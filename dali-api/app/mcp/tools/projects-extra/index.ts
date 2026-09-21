@@ -15,8 +15,22 @@ import { LIST_ARCHIVED_TASKS_TOOL, runListArchivedTasks } from "./list-archived-
 import { MANAGE_PROJECT_FILE_TOOL, runManageProjectFile } from "./manage-project-file";
 import { GET_PROJECT_FILE_TOOL, runGetProjectFile } from "./get-project-file";
 import { PROVISION_EPIC_DESCRIPTION_DOC_TOOL, runProvisionEpicDescriptionDoc } from "./provision-epic-description-doc";
+import {
+  LIST_PROJECT_CHART_STRINGS_TOOL,
+  runListProjectChartStrings,
+  SET_PROJECT_CHART_STRING_TOOL,
+  runSetProjectChartString,
+} from "./chart-strings";
 
 export const PROJECTS_EXTRA_TOOLS: McpTool[] = [
+  {
+    def: LIST_PROJECT_CHART_STRINGS_TOOL,
+    run: (ctx, args) => runListProjectChartStrings(ctx.user.id, args as any),
+  },
+  {
+    def: SET_PROJECT_CHART_STRING_TOOL,
+    run: (ctx, args) => runSetProjectChartString(ctx.user.id, args as any),
+  },
   {
     def: UPDATE_PROJECT_TOOL,
     run: (ctx, args) => runUpdateProject(ctx.user.id, args as any),

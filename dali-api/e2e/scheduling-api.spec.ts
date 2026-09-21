@@ -178,6 +178,7 @@ test.describe.serial('scheduling API: reschedule atomicity', () => {
       `/api/hiring/cycles/${CYCLE}/available-slots?domainId=domain-eng`,
     );
     const slots = await slotsRes.json();
+    expect(slots.length).toBeGreaterThan(0);
     // Pick a slot different from the current one
     const newSlot = slots.find(
       (s: { startTime: string }) => s.startTime !== currentStart,
@@ -209,6 +210,7 @@ test.describe('scheduling API: authorization', () => {
       `/api/hiring/cycles/${CYCLE}/available-slots?domainId=domain-eng`,
     );
     const slots = await slotsRes.json();
+    expect(slots.length).toBeGreaterThan(0);
     // Felix tries to book Alice's domain application
     const bookRes = await page.request.post(
       `/api/hiring/domain-applications/da-alice-eng/schedule-interview`,

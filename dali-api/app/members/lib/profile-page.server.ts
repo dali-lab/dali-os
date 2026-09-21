@@ -53,6 +53,7 @@ import {
   mentorshipPairWhere,
   mentorNoteWhere,
 } from "~/mentorship/lib/visibility";
+import type { OfferingType } from "~/education/lib/offering-type";
 
 export type ProfileMember = {
   id: string;
@@ -176,7 +177,7 @@ export type ProfilePageData = {
     attended: Array<{
       offeringId: string;
       title: string;
-      type: "Miniseries" | "Workshop";
+      type: OfferingType;
       startsAt: Date | null;
       endsAt: Date | null;
       status: string;
@@ -186,7 +187,7 @@ export type ProfilePageData = {
     taught: Array<{
       offeringId: string;
       title: string;
-      type: "Miniseries" | "Workshop";
+      type: OfferingType;
       termCode: string;
     }>;
     ceCredits: Array<{ termCode: string; count: number }>;
@@ -384,8 +385,8 @@ export async function loadProfilePage({
 
   // Mentorship panel: visible only when the viewer is a lab mentor (or Core)
   // AND they are NOT looking at their own profile. Mentees never see
-  // anything about notes written about them. Non-Core mentors only see
-  // pairs/notes in domains they mentor in (plus notes they authored).
+  // anything about notes written about them. Any lab mentor sees every pair
+  // and note here — the scope helpers only narrow a non-mentor caller.
   const viewerCanSeeMentorshipPanel = !isSelf
     ? canManageEligibility || (await isLabMentor(auth.user.sub))
     : false;

@@ -1,4 +1,4 @@
-import { useRevalidator } from "react-router";
+import { useLocation, useRevalidator } from "react-router";
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import type { RoleInstance } from "~/lib/roles";
@@ -37,6 +37,11 @@ function TimesheetEntryForm({
 }) {
   const { formClass, formTrigger } = useOsChrome();
   const revalidator = useRevalidator();
+  // Post to whichever calendar route is mounted — /calendar for members,
+  // /portal/calendar for the non-member copy. A hardcoded "/calendar" would
+  // send the portal's writes through the member route, whose loaders bounce a
+  // non-member back to /portal.
+  const actionPath = useLocation().pathname;
   const [start, setStart] = useState(startLocal);
   const [end, setEnd] = useState(endLocal);
   // Follow the committed selection while the user resizes it on the grid.
@@ -73,7 +78,7 @@ function TimesheetEntryForm({
         body.set("roleRefId", role.roleRefId);
       }
       if (note.trim()) body.set("note", note.trim());
-      const res = await fetch("/calendar", { method: "POST", credentials: "include", body });
+      const res = await fetch(actionPath, { method: "POST", credentials: "include", body });
       if (!res.ok) {
         const j = await res.json().catch(() => null);
         setError(j?.error ?? "Failed to add entry");
@@ -157,6 +162,9 @@ function TimesheetEntryForm({
           placeholder="What did you work on?"
           className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground resize-y min-h-[4.5rem]"
         />
+        {note.trim() === "" && (
+          <p className="mt-1 text-xs text-red-600">Add a note describing the work.</p>
+        )}
       </div>
 
       {error && <p className="text-sm text-red-700">{error}</p>}
@@ -284,6 +292,7 @@ export function TimesheetEditPopover({
 }) {
   const { formClass, fieldLabel, formTrigger } = useOsChrome();
   const revalidator = useRevalidator();
+  const actionPath = useLocation().pathname;
   const [start, setStart] = useState(startLocal);
   const [end, setEnd] = useState(endLocal);
   // Follow the block while it's dragged/resized on the grid, so the form and
@@ -335,7 +344,7 @@ export function TimesheetEditPopover({
       body.set("assignmentType", role?.assignmentType ?? "");
       body.set("roleRefId", role?.roleRefId ?? "");
       body.set("note", note.trim());
-      const res = await fetch("/calendar", { method: "POST", credentials: "include", body });
+      const res = await fetch(actionPath, { method: "POST", credentials: "include", body });
       if (!res.ok) {
         const j = await res.json().catch(() => null);
         setError(j?.error ?? "Failed to save entry");
@@ -357,7 +366,7 @@ export function TimesheetEditPopover({
       const body = new FormData();
       body.set("intent", "delete-time-entry");
       body.set("id", entry.id);
-      const res = await fetch("/calendar", { method: "POST", credentials: "include", body });
+      const res = await fetch(actionPath, { method: "POST", credentials: "include", body });
       if (!res.ok) {
         const j = await res.json().catch(() => null);
         setError(j?.error ?? "Failed to delete entry");
@@ -458,6 +467,9 @@ export function TimesheetEditPopover({
             placeholder="What did you work on?"
             className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground resize-y min-h-[4.5rem]"
           />
+          {note.trim() === "" && (
+            <p className="mt-1 text-xs text-red-600">Add a note describing the work.</p>
+          )}
         </div>
 
         {error && <p className="text-sm text-red-700">{error}</p>}

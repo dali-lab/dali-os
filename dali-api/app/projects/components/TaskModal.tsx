@@ -17,7 +17,7 @@ import { useDialog } from "~/components/ui/dialog";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
 import { uploadFileToS3 } from "~/lib/upload-client";
-import { Select, Tooltip } from "~/components/ui/floating";
+import { MultiSelect, Select, Tooltip } from "~/components/ui/floating";
 import {
   normalizeChecklist,
   CHECKLIST_MAX_ITEMS,
@@ -25,7 +25,9 @@ import {
   type ChecklistItem,
 } from "../lib/task-checklist";
 import type { TaskBoardOptions, TaskCardModel, TaskStatus } from "../lib/task-board";
-import { TASK_STATUSES, TASK_STATUS_LABELS } from "../lib/task-board";
+import { TASK_STATUSES, TASK_STATUS_LABELS, isTaskFinished } from "../lib/task-board";
+import { DependencyLinks } from "./DependencyLinks";
+import { PeopleFilter } from "./PeopleFilter";
 import { cn } from "~/lib/cn";
 
 // Borderless control for the Details property panel — the row supplies the
@@ -60,6 +62,8 @@ export type NewTaskValues = {
   // dates, not chosen here.)
   epicId: string | null;
   storyId: string | null;
+  // Tasks the new one waits on. Applied with a follow-up PATCH, like assignees.
+  dependsOn: string[];
   // Not collected in create mode today (the create endpoint doesn't accept a
   // checklist); present so the board's optimistic card mapping can read it.
   checklist?: ChecklistItem[] | null;
@@ -74,6 +78,8 @@ export function TaskModal({
   task,
   projectId,
   options,
+  allTasks,
+  onOpenTask,
   canManage,
   onClose,
   onPatch,
@@ -88,6 +94,11 @@ export function TaskModal({
   task?: TaskCardModel;
   projectId: string;
   options: TaskBoardOptions;
+  // Every task on the board: the "Blocked by" choices, and the source of the
+  // reverse "Blocks" list.
+  allTasks: TaskCardModel[];
+  // Edit mode: opens another task from a dependency link.
+  onOpenTask?: (taskId: string) => void;
   canManage: boolean;
   onClose: () => void;
   // Resolves with the save outcome; on failure the modal stays open and
@@ -136,9 +147,29 @@ export function TaskModal({
     task?.startsAt ? dateInputValue(task.startsAt) : "",
   );
   const [storyId, setStoryId] = useState<string>(task?.storyId ?? "");
+  const [dependsOn, setDependsOn] = useState<string[]>(task?.dependsOn ?? []);
   const [domainId, setDomainId] = useState<string>(task?.domain?.id ?? "");
   const [epicId, setEpicId] = useState<string>(
     task ? task.epicId ?? "" : defaultEpicId ?? "",
+  );
+
+  // Dependency choices are every other task on the board. "Blocks" is the
+  // reverse edge: tasks that list this one in their own Blocked by.
+  const dependencyOptions = useMemo(
+    () =>
+      allTasks
+        .filter((t) => t.id !== task?.id)
+        .map((t) => ({ value: t.id, label: t.title })),
+    [allTasks, task?.id],
+  );
+  const blocksLinks = useMemo(
+    () =>
+      task
+        ? allTasks
+            .filter((t) => t.dependsOn.includes(task.id))
+            .map((t) => ({ id: t.id, label: t.title, open: !isTaskFinished(t) }))
+        : [],
+    [allTasks, task],
   );
 
   // Stories always belong to an epic, so with no epic picked there's nothing
@@ -153,10 +184,23 @@ export function TaskModal({
   const assigneeOptions = useMemo(() => {
     const byId = new Map(options.members.map((m) => [m.id, m]));
     for (const a of task?.assignees ?? []) {
-      if (!byId.has(a.id)) byId.set(a.id, { id: a.id, name: a.name, photoUrl: null });
+      if (!byId.has(a.id))
+        byId.set(a.id, { id: a.id, name: a.name, photoUrl: null, domainId: null });
     }
     return [...byId.values()];
   }, [options.members, task]);
+  // Assigning someone seeds Domain with their staffed domain on this project —
+  // the common case (a task belongs to the assignee's domain), left editable so
+  // cross-domain work can still override it. Only fills a blank Domain, so it
+  // never fights a choice already made, and only off the first person added.
+  function handleAssigneesChange(next: string[]) {
+    const added = next.find((id) => !assigneeIds.includes(id));
+    setAssigneeIds(next);
+    if (added && !domainId) {
+      const staffed = options.members.find((m) => m.id === added)?.domainId;
+      if (staffed) setDomainId(staffed);
+    }
+  }
   // Why a picker has nothing in it, said once under the field. Inside the
   // control it read as a value you could choose; the design's .field-hint is
   // where an explanation belongs.
@@ -238,6 +282,7 @@ export function TaskModal({
     setDueDate(task.dueAt ? dateInputValue(task.dueAt) : "");
     setStartDate(task.startsAt ? dateInputValue(task.startsAt) : "");
     setStoryId(task.storyId ?? "");
+    setDependsOn(task.dependsOn);
     setDomainId(task.domain?.id ?? "");
     setEpicId(task.epicId ?? "");
     setChecklist(task.checklist ?? []);
@@ -306,6 +351,9 @@ export function TaskModal({
     if (nextEpicId !== current.epicId) patch.epicId = nextEpicId;
     const nextStoryId = storyId === "" ? null : storyId;
     if (nextStoryId !== current.storyId) patch.storyId = nextStoryId;
+    if ([...dependsOn].sort().join() !== [...current.dependsOn].sort().join()) {
+      patch.dependsOn = dependsOn;
+    }
     const nextChecklist = normalizeChecklist(checklist);
     const currentChecklist = normalizeChecklist(current.checklist ?? []);
     if (JSON.stringify(nextChecklist) !== JSON.stringify(currentChecklist)) {
@@ -337,6 +385,7 @@ export function TaskModal({
       dueDate !== "" ||
       domainId !== "" ||
       assigneeIds.length > 0 ||
+      dependsOn.length > 0 ||
       epicId !== (defaultEpicId ?? "") ||
       githubEnabled
     );
@@ -365,6 +414,7 @@ export function TaskModal({
     setDueDate(current.dueAt ? dateInputValue(current.dueAt) : "");
     setStartDate(current.startsAt ? dateInputValue(current.startsAt) : "");
     setStoryId(current.storyId ?? "");
+    setDependsOn(current.dependsOn);
     setDomainId(current.domain?.id ?? "");
     setEpicId(current.epicId ?? "");
     setChecklist(current.checklist ?? []);
@@ -435,6 +485,7 @@ export function TaskModal({
         assigneeIds,
         epicId: epicId === "" ? null : epicId,
         storyId: storyId === "" ? null : storyId,
+        dependsOn,
         github: githubEnabled && githubRepo ? { repo: githubRepo } : null,
       });
       onClose();
@@ -938,6 +989,19 @@ export function TaskModal({
           </FieldPair>
 
           <FieldPair>
+          <PropRow label="Assignees" align="start">
+            <PeopleFilter
+              options={assigneeOptions}
+              selected={assigneeIds}
+              // Read-only as well as no-rights: a record you are only reading
+              // shows who is on the task, not an Edit link into a picker the
+              // readonly form has already made inert.
+              disabled={!canManage || readOnly}
+              onChange={handleAssigneesChange}
+              emptyLabel="Assign someone"
+              clearLabel="Clear"
+            />
+          </PropRow>
           <PropRow label="Domain">
             <Select
               value={domainId}
@@ -949,17 +1013,6 @@ export function TaskModal({
                 ...options.domains.map((d) => ({ value: d.id, label: d.name })),
               ]}
               buttonClassName={PROP_CONTROL}
-            />
-          </PropRow>
-          <PropRow label="Assignees" align="start">
-            <AssigneePicker
-              all={assigneeOptions}
-              selected={assigneeIds}
-              // Read-only as well as no-rights: a record you are only reading
-              // shows who is on the task, not an Edit link into a picker the
-              // readonly form has already made inert.
-              disabled={!canManage || readOnly}
-              onChange={setAssigneeIds}
             />
           </PropRow>
           </FieldPair>
@@ -1011,6 +1064,24 @@ export function TaskModal({
               </span>
             </Tooltip>
           </PropRow>
+
+          <PropRow label="Blocked by" align="start">
+            <MultiSelect
+              values={dependsOn}
+              options={dependencyOptions}
+              disabled={!canManage || readOnly}
+              onChange={setDependsOn}
+              ariaLabel="Tasks this one waits on"
+              placeholder="Nothing"
+              emptyLabel="No other tasks on this board"
+              buttonClassName={PROP_CONTROL}
+            />
+          </PropRow>
+          {!isCreate && (
+            <PropRow label="Blocks" align="start">
+              <DependencyLinks items={blocksLinks} onSelect={onOpenTask} />
+            </PropRow>
+          )}
         </div>
 
         {isCreate && canManage && githubRepos.length > 0 && (
@@ -1464,113 +1535,6 @@ function PropRow({
       <span className="os-field-label">{caption}</span>
       <div className="min-w-0">{children}</div>
       {hint && <span className="os-field-hint">{hint}</span>}
-    </div>
-  );
-}
-
-// Checkbox list of project members. Compact list rather than a multi-select
-// because a typical project has 3–8 members and click-to-toggle reads
-// faster than cmd-clicking a <select multiple>.
-function AssigneePicker({
-  all,
-  selected,
-  disabled,
-  onChange,
-}: {
-  all: { id: string; name: string; photoUrl?: string | null }[];
-  selected: string[];
-  disabled: boolean;
-  onChange: (next: string[]) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
-
-  function toggle(id: string) {
-    if (selected.includes(id)) onChange(selected.filter((x) => x !== id));
-    else onChange([...selected, id]);
-  }
-
-  if (all.length === 0) {
-    return (
-      <p className="text-xs text-muted-foreground italic">
-        No team members on this project yet.
-      </p>
-    );
-  }
-
-  const chosen = all.filter((m) => selected.includes(m.id));
-
-  // Chips for who's on it, and everyone else behind a popover — rather than a
-  // permanently-open bordered scroll box, which read as a panel inside the
-  // properties panel and grew with the roster.
-  return (
-    <div ref={ref} className="relative flex flex-wrap items-center gap-1.5">
-      {chosen.map((m) => (
-        <span
-          key={m.id}
-          className="inline-flex items-center gap-1.5 rounded-full bg-muted/60 pl-0.5 pr-1.5 py-0.5 text-xs text-foreground"
-        >
-          <Avatar photoUrl={m.photoUrl} name={m.name} size="xs" className="shrink-0" />
-          {m.name}
-          {!disabled && (
-            <button
-              type="button"
-              onClick={() => toggle(m.id)}
-              aria-label={`Remove ${m.name}`}
-              className="text-muted-foreground/70 hover:text-foreground rounded-full"
-            >
-              <X className="w-3 h-3" aria-hidden />
-            </button>
-          )}
-        </span>
-      ))}
-
-      {!disabled && (
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          aria-expanded={open}
-          className="text-xs font-medium text-accent-coral hover:underline px-1 py-0.5"
-        >
-          {chosen.length === 0 ? "Assign someone" : "Edit"}
-        </button>
-      )}
-      {disabled && chosen.length === 0 && (
-        <span className="text-sm text-muted-foreground">Unassigned</span>
-      )}
-
-      {open && (
-        <div className="absolute top-full left-0 z-20 mt-1 max-h-56 w-60 overflow-y-auto rounded-md border border-border bg-card p-1 shadow-brand-2">
-          {all.map((m) => (
-            <Checkbox
-              key={m.id}
-              checked={selected.includes(m.id)}
-              onChange={() => toggle(m.id)}
-              label={
-                <span className="flex items-center gap-2 min-w-0">
-                  <Avatar
-                    photoUrl={m.photoUrl}
-                    name={m.name}
-                    size="xs"
-                    className="shrink-0"
-                  />
-                  <span className="truncate text-foreground">{m.name}</span>
-                </span>
-              }
-              className="rounded px-1.5 py-1 text-sm hover:bg-muted/40 cursor-pointer"
-            />
-          ))}
-        </div>
-      )}
     </div>
   );
 }

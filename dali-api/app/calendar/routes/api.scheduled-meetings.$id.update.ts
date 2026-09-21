@@ -8,18 +8,28 @@ import {
   type ScheduledMeetingScope,
 } from "~/lib/scheduled-meeting";
 
-// Edit is deliberately narrower than create: title, time, and the guest list.
-// Meeting type, project, note, and attendance mode are fixed once created.
+// Edit is deliberately narrower than create: title, time, location, description,
+// and the guest list. Meeting type, project, note, and attendance mode are fixed
+// once created.
 const Base = {
   title: z.string().trim().min(1).max(200),
   durationMinutes: z.number().int().min(5).max(480),
   recurrenceRule: z.string().max(500).optional(),
   startTime: z.string().datetime().optional(),
+  // Omitted leaves the stored value alone; "" clears it (here and on Google).
+  location: z.string().trim().max(500).optional(),
+  description: z.string().trim().max(5000).optional(),
 } as const;
 
 const UpdateSchema = z.discriminatedUnion("scopeType", [
   z.object({ scopeType: z.literal("None"), ...Base }),
-  z.object({ scopeType: z.literal("Group"), groupId: z.string().min(1), ...Base }),
+  z.object({
+    scopeType: z.literal("Group"),
+    groupId: z.string().min(1),
+    // Guests on top of the group, so an edit keeps anyone invited individually.
+    extraUserIds: z.array(z.string().min(1)).optional(),
+    ...Base,
+  }),
   z.object({
     scopeType: z.literal("UserList"),
     participantUserIds: z.array(z.string().min(1)).min(1),
@@ -44,7 +54,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   let scope: ScheduledMeetingScope;
   if (body.scopeType === "Group") {
-    scope = { type: "Group", groupId: body.groupId };
+    scope = { type: "Group", groupId: body.groupId, extraUserIds: body.extraUserIds };
   } else if (body.scopeType === "UserList") {
     scope = { type: "UserList", participantUserIds: body.participantUserIds };
   } else {
@@ -57,6 +67,8 @@ export async function action({ request, params }: Route.ActionArgs) {
     scope,
     startTime: body.startTime,
     recurrenceRule: body.recurrenceRule,
+    location: body.location,
+    description: body.description,
   });
 
   if (!result.ok) {

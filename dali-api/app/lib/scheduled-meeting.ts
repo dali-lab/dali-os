@@ -10,6 +10,7 @@ import {
   createGoogleCalendarEvent,
   patchGoogleCalendarEvent,
   getGoogleEvent,
+  deleteGoogleCalendarEvent,
   type GoogleAttendee,
 } from "~/lib/google-calendar";
 import { primaryEmail, formatDateShort } from "~/lib/display";
@@ -23,7 +24,7 @@ import {
   ensureLabMeetingNotesFolder,
 } from "~/lib/pages";
 import { isCore } from "~/lib/roles";
-import { expandOccurrences, type OccurrenceException } from "~/lib/meeting-occurrences";
+import { expandOccurrences, rruleWithUntil, bareRrule, type OccurrenceException } from "~/lib/meeting-occurrences";
 import type { ScheduledMeeting, MeetingType, AttendanceMode } from "~/generated/prisma/client";
 
 function meetingUid(meetingId: string): string {
@@ -46,6 +47,8 @@ async function buildPerRecipientIcs(args: {
   durationMinutes: number;
   organizerEmail: string;
   recurrenceRule: string | null;
+  location?: string | null;
+  description?: string | null;
   userIds: string[];
 }): Promise<Map<string, string>> {
   const users = await prisma.user.findMany({
@@ -71,6 +74,8 @@ async function buildPerRecipientIcs(args: {
         summary: args.title,
         startTime: args.startTime,
         endTime,
+        location: args.location ?? null,
+        description: args.description ?? undefined,
         organizer: { email: args.organizerEmail, name: "DALI OS" },
         attendees: [{ email, name: `${u.firstName} ${u.lastName}`.trim() || email }],
         sequence: args.method === "CANCEL" ? ICS_SEQ_CANCEL : ICS_SEQ_INVITE,
@@ -81,10 +86,115 @@ async function buildPerRecipientIcs(args: {
   return byUser;
 }
 
+async function googleAttendeesFor(userIds: string[]): Promise<GoogleAttendee[]> {
+  const users = await prisma.user.findMany({
+    where: { id: { in: userIds } },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      daliEmail: true,
+      dartmouthEmail: true,
+    },
+  });
+  const attendees: GoogleAttendee[] = [];
+  for (const u of users) {
+    const email = primaryEmail(u);
+    if (!email) continue;
+    attendees.push({ email, displayName: `${u.firstName} ${u.lastName}`.trim() || email });
+  }
+  return attendees;
+}
+
+// The invite's body across all three channels. The ICS (and, for a Google-hosted
+// meeting, Google's own invite) carries these fields too, but the in-app feed and
+// the Slack DM have no attachment to open — so where and what the meeting is has
+// to be in the message itself.
+function inviteBody(
+  startDate: Date | null,
+  location: string | null,
+  description: string | null,
+): string | null {
+  const lines = [
+    startDate ? `Starts ${startDate.toISOString()}` : null,
+    location ? `Location: ${location}` : null,
+    description || null,
+  ].filter(Boolean);
+  return lines.length > 0 ? lines.join("\n") : null;
+}
+
+// The in-app/email/Slack invite for newly added guests. An ICS rides along only
+// when we manage the invite ourselves — a Google-hosted meeting already gets a
+// real invite from Google.
+async function sendMeetingInvites(args: {
+  meetingId: string;
+  actorUserId: string;
+  title: string;
+  startDate: Date | null;
+  durationMinutes: number;
+  recurrenceRule: string | null;
+  ownerCalendarEmail: string;
+  googleManaged: boolean;
+  sourceGroupId: string | null;
+  location: string | null;
+  description: string | null;
+  recipientIds: string[];
+}): Promise<{ inApp: number }> {
+  const icsByUser =
+    args.startDate && !args.googleManaged
+      ? await buildPerRecipientIcs({
+          meetingId: args.meetingId,
+          method: "REQUEST",
+          title: args.title,
+          startTime: args.startDate,
+          durationMinutes: args.durationMinutes,
+          organizerEmail: args.ownerCalendarEmail,
+          recurrenceRule: args.recurrenceRule,
+          location: args.location,
+          description: args.description,
+          userIds: args.recipientIds,
+        })
+      : null;
+  return notify({
+    eventType: "meeting.invite",
+    createdByUserId: args.actorUserId,
+    message: {
+      title: `Meeting invite: ${args.title}`,
+      body: inviteBody(args.startDate, args.location, args.description),
+      link: `/calendar?meeting=${args.meetingId}`,
+      sourceGroupId: args.sourceGroupId,
+      scheduledMeetingId: args.meetingId,
+    },
+    recipients: args.recipientIds.map((userId) => ({
+      userId,
+      ics: icsByUser?.get(userId) ?? null,
+    })),
+  });
+}
+
 export type ScheduledMeetingScope =
   | { type: "None" }
-  | { type: "Group"; groupId: string }
+  // extraUserIds: guests invited on top of the group (e.g. added after the
+  // fact), kept so the meeting stays scoped to the group — and on that group's
+  // calendar — instead of collapsing into a plain list.
+  | { type: "Group"; groupId: string; extraUserIds?: string[] }
   | { type: "UserList"; participantUserIds: string[] };
+
+async function resolveScope(
+  scope: ScheduledMeetingScope,
+): Promise<{ participantUserIds: string[]; scopeId: string | null }> {
+  if (scope.type === "Group") {
+    const members = await resolveGroupMembers(scope.groupId);
+    return {
+      participantUserIds: Array.from(new Set([...members, ...(scope.extraUserIds ?? [])])),
+      scopeId: scope.groupId,
+    };
+  }
+  if (scope.type === "UserList") {
+    return { participantUserIds: Array.from(new Set(scope.participantUserIds)), scopeId: null };
+  }
+  return { participantUserIds: [], scopeId: null };
+}
 
 export type CreateScheduledMeetingInput = {
   organizerId: string;
@@ -97,15 +207,21 @@ export type CreateScheduledMeetingInput = {
   organizerCalendarLinkId?: string | null;
   /** A calendar inside that link. Omitted = the account's primary calendar. */
   organizerCalendarId?: string | null;
-  // Meeting-note fields. When both are set, a "<label> meeting note (<date>)"
-  // Page is auto-created under the project's shared documents, and a
-  // MeetingAttendance row is fanned out per participant (including the
-  // organizer). meetingTypeLabel supplies the note's display label — required
-  // when meetingType is "Other", ignored otherwise (Team/Partner have fixed
-  // labels).
+  /** Stored on the meeting and mirrored onto the Google event / ICS invite. */
+  location?: string | null;
+  description?: string | null;
+  // Meeting-asset fields. When meetingType is set, the meeting records its type
+  // and a MeetingAttendance row is fanned out per participant (incl. the
+  // organizer). meetingTypeLabel supplies the display label — required when
+  // meetingType is "Other", ignored otherwise (Team/Partner have fixed labels).
   meetingType?: MeetingType | null;
   meetingTypeLabel?: string | null;
   projectId?: string | null;
+  // Which assets to create for the meeting (both file under the resolved
+  // location/folder). Default: a note when createNote is omitted but meetingType
+  // is set (back-compat for callers that only set meetingType), no whiteboard.
+  createNote?: boolean;
+  createWhiteboard?: boolean;
   // General ("Other") meetings only: where to file the note page. Authorized and
   // resolved by resolveNoteDestination — an unauthorized/invalid location (or an
   // omitted one) falls back to the Lab root. Ignored for Team/Partner, which file
@@ -139,6 +255,7 @@ export type CreateScheduledMeetingResult =
       notifiedCount: number;
       gcalError: string | null;
       notePageId: string | null;
+      whiteboardPageId: string | null;
     }
   | { ok: false; error: string };
 
@@ -187,15 +304,18 @@ async function resolveNoteDestination(
   };
 }
 
-// Create the meeting-note Page for a meeting and return its id. Shared by
-// createScheduledMeeting (note requested at creation) and attachMeetingNote
-// (note added to an already-created meeting) so the three filing paths —
-// project (Team/Partner), Core, and General (chosen Drive location) — live in
-// one place. `authorId` is the note's creator and the identity note-destination
-// authorization runs against (the organizer at creation, the actor after).
-async function buildMeetingNotePage(input: {
+// Create a meeting-asset Page (note doc or whiteboard) for a meeting and return
+// its id. Shared by createScheduledMeeting (asset requested at creation) and the
+// attach* helpers (asset added to an already-created meeting) so the three
+// filing paths — project (Team/Partner), Core, and General (chosen Drive
+// location) — live in one place for both artifacts. `authorId` is the creator
+// and the identity destination authorization runs against (the organizer at
+// creation, the actor after). Notes and whiteboards for the same meeting file
+// side by side under the same folder.
+async function buildMeetingArtifactPage(input: {
   meetingId: string;
   authorId: string;
+  artifact: "note" | "whiteboard";
   meetingType: MeetingType;
   meetingTypeLabel: string | null;
   projectId: string | null;
@@ -205,11 +325,20 @@ async function buildMeetingNotePage(input: {
 }): Promise<string> {
   const noteDate = input.startDate ?? new Date();
   const dateLabel = formatDateShort(noteDate);
-  let title = dateLabel;
+  const isBoard = input.artifact === "whiteboard";
+  // Link column + page kind that make this a meeting's note vs its whiteboard.
+  const linkFields = isBoard
+    ? { meetingWhiteboardId: input.meetingId, kind: "Whiteboard" as const }
+    : { meetingNoteId: input.meetingId };
+  // The artifact noun in the title, so a note and a board for the same meeting
+  // stay distinguishable in Drive and search. Whiteboards always carry
+  // "whiteboard"; notes keep their existing "meeting note" naming.
+  const noun = isBoard ? "whiteboard" : "meeting note";
+  let title = isBoard ? `${dateLabel} whiteboard` : dateLabel;
 
   if (input.projectId) {
-    // Team/Partner notes nest under their default, undeletable folder;
-    // "Other" notes stay top-level (no default folder for a custom label).
+    // Team/Partner assets nest under their default, undeletable folder;
+    // "Other" assets stay top-level (no default folder for a custom label).
     let parentPageId: string | null = null;
     if (input.meetingType === "Team" || input.meetingType === "Partner") {
       const folder = await ensureMeetingNotesFolder(
@@ -218,72 +347,83 @@ async function buildMeetingNotePage(input: {
         input.authorId,
       );
       parentPageId = folder.id;
-      // Team/Partner notes are named for the project and kind they belong
-      // to, so they stay identifiable once they leave that folder — in
-      // search, in Drive, and on the meeting itself.
+      // Named for the project and kind they belong to, so they stay
+      // identifiable once they leave that folder — in search, in Drive, and on
+      // the meeting itself.
       const project = await prisma.project.findUnique({
         where: { id: input.projectId },
         select: { name: true },
       });
       if (project) {
-        title = `${project.name} ${input.meetingType} meeting note (${dateLabel})`;
+        title = `${project.name} ${input.meetingType} ${noun} (${dateLabel})`;
       }
+    } else if (input.meetingTypeLabel) {
+      title = isBoard
+        ? `${input.meetingTypeLabel} whiteboard (${dateLabel})`
+        : `${input.meetingTypeLabel} (${dateLabel})`;
     }
     const page = await createProjectPage({
       projectId: input.projectId,
       title,
       createdById: input.authorId,
-      meetingNoteId: input.meetingId,
       parentPageId,
+      ...linkFields,
     });
     return page.id;
   }
 
   if (input.isCoreMeeting) {
-    // A Core meeting's note belongs to Core, the way a project meeting's note
-    // belongs to its project: always Core's own meeting-notes folder, never a
-    // location the organizer picked. The folder is Core-scoped, so the note is
-    // Core-only without depending on its own link access.
-    if (input.meetingTypeLabel) title = `${input.meetingTypeLabel} (${dateLabel})`;
+    // A Core meeting's assets belong to Core, the way a project meeting's belong
+    // to its project: always Core's own meeting-assets folder, never a location
+    // the organizer picked. The folder is Core-scoped, so the asset is Core-only
+    // without depending on its own link access.
+    if (input.meetingTypeLabel) {
+      title = isBoard
+        ? `${input.meetingTypeLabel} whiteboard (${dateLabel})`
+        : `${input.meetingTypeLabel} (${dateLabel})`;
+    }
     const coreFolderId = await ensureCoreMeetingNotesFolder(input.authorId);
     const page = await createLabMeetingPage({
       title,
       createdById: input.authorId,
-      meetingNoteId: input.meetingId,
-      // Null only when the Core group isn't seeded yet — the note lands at the
+      // Null only when the Core group isn't seeded yet — the asset lands at the
       // Lab root rather than not existing at all.
       parentPageId: coreFolderId,
       restricted: coreFolderId !== null,
+      ...linkFields,
     });
     return page.id;
   }
 
-  // General meeting: file the note at the author's chosen Drive location.
-  // Include the label in the title so the note stays identifiable wherever it
-  // lands.
-  if (input.meetingTypeLabel) title = `${input.meetingTypeLabel} (${dateLabel})`;
+  // General meeting: file at the author's chosen Drive location. Include the
+  // label in the title so the asset stays identifiable wherever it lands.
+  if (input.meetingTypeLabel) {
+    title = isBoard
+      ? `${input.meetingTypeLabel} whiteboard (${dateLabel})`
+      : `${input.meetingTypeLabel} (${dateLabel})`;
+  }
   const dest = await resolveNoteDestination(input.authorId, input.noteLocation);
   if (dest.workspaceType === "Project" && dest.workspaceId) {
     const page = await createProjectPage({
       projectId: dest.workspaceId,
       title,
       createdById: input.authorId,
-      meetingNoteId: input.meetingId,
       parentPageId: dest.parentPageId,
+      ...linkFields,
     });
     return page.id;
   }
   // No folder chosen — the common case, since the picker defaults to the top of
   // the Lab drive and resolveNoteDestination falls back there for anything it
-  // can't honour. The Lab's own "Meeting notes" folder is the default instead
-  // of the root, where a note titled just its date went loose among every other
-  // Lab doc. An explicitly chosen folder still wins.
+  // can't honour. The Lab's own "Meeting assets" folder is the default instead
+  // of the root, where an asset titled just its date went loose among every
+  // other Lab doc. An explicitly chosen folder still wins.
   const parentPageId = dest.parentPageId ?? (await ensureLabMeetingNotesFolder(input.authorId));
   const page = await createLabMeetingPage({
     title,
     createdById: input.authorId,
-    meetingNoteId: input.meetingId,
     parentPageId,
+    ...linkFields,
   });
   return page.id;
 }
@@ -291,24 +431,14 @@ async function buildMeetingNotePage(input: {
 export async function createScheduledMeeting(
   input: CreateScheduledMeetingInput,
 ): Promise<CreateScheduledMeetingResult> {
-  // Hard constraint (defense in depth alongside the route schema): a meeting is
-  // either a project meeting (Team/Partner + project) or a General one (Other,
-  // no project). No "Team without a team", no "Other pinned to a project".
+  // Hard constraint (defense in depth alongside the route schema): Team/Partner
+  // are project meetings. "Other" may be General (no project) or a custom-named
+  // project meeting.
   if ((input.meetingType === "Team" || input.meetingType === "Partner") && !input.projectId) {
     return { ok: false, error: "A project is required for Team and Partner meetings" };
   }
-  if (input.meetingType === "Other" && input.projectId) {
-    return { ok: false, error: "General meetings cannot be attached to a project" };
-  }
 
-  let participantUserIds: string[] = [];
-  let scopeId: string | null = null;
-  if (input.scope.type === "Group") {
-    participantUserIds = await resolveGroupMembers(input.scope.groupId);
-    scopeId = input.scope.groupId;
-  } else if (input.scope.type === "UserList") {
-    participantUserIds = Array.from(new Set(input.scope.participantUserIds));
-  }
+  const { participantUserIds, scopeId } = await resolveScope(input.scope);
 
   const startDate = input.startTime ? new Date(input.startTime) : null;
 
@@ -330,11 +460,17 @@ export async function createScheduledMeeting(
 
   const attendanceMode = input.attendanceMode ?? "Roster";
 
+  // Blank is the same as unset here: an untouched field shouldn't persist as "".
+  const location = input.location?.trim() || null;
+  const description = input.description?.trim() || null;
+
   const meeting = await prisma.scheduledMeeting.create({
     data: {
       organizerId: input.organizerId,
       title: input.title,
       durationMinutes: input.durationMinutes,
+      location,
+      description,
       scopeType: input.scope.type,
       scopeId,
       participantUserIds,
@@ -356,25 +492,7 @@ export async function createScheduledMeeting(
   let meetingUrl: string | null = null;
   let gcalError: string | null = null;
   if (organizerLink && organizerLink.enabled && startDate && participantUserIds.length > 0) {
-    const attendeeUsers = await prisma.user.findMany({
-      where: { id: { in: participantUserIds } },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        daliEmail: true,
-        dartmouthEmail: true,
-      },
-    });
-    const attendees: GoogleAttendee[] = [];
-    for (const u of attendeeUsers) {
-      const email = primaryEmail(u);
-      if (!email) continue;
-      attendees.push({
-        email,
-        displayName: `${u.firstName} ${u.lastName}`.trim() || email,
-      });
-    }
+    const attendees = await googleAttendeesFor(participantUserIds);
     if (attendees.length > 0) {
       const endDate = new Date(startDate.getTime() + input.durationMinutes * 60_000);
       // A recurring insert must name the zone its RRULE expands in — anchor it
@@ -387,6 +505,8 @@ export async function createScheduledMeeting(
         const result = await createGoogleCalendarEvent({
           linkId: organizerLink.id,
           summary: input.title,
+          location: location ?? undefined,
+          description: description ?? undefined,
           startIso: startDate.toISOString(),
           endIso: endDate.toISOString(),
           recurrenceRule: input.recurrenceRule ?? null,
@@ -421,8 +541,13 @@ export async function createScheduledMeeting(
   // roster regardless of whether a note exists. Scope is always the meeting's
   // participants (+ organizer), never the whole lab.
   let notePageId: string | null = null;
+  let whiteboardPageId: string | null = null;
   if (input.meetingType) {
-    notePageId = await buildMeetingNotePage({
+    // Default to a note (and no board) when the caller only set meetingType —
+    // matches the pre-whiteboard behaviour for MCP and other callers.
+    const wantNote = input.createNote ?? true;
+    const wantWhiteboard = input.createWhiteboard ?? false;
+    const common = {
       meetingId: meeting.id,
       authorId: input.organizerId,
       meetingType: input.meetingType,
@@ -431,7 +556,10 @@ export async function createScheduledMeeting(
       isCoreMeeting: input.isCoreMeeting ?? false,
       noteLocation: input.noteLocation ?? null,
       startDate,
-    });
+    };
+    if (wantNote) notePageId = await buildMeetingArtifactPage({ ...common, artifact: "note" });
+    if (wantWhiteboard)
+      whiteboardPageId = await buildMeetingArtifactPage({ ...common, artifact: "whiteboard" });
   }
 
   if (input.meetingType || attendanceMode === "SelfCheckIn" || participantUserIds.length > 0) {
@@ -447,35 +575,19 @@ export async function createScheduledMeeting(
   const notifyIds = participantUserIds.filter((id) => id !== input.organizerId);
   let notifiedCount = 0;
   if (notifyIds.length > 0) {
-    // Attach a calendar invite on the instant-email channel — but only when
-    // Google Calendar isn't already sending real invites for this meeting.
-    const icsByUser =
-      startDate && !externalEventId
-        ? await buildPerRecipientIcs({
-            meetingId: meeting.id,
-            method: "REQUEST",
-            title: input.title,
-            startTime: startDate,
-            durationMinutes: input.durationMinutes,
-            organizerEmail: meeting.ownerCalendarEmail,
-            recurrenceRule: input.recurrenceRule ?? null,
-            userIds: notifyIds,
-          })
-        : null;
-    const result = await notify({
-      eventType: "meeting.invite",
-      createdByUserId: input.organizerId,
-      message: {
-        title: `Meeting invite: ${input.title}`,
-        body: startDate ? `Starts ${startDate.toISOString()}` : null,
-        link: `/calendar?meeting=${meeting.id}`,
-        sourceGroupId: scopeId,
-        scheduledMeetingId: meeting.id,
-      },
-      recipients: notifyIds.map((userId) => ({
-        userId,
-        ics: icsByUser?.get(userId) ?? null,
-      })),
+    const result = await sendMeetingInvites({
+      meetingId: meeting.id,
+      actorUserId: input.organizerId,
+      title: input.title,
+      startDate,
+      durationMinutes: input.durationMinutes,
+      recurrenceRule: input.recurrenceRule ?? null,
+      ownerCalendarEmail: meeting.ownerCalendarEmail,
+      googleManaged: externalEventId !== null,
+      sourceGroupId: scopeId,
+      location,
+      description,
+      recipientIds: notifyIds,
     });
     notifiedCount = result.inApp;
   }
@@ -486,6 +598,7 @@ export async function createScheduledMeeting(
     notifiedCount,
     gcalError,
     notePageId,
+    whiteboardPageId,
   };
 }
 
@@ -543,12 +656,9 @@ export async function attachMeetingNote(
   }
 
   // Same hard constraint as createScheduledMeeting: a project meeting
-  // (Team/Partner) needs a project; a General ("Other") one must not have one.
+  // (Team/Partner) needs a project.
   if ((input.meetingType === "Team" || input.meetingType === "Partner") && !input.projectId) {
     return { ok: false, error: "A project is required for Team and Partner meetings", status: 400 };
-  }
-  if (input.meetingType === "Other" && input.projectId) {
-    return { ok: false, error: "General meetings cannot be attached to a project", status: 400 };
   }
   // Filing under a project requires membership (or Core) — mirrors the note
   // destinations the create form offers via /api/move-destinations.
@@ -563,9 +673,10 @@ export async function attachMeetingNote(
     if (!proj) return { ok: false, error: "You can't file a note under that project", status: 403 };
   }
 
-  const notePageId = await buildMeetingNotePage({
+  const notePageId = await buildMeetingArtifactPage({
     meetingId: meeting.id,
     authorId: input.actorId,
+    artifact: "note",
     meetingType: input.meetingType,
     meetingTypeLabel: input.meetingTypeLabel ?? null,
     projectId: input.projectId ?? null,
@@ -594,6 +705,141 @@ export async function attachMeetingNote(
   });
 
   return { ok: true, notePageId };
+}
+
+export type AttachMeetingWhiteboardInput = {
+  meetingId: string;
+  /** Who is adding the board — must be the organizer or Core, and the board's
+   *  creator. */
+  actorId: string;
+  // Only read when the meeting has no recorded type yet (a note-less meeting).
+  // When the meeting already knows its type — it has a note, or was created with
+  // one — the board reuses that and files alongside it, and these are ignored.
+  meetingType?: MeetingType | null;
+  meetingTypeLabel?: string | null;
+  projectId?: string | null;
+  noteLocation?: CreateScheduledMeetingInput["noteLocation"];
+};
+
+export type AttachMeetingWhiteboardResult =
+  | { ok: true; whiteboardPageId: string }
+  | { ok: false; error: string; status: number };
+
+/**
+ * Add a whiteboard to an already-created meeting that doesn't have one. Mirrors
+ * attachMeetingNote. A meeting that already knows its type (it has a note) reuses
+ * it and files the board next to the note; a note-less meeting collects the type
+ * the way the create form does and records it, so a whiteboard-only meeting reads
+ * the same as one configured at creation.
+ */
+export async function attachMeetingWhiteboard(
+  input: AttachMeetingWhiteboardInput,
+): Promise<AttachMeetingWhiteboardResult> {
+  const meeting = await prisma.scheduledMeeting.findUnique({
+    where: { id: input.meetingId },
+    select: {
+      id: true,
+      organizerId: true,
+      participantUserIds: true,
+      isCoreMeeting: true,
+      selectedAt: true,
+      status: true,
+      meetingType: true,
+      meetingTypeLabel: true,
+      projectId: true,
+      whiteboardPage: { select: { id: true } },
+      notePage: {
+        select: { id: true, workspaceType: true, workspaceId: true, parentPageId: true },
+      },
+    },
+  });
+  if (!meeting || meeting.status === "Cancelled") {
+    return { ok: false, error: "Meeting not found", status: 404 };
+  }
+  if (meeting.whiteboardPage) {
+    return { ok: false, error: "This meeting already has a whiteboard", status: 409 };
+  }
+
+  // Same authority as adding a note: the organizer owns the meeting, Core has
+  // broad access. The client only shows the affordance to those two.
+  const core = await isCore(input.actorId);
+  if (meeting.organizerId !== input.actorId && !core) {
+    return { ok: false, error: "Only the organizer or Core can add a whiteboard", status: 403 };
+  }
+
+  // Reuse the meeting's own type when it has one (so a note + board sit side by
+  // side under the same folder); otherwise take it from the caller the way the
+  // add-note flow does, applying the same project constraint + membership gate.
+  const useExisting = meeting.meetingType != null;
+  const meetingType = useExisting ? meeting.meetingType : (input.meetingType ?? null);
+  const meetingTypeLabel = useExisting ? meeting.meetingTypeLabel : (input.meetingTypeLabel ?? null);
+  const projectId = useExisting ? meeting.projectId : (input.projectId ?? null);
+
+  if (!meetingType) {
+    return { ok: false, error: "Choose what this meeting is about", status: 400 };
+  }
+  if ((meetingType === "Team" || meetingType === "Partner") && !projectId) {
+    return { ok: false, error: "A project is required for Team and Partner meetings", status: 400 };
+  }
+  if (!useExisting && projectId) {
+    const proj = await prisma.project.findFirst({
+      where: {
+        id: projectId,
+        ...(core ? {} : { assignments: { some: { userId: input.actorId } } }),
+      },
+      select: { id: true },
+    });
+    if (!proj) {
+      return { ok: false, error: "You can't file a whiteboard under that project", status: 403 };
+    }
+  }
+
+  // Co-locate with the note when it lives in the Lab drive (a General meeting
+  // whose note went to a chosen folder). Project/Core assets file into their
+  // fixed folder regardless, so no override is needed there.
+  let noteLocation = useExisting ? null : (input.noteLocation ?? null);
+  if (meeting.notePage && meeting.notePage.workspaceType === "Lab") {
+    noteLocation = {
+      workspaceType: "Lab",
+      workspaceId: null,
+      parentPageId: meeting.notePage.parentPageId,
+    };
+  }
+
+  const whiteboardPageId = await buildMeetingArtifactPage({
+    meetingId: meeting.id,
+    authorId: input.actorId,
+    artifact: "whiteboard",
+    meetingType,
+    meetingTypeLabel: meetingType === "Other" ? meetingTypeLabel : null,
+    projectId: projectId ?? null,
+    isCoreMeeting: meeting.isCoreMeeting,
+    noteLocation,
+    startDate: meeting.selectedAt,
+  });
+
+  // Record the derived type on a note-less meeting so it reads the same as one
+  // configured at creation (a meeting that already had a type keeps it).
+  if (!useExisting) {
+    await prisma.scheduledMeeting.update({
+      where: { id: meeting.id },
+      data: {
+        meetingType,
+        meetingTypeLabel: meetingType === "Other" ? meetingTypeLabel : null,
+        projectId: projectId ?? null,
+      },
+    });
+  }
+
+  // Backfill the attendance roster (idempotent — a note or SelfCheckIn meeting
+  // may already have rows).
+  const attendeeIds = Array.from(new Set([...meeting.participantUserIds, meeting.organizerId]));
+  await prisma.meetingAttendance.createMany({
+    data: attendeeIds.map((userId) => ({ scheduledMeetingId: meeting.id, userId })),
+    skipDuplicates: true,
+  });
+
+  return { ok: true, whiteboardPageId };
 }
 
 // Grace on either side of a meeting during which self-check-in / wallet-pass
@@ -731,17 +977,19 @@ export type CancelScheduledMeetingResult =
 
 /**
  * Cancel a meeting. The organizer may cancel; Core can also cancel (used by
- * Admin → Attendance to remove a self-check-in event from the list). Flipping
- * the status to Cancelled is all that's needed to pull the invite out of every
- * recipient's todos, tasks, attention banner, and notification bell — those
- * surfaces filter on `scheduledMeeting.status !== "Cancelled"` rather than
- * fanning out deletes. The Google Calendar event (if any) is left in place;
- * deleting it would need a new google-calendar helper and is out of scope here.
+ * Admin → Attendance to remove a self-check-in event from the list). Supports
+ * scoped cancellation: "this" cancels one occurrence via MeetingException,
+ * "following" truncates the series, "all" (default) cancels the whole meeting.
  */
 export async function cancelScheduledMeeting(
   meetingId: string,
   actorUserId: string,
-  opts?: { allowCore?: boolean },
+  opts?: {
+    allowCore?: boolean;
+    scope?: "this" | "following" | "all";
+    occurrenceStart?: string;
+    occurrenceEventId?: string;
+  },
 ): Promise<CancelScheduledMeetingResult> {
   const meeting = await prisma.scheduledMeeting.findUnique({
     where: { id: meetingId },
@@ -756,6 +1004,8 @@ export async function cancelScheduledMeeting(
       recurrenceRule: true,
       ownerCalendarEmail: true,
       externalEventId: true,
+      organizerCalendarLinkId: true,
+      organizerCalendarId: true,
     },
   });
   if (!meeting) return { ok: false, error: "Not found", status: 404 };
@@ -764,12 +1014,126 @@ export async function cancelScheduledMeeting(
       return { ok: false, error: "Only the organizer can cancel", status: 403 };
     }
   }
+
+  const cancelScope = opts?.scope ?? "all";
+
+  // ── "this" occurrence ────────────────────────────────────────────────────
+  if (cancelScope === "this") {
+    const occurrenceStart = opts?.occurrenceStart;
+    if (!occurrenceStart) {
+      return { ok: false, error: "occurrenceStart is required for scope=this", status: 400 };
+    }
+    await prisma.meetingException.upsert({
+      where: {
+        scheduledMeetingId_originalStart: {
+          scheduledMeetingId: meetingId,
+          originalStart: new Date(occurrenceStart),
+        },
+      },
+      create: {
+        scheduledMeetingId: meetingId,
+        originalStart: new Date(occurrenceStart),
+        cancelled: true,
+      },
+      update: { cancelled: true },
+    });
+    if (opts?.occurrenceEventId && meeting.organizerCalendarLinkId) {
+      try {
+        const link = await prisma.userCalendarLink.findUnique({
+          where: { id: meeting.organizerCalendarLinkId },
+          select: { id: true, enabled: true },
+        });
+        if (link?.enabled) {
+          await deleteGoogleCalendarEvent({
+            linkId: link.id,
+            calendarId: meeting.organizerCalendarId ?? undefined,
+            eventId: opts.occurrenceEventId,
+          });
+        }
+      } catch {
+        // best-effort
+      }
+    }
+    const recipients = (meeting.participantUserIds ?? []).filter((id) => id !== actorUserId);
+    if (recipients.length > 0) {
+      try {
+        await notify({
+          eventType: "meeting.cancelled",
+          createdByUserId: actorUserId,
+          message: {
+            title: `Meeting occurrence cancelled: ${meeting.title}`,
+            link: "/calendar",
+          },
+          recipients: recipients.map((userId) => ({ userId, ics: null })),
+        });
+      } catch (err) {
+        console.error(`meeting ${meetingId}: occurrence cancel notify failed`, err);
+      }
+    }
+    return { ok: true, alreadyCancelled: false };
+  }
+
+  // ── "following" occurrences ───────────────────────────────────────────────
+  if (cancelScope === "following") {
+    const occurrenceStart = opts?.occurrenceStart;
+    if (!occurrenceStart) {
+      return { ok: false, error: "occurrenceStart is required for scope=following", status: 400 };
+    }
+    const untilDate = new Date(new Date(occurrenceStart).getTime() - 1000);
+    const truncatedRule = rruleWithUntil(meeting.recurrenceRule ?? "FREQ=WEEKLY", untilDate);
+    if (truncatedRule) {
+      await prisma.scheduledMeeting.update({
+        where: { id: meetingId },
+        data: { recurrenceRule: truncatedRule },
+      });
+      if (meeting.externalEventId && meeting.organizerCalendarLinkId) {
+        try {
+          const link = await prisma.userCalendarLink.findUnique({
+            where: { id: meeting.organizerCalendarLinkId },
+            select: { id: true, enabled: true },
+          });
+          if (link?.enabled) {
+            await patchGoogleCalendarEvent({
+              linkId: link.id,
+              calendarId: meeting.organizerCalendarId ?? undefined,
+              eventId: meeting.externalEventId,
+              recurrenceRule: truncatedRule,
+            });
+          }
+        } catch {
+          // best-effort
+        }
+      }
+    }
+    return { ok: true, alreadyCancelled: false };
+  }
+
+  // ── "all" (default) ───────────────────────────────────────────────────────
   if (meeting.status === "Cancelled") return { ok: true, alreadyCancelled: true };
 
   await prisma.scheduledMeeting.update({
     where: { id: meetingId },
     data: { status: "Cancelled" },
   });
+
+  // Delete the Google event best-effort.
+  if (meeting.externalEventId && meeting.organizerCalendarLinkId) {
+    try {
+      const link = await prisma.userCalendarLink.findUnique({
+        where: { id: meeting.organizerCalendarLinkId },
+        select: { id: true, enabled: true },
+      });
+      if (link?.enabled) {
+        await deleteGoogleCalendarEvent({
+          linkId: link.id,
+          calendarId: meeting.organizerCalendarId ?? undefined,
+          eventId: meeting.externalEventId,
+        });
+      }
+    } catch (err) {
+      console.error(`meeting ${meetingId}: Google delete failed`, err);
+    }
+  }
 
   // Tell everyone who was invited. Deliberately NOT stamped with
   // scheduledMeetingId — surfaces hide rows whose meeting is Cancelled, which
@@ -821,6 +1185,16 @@ export type UpdateScheduledMeetingInput = {
   scope: ScheduledMeetingScope;
   startTime?: string | null;
   recurrenceRule?: string | null;
+  // Omitted (undefined) leaves them unchanged; a set value, including "", is
+  // written (so clearing a location clears it both here and on Google). A
+  // scope="this" edit only writes them to that occurrence's Google event —
+  // MeetingException carries no per-occurrence copy of either field.
+  location?: string;
+  description?: string;
+  // Scoped edit fields (optional, default "all"):
+  editScope?: "this" | "following" | "all";
+  occurrenceStart?: string;   // ISO of this occurrence's ORIGINAL start
+  occurrenceEventId?: string; // Google instance event id (for "this" patch)
 };
 
 export type UpdateScheduledMeetingResult =
@@ -858,24 +1232,157 @@ export async function updateScheduledMeeting(
       organizerCalendarId: true,
       meetingType: true,
       attendanceMode: true,
+      recurrenceRule: true,
+      scopeType: true,
+      scopeId: true,
+      isCoreMeeting: true,
+      meetingTypeLabel: true,
+      projectId: true,
+      location: true,
+      description: true,
     },
   });
   if (!meeting) return { ok: false, error: "Not found", status: 404 };
   if (meeting.status === "Cancelled") {
     return { ok: false, error: "This meeting has been cancelled", status: 400 };
   }
+
   if (meeting.organizerId !== actorUserId && !(await isCore(actorUserId))) {
     return { ok: false, error: "Only the organizer or Core can edit this meeting", status: 403 };
   }
 
-  let participantUserIds: string[] = [];
-  let scopeId: string | null = null;
-  if (input.scope.type === "Group") {
-    participantUserIds = await resolveGroupMembers(input.scope.groupId);
-    scopeId = input.scope.groupId;
-  } else if (input.scope.type === "UserList") {
-    participantUserIds = Array.from(new Set(input.scope.participantUserIds));
+  const editScope = input.editScope ?? "all";
+
+  // ── "this" occurrence ────────────────────────────────────────────────────
+  if (editScope === "this") {
+    const occurrenceStart = input.occurrenceStart;
+    if (!occurrenceStart) {
+      return { ok: false, error: "occurrenceStart is required for scope=this", status: 400 };
+    }
+    const startDate = input.startTime ? new Date(input.startTime) : null;
+    await prisma.meetingException.upsert({
+      where: {
+        scheduledMeetingId_originalStart: {
+          scheduledMeetingId: meetingId,
+          originalStart: new Date(occurrenceStart),
+        },
+      },
+      create: {
+        scheduledMeetingId: meetingId,
+        originalStart: new Date(occurrenceStart),
+        overrideStart: startDate,
+        overrideDurationMin: input.durationMinutes,
+        overrideTitle: input.title,
+        cancelled: false,
+      },
+      update: {
+        overrideStart: startDate,
+        overrideDurationMin: input.durationMinutes,
+        overrideTitle: input.title,
+        cancelled: false,
+      },
+    });
+
+    let gcalError: string | null = null;
+    if (input.occurrenceEventId && meeting.organizerCalendarLinkId) {
+      try {
+        const link = await prisma.userCalendarLink.findUnique({
+          where: { id: meeting.organizerCalendarLinkId },
+          select: { id: true, enabled: true },
+        });
+        if (link?.enabled && startDate) {
+          const endDate = new Date(startDate.getTime() + input.durationMinutes * 60_000);
+          await patchGoogleCalendarEvent({
+            linkId: link.id,
+            calendarId: meeting.organizerCalendarId ?? undefined,
+            eventId: input.occurrenceEventId,
+            summary: input.title,
+            startIso: startDate.toISOString(),
+            endIso: endDate.toISOString(),
+            ...(input.location !== undefined ? { location: input.location } : {}),
+            ...(input.description !== undefined ? { description: input.description } : {}),
+            sendUpdates: "all",
+          });
+        }
+      } catch (err) {
+        gcalError = err instanceof Error ? err.message : "Google Calendar update failed";
+      }
+    }
+
+    const updated = await prisma.scheduledMeeting.findUnique({ where: { id: meetingId } });
+    return { ok: true, meeting: updated!, gcalError };
   }
+
+  // ── "following" occurrences ───────────────────────────────────────────────
+  if (editScope === "following") {
+    const occurrenceStart = input.occurrenceStart;
+    if (!occurrenceStart) {
+      return { ok: false, error: "occurrenceStart is required for scope=following", status: 400 };
+    }
+    const untilDate = new Date(new Date(occurrenceStart).getTime() - 1000);
+    const truncatedRule = rruleWithUntil(meeting.recurrenceRule ?? "FREQ=WEEKLY", untilDate);
+    if (truncatedRule) {
+      await prisma.scheduledMeeting.update({
+        where: { id: meetingId },
+        data: { recurrenceRule: truncatedRule },
+      });
+      if (meeting.externalEventId && meeting.organizerCalendarLinkId) {
+        try {
+          const link = await prisma.userCalendarLink.findUnique({
+            where: { id: meeting.organizerCalendarLinkId },
+            select: { id: true, enabled: true },
+          });
+          if (link?.enabled) {
+            await patchGoogleCalendarEvent({
+              linkId: link.id,
+              calendarId: meeting.organizerCalendarId ?? undefined,
+              eventId: meeting.externalEventId,
+              recurrenceRule: truncatedRule,
+            });
+          }
+        } catch {
+          // Best-effort; the DALI truncation already landed.
+        }
+      }
+    }
+
+    const newRule = bareRrule(meeting.recurrenceRule ?? "FREQ=WEEKLY");
+
+    const ownerLink = meeting.organizerCalendarLinkId
+      ? await prisma.userCalendarLink.findUnique({
+          where: { id: meeting.organizerCalendarLinkId },
+          select: { id: true, externalEmail: true },
+        })
+      : null;
+
+    const newMeetingResult = await createScheduledMeeting({
+      organizerId: meeting.organizerId,
+      organizerEmail: ownerLink?.externalEmail ?? meeting.ownerCalendarEmail,
+      title: input.title,
+      durationMinutes: input.durationMinutes,
+      // The new series carries the edit's guest list (the composer's picker),
+      // not the master's — a "this and following" edit applies guest changes too.
+      scope: input.scope,
+      startTime: occurrenceStart,
+      recurrenceRule: newRule,
+      organizerCalendarLinkId: meeting.organizerCalendarLinkId,
+      organizerCalendarId: meeting.organizerCalendarId,
+      meetingType: meeting.meetingType,
+      meetingTypeLabel: meeting.meetingTypeLabel,
+      projectId: meeting.projectId,
+      isCoreMeeting: meeting.isCoreMeeting,
+      location: input.location ?? meeting.location,
+      description: input.description ?? meeting.description,
+    });
+
+    if (!newMeetingResult.ok) {
+      return { ok: false, error: newMeetingResult.error, status: 500 };
+    }
+    return { ok: true, meeting: newMeetingResult.meeting, gcalError: newMeetingResult.gcalError };
+  }
+
+  // ── "all" (default) — existing behavior ──────────────────────────────────
+  const { participantUserIds, scopeId } = await resolveScope(input.scope);
 
   const startDate = input.startTime ? new Date(input.startTime) : null;
 
@@ -890,6 +1397,8 @@ export async function updateScheduledMeeting(
       recurrenceRule: input.recurrenceRule ?? null,
       selectedAt: startDate,
       status: startDate ? "Confirmed" : "Searching",
+      ...(input.location !== undefined ? { location: input.location.trim() || null } : {}),
+      ...(input.description !== undefined ? { description: input.description.trim() || null } : {}),
     },
   });
 
@@ -934,25 +1443,7 @@ export async function updateScheduledMeeting(
         select: { id: true, enabled: true },
       });
       if (link?.enabled) {
-        const attendeeUsers = await prisma.user.findMany({
-          where: { id: { in: participantUserIds } },
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            daliEmail: true,
-            dartmouthEmail: true,
-          },
-        });
-        const attendees: GoogleAttendee[] = [];
-        for (const u of attendeeUsers) {
-          const email = primaryEmail(u);
-          if (!email) continue;
-          attendees.push({
-            email,
-            displayName: `${u.firstName} ${u.lastName}`.trim() || email,
-          });
-        }
+        const attendees = await googleAttendeesFor(participantUserIds);
         const organizerUser = await prisma.user.findUnique({
           where: { id: meeting.organizerId },
           select: { timeZone: true },
@@ -968,6 +1459,8 @@ export async function updateScheduledMeeting(
           ...(startDate && endDate
             ? { startIso: startDate.toISOString(), endIso: endDate.toISOString() }
             : {}),
+          ...(input.location !== undefined ? { location: input.location } : {}),
+          ...(input.description !== undefined ? { description: input.description } : {}),
           recurrenceRule: input.recurrenceRule ?? null,
           timeZone: resolveUserTimeZone(organizerUser),
           attendees,
@@ -989,32 +1482,19 @@ export async function updateScheduledMeeting(
   const removedRecipients = toRemove.filter((id) => id !== meeting.organizerId);
   try {
     if (addedRecipients.length > 0) {
-      const ics = selfManaged
-        ? await buildPerRecipientIcs({
-            meetingId: updated.id,
-            method: "REQUEST",
-            title: input.title,
-            startTime: startDate!,
-            durationMinutes: input.durationMinutes,
-            organizerEmail: meeting.ownerCalendarEmail,
-            recurrenceRule: input.recurrenceRule ?? null,
-            userIds: addedRecipients,
-          })
-        : null;
-      await notify({
-        eventType: "meeting.invite",
-        createdByUserId: actorUserId,
-        message: {
-          title: `Meeting invite: ${input.title}`,
-          body: startDate ? `Starts ${startDate.toISOString()}` : null,
-          link: `/calendar?meeting=${updated.id}`,
-          sourceGroupId: scopeId,
-          scheduledMeetingId: updated.id,
-        },
-        recipients: addedRecipients.map((userId) => ({
-          userId,
-          ics: ics?.get(userId) ?? null,
-        })),
+      await sendMeetingInvites({
+        meetingId: updated.id,
+        actorUserId,
+        title: input.title,
+        startDate,
+        durationMinutes: input.durationMinutes,
+        recurrenceRule: input.recurrenceRule ?? null,
+        ownerCalendarEmail: meeting.ownerCalendarEmail,
+        googleManaged: meeting.externalEventId !== null,
+        sourceGroupId: scopeId,
+        location: updated.location,
+        description: updated.description,
+        recipientIds: addedRecipients,
       });
     }
     if (removedRecipients.length > 0) {
@@ -1048,6 +1528,16 @@ export async function updateScheduledMeeting(
   }
 
   return { ok: true, meeting: updated, gcalError };
+}
+
+/** Whether a meeting still has an occurrence ahead of `now`. A series is treated
+ *  as ongoing; an unscheduled (Searching) meeting hasn't happened yet. */
+export function meetingIsUpcoming(
+  meeting: { selectedAt: Date | null; durationMinutes: number; recurrenceRule: string | null },
+  now: Date,
+): boolean {
+  if (meeting.recurrenceRule || !meeting.selectedAt) return true;
+  return meeting.selectedAt.getTime() + meeting.durationMinutes * 60_000 > now.getTime();
 }
 
 export type TrackExternalEventInput = {
@@ -1168,6 +1658,8 @@ export async function trackExternalEventAsMeeting(
       organizerId: input.actorId,
       title: event.summary?.trim() || "Untitled event",
       durationMinutes,
+      location: event.location,
+      description: event.description,
       // "None" — not scoped to a group or a hand-picked list. It is the marker
       // the meeting page reads to let any lab member see a lab-wide meeting.
       scopeType: "None",

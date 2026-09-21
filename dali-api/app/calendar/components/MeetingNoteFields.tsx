@@ -38,8 +38,9 @@ export function useMeetingNote() {
   return {
     state,
     setEnabled: (enabled: boolean) => patch({ enabled }),
+    setWhiteboard: (whiteboard: boolean) => patch({ whiteboard }),
     setAbout: (about: string) => patch({ about }),
-    setSubtype: (subtype: "Team" | "Partner") => patch({ subtype }),
+    setSubtype: (subtype: MeetingNoteState["subtype"]) => patch({ subtype }),
     setLabel: (label: string) => patch({ label }),
     setLocation: (location: MeetingNoteLocation | null) => patch({ location }),
     // Prefill "About" from a single invited project group — a default, not a lock:
@@ -65,29 +66,42 @@ export function MeetingNoteFields({
   fieldClass,
   labelClass,
   core = false,
+  allowProjectWhenCore = false,
 }: {
   note: MeetingNoteController;
-  /** Not read in `core` mode — a Core note has no project to file under. */
+  /** Ignored when the picker is collapsed to "Core" (see `allowProjectWhenCore`). */
   myProjects?: { id: string; name: string }[];
   fieldClass: string;
   labelClass: string;
-  /** The meeting is a Core meeting: the note belongs to Core, not to a project,
-   *  so the About picker collapses to a fixed "Core" instead of offering the
-   *  organizer's projects. */
+  /** The meeting is a Core meeting. On its own this only relabels the "no
+   *  project" option to "Core" and files a project-less note in Core's folder;
+   *  combined with `!allowProjectWhenCore` it collapses the About picker to a
+   *  fixed "Core" and forbids a project. */
   core?: boolean;
+  /** Feature-flagged (`unified-core-project-meetings`): let a Core meeting also
+   *  be about a project. When true, the About picker still offers the
+   *  organizer's projects (a project note files in the project, not Core). When
+   *  false, Core collapses to a project-less "Core" note as before. */
+  allowProjectWhenCore?: boolean;
 }) {
   const { state } = note;
 
-  // Core has no project to file under, so drop any project the organizer (or the
-  // group prefill) had chosen and name the note for Core. Only fills an empty
-  // name — a name they typed themselves survives the toggle.
+  // Flag off: a Core meeting has no project, so the picker is a fixed fact.
+  const coreCollapsed = core && !allowProjectWhenCore;
+
+  // Keep the Core note's state consistent. Collapsed mode drops any project the
+  // organizer (or the group prefill) chose, since Core can't be about one. Either
+  // way a project-less Core note files in Core's folder and needs a name, so seed
+  // an empty one — a name they typed themselves survives.
   useEffect(() => {
     if (!core) return;
-    note.setAbout("");
-    note.setLocation(null);
-    if (state.label.trim() === "") note.setLabel(CORE_NOTE_LABEL);
+    if (coreCollapsed) {
+      note.setAbout("");
+      note.setLocation(null);
+    }
+    if (state.about === "" && state.label.trim() === "") note.setLabel(CORE_NOTE_LABEL);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [core]);
+  }, [core, coreCollapsed]);
 
   const [pickerOpen, setPickerOpen] = useState(false);
   const [drives, setDrives] = useState<PickerDrive[]>([]);
@@ -138,7 +152,7 @@ export function MeetingNoteFields({
     <div className="pl-6 space-y-3">
       <div>
         <span className={labelClass}>About</span>
-        {core ? (
+        {coreCollapsed ? (
           // One answer, so it reads as a fact rather than a control the
           // organizer has to make a choice in.
           <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-foreground">
@@ -149,7 +163,8 @@ export function MeetingNoteFields({
             value={state.about}
             onChange={(v) => note.setAbout(v)}
             options={[
-              { value: "", label: "General (no project)" },
+              // For a Core meeting the "no project" answer is Core itself.
+              { value: "", label: core ? "Core" : "General (no project)" },
               ...myProjects.map((p) => ({ value: p.id, label: p.name })),
             ]}
             buttonClassName={`${fieldClass} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
@@ -173,7 +188,25 @@ export function MeetingNoteFields({
               onChange={() => note.setSubtype("Partner")}
               label="Partner meeting"
             />
+            <Radio
+              name="meeting-subtype"
+              checked={state.subtype === "Other"}
+              onChange={() => note.setSubtype("Other")}
+              label="Other"
+            />
           </div>
+          {state.subtype === "Other" && (
+            <input
+              aria-label="Meeting type name"
+              type="text"
+              value={state.label}
+              onChange={(e) => note.setLabel(e.target.value)}
+              placeholder="e.g. Design review"
+              maxLength={80}
+              required
+              className={`${fieldClass} mt-2`}
+            />
+          )}
         </div>
       ) : (
         <>

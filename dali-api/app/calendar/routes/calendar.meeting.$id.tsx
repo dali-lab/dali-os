@@ -1,6 +1,7 @@
-import { Link, useLoaderData } from "react-router";
+import { useState } from "react";
+import { Link, useFetcher, useLoaderData } from "react-router";
 import QRCode from "qrcode";
-import { FileText, Users, ScanLine, Shield, Video } from "lucide-react";
+import { FileText, Users, ScanLine, Shield, Video, Pencil, Clock, MapPin, Shapes } from "lucide-react";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
@@ -11,6 +12,9 @@ import { AttendanceChecklist, type AttendanceRow } from "~/components/Attendance
 import { CheckInPanel } from "~/components/CheckInPanel";
 import { AttendeeScanner } from "~/components/AttendeeScanner";
 import { useFeatureFlag } from "~/components/FeatureFlags";
+import { EditMeetingModal } from "~/calendar/components/EditMeetingModal";
+import { AddMeetingNoteButton } from "~/calendar/components/AddMeetingNoteModal";
+import { AddMeetingWhiteboardButton } from "~/calendar/components/AddMeetingWhiteboardModal";
 import type { Route } from "./+types/calendar.meeting.$id";
 
 export const meta: Route.MetaFunction = () => [{ title: "Meeting · DALI OS" }];
@@ -54,16 +58,20 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       projectId: true,
       selectedAt: true,
       durationMinutes: true,
+      location: true,
+      description: true,
       status: true,
       scopeType: true,
       isCoreMeeting: true,
       meetingUrl: true,
       organizer: { select: { firstName: true, lastName: true } },
       notePage: { select: { id: true } },
+      whiteboardPage: { select: { id: true } },
       attendance: {
         select: {
           userId: true,
           present: true,
+          absenceNote: true,
           user: { select: { firstName: true, lastName: true, daliEmail: true } },
         },
       },
@@ -89,6 +97,23 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const selfCheckIn = meeting.attendanceMode === "SelfCheckIn";
 
+  // Adding a note after the fact is the organizer's or Core's call — narrower
+  // than canManage (a project member marks attendance but doesn't file the
+  // meeting's doc), and the same authority attachMeetingNote re-checks.
+  const canAddNote = auth.user.sub === meeting.organizerId || roles.isCore;
+
+  const proposalRows = canManage
+    ? await prisma.meetingTimeProposal.findMany({
+        where: { scheduledMeetingId: meeting.id, status: "Pending" },
+        select: {
+          id: true,
+          proposedStart: true,
+          proposedBy: { select: { firstName: true, lastName: true } },
+        },
+        orderBy: { createdAt: "asc" },
+      })
+    : [];
+
   // The QR/link is a sharing affordance, so it's only generated for a manager.
   let checkInUrl: string | null = null;
   let checkInQrSvg: string | null = null;
@@ -110,22 +135,126 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     isCoreMeeting: meeting.isCoreMeeting,
     organizerName: fullName(meeting.organizer),
     selectedAtIso: meeting.selectedAt ? meeting.selectedAt.toISOString() : null,
+    location: meeting.location,
+    description: meeting.description,
     notePageId: meeting.notePage?.id ?? null,
+    whiteboardPageId: meeting.whiteboardPage?.id ?? null,
+    // Adding a whiteboard is the same authority as adding a note. hasType lets
+    // the add flow skip the About/type step when the meeting already knows it.
+    canAddWhiteboard: canAddNote,
+    hasType: meeting.meetingType != null,
+    canAddNote,
     meetingUrl: meeting.meetingUrl,
     canManage,
+    // Narrower than canManage: editing the event is the organizer's or Core's
+    // call, as updateScheduledMeeting enforces.
+    canInvite: auth.user.sub === meeting.organizerId || roles.isCore,
     selfCheckIn,
     rows: meeting.attendance.map((a) => ({
       userId: a.userId,
       name: fullName(a.user) || a.user.daliEmail || a.userId,
       present: a.present,
+      // Withheld rather than merely hidden: a note can say why someone was
+      // out, so a viewer who can't mark attendance never receives one.
+      absenceNote: canManage ? a.absenceNote : null,
     })) satisfies AttendanceRow[],
     viewerInvited: viewerRow !== undefined,
     viewerPresent: viewerRow?.present ?? false,
     checkInUrl,
     checkInQrSvg,
     walletConfigured: walletTokensConfigured(),
+    proposals: proposalRows.map((p) => ({
+      id: p.id,
+      proposedStartIso: p.proposedStart.toISOString(),
+      proposerName: fullName(p.proposedBy),
+    })),
   };
 }
+
+function ProposedTimesCard({
+  meetingId,
+  proposals,
+}: {
+  meetingId: string;
+  proposals: { id: string; proposedStartIso: string; proposerName: string }[];
+}) {
+  const fetcher = useFetcher<{ ok?: boolean; error?: string; gcalError?: string | null }>();
+
+  if (proposals.length === 0) return null;
+
+  return (
+    <section className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4">
+      <h2 className="flex items-center gap-2 font-heading text-lg font-semibold text-foreground">
+        <Clock className="h-4 w-4 text-muted-foreground" /> Proposed times
+      </h2>
+      <ul className="flex flex-col gap-3">
+        {proposals.map((p) => (
+          <li key={p.id} className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <span className="text-sm font-medium text-foreground">{p.proposerName}</span>
+              <span className="ml-2 text-sm text-muted-foreground">
+                {new Date(p.proposedStartIso).toLocaleString(undefined, {
+                  weekday: "short",
+                  month: "short",
+                  day: "numeric",
+                  hour: "numeric",
+                  minute: "2-digit",
+                })}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={fetcher.state !== "idle"}
+                onClick={() =>
+                  fetcher.submit(
+                    { action: "accept", proposalId: p.id },
+                    {
+                      method: "post",
+                      action: `/api/scheduled-meetings/${meetingId}/proposal`,
+                      encType: "application/json",
+                    },
+                  )
+                }
+                className="inline-flex items-center rounded-md bg-accent-teal px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-teal/90 disabled:opacity-60"
+              >
+                Accept
+              </button>
+              <button
+                type="button"
+                disabled={fetcher.state !== "idle"}
+                onClick={() =>
+                  fetcher.submit(
+                    { action: "decline", proposalId: p.id },
+                    {
+                      method: "post",
+                      action: `/api/scheduled-meetings/${meetingId}/proposal`,
+                      encType: "application/json",
+                    },
+                  )
+                }
+                className="inline-flex items-center rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-60"
+              >
+                Decline
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+      {fetcher.data?.error && (
+        <p className="text-sm text-destructive">{fetcher.data.error}</p>
+      )}
+      {fetcher.data?.gcalError && (
+        <p className="text-sm text-muted-foreground">
+          Rescheduled, but Google Calendar sync failed: {fetcher.data.gcalError}
+        </p>
+      )}
+    </section>
+  );
+}
+
+const noteBtnClass =
+  "inline-flex w-fit items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted";
 
 export default function CalendarMeetingPage() {
   const d = useLoaderData<typeof loader>();
@@ -145,7 +274,9 @@ export default function CalendarMeetingPage() {
   // scanning a passholder into a meeting with no MeetingAttendance rows only ever
   // returns "not invited", so hide the station rather than show a dead scanner.
   const walletCheckin = useFeatureFlag("wallet-checkin");
+  const whiteboardEnabled = useFeatureFlag("whiteboard");
   const canScan = d.canManage && walletCheckin && d.walletConfigured && d.rows.length > 0;
+  const [editing, setEditing] = useState(false);
 
   return (
     // Full-bleed and left-aligned: the app shell already supplies the page
@@ -167,6 +298,14 @@ export default function CalendarMeetingPage() {
           {when}
           {d.organizerName ? ` · ${d.organizerName}` : ""}
         </p>
+        {d.location && (
+          <p className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+            <MapPin className="h-3.5 w-3.5 shrink-0" /> {d.location}
+          </p>
+        )}
+        {d.description && (
+          <p className="whitespace-pre-wrap text-sm text-foreground">{d.description}</p>
+        )}
         <div className="flex flex-wrap items-center gap-2">
           {d.meetingUrl && (
             <a
@@ -178,14 +317,44 @@ export default function CalendarMeetingPage() {
               <Video className="h-4 w-4" /> Join Google Meet
             </a>
           )}
-          {d.notePageId && (
+          {d.notePageId ? (
             <Link
               to={`/documents/${d.notePageId}`}
-              className="inline-flex w-fit items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted"
+              className={noteBtnClass}
             >
               <FileText className="h-4 w-4 text-muted-foreground" /> Open meeting note
             </Link>
+          ) : (
+            d.canAddNote && (
+              // A meeting created before notes existed (or with the note
+              // toggle off) has no doc and, unless it synced to Google, never
+              // appears on the calendar grid either — so this page is the only
+              // place its organizer can start one. The action lives on
+              // /calendar, which is also where the grid's popover posts it.
+              <AddMeetingNoteButton
+                meetingId={d.meetingId}
+                isCoreMeeting={d.isCoreMeeting}
+                actionPath="/calendar"
+                className={noteBtnClass}
+              />
+            )
           )}
+          {whiteboardEnabled &&
+            (d.whiteboardPageId ? (
+              <Link to={`/whiteboard/${d.whiteboardPageId}`} className={noteBtnClass}>
+                <Shapes className="h-4 w-4 text-muted-foreground" /> Open whiteboard
+              </Link>
+            ) : (
+              d.canAddWhiteboard && (
+                <AddMeetingWhiteboardButton
+                  meetingId={d.meetingId}
+                  isCoreMeeting={d.isCoreMeeting}
+                  hasType={d.hasType}
+                  actionPath="/calendar"
+                  className={noteBtnClass}
+                />
+              )
+            ))}
         </div>
       </header>
 
@@ -194,12 +363,26 @@ export default function CalendarMeetingPage() {
           <h2 className="flex items-center gap-2 font-heading text-lg font-semibold text-foreground">
             <Users className="h-4 w-4 text-muted-foreground" /> Attendance
           </h2>
-          {d.canManage && d.rows.length > 0 && (
-            <span className="text-sm text-muted-foreground">
-              {present}/{d.rows.length} present
-            </span>
-          )}
+          <div className="flex items-center gap-3">
+            {d.canManage && d.rows.length > 0 && (
+              <span className="text-sm text-muted-foreground">
+                {present}/{d.rows.length} present
+              </span>
+            )}
+            {d.canInvite && (
+              <button
+                type="button"
+                onClick={() => setEditing(true)}
+                className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted"
+              >
+                <Pencil className="h-4 w-4 text-muted-foreground" /> Edit event
+              </button>
+            )}
+          </div>
         </div>
+        {editing && (
+          <EditMeetingModal meetingId={d.meetingId} onClose={() => setEditing(false)} />
+        )}
 
         {d.selfCheckIn && (d.canManage || d.viewerInvited) && (
           <CheckInPanel
@@ -213,7 +396,13 @@ export default function CalendarMeetingPage() {
         )}
 
         {d.canManage && d.rows.length > 0 && (
-          <AttendanceChecklist meetingId={d.meetingId} meetingLabel={d.meetingLabel} canEdit attendees={d.rows} />
+          <AttendanceChecklist
+            meetingId={d.meetingId}
+            meetingLabel={d.meetingLabel}
+            canEdit
+            canNote={d.canManage}
+            attendees={d.rows}
+          />
         )}
 
         {/* The scanner is the point of opening this page during an event, so the
@@ -237,6 +426,10 @@ export default function CalendarMeetingPage() {
           </p>
         )}
       </section>
+
+      {d.canManage && d.proposals.length > 0 && (
+        <ProposedTimesCard meetingId={d.meetingId} proposals={d.proposals} />
+      )}
     </div>
   );
 }

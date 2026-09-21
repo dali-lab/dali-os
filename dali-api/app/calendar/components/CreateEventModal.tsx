@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useFetcher, useRevalidator } from "react-router";
-import { AlignLeft, CalendarDays, ChevronLeft, ChevronRight, Clock, MapPin, Repeat, UsersRound, Video, X } from "lucide-react";
+import { AlignLeft, CalendarDays, Clock, MapPin, Repeat, UsersRound, Video, X } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
@@ -26,6 +26,7 @@ import {
 } from "~/calendar/components/composer";
 import { durationMinutesBetween } from "~/calendar/lib/event-block";
 import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
+import { weekStartIsoForDay, weekWindow } from "~/calendar/lib/view-window";
 import {
   useMeetingNote,
   meetingNoteValid,
@@ -48,20 +49,6 @@ export type CreateEventModalProps = {
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-
-function weekLabel(weekStartIso: string, timezone: string): string {
-  const start = new Date(weekStartIso);
-  // Display the 7-day range Sun – Sat
-  const end = new Date(start.getTime() + 6 * 86_400_000);
-  const fmt = (d: Date, opts: Intl.DateTimeFormatOptions) =>
-    new Intl.DateTimeFormat("en-US", { timeZone: timezone, ...opts }).format(d);
-  const startMonth = fmt(start, { month: "short" });
-  const endMonth = fmt(end, { month: "short" });
-  const startDay = fmt(start, { day: "numeric" });
-  const endDay = fmt(end, { day: "numeric" });
-  if (startMonth === endMonth) return `${startMonth} ${startDay} – ${endDay}`;
-  return `${startMonth} ${startDay} – ${endMonth} ${endDay}`;
-}
 
 // Compose "YYYY-MM-DDTHH:mm" from separate date + time strings.
 function composeDateTimeLocal(date: string, time: string): string {
@@ -195,18 +182,24 @@ export function CreateEventModal({
   }, [coreSelected]);
   const isCoreMeeting = coreSelected || (data.canMarkCoreMeeting && coreMeeting);
 
+  // Flag: a Core meeting may also be about a project (its note stays a project
+  // note; Core is just extra hub visibility). Off = marking Core clears any
+  // project, as before.
+  const unifiedCoreProject = useFeatureFlag("unified-core-project-meetings");
+
   // ── Meeting note fields (only shown in Meeting mode) ─────────────────────
   // Derive-type-from-project model; see MeetingNoteFields.
   const note = useMeetingNote();
 
   // Prefill "About" when exactly one invited group is a project group — a default
-  // the sender can still change; it never enables the note on its own. A Core
-  // meeting's note has no project, so the prefill stays out of its way.
+  // the sender can still change; it never enables the note on its own. Without the
+  // unify flag a Core meeting's note has no project, so the prefill stays out of
+  // its way; with it, a Core project meeting still prefills its project.
   useEffect(() => {
-    if (selectedGroupIds.length !== 1 || isCoreMeeting) return;
+    if (selectedGroupIds.length !== 1 || (isCoreMeeting && !unifiedCoreProject)) return;
     note.applyGroupPrefill(groupsById.get(selectedGroupIds[0]!)?.projectId ?? null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedGroupIds, isCoreMeeting]);
+  }, [selectedGroupIds, isCoreMeeting, unifiedCoreProject]);
 
   // Send the invite from a specific calendar, not just an account — the same
   // sub-calendars the event destination offers. Starts on the event default
@@ -220,11 +213,19 @@ export function CreateEventModal({
   // The link is minted on the selected Google calendar, so the option only
   // makes sense with a Google destination and real guests.
   const meetEnabled = useFeatureFlag("google-meet");
+  const whiteboardEnabled = useFeatureFlag("whiteboard");
   const [addMeet, setAddMeet] = useState(false);
   const canAddMeet = meetEnabled && !!inviteFrom && hasGuests;
 
   // ── Week navigation for the left panel ───────────────────────────────────
-  const [weekStartIso, setWeekStartIso] = useState(data.weekStartIso);
+  const weekStartForDate = (day: string) => weekStartIsoForDay(data.timezone, day);
+  // Opening on a dragged-out slot should show that slot's week, which isn't
+  // necessarily the week the calendar behind the modal was on (a month-view
+  // drag can land outside it).
+  const [weekStartIso, setWeekStartIso] = useState(() => {
+    const day = extractDate(initStart ?? "");
+    return day ? weekStartForDate(day) : data.weekStartIso;
+  });
   // Keep the week start on zoned midnight (like the loader's weekWindow) so the
   // availability fetch covers the whole local week. A bare YYYY-MM-DD from
   // shiftWeekParam parses as UTC midnight, which is hours off in US zones.
@@ -234,12 +235,28 @@ export function CreateEventModal({
       zonedDayStartUtc(ymd.year, ymd.month, ymd.day + weeks * 7, data.timezone).toISOString(),
     );
   };
+  const goToThisWeek = () => setWeekStartIso(weekWindow(data.timezone).start.toISOString());
   const weekEndIso = new Date(new Date(weekStartIso).getTime() + 7 * 86_400_000).toISOString();
+
+  // Choosing the day to meet on is what moves the preview — otherwise picking a
+  // date in another week leaves you reading this week's availability while the
+  // meeting is somewhere else entirely. The pull is one-directional on purpose:
+  // the week arrows browse freely without rewriting the date, and picking a slot
+  // inside the week already on screen resolves to the same week, so neither can
+  // fight the other.
+  const pickDate = (day: string) => {
+    setDate(day);
+    if (day) setWeekStartIso(weekStartForDate(day));
+  };
+  const pickAllDayStart = (day: string) => {
+    setDStart(day);
+    if (day) setWeekStartIso(weekStartForDate(day));
+  };
 
   // ── Slot selected from the availability grid ─────────────────────────────
   const handleSelectRange = (s: string, e: string) => {
     // s and e are "YYYY-MM-DDTHH:mm" local strings from the grid
-    setDate(extractDate(s));
+    pickDate(extractDate(s));
     setStartTime(extractTime(s));
     setEndTime(extractTime(e));
   };
@@ -277,7 +294,13 @@ export function CreateEventModal({
   const revalidator = useRevalidator();
   const [meetingStatus, setMeetingStatus] = useState<
     | null
-    | { ok: true; count: number; gcalError?: string | null; notePageId?: string | null }
+    | {
+        ok: true;
+        count: number;
+        gcalError?: string | null;
+        notePageId?: string | null;
+        whiteboardPageId?: string | null;
+      }
     | { ok: false; error: string }
   >(null);
   const [submitting, setSubmitting] = useState(false);
@@ -333,6 +356,8 @@ export function CreateEventModal({
         title: title.trim(),
         durationMinutes,
       };
+      if (location.trim()) payload.location = location.trim();
+      if (description.trim()) payload.description = description.trim();
       if (selectedStartLocal) {
         const d = new Date(selectedStartLocal);
         if (!isNaN(d.getTime())) payload.startTime = d.toISOString();
@@ -370,6 +395,7 @@ export function CreateEventModal({
           count: json.notifiedCount ?? 0,
           gcalError: json.gcalError ?? null,
           notePageId: json.notePageId ?? null,
+          whiteboardPageId: json.whiteboardPageId ?? null,
         });
         // If isWork, log the organizer's time against the meeting we just
         // created — linked by its id so it shows as an accent on the meeting
@@ -479,36 +505,13 @@ export function CreateEventModal({
       <div
         className={cn(
           "relative z-10 flex w-full flex-col sm:flex-row overflow-hidden rounded-xl cal-surface max-h-[90vh]",
-          hasGuests ? "max-w-6xl" : "max-w-lg",
+          hasGuests ? "max-w-[88rem]" : "max-w-lg",
         )}
       >
         {/* ── Left panel: availability grid — only shown once there are guests
             (a solo event has no availability worth previewing). ───────────── */}
         {hasGuests && (
-        <div className="flex w-full sm:w-[52%] shrink-0 flex-col gap-3 border-b sm:border-b-0 sm:border-r border-border bg-muted/20 p-5">
-          {/* Week nav */}
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              aria-label="Previous week"
-              onClick={() => shiftWeek(-1)}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <span className="flex-1 text-center text-sm font-medium text-foreground">
-              {weekLabel(weekStartIso, data.timezone)}
-            </span>
-            <button
-              type="button"
-              aria-label="Next week"
-              onClick={() => shiftWeek(1)}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-
+        <div className="flex w-full sm:w-[58%] shrink-0 flex-col gap-3 border-b sm:border-b-0 sm:border-r border-border bg-muted/20 p-5">
           {/* Availability grid — compact + no self-only tint when no guests */}
           <div className="min-h-0 flex-1 overflow-hidden">
             <ScheduleWeekGrid
@@ -530,6 +533,7 @@ export function CreateEventModal({
               selectedEndLocal={selectedEndLocal || undefined}
               compact
               hideAvailability={!hasGuests}
+              weekNav={{ onShift: shiftWeek, onToday: goToThisWeek }}
             />
           </div>
 
@@ -542,17 +546,7 @@ export function CreateEventModal({
         {/* ── Right panel: form ──────────────────────────────────────────── */}
         <div className="flex flex-1 flex-col gap-5 overflow-y-auto p-6">
           {/* Header */}
-          <div className="flex items-center justify-between">
-            <span
-              className={cn(
-                "rounded-full px-2.5 py-0.5 text-xs font-semibold",
-                type === "Meeting"
-                  ? "bg-accent-teal/10 text-accent-teal"
-                  : "bg-muted text-muted-foreground",
-              )}
-            >
-              {type}
-            </span>
+          <div className="flex items-center justify-end">
             <button
               type="button"
               onClick={onClose}
@@ -629,7 +623,7 @@ export function CreateEventModal({
                     <DateField
                       mode="date"
                       value={dStart}
-                      onChange={setDStart}
+                      onChange={pickAllDayStart}
                       ariaLabel="Start date"
                       className="min-w-0 flex-1"
                     />
@@ -648,7 +642,7 @@ export function CreateEventModal({
                     <DateField
                       mode="date"
                       value={date}
-                      onChange={(v) => setDate(v)}
+                      onChange={pickDate}
                       ariaLabel="Date"
                       className="min-w-[150px]"
                     />
@@ -800,7 +794,7 @@ export function CreateEventModal({
                   <DateField
                     mode="date"
                     value={date}
-                    onChange={(v) => setDate(v)}
+                    onChange={pickDate}
                     ariaLabel="Date"
                     className="min-w-[130px]"
                   />
@@ -918,7 +912,8 @@ export function CreateEventModal({
                 </div>
               )}
 
-              {/* Meeting notes toggle */}
+              {/* Meeting assets: a note doc and/or a whiteboard, sharing the
+                  same About/type. The fields appear once either is enabled. */}
               <div className="rounded-md border border-border bg-muted/20 p-3">
                 <Toggle
                   checked={note.state.enabled}
@@ -926,7 +921,17 @@ export function CreateEventModal({
                   label="Create meeting note"
                   description="Starts a shared note doc linked to this meeting."
                 />
-                {note.state.enabled && (
+                {whiteboardEnabled && (
+                  <div className="mt-3">
+                    <Toggle
+                      checked={note.state.whiteboard}
+                      onChange={(e) => note.setWhiteboard(e.target.checked)}
+                      label="Create whiteboard"
+                      description="Starts a shared whiteboard canvas linked to this meeting."
+                    />
+                  </div>
+                )}
+                {(note.state.enabled || note.state.whiteboard) && (
                   <div className="mt-3 pt-1">
                     <MeetingNoteFields
                       note={note}
@@ -934,6 +939,7 @@ export function CreateEventModal({
                       fieldClass={fieldClass}
                       labelClass={labelClass}
                       core={isCoreMeeting}
+                      allowProjectWhenCore={unifiedCoreProject}
                     />
                   </div>
                 )}
@@ -952,6 +958,17 @@ export function CreateEventModal({
                       {" "}
                       <a href={`/documents/${meetingStatus.notePageId}`} className="underline font-medium">
                         View meeting note
+                      </a>
+                    </>
+                  )}
+                  {meetingStatus.whiteboardPageId && (
+                    <>
+                      {" "}
+                      <a
+                        href={`/whiteboard/${meetingStatus.whiteboardPageId}`}
+                        className="underline font-medium"
+                      >
+                        View whiteboard
                       </a>
                     </>
                   )}

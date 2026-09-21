@@ -1,15 +1,18 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-// Mocked at the getActiveCycle seam rather than at prisma: the status-
-// resolution rules (latest update wins, Open-past-closeDate derives
-// UnderReview) are already covered by app/hiring/lib/__tests__/cycles.test.ts.
-// What's under test here is the narrower public projection on top of it.
-vi.mock("~/hiring/lib/cycles", () => ({ getActiveCycle: vi.fn() }));
+// Mocked at the getOpenCycles seam rather than at prisma: the status-resolution
+// rules (latest update wins, Open-past-closeDate derives UnderReview, only Open
+// counts) are covered by app/hiring/lib/__tests__/cycles.test.ts. What's under
+// test here is the narrower public projection on top of it.
+vi.mock("~/hiring/lib/cycles", () => ({ getOpenCycles: vi.fn() }));
 
-import { getActiveCycle } from "~/hiring/lib/cycles";
-import { getPublicApplicationCycle } from "~/public-api/lib/public-application-cycle.server";
+import { getOpenCycles } from "~/hiring/lib/cycles";
+import {
+  getPublicApplicationCycles,
+  getPublicApplicationCycleResponse,
+} from "~/public-api/lib/public-application-cycle.server";
 
-const mockGetActiveCycle = getActiveCycle as unknown as ReturnType<typeof vi.fn>;
+const mockGetOpenCycles = getOpenCycles as unknown as ReturnType<typeof vi.fn>;
 
 // 2026-11-03T04:59:00Z = 11:59 PM EDT on November 2. Deliberately a date whose
 // UTC day differs from its Eastern day, so a timezone slip would show up.
@@ -19,84 +22,75 @@ const openCycle = {
   id: "c1",
   name: "Fall 2026",
   closeDate: CLOSE_DATE,
-  cycleType: "Standard",
+  applicants: "Students",
   currentStatus: "Open",
 };
 
+const CLOSED = { status: "closed", name: null, closeDate: null };
+
 beforeEach(() => {
   vi.clearAllMocks();
-  mockGetActiveCycle.mockResolvedValue(null);
+  mockGetOpenCycles.mockResolvedValue([]);
 });
 
-describe("getPublicApplicationCycle", () => {
-  it("reports open, with the deadline as an ISO timestamp, for an Open cycle", async () => {
-    mockGetActiveCycle.mockResolvedValue(openCycle);
+describe("getPublicApplicationCycles", () => {
+  it("lists an Open cycle with its deadline as an ISO timestamp", async () => {
+    mockGetOpenCycles.mockResolvedValue([openCycle]);
 
-    expect(await getPublicApplicationCycle()).toEqual({
+    expect(await getPublicApplicationCycles()).toEqual([
+      { status: "open", name: "Fall 2026", closeDate: "2026-11-03T04:59:00.000Z" },
+    ]);
+  });
+
+  // Interns and Lab members cycles are for people already in the lab, with no
+  // public form; the query must never widen to pick them up.
+  it("only ever asks for Students cycles", async () => {
+    await getPublicApplicationCycles();
+    expect(mockGetOpenCycles).toHaveBeenCalledWith({ applicants: "Students" });
+  });
+
+  it("lists every open cycle, soonest deadline first and no deadline last", async () => {
+    mockGetOpenCycles.mockResolvedValue([
+      { ...openCycle, id: "none", name: "No date", closeDate: null },
+      { ...openCycle, id: "late", name: "Winter 2027", closeDate: new Date("2027-01-15T05:00:00.000Z") },
+      { ...openCycle, id: "soon", name: "Fall 2026" },
+    ]);
+
+    expect((await getPublicApplicationCycles()).map((c) => c.name)).toEqual([
+      "Fall 2026",
+      "Winter 2027",
+      "No date",
+    ]);
+  });
+
+  it("reports an open cycle with a null deadline when it has no close date", async () => {
+    mockGetOpenCycles.mockResolvedValue([{ ...openCycle, closeDate: null }]);
+
+    expect(await getPublicApplicationCycles()).toEqual([
+      { status: "open", name: "Fall 2026", closeDate: null },
+    ]);
+  });
+});
+
+describe("getPublicApplicationCycleResponse", () => {
+  it("is empty and closed when nothing is open", async () => {
+    expect(await getPublicApplicationCycleResponse()).toEqual({ cycles: [], cycle: CLOSED });
+  });
+
+  // `cycle` is the pre-multi-cycle field, kept for one release so the site
+  // doesn't break mid-deploy: it mirrors the soonest-closing open cycle.
+  it("keeps the single `cycle` field as the soonest-closing open cycle", async () => {
+    mockGetOpenCycles.mockResolvedValue([
+      { ...openCycle, id: "late", name: "Winter 2027", closeDate: new Date("2027-01-15T05:00:00.000Z") },
+      openCycle,
+    ]);
+
+    const res = await getPublicApplicationCycleResponse();
+    expect(res.cycles).toHaveLength(2);
+    expect(res.cycle).toEqual({
       status: "open",
       name: "Fall 2026",
       closeDate: "2026-11-03T04:59:00.000Z",
     });
-  });
-
-  it("only ever asks for Standard cycles", async () => {
-    await getPublicApplicationCycle();
-    expect(mockGetActiveCycle).toHaveBeenCalledWith("Standard");
-  });
-
-  it("reports closed when no cycle is active", async () => {
-    mockGetActiveCycle.mockResolvedValue(null);
-
-    expect(await getPublicApplicationCycle()).toEqual({
-      status: "closed",
-      name: null,
-      closeDate: null,
-    });
-  });
-
-  // The public contract's whole point: internally UnderReview is still an
-  // "active" cycle, but submissions have closed, so the site must not invite
-  // more of them.
-  it("reports closed for a cycle under review", async () => {
-    mockGetActiveCycle.mockResolvedValue({
-      ...openCycle,
-      currentStatus: "UnderReview",
-    });
-
-    const cycle = await getPublicApplicationCycle();
-    expect(cycle.status).toBe("closed");
-    expect(cycle.name).toBeNull();
-  });
-
-  // getActiveCycle derives UnderReview once an Open cycle passes its close
-  // date, so the deadline is enforced without a second clock check here.
-  it("reports closed once an Open cycle has passed its close date", async () => {
-    mockGetActiveCycle.mockResolvedValue({
-      ...openCycle,
-      currentStatus: "UnderReview",
-    });
-
-    expect((await getPublicApplicationCycle()).status).toBe("closed");
-  });
-
-  it("reports open with a null deadline when the cycle has no close date", async () => {
-    mockGetActiveCycle.mockResolvedValue({ ...openCycle, closeDate: null });
-
-    expect(await getPublicApplicationCycle()).toEqual({
-      status: "open",
-      name: "Fall 2026",
-      closeDate: null,
-    });
-  });
-
-  // Fellowship/Core cycles are internal conversions with no public form.
-  // getActiveCycle("Standard") filters them out upstream; this pins the
-  // expectation that we never widen the query to pick them up.
-  it("stays closed while only an internal cycle is running", async () => {
-    mockGetActiveCycle.mockImplementation(async (type: string) =>
-      type === "Fellowship" ? { ...openCycle, cycleType: "Fellowship" } : null,
-    );
-
-    expect((await getPublicApplicationCycle()).status).toBe("closed");
   });
 });

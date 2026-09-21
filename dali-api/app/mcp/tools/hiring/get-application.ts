@@ -11,7 +11,7 @@
 
 import { prisma } from "~/lib/db";
 import { getUserRoles, hasCycleAccess } from "~/lib/roles";
-import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
+import { confidentialityCleared, getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { buildCriteriaLabelMap } from "~/hiring/lib/rubric-criteria";
 import {
   isApplicantBlinded,
@@ -56,7 +56,6 @@ export async function runGetApplication(userId: string, input: Input): Promise<u
             select: {
               id: true,
               generalRubricVersionId: true,
-              cycleType: true,
               anonymizeReview: true,
             },
           },
@@ -120,7 +119,7 @@ export async function runGetApplication(userId: string, input: Input): Promise<u
 
   // Confidentiality gate: caller must have signed the agreement.
   const confState = await getCycleConfidentialityState(userId, cycleId);
-  if (confState.status !== "signed") {
+  if (!confidentialityCleared(confState)) {
     throw new McpForbiddenError(
       `Confidentiality agreement required (${confState.status}). Sign it in the web app first.`,
     );

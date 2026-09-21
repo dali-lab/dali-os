@@ -37,7 +37,8 @@ const AUTOMATIONS: {
   {
     id: "github",
     label: "Set up GitHub teams",
-    description: "Create the project's GitHub team and add the confirmed roster.",
+    description:
+      "Create the project's GitHub team, add the confirmed roster, and grant it access to the project's repos.",
     configured: true,
   },
   {

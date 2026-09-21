@@ -1,8 +1,19 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
+// Availability comes from each member's DALI OS calendar. By default every
+// interviewer's calendar is free for the whole window (every fixture here is);
+// a test narrows it with setCalendarFree.
+vi.mock("~/hiring/lib/interview-availability.server", () => ({ interviewerCalendars: vi.fn() }));
 
 import { prisma } from "~/lib/db";
+import { interviewerCalendars } from "~/hiring/lib/interview-availability.server";
+
+const ALWAYS_FREE = [{ startTime: new Date("2000-01-01T00:00:00Z"), endTime: new Date("2100-01-01T00:00:00Z") }];
+let calendarFree: Map<string, { startTime: Date; endTime: Date }[]> = new Map();
+function setCalendarFree(userId: string, free: { startTime: Date; endTime: Date }[]) {
+  calendarFree.set(userId, free);
+}
 import {
   isInterviewerFree,
   generateCandidateSlots,
@@ -41,6 +52,18 @@ beforeEach(() => {
     };
   if (!mockPrisma.interview) (mockPrisma as any).interview = { create: vi.fn(), update: vi.fn() };
   if (!mockPrisma.$transaction) (mockPrisma as any).$transaction = vi.fn();
+  // Booking reads calendars before its transaction, via the global client.
+  mockPrisma.interviewConfig.findUnique.mockResolvedValue({});
+  mockPrisma.cycleInterviewer.findMany.mockResolvedValue([]);
+  (mockPrisma as any).interview.findUnique = vi.fn().mockResolvedValue({ applicationCycleId: "cycle1" });
+  calendarFree = new Map();
+  vi.mocked(interviewerCalendars).mockImplementation(async () => ({
+    get: (userId: string) => ({
+      hasCalendar: true,
+      hasWorkingHours: true,
+      available: calendarFree.get(userId) ?? ALWAYS_FREE,
+    }),
+  }) as any);
 });
 
 // ─── isInterviewerFree ─────────────────────────────────────────────────────────

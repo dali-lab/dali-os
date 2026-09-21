@@ -4,9 +4,9 @@ import { notify } from "~/lib/notify.server";
 import type { EventType } from "~/lib/notification-events";
 import { parseJson } from "~/lib/validate";
 import { requireAuth } from "~/lib/auth";
-import { isCore, hasCycleAccess } from "~/lib/roles";
-import { autoCloseIfExpired, findOtherActiveCycleId } from "~/hiring/lib/cycles";
-import { internalCycleConfig, isInternalCycleType } from "~/hiring/lib/internal-cycles.server";
+import { isCycleAdmin, hasCycleAccess } from "~/lib/roles";
+import { autoCloseIfExpired } from "~/hiring/lib/cycles";
+import { applicantGroup, isMemberApplicants } from "~/hiring/lib/applicant-groups.server";
 import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
 import { APPLICATION_TZ } from "~/lib/timezone";
 import type { Route } from "./+types/api.cycles.$cycleId.status";
@@ -42,37 +42,15 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
-  if (!(await isCore(auth.user.sub))) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
+  if (!(await isCycleAdmin(auth.user.sub, params.cycleId!))) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
 
   const body = await parseJson(request, StatusUpdateSchema);
   if (body instanceof Response) return body;
   const { newStatus, force } = body;
 
-  // Single-active-cycle invariant — enforced *per cycleType*. A Standard hire
-  // cycle and an Fellowship conversion cycle may overlap, but two of the
-  // same type may not. We look up this cycle's type first so the check is
-  // scoped correctly.
-  if (newStatus === "Open" || newStatus === "UnderReview") {
-    const thisCycle = await prisma.applicationCycle.findUniqueOrThrow({
-      where: { id: params.cycleId! },
-      select: { cycleType: true },
-    });
-    const otherActiveId = await findOtherActiveCycleId(params.cycleId!, thisCycle.cycleType);
-    if (otherActiveId) {
-      return Response.json(
-              {
-                error:
-                  "Another cycle of the same type is already active. Only one cycle per type can be Open or UnderReview at a time. Move the existing active cycle to Completed first.",
-                activeCycleId: otherActiveId,
-              },
-              { status: 409 },
-            );
-    }
-  }
-
-  // Draft → Open: validate per-cycleType readiness. Standard requires a
-  // linked challenge version per domain (challenge-based hiring); Fellowship
-  // skips challenges and only requires the shortform to be pinned.
+  // Draft → Open: validate readiness. A cycle with challenges needs one linked
+  // per domain; member-authed cycles (and any cycle without challenges) need
+  // the application form bound, since that's all the applicant fills in.
   if (newStatus === "Open") {
     const cycle = await prisma.applicationCycle.findUniqueOrThrow({
       where: { id: params.cycleId! },
@@ -91,7 +69,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       return Response.json({ error: "Close date must be set before opening" }, { status: 400 });
     }
 
-    if (cycle.cycleType === "Standard") {
+    if (cycle.hasChallenges) {
       const domainIds = new Set(cycle.domains.map((d) => d.domainId));
       // Check that every domain has at least one challenge Form linked.
       if (domainIds.size > 0) {
@@ -109,15 +87,12 @@ export async function action({ request, params }: Route.ActionArgs) {
           }
         }
       }
-    } else if (isInternalCycleType(cycle.cycleType)) {
-      // Internal cycles (Fellowship/Core) skip challenges — only the application
-      // form must be bound before opening.
-      if (!cycle.applicationFormId) {
-        return Response.json(
-                { error: "An application form must be bound before opening this cycle" },
-                { status: 400 },
-              );
-      }
+    }
+    if ((!cycle.hasChallenges || isMemberApplicants(cycle.applicants)) && !cycle.applicationFormId) {
+      return Response.json(
+              { error: "An application form must be bound before opening this cycle" },
+              { status: 400 },
+            );
     }
 
     // Every domain must be marked ready by its domain lead (or hiring lead override)
@@ -155,13 +130,13 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
   }
 
-  // For internal (Fellowship/Core) cycles opening for the first time, prepare
+  // For member-authed cycles (Interns/Lab members) opening for the first time, prepare
   // the notification fan-out. We pre-compute the recipient list outside the
   // transaction (it's a pure read), then commit the status transition,
   // notification rows, and idempotency marker atomically. The
   // applicantsNotifiedAt flag guards against re-spam if the lead later bounces
   // Open→Draft→Open during setup. Copy + recipient set + event come from the
-  // internal-cycle registry.
+  // applicant-group registry.
   let fanOutPlan: {
     userIds: string[];
     eventType: EventType;
@@ -172,10 +147,10 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (newStatus === "Open") {
     const cycle = await prisma.applicationCycle.findUniqueOrThrow({
       where: { id: params.cycleId! },
-      select: { cycleType: true, closeDate: true, name: true, applicantsNotifiedAt: true },
+      select: { applicants: true, closeDate: true, name: true, applicantsNotifiedAt: true },
     });
-    const config = internalCycleConfig(cycle.cycleType);
-    if (config && !cycle.applicantsNotifiedAt) {
+    const config = applicantGroup(cycle.applicants, params.cycleId!);
+    if (config.openInvite && config.eligibleUserIds && !cycle.applicantsNotifiedAt) {
       const userIds = await config.eligibleUserIds();
       const closeText = cycle.closeDate
         ? ` Apply by ${cycle.closeDate.toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: APPLICATION_TZ })}.`
@@ -185,7 +160,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         eventType: config.openInvite.eventType,
         title: config.openInvite.title(cycle.name),
         body: config.openInvite.body(cycle.name, closeText),
-        link: config.openInvite.link,
+        link: config.portalPath,
       };
     }
   }
@@ -221,7 +196,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         link: fanOutPlan.link,
       },
       recipients: fanOutPlan.userIds.map((userId) => ({ userId })),
-    }).catch((err) => console.error("[cycle-status] internal-cycle fan-out failed:", err));
+    }).catch((err) => console.error("[cycle-status] open fan-out failed:", err));
   }
 
   return Response.json({ currentStatus: newStatus });

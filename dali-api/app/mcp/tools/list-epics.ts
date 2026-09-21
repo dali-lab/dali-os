@@ -46,26 +46,12 @@ export async function runListEpics(_callerId: string, input: Input) {
       status: true,
       startsAt: true,
       endsAt: true,
-      targetTermId: true,
       stories: {
         orderBy: { position: "asc" },
         select: { id: true, title: true, notes: true, status: true },
       },
     },
   });
-
-  // Term has no inverse `targetTerm` relation declared on Epic in the schema,
-  // so we resolve term codes in one follow-up query.
-  const termIds = Array.from(
-    new Set(epics.map((e) => e.targetTermId).filter((id): id is string => !!id)),
-  );
-  const terms = termIds.length
-    ? await prisma.term.findMany({
-        where: { id: { in: termIds } },
-        select: { id: true, code: true },
-      })
-    : [];
-  const termCodeById = new Map(terms.map((t) => [t.id, t.code]));
 
   return {
     epics: epics.map((e) => ({
@@ -75,8 +61,6 @@ export async function runListEpics(_callerId: string, input: Input) {
       status: e.status,
       startsAt: e.startsAt?.toISOString() ?? null,
       endsAt: e.endsAt?.toISOString() ?? null,
-      targetTermId: e.targetTermId,
-      targetTermCode: e.targetTermId ? termCodeById.get(e.targetTermId) ?? null : null,
       stories: e.stories,
     })),
   };

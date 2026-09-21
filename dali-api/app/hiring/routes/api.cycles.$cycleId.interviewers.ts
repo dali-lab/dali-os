@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth, requireCoreOrDomainLead, forbidden } from "~/lib/auth";
 import { hasCycleAccess } from "~/lib/roles";
+import { interviewerCalendars } from "~/hiring/lib/interview-availability.server";
 import { idSchema, parseJson } from "~/lib/validate";
 
 const CreateInterviewerSchema = z.object({
@@ -26,24 +27,32 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     include: {
       user: { select: { firstName: true, lastName: true, daliEmail: true } },
       domain: { select: { id: true, name: true } },
-      availabilityBlocks: { select: { startTime: true, endTime: true } },
     },
     orderBy: { createdAt: "asc" },
   });
 
+  // Free time comes from each interviewer's DALI OS calendar inside the
+  // interview window (none until the window is set).
+  const config = await prisma.interviewConfig.findUnique({
+    where: { applicationCycleId: params.cycleId },
+  });
+  const calendars = config
+    ? await interviewerCalendars(interviewers.map((i) => i.userId), config)
+    : new Map();
   const withStats = interviewers.map((i) => {
-    const sorted = [...i.availabilityBlocks].sort(
-      (a, b) => a.startTime.getTime() - b.startTime.getTime(),
-    );
-    const totalMs = sorted.reduce(
-      (sum, b) => sum + (b.endTime.getTime() - b.startTime.getTime()),
+    const cal = calendars.get(i.userId)
+    const blocks = cal?.available ?? [];
+    const totalMs = blocks.reduce(
+      (sum: number, b: { startTime: Date; endTime: Date }) => sum + (b.endTime.getTime() - b.startTime.getTime()),
       0,
     );
     return {
       ...i,
-      availabilityBlocks: sorted,
-      availabilityBlockCount: sorted.length,
+      availabilityBlocks: blocks,
+      availabilityBlockCount: blocks.length,
       availabilityHours: totalMs / (1000 * 60 * 60),
+      hasCalendar: cal?.hasCalendar ?? false,
+      hasWorkingHours: cal?.hasWorkingHours ?? false,
     };
   });
 

@@ -4,6 +4,7 @@ import { prisma } from "~/lib/db";
 import { requireProjectEditAccess, requireMemberSession } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
+import { getPageAccess } from "~/lib/pageAccess.server";
 
 // POST   /api/documents/:id — partial update. Body: any of
 //                             { title?, iconEmoji?, coverImageUrl? }.
@@ -13,9 +14,13 @@ import { logAuditEvent } from "~/lib/audit";
 // Documents are FreeForm Pages. Project-scoped pages use the project-edit gate
 // (isCore === Admin || Core, or a project assignee); Lab-scoped pages (the
 // lab-wide Documents area) use the lab-member gate — the lab's members are the
-// Lab workspace's members, mirroring project membership. EducationOffering
-// pages are not handled here (they keep their existing behavior); parity is a
-// follow-up.
+// Lab workspace's members, mirroring project membership. Member-scoped pages
+// (personal notes in My Drive) resolve through getPageAccess, which is the only
+// gate that knows the note's owner and its share list — the doc editor's title
+// box posts here for every workspace, so without this branch renaming a note
+// from the document itself failed. Archiving one still belongs to /api/notes,
+// so DELETE stays owner-only. EducationOffering pages are not handled here
+// (they keep their existing behavior); parity is a follow-up.
 
 type Body = { title?: string; iconEmoji?: string | null; coverImageUrl?: string | null };
 
@@ -48,8 +53,10 @@ export async function action({ request, params }: Route.ActionArgs) {
   });
   if (
     !page ||
-    (page.workspaceType !== "Project" && page.workspaceType !== "Lab") ||
-    (page.workspaceType === "Project" && !page.workspaceId)
+    (page.workspaceType !== "Project" &&
+      page.workspaceType !== "Lab" &&
+      page.workspaceType !== "Member") ||
+    (page.workspaceType !== "Lab" && !page.workspaceId)
   ) {
     return withCors(request, Response.json({ error: "Document not found" }, { status: 404 }));
   }
@@ -58,6 +65,20 @@ export async function action({ request, params }: Route.ActionArgs) {
     const gate = await requireMemberSession(request);
     if (!gate.ok) return withCors(request, gate.response);
     auth = gate.auth;
+  } else if (page.workspaceType === "Member") {
+    const gate = await requireMemberSession(request);
+    if (!gate.ok) return withCors(request, gate.response);
+    auth = gate.auth;
+    const isOwner = page.workspaceId === auth.user.sub;
+    // DELETE archives the note, which is the owner's call alone; a metadata
+    // edit follows the note's own edit grant (owner or an Edit/Full share).
+    const allowed =
+      request.method === "DELETE"
+        ? isOwner
+        : isOwner || (await getPageAccess(auth.user.sub, pageId, request)).canEdit;
+    if (!allowed) {
+      return withCors(request, Response.json({ error: "Document not found" }, { status: 404 }));
+    }
   } else {
     const gate = await requireProjectEditAccess(request, page.workspaceId!);
     if (!gate.ok) return gate.response;

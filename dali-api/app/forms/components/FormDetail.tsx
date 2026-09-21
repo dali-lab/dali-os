@@ -1,36 +1,37 @@
 import { useState, useEffect, useRef } from "react";
-import { Link, useLoaderData, useFetcher } from "react-router";
+import { Link, useLoaderData, useFetcher, useSearchParams } from "react-router";
 import {
   Plus,
   Pencil,
   FileText,
   Clock,
   UserIcon,
-  Globe,
   Lock,
   Copy,
   Check,
-  Inbox,
   Eye,
   Loader2,
-  Unlink,
   Trash2,
+  History,
+  ChevronDown,
+  Share2,
 } from "lucide-react";
-import { useConfirmSubmit } from "~/components/ui/dialog";
+import { useConfirmSubmit, useDialog } from "~/components/ui/dialog";
 import type { HiringFormLink } from "~/hiring/lib/form-links.server";
-import { FormBuilderTab } from "~/components/form-builder/FormBuilder";
+import { BADGE, FormBuilderTab } from "~/components/form-builder/FormBuilder";
 import { FormPreviewModal } from "~/forms/components/FormPreviewModal";
+import { FormSettingsButton } from "~/forms/components/FormSettings";
+import { VersionResults } from "~/forms/components/VersionResults";
 import { DocEditor } from "~/components/doc";
 import { isEmptyBlocks } from "~/lib/blocks";
-import { Button, buttonClasses } from "~/components/ui/Button";
-import { Checkbox } from "~/components/ui/Checkbox";
-import { Radio } from "~/components/ui/Radio";
-import { Tooltip, InfoTip } from "~/components/ui/floating";
+import { Button } from "~/components/ui/Button";
+import { Popover, Tooltip } from "~/components/ui/floating";
 import type { Question } from "~/types";
 import type { loader } from "~/forms/routes/forms.edit.$formId";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { formatInTimeZone } from "~/lib/timezone";
-import { DateField } from "~/components/ui/DateField";
+import { cn } from "~/lib/cn";
+import { useOsChrome } from "~/components/os-chrome";
 
 function formatDateTime(iso: string, tz: string) {
   return (
@@ -40,7 +41,7 @@ function formatDateTime(iso: string, tz: string) {
   );
 }
 
-// Compact one-line form for the narrow versions sidebar, e.g. "May 24, 11:49 AM".
+// Compact one-line form for the versions menu, e.g. "May 24, 11:49 AM".
 function formatDateShort(iso: string, tz: string) {
   return (
     formatInTimeZone(iso, tz, { month: "short", day: "numeric" }) +
@@ -49,9 +50,14 @@ function formatDateShort(iso: string, tz: string) {
   );
 }
 
-// Editor page for a single form. A versions sidebar on the left; on the right,
-// the builder when editing the draft, or a read-only preview of a selected
-// version otherwise.
+type FormVersion = ReturnType<
+  typeof useLoaderData<typeof loader>
+>["form"]["versions"][number];
+
+// Editor page for a single form. A top bar (name, versions, settings, preview,
+// share, publish) over either the builder — component library on the left,
+// canvas on the right — or a selected version, shown as its questions or its
+// results. Results belong to the version they were collected on.
 //
 // Two save actions (see FormBuilderTab):
 //   - "Save"            → persists the editable draft (save-draft). The draft
@@ -61,20 +67,17 @@ function formatDateShort(iso: string, tz: string) {
 //                         (save-version) and clears the draft. Frozen versions
 //                         are read-only and are what publishing serves.
 export function FormDetail() {
-  const { form, terms, usages, groups, managing, hiringLinks: rawHiringLinks, collabToken } = useLoaderData<typeof loader>();
+  const { form, terms, usages, groups, managing, hiringLinks: rawHiringLinks, collabToken, results } = useLoaderData<typeof loader>();
   const hiringLinks: HiringFormLink[] = rawHiringLinks ?? [];
   const tz = useUserTimeZone();
-  // A dedicated fetcher for saves so the builder's buttons can reflect
-  // request state ("Saving…"/"Saved ✓"). The submitted intent tells us which
-  // button is in flight; fetcher.state + a brief post-success window drive the
-  // "Saved" confirmation.
+  // A dedicated fetcher for Save and Publish-from-the-builder, so both
+  // buttons can reflect request state. A submission carrying `publish` is the
+  // Publish button's; anything else is Save's.
   const saveFetcher = useFetcher<{ ok?: boolean; error?: string }>();
-  const savingIntent = saveFetcher.formData?.get("intent") as
-    | "save-draft"
-    | "save-version"
-    | "update-version"
-    | null;
-  const [justSaved, setJustSaved] = useState<null | "draft" | "version">(null);
+  const inFlight = saveFetcher.formData;
+  const publishingEdits = inFlight?.get("publish") === "true";
+  const savingEdits = inFlight != null && !publishingEdits;
+  const [justSaved, setJustSaved] = useState(false);
   const saveError =
     saveFetcher.data && "error" in saveFetcher.data ? saveFetcher.data.error : null;
 
@@ -97,19 +100,47 @@ export function FormDetail() {
     : null;
   const hasDraft = form.draft != null;
 
+  // A version's results view lives in the URL (`?view=results&version=N`) so
+  // the loader can fetch that version's responses and links can deep-link.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const view = searchParams.get("view") === "results" ? "results" : "questions";
+
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(
-    () => latestVersion?.id ?? null,
+    () =>
+      (view === "results"
+        ? form.versions.find(
+            (v) => String(v.versionNumber) === searchParams.get("version"),
+          )?.id
+        : undefined) ??
+      latestVersion?.id ??
+      null,
   );
   // Open straight into the builder when there's a draft to resume or no
   // version exists yet; otherwise land on the latest version's preview.
-  const [isEditing, setIsEditing] = useState(hasDraft || form.versions.length === 0);
+  const [isEditing, setIsEditing] = useState(
+    view !== "results" && (hasDraft || form.versions.length === 0),
+  );
+
+  function showVersion(id: string, nextView: "questions" | "results") {
+    setSelectedVersionId(id);
+    setIsEditing(false);
+    setEditingVersionId(null);
+    const version = form.versions.find((v) => v.id === id);
+    if (nextView === "results" && version) {
+      setSearchParams(
+        { view: "results", version: String(version.versionNumber) },
+        { replace: true, preventScrollReset: true },
+      );
+    } else if (searchParams.has("view")) {
+      setSearchParams({}, { replace: true, preventScrollReset: true });
+    }
+  }
 
   const selectedVersion = form.versions.find(
     (v) => v.id === selectedVersionId,
   );
   const editingVersion =
     form.versions.find((v) => v.id === editingVersionId) ?? null;
-  const nextVersionNumber = form.versions.length + 1;
 
   // Seed the builder: resume the draft if present, else duplicate the version
   // the user chose to branch from, else start blank.
@@ -187,6 +218,9 @@ export function FormDetail() {
   // source version, the resumable draft, the latest frozen version (so "New
   // version" carries the current questions forward to add to), else blank.
   function startEditing(from?: { questions: Question[]; description: unknown }) {
+    if (searchParams.has("view")) {
+      setSearchParams({}, { replace: true, preventScrollReset: true });
+    }
     setEditingVersionId(null);
     setSeed(
       from ??
@@ -202,6 +236,9 @@ export function FormDetail() {
   // Edit an existing, not-yet-used version in place. Seeds the builder from
   // that version and routes Save to update-version (see handleUpdateVersion).
   function startEditingVersion(version: (typeof form.versions)[number]) {
+    if (searchParams.has("view")) {
+      setSearchParams({}, { replace: true, preventScrollReset: true });
+    }
     setSelectedVersionId(version.id);
     setEditingVersionId(version.id);
     setSeed({ questions: version.questions, description: version.description });
@@ -209,575 +246,361 @@ export function FormDetail() {
     setIsEditing(true);
   }
 
-  function handleUpdateVersion({
-    questions,
-    description,
-  }: {
-    questions: Question[];
-    description: unknown;
-  }) {
-    if (!editingVersionId) return;
+  // Save and Publish share one submission: Save persists the draft (or, when
+  // fixing an unused version in place, that version); Publish freezes the
+  // edits into a version — a new one, or the one being fixed — and publishes.
+  function submitEdits(
+    { questions, description }: { questions: Question[]; description: unknown },
+    publish: boolean,
+  ) {
     const fd = new FormData();
-    fd.set("intent", "update-version");
     fd.set("id", form.id);
-    fd.set("versionId", editingVersionId);
+    if (editingVersionId) {
+      fd.set("intent", "update-version");
+      fd.set("versionId", editingVersionId);
+    } else {
+      fd.set("intent", publish ? "save-version" : "save-draft");
+    }
+    if (publish) fd.set("publish", "true");
     fd.set("questions", JSON.stringify(questions));
     fd.set("description", isEmptyBlocks(description) ? "" : JSON.stringify(description));
     saveFetcher.submit(fd, { method: "post" });
   }
 
-  function handleSaveDraft({
-    questions,
-    description,
-  }: {
-    questions: Question[];
-    description: unknown;
-  }) {
-    const fd = new FormData();
-    fd.set("intent", "save-draft");
-    fd.set("id", form.id);
-    fd.set("questions", JSON.stringify(questions));
-    fd.set("description", isEmptyBlocks(description) ? "" : JSON.stringify(description));
-    saveFetcher.submit(fd, { method: "post" });
+  // Remember what the in-flight submission was (fetcher.formData is gone by
+  // the time it's idle) so its success can be handled.
+  const lastSubmitRef = useRef<{ intent: string; publish: boolean } | null>(null);
+  if (inFlight) {
+    lastSubmitRef.current = {
+      intent: String(inFlight.get("intent")),
+      publish: publishingEdits,
+    };
   }
 
-  function handleSaveVersion({
-    questions,
-    description,
-  }: {
-    questions: Question[];
-    description: unknown;
-  }) {
-    const fd = new FormData();
-    fd.set("intent", "save-version");
-    fd.set("id", form.id);
-    fd.set("questions", JSON.stringify(questions));
-    fd.set("description", isEmptyBlocks(description) ? "" : JSON.stringify(description));
-    saveFetcher.submit(fd, { method: "post" });
-  }
-
-  // Remember the intent of the in-flight save so the post-success flash knows
-  // which button to mark (fetcher.formData is gone by the time it's idle).
-  const lastIntentRef = useRef<
-    "save-draft" | "save-version" | "update-version" | null
-  >(null);
-  if (savingIntent) lastIntentRef.current = savingIntent;
-
-  // When a save finishes (fetcher leaves "submitting", data ok), flash "Saved"
-  // on the button for ~2s. The draft save stays in the editor, so this
-  // transient checkmark is the main "it worked" signal; the version save also
-  // leaves edit mode (the version-count effect above), so the user sees the
-  // new read-only version.
+  // When a submission lands: a draft Save flashes "Saved" for ~2s (it stays in
+  // the editor, so the checkmark is the "it worked" signal). A new version
+  // leaves edit mode via the version-count effect above; an in-place version
+  // edit doesn't grow the count, so it leaves edit mode here.
   const wasSubmitting = useRef(false);
   useEffect(() => {
     const submitting = saveFetcher.state === "submitting";
     if (wasSubmitting.current && !submitting) {
       const data = saveFetcher.data;
-      if (data && data.ok) {
-        const wasDraft = lastIntentRef.current === "save-draft";
-        setJustSaved(wasDraft ? "draft" : "version");
-        // An in-place version edit (update-version) doesn't grow the version
-        // count, so the count effect can't return us to the preview — do it
-        // here once the edit lands.
-        if (lastIntentRef.current === "update-version") {
+      const last = lastSubmitRef.current;
+      if (data && data.ok && last) {
+        if (last.intent === "update-version") {
           setIsEditing(false);
           setEditingVersionId(null);
         }
-        const t = setTimeout(() => setJustSaved(null), 2000);
-        wasSubmitting.current = submitting;
-        return () => clearTimeout(t);
+        if (last.intent === "save-draft") {
+          setJustSaved(true);
+          const t = setTimeout(() => setJustSaved(false), 2000);
+          wasSubmitting.current = submitting;
+          return () => clearTimeout(t);
+        }
       }
     }
     wasSubmitting.current = submitting;
   }, [saveFetcher.state, saveFetcher.data]);
 
-  // Roll up the fetcher state into the builder's saveStatus prop.
-  const saveStatus =
-    savingIntent === "save-draft"
-      ? ("saving-draft" as const)
-      : savingIntent === "save-version" || savingIntent === "update-version"
-        ? ("saving-version" as const)
-        : justSaved === "draft"
-          ? ("saved-draft" as const)
-          : justSaved === "version"
-            ? ("saved-version" as const)
-            : ("idle" as const);
+  const saveStatus = savingEdits
+    ? ("saving" as const)
+    : justSaved
+      ? ("saved" as const)
+      : ("idle" as const);
+  const busySaving = inFlight != null;
+  const builderSnapshot = useRef<
+    (() => { questions: Question[]; description: unknown }) | null
+  >(null);
+
+  function preview() {
+    if (isEditing && builderSnapshot.current) {
+      requestPreview(builderSnapshot.current());
+    } else if (selectedVersion) {
+      requestPreview({
+        questions: selectedVersion.questions,
+        description: selectedVersion.description,
+      });
+    }
+  }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <div className="flex justify-between items-start">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">{form.name}</h1>
-            <p className="mt-1 text-muted-foreground">
-              Created {new Date(form.createdAt).toLocaleDateString()}
-            </p>
-            {usages.length > 0 && (
-              <div className="mt-2 flex items-center gap-1.5 flex-wrap text-xs">
-                <span className="text-muted-foreground font-medium">In use:</span>
-                {usages.map((u) => {
-                  const className =
-                    "inline-flex items-center px-2 py-0.5 rounded-full bg-accent-teal/10 text-accent-teal border border-accent-teal/20";
-                  return u.href ? (
-                    <Tooltip content="Open where this form is managed">
-                      <Link
-                        key={`${u.kind}:${u.label}`}
-                        to={u.href}
-                        className={`${className} hover:bg-accent-teal/20 hover:underline transition-colors`}
-                      >
-                        {u.label}
-                      </Link>
-                    </Tooltip>
-                  ) : (
-                    <span key={`${u.kind}:${u.label}`} className={className}>
-                      {u.label}
-                    </span>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            {!isEditing && (
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => startEditing()}
-              >
-                <Plus className="w-4 h-4" />
-                {hasDraft ? "Continue editing draft" : "New version"}
-              </Button>
-            )}
-          </div>
+    <div className="space-y-5">
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex-1 min-w-[12rem]">
+          <FormNameInput formId={form.id} name={form.name} />
         </div>
-
+        <FormVersionMenu
+          formId={form.id}
+          versions={form.versions}
+          draftQuestionCount={hasDraft ? (form.draft?.questions.length ?? 0) : null}
+          currentLabel={
+            isEditing
+              ? editingVersion
+                ? `Editing v${editingVersion.versionNumber}`
+                : "Draft"
+              : selectedVersion
+                ? `v${selectedVersion.versionNumber}`
+                : "Versions"
+          }
+          selectedVersionId={isEditing ? null : (selectedVersionId ?? null)}
+          editingDraft={isEditing && !editingVersion}
+          tz={tz}
+          onOpenDraft={() => startEditing()}
+          onNewVersion={() => startEditing()}
+          onSelect={(v) => showVersion(v.id, "questions")}
+          onResults={(v) => showVersion(v.id, "results")}
+          onEdit={(v) => startEditingVersion(v)}
+          deleteFetcher={deleteFetcher}
+          confirmSubmit={confirmSubmit}
+        />
+        <FormSettingsButton
+          managing={managing}
+          usages={usages}
+          hiringLinks={hiringLinks}
+          formId={form.id}
+          oneResponsePerMember={form.oneResponsePerMember}
+          notifyOnSubmission={form.notifyOnSubmission}
+          listed={form.listed}
+          audience={form.audience}
+          audienceGroupIds={form.audienceGroupIds}
+          groups={groups}
+          opensAt={form.opensAt}
+          closesAt={form.closesAt}
+        />
+        <Button
+          variant="secondary"
+          onClick={preview}
+          disabled={previewResolving || (!isEditing && !selectedVersion)}
+        >
+          {previewResolving ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Eye className="w-4 h-4" />
+          )}
+          Preview
+        </Button>
         {managing ? (
-          <div className="rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-900/40 dark:bg-blue-900/20 p-4 flex items-start gap-3">
-            <Lock className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-            <div className="text-sm text-blue-900 dark:text-blue-200">
-              <p className="font-semibold">
-                Managed form —{" "}
-                {managing.href ? (
-                  <Link to={managing.href} className="underline hover:no-underline">
-                    {managing.label}
-                  </Link>
-                ) : (
-                  managing.label
-                )}
-              </p>
-              <p className="mt-0.5 text-blue-800/80 dark:text-blue-300/80">
-                Who can fill this form and when is controlled by that feature, so
-                publishing, the public link, schedule, audience, and response
-                settings don&apos;t apply here. Edit the questions below; the
-                feature serves the latest saved version.
-              </p>
-            </div>
-          </div>
+          <>
+            <Tooltip content="This feature decides who can fill the form and when, so publishing and sharing happen there.">
+              {managing.href ? (
+                <Link
+                  to={managing.href}
+                  className="inline-flex items-center gap-1.5 px-3 text-sm text-os-grey hover:text-foreground"
+                >
+                  <Lock className="w-4 h-4" />
+                  Managed by {managing.label}
+                </Link>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-3 text-sm text-os-grey">
+                  <Lock className="w-4 h-4" />
+                  Managed by {managing.label}
+                </span>
+              )}
+            </Tooltip>
+            {/* The managing feature serves the latest version, so Publish
+                here only freezes the edits into one. */}
+            {isEditing && (
+              <Tooltip content="Save your changes as a new version. The managing feature uses the latest one.">
+                <Button
+                  variant="primary"
+                  disabled={busySaving}
+                  onClick={() => builderSnapshot.current && submitEdits(builderSnapshot.current(), true)}
+                >
+                  {publishingEdits ? "Publishing…" : "Publish"}
+                </Button>
+              </Tooltip>
+            )}
+          </>
         ) : (
           <>
-            <PublishControl
+            <FormShareButton published={form.published} publicToken={form.publicToken} />
+            <PublishButton
               formId={form.id}
               published={form.published}
-              publicToken={form.publicToken}
               hasVersions={form.versions.length > 0}
               inUse={usages.length > 0}
-              audience={form.audience}
-            />
-
-            <FormSettingsCard
-              formId={form.id}
-              oneResponsePerMember={form.oneResponsePerMember}
-              notifyOnSubmission={form.notifyOnSubmission}
-              listed={form.listed}
-              audience={form.audience}
-              audienceGroupIds={form.audienceGroupIds}
-              groups={groups}
-              opensAt={form.opensAt}
-              closesAt={form.closesAt}
+              onPublishEdits={
+                isEditing
+                  ? () => builderSnapshot.current && submitEdits(builderSnapshot.current(), true)
+                  : undefined
+              }
+              publishingEdits={publishingEdits}
+              editsBusy={busySaving}
+              editingVersion={editingVersion != null}
             />
           </>
         )}
       </div>
 
-      {hiringLinks.length > 0 && (
-        <HiringLinksPanel links={hiringLinks} />
+      {(deleteError || saveError) && (
+        <p className="text-sm text-destructive">{deleteError ?? saveError}</p>
       )}
 
-      <div className="flex flex-col lg:flex-row gap-8">
-        {/* Left: draft + versions list */}
-        <div className="w-full lg:w-64 flex-shrink-0 space-y-4">
-          {/* Unsaved working copy — editable, not usable until saved as a
-              version. Highlighted so it's clearly distinct from frozen ones. */}
-          {hasDraft && (
-            <div className="space-y-2">
-              <h3 className="text-sm font-bold text-foreground uppercase tracking-wider inline-flex items-center gap-1">
-                Draft
-                <InfoTip content="An editable scratch copy — not yet usable as a form. Save it as a version to freeze it and make it available for responses." />
-              </h3>
-              <button
-                onClick={() => startEditing(form.draft ?? undefined)}
-                className={`w-full text-left p-4 rounded-xl border transition-colors ${
-                  isEditing
-                    ? "border-accent-coral bg-accent-coral/10 ring-1 ring-accent-coral"
-                    : "border-dashed border-accent-coral/50 bg-card hover:bg-muted/50"
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <Pencil className="w-3.5 h-3.5 text-accent-coral flex-shrink-0" />
-                  <span className="font-medium text-foreground">
-                    Unsaved draft
-                  </span>
-                </div>
-                <p className="text-sm text-muted-foreground mt-1">
-                  {form.draft?.questions.length ?? 0} questions · not yet usable
-                </p>
-              </button>
+      {isEditing ? (
+        <FormBuilderTab
+          // Remount only on a deliberate re-seed (startEditing bumps
+          // editKey), so a draft save's revalidation doesn't blow away
+          // in-progress edits. FormBuilderTab reads its initial* props
+          // only on mount.
+          key={editKey}
+          // Version-edit mode (editingVersion) works against the version's
+          // frozen snapshot, not the shared draft room — skip collab so the
+          // room's draft content can't overwrite the chosen version's questions.
+          formId={editingVersion ? undefined : form.id}
+          collabToken={editingVersion ? null : (collabToken ?? null)}
+          initialQuestions={seed.questions}
+          initialDescription={seed.description}
+          terms={terms}
+          allowCheckbox
+          // Version-edit mode has one primary save (update in place) and
+          // no draft — a draft would re-introduce the two-copy state we're
+          // avoiding. Draft editing keeps both buttons.
+          onSave={(payload) => submitEdits(payload, false)}
+          saveStatus={saveStatus}
+          snapshotRef={builderSnapshot}
+          onCancel={
+            (!editingVersion && form.versions.length === 0 && !hasDraft) || busySaving
+              ? undefined
+              : () => {
+                  setIsEditing(false);
+                  setEditingVersionId(null);
+                }
+          }
+        />
+      ) : selectedVersion ? (
+        <div className="max-w-4xl mx-auto space-y-4">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="inline-flex p-1 rounded-full bg-os-container">
+              {(["questions", "results"] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => showVersion(selectedVersion.id, v)}
+                  aria-pressed={view === v}
+                  className={cn(
+                    "px-4 py-1.5 rounded-full text-sm font-semibold transition-colors",
+                    view === v
+                      ? "bg-os-card text-foreground shadow-sm"
+                      : "text-os-grey hover:text-foreground",
+                  )}
+                >
+                  {v === "questions" ? "Questions" : "Results"}
+                  {v === "results" && (
+                    <span className="ml-1.5 tabular-nums opacity-70">
+                      {selectedVersion.submissionCount}
+                    </span>
+                  )}
+                </button>
+              ))}
             </div>
-          )}
+            <span className="text-sm text-os-grey">
+              v{selectedVersion.versionNumber} · {selectedVersion.createdByName} ·{" "}
+              {formatDateTime(selectedVersion.createdAt, tz)}
+            </span>
+            <Button variant="secondary" className="ml-auto" onClick={() => startEditing()}>
+              {hasDraft ? <Pencil className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+              {hasDraft ? "Continue editing draft" : "New version"}
+            </Button>
+          </div>
 
-          <h3 className="text-sm font-bold text-foreground uppercase tracking-wider inline-flex items-center gap-1">
-            Versions
-            <InfoTip content="Each saved version is a frozen snapshot of the question set. Published forms always serve the latest version. A version with responses cannot be edited or deleted." />
-          </h3>
-          {form.versions.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No versions yet.</p>
+          {view === "results" ? (
+            results && results.versionId === selectedVersion.id ? (
+              <VersionResults
+                formId={form.id}
+                versionNumber={selectedVersion.versionNumber}
+                results={results}
+              />
+            ) : (
+              <div className="py-12 flex justify-center">
+                <Loader2 className="w-5 h-5 animate-spin text-os-grey" />
+              </div>
+            )
           ) : (
-            <div className="space-y-2">
-              {[...form.versions].reverse().map((version, i) => {
-                const isLatest = i === 0;
-                return (
+            <div className="rounded-os-card bg-os-card p-6 space-y-4">
+              {!isEmptyBlocks(selectedVersion.description) && (
+                <div className="px-4 py-3 rounded-os-item bg-os-well">
+                  {/* Keyed per version: DocEditor reads initialContent once,
+                      so switching versions must remount it. */}
+                  <DocEditor
+                    key={selectedVersion.id}
+                    features="notes"
+                    density="compact"
+                    editable={false}
+                    initialContent={selectedVersion.description}
+                  />
+                </div>
+              )}
+              {selectedVersion.questions.map((q, index) => (
+                <Tooltip key={q.key} content={hasDraft ? "Continue editing draft" : "Edit in a new version"}>
                   <div
-                    key={version.id}
                     role="button"
                     tabIndex={0}
-                    onClick={() => {
-                      setSelectedVersionId(version.id);
-                      setIsEditing(false);
-                    }}
+                    onClick={() => startEditing()}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" || e.key === " ") {
                         e.preventDefault();
-                        setSelectedVersionId(version.id);
-                        setIsEditing(false);
+                        startEditing();
                       }
                     }}
-                    className={`w-full text-left p-3 rounded-xl border transition-colors cursor-pointer ${
-                      selectedVersionId === version.id && !isEditing
-                        ? "border-accent-teal bg-accent-teal/10 ring-1 ring-accent-teal"
-                        : "border-border bg-card hover:bg-muted/50"
-                    }`}
+                    className="p-4 rounded-os-item border border-os-container cursor-pointer transition-colors hover:border-os-container-hi hover:bg-os-well/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent"
                   >
-                    {/* Title row: version number, the "Live" badge on the
-                        latest frozen version (what published fills serve), and
-                        the question count — all on one line. */}
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-semibold text-foreground">
-                        v{version.versionNumber}
+                    <div className="flex items-center gap-3 mb-1 flex-wrap">
+                      <span className="text-sm font-medium text-muted-foreground">
+                        Q{index + 1}
                       </span>
-                      {isLatest && (
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-accent-teal/15 text-accent-teal">
-                          Live
+                      <h4 className="text-base font-medium text-foreground">
+                        {q.data.label}
+                      </h4>
+                      {q.required && (
+                        <span className={BADGE.accent}>
+                          Required
                         </span>
                       )}
-                      <span className="text-xs text-muted-foreground">
-                        · {version.questions.length}{" "}
-                        {version.questions.length === 1 ? "question" : "questions"}
-                      </span>
                     </div>
-                    {/* Metadata: each on its own full-width line so the
-                        timestamp never wraps mid-value. */}
-                    <div className="mt-2 space-y-1 text-xs text-muted-foreground">
-                      <div className="flex items-center gap-1.5">
-                        <Clock className="w-3 h-3 flex-shrink-0" />
-                        <span className="truncate">{formatDateShort(version.createdAt, tz)}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <UserIcon className="w-3 h-3 flex-shrink-0" />
-                        <span className="truncate">{version.createdByName}</span>
-                      </div>
-                    </div>
-                    {/* Responses are stored per-version — link straight into
-                        the responses page pre-filtered to this version. */}
-                    <Link
-                      to={`/forms/responses/${form.id}?version=${version.versionNumber}`}
-                      onClick={(e) => e.stopPropagation()}
-                      className={buttonClasses(
-                        "secondary",
-                        "sm",
-                        "mt-2 w-full gap-1.5",
-                      )}
-                    >
-                      <Inbox className="w-3.5 h-3.5" />
-                      Responses
-                      <span className="tabular-nums opacity-80">
-                        {version.submissionCount}
-                      </span>
-                    </Link>
-                    {/* An unused version (no responses, no hiring pin) can be
-                        fixed in place or removed — this is how an accidental
-                        "Save as version" gets corrected without accreting dead
-                        versions. Once used, the version freezes and these
-                        disappear. */}
-                    {!version.locked && (
-                      <div className="mt-2 flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            startEditingVersion(version);
-                          }}
-                          className={buttonClasses(
-                            "secondary",
-                            "sm",
-                            "flex-1 gap-1.5",
-                          )}
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                          Edit
-                        </button>
-                        <deleteFetcher.Form
-                          method="post"
-                          onSubmit={confirmSubmit({
-                            title: `Delete v${version.versionNumber}?`,
-                            description:
-                              "This version has no responses yet. Deleting it can't be undone.",
-                            confirmLabel: "Delete",
-                            tone: "destructive",
-                          })}
-                        >
-                          <input type="hidden" name="intent" value="delete-version" />
-                          <input type="hidden" name="id" value={form.id} />
-                          <input type="hidden" name="versionId" value={version.id} />
-                          <Tooltip content="Delete version">
-                            <button
-                              type="submit"
-                              onClick={(e) => e.stopPropagation()}
-                              aria-label="Delete version"
-                              className={buttonClasses("secondary", "sm", "gap-1.5")}
+                    {q.data.description && (
+                      <p className="text-sm text-muted-foreground mb-2">
+                        {q.data.description}
+                      </p>
+                    )}
+                    {(q.type === "select" ||
+                      q.type === "skills_rating" ||
+                      q.type === "checkbox") &&
+                      q.data.options && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {q.data.options.map((opt) => (
+                            <span
+                              key={opt}
+                              className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-os-well text-os-grey border border-os-container"
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </Tooltip>
-                        </deleteFetcher.Form>
-                      </div>
+                              {opt}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    {q.type === "file" && q.data.accept && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Accepts: {q.data.accept}
+                      </p>
                     )}
                   </div>
-                );
-              })}
-            </div>
-          )}
-          {deleteError && (
-            <p className="text-sm text-destructive">{deleteError}</p>
-          )}
-        </div>
-
-        {/* Right: builder or preview */}
-        <div className="flex-1">
-          {isEditing ? (
-            <div className="bg-card rounded-xl border border-border shadow-sm p-6">
-              <div className="mb-6 pb-6 border-b border-border">
-                <h2 className="text-lg font-bold text-foreground">
-                  {editingVersion
-                    ? `Editing v${editingVersion.versionNumber}`
-                    : form.versions.length === 0
-                      ? "Build this form"
-                      : "Edit draft"}
-                </h2>
-                <p className="text-sm text-muted-foreground mt-1">
-                  {editingVersion ? (
-                    <>
-                      No responses yet, so you can fix v
-                      {editingVersion.versionNumber} in place.{" "}
-                      <strong className="font-medium text-foreground">
-                        Save changes
-                      </strong>{" "}
-                      updates this version — it won&apos;t create a new one.
-                    </>
-                  ) : (
-                    <>
-                      <strong className="font-medium text-foreground">Save</strong>{" "}
-                      keeps an editable draft — it isn&apos;t usable yet.{" "}
-                      <strong className="font-medium text-foreground">
-                        Save as version
-                      </strong>{" "}
-                      freezes it as v{nextVersionNumber}; published forms always
-                      serve the latest saved version.
-                    </>
-                  )}
-                </p>
-              </div>
-              <FormBuilderTab
-                // Remount only on a deliberate re-seed (startEditing bumps
-                // editKey), so a draft save's revalidation doesn't blow away
-                // in-progress edits. FormBuilderTab reads its initial* props
-                // only on mount.
-                key={editKey}
-                // Version-edit mode (editingVersion) works against the version's
-                // frozen snapshot, not the shared draft room — skip collab so the
-                // room's draft content can't overwrite the chosen version's questions.
-                formId={editingVersion ? undefined : form.id}
-                collabToken={editingVersion ? null : (collabToken ?? null)}
-                initialQuestions={seed.questions}
-                initialDescription={seed.description}
-                terms={terms}
-                allowCheckbox
-                // Version-edit mode has one primary save (update in place) and
-                // no draft — a draft would re-introduce the two-copy state we're
-                // avoiding. Draft editing keeps both buttons.
-                onSaveDraft={editingVersion ? undefined : handleSaveDraft}
-                onSave={editingVersion ? handleUpdateVersion : handleSaveVersion}
-                saveLabel={editingVersion ? "Save changes" : "Save as version"}
-                saveStatus={saveStatus}
-                onPreview={requestPreview}
-                previewPending={previewResolving}
-                onCancel={
-                  !editingVersion && form.versions.length === 0 && !hasDraft
-                    ? undefined
-                    : () => {
-                        setIsEditing(false);
-                        setEditingVersionId(null);
-                      }
-                }
-              />
-              {saveError && (
-                <p className="mt-3 text-sm text-destructive">{saveError}</p>
-              )}
-            </div>
-          ) : selectedVersion ? (
-            <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-              {/* A saved version is immutable — no edit affordance here. Make a
-                  new version with the header's "New version" button instead. */}
-              <div className="px-6 py-5 border-b border-border bg-muted/50 flex justify-between items-center">
-                <div>
-                  <h2 className="text-lg font-semibold text-foreground">
-                    Version {selectedVersion.versionNumber} · read-only
-                  </h2>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Created by {selectedVersion.createdByName} on{" "}
-                    {formatDateTime(selectedVersion.createdAt, tz)}
-                  </p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    disabled={previewResolving}
-                    onClick={() =>
-                      requestPreview({
-                        questions: selectedVersion.questions,
-                        description: selectedVersion.description,
-                      })
-                    }
-                    className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground/80 hover:text-foreground px-2.5 py-1.5 rounded-md border border-border bg-card hover:bg-muted/50 disabled:opacity-60"
-                  >
-                    {previewResolving ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Eye className="w-3.5 h-3.5" />
-                    )}
-                    Preview
-                  </button>
-                  <Tooltip
-                    content="This version has responses or is pinned by a hiring cycle — it can't be edited. Use New version to branch off a new one."
-                    variant="rich"
-                    placement="top"
-                  >
-                    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground cursor-default">
-                      <Lock className="w-3.5 h-3.5" />
-                      Read-only
-                    </span>
-                  </Tooltip>
-                </div>
-              </div>
-
-              <div className="p-6 space-y-4">
-                {!isEmptyBlocks(selectedVersion.description) && (
-                  <div className="px-4 py-3 rounded-lg border border-border bg-muted/30">
-                    {/* Keyed per version: DocEditor reads initialContent once,
-                        so switching versions must remount it. */}
-                    <DocEditor
-                      key={selectedVersion.id}
-                      features="notes"
-                      density="compact"
-                      editable={false}
-                      initialContent={selectedVersion.description}
-                    />
-                  </div>
-                )}
-                {selectedVersion.questions.map((q, index) => (
-                  <div
-                    key={q.key}
-                    className="flex items-start gap-4 p-4 rounded-xl border border-border bg-card"
-                  >
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-1">
-                        <span className="text-sm font-medium text-muted-foreground">
-                          Q{index + 1}
-                        </span>
-                        <h4 className="text-base font-medium text-foreground">
-                          {q.data.label}
-                        </h4>
-                        {q.required && (
-                          <span className="text-xs font-medium text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
-                            Required
-                          </span>
-                        )}
-                        <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded-full capitalize">
-                          {q.type}
-                        </span>
-                      </div>
-                      {q.data.description && (
-                        <p className="text-sm text-muted-foreground mb-2">
-                          {q.data.description}
-                        </p>
-                      )}
-                      {(q.type === "select" ||
-                        q.type === "skills_rating" ||
-                        q.type === "checkbox") &&
-                        q.data.options && (
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            {q.data.options.map((opt) => (
-                              <span
-                                key={opt}
-                                className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-accent-teal/10 text-accent-teal border border-accent-teal/20"
-                              >
-                                {opt}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      {q.type === "file" && q.data.accept && (
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Accepts: {q.data.accept}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="text-center py-12 bg-card rounded-xl border border-border border-dashed">
-              <FileText className="mx-auto h-12 w-12 text-muted-foreground/70" />
-              <h3 className="mt-2 text-sm font-medium text-foreground">
-                No versions
-              </h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Get started by building this form.
-              </p>
-              <div className="mt-6">
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => startEditing()}
-                >
-                  <Plus className="w-4 h-4" />
-                  Build form
-                </Button>
-              </div>
+                </Tooltip>
+              ))}
             </div>
           )}
         </div>
-      </div>
+      ) : (
+        <div className="max-w-4xl mx-auto text-center py-12 rounded-os-card bg-os-card">
+          <FileText className="mx-auto h-12 w-12 text-muted-foreground/70" />
+          <h3 className="mt-2 text-sm font-medium text-foreground">No versions</h3>
+          <div className="mt-6">
+            <Button variant="primary" size="sm" onClick={() => startEditing()}>
+              <Plus className="w-4 h-4" />
+              Build form
+            </Button>
+          </div>
+        </div>
+      )}
 
       {previewData && (
         <FormPreviewModal
@@ -791,324 +614,219 @@ export function FormDetail() {
   );
 }
 
-// Publish toggle + shareable link. A published form is fillable by logged-in
-// members at /forms/fill/:publicToken; unpublishing 404s that route but keeps
-// the token so re-publishing restores the same link.
-type AudienceValue = "Members" | "SignedIn" | "Groups" | "Public";
-type GroupOption = { id: string; name: string; type: "Static" | "Dynamic" };
-
-const AUDIENCE_OPTIONS: {
-  value: AudienceValue;
-  label: string;
-  description: string;
-}[] = [
-  {
-    value: "Members",
-    label: "Lab members",
-    description: "Signed-in lab members (default).",
-  },
-  {
-    value: "SignedIn",
-    label: "Anyone signed in",
-    description: "Any DALI OS account — members, Dartmouth students, partners.",
-  },
-  {
-    value: "Groups",
-    label: "Specific groups",
-    description: "Signed-in users in at least one selected group.",
-  },
-  {
-    value: "Public",
-    label: "Public",
-    description:
-      "Anyone with the link, no sign-in. Add name/email questions yourself if you need them; submissions record the sender's IP.",
-  },
-];
-
-// Per-form response settings + audience. Toggles submit both boolean values
-// (single idempotent update); audience submits on radio change — except
-// "Specific groups", which waits until at least one group is checked (the
-// server enforces the same rule). Pending fetcher FormData drives optimistic
-// state so changes feel instant and settle to the loader's truth.
-// ISO timestamp → the local wall-time string a datetime-local input expects.
-function toLocalInputValue(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function FormSettingsCard({
+// The clock button: the draft, every saved version (newest first) with its
+// response count, and in-place edit/delete for versions nobody has used yet.
+function FormVersionMenu({
   formId,
-  oneResponsePerMember,
-  notifyOnSubmission,
-  listed,
-  audience,
-  audienceGroupIds,
-  groups,
-  opensAt,
-  closesAt,
+  versions,
+  draftQuestionCount,
+  currentLabel,
+  selectedVersionId,
+  editingDraft,
+  tz,
+  onOpenDraft,
+  onNewVersion,
+  onSelect,
+  onResults,
+  onEdit,
+  deleteFetcher,
+  confirmSubmit,
 }: {
   formId: string;
-  oneResponsePerMember: boolean;
-  notifyOnSubmission: boolean;
-  listed: boolean;
-  audience: AudienceValue;
-  audienceGroupIds: string[];
-  groups: GroupOption[];
-  opensAt: string | null;
-  closesAt: string | null;
+  versions: FormVersion[];
+  draftQuestionCount: number | null;
+  currentLabel: string;
+  selectedVersionId: string | null;
+  editingDraft: boolean;
+  tz: string;
+  onOpenDraft: () => void;
+  onNewVersion: () => void;
+  onSelect: (v: FormVersion) => void;
+  onResults: (v: FormVersion) => void;
+  onEdit: (v: FormVersion) => void;
+  deleteFetcher: ReturnType<typeof useFetcher<{ ok?: boolean; error?: string }>>;
+  confirmSubmit: ReturnType<typeof useConfirmSubmit>;
 }) {
-  const fetcher = useFetcher();
-  const err =
-    fetcher.data && typeof fetcher.data === "object" && "error" in fetcher.data
-      ? String((fetcher.data as { error: unknown }).error)
-      : null;
-
-  const pending = fetcher.formData;
-  const pendingSettings = pending?.get("intent") === "update-form-settings";
-  const oneResponse = pendingSettings
-    ? pending!.get("oneResponsePerMember") === "true"
-    : oneResponsePerMember;
-  const notify = pendingSettings
-    ? pending!.get("notifyOnSubmission") === "true"
-    : notifyOnSubmission;
-  const isListed = pendingSettings
-    ? pending!.get("listed") === "true"
-    : listed;
-
-  // Window edits stage locally and save on the button — datetime inputs fire
-  // change per keystroke in some browsers, so instant-save would spam.
-  const [draftOpensAt, setDraftOpensAt] = useState(() => toLocalInputValue(opensAt));
-  const [draftClosesAt, setDraftClosesAt] = useState(() => toLocalInputValue(closesAt));
-  const windowDirty =
-    draftOpensAt !== toLocalInputValue(opensAt) ||
-    draftClosesAt !== toLocalInputValue(closesAt);
-
-  function saveWindow() {
-    fetcher.submit(
-      {
-        intent: "update-form-window",
-        id: formId,
-        opensAt: draftOpensAt ? new Date(draftOpensAt).toISOString() : "",
-        closesAt: draftClosesAt ? new Date(draftClosesAt).toISOString() : "",
-      },
-      { method: "post" },
+  const { popover } = useOsChrome();
+  const latestId = versions[versions.length - 1]?.id;
+  const rowClass = (active: boolean) =>
+    cn(
+      "w-full text-left px-3 py-2.5 rounded-os-item transition-colors",
+      active ? "bg-os-accent/15" : "hover:bg-os-container",
     );
-  }
-
-  // Audience edits stage locally: picking "Specific groups" with nothing
-  // checked must not submit (the saved audience stays live until a valid
-  // selection exists).
-  const [draftAudience, setDraftAudience] = useState<AudienceValue>(audience);
-  const [groupSel, setGroupSel] = useState<Set<string>>(
-    () => new Set(audienceGroupIds),
-  );
-
-  function saveSettings(
-    nextOneResponse: boolean,
-    nextNotify: boolean,
-    nextListed: boolean,
-  ) {
-    fetcher.submit(
-      {
-        intent: "update-form-settings",
-        id: formId,
-        oneResponsePerMember: String(nextOneResponse),
-        notifyOnSubmission: String(nextNotify),
-        listed: String(nextListed),
-      },
-      { method: "post" },
-    );
-  }
-
-  function saveAudience(nextAudience: AudienceValue, ids: Set<string>) {
-    fetcher.submit(
-      {
-        intent: "update-form-audience",
-        id: formId,
-        audience: nextAudience,
-        groupIds: JSON.stringify([...ids]),
-      },
-      { method: "post" },
-    );
-  }
-
-  function pickAudience(next: AudienceValue) {
-    setDraftAudience(next);
-    if (next !== "Groups") {
-      saveAudience(next, new Set());
-      return;
-    }
-    if (groupSel.size > 0) saveAudience("Groups", groupSel);
-  }
-
-  function toggleGroup(id: string) {
-    const next = new Set(groupSel);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    setGroupSel(next);
-    if (draftAudience === "Groups" && next.size > 0) {
-      saveAudience("Groups", next);
-    }
-  }
-
   return (
-    <div className="mt-3 rounded-lg border border-border bg-card p-4 flex flex-col gap-3">
-      <span className="text-sm font-medium text-foreground">Settings</span>
-      <Checkbox
-        checked={oneResponse}
-        onChange={(e) => saveSettings(e.target.checked, notify, isListed)}
-        label="One response per member"
-        description="Signed-in members can only submit this form once. Doesn't apply to staffing or education fills."
-      />
-      <Checkbox
-        checked={notify}
-        onChange={(e) => saveSettings(oneResponse, e.target.checked, isListed)}
-        label="Notify on submission"
-        description="Get an in-app notification whenever someone submits a response."
-      />
-      <Checkbox
-        checked={isListed}
-        onChange={(e) => saveSettings(oneResponse, notify, e.target.checked)}
-        label="List in Forms for you"
-        description="Show this form on Home for people its audience includes. Unlisted forms are reachable only by link."
-      />
-
-      <div className="border-t border-border pt-3 flex flex-col gap-2">
-        <span className="text-sm font-medium text-foreground">Schedule</span>
-        <span className="text-xs text-muted-foreground">
-          Publishes at open and unpublishes at close, automatically. Leave
-          blank to keep manual control.
-        </span>
-        <label className="flex items-center gap-2 text-sm">
-          <span className="w-14 text-muted-foreground">Opens</span>
-          <DateField
-            mode="datetime-local"
-            value={draftOpensAt}
-            onChange={(value) => setDraftOpensAt(value)}
-            ariaLabel="Opens at"
-          />
-        </label>
-        <label className="flex items-center gap-2 text-sm">
-          <span className="w-14 text-muted-foreground">Closes</span>
-          <DateField
-            mode="datetime-local"
-            value={draftClosesAt}
-            onChange={(value) => setDraftClosesAt(value)}
-            ariaLabel="Closes at"
-          />
-        </label>
-        {windowDirty && (
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={saveWindow}
-            className="self-start"
-          >
-            Save schedule
-          </Button>
-        )}
-      </div>
-
-      <div className="border-t border-border pt-3 flex flex-col gap-2">
-        <span className="text-sm font-medium text-foreground">
-          Who can fill this form
-        </span>
-        {AUDIENCE_OPTIONS.map((opt) => (
-          <Radio
-            key={opt.value}
-            name="form-audience"
-            checked={draftAudience === opt.value}
-            onChange={() => pickAudience(opt.value)}
-            label={opt.label}
-            description={opt.description}
-          />
-        ))}
-
-        {draftAudience === "Groups" && (
-          <div className="ml-6 flex flex-col gap-1.5">
-            {groups.length === 0 ? (
-              <span className="text-xs text-muted-foreground">
-                No groups exist yet — create them in Admin › Groups.
-              </span>
-            ) : (
-              groups.map((g) => (
-                <Checkbox
-                  key={g.id}
-                  checked={groupSel.has(g.id)}
-                  onChange={() => toggleGroup(g.id)}
-                  label={
-                    <>
-                      <span className="text-sm text-foreground truncate">{g.name}</span>
-                      <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full shrink-0">
-                        {g.type}
-                      </span>
-                    </>
-                  }
-                />
-              ))
-            )}
-            {groupSel.size === 0 && (
-              <span className="text-xs text-amber-700">
-                Select at least one group — until then the saved audience stays
-                in effect.
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-
-      {err && <div className="text-destructive text-xs">{err}</div>}
-    </div>
+    <Popover
+      align="right"
+      ariaLabel="Versions"
+      panelClassName={cn(
+        "z-[60] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto overflow-x-hidden p-2 focus:outline-none",
+        popover,
+      )}
+      trigger={
+        <button
+          type="button"
+          className="inline-flex items-center gap-2 h-10 px-3.5 rounded-full text-sm font-semibold text-os-grey hover:bg-os-container hover:text-foreground transition-colors"
+        >
+          <History className="w-5 h-5" />
+          {currentLabel}
+          <ChevronDown className="w-4 h-4" />
+        </button>
+      }
+    >
+      {(close) => (
+        <div className="flex flex-col gap-1">
+          {draftQuestionCount !== null ? (
+            <button
+              type="button"
+              onClick={() => {
+                onOpenDraft();
+                close();
+              }}
+              className={rowClass(editingDraft)}
+            >
+              <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                <Pencil className="w-3.5 h-3.5 text-os-accent" />
+                Draft
+              </div>
+              <div className="text-xs text-os-grey mt-0.5">
+                {draftQuestionCount} {draftQuestionCount === 1 ? "question" : "questions"} · unsaved
+              </div>
+            </button>
+          ) : (
+            versions.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  onNewVersion();
+                  close();
+                }}
+                className={cn(rowClass(false), "flex items-center gap-2 text-sm font-semibold text-foreground")}
+              >
+                <Plus className="w-4 h-4 text-os-accent" />
+                New version
+              </button>
+            )
+          )}
+          {versions.length > 0 && <div className="h-px bg-os-container my-1" />}
+          {versions.length === 0 && (
+            <p className="px-3 py-2 text-sm text-os-grey">No versions yet.</p>
+          )}
+          {[...versions].reverse().map((v) => (
+            <div key={v.id} className={cn(rowClass(v.id === selectedVersionId), "group")}>
+              <button
+                type="button"
+                onClick={() => {
+                  onSelect(v);
+                  close();
+                }}
+                className="w-full text-left"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-foreground">
+                    v{v.versionNumber}
+                  </span>
+                  {v.id === latestId && (
+                    <span className={BADGE.accent}>
+                      Live
+                    </span>
+                  )}
+                  <span className="text-xs text-os-grey">
+                    {v.questions.length} {v.questions.length === 1 ? "question" : "questions"}
+                  </span>
+                </div>
+                <div className="mt-1 flex items-center gap-3 text-xs text-os-grey">
+                  <span className="inline-flex items-center gap-1 min-w-0">
+                    <Clock className="w-3 h-3 shrink-0" />
+                    <span className="truncate">{formatDateShort(v.createdAt, tz)}</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1 min-w-0">
+                    <UserIcon className="w-3 h-3 shrink-0" />
+                    <span className="truncate">{v.createdByName}</span>
+                  </span>
+                </div>
+              </button>
+              <div className="mt-2 flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onResults(v);
+                    close();
+                  }}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-os-container text-foreground hover:bg-os-container-hi transition-colors"
+                >
+                  Results
+                  <span className="tabular-nums opacity-70">{v.submissionCount}</span>
+                </button>
+                {/* An unused version (no responses, no hiring pin) can be
+                    fixed in place or removed — this is how an accidental
+                    "Save as version" gets corrected without accreting dead
+                    versions. Once used, the version freezes. */}
+                {!v.locked && (
+                  <>
+                    <Tooltip content="Edit in place">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onEdit(v);
+                          close();
+                        }}
+                        aria-label={`Edit v${v.versionNumber}`}
+                        className="ml-auto p-1.5 rounded-full text-os-grey hover:bg-os-container-hi hover:text-foreground"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                    </Tooltip>
+                    <deleteFetcher.Form
+                      method="post"
+                      onSubmit={confirmSubmit({
+                        title: `Delete v${v.versionNumber}?`,
+                        description:
+                          "This version has no responses yet. Deleting it can't be undone.",
+                        confirmLabel: "Delete",
+                        tone: "destructive",
+                      })}
+                    >
+                      <input type="hidden" name="intent" value="delete-version" />
+                      <input type="hidden" name="id" value={formId} />
+                      <input type="hidden" name="versionId" value={v.id} />
+                      <Tooltip content="Delete version">
+                        <button
+                          type="submit"
+                          aria-label={`Delete v${v.versionNumber}`}
+                          className="p-1.5 rounded-full text-os-grey hover:bg-destructive/10 hover:text-destructive"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </Tooltip>
+                    </deleteFetcher.Form>
+                  </>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Popover>
   );
 }
 
-const PUBLISHED_COPY: Record<AudienceValue, string> = {
-  Members:
-    "The latest version is live - any logged-in member can fill it via the link.",
-  SignedIn:
-    "The latest version is live — anyone signed in to DALI OS can fill it via the link.",
-  Groups:
-    "The latest version is live — members of the selected groups can fill it via the link.",
-  Public:
-    "The latest version is live — anyone with the link can fill it, no sign-in needed.",
-};
-
-function PublishControl({
-  formId,
+// The fill link, next to Publish. A published form is fillable at
+// /forms/fill/:publicToken; unpublishing 404s that route but keeps the token
+// so re-publishing restores the same link.
+function FormShareButton({
   published,
   publicToken,
-  hasVersions,
-  inUse,
-  audience,
 }: {
-  formId: string;
   published: boolean;
   publicToken: string | null;
-  hasVersions: boolean;
-  inUse: boolean;
-  audience: AudienceValue;
 }) {
-  const fetcher = useFetcher();
+  const { popover } = useOsChrome();
   const [copied, setCopied] = useState(false);
-  const busy = fetcher.state !== "idle";
-  const err =
-    fetcher.data && typeof fetcher.data === "object" && "error" in fetcher.data
-      ? String((fetcher.data as { error: unknown }).error)
-      : null;
-
   const publicUrl =
     published && publicToken
       ? `${typeof window !== "undefined" ? window.location.origin : ""}/forms/fill/${publicToken}`
       : null;
 
-  function toggle() {
-    fetcher.submit(
-      { intent: published ? "unpublish-form" : "publish-form", id: formId },
-      { method: "post" },
-    );
-  }
   async function copy() {
     if (!publicUrl) return;
     try {
@@ -1120,159 +838,175 @@ function PublishControl({
     }
   }
 
-  return (
-    <div className="mt-4 rounded-lg border border-border bg-card p-4 flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-2 text-sm">
-          {published ? (
-            <Globe className="w-4 h-4 text-green-600" />
-          ) : (
-            <Lock className="w-4 h-4 text-muted-foreground" />
-          )}
-          <span className="font-medium text-foreground">
-            {published ? "Published" : "Not published"}
-          </span>
-          <span className="text-muted-foreground">
-            {published ? PUBLISHED_COPY[audience] : "Only lab staff can see this form."}
-          </span>
-        </div>
-        <Tooltip
-          content={!published && !hasVersions ? "Save a version first — only versioned forms can be published." : null}
-          variant="rich"
-          placement="top"
-        >
-          <span>
-            <button
-              type="button"
-              onClick={toggle}
-              disabled={busy || (!published && !hasVersions)}
-              className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
-                published
-                  ? "border border-border text-foreground hover:bg-muted/50"
-                  : "bg-accent-coral text-white hover:bg-accent-coral/90"
-              }`}
-            >
-              {busy
-                ? "Saving…"
-                : published
-                  ? "Unpublish"
-                  : "Publish"}
-            </button>
-          </span>
-        </Tooltip>
-      </div>
-
-      {err && (
-        <div className="text-destructive text-xs">{err}</div>
-      )}
-
-      {published && inUse && (
-        <p className="text-xs text-amber-700">
-          This form is in use (see above) — unpublishing hides it from those
-          surfaces until it's re-published.
-        </p>
-      )}
-
-      {publicUrl && (
-        <div className="flex items-center gap-2">
-          <input
-            readOnly
-            value={publicUrl}
-            onFocus={(e) => e.currentTarget.select()}
-            className="flex-1 min-w-0 px-2 py-1.5 text-xs border border-border rounded-md bg-background text-foreground font-mono"
-          />
-          <Tooltip content="Copy link">
-            <button
-              type="button"
-              onClick={copy}
-              aria-label="Copy link"
-              className="inline-flex items-center justify-center p-1.5 text-xs border border-border rounded-md text-foreground hover:bg-muted/50 transition-colors"
-            >
-              {copied ? (
-                <Check className="w-3.5 h-3.5" />
-              ) : (
-                <Copy className="w-3.5 h-3.5" />
-              )}
-            </button>
-          </Tooltip>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Panel showing every hiring cycle this form is linked to, with an Unlink
-// button for cycles still in Draft. Renders nothing when `links` is empty.
-function HiringLinksPanel({ links }: { links: HiringFormLink[] }) {
-  const confirmSubmit = useConfirmSubmit();
-  return (
-    <div className="rounded-lg border border-border bg-card p-4 space-y-3">
-      <h3 className="text-sm font-semibold text-foreground">
-        Linked to hiring
-      </h3>
-      <ul className="space-y-2">
-        {links.map((link) => (
-          <HiringLinkRow key={`${link.linkType}:${link.cycleDomainFormId ?? link.cycleId}`} link={link} confirmSubmit={confirmSubmit} />
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function HiringLinkRow({
-  link,
-  confirmSubmit,
-}: {
-  link: HiringFormLink;
-  confirmSubmit: ReturnType<typeof useConfirmSubmit>;
-}) {
-  const fetcher = useFetcher<{ ok?: true; error?: string }>();
-  const isSubmitting = fetcher.state !== "idle";
-  const responseError =
-    fetcher.data && "error" in fetcher.data ? fetcher.data.error : null;
-
-  return (
-    <li className="flex items-center justify-between gap-3 text-sm">
-      <div className="flex items-center gap-2 min-w-0">
-        <Unlink className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-        <span className="truncate text-foreground">{link.label}</span>
-        {responseError && (
-          <span className="text-xs text-destructive ml-1">{responseError}</span>
-        )}
-      </div>
-      {link.locked ? (
-        <span className="text-xs text-muted-foreground flex-shrink-0">
-          {link.lockReason}
+  if (!publicUrl) {
+    return (
+      <Tooltip content="Publish to get a link">
+        <span>
+          <Button variant="secondary" disabled>
+            <Share2 className="w-4 h-4" />
+            Share
+          </Button>
         </span>
-      ) : (
-        <fetcher.Form
-          method="post"
-          onSubmit={confirmSubmit({
-            title: "Unlink this form?",
-            description: `This will remove the form from "${link.cycleName}". The form itself is kept.`,
-            tone: "destructive",
-            confirmLabel: "Unlink",
-          })}
-        >
-          <input type="hidden" name="intent" value="unlink-hiring-form" />
-          <input type="hidden" name="linkType" value={link.linkType} />
-          <input type="hidden" name="cycleId" value={link.cycleId} />
-          {link.cycleDomainFormId && (
-            <input
-              type="hidden"
-              name="cycleDomainFormId"
-              value={link.cycleDomainFormId}
-            />
-          )}
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="text-xs font-medium text-destructive hover:text-destructive/80 disabled:opacity-50 flex-shrink-0"
-          >
-            {isSubmitting ? "Unlinking…" : "Unlink"}
-          </button>
-        </fetcher.Form>
+      </Tooltip>
+    );
+  }
+
+  return (
+    <Popover
+      align="right"
+      ariaLabel="Share"
+      panelClassName={cn(
+        "z-[60] w-96 max-w-[calc(100vw-2rem)] p-3 os-form focus:outline-none",
+        popover,
       )}
-    </li>
+      trigger={
+        <Button variant="secondary">
+          <Share2 className="w-4 h-4" />
+          Share
+        </Button>
+      }
+    >
+      <div className="flex items-center gap-2">
+        <input
+          type="text"
+          readOnly
+          value={publicUrl}
+          onFocus={(e) => e.currentTarget.select()}
+          className="flex-1 min-w-0 font-mono text-xs"
+          aria-label="Form link"
+        />
+        <Button variant="primary" size="sm" onClick={copy}>
+          {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+          {copied ? "Copied" : "Copy"}
+        </Button>
+      </div>
+    </Popover>
+  );
+}
+
+// Publish. While editing it freezes the builder's edits into a version and
+// publishes them (onPublishEdits); otherwise it publishes the latest version,
+// or unpublishes a published form.
+function PublishButton({
+  formId,
+  published,
+  hasVersions,
+  inUse,
+  onPublishEdits,
+  publishingEdits,
+  editsBusy,
+  editingVersion,
+}: {
+  formId: string;
+  published: boolean;
+  hasVersions: boolean;
+  inUse: boolean;
+  onPublishEdits?: () => void;
+  publishingEdits: boolean;
+  editsBusy: boolean;
+  editingVersion: boolean;
+}) {
+  const fetcher = useFetcher<{ error?: string }>();
+  const dialog = useDialog();
+  const busy = fetcher.state !== "idle";
+  const err = fetcher.data?.error ?? null;
+
+  if (onPublishEdits) {
+    return (
+      <Tooltip
+        content={
+          editingVersion
+            ? "Save this version and make it live at the share link."
+            : "Save your changes as a new version and make it live at the share link."
+        }
+      >
+        <Button variant="primary" onClick={onPublishEdits} disabled={editsBusy}>
+          {publishingEdits ? "Publishing…" : "Publish"}
+        </Button>
+      </Tooltip>
+    );
+  }
+
+  async function toggle() {
+    if (
+      published &&
+      inUse &&
+      !(await dialog.confirm({
+        title: "Unpublish this form?",
+        description:
+          "It's in use elsewhere. Unpublishing hides it there until you publish again.",
+        confirmLabel: "Unpublish",
+      }))
+    ) {
+      return;
+    }
+    fetcher.submit(
+      { intent: published ? "unpublish-form" : "publish-form", id: formId },
+      { method: "post" },
+    );
+  }
+
+  return (
+    <Tooltip
+      content={
+        err ??
+        (published
+          ? "Take the form offline. The link stops working until you publish again."
+          : hasVersions
+            ? "Make the latest version live at the share link."
+            : "Add questions first.")
+      }
+      variant="rich"
+      placement="bottom"
+    >
+      <span>
+        <Button
+          variant={published ? "secondary" : "primary"}
+          onClick={toggle}
+          disabled={busy || (!published && !hasVersions)}
+        >
+          {busy ? "Saving…" : published ? "Unpublish" : "Publish"}
+        </Button>
+      </span>
+    </Tooltip>
+  );
+}
+
+// Inline-editable form title. Saves on blur/Enter; Escape or an empty value
+// reverts to the saved name.
+function FormNameInput({ formId, name }: { formId: string; name: string }) {
+  const fetcher = useFetcher();
+  const [value, setValue] = useState(name);
+  useEffect(() => setValue(name), [name]);
+
+  function commit() {
+    const next = value.trim();
+    if (!next || next === name) {
+      setValue(name);
+      return;
+    }
+    fetcher.submit(
+      { intent: "rename-form", id: formId, name: next },
+      { method: "post" },
+    );
+  }
+
+  return (
+    <input
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") {
+          const el = e.currentTarget;
+          setValue(name);
+          requestAnimationFrame(() => el.blur());
+        }
+      }}
+      maxLength={120}
+      aria-label="Form name"
+      className="w-full px-3 py-1.5 rounded-os-item bg-transparent font-heading text-2xl font-semibold text-foreground outline-none hover:bg-os-container focus:bg-os-container"
+    />
   );
 }

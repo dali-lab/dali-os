@@ -44,6 +44,7 @@ import {
   ClipboardList,
   FileSignature,
   FileText,
+  Shapes,
   Folder,
   Handshake,
   MoreHorizontal,
@@ -345,6 +346,8 @@ function itemIcon(item: DriveItem, size: IconSize = "sm") {
       // Finder icon does (PageIcon is a fixed list-row glyph and ignores size).
       return item.iconEmoji ? (
         <span className={emojiCls}>{item.iconEmoji}</span>
+      ) : item.type === "doc" && item.isWhiteboard ? (
+        <Shapes className={`${cls} text-muted-foreground shrink-0`} />
       ) : (
         <FileText className={`${cls} text-muted-foreground shrink-0`} />
       );

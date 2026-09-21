@@ -548,6 +548,16 @@ input[type="range"] {
 html {
   background-color: var(--color-background);
   color-scheme: light dark;
+  /* Reserve the scrollbar's width even when the page doesn't scroll, so the
+     layout doesn't jump sideways when content height crosses the viewport or
+     a modal locks body scroll. */
+  scrollbar-gutter: stable;
+}
+
+/* The tabbed shell never scrolls its own document (each tab's iframe does), so
+   a reserved gutter there is just an empty strip beside the workspace. */
+html:has([data-tab-workspace]) {
+  scrollbar-gutter: auto;
 }
 
 /* The sidebar shell is dark navy in both color modes. Force a dark scrollbar
@@ -927,6 +937,30 @@ select:not(:disabled) {
      what surrounds it. */
   --os-incomplete-fill:  #ffcf33;
   --os-incomplete-ink:   #33240a;
+
+  /* The domain chips (DomainChips: the project hero, its team cards, a
+     member's profile header). Fourteen hues so a role reads identically
+     wherever it appears — the table that routes a domain to one of them lives
+     in the component; only the colour lives here.
+
+     At the root rather than inside `.os-shell`, for the reason the level
+     plates above give: a custom property set on the shell div beats the
+     mode's value on <html> for everything inside it, so a chip declared there
+     would keep its dark plate on a light page. */
+  --os-role-amber-fill:   #3d3a26;  --os-role-amber-ink:   #e8dd9a;
+  --os-role-teal-fill:    #1f3a37;  --os-role-teal-ink:    #8fd6cb;
+  --os-role-violet-fill:  #31284a;  --os-role-violet-ink:  #c3aef2;
+  --os-role-pink-fill:    #3f2530;  --os-role-pink-ink:    #f2a8bd;
+  --os-role-blue-fill:    #1e3348;  --os-role-blue-ink:    #a2d2fd;
+  --os-role-green-fill:   #263a29;  --os-role-green-ink:   #a6dda6;
+  --os-role-orange-fill:  #43301f;  --os-role-orange-ink:  #f0b98a;
+  --os-role-magenta-fill: #3d2440;  --os-role-magenta-ink: #e2a6ee;
+  --os-role-slate-fill:   #2b3340;  --os-role-slate-ink:   #aec4de;
+  --os-role-cyan-fill:    #193a3f;  --os-role-cyan-ink:    #8fd4e0;
+  --os-role-red-fill:     #3f2424;  --os-role-red-ink:     #f0a5a5;
+  --os-role-lime-fill:    #333d1f;  --os-role-lime-ink:    #cfe08a;
+  --os-role-indigo-fill:  #2a2c4d;  --os-role-indigo-ink:  #b0b4f0;
+  --os-role-sand-fill:    #3a3128;  --os-role-sand-ink:    #ddc3a3;
 }
 
 .os-shell,
@@ -1120,6 +1154,26 @@ html.light,
   --os-status-cancelled-edge:  #a9b9c9;
 
   --os-danger-ink:       #c0362f;
+
+  /* The domain chips invert rather than darken: on paper the plate is a pale
+     wash of the hue and the ink is a deep shade of the same one. Carrying the
+     dark fills over was what made a row of domains read as black slabs on a
+     white card — they are the loudest thing on the project hero and they are
+     not meant to be. */
+  --os-role-amber-fill:   #f7edc2;  --os-role-amber-ink:   #5a4a0c;
+  --os-role-teal-fill:    #cdeae5;  --os-role-teal-ink:    #0d4f48;
+  --os-role-violet-fill:  #e6ddfa;  --os-role-violet-ink:  #45307d;
+  --os-role-pink-fill:    #fbdde5;  --os-role-pink-ink:    #7a2740;
+  --os-role-blue-fill:    #d6e8fb;  --os-role-blue-ink:    #17456e;
+  --os-role-green-fill:   #d8eed8;  --os-role-green-ink:   #1f5a2a;
+  --os-role-orange-fill:  #fbe2cd;  --os-role-orange-ink:  #7a4213;
+  --os-role-magenta-fill: #f6dcfa;  --os-role-magenta-ink: #6b2a77;
+  --os-role-slate-fill:   #dde5ef;  --os-role-slate-ink:   #3a4c60;
+  --os-role-cyan-fill:    #d0eaf0;  --os-role-cyan-ink:    #0c4c57;
+  --os-role-red-fill:     #fbdcdc;  --os-role-red-ink:     #7d2222;
+  --os-role-lime-fill:    #e8f2c8;  --os-role-lime-ink:    #4d5a12;
+  --os-role-indigo-fill:  #dfe0fb;  --os-role-indigo-ink:  #33377f;
+  --os-role-sand-fill:    #f0e4d3;  --os-role-sand-ink:    #5f4726;
 }
 
 /* The nav is a plane, and on paper a plane wants an edge. In dark the tone

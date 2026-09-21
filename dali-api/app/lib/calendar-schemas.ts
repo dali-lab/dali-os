@@ -232,6 +232,26 @@ export const AddMeetingNoteSchema = z.object({
     .optional(),
 });
 
+// Post-hoc "Add whiteboard" — the whiteboard counterpart of AddMeetingNoteSchema.
+// The type fields are optional: a meeting that already has a note/type reuses it
+// (the board files alongside), so the modal only sends them for a note-less
+// meeting. The action re-checks the caller may file it and gates on the flag.
+export const AddMeetingWhiteboardSchema = z.object({
+  intent: z.literal("add-meeting-whiteboard"),
+  meetingId: z.string().min(1),
+  meetingType: z.enum(["Team", "Partner", "Other"]).optional(),
+  meetingTypeLabel: z.string().optional(),
+  projectId: z.string().optional(),
+  noteLocation: z
+    .object({
+      workspaceType: z.enum(["Lab", "Project"]),
+      workspaceId: z.string().nullable(),
+      parentPageId: z.string().nullable(),
+    })
+    .nullable()
+    .optional(),
+});
+
 // "Mirror my timesheet to Google" opt-in toggle (Calendars panel). Persists the
 // flag on UserAvailabilitySettings and, on enable, lazily provisions the DALI
 // Timesheet Google calendar (see timesheet-mirror.server.ts).
@@ -270,6 +290,7 @@ export const CalendarActionSchema = z.discriminatedUnion("intent", [
   ToggleMeetingTimeEntrySchema,
   SetMeetingCoreSchema,
   AddMeetingNoteSchema,
+  AddMeetingWhiteboardSchema,
   SetTimesheetSyncSchema,
   TrackEventAsMeetingSchema,
 ]);

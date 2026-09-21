@@ -11,17 +11,17 @@ import {
 
 export const meta: Route.MetaFunction = () => [{ title: "Fellowship · DALI OS" }];
 
-// The *internal* applicant portal for Fellowship cycles. Lives under the
+// The *internal* applicant portal for Interns (Fellowship) cycles. Lives under the
 // authenticated app layout (Google OAuth member session), intentionally not
 // reachable from the CAS-authed /portal flow (that flow exists for external
 // applicants). Loader/action logic is shared with Core via
 // internal-cycle-portal.server.ts.
-export async function loader({ request }: Route.LoaderArgs) {
-  return loadInternalCyclePortal(request, "Fellowship");
+export async function loader({ request, params }: Route.LoaderArgs) {
+  return loadInternalCyclePortal(request, "Interns", params.cycleId);
 }
 
-export async function action({ request }: Route.ActionArgs) {
-  return handleInternalCyclePortalAction(request, "Fellowship");
+export async function action({ request, params }: Route.ActionArgs) {
+  return handleInternalCyclePortalAction(request, "Interns", params.cycleId);
 }
 
 const COPY: PortalCopy = {
@@ -30,6 +30,7 @@ const COPY: PortalCopy = {
   notEligible:
     "Fellowship applications are only open to members currently in an intern-program domain (ERAS, EEJUST, WISP) during an active term.",
   noActiveCycleTitle: "No open fellowship cycle",
+  chooseCycleTitle: "Pick a fellowship cycle",
   noActiveCycleBody:
     "There's no fellowship application cycle open right now. The hiring leads will let interns know when one opens.",
   submittedBody:

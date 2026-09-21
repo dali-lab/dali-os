@@ -188,6 +188,11 @@ export type RsvpStatus = "Accepted" | "Declined" | "Tentative" | "Pending";
 export type EventMeetingDTO = {
   meetingId: string;
   notePageId: string | null;
+  /** The meeting's linked whiteboard, when it has one (whiteboard flag). */
+  whiteboardPageId: string | null;
+  /** The meeting already records a type (e.g. it has a note): an added
+   *  whiteboard reuses it and skips the About/type step. */
+  hasType: boolean;
   /** Whether the viewer already has a TimeEntry for this meeting. */
   onTimesheet: boolean;
   isCoreMeeting: boolean;
@@ -197,6 +202,12 @@ export type EventMeetingDTO = {
    *  that doesn't have one yet — gates the popover's "Add meeting notes"
    *  affordance. Moot once `notePageId` is set. */
   canAddNote: boolean;
+  /** Same authority as canAddNote, for the "Add whiteboard" affordance. Moot
+   *  once `whiteboardPageId` is set. Rendering is also gated on the flag. */
+  canAddWhiteboard: boolean;
+  /** Whether the viewer (organizer or Core) may invite more people to the
+   *  meeting — including after it has happened. Gates the popover's "Invite". */
+  canInvite: boolean;
   /** Route the toggles post to. Unset means the current route, which is right
    *  on the calendar page; a page that shows the same popover without owning
    *  the calendar action (the Core hub) names "/calendar" here. */
@@ -345,6 +356,12 @@ export type EventBlock = {
   bgColor?: string;
   /** Border color class for the outer wrapper (defaults to matching the body). */
   borderClassName?: string;
+  /** The viewer is a guest here and hasn't answered yet. Drawn hollow — border
+   *  and theme ink, no fill — the way Google Calendar marks an invitation you
+   *  haven't accepted, declined or marked maybe. Kept separate from `rsvp`,
+   *  which exists to *write* an answer back and so is only set where there's a
+   *  control to write it with. */
+  unanswered?: boolean;
   /** Background tint for the buffer strip + frame (e.g. "bg-accent-coral/25"). */
   bufferClassName?: string;
   /** Hours of buffer above the event body. */
@@ -393,7 +410,11 @@ export type EventBlock = {
    *  work, the role accent shown ON the block — a right-edge stripe in the role
    *  colour + "logged Nh" — instead of drawing a duplicate logged-time block on
    *  top of it. `color` is a CSS colour (the role palette's `dot`). */
-  loggedAccent?: { color: string; hours: number };
+  loggedAccent?: { color: string; hours: number; incomplete?: boolean };
+  /** Timesheet only: this block's logged time can't be submitted as it stands —
+   *  no role to bill it to, or no note saying what the work was. Draws a "!"
+   *  badge on the block; the string is the reason ("Missing a role"). */
+  issue?: string;
   /** Set when this block is a DALI meeting: the detail popover adds its
    *  meeting page, its notes doc, and the per-viewer timesheet / Core toggles. */
   meeting?: EventMeetingDTO;

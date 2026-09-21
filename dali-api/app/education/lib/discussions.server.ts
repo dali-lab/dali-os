@@ -65,7 +65,7 @@ export async function createPost(args: {
   parentId?: string | null;
 }): Promise<PostResult> {
   const body = args.body.trim();
-  if (!body) return { error: "Post text is required", status: 400 };
+  if (!body) return { error: "Your post can't be empty.", status: 400 };
 
   if (args.parentId) {
     const parent = await prisma.educationDiscussionPost.findUnique({
@@ -73,7 +73,7 @@ export async function createPost(args: {
       select: { offeringId: true, parentId: true },
     });
     if (!parent || parent.offeringId !== args.offeringId)
-      return { error: "Thread not found", status: 404 };
+      return { error: "Post not found", status: 404 };
     // One reply level: replying to a reply is rejected here so the data
     // shape stays predictable.
     if (parent.parentId !== null)
@@ -160,6 +160,18 @@ export async function runDiscussionAction(
       return Response.json({ error: result.error }, { status: result.status });
     return { ok: true };
   }
+  if (intent === "delete-announcement") {
+    const { deleteAnnouncement } = await import("./announcements.server");
+    const result = await deleteAnnouncement({
+      postId: String(formData.get("postId") ?? ""),
+      offeringId: ctx.offeringId,
+      actorId: ctx.userId,
+      isManager: ctx.isManager,
+    });
+    if ("error" in result)
+      return Response.json({ error: result.error }, { status: result.status });
+    return { ok: true };
+  }
   if (intent === "post-discussion") {
     const result = await createPost({
       offeringId: ctx.offeringId,
@@ -230,7 +242,7 @@ async function notifyDiscussionPost(args: {
     message: {
       title: args.parentId
         ? `New reply in ${offering.title}`
-        : `New discussion post in ${offering.title}`,
+        : `New post in ${offering.title}`,
       body: preview,
     },
     recipients: users.map((u) => ({

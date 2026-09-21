@@ -75,6 +75,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         workspaceId: offeringId,
         title: body.title,
         folderPageId: null,
+        sessionId: body.sessionId ?? null,
       },
       select: { id: true },
     });

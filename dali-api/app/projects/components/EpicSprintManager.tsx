@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useRevalidator } from "react-router";
-import { Select, Tooltip, InfoTip } from "~/components/ui/floating";
+import { Select, MultiSelect, Tooltip, InfoTip } from "~/components/ui/floating";
 import {
   X,
   Trash2,
@@ -12,6 +12,8 @@ import {
   Calendar,
   GanttChart,
   List,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { Checkbox } from "~/components/ui/Checkbox";
@@ -28,8 +30,11 @@ import {
   type TimelineEpic,
   type TimelineTerm,
   type StoryDependencyEdge,
+  type EpicDependencyEdge,
+  type TaskDependencyEdge,
 } from "./EpicsTimeline";
 import { EpicList } from "./EpicList";
+import { DependencyLinks, type DependencyLink } from "./DependencyLinks";
 
 // MoSCoW priority for a product requirement (story). Null = unset.
 export type StoryPriority = "Must" | "Should" | "Could" | "Wont";
@@ -63,18 +68,17 @@ export type EditableEpic = {
   // these over sprint-derived dates.
   startsAt: string | null;
   endsAt: string | null;
-  // Optional target term for cross-term epics — a planning signal ("we intend
-  // to land this in 26F"), not a hard scope. Null when unset. The board's term
-  // filter treats it as one of the terms an epic counts toward.
-  targetTermId: string | null;
   // Collab-doc reference for the epic's rich description (Notion-style),
   // same pattern as the project Overview/PRD pages. Null when none attached.
   descriptionDocId: string | null;
+  // Ids of epics this one waits for, edited in the epic detail modal and drawn
+  // as arrows between epic bars on the timeline.
+  dependsOn: string[];
   // User stories under this epic, ordered by position.
   stories: EditableStory[];
 };
 
-// A term the project runs, for the epic target-term picker. Newest first.
+// A term option for the list view's term filter. Newest first.
 export type EpicTermOption = { id: string; code: string };
 
 const EPIC_STATUSES = ["Backlog", "Open", "InProgress", "Done", "Cancelled"] as const;
@@ -105,8 +109,8 @@ const STORY_PRIORITY_TONE: Record<StoryPriority, string> = {
 type Props = {
   projectId: string;
   epics: EditableEpic[];
-  // The project's planned terms (newest first) — options for an epic's
-  // optional target term. Empty hides the picker.
+  // Terms the project's work falls in (newest first) — the list view's term
+  // filter options.
   terms: EpicTermOption[];
   canManage: boolean;
   // Hocuspocus WebSocket auth token; userName labels the presence cursor.
@@ -119,11 +123,14 @@ type Props = {
   timelineEpics?: TimelineEpic[];
   // Story dependency edges, drawn as arrows between story bars on the timeline.
   storyDependencies?: StoryDependencyEdge[];
+  // The same, one level up — arrows between epic bars.
+  epicDependencies?: EpicDependencyEdge[];
+  // And one level down — arrows between task bars.
+  taskDependencies?: TaskDependencyEdge[];
   // Project terms (oldest first) anchoring the timeline's one-week sprint grid.
   timelineTerms?: TimelineTerm[];
-  // Terms each epic counts toward, keyed by epic id — the same footprint the
-  // board's term filter uses (sprint terms ∪ span overlap ∪ target term),
-  // derived in the loader. Drives the list view's term filter.
+  // Terms each epic counts toward, keyed by epic id — the same date-derived
+  // footprint the board's term filter uses, computed in the loader. Drives the list view's term filter.
   epicTermIds?: Record<string, string[]>;
   // The term "now" falls in, when the project runs it. The list view opens on
   // it; null falls back to all terms.
@@ -198,6 +205,8 @@ export function EpicSprintManager({
   userName,
   timelineEpics = [],
   storyDependencies = [],
+  epicDependencies = [],
+  taskDependencies = [],
   timelineTerms = [],
   epicTermIds,
   currentTermId,
@@ -217,6 +226,10 @@ export function EpicSprintManager({
   // Timeline or outline. The two show the same tree; the grid places it in
   // time, the list folds it up so an epic's stories and tasks read at a glance.
   const [view, setView] = useState<EpicView>("timeline");
+  // Fullscreen belongs to the timeline alone: the grid is the one view here
+  // wide enough to be worth the whole viewport, and the outline already reads
+  // fine in the page's column. Switching views drops it (effect below).
+  const [fullscreen, setFullscreen] = useState(false);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   // Second level of the Add menu: "User story" has to be told which epic it
   // belongs to, so picking it lists the epics rather than guessing one.
@@ -226,6 +239,36 @@ export function EpicSprintManager({
   const [openEpicId, setOpenEpicId] = useState<string | null>(null);
   // Which epic to open with its new-story form already up (Add ▸ User story).
   const [autoNewStoryEpicId, setAutoNewStoryEpicId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (view !== "timeline") setFullscreen(false);
+  }, [view]);
+
+  // Escape leaves fullscreen. A modal over the timeline gets the key first —
+  // both handlers sit on `document`, so the modal's stopPropagation never
+  // reaches this one and Escape would otherwise close the modal and drop
+  // fullscreen in the same press.
+  const modalOpen = newEpicOpen || openEpicId != null;
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !modalOpen) setFullscreen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [fullscreen, modalOpen]);
+
+  // Freeze the page under the overlay so a scroll that falls off the grid
+  // doesn't move it. Kept apart from the key handler above: this has to latch
+  // the pre-fullscreen value once, not re-latch whatever a modal left behind.
+  useEffect(() => {
+    if (!fullscreen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [fullscreen]);
 
   useEffect(() => {
     if (!addMenuOpen) return;
@@ -256,6 +299,12 @@ export function EpicSprintManager({
       epics.flatMap((e) =>
         e.stories.map((st) => ({ id: st.id, name: `${e.title} · ${st.title}` })),
       ),
+    [epics],
+  );
+
+  // The same list one level up, for the epic's own "depends on".
+  const allEpicOptions = useMemo(
+    () => epics.map((e) => ({ id: e.id, name: e.title })),
     [epics],
   );
 
@@ -359,6 +408,27 @@ export function EpicSprintManager({
         >
           <Pencil className="h-[15px] w-[15px]" aria-hidden />
           {editMode ? "Done" : "Edit"}
+        </button>
+      )}
+
+      {view === "timeline" && (
+        <button
+          type="button"
+          className="os-edit-btn"
+          aria-pressed={fullscreen}
+          onClick={() => setFullscreen((v) => !v)}
+          title={
+            fullscreen
+              ? "Exit fullscreen (Esc)"
+              : "Fill the screen with the timeline"
+          }
+        >
+          {fullscreen ? (
+            <Minimize2 className="h-[15px] w-[15px]" aria-hidden />
+          ) : (
+            <Maximize2 className="h-[15px] w-[15px]" aria-hidden />
+          )}
+          {fullscreen ? "Exit" : "Fullscreen"}
         </button>
       )}
 
@@ -492,7 +562,6 @@ export function EpicSprintManager({
         </div>
         <EpicForm
           busy={busy}
-          terms={terms}
           onCancel={() => setNewEpicOpen(false)}
           onSubmit={(values) =>
             run(async () => {
@@ -525,7 +594,9 @@ export function EpicSprintManager({
             epic={activeEpic}
             autoNewStory={autoNewStoryEpicId === activeEpic.id}
             storyOptions={allStoryOptions}
-            terms={terms}
+            epicOptions={allEpicOptions}
+            allEpics={epics}
+            onOpenEpic={openEpic}
             timelineTerms={timelineTerms}
             canManage={canManage}
             busy={busy}
@@ -547,23 +618,39 @@ export function EpicSprintManager({
           The Edit/New controls (os) and the classic "+ Add epic" button ride in
           the timeline's own header row, right of the level legend. */}
       {view === "timeline" ? (
-        <EpicsTimeline
-          epics={timelineEpics}
-          terms={timelineTerms}
-          storyDependencies={storyDependencies}
-          actions={progressActions}
-          editMode={editMode}
-          onReschedule={canManage ? reschedule : undefined}
-          onEpicClick={canManage ? (id) => openEpic(id) : undefined}
-          onStoryClick={canManage ? (epicId) => openEpic(epicId) : undefined}
-          onTaskClick={onTaskClick}
-        />
+        // Fullscreen keeps the same timeline mounted inside a fixed shell, so
+        // the legend toggles, scroll position and any drag in flight survive
+        // the switch. Below the Modals' z-50 on purpose: an epic opened from a
+        // fullscreen bar still draws over the grid.
+        <div
+          className={cn(
+            fullscreen && "fixed inset-0 z-40 flex flex-col bg-background p-4 sm:p-6",
+          )}
+        >
+          <EpicsTimeline
+            epics={timelineEpics}
+            terms={timelineTerms}
+            storyDependencies={storyDependencies}
+            epicDependencies={epicDependencies}
+            taskDependencies={taskDependencies}
+            actions={progressActions}
+            editMode={editMode}
+            fillHeight={fullscreen}
+            onReschedule={canManage ? reschedule : undefined}
+            onEpicClick={canManage ? (id) => openEpic(id) : undefined}
+            onStoryClick={canManage ? (epicId) => openEpic(epicId) : undefined}
+            onTaskClick={onTaskClick}
+          />
+        </div>
       ) : (
         <EpicList
           epics={timelineEpics}
           terms={terms}
           epicTermIds={epicTermIds}
           currentTermId={currentTermId}
+          epicDependencies={epicDependencies}
+          storyDependencies={storyDependencies}
+          taskDependencies={taskDependencies}
           actions={progressActions}
           onEpicClick={canManage ? (id) => openEpic(id) : undefined}
           onStoryClick={canManage ? (epicId) => openEpic(epicId) : undefined}
@@ -579,7 +666,9 @@ export function EpicDetail({
   epic,
   autoNewStory = false,
   storyOptions,
-  terms,
+  epicOptions,
+  allEpics,
+  onOpenEpic,
   timelineTerms,
   canManage,
   busy,
@@ -597,7 +686,15 @@ export function EpicDetail({
   // Every story in the project except the one being edited — "depends on"
   // targets. Cross-epic edges are allowed, same as sprint dependencies.
   storyOptions: { id: string; name: string }[];
-  terms: EpicTermOption[];
+  // Every epic in the project, as targets for this epic's own "depends on".
+  // This epic is filtered out where it's offered — a self-edge is rejected.
+  epicOptions: { id: string; name: string }[];
+  // Every epic in the project, for the reverse "Blocks" edges and whether a
+  // dependency is still open. Omitted where planning edges aren't shown (the
+  // partner hub), which hides the dependency rows entirely.
+  allEpics?: EditableEpic[];
+  // Opens another epic from a dependency link.
+  onOpenEpic?: (epicId: string) => void;
   // Term spans, oldest first — the anchor for the fixed one-week sprint grid
   // this modal reads the epic's sprints off.
   timelineTerms: TimelineTerm[];
@@ -687,6 +784,36 @@ export function EpicDetail({
   // There is no modal-level edit mode: a manager can add a story, rename the
   // epic, or open the details form straight from the read view.
   const canEditContent = canManage;
+
+  // Both directions of each edge, with whether the other end is unfinished.
+  const deps = useMemo(() => {
+    if (!allEpics) return null;
+    const epicLink = (e: EditableEpic): DependencyLink => ({
+      id: e.id,
+      label: e.title,
+      open: e.status !== "Done" && e.status !== "Cancelled",
+    });
+    const stories = allEpics.flatMap((e) =>
+      e.stories.map((st) => ({ epic: e, story: st })),
+    );
+    const storyLink = ({ epic: e, story: st }: (typeof stories)[number]): DependencyLink => ({
+      id: st.id,
+      label: e.id === epic.id ? st.title : `${e.title} · ${st.title}`,
+      open: st.status !== "Done",
+    });
+    const storyById = new Map(stories.map((x) => [x.story.id, x]));
+    return {
+      blockedBy: allEpics.filter((e) => epic.dependsOn.includes(e.id)).map(epicLink),
+      blocks: allEpics.filter((e) => e.dependsOn.includes(epic.id)).map(epicLink),
+      storyBlockedBy: (st: EditableStory) =>
+        st.dependsOn.flatMap((id) => {
+          const x = storyById.get(id);
+          return x ? [storyLink(x)] : [];
+        }),
+      storyBlocks: (st: EditableStory) =>
+        stories.filter((x) => x.story.dependsOn.includes(st.id)).map(storyLink),
+    };
+  }, [allEpics, epic.id, epic.dependsOn]);
 
   // Which fixed weeks this epic runs through — derived from its dates against
   // the same term-anchored grid the timeline's sprint bands use, so the modal
@@ -794,27 +921,6 @@ export function EpicDetail({
             <span className="text-sm text-foreground">{epic.status}</span>
           )}
           </div>
-          {terms.length > 0 && (
-            <div className="os-field-group">
-              <span className="os-field-label">Target term</span>
-          {canManage ? (
-            <Select
-              value={epic.targetTermId ?? ""}
-              onChange={(value) => void saveEpic({ targetTermId: value || null })}
-              placeholder="No target term"
-              options={[
-                { value: "", label: "No target term" },
-                ...terms.map((t) => ({ value: t.id, label: t.code })),
-              ]}
-              buttonClassName={EPIC_FIELD}
-            />
-          ) : (
-            <span className="text-sm text-foreground">
-              {terms.find((t) => t.id === epic.targetTermId)?.code ?? "—"}
-            </span>
-          )}
-            </div>
-          )}
         </div>
         <div className="os-field-row">
           <div className="os-field-group">
@@ -856,6 +962,35 @@ export function EpicDetail({
           )}
           </div>
         </div>
+        {/* Which other epics this one waits on, and which wait on it.
+            Advisory, like the story-level edge: it draws an arrow on the
+            timeline rather than moving dates or blocking a status change. */}
+        {deps && (
+          <div className="os-field-row">
+            <div className="os-field-group">
+              <span className="os-field-label">Blocked by</span>
+              {canManage ? (
+                <MultiSelect
+                  values={epic.dependsOn}
+                  options={epicOptions
+                    .filter((o) => o.id !== epic.id)
+                    .map((o) => ({ value: o.id, label: o.name }))}
+                  onChange={(next) => void saveEpic({ dependsOn: next })}
+                  ariaLabel="Epics this one waits on"
+                  placeholder="Nothing"
+                  emptyLabel="No other epics in this project"
+                  buttonClassName={EPIC_FIELD}
+                />
+              ) : (
+                <DependencyLinks items={deps.blockedBy} onSelect={onOpenEpic} />
+              )}
+            </div>
+            <div className="os-field-group">
+              <span className="os-field-label">Blocks</span>
+              <DependencyLinks items={deps.blocks} onSelect={onOpenEpic} />
+            </div>
+          </div>
+        )}
         {/* Not a picker. A sprint is a fixed week, so the weeks an epic runs
             through are already settled by the two dates above — these state
             them rather than asking again. */}
@@ -1021,6 +1156,11 @@ export function EpicDetail({
                         </Tooltip>
                       )}
                       <span className="truncate">{story.title}</span>
+                      {deps && deps.storyBlockedBy(story).some((d) => d.open) && (
+                        <span className="flex-shrink-0 rounded-full bg-os-amber/15 px-1.5 py-0.5 text-[11px] font-semibold text-os-amber">
+                          Blocked
+                        </span>
+                      )}
                     </button>
                   </Tooltip>
                   {canEditContent && (
@@ -1068,6 +1208,7 @@ export function EpicDetail({
                       busy={busy}
                       initial={story}
                       storyOptions={storyOptions.filter((o) => o.id !== story.id)}
+                      blocks={deps?.storyBlocks(story)}
                       onCancel={() => setEditStoryId(null)}
                       onSubmit={(values) =>
                         run(async () => {
@@ -1095,16 +1236,13 @@ export function EpicDetail({
 // screen. It stays a submit form because there's no epic to PATCH into yet.
 function EpicForm({
   busy,
-  terms,
   onSubmit,
   onCancel,
 }: {
   busy: boolean;
-  terms: EpicTermOption[];
   onSubmit: (values: {
     title: string;
     status: string;
-    targetTermId: string | null;
     startsAt: string | null;
     endsAt: string | null;
   }) => void;
@@ -1112,7 +1250,6 @@ function EpicForm({
 }) {
   const [title, setTitle] = useState("");
   const [status, setStatus] = useState<EditableEpic["status"]>("Open");
-  const [targetTermId, setTargetTermId] = useState("");
   const [startsAt, setStartsAt] = useState("");
   const [endsAt, setEndsAt] = useState("");
 
@@ -1123,18 +1260,6 @@ function EpicForm({
       value={status}
       onChange={(value) => setStatus(value as EditableEpic["status"])}
       options={EPIC_STATUSES.map((st) => ({ value: st, label: st }))}
-      buttonClassName={EPIC_FIELD}
-    />
-  );
-  const termField = (
-    <Select
-      value={targetTermId}
-      onChange={(value) => setTargetTermId(value)}
-      placeholder="No target term"
-      options={[
-        { value: "", label: "No target term" },
-        ...terms.map((t) => ({ value: t.id, label: t.code })),
-      ]}
       buttonClassName={EPIC_FIELD}
     />
   );
@@ -1162,8 +1287,6 @@ function EpicForm({
         onSubmit({
           title,
           status,
-          // Empty → null clears the target term.
-          targetTermId: targetTermId || null,
           // Dates are optional for epics; empty → null clears the field.
           startsAt: startsAt ? new Date(startsAt).toISOString() : null,
           endsAt: endsAt ? new Date(endsAt).toISOString() : null,
@@ -1196,12 +1319,6 @@ function EpicForm({
             <span className="os-field-label">Status</span>
             {statusField}
           </div>
-          {terms.length > 0 && (
-            <div className="os-field-group">
-              <span className="os-field-label">Target term</span>
-              {termField}
-            </div>
-          )}
         </div>
         <div className="os-field-row">
           <div className="os-field-group">
@@ -1236,66 +1353,13 @@ function EpicForm({
   );
 }
 
-// Multi-select "waits for" picker for the story form. Checkbox list so several
-// can be picked; closes on outside click.
-function DependsOnField({
-  options,
-  value,
-  onChange,
-  noun,
-}: {
-  options: { id: string; name: string }[];
-  value: string[];
-  onChange: (next: string[]) => void;
-  // Singular label for the summary line ("2 sprints", "1 story").
-  noun: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
-  const toggle = (id: string) =>
-    onChange(value.includes(id) ? value.filter((v) => v !== id) : [...value, id]);
-  return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="min-w-[120px] rounded-md border border-border bg-background px-2 py-1.5 text-left text-sm text-foreground"
-      >
-        {value.length === 0
-          ? "None"
-          : `${value.length} ${noun}${value.length === 1 ? "" : "s"}`}
-      </button>
-      {open && (
-        <div className="absolute z-20 mt-1 max-h-48 w-56 overflow-y-auto rounded-md border border-border bg-card p-1 shadow-brand-2">
-          {options.map((s) => (
-            <Checkbox
-              key={s.id}
-              checked={value.includes(s.id)}
-              onChange={() => toggle(s.id)}
-              label={<span className="truncate">{s.name}</span>}
-              className="rounded px-2 py-1 text-sm hover:bg-muted"
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 const STORY_STATUSES = ["Todo", "InProgress", "Done"] as const;
 
 function StoryForm({
   initial,
   busy,
   storyOptions = [],
+  blocks,
   onSubmit,
   onCancel,
 }: {
@@ -1304,6 +1368,8 @@ function StoryForm({
   // Other stories in the project, as "depends on" targets. Empty on create —
   // dependencies are added once the story exists.
   storyOptions?: { id: string; name: string }[];
+  // Stories waiting on this one (the reverse edge), shown read-only.
+  blocks?: DependencyLink[];
   onSubmit: (values: {
     title: string;
     notes: string | null;
@@ -1387,6 +1453,11 @@ function StoryForm({
       className="w-full"
     />
   );
+  // Only an existing story can point at siblings, and it must not point at
+  // itself — the route rejects a self-edge, so it's never offered.
+  const dependsOnOptions = storyOptions
+    .filter((o) => o.id !== initial?.id)
+    .map((o) => ({ value: o.id, label: o.name }));
 
   return (
     <form
@@ -1438,6 +1509,30 @@ function StoryForm({
           <span>Labels</span>
           {categoryField}
         </label>
+        {/* Only offered once the story exists: the create route ignores
+            `dependsOn`, so a picker there would silently drop what was set. */}
+        {initial && (
+          <div className="os-field-row">
+            <div className="os-field-group">
+              <span>Blocked by</span>
+              <MultiSelect
+                values={dependsOn}
+                options={dependsOnOptions}
+                onChange={setDependsOn}
+                ariaLabel="Stories this one waits on"
+                placeholder="Nothing"
+                emptyLabel="No other stories in this project"
+                buttonClassName={EPIC_FIELD}
+              />
+            </div>
+            {blocks && (
+              <div className="os-field-group">
+                <span>Blocks</span>
+                <DependencyLinks items={blocks} />
+              </div>
+            )}
+          </div>
+        )}
         <label className="os-field-group">
           <span>Description</span>
           {notesField}

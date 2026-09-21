@@ -1,3 +1,4 @@
+import { redirect } from "react-router";
 import { prisma } from "~/lib/db";
 import { requireAuth, forbidden, redirectApplicantToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -56,7 +57,15 @@ import {
   generalCalendarState,
 } from "~/lib/general-calendar";
 import { publishNotificationChange } from "~/lib/notify-stream.server";
-import { attachMeetingNote, trackExternalEventAsMeeting } from "~/lib/scheduled-meeting";
+import {
+  attachMeetingNote,
+  attachMeetingWhiteboard,
+  cancelScheduledMeeting,
+  trackExternalEventAsMeeting,
+  updateScheduledMeeting,
+  type ScheduledMeetingScope,
+} from "~/lib/scheduled-meeting";
+import { rruleWithUntil, bareRrule } from "~/lib/meeting-occurrences";
 import { getZonedYMD, resolveUserTimeZone, zonedDayStartUtc } from "~/lib/timezone";
 import { fetchWindow, parseAnchor, parseView, viewWindow, weekWindow } from "~/calendar/lib/view-window";
 import type {
@@ -178,22 +187,29 @@ async function meetingsForExternalEvents(
       organizerId: true,
       externalEventId: true,
       isCoreMeeting: true,
+      meetingType: true,
       notePage: { select: { id: true } },
+      whiteboardPage: { select: { id: true } },
       timeEntries: { where: { userId }, select: { id: true }, take: 1 },
     },
   });
   const byExternalId = new Map<string, EventMeetingDTO>();
   for (const m of meetings) {
     if (!m.externalEventId) continue;
+    const isOrganizer = m.organizerId === userId;
     byExternalId.set(m.externalEventId, {
       meetingId: m.id,
       notePageId: m.notePage?.id ?? null,
+      whiteboardPageId: m.whiteboardPage?.id ?? null,
+      hasType: m.meetingType != null,
       onTimesheet: m.timeEntries.length > 0,
       isCoreMeeting: m.isCoreMeeting,
       canMarkCoreMeeting,
-      // Adding notes after the fact is the organizer's or Core's call — the same
-      // authority attachMeetingNote re-checks server-side.
-      canAddNote: m.organizerId === userId || canMarkCoreMeeting,
+      // Adding notes/whiteboards after the fact is the organizer's or Core's
+      // call — the same authority the attach* helpers re-check server-side.
+      canAddNote: isOrganizer || canMarkCoreMeeting,
+      canAddWhiteboard: isOrganizer || canMarkCoreMeeting,
+      canInvite: isOrganizer || canMarkCoreMeeting,
     });
   }
   // Re-key onto the ids the events themselves carry, so an instance of a
@@ -408,24 +424,6 @@ async function assertLinkOwned(userId: string, linkId: string): Promise<void> {
   if (!link) throw new Error("That calendar isn't connected to your account.");
 }
 
-/** RRULE UTC "UNTIL" in basic format (YYYYMMDDTHHMMSSZ). */
-function rruleUntilBasic(d: Date): string {
-  return d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
-}
-/** Take a recurring master's `recurrence` array and return one RRULE string with
- *  UNTIL set (existing UNTIL/COUNT stripped) — for splitting/truncating a series. */
-function rruleWithUntil(recurrence: string[], until: Date): string | null {
-  const rule = recurrence.map((r) => r.replace(/^RRULE:/i, "")).find((r) => /FREQ=/i.test(r));
-  if (!rule) return null;
-  const parts = rule.split(";").filter((p) => !/^(UNTIL|COUNT)=/i.test(p));
-  parts.push(`UNTIL=${rruleUntilBasic(until)}`);
-  return parts.join(";");
-}
-function bareRrule(recurrence: string[]): string | null {
-  const rule = recurrence.map((r) => r.replace(/^RRULE:/i, "")).find((r) => /FREQ=/i.test(r));
-  return rule ? rule.split(";").filter((p) => !/^UNTIL=/i.test(p)).join(";") : null;
-}
-
 type EventScope = "this" | "following" | "all";
 
 /** The validated "Count this as work" half of an event form. */
@@ -635,6 +633,142 @@ async function handleEventRsvp(opts: {
 // date (all-day, end exclusive). For recurring events the `scope` (this /
 // following / all) decides whether we touch the instance, the master, or split
 // the series.
+/** Parse the composer's guest scope (JSON) back into a ScheduledMeetingScope,
+ *  normalizing anything unexpected to "None" (no guests) rather than trusting the
+ *  wire shape. */
+function parseMeetingScope(raw: string): ScheduledMeetingScope {
+  const p = JSON.parse(raw) as {
+    type?: string;
+    groupId?: unknown;
+    extraUserIds?: unknown;
+    participantUserIds?: unknown;
+  };
+  if (p?.type === "Group" && typeof p.groupId === "string") {
+    return {
+      type: "Group",
+      groupId: p.groupId,
+      extraUserIds: Array.isArray(p.extraUserIds) ? (p.extraUserIds as string[]) : undefined,
+    };
+  }
+  if (p?.type === "UserList" && Array.isArray(p.participantUserIds)) {
+    return { type: "UserList", participantUserIds: p.participantUserIds as string[] };
+  }
+  return { type: "None" };
+}
+
+/**
+ * When the event being edited from the composer is a DALI meeting, edit it
+ * through updateScheduledMeeting instead of a raw Google patch: that reconciles
+ * the attendance roster, notifies added/removed guests, and re-syncs the Google
+ * event — all under organizer-or-Core auth, which also lets Core edit a meeting
+ * on a calendar they don't own. So this runs before the link-ownership gate.
+ * Returns "passthrough" when the event isn't a manageable meeting.
+ */
+async function maybeUpdateMeetingFromComposer(
+  userId: string,
+  get: (k: string) => string,
+): Promise<Response | null | "passthrough"> {
+  const eventId = get("eventId");
+  if (!eventId) return "passthrough";
+  const recurringEventId = get("recurringEventId") || null;
+  const externalIds = recurringEventId ? [eventId, recurringEventId] : [eventId];
+  const meeting = await prisma.scheduledMeeting.findFirst({
+    where: { externalEventId: { in: externalIds }, status: { not: "Cancelled" } },
+    select: { id: true, recurrenceRule: true },
+  });
+  if (!meeting) return "passthrough";
+
+  const title = get("title").trim();
+  if (!title) return Response.json({ error: "Give the event a title." }, { status: 400 });
+  const startIso = get("startIso");
+  const endIso = get("endIso");
+  if (!startIso || !endIso) return Response.json({ error: "Set a start and end." }, { status: 400 });
+  const durationMinutes = Math.round(
+    (new Date(endIso).getTime() - new Date(startIso).getTime()) / 60_000,
+  );
+  if (!(durationMinutes > 0)) return Response.json({ error: "End must be after start." }, { status: 400 });
+
+  let scope: ScheduledMeetingScope;
+  try {
+    scope = parseMeetingScope(get("meetingScope") || '{"type":"None"}');
+  } catch {
+    return Response.json({ error: "Couldn't read the guest list." }, { status: 400 });
+  }
+
+  const editScope = (get("scope") || "all") as "this" | "following" | "all";
+  const occurrenceStart = get("originalStartIso") || undefined;
+  const occurrenceEventId = get("eventId") || undefined;
+
+  // For "all" we pass the recurrenceRule from the master (cadence unchanged).
+  // For "this"/"following" the handlers in updateScheduledMeeting manage the rule.
+  const recurrenceRule = editScope === "all" ? meeting.recurrenceRule : undefined;
+
+  const result = await updateScheduledMeeting(meeting.id, userId, {
+    title,
+    durationMinutes,
+    scope,
+    startTime: startIso,
+    recurrenceRule,
+    location: get("location").trim(),
+    description: get("description").trim(),
+    editScope,
+    occurrenceStart,
+    occurrenceEventId,
+  });
+  if (!result.ok) return Response.json({ error: result.error }, { status: result.status });
+
+  // "Count this as work" logs the viewer's own hours against the event.
+  // Skip for any scoped edit that isn't a plain single-event save.
+  if (!recurringEventId && editScope === "all") {
+    const [linkId] = get("destination").split(":");
+    const ownsLink = linkId
+      ? Boolean(
+          await prisma.userCalendarLink.findFirst({
+            where: { id: linkId, userId },
+            select: { id: true },
+          }),
+        )
+      : false;
+    if (ownsLink) {
+      const work = await resolveEventWorkLog(userId, get);
+      if (work.error) return work.error;
+      if (work.work.kind === "write") {
+        const shapeError = workLogShapeError(null, get("allDay") === "1");
+        if (shapeError) return shapeError;
+      }
+      await writeEventWorkLog({ userId, eventId, linkId, title, startIso, endIso, work: work.work });
+    }
+  }
+  return null;
+}
+
+async function maybeCancelMeetingFromComposer(
+  userId: string,
+  get: (k: string) => string,
+): Promise<Response | null | "passthrough"> {
+  const eventId = get("eventId");
+  if (!eventId) return "passthrough";
+  const recurringEventId = get("recurringEventId") || null;
+  const externalIds = recurringEventId ? [eventId, recurringEventId] : [eventId];
+  const meeting = await prisma.scheduledMeeting.findFirst({
+    where: { externalEventId: { in: externalIds }, status: { not: "Cancelled" } },
+    select: { id: true },
+  });
+  if (!meeting) return "passthrough";
+
+  const deleteScope = (get("scope") || "all") as "this" | "following" | "all";
+  const occurrenceStart = get("originalStartIso") || undefined;
+
+  const result = await cancelScheduledMeeting(meeting.id, userId, {
+    allowCore: true,
+    scope: deleteScope,
+    occurrenceStart,
+    occurrenceEventId: eventId,
+  });
+  if (!result.ok) return Response.json({ error: result.error }, { status: result.status });
+  return null;
+}
+
 async function handleEventAction(
   intent: string,
   raw: Record<string, FormDataEntryValue>,
@@ -645,6 +779,16 @@ async function handleEventAction(
   const roles = await getUserRoles(userId, request);
   if (!(await isFeatureEnabled("calendar-unified", userId, roles, request))) {
     return Response.json({ error: "Not enabled" }, { status: 403 });
+  }
+  // A meeting-backed event is edited through its own DALI update path (roster +
+  // notifications + Google sync), before the link-ownership gate below.
+  if (intent === "event-update") {
+    const handled = await maybeUpdateMeetingFromComposer(userId, get);
+    if (handled !== "passthrough") return handled;
+  }
+  if (intent === "event-delete") {
+    const handled = await maybeCancelMeetingFromComposer(userId, get);
+    if (handled !== "passthrough") return handled;
   }
   const dest = get("destination");
   const [linkId, calRaw] = dest.split(":");
@@ -934,22 +1078,25 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
       return { intent, meetingId: get("meetingId"), onTimesheet: asBool(get("onTimesheet")) };
     case "set-meeting-core":
       return { intent, meetingId: get("meetingId"), isCoreMeeting: asBool(get("isCoreMeeting")) };
-    case "add-meeting-note": {
+    case "add-meeting-note":
+    case "add-meeting-whiteboard": {
       // noteLocation is a nested object, so it rides across as a JSON string
-      // (same pattern as seed-working-hours' `days`).
+      // (same pattern as seed-working-hours' `days`). meetingType is optional for
+      // the whiteboard intent (a meeting with a note reuses its type), so an
+      // empty field coerces to undefined rather than a failing enum value.
       let noteLocation: unknown = undefined;
       const locRaw = get("noteLocation");
       if (locRaw) {
         try {
           noteLocation = JSON.parse(locRaw);
         } catch {
-          // Leave undefined; the note falls back to its default destination.
+          // Leave undefined; the asset falls back to its default destination.
         }
       }
       return {
         intent,
         meetingId: get("meetingId"),
-        meetingType: get("meetingType"),
+        meetingType: get("meetingType") || undefined,
         meetingTypeLabel: get("meetingTypeLabel") || undefined,
         projectId: get("projectId") || undefined,
         noteLocation,
@@ -1004,13 +1151,32 @@ export async function loadParticipantOptions(
   return { groups, users: [...users, ...extraGroupMembers] };
 }
 
-export async function loadCalendarData(request: Request) {
+/**
+ * @param opts.portal true when this is the /portal/calendar mount — the same
+ *   calendar, read for a non-member (a Dartmouth student, or an external
+ *   instructor). They get the personal half of it: their own working hours,
+ *   their own linked Google calendars and events, and their classes this term.
+ *   The lab's member and group directory is withheld, so the participant picker
+ *   is empty and no meeting can be addressed to a member from there.
+ */
+export async function loadCalendarData(
+  request: Request,
+  opts: { portal?: boolean } = {},
+) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  const portalRedirect = redirectApplicantToPortal(auth);
-  if (portalRedirect) return portalRedirect;
+  if (!opts.portal) {
+    const portalRedirect = redirectApplicantToPortal(auth);
+    if (portalRedirect) return portalRedirect;
+  }
 
   const userId = auth.user.sub;
+
+  // Keyed on the DALIMember row rather than the auth type, the same way the
+  // member shell decides who it is for: a non-member instructor authenticates
+  // as a "member" account and still belongs on the portal copy.
+  const labMember = await isLabMember(userId, request);
+  if (opts.portal && labMember) return redirect("/calendar");
 
   // Resolve the current term once and reuse it everywhere in this loader so
   // the per-request cache in roles.ts eliminates redundant DB reads.
@@ -1020,7 +1186,9 @@ export async function loadCalendarData(request: Request) {
   // Members + groups for the participant picker (shared with the meeting
   // edit-context endpoint). Kicked off here so it runs alongside the fan-out
   // below; awaited once the rest resolves.
-  const participantOptionsP = loadParticipantOptions(request);
+  const participantOptionsP = labMember
+    ? loadParticipantOptions(request)
+    : Promise.resolve({ groups: [] as GroupOption[], users: [] as UserOption[] });
 
   const [
     settings,
@@ -1221,12 +1389,15 @@ export async function loadCalendarData(request: Request) {
   let ingestionError: string | null = null;
   const externalCacheKey = `${userId}:${crudEnabled ? "crud" : "busy"}:${fetchStart.getTime()}:${fetchEnd.getTime()}`;
   const [externalRaw, calendarLinks] = await Promise.all([
+    // Read every calendar on each account ("all"), not just the ones counting
+    // toward availability: the grid's per-calendar Show toggle filters this
+    // client-side, so a calendar missing here can never be shown.
     cachedExternalRead<CalendarEvent[] | Awaited<ReturnType<typeof fetchBusyEvents>>>(
       externalCacheKey,
       () =>
         crudEnabled
-          ? fetchCalendarEvents(userId, fetchStart, fetchEnd, prefetchedCalendarLists, prefetchedTokens)
-          : fetchBusyEvents(userId, fetchStart, fetchEnd, prefetchedCalendarLists, prefetchedTokens),
+          ? fetchCalendarEvents(userId, fetchStart, fetchEnd, prefetchedCalendarLists, prefetchedTokens, "all")
+          : fetchBusyEvents(userId, fetchStart, fetchEnd, prefetchedCalendarLists, prefetchedTokens, "all"),
     ).catch((err): CalendarEvent[] | Awaited<ReturnType<typeof fetchBusyEvents>> => {
       ingestionError = err instanceof Error ? err.message : "Failed to fetch external events";
       return [];
@@ -1321,18 +1492,20 @@ export async function loadCalendarData(request: Request) {
           Boolean(e.eventId) &&
           !eventMeetings.has(e.eventId),
       }))
-    : (externalRaw as Awaited<ReturnType<typeof fetchBusyEvents>>).map((e) => ({
-        startIso: e.start,
-        endIso: e.end,
-        title: e.title ?? "Busy",
-        color: e.color ?? null,
-        calendarId: e.calendarId ?? null,
-        description: e.description,
-        location: e.location,
-        organizerName: e.organizerName,
-        attendees: externalAttendees(e.attendees),
-        links: externalLinks(e.meetingUrl, e.htmlLink),
-      }));
+    : (externalRaw as Awaited<ReturnType<typeof fetchBusyEvents>>)
+        .filter((e) => !timesheetCalendarId || e.calendarId !== timesheetCalendarId)
+        .map((e) => ({
+          startIso: e.start,
+          endIso: e.end,
+          title: e.title ?? "Busy",
+          color: e.color ?? null,
+          calendarId: e.calendarId ?? null,
+          description: e.description,
+          location: e.location,
+          organizerName: e.organizerName,
+          attendees: externalAttendees(e.attendees),
+          links: externalLinks(e.meetingUrl, e.htmlLink),
+        }));
 
   // Classes (same calendar-unified flag as CRUD). Load all current+upcoming
   // terms for the modal picker.
@@ -1408,11 +1581,24 @@ export async function loadCalendarData(request: Request) {
   return data;
 }
 
+// The intents that write lab records rather than the viewer's own calendar:
+// meeting notes and their Drive pages, the Core-meeting marker, the logged-time
+// link on a meeting, promoting a Google event into a DALI meeting, and
+// subscribing to the lab's general calendar. The portal calendar posts here
+// too, so these stay member-only — everything else (working hours, linked
+// calendars, Google events, classes this term, one's own time entries) is the
+// viewer's own data and is open to a non-member.
+const MEMBER_ONLY_CALENDAR_INTENTS = new Set([
+  "subscribe-general-calendar",
+  "toggle-meeting-time-entry",
+  "set-meeting-core",
+  "add-meeting-note",
+  "track-event-as-meeting",
+]);
+
 export async function submitCalendarAction(request: Request) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
-  if (auth.user.type === "applicant")
-    return forbidden(request);
 
   const userId = auth.user.sub;
   // Any write here can change what the next read should return, so drop this
@@ -1424,6 +1610,12 @@ export async function submitCalendarAction(request: Request) {
   // Classes-this-term intents carry their own shape (period/custom + Google
   // destination), so they're handled before the Zod-validated calendar action.
   const rawIntent = typeof raw.intent === "string" ? raw.intent : "";
+  if (
+    MEMBER_ONLY_CALENDAR_INTENTS.has(rawIntent) &&
+    !(await isLabMember(userId, request))
+  ) {
+    return forbidden(request);
+  }
   if (rawIntent.startsWith("class-")) {
     return handleClassAction(rawIntent, raw, userId, request);
   }
@@ -1825,6 +2017,27 @@ export async function submitCalendarAction(request: Request) {
         return Response.json({ error: result.error }, { status: result.status });
       }
       return Response.json({ ok: true, notePageId: result.notePageId });
+    }
+
+    case "add-meeting-whiteboard": {
+      // Whiteboards ship behind a flag — don't create one for a caller who
+      // can't see the feature. 404 (not 403) so a disabled feature isn't leaked.
+      const roles = await getUserRoles(userId, request);
+      if (!(await isFeatureEnabled("whiteboard", userId, roles, request))) {
+        return Response.json({ error: "Not found" }, { status: 404 });
+      }
+      const result = await attachMeetingWhiteboard({
+        meetingId: input.meetingId,
+        actorId: userId,
+        meetingType: input.meetingType ?? null,
+        meetingTypeLabel: input.meetingTypeLabel ?? null,
+        projectId: input.projectId ?? null,
+        noteLocation: input.noteLocation ?? null,
+      });
+      if (!result.ok) {
+        return Response.json({ error: result.error }, { status: result.status });
+      }
+      return Response.json({ ok: true, whiteboardPageId: result.whiteboardPageId });
     }
 
     case "track-event-as-meeting": {

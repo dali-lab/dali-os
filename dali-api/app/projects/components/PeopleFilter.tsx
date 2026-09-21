@@ -2,21 +2,32 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronsUpDown, Users } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { Checkbox } from "~/components/ui/Checkbox";
+import { Avatar } from "~/components/ui/Avatar";
 
-export type PersonOption = { id: string; name: string };
+export type PersonOption = { id: string; name: string; photoUrl?: string | null };
 
-// The task board's "All people" filter: a pill that opens a checkbox list of
-// the people who hold work on this project. Selection is owned by the caller
-// (it lives in the URL so a person-sliced view is shareable) — this is the
-// control, not the state.
+// The task board's "All people" control: a pill that opens a checkbox list of
+// people, each with their avatar. Selection is owned by the caller — the board
+// keeps it in the URL (a person-sliced view is shareable), the task modal keeps
+// it in form state (a task's assignees). Reused for both so assignment and
+// filtering wear the same control.
 export function PeopleFilter({
   options,
   selected,
   onChange,
+  disabled = false,
+  emptyLabel = "All people",
+  clearLabel = "Clear filter",
 }: {
   options: PersonOption[];
   selected: string[];
   onChange: (ids: string[]) => void;
+  /** Read-only surface (e.g. a task you can't edit): shows who, no dropdown. */
+  disabled?: boolean;
+  /** Trigger text when nobody is chosen — "All people" filtering, "Assign someone" for assignment. */
+  emptyLabel?: string;
+  /** Footer action label — "Clear filter" vs "Clear". */
+  clearLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
@@ -38,12 +49,15 @@ export function PeopleFilter({
   }, [open]);
 
   const selectedSet = new Set(selected);
+  // Ordered by the option list so the avatar stack and label stay stable as
+  // people are toggled.
+  const chosen = options.filter((o) => selectedSet.has(o.id));
   const label =
-    selected.length === 0
-      ? "All people"
-      : selected.length === 1
-        ? (options.find((o) => o.id === selected[0])?.name ?? "1 person")
-        : `${selected.length} people`;
+    chosen.length === 0
+      ? emptyLabel
+      : chosen.length === 1
+        ? chosen[0].name
+        : `${chosen.length} people`;
 
   const toggle = (id: string) =>
     onChange(
@@ -56,24 +70,46 @@ export function PeopleFilter({
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
+        disabled={disabled}
         onClick={() => setOpen((v) => !v)}
         className={cn(
           "inline-flex items-center gap-2 rounded-full border px-3.5 py-2 text-sm font-medium transition-colors",
-          selected.length > 0
+          chosen.length > 0
             ? "border-os-accent/60 text-foreground"
-            : "border-os-container text-foreground hover:bg-os-container",
+            : "border-os-container text-foreground",
+          disabled ? "cursor-default" : "hover:bg-os-container",
         )}
       >
-        <Users className="h-[17px] w-[17px] text-os-muted" aria-hidden />
+        {chosen.length > 0 ? (
+          // Who's chosen, read at a glance — the same faces the dropdown lists.
+          <span className="flex -space-x-1.5">
+            {chosen.slice(0, 3).map((o) => (
+              <Avatar
+                key={o.id}
+                photoUrl={o.photoUrl}
+                name={o.name}
+                size="xs"
+                className="ring-1 ring-os-card"
+              />
+            ))}
+          </span>
+        ) : (
+          <Users className="h-[17px] w-[17px] text-os-muted" aria-hidden />
+        )}
         <span className="truncate max-w-[160px]">{label}</span>
-        <ChevronsUpDown className="h-4 w-4 text-os-muted" aria-hidden />
+        {!disabled && (
+          <ChevronsUpDown className="h-4 w-4 text-os-muted" aria-hidden />
+        )}
       </button>
 
-      {open && (
+      {open && !disabled && (
         <div
           role="menu"
           className="absolute left-0 top-[calc(100%+8px)] z-[100] max-h-80 min-w-[248px] overflow-y-auto rounded-xl border border-os-container bg-os-card p-1.5 shadow-[0_12px_32px_var(--color-os-shadow)]"
         >
+          {options.length === 0 && (
+            <p className="px-2.5 py-2 text-sm text-os-muted">No one to choose yet.</p>
+          )}
           {options.map((o) => (
             <Checkbox
               key={o.id}
@@ -82,7 +118,12 @@ export function PeopleFilter({
               className="w-full !items-center rounded-lg px-2.5 py-2 transition-colors hover:bg-os-container"
               label={
                 <span className="flex items-center gap-2.5">
-                  <span className="h-6 w-6 flex-shrink-0 rounded-full bg-gradient-to-b from-os-hover to-os-container" />
+                  <Avatar
+                    photoUrl={o.photoUrl}
+                    name={o.name}
+                    size="sm"
+                    className="flex-shrink-0"
+                  />
                   <span className="truncate">{o.name}</span>
                 </span>
               }
@@ -94,7 +135,7 @@ export function PeopleFilter({
               onClick={() => onChange([])}
               className="mt-1 w-full rounded-lg border-t border-os-container px-2.5 py-2 text-left text-sm text-os-muted transition-colors hover:text-foreground"
             >
-              Clear filter
+              {clearLabel}
             </button>
           )}
         </div>

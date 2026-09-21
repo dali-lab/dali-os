@@ -22,7 +22,10 @@ import {
   type OnboardingReminderStep,
   type OnboardingRemindVia,
 } from "~/members/lib/welcome.server";
-import { Menu, Select, type SelectOption } from "~/components/ui/floating";
+import { Menu, Select } from "~/components/ui/floating";
+import { filterPillClass } from "~/components/ui/floating/styles";
+import { useOsChrome } from "~/components/os-chrome";
+import { cn } from "~/lib/cn";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Onboarding · Hiring · DALI OS" },
@@ -67,20 +70,55 @@ function incompleteForStep(row: OnboardingRow, step: RemindStep): boolean {
 async function loadOnboardingRows(args: {
   cycleId: string | "all" | null;
   domainKey: string | null;
+  /** The term a cycle's members start in, filtered separately from the cycle. */
+  termId: string | null;
 }): Promise<{
-  cycles: { id: string; name: string; cycleType: string }[];
+  cycles: { id: string; name: string }[];
+  terms: { id: string; code: string }[];
+  hasUntermed: boolean;
+  selectedTermId: string | null;
   selectedCycleId: string | "all" | null;
   domains: { key: string; label: string }[];
   selectedDomain: string | null;
   rows: OnboardingRow[];
   allCycles: boolean;
 }> {
-  const cycles = await prisma.applicationCycle.findMany({
-    select: { id: true, name: true, cycleType: true },
+  const allCyclesRows = await prisma.applicationCycle.findMany({
+    select: { id: true, name: true, term: { select: { id: true, code: true, startDate: true } } },
     orderBy: { createdAt: "desc" },
   });
 
-  const allCycles = args.cycleId === "all";
+  // Start term and cycle are two different questions, so they get a filter
+  // each: the term narrows which cycles the cycle filter offers.
+  const terms = Array.from(
+    new Map(
+      allCyclesRows
+        .filter((c) => c.term)
+        .map((c) => [c.term!.id, { id: c.term!.id, code: c.term!.code, startDate: c.term!.startDate }]),
+    ).values(),
+  )
+    .sort((a, b) => b.startDate.getTime() - a.startDate.getTime())
+    .map(({ id, code }) => ({ id, code }));
+
+  // "none" is a real choice: cycles predating the term link, or ones whose term
+  // hasn't been picked on Setup yet.
+  const hasUntermed = allCyclesRows.some((c) => !c.term);
+  const selectedTermId =
+    args.termId === "none"
+      ? hasUntermed
+        ? "none"
+        : null
+      : args.termId && terms.some((t) => t.id === args.termId)
+        ? args.termId
+        : null;
+  const inTerm = selectedTermId
+    ? allCyclesRows.filter((c) => (selectedTermId === "none" ? !c.term : c.term?.id === selectedTermId))
+    : allCyclesRows;
+  const cycles = inTerm.map(({ id, name }) => ({ id, name }));
+
+  // With a term picked, the cycle filter starts at "all" so the term alone
+  // narrows the list; without one, the newest cycle opens as before.
+  const allCycles = args.cycleId === "all" || (!args.cycleId && selectedTermId != null);
   const selectedCycleId: string | "all" | null = allCycles
     ? "all"
     : args.cycleId && cycles.some((c) => c.id === args.cycleId)
@@ -90,6 +128,9 @@ async function loadOnboardingRows(args: {
   if (!selectedCycleId) {
     return {
       cycles,
+      terms,
+      hasUntermed,
+      selectedTermId,
       selectedCycleId: null,
       domains: [],
       selectedDomain: null,
@@ -104,7 +145,9 @@ async function loadOnboardingRows(args: {
       type: "Accepted",
       domainApplication: {
         application: allCycles
-          ? {}
+          ? selectedTermId
+            ? { applicationCycleId: { in: cycles.map((c) => c.id) } }
+            : {}
           : { applicationCycleId: selectedCycleId as string },
       },
     },
@@ -201,6 +244,9 @@ async function loadOnboardingRows(args: {
 
   return {
     cycles,
+    terms,
+    hasUntermed,
+    selectedTermId,
     selectedCycleId,
     domains,
     selectedDomain,
@@ -229,6 +275,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const data = await loadOnboardingRows({
     cycleId: requested === "all" ? "all" : requested,
     domainKey: url.searchParams.get("domain"),
+    termId: url.searchParams.get("term"),
   });
 
   return { ...data, pillRoles };
@@ -271,6 +318,7 @@ export async function action({ request }: Route.ActionArgs) {
     const { rows } = await loadOnboardingRows({
       cycleId: cycleParam === "all" ? "all" : cycleParam || null,
       domainKey: domainParam,
+      termId: String(form.get("term") ?? "") || null,
     });
     const userIds = [
       ...new Set(
@@ -297,11 +345,12 @@ export async function action({ request }: Route.ActionArgs) {
 function StatusPill({ ok, label }: { ok: boolean; label: string }) {
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${
-        ok ? "bg-green-100 text-green-700" : "bg-muted text-muted-foreground"
-      }`}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold",
+        ok ? "bg-os-green/15 text-os-green" : "bg-os-container text-os-grey",
+      )}
     >
-      <span className={`h-1.5 w-1.5 rounded-full ${ok ? "bg-green-500" : "bg-muted-foreground/40"}`} />
+      <span className={cn("h-1.5 w-1.5 rounded-full", ok ? "bg-os-green" : "bg-os-muted")} />
       {label}
     </span>
   );
@@ -316,7 +365,7 @@ function FigmaCheckbox({ userId, invited }: { userId: string; invited: boolean }
     // eslint-disable-next-line jsx-a11y/click-events-have-key-events
     <span onClick={(e) => e.stopPropagation()}>
       <Checkbox
-        className="inline-flex cursor-pointer items-center gap-2 text-xs text-muted-foreground"
+        className="inline-flex cursor-pointer items-center gap-2 text-sm text-os-grey"
         checked={checked}
         disabled={fetcher.state !== "idle"}
         onChange={() =>
@@ -381,11 +430,13 @@ function RemindHeader({
   incompleteCount,
   cycle,
   domain,
+  term,
 }: {
   step: RemindStep;
   incompleteCount: number;
   cycle: string | "all";
   domain: string | null;
+  term: string | null;
 }) {
   const fetcher = useFetcher<{
     ok?: boolean;
@@ -405,7 +456,7 @@ function RemindHeader({
     : justSent
       ? `Sent to ${fetcher.data?.count ?? 0}${
           fetcher.data?.skipped
-            ? ` (${fetcher.data.skipped} skipped — no address)`
+            ? ` (${fetcher.data.skipped} skipped, no address)`
             : ""
         }`
       : incompleteCount === 0
@@ -440,13 +491,14 @@ function RemindHeader({
         via,
         cycle,
         domain: domain ?? "",
+        term: term ?? "",
       },
       { method: "post" },
     );
   }
 
   return (
-    <th className="px-5 py-3 font-heading font-semibold text-dark-blue align-bottom">
+    <th className="px-6 py-4 font-medium align-bottom">
       <div className="flex items-center gap-1.5">
         <span>{STEP_HEADERS[step]}</span>
         <Menu
@@ -458,7 +510,7 @@ function RemindHeader({
               icon={justSent ? Check : Bell}
               disabled={busy || incompleteCount === 0}
               tooltipSide="top"
-              className="text-accent-coral hover:bg-accent-coral/10 hover:text-accent-coral"
+              className="text-os-accent hover:bg-os-accent/15 hover:text-os-accent"
               iconClassName="h-3.5 w-3.5"
             />
           }
@@ -492,16 +544,22 @@ export default function HiringOnboarding() {
     rows,
     allCycles,
     pillRoles,
+    terms,
+    hasUntermed,
+    selectedTermId,
   } = useLoaderData<typeof loader>();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
 
-  function setParam(key: string, value: string | null) {
+  function setParams(values: Record<string, string | null>) {
     const next = new URLSearchParams(searchParams);
-    if (value) next.set(key, value);
-    else next.delete(key);
+    for (const [key, value] of Object.entries(values)) {
+      if (value) next.set(key, value);
+      else next.delete(key);
+    }
     setSearchParams(next, { replace: true });
   }
+  const setParam = (key: string, value: string | null) => setParams({ [key]: value });
 
   const incompleteCounts: Record<RemindStep, number> = {
     email: new Set(rows.filter((r) => !r.emailCreated).map((r) => r.userId)).size,
@@ -511,19 +569,45 @@ export default function HiringOnboarding() {
   };
 
   const cycleValue = selectedCycleId ?? "";
+  const { pageTitle, bodyText, panel } = useOsChrome();
+  const remindCycle = cycleValue === "all" ? "all" : cycleValue;
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="font-heading text-2xl font-bold text-foreground">Onboarding</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Accepted applicants and their onboarding progress.
-          </p>
-        </div>
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-2">
+        <h1 className={pageTitle}>Onboarding</h1>
+        <p className={bodyText}>Accepted applicants and their onboarding progress.</p>
+      </div>
+
+      {cycles.length > 0 && (
         <div className="flex flex-wrap items-center gap-3">
+          {(terms.length > 1 || (terms.length === 1 && hasUntermed)) && (
+            <Select
+              ariaLabel="Starts"
+              value={selectedTermId ?? ""}
+              placeholder="Any start"
+              onChange={(v) => setParams({ term: v || null, cycle: null })}
+              options={[
+                { value: "", label: "Any start" },
+                ...terms.map((t) => ({ value: t.id, label: t.code })),
+                ...(hasUntermed ? [{ value: "none", label: "No start set" }] : []),
+              ]}
+              buttonClassName={cn(filterPillClass(), "w-full sm:w-44")}
+            />
+          )}
+          <Select
+            ariaLabel="Cycle"
+            value={cycleValue}
+            onChange={(v) => setParam("cycle", v || null)}
+            options={[
+              { value: "all", label: "All cycles" },
+              ...cycles.map((c) => ({ value: c.id, label: c.name })),
+            ]}
+            buttonClassName={cn(filterPillClass(), "w-full sm:w-64")}
+          />
           {domains.length > 0 && (
             <Select
+              ariaLabel="Domain"
               value={selectedDomain ?? ""}
               placeholder="All domains"
               onChange={(v) => setParam("domain", v || null)}
@@ -531,120 +615,96 @@ export default function HiringOnboarding() {
                 { value: "", label: "All domains" },
                 ...domains.map((d) => ({ value: d.key, label: d.label })),
               ]}
-              buttonClassName="rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-dark-blue inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+              buttonClassName={cn(filterPillClass(), "w-full sm:w-56")}
             />
           )}
-          {cycles.length > 0 && (
-            <Select
-              value={cycleValue}
-              onChange={(v) => setParam("cycle", v || null)}
-              options={[
-                { value: "all", label: "All cycles" },
-                ...cycles.map((c) => ({ value: c.id, label: c.name })),
-              ]}
-              buttonClassName="rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-dark-blue inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-            />
-          )}
+          <span className="ml-auto text-base text-os-grey tabular-nums">
+            {rows.length} {rows.length === 1 ? "member" : "members"}
+          </span>
         </div>
-      </div>
+      )}
 
       {!selectedCycleId ? (
-        <div className="rounded-2xl border border-border bg-card py-16 text-center">
-          <p className="text-muted-foreground">No application cycles yet.</p>
+        <div className={cn(panel, "py-16 text-center text-base text-os-grey")}>
+          No application cycles yet.
         </div>
       ) : rows.length === 0 ? (
-        <div className="rounded-2xl border border-border bg-card py-16 text-center">
-          <p className="text-muted-foreground">
-            {selectedDomain
-              ? allCycles
-                ? "No accepted applicants in this domain across cycles."
-                : "No accepted applicants in this domain for the selected cycle."
-              : allCycles
-                ? "No accepted applicants across cycles yet."
-                : "No accepted applicants in this cycle yet."}
-          </p>
+        <div className={cn(panel, "py-16 text-center text-base text-os-grey")}>
+          {selectedDomain
+            ? allCycles
+              ? "No accepted applicants in this domain across cycles."
+              : "No accepted applicants in this domain for the selected cycle."
+            : allCycles
+              ? "No accepted applicants across cycles yet."
+              : "No accepted applicants in this cycle yet."}
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-2xl border border-border">
-          <table className="w-full text-sm">
-            <thead className="bg-brand-tint text-left">
-              <tr>
-                <th className="px-5 py-3 font-heading font-semibold text-dark-blue">Member</th>
-                {allCycles && (
-                  <th className="px-5 py-3 font-heading font-semibold text-dark-blue">Cycle</th>
-                )}
-                <th className="px-5 py-3 font-heading font-semibold text-dark-blue">Role</th>
-                <RemindHeader
-                  step="email"
-                  incompleteCount={incompleteCounts.email}
-                  cycle={cycleValue === "all" ? "all" : cycleValue}
-                  domain={selectedDomain}
-                />
-                <RemindHeader
-                  step="slack"
-                  incompleteCount={incompleteCounts.slack}
-                  cycle={cycleValue === "all" ? "all" : cycleValue}
-                  domain={selectedDomain}
-                />
-                <RemindHeader
-                  step="figma"
-                  incompleteCount={incompleteCounts.figma}
-                  cycle={cycleValue === "all" ? "all" : cycleValue}
-                  domain={selectedDomain}
-                />
-                <RemindHeader
-                  step="profile"
-                  incompleteCount={incompleteCounts.profile}
-                  cycle={cycleValue === "all" ? "all" : cycleValue}
-                  domain={selectedDomain}
-                />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {rows.map((r) => (
-                <tr
-                  key={`${r.userId}-${r.cycleId}-${r.domainKey}`}
-                  onClick={() => navigate(`/members/${r.userId}`)}
-                  className="cursor-pointer hover:bg-muted/30"
-                >
-                  <td className="px-5 py-3 font-medium text-dark-blue">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <Avatar
-                        photoUrl={r.photoUrl}
-                        name={r.name}
-                        size="sm"
-                        className="flex-shrink-0"
-                      />
-                      <span className="truncate">{r.name}</span>
-                    </div>
-                  </td>
-                  {allCycles && (
-                    <td className="px-5 py-3 text-muted-foreground">{r.cycleName}</td>
-                  )}
-                  <td className="px-5 py-3 text-muted-foreground">{r.role}</td>
-                  <td className="px-5 py-3">
-                    {r.emailCreated ? (
-                      <span className="font-mono text-xs text-dark-blue">{r.daliEmail}</span>
-                    ) : (
-                      <StatusPill ok={false} label="Not created" />
-                    )}
-                  </td>
-                  <td className="px-5 py-3">
-                    <StatusPill ok={r.inSlack} label={r.inSlack ? "Joined" : "Not joined"} />
-                  </td>
-                  <td className="px-5 py-3">
-                    <FigmaCheckbox userId={r.userId} invited={r.figmaInvited} />
-                  </td>
-                  <td className="px-5 py-3">
-                    <StatusPill
-                      ok={r.profileSubmitted}
-                      label={r.profileSubmitted ? "Submitted" : "Pending"}
+        <div className={cn(panel, "overflow-hidden")}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[760px]">
+              <thead className="text-left text-xs uppercase tracking-wide text-os-grey">
+                <tr>
+                  <th className="px-6 py-4 font-medium">Member</th>
+                  {allCycles && <th className="px-6 py-4 font-medium">Cycle</th>}
+                  <th className="px-6 py-4 font-medium">Role</th>
+                  {REMIND_STEPS.map((step) => (
+                    <RemindHeader
+                      key={step}
+                      step={step}
+                      incompleteCount={incompleteCounts[step]}
+                      cycle={remindCycle}
+                      domain={selectedDomain}
+                      term={selectedTermId}
                     />
-                  </td>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr
+                    key={`${r.userId}-${r.cycleId}-${r.domainKey}`}
+                    onClick={() => navigate(`/members/${r.userId}`)}
+                    className="cursor-pointer border-t border-os-container transition-colors hover:bg-os-card-hover"
+                  >
+                    <td className="px-6 py-3.5">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <Avatar
+                          photoUrl={r.photoUrl}
+                          name={r.name}
+                          size="sm"
+                          className="flex-shrink-0"
+                        />
+                        <span className="truncate text-base font-medium text-foreground">
+                          {r.name}
+                        </span>
+                      </div>
+                    </td>
+                    {allCycles && <td className="px-6 py-3.5 text-os-grey">{r.cycleName}</td>}
+                    <td className="px-6 py-3.5 text-foreground">{r.role}</td>
+                    <td className="px-6 py-3.5">
+                      {r.emailCreated ? (
+                        <span className="font-mono text-xs text-foreground">{r.daliEmail}</span>
+                      ) : (
+                        <StatusPill ok={false} label="Not created" />
+                      )}
+                    </td>
+                    <td className="px-6 py-3.5">
+                      <StatusPill ok={r.inSlack} label={r.inSlack ? "Joined" : "Not joined"} />
+                    </td>
+                    <td className="px-6 py-3.5">
+                      <FigmaCheckbox userId={r.userId} invited={r.figmaInvited} />
+                    </td>
+                    <td className="px-6 py-3.5">
+                      <StatusPill
+                        ok={r.profileSubmitted}
+                        label={r.profileSubmitted ? "Submitted" : "Pending"}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>

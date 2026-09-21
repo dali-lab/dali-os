@@ -16,6 +16,9 @@ const Base = {
   durationMinutes: z.number().int().min(5).max(480),
   recurrenceRule: z.string().max(500).optional(),
   startTime: z.string().datetime().optional(),
+  // Stored on the meeting and mirrored onto the Google event / ICS invite.
+  location: z.string().trim().max(500).optional(),
+  description: z.string().trim().max(5000).optional(),
   organizerCalendarLinkId: z.string().min(1).optional(),
   // Which calendar inside that account the invite lands on. Omitted = the
   // account's primary, which is what every caller got before it was askable.
@@ -45,6 +48,12 @@ const Base = {
   // Opt in to a Google Meet link. Only honored when the google-meet flag is on
   // for the caller and the meeting is pushed to a linked Google calendar.
   addMeet: z.boolean().optional(),
+  // Which meeting assets to create (both file under the resolved location). From
+  // the create form's toggles; a whiteboard is additionally gated on the
+  // feature flag server-side. Omitting `note` keeps the pre-whiteboard default
+  // (a note whenever meetingType is set).
+  note: z.boolean().optional(),
+  whiteboard: z.boolean().optional(),
 } as const;
 
 const CreateSchema = z
@@ -66,14 +75,9 @@ const CreateSchema = z
     message: "A project is required for Team and Partner meetings",
     path: ["projectId"],
   })
-  // "Other" is a General meeting — it must not be attached to a project.
-  .refine((v) => (v.meetingType === "Other" ? !v.projectId : true), {
-    message: "General meetings cannot be attached to a project",
-    path: ["projectId"],
-  })
-  // A custom note location only makes sense for General meetings (project meetings
-  // file into the project's own meeting-notes folder).
-  .refine((v) => (v.noteLocation ? v.meetingType === "Other" : true), {
+  // A custom note location only makes sense for General meetings (Other with no
+  // project) — project meetings file into the project itself.
+  .refine((v) => (v.noteLocation ? v.meetingType === "Other" && !v.projectId : true), {
     message: "noteLocation is only allowed for General meetings",
     path: ["noteLocation"],
   })
@@ -125,16 +129,15 @@ export async function action({ request }: Route.ActionArgs) {
     scope = { type: "None" };
   }
 
+  const roles = await getUserRoles(auth.user.sub, request);
   // Only mint a Meet link when the feature is on for this user; the create
   // helper further requires an actual Google-calendar push for it to take hold.
   const addMeet =
-    !!body.addMeet &&
-    (await isFeatureEnabled(
-      "google-meet",
-      auth.user.sub,
-      await getUserRoles(auth.user.sub, request),
-      request,
-    ));
+    !!body.addMeet && (await isFeatureEnabled("google-meet", auth.user.sub, roles, request));
+  // Whiteboards ship behind a flag — never create one for a caller who can't see
+  // the feature, even if the field is posted.
+  const createWhiteboard =
+    !!body.whiteboard && (await isFeatureEnabled("whiteboard", auth.user.sub, roles, request));
 
   const result = await createScheduledMeeting({
     organizerId: auth.user.sub,
@@ -144,12 +147,16 @@ export async function action({ request }: Route.ActionArgs) {
     scope,
     startTime: body.startTime,
     recurrenceRule: body.recurrenceRule,
+    location: body.location,
+    description: body.description,
     organizerCalendarLinkId: body.organizerCalendarLinkId,
     organizerCalendarId: body.organizerCalendarId,
     meetingType: body.meetingType,
     meetingTypeLabel: body.meetingTypeLabel,
     projectId: body.projectId,
     noteLocation: body.noteLocation,
+    createNote: body.note,
+    createWhiteboard,
     attendanceMode: body.attendanceMode,
     isCoreMeeting: coreMeeting,
     addMeet,
@@ -168,6 +175,7 @@ export async function action({ request }: Route.ActionArgs) {
         notifiedCount: result.notifiedCount,
         gcalError: result.gcalError,
         notePageId: result.notePageId,
+        whiteboardPageId: result.whiteboardPageId,
       },
       { status: 201 },
     ),

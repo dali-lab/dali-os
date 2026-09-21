@@ -380,6 +380,7 @@ describe("get_certificate", () => {
   const baseCert = {
     id: "cert1",
     issuedAt: new Date("2026-06-01"),
+    templateId: null,
     applicantUserId: "u1",
     studentName: "Alice Smith",
     offeringId: "o1",
@@ -524,6 +525,7 @@ describe("read_education_page", () => {
     vi.mocked(readMaterialPage).mockResolvedValue({
       id: "page1",
       title: "Week 1",
+      studentEditable: false,
       content: { type: "doc", content: [] },
     });
     const result = await runReadEducationPage(ctx(), { offeringId: "o1", pageId: "page1" });
@@ -569,7 +571,7 @@ describe("post_education_announcement", () => {
 
   it("throws McpInvalidError on empty body", async () => {
     vi.mocked(postAnnouncement).mockResolvedValue({
-      error: "Write something first",
+      error: "Your post can't be empty.",
       status: 400,
     });
     await expect(

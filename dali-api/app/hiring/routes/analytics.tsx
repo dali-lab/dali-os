@@ -1,11 +1,13 @@
 import { redirect } from "react-router";
 import type { Route } from "./+types/analytics";
 
-// The pipeline (status pie + drill-down) now lives on the /hiring hub; keep
-// old links working, including their ?cycleId/&domain/&status params.
+// The pipeline pie now lives on Applications; keep old links working. Its
+// cycle param was ?cycleId=, Applications reads ?cycle=.
 export async function loader({ request }: Route.LoaderArgs) {
-  const url = new URL(request.url);
-  return redirect(`/hiring${url.search}`);
+  const cycleId = new URL(request.url).searchParams.get("cycleId");
+  return redirect(
+    cycleId ? `/hiring/applications?cycle=${encodeURIComponent(cycleId)}` : "/hiring/applications",
+  );
 }
 
 export default function AnalyticsRedirect() {

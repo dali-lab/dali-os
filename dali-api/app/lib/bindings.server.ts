@@ -36,6 +36,10 @@ export const HIRING_PROCESS_ID = "hiring";
 // share this constant.
 export const LAB_PROCESS_ID = "lab";
 
+// Singleton processId for certificate-template background images — one lab-wide,
+// Core-scoped folder that every uploaded template background auto-files into.
+export const CERTIFICATE_TEMPLATES_PROCESS_ID = "certificate-templates";
+
 // A named slot a process type exposes. `purpose` is the stable key stored on the
 // binding; `label` is shown in settings; `defaultTitle` names the folder we
 // create when auto-provisioning. Slots are system-defined (they map to what
@@ -44,9 +48,12 @@ export const LAB_PROCESS_ID = "lab";
 export type FolderSlot = { purpose: string; label: string; defaultTitle: string };
 
 export const FOLDER_SLOTS: Record<ProcessType, FolderSlot[]> = {
+  // "Meeting assets" (not "notes"): these folders now hold a meeting's note doc
+  // and/or its whiteboard. The `purpose` keys stay meeting-notes-* — they're the
+  // stable binding keys persisted on existing rows.
   Project: [
-    { purpose: "meeting-notes-team", label: "Team meeting notes", defaultTitle: "Team meeting notes" },
-    { purpose: "meeting-notes-partner", label: "Partner meeting notes", defaultTitle: "Partner meeting notes" },
+    { purpose: "meeting-notes-team", label: "Team meeting assets", defaultTitle: "Team meeting assets" },
+    { purpose: "meeting-notes-partner", label: "Partner meeting assets", defaultTitle: "Partner meeting assets" },
   ],
   EducationOffering: [{ purpose: "forms", label: "Forms", defaultTitle: "Forms" }],
   // Hiring is a lab-wide singleton (processId = HIRING_PROCESS_ID), parallel to
@@ -59,7 +66,7 @@ export const FOLDER_SLOTS: Record<ProcessType, FolderSlot[]> = {
     { purpose: "rubrics", label: "Rubrics", defaultTitle: "Rubrics" },
   ],
   Core: [
-    { purpose: "meeting-notes", label: "Meeting notes", defaultTitle: "Meeting notes" },
+    { purpose: "meeting-notes", label: "Meeting assets", defaultTitle: "Meeting assets" },
     { purpose: "agreements", label: "Agreements", defaultTitle: "Agreements" },
     { purpose: "email-templates", label: "Email templates", defaultTitle: "Templates" },
     { purpose: "education-templates", label: "Education templates", defaultTitle: "Education Templates" },
@@ -68,7 +75,12 @@ export const FOLDER_SLOTS: Record<ProcessType, FolderSlot[]> = {
   // workspace, but no Core-group scope, so these folders are the communal shelf
   // every member can see and edit.
   Lab: [
-    { purpose: "meeting-notes", label: "Meeting notes", defaultTitle: "Meeting notes" },
+    { purpose: "meeting-notes", label: "Meeting assets", defaultTitle: "Meeting assets" },
+  ],
+  // Lab-wide singleton (processId = CERTIFICATE_TEMPLATES_PROCESS_ID): the one
+  // Core-scoped folder every uploaded certificate-template background files into.
+  CertificateTemplates: [
+    { purpose: "background", label: "Certificate backgrounds", defaultTitle: "Certificate Backgrounds" },
   ],
 };
 
@@ -93,6 +105,7 @@ function workspaceFor(
       return { workspaceType: "EducationOffering", workspaceId: processId, coreScoped: false };
     case "HiringCycle":
     case "Core":
+    case "CertificateTemplates":
       return { workspaceType: "Lab", workspaceId: null, coreScoped: true };
     case "Lab":
       // Same workspace as Core, deliberately unscoped: a Lab folder inherits the

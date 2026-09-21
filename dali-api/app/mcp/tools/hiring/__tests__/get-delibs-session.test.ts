@@ -26,7 +26,9 @@ vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, hasCycleAccess: vi.fn() };
 });
-vi.mock("~/hiring/lib/confidentiality", () => ({
+vi.mock("~/hiring/lib/confidentiality", async (importOriginal) => ({
+  // Keep the pure access helpers real; only the DB-backed state is stubbed.
+  ...(await importOriginal<typeof import("~/hiring/lib/confidentiality")>()),
   getCycleConfidentialityState: vi.fn(),
 }));
 
@@ -44,7 +46,8 @@ const fakeSession = {
   applicationCycleId: "cy1",
   domainId: "dom1",
   domain: { id: "dom1", name: "design", displayName: "Design" },
-  type: "Initial",
+  roundId: "first",
+  applicationCycle: { timeline: null }, // the standard timeline
   status: "Active",
   columnOrder: { "No Decision": ["da1"], Interview: [], Reject: [] },
   createdAt: new Date("2026-10-05"),
@@ -79,6 +82,7 @@ describe("get_delibs_session", () => {
     vi.mocked(getCycleConfidentialityState).mockResolvedValue({
       status: "no_agreement",
       activeVersionId: null,
+      exempt: false,
     });
     await expect(
       runGetDelibsSession("u1", { delibsSessionId: "ds1" }),
@@ -91,13 +95,14 @@ describe("get_delibs_session", () => {
     vi.mocked(getCycleConfidentialityState).mockResolvedValue({
       status: "signed",
       activeVersionId: "v1",
+      exempt: false,
     });
 
     const result = await runGetDelibsSession("u1", { delibsSessionId: "ds1" }) as any;
     expect(result).toMatchObject({
       id: "ds1",
       cycleId: "cy1",
-      type: "Initial",
+      round: { id: "first", label: "First delib", isFinal: false },
       status: "Active",
       domain: { id: "dom1", name: "Design" },
       columnOrder: { "No Decision": ["da1"] },

@@ -238,8 +238,13 @@ function CrumbSwitcher({
 export function Breadcrumbs() {
   const matches = useMatches()
   const { pathname, search } = useLocation()
-  // A page can suppress the trail entirely via handle.hideBreadcrumbs.
-  if (matches.some((m) => (m as { handle?: Handle }).handle?.hideBreadcrumbs)) {
+  // A page can suppress the trail entirely via handle.hideBreadcrumbs. Hiring
+  // drops it section-wide; its sidebar sub-tabs are the wayfinding there.
+  if (
+    pathname === '/hiring' ||
+    pathname.startsWith('/hiring/') ||
+    matches.some((m) => (m as { handle?: Handle }).handle?.hideBreadcrumbs)
+  ) {
     return null
   }
 

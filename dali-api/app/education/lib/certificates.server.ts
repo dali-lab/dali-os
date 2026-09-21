@@ -3,7 +3,9 @@ import { notify } from "~/lib/notify.server";
 import { logAuditEvent } from "~/lib/audit";
 import { requestInstructorExitSurveys } from "./feedback.server";
 import { lockOffering } from "./apply.server";
+import { resolveCertificateTemplateId } from "./certificate-templates.server";
 import { currentTerm } from "~/lib/roles";
+import { isMultiSession, type OfferingType } from "~/education/lib/offering-type";
 
 // Completion certificates. Pure derived data — the HTML page and PDF are
 // generated on demand from the EducationCertificate row; nothing is stored in
@@ -13,7 +15,7 @@ import { currentTerm } from "~/lib/roles";
 // certificates.
 
 /**
- * Completion policy: Miniseries — (Present + Excused) / total sessions ≥ threshold
+ * Completion policy: Miniseries and Fellowship — (Present + Excused) / total sessions ≥ threshold
  * (excused absences are forgiven for completion; they still don't earn CE
  * credit). Workshops — at least one Present mark. No sessions → not eligible.
  *
@@ -21,14 +23,14 @@ import { currentTerm } from "~/lib/roles";
  * EducationOffering.completionThreshold.
  */
 export function certificateEligibility(args: {
-  type: "Miniseries" | "Workshop";
+  type: OfferingType;
   totalSessions: number;
   present: number;
   excused: number;
   threshold?: number;
 }): boolean {
   if (args.totalSessions === 0) return false;
-  if (args.type === "Workshop") return args.present >= 1;
+  if (!isMultiSession(args.type)) return args.present >= 1;
   const threshold = args.threshold ?? 0.8;
   return (args.present + args.excused) / args.totalSessions >= threshold;
 }
@@ -40,6 +42,12 @@ export type CloseOutResult =
 export async function closeOutOffering(args: {
   offeringId: string;
   actorId: string;
+  // Close-out issues certificates and marks the offering complete. By default we
+  // refuse to do that before the offering has finished running (its last session
+  // ends in the future), since that's almost always a misfire — the very bug that
+  // stranded an offering in "Past offerings" before it happened. Callers that
+  // genuinely mean to close an offering early (e.g. a cancellation) pass this.
+  allowEarly?: boolean;
 }): Promise<CloseOutResult> {
   const offering = await prisma.educationOffering.findUnique({
     where: { id: args.offeringId },
@@ -47,6 +55,7 @@ export async function closeOutOffering(args: {
       id: true,
       title: true,
       type: true,
+      endsAt: true,
       closedOutAt: true,
       completionThreshold: true,
       _count: { select: { sessions: true } },
@@ -73,6 +82,19 @@ export async function closeOutOffering(args: {
   });
   if (!offering) return { error: "Offering not found", status: 404 };
 
+  // Guard: don't complete an offering that hasn't run yet. A null endsAt (no
+  // dated sessions) isn't "unfinished" in a way we can prove, so it's allowed.
+  if (
+    !args.allowEarly &&
+    offering.endsAt != null &&
+    offering.endsAt.getTime() > Date.now()
+  ) {
+    return {
+      error: `This course runs until ${offering.endsAt.toISOString().slice(0, 10)} and hasn't finished yet. Close-out issues certificates and marks it complete — pass allowEarly to close it out early.`,
+      status: 409,
+    };
+  }
+
   const firstCloseOut = offering.closedOutAt === null;
   const totalSessions = offering._count.sessions;
 
@@ -84,6 +106,10 @@ export async function closeOutOffering(args: {
     certificateId: string;
     applicant: (typeof offering.applications)[number]["applicant"];
   }[] = [];
+
+  // Which template new certificates get stamped with (per-offering binding →
+  // lab-wide default → null = built-in design). Resolved once for the batch.
+  const certificateTemplateId = await resolveCertificateTemplateId(args.offeringId);
 
   for (const application of offering.applications) {
     if (application.certificate) {
@@ -97,7 +123,11 @@ export async function closeOutOffering(args: {
       continue;
     }
     const certificate = await prisma.educationCertificate.create({
-      data: { applicationId: application.id, issuedById: args.actorId },
+      data: {
+        applicationId: application.id,
+        issuedById: args.actorId,
+        templateId: certificateTemplateId,
+      },
       select: { id: true },
     });
     issued += 1;
@@ -190,6 +220,39 @@ export async function closeOutOffering(args: {
   return { ok: true, issued, alreadyIssued, ineligible };
 }
 
+export type ReopenResult = { ok: true } | { error: string; status: number };
+
+/**
+ * Reverse a close-out: clears `closedOutAt`/`closedOutById` so the offering
+ * leaves the "Past offerings" bucket and can be edited and re-closed later.
+ * Certificates and CE credits already issued by the prior close-out are left in
+ * place — re-running close-out is idempotent and only issues missing ones — so
+ * reopening cleanly undoes an accidental or premature close-out without clawing
+ * anything back. No-op if the offering was never closed out.
+ */
+export async function reopenOffering(args: {
+  offeringId: string;
+  actorId: string;
+}): Promise<ReopenResult> {
+  const offering = await prisma.educationOffering.findUnique({
+    where: { id: args.offeringId },
+    select: { id: true, closedOutAt: true },
+  });
+  if (!offering) return { error: "Offering not found", status: 404 };
+  if (offering.closedOutAt === null) return { ok: true }; // already open
+
+  await prisma.educationOffering.update({
+    where: { id: args.offeringId },
+    data: { closedOutAt: null, closedOutById: null },
+  });
+  await logAuditEvent({
+    action: "education.offering.reopen",
+    userId: args.actorId,
+    targetId: args.offeringId,
+  });
+  return { ok: true };
+}
+
 export type CloseOutPreview = {
   eligible: string[];
   belowThreshold: string[];
@@ -251,6 +314,7 @@ export async function getCertificate(certificateId: string) {
     select: {
       id: true,
       issuedAt: true,
+      templateId: true,
       application: {
         select: {
           id: true,
@@ -280,6 +344,7 @@ export async function getCertificate(certificateId: string) {
   return {
     id: certificate.id,
     issuedAt: certificate.issuedAt,
+    templateId: certificate.templateId,
     applicantUserId: application.applicantUserId,
     studentName:
       `${application.applicant.firstName} ${application.applicant.lastName}`.trim(),

@@ -27,6 +27,7 @@
 
 import { PrismaClient } from "../app/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
+import { DEFAULT_STAGES, defaultTimelineFor } from "../app/hiring/lib/applicant-groups";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
 const prisma = new PrismaClient({ adapter });
@@ -227,7 +228,9 @@ async function main() {
   const cycle = await prisma.applicationCycle.create({
     data: {
       name: `Intern → Full ${termCode} demo`,
-      cycleType: "Fellowship",
+      applicants: "Interns",
+      ...DEFAULT_STAGES.Interns,
+      timeline: defaultTimelineFor("Interns"),
       closeDate,
       applicationFormId: applicationForm.id,
       statusUpdates: { create: { newStatus: "Draft", userId: admin.id } },

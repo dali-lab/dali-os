@@ -3,23 +3,29 @@ import { createPortal } from "react-dom";
 import { Link, useFetcher, useRevalidator } from "react-router";
 import {
   Building2, Wifi, Users, FileText, Pencil, Copy, Trash2,
-  Check, HelpCircle, X, Video, ExternalLink,
+  Check, HelpCircle, X, Video, ExternalLink, Clock, AlertCircle, Shapes,
 } from "lucide-react";
 import { Tooltip } from "~/components/ui/floating";
 import { Toggle } from "~/components/ui/Toggle";
+import { Modal, ModalHeader, ModalFooter } from "~/components/Modal";
+import { DateField } from "~/components/ui/DateField";
+import { TimeField } from "~/components/ui/TimeField";
+import { useToast } from "~/components/ui/toast";
 import { notifyTasksChanged } from "~/components/RsvpButtons";
 import { cn } from "~/lib/cn";
 import { getZonedHourFraction, getZonedYMD } from "~/lib/timezone";
 import { isPayPeriodEnd, isPayPeriodStart } from "~/lib/pay-period";
 import { AddMeetingNoteButton } from "~/calendar/components/AddMeetingNoteModal";
+import { AddMeetingWhiteboardButton } from "~/calendar/components/AddMeetingWhiteboardModal";
 import { TrackEventButton } from "~/calendar/components/TrackEventButton";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import type {
   EventBlock, EventAttendeeDTO, EventLinkDTO, EventRsvpTarget, RsvpStatus, WhDay,
 } from "~/calendar/lib/types";
 import {
   HOURS, HOUR_PX, INITIAL_SCROLL_CENTER_HOUR, SUBDIVISIONS_PER_HOUR, SNAP_HOURS,
   DAY_KEYS, ATTENDEE_DOT, GUESTS_COLLAPSED, OFFHOURS_STYLE,
-  formatHour, formatHourMinute, readableTextColor, computeEventLanes,
+  formatHour, formatHourMinute, readableTextColor, computeEventLanes, eventSkin,
 } from "~/calendar/lib/event-block";
 import type { EventLane } from "~/calendar/lib/event-block";
 
@@ -149,13 +155,39 @@ export function EventGuestList({ attendees }: { attendees: EventAttendeeDTO[] })
  * meeting goes through its invite endpoint, which pushes the answer on with
  * the organizer's link. Either way the next read shows what Google holds.
  */
-export function EventRsvpControl({ rsvp }: { rsvp: EventRsvpTarget }) {
+export function EventRsvpControl({
+  rsvp,
+  meetingId,
+  eventStartIso,
+}: {
+  rsvp: EventRsvpTarget;
+  /** When set (DALI meeting, viewer is invitee), shows "Propose new time". */
+  meetingId?: string;
+  /** ISO string of the event's current start, used to prefill the picker. */
+  eventStartIso?: string;
+}) {
   const fetcher = useFetcher<{ error?: string }>();
   const revalidator = useRevalidator();
+  const toast = useToast();
   // The notification route is a plain endpoint, not this page's action, so its
   // in-flight state is tracked here rather than by a fetcher.
   const [sending, setSending] = useState<RsvpResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [proposeOpen, setProposeOpen] = useState(false);
+  const [proposeDate, setProposeDate] = useState(() => {
+    if (!eventStartIso) return "";
+    const d = new Date(eventStartIso);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  });
+  const [proposeTime, setProposeTime] = useState(() => {
+    if (!eventStartIso) return "";
+    const d = new Date(eventStartIso);
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  });
+  const [proposing, setProposing] = useState(false);
 
   // Revalidation lands a beat after the write, so show the answer being sent —
   // otherwise the pressed button visibly snaps back before settling.
@@ -204,6 +236,33 @@ export function EventRsvpControl({ rsvp }: { rsvp: EventRsvpTarget }) {
     }
   }
 
+  async function submitProposal() {
+    if (!meetingId || !proposeDate || !proposeTime) return;
+    const proposedStart = new Date(`${proposeDate}T${proposeTime}`).toISOString();
+    setProposing(true);
+    try {
+      const res = await fetch(`/api/scheduled-meetings/${meetingId}/propose-time`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ proposedStart }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        toast.error(json.error ?? "Failed to propose time");
+        return;
+      }
+      toast.success("Time proposed — the organizer will be notified");
+      setProposeOpen(false);
+    } catch {
+      toast.error("Network error");
+    } finally {
+      setProposing(false);
+    }
+  }
+
+  const showPropose = meetingId && rsvp.via === "notification";
+
   return (
     <DetailSection label="Going?">
       <div className="flex flex-wrap gap-1.5">
@@ -234,6 +293,52 @@ export function EventRsvpControl({ rsvp }: { rsvp: EventRsvpTarget }) {
       {(error ?? fetcher.data?.error) && (
         <p className="mt-1.5 text-[12px] text-red-600">{error ?? fetcher.data?.error}</p>
       )}
+      {showPropose && (
+        <button
+          type="button"
+          onClick={() => setProposeOpen(true)}
+          className="mt-2 inline-flex items-center gap-1 text-[13px] text-os-accent hover:underline"
+        >
+          <Clock className="h-3.5 w-3.5" />
+          Propose new time
+        </button>
+      )}
+      {proposeOpen && meetingId && (
+        <Modal open labelledBy="propose-time-title" onClose={() => setProposeOpen(false)}>
+          <ModalHeader
+            titleId="propose-time-title"
+            title="Propose a new time"
+            onClose={() => setProposeOpen(false)}
+          />
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium text-foreground">Date</label>
+              <DateField
+                mode="date"
+                value={proposeDate}
+                onChange={setProposeDate}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium text-foreground">Time</label>
+              <TimeField
+                value={proposeTime}
+                onChange={setProposeTime}
+              />
+            </div>
+          </div>
+          <ModalFooter onCancel={() => setProposeOpen(false)}>
+            <button
+              type="button"
+              disabled={proposing || !proposeDate || !proposeTime}
+              onClick={submitProposal}
+              className="os-btn-primary disabled:opacity-60"
+            >
+              {proposing ? "Proposing…" : "Propose time"}
+            </button>
+          </ModalFooter>
+        </Modal>
+      )}
     </DetailSection>
   );
 }
@@ -250,6 +355,8 @@ export function CalendarEventDetailPopover({
   attendees,
   links,
   rsvp,
+  meetingId,
+  eventStartIso,
   onClose,
   footer,
 }: {
@@ -266,6 +373,10 @@ export function CalendarEventDetailPopover({
   links?: EventLinkDTO[];
   /** The viewer's own answer, when they're a guest — renders the RSVP control. */
   rsvp?: EventRsvpTarget;
+  /** DALI meeting id — enables "Propose new time" for invitees. */
+  meetingId?: string;
+  /** ISO start of the event, prefills the propose-time picker. */
+  eventStartIso?: string;
   // When set, the popover is interactive (click-opened): a backdrop dismisses
   // it and Escape closes it. Hover popovers leave this undefined.
   onClose?: () => void;
@@ -416,7 +527,7 @@ export function CalendarEventDetailPopover({
           </DetailSection>
         )}
 
-        {rsvp && <EventRsvpControl rsvp={rsvp} />}
+        {rsvp && <EventRsvpControl rsvp={rsvp} meetingId={meetingId} eventStartIso={eventStartIso} />}
 
         {attendees && attendees.length > 0 && <EventGuestList attendees={attendees} />}
 
@@ -572,6 +683,7 @@ export function WeekGridEvent({
   e,
   lane,
   dayIdx,
+  dayDateUtc,
   hitTestDay,
 }: {
   e: EventBlock;
@@ -579,20 +691,35 @@ export function WeekGridEvent({
   // This event's day column, and a hit-test to resolve a pointer X → day index,
   // so a body-move drag can cross columns to another date.
   dayIdx?: number;
+  dayDateUtc?: Date;
   hitTestDay?: (clientX: number) => number | null;
 }) {
   const [detailOpen, setDetailOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [anchorEl, setAnchorEl] = useState<HTMLDivElement | null>(null);
+  const whiteboardEnabled = useFeatureFlag("whiteboard");
   // Horizontal shift (in columns × colWidth px) while a move drag crosses days.
   const [liveDayShift, setLiveDayShift] = useState<{ offset: number; colWidth: number } | null>(null);
   const bufferBefore = e.bufferBefore ?? 0;
   const bufferAfter = e.bufferAfter ?? 0;
   const totalHours = bufferBefore + e.duration + bufferAfter;
-  const border = e.borderClassName ? `border-2 ${e.borderClassName}` : "";
+  const skin = eventSkin(e);
+  // An unanswered invite draws its own outline on the body, so the wrapper
+  // stands down — otherwise its border and the body's stack into a double ring.
+  const border = !skin.outlined && e.borderClassName ? `border-2 ${e.borderClassName}` : "";
   const bufferBg = e.bufferClassName ?? "";
   const bodyHeight = e.duration * HOUR_PX;
   const timeRange = `${formatHourMinute(e.startHour)} – ${formatHourMinute(e.startHour + e.duration)}`;
+  // ISO start for the propose-time flow — built from the day date + fractional startHour.
+  const eventStartIso = dayDateUtc
+    ? (() => {
+        const d = new Date(dayDateUtc);
+        const wholeHour = Math.floor(e.startHour);
+        const minutes = Math.round((e.startHour - wholeHour) * 60);
+        d.setUTCHours(wholeHour, minutes, 0, 0);
+        return d.toISOString();
+      })()
+    : undefined;
   const isMeeting = Boolean(e.meeting);
   // An answered invite says so on the block itself, in place of the location —
   // "Pending" is what every unanswered invite says, so it earns no room.
@@ -859,7 +986,11 @@ export function WeekGridEvent({
             }
           : undefined
       }
-      aria-label={clickable || movable ? `${e.label}, ${timeRange}` : undefined}
+      aria-label={
+        clickable || movable
+          ? `${e.label}, ${timeRange}${e.issue ? `, ${e.issue}` : ""}`
+          : undefined
+      }
     >
       {/* Top resize handle — only for movable blocks */}
       {movable && (
@@ -871,19 +1002,25 @@ export function WeekGridEvent({
       )}
       <div
         ref={setAnchorEl}
-        className={`absolute left-0 right-0 ${displayBufferBefore === 0 ? "rounded-t-md" : ""} ${
-          displayBufferAfter === 0 ? "rounded-b-md" : ""
-        } px-1.5 py-1 text-xs font-semibold leading-tight overflow-hidden transition-shadow shadow-[inset_3px_0_0_0_rgba(0,0,0,0.18),0_1px_2px_-1px_rgba(0,0,0,0.15)] ${e.className} ${
-          clickable || movable
-            ? "hover:ring-2 hover:ring-inset hover:ring-white/60 hover:shadow-[inset_3px_0_0_0_rgba(0,0,0,0.18),0_2px_5px_-1px_rgba(0,0,0,0.25)]"
-            : ""
-        }`}
+        className={cn(
+          "absolute left-0 right-0 px-1.5 py-1 text-xs font-semibold leading-tight overflow-hidden transition-shadow",
+          displayBufferBefore === 0 && "rounded-t-md",
+          displayBufferAfter === 0 && "rounded-b-md",
+          // The inset left bar reads as a stray grey stripe on a hollow block,
+          // and a white hover ring is invisible on one — both swap out.
+          skin.outlined
+            ? "border shadow-[0_1px_2px_-1px_rgba(0,0,0,0.15)]"
+            : "shadow-[inset_3px_0_0_0_rgba(0,0,0,0.18),0_1px_2px_-1px_rgba(0,0,0,0.15)]",
+          skin.className,
+          (clickable || movable) &&
+            (skin.outlined
+              ? "hover:ring-2 hover:ring-inset hover:ring-foreground/20"
+              : "hover:ring-2 hover:ring-inset hover:ring-white/60 hover:shadow-[inset_3px_0_0_0_rgba(0,0,0,0.18),0_2px_5px_-1px_rgba(0,0,0,0.25)]"),
+        )}
         style={{
           top: displayBufferBefore * HOUR_PX,
           height: displayBodyHeight,
-          ...(e.bgColor
-            ? { backgroundColor: e.bgColor, color: readableTextColor(e.bgColor) }
-            : {}),
+          ...skin.style,
         }}
       >
         {e.loggedAccent && (
@@ -893,7 +1030,18 @@ export function WeekGridEvent({
             aria-hidden
           />
         )}
-        {e.label && <span className="truncate block">{e.label}</span>}
+        {(e.label || e.issue) && (
+          <span className="flex items-start gap-1" title={e.issue || undefined}>
+            {e.issue && (
+              <AlertCircle
+                className="mt-px h-3 w-3 shrink-0 fill-white text-red-700"
+                aria-hidden
+              />
+            )}
+            <span className="truncate block">{e.label}</span>
+          </span>
+        )}
+        {e.issue && <span className="sr-only">{e.issue}</span>}
         {displayBodyHeight >= 34 && (
           <span className="block truncate text-[10px] font-normal leading-tight opacity-75">
             {displayTimeRange}
@@ -927,6 +1075,8 @@ export function WeekGridEvent({
           attendees={e.attendees}
           links={e.links}
           rsvp={e.rsvp}
+          meetingId={e.meeting?.meetingId}
+          eventStartIso={eventStartIso}
           onClose={() => {
             setConfirmDelete(false);
             setDetailOpen(false);
@@ -960,6 +1110,23 @@ export function WeekGridEvent({
                         className={popoverActionBtn}
                       />
                     ) : null}
+                    {whiteboardEnabled &&
+                      (e.meeting.whiteboardPageId ? (
+                        <Link
+                          to={`/whiteboard/${e.meeting.whiteboardPageId}`}
+                          className={popoverActionBtn}
+                        >
+                          <Shapes className="h-3.5 w-3.5 text-os-grey" /> Whiteboard
+                        </Link>
+                      ) : e.meeting.canAddWhiteboard ? (
+                        <AddMeetingWhiteboardButton
+                          meetingId={e.meeting.meetingId}
+                          isCoreMeeting={e.meeting.isCoreMeeting}
+                          hasType={e.meeting.hasType}
+                          actionPath={e.meeting.actionPath}
+                          className={popoverActionBtn}
+                        />
+                      ) : null)}
                   </div>
                   <MeetingDetailToggles meeting={e.meeting} />
                 </div>
@@ -1056,6 +1223,9 @@ export function WeekGridEvent({
 export type AllDayBlock = {
   label: string;
   color?: string | null;
+  /** The viewer hasn't answered this invite — drawn hollow, the same way an
+   *  unanswered timed invite is on the grid below. */
+  unanswered?: boolean;
   onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
 };
 
@@ -1089,6 +1259,7 @@ export function WeekGrid({
   timezone,
   markPayPeriodBounds = false,
   fillAndScroll = false,
+  stickyHeader = false,
   allDayByDay,
   clickDurationHours,
 }: {
@@ -1127,6 +1298,13 @@ export function WeekGrid({
   // Also makes the day-header row + hour axis sticky. Availability opts in;
   // Schedule/Timesheet keep the page-flow layout.
   fillAndScroll?: boolean;
+  // Pin the weekday-header row to the top of the nearest scrollport via CSS
+  // `sticky`, for callers that place the whole grid inside their own scroll
+  // container (the availability preview scrolls the grid, not the page). This is
+  // the complement to fillAndScroll: there the header sits outside an internal
+  // scrollport, so it needs no sticky; here it lives inside the caller's one.
+  // Inert when there's no scrolling ancestor, so it's safe to leave on.
+  stickyHeader?: boolean;
   // Optional all-day events band. Keyed by day-column index (matching
   // eventsByDay). Only rendered when at least one day has events.
   allDayByDay?: Record<number, AllDayBlock[]>;
@@ -1400,12 +1578,16 @@ export function WeekGrid({
         view in fillAndScroll mode — no sticky needed. Same scrollbar-width
         reservation as the band so its columns line up with the grid's. */}
     <div
-      className="flex border-x border-t border-border rounded-t-md bg-card select-none"
+      className={`flex border-x border-t border-border rounded-t-md bg-card select-none ${
+        // z-40 clears the grid's z-30 event/selection blocks so they scroll
+        // under the (opaque) header rather than over it.
+        stickyHeader ? "sticky top-0 z-40" : ""
+      }`}
       style={fillAndScroll ? { paddingRight: scrollbarWidth } : undefined}
     >
       {/* Left gutter — matches the hour-axis width */}
       <div
-        className={`w-14 shrink-0 border-r border-b border-border flex items-center justify-center ${showProviderRow ? "h-20" : "h-12"}`}
+        className={`sticky left-0 z-[45] bg-card w-14 shrink-0 border-r border-b border-border flex items-center justify-center ${showProviderRow ? "h-20" : "h-12"}`}
       >
         {timezone && (
           <span className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground leading-none">
@@ -1473,7 +1655,7 @@ export function WeekGrid({
         style={fillAndScroll ? { paddingRight: scrollbarWidth } : undefined}
       >
         {/* Left gutter — matches the hour-axis width */}
-        <div className="w-14 shrink-0 border-r border-border flex items-center justify-end pr-2">
+        <div className="sticky left-0 z-[45] bg-card w-14 shrink-0 border-r border-border flex items-center justify-end pr-2">
           <span className="text-[9px] font-medium uppercase tracking-wide text-muted-foreground leading-none">
             all-day
           </span>
@@ -1495,20 +1677,27 @@ export function WeekGrid({
             >
               {visible.map((block, bi) => {
                 const hasColor = Boolean(block.color);
+                const outlined = Boolean(block.unanswered);
                 return (
                   <button
                     key={bi}
                     type="button"
                     onClick={block.onClick}
-                    className={`w-full text-left truncate rounded px-1.5 py-0.5 text-[11px] font-medium leading-tight ${
-                      block.onClick ? "cursor-pointer" : "cursor-default"
-                    } ${hasColor ? "" : "bg-muted text-foreground"}`}
+                    className={cn(
+                      "w-full text-left truncate rounded px-1.5 py-0.5 text-[11px] font-medium leading-tight",
+                      block.onClick ? "cursor-pointer" : "cursor-default",
+                      outlined
+                        ? cn("border bg-card text-foreground", !hasColor && "border-border")
+                        : !hasColor && "bg-muted text-foreground",
+                    )}
                     style={
                       hasColor
-                        ? {
-                            backgroundColor: block.color!,
-                            color: readableTextColor(block.color!),
-                          }
+                        ? outlined
+                          ? { borderColor: block.color! }
+                          : {
+                              backgroundColor: block.color!,
+                              color: readableTextColor(block.color!),
+                            }
                         : undefined
                     }
                   >
@@ -1528,7 +1717,10 @@ export function WeekGrid({
     )}
     <div
       ref={scrollRef}
-      className={`flex border-x border-b border-border rounded-b-md overflow-hidden select-none ${
+      // overflow-clip rather than hidden when not self-scrolling: hidden would make
+      // this row its own scroll container and pin the sticky hour axis to it, so
+      // the axis would slide away when an outer container scrolls sideways.
+      className={`flex border-x border-b border-border rounded-b-md select-none ${fillAndScroll ? "overflow-hidden" : "overflow-clip"} ${
         // items-start: size the hour-axis + day columns to their full 24h
         // content height and scroll, instead of stretching (align-items:stretch)
         // them to the shorter viewport. Stretch clipped each column's box to the
@@ -1541,7 +1733,7 @@ export function WeekGrid({
       }`}
     >
       {/* Hour axis */}
-      <div className="flex flex-col w-14 border-r border-border bg-card text-[11px] text-muted-foreground">
+      <div className="sticky left-0 z-[45] flex flex-col w-14 shrink-0 border-r border-border bg-card text-[11px] text-muted-foreground">
         {HOURS.map((h) => (
           <div key={h} style={{ height: HOUR_PX }} className="shrink-0 px-2 pt-1 text-right">
             {formatHour(h)}
@@ -1711,7 +1903,7 @@ export function WeekGrid({
               const dayEvents = eventsByDay[idx] ?? [];
               const eventLanes = computeEventLanes(dayEvents);
               return dayEvents.map((e, i) => (
-                <WeekGridEvent key={i} e={e} lane={eventLanes[i]} dayIdx={idx} hitTestDay={hitTestDay} />
+                <WeekGridEvent key={i} e={e} lane={eventLanes[i]} dayIdx={idx} dayDateUtc={d.dateUtc} hitTestDay={hitTestDay} />
               ));
             })()}
             {overlayLayer?.(idx)}

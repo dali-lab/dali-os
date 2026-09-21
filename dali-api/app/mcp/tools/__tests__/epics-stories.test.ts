@@ -54,7 +54,7 @@ describe("epic + story tools", () => {
     expect(DELETE_STORY_TOOL.requiredScope).toBe("mcp:write");
   });
 
-  it("list_epics resolves term code via separate query", async () => {
+  it("list_epics returns epics with their stories", async () => {
     mockPrisma.epic.findMany.mockResolvedValue([
       {
         id: "e1",
@@ -63,16 +63,11 @@ describe("epic + story tools", () => {
         status: "Open",
         startsAt: null,
         endsAt: null,
-        targetTermId: "tm1",
         stories: [],
       },
     ]);
-    if (!mockPrisma.term) (mockPrisma as { term?: unknown }).term = {};
-    (prisma as unknown as { term: { findMany: ReturnType<typeof vi.fn> } }).term = {
-      findMany: vi.fn().mockResolvedValue([{ id: "tm1", code: "26S" }]),
-    };
     const out = await runListEpics("u1", { projectId: "p1" });
-    expect(out.epics[0]).toMatchObject({ id: "e1", targetTermCode: "26S" });
+    expect(out.epics[0]).toMatchObject({ id: "e1", title: "Onboarding", stories: [] });
   });
 
   it("create_epic enforces title and date order", async () => {

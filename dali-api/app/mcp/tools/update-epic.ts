@@ -9,7 +9,7 @@ type EpicStatus = (typeof EPIC_STATUSES)[number];
 export const UPDATE_EPIC_TOOL = {
   name: "update_epic",
   description:
-    "Edit an epic's fields (title, description, status, dates, target term). Requires Core or project-member access. Empty string clears nullable fields.",
+    "Edit an epic's fields (title, description, status, dates). Requires Core or project-member access. Empty string clears nullable fields.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -22,7 +22,6 @@ export const UPDATE_EPIC_TOOL = {
       },
       startsAt: { type: "string", description: "Empty string clears." },
       endsAt: { type: "string", description: "Empty string clears." },
-      targetTermId: { type: "string", description: "Empty string clears." },
     },
     required: ["epicId"],
     additionalProperties: false,
@@ -37,7 +36,6 @@ type Input = {
   status?: EpicStatus;
   startsAt?: string;
   endsAt?: string;
-  targetTermId?: string;
 };
 
 export class UpdateEpicError extends Error {
@@ -64,7 +62,6 @@ export async function runUpdateEpic(callerId: string, input: Input) {
     status?: EpicStatus;
     startsAt?: Date | null;
     endsAt?: Date | null;
-    targetTermId?: string | null;
   } = {};
 
   if (input.title !== undefined) {
@@ -96,9 +93,6 @@ export async function runUpdateEpic(callerId: string, input: Input) {
       }
       data.endsAt = d;
     }
-  }
-  if (input.targetTermId !== undefined) {
-    data.targetTermId = input.targetTermId === "" ? null : input.targetTermId;
   }
 
   const effStart = data.startsAt !== undefined ? data.startsAt : epic.startsAt;

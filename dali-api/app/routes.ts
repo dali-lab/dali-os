@@ -27,9 +27,10 @@ export default [
     route("sign/:bindingId", "signing/routes/sign.$bindingId.tsx"),
     route("sign/:bindingId/pdf", "signing/routes/sign.$bindingId.pdf.ts"),
 
-    // Hiring section. /hiring is the role-aware hub; the tools below are
-    // reached via its pill row (the sidebar carries a single Hiring entry).
+    // Hiring section. /hiring is My work (the viewer's reviews, interviews and
+    // delibs mirror); the tools below are the sidebar's Hiring sub-tabs.
     route("hiring", "hiring/routes/hiring.tsx"),
+    // Redirects into My work, as does hiring/interviews.
     route("hiring/reviewer", "hiring/routes/reviewer.tsx"),
     route("hiring/reviewer/application/:id", "hiring/routes/reviewer.application.$id.tsx"),
     // Applications database: list of all submissions for a cycle, scoped by
@@ -60,7 +61,6 @@ export default [
     route("hiring/emails/:id", "hiring/routes/email-templates.$id.tsx"),
     route("hiring/confidentiality-agreements/:id", "hiring/routes/confidentiality-agreements.$id.tsx"),
     route("hiring/cycles/:cycleId/confidentiality", "hiring/routes/cycles.$cycleId.confidentiality.tsx"),
-    // Interviewer surfaces: list (availability + assigned) and detail.
     route("hiring/interviews", "hiring/routes/interviews.tsx"),
     route("hiring/interviews/:interviewId", "hiring/routes/interviews.$interviewId.tsx"),
     route("hiring/analytics", "hiring/routes/analytics.tsx"),
@@ -170,6 +170,7 @@ export default [
       "documents/agreement/:id/signature/:sigId",
       "signing/routes/documents.agreement.$id.signature.$sigId.tsx",
     ),
+    route("whiteboard/:pageId", "routes/whiteboard.$pageId.tsx"),
     route("documents/:pageId", "routes/documents.$pageId.tsx"),
 
     // Members directory (separate from admin/members)
@@ -192,6 +193,10 @@ export default [
     route("education/manage/new", "education/routes/education.manage.new.tsx"),
     route("education/manage/assignments/:assignmentId", "education/routes/education.manage.assignments.$assignmentId.tsx"),
     route("education/manage/:offeringId", "education/routes/education.manage.$offeringId.tsx"),
+    // Certificate template library + editor (Core, flag: certificate-templates).
+    // Before education/:offeringId so the literal path isn't read as an offering id.
+    route("education/certificate-templates", "education/routes/education.certificate-templates.tsx"),
+    route("education/certificate-templates/:templateId", "education/routes/education.certificate-templates.$templateId.tsx"),
     // Standalone session self-check-in surface (the projected QR / link target).
     // Literal "check-in" precedes :offeringId so it isn't read as an offering id.
     route("education/check-in/:sessionId", "education/routes/education.check-in.$sessionId.tsx"),
@@ -220,15 +225,17 @@ export default [
     route("forms/preview-resolve", "forms/routes/forms.preview-resolve.ts"),
     route("forms/responses/:formId", "forms/routes/forms.responses.$formId.tsx"),
 
-    // Internal applicant portal — Fellowship (intern → full-time) and Core
-    // (member → Core). Authenticated member routes (not under /portal) so
-    // members use their existing session rather than the CAS flow built for
-    // external applicants. Both render the shared internal-cycle portal.
+    // Internal applicant portal — Interns cycles (Fellowship, intern →
+    // full-time) and Lab members cycles (member → Core). Authenticated member
+    // routes (not under /portal) so members use their existing session rather
+    // than the CAS flow built for external applicants. Both render the shared
+    // internal-cycle portal. :cycleId is optional: without it the portal shows
+    // the one open cycle, or a chooser when several are open.
     // Core's portal lives at /core/apply, not /core: the nav-regroup Core hub
     // (core/routes/core.hub.tsx) owns /core, so the hub loader redirects
-    // eligible non-Core members here when a Core cycle is open.
-    route("fellowship", "routes/fellowship.tsx"),
-    route("core/apply", "routes/core.tsx"),
+    // eligible non-Core members here when a Lab members cycle is open.
+    route("fellowship/:cycleId?", "routes/fellowship.tsx"),
+    route("core/apply/:cycleId?", "routes/core.tsx"),
     // Legacy path — old notification/task links pointed at /intern-to-full.
     route("intern-to-full", "routes/intern-to-full.legacy.tsx"),
 
@@ -258,17 +265,22 @@ export default [
   layout("routes/applicant-layout.tsx", [
     route("portal", "routes/portal.tsx"),
     route("portal/hiring", "routes/portal.hiring.tsx"),
-    route("portal/apply", "routes/portal.apply.tsx"),
+    route("portal/apply/:cycleId?", "routes/portal.apply.tsx"),
     route("portal/application", "routes/portal.application.tsx"),
     // Combined education + hiring application history (linked from the home).
     route("portal/applications", "routes/portal.applications.tsx"),
     route("portal/settings", "routes/portal.settings.tsx"),
+    // The calendar, mounted for non-members: the same page as /calendar, read
+    // and written without the lab's member/group directory (see
+    // loadCalendarData's `portal` option).
+    route("portal/calendar", "routes/portal.calendar.tsx"),
     // Education mirror for non-member Dartmouth students.
     route("portal/education", "routes/portal.education.tsx"),
     route("portal/education/:offeringId", "routes/portal.education.$offeringId.tsx"),
     route("portal/education/:offeringId/apply", "routes/portal.education.$offeringId.apply.tsx"),
     route("portal/education/:offeringId/hub", "routes/portal.education.$offeringId.hub.tsx"),
     route("portal/education/:offeringId/page/:pageId", "routes/portal.education.$offeringId.page.$pageId.tsx"),
+    route("portal/education/:offeringId/file/:fileId", "routes/portal.education.$offeringId.file.$fileId.tsx"),
     route("portal/education/:offeringId/assignments/:assignmentId", "routes/portal.education.$offeringId.assignments.$assignmentId.tsx"),
   ]),
 
@@ -419,6 +431,8 @@ export default [
   route("api/scheduled-meetings/:id/cancel", "calendar/routes/api.scheduled-meetings.$id.cancel.ts"),
   route("api/scheduled-meetings/:id/attendance", "calendar/routes/api.scheduled-meetings.$id.attendance.ts"),
   route("api/scheduled-meetings/:id/check-in", "calendar/routes/api.scheduled-meetings.$id.check-in.ts"),
+  route("api/scheduled-meetings/:id/propose-time", "calendar/routes/api.scheduled-meetings.$id.propose-time.ts"),
+  route("api/scheduled-meetings/:id/proposal", "calendar/routes/api.scheduled-meetings.$id.proposal.ts"),
   // Wallet-pass scan check-in: an operator scans a member's pass to mark them
   // present (inverse of self-check-in; the member is taken from the pass token).
   route(
@@ -551,6 +565,7 @@ export default [
   route("api/pages/:id/template", "routes/api.pages.$id.template.ts"),
   route("api/pages/:id/typography", "routes/api.pages.$id.typography.ts"),
   route("api/page-templates", "routes/api.page-templates.ts"),
+  route("api/page-templates/:id/blocks", "routes/api.page-templates.$id.blocks.ts"),
 
   // Project files (standalone uploads with versions)
   route("api/projects/:id/files", "projects/routes/api.projects.$id.files.ts"),
@@ -610,7 +625,6 @@ export default [
   route("api/hiring/cycles/:cycleId/interview-config", "hiring/routes/api.cycles.$cycleId.interview-config.ts"),
   route("api/hiring/cycles/:cycleId/reviewers", "hiring/routes/api.cycles.$cycleId.reviewers.ts"),
   route("api/hiring/cycles/:cycleId/reviewers/:reviewerId", "hiring/routes/api.cycles.$cycleId.reviewers.$reviewerId.ts"),
-  route("api/hiring/cycles/:cycleId/my-availability", "hiring/routes/api.cycles.$cycleId.my-availability.ts"),
   route("api/hiring/cycles/:cycleId/my-interviews", "hiring/routes/api.cycles.$cycleId.my-interviews.ts"),
   route("api/hiring/cycles/:cycleId/my-interviews/:interviewId/decline", "hiring/routes/api.cycles.$cycleId.my-interviews.$interviewId.decline.ts"),
   route("api/hiring/cycles/:cycleId/my-interviews/:interviewId/notes", "hiring/routes/api.cycles.$cycleId.my-interviews.$interviewId.notes.ts"),
@@ -640,6 +654,7 @@ export default [
   route("api/hiring/decisions/:id/release", "hiring/routes/api.decisions.$id.release.ts"),
 
   route("api/hiring/waitlist", "hiring/routes/api.waitlist.ts"),
+  route("api/hiring/waitlist/reorder", "hiring/routes/api.waitlist.reorder.ts"),
   route("api/hiring/waitlist/:domainApplicationId/accept", "hiring/routes/api.waitlist.$domainApplicationId.accept.ts"),
   route("api/hiring/waitlist/:domainApplicationId/remove", "hiring/routes/api.waitlist.$domainApplicationId.remove.ts"),
 
@@ -660,6 +675,7 @@ export default [
   route("api/upload/presign", "routes/api.upload.presign.ts"),
   route("api/upload/url", "routes/api.upload.url.ts"),
   route("api/upload/raw", "routes/api.upload.raw.ts"),
+  route("api/whiteboard/image", "routes/api.whiteboard.image.ts"),
 
   // Gmail OAuth one-time authorization
   route("admin/authorize-gmail", "routes/admin.authorize-gmail.ts"),

@@ -38,6 +38,15 @@ export function weekWindow(timezone: string, anchor?: Date): { start: Date; end:
   return { start: snap(sundayUtc), end: snap(nextSundayUtc) };
 }
 
+/** The Sunday-anchored week containing a "YYYY-MM-DD" day, as the ISO instant
+ *  the week grids key off. Routed through `parseAnchor` rather than
+ *  `new Date(day)` on purpose: a bare date string parses as UTC midnight, which
+ *  is the previous evening anywhere in the Americas — enough to place a Sunday
+ *  in the week before its own. */
+export function weekStartIsoForDay(timezone: string, day: string): string {
+  return weekWindow(timezone, parseAnchor(day)).start.toISOString();
+}
+
 /**
  * The range the screen shows. Day = the anchor's calendar day; Week =
  * `weekWindow`; Month/Agenda = the Sunday on/before the 1st .. the Sunday after

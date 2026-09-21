@@ -3,7 +3,8 @@ import type { Route } from "./+types/portal";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { getActiveCycle } from "~/hiring/lib/cycles";
+import { getActiveCycles } from "~/hiring/lib/cycles";
+import { applicantPortalPath } from "~/hiring/lib/applicant-groups";
 import { listCatalog, registrationOpen } from "~/education/lib/offerings.server";
 import { listUpcomingSessionsForUser } from "~/education/lib/schedule.server";
 import { buttonClasses } from "~/components/ui/Button";
@@ -23,9 +24,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Lab members have the full app; the portal is the non-member surface.
   if (auth.user.type === "member") return redirect("/");
 
-  const [cycle, offerings, me, upcomingSessions, instructorAssignments] =
+  const [cycles, offerings, me, upcomingSessions, instructorAssignments] =
     await Promise.all([
-      getActiveCycle(),
+      getActiveCycles({ applicants: "Students" }),
       listCatalog(auth.user.sub),
       prisma.user.findUnique({
         where: { id: auth.user.sub },
@@ -48,22 +49,44 @@ export async function loader({ request }: Route.LoaderArgs) {
   // a Dartmouth cohort.
   const tz = me?.timeZone ?? "America/New_York";
 
-  // Hiring summary: the latest status update on my application in the active
-  // cycle (Draft → Submitted → Withdrawn), if any.
-  let applicationStatus: string | null = null;
-  if (cycle) {
-    const application = await prisma.application.findFirst({
-      where: { userId: auth.user.sub, applicationCycleId: cycle.id },
+  // Hiring summary: the latest status on my application in each active cycle
+  // (Draft → Submitted → Withdrawn). Several cycles can be active at once; the
+  // card leads with the one I've applied to, else the first open one.
+  const [myActiveApps, hiringAppCount] = await Promise.all([
+    prisma.application.findMany({
+      where: { userId: auth.user.sub, applicationCycleId: { in: cycles.map((c) => c.id) } },
       select: {
+        applicationCycleId: true,
         statusUpdates: {
           orderBy: { createdAt: "desc" },
           take: 1,
           select: { newStatus: true },
         },
       },
-    });
-    applicationStatus = application?.statusUpdates[0]?.newStatus ?? null;
-  }
+    }),
+    prisma.application.count({ where: { userId: auth.user.sub } }),
+  ]);
+  const statusByCycle = new Map(
+    myActiveApps.map((a) => [a.applicationCycleId, a.statusUpdates[0]?.newStatus ?? null]),
+  );
+  const cycle =
+    cycles.find((c) => statusByCycle.get(c.id)) ??
+    cycles.find((c) => c.currentStatus === "Open") ??
+    cycles[0] ??
+    null;
+  const applicationStatus = cycle ? (statusByCycle.get(cycle.id) ?? null) : null;
+  // Formatted server-side (locale + zone pinned, matching the tracker's
+  // deadline line) and only while Open — a lapsed date reads as nonsense.
+  const closesOnFor = (c: (typeof cycles)[number]) =>
+    c.currentStatus === "Open" && c.closeDate
+      ? c.closeDate.toLocaleDateString("en-US", {
+          timeZone: "America/New_York",
+          weekday: "long",
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+        })
+      : null;
 
   const enrolled = offerings.filter((o) => o.myStatus === "Approved");
   // Every education application ever (any status, including offerings that have
@@ -75,24 +98,25 @@ export async function loader({ request }: Route.LoaderArgs) {
     firstName: auth.user.firstName ?? null,
     // The redesigned home shows a "My applications" card whenever the student
     // has applied to anything — DALI hiring or an education offering.
-    hasAnyApplication: educationAppCount > 0 || applicationStatus != null,
+    hasAnyApplication: educationAppCount > 0 || hiringAppCount > 0,
     educationAppCount,
     hiring: {
       cycleName: cycle?.name ?? null,
       cycleOpen: cycle?.currentStatus === "Open",
-      // Formatted server-side (locale + zone pinned, matching the tracker's
-      // deadline line) and only while Open — a lapsed date reads as nonsense.
-      closesOn:
-        cycle?.currentStatus === "Open" && cycle.closeDate
-          ? cycle.closeDate.toLocaleDateString("en-US", {
-              timeZone: "America/New_York",
-              weekday: "long",
-              month: "long",
-              day: "numeric",
-              year: "numeric",
-            })
-          : null,
+      closesOn: cycle ? closesOnFor(cycle) : null,
       applicationStatus,
+      applyHref: cycle ? applicantPortalPath("Students", cycle.id) : "/portal/apply",
+      trackHref: cycle ? `/portal/hiring?cycle=${cycle.id}` : "/portal/hiring",
+      // Every open cycle, for one Apply card each.
+      openCycles: cycles
+        .filter((c) => c.currentStatus === "Open")
+        .map((c) => ({
+          id: c.id,
+          name: c.name,
+          closesOn: closesOnFor(c),
+          applicationStatus: statusByCycle.get(c.id) ?? null,
+          applyHref: applicantPortalPath("Students", c.id),
+        })),
     },
     education: {
       openOfferings: offerings.filter((o) => registrationOpen(o)).length,
@@ -205,32 +229,32 @@ function buildActionCards(
 ): ActionCard[] {
   const cards: ActionCard[] = [];
 
-  if (hiring.cycleOpen) {
+  for (const open of hiring.openCycles) {
     const meta: { label: string; value: string }[] = [];
-    if (hiring.cycleName) meta.push({ label: "Cycle", value: hiring.cycleName });
+    meta.push({ label: "Cycle", value: open.name });
     meta.push({
       label: "Status",
       value:
-        hiring.applicationStatus === "Draft"
+        open.applicationStatus === "Draft"
           ? "Draft — not submitted"
-          : hiring.applicationStatus === "Submitted"
+          : open.applicationStatus === "Submitted"
             ? "Submitted"
             : "Not started",
     });
-    if (hiring.closesOn) {
+    if (open.closesOn) {
       meta.push({
         // A submitted application can still be edited up to the close date; an
         // unstarted one has that long to be filed at all.
-        label: hiring.applicationStatus === "Submitted" ? "Edit until" : "Closes",
-        value: hiring.closesOn,
+        label: open.applicationStatus === "Submitted" ? "Edit until" : "Closes",
+        value: open.closesOn,
       });
     }
     cards.push({
-      key: "apply-dali",
-      to: "/portal/apply",
+      key: `apply-dali-${open.id}`,
+      to: open.applyHref,
       emoji: "📝",
       title:
-        hiring.applicationStatus === "Draft"
+        open.applicationStatus === "Draft"
           ? "Finish your application"
           : "Apply to DALI",
       meta,
@@ -381,13 +405,13 @@ export default function PortalHome() {
           }
         >
           {hiring.applicationStatus ? (
-            <Link to="/portal/hiring" className={buttonClasses("primary", "sm")}>
+            <Link to={hiring.trackHref} className={buttonClasses("primary", "sm")}>
               {hiring.applicationStatus === "Draft"
                 ? "Finish my application"
                 : "Track my application"}
             </Link>
           ) : hiring.cycleOpen ? (
-            <Link to="/portal/apply" className={buttonClasses("primary", "sm")}>
+            <Link to={hiring.applyHref} className={buttonClasses("primary", "sm")}>
               Start an application
             </Link>
           ) : (

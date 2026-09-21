@@ -43,7 +43,7 @@ export default function PortalEducation() {
           Education at DALI
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Miniseries and workshops open to Dartmouth students. Apply or RSVP below!
+          Workshops, miniseries, and fellowships open to Dartmouth students. Apply or RSVP below!
         </p>
       </header>
 

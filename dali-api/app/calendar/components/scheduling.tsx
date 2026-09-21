@@ -18,6 +18,7 @@ import { Tooltip, InfoTip, Select } from "~/components/ui/floating";
 import { usePanelClass } from "~/components/ui/floating/os-styles";
 import { buttonClasses } from "~/components/ui/Button";
 import { Toggle } from "~/components/ui/Toggle";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import { DateField } from "~/components/ui/DateField";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
@@ -25,6 +26,7 @@ import { fullName } from "~/lib/display";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { NO_REPEAT, RepeatField, repeatSpecToRRule, type RepeatSpec } from "~/calendar/components/RepeatField";
 import { inviteDestinations, inviteOrganizerFields } from "~/calendar/components/composer";
+import type { RsvpStatus } from "~/calendar/lib/types";
 import {
   useMeetingNote,
   meetingNoteValid,
@@ -131,6 +133,7 @@ export function WeekToolbar({
   weekStartIso,
   onRefresh,
   refreshing,
+  weekNav,
 }: {
   // `color` is a Tailwind bg-* class; `swatch` is a raw CSS color for tints
   // that are computed at runtime (e.g. the availability gradient stops).
@@ -142,12 +145,24 @@ export function WeekToolbar({
   weekStartIso: string;
   onRefresh?: () => void;
   refreshing?: boolean;
+  /**
+   * Controlled week navigation. Callers that keep the week in their own state
+   * rather than in `?weekStart=` (CreateEventModal) must pass this: the default
+   * Link nav only moves the URL, so in a modal it would re-run the route loader
+   * behind the overlay while the grid — which reads the week from a prop — sat
+   * on the same seven days.
+   */
+  weekNav?: { onShift: (weeks: number) => void; onToday: () => void };
 }) {
   const { iconBtn } = useOsChrome();
   // Use URL-relative resolution so "?weekStart=…" stays on /calendar instead of
   // bubbling up to the parent route (which would land on /).
   const prev = `?weekStart=${shiftWeekParam(weekStartIso, -1)}`;
   const next = `?weekStart=${shiftWeekParam(weekStartIso, 1)}`;
+  const todayClass = cn(
+    "text-xs font-semibold transition-colors",
+    "os-edit-btn os-add-btn--sm",
+  );
   return (
     <div className={cn("flex items-center justify-between", "mb-5")}>
       <div className="flex items-center gap-3">
@@ -160,35 +175,53 @@ export function WeekToolbar({
           {monthLabel}
         </h2>
         <div className="flex items-center gap-1">
-          <Link
-            to={prev}
-            relative="path"
-            aria-label="Previous week"
-            preventScrollReset
-            className={iconBtn}
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </Link>
-          <Link
-            to="?"
-            relative="path"
-            preventScrollReset
-            className={cn(
-              "text-xs font-semibold transition-colors",
-              "os-edit-btn os-add-btn--sm",
-            )}
-          >
-            Today
-          </Link>
-          <Link
-            to={next}
-            relative="path"
-            aria-label="Next week"
-            preventScrollReset
-            className={iconBtn}
-          >
-            <ChevronRight className="w-4 h-4" />
-          </Link>
+          {weekNav ? (
+            <>
+              <button
+                type="button"
+                aria-label="Previous week"
+                onClick={() => weekNav.onShift(-1)}
+                className={iconBtn}
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <button type="button" onClick={weekNav.onToday} className={todayClass}>
+                Today
+              </button>
+              <button
+                type="button"
+                aria-label="Next week"
+                onClick={() => weekNav.onShift(1)}
+                className={iconBtn}
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </>
+          ) : (
+            <>
+              <Link
+                to={prev}
+                relative="path"
+                aria-label="Previous week"
+                preventScrollReset
+                className={iconBtn}
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </Link>
+              <Link to="?" relative="path" preventScrollReset className={todayClass}>
+                Today
+              </Link>
+              <Link
+                to={next}
+                relative="path"
+                aria-label="Next week"
+                preventScrollReset
+                className={iconBtn}
+              >
+                <ChevronRight className="w-4 h-4" />
+              </Link>
+            </>
+          )}
           {onRefresh && (
             <Tooltip content={refreshing ? "Refreshing…" : "Refresh availability"}>
               <button
@@ -250,6 +283,9 @@ export function CreateScheduledMeetingForm({
   // Meeting notes are opt-in — the About / type / location fields only appear
   // once enabled. See MeetingNoteFields for the derive-type-from-project model.
   const note = useMeetingNote();
+  const whiteboardEnabled = useFeatureFlag("whiteboard");
+  // Flag: a Core meeting may also be about a project; off = Core clears it.
+  const unifiedCoreProject = useFeatureFlag("unified-core-project-meetings");
   // Self check-in is independent of the meeting note (QR lives on the note when
   // one exists, otherwise on /calendar/check-in/:id).
   const [selfCheckIn, setSelfCheckIn] = useState(false);
@@ -264,6 +300,7 @@ export function CreateScheduledMeetingForm({
         count: number;
         gcalError?: string | null;
         notePageId?: string | null;
+        whiteboardPageId?: string | null;
         meetingId?: string | null;
         selfCheckIn?: boolean;
       }
@@ -288,13 +325,13 @@ export function CreateScheduledMeetingForm({
   // Prefill "About" when exactly one selected group is a system-managed project
   // group (see GroupOption.projectId) — a default the sender can still change. It
   // fills even while the note is off, so the project is already chosen if they
-  // turn it on; it never enables the note itself. A Core meeting's note has no
-  // project, so the prefill stays out of its way.
+  // turn it on; it never enables the note itself. Without the unify flag a Core
+  // meeting's note has no project, so the prefill stays out of its way.
   useEffect(() => {
-    if (selectedGroupIds.length !== 1 || isCoreMeeting) return;
+    if (selectedGroupIds.length !== 1 || (isCoreMeeting && !unifiedCoreProject)) return;
     note.applyGroupPrefill(groupsById.get(selectedGroupIds[0]!)?.projectId ?? null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedGroupIds, isCoreMeeting]);
+  }, [selectedGroupIds, isCoreMeeting, unifiedCoreProject]);
 
   // Both pickers filled → derive duration; otherwise fall back to 30 min so
   // "schedule later" (no start/end yet) still produces a valid payload.
@@ -358,6 +395,7 @@ export function CreateScheduledMeetingForm({
           count: json.notifiedCount ?? 0,
           gcalError: json.gcalError ?? null,
           notePageId: json.notePageId ?? null,
+          whiteboardPageId: json.whiteboardPageId ?? null,
           meetingId: json.meeting?.id ?? null,
           selfCheckIn,
         });
@@ -505,13 +543,22 @@ export function CreateScheduledMeetingForm({
               label="Create meeting note"
             />
 
-            {note.state.enabled && (
+            {whiteboardEnabled && (
+              <Toggle
+                checked={note.state.whiteboard}
+                onChange={(e) => note.setWhiteboard(e.target.checked)}
+                label="Create whiteboard"
+              />
+            )}
+
+            {(note.state.enabled || note.state.whiteboard) && (
               <MeetingNoteFields
                 note={note}
                 myProjects={myProjects}
                 fieldClass={fieldClass}
                 labelClass={labelClass}
                 core={isCoreMeeting}
+                allowProjectWhenCore={unifiedCoreProject}
               />
             )}
           </div>
@@ -577,6 +624,26 @@ export function CreateScheduledMeetingForm({
                       className="underline font-medium"
                     >
                       View meeting note
+                    </a>
+                  </>
+                )}
+                {status.whiteboardPageId && (
+                  <>
+                    {" "}
+                    <a
+                      href={`/whiteboard/${status.whiteboardPageId}`}
+                      onClick={(e) => {
+                        if (
+                          requestOpenTabIfEmbedded(
+                            `/whiteboard/${status.whiteboardPageId}`,
+                            "Whiteboard",
+                          )
+                        )
+                          e.preventDefault();
+                      }}
+                      className="underline font-medium"
+                    >
+                      View whiteboard
                     </a>
                   </>
                 )}
@@ -652,6 +719,7 @@ export function ParticipantPicker({
   usersById,
   groupsById,
   resolvedCount,
+  responsesByUserId,
 }: {
   users: UserOption[];
   groups: GroupOption[];
@@ -662,6 +730,9 @@ export function ParticipantPicker({
   usersById: Map<string, UserOption>;
   groupsById: Map<string, GroupOption>;
   resolvedCount: number;
+  // Per-guest RSVP (from the meeting's invite notifications), shown as a dot on
+  // each chip when editing an existing meeting. Absent = no response yet.
+  responsesByUserId?: Map<string, RsvpStatus>;
 }) {
   const { fieldRadius } = useOsChrome();
   const panelClass = usePanelClass();
@@ -750,6 +821,13 @@ export function ParticipantPicker({
 
   const chip =
     "inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-foreground";
+  // Google-style RSVP dot: green accepted, red declined, amber maybe.
+  const RSVP_DOT: Record<RsvpStatus, string> = {
+    Accepted: "text-green-600",
+    Declined: "text-red-600",
+    Tentative: "text-amber-500",
+    Pending: "text-muted-foreground/40",
+  };
   const listId = "participant-list";
 
   return (
@@ -792,8 +870,18 @@ export function ParticipantPicker({
         {selectedUserIds.map((uid) => {
           const u = usersById.get(uid);
           if (!u) return null;
+          const rsvp = responsesByUserId?.get(uid);
           return (
             <span key={`u:${uid}`} className={chip}>
+              {rsvp && (
+                <span
+                  className={cn("text-[9px] leading-none", RSVP_DOT[rsvp])}
+                  title={`RSVP: ${rsvp}`}
+                  aria-label={`RSVP: ${rsvp}`}
+                >
+                  ●
+                </span>
+              )}
               {userLabel(u)}
               <button
                 type="button"
@@ -928,6 +1016,7 @@ export function ScheduleWeekGrid({
   selectedEndLocal,
   compact = false,
   hideAvailability = false,
+  weekNav,
 }: {
   participantIds: string[];
   // True when the caller is rendering the current user's own availability
@@ -958,6 +1047,12 @@ export function ScheduleWeekGrid({
    * so MeetingComposer is unchanged.
    */
   hideAvailability?: boolean;
+  /**
+   * Controlled week arrows for the toolbar. Required when the caller owns the
+   * week (CreateEventModal); omitted on /calendar, where the arrows navigate
+   * `?weekStart=` and the loader supplies the new week.
+   */
+  weekNav?: { onShift: (weeks: number) => void; onToday: () => void };
 }) {
   const { panel } = useOsChrome();
   const [data, setData] = useState<GroupAvailResponse | null>(null);
@@ -1261,6 +1356,11 @@ export function ScheduleWeekGrid({
       days={days}
       eventsByDay={eventsByDay}
       showSubHourGrid
+      // The availability grid always lives inside a scrollport (the compact
+      // preview's own box, or the /calendar composer's scroll section), so pin
+      // the weekday header — otherwise it scrolls off and you lose which day
+      // each column is.
+      stickyHeader
       timezone={timezone}
       backgroundLayer={(dayIdx) => (
         <>
@@ -1332,6 +1432,7 @@ export function ScheduleWeekGrid({
       <WeekToolbar
         monthLabel={"Schedule preview"}
         weekStartIso={weekStartIso}
+        weekNav={weekNav}
         onRefresh={refresh}
         refreshing={loading || revalidator.state !== "idle"}
         legend={

@@ -9,11 +9,12 @@ import {
   type DiscussionPost as OfferingDiscussionPost,
 } from "./OfferingDiscussion";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import { cn } from "~/lib/cn";
 import { DocEditor } from "~/components/doc";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { Avatar } from "~/components/ui/Avatar";
-import { Check, ChevronRight, FileText } from "lucide-react";
+import { Check, ChevronRight, FileText, Paperclip, Users } from "lucide-react";
 
 // The enrolled course hub, shared by the member surface and the portal
 // mirror. `basePath` decides where page/assignment links land
@@ -44,7 +45,8 @@ export type HubData = {
     sessionId: string | null;
     children: { id: string; title: string; sessionId: string | null }[];
   }[];
-  workspaceDocs: { id: string; title: string }[];
+  workspaceDocs: { id: string; title: string; sessionId: string | null }[];
+  files: { id: string; title: string; href: string; sessionId: string | null }[];
   assignments: {
     id: string;
     title: string;
@@ -83,8 +85,17 @@ type DiscussionPost = {
 // concept split — see specs/education-student-ui.md.
 const TABS = [
   { key: "timeline", label: "Timeline" },
-  { key: "grades", label: "Grades" },
   { key: "discussions", label: "Discussions" },
+  { key: "overview", label: "Overview" },
+] as const;
+
+// education-student-hub: the reworked tab set. The Workspace tab is gone (shared
+// docs live on the timeline now) and a Canvas-style People tab replaces the
+// roster that used to sit inside Overview.
+const V2_TABS = [
+  { key: "timeline", label: "Timeline" },
+  { key: "discussions", label: "Discussions" },
+  { key: "people", label: "People" },
   { key: "overview", label: "Overview" },
 ] as const;
 
@@ -105,14 +116,18 @@ export function CourseHub({
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const tz = useUserTimeZone();
+  const v2 = useFeatureFlag("education-student-hub");
   const tab = searchParams.get("tab") ?? "timeline";
 
-  // Workspace tab only when the offering has shared collaborative docs. Insert
-  // it before Overview (after Discussions) so the co-edited docs sit with the
-  // other communication surfaces.
-  const tabs = data.workspaceDocs.length > 0
-    ? [...TABS.slice(0, 3), { key: "workspace", label: "Workspace" } as const, ...TABS.slice(3)]
-    : TABS;
+  // education-student-hub: fixed tab set with People, no Workspace. Otherwise the
+  // Workspace tab appears only when the offering has shared collaborative docs,
+  // inserted before Overview (after Discussions) so the co-edited docs sit with
+  // the other communication surfaces.
+  const tabs = v2
+    ? V2_TABS
+    : data.workspaceDocs.length > 0
+      ? [...TABS.slice(0, 2), { key: "workspace", label: "Workspace" } as const, ...TABS.slice(2)]
+      : TABS;
 
   // Assignments awaiting this student's submission (past-due ones can't be
   // submitted anymore, so they don't count) — surfaced as a tab badge on the
@@ -153,19 +168,16 @@ export function CourseHub({
           sessions={data.sessions}
           materials={data.materials}
           assignments={data.assignments}
+          sharedDocs={v2 ? data.workspaceDocs : []}
+          files={v2 ? data.files : []}
           basePath={basePath}
           tz={tz}
           isManager={data.isManager}
         />
       )}
 
-      {tab === "grades" && (
-        <GradesTab
-          sessions={data.sessions}
-          assignments={data.assignments}
-          myCertificateId={data.myCertificateId}
-          tz={tz}
-        />
+      {v2 && tab === "people" && (
+        <PeopleTab instructors={data.instructors} classmates={data.classmates} />
       )}
 
       {tab === "overview" && (
@@ -212,7 +224,7 @@ export function CourseHub({
               </p>
             )}
 
-            {data.instructors.length > 0 && (
+            {!v2 && data.instructors.length > 0 && (
               <div className="mt-4 border-t border-border pt-4">
                 <p className="text-xs font-semibold text-muted-foreground">
                   {data.instructors.length === 1 ? "Instructor" : "Instructors"}
@@ -231,7 +243,7 @@ export function CourseHub({
               </div>
             )}
 
-            {data.classmates.length > 0 && (
+            {!v2 && data.classmates.length > 0 && (
               <div className="mt-4 border-t border-border pt-4">
                 <p className="text-xs font-semibold text-muted-foreground">
                   Taking this course · {data.classmates.length}
@@ -263,7 +275,7 @@ export function CourseHub({
         </div>
       )}
 
-      {tab === "workspace" && (
+      {!v2 && tab === "workspace" && (
         <WorkspaceTab
           docs={data.workspaceDocs}
           collabToken={collabToken ?? null}
@@ -307,42 +319,132 @@ export function CourseHub({
   );
 }
 
-/** One material, rendered as a clickable resource card. */
-function MaterialLink({
-  to,
-  title,
-  nested = false,
-}: {
-  to: string;
-  title: string;
-  nested?: boolean;
-}) {
+// A single thing attached to a session or the whole course on the student
+// timeline: a read-only material page, a co-edited shared doc, or an uploaded
+// file. Under education-student-hub these three live together instead of in
+// separate Materials / Workspace / Files buckets.
+type TimelineResource =
+  | { kind: "material"; id: string; title: string }
+  | { kind: "shared"; id: string; title: string }
+  | { kind: "file"; id: string; title: string; href: string };
+
+const RESOURCE_ICON = { material: FileText, shared: Users, file: Paperclip } as const;
+
+/** Inline resource link, used under a session row. Files open the Drive viewer
+ *  in a new tab; materials + shared docs open their in-app page. */
+function ResourceChip({ r, basePath }: { r: TimelineResource; basePath: string }) {
+  const Icon = RESOURCE_ICON[r.kind];
+  const className = "inline-flex items-center gap-1 text-accent-teal hover:underline";
+  const inner = (
+    <>
+      <Icon className="h-3 w-3" aria-hidden />
+      {r.title}
+      {r.kind === "shared" && (
+        <span className="rounded-full bg-accent-teal/10 px-1.5 text-[9px] font-semibold uppercase tracking-wide text-accent-teal">
+          Shared
+        </span>
+      )}
+    </>
+  );
+  if (r.kind === "file") {
+    return (
+      <a href={r.href} target="_blank" rel="noreferrer" className={className}>
+        {inner}
+      </a>
+    );
+  }
   return (
-    <Link
-      to={to}
-      className={`group flex items-center gap-3 rounded-lg border border-border bg-card transition-colors hover:border-accent-coral/50 hover:bg-muted/40 ${
-        nested ? "px-3 py-2" : "px-4 py-3"
-      }`}
-    >
-      <span
-        className={`flex shrink-0 items-center justify-center rounded-md bg-accent-coral/10 text-accent-coral ${
-          nested ? "h-7 w-7" : "h-8 w-8"
-        }`}
-      >
-        <FileText className={nested ? "h-3.5 w-3.5" : "h-4 w-4"} aria-hidden />
+    <Link to={`${basePath}/page/${r.id}`} className={className}>
+      {inner}
+    </Link>
+  );
+}
+
+/** Full-width resource card, used in the "Whole course" group. */
+function ResourceCard({ r, basePath }: { r: TimelineResource; basePath: string }) {
+  const Icon = RESOURCE_ICON[r.kind];
+  const className =
+    "group flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 transition-colors hover:border-accent-coral/50 hover:bg-muted/40";
+  const inner = (
+    <>
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent-coral/10 text-accent-coral">
+        <Icon className="h-4 w-4" aria-hidden />
       </span>
-      <span
-        className={`min-w-0 flex-1 truncate group-hover:text-accent-coral ${
-          nested ? "text-sm text-muted-foreground" : "text-sm font-medium text-foreground"
-        }`}
-      >
-        {title}
+      <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground group-hover:text-accent-coral">
+        {r.title}
       </span>
+      {r.kind === "shared" && (
+        <span className="shrink-0 rounded-full bg-accent-teal/10 px-2 py-0.5 text-[10px] font-semibold text-accent-teal">
+          Shared
+        </span>
+      )}
       <ChevronRight
         className="h-4 w-4 shrink-0 text-muted-foreground/60 group-hover:text-accent-coral"
         aria-hidden
       />
+    </>
+  );
+  if (r.kind === "file") {
+    return (
+      <a href={r.href} target="_blank" rel="noreferrer" className={className}>
+        {inner}
+      </a>
+    );
+  }
+  return (
+    <Link to={`${basePath}/page/${r.id}`} className={className}>
+      {inner}
     </Link>
+  );
+}
+
+/** Canvas-style roster: instructors and students, each as an avatar row.
+ *  education-student-hub — this is the People tab (was a block in Overview). */
+function PeopleTab({
+  instructors,
+  classmates,
+}: {
+  instructors: HubData["instructors"];
+  classmates: HubData["classmates"];
+}) {
+  const Group = ({
+    label,
+    people,
+  }: {
+    label: string;
+    people: { id: string; name: string; photoUrl: string | null; isMe?: boolean; role?: string }[];
+  }) => (
+    <section>
+      <h2 className="mb-2 font-heading text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+        {label} · {people.length}
+      </h2>
+      <ul className="divide-y divide-border rounded-lg border border-border bg-card">
+        {people.map((p) => (
+          <li key={p.id} className="flex items-center gap-3 px-4 py-2.5">
+            <Avatar photoUrl={p.photoUrl} name={p.name} size="sm" />
+            <span className="text-sm font-medium text-foreground">{p.name}</span>
+            {p.isMe && (
+              <span className="rounded-full bg-accent-coral/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent-coral">
+                You
+              </span>
+            )}
+            {p.role && <span className="ml-auto text-xs text-muted-foreground">{p.role}</span>}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+
+  return (
+    <div className="flex flex-col gap-5">
+      {instructors.length > 0 && (
+        <Group
+          label={instructors.length === 1 ? "Instructor" : "Instructors"}
+          people={instructors.map((i) => ({ ...i, role: "Instructor" }))}
+        />
+      )}
+      <Group label="Students" people={classmates} />
+    </div>
   );
 }
 
@@ -363,7 +465,7 @@ function DiscussionBoard({
           name="body"
           required
           rows={3}
-          placeholder="Start a discussion — questions, links, ideas…"
+          placeholder="Ask a question or share something with the class…"
           className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
         />
         <div className="mt-2">
@@ -395,7 +497,7 @@ function DiscussionBoard({
       ))}
       {threads.length === 0 && (
         <p className="text-sm text-muted-foreground italic">
-          No discussions yet — start the first thread above.
+          No posts yet — start the discussion above.
         </p>
       )}
     </div>
@@ -567,17 +669,6 @@ function WorkspaceTab({
   );
 }
 
-/** One number on the Overview progress row (attendance, assignments, grades). */
-function StatCard({ label, value, hint }: { label: string; value: string; hint: string }) {
-  return (
-    <div className="rounded-lg border border-border bg-card p-4">
-      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className="mt-1 font-heading text-2xl font-bold text-foreground">{value}</p>
-      <p className="text-xs text-muted-foreground">{hint}</p>
-    </div>
-  );
-}
-
 /** One-tap self-check-in for the student, used on the Overview "up next" card and
  *  each open session row. Posts to the same endpoint the projected QR opens. */
 function SessionCheckInButton({
@@ -636,6 +727,8 @@ function SessionTimeline({
   sessions,
   materials,
   assignments,
+  sharedDocs = [],
+  files = [],
   basePath,
   tz,
   isManager,
@@ -643,6 +736,10 @@ function SessionTimeline({
   sessions: HubData["sessions"];
   materials: HubData["materials"];
   assignments: HubData["assignments"];
+  /** education-student-hub: co-edited docs + uploaded files placed on the
+   *  timeline. Empty (the defaults) on the classic hub. */
+  sharedDocs?: HubData["workspaceDocs"];
+  files?: HubData["files"];
   basePath: string;
   tz: string;
   isManager: boolean;
@@ -653,9 +750,22 @@ function SessionTimeline({
     { id: m.id, title: m.title, sessionId: m.sessionId, isFolder: m.isFolder },
     ...m.children.map((c) => ({ id: c.id, title: c.title, sessionId: c.sessionId, isFolder: false })),
   ]);
-  const materialsForSession = (sid: string) =>
-    flatMaterials.filter((f) => !f.isFolder && f.sessionId === sid);
-  const generalMaterials = flatMaterials.filter((f) => !f.isFolder && !f.sessionId);
+  // Files open in the member file viewer (/documents/file/:id); the portal shell
+  // bounces Dartmouth students there, so on the portal surface they go through
+  // the enrollment-gated portal file route instead.
+  const fileHref = (id: string) =>
+    basePath.startsWith("/portal") ? `${basePath}/file/${id}` : `/documents/file/${id}`;
+  // Every timeline resource (material / shared doc / file) reduced to one shape,
+  // tagged with the session it belongs to (null = whole course).
+  const allResources: (TimelineResource & { sessionId: string | null })[] = [
+    ...flatMaterials
+      .filter((f) => !f.isFolder)
+      .map((m) => ({ kind: "material" as const, id: m.id, title: m.title, sessionId: m.sessionId })),
+    ...sharedDocs.map((d) => ({ kind: "shared" as const, id: d.id, title: d.title, sessionId: d.sessionId })),
+    ...files.map((f) => ({ kind: "file" as const, id: f.id, title: f.title, href: fileHref(f.id), sessionId: f.sessionId })),
+  ];
+  const resourcesForSession = (sid: string) => allResources.filter((r) => r.sessionId === sid);
+  const generalResources = allResources.filter((r) => r.sessionId == null);
   const assignmentsForSession = (seq: number) =>
     assignments.filter((a) => a.sessionSequence === seq);
   const generalAssignments = assignments.filter((a) => a.sessionSequence == null);
@@ -668,7 +778,7 @@ function SessionTimeline({
       .sort((a, b) => +new Date(a.datetime) - +new Date(b.datetime))[0]?.id ?? null;
   const nextSession = sessions.find((s) => s.id === nextId) ?? null;
 
-  if (sessions.length === 0 && generalMaterials.length === 0 && assignments.length === 0) {
+  if (sessions.length === 0 && allResources.length === 0 && assignments.length === 0) {
     return <p className="text-sm text-muted-foreground italic">Nothing scheduled yet.</p>;
   }
 
@@ -704,7 +814,7 @@ function SessionTimeline({
         {sessions.map((s) => {
           const past = new Date(s.endsAt ?? s.datetime) < now;
           const isNext = s.id === nextId;
-          const mats = materialsForSession(s.id);
+          const res = resourcesForSession(s.id);
           const asgs = assignmentsForSession(s.sequence);
           return (
             <li
@@ -743,17 +853,10 @@ function SessionTimeline({
                       {s.notes}
                     </p>
                   )}
-                  {(mats.length > 0 || s.recordingUrl) && (
+                  {(res.length > 0 || s.recordingUrl) && (
                     <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs">
-                      {mats.map((m) => (
-                        <Link
-                          key={m.id}
-                          to={`${basePath}/page/${m.id}`}
-                          className="inline-flex items-center gap-1 text-accent-teal hover:underline"
-                        >
-                          <FileText className="h-3 w-3" aria-hidden />
-                          {m.title}
-                        </Link>
+                      {res.map((r) => (
+                        <ResourceChip key={`${r.kind}-${r.id}`} r={r} basePath={basePath} />
                       ))}
                       {s.recordingUrl && (
                         <a
@@ -777,14 +880,14 @@ function SessionTimeline({
         })}
       </ol>
 
-      {(generalMaterials.length > 0 || generalAssignments.length > 0) && (
+      {(generalResources.length > 0 || generalAssignments.length > 0) && (
         <section className="rounded-lg border border-border bg-card p-4">
           <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Whole course
           </h3>
           <div className="flex flex-col gap-2">
-            {generalMaterials.map((m) => (
-              <MaterialLink key={m.id} to={`${basePath}/page/${m.id}`} title={m.title} />
+            {generalResources.map((r) => (
+              <ResourceCard key={`${r.kind}-${r.id}`} r={r} basePath={basePath} />
             ))}
             {generalAssignments.map((a) => (
               <AssignmentRow key={a.id} a={a} basePath={basePath} tz={tz} />
@@ -872,87 +975,3 @@ function AssignmentRow({
   );
 }
 
-/** Grades tab: the student's standing (attendance + certificate) and a table of
- *  every assignment with its score and status. */
-function GradesTab({
-  sessions,
-  assignments,
-  myCertificateId,
-  tz,
-}: {
-  sessions: HubData["sessions"];
-  assignments: HubData["assignments"];
-  myCertificateId: string | null;
-  tz: string;
-}) {
-  const present = sessions.filter((s) => s.myAttendance === "Present").length;
-  const total = sessions.length;
-  const pct = total > 0 ? Math.round((present / total) * 100) : null;
-  return (
-    <div className="flex flex-col gap-4">
-      <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <StatCard
-          label="Attendance"
-          value={total > 0 ? `${present}/${total}` : "—"}
-          hint={pct != null ? `${pct}% of sessions` : "No sessions yet"}
-        />
-        <StatCard
-          label="Assignments"
-          value={
-            assignments.length > 0
-              ? `${assignments.filter((a) => a.mySubmittedAt).length}/${assignments.length}`
-              : "—"
-          }
-          hint={assignments.length > 0 ? "submitted" : "None assigned"}
-        />
-        <StatCard
-          label="Certificate"
-          value={myCertificateId ? "Earned" : "—"}
-          hint={myCertificateId ? "course complete" : "on completion"}
-        />
-      </section>
-
-      {assignments.length === 0 ? (
-        <p className="text-sm text-muted-foreground italic">No graded work yet.</p>
-      ) : (
-        <div className="overflow-x-auto rounded-lg border border-border bg-card">
-          <table className="w-full text-sm">
-            <thead className="border-b border-border bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
-              <tr>
-                <th className="px-4 py-2 font-semibold">Assignment</th>
-                <th className="px-4 py-2 font-semibold">Due</th>
-                <th className="px-4 py-2 text-right font-semibold">Score</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {assignments.map((a) => {
-                const graded = a.myGrade != null || a.myScore != null;
-                return (
-                  <tr key={a.id}>
-                    <td className="px-4 py-2 text-foreground">{a.title}</td>
-                    <td className="px-4 py-2 text-muted-foreground">
-                      {a.dueAt ? formatDateTime(a.dueAt, tz) : "—"}
-                    </td>
-                    <td className="px-4 py-2 text-right font-semibold text-foreground">
-                      {graded ? (
-                        a.myScore != null && a.points != null ? (
-                          `${a.myScore}/${a.points}`
-                        ) : (
-                          (a.myGrade ?? String(a.myScore))
-                        )
-                      ) : a.mySubmittedAt ? (
-                        <span className="font-normal text-blue-700">Submitted</span>
-                      ) : (
-                        <span className="font-normal text-muted-foreground">—</span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-}

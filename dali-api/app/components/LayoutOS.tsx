@@ -27,7 +27,8 @@ import { AttentionPanel, attentionCount } from '~/components/AttentionPanel'
 import { DesktopBanner } from '~/components/DesktopBanner'
 import { ActivityLauncher } from '~/components/activities/ActivityLauncher'
 import { CommandPalette } from '~/components/CommandPalette'
-import { PageDocButton, ShellGuideProvider } from '~/components/page-docs/PageDocButton'
+import { PageDocButton, GuideTopbarButton, ShellGuideProvider } from '~/components/page-docs/PageDocButton'
+import type { GuideState } from '~/components/page-docs/guide-bridge'
 import {
   TablessHistoryNav,
   useRecordTablessHistory,
@@ -38,6 +39,7 @@ import { useShellNav } from '~/components/shell-nav'
 import { setFocusPreference } from '~/lib/focus-mode'
 import { useOsShellRoot } from '~/lib/os-shell'
 import { cn } from '~/lib/cn'
+import { osMenuClass, osMenuItemClass, railRowClass } from '~/components/os-shell-chrome'
 import {
   areaForPath,
   pinnedNavItems,
@@ -85,38 +87,6 @@ const LAST_AREA_KEY = 'dali:sidebar:area'
 /* the user row at the foot of the rail as a menu.                      */
 /* ------------------------------------------------------------------ */
 
-// Every floating panel in the design is one material: the card fill, a hairline
-// container border, 14px corners and a cast shadow. Not the card *hover* fill —
-// that's a state a card takes on under the pointer, so a panel painted with it
-// reads as a different surface from the card it drops out of, which is what
-// made the account menu look out of place against the rail.
-const osMenuClass =
-  'rounded-[14px] border border-os-container bg-os-card p-1.5 shadow-[0_12px_32px_var(--color-os-shadow)]'
-
-// A row inside one. Full-strength text — a menu's rows are all equally
-// available, so greying them is a state that isn't true of any of them.
-const osMenuItemClass =
-  'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm text-foreground transition-colors hover:bg-os-container'
-
-// A rail row. The active state is the design's marker: a filled well whose
-// left border is the accent stripe, square on that edge so it reads as
-// attached to the rail rather than as a floating pill.
-function railRowClass(active: boolean, collapsed: boolean) {
-  return cn(
-    'flex items-center gap-3 text-base text-left transition-colors',
-    collapsed ? 'justify-center px-3 py-2 rounded-os-item' : 'px-3 py-2',
-    active
-      ? cn('font-medium text-foreground', !collapsed && 'os-subtab-active pl-[10px]')
-      : cn(
-          'font-normal text-os-grey hover:bg-os-hover hover:text-foreground',
-          // Match the active state / sub-tabs: right-rounded hover, square on
-          // the left where the rail accent sits (not a bare rectangle).
-          !collapsed && 'rounded-r-os-item',
-        ),
-    collapsed && active && 'bg-os-container text-foreground',
-  )
-}
-
 export function LayoutOS({
   user,
   photoUrl,
@@ -153,6 +123,9 @@ export function LayoutOS({
   } = useShellNav(tabless)
 
   const [focusedTabUrl, setFocusedTabUrl] = useState<string | null>(null)
+  // Tab mode: the focused tab's frame reports its page guide over the guide
+  // bridge, since only that document knows the route's docKey.
+  const [workspaceGuide, setWorkspaceGuide] = useState<GuideState | null>(null)
   // The live url, query included — the nav matchers trim it themselves, but they
   // need the query to tell a Core deep-link into the Drive (/drive?type=agreement)
   // from the plain Drive pin. In tab mode the focused-tab url already carries it;
@@ -711,10 +684,15 @@ export function LayoutOS({
       </div>
 
       <div className="flex flex-shrink-0 items-center gap-3">
-        {/* The page's guide, on the same plate as the bell beside it. Renders
-            only where the shell knows the route (tabless); in tab mode the
-            iframe carries its own copy, since the docKey lives in there. */}
-        <PageDocButton variant="topbar" />
+        {/* The page's guide, on the same plate as the bell beside it, in both
+            shells. Tabless mode shares this document with the page and reads
+            the route itself; tab mode takes the focused frame's report and
+            posts the click back to it. The open guide draws its own Close. */}
+        {tabless ? (
+          <PageDocButton variant="topbar" />
+        ) : workspaceGuide?.hasGuide && !workspaceGuide.open ? (
+          <GuideTopbarButton onClick={() => workspaceRef.current?.openFocusedGuide()} />
+        ) : null}
         <div ref={bellRef} className="relative">
           <Tooltip content={`Notifications — ${taskCount} need${taskCount === 1 ? 's' : ''} your attention`}>
             <button
@@ -761,21 +739,23 @@ export function LayoutOS({
                   closeBellPanel()
                   openInWorkspace({ url, label })
                 }}
+                headerAction={
+                  // Close after opening, in the same handler. Closing on
+                  // capture flushed the state update before the bubble phase,
+                  // unmounting this button so its navigation never ran.
+                  <button
+                    type="button"
+                    {...seeAllProps}
+                    onClick={(e) => {
+                      seeAllProps.onClick(e)
+                      closeBellPanel()
+                    }}
+                    className="shrink-0 text-xs font-medium text-os-grey hover:text-foreground"
+                  >
+                    See all →
+                  </button>
+                }
               />
-              {/* Close after opening, in the same handler. Closing on
-                  capture flushed the state update before the bubble phase,
-                  unmounting this button so its navigation never ran. */}
-              <button
-                type="button"
-                {...seeAllProps}
-                onClick={(e) => {
-                  seeAllProps.onClick(e)
-                  closeBellPanel()
-                }}
-                className={cn(osMenuItemClass, 'text-os-grey')}
-              >
-                <span className="truncate">See all →</span>
-              </button>
             </div>
           )}
         </div>
@@ -908,6 +888,7 @@ export function LayoutOS({
                 : []),
             ]}
             onActiveUrlChange={setFocusedTabUrl}
+            onGuideChange={setWorkspaceGuide}
           />
         )}
       </main>

@@ -20,6 +20,7 @@ import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
 import { APPLICATION_TZ, APPLICATION_TZ_LABEL } from "~/lib/timezone";
 import { renderForSlot, notificationSlot } from "./email-variables";
+import { getHiringEmail } from "~/hiring/lib/hiring-emails.server";
 import { logAuditEvent } from "~/lib/audit";
 
 function formatCloseInstant(d: Date): string {
@@ -85,7 +86,7 @@ interface SendResult {
 interface BlastContext {
   cycleId: string;
   refreshToken: string;
-  binding: { emailTemplateVersion: { subject: string; body: string } };
+  binding: { subject: string; body: string };
   originalCloseDate: Date;
   closeDate: Date;
 }
@@ -107,7 +108,7 @@ async function blastExtensionNotice(ctx: BlastContext): Promise<SendResult> {
     try {
       const { subject, html } = renderForSlot(
         notificationSlot("ApplicationExtensionNotice"),
-        ctx.binding.emailTemplateVersion,
+        ctx.binding,
         { firstName: r.firstName, originalCloseDate, newCloseDate },
       );
       // The outbox dedupKey is the per-recipient guard: a recipient already
@@ -170,19 +171,11 @@ async function loadExtensionContext(cycleId: string): Promise<{
 // someone manually clears it).
 async function preflight(cycleId: string): Promise<{
   refreshToken: string;
-  binding: { emailTemplateVersion: { subject: string; body: string } };
+  binding: { subject: string; body: string };
 } | null> {
   const refreshToken = await getApplicationsGmailRefreshToken();
   if (!refreshToken) return null;
-  const binding = await prisma.cycleNotificationEmail.findUnique({
-    where: {
-      applicationCycleId_notificationType: {
-        applicationCycleId: cycleId,
-        notificationType: "ApplicationExtensionNotice",
-      },
-    },
-    include: { emailTemplateVersion: true },
-  });
+  const binding = await getHiringEmail(notificationSlot("ApplicationExtensionNotice"));
   if (!binding) return null;
   return { refreshToken, binding };
 }

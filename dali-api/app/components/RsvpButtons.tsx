@@ -73,12 +73,12 @@ export function RsvpButtons({
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-1.5 mt-2">
+      <div className="flex items-center gap-1 mt-2">
         <button
           type="button"
           onClick={() => sendRsvp("accepted")}
           disabled={!!submitting}
-          className={buttonClasses("primary", "sm", "gap-1")}
+          className={buttonClasses("primary", "xs", "gap-1")}
         >
           <Check className="w-3 h-3" />
           {submitting === "accepted" ? "Accepting…" : "Accept"}
@@ -87,7 +87,7 @@ export function RsvpButtons({
           type="button"
           onClick={() => sendRsvp("tentative")}
           disabled={!!submitting}
-          className={buttonClasses("secondary", "sm", "gap-1")}
+          className={buttonClasses("secondary", "xs", "gap-1")}
         >
           <HelpCircle className="w-3 h-3" />
           {submitting === "tentative" ? "…" : "Maybe"}
@@ -96,7 +96,7 @@ export function RsvpButtons({
           type="button"
           onClick={() => sendRsvp("declined")}
           disabled={!!submitting}
-          className={buttonClasses("secondary", "sm", "gap-1")}
+          className={buttonClasses("secondary", "xs", "gap-1")}
         >
           <XIcon className="w-3 h-3" />
           {submitting === "declined" ? "…" : "Decline"}

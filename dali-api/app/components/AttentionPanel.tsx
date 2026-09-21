@@ -1,4 +1,4 @@
-import { useState, type MouseEvent } from "react";
+import { useState, type MouseEvent, type ReactNode } from "react";
 import { useRevalidator } from "react-router";
 import { Check, ExternalLink, CalendarClock, X } from "lucide-react";
 import { useDialog } from "~/components/ui/dialog";
@@ -126,29 +126,35 @@ export function AttentionPanel({
   tasks,
   notifications,
   onOpen,
+  headerAction,
 }: {
   tasks: OpenTask[];
   notifications: AttentionNotification[];
   onOpen?: OpenLink;
+  headerAction?: ReactNode;
 }) {
   const extras = extraNotifications(tasks, notifications);
   const count = attentionCount(tasks, notifications);
 
   if (tasks.length === 0 && extras.length === 0) {
     return (
-      <p className="px-3 py-6 text-center text-xs text-muted-foreground">
-        You&apos;re all caught up.
-      </p>
+      <div className="flex items-center justify-between gap-3 p-3">
+        <p className="text-xs text-muted-foreground">You&apos;re all caught up.</p>
+        {headerAction}
+      </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-3 p-3">
-      <span className="font-heading text-sm font-semibold text-foreground">
-        {count > 0
-          ? `${count} ${count === 1 ? "item needs" : "items need"} your attention`
-          : "Your notifications"}
-      </span>
+      <div className="flex items-center justify-between gap-3">
+        <span className="font-heading text-sm font-semibold text-foreground">
+          {count > 0
+            ? `${count} ${count === 1 ? "item needs" : "items need"} your attention`
+            : "Your notifications"}
+        </span>
+        {headerAction}
+      </div>
 
       {tasks.length > 0 && (
         <div className="flex flex-col gap-2">
@@ -193,7 +199,7 @@ function TaskCard({ task: t, onOpen }: { task: OpenTask; onOpen?: OpenLink }) {
     "block bg-card border border-border shadow-brand-1 border-l-4 border-l-accent-coral rounded-md px-3 py-2.5";
 
   const meta = t.dueAt ? (
-    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-accent-coral mt-1">
+    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground mt-1">
       <CalendarClock className="w-3 h-3" />
       {formatDeadline(t.dueAt)}
     </span>

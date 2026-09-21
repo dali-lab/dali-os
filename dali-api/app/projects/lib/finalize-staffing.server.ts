@@ -34,6 +34,7 @@ import type { Level } from "~/lib/level";
 import { dedupeLiveAssignments } from "./staffing-board";
 import { publishCycleChange } from "./staffing-events.server";
 import { derivePairings, findDomainsMissingMentors } from "./mentorship-pairings";
+import { grantTeamRepos } from "./github-team-sync";
 
 const AUTOMATIONS = ["assignments", "slack", "gmail", "github"] as const;
 type Automation = (typeof AUTOMATIONS)[number];
@@ -630,6 +631,13 @@ export async function finalizeStaffing(
           }
         }
         const added = withHandle.size - needs2fa.length - failed.length;
+        // Grant the team push on each of the project's repos so confirmed
+        // members inherit repo access through their team membership — adding
+        // people to the team alone gives them nothing. Add-only, idempotent,
+        // per-repo isolation.
+        const repoResults = await grantTeamRepos(team.slug, project.repoUrls);
+        const reposGranted = repoResults.filter((r) => r.status === "granted").length;
+        const repoErrors = repoResults.filter((r) => r.status === "error");
         if (slug !== project.githubTeamSlug) {
           await prisma.project.update({
             where: { id: project.id },
@@ -637,14 +645,19 @@ export async function finalizeStaffing(
           });
         }
         results.github = {
-          status: failed.length > 0 ? "error" : "ok",
+          status: failed.length > 0 || repoErrors.length > 0 ? "error" : "ok",
           message: summarize(
             `${team.slug}${team.created ? " (new)" : ""}`,
             `${added} added`,
+            reposGranted > 0 && `${reposGranted} repo${reposGranted === 1 ? "" : "s"} granted`,
             missing.length > 0 && `${missing.length} no GitHub username: ${missing.join(", ")}`,
             needs2fa.length > 0 &&
               `${needs2fa.length} must enable two-factor auth on GitHub before they can join: ${needs2fa.join(", ")}`,
             failed.length > 0 && `${failed.length} failed — ${failed.join("; ")}`,
+            repoErrors.length > 0 &&
+              `${repoErrors.length} repo error${repoErrors.length === 1 ? "" : "s"}: ${repoErrors
+                .map((r) => r.message)
+                .join("; ")}`,
           ),
         };
       } catch (err) {

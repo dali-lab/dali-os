@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import { redirect, useLoaderData, useNavigate, useRevalidator } from "react-router";
+import { Link, redirect, useLoaderData, useNavigate, useRevalidator } from "react-router";
 import type { Route } from "./+types/domain-lead.delibs.$id";
 import type { DragEndEvent } from "@dnd-kit/core";
 import { prisma } from "~/lib/db";
@@ -11,30 +11,21 @@ import { isCycleAdmin } from "~/lib/roles";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { GripVertical } from "lucide-react";
 import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
-import { INITIAL_COLUMNS, FINAL_COLUMNS, buildColumnOrder } from "~/hiring/lib/delibs";
+import { buildColumnOrder } from "~/hiring/lib/delibs";
+import { findRound, parseTimeline } from "~/hiring/lib/cycle-timeline";
+import { delibsQualifier } from "~/hiring/lib/cycle-stages.server";
 import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
 import { ApplicantContextModal } from "~/hiring/components/delibs/ApplicantContextModal";
+import { buttonClasses } from "~/components/ui/Button";
+import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { RECOMMENDATION_TONES } from "~/hiring/lib/labels";
+import { useOsChrome } from "~/components/os-chrome";
+import { useDialog } from "~/components/ui/dialog";
 import { anonLabelMapForCycle, releasedDaIds, blindUser } from "~/hiring/lib/anonymization.server";
-
-// Same recommendation scale + tones used by the ApplicantContextModal, so the
-// card's reviewer/interviewer recommendation pills read consistently.
-const RECOMMENDATION_COLORS: Record<string, string> = {
-  "Strong Hire": "bg-green-100 text-green-800 border-green-300",
-  Hire: "bg-green-50 text-green-700 border-green-200",
-  "Lean Hire": "bg-yellow-50 text-yellow-700 border-yellow-300",
-  "Lean No Hire": "bg-orange-50 text-orange-700 border-orange-300",
-  "No Hire": "bg-red-100 text-red-700 border-red-300",
-};
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const domain = (data as any)?.session?.domain?.name;
   return [{ title: `${domain ? `${domain} ` : ""}delibs · DALI OS` }];
-};
-
-export const handle = {
-  breadcrumb: (data: unknown) =>
-    (data as { session?: { domain?: { name?: string } } } | undefined)?.session
-      ?.domain?.name,
 };
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -60,8 +51,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   });
 
-  // Access: the cycle's admin tier (Core hiring leads for Standard/Fellowship,
-  // Admins-only for Core cycles), or a domain lead for THIS session's domain. A
+  // Access: the cycle's admin tier (Core hiring leads, Admins-only for Lab
+  // members cycles), or a domain lead for THIS session's domain. A
   // lead for another domain can't open the board — and because Core cycles hang
   // off the synthetic CORE domain (which regular leads don't hold), Core-cycle
   // delibs stay limited to Admins (+ any explicit CORE lead).
@@ -90,42 +81,28 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     request,
   );
 
-  // Load domain applications that qualify for this delibs type.
-  // Initial: all reviews submitted, at least one review, no Final/Released decision.
-  // Final: interview completed (Standard) OR all reviews submitted (Fellowship,
-  //   which has no interview round), no post-interview Final/Released decision.
-  const cycleTypeRow = await prisma.applicationCycle.findUniqueOrThrow({
+  const cycle = await prisma.applicationCycle.findUniqueOrThrow({
     where: { id: session.applicationCycleId },
-    select: { cycleType: true, anonymizeReview: true },
+    select: { id: true, timeline: true, anonymizeReview: true },
   });
-  const isFellowship = cycleTypeRow.cycleType === "Fellowship";
+  // The board's round sets its columns and who qualifies. A round removed from
+  // the timeline leaves its board behind with nothing to show.
+  const round = findRound(parseTimeline(cycle.timeline), session.roundId);
+  const columns = round ? round.columns : [];
 
-  const qualifyingFilter = session.type === "Initial"
-    ? {
-        reviews: { every: { submittedAt: { not: null } }, some: {} },
-        decisions: { none: { stage: { in: ["Final" as const, "Released" as const] } } },
-      }
-    : isFellowship
-      ? {
-          reviews: { every: { submittedAt: { not: null } }, some: {} },
-          decisions: { none: { stage: { in: ["Final" as const, "Released" as const] } } },
-        }
-      : {
-          interviews: { some: { status: "Completed" as const } },
-        };
-
-  const domainApplications = await prisma.domainApplication.findMany({
-    where: {
-      selected: true,
-      // DomainApplication.domainId is the authoritative domain link for both
-      // Standard and Fellowship cycles.
-      domainId: session.domainId,
-      application: {
-        applicationCycleId: session.applicationCycleId,
-        ...inReviewPipelineFilter,
-      },
-      ...qualifyingFilter,
-    },
+  // A board whose round is gone has nothing to qualify for, so skip the query.
+  const domainApplications = round
+    ? await prisma.domainApplication.findMany({
+        where: {
+          selected: true,
+          // DomainApplication.domainId is the authoritative domain link.
+          domainId: session.domainId,
+          application: {
+            applicationCycleId: session.applicationCycleId,
+            ...inReviewPipelineFilter,
+          },
+          ...(await delibsQualifier(cycle, session.roundId, session.domainId)),
+        },
     include: {
       application: {
         include: {
@@ -161,13 +138,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         },
       },
     },
-  });
+      })
+    : [];
 
-  // Blind review: Standard cycles with anonymizeReview on show "Applicant N" on
-  // the delibs cards until a decision is Released for that applicant. This blinds
-  // the Initial board (pre-decision) while the Final board (released → real
-  // names) is unaffected.
-  if (cycleTypeRow.cycleType === "Standard" && cycleTypeRow.anonymizeReview) {
+  // Blind review: with anonymizeReview on, cards read "Applicant N" until that
+  // applicant's decision is released.
+  if (cycle.anonymizeReview) {
     const released = await releasedDaIds(domainApplications.map((d) => d.id));
     const labelMap = await anonLabelMapForCycle(session.applicationCycleId);
     for (const da of domainApplications) {
@@ -179,25 +155,33 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const collabToken = parseSessionCookie(request);
 
-  return { session, domainApplications, collabToken, userName };
+  return { session, domainApplications, collabToken, userName, round, columns };
 }
 
-type LoaderResult = {
-  session: Awaited<ReturnType<typeof prisma.delibsSession.findUniqueOrThrow<any>>>;
-  domainApplications: any[];
-};
 type DomainApp = any;
 
+// Shared status hues (app.css --os-status-*), so a delibs column reads like the
+// reviews board and the project task board, in both themes.
+const token = (name: string, part: "fill" | "ink" | "edge") => `var(--os-status-${name}-${part})`;
+
+const COLUMN_TOKENS: Record<string, string> = {
+  "No Decision": "backlog",
+  Interview: "todo",
+  Advance: "todo",
+  Accept: "done",
+  Waitlist: "review",
+  Reject: "cancelled",
+};
+
 export default function DelibsKanban() {
-  const { session, domainApplications, collabToken, userName } =
+  const { session, domainApplications, collabToken, userName, round, columns } =
     useLoaderData<typeof loader>() as any;
   const navigate = useNavigate();
+  const os = useOsChrome();
+  const dialog = useDialog();
 
-  const columns =
-    session.type === "Initial" ? INITIAL_COLUMNS : FINAL_COLUMNS;
   const defaultColumn = columns[0];
 
-  // Build lookup map
   const appMap = new Map<string, DomainApp>();
   for (const da of domainApplications) {
     appMap.set(da.id, da);
@@ -217,12 +201,10 @@ export default function DelibsKanban() {
     useState<Record<string, string[]>>(initialOrder);
   // The card currently being dragged, or null. Drives the
   // revalidate/poll-adoption guard below. Set on @dnd-kit drag start, cleared on
-  // end/cancel. (@dnd-kit's activation-distance sensor also removes the stray
-  // post-drag click the old native-HTML5 `wasDragging` ref had to suppress.)
+  // end/cancel.
   const [dragItem, setDragItem] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [closing, setClosing] = useState(false);
-  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [selectedDomainApplicationId, setSelectedDomainApplicationId] =
     useState<string | null>(null);
 
@@ -291,6 +273,8 @@ export default function DelibsKanban() {
     [session.id, columns, defaultColumn]
   );
 
+  const isClosed = session.status === "Closed";
+
   function handleDragEnd(event: DragEndEvent) {
     setDragItem(null);
     if (isClosed) return;
@@ -307,10 +291,9 @@ export default function DelibsKanban() {
 
     const newOrder = { ...columnOrder };
     // Optimistic local update: drop the card from every column, append to the
-    // target. (Cross-column only — no within-column reorder, matching the old
-    // native-drag behavior.)
+    // target. (Cross-column only — no within-column reorder.)
     for (const col of columns) {
-      newOrder[col] = (newOrder[col] ?? []).filter((id) => id !== cardId);
+      newOrder[col] = (newOrder[col] ?? []).filter((id: string) => id !== cardId);
     }
     newOrder[targetCol] = [...(newOrder[targetCol] ?? []), cardId];
 
@@ -332,119 +315,82 @@ export default function DelibsKanban() {
     setClosing(false);
   }
 
-  const isClosed = session.status === "Closed";
-
-  // Per-column color theming is real product intent — kept verbatim. (The drop
-  // ring itself is now the shared coral ring from KanbanBoard, not the old
-  // blue-400 ring; flagged for QA.)
-  const COLUMN_STYLES: Record<string, { bg: string; border: string; header: string; badge: string }> = {
-    "No Decision": { bg: "bg-muted/50", border: "border-border", header: "text-foreground/80", badge: "bg-card text-muted-foreground border-border" },
-    Interview: { bg: "bg-blue-50/50", border: "border-blue-200", header: "text-blue-800", badge: "bg-card text-blue-700 border-blue-200" },
-    Accept: { bg: "bg-green-50/50", border: "border-green-200", header: "text-green-800", badge: "bg-card text-green-700 border-green-200" },
-    Waitlist: { bg: "bg-yellow-50/50", border: "border-yellow-200", header: "text-yellow-800", badge: "bg-card text-yellow-700 border-yellow-200" },
-    Reject: { bg: "bg-red-50/50", border: "border-red-200", header: "text-red-800", badge: "bg-card text-red-700 border-red-200" },
-  };
-
   const kanbanColumns: KanbanColumn<DomainApp>[] = useMemo(
     () =>
-      columns.map((col) => {
-        const style = COLUMN_STYLES[col] ?? COLUMN_STYLES["No Decision"];
+      (columns as string[]).map((col) => {
+        const name = COLUMN_TOKENS[col] ?? "backlog";
         const items = (columnOrder[col] ?? [])
           .map((id) => appMap.get(id))
           .filter((da): da is DomainApp => !!da);
         return {
           id: col,
-          title: <span className={`font-bold ${style.header}`}>{col}</span>,
+          title: <span className="text-sm font-semibold">{col}</span>,
           cards: items,
-          className: `rounded-xl border ${style.border} ${style.bg} p-4 min-h-[400px] transition-all flex flex-col`,
-          headerClassName: "flex items-center justify-between border-b border-current/20 pb-2 mb-3",
-          listClassName: "space-y-2",
+          className: "flex min-h-[400px] w-full flex-col rounded-os-item bg-os-card",
+          headerClassName: "flex items-center justify-between gap-2 rounded-t-os-item px-3 py-2",
+          headerStyle: { background: token(name, "fill"), color: token(name, "ink") },
+          listClassName: "flex flex-1 flex-col gap-2 p-2",
           headerExtra: (
-            <span
-              className={`px-2 py-0.5 rounded-full text-xs font-bold border shadow-sm ${style.badge}`}
-            >
+            <span className="rounded-full border border-current/30 px-2 py-0.5 text-xs font-medium tabular-nums">
               {items.length}
             </span>
           ),
-          renderEmpty: () => (
-            <div className="py-8 text-center border-2 border-dashed border-gray-300 rounded-lg bg-card/50">
-              <p className="text-sm text-muted-foreground/70 italic">Empty</p>
-            </div>
-          ),
+          renderEmpty: () => <p className="py-8 text-center text-sm text-os-grey">Empty</p>,
         };
       }),
-    // appMap + COLUMN_STYLES are rebuilt every render; columnOrder/columns drive
-    // the actual content.
+    // appMap is rebuilt every render; columnOrder/columns drive the content.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [columns, columnOrder, domainApplications],
   );
 
+  if (!round) {
+    return (
+      <div className="flex flex-col gap-3">
+        <h1 className={os.pageTitle}>Delibs · {session.domain.name}</h1>
+        <p className={os.bodyText}>This board's round was removed from the cycle's timeline.</p>
+        <Link to="/hiring/domain-lead" className="text-sm text-accent-coral hover:underline">
+          Back to the domain page
+        </Link>
+      </div>
+    );
+  }
+
+  async function confirmClose() {
+    const counts = (columns as string[])
+      .filter((c) => c !== defaultColumn)
+      .map((c) => `${(columnOrder[c] ?? []).length} ${c.toLowerCase()}`)
+      .join(", ");
+    if (
+      await dialog.confirm({
+        title: "Close delibs and create draft decisions?",
+        description: `${counts}. Anyone left in "${defaultColumn}" gets no decision.`,
+        confirmLabel: "Close delibs",
+        tone: "destructive",
+      })
+    )
+      await handleClose();
+  }
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">
-            {session.type === "Initial" ? "Initial" : "Final"} Deliberations —{" "}
-            {session.domain.name}
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className={os.pageTitle}>
+            {round.label} · {session.domain.name}
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Drag applications between columns. Changes save automatically.
-          </p>
+          <p className={os.bodyText}>Drag applications between columns. Changes save as you go.</p>
         </div>
         <div className="flex items-center gap-3">
-          {saving && (
-            <span className="text-xs text-muted-foreground/70">Saving...</span>
-          )}
+          {saving && <span className="text-sm text-os-grey">Saving…</span>}
           {isClosed ? (
-            <span className="px-3 py-1.5 text-sm font-medium bg-muted text-muted-foreground rounded-lg">
-              Closed
-            </span>
+            <Pill>Closed</Pill>
           ) : (
-            <button
-              onClick={() => setShowCloseConfirm(true)}
-              className="px-4 py-2 text-sm font-medium rounded-lg bg-red-600 hover:bg-red-700 text-white transition"
-            >
-              Close Delibs
+            <button type="button" onClick={confirmClose} disabled={closing} className={buttonClasses("primary", "md")}>
+              {closing ? "Closing…" : "Close delibs"}
             </button>
           )}
         </div>
       </div>
-
-      {/* Close confirmation */}
-      {showCloseConfirm && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center justify-between">
-          <div>
-            <p className="text-sm font-bold text-red-900">
-              Close deliberations and create Draft decisions?
-            </p>
-            <p className="text-xs text-red-700 mt-0.5">
-              {columns
-                .filter((c) => c !== defaultColumn)
-                .map(
-                  (c) =>
-                    `${(columnOrder[c] ?? []).length} ${c.toLowerCase()}`
-                )
-                .join(", ")}
-              . Items in "{defaultColumn}" will not receive a decision.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowCloseConfirm(false)}
-              className="px-3 py-1.5 text-sm font-medium text-foreground/80 bg-card border border-gray-300 rounded-lg hover:bg-muted/50"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleClose}
-              disabled={closing}
-              className="px-3 py-1.5 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50"
-            >
-              {closing ? "Closing..." : "Confirm & Close"}
-            </button>
-          </div>
-        </div>
-      )}
 
       {selectedDomainApplicationId && (
         <ApplicantContextModal
@@ -452,7 +398,7 @@ export default function DelibsKanban() {
           onClose={() => setSelectedDomainApplicationId(null)}
           collabToken={collabToken}
           userName={userName}
-          editable={session.type === "Initial"}
+          editable={round?.index === 0}
         />
       )}
 
@@ -539,14 +485,9 @@ function DelibsCard({
   const fmt = (u: any) =>
     u ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() : "";
   const recPill = (rec: string, key: string) => (
-    <span
-      key={key}
-      className={`inline-block text-[10px] font-medium px-1.5 py-0.5 rounded border ${
-        RECOMMENDATION_COLORS[rec] ?? "border-border bg-muted/50 text-muted-foreground"
-      }`}
-    >
+    <Pill key={key} dot={RECOMMENDATION_TONES[rec] ?? "neutral"}>
       {rec}
-    </span>
+    </Pill>
   );
   // Reviewer recommendations: one per submitted review.
   const reviewerNames = Array.from(
@@ -591,7 +532,7 @@ function DelibsCard({
               }
             }
       }
-      className={`bg-card p-3 rounded-lg border border-border transition-all ${
+      className={`rounded-os-item bg-os-well p-3 transition-all ${
         overlay
           ? "shadow-lg cursor-grabbing"
           : isClosed
@@ -608,24 +549,24 @@ function DelibsCard({
             {da.application.user.firstName} {da.application.user.lastName}
           </h4>
           <div className="flex items-center gap-2 mt-1">
-            <span className="text-xs text-muted-foreground">
+            <span className="text-xs text-os-grey">
               {submittedCount}/{reviewCount} reviews
             </span>
             {avgScore !== null && (
-              <span className="text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
+              <span className="rounded-full bg-os-container px-2 py-0.5 text-xs font-medium text-foreground">
                 avg {avgScore.toFixed(1)}
               </span>
             )}
           </div>
           {(hasReviewers || hasInterviewers) && (
-            <div className="mt-2 pt-2 border-t border-border space-y-2">
+            <div className="mt-2 space-y-2 border-t border-os-container pt-2">
               {hasReviewers && (
                 <div>
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-os-grey">
                     Reviewers
                   </p>
                   {reviewerNames.length > 0 && (
-                    <p className="text-[10px] text-muted-foreground">
+                    <p className="text-[10px] text-os-grey">
                       {reviewerNames.join(", ")}
                     </p>
                   )}
@@ -640,11 +581,11 @@ function DelibsCard({
               )}
               {hasInterviewers && (
                 <div>
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-os-grey">
                     Interviewers
                   </p>
                   {interviewerNames.length > 0 && (
-                    <p className="text-[10px] text-muted-foreground">
+                    <p className="text-[10px] text-os-grey">
                       {interviewerNames.join(", ")}
                     </p>
                   )}
@@ -655,7 +596,7 @@ function DelibsCard({
                       )}
                     </div>
                   ) : (
-                    <p className="text-[10px] text-muted-foreground/60 italic mt-0.5">
+                    <p className="mt-0.5 text-[10px] italic text-os-grey">
                       No interview recommendation yet.
                     </p>
                   )}

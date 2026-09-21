@@ -1,22 +1,30 @@
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRevalidator } from "react-router";
-import { Clock, UsersRound } from "lucide-react";
+import { AlignLeft, Clock, MapPin, UsersRound } from "lucide-react";
 import { Modal, ModalHeader, ModalFooter } from "~/components/Modal";
 import { modalCardClass } from "~/components/os-chrome";
 import { DateField } from "~/components/ui/DateField";
 import { TimeField } from "~/components/ui/TimeField";
 import { ParticipantPicker } from "~/calendar/components/scheduling";
 
-type EditContext = {
+// Shape of GET /api/scheduled-meetings/:id/edit-context.
+export type EditContext = {
+  // Per-guest RSVP (userId → response), from the meeting's invite notifications.
+  responsesByUserId?: Record<string, "Accepted" | "Declined" | "Tentative">;
   meeting: {
     id: string;
     title: string;
     startTime: string | null;
     durationMinutes: number;
     recurrenceRule: string | null;
+    location: string | null;
+    description: string | null;
     scopeType: "None" | "Group" | "UserList" | "Project";
     groupId: string | null;
     participantUserIds: string[];
+    organizerId: string;
+    upcoming: boolean;
   };
   options: {
     users: { id: string; firstName: string; lastName: string; daliEmail: string | null }[];
@@ -74,8 +82,9 @@ function FieldRow({
 }
 
 /**
- * Edit a meeting's title, time, and guest list from the Attendance tab. Fetches
- * its context (current values + member/group directory) on open, then posts to
+ * Edit a meeting's title, time, location, description, and guest list from the
+ * Attendance tab. Fetches its context (current values + member/group directory)
+ * on open, then posts to
  * /api/scheduled-meetings/:id/update. Recurrence is carried through unchanged —
  * a repeating meeting keeps its cadence; changing the cadence is a follow-up.
  */
@@ -94,6 +103,8 @@ export function EditMeetingModal({
   const [date, setDate] = useState("");
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
+  const [location, setLocation] = useState("");
+  const [description, setDescription] = useState("");
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
   const [recurrenceRule, setRecurrenceRule] = useState<string | null>(null);
@@ -130,9 +141,16 @@ export function EditMeetingModal({
         setStartTime(t);
         setEndTime(end);
         setRecurrenceRule(data.meeting.recurrenceRule);
+        setLocation(data.meeting.location ?? "");
+        setDescription(data.meeting.description ?? "");
         if (data.meeting.scopeType === "Group" && data.meeting.groupId) {
+          // Anyone on the meeting who isn't in the group was invited on top of
+          // it; select them too so saving doesn't drop them.
+          const members = new Set(
+            data.options.groups.find((g) => g.id === data.meeting.groupId)?.memberIds ?? [],
+          );
           setSelectedGroupIds([data.meeting.groupId]);
-          setSelectedUserIds([]);
+          setSelectedUserIds(data.meeting.participantUserIds.filter((id) => !members.has(id)));
         } else {
           setSelectedUserIds(data.meeting.participantUserIds);
           setSelectedGroupIds([]);
@@ -153,6 +171,10 @@ export function EditMeetingModal({
   );
   const groupsById = useMemo(
     () => new Map((ctx?.options.groups ?? []).map((g) => [g.id, g])),
+    [ctx],
+  );
+  const guestResponses = useMemo(
+    () => new Map(Object.entries(ctx?.responsesByUserId ?? {})),
     [ctx],
   );
 
@@ -185,16 +207,21 @@ export function EditMeetingModal({
     setSaving(true);
     setSaveError(null);
     try {
+      // Always sent, blank included: clearing a field has to clear it here and
+      // on the linked Google event, which an omitted key would leave untouched.
       const payload: Record<string, unknown> = {
         title: title.trim(),
         durationMinutes,
+        location: location.trim(),
+        description: description.trim(),
       };
       const local = new Date(`${date}T${startTime}`);
       if (!isNaN(local.getTime())) payload.startTime = local.toISOString();
       if (recurrenceRule) payload.recurrenceRule = recurrenceRule;
-      if (selectedGroupIds.length === 1 && selectedUserIds.length === 0) {
+      if (selectedGroupIds.length === 1) {
         payload.scopeType = "Group";
         payload.groupId = selectedGroupIds[0];
+        if (selectedUserIds.length > 0) payload.extraUserIds = selectedUserIds;
       } else if (resolvedParticipantIds.length > 0) {
         payload.scopeType = "UserList";
         payload.participantUserIds = resolvedParticipantIds;
@@ -222,7 +249,11 @@ export function EditMeetingModal({
     }
   }
 
-  return (
+  if (typeof document === "undefined") return null;
+
+  // Portaled to <body>: this can open from inside the calendar's event popover,
+  // whose positioned ancestors would otherwise trap the fixed overlay.
+  return createPortal(
     <Modal
       open
       onClose={onClose}
@@ -264,6 +295,7 @@ export function EditMeetingModal({
               usersById={usersById}
               groupsById={groupsById}
               resolvedCount={resolvedParticipantIds.length}
+              responsesByUserId={guestResponses}
             />
           </FieldRow>
 
@@ -306,6 +338,40 @@ export function EditMeetingModal({
             )}
           </div>
 
+          {/* Location */}
+          <div>
+            <label htmlFor="edit-mtg-location" className={labelClass}>
+              <span className="inline-flex items-center gap-1">
+                <MapPin className="h-3 w-3" /> Location
+              </span>
+            </label>
+            <input
+              id="edit-mtg-location"
+              type="text"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              className={fieldClass}
+              placeholder="Video call, room, or address"
+            />
+          </div>
+
+          {/* Description */}
+          <div>
+            <label htmlFor="edit-mtg-description" className={labelClass}>
+              <span className="inline-flex items-center gap-1">
+                <AlignLeft className="h-3 w-3" /> Description
+              </span>
+            </label>
+            <textarea
+              id="edit-mtg-description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+              className={`${fieldClass} resize-y`}
+              placeholder="Add description"
+            />
+          </div>
+
           {saveError && <p className="text-sm text-red-600">{saveError}</p>}
         </div>
       )}
@@ -322,6 +388,7 @@ export function EditMeetingModal({
           </button>
         </ModalFooter>
       )}
-    </Modal>
+    </Modal>,
+    document.body,
   );
 }

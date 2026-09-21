@@ -162,6 +162,7 @@ model User {
   // ─── Calendar / scheduling relations ───────────────────────────────────────
   calendarLinks        UserCalendarLink[]
   scheduledMeetings    ScheduledMeeting[]
+  meetingTimeProposals MeetingTimeProposal[]
   availabilitySettings UserAvailabilitySettings?
   workingHoursDays     WorkingHoursDay[]
   meetingAttendances   MeetingAttendance[]
@@ -267,9 +268,11 @@ model User {
   // ─── Payroll: Reconcile back-relation ─────────────────────────────────────
   timesheetImports TimesheetImport[]
   customHires      CustomHire[]
+  chartStringsAuthored ProjectChartString[] @relation("ChartStringCreatedBy")
 
   // ─── Public showcase ──────────────────────────────────────────────────────
   projectShowcasesUpdated ProjectShowcase[] @relation("ProjectShowcaseUpdatedBy")
+  hiringEmailsEdited HiringEmail[] @relation("HiringEmailEditor")
 }
 
 // A DALI lab member. userId is optional because a member may be known (e.g. via daliEmail)
@@ -310,6 +313,20 @@ model ApplicationCycle {
   // ApplicationCycleStatusUpdate rather than stored directly here.
   name String
 
+  // The term the hiring runs in. Its start date anchors the phase weeks
+  // (Week N starts termStartDate + N-1 weeks; app/hiring/lib/cycle-phases.ts).
+  termId String?
+  term   Term?   @relation(fields: [termId], references: [id])
+
+  // Planned date applications open (Week 4 by default). Opening itself is
+  // still a status change; this is the target shown on the phase timeline.
+  openDate DateTime?
+
+  // The cycle's phases and delib rounds in order, each on some term weeks
+  // (app/hiring/lib/cycle-timeline.ts). Written at creation; null reads as the
+  // standard timeline.
+  timeline Json?
+
   // Application due date; triggers auto-transition to UnderReview when passed.
   closeDate DateTime?
 
@@ -322,10 +339,10 @@ model ApplicationCycle {
   // can re-trigger the notice.
   extensionNoticeSentAt DateTime?
 
-  // Idempotency marker for the internal-cycle eligibility notification fan-out
-  // (Fellowship/Core, sent when the cycle first transitions to Open). Stays set
-  // across Open→Draft→Open bounces so leads can iterate during setup without
-  // re-spamming eligible members. Always null on Standard cycles.
+  // Idempotency marker for the eligibility notification fan-out (Interns and
+  // Lab members cycles, sent when the cycle first transitions to Open). Stays
+  // set across Open→Draft→Open bounces so leads can iterate during setup
+  // without re-spamming eligible members. Always null on Students cycles.
   applicantsNotifiedAt DateTime?
 
   // Rubric for the general application form (reviewers score this alongside
@@ -333,26 +350,29 @@ model ApplicationCycle {
   generalRubricVersionId String?
   generalRubricVersion   RubricVersion? @relation("CycleGeneralRubric", fields: [generalRubricVersionId], references: [id])
 
-  // Blind review. When true (Standard cycles only), applicant identity — name,
-  // photo, email, class year, pronouns — is hidden from reviewers behind a
-  // stable pseudonym ("Applicant N") on the reviewer + Initial-delibs surfaces,
-  // until a decision is Released for them (i.e. they move into interviews).
-  // Core/lead cycle-management views are never blinded. Default on (opt-out per
-  // cycle in setup); see app/hiring/lib/anonymization.server.ts.
+  // Blind review. When true, applicant identity (name, photo, email, class
+  // year, pronouns) is hidden from reviewers behind a stable pseudonym
+  // ("Applicant N") on the reviewer + Initial-delibs surfaces, until a decision
+  // is Released for them. Core/lead cycle-management views are never blinded.
+  // See app/hiring/lib/anonymization.server.ts.
   anonymizeReview Boolean @default(true)
 
-  // Discriminator. Standard = the normal hire cycle (CAS-authed applicants,
-  // general form + per-domain challenge + interviews). Fellowship = current
-  // interns converting to full-time; Core = current members applying to join
-  // Core. Both internal types use a shorter DB-backed shortform, no challenges,
-  // no interviews. One active cycle per cycleType is enforced at the route
-  // layer (see findOtherActiveCycleId).
-  cycleType ApplicationCycleType @default(Standard)
+  // Who applies, which fixes the portal, eligibility, what Accept does and how
+  // decisions reach the applicant (app/hiring/lib/applicant-groups.server.ts).
+  // Set at creation. Any number of cycles may be open at once.
+  applicants CycleApplicants @default(Students)
 
-  // The cycle's application form (a Drive Form). For internal cycles
-  // (Fellowship/Core) this is the whole application form; it stays UNPUBLISHED —
-  // the hiring portal reads its latest version directly and eligibility is the
-  // fill gate. Auto-created + rebindable via app/hiring/lib/application-form.server.ts.
+  // hasChallenges: per-domain challenge form + per-domain rubric.
+  // hasInterviews: whether the timeline has an Interviews phase. Kept in sync
+  // with `timeline` by its one writer (cycle-timeline.server.ts) because many
+  // surfaces only need this flag.
+  hasChallenges Boolean @default(true)
+  hasInterviews Boolean @default(true)
+
+  // The cycle's application form (a Drive Form). For Interns and Lab members
+  // cycles it stays UNPUBLISHED: the hiring portal reads its latest version
+  // directly and eligibility is the fill gate. Auto-created + rebindable via
+  // app/hiring/lib/application-form.server.ts.
   applicationFormId String?
   applicationForm   Form?   @relation("CycleApplicationForm", fields: [applicationFormId], references: [id])
 
@@ -366,8 +386,6 @@ model ApplicationCycle {
   cycleInterviewers  CycleInterviewer[]
   interviews         Interview[]
   delibsSessions     DelibsSession[]
-  decisionEmails     CycleDecisionEmail[]
-  notificationEmails CycleNotificationEmail[]
 
   signingBindings SigningBinding[]
 }
@@ -437,14 +455,12 @@ enum ApplicationType {
   Transfer
 }
 
-// Cycle-level discriminator. Drives form rendering, eligibility gating,
-// interview/challenge presence, and delibs column layout. Fellowship and Core
-// are the "internal" cycle types (member-authed portal, shortform, no
-// interviews) — see app/hiring/lib/internal-cycles.server.ts.
-enum ApplicationCycleType {
-  Standard
-  Fellowship
-  Core
+// Who a cycle is for. Students apply through the public portal (CAS); Interns
+// (Fellowship) and LabMembers (Core) apply through member-authed portals.
+enum CycleApplicants {
+  Students
+  Interns
+  LabMembers
 }
 
 // One DomainApplication per (application, target domain). `domainId` is the
@@ -674,23 +690,9 @@ model CycleInterviewer {
   domainId           String
   domain             Domain           @relation(fields: [domainId], references: [id])
 
-  availabilityBlocks   InterviewerAvailability[]
   interviewAssignments InterviewAssignment[]
 
   @@unique([userId, applicationCycleId, domainId])
-}
-
-model InterviewerAvailability {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-
-  cycleInterviewerId String
-  cycleInterviewer   CycleInterviewer @relation(fields: [cycleInterviewerId], references: [id], onDelete: Cascade)
-
-  startTime DateTime
-  endTime   DateTime
-
-  @@index([cycleInterviewerId, startTime, endTime])
 }
 
 enum InterviewStatus {
@@ -915,11 +917,6 @@ model ApplicationReview {
 
 // ─── Delibs ──────────────────────────────────────────────────────────────────
 
-enum DelibsType {
-  Initial // deliberating on applications with completed reviews, no decision yet
-  Final // deliberating after interviews; produces Accept/Waitlist/Reject decisions
-}
-
 enum DelibsStatus {
   Active
   Closed
@@ -938,19 +935,22 @@ model DelibsSession {
   applicationCycleId String
   applicationCycle   ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
 
-  type   DelibsType
-  status DelibsStatus @default(Active)
+  // The delib round this board is for: a delib block id in the cycle's
+  // timeline ("first" / "final" for boards opened before rounds were flexible).
+  roundId String
+  status  DelibsStatus @default(Active)
 
-  // Ordered list of domainApplicationIds per column.
-  // Column names vary by type:
-  //   Initial: { "No Decision": [...], "Interview": [...], "Reject": [...] }
-  //   Final:   { "Accept": [...], "Waitlist": [...], "Reject": [...] }
+  // Ordered list of domainApplicationIds per column. The columns follow the
+  // round's place in the timeline (cycle-timeline.ts delibRounds):
+  //   before Interviews: { "No Decision", "Interview", "Reject" }
+  //   other rounds:      { "No Decision", "Advance", "Reject" }
+  //   the last round:    { "Accept", "Waitlist", "Reject" }
   columnOrder Json @default("{}")
 
   openedById String
   openedBy   User   @relation(fields: [openedById], references: [id])
 
-  @@unique([domainId, applicationCycleId, type])
+  @@unique([domainId, applicationCycleId, roundId])
 }
 
 // ─── Rubrics ─────────────────────────────────────────────────────────────────
@@ -1152,6 +1152,12 @@ model ProjectFile {
   // Page.workspaceId polymorphic pattern.
   workspaceType WorkspaceType?
   workspaceId   String?
+
+  // Education timeline placement. When workspaceType = EducationOffering, links
+  // this file to a specific EducationSession so it renders under that session on
+  // the student course timeline; null = a whole-offering material. Loose FK (no
+  // DB constraint), matching Page.sessionId / the workspaceId convention.
+  sessionId String?
 
   archivedAt DateTime?
   createdAt  DateTime  @default(now())
@@ -1452,27 +1458,9 @@ model EmailTemplateVersion {
 
   createdById String
   createdBy   User   @relation(fields: [createdById], references: [id])
-
-  cycleDecisionEmails     CycleDecisionEmail[]
-  cycleNotificationEmails CycleNotificationEmail[]
   educationDecisionEmails EducationDecisionEmail[]
 
   @@index([templateId, versionNumber])
-}
-
-// Per-cycle binding: which EmailTemplateVersion fires when a Decision of the
-// given DecisionType is released in this cycle. One row per (cycle, decisionType).
-// No row = no email fires (surfaced explicitly in the picker UI).
-model CycleDecisionEmail {
-  applicationCycleId String
-  applicationCycle   ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
-
-  decisionType DecisionType
-
-  emailTemplateVersionId String
-  emailTemplateVersion   EmailTemplateVersion @relation(fields: [emailTemplateVersionId], references: [id])
-
-  @@id([applicationCycleId, decisionType])
 }
 
 // Non-decision email slots managed per-cycle. Mirrors CycleDecisionEmail but
@@ -1490,18 +1478,6 @@ enum NotificationType {
   // Scheduled 24h/1h reminders fired by the interview-reminders job.
   InterviewReminderApplicant
   InterviewReminderInterviewer
-}
-
-model CycleNotificationEmail {
-  applicationCycleId String
-  applicationCycle   ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
-
-  notificationType NotificationType
-
-  emailTemplateVersionId String
-  emailTemplateVersion   EmailTemplateVersion @relation(fields: [emailTemplateVersionId], references: [id])
-
-  @@id([applicationCycleId, notificationType])
 }
 
 // One row per (cycle, notificationType, applicant). Enforces single-send
@@ -1795,6 +1771,13 @@ model ScheduledMeeting {
   title            String
   durationMinutes  Int
 
+  // What the organizer typed into the invite form. Mirrored onto the linked
+  // Google event (and the ICS we send when no Google event mirrors it), and
+  // kept here so the meeting still carries them when there's nothing to
+  // mirror to — an unlinked organizer, or a meeting with no guests.
+  location         String?
+  description      String?
+
   scopeType ScopeType
   // Untyped at DB layer — dispatched in app code by scopeType.
   scopeId   String?
@@ -1840,7 +1823,8 @@ model ScheduledMeeting {
   meetingTypeLabel String?
   projectId        String?
   project          Project?     @relation(fields: [projectId], references: [id])
-  notePage         Page?
+  notePage         Page?        @relation("MeetingNotePage")
+  whiteboardPage   Page?        @relation("MeetingWhiteboardPage")
 
   // Roster (default): organizer/Core check people off by hand via
   // AttendanceChecklist. SelfCheckIn: attendees mark themselves present via
@@ -1862,6 +1846,7 @@ model ScheduledMeeting {
   reminderLogs  MeetingReminderLog[]
   attendance    MeetingAttendance[]
   timeEntries   TimeEntry[]
+  timeProposals MeetingTimeProposal[]
 
   createdAt DateTime @default(now())
 }
@@ -2144,6 +2129,28 @@ model MeetingException {
   @@unique([scheduledMeetingId, originalStart])
 }
 
+// An invitee's suggestion of an alternative start time for a meeting. The
+// organizer accepts (reschedules the meeting to proposedStart) or declines.
+model MeetingTimeProposal {
+  id                 String             @id @default(cuid())
+  scheduledMeetingId String
+  proposedByUserId   String
+  proposedStart      DateTime
+  status             TimeProposalStatus @default(Pending)
+  createdAt          DateTime           @default(now())
+
+  meeting    ScheduledMeeting @relation(fields: [scheduledMeetingId], references: [id], onDelete: Cascade)
+  proposedBy User             @relation(fields: [proposedByUserId], references: [id])
+
+  @@index([scheduledMeetingId, status])
+}
+
+enum TimeProposalStatus {
+  Pending
+  Accepted
+  Declined
+}
+
 // Send log for meeting reminders (meeting-reminders job) — the idempotency
 // key. occurrenceStart is the occurrence's ORIGINAL start (pre-exception-
 // override) so a moved occurrence doesn't double-remind; consequence: an
@@ -2356,6 +2363,7 @@ model Term {
   projectRoleRequests   ProjectRoleRequest[]
   staffingAssignments   StaffingAssignment[]
   partnerApplications   PartnerApplicationTargetTerm[]
+  applicationCycles     ApplicationCycle[]
   intentToWork          IntentToWork[]
   projectDomainScopes   ProjectDomainScope[]
   ceCredits             CECredit[]
@@ -2367,6 +2375,7 @@ model Term {
   timelineDomains       TimelineDomain[]
   memberClasses         MemberClass[]
   courseOfferings       CourseOffering[]
+  projectChartStrings   ProjectChartString[]
 
   @@index([sortKey])
 }
@@ -2831,6 +2840,7 @@ model Project {
   files             ProjectFile[]
   budgetEntries     BudgetEntry[]
   budgetNotes       BudgetNote[]
+  chartStrings      ProjectChartString[]
   scheduledMeetings ScheduledMeeting[]
   timeEntries       TimeEntry[]
   // The curated public face of this project, if it has one. Absent until
@@ -3059,17 +3069,38 @@ model Epic {
   // its stories' (and their tasks') dates (see buildTimelineEpics).
   startsAt         DateTime?
   endsAt           DateTime?
-  // Optional target term for cross-term epics that span multiple terms.
-  targetTermId     String?
   position         Int        @default(0)
 
   project Project     @relation(fields: [projectId], references: [id])
   tasks   Task[]
   stories UserStory[]
 
+  // Timeline dependency edges, the same two-sided shape user stories carry.
+  // `dependencies` are rows where this epic is the dependent (epics it waits
+  // on); `blocking` are rows where it is the predecessor.
+  dependencies EpicDependency[] @relation("EpicDependent")
+  blocking     EpicDependency[] @relation("EpicBlocker")
+
   createdAt DateTime @default(now())
 
   @@index([projectId])
+}
+
+// Directed edge: `epic` waits on `dependsOnEpic`. Both sides belong to the
+// same project — enforced in the API, not the schema, exactly as the story
+// edge is. Drawn as arrows between epic bars on the project timeline.
+model EpicDependency {
+  id              String @id @default(cuid())
+  epicId          String
+  dependsOnEpicId String
+
+  epic          Epic @relation("EpicDependent", fields: [epicId], references: [id], onDelete: Cascade)
+  dependsOnEpic Epic @relation("EpicBlocker", fields: [dependsOnEpicId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([epicId, dependsOnEpicId])
+  @@index([dependsOnEpicId])
 }
 
 enum EpicStatus {
@@ -3223,6 +3254,12 @@ model Task {
   files     TaskFileLink[]
   views     TaskView[]
 
+  // Dependency edges, the same two-sided shape epics and stories carry.
+  // `dependencies` are rows where this task waits on another; `blocking` are
+  // rows where it is the predecessor.
+  dependencies TaskDependency[] @relation("TaskDependent")
+  blocking     TaskDependency[] @relation("TaskBlocker")
+
   createdById String
   createdBy   User     @relation("TaskCreatedBy", fields: [createdById], references: [id])
   createdAt   DateTime @default(now())
@@ -3231,6 +3268,23 @@ model Task {
   @@unique([githubRepo, githubIssueNumber], name: "task_github_issue_unique")
   @@index([projectId])
   @@index([storyId])
+}
+
+// Directed edge: `task` waits on `dependsOnTask`. Both sides belong to the
+// same project — enforced in the API, not the schema, as the story edge is.
+// A task is "blocked" while any task it waits on is unfinished.
+model TaskDependency {
+  id              String @id @default(cuid())
+  taskId          String
+  dependsOnTaskId String
+
+  task          Task @relation("TaskDependent", fields: [taskId], references: [id], onDelete: Cascade)
+  dependsOnTask Task @relation("TaskBlocker", fields: [dependsOnTaskId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([taskId, dependsOnTaskId])
+  @@index([dependsOnTaskId])
 }
 
 enum TaskStatus {
@@ -3353,12 +3407,12 @@ model EducationOffering {
   startsAt             DateTime?
   endsAt               DateTime?
   status               OfferingStatus @default(Draft)
-  // True for typical miniseries (instructor-reviewed), false for typical
+  // True for typical miniseries and fellowships (instructor-reviewed), false for typical
   // workshops (auto-approve up to capacity, waitlist after). Configurable
   // per-offering — workshops can opt into review without a schema change.
   requiresReview       Boolean
   // Fraction of sessions a student must attend (Present + Excused) to earn a
-  // completion certificate. Miniseries only; workshops need one Present mark.
+  // completion certificate. Miniseries and fellowships; workshops need one Present mark.
   completionThreshold  Float          @default(0.8)
 
   // Optional per-offering Google Workspace identity. Falls back to a shared
@@ -3396,6 +3450,7 @@ model EducationOffering {
 enum OfferingType {
   Miniseries
   Workshop
+  Fellowship
 }
 
 enum OfferingStatus {
@@ -3738,9 +3793,51 @@ model EducationCertificate {
   applicationId String   @unique
   issuedAt      DateTime @default(now())
   issuedById    String
+  // The CertificateTemplate resolved for this offering at issue time (loose FK).
+  // Null = rendered with the built-in design. Certs are regenerated on demand,
+  // so editing the template restyles them; archiving it falls back to built-in.
+  templateId    String?
 
   application EducationApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   issuedBy    User                 @relation("EducationCertificateIssuer", fields: [issuedById], references: [id])
+}
+
+// An operator-designed certificate: a full-bleed background image (PNG/JPG,
+// uploaded to S3) with dynamic fields (student name, offering title, dates,
+// instructors, issued date) placed on top at fractional coordinates. Rendered
+// to PDF by drawing the background full-page and overlaying each field's text.
+// See app/education/lib/certificate-templates.server.ts.
+model CertificateTemplate {
+  id                    String    @id @default(cuid())
+  name                  String
+  // The background image lives in Drive as a ProjectFile (auto-filed into the
+  // CertificateTemplates folder binding). Loose FK — the file's current version
+  // holds the S3 key + content type, so replacing the file in Drive updates the
+  // certificate. See certificate-templates.server.ts.
+  backgroundFileId      String
+  // Intrinsic pixel size of the background. The PDF page is sized to match
+  // (1px = 1pt) so a field's fractional x/y maps to the same spot in the editor
+  // preview and the rendered PDF regardless of display scale.
+  bgWidth               Int
+  bgHeight              Int
+  // Placed fields: [{ key, x, y, fontSize, color, align, bold }] — x/y are 0..1
+  // fractions of the page. `key` is one of the CERTIFICATE_FIELD_KEYS registry.
+  fields                Json      @default("[]")
+  // At most one template is the lab-wide default (enforced in the setter).
+  isDefault             Boolean   @default(false)
+  archivedAt            DateTime?
+  createdAt             DateTime  @default(now())
+  createdById           String
+}
+
+// Per-offering certificate template override. The lab-wide default lives on
+// CertificateTemplate.isDefault; a row here points one offering at a specific
+// template instead. Loose FKs (no relations), matching the workspaceId pattern.
+model EducationCertificateBinding {
+  id         String   @id @default(cuid())
+  offeringId String   @unique
+  templateId String
+  createdAt  DateTime @default(now())
 }
 
 // Binds a Form to a named slot on one offering, mirroring
@@ -4305,7 +4402,13 @@ model Page {
   // note (see ScheduledMeeting.notePage / meetingType). Lets the document
   // route know to render the AttendanceChecklist above the editor.
   meetingNoteId String?           @unique
-  meetingNote   ScheduledMeeting? @relation(fields: [meetingNoteId], references: [id])
+  meetingNote   ScheduledMeeting? @relation("MeetingNotePage", fields: [meetingNoteId], references: [id])
+
+  // Set when this page is a meeting's linked whiteboard (kind = Whiteboard).
+  // Parallel to meetingNoteId: a meeting can have a note doc and/or a whiteboard,
+  // each 1:1. See ScheduledMeeting.whiteboardPage.
+  meetingWhiteboardId String?           @unique
+  meetingWhiteboard   ScheduledMeeting? @relation("MeetingWhiteboardPage", fields: [meetingWhiteboardId], references: [id])
 
   // When true, this page acts as a template: it is excluded from the normal
   // document list and offered as a starting point when creating new pages.
@@ -4414,6 +4517,8 @@ enum ProcessType {
   // Lab-wide, everyone-can-see singleton — the open counterpart of Core, for
   // folders the whole lab files into (meeting notes that belong to no project).
   Lab
+  // Lab-wide singleton for certificate-template background images (Core-scoped).
+  CertificateTemplates
 }
 
 // Who a personal note has been shared with, beyond its own profileVisible
@@ -4544,6 +4649,9 @@ enum PageKind {
   // up to depth 6; a Folder may carry a scopeKind to govern access for
   // everything inside it.
   Folder
+  // A collaborative Excalidraw canvas. Body lives in a whiteboard:{id}:canvas
+  // collab room (Y.Map of elements), not in contentDocId.
+  Whiteboard
 }
 
 enum ScopeKind {
@@ -5774,4 +5882,118 @@ model LabProcessWeekContent {
   updatedByUserId String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+}
+
+// Hiring's emails: one per slot ("decision:Rejected", "notification:
+// ApplicationReceived", …; app/hiring/lib/email-variables.ts TemplateSlot),
+// shared by every cycle and edited in place, with no versions. No row means
+// that slot sends no email.
+model HiringEmail {
+  slot      String   @id
+  subject   String
+  body      String
+  updatedAt DateTime @updatedAt
+
+  updatedById String?
+  updatedBy   User?   @relation("HiringEmailEditor", fields: [updatedById], references: [id])
+}
+
+// A chart string a project charges against, for one term, with full history.
+// Nothing is ever edited in place: superseding writes a new row and points it
+// at the one it replaces — which is also what OSP does upstream, where Katie
+// reissues a whole new PTAEO rather than amending the old one.
+//
+// `projectId` NULL means the lab-wide default for that term: the string every
+// project inherits unless it has a row of its own. Twenty projects charge the
+// same lab GL string, so storing it per project per term would relocate the
+// transcription problem rather than end it. Defaults carry history too — the
+// 2026-07 org migration from 722 to 330 is a superseded default row, not an
+// edit that erased the old value.
+//
+// `isCurrent` is enforced by two partial unique indexes added in the migration
+// (Prisma can't express them): at most one current row per (project, term), and
+// at most one current default per term. A plain composite unique would not
+// constrain the defaults, because Postgres treats NULLs as distinct — the same
+// trap BudgetEntry documents.
+model ProjectChartString {
+  id        String  @id @default(cuid())
+  /// NULL = the lab-wide default for this term.
+  projectId String?
+  termId    String
+
+  /// Exactly as received. Never rewritten, so the audit trail starts at the source.
+  raw        String
+  /// Trimmed, scheme-stripped, upper-cased. Not a semantic repair.
+  normalized String
+  type       ChartStringType
+
+  /// GL segment 4 (Activity) or PTAEO segment 1 (Project) — what payroll joins on.
+  projectCode String
+  /// GL only: 0000 | 1500 | 2000 | 3000 | 4000 | 5000, and growing.
+  subactivity String?
+  /// GL segment 2, PTAEO segment 5. 330 = DALI Lab since ~2026-07-01.
+  org         String?
+  /// PTAEO segment 3 — the A of PTA.
+  awardCode   String?
+
+  /// Provenance, straight off the RAPPORT mail.
+  fpNumber    String?
+  awardId     String?
+  /// RAPPORT's own title, which is never quite the DALI OS project name.
+  rapportName String?
+  /// Metadata, not scope: OSP forbids spend outside this window.
+  awardStart  DateTime?
+  awardEnd    DateTime?
+  /// Null when not yet known — the four values are a judgement the person
+  /// entering the string makes, not something the format reveals.
+  fundingType ProjectFundingType?
+
+  /// False once a later row replaces this one. See the partial unique indexes.
+  isCurrent Boolean @default(true)
+  /// The row this one replaces. Reverse pointer: a replacement records its own
+  /// provenance on insert, so no existing row's history is rewritten.
+  supersedesId    String? @unique
+  supersedeReason String?
+
+  note        String?
+  createdAt   DateTime @default(now())
+  createdById String
+
+  /// Restrict, not Cascade: deleting a project must not take payroll history.
+  project    Project?            @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  term       Term                @relation(fields: [termId], references: [id])
+  supersedes ProjectChartString? @relation("ChartStringSupersession", fields: [supersedesId], references: [id], onDelete: Restrict)
+  supersededBy ProjectChartString? @relation("ChartStringSupersession")
+  createdBy  User                @relation("ChartStringCreatedBy", fields: [createdById], references: [id])
+
+  @@index([projectId, termId])
+  @@index([projectCode])
+  @@index([termId])
+}
+
+enum ChartStringType {
+  GL
+  PTAEO
+}
+
+/// How the work on this chart string is paid for. Mirrors the four values the
+/// Budget tab already offers (`PROJECT_TYPES` in app/admin/lib/budget.shared.ts),
+/// which are the lab's real project types.
+///
+/// Deliberately NOT an advance-vs-funded distinction: a RAPPORT advance account
+/// and the funded award that follows carry the same Project.Task.Award, so that
+/// is a status of the award in RAPPORT, not a property of the chart string —
+/// modelling it here would leave every row claiming ADVANCE forever.
+///
+/// Spelled PTAEO per OSP. The legacy `BudgetEntry.projectType` strings still
+/// read "PATEO"; unifying them belongs with the funding-model work.
+enum ProjectFundingType {
+  /// Lab money, charged to the lab's own GL and settled there.
+  DALI_GL
+  /// DALI fronts the cost on the GL, invoices, and the revenue transfers back.
+  TRANSFER_GL
+  /// DALI holds the sponsored award. The only type carrying F&A recovery.
+  DALI_PTAEO
+  /// A PTAEO that belongs to someone else, usually another Dartmouth unit.
+  OTHER_PTAEO
 }

@@ -5,6 +5,7 @@ import { isCore } from "~/lib/roles";
 import { renderForSlot, notificationSlot } from "~/hiring/lib/email-variables";
 import { logAuditEvent } from "~/lib/audit";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
+import { getHiringEmail } from "~/hiring/lib/hiring-emails.server";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -86,15 +87,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   );
   if (gate) return gate;
 
-  const binding = await prisma.cycleNotificationEmail.findUnique({
-    where: {
-      applicationCycleId_notificationType: {
-        applicationCycleId: domainApp.application.applicationCycleId,
-        notificationType: "InterviewInviteReminder",
-      },
-    },
-    include: { emailTemplateVersion: true },
-  });
+  const binding = await getHiringEmail(notificationSlot("InterviewInviteReminder"));
   if (!binding) {
     return Response.json(
       {
@@ -120,7 +113,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const { subject, html } = renderForSlot(
     notificationSlot("InterviewInviteReminder"),
-    binding.emailTemplateVersion,
+    binding,
     {
       firstName: user.firstName,
       domain: domainName,

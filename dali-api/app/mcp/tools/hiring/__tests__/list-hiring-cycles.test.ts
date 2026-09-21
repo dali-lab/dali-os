@@ -91,7 +91,7 @@ describe("list_hiring_cycles", () => {
       {
         id: "cy1",
         name: "Fall 2026",
-        cycleType: "Standard",
+        applicants: "Students", hasChallenges: true, hasInterviews: true,
         closeDate: new Date("2026-10-01"),
         createdAt: new Date("2026-09-01"),
         statusUpdates: [{ newStatus: "Open" }],
@@ -99,7 +99,14 @@ describe("list_hiring_cycles", () => {
     ]);
     const result = await runListHiringCycles("u1") as any[];
     expect(result).toHaveLength(1);
-    expect(result[0]).toMatchObject({ id: "cy1", name: "Fall 2026", status: "Open" });
+    expect(result[0]).toMatchObject({
+      id: "cy1",
+      name: "Fall 2026",
+      status: "Open",
+      applicants: "Students",
+      stages: { challenges: true, interviews: true },
+      delibRounds: ["First delib", "Final delib"],
+    });
   });
 
   it("returns every cycle unfiltered for an admin", async () => {
@@ -111,7 +118,7 @@ describe("list_hiring_cycles", () => {
     );
   });
 
-  it("hides Core cycles from a non-admin Core user (except ones they're assigned on)", async () => {
+  it("hides Lab members cycles from a non-admin Core user (except ones they're assigned on)", async () => {
     vi.mocked(getUserRoles).mockResolvedValue(coreRoles);
     mockPrisma.cycleReviewer.findMany.mockResolvedValue([]);
     mockPrisma.cycleInterviewer.findMany.mockResolvedValue([]);
@@ -119,7 +126,7 @@ describe("list_hiring_cycles", () => {
     await runListHiringCycles("u-core");
     expect(mockPrisma.applicationCycle.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { OR: [{ cycleType: { not: "Core" } }, { id: { in: [] } }] },
+        where: { OR: [{ applicants: { not: "LabMembers" } }, { id: { in: [] } }] },
       }),
     );
   });
@@ -134,7 +141,7 @@ describe("list_hiring_cycles", () => {
       {
         id: "cy2",
         name: "Winter 2027",
-        cycleType: "Standard",
+        applicants: "Students", hasChallenges: true, hasInterviews: true,
         closeDate: null,
         createdAt: new Date("2026-12-01"),
         statusUpdates: [{ newStatus: "Draft" }],

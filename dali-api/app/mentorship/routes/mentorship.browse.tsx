@@ -114,7 +114,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     status: pickFilter(url.searchParams.get("status")),
   };
 
-  // Scope non-Core viewers to their own notes/pairs + own-domain mentee data.
+  // Every lab mentor sees all pairs/notes lab-wide (Core included); the scope
+  // helpers only narrow a caller who isn't a mentor at all.
   const [pairScope, noteScope] = await Promise.all([
     mentorshipPairWhere(auth.user.sub),
     mentorNoteWhere(auth.user.sub),

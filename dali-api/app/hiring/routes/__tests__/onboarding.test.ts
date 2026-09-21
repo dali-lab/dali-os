@@ -138,8 +138,8 @@ describe("hiring/onboarding loader", () => {
 
   it("defaults to the newest cycle and derives live status per accepted applicant", async () => {
     mockPrisma.applicationCycle.findMany.mockResolvedValue([
-      { id: "cyc-new", name: "Spring 2026", cycleType: "Standard" },
-      { id: "cyc-old", name: "Fall 2025", cycleType: "Standard" },
+      { id: "cyc-new", name: "Spring 2026" },
+      { id: "cyc-old", name: "Fall 2025" },
     ]);
     mockPrisma.decision.findMany.mockResolvedValue([
       decisionRow({
@@ -214,8 +214,8 @@ describe("hiring/onboarding loader", () => {
 
   it("honors a valid ?cycle= override", async () => {
     mockPrisma.applicationCycle.findMany.mockResolvedValue([
-      { id: "cyc-new", name: "Spring 2026", cycleType: "Standard" },
-      { id: "cyc-old", name: "Fall 2025", cycleType: "Standard" },
+      { id: "cyc-new", name: "Spring 2026" },
+      { id: "cyc-old", name: "Fall 2025" },
     ]);
     const data = (await call("http://localhost/hiring/onboarding?cycle=cyc-old")) as any;
     expect(data.selectedCycleId).toBe("cyc-old");
@@ -223,7 +223,7 @@ describe("hiring/onboarding loader", () => {
 
   it("falls back to the newest cycle when ?cycle= is unknown", async () => {
     mockPrisma.applicationCycle.findMany.mockResolvedValue([
-      { id: "cyc-new", name: "Spring 2026", cycleType: "Standard" },
+      { id: "cyc-new", name: "Spring 2026" },
     ]);
     const data = (await call("http://localhost/hiring/onboarding?cycle=bogus")) as any;
     expect(data.selectedCycleId).toBe("cyc-new");
@@ -231,8 +231,8 @@ describe("hiring/onboarding loader", () => {
 
   it("loads all cycles when ?cycle=all", async () => {
     mockPrisma.applicationCycle.findMany.mockResolvedValue([
-      { id: "cyc-new", name: "Spring 2026", cycleType: "Standard" },
-      { id: "cyc-old", name: "Fall 2025", cycleType: "Standard" },
+      { id: "cyc-new", name: "Spring 2026" },
+      { id: "cyc-old", name: "Fall 2025" },
     ]);
     mockPrisma.decision.findMany.mockResolvedValue([
       decisionRow({
@@ -265,9 +265,62 @@ describe("hiring/onboarding loader", () => {
     ]);
   });
 
+  describe("start term filter", () => {
+    const TERMED = [
+      { id: "cyc-f26", name: "26F Core", term: { id: "t-26f", code: "26F", startDate: new Date("2026-09-14") } },
+      { id: "cyc-w26", name: "26W Core", term: { id: "t-26w", code: "26W", startDate: new Date("2026-01-05") } },
+      { id: "cyc-none", name: "Ad hoc", term: null },
+    ];
+
+    it("lists each term once, newest start first, separately from the cycles", async () => {
+      mockPrisma.applicationCycle.findMany.mockResolvedValue(TERMED);
+      const data = (await call("http://localhost/hiring/onboarding")) as any;
+      expect(data.terms).toEqual([
+        { id: "t-26f", code: "26F" },
+        { id: "t-26w", code: "26W" },
+      ]);
+      expect(data.selectedTermId).toBeNull();
+    });
+
+    it("narrows the cycle list and the rows to the chosen term", async () => {
+      mockPrisma.applicationCycle.findMany.mockResolvedValue(TERMED);
+      const data = (await call("http://localhost/hiring/onboarding?term=t-26f")) as any;
+      expect(data.selectedTermId).toBe("t-26f");
+      expect(data.cycles.map((c: any) => c.id)).toEqual(["cyc-f26"]);
+      // The term alone filters, so the cycle filter opens on every cycle in it.
+      expect(data.selectedCycleId).toBe("all");
+      const where = mockPrisma.decision.findMany.mock.calls[0][0].where;
+      expect(where.domainApplication.application).toEqual({ applicationCycleId: { in: ["cyc-f26"] } });
+    });
+
+    it("groups cycles with no term under ?term=none", async () => {
+      mockPrisma.applicationCycle.findMany.mockResolvedValue(TERMED);
+      const data = (await call("http://localhost/hiring/onboarding?term=none")) as any;
+      expect(data.hasUntermed).toBe(true);
+      expect(data.selectedTermId).toBe("none");
+      expect(data.cycles.map((c: any) => c.id)).toEqual(["cyc-none"]);
+      const where = mockPrisma.decision.findMany.mock.calls[0][0].where;
+      expect(where.domainApplication.application).toEqual({ applicationCycleId: { in: ["cyc-none"] } });
+    });
+
+    it("drops ?term=none when every cycle has a term", async () => {
+      mockPrisma.applicationCycle.findMany.mockResolvedValue(TERMED.slice(0, 2));
+      const data = (await call("http://localhost/hiring/onboarding?term=none")) as any;
+      expect(data.hasUntermed).toBe(false);
+      expect(data.selectedTermId).toBeNull();
+    });
+
+    it("ignores an unknown ?term= and keeps the newest cycle", async () => {
+      mockPrisma.applicationCycle.findMany.mockResolvedValue(TERMED);
+      const data = (await call("http://localhost/hiring/onboarding?term=bogus")) as any;
+      expect(data.selectedTermId).toBeNull();
+      expect(data.selectedCycleId).toBe("cyc-f26");
+    });
+  });
+
   it("collapses duplicate accepted decisions for the same user+domain+cycle to one row", async () => {
     mockPrisma.applicationCycle.findMany.mockResolvedValue([
-      { id: "cyc-new", name: "Spring 2026", cycleType: "Standard" },
+      { id: "cyc-new", name: "Spring 2026" },
     ]);
     mockPrisma.decision.findMany.mockResolvedValue([
       decisionRow({
@@ -294,7 +347,7 @@ describe("hiring/onboarding loader", () => {
 
   it("includes already-onboarded members (full accepted roster)", async () => {
     mockPrisma.applicationCycle.findMany.mockResolvedValue([
-      { id: "cyc-new", name: "Spring 2026", cycleType: "Standard" },
+      { id: "cyc-new", name: "Spring 2026" },
     ]);
     mockPrisma.decision.findMany.mockResolvedValue([
       decisionRow({
@@ -324,7 +377,7 @@ describe("hiring/onboarding loader", () => {
 
   it("filters rows by a valid ?domain=", async () => {
     mockPrisma.applicationCycle.findMany.mockResolvedValue([
-      { id: "cyc-new", name: "Spring 2026", cycleType: "Standard" },
+      { id: "cyc-new", name: "Spring 2026" },
     ]);
     mockPrisma.decision.findMany.mockResolvedValue([
       decisionRow({
@@ -344,7 +397,7 @@ describe("hiring/onboarding loader", () => {
 
   it("ignores an unknown ?domain= and shows all rows", async () => {
     mockPrisma.applicationCycle.findMany.mockResolvedValue([
-      { id: "cyc-new", name: "Spring 2026", cycleType: "Standard" },
+      { id: "cyc-new", name: "Spring 2026" },
     ]);
     mockPrisma.decision.findMany.mockResolvedValue([
       decisionRow({
@@ -432,7 +485,7 @@ describe("hiring/onboarding action (remind)", () => {
 
   beforeEach(() => {
     mockPrisma.applicationCycle.findMany.mockResolvedValue([
-      { id: "cyc-new", name: "Spring 2026", cycleType: "Standard" },
+      { id: "cyc-new", name: "Spring 2026" },
     ]);
     mockPrisma.decision.findMany.mockResolvedValue([
       // Complete email/slack/figma, missing profile

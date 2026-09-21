@@ -18,8 +18,11 @@ import {
   RotateCcw,
   MoreHorizontal,
   X,
+  Shapes,
 } from "lucide-react";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import { useState, useCallback, useEffect, useRef, useId, useMemo } from "react";
+import type { ReactNode } from "react";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
@@ -240,6 +243,9 @@ export async function loader({ request }: Route.LoaderArgs) {
     selectedTerm: termFilter.selected,
     canViewForms: userCanViewForms,
     canManageAgreements: userCanManageAgreements,
+    // My Drive is the Member workspace keyed by the viewer's own id — the
+    // cross-drive move needs it to name the source workspace it's leaving.
+    viewerId: auth.user.sub,
   };
 }
 
@@ -487,18 +493,26 @@ function scopeAudience(scopeId: string): string {
   return "the project team";
 }
 
-// A scope's destination workspace + drive-root parent for a cross-drive move.
+// A scope's workspace + drive-root parent for a cross-drive move.
 // Lab/Core/Hiring are all Lab-workspace pages (Core/Hiring nest under their
-// scoped root folder); a project scope is its own Project workspace.
+// scoped root folder); a project scope is its own Project workspace; My Drive is
+// the viewer's own Member workspace. My Drive only ever appears here as a
+// SOURCE — moveDestinationsFor filters it out of the picker, and the move
+// endpoint refuses it as a destination — but naming it correctly is what makes a
+// move OUT of it register as cross-workspace.
 // The synthetic "projects"/"education" group scopes are not valid move destinations
 // (dropping onto them is disabled in DriveBrowser), so they return a safe Lab
 // default rather than throwing — the hub guards against them via moveDestinationsFor.
-function scopeDest(scope: DriveTreeScope): {
-  workspaceType: "Lab" | "Project";
+function scopeDest(
+  scope: DriveTreeScope,
+  viewerId: string,
+): {
+  workspaceType: "Lab" | "Project" | "Member";
   workspaceId: string | null;
   root: string | null;
 } {
   const kind = scopeKindOf(scope.id);
+  if (kind === "mine") return { workspaceType: "Member", workspaceId: viewerId, root: null };
   if (kind === "project") return { workspaceType: "Project", workspaceId: scope.id, root: scope.rootFolderId ?? null };
   // projects-group / education-group: safe no-op fallback (never a move target).
   if (kind === "projects-group" || kind === "education-group") return { workspaceType: "Lab", workspaceId: null, root: null };
@@ -533,6 +547,7 @@ function folderAndDescendants(items: DriveItem[], folderId: string): Set<string>
 type ScopeActions = {
   createDoc: () => Promise<void>;
   createFolder: () => Promise<void>;
+  createWhiteboard: () => Promise<void>;
   rename: (item: DriveItem) => Promise<void>;
   remove: (item: DriveItem) => Promise<void>;
   /** Delete request without the confirm/toast — used by bulk delete. */
@@ -555,6 +570,21 @@ function resolveWorkspaceId(items: DriveItem[], folderId: string | null): string
     if (!node) break;
     if (node.parentFolderId === null) return node.id; // synthetic top-level = workspace id
     cursor = node.parentFolderId;
+  }
+  return null;
+}
+
+// Education materials are a two-level tree (createMaterialPage): folders sit
+// only at an offering's top level and hold documents, never other folders.
+// Returns why the Education drive would refuse this create, or null if allowed.
+function educationCreateBlock(
+  items: DriveItem[],
+  folderId: string | null,
+  pageKind: "FreeForm" | "Folder",
+): string | null {
+  if (!resolveWorkspaceId(items, folderId)) return "Open an offering first";
+  if (pageKind === "Folder" && items.find((it) => it.id === folderId)?.parentFolderId !== null) {
+    return "Folders can't go inside folders";
   }
   return null;
 }
@@ -583,7 +613,7 @@ function makeScopeActions({
   const createParent = currentFolderId ?? rootParent;
 
   async function createPage(
-    pageKind: "FreeForm" | "Folder",
+    pageKind: "FreeForm" | "Folder" | "Whiteboard",
     title: string,
     parentPageId: string | null,
   ): Promise<string | null> {
@@ -592,6 +622,7 @@ function makeScopeActions({
       fd.set("intent", "create");
       fd.set("title", title);
       fd.set("isFolder", pageKind === "Folder" ? "true" : "false");
+      fd.set("kind", pageKind);
       if (parentPageId) fd.set("parentPageId", parentPageId);
       const res = await fetch("/api/notes", { method: "POST", body: fd, credentials: "include" });
       if (!res.ok) return null;
@@ -674,6 +705,20 @@ function makeScopeActions({
     } else {
       toast.error("Couldn't create the folder");
     }
+  }
+
+  async function createWhiteboard() {
+    const name = await dialog.prompt({
+      title: "New whiteboard",
+      label: "Name",
+      defaultValue: "Untitled whiteboard",
+      confirmLabel: "Create",
+      validate: (v) => (v.trim() ? null : "Enter a name"),
+    });
+    if (name === null) return;
+    const id = await createPage("Whiteboard", name.trim(), createParent);
+    if (id) window.location.assign(`/whiteboard/${id}`);
+    else toast.error("Couldn't create the whiteboard");
   }
 
   async function rename(item: DriveItem) {
@@ -876,7 +921,7 @@ function makeScopeActions({
     revalidate();
   }
 
-  return { createDoc, createFolder, rename, remove, deleteItem, performMove };
+  return { createDoc, createFolder, createWhiteboard, rename, remove, deleteItem, performMove };
 }
 
 // ── New menu (contextual to the current location) ────────────────────────────
@@ -884,6 +929,24 @@ function makeScopeActions({
 // The New ▾ button in the header. Creates into the current scope + folder via
 // the scope's action factory; Lab adds form/agreement/template extras. Hidden
 // at the Drive root (you pick a drive first).
+// Disabled menu items can't show a tooltip, so the reason renders inline.
+function CreateLabel({
+  testId,
+  blockedReason,
+  children,
+}: {
+  testId: string;
+  blockedReason: string | null;
+  children: ReactNode;
+}) {
+  return (
+    <span data-testid={testId} className={blockedReason ? "flex flex-col opacity-60" : undefined}>
+      {children}
+      {blockedReason && <span className="text-xs text-muted-foreground">{blockedReason}</span>}
+    </span>
+  );
+}
+
 function NewMenu({
   scope,
   actions,
@@ -907,6 +970,10 @@ function NewMenu({
   const label = scope.id === "mine" ? "My Drive" : isLab ? "Lab" : scope.label;
   const dialog = useDialog();
   const toast = useToast();
+  const whiteboardEnabled = useFeatureFlag("whiteboard");
+  const isEducation = scopeKindOf(scope.id) === "education-group";
+  const docBlock = isEducation ? educationCreateBlock(scope.items, currentFolderId, "FreeForm") : null;
+  const folderBlock = isEducation ? educationCreateBlock(scope.items, currentFolderId, "Folder") : null;
 
   // Create a form into the current Drive folder, then navigate to its editor.
   // Prompts for a name first (like New document/folder).
@@ -975,12 +1042,35 @@ function NewMenu({
         </button>
       }
     >
-      <Menu.Item icon={<FileText className="w-3.5 h-3.5" />} onSelect={() => void actions.createDoc()}>
-        <span data-testid={`drive-new-doc-${scope.id}`}>New document</span>
+      <Menu.Item
+        icon={<FileText className="w-3.5 h-3.5" />}
+        disabled={docBlock !== null}
+        onSelect={() => void actions.createDoc()}
+      >
+        <CreateLabel testId={`drive-new-doc-${scope.id}`} blockedReason={docBlock}>
+          New document
+        </CreateLabel>
       </Menu.Item>
-      <Menu.Item icon={<FolderOpen className="w-3.5 h-3.5" />} onSelect={() => void actions.createFolder()}>
-        <span data-testid={`drive-new-folder-${scope.id}`}>New folder</span>
+      <Menu.Item
+        icon={<FolderOpen className="w-3.5 h-3.5" />}
+        disabled={folderBlock !== null}
+        onSelect={() => void actions.createFolder()}
+      >
+        <CreateLabel testId={`drive-new-folder-${scope.id}`} blockedReason={folderBlock}>
+          New folder
+        </CreateLabel>
       </Menu.Item>
+      {whiteboardEnabled && (
+        <Menu.Item
+          icon={<Shapes className="w-3.5 h-3.5" />}
+          disabled={docBlock !== null}
+          onSelect={() => void actions.createWhiteboard()}
+        >
+          <CreateLabel testId={`drive-new-whiteboard-${scope.id}`} blockedReason={docBlock}>
+            New whiteboard
+          </CreateLabel>
+        </Menu.Item>
+      )}
       {canViewForms && (
         <Menu.Item icon={<ClipboardList className="w-3.5 h-3.5" />} onSelect={() => void createForm()}>
           <span data-testid="drive-new-form">New form</span>
@@ -1018,6 +1108,7 @@ export default function DriveHub() {
     selectedTerm,
     canViewForms,
     canManageAgreements,
+    viewerId,
   } = useLoaderData() as LoaderData;
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -1191,7 +1282,9 @@ export default function DriveHub() {
       const destScope = driveScopes.find((s) => s.id === destScopeId);
       if (!destScope) return;
       const src = driveScopes.find((s) => s.id === sourceScopeId);
-      const srcWs = src ? scopeDest(src) : { workspaceType: "Lab" as const, workspaceId: null, root: null };
+      const srcWs = src
+        ? scopeDest(src, viewerId)
+        : { workspaceType: "Lab" as const, workspaceId: null, root: null };
 
       // For the synthetic group scopes (projects/education), the destFolderPageId
       // IS the project/offering id when the user picks a synthetic top-level folder.
@@ -1224,7 +1317,7 @@ export default function DriveHub() {
         };
         parent = realParent;
       } else {
-        d = scopeDest(destScope) as typeof d;
+        d = scopeDest(destScope, viewerId) as typeof d;
         parent = destFolderPageId ?? d.root;
       }
 
@@ -1261,30 +1354,37 @@ export default function DriveHub() {
         });
       }
       if (res.ok) {
-        // Undo: move back to the original scope + folder.
+        // Undo: move back to the original scope + folder. Nothing can be moved
+        // back INTO My Drive (the move endpoint refuses a Member destination),
+        // so a move off it is one-way and gets a plain confirmation instead of
+        // an Undo that would only fail.
         const prevScopeId = sourceScopeId;
         const prevFolderId = item.parentFolderId;
-        toast.info(
-          <span className="flex items-center gap-2">
-            Moved
-            <button
-              type="button"
-              className="underline font-medium hover:no-underline"
-              onClick={() =>
-                void moveItemToScope(item, destScopeId, prevScopeId, prevFolderId, { skipConfirm: true })
-              }
-            >
-              Undo
-            </button>
-          </span>,
-          { duration: 6000 },
-        );
+        if (scopeKindOf(prevScopeId) === "mine") {
+          toast.success("Moved");
+        } else {
+          toast.info(
+            <span className="flex items-center gap-2">
+              Moved
+              <button
+                type="button"
+                className="underline font-medium hover:no-underline"
+                onClick={() =>
+                  void moveItemToScope(item, destScopeId, prevScopeId, prevFolderId, { skipConfirm: true })
+                }
+              >
+                Undo
+              </button>
+            </span>,
+            { duration: 6000 },
+          );
+        }
       } else {
         toast.error((await driveErrorFrom(res)) ?? "Couldn't move");
       }
       revalidator.revalidate();
     },
-    [driveScopes, dialog, toast, revalidator],
+    [driveScopes, viewerId, dialog, toast, revalidator],
   );
 
   // Open the hybrid destination picker over every drive the item(s) may move to
