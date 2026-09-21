@@ -293,18 +293,20 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
   const reviewedDomainIds = Array.from(reviewedDomainIdSet);
 
-  // Decisions awaiting the hiring lead. Students cycles: Final decisions ready
-  // for release (domain leads finalize on their own page). Member cycles have
-  // no domain-lead step, so the lead finalizes Drafts here too. Exclude rows
-  // that already have a Released child — Decision is append-only, so released
-  // rows still match their stage and would otherwise re-appear here after the
-  // optimistic UI update is undone by a loader refetch.
+  // Decisions awaiting the hiring lead: Drafts to finalize and Finals to
+  // release, on every kind of cycle. Students cycles used to load Finals only,
+  // on the theory that domain leads finalize on their own page — but a Draft
+  // made outside that flow (moved by hand, or left behind when the cycle
+  // closed) was then invisible here, which is the one place a lead looks.
+  // Exclude rows that already have a Released child — Decision is append-only,
+  // so released rows still match their stage and would otherwise re-appear here
+  // after the optimistic UI update is undone by a loader refetch.
   const isMemberCycle = isMemberApplicants(cycleBase.applicants);
   const pendingDecisions = confidentialityRequired
     ? []
     : await prisma.decision.findMany({
         where: {
-          stage: isMemberCycle ? { in: ["Draft", "Final"] } : "Final",
+          stage: { in: ["Draft", "Final"] },
           children: { none: { stage: "Released" } },
           domainApplication: {
             application: { applicationCycleId: params.id },
@@ -2657,6 +2659,12 @@ export default function HiringLeadCycleDetails() {
       )}
 
       {/* ── Decisions ── */}
+      {/* Drafts first: they are the ones still needing a lead's hand. Skipped
+          when the round context above is already showing this same list, so a
+          member cycle mid-final-round doesn't render it twice. */}
+      {tab === 'decisions' && !(activeRound?.isFinal && isMemberCycle) && (
+        <NavSection id="finalize" title="Draft decisions">{renderDecisions('finalize')}</NavSection>
+      )}
       {tab === 'decisions' && (
         <NavSection id="release" title="Decisions to release">{renderDecisions('outcomes')}</NavSection>
       )}

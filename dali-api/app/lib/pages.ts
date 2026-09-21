@@ -12,6 +12,7 @@ export async function createProjectPage(input: {
   title: string;
   createdById: string;
   meetingNoteId?: string;
+  meetingWhiteboardId?: string;
   parentPageId?: string | null;
   kind?: PageKind;
 }): Promise<{ id: string }> {
@@ -33,6 +34,7 @@ export async function createProjectPage(input: {
       parentPageId,
       createdById: input.createdById,
       meetingNoteId: input.meetingNoteId ?? null,
+      meetingWhiteboardId: input.meetingWhiteboardId ?? null,
     },
     select: { id: true },
   });
@@ -47,6 +49,9 @@ export async function createLabMeetingPage(input: {
   title: string;
   createdById: string;
   meetingNoteId?: string;
+  meetingWhiteboardId?: string;
+  // FreeForm (note doc) by default; a meeting whiteboard passes Whiteboard.
+  kind?: PageKind;
   // Optional Lab folder to nest under (null = Lab top level). Lets a General
   // meeting file its note at a chosen Lab location instead of the root.
   parentPageId?: string | null;
@@ -68,11 +73,12 @@ export async function createLabMeetingPage(input: {
       workspaceType: "Lab",
       workspaceId: null,
       title: input.title,
-      kind: "FreeForm",
+      kind: input.kind ?? "FreeForm",
       position,
       parentPageId,
       createdById: input.createdById,
       meetingNoteId: input.meetingNoteId ?? null,
+      meetingWhiteboardId: input.meetingWhiteboardId ?? null,
       // Lab docs default to the communal shelf: everyone in the lab can edit.
       linkAccess: input.restricted ? "Restricted" : "LabMembers",
       linkPermission: input.restricted ? "View" : "Edit",

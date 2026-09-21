@@ -13,6 +13,8 @@ const openStandard: C = { id: "std-open", applicants: "Students", statusUpdates:
 const underReviewStandard: C = { id: "std-ur", applicants: "Students", statusUpdates: [{ newStatus: "UnderReview" }] };
 const openIntern: C = { id: "itf-open", applicants: "Interns", statusUpdates: [{ newStatus: "Open" }] };
 const draftIntern: C = { id: "itf-draft", applicants: "Interns", statusUpdates: [{ newStatus: "Draft" }] };
+const completedStudents: C = { id: "std-done", applicants: "Students", statusUpdates: [{ newStatus: "Completed" }] };
+const completedInterns: C = { id: "itf-done", applicants: "Interns", statusUpdates: [{ newStatus: "Completed" }] };
 
 describe("selectActiveCycleForDomainLead", () => {
   it("returns null when there are no candidates", () => {
@@ -50,5 +52,22 @@ describe("selectActiveCycleForDomainLead", () => {
 
   it("falls back to Draft when nothing is Open/UnderReview", () => {
     expect(selectActiveCycleForDomainLead([draftStandard, draftIntern], null)).toBe(draftStandard);
+  });
+
+  // Past cycles are offered in the picker so a lead can reopen one, but they
+  // are only ever reached deliberately.
+  it("opens a Completed cycle when ?cycle=<id> names one", () => {
+    expect(
+      selectActiveCycleForDomainLead([completedStudents, openStandard], completedStudents.id),
+    ).toBe(completedStudents);
+  });
+
+  it("never defaults to a Completed cycle while a live one exists", () => {
+    expect(selectActiveCycleForDomainLead([completedStudents, openIntern], null)).toBe(openIntern);
+    expect(selectActiveCycleForDomainLead([completedStudents, draftStandard], null)).toBe(draftStandard);
+  });
+
+  it("returns null when every cycle is Completed, so the page keeps its empty state", () => {
+    expect(selectActiveCycleForDomainLead([completedStudents, completedInterns], null)).toBeNull();
   });
 });
