@@ -1,18 +1,21 @@
-/* Scoped tweaks that make the embedded Excalidraw canvas read as a DALI
-   surface. These target Excalidraw's own class names (it exposes no props for
-   them), so revisit if the Excalidraw version is bumped. All rules are scoped to
-   `.dali-whiteboard` so they can't leak into the rest of the app. */
+/* Tweaks that make the embedded Excalidraw canvas read as a DALI surface. Some
+   target Excalidraw's own class names (it exposes no props for them) — revisit if
+   the Excalidraw version is bumped. */
 
-/* Empty-board copy ("Start on the canvas…") in the DALI OS typeface (Mulish),
-   not Excalidraw's UI font. */
-.dali-whiteboard .welcome-screen-center {
-  font-family: var(--font-os, "Mulish"), var(--font-sans, "Open Sans"), sans-serif;
+/* Empty-board copy ("Start on the canvas…") in the DALI OS typeface (Mulish).
+   Excalidraw sets no font-family on the heading (it inherits its UI font), so we
+   force it with !important and target the heading directly. */
+.dali-whiteboard .welcome-screen-center,
+.dali-whiteboard .welcome-screen-center__heading {
+  font-family: var(--font-os, "Mulish"), var(--font-sans, "Open Sans"), sans-serif !important;
 }
 
 /* Keep the Help modal (its keyboard-shortcuts reference is useful) but strip its
    top row of Excalidraw links (Documentation / blog / GitHub / YouTube). The
-   shortcuts below (.HelpDialog__islands-container) stay. */
-.dali-whiteboard .HelpDialog__header {
+   dialog portals into .excalidraw-modal-container — outside .dali-whiteboard —
+   so this rule is intentionally NOT scoped to the board wrapper (whiteboard.css
+   only loads on the whiteboard route, and .HelpDialog is Excalidraw-only). */
+.HelpDialog__header {
   display: none !important;
 }
 

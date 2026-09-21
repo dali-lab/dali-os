@@ -11,10 +11,24 @@ import { getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
 import { driveRootCrumbs } from "~/lib/drive-crumbs";
+import { Shapes } from "lucide-react";
 import { ProjectIcon } from "~/components/ProjectIcon";
-import { PageIcon } from "~/components/PageIcon";
 import { FolderIcon } from "~/components/FolderIcon";
 import { WhiteboardEditor } from "~/components/whiteboard/WhiteboardEditor";
+
+// Leading glyph for a whiteboard in the breadcrumb trail: its custom emoji, else
+// a canvas/shapes icon (matching the Drive browser) — never the plain doc glyph.
+function WhiteboardCrumbIcon({ iconEmoji }: { iconEmoji?: string | null }) {
+  return (
+    <span className="flex w-4 flex-shrink-0 items-center justify-center leading-none" aria-hidden>
+      {iconEmoji ? (
+        <span className="text-sm">{iconEmoji}</span>
+      ) : (
+        <Shapes className="h-3.5 w-3.5 text-muted-foreground" />
+      )}
+    </span>
+  );
+}
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const t = (data as { title?: string } | undefined)?.title;
@@ -54,7 +68,7 @@ export const handle = {
           to: `/drive?scope=${scope}&folder=${f.id}`,
           icon: <FolderIcon iconEmoji={f.iconEmoji} />,
         })),
-        { label: d.title, icon: <PageIcon iconEmoji={d.iconEmoji} /> },
+        { label: d.title, icon: <WhiteboardCrumbIcon iconEmoji={d.iconEmoji} /> },
       ];
     }
     // Project / offering pages root at their hub.
@@ -78,7 +92,7 @@ export const handle = {
         to: `/drive?scope=${driveScope}&folder=${f.id}`,
         icon: <FolderIcon iconEmoji={f.iconEmoji} />,
       })),
-      { label: d.title, icon: <PageIcon iconEmoji={d.iconEmoji} /> },
+      { label: d.title, icon: <WhiteboardCrumbIcon iconEmoji={d.iconEmoji} /> },
     ];
   },
 };

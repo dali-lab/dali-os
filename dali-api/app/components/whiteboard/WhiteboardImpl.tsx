@@ -1,8 +1,16 @@
 import "@excalidraw/excalidraw/index.css";
 import "./whiteboard.css";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Excalidraw, MainMenu, WelcomeScreen, FONT_FAMILY } from "@excalidraw/excalidraw";
+import {
+  Excalidraw,
+  MainMenu,
+  WelcomeScreen,
+  FONT_FAMILY,
+  CaptureUpdateAction,
+} from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+import { Trash2 } from "lucide-react";
+import { useDialog } from "~/components/ui/dialog";
 import { acquireCollabDoc, releaseCollabDoc, nameToHexColor } from "~/components/doc/collab-doc";
 import { whiteboardRoomName } from "~/collab/roomName";
 import { bindExcalidrawToYjs, type WhiteboardBinding } from "./whiteboard-yjs";
@@ -12,6 +20,7 @@ import type { WhiteboardEditorProps } from "./WhiteboardEditor";
 export default function WhiteboardImpl(props: WhiteboardEditorProps) {
   // title/iconEmoji come through props but the shell breadcrumb renders them now.
   const { pageId, canEdit, collabToken, userName, photoUrl } = props;
+  const dialog = useDialog();
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const bindingRef = useRef<WhiteboardBinding | null>(null);
   const roomName = useMemo(() => whiteboardRoomName(pageId), [pageId]);
@@ -38,6 +47,21 @@ export default function WhiteboardImpl(props: WhiteboardEditorProps) {
     }),
     [],
   );
+
+  // Clear via the DALI confirm dialog (useDialog) instead of Excalidraw's own
+  // confirm modal, then wipe the scene — the binding propagates the clear to
+  // peers. Captured in local history so the author can undo.
+  async function handleClearCanvas() {
+    if (!api) return;
+    const confirmed = await dialog.confirm({
+      title: "Clear canvas",
+      description: "This will clear the whole whiteboard for everyone. Are you sure?",
+      tone: "destructive",
+      confirmLabel: "Clear",
+    });
+    if (!confirmed) return;
+    api.updateScene({ elements: [], captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+  }
 
   // Acquire the shared Y.Doc + provider and wire the binding once the Excalidraw
   // imperative API is ready. The doc cache is refcounted with a dispose debounce,
@@ -83,7 +107,9 @@ export default function WhiteboardImpl(props: WhiteboardEditorProps) {
         <MainMenu>
           <MainMenu.DefaultItems.SaveAsImage />
           <MainMenu.DefaultItems.ChangeCanvasBackground />
-          <MainMenu.DefaultItems.ClearCanvas />
+          <MainMenu.Item icon={<Trash2 className="h-4 w-4" />} onSelect={() => void handleClearCanvas()}>
+            Clear canvas
+          </MainMenu.Item>
           <MainMenu.Separator />
           <MainMenu.DefaultItems.Help />
         </MainMenu>
