@@ -58,13 +58,19 @@ test.describe('portal home dashboard', () => {
   }) => {
     await loginAs({ netId: 'f007al1' });
     await page.goto('/portal');
-    await expect(page.getByRole('heading', { name: 'Apply to DALI' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Education' })).toBeVisible();
-    // Education is the only nav item: applying lives on the portal home
-    // itself, which the logo links back to, so a separate "Apply" tab would
-    // just point at the page you are already on.
-    await expect(page.getByRole('link', { name: 'Education', exact: true })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Apply', exact: true })).toHaveCount(0);
+    // Asserted on text, not on a heading role: the redesigned home (the
+    // education-redesign-v2 flag) titles its cards with a span.
+    await expect(page.getByText('Apply to DALI').first()).toBeVisible();
+    // The education card, whichever home layout is in force, links into the
+    // catalog. The rail's own Education row is a button, so this can only match
+    // a card in the page.
+    await expect(page.locator('a[href="/portal/education"]').first()).toBeVisible();
+    // The portal wears the dali.os rail: the student's four surfaces as direct
+    // rows (no area switcher), and none of the member-only ones.
+    for (const row of ['Home', 'Calendar', 'Application', 'Education']) {
+      await expect(page.getByRole('button', { name: row, exact: true })).toBeVisible();
+    }
+    await expect(page.getByRole('button', { name: 'Drive', exact: true })).toHaveCount(0);
   });
 });
 
@@ -111,9 +117,10 @@ test.describe('portal RSVP, waitlist, and auto-promotion', () => {
     await page.goto(`/portal/education/${WORKSHOP_ID}`);
     await expect(page.getByText('Enrolled', { exact: true })).toBeVisible();
 
-    // The enrolled student can open the course hub (the session Timeline is the
-    // default tab).
+    // The enrolled student can open the course hub. Overview is the default
+    // tab; Sessions (once "Timeline") holds the session-by-session content.
     await page.getByRole('link', { name: 'Open course hub' }).click();
-    await expect(page.getByRole('button', { name: 'Timeline' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Overview' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Sessions' })).toBeVisible();
   });
 });

@@ -29,7 +29,7 @@ export const handle = {
     return [
       { label: "Education", to: "/education" },
       { label: data.offeringTitle, to: hub },
-      { label: "Timeline", to: `${hub}?tab=timeline` },
+      { label: "Sessions", to: `${hub}?tab=sessions` },
       { label: data.page.title },
     ];
   },

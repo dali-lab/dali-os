@@ -57,28 +57,29 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     return redirect("/portal/education");
   }
 
-  // Draft/Archived offerings are manager-only surfaces.
-  if (offering.status !== "Published" && !isManager) {
+  const myApplication = await prisma.educationApplication.findUnique({
+    where: {
+      applicantUserId_offeringId: {
+        applicantUserId: auth.user.sub,
+        offeringId: offering.id,
+      },
+    },
+    select: { id: true, status: true },
+  });
+
+  // Draft/Archived offerings are manager-only surfaces — except to someone who
+  // applied to this one. Close-out archives a course, so its own students would
+  // otherwise lose the page the day it finished.
+  if (offering.status !== "Published" && !isManager && !myApplication) {
     throw new Response("Not found", { status: 404 });
   }
 
   // After the gate — a course the viewer can open lands in their recents.
   recordRouteVisit(auth.user.sub, `/education/${offering.id}`, offering.title, request);
 
-  const [descriptionHtml, myApplication] = await Promise.all([
-    offering.descriptionDocId
-      ? collabDocToHtml(offering.descriptionDocId)
-      : Promise.resolve(""),
-    prisma.educationApplication.findUnique({
-      where: {
-        applicantUserId_offeringId: {
-          applicantUserId: auth.user.sub,
-          offeringId: offering.id,
-        },
-      },
-      select: { id: true, status: true },
-    }),
-  ]);
+  const descriptionHtml = offering.descriptionDocId
+    ? await collabDocToHtml(offering.descriptionDocId)
+    : "";
 
   return {
     offering: {

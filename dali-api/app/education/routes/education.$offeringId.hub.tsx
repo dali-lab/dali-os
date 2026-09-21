@@ -90,7 +90,7 @@ export default function MemberCourseHub() {
               to={`/education/${hub.offering.id}/hub?as=student`}
               className={buttonClasses("ghost", "sm")}
             >
-              View as student
+              Student view
             </Link>
             <Link
               to={`/education/manage/${hub.offering.id}`}

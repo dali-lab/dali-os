@@ -177,21 +177,58 @@ export async function createLabPage(input: {
 }
 
 /** Idempotently ensure the "Forms" folder inside an EducationOffering's
- *  workspace and return its id. Home for the offering's application form, so it
- *  lives WITH its offering (under the Education space). Backed by a
- *  ProcessFolderBinding (EducationOffering / <offeringId> / "forms") — a normal,
- *  editable folder, swappable from the offering settings. */
+ *  workspace and return its id. Home for the offering's application form.
+ *
+ *  Fixed, not bound: an offering's Drive home is always Education ▸ <the
+ *  offering> (the workspace itself is what the Education space renders as that
+ *  folder), so there is nothing to configure and no settings section for it.
+ *  The folder page stays an ordinary one — renameable, shareable — and is
+ *  re-created here if someone deletes it.
+ *
+ *  Concurrency: the offering row is locked for the find-or-create so two
+ *  simultaneous "create the application form" clicks can't leave two Forms
+ *  folders behind. */
 export async function ensureOfferingFormsFolder(
   offeringId: string,
   createdById: string,
 ): Promise<string> {
-  return ensureProcessFolder({
-    processType: "EducationOffering",
-    processId: offeringId,
-    purpose: "forms",
-    createdById,
+  return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "EducationOffering" WHERE id = ${offeringId} FOR UPDATE`;
+    const existing = await tx.page.findFirst({
+      where: {
+        workspaceType: "EducationOffering",
+        workspaceId: offeringId,
+        parentPageId: null,
+        kind: "Folder",
+        title: OFFERING_FORMS_FOLDER_TITLE,
+        archivedAt: null,
+      },
+      select: { id: true },
+    });
+    if (existing) return existing.id;
+
+    const last = await tx.page.findFirst({
+      where: { workspaceType: "EducationOffering", workspaceId: offeringId, parentPageId: null },
+      orderBy: { position: "desc" },
+      select: { position: true },
+    });
+    const folder = await tx.page.create({
+      data: {
+        workspaceType: "EducationOffering",
+        workspaceId: offeringId,
+        parentPageId: null,
+        title: OFFERING_FORMS_FOLDER_TITLE,
+        kind: "Folder",
+        position: last ? last.position + 1 : 0,
+        createdById,
+      },
+      select: { id: true },
+    });
+    return folder.id;
   });
 }
+
+const OFFERING_FORMS_FOLDER_TITLE = "Forms";
 
 export type MeetingNotesFolderKind = "Team" | "Partner";
 

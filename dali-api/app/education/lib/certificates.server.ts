@@ -55,6 +55,7 @@ export async function closeOutOffering(args: {
       id: true,
       title: true,
       type: true,
+      status: true,
       endsAt: true,
       closedOutAt: true,
       completionThreshold: true,
@@ -166,8 +167,22 @@ export async function closeOutOffering(args: {
       }
       await tx.educationOffering.update({
         where: { id: args.offeringId },
-        data: { closedOutAt: new Date(), closedOutById: args.actorId },
+        data: {
+          closedOutAt: new Date(),
+          closedOutById: args.actorId,
+          // Closing out and archiving are one action: a finished course is
+          // hidden from the hub and closed to new applications, which is what
+          // Archived means. Reopening puts it back.
+          status: "Archived",
+        },
       });
+    });
+  } else if (offering.status !== "Archived") {
+    // A re-run of close-out on a course someone re-published: bring the status
+    // back in line without touching the original close-out stamp.
+    await prisma.educationOffering.update({
+      where: { id: args.offeringId },
+      data: { status: "Archived" },
     });
   }
 
@@ -223,8 +238,9 @@ export async function closeOutOffering(args: {
 export type ReopenResult = { ok: true } | { error: string; status: number };
 
 /**
- * Reverse a close-out: clears `closedOutAt`/`closedOutById` so the offering
- * leaves the "Past offerings" bucket and can be edited and re-closed later.
+ * Reverse a close-out: clears `closedOutAt`/`closedOutById` and un-archives,
+ * so the offering leaves the "Past offerings" bucket, is visible again, and
+ * can be edited and re-closed later.
  * Certificates and CE credits already issued by the prior close-out are left in
  * place — re-running close-out is idempotent and only issues missing ones — so
  * reopening cleanly undoes an accidental or premature close-out without clawing
@@ -236,14 +252,20 @@ export async function reopenOffering(args: {
 }): Promise<ReopenResult> {
   const offering = await prisma.educationOffering.findUnique({
     where: { id: args.offeringId },
-    select: { id: true, closedOutAt: true },
+    select: { id: true, status: true, closedOutAt: true },
   });
   if (!offering) return { error: "Offering not found", status: 404 };
   if (offering.closedOutAt === null) return { ok: true }; // already open
 
   await prisma.educationOffering.update({
     where: { id: args.offeringId },
-    data: { closedOutAt: null, closedOutById: null },
+    data: {
+      closedOutAt: null,
+      closedOutById: null,
+      // Close-out archived it, so reopening publishes it again. A course that
+      // was left in Draft before close-out stays a draft.
+      ...(offering.status === "Archived" ? { status: "Published" as const } : {}),
+    },
   });
   await logAuditEvent({
     action: "education.offering.reopen",

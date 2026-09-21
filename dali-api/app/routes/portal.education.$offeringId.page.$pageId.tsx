@@ -44,7 +44,7 @@ export default function PortalMaterialPage() {
       <header>
         <p className="text-xs text-muted-foreground">
           <Link
-            to={`/portal/education/${offeringId}/hub?tab=timeline`}
+            to={`/portal/education/${offeringId}/hub?tab=sessions`}
             className="hover:underline"
           >
             ← Timeline

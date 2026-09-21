@@ -83,20 +83,23 @@ type DiscussionPost = {
 // materials, attendance, and assignment inline), with Grades / Discussion /
 // Overview as secondary destinations. Sequenced-content home beats a tab-per-
 // concept split — see specs/education-student-ui.md.
+// Overview leads: it's the course at a glance (where it meets, how you're
+// doing, your certificate), which is what a student opens the hub for. The
+// session list is named for what it holds — "Timeline" described the shape of
+// the page rather than the sessions, materials and work on it.
 const TABS = [
-  { key: "timeline", label: "Timeline" },
-  { key: "discussions", label: "Discussions" },
   { key: "overview", label: "Overview" },
+  { key: "sessions", label: "Sessions" },
+  { key: "discussions", label: "Discussions" },
 ] as const;
 
-// education-student-hub: the reworked tab set. The Workspace tab is gone (shared
-// docs live on the timeline now) and a Canvas-style People tab replaces the
-// roster that used to sit inside Overview.
+// education-student-hub: the reworked tab set. A Canvas-style People tab
+// replaces the roster that used to sit inside Overview.
 const V2_TABS = [
-  { key: "timeline", label: "Timeline" },
+  { key: "overview", label: "Overview" },
+  { key: "sessions", label: "Sessions" },
   { key: "discussions", label: "Discussions" },
   { key: "people", label: "People" },
-  { key: "overview", label: "Overview" },
 ] as const;
 
 const ATTENDANCE_STYLE: Record<string, string> = {
@@ -117,21 +120,20 @@ export function CourseHub({
   const [searchParams, setSearchParams] = useSearchParams();
   const tz = useUserTimeZone();
   const v2 = useFeatureFlag("education-student-hub");
-  const tab = searchParams.get("tab") ?? "timeline";
+  // `timeline` was this tab's key before it was renamed; a bookmark or an old
+  // link still lands on the sessions it always did rather than on nothing.
+  const rawTab = searchParams.get("tab") ?? "overview";
+  const tab = rawTab === "timeline" ? "sessions" : rawTab;
 
-  // education-student-hub: fixed tab set with People, no Workspace. Otherwise the
-  // Workspace tab appears only when the offering has shared collaborative docs,
-  // inserted before Overview (after Discussions) so the co-edited docs sit with
-  // the other communication surfaces.
-  const tabs = v2
-    ? V2_TABS
-    : data.workspaceDocs.length > 0
-      ? [...TABS.slice(0, 2), { key: "workspace", label: "Workspace" } as const, ...TABS.slice(2)]
-      : TABS;
+  // education-student-hub adds a People tab; otherwise the two sets are the
+  // same. There is no Workspace tab in either: a shared doc is a material the
+  // class writes in rather than reads, so it belongs with the other material
+  // for its session, not in a separate place you had to know to look.
+  const tabs = v2 ? V2_TABS : TABS;
 
   // Assignments awaiting this student's submission (past-due ones can't be
-  // submitted anymore, so they don't count) — surfaced as a tab badge on the
-  // timeline (where the work lives) so new work is visible from anywhere.
+  // submitted anymore, so they don't count) — surfaced as a tab badge on
+  // Sessions (where the work lives) so new work is visible from anywhere.
   const openAssignments = data.isManager
     ? 0
     : data.assignments.filter(
@@ -140,35 +142,37 @@ export function CourseHub({
 
   return (
     <div className="flex flex-col gap-5">
-      <nav className="flex gap-1 border-b border-border overflow-x-auto">
+      <nav className="flex overflow-x-auto">
         {tabs.map((t) => (
           <button
             key={t.key}
             type="button"
             onClick={() => setSearchParams({ tab: t.key }, { preventScrollReset: true })}
+            style={
+              tab === t.key ? { borderBottomColor: "var(--color-os-accent)" } : undefined
+            }
             className={cn(
-              "px-4 py-2 text-sm font-semibold whitespace-nowrap inline-flex items-center gap-1.5",
-              tab === t.key
-                ? "text-accent-coral border-b-2 border-accent-coral"
-                : "text-muted-foreground hover:text-foreground",
+              "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-4 py-3 text-sm font-semibold transition",
+              tab === t.key ? "text-os-accent" : "text-os-grey hover:text-foreground",
             )}
           >
             {t.label}
-            {t.key === "timeline" && openAssignments > 0 && (
-              <span className="inline-flex items-center justify-center rounded-full bg-accent-coral text-white text-[10px] font-bold min-w-4 h-4 px-1">
+            {t.key === "sessions" && openAssignments > 0 && (
+              <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-os-accent px-1.5 text-[11px] font-bold text-os-card">
                 {openAssignments}
               </span>
             )}
           </button>
         ))}
+        <span aria-hidden className="flex-1 border-b-2" />
       </nav>
 
-      {tab === "timeline" && (
+      {tab === "sessions" && (
         <SessionTimeline
           sessions={data.sessions}
           materials={data.materials}
           assignments={data.assignments}
-          sharedDocs={v2 ? data.workspaceDocs : []}
+          sharedDocs={data.workspaceDocs}
           files={v2 ? data.files : []}
           basePath={basePath}
           tz={tz}
@@ -183,7 +187,7 @@ export function CourseHub({
       {tab === "overview" && (
         <div className="flex flex-col gap-5">
           {data.myCertificateId && (
-            <section className="bg-brand-tint rounded-lg px-4 py-3 flex items-center justify-between gap-4">
+            <section className="flex items-center justify-between gap-4 rounded-os-card bg-os-accent/10 px-5 py-4">
               <p className="text-sm text-foreground">
                 🎓 You completed this course — your certificate is ready.
               </p>
@@ -196,8 +200,8 @@ export function CourseHub({
             </section>
           )}
           {data.myFeedback && (
-            <section className="bg-accent-teal/5 border border-accent-teal/30 rounded-lg p-4">
-              <p className="text-xs font-semibold text-accent-teal">
+            <section className="rounded-os-card bg-os-accent/10 p-5">
+              <p className="text-xs font-semibold text-os-accent">
                 Instructor feedback
                 {data.myFeedback.authorName ? ` · ${data.myFeedback.authorName}` : ""}
               </p>
@@ -209,8 +213,8 @@ export function CourseHub({
           {/* About the course: what it is, who teaches it, who else is in it.
               None of this was reachable from inside the hub before — a student
               had to go back out to the listing page to read the description. */}
-          <section className="rounded-lg border border-border bg-card p-5">
-            <h2 className="font-heading text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          <section className="rounded-os-card bg-os-card p-6">
+            <h2 className="font-heading text-[19px] font-semibold text-foreground">
               About this course
             </h2>
             {data.offering.descriptionHtml ? (
@@ -219,21 +223,21 @@ export function CourseHub({
                 dangerouslySetInnerHTML={{ __html: data.offering.descriptionHtml }}
               />
             ) : (
-              <p className="mt-2 text-sm text-muted-foreground italic">
+              <p className="mt-2 text-sm text-os-grey italic">
                 No description yet.
               </p>
             )}
 
             {!v2 && data.instructors.length > 0 && (
-              <div className="mt-4 border-t border-border pt-4">
-                <p className="text-xs font-semibold text-muted-foreground">
+              <div className="mt-4 border-t border-os-container pt-4">
+                <p className="text-xs font-semibold text-os-grey">
                   {data.instructors.length === 1 ? "Instructor" : "Instructors"}
                 </p>
                 <ul className="mt-2 flex flex-wrap gap-2">
                   {data.instructors.map((i) => (
                     <li
                       key={i.id}
-                      className="inline-flex items-center gap-2 rounded-md border border-border bg-muted px-2 py-1"
+                      className="inline-flex items-center gap-2 rounded-full bg-os-well px-3 py-1"
                     >
                       <Avatar photoUrl={i.photoUrl} name={i.name} size="xs" />
                       <span className="text-sm text-foreground">{i.name}</span>
@@ -244,8 +248,8 @@ export function CourseHub({
             )}
 
             {!v2 && data.classmates.length > 0 && (
-              <div className="mt-4 border-t border-border pt-4">
-                <p className="text-xs font-semibold text-muted-foreground">
+              <div className="mt-4 border-t border-os-container pt-4">
+                <p className="text-xs font-semibold text-os-grey">
                   Taking this course · {data.classmates.length}
                 </p>
                 <ul className="mt-2 flex flex-wrap gap-2">
@@ -254,14 +258,14 @@ export function CourseHub({
                       key={c.id}
                       className={`inline-flex items-center gap-2 rounded-md border px-2 py-1 ${
                         c.isMe
-                          ? "border-accent-coral/30 bg-accent-coral/5"
-                          : "border-border bg-card"
+                          ? "border-os-accent/30 bg-os-accent/5"
+                          : "border-os-container bg-os-card"
                       }`}
                     >
                       <Avatar photoUrl={c.photoUrl} name={c.name} size="xs" />
                       <span className="text-sm text-foreground">{c.name}</span>
                       {c.isMe && (
-                        <span className="text-[10px] font-semibold uppercase tracking-wide text-accent-coral">
+                        <span className="text-[10px] font-semibold uppercase tracking-wide text-os-accent">
                           You
                         </span>
                       )}
@@ -275,19 +279,11 @@ export function CourseHub({
         </div>
       )}
 
-      {!v2 && tab === "workspace" && (
-        <WorkspaceTab
-          docs={data.workspaceDocs}
-          collabToken={collabToken ?? null}
-          userName={data.currentUserName}
-        />
-      )}
-
       {tab === "discussions" && (
         <div className="flex flex-col gap-5">
           {data.announcements.length > 0 && (
             <section>
-              <h2 className="mb-2 font-heading text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              <h2 className="mb-3 font-heading text-[19px] font-semibold text-foreground">
                 Announcements
               </h2>
               {/* Read-only here: announcements are a broadcast from the
@@ -296,9 +292,9 @@ export function CourseHub({
                 {data.announcements.map((a) => (
                   <li
                     key={a.id}
-                    className="rounded-lg border border-accent-coral/30 bg-accent-coral/5 p-4"
+                    className="rounded-os-card bg-os-accent/10 p-5"
                   >
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-xs text-os-grey">
                       {a.author.firstName} {a.author.lastName} ·{" "}
                       {formatDateTime(a.sentAt as never, tz)}
                     </p>
@@ -322,7 +318,7 @@ export function CourseHub({
 // A single thing attached to a session or the whole course on the student
 // timeline: a read-only material page, a co-edited shared doc, or an uploaded
 // file. Under education-student-hub these three live together instead of in
-// separate Materials / Workspace / Files buckets.
+// separate Materials / shared-doc / Files buckets.
 type TimelineResource =
   | { kind: "material"; id: string; title: string }
   | { kind: "shared"; id: string; title: string }
@@ -334,13 +330,13 @@ const RESOURCE_ICON = { material: FileText, shared: Users, file: Paperclip } as 
  *  in a new tab; materials + shared docs open their in-app page. */
 function ResourceChip({ r, basePath }: { r: TimelineResource; basePath: string }) {
   const Icon = RESOURCE_ICON[r.kind];
-  const className = "inline-flex items-center gap-1 text-accent-teal hover:underline";
+  const className = "inline-flex items-center gap-1 text-os-accent hover:underline";
   const inner = (
     <>
       <Icon className="h-3 w-3" aria-hidden />
       {r.title}
       {r.kind === "shared" && (
-        <span className="rounded-full bg-accent-teal/10 px-1.5 text-[9px] font-semibold uppercase tracking-wide text-accent-teal">
+        <span className="rounded-full bg-os-accent/15 px-1.5 text-[9px] font-semibold uppercase tracking-wide text-os-accent">
           Shared
         </span>
       )}
@@ -364,22 +360,22 @@ function ResourceChip({ r, basePath }: { r: TimelineResource; basePath: string }
 function ResourceCard({ r, basePath }: { r: TimelineResource; basePath: string }) {
   const Icon = RESOURCE_ICON[r.kind];
   const className =
-    "group flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 transition-colors hover:border-accent-coral/50 hover:bg-muted/40";
+    "group flex items-center gap-3 rounded-os-card bg-os-card px-5 py-3.5 transition-colors hover:bg-os-card-hover";
   const inner = (
     <>
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent-coral/10 text-accent-coral">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-os-item bg-os-accent/10 text-os-accent">
         <Icon className="h-4 w-4" aria-hidden />
       </span>
-      <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground group-hover:text-accent-coral">
+      <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground group-hover:text-os-accent">
         {r.title}
       </span>
       {r.kind === "shared" && (
-        <span className="shrink-0 rounded-full bg-accent-teal/10 px-2 py-0.5 text-[10px] font-semibold text-accent-teal">
+        <span className="shrink-0 rounded-full bg-os-accent/15 px-2 py-0.5 text-[10px] font-semibold text-os-accent">
           Shared
         </span>
       )}
       <ChevronRight
-        className="h-4 w-4 shrink-0 text-muted-foreground/60 group-hover:text-accent-coral"
+        className="h-4 w-4 shrink-0 text-os-grey/60 group-hover:text-os-accent"
         aria-hidden
       />
     </>
@@ -415,20 +411,20 @@ function PeopleTab({
     people: { id: string; name: string; photoUrl: string | null; isMe?: boolean; role?: string }[];
   }) => (
     <section>
-      <h2 className="mb-2 font-heading text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+      <h2 className="mb-3 font-heading text-[19px] font-semibold text-foreground">
         {label} · {people.length}
       </h2>
-      <ul className="divide-y divide-border rounded-lg border border-border bg-card">
+      <ul className="divide-y divide-os-container rounded-os-card bg-os-card">
         {people.map((p) => (
           <li key={p.id} className="flex items-center gap-3 px-4 py-2.5">
             <Avatar photoUrl={p.photoUrl} name={p.name} size="sm" />
             <span className="text-sm font-medium text-foreground">{p.name}</span>
             {p.isMe && (
-              <span className="rounded-full bg-accent-coral/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent-coral">
+              <span className="rounded-full bg-os-accent/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-os-accent">
                 You
               </span>
             )}
-            {p.role && <span className="ml-auto text-xs text-muted-foreground">{p.role}</span>}
+            {p.role && <span className="ml-auto text-xs text-os-grey">{p.role}</span>}
           </li>
         ))}
       </ul>
@@ -459,14 +455,14 @@ function DiscussionBoard({
 }) {
   return (
     <div className="flex flex-col gap-4">
-      <Form method="post" className="bg-card border border-border rounded-lg p-4">
+      <Form method="post" className="os-form rounded-os-card bg-os-card p-5">
         <input type="hidden" name="intent" value="post-discussion" />
         <textarea
           name="body"
           required
           rows={3}
           placeholder="Ask a question or share something with the class…"
-          className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
+          className="w-full"
         />
         <div className="mt-2">
           <Button type="submit" size="sm">
@@ -476,13 +472,13 @@ function DiscussionBoard({
       </Form>
 
       {threads.map((t) => (
-        <div key={t.id} className="bg-card border border-border rounded-lg p-4">
+        <div key={t.id} className="rounded-os-card bg-os-card p-5">
           <PostBody
             post={t}
             currentUserId={currentUserId}
             isManager={isManager}
           />
-          <div className="mt-3 ml-5 flex flex-col gap-3 border-l-2 border-border pl-4">
+          <div className="mt-3 ml-5 flex flex-col gap-3 border-l-2 border-os-container pl-4">
             {(t.replies ?? []).map((r) => (
               <PostBody
                 key={r.id}
@@ -496,7 +492,7 @@ function DiscussionBoard({
         </div>
       ))}
       {threads.length === 0 && (
-        <p className="text-sm text-muted-foreground italic">
+        <p className="text-sm text-os-grey italic">
           No posts yet — start the discussion above.
         </p>
       )}
@@ -517,10 +513,10 @@ function PostBody({
   const confirmSubmit = useConfirmSubmit();
   return (
     <div>
-      <p className="text-xs text-muted-foreground flex items-center gap-2">
+      <p className="text-xs text-os-grey flex items-center gap-2">
         <span className="font-semibold text-foreground">{post.authorName}</span>
         {post.isInstructor && (
-          <span className="inline-flex items-center rounded-full bg-accent-teal/10 text-accent-teal px-2 py-0.5 text-[10px] font-semibold">
+          <span className="inline-flex items-center rounded-full bg-os-accent/15 text-os-accent px-2 py-0.5 text-[10px] font-semibold">
             Instructor
           </span>
         )}
@@ -538,7 +534,7 @@ function PostBody({
             <input type="hidden" name="postId" value={post.id} />
             <button
               type="submit"
-              className="text-[11px] text-muted-foreground hover:text-destructive underline"
+              className="text-[11px] text-os-grey hover:text-destructive underline"
             >
               Delete
             </button>
@@ -557,7 +553,7 @@ function ReplyForm({ parentId }: { parentId: string }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="self-start text-xs text-muted-foreground hover:text-foreground underline"
+        className="self-start text-xs text-os-grey hover:text-foreground underline"
       >
         Reply
       </button>
@@ -573,7 +569,7 @@ function ReplyForm({ parentId }: { parentId: string }) {
         rows={2}
         autoFocus
         placeholder="Write a reply…"
-        className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
+        className="w-full"
       />
       <div className="flex gap-2">
         <Button type="submit" size="sm" variant="secondary">
@@ -584,88 +580,6 @@ function ReplyForm({ parentId }: { parentId: string }) {
         </Button>
       </div>
     </Form>
-  );
-}
-
-// Shared collaborative docs for the offering. Enrolled students (members and
-// Dartmouth portal users) co-edit live via the same Hocuspocus room the
-// instructor uses. The editor is mounted client-only (it can't render on the
-// server) and re-keyed per doc so switching docs rebinds cleanly. Mentions are
-// off — the mention search is member-gated, so it would be empty for portal
-// students.
-function WorkspaceTab({
-  docs,
-  collabToken,
-  userName,
-}: {
-  docs: { id: string; title: string }[];
-  collabToken: string | null;
-  userName: string;
-}) {
-  const [mounted, setMounted] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(docs[0]?.id ?? null);
-  useEffect(() => setMounted(true), []);
-
-  const selected = docs.find((d) => d.id === selectedId) ?? docs[0] ?? null;
-
-  if (!collabToken) {
-    return (
-      <p className="text-sm text-muted-foreground italic">
-        Sign in again to open shared docs.
-      </p>
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-3">
-      {docs.length > 1 && (
-        <div className="flex flex-wrap gap-1.5">
-          {docs.map((d) => (
-            <button
-              key={d.id}
-              type="button"
-              onClick={() => setSelectedId(d.id)}
-              className={cn(
-                "rounded-full px-3 py-1 text-xs font-semibold",
-                selected?.id === d.id
-                  ? "bg-accent-coral text-white"
-                  : "bg-muted text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {d.title}
-            </button>
-          ))}
-        </div>
-      )}
-      {selected && (
-        <div>
-          <p className="mb-1 text-xs text-muted-foreground">
-            Shared doc — everyone enrolled can edit. Changes save automatically.
-          </p>
-          {mounted ? (
-            <PresenceProvider
-              pageId={`doc:${selected.id}`}
-              token={collabToken}
-              userName={userName}
-            >
-              <DocEditor
-                key={selected.id}
-                features="notes"
-                collab={{
-                  documentName: `doc:${selected.id}:body`,
-                  token: collabToken,
-                  userName,
-                }}
-                placeholder="Start writing together…"
-                className="border border-border rounded-md"
-              />
-            </PresenceProvider>
-          ) : (
-            <div className="h-40 animate-pulse rounded-md border border-border bg-muted/30" />
-          )}
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -704,7 +618,7 @@ function SessionCheckInButton({
   }
 
   if (present) {
-    return <span className="text-xs font-semibold text-accent-teal">✓ Checked in</span>;
+    return <span className="text-xs font-semibold text-os-accent">✓ Checked in</span>;
   }
   return (
     <div className="flex flex-col items-end gap-1">
@@ -779,30 +693,30 @@ function SessionTimeline({
   const nextSession = sessions.find((s) => s.id === nextId) ?? null;
 
   if (sessions.length === 0 && allResources.length === 0 && assignments.length === 0) {
-    return <p className="text-sm text-muted-foreground italic">Nothing scheduled yet.</p>;
+    return <p className="text-sm text-os-grey italic">Nothing scheduled yet.</p>;
   }
 
   return (
     <div className="flex flex-col gap-4">
       {/* Header strip: where the student stands + what's next. */}
       {sessions.length > 0 && (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-border bg-card px-4 py-3 text-sm">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-os-card bg-os-card px-5 py-3.5 text-sm">
           <span className="text-foreground">
             <strong className="font-semibold">
               {present}/{sessions.length}
             </strong>{" "}
-            <span className="text-muted-foreground">attended</span>
+            <span className="text-os-grey">attended</span>
           </span>
           {assignments.length > 0 && (
             <span className="text-foreground">
               <strong className="font-semibold">
                 {submitted}/{assignments.length}
               </strong>{" "}
-              <span className="text-muted-foreground">submitted</span>
+              <span className="text-os-grey">submitted</span>
             </span>
           )}
           {nextSession && (
-            <span className="text-muted-foreground">
+            <span className="text-os-grey">
               next: {nextSession.title ? nextSession.title : `Session ${nextSession.sequence}`} ·{" "}
               {formatSessionWhen(nextSession.datetime, nextSession.endsAt, tz)}
             </span>
@@ -820,8 +734,8 @@ function SessionTimeline({
             <li
               key={s.id}
               className={cn(
-                "rounded-lg border bg-card p-4",
-                isNext ? "border-accent-coral/40 ring-1 ring-accent-coral/20" : "border-border",
+                "rounded-os-card bg-os-card p-5",
+                isNext ? "ring-2 ring-os-accent/40" : "",
               )}
             >
               <div className="flex items-start gap-3">
@@ -844,12 +758,12 @@ function SessionTimeline({
                       <SessionCheckInButton sessionId={s.id} initialPresent={false} />
                     ) : null}
                   </div>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-xs text-os-grey">
                     {formatSessionWhen(s.datetime, s.endsAt, tz)}
                     {s.location ? ` · ${s.location}` : ""}
                   </p>
                   {s.notes && (
-                    <p className="mt-1 text-xs text-muted-foreground/90 whitespace-pre-line">
+                    <p className="mt-1 text-xs text-os-grey/90 whitespace-pre-line">
                       {s.notes}
                     </p>
                   )}
@@ -863,7 +777,7 @@ function SessionTimeline({
                           href={s.recordingUrl}
                           target="_blank"
                           rel="noreferrer"
-                          className="text-accent-teal hover:underline"
+                          className="text-os-accent hover:underline"
                         >
                           ▶ Recording
                         </a>
@@ -881,8 +795,8 @@ function SessionTimeline({
       </ol>
 
       {(generalResources.length > 0 || generalAssignments.length > 0) && (
-        <section className="rounded-lg border border-border bg-card p-4">
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <section className="rounded-os-card bg-os-card p-5">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-os-grey">
             Whole course
           </h3>
           <div className="flex flex-col gap-2">
@@ -910,7 +824,7 @@ function SessionDot({
 }) {
   if (present) {
     return (
-      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent-teal text-white">
+      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-os-accent text-os-card">
         <Check className="h-3 w-3" aria-hidden />
       </span>
     );
@@ -919,7 +833,7 @@ function SessionDot({
     <span
       className={cn(
         "mt-0.5 h-5 w-5 shrink-0 rounded-full border-2",
-        isNext ? "border-accent-coral" : past ? "border-muted-foreground/40" : "border-border",
+        isNext ? "border-os-accent" : past ? "border-os-grey/40" : "border-os-container",
       )}
       aria-hidden
     />
@@ -941,10 +855,10 @@ function AssignmentRow({
   const overdue = !a.mySubmittedAt && a.dueAt != null && new Date(a.dueAt) < new Date();
   return (
     <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-      <span className="text-muted-foreground">Assignment:</span>
+      <span className="text-os-grey">Assignment:</span>
       <Link
         to={`${basePath}/assignments/${a.id}`}
-        className="font-medium text-foreground hover:text-accent-coral"
+        className="font-medium text-foreground hover:text-os-accent"
       >
         {a.title}
       </Link>
@@ -960,12 +874,12 @@ function AssignmentRow({
         </span>
       ) : (
         <>
-          <span className={overdue ? "font-medium text-red-600" : "text-muted-foreground"}>
+          <span className={overdue ? "font-medium text-red-600" : "text-os-grey"}>
             {a.dueAt ? `due ${formatDateTime(a.dueAt, tz)}` : "no due date"}
           </span>
           <Link
             to={`${basePath}/assignments/${a.id}`}
-            className="font-semibold text-accent-coral hover:underline"
+            className="font-semibold text-os-accent hover:underline"
           >
             Open
           </Link>

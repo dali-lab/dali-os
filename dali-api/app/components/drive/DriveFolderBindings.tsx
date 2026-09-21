@@ -10,7 +10,7 @@ import { Folder, ExternalLink, Plus, X, AlertTriangle } from "lucide-react";
 // plumbing). "Binding" here = which folder auto-files land in; a folder's ACCESS
 // is a separate control (open the folder → Share).
 
-type ProcessType = "Project" | "EducationOffering" | "HiringCycle" | "Core" | "CertificateTemplates";
+type ProcessType = "Project" | "HiringCycle" | "Core" | "CertificateTemplates";
 
 type Row = {
   purpose: string;
@@ -24,7 +24,6 @@ type LoaderData = { processType: string; processId: string; rows: Row[]; candida
 
 const NOUN: Record<ProcessType, string> = {
   Project: "project",
-  EducationOffering: "offering",
   HiringCycle: "hiring cycle",
   Core: "Core area",
   CertificateTemplates: "certificate templates",

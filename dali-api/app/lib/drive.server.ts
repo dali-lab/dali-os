@@ -811,22 +811,9 @@ export async function buildLinkedProcessMap(): Promise<Map<string, { label: stri
     }
   }
 
-  // ── Email templates: education offering decision bindings ─────────────────
-  const eduDecisionBindings = await prisma.educationDecisionEmail.findMany({
-    select: {
-      emailTemplateVersion: { select: { templateId: true } },
-      offering: { select: { id: true, title: true } },
-    },
-  });
-  for (const b of eduDecisionBindings) {
-    const tId = b.emailTemplateVersion.templateId;
-    if (!map.has(tId)) {
-      map.set(tId, {
-        label: b.offering.title,
-        href: `/education/manage/${b.offering.id}`,
-      });
-    }
-  }
+  // Education's emails aren't templates any more (one shared, unversioned
+  // email per slot — see app/education/lib/education-emails.server.ts), so
+  // nothing in the library is filed against a course.
 
   return map;
 }

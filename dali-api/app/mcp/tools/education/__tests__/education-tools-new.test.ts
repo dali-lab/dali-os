@@ -92,6 +92,10 @@ vi.mock("~/education/lib/feedback.server", () => ({
   setFormBinding: vi.fn(),
 }));
 
+vi.mock("~/education/lib/education-emails.server", () => ({
+  saveEducationEmail: vi.fn(),
+}));
+
 vi.mock("~/education/lib/offerings.server", () => ({
   runOfferingAction: vi.fn(),
 }));
@@ -117,6 +121,7 @@ import { listThreads, offeringInstructorIds } from "~/education/lib/discussions.
 import { complianceForTerm, grantManualCredit, remindNonCompliant } from "~/education/lib/ce-credits.server";
 import { setFormBinding } from "~/education/lib/feedback.server";
 import { runOfferingAction } from "~/education/lib/offerings.server";
+import { saveEducationEmail } from "~/education/lib/education-emails.server";
 import { prisma } from "~/lib/db";
 
 import { SUBMIT_ASSIGNMENT_TOOL, runSubmitAssignment } from "../submit-assignment";
@@ -869,28 +874,44 @@ describe("manage_education_offering / new actions", () => {
     );
   });
 
-  it("rejects non-manager for set_decision_email", async () => {
-    vi.mocked(isOfferingManager).mockResolvedValue(false);
+  it("rejects non-Core for set_decision_email", async () => {
+    vi.mocked(isCore).mockResolvedValue(false);
     await expect(
       runManageEducationOffering(ctx(), {
         action: "set_decision_email",
-        offeringId: "o1",
         decisionStatus: "Approved",
-        emailTemplateVersionId: "ver1",
+        subject: "You're in",
+        body: "See you there.",
       }),
     ).rejects.toMatchObject({ name: "McpForbiddenError" });
   });
 
-  it("sets decision email via runOfferingAction", async () => {
-    vi.mocked(isOfferingManager).mockResolvedValue(true);
-    vi.mocked(runOfferingAction).mockResolvedValue({ ok: true, id: "o1" });
+  it("writes the shared decision email for a status", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
     const result = await runManageEducationOffering(ctx(), {
       action: "set_decision_email",
-      offeringId: "o1",
       decisionStatus: "Approved",
-      emailTemplateVersionId: "ver1",
+      subject: "You're in: {{domain}}",
+      body: "Hi {{firstName}}.",
     });
-    expect(runOfferingAction).toHaveBeenCalled();
+    expect(saveEducationEmail).toHaveBeenCalledWith(
+      "decision:Approved",
+      { subject: "You're in: {{domain}}", body: "Hi {{firstName}}." },
+      "u1",
+    );
+    expect(runOfferingAction).not.toHaveBeenCalled();
     expect(result.ok).toBe(true);
+  });
+
+  it("rejects an unknown decision status", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    await expect(
+      runManageEducationOffering(ctx(), {
+        action: "set_decision_email",
+        decisionStatus: "Submitted",
+        subject: "x",
+        body: "y",
+      }),
+    ).rejects.toMatchObject({ name: "McpInvalidError" });
   });
 });
