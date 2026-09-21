@@ -1,3 +1,4 @@
+import { redirect } from "react-router";
 import { prisma } from "~/lib/db";
 import { requireAuth, forbidden, redirectApplicantToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -1150,13 +1151,32 @@ export async function loadParticipantOptions(
   return { groups, users: [...users, ...extraGroupMembers] };
 }
 
-export async function loadCalendarData(request: Request) {
+/**
+ * @param opts.portal true when this is the /portal/calendar mount — the same
+ *   calendar, read for a non-member (a Dartmouth student, or an external
+ *   instructor). They get the personal half of it: their own working hours,
+ *   their own linked Google calendars and events, and their classes this term.
+ *   The lab's member and group directory is withheld, so the participant picker
+ *   is empty and no meeting can be addressed to a member from there.
+ */
+export async function loadCalendarData(
+  request: Request,
+  opts: { portal?: boolean } = {},
+) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  const portalRedirect = redirectApplicantToPortal(auth);
-  if (portalRedirect) return portalRedirect;
+  if (!opts.portal) {
+    const portalRedirect = redirectApplicantToPortal(auth);
+    if (portalRedirect) return portalRedirect;
+  }
 
   const userId = auth.user.sub;
+
+  // Keyed on the DALIMember row rather than the auth type, the same way the
+  // member shell decides who it is for: a non-member instructor authenticates
+  // as a "member" account and still belongs on the portal copy.
+  const labMember = await isLabMember(userId, request);
+  if (opts.portal && labMember) return redirect("/calendar");
 
   // Resolve the current term once and reuse it everywhere in this loader so
   // the per-request cache in roles.ts eliminates redundant DB reads.
@@ -1166,7 +1186,9 @@ export async function loadCalendarData(request: Request) {
   // Members + groups for the participant picker (shared with the meeting
   // edit-context endpoint). Kicked off here so it runs alongside the fan-out
   // below; awaited once the rest resolves.
-  const participantOptionsP = loadParticipantOptions(request);
+  const participantOptionsP = labMember
+    ? loadParticipantOptions(request)
+    : Promise.resolve({ groups: [] as GroupOption[], users: [] as UserOption[] });
 
   const [
     settings,
@@ -1559,11 +1581,24 @@ export async function loadCalendarData(request: Request) {
   return data;
 }
 
+// The intents that write lab records rather than the viewer's own calendar:
+// meeting notes and their Drive pages, the Core-meeting marker, the logged-time
+// link on a meeting, promoting a Google event into a DALI meeting, and
+// subscribing to the lab's general calendar. The portal calendar posts here
+// too, so these stay member-only — everything else (working hours, linked
+// calendars, Google events, classes this term, one's own time entries) is the
+// viewer's own data and is open to a non-member.
+const MEMBER_ONLY_CALENDAR_INTENTS = new Set([
+  "subscribe-general-calendar",
+  "toggle-meeting-time-entry",
+  "set-meeting-core",
+  "add-meeting-note",
+  "track-event-as-meeting",
+]);
+
 export async function submitCalendarAction(request: Request) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
-  if (auth.user.type === "applicant")
-    return forbidden(request);
 
   const userId = auth.user.sub;
   // Any write here can change what the next read should return, so drop this
@@ -1575,6 +1610,12 @@ export async function submitCalendarAction(request: Request) {
   // Classes-this-term intents carry their own shape (period/custom + Google
   // destination), so they're handled before the Zod-validated calendar action.
   const rawIntent = typeof raw.intent === "string" ? raw.intent : "";
+  if (
+    MEMBER_ONLY_CALENDAR_INTENTS.has(rawIntent) &&
+    !(await isLabMember(userId, request))
+  ) {
+    return forbidden(request);
+  }
   if (rawIntent.startsWith("class-")) {
     return handleClassAction(rawIntent, raw, userId, request);
   }

@@ -4,7 +4,7 @@ import { cn } from '~/lib/cn'
 import { LayoutOS } from '~/components/LayoutOS'
 import { useOsShellRoot } from '~/lib/os-shell'
 import { Breadcrumbs } from '~/components/Breadcrumbs'
-import { PageDocProvider, PageDocButton, PageDocOutlet } from '~/components/page-docs/PageDocButton'
+import { PageDocProvider, PageDocButton, PageDocOutlet, ShellGuideProvider } from '~/components/page-docs/PageDocButton'
 import { useLiveFavorites } from '~/components/favorites-live'
 import { LaunchWelcome } from '~/components/LaunchWelcome'
 import { NavPreloader } from '~/components/NavPreloader'
@@ -485,8 +485,9 @@ export default function AppLayoutRoute() {
           )}
         >
           <Breadcrumbs />
-          {/* Under the dali.os shell the top bar carries the Guide, and
-              ShellGuideProvider stands this copy down for it. */}
+          {/* Under the dali.os shell the top bar carries the Guide — in tab
+              mode too, over the guide bridge — and ShellGuideProvider stands
+              this copy down for it. */}
           <PageDocButton suppressWhenPills />
         </div>
       )}
@@ -509,6 +510,10 @@ export default function AppLayoutRoute() {
       <FeatureFlagsProvider flags={flags}>
         <ActivitiesProvider activities={activeActivities}>
         <PageDocProvider>
+          {/* The shell above this iframe carries the Guide CTA in its top bar,
+              reached over the guide bridge — so the page-row copy stands down
+              here exactly as it does in tabless mode. */}
+          <ShellGuideProvider>
           <div
             className={cn(
               // clip, not hidden: `overflow-x: hidden` turns the wrapper into a
@@ -527,6 +532,7 @@ export default function AppLayoutRoute() {
           >
             {pageContent}
           </div>
+          </ShellGuideProvider>
         </PageDocProvider>
         </ActivitiesProvider>
       </FeatureFlagsProvider>

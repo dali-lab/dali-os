@@ -89,16 +89,19 @@ beforeEach(() => {
 });
 
 describe("lead.cycle.$id loader — pending decisions filter", () => {
-  it("excludes Final decisions that already have a Released child", async () => {
+  // Drafts belong here on every kind of cycle, not just member ones: a Draft
+  // made outside the delibs flow (moved by hand, or left behind when the cycle
+  // closed) is otherwise invisible on the one page a lead looks at.
+  it("loads Drafts and Finals, excluding rows that already have a Released child", async () => {
     const req = new Request(`http://localhost/hiring-lead-admin/cycle/${CYCLE_ID}`);
     await loader({ request: req, params: { id: CYCLE_ID }, context: {} } as any);
 
-    const finalCall = mockPrisma.decision.findMany.mock.calls.find(
-      (c: any[]) => c[0]?.where?.stage === "Final",
+    const pendingCall = mockPrisma.decision.findMany.mock.calls.find(
+      (c: any[]) => Array.isArray(c[0]?.where?.stage?.in),
     );
-    expect(finalCall).toBeDefined();
-    expect(finalCall![0].where).toMatchObject({
-      stage: "Final",
+    expect(pendingCall).toBeDefined();
+    expect(pendingCall![0].where.stage.in.slice().sort()).toEqual(["Draft", "Final"]);
+    expect(pendingCall![0].where).toMatchObject({
       children: { none: { stage: "Released" } },
       domainApplication: { application: { applicationCycleId: CYCLE_ID } },
     });

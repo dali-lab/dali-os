@@ -24,6 +24,7 @@ import {
   currentDecisionId,
   type DecisionPill,
   type PrePipelinePill,
+  findFinalizableDraft,
 } from "~/hiring/lib/decision-pills";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
 import type { DecisionType, Question } from "~/types";
@@ -115,13 +116,21 @@ export async function loader({ request }: Route.LoaderArgs) {
         orderBy: { createdAt: "desc" },
       });
 
-      // Cycles eligible for the picker: anything Open/UnderReview/Draft for
-      // this domain. Several cycles can be active for the same domain.
-      const candidateCycles = allCycles.filter((c) => {
-        const status = c.statusUpdates[0]?.newStatus;
-        return status && ["Open", "UnderReview", "Draft"].includes(status);
-      });
-      const availableCycles = candidateCycles.map((c) => ({ id: c.id, name: c.name }));
+      // Cycles eligible for the picker: every cycle this domain has ever run,
+      // in any status. Several can be active at once, and Completed ones are
+      // offered so a lead can reopen a past cycle to read its reviews,
+      // interviews and decisions back. Which one is shown *by default* is a
+      // separate question — see selectActiveCycleForDomainLead, where a
+      // Completed cycle is only ever reached through ?cycle=.
+      // No extra query cost: allCycles above already loads them all.
+      const candidateCycles = allCycles.filter((c) =>
+        Boolean(c.statusUpdates[0]?.newStatus),
+      );
+      const availableCycles = candidateCycles.map((c) => ({
+        id: c.id,
+        name: c.name,
+        status: c.statusUpdates[0]?.newStatus ?? null,
+      }));
 
       const requestedCycleId = new URL(request.url).searchParams.get("cycle");
       const activeCycle = selectActiveCycleForDomainLead(candidateCycles, requestedCycleId);
@@ -532,19 +541,6 @@ function ConfirmDialog({
   );
 }
 
-// Find the most-recent Draft decision that hasn't been superseded by a Final
-// or Released sibling of the same type. Mirrors the per-row finalize lookup in
-// `ApplicationsTable` so the Interviews section uses the same definition of
-// "needs finalization".
-function findFinalizableDraft(decisions: any[]) {
-  return decisions.find((d: any) => {
-    if (d.stage !== "Draft") return false;
-    return !decisions.some(
-      (other: any) => other.type === d.type && (other.stage === "Final" || other.stage === "Released")
-    );
-  });
-}
-
 export default function DomainLeadDashboard() {
   const data = useLoaderData<typeof loader>() as any;
   const actionData = useActionData<typeof action>() as { notice?: string } | undefined;
@@ -624,31 +620,44 @@ function DomainPanel({ entry }: { entry: any }) {
       .catch(() => {});
   }, []);
 
+  // The picker carries every cycle this domain has run, so a name alone no
+  // longer identifies one — two Students cycles a year apart read the same.
+  // The status rides along as the option's description. Rendered whenever
+  // there is a cycle you are not already on, which includes the case where no
+  // cycle is selected at all: a domain whose cycles have all completed has no
+  // default, and without the picker there would be no way to reach them.
+  const cyclePicker = (availableCycles ?? []).some(
+    (c: { id: string }) => c.id !== cycle?.id,
+  ) ? (
+    <div className="w-56">
+      <Select
+        ariaLabel="Cycle"
+        value={cycle?.id}
+        placeholder="Pick a cycle"
+        onChange={setCycle}
+        options={(availableCycles ?? []).map(
+          (c: { id: string; name: string; status?: string | null }) => ({
+            value: c.id,
+            label: c.name,
+            description: c.status ? (STATUS_LABELS[c.status] ?? c.status) : undefined,
+          }),
+        )}
+        buttonClassName={pillTrigger(os.formTrigger)}
+      />
+    </div>
+  ) : null;
+
   const header = (
     <header className="flex flex-wrap items-center justify-between gap-3">
       <h1 className={os.pageTitle}>{assignment.domain.name}</h1>
-      {cycle && (
-        <div className="flex flex-wrap items-center gap-2">
-          {cycle.statusUpdates[0]?.newStatus && (
-            <Pill dot={STATUS_TONES[cycle.statusUpdates[0].newStatus] ?? "neutral"}>
-              {STATUS_LABELS[cycle.statusUpdates[0].newStatus]}
-            </Pill>
-          )}
-          {(availableCycles ?? []).length > 1 ? (
-            <div className="w-56">
-              <Select
-                ariaLabel="Cycle"
-                value={cycle.id}
-                onChange={setCycle}
-                options={availableCycles.map((c: { id: string; name: string }) => ({ value: c.id, label: c.name }))}
-                buttonClassName={pillTrigger(os.formTrigger)}
-              />
-            </div>
-          ) : (
-            <span className={os.bodyText}>{cycle.name}</span>
-          )}
-        </div>
-      )}
+      <div className="flex flex-wrap items-center gap-2">
+        {cycle?.statusUpdates[0]?.newStatus && (
+          <Pill dot={STATUS_TONES[cycle.statusUpdates[0].newStatus] ?? "neutral"}>
+            {STATUS_LABELS[cycle.statusUpdates[0].newStatus]}
+          </Pill>
+        )}
+        {cyclePicker ?? (cycle ? <span className={os.bodyText}>{cycle.name}</span> : null)}
+      </div>
     </header>
   );
 
@@ -656,7 +665,11 @@ function DomainPanel({ entry }: { entry: any }) {
     return (
       <div className="flex flex-col gap-6">
         {header}
-        <p className={os.bodyText}>No active cycle for this domain.</p>
+        <p className={os.bodyText}>
+          {cyclePicker
+            ? "No active cycle. Pick a past cycle above to review it."
+            : "No active cycle for this domain."}
+        </p>
       </div>
     );
   }
@@ -921,7 +934,11 @@ function DomainPanel({ entry }: { entry: any }) {
             if (draft) finalizableByDaId.set(da.id, draft);
           }
           const finalizableCount = finalizableByDaId.size;
-          const canFinalize = currentStatus === "UnderReview";
+          // Not gated on the cycle being UnderReview. Finalizing is an admin
+          // step on a decision that already exists, and a cycle reaching
+          // Completed with Drafts still outstanding is exactly when it's
+          // needed — the gate used to strand them with no reachable action.
+          const canFinalize = true;
           const finalizeOne = async (daId: string | undefined) => {
             if (!daId) return;
             const draft = finalizableByDaId.get(daId);
@@ -1464,6 +1481,10 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
 }) {
   const toast = useToast();
   const isUnderReview = currentStatus === "UnderReview";
+  // Assigning reviewers belongs to a live cycle; finalizing a decision that
+  // already exists does not. Keeping the two apart is what lets a closed
+  // cycle's leftover Drafts still be finalized. See canFinalize above.
+  const canFinalize = true;
   const [searchParams, setSearchParams] = useSearchParams();
   const revalidator = useRevalidator();
   // Which draft is currently being finalized — disables its Finalize button so a
@@ -1588,7 +1609,10 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
   return (
     <div className="border border-border rounded-lg overflow-hidden">
       <div className="px-4 sm:px-6 py-3 border-b border-border bg-muted/30 flex flex-wrap items-center gap-x-3 gap-y-2">
-        {isUnderReview && (
+        {/* The way into the finalize filter, so it outlives the cycle being
+            live: a closed cycle still shows it while anything is left to
+            finalize, and drops it once nothing is. */}
+        {(isUnderReview || finalizableApps.length > 0) && (
           <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5">
             <button
               onClick={() => setFilter("all")}
@@ -1637,7 +1661,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
           {displayedApps.length} of {baseApps.length}
         </span>
         <div className="ml-auto flex items-center gap-2">
-          {isUnderReview && filter === "finalize" && finalizableApps.length > 0 && (
+          {canFinalize && filter === "finalize" && finalizableApps.length > 0 && (
             <button
               onClick={async () => {
                 for (const app of finalizableApps) {
@@ -1799,7 +1823,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                 </td>
                 <td className="px-6 py-4 text-right">
                   <div className="flex flex-wrap items-center justify-end gap-2">
-                  {isUnderReview && draftToFinalize ? (
+                  {canFinalize && draftToFinalize ? (
                     <button
                       onClick={() => handleFinalize(draftToFinalize.id)}
                       disabled={finalizingId === draftToFinalize.id}
@@ -1891,7 +1915,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                   <span className="text-xs text-muted-foreground">—</span>
                 )}
               </div>
-              {isUnderReview && draftToFinalize && (
+              {canFinalize && draftToFinalize && (
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     onClick={() => handleFinalize(draftToFinalize.id)}

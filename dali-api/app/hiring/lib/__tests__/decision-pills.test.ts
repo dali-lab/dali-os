@@ -3,6 +3,7 @@ import {
   summarizeDecisionPills,
   synthesizePrePipelinePill,
   currentDecisionId,
+  findFinalizableDraft,
 } from "~/hiring/lib/decision-pills";
 import type { DecisionStage, DecisionType } from "~/types";
 
@@ -285,5 +286,48 @@ describe("currentDecisionId", () => {
         { id: "fin", ...row("Rejected", "Final", "2025-02-01T10:00:00Z") },
       ]),
     ).toBe("rel");
+  });
+});
+
+describe("findFinalizableDraft", () => {
+  const draft = (type: DecisionType, id: string) => ({
+    ...row(type, "Draft", "2026-01-01T00:00:00Z"),
+    id,
+  });
+  const at = (type: DecisionType, stage: DecisionStage, id: string) => ({
+    ...row(type, stage, "2026-01-02T00:00:00Z"),
+    id,
+  });
+
+  it("returns nothing when there are no decisions", () => {
+    expect(findFinalizableDraft([])).toBeNull();
+  });
+
+  it("finds a Draft with no Final or Released sibling of its type", () => {
+    expect(findFinalizableDraft([draft("Accepted", "d1")])?.id).toBe("d1");
+  });
+
+  it("ignores a Draft already promoted to Final", () => {
+    expect(
+      findFinalizableDraft([draft("Accepted", "d1"), at("Accepted", "Final", "f1")]),
+    ).toBeNull();
+  });
+
+  it("ignores a Draft already released", () => {
+    expect(
+      findFinalizableDraft([draft("Accepted", "d1"), at("Accepted", "Released", "r1")]),
+    ).toBeNull();
+  });
+
+  // Siblings are matched per type: an applicant invited to interview already
+  // carries a Released InvitedToInterview, which must not mask the Accepted
+  // Draft that comes out of final delibs.
+  it("finds an Accepted Draft beside a Released InvitedToInterview", () => {
+    expect(
+      findFinalizableDraft([
+        at("InvitedToInterview", "Released", "r1"),
+        draft("Accepted", "d1"),
+      ])?.id,
+    ).toBe("d1");
   });
 });
