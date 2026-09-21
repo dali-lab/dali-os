@@ -116,7 +116,7 @@ export default function WhiteboardImpl(props: WhiteboardEditorProps) {
         <WelcomeScreen>
           <WelcomeScreen.Center>
             <WelcomeScreen.Center.Heading>
-              Start on the canvas — everyone here sees it live.
+              Start drawing. Everyone on this board sees your changes live.
             </WelcomeScreen.Center.Heading>
           </WelcomeScreen.Center>
         </WelcomeScreen>
