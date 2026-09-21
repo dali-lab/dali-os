@@ -934,7 +934,11 @@ function DomainPanel({ entry }: { entry: any }) {
             if (draft) finalizableByDaId.set(da.id, draft);
           }
           const finalizableCount = finalizableByDaId.size;
-          const canFinalize = currentStatus === "UnderReview";
+          // Not gated on the cycle being UnderReview. Finalizing is an admin
+          // step on a decision that already exists, and a cycle reaching
+          // Completed with Drafts still outstanding is exactly when it's
+          // needed — the gate used to strand them with no reachable action.
+          const canFinalize = true;
           const finalizeOne = async (daId: string | undefined) => {
             if (!daId) return;
             const draft = finalizableByDaId.get(daId);
@@ -1477,6 +1481,10 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
 }) {
   const toast = useToast();
   const isUnderReview = currentStatus === "UnderReview";
+  // Assigning reviewers belongs to a live cycle; finalizing a decision that
+  // already exists does not. Keeping the two apart is what lets a closed
+  // cycle's leftover Drafts still be finalized. See canFinalize above.
+  const canFinalize = true;
   const [searchParams, setSearchParams] = useSearchParams();
   const revalidator = useRevalidator();
   // Which draft is currently being finalized — disables its Finalize button so a
@@ -1601,7 +1609,10 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
   return (
     <div className="border border-border rounded-lg overflow-hidden">
       <div className="px-4 sm:px-6 py-3 border-b border-border bg-muted/30 flex flex-wrap items-center gap-x-3 gap-y-2">
-        {isUnderReview && (
+        {/* The way into the finalize filter, so it outlives the cycle being
+            live: a closed cycle still shows it while anything is left to
+            finalize, and drops it once nothing is. */}
+        {(isUnderReview || finalizableApps.length > 0) && (
           <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5">
             <button
               onClick={() => setFilter("all")}
@@ -1650,7 +1661,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
           {displayedApps.length} of {baseApps.length}
         </span>
         <div className="ml-auto flex items-center gap-2">
-          {isUnderReview && filter === "finalize" && finalizableApps.length > 0 && (
+          {canFinalize && filter === "finalize" && finalizableApps.length > 0 && (
             <button
               onClick={async () => {
                 for (const app of finalizableApps) {
@@ -1812,7 +1823,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                 </td>
                 <td className="px-6 py-4 text-right">
                   <div className="flex flex-wrap items-center justify-end gap-2">
-                  {isUnderReview && draftToFinalize ? (
+                  {canFinalize && draftToFinalize ? (
                     <button
                       onClick={() => handleFinalize(draftToFinalize.id)}
                       disabled={finalizingId === draftToFinalize.id}
@@ -1904,7 +1915,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                   <span className="text-xs text-muted-foreground">—</span>
                 )}
               </div>
-              {isUnderReview && draftToFinalize && (
+              {canFinalize && draftToFinalize && (
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     onClick={() => handleFinalize(draftToFinalize.id)}
