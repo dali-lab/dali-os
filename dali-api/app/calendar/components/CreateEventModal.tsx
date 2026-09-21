@@ -182,18 +182,24 @@ export function CreateEventModal({
   }, [coreSelected]);
   const isCoreMeeting = coreSelected || (data.canMarkCoreMeeting && coreMeeting);
 
+  // Flag: a Core meeting may also be about a project (its note stays a project
+  // note; Core is just extra hub visibility). Off = marking Core clears any
+  // project, as before.
+  const unifiedCoreProject = useFeatureFlag("unified-core-project-meetings");
+
   // ── Meeting note fields (only shown in Meeting mode) ─────────────────────
   // Derive-type-from-project model; see MeetingNoteFields.
   const note = useMeetingNote();
 
   // Prefill "About" when exactly one invited group is a project group — a default
-  // the sender can still change; it never enables the note on its own. A Core
-  // meeting's note has no project, so the prefill stays out of its way.
+  // the sender can still change; it never enables the note on its own. Without the
+  // unify flag a Core meeting's note has no project, so the prefill stays out of
+  // its way; with it, a Core project meeting still prefills its project.
   useEffect(() => {
-    if (selectedGroupIds.length !== 1 || isCoreMeeting) return;
+    if (selectedGroupIds.length !== 1 || (isCoreMeeting && !unifiedCoreProject)) return;
     note.applyGroupPrefill(groupsById.get(selectedGroupIds[0]!)?.projectId ?? null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedGroupIds, isCoreMeeting]);
+  }, [selectedGroupIds, isCoreMeeting, unifiedCoreProject]);
 
   // Send the invite from a specific calendar, not just an account — the same
   // sub-calendars the event destination offers. Starts on the event default
@@ -933,6 +939,7 @@ export function CreateEventModal({
                       fieldClass={fieldClass}
                       labelClass={labelClass}
                       core={isCoreMeeting}
+                      allowProjectWhenCore={unifiedCoreProject}
                     />
                   </div>
                 )}
