@@ -48,3 +48,10 @@ export function formDraftName(formId: string): string {
 export function rubricDraftName(rubricId: string): string {
   return `rubric:${rubricId}:draft`;
 }
+
+/** Collaborative canvas room for a Whiteboard Page (kind=Whiteboard). Stores a
+ *  Y.Map of Excalidraw elements — structured, not a BlockNote fragment. Derived
+ *  from the Page id (no contentDocId override). */
+export function whiteboardRoomName(pageId: string): string {
+  return `whiteboard:${pageId}:canvas`;
+}

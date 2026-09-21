@@ -38,6 +38,7 @@ export function useMeetingNote() {
   return {
     state,
     setEnabled: (enabled: boolean) => patch({ enabled }),
+    setWhiteboard: (whiteboard: boolean) => patch({ whiteboard }),
     setAbout: (about: string) => patch({ about }),
     setSubtype: (subtype: MeetingNoteState["subtype"]) => patch({ subtype }),
     setLabel: (label: string) => patch({ label }),

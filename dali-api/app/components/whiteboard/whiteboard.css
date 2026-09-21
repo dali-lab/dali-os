@@ -1,0 +1,46 @@
+/* Tweaks that make the embedded Excalidraw canvas read as a DALI surface. Some
+   target Excalidraw's own class names (it exposes no props for them) — revisit if
+   the Excalidraw version is bumped. */
+
+/* Empty-board copy ("Start on the canvas…") in the DALI OS typeface (Mulish).
+   Excalidraw sets no font-family on the heading (it inherits its UI font), so we
+   force it with !important and target the heading directly. */
+.dali-whiteboard .welcome-screen-center,
+.dali-whiteboard .welcome-screen-center__heading {
+  font-family: var(--font-os, "Mulish"), var(--font-sans, "Open Sans"), sans-serif !important;
+}
+
+/* Keep the Help modal (its keyboard-shortcuts reference is useful) but strip its
+   top row of Excalidraw links (Documentation / blog / GitHub / YouTube). The
+   dialog portals into .excalidraw-modal-container — outside .dali-whiteboard —
+   so this rule is intentionally NOT scoped to the board wrapper (whiteboard.css
+   only loads on the whiteboard route, and .HelpDialog is Excalidraw-only). */
+.HelpDialog__header {
+  display: none !important;
+}
+
+/* Drop the community shape-library button (opens libraries.excalidraw.com). */
+.dali-whiteboard .default-sidebar-trigger,
+.dali-whiteboard .sidebar-trigger {
+  display: none !important;
+}
+
+/* Remove the "more tools" dropdown entirely. After dropping the web-embed item
+   and the built-in hand-drawn Mermaid, it held only Frame + Laser — both still
+   reachable by keyboard (F / K) — so hiding the one trigger is cleaner and more
+   robust than whitelisting items against Excalidraw's internal DOM. Our "Insert
+   diagram" button replaces the built-in Mermaid. */
+.dali-whiteboard .App-toolbar__extra-tools-trigger {
+  display: none !important;
+}
+
+/* Font family: keep the three quick fonts (hand-drawn, Nunito, code) but drop
+   the "more fonts" searchable picker — the extra fonts aren't needed. The row is
+   a 3-column grid: [quick fonts][divider][picker trigger]; hide the last two and
+   collapse the grid so the quick fonts sit flush. */
+.dali-whiteboard .FontPicker__container {
+  grid-template-columns: auto !important;
+}
+.dali-whiteboard .FontPicker__container > *:not(:first-child) {
+  display: none !important;
+}
