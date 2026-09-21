@@ -7,27 +7,29 @@ vi.mock("~/lib/db", () => {
     update: vi.fn(),
     create: vi.fn(),
   };
+  const project = { findUnique: vi.fn(), update: vi.fn() };
   return {
     prisma: {
-      project: { findUnique: vi.fn() },
+      project,
       term: { findUnique: vi.fn() },
       projectChartString,
       // The transaction callback has to actually run: the write's whole point
-      // is that the deactivate and the insert happen together.
+      // is that the deactivate, the insert and the legacy mirror happen
+      // together.
       $transaction: vi.fn(async (fn: (tx: unknown) => unknown) =>
-        fn({ projectChartString }),
+        fn({ projectChartString, project }),
       ),
     },
   };
 });
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
-  return { ...real, isCore: vi.fn(), isAdmin: vi.fn() };
+  return { ...real, isCore: vi.fn(), isAdmin: vi.fn(), currentTerm: vi.fn() };
 });
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 
 import { prisma } from "~/lib/db";
-import { isCore, isAdmin } from "~/lib/roles";
+import { isCore, isAdmin, currentTerm } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import {
   LIST_PROJECT_CHART_STRINGS_TOOL,
@@ -37,7 +39,7 @@ import {
 } from "~/mcp/tools/projects-extra/chart-strings";
 
 const db = prisma as unknown as {
-  project: { findUnique: ReturnType<typeof vi.fn> };
+  project: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
   term: { findUnique: ReturnType<typeof vi.fn> };
   projectChartString: {
     findMany: ReturnType<typeof vi.fn>;
@@ -65,7 +67,7 @@ function row(over: Record<string, unknown> = {}) {
     rapportName: null,
     awardStart: null,
     awardEnd: null,
-    kind: "FUNDED",
+    fundingType: "DALI_PTAEO",
     isCurrent: true,
     supersedesId: null,
     supersedeReason: null,
@@ -83,6 +85,8 @@ beforeEach(() => {
   vi.mocked(isAdmin).mockResolvedValue(false);
   db.project.findUnique.mockResolvedValue({ id: "p1", name: "Link VT" });
   db.term.findUnique.mockResolvedValue({ id: "t1", code: "26F" });
+  // Default: the term being written IS the current one, so the legacy mirror runs.
+  vi.mocked(currentTerm).mockResolvedValue({ id: "t1" } as never);
 });
 
 describe("tool contracts", () => {
@@ -222,7 +226,7 @@ describe("set_project_chart_string", () => {
       projectId: "p1",
       termCode: "26F",
       chartString: "523241.5000.B04662.XXXXX.330",
-      kind: "ADVANCE",
+      fundingType: "DALI_PTAEO",
       fpNumber: "FP00014787",
     });
 
@@ -238,7 +242,7 @@ describe("set_project_chart_string", () => {
     const data = db.projectChartString.create.mock.calls[0][0].data;
     expect(data).toMatchObject({
       isCurrent: true,
-      kind: "ADVANCE",
+      fundingType: "DALI_PTAEO",
       awardCode: "B04662",
       org: "330",
       supersedesId: null,
@@ -353,5 +357,42 @@ describe("set_project_chart_string", () => {
         targetId: "p1",
       }),
     );
+  });
+});
+
+describe("legacy mirror (transitional)", () => {
+  // Project.chartString still drives the payroll export, collation and the
+  // Admin → Payroll warning. Until those readers move, a write for the current
+  // term has to reach them or the string lands where nothing looks.
+  it("mirrors into Project.chartString for the current term", async () => {
+    db.projectChartString.findFirst.mockResolvedValue(null);
+    db.projectChartString.create.mockResolvedValue({ id: "n1", supersedesId: null });
+
+    await runSetProjectChartString("u1", {
+      projectId: "p1",
+      termCode: "26F",
+      chartString: "523241.5000.B04662.XXXXX.330",
+    });
+
+    expect(db.project.update).toHaveBeenCalledWith({
+      where: { id: "p1" },
+      data: { chartString: "523241.5000.B04662.XXXXX.330", chartStringType: "PTAEO" },
+    });
+  });
+
+  it("does NOT mirror a past or future term", async () => {
+    // Project.chartString has no term, so mirroring another term's string
+    // would overwrite what payroll is charging right now.
+    vi.mocked(currentTerm).mockResolvedValue({ id: "some-other-term" } as never);
+    db.projectChartString.findFirst.mockResolvedValue(null);
+    db.projectChartString.create.mockResolvedValue({ id: "n2", supersedesId: null });
+
+    await runSetProjectChartString("u1", {
+      projectId: "p1",
+      termCode: "26F",
+      chartString: "523241.5000.B04662.XXXXX.330",
+    });
+
+    expect(db.project.update).not.toHaveBeenCalled();
   });
 });

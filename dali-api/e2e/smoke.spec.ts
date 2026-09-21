@@ -5,10 +5,11 @@ test('unauthenticated user is redirected to login', async ({ page }) => {
   await expect(page).toHaveURL(/\/login/);
 });
 
-test('admin can log in and reach reviewer page', async ({ page, loginAs }) => {
+test('admin can log in and reach the hiring area', async ({ page, loginAs }) => {
   await loginAs({ daliEmail: 'admin@dali.dartmouth.edu' });
+  // /hiring/reviewer is kept as a redirect into My work's reviews view.
   await page.goto('/hiring/reviewer');
-  await expect(page).toHaveURL(/\/hiring\/reviewer/);
+  await expect(page).toHaveURL(/\/hiring\?.*view=reviews/);
   // Sidebar footer shows the user's first name; assert it inside <aside>
   // to avoid matching the "Admin" copy that appears elsewhere on the page.
   await expect(page.locator('aside').first()).toContainText('Admin');

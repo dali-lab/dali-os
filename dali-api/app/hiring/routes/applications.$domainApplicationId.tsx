@@ -1,4 +1,5 @@
 import { redirect, useLoaderData, useSearchParams } from "react-router";
+import { isAdminOnlyCycle } from "~/hiring/lib/applicant-groups";
 import { safeParseJsonString } from "~/forms/lib/forms-data";
 import type { Route } from "./+types/applications.$domainApplicationId";
 import { prisma } from "~/lib/db";
@@ -18,11 +19,23 @@ import {
   InterviewNotesCard,
   type InterviewNotesData,
 } from "~/hiring/components/InterviewNotesCard";
-import { DecisionHistoryList } from "~/hiring/components/DecisionHistoryList";
+import {
+  ApplicationTimeline,
+  FinalizeDraftButton,
+  StageMoveControl,
+} from "~/hiring/components/ApplicationTimeline";
+import { SetupCard } from "~/hiring/components/cycle-setup/SetupCard";
+import {
+  buildApplicationTimeline,
+  visibleTimeline,
+  type TimelineEntry,
+} from "~/hiring/lib/application-timeline";
+import { findFinalizableDraft } from "~/hiring/lib/decision-pills";
 import { getEducationEngagement } from "~/education/lib/engagement.server";
 import { EducationEngagementPanel } from "~/education/components/EducationEngagementPanel";
 import type { Question, RubricCriterion } from "~/types";
-import { Select, type SelectOption, InfoTip } from "~/components/ui/floating";
+import { findRound, parseTimeline } from "~/hiring/lib/cycle-timeline";
+import { Select } from "~/components/ui/floating";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const name = (data as { applicantName?: string } | undefined)?.applicantName;
@@ -31,11 +44,6 @@ export const meta: Route.MetaFunction = ({ data }) => {
 
 // Resolves the dynamic leaf crumb so the trail reads
 // "Hiring › Applications › <applicant name>" instead of a raw id.
-export const handle = {
-  breadcrumb: (data: unknown) =>
-    (data as { applicantName?: string } | undefined)?.applicantName ?? null,
-};
-
 // Read-only view of one (applicant, domain) submission with a selectable
 // reviewer-review viewer. Reachable from the Applications database list.
 //
@@ -71,11 +79,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           applicationCycle: {
             select: {
               name: true,
-              cycleType: true,
+              applicants: true,
+              timeline: true,
+              hasChallenges: true,
               generalRubricVersion: { select: { criteria: true } },
               domains: { select: { domainId: true, rubricVersion: { select: { criteria: true } } } },
             },
           },
+          statusUpdates: { select: { newStatus: true, createdAt: true } },
           user: { select: { id: true, firstName: true, lastName: true } },
         },
       },
@@ -92,7 +103,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // domain lead on a Core cycle) sees only the domains they cover for this
   // cycle — hitting a URL outside that bounces back to the list.
   const roles = await getUserRoles(auth.user.sub);
-  const isCoreCycle = da.application.applicationCycle.cycleType === "Core";
+  const isCoreCycle = isAdminOnlyCycle(da.application.applicationCycle.applicants);
   // Admin always; Core (hiring lead) only on non-Core cycles. On Core cycles,
   // plain Core membership grants nothing — access is Admin + assigned reviewers.
   const hasLeadAccess = roles.isAdmin || (!isCoreCycle && roles.isCore);
@@ -141,15 +152,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
   // Criterion labels for the Scores list: the cycle's general rubric plus this
-  // domain's rubric. Scores are keyed by criterion key (e.g. "crit-1778..."),
+  // domain's rubric (only with challenges, which it scores). Scores are keyed by criterion key (e.g. "crit-1778..."),
   // so without this map the page renders the raw keys.
   const cycle = da.application.applicationCycle;
   const criterionLabels: Record<string, string> = {};
   const generalCriteria =
     (cycle.generalRubricVersion?.criteria as unknown as RubricCriterion[]) ?? [];
-  const domainCriteria =
-    (cycle.domains.find((d) => d.domainId === effectiveDomainId)?.rubricVersion
-      ?.criteria as unknown as RubricCriterion[]) ?? [];
+  const domainCriteria = cycle.hasChallenges
+    ? ((cycle.domains.find((d) => d.domainId === effectiveDomainId)?.rubricVersion
+        ?.criteria as unknown as RubricCriterion[]) ?? [])
+    : [];
   for (const c of [...generalCriteria, ...domainCriteria]) {
     criterionLabels[c.key] = c.label;
   }
@@ -160,6 +172,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // lead grant does not apply, so these stay Core/Admin-only there.
   const canSeePreReleaseDecisions = hasLeadAccess || leadSeesAllDomains;
   const canSeeDelibs = hasLeadAccess || leadSeesAllDomains;
+
+  // Moving an applicant without a delib is the hiring lead's call, or the lead
+  // of THIS domain's — the same rule the decisions endpoint enforces.
+  const canMoveStage =
+    hasLeadAccess ||
+    (leadSeesAllDomains &&
+      (await prisma.domainLeadAssignment.findFirst({
+        where: { userId: auth.user.sub, domainId: effectiveDomainId },
+        select: { id: true },
+      })) != null);
 
   // Submitted reviews, interviews (+ assignments + latest note per assignment),
   // decisions, and delibs sessions for this DA — all in parallel.
@@ -224,14 +246,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       },
     }),
     // Delibs sessions reference DAs by id inside columnOrder JSON, not by FK.
-    // There's at most one Initial + one Final session per (domain, cycle), so
-    // this is bounded.
+    // There's at most one board per delib round per (domain, cycle), so this
+    // is bounded.
     canSeeDelibs
       ? prisma.delibsSession.findMany({
           where: { domainId: effectiveDomainId, applicationCycleId: cycleId },
           select: {
             id: true,
-            type: true,
+            roundId: true,
             status: true,
             columnOrder: true,
             createdAt: true,
@@ -240,7 +262,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         })
       : Promise.resolve([] as Array<{
           id: string;
-          type: "Initial" | "Final";
+          roundId: string;
           status: "Active" | "Closed";
           columnOrder: unknown;
           createdAt: Date;
@@ -342,30 +364,35 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     };
   });
 
-  // Decisions: applicants never reach this page; reviewers (in-domain) see only
-  // Released. Core/DomainLead see the full append-only history.
-  const visibleDecisions = decisionRows
-    .filter((d) => canSeePreReleaseDecisions || d.stage === "Released")
-    .map((d) => ({
-      id: d.id,
-      type: d.type,
-      stage: d.stage,
-      notes: d.notes,
-      waitlistRank: d.waitlistRank,
-      createdAt: d.createdAt.toISOString(),
-      madeByName:
-        [d.madeBy?.firstName, d.madeBy?.lastName].filter(Boolean).join(" ").trim() || null,
-    }));
+  const decisions = decisionRows.map((d) => ({
+    id: d.id,
+    type: d.type,
+    stage: d.stage,
+    notes: d.notes,
+    waitlistRank: d.waitlistRank,
+    createdAt: d.createdAt.toISOString(),
+    madeByName:
+      [d.madeBy?.firstName, d.madeBy?.lastName].filter(Boolean).join(" ").trim() || null,
+  }));
+
+  // The Draft waiting on a Finalize, if there is one. The Move control on this
+  // card records a Draft; until someone promotes it to Final it stays invisible
+  // to the hiring lead's Decisions list, and every other Finalize button lives
+  // on the domain lead dashboard behind an UnderReview gate. So the page that
+  // creates the Draft offers the next step itself.
+  const finalizableDraft = canMoveStage ? findFinalizableDraft(decisions) : null;
 
   // For each delibs session, find which column this DA sits in (if any). Some
   // closed sessions may not contain the DA at all — exclude those.
   type DelibsRef = {
     id: string;
-    type: "Initial" | "Final";
+    /** The round's label from the cycle's timeline. */
+    label: string;
     status: "Active" | "Closed";
     column: string | null;
     updatedAt: string;
   };
+  const timeline = parseTimeline(da.application.applicationCycle.timeline);
   const delibs: DelibsRef[] = canSeeDelibs
     ? delibsSessions
         .map((s): DelibsRef | null => {
@@ -382,7 +409,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           if (column === null) return null;
           return {
             id: s.id,
-            type: s.type,
+            label: findRound(timeline, s.roundId)?.label ?? "Delib round",
             status: s.status,
             column,
             updatedAt: s.updatedAt.toISOString(),
@@ -390,6 +417,19 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         })
         .filter((s): s is DelibsRef => s !== null)
     : [];
+
+  // One ordered list of everything that moved this applicant along. Pre-release
+  // decisions and delibs entries are dropped here, server-side, for a viewer
+  // who isn't a lead — they never reach the client.
+  const statusTimeline = visibleTimeline(
+    buildApplicationTimeline({
+      statusUpdates: da.application.statusUpdates,
+      decisions,
+      delibs,
+      interviews,
+    }),
+    canSeePreReleaseDecisions,
+  );
 
   // Selected review = ?review= if valid, else the first.
   const url = new URL(request.url);
@@ -449,11 +489,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     criterionLabels,
     reviews,
     interviews,
-    decisions: visibleDecisions,
-    delibs,
+    domainApplicationId: da.id,
+    timeline: statusTimeline,
     interviewPrepNote: canSeeDelibs ? da.interviewPrepNote : null,
     canSeePreReleaseDecisions,
-    canSeeDelibs,
+    canMoveStage,
+    finalizableDraft: finalizableDraft && {
+      id: finalizableDraft.id,
+      type: finalizableDraft.type,
+    },
     selectedReviewId,
   };
 }
@@ -560,18 +604,18 @@ export default function ApplicationReadOnlyDetail() {
         interviewPrepNote={data.interviewPrepNote}
       />
       <DecisionsSection
-        decisions={data.decisions}
+        timeline={data.timeline}
         canSeePreReleaseDecisions={data.canSeePreReleaseDecisions}
+        domainApplicationId={data.domainApplicationId}
+        canMoveStage={data.canMoveStage}
+        finalizableDraft={data.finalizableDraft ?? null}
       />
-      {data.canSeeDelibs && <DelibsSection delibs={data.delibs} />}
     </div>
   );
 }
 
 type LoaderData = Exclude<Awaited<ReturnType<typeof loader>>, Response>;
 type InterviewRow = LoaderData["interviews"][number];
-type DecisionRow = LoaderData["decisions"][number];
-type DelibsRef = LoaderData["delibs"][number];
 
 function InterviewsSection({
   interviews,
@@ -644,80 +688,39 @@ function toInterviewNotesData(iv: InterviewRow): InterviewNotesData {
 }
 
 
+// Decisions and delibs in one list: every stage change in the order it
+// happened, with the lead's manual move sitting alongside the rest.
 function DecisionsSection({
-  decisions,
+  timeline,
   canSeePreReleaseDecisions,
+  domainApplicationId,
+  canMoveStage,
+  finalizableDraft,
 }: {
-  decisions: DecisionRow[];
+  timeline: TimelineEntry[];
   canSeePreReleaseDecisions: boolean;
+  domainApplicationId: string;
+  canMoveStage: boolean;
+  finalizableDraft: { id: string; type: string } | null;
 }) {
   return (
-    <DetailCard
+    <SetupCard
       title="Decisions"
-      subtitle={
-        <>
-          {decisions.length === 0
-            ? canSeePreReleaseDecisions
-              ? "No decisions recorded."
-              : "No released decisions yet."
-            : `${decisions.length} ${decisions.length === 1 ? "record" : "records"}`}
-          {!canSeePreReleaseDecisions && decisions.length > 0 && " (released only)"}
-        </>
+      description={
+        canSeePreReleaseDecisions
+          ? "Every stage change, oldest first: delibs, interviews and decisions."
+          : "Released decisions only."
       }
-      headerExtra={
-        <InfoTip
-          content="Draft decisions are visible only to leads, Final marks the decision ready to release, Released sends the decision email to the applicant. An 'Accepted elsewhere' status means the applicant accepted another DALI domain's offer — sibling pending applications are automatically withdrawn."
-        />
+      action={
+        canMoveStage ? (
+          <div className="flex flex-wrap items-center gap-2">
+            {finalizableDraft && <FinalizeDraftButton draft={finalizableDraft} />}
+            <StageMoveControl domainApplicationId={domainApplicationId} />
+          </div>
+        ) : undefined
       }
     >
-      {decisions.length > 0 && <DecisionHistoryList decisions={decisions} showNotes />}
-    </DetailCard>
-  );
-}
-
-function DelibsSection({ delibs }: { delibs: DelibsRef[] }) {
-  return (
-    <DetailCard
-      title="Delibs"
-      subtitle={
-        delibs.length === 0
-          ? "Not part of any delibs session."
-          : `${delibs.length} ${delibs.length === 1 ? "session" : "sessions"}`
-      }
-      headerExtra={
-        <InfoTip
-          content="Short for deliberations — the group discussion sessions where domain leads review applications together and make accept, waitlist, or reject decisions."
-        />
-      }
-    >
-      {delibs.length > 0 && (
-        <ul className="divide-y divide-border">
-          {delibs.map((s) => (
-            <li key={s.id} className="px-6 py-3 flex items-center gap-3">
-              <span className="text-sm font-medium text-foreground">{s.type} delibs</span>
-              <span
-                className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${
-                  s.status === "Active"
-                    ? "bg-amber-100 text-amber-800"
-                    : "bg-muted text-foreground/80"
-                }`}
-              >
-                {s.status}
-              </span>
-              {s.column && (
-                <span className="text-xs text-muted-foreground">in “{s.column}”</span>
-              )}
-              <span className="ml-auto text-xs text-muted-foreground/70">
-                Updated{" "}
-                {new Date(s.updatedAt).toLocaleDateString(undefined, {
-                  month: "short",
-                  day: "numeric",
-                })}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </DetailCard>
+      <ApplicationTimeline entries={timeline} />
+    </SetupCard>
   );
 }

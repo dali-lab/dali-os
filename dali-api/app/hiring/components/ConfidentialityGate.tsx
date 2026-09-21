@@ -7,6 +7,8 @@ interface ConfidentialityGateProps {
   reason: "no_agreement" | "unsigned";
   /** Path to return to after signing. */
   next?: string;
+  /** Names the cycle, for pages that show more than one. */
+  cycleName?: string;
   className?: string;
 }
 
@@ -14,6 +16,7 @@ export function ConfidentialityGate({
   cycleId,
   reason,
   next,
+  cycleName,
   className,
 }: ConfidentialityGateProps) {
   const href =
@@ -30,8 +33,9 @@ export function ConfidentialityGate({
       >
         <ShieldOff className="w-6 h-6 text-amber-500 mx-auto mb-2" />
         <p className="text-sm text-amber-900 font-medium">
-          Sensitive data is hidden until the hiring lead binds a confidentiality
-          agreement to this cycle.
+          {cycleName
+            ? `${cycleName} data is hidden until the hiring lead binds a confidentiality agreement.`
+            : "Sensitive data is hidden until the hiring lead binds a confidentiality agreement to this cycle."}
         </p>
       </div>
     );
@@ -46,7 +50,9 @@ export function ConfidentialityGate({
     >
       <ShieldAlert className="w-6 h-6 text-blue-600 mx-auto mb-2" />
       <p className="text-sm text-foreground/80 font-medium">
-        Sign the confidentiality agreement to view this section.
+        {cycleName
+          ? `Sign the ${cycleName} confidentiality agreement to see its applications.`
+          : "Sign the confidentiality agreement to view this section."}
       </p>
       <Link
         to={href}

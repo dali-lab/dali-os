@@ -157,6 +157,18 @@ export const FEATURE_FLAGS = [
     description:
       "Operator-designed completion certificates. Core uploads a background image and drags the dynamic fields (student name, offering title, dates, instructors, issued date) onto it in a template editor, sets a lab-wide default, and can bind a specific template to an offering. When off, certificates use the built-in DALI design (unchanged). Ships off.",
   },
+  {
+    key: "whiteboard",
+    label: "Whiteboard",
+    description:
+      "Collaborative Excalidraw whiteboards in Drive — an infinite canvas with shapes, arrows, sticky notes, freehand pen, text, and images, synced live (with multiplayer cursors) through the same Yjs collab backend as documents. Create one from the Drive New menu; it shares, nests, versions, and is searchable like any page. Ships off.",
+  },
+  {
+    key: "unified-core-project-meetings",
+    label: "Core + project meetings",
+    description:
+      "Let one meeting be both a Core meeting and a project meeting. When a meeting is marked Core, its note's About picker still offers the organizer's projects instead of collapsing to a fixed 'Core' — so a project's team meeting can live as that project's meeting (its note filed in the project's meeting-notes folder) while also showing on the Core hub calendar. Applies to the Events create modal and the Core hub's create modal. Ships off; without it, marking a meeting Core clears any project.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

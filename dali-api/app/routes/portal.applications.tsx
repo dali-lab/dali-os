@@ -3,7 +3,6 @@ import type { Route } from "./+types/portal.applications";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { getActiveCycle } from "~/hiring/lib/cycles";
 import {
   inferDomainApplicationStatus,
   domainApplicationStatusInclude,
@@ -16,73 +15,66 @@ import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
 
 export const meta: Route.MetaFunction = () => [{ title: "My applications · DALI" }];
 
-// Compact hiring summary for the one active/most-recent cycle: the cycle name,
-// the applicant's overall status, and a per-domain status line. The full
-// tracker (interview booking, decision views) stays at /portal/hiring — this is
-// the at-a-glance entry to it, so the combined page can list both application
-// kinds without duplicating that whole surface.
-async function loadHiringSummary(userId: string) {
-  const active = await getActiveCycle();
-  let cycleId: string;
-  let cycleName: string;
-  let cycleStatus: ApplicationCycleStatus;
-
-  if (active) {
-    cycleId = active.id;
-    cycleName = active.name;
-    cycleStatus = active.currentStatus as ApplicationCycleStatus;
-  } else {
-    // No active cycle: fall back to the applicant's most recent application so a
-    // completed cycle still shows here.
-    const recent = await prisma.application.findFirst({
-      where: { userId },
-      include: {
-        applicationCycle: {
-          include: { statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 } },
-        },
-      },
-      orderBy: { createdAt: "desc" },
-    });
-    if (!recent) return null;
-    cycleId = recent.applicationCycleId;
-    cycleName = recent.applicationCycle.name;
-    cycleStatus = (recent.applicationCycle.statusUpdates[0]?.newStatus ??
-      "Draft") as ApplicationCycleStatus;
-  }
-
-  const application = await prisma.application.findFirst({
-    where: { userId, applicationCycleId: cycleId },
+// Compact hiring summary, one per application across every cycle the student
+// applied to (newest first): the cycle name, the applicant's overall status,
+// and a per-domain status line. The full tracker (interview booking, decision
+// views) stays at /portal/hiring — this is the at-a-glance entry to it, so the
+// combined page can list both application kinds without duplicating that
+// whole surface.
+async function loadHiringSummaries(userId: string) {
+  const applications = await prisma.application.findMany({
+    where: { userId, applicationCycle: { applicants: "Students" } },
     include: {
       statusUpdates: true,
+      applicationCycle: {
+        include: { statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 } },
+      },
       domainApplications: {
         where: { selected: true },
         include: { ...domainApplicationStatusInclude, domain: true },
       },
     },
+    orderBy: { createdAt: "desc" },
   });
-  if (!application) return null;
 
-  // Withdrawn (which always follows Submitted) wins over the earlier entries.
-  const latest = application.statusUpdates
-    .slice()
-    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0]?.newStatus;
-  const applicationStatus =
-    latest === "Withdrawn"
-      ? "Withdrawn"
-      : application.statusUpdates.some((u) => u.newStatus === "Submitted")
-        ? "Submitted"
-        : "Draft";
+  return applications.map((application) => {
+    const cycle = application.applicationCycle;
+    const latestCycleStatus = cycle.statusUpdates[0]?.newStatus ?? "Draft";
+    // An Open cycle past its close date is under review, as getActiveCycles derives.
+    const cycleStatus = (
+      latestCycleStatus === "Open" && cycle.closeDate && new Date() > cycle.closeDate
+        ? "UnderReview"
+        : latestCycleStatus
+    ) as ApplicationCycleStatus;
 
-  const domains = application.domainApplications.map((da) => ({
-    id: da.id,
-    domainName: da.domain?.name ?? "Unknown",
-    status: inferDomainApplicationStatus(
-      { ...da, application: { statusUpdates: application.statusUpdates } } as any,
-      cycleStatus,
-    ),
-  }));
+    // Withdrawn (which always follows Submitted) wins over the earlier entries.
+    const latest = application.statusUpdates
+      .slice()
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0]?.newStatus;
+    const applicationStatus =
+      latest === "Withdrawn"
+        ? "Withdrawn"
+        : application.statusUpdates.some((u) => u.newStatus === "Submitted")
+          ? "Submitted"
+          : "Draft";
 
-  return { cycleName, applicationStatus, domains };
+    const domains = application.domainApplications.map((da) => ({
+      id: da.id,
+      domainName: da.domain?.name ?? "Unknown",
+      status: inferDomainApplicationStatus(
+        { ...da, application: { statusUpdates: application.statusUpdates } } as any,
+        cycleStatus,
+      ),
+    }));
+
+    return {
+      id: application.id,
+      cycleId: cycle.id,
+      cycleName: cycle.name,
+      applicationStatus,
+      domains,
+    };
+  });
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -93,7 +85,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const [educationApps, hiring] = await Promise.all([
     listMyApplications(auth.user.sub),
-    loadHiringSummary(auth.user.sub),
+    loadHiringSummaries(auth.user.sub),
   ]);
   return { educationApps, hiring };
 }
@@ -132,7 +124,7 @@ const SECTION_HEADING =
 
 export default function PortalApplications() {
   const { educationApps, hiring } = useLoaderData<typeof loader>();
-  const isEmpty = !hiring && educationApps.length === 0;
+  const isEmpty = hiring.length === 0 && educationApps.length === 0;
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-10 flex flex-col gap-8">
@@ -157,36 +149,43 @@ export default function PortalApplications() {
         </div>
       ) : (
         <>
-          {hiring && (
+          {hiring.length > 0 && (
             <section>
               <h2 className={SECTION_HEADING}>DALI Lab</h2>
-              <div className="rounded-xl border border-border bg-card p-5 shadow-brand-1">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="font-heading font-semibold text-dark-blue truncate">
-                      {hiring.cycleName}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Application {hiring.applicationStatus.toLowerCase()}
-                    </p>
-                  </div>
-                  <Link to="/portal/hiring" className={buttonClasses("secondary", "sm")}>
-                    Track →
-                  </Link>
-                </div>
-                {hiring.domains.length > 0 && (
-                  <ul className="mt-4 flex flex-col divide-y divide-border border-t border-border">
-                    {hiring.domains.map((d) => (
-                      <li
-                        key={d.id}
-                        className="flex items-center justify-between gap-3 py-2.5"
+              <div className="flex flex-col gap-3">
+                {hiring.map((app) => (
+                  <div key={app.id} className="rounded-xl border border-border bg-card p-5 shadow-brand-1">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-heading font-semibold text-dark-blue truncate">
+                          {app.cycleName}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Application {app.applicationStatus.toLowerCase()}
+                        </p>
+                      </div>
+                      <Link
+                        to={`/portal/hiring?cycle=${app.cycleId}`}
+                        className={buttonClasses("secondary", "sm")}
                       >
-                        <span className="text-sm text-foreground">{d.domainName}</span>
-                        <HiringStatusPill status={d.status} />
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                        Track →
+                      </Link>
+                    </div>
+                    {app.domains.length > 0 && (
+                      <ul className="mt-4 flex flex-col divide-y divide-border border-t border-border">
+                        {app.domains.map((d) => (
+                          <li
+                            key={d.id}
+                            className="flex items-center justify-between gap-3 py-2.5"
+                          >
+                            <span className="text-sm text-foreground">{d.domainName}</span>
+                            <HiringStatusPill status={d.status} />
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ))}
               </div>
             </section>
           )}

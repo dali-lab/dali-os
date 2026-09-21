@@ -12,9 +12,11 @@ export interface ToggleProps extends Omit<InputHTMLAttributes<HTMLInputElement>,
   /** Replaces (not extends) the label's default type, for surfaces with their
    *  own label scale — e.g. the Customize panel's rows. */
   labelClassName?: string;
+  /** "os" fills the on state with the dali.os accent instead of brand coral. */
+  tone?: "brand" | "os";
 }
 
-export function Toggle({ label, description, className, labelClassName, disabled, ...props }: ToggleProps) {
+export function Toggle({ label, description, className, labelClassName, disabled, tone = "brand", ...props }: ToggleProps) {
   return (
     <label
       className={cn(
@@ -38,7 +40,12 @@ export function Toggle({ label, description, className, labelClassName, disabled
             themes, and the inset hairline gives it an edge of its own. */}
         <span
           aria-hidden="true"
-          className="absolute inset-0 rounded-full bg-muted-foreground/30 ring-1 ring-inset ring-black/10 transition-colors peer-checked:bg-accent-coral peer-checked:ring-transparent peer-focus-visible:ring-2 peer-focus-visible:ring-accent-coral/40 peer-focus-visible:ring-offset-1"
+          className={cn(
+            "absolute inset-0 rounded-full bg-muted-foreground/30 ring-1 ring-inset ring-black/10 transition-colors peer-checked:ring-transparent peer-focus-visible:ring-2 peer-focus-visible:ring-offset-1",
+            tone === "os"
+              ? "peer-checked:bg-os-accent peer-focus-visible:ring-os-accent/40"
+              : "peer-checked:bg-accent-coral peer-focus-visible:ring-accent-coral/40",
+          )}
         />
         <span
           aria-hidden="true"

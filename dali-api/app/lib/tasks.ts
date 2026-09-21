@@ -1,8 +1,7 @@
 import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db";
-import { getActiveCycle } from "~/hiring/lib/cycles";
-import { INTERNAL_CYCLES } from "~/hiring/lib/internal-cycles.server";
-import { INTERNAL_CYCLE_TYPES, type InternalCycleType } from "~/hiring/lib/internal-cycles";
+import { getOpenCycles, type ActiveCycle } from "~/hiring/lib/cycles";
+import { applicantGroup } from "~/hiring/lib/applicant-groups.server";
 import { ONBOARDING_EVENT_TYPE } from "~/members/lib/welcome.server";
 import { fullName } from "~/lib/display";
 import { NOT_CANCELLED_MEETING, liveMeetingPingClauses } from "~/lib/notifications";
@@ -177,44 +176,46 @@ export async function countOpenTasks(userId: string, request?: Request): Promise
   return notifs + applyTasks.length;
 }
 
-const APPLY_TASK_COPY: Record<InternalCycleType, { draft: string; apply: string }> = {
-  Fellowship: {
+type MemberApplicants = "Interns" | "LabMembers";
+
+const APPLY_TASK_COPY: Record<MemberApplicants, { draft: string; apply: string }> = {
+  Interns: {
     draft: "Continue your fellowship application",
     apply: "Apply to the fellowship",
   },
-  Core: {
+  LabMembers: {
     draft: "Continue your Core application",
     apply: "Apply to Core",
   },
 };
 
 /**
- * Synthetic "apply to <internal cycle>" tasks: for each internal cycle type
- * (Fellowship, Core) that's Open and the user is eligible for + hasn't finished.
+ * Synthetic "apply to <cycle>" tasks: one per Open Interns or Lab members cycle
+ * the user is eligible for + hasn't finished (several can be open at once).
  * These are not Notification rows — they're derived state, so they persist in
  * the attention banner across reloads until the user submits or withdraws.
  */
 export async function getInternalCycleApplyTasks(userId: string, request?: Request): Promise<Task[]> {
-  const results = await Promise.all(
-    INTERNAL_CYCLE_TYPES.map((t) => getInternalCycleApplyTask(userId, t, request)),
+  const groups: MemberApplicants[] = ["Interns", "LabMembers"];
+  const perGroup = await Promise.all(
+    groups.map(async (applicants) => {
+      // Eligible check and open-cycle fetch are independent — run them together.
+      const [eligible, cycles] = await Promise.all([
+        applicantGroup(applicants, "").eligible!(userId),
+        getOpenCycles({ applicants }),
+      ]);
+      if (!eligible) return [];
+      return Promise.all(cycles.map((c) => getInternalCycleApplyTask(userId, applicants, c)));
+    }),
   );
-  return results.filter((t): t is Task => t != null);
+  return perGroup.flat().filter((t): t is Task => t != null);
 }
 
 async function getInternalCycleApplyTask(
   userId: string,
-  cycleType: InternalCycleType,
-  request?: Request,
+  applicants: MemberApplicants,
+  cycle: ActiveCycle,
 ): Promise<Task | null> {
-  const config = INTERNAL_CYCLES[cycleType];
-  // Eligible check and active-cycle fetch are independent — run them together.
-  const [eligible, cycle] = await Promise.all([
-    config.eligible(userId),
-    getActiveCycle(cycleType),
-  ]);
-  if (!eligible) return null;
-  if (!cycle || cycle.currentStatus !== "Open") return null;
-
   const app = await prisma.application.findFirst({
     where: { userId, applicationCycleId: cycle.id },
     select: {
@@ -226,12 +227,12 @@ async function getInternalCycleApplyTask(
   if (status === "Submitted" || status === "Withdrawn") return null;
 
   const isDraft = status === "Draft";
-  const copy = APPLY_TASK_COPY[cycleType];
+  const copy = APPLY_TASK_COPY[applicants];
   return {
-    id: `${cycleType.toLowerCase()}-apply-${cycle.id}`,
+    id: `${applicants.toLowerCase()}-apply-${cycle.id}`,
     title: isDraft ? copy.draft : copy.apply,
     body: cycle.name,
-    link: config.portalPath,
+    link: applicantGroup(applicants, cycle.id).portalPath,
     createdAt: (app?.statusUpdates[0]?.createdAt ?? new Date()).toISOString(),
     source: "general",
     dueAt: cycle.closeDate ? cycle.closeDate.toISOString() : null,

@@ -79,8 +79,8 @@ export async function action({ request }: Route.ActionArgs) {
           throw new Error("__TOO_SOON_TO_BOOK__");
         }
 
-        // DomainApplication.domainId is authoritative and always set for
-        // Standard cycles (the only cycleType that schedules interviews).
+        // DomainApplication.domainId is authoritative and always set, for
+        // every applicant group.
         const applicantDomainIds = current.domainApplication.application.domainApplications
           .map((da) => da.domainId)
           .filter((id): id is string => id !== null);

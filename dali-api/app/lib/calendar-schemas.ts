@@ -213,6 +213,18 @@ export const SetMeetingCoreSchema = z.object({
   isCoreMeeting: z.boolean(),
 });
 
+// Associate an existing meeting with a project after creation (behind the
+// unified-core-project-meetings flag). Sets its type/project and re-files any
+// note. Requires a real project; the action re-checks organizer/Core + project
+// membership.
+export const SetMeetingProjectSchema = z.object({
+  intent: z.literal("set-meeting-project"),
+  meetingId: z.string().min(1),
+  projectId: z.string().min(1),
+  meetingType: z.enum(["Team", "Partner", "Other"]),
+  meetingTypeLabel: z.string().optional(),
+});
+
 // "Add meeting notes" on a note-less meeting's detail popover — creates the
 // notes doc after the fact with the same About/Type/Name/location choices the
 // create form collects. The action re-checks that the caller may file it.
@@ -220,6 +232,26 @@ export const AddMeetingNoteSchema = z.object({
   intent: z.literal("add-meeting-note"),
   meetingId: z.string().min(1),
   meetingType: z.enum(["Team", "Partner", "Other"]),
+  meetingTypeLabel: z.string().optional(),
+  projectId: z.string().optional(),
+  noteLocation: z
+    .object({
+      workspaceType: z.enum(["Lab", "Project"]),
+      workspaceId: z.string().nullable(),
+      parentPageId: z.string().nullable(),
+    })
+    .nullable()
+    .optional(),
+});
+
+// Post-hoc "Add whiteboard" — the whiteboard counterpart of AddMeetingNoteSchema.
+// The type fields are optional: a meeting that already has a note/type reuses it
+// (the board files alongside), so the modal only sends them for a note-less
+// meeting. The action re-checks the caller may file it and gates on the flag.
+export const AddMeetingWhiteboardSchema = z.object({
+  intent: z.literal("add-meeting-whiteboard"),
+  meetingId: z.string().min(1),
+  meetingType: z.enum(["Team", "Partner", "Other"]).optional(),
   meetingTypeLabel: z.string().optional(),
   projectId: z.string().optional(),
   noteLocation: z
@@ -269,7 +301,9 @@ export const CalendarActionSchema = z.discriminatedUnion("intent", [
   DeleteTimeEntrySchema,
   ToggleMeetingTimeEntrySchema,
   SetMeetingCoreSchema,
+  SetMeetingProjectSchema,
   AddMeetingNoteSchema,
+  AddMeetingWhiteboardSchema,
   SetTimesheetSyncSchema,
   TrackEventAsMeetingSchema,
 ]);

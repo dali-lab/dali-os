@@ -9,7 +9,7 @@ vi.mock("~/lib/auth", () => ({
 vi.mock("~/lib/roles");
 vi.mock("~/lib/email");
 
-import { OpenApplicationsConfirmModal } from "~/hiring/routes/lead.cycle.$id";
+import { OpenApplicationsConfirmModal } from "~/hiring/components/cycle-setup/OpenApplicationsConfirmModal";
 
 describe("OpenApplicationsConfirmModal", () => {
   const baseProps = {

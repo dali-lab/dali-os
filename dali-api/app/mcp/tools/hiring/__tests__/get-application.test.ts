@@ -26,7 +26,9 @@ vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, hasCycleAccess: vi.fn(), getUserRoles: vi.fn() };
 });
-vi.mock("~/hiring/lib/confidentiality", () => ({
+vi.mock("~/hiring/lib/confidentiality", async (importOriginal) => ({
+  // Keep the pure access helpers real; only the DB-backed state is stubbed.
+  ...(await importOriginal<typeof import("~/hiring/lib/confidentiality")>()),
   getCycleConfidentialityState: vi.fn(),
   requireApiSignedOrForbidden: vi.fn(),
 }));
@@ -64,7 +66,6 @@ const fakeDa = {
     applicationCycle: {
       id: "cy1",
       generalRubricVersionId: null,
-      cycleType: "Standard",
     },
   },
   reviews: [],
@@ -121,6 +122,7 @@ describe("get_application", () => {
     vi.mocked(getCycleConfidentialityState).mockResolvedValue({
       status: "signed",
       activeVersionId: "v1",
+      exempt: false,
     });
     mockPrisma.domainApplicationCycle.findUnique.mockResolvedValue(null);
     mockPrisma.rubricVersion.findUnique.mockResolvedValue(null);
@@ -136,6 +138,7 @@ describe("get_application", () => {
     vi.mocked(getCycleConfidentialityState).mockResolvedValue({
       status: "unsigned",
       activeVersionId: "v1",
+      exempt: false,
     });
     await expect(runGetApplication("u1", { domainApplicationId: "da1" })).rejects.toMatchObject({
       status: 403,
@@ -148,6 +151,7 @@ describe("get_application", () => {
     vi.mocked(getCycleConfidentialityState).mockResolvedValue({
       status: "signed",
       activeVersionId: "v1",
+      exempt: false,
     });
     mockPrisma.domainApplicationCycle.findUnique.mockResolvedValue(null);
     mockPrisma.rubricVersion.findUnique.mockResolvedValue(null);
@@ -171,7 +175,6 @@ describe("get_application", () => {
         applicationCycle: {
           id: "cy1",
           generalRubricVersionId: null,
-          cycleType: "Standard",
           anonymizeReview: true,
         },
       },
@@ -181,6 +184,7 @@ describe("get_application", () => {
     vi.mocked(getCycleConfidentialityState).mockResolvedValue({
       status: "signed",
       activeVersionId: "v1",
+      exempt: false,
     });
     mockPrisma.domainApplicationCycle.findUnique.mockResolvedValue(null);
     mockPrisma.rubricVersion.findUnique.mockResolvedValue(null);
@@ -201,7 +205,6 @@ describe("get_application", () => {
         applicationCycle: {
           id: "cy1",
           generalRubricVersionId: null,
-          cycleType: "Standard",
           anonymizeReview: true,
         },
       },
@@ -211,6 +214,7 @@ describe("get_application", () => {
     vi.mocked(getCycleConfidentialityState).mockResolvedValue({
       status: "signed",
       activeVersionId: "v1",
+      exempt: false,
     });
     mockPrisma.domainApplicationCycle.findUnique.mockResolvedValue(null);
     mockPrisma.rubricVersion.findUnique.mockResolvedValue(null);

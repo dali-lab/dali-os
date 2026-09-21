@@ -4,14 +4,8 @@
 // dashboard, and the interviewer page, which each wrap it in their own chrome.
 
 import { Avatar } from "~/components/ui/Avatar";
-
-const DEFAULT_RECOMMENDATION_TONE: Record<string, string> = {
-  "Strong Hire": "bg-green-100 text-green-800",
-  Hire: "bg-green-50 text-green-700",
-  "Lean Hire": "bg-lime-50 text-lime-700",
-  "Lean No Hire": "bg-amber-50 text-amber-700",
-  "No Hire": "bg-red-50 text-red-700",
-};
+import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { RECOMMENDATION_TONES } from "~/hiring/lib/labels";
 
 export interface ReviewSummaryProps {
   reviewerName?: string;
@@ -20,9 +14,6 @@ export interface ReviewSummaryProps {
   reviewerId?: string;
   submittedAt?: string | Date | null;
   overallRecommendation?: string | null;
-  // Maps a recommendation value to its badge classes. Defaults to a
-  // green→red scale; pass a custom map to match a page's existing palette.
-  recommendationTone?: Record<string, string>;
   scores?: Record<string, number>;
   // Criterion key → display label (and optional max score for "n/max").
   criteria?: Record<string, { label: string; maxScore?: number }>;
@@ -39,7 +30,6 @@ export function ReviewSummary({
   reviewerId,
   submittedAt,
   overallRecommendation,
-  recommendationTone = DEFAULT_RECOMMENDATION_TONE,
   scores,
   criteria = {},
   feedback,
@@ -79,13 +69,9 @@ export function ReviewSummary({
           <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">
             Overall Recommendation
           </h3>
-          <span
-            className={`inline-flex items-center px-2.5 py-1 rounded-md text-sm font-medium ${
-              recommendationTone[overallRecommendation] ?? "bg-muted text-foreground"
-            }`}
-          >
+          <Pill dot={RECOMMENDATION_TONES[overallRecommendation] ?? "neutral"}>
             {overallRecommendation}
-          </span>
+          </Pill>
         </div>
       )}
 

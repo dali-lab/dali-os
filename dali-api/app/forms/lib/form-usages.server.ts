@@ -1,7 +1,6 @@
 import { prisma } from "~/lib/db";
 import { SLOTS, isSlot } from "~/projects/lib/form-slots";
 import { NEW_MEMBER_PROFILE_FORM_NAME } from "~/members/lib/profile-form-interpreter";
-import { isInternalCycleType } from "~/hiring/lib/internal-cycles";
 
 // Central answer to "where is this form used?". Each surface keeps its own
 // binding (StaffingCycleFormBinding, PartnerApplicationFormBinding,
@@ -73,7 +72,7 @@ export async function formUsages(formId: string): Promise<FormUsage[]> {
     // Hiring: cycle general/internal application form + per-domain challenges.
     prisma.applicationCycle.findMany({
       where: { applicationFormId: formId },
-      select: { id: true, name: true, cycleType: true },
+      select: { id: true, name: true },
     }),
     prisma.cycleDomainForm.findMany({
       where: { formId },
@@ -117,9 +116,7 @@ export async function formUsages(formId: string): Promise<FormUsage[]> {
     usages.push({
       kind: "hiring",
       label: `${c.name} — application form`,
-      href: isInternalCycleType(c.cycleType)
-        ? `/hiring/lead/internal-cycle/${c.id}`
-        : `/hiring/lead/cycle/${c.id}`,
+      href: `/hiring/lead/cycle/${c.id}`,
     });
   }
   for (const ch of hiringChallenges) {

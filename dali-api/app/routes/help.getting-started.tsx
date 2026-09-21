@@ -54,7 +54,7 @@ const SECTIONS: Array<{
   },
   {
     title: "Hiring",
-    to: "/hiring/reviewer",
+    to: "/hiring",
     body: (
       <>
         Everything for running an application cycle: reviewing applications,

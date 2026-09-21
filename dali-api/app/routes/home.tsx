@@ -10,6 +10,10 @@ import { FavoriteStar } from "~/components/FavoriteStar";
 import { FavoriteRouteButton } from "~/components/FavoriteRouteButton";
 import MilestoneHero from "~/components/home/MilestoneHero";
 import SearchIcon from "~/components/home/landing/SearchIcon";
+import {
+  isLandingBackgroundId,
+  scheduledLandingBackground,
+} from "~/components/home/landing/backgrounds/schedule";
 import { isNavbarRoute } from "~/lib/navbar-routes";
 import { currentTermStrict, getUserRoles } from "~/lib/roles";
 import { termWeekNumber } from "~/lib/terms.shared";
@@ -66,8 +70,18 @@ export async function loader({ request }: Route.LoaderArgs) {
   const greeting =
     greetingHour < 12 ? "Good morning" : greetingHour < 18 ? "Good afternoon" : "Good evening";
 
+  // This week's background, or `?background=<id>` to preview one before its date.
+  const preview = new URL(request.url).searchParams.get("background");
+  const background = isLandingBackgroundId(preview)
+    ? preview
+    : scheduledLandingBackground(
+        // en-CA formats as YYYY-MM-DD, the schedule's date format.
+        new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date()),
+      );
+
   return {
     greeting,
+    background,
     week,
     user: auth.user,
     pages: {
@@ -113,7 +127,7 @@ const HOME_PAGE_LIMIT = 6;
 export const handle = { fitViewport: true, bleedPane: true };
 
 export default function Home() {
-  const { user, greeting, week, pages } = useLoaderData<typeof loader>();
+  const { user, greeting, week, background, pages } = useLoaderData<typeof loader>();
   const revalidator = useRevalidator();
   const onChanged = () => revalidator.revalidate();
   const firstName = user.firstName || user.email.split("@")[0];
@@ -127,6 +141,7 @@ export default function Home() {
         greeting={greeting}
         userName={firstName}
         search={<HomeSearch />}
+        background={background}
         recentsHeading="Favorites + Recently Visited"
         // A brand-new account (nothing starred, nothing opened) gets no card
         // row at all — the search field is the only thing to do.

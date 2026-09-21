@@ -16,6 +16,10 @@ import {
   runGetGroupAvailability,
 } from "./get-group-availability";
 import {
+  OPTIMIZE_GROUP_MEETINGS_DEF,
+  runOptimizeGroupMeetings,
+} from "./optimize-group-meetings";
+import {
   GET_GOOGLE_CALENDAR_BUSY_DEF,
   runGetGoogleCalendarBusy,
 } from "./get-google-calendar-busy";
@@ -71,6 +75,11 @@ export const CALENDAR_TOOLS: McpTool[] = [
     def: GET_GROUP_AVAILABILITY_DEF,
     run: (_ctx, args) =>
       runGetGroupAvailability(args as { userIds: string[]; weekStartIso: string; weekEndIso: string; durationMinutes: number; timezone: string }),
+  },
+  {
+    def: OPTIMIZE_GROUP_MEETINGS_DEF,
+    run: (_ctx, args) =>
+      runOptimizeGroupMeetings(args as Parameters<typeof runOptimizeGroupMeetings>[0]),
   },
   {
     def: GET_GOOGLE_CALENDAR_BUSY_DEF,

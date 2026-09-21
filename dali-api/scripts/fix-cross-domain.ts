@@ -37,12 +37,11 @@ async function main() {
   });
   if (!morgan) { console.error("Morgan not found"); process.exit(1); }
 
-  // Delete old Engineering CycleInterviewer (and its availability)
+  // Delete old Engineering CycleInterviewer
   const oldCI = await prisma.cycleInterviewer.findFirst({
     where: { userId: morgan.id, applicationCycleId: cycleId },
   });
   if (oldCI) {
-    await prisma.interviewerAvailability.deleteMany({ where: { cycleInterviewerId: oldCI.id } });
     await prisma.cycleInterviewer.delete({ where: { id: oldCI.id } });
     console.log(`Deleted old Engineering CycleInterviewer`);
   }
@@ -56,27 +55,16 @@ async function main() {
     },
   });
 
-  // Add availability: next 5 weekdays, 2pm-5pm ET
-  const cursor = new Date();
-  cursor.setUTCHours(0, 0, 0, 0);
-  cursor.setUTCDate(cursor.getUTCDate() + 1);
-  let added = 0;
-  while (added < 5) {
-    const dow = cursor.getUTCDay();
-    if (dow !== 0 && dow !== 6) {
-      const start = new Date(cursor); start.setUTCHours(18, 0, 0, 0);
-      const end = new Date(cursor); end.setUTCHours(21, 0, 0, 0);
-      await prisma.interviewerAvailability.create({
-        data: { cycleInterviewerId: newCI.id, startTime: start, endTime: end },
-      });
-      added++;
-    }
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
-  }
+  // Interview scheduling reads DALI OS calendar availability: working hours
+  // (weekdays 2pm-5pm) with no linked calendar means those hours are free.
+  await prisma.workingHoursDay.deleteMany({ where: { userId: morgan.id } });
+  await prisma.workingHoursDay.createMany({
+    data: [1, 2, 3, 4, 5].map((dayOfWeek) => ({ userId: morgan.id, dayOfWeek, startMinute: 14 * 60, endMinute: 17 * 60 })),
+  });
 
   console.log(`Morgan reassigned to Design domain as cross-domain interviewer`);
   console.log(`CycleInterviewer ID: ${newCI.id}`);
-  console.log(`5 availability blocks added (next 5 weekdays, 2pm-5pm ET)`);
+  console.log(`Working hours set: weekdays 2pm-5pm`);
   console.log(`\nNow Henry (Engineering, in-domain) + Morgan (Design, cross-domain) can jointly cover Engineering interviews.`);
 }
 

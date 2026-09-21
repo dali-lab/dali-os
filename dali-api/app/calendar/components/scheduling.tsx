@@ -18,6 +18,7 @@ import { Tooltip, InfoTip, Select } from "~/components/ui/floating";
 import { usePanelClass } from "~/components/ui/floating/os-styles";
 import { buttonClasses } from "~/components/ui/Button";
 import { Toggle } from "~/components/ui/Toggle";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import { DateField } from "~/components/ui/DateField";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
@@ -282,6 +283,9 @@ export function CreateScheduledMeetingForm({
   // Meeting notes are opt-in — the About / type / location fields only appear
   // once enabled. See MeetingNoteFields for the derive-type-from-project model.
   const note = useMeetingNote();
+  const whiteboardEnabled = useFeatureFlag("whiteboard");
+  // Flag: a Core meeting may also be about a project; off = Core clears it.
+  const unifiedCoreProject = useFeatureFlag("unified-core-project-meetings");
   // Self check-in is independent of the meeting note (QR lives on the note when
   // one exists, otherwise on /calendar/check-in/:id).
   const [selfCheckIn, setSelfCheckIn] = useState(false);
@@ -296,6 +300,7 @@ export function CreateScheduledMeetingForm({
         count: number;
         gcalError?: string | null;
         notePageId?: string | null;
+        whiteboardPageId?: string | null;
         meetingId?: string | null;
         selfCheckIn?: boolean;
       }
@@ -320,13 +325,13 @@ export function CreateScheduledMeetingForm({
   // Prefill "About" when exactly one selected group is a system-managed project
   // group (see GroupOption.projectId) — a default the sender can still change. It
   // fills even while the note is off, so the project is already chosen if they
-  // turn it on; it never enables the note itself. A Core meeting's note has no
-  // project, so the prefill stays out of its way.
+  // turn it on; it never enables the note itself. Without the unify flag a Core
+  // meeting's note has no project, so the prefill stays out of its way.
   useEffect(() => {
-    if (selectedGroupIds.length !== 1 || isCoreMeeting) return;
+    if (selectedGroupIds.length !== 1 || (isCoreMeeting && !unifiedCoreProject)) return;
     note.applyGroupPrefill(groupsById.get(selectedGroupIds[0]!)?.projectId ?? null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedGroupIds, isCoreMeeting]);
+  }, [selectedGroupIds, isCoreMeeting, unifiedCoreProject]);
 
   // Both pickers filled → derive duration; otherwise fall back to 30 min so
   // "schedule later" (no start/end yet) still produces a valid payload.
@@ -390,6 +395,7 @@ export function CreateScheduledMeetingForm({
           count: json.notifiedCount ?? 0,
           gcalError: json.gcalError ?? null,
           notePageId: json.notePageId ?? null,
+          whiteboardPageId: json.whiteboardPageId ?? null,
           meetingId: json.meeting?.id ?? null,
           selfCheckIn,
         });
@@ -537,13 +543,22 @@ export function CreateScheduledMeetingForm({
               label="Create meeting note"
             />
 
-            {note.state.enabled && (
+            {whiteboardEnabled && (
+              <Toggle
+                checked={note.state.whiteboard}
+                onChange={(e) => note.setWhiteboard(e.target.checked)}
+                label="Create whiteboard"
+              />
+            )}
+
+            {(note.state.enabled || note.state.whiteboard) && (
               <MeetingNoteFields
                 note={note}
                 myProjects={myProjects}
                 fieldClass={fieldClass}
                 labelClass={labelClass}
                 core={isCoreMeeting}
+                allowProjectWhenCore={unifiedCoreProject}
               />
             )}
           </div>
@@ -609,6 +624,26 @@ export function CreateScheduledMeetingForm({
                       className="underline font-medium"
                     >
                       View meeting note
+                    </a>
+                  </>
+                )}
+                {status.whiteboardPageId && (
+                  <>
+                    {" "}
+                    <a
+                      href={`/whiteboard/${status.whiteboardPageId}`}
+                      onClick={(e) => {
+                        if (
+                          requestOpenTabIfEmbedded(
+                            `/whiteboard/${status.whiteboardPageId}`,
+                            "Whiteboard",
+                          )
+                        )
+                          e.preventDefault();
+                      }}
+                      className="underline font-medium"
+                    >
+                      View whiteboard
                     </a>
                   </>
                 )}

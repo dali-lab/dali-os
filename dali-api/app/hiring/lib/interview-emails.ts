@@ -1,5 +1,5 @@
 // Sends ICS calendar invite emails for interview booking, rescheduling, and cancellation.
-// Email bodies come from per-cycle CycleNotificationEmail template bindings — no binding = no email.
+// Email bodies come from hiring's shared emails (hiring-emails.server.ts): no email for a slot, no send.
 // All sends are best-effort — failures are logged but never block the booking flow.
 // Every send goes through the outbox (app/lib/outbound.server.ts): enqueue +
 // inline drain, so delivery gets retry + per-sender cap + history for free.
@@ -10,6 +10,7 @@ import { type InterpolationVars } from "~/lib/email";
 import { APPLICATION_TZ, APPLICATION_TZ_LABEL } from "~/lib/timezone";
 import { renderForSlot, notificationSlot } from "./email-variables";
 import { buildInviteIcs, buildCancelIcs, type IcsAttendee } from "./interview-ics";
+import { getHiringEmail } from "~/hiring/lib/hiring-emails.server";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 
 const ORGANIZER: IcsAttendee = {
@@ -99,29 +100,20 @@ async function bumpIcsSequence(interviewId: string): Promise<number> {
   return updated.icsSequence;
 }
 
-async function renderFromBinding(
-  applicationCycleId: string,
+async function renderSlot(
   notificationType: NotificationType,
   vars: InterpolationVars,
 ): Promise<{ subject: string; html: string } | null> {
-  const binding = await prisma.cycleNotificationEmail.findUnique({
-    where: {
-      applicationCycleId_notificationType: {
-        applicationCycleId,
-        notificationType,
-      },
-    },
-    include: { emailTemplateVersion: true },
-  });
-  if (!binding) return null;
-  return renderForSlot(notificationSlot(notificationType), binding.emailTemplateVersion, vars);
+  const email = await getHiringEmail(notificationSlot(notificationType));
+  if (!email) return null;
+  return renderForSlot(notificationSlot(notificationType), email, vars);
 }
 
 // ─── Public API ─────────────────────────────────────────────────────────────
 
-// Reminder emails for the interview-reminders job. Same per-cycle
-// CycleNotificationEmail binding flow as every other hiring email — no
-// binding = no email for that audience. No ICS — recipients already hold
+// Reminder emails for the interview-reminders job. Same shared-email flow as
+// every other hiring email: no email for a slot, nothing sent to that
+// audience. No ICS — recipients already hold
 // the calendar event from the invite. Returns the number of emails enqueued.
 export async function sendInterviewReminderEmails(interviewId: string): Promise<number> {
   try {
@@ -149,8 +141,7 @@ export async function sendInterviewReminderEmails(interviewId: string): Promise<
     // 24h + 1h reminders legitimately both send.
     const enqueues: Promise<string | null>[] = [];
     if (applicant) {
-      const rendered = await renderFromBinding(
-        interview.applicationCycleId,
+      const rendered = await renderSlot(
         "InterviewReminderApplicant",
         { firstName: applicant.firstName, ...baseVars },
       );
@@ -168,8 +159,7 @@ export async function sendInterviewReminderEmails(interviewId: string): Promise<
       }
     }
     for (const interviewer of interviewers) {
-      const rendered = await renderFromBinding(
-        interview.applicationCycleId,
+      const rendered = await renderSlot(
         "InterviewReminderInterviewer",
         { firstName: interviewer.firstName, ...baseVars },
       );
@@ -256,8 +246,7 @@ export async function sendInterviewInviteEmails(
     const enqueues: Promise<string | null>[] = [];
 
     if (applicant) {
-      const rendered = await renderFromBinding(
-        interview.applicationCycleId,
+      const rendered = await renderSlot(
         "InterviewConfirmedApplicant",
         { firstName: applicant.firstName, ...baseVars },
       );
@@ -280,8 +269,7 @@ export async function sendInterviewInviteEmails(
     }
 
     for (const interviewer of interviewers) {
-      const rendered = await renderFromBinding(
-        interview.applicationCycleId,
+      const rendered = await renderSlot(
         "InterviewInviteMentor",
         { firstName: interviewer.firstName, ...baseVars },
       );
@@ -365,8 +353,7 @@ export async function sendInterviewCancelEmails(
     const enqueues: Promise<string | null>[] = [];
 
     if (applicant) {
-      const rendered = await renderFromBinding(
-        interview.applicationCycleId,
+      const rendered = await renderSlot(
         "InterviewCancelledApplicant",
         { firstName: applicant.firstName, ...baseVars },
       );
@@ -385,8 +372,7 @@ export async function sendInterviewCancelEmails(
     }
 
     for (const interviewer of interviewers) {
-      const rendered = await renderFromBinding(
-        interview.applicationCycleId,
+      const rendered = await renderSlot(
         "InterviewCancelledInterviewer",
         { firstName: interviewer.firstName, ...baseVars },
       );
@@ -458,8 +444,7 @@ export async function sendReassignmentEmails(
         sequence,
       });
       const firstName = removedName;
-      const rendered = await renderFromBinding(
-        interview.applicationCycleId,
+      const rendered = await renderSlot(
         "InterviewCancelledInterviewer",
         { firstName, ...baseVars },
       );
@@ -511,8 +496,7 @@ export async function sendReassignmentEmails(
     });
 
     if (applicant) {
-      const rendered = await renderFromBinding(
-        interview.applicationCycleId,
+      const rendered = await renderSlot(
         "InterviewConfirmedApplicant",
         { firstName: applicant.firstName, ...baseVars },
       );
@@ -530,8 +514,7 @@ export async function sendReassignmentEmails(
     }
 
     for (const interviewer of currentInterviewers) {
-      const rendered = await renderFromBinding(
-        interview.applicationCycleId,
+      const rendered = await renderSlot(
         "InterviewInviteMentor",
         { firstName: interviewer.firstName, ...baseVars },
       );
@@ -613,8 +596,7 @@ export async function sendLocationChangeEmails(
     const enqueues: Promise<string | null>[] = [];
 
     if (applicant) {
-      const rendered = await renderFromBinding(
-        interview.applicationCycleId,
+      const rendered = await renderSlot(
         "InterviewLocationChanged",
         { firstName: applicant.firstName, ...baseVars },
       );
@@ -632,8 +614,7 @@ export async function sendLocationChangeEmails(
     }
 
     for (const interviewer of interviewers) {
-      const rendered = await renderFromBinding(
-        interview.applicationCycleId,
+      const rendered = await renderSlot(
         "InterviewLocationChanged",
         { firstName: interviewer.firstName, ...baseVars },
       );

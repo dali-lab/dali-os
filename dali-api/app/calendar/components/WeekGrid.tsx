@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { Link, useFetcher, useRevalidator } from "react-router";
 import {
   Building2, Wifi, Users, FileText, Pencil, Copy, Trash2,
-  Check, HelpCircle, X, Video, ExternalLink, Clock, AlertCircle,
+  Check, HelpCircle, X, Video, ExternalLink, Clock, AlertCircle, Shapes,
 } from "lucide-react";
 import { Tooltip } from "~/components/ui/floating";
 import { Toggle } from "~/components/ui/Toggle";
@@ -16,7 +16,9 @@ import { cn } from "~/lib/cn";
 import { getZonedHourFraction, getZonedYMD } from "~/lib/timezone";
 import { isPayPeriodEnd, isPayPeriodStart } from "~/lib/pay-period";
 import { AddMeetingNoteButton } from "~/calendar/components/AddMeetingNoteModal";
+import { AddMeetingWhiteboardButton } from "~/calendar/components/AddMeetingWhiteboardModal";
 import { TrackEventButton } from "~/calendar/components/TrackEventButton";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import type {
   EventBlock, EventAttendeeDTO, EventLinkDTO, EventRsvpTarget, RsvpStatus, WhDay,
 } from "~/calendar/lib/types";
@@ -695,6 +697,7 @@ export function WeekGridEvent({
   const [detailOpen, setDetailOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [anchorEl, setAnchorEl] = useState<HTMLDivElement | null>(null);
+  const whiteboardEnabled = useFeatureFlag("whiteboard");
   // Horizontal shift (in columns × colWidth px) while a move drag crosses days.
   const [liveDayShift, setLiveDayShift] = useState<{ offset: number; colWidth: number } | null>(null);
   const bufferBefore = e.bufferBefore ?? 0;
@@ -1107,6 +1110,23 @@ export function WeekGridEvent({
                         className={popoverActionBtn}
                       />
                     ) : null}
+                    {whiteboardEnabled &&
+                      (e.meeting.whiteboardPageId ? (
+                        <Link
+                          to={`/whiteboard/${e.meeting.whiteboardPageId}`}
+                          className={popoverActionBtn}
+                        >
+                          <Shapes className="h-3.5 w-3.5 text-os-grey" /> Whiteboard
+                        </Link>
+                      ) : e.meeting.canAddWhiteboard ? (
+                        <AddMeetingWhiteboardButton
+                          meetingId={e.meeting.meetingId}
+                          isCoreMeeting={e.meeting.isCoreMeeting}
+                          hasType={e.meeting.hasType}
+                          actionPath={e.meeting.actionPath}
+                          className={popoverActionBtn}
+                        />
+                      ) : null)}
                   </div>
                   <MeetingDetailToggles meeting={e.meeting} />
                 </div>

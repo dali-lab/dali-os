@@ -14,7 +14,7 @@ vi.mock("~/hiring/lib/interview-emails", () => ({
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { getActiveCycle } from "~/hiring/lib/cycles";
+import { getActiveCycleById } from "~/hiring/lib/cycles";
 import { sendInterviewCancelEmails } from "~/hiring/lib/interview-emails";
 import { action } from "~/routes/portal.application";
 
@@ -47,14 +47,14 @@ beforeEach(() => {
 
   (mockPrisma as any).$transaction = vi.fn(async (cb: any) => cb(mockTx));
 
-  vi.mocked(getActiveCycle).mockResolvedValue({ id: CYCLE_ID, currentStatus: "Open" } as any);
+  vi.mocked(getActiveCycleById).mockResolvedValue({ id: CYCLE_ID, currentStatus: "Open" } as any);
   vi.mocked(requireAuth).mockResolvedValue({
     ok: true,
     user: { sub: USER_ID, email: "u@x.com", type: "applicant" },
   } as any);
 });
 
-function makeRequest(body: Record<string, string> = { intent: "withdraw" }) {
+function makeRequest(body: Record<string, string> = { intent: "withdraw", cycleId: CYCLE_ID }) {
   const form = new URLSearchParams(body);
   return new Request("http://localhost/portal/application", {
     method: "POST",
@@ -85,8 +85,8 @@ describe("POST /portal/application (withdraw)", () => {
     expect(json.error).toMatch(/intent/i);
   });
 
-  it("returns 400 when there is no active cycle", async () => {
-    vi.mocked(getActiveCycle).mockResolvedValueOnce(null);
+  it("returns 400 when the posted cycle isn't active", async () => {
+    vi.mocked(getActiveCycleById).mockResolvedValueOnce(null);
 
     const res = await action({ request: makeRequest(), params: {}, context: {} } as any);
     expect(res.status).toBe(400);
@@ -94,11 +94,22 @@ describe("POST /portal/application (withdraw)", () => {
     expect(json.error).toMatch(/cycle/i);
   });
 
-  it("returns 404 when the user has no application for the active cycle", async () => {
+  it("returns 404 when the user has no application for the posted cycle", async () => {
     mockPrisma.application.findFirst.mockResolvedValue(null);
 
     const res = await action({ request: makeRequest(), params: {}, context: {} } as any);
     expect(res.status).toBe(404);
+  });
+
+  it("looks up the caller's application in the posted cycle", async () => {
+    mockPrisma.application.findFirst.mockResolvedValue(null);
+
+    await action({ request: makeRequest(), params: {}, context: {} } as any);
+    expect(getActiveCycleById).toHaveBeenCalledWith(CYCLE_ID);
+    expect(mockPrisma.application.findFirst.mock.calls[0][0].where).toEqual({
+      userId: USER_ID,
+      applicationCycleId: CYCLE_ID,
+    });
   });
 
   it("returns 400 when the application is still a Draft", async () => {

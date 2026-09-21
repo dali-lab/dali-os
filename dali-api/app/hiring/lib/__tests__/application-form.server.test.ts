@@ -116,7 +116,7 @@ describe("createCycleApplicationForm", () => {
     mockPrisma.applicationCycle.findUnique.mockResolvedValue({
       id: "c1",
       name: "Fall",
-      cycleType: "Core",
+      applicants: "LabMembers",
       applicationFormId: "existing-form",
     });
     await expect(createCycleApplicationForm("c1", "actor")).resolves.toBe("existing-form");
@@ -128,7 +128,7 @@ describe("createCycleApplicationForm", () => {
     mockPrisma.applicationCycle.findUnique.mockResolvedValue({
       id: "c1",
       name: "Fall",
-      cycleType: "Core",
+      applicants: "LabMembers",
       applicationFormId: null,
     });
     // ensureHiringTemplate: template already exists with a version.

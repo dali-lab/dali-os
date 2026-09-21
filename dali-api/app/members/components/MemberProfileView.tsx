@@ -1056,7 +1056,7 @@ function ActivitySection({
             </span>
             {isSelf && (
               <Link
-                to="/hiring/reviewer"
+                to="/hiring?view=reviews"
                 className="ml-auto text-xs font-medium text-os-accent hover:underline"
               >
                 Go to reviews →

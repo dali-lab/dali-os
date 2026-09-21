@@ -1,7 +1,8 @@
 import type React from "react";
 import { Link } from "react-router";
 import { Calendar, MapPin, Users } from "lucide-react";
-import { INTERVIEW_STATUS_COLORS, INTERVIEW_STATUS_LABELS } from "~/hiring/lib/labels";
+import { INTERVIEW_STATUS_TONES, INTERVIEW_STATUS_LABELS, RECOMMENDATION_TONES } from "~/hiring/lib/labels";
+import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
 
 const LOCATION_LABELS: Record<string, string> = {
   PodAppa: "Pod Appa",
@@ -22,7 +23,7 @@ export interface InterviewNotesData {
   id: string;
   startTime: string | Date;
   endTime?: string | Date | null;
-  status: string; // key into labels.INTERVIEW_STATUS_COLORS
+  status: string; // key into labels.INTERVIEW_STATUS_TONES
   location?: string | null;
   zoomJoinUrl?: string | null;
   videoUrl?: string | null;
@@ -75,7 +76,7 @@ export function InterviewNotesCard({
   const start = new Date(interview.startTime);
   const end = interview.endTime != null ? new Date(interview.endTime) : null;
   const statusLabel = INTERVIEW_STATUS_LABELS[interview.status] ?? interview.status;
-  const statusClass = INTERVIEW_STATUS_COLORS[interview.status] ?? "bg-muted text-foreground/80";
+  const statusTone = INTERVIEW_STATUS_TONES[interview.status] ?? "neutral";
   const joint = jointNotesText(interview.jointNotes);
   const interviewers = interview.interviewers ?? [];
   const interviewersWithNotes = interviewers.filter(
@@ -90,9 +91,7 @@ export function InterviewNotesCard({
             {start.toLocaleDateString(undefined, { month: "short", day: "numeric" })}{" "}
             {start.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
           </span>
-          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusClass}`}>
-            {statusLabel}
-          </span>
+          <Pill dot={statusTone}>{statusLabel}</Pill>
         </div>
         {interview.recommendation && (
           <div className="text-sm">
@@ -148,11 +147,7 @@ export function InterviewNotesCard({
   return (
     <div className="px-6 py-4 space-y-3">
       <div className="flex flex-wrap items-center gap-3">
-        <span
-          className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${statusClass}`}
-        >
-          {statusLabel}
-        </span>
+        <Pill dot={statusTone}>{statusLabel}</Pill>
         <span className="inline-flex items-center gap-1.5 text-sm text-foreground">
           <Calendar className="w-3.5 h-3.5 text-muted-foreground" aria-hidden />
           {start.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
@@ -228,9 +223,9 @@ export function InterviewNotesCard({
           </div>
           {interview.recommendation && (
             <div className="mt-2">
-              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-muted text-foreground/80">
+              <Pill dot={RECOMMENDATION_TONES[interview.recommendation] ?? "neutral"}>
                 {interview.recommendation}
-              </span>
+              </Pill>
             </div>
           )}
           {interview.recommendationNotes && interview.recommendationNotes.trim().length > 0 && (

@@ -1,13 +1,6 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
-
-// react-router's hooks need a router context at runtime; for an SSR smoke test
-// we just need them to not throw.
-vi.mock("react-router", () => ({
-  useNavigate: () => () => {},
-  useSearchParams: () => [new URLSearchParams(), () => {}],
-}));
 
 import { StatusPie } from "./StatusPie";
 
@@ -21,6 +14,7 @@ describe("StatusPie SSR", () => {
             { status: "Rejected", label: "Rejected", count: 5 },
           ],
           selectedStatus: null,
+          onSelect: () => {},
         }),
       ),
     ).not.toThrow();
@@ -31,6 +25,7 @@ describe("StatusPie SSR", () => {
       createElement(StatusPie, {
         data: [{ status: "Accepted", label: "Accepted", count: 0 }],
         selectedStatus: null,
+        onSelect: () => {},
       }),
     );
     expect(html).toContain("No applications match the current filter.");

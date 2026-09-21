@@ -23,7 +23,9 @@ import { notify } from "~/lib/notify.server";
 import { isCore } from "~/lib/roles";
 import { resolveGroupMembers } from "~/lib/groups";
 import {
+  createProjectPage,
   createLabMeetingPage,
+  ensureMeetingNotesFolder,
   ensureCoreMeetingNotesFolder,
   ensureLabMeetingNotesFolder,
 } from "~/lib/pages";
@@ -39,6 +41,7 @@ import {
   createScheduledMeeting,
   isWithinCheckInWindow,
   meetingIsUpcoming,
+  setMeetingProject,
   trackExternalEventAsMeeting,
   updateScheduledMeeting,
 } from "~/lib/scheduled-meeting";
@@ -301,6 +304,8 @@ describe("createScheduledMeeting — where a note is filed", () => {
     meetingAttendance: { createMany: ReturnType<typeof vi.fn> };
   };
   const labPage = createLabMeetingPage as unknown as ReturnType<typeof vi.fn>;
+  const projectPage = createProjectPage as unknown as ReturnType<typeof vi.fn>;
+  const projectFolder = ensureMeetingNotesFolder as unknown as ReturnType<typeof vi.fn>;
   const coreFolder = ensureCoreMeetingNotesFolder as unknown as ReturnType<typeof vi.fn>;
   const labFolder = ensureLabMeetingNotesFolder as unknown as ReturnType<typeof vi.fn>;
 
@@ -318,6 +323,26 @@ describe("createScheduledMeeting — where a note is filed", () => {
   beforeEach(() => {
     mockPage.scheduledMeeting.create.mockResolvedValue({ id: "m1", ownerCalendarEmail: base.organizerEmail });
     mockPage.meetingAttendance.createMany.mockResolvedValue({});
+  });
+
+  it("files a Core meeting that is also about a project in the project's folder, not Core's", async () => {
+    // unified-core-project-meetings: a project team meeting can also be Core.
+    // buildMeetingArtifactPage checks projectId first, so the note belongs to
+    // the project team; the Core hub still surfaces the meeting via isCoreMeeting.
+    await createScheduledMeeting({
+      ...base,
+      isCoreMeeting: true,
+      meetingType: "Team",
+      meetingTypeLabel: null,
+      projectId: "proj-7",
+    });
+
+    expect(projectFolder).toHaveBeenCalledWith("proj-7", "Team", "org-1");
+    expect(projectPage).toHaveBeenCalledWith(
+      expect.objectContaining({ projectId: "proj-7", parentPageId: "folder-project" }),
+    );
+    expect(coreFolder).not.toHaveBeenCalled();
+    expect(labPage).not.toHaveBeenCalled();
   });
 
   it("files a Core meeting's note in Core's own folder, ignoring a chosen location", async () => {
@@ -379,6 +404,115 @@ describe("createScheduledMeeting — where a note is filed", () => {
       expect.objectContaining({ parentPageId: "folder-chosen" }),
     );
     expect(labFolder).not.toHaveBeenCalled();
+  });
+});
+
+describe("setMeetingProject", () => {
+  const p = prisma as unknown as {
+    scheduledMeeting: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
+    project: { findFirst: ReturnType<typeof vi.fn> };
+    page: { update: ReturnType<typeof vi.fn> };
+    meetingAttendance: { createMany: ReturnType<typeof vi.fn> };
+  };
+  const projectFolder = ensureMeetingNotesFolder as unknown as ReturnType<typeof vi.fn>;
+
+  const baseMeeting = {
+    id: "m1",
+    organizerId: "org-1",
+    participantUserIds: ["u2"],
+    status: "Confirmed",
+    selectedAt: new Date("2026-09-10T15:00:00.000Z"),
+    meetingType: null as string | null,
+    notePage: null as { id: string; kind: string } | null,
+    whiteboardPage: null as { id: string; kind: string } | null,
+  };
+
+  beforeEach(() => {
+    p.project.findFirst.mockResolvedValue({ id: "proj-7", name: "Cortex" });
+    p.scheduledMeeting.update.mockResolvedValue({});
+  });
+
+  it("re-files an existing note into the project folder and records the project", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue({
+      ...baseMeeting,
+      // Already had a type (a Core note), so no attendance backfill.
+      meetingType: "Other",
+      notePage: { id: "note-1", kind: "FreeForm" },
+    });
+
+    const res = await setMeetingProject({
+      meetingId: "m1",
+      actorId: "org-1",
+      projectId: "proj-7",
+      meetingType: "Team",
+      meetingTypeLabel: null,
+    });
+
+    expect(res.ok).toBe(true);
+    expect(projectFolder).toHaveBeenCalledWith("proj-7", "Team", "org-1");
+    expect(p.page.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "note-1" },
+        data: expect.objectContaining({
+          workspaceType: "Project",
+          workspaceId: "proj-7",
+          parentPageId: "folder-project",
+          linkAccess: "Restricted",
+        }),
+      }),
+    );
+    expect(p.scheduledMeeting.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ projectId: "proj-7", meetingType: "Team" }),
+      }),
+    );
+    // Already had a type → no roster backfill.
+    expect(p.meetingAttendance.createMany).not.toHaveBeenCalled();
+  });
+
+  it("records the project and fans out attendance for a note-less, type-less meeting", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue({ ...baseMeeting });
+
+    const res = await setMeetingProject({
+      meetingId: "m1",
+      actorId: "org-1",
+      projectId: "proj-7",
+      meetingType: "Team",
+    });
+
+    expect(res.ok).toBe(true);
+    expect(p.page.update).not.toHaveBeenCalled(); // nothing to move
+    expect(p.meetingAttendance.createMany).toHaveBeenCalled(); // roster created now
+  });
+
+  it("rejects a non-organizer who isn't Core", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue({ ...baseMeeting });
+
+    const res = await setMeetingProject({
+      meetingId: "m1",
+      actorId: "stranger",
+      projectId: "proj-7",
+      meetingType: "Team",
+    });
+
+    expect(res).toMatchObject({ ok: false, status: 403 });
+    expect(p.scheduledMeeting.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects when the actor can't file under the project", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue({ ...baseMeeting });
+    // Organizer passes the meeting gate, but the membership query finds nothing.
+    p.project.findFirst.mockResolvedValue(null);
+
+    const res = await setMeetingProject({
+      meetingId: "m1",
+      actorId: "org-1",
+      projectId: "proj-7",
+      meetingType: "Team",
+    });
+
+    expect(res).toMatchObject({ ok: false, status: 403 });
+    expect(p.scheduledMeeting.update).not.toHaveBeenCalled();
   });
 });
 

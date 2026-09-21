@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { hasCycleAccess } from "~/lib/roles";
 import { generateCandidateSlots, isInterviewerFree } from "~/hiring/lib/scheduling";
+import { interviewerCalendars } from "~/hiring/lib/interview-availability.server";
 import { APPLICATION_TZ } from "~/lib/timezone";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -29,7 +30,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     include: {
       user: { select: { id: true, firstName: true, lastName: true } },
       domain: { select: { name: true } },
-      availabilityBlocks: { select: { startTime: true, endTime: true } },
       interviewAssignments: {
         where: { status: "Active", interview: { status: "Scheduled" } },
         include: { interview: { select: { startTime: true, endTime: true } } },
@@ -48,11 +48,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     memberIntervals.set(r.userId, (memberIntervals.get(r.userId) ?? []).concat(intervals));
   }
 
+  // Availability is each member's DALI OS calendar, same as the scheduler.
+  const calendars = await interviewerCalendars(interviewers.map((r) => r.userId), config);
   const checks = interviewers.map((r) => ({
     cycleInterviewerId: r.id,
     userId: r.userId,
     domainId: r.domainId,
-    availability: r.availabilityBlocks,
+    availability: calendars.get(r.userId)?.available ?? [],
     bookedIntervals: memberIntervals.get(r.userId) ?? [],
   }));
 

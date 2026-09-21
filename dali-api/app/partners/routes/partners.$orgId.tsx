@@ -33,6 +33,11 @@ import {
   revokePartnerInvite,
 } from "../lib/invites.server";
 import {
+  classifyPartnerEmail,
+  issuePartnerMagicLink,
+  normalizeEmail,
+} from "../lib/magic-link.server";
+import {
   PARTNER_APPLICATION_STATUS_LABELS,
   PARTNER_APPLICATION_STATUS_PILL,
 } from "../lib/partner-application";
@@ -86,6 +91,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
               id: true,
               name: true,
               email: true,
+              // Portal status for individual partners: set once they sign in.
+              userId: true,
             },
           },
         },
@@ -152,10 +159,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     linkableProjects,
     otherOrgs,
     // Cleanup affordance for duplicate-org husks: deletable only when truly
-    // empty (the action re-validates with authoritative counts).
+    // empty (the action re-validates with authoritative counts). An individual
+    // always carries its own self-membership, so that one doesn't block —
+    // deleting the org cascades it away.
     canDeleteOrg:
       canEdit &&
-      org.memberships.length === 0 &&
+      (org.isIndividual || org.memberships.length === 0) &&
       org.projects.length === 0 &&
       org.applications.length === 0 &&
       pendingInvites.length === 0,
@@ -172,7 +181,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
   const org = await prisma.partnerOrg.findUnique({
     where: { id: params.orgId },
-    select: { id: true, primaryContactId: true },
+    select: { id: true, primaryContactId: true, isIndividual: true },
   });
   if (!org) throw new Response("Not found", { status: 404 });
 
@@ -183,6 +192,86 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (intent === "org-details") {
     const name = (form.get("name") as string | null)?.trim() ?? "";
     if (!name) return { error: "A name is required." };
+    const isIndividual = form.get("isIndividual") === "on";
+
+    if (isIndividual) {
+      // An individual's name + email live on their sole contact. The org keeps
+      // no website/logo, and its primary contact stays that person. Legacy
+      // individuals created before this fix have no membership yet, so we set
+      // one up here (the lazy heal).
+      const email = normalizeEmail((form.get("email") as string | null) ?? "");
+      if (!email.includes("@")) {
+        return { error: "An email is required for an individual partner." };
+      }
+      const identity = await classifyPartnerEmail(email);
+      if (identity.kind === "member-conflict") {
+        return {
+          error:
+            "That address belongs to a DALI member or Dartmouth account. Partners use a separate work email.",
+        };
+      }
+      const membership = await prisma.partnerMembership.findFirst({
+        where: { orgId: org.id, endedAt: null },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, contactId: true },
+      });
+      try {
+        await prisma.$transaction(async (tx) => {
+          if (membership) {
+            await tx.partnerContact.update({
+              where: { id: membership.contactId },
+              data: { name, email },
+            });
+            await tx.partnerOrg.update({
+              where: { id: org.id },
+              data: {
+                name,
+                isIndividual: true,
+                website: null,
+                logoUrl: null,
+                primaryContactId: org.primaryContactId ?? membership.id,
+              },
+            });
+          } else {
+            const contact = await tx.partnerContact.upsert({
+              where: { email },
+              create: { email, name },
+              update: { name },
+              select: { id: true },
+            });
+            const created = await tx.partnerMembership.create({
+              data: { contactId: contact.id, orgId: org.id },
+              select: { id: true },
+            });
+            await tx.partnerOrg.update({
+              where: { id: org.id },
+              data: {
+                name,
+                isIndividual: true,
+                website: null,
+                logoUrl: null,
+                primaryContactId: created.id,
+              },
+            });
+          }
+        });
+      } catch (e) {
+        // PartnerContact.email is unique — collision means another contact
+        // already owns this address.
+        if ((e as { code?: string })?.code === "P2002") {
+          return { error: "Another partner already uses that email address." };
+        }
+        throw e;
+      }
+      await logAuditEvent({
+        action: "partner.org.update",
+        userId: auth.user.sub,
+        targetId: org.id,
+        request,
+      });
+      return { ok: true };
+    }
+
     const primaryContactId =
       (form.get("primaryContactId") as string | null) || null;
     if (primaryContactId) {
@@ -198,7 +287,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         name,
         website: (form.get("website") as string | null)?.trim() || null,
         logoUrl: (form.get("logoUrl") as string | null)?.trim() || null,
-        isIndividual: form.get("isIndividual") === "on",
+        isIndividual: false,
         primaryContactId,
       },
     });
@@ -208,6 +297,26 @@ export async function action({ request, params }: Route.ActionArgs) {
       targetId: org.id,
       request,
     });
+    return { ok: true };
+  }
+
+  if (intent === "send-signin-link") {
+    // Individual partners already have their contact + membership; portal
+    // access is a self-service magic link, not the teammate-invite flow
+    // (that path would create a second membership and hit the unique index).
+    const membership = await prisma.partnerMembership.findFirst({
+      where: { orgId: org.id, endedAt: null },
+      orderBy: { createdAt: "asc" },
+      select: { contact: { select: { email: true } } },
+    });
+    const email = membership?.contact.email;
+    if (!email) return { error: "This partner has no contact email yet." };
+    const result = await issuePartnerMagicLink(email, request);
+    if ("rateLimited" in result) {
+      return {
+        error: "Too many sign-in links were just sent. Try again in a few minutes.",
+      };
+    }
     return { ok: true };
   }
 
@@ -294,7 +403,14 @@ export async function action({ request, params }: Route.ActionArgs) {
           },
         }),
       ]);
-    if (memberCount || projectCount || applicationCount || pendingInviteCount) {
+    // An individual's own self-membership doesn't block — deleting the org
+    // cascades it. Projects, applications, and pending invites still do.
+    if (
+      (!org.isIndividual && memberCount) ||
+      projectCount ||
+      applicationCount ||
+      pendingInviteCount
+    ) {
       return {
         error:
           "Only an empty organization can be deleted — this one still has members, projects, applications, or a pending invite.",
@@ -414,6 +530,121 @@ function memberName(c: { name: string; email: string | null }) {
   return c.name || c.email || "Unnamed";
 }
 
+const detailInputClass =
+  "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm";
+
+// The Details body. Individuals show Name + Email (both stored on the sole
+// contact) and hide the org-only Website/Logo/Primary-contact fields. The
+// Individual checkbox is controlled so toggling it swaps the fields live;
+// EditableSection remounts this on Cancel, resetting the state.
+function DetailsFields({
+  org,
+  editing,
+}: {
+  org: {
+    name: string;
+    website: string | null;
+    logoUrl: string | null;
+    isIndividual: boolean;
+    primaryContactId: string | null;
+    memberships: { id: string; contact: { name: string; email: string | null } }[];
+  };
+  editing: boolean;
+}) {
+  const [individual, setIndividual] = useState(org.isIndividual);
+  const soleContact = org.memberships[0]?.contact ?? null;
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <input type="hidden" name="intent" value="org-details" />
+      <div>
+        <div className="text-xs font-medium text-muted-foreground mb-1">Name</div>
+        {editing ? (
+          <input name="name" defaultValue={org.name} required className={detailInputClass} />
+        ) : (
+          <div className="text-sm text-foreground">{org.name}</div>
+        )}
+      </div>
+
+      {individual ? (
+        <div>
+          <div className="text-xs font-medium text-muted-foreground mb-1">Email</div>
+          {editing ? (
+            <input
+              name="email"
+              type="email"
+              required
+              defaultValue={soleContact?.email ?? ""}
+              className={detailInputClass}
+            />
+          ) : (
+            <div className="text-sm text-foreground">{soleContact?.email ?? "—"}</div>
+          )}
+        </div>
+      ) : (
+        <>
+          <div>
+            <div className="text-xs font-medium text-muted-foreground mb-1">Website</div>
+            {editing ? (
+              <input name="website" defaultValue={org.website ?? ""} className={detailInputClass} />
+            ) : (
+              <div className="text-sm text-foreground">{org.website ?? "—"}</div>
+            )}
+          </div>
+          <div>
+            <div className="text-xs font-medium text-muted-foreground mb-1">Logo URL</div>
+            {editing ? (
+              <input name="logoUrl" defaultValue={org.logoUrl ?? ""} className={detailInputClass} />
+            ) : (
+              <div className="text-sm text-foreground truncate">{org.logoUrl ?? "—"}</div>
+            )}
+          </div>
+          <div>
+            <div className="text-xs font-medium text-muted-foreground mb-1">Primary contact</div>
+            {editing ? (
+              <Select
+                name="primaryContactId"
+                defaultValue={org.primaryContactId ?? ""}
+                options={[
+                  { value: "", label: "None" },
+                  ...org.memberships.map((m) => ({ value: m.id, label: memberName(m.contact) })),
+                ]}
+                buttonClassName={`${detailInputClass} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
+              />
+            ) : (
+              <div className="text-sm text-foreground">
+                {memberName(
+                  org.memberships.find((m) => m.id === org.primaryContactId)?.contact ?? {
+                    name: "—",
+                    email: null,
+                  },
+                )}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {editing ? (
+        <Checkbox
+          name="isIndividual"
+          checked={individual}
+          onChange={(e) => setIndividual(e.target.checked)}
+          label="Individual (not an organization)"
+          className="text-sm text-foreground"
+        />
+      ) : (
+        <Checkbox
+          checked={org.isIndividual}
+          disabled
+          label="Individual (not an organization)"
+          className="text-sm text-foreground"
+        />
+      )}
+    </div>
+  );
+}
+
 export default function PartnerOrgDetail() {
   const { org, pendingInvites, linkableProjects, otherOrgs, canDeleteOrg, canEdit, canViewApplications } =
     useLoaderData<typeof loader>();
@@ -432,6 +663,9 @@ export default function PartnerOrgDetail() {
 
   const inputClass =
     "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm";
+
+  // An individual partner is a single person — their sole membership's contact.
+  const soleContact = org.isIndividual ? org.memberships[0]?.contact ?? null : null;
 
   return (
     <div className="flex flex-col gap-6 max-w-4xl">
@@ -486,73 +720,7 @@ export default function PartnerOrgDetail() {
             if (detailsFormRef.current) submit(detailsFormRef.current);
           }}
         >
-          {({ editing, resetKey }) => (
-            <div key={resetKey} className="grid gap-3 sm:grid-cols-2">
-              <input type="hidden" name="intent" value="org-details" />
-              <div>
-                <div className="text-xs font-medium text-muted-foreground mb-1">Name</div>
-                {editing ? (
-                  <input name="name" defaultValue={org.name} required className={inputClass} />
-                ) : (
-                  <div className="text-sm text-foreground">{org.name}</div>
-                )}
-              </div>
-              <div>
-                <div className="text-xs font-medium text-muted-foreground mb-1">Website</div>
-                {editing ? (
-                  <input name="website" defaultValue={org.website ?? ""} className={inputClass} />
-                ) : (
-                  <div className="text-sm text-foreground">{org.website ?? "—"}</div>
-                )}
-              </div>
-              <div>
-                <div className="text-xs font-medium text-muted-foreground mb-1">Logo URL</div>
-                {editing ? (
-                  <input name="logoUrl" defaultValue={org.logoUrl ?? ""} className={inputClass} />
-                ) : (
-                  <div className="text-sm text-foreground truncate">{org.logoUrl ?? "—"}</div>
-                )}
-              </div>
-              <div>
-                <div className="text-xs font-medium text-muted-foreground mb-1">Primary contact</div>
-                {editing ? (
-                  <Select
-                    name="primaryContactId"
-                    defaultValue={org.primaryContactId ?? ""}
-                    options={[
-                      { value: "", label: "None" },
-                      ...org.memberships.map((m) => ({ value: m.id, label: memberName(m.contact) })),
-                    ]}
-                    buttonClassName={`${inputClass} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
-                  />
-                ) : (
-                  <div className="text-sm text-foreground">
-                    {memberName(
-                      org.memberships.find((m) => m.id === org.primaryContactId)?.contact ?? {
-                        name: "—",
-                        email: null,
-                      },
-                    )}
-                  </div>
-                )}
-              </div>
-              {editing ? (
-                <Checkbox
-                  name="isIndividual"
-                  defaultChecked={org.isIndividual}
-                  label="Individual (not an organization)"
-                  className="text-sm text-foreground"
-                />
-              ) : (
-                <Checkbox
-                  checked={org.isIndividual}
-                  disabled
-                  label="Individual (not an organization)"
-                  className="text-sm text-foreground"
-                />
-              )}
-            </div>
-          )}
+          {({ editing }) => <DetailsFields org={org} editing={editing} />}
         </EditableSection>
       </Form>
 
@@ -560,9 +728,9 @@ export default function PartnerOrgDetail() {
       <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <h2 className="font-heading font-semibold text-foreground flex items-center gap-2">
-            <Users className="w-4 h-4" /> Members
+            <Users className="w-4 h-4" /> {org.isIndividual ? "Contact" : "Members"}
           </h2>
-          {canEdit && (
+          {!org.isIndividual && canEdit && (
             <button
               type="button"
               onClick={() => setInviting((v) => !v)}
@@ -573,6 +741,53 @@ export default function PartnerOrgDetail() {
           )}
         </div>
 
+        {org.isIndividual ? (
+          soleContact ? (
+            <div className="flex items-center gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium text-foreground">
+                  {memberName(soleContact)}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {soleContact.email ?? "no email"}
+                </div>
+              </div>
+              <span
+                className={`text-xs rounded-full px-2 py-0.5 ${
+                  soleContact.userId
+                    ? "bg-accent-teal/15 text-accent-teal"
+                    : "bg-muted text-muted-foreground"
+                }`}
+              >
+                {soleContact.userId ? "Active" : "Hasn't signed in"}
+              </span>
+              {canEdit && (
+                <Form
+                  method="post"
+                  onSubmit={confirmSubmit({
+                    title: `Send a sign-in link to ${soleContact.email}?`,
+                    description:
+                      "This emails them a one-time link to sign in to the partner portal.",
+                    confirmLabel: "Send link",
+                  })}
+                >
+                  <input type="hidden" name="intent" value="send-signin-link" />
+                  <button
+                    type="submit"
+                    className="text-xs text-dark-blue hover:underline whitespace-nowrap"
+                  >
+                    {soleContact.userId ? "Resend sign-in link" : "Send sign-in link"}
+                  </button>
+                </Form>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Add this person's email in Details to set up their portal access.
+            </p>
+          )
+        ) : (
+          <>
         {inviting && canEdit && (
           <Form
             method="post"
@@ -735,6 +950,8 @@ export default function PartnerOrgDetail() {
               </li>
             ))}
           </ul>
+        )}
+          </>
         )}
       </section>
 

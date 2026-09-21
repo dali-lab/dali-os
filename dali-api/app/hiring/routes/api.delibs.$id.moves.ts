@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireCoreOrDomainLead, forbidden } from "~/lib/auth";
 import { hasCycleAccess } from "~/lib/roles";
-import { INITIAL_COLUMNS, FINAL_COLUMNS } from "~/hiring/lib/delibs";
+import { findRound, parseTimeline } from "~/hiring/lib/cycle-timeline";
 import { idSchema, parseJson } from "~/lib/validate";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
 
@@ -56,6 +56,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       async (tx) => {
         const session = await tx.delibsSession.findUnique({
           where: { id: params.id },
+          include: { applicationCycle: { select: { timeline: true } } },
         });
         if (!session) {
           throw new Error("__NOT_FOUND__");
@@ -65,7 +66,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         }
 
         const validColumns: readonly string[] =
-          session.type === "Initial" ? INITIAL_COLUMNS : FINAL_COLUMNS;
+          findRound(parseTimeline(session.applicationCycle.timeline), session.roundId)?.columns ?? [];
         if (!validColumns.includes(toColumn)) {
           throw new Error("__INVALID_COLUMN__");
         }

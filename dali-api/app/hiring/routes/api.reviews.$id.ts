@@ -20,7 +20,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       domainApplication: {
         select: {
           domainId: true,
-          application: { select: { applicationCycleId: true } },
+          application: { select: { applicationCycleId: true, applicationCycle: { select: { hasChallenges: true } } } },
         },
       },
     },
@@ -62,7 +62,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (parsed.scores !== undefined && !review.rubricVersionId && da) {
       const domainId = da.domainId ?? null;
       const applicationCycleId = da.application?.applicationCycleId ?? null;
-      if (domainId && applicationCycleId) {
+      if (domainId && applicationCycleId && da.application?.applicationCycle.hasChallenges) {
         const dac = await prisma.domainApplicationCycle.findUnique({
           where: {
             domainId_applicationCycleId: { domainId, applicationCycleId },

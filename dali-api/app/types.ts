@@ -35,7 +35,6 @@ export type DecisionStage =
   | 'Final'
   | 'Released'
 
-export type DelibsType = 'Initial' | 'Final'
 export type DelibsStatus = 'Active' | 'Closed'
 
 export type OverallRecommendation =
@@ -227,7 +226,8 @@ export interface DelibsSession {
   id: string
   domainId: string
   applicationCycleId: string
-  type: DelibsType
+  /** A delib round id in the cycle's timeline. */
+  roundId: string
   status: DelibsStatus
   columnOrder: Record<string, string[]>
   openedById: string

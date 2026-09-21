@@ -4,18 +4,17 @@
 //
 // Rules, in order:
 //   1. Honor ?cycle=<id> when it matches one of the candidates.
-//   2. Prefer a Standard cycle in Open/UnderReview — keeps the existing
-//      single-cycle UX unchanged when a Standard cycle is the "main" one.
-//   3. Any cycle in Open/UnderReview (Fellowship falls here).
+//   2. Prefer a Students cycle in Open/UnderReview (the "main" hire).
+//   3. Any cycle in Open/UnderReview.
 //   4. Any Draft cycle.
 //   5. Otherwise null (caller falls back to a "no active cycle" card).
 //
 // Completed cycles are legitimate candidates — a domain lead can open a past
-// cycle to read its reviews, interviews and decisions — but only ever via rule
-// 1. Rules 2-4 match none of them on purpose: landing on last year's cycle
-// because this year's hasn't opened yet would be worse than the empty card.
+// cycle to read its reviews, interviews and decisions back — but only ever via
+// rule 1. Rules 2-4 match none of them on purpose: landing on last year's cycle
+// because this year's hasn't opened yet would be worse than the empty state.
 export function selectActiveCycleForDomainLead<
-  C extends { id: string; cycleType: string; statusUpdates: Array<{ newStatus: string }> },
+  C extends { id: string; applicants: string; statusUpdates: Array<{ newStatus: string }> },
 >(candidates: C[], requestedId: string | null): C | null {
   if (requestedId) {
     const found = candidates.find((c) => c.id === requestedId);
@@ -27,7 +26,7 @@ export function selectActiveCycleForDomainLead<
   };
   const isDraft = (c: C) => c.statusUpdates[0]?.newStatus === "Draft";
   return (
-    candidates.find((c) => c.cycleType === "Standard" && isActive(c)) ??
+    candidates.find((c) => c.applicants === "Students" && isActive(c)) ??
     candidates.find(isActive) ??
     candidates.find(isDraft) ??
     null

@@ -1,6 +1,6 @@
 import { prisma } from "~/lib/db";
 import { isCore, isDomainLead, isProjectMember, isLabMember } from "~/lib/roles";
-import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
+import { confidentialityCleared, getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { COLLAB_SOURCES } from "~/collab/sources";
@@ -72,7 +72,7 @@ export async function authorizeCollabDoc(
     if (!review) return deny;
     const cycleId = review.cycleReviewer.applicationCycleId;
     const confState = await getCycleConfidentialityState(userSub, cycleId);
-    if (confState.status !== "signed") return deny;
+    if (!confidentialityCleared(confState)) return deny;
     if (review.cycleReviewer.userId === userSub) return allow;
     if (await isDomainLead(userSub)) return allow;
     if (await isCore(userSub)) return allow;
@@ -90,7 +90,7 @@ export async function authorizeCollabDoc(
     if (!da) return deny;
     const cycleId = da.application.applicationCycleId;
     const confState = await getCycleConfidentialityState(userSub, cycleId);
-    if (confState.status !== "signed") return deny;
+    if (!confidentialityCleared(confState)) return deny;
     if (await isDomainLead(userSub)) return allow;
     if (await isCore(userSub)) return allow;
     return deny;
@@ -106,7 +106,7 @@ export async function authorizeCollabDoc(
       userSub,
       interview.applicationCycleId,
     );
-    if (confState.status !== "signed") return deny;
+    if (!confidentialityCleared(confState)) return deny;
     const assignment = await prisma.interviewAssignment.findFirst({
       where: {
         interviewId: id,
@@ -161,6 +161,57 @@ export async function authorizeCollabDoc(
     // shared "workspace" doc), but only while the offering is live. Enrollment
     // is the gate, not auth type, so this covers members and Dartmouth-portal
     // students alike — and getPageAccess doesn't model it.
+    if (
+      page.workspaceType === "EducationOffering" &&
+      page.workspaceId &&
+      page.studentEditable
+    ) {
+      const offering = await prisma.educationOffering.findUnique({
+        where: { id: page.workspaceId },
+        select: { status: true, closedOutAt: true },
+      });
+      if (offering?.status === "Published" && offering.closedOutAt === null) {
+        const enrolled = await prisma.educationApplication.findFirst({
+          where: {
+            applicantUserId: userSub,
+            offeringId: page.workspaceId,
+            status: "Approved",
+          },
+          select: { id: true },
+        });
+        if (enrolled !== null) return { allowed: true, readOnly: false };
+      }
+    }
+    return deny;
+  }
+
+  // whiteboard:{pageId}:canvas — a Page (kind=Whiteboard) whose body is an
+  // Excalidraw scene. Same access model as doc:{pageId}:body: delegate to
+  // getPageAccess so viewer-only users connect read-only (live view) rather
+  // than being denied. Enrolled students co-edit a studentEditable offering
+  // whiteboard while the offering is live, mirroring the doc: branch.
+  if (entity === "whiteboard") {
+    const page = await prisma.page.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        archivedAt: true,
+        workspaceType: true,
+        workspaceId: true,
+        partnerVisible: true,
+        createdById: true,
+        studentEditable: true,
+        profileVisible: true,
+        labListing: true,
+        linkAccess: true,
+        linkPermission: true,
+      },
+    });
+    if (!page || page.archivedAt !== null) return deny;
+
+    const access = await getPageAccess(userSub, page);
+    if (access.canView) return { allowed: true, readOnly: !access.canEdit };
+
     if (
       page.workspaceType === "EducationOffering" &&
       page.workspaceId &&

@@ -16,12 +16,14 @@
 
 import { prisma } from "~/lib/db";
 import { isCore, isAdmin } from "~/lib/roles";
-import { logAuditEvent } from "~/lib/audit";
-import { parseChartString, type ChartStringType } from "~/lib/chart-string";
+import { type ChartStringType } from "~/lib/chart-string";
+import {
+  recordProjectChartString,
+  ChartStringValidationError,
+  PROJECT_FUNDING_TYPES,
+  type ProjectFundingType,
+} from "~/lib/chart-string.server";
 import { McpForbiddenError, McpNotFoundError, McpInvalidError } from "./errors";
-
-const CHART_STRING_KINDS = ["ADVANCE", "FUNDED", "DEPARTMENT"] as const;
-type ChartStringKind = (typeof CHART_STRING_KINDS)[number];
 
 async function requireCore(callerId: string): Promise<void> {
   const [core, admin] = await Promise.all([isCore(callerId), isAdmin(callerId)]);
@@ -77,7 +79,7 @@ export type ChartStringEntry = {
   rapportName: string | null;
   awardStart: string | null;
   awardEnd: string | null;
-  kind: ChartStringKind;
+  fundingType: ProjectFundingType | null;
   isCurrent: boolean;
   supersedesId: string | null;
   supersedeReason: string | null;
@@ -110,7 +112,7 @@ type Row = {
   rapportName: string | null;
   awardStart: Date | null;
   awardEnd: Date | null;
-  kind: ChartStringKind;
+  fundingType: ProjectFundingType | null;
   isCurrent: boolean;
   supersedesId: string | null;
   supersedeReason: string | null;
@@ -136,7 +138,7 @@ function toEntry(r: Row): ChartStringEntry {
     rapportName: r.rapportName,
     awardStart: r.awardStart?.toISOString() ?? null,
     awardEnd: r.awardEnd?.toISOString() ?? null,
-    kind: r.kind,
+    fundingType: r.fundingType,
     isCurrent: r.isCurrent,
     supersedesId: r.supersedesId,
     supersedeReason: r.supersedeReason,
@@ -180,7 +182,7 @@ export async function runListProjectChartStrings(
     rapportName: true,
     awardStart: true,
     awardEnd: true,
-    kind: true,
+    fundingType: true,
     isCurrent: true,
     supersedesId: true,
     supersedeReason: true,
@@ -277,11 +279,11 @@ export const SET_PROJECT_CHART_STRING_TOOL = {
         description:
           "The chart string as received. GL is entity.org.funding.activity.subactivity; PTAEO is project.task.award.expenditureType.org, where XXXXX in the expenditure type is expected and correct.",
       },
-      kind: {
+      fundingType: {
         type: "string",
-        enum: [...CHART_STRING_KINDS],
+        enum: [...PROJECT_FUNDING_TYPES],
         description:
-          "ADVANCE (advance account while the FP routes), FUNDED (the funded award), or DEPARTMENT (a departmental GL line). Default FUNDED.",
+          "How the work is paid for — the lab's four project types. DALI_GL (lab money on the GL), TRANSFER_GL (DALI fronts it and invoices, revenue transfers back), DALI_PTAEO (our own sponsored award), OTHER_PTAEO (someone else's award). Omit if not known.",
       },
       fpNumber: { type: "string", description: "RAPPORT FP, e.g. FP00014787." },
       awardId: { type: "string", description: "RAPPORT award, e.g. AWD00013615." },
@@ -324,7 +326,7 @@ export async function runSetProjectChartString(
     projectId: string;
     termCode: string;
     chartString: string;
-    kind?: ChartStringKind;
+    fundingType?: ProjectFundingType;
     fpNumber?: string;
     awardId?: string;
     rapportName?: string;
@@ -349,85 +351,40 @@ export async function runSetProjectChartString(
   if (!project) throw new McpNotFoundError(`Project ${input.projectId} not found.`);
   if (!term) throw new McpNotFoundError(`Term ${input.termCode} not found.`);
 
-  const parsed = parseChartString(input.chartString);
-  if (parsed.errors.length > 0 || !parsed.type || !parsed.projectCode) {
-    throw new McpInvalidError(
-      `Invalid chart string: ${parsed.errors.map((e) => e.message).join(" ")}`,
-    );
-  }
-
-  const awardStart = parseDate(input.awardStart, "awardStart");
-  const awardEnd = parseDate(input.awardEnd, "awardEnd");
-
-  // Deactivate-then-insert, in that order and in one transaction: the partial
-  // unique index permits exactly one current row per (project, term), so the
-  // old row has to stop being current before the new one exists. `supersedesId`
-  // then points backwards from the replacement, which means no row's own
-  // history is ever rewritten — only its current flag is cleared.
-  const created = await prisma.$transaction(async (tx) => {
-    const previous = await tx.projectChartString.findFirst({
-      where: { projectId: project.id, termId: term.id, isCurrent: true },
-      select: { id: true },
+  try {
+    // One shared write path with the project detail form: same validation,
+    // same supersession, same mirror into the legacy columns, same audit.
+    const result = await recordProjectChartString({
+      projectId: project.id,
+      termId: term.id,
+      chartString: input.chartString,
+      fundingType: input.fundingType,
+      fpNumber: input.fpNumber,
+      awardId: input.awardId,
+      rapportName: input.rapportName,
+      awardStart: parseDate(input.awardStart, "awardStart"),
+      awardEnd: parseDate(input.awardEnd, "awardEnd"),
+      supersedeReason: input.supersedeReason,
+      note: input.note,
+      createdById: callerId,
     });
 
-    if (previous) {
-      await tx.projectChartString.update({
-        where: { id: previous.id },
-        data: { isCurrent: false },
-      });
-    }
-
-    return tx.projectChartString.create({
-      data: {
-        projectId: project.id,
-        termId: term.id,
-        raw: input.chartString,
-        normalized: parsed.normalized,
-        type: parsed.type as ChartStringType,
-        projectCode: parsed.projectCode as string,
-        subactivity: parsed.subactivity,
-        org: parsed.org,
-        awardCode: parsed.awardCode,
-        fpNumber: input.fpNumber?.trim() || null,
-        awardId: input.awardId?.trim() || null,
-        rapportName: input.rapportName?.trim() || null,
-        awardStart,
-        awardEnd,
-        kind: input.kind ?? "FUNDED",
-        isCurrent: true,
-        supersedesId: previous?.id ?? null,
-        supersedeReason: previous ? input.supersedeReason?.trim() || null : null,
-        note: input.note?.trim() || null,
-        createdById: callerId,
-      },
-      select: { id: true, supersedesId: true },
-    });
-  });
-
-  await logAuditEvent({
-    action: "project.chart-string.set",
-    userId: callerId,
-    targetId: project.id,
-    metadata: {
+    return {
+      ok: true,
+      id: result.id,
       termCode: term.code,
-      chartString: parsed.normalized,
-      type: parsed.type,
-      kind: input.kind ?? "FUNDED",
-      supersededId: created.supersedesId,
-      warnings: parsed.warnings.map((w) => w.code),
-    },
-  });
-
-  return {
-    ok: true,
-    id: created.id,
-    termCode: term.code,
-    normalized: parsed.normalized,
-    type: parsed.type as ChartStringType,
-    projectCode: parsed.projectCode as string,
-    supersededId: created.supersedesId,
-    warnings: parsed.warnings,
-  };
+      normalized: result.normalized,
+      type: result.type,
+      projectCode: result.projectCode,
+      supersededId: result.supersededId,
+      warnings: result.warnings,
+    };
+  } catch (err) {
+    if (err instanceof ChartStringValidationError) {
+      throw new McpInvalidError(`Invalid chart string: ${err.message}`);
+    }
+    throw err;
+  }
 }
 
 function parseDate(value: string | undefined, field: string): Date | null {

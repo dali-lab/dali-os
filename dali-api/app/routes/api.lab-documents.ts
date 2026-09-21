@@ -19,7 +19,7 @@ import { isUnderGoverningScope } from "~/lib/pageAccess.server";
 
 const BodySchema = z.object({
   title: z.string().trim().min(1).max(200),
-  kind: z.enum(["FreeForm", "Folder"]).optional().default("FreeForm"),
+  kind: z.enum(["FreeForm", "Folder", "Whiteboard"]).optional().default("FreeForm"),
   parentPageId: z.string().min(1).optional(),
 });
 
