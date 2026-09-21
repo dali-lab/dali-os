@@ -2096,6 +2096,69 @@ export default function ProjectDetail() {
 // component only ever renders with the data branch, so narrow it out here.
 type LoaderData = Exclude<Awaited<ReturnType<typeof loader>>, Response>;
 
+// Above this many terms the row collapses its middle so a long-running project
+// doesn't push a wall of chips across the hero. Terms are chronological, so we
+// keep the first and last few (the span endpoints) and hide the run between
+// behind a "+N" that expands in place.
+const TERMS_COLLAPSE_THRESHOLD = 8;
+const TERMS_HEAD = 3;
+const TERMS_TAIL = 3;
+
+function TermChip({ code }: { code: string }) {
+  return (
+    <span className="rounded-full bg-os-container px-3 py-[5px] text-[13px] font-semibold text-foreground">
+      {code}
+    </span>
+  );
+}
+
+function TermsChips({ terms }: { terms: { code: string }[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const collapsible = terms.length > TERMS_COLLAPSE_THRESHOLD;
+
+  if (!collapsible || expanded) {
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        {terms.map((t) => (
+          <TermChip key={t.code} code={t.code} />
+        ))}
+        {collapsible && (
+          <button
+            type="button"
+            onClick={() => setExpanded(false)}
+            className="rounded-full px-2.5 py-[5px] text-[13px] font-medium text-os-grey transition-colors hover:text-foreground"
+          >
+            Show less
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  const head = terms.slice(0, TERMS_HEAD);
+  const tail = terms.slice(terms.length - TERMS_TAIL);
+  const hidden = terms.length - TERMS_HEAD - TERMS_TAIL;
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {head.map((t) => (
+        <TermChip key={t.code} code={t.code} />
+      ))}
+      <button
+        type="button"
+        onClick={() => setExpanded(true)}
+        aria-label={`Show ${hidden} more terms`}
+        className="rounded-full bg-os-container/60 px-3 py-[5px] text-[13px] font-semibold text-os-grey transition-colors hover:bg-os-container hover:text-foreground"
+      >
+        +{hidden}
+      </button>
+      {tail.map((t) => (
+        <TermChip key={t.code} code={t.code} />
+      ))}
+    </div>
+  );
+}
+
 function ProjectHeader({
   project,
   partnerNames,
@@ -2178,16 +2241,7 @@ function ProjectHeader({
         {project.terms.length === 0 ? (
           <span className="text-[13px] text-os-muted">No terms yet</span>
         ) : (
-          <div className="flex flex-wrap items-center gap-2">
-            {project.terms.map((t) => (
-              <span
-                key={t.code}
-                className="rounded-full bg-os-container px-3 py-[5px] text-[13px] font-semibold text-foreground"
-              >
-                {t.code}
-              </span>
-            ))}
-          </div>
+          <TermsChips terms={project.terms} />
         )}
         <span className="text-xs text-os-grey">{termCountLabel}</span>
       </HeroClusterLabel>

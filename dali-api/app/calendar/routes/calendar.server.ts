@@ -61,6 +61,7 @@ import {
   attachMeetingNote,
   attachMeetingWhiteboard,
   cancelScheduledMeeting,
+  setMeetingProject,
   trackExternalEventAsMeeting,
   updateScheduledMeeting,
   type ScheduledMeetingScope,
@@ -1078,6 +1079,14 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
       return { intent, meetingId: get("meetingId"), onTimesheet: asBool(get("onTimesheet")) };
     case "set-meeting-core":
       return { intent, meetingId: get("meetingId"), isCoreMeeting: asBool(get("isCoreMeeting")) };
+    case "set-meeting-project":
+      return {
+        intent,
+        meetingId: get("meetingId"),
+        projectId: get("projectId") || undefined,
+        meetingType: get("meetingType") || undefined,
+        meetingTypeLabel: get("meetingTypeLabel") || undefined,
+      };
     case "add-meeting-note":
     case "add-meeting-whiteboard": {
       // noteLocation is a nested object, so it rides across as a JSON string
@@ -2002,6 +2011,26 @@ export async function submitCalendarAction(request: Request) {
         data: { isCoreMeeting: input.isCoreMeeting },
       });
       return null;
+    }
+
+    case "set-meeting-project": {
+      // Behind the unify flag — 404 (not 403) so a disabled feature isn't leaked.
+      // setMeetingProject re-checks organizer/Core + project membership.
+      const roles = await getUserRoles(userId, request);
+      if (!(await isFeatureEnabled("unified-core-project-meetings", userId, roles, request))) {
+        return Response.json({ error: "Not found" }, { status: 404 });
+      }
+      const result = await setMeetingProject({
+        meetingId: input.meetingId,
+        actorId: userId,
+        projectId: input.projectId,
+        meetingType: input.meetingType,
+        meetingTypeLabel: input.meetingTypeLabel ?? null,
+      });
+      if (!result.ok) {
+        return Response.json({ error: result.error }, { status: result.status });
+      }
+      return Response.json({ ok: true });
     }
 
     case "add-meeting-note": {
