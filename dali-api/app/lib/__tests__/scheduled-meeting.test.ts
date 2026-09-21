@@ -23,7 +23,9 @@ import { notify } from "~/lib/notify.server";
 import { isCore } from "~/lib/roles";
 import { resolveGroupMembers } from "~/lib/groups";
 import {
+  createProjectPage,
   createLabMeetingPage,
+  ensureMeetingNotesFolder,
   ensureCoreMeetingNotesFolder,
   ensureLabMeetingNotesFolder,
 } from "~/lib/pages";
@@ -301,6 +303,8 @@ describe("createScheduledMeeting — where a note is filed", () => {
     meetingAttendance: { createMany: ReturnType<typeof vi.fn> };
   };
   const labPage = createLabMeetingPage as unknown as ReturnType<typeof vi.fn>;
+  const projectPage = createProjectPage as unknown as ReturnType<typeof vi.fn>;
+  const projectFolder = ensureMeetingNotesFolder as unknown as ReturnType<typeof vi.fn>;
   const coreFolder = ensureCoreMeetingNotesFolder as unknown as ReturnType<typeof vi.fn>;
   const labFolder = ensureLabMeetingNotesFolder as unknown as ReturnType<typeof vi.fn>;
 
@@ -318,6 +322,26 @@ describe("createScheduledMeeting — where a note is filed", () => {
   beforeEach(() => {
     mockPage.scheduledMeeting.create.mockResolvedValue({ id: "m1", ownerCalendarEmail: base.organizerEmail });
     mockPage.meetingAttendance.createMany.mockResolvedValue({});
+  });
+
+  it("files a Core meeting that is also about a project in the project's folder, not Core's", async () => {
+    // unified-core-project-meetings: a project team meeting can also be Core.
+    // buildMeetingArtifactPage checks projectId first, so the note belongs to
+    // the project team; the Core hub still surfaces the meeting via isCoreMeeting.
+    await createScheduledMeeting({
+      ...base,
+      isCoreMeeting: true,
+      meetingType: "Team",
+      meetingTypeLabel: null,
+      projectId: "proj-7",
+    });
+
+    expect(projectFolder).toHaveBeenCalledWith("proj-7", "Team", "org-1");
+    expect(projectPage).toHaveBeenCalledWith(
+      expect.objectContaining({ projectId: "proj-7", parentPageId: "folder-project" }),
+    );
+    expect(coreFolder).not.toHaveBeenCalled();
+    expect(labPage).not.toHaveBeenCalled();
   });
 
   it("files a Core meeting's note in Core's own folder, ignoring a chosen location", async () => {
