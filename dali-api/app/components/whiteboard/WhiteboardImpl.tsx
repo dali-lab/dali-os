@@ -9,12 +9,13 @@ import {
   CaptureUpdateAction,
 } from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import { Trash2 } from "lucide-react";
+import { Trash2, Maximize2, Minimize2, Workflow } from "lucide-react";
 import { useDialog } from "~/components/ui/dialog";
 import { acquireCollabDoc, releaseCollabDoc, nameToHexColor } from "~/components/doc/collab-doc";
 import { whiteboardRoomName } from "~/collab/roomName";
 import { bindExcalidrawToYjs, type WhiteboardBinding } from "./whiteboard-yjs";
 import { uploadWhiteboardImage } from "./upload";
+import { MermaidDialog, type DiagramInsert } from "./MermaidDialog";
 import type { WhiteboardEditorProps } from "./WhiteboardEditor";
 
 export default function WhiteboardImpl(props: WhiteboardEditorProps) {
@@ -23,6 +24,8 @@ export default function WhiteboardImpl(props: WhiteboardEditorProps) {
   const dialog = useDialog();
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const bindingRef = useRef<WhiteboardBinding | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [diagramOpen, setDiagramOpen] = useState(false);
   const roomName = useMemo(() => whiteboardRoomName(pageId), [pageId]);
   const theme = useMemo<"light" | "dark">(
     () =>
@@ -63,6 +66,26 @@ export default function WhiteboardImpl(props: WhiteboardEditorProps) {
     api.updateScene({ elements: [], captureUpdate: CaptureUpdateAction.IMMEDIATELY });
   }
 
+  // Insert a Mermaid diagram as native elements, normalized to the board's clean
+  // style (no hand-drawn font / sketchy fill); the binding propagates them to peers.
+  function handleInsertDiagram(payload: DiagramInsert) {
+    if (!api) return;
+    for (const el of payload.elements) {
+      (el as { roughness: number }).roughness = 0;
+      (el as { fillStyle: string }).fillStyle = "solid";
+      if (el.type === "text") (el as { fontFamily: number }).fontFamily = FONT_FAMILY.Nunito;
+    }
+    if (payload.files) {
+      const files = Object.values(payload.files);
+      if (files.length) api.addFiles(files);
+    }
+    api.updateScene({
+      elements: [...api.getSceneElementsIncludingDeleted(), ...payload.elements],
+      captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+    });
+    api.scrollToContent(payload.elements, { fitToContent: true, animate: true });
+  }
+
   // Acquire the shared Y.Doc + provider and wire the binding once the Excalidraw
   // imperative API is ready. The doc cache is refcounted with a dispose debounce,
   // so React StrictMode's double-invoke reuses the same instance.
@@ -86,13 +109,30 @@ export default function WhiteboardImpl(props: WhiteboardEditorProps) {
   }, [api, roomName, collabToken, canEdit, userName, photoUrl]);
 
   return (
-    <div className="dali-whiteboard relative min-h-0 flex-1 bg-page">
+    <div
+      className={
+        isFullscreen
+          ? "dali-whiteboard fixed inset-0 z-40 bg-page"
+          : "dali-whiteboard relative min-h-0 flex-1 bg-page"
+      }
+    >
       <Excalidraw
         excalidrawAPI={(a) => setApi(a)}
         initialData={initialData}
         viewModeEnabled={!canEdit}
         theme={theme}
         isCollaborating
+        renderTopRightUI={() => (
+          <button
+            type="button"
+            onClick={() => setIsFullscreen((v) => !v)}
+            title={isFullscreen ? "Exit full screen" : "Full screen"}
+            aria-label={isFullscreen ? "Exit full screen" : "Full screen"}
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-black/10 bg-white text-gray-700 shadow-sm transition-colors hover:bg-gray-100 dark:border-white/10 dark:bg-[#232329] dark:text-gray-200 dark:hover:bg-[#2d2d36]"
+          >
+            {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+          </button>
+        )}
         onChange={(elements, appState, files) =>
           bindingRef.current?.onChange(elements, appState, files)
         }
@@ -107,9 +147,22 @@ export default function WhiteboardImpl(props: WhiteboardEditorProps) {
         <MainMenu>
           <MainMenu.DefaultItems.SaveAsImage />
           <MainMenu.DefaultItems.ChangeCanvasBackground />
-          <MainMenu.Item icon={<Trash2 className="h-4 w-4" />} onSelect={() => void handleClearCanvas()}>
-            Clear canvas
-          </MainMenu.Item>
+          {canEdit && (
+            <MainMenu.Item
+              icon={<Workflow className="h-4 w-4" />}
+              onSelect={() => setDiagramOpen(true)}
+            >
+              Insert diagram
+            </MainMenu.Item>
+          )}
+          {canEdit && (
+            <MainMenu.Item
+              icon={<Trash2 className="h-4 w-4" />}
+              onSelect={() => void handleClearCanvas()}
+            >
+              Clear canvas
+            </MainMenu.Item>
+          )}
           <MainMenu.Separator />
           <MainMenu.DefaultItems.Help />
         </MainMenu>
@@ -121,6 +174,11 @@ export default function WhiteboardImpl(props: WhiteboardEditorProps) {
           </WelcomeScreen.Center>
         </WelcomeScreen>
       </Excalidraw>
+      <MermaidDialog
+        open={diagramOpen}
+        onClose={() => setDiagramOpen(false)}
+        onInsert={handleInsertDiagram}
+      />
     </div>
   );
 }
