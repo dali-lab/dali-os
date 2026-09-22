@@ -666,6 +666,10 @@ type BlockDragState =
 const BLOCK_MIN_HOUR = HOURS[0];
 const BLOCK_MAX_HOUR = HOURS[HOURS.length - 1] + 1;
 const BLOCK_MIN_DURATION = SNAP_HOURS; // one 10-min step minimum
+// Empty strip kept clear on the right of each day column when drag-to-create is
+// on (Google-Calendar style), so a slot covered by events can still be dragged
+// to open the scheduling popover.
+const CREATE_GUTTER_PX = 12;
 
 function snapHour(raw: number): number {
   return Math.round(raw / SNAP_HOURS) * SNAP_HOURS;
@@ -685,9 +689,12 @@ export function WeekGridEvent({
   dayIdx,
   dayDateUtc,
   hitTestDay,
+  rightGutterPx = 0,
 }: {
   e: EventBlock;
   lane?: EventLane;
+  // Width (px) left free on the column's right edge; blocks lay out in the rest.
+  rightGutterPx?: number;
   // This event's day column, and a hit-test to resolve a pointer X → day index,
   // so a body-move drag can cross columns to another date.
   dayIdx?: number;
@@ -746,6 +753,10 @@ export function WeekGridEvent({
   // touch. A block with no overlap keeps the full width (left-0 right-0), so the
   // common case is pixel-identical to before.
   const laned = lane && !(lane.left === 0 && lane.width === 1);
+  // Explicit left/width when laned or when a gutter narrows the usable width;
+  // otherwise left-0 right-0.
+  const positioned = laned || rightGutterPx > 0;
+  const usableWidth = `(100% - ${rightGutterPx}px)`;
 
   // ── Per-block move / resize (writable Google events only) ────────────────────
   // dragRef holds the mutable drag state; livePos drives the visual override
@@ -936,7 +947,7 @@ export function WeekGridEvent({
 
   return (
     <div
-      className={`absolute ${laned ? "" : "left-0 right-0"} ${displayBufferBefore === 0 ? "rounded-t-md" : ""} ${
+      className={`absolute ${positioned ? "" : "left-0 right-0"} ${displayBufferBefore === 0 ? "rounded-t-md" : ""} ${
         displayBufferAfter === 0 ? "rounded-b-md" : ""
       } ${border} ${bufferBg} overflow-hidden ${
         movable ? (isDragging ? "cursor-grabbing" : "cursor-grab") : clickable ? "cursor-pointer" : ""
@@ -947,8 +958,13 @@ export function WeekGridEvent({
         // Live horizontal shift while a move drag crosses to another day column.
         ...(liveDayShift ? { transform: `translateX(${liveDayShift.offset * liveDayShift.colWidth}px)` } : {}),
         ...(laned
-          ? { left: `calc(${lane!.left * 100}% + 1px)`, width: `calc(${lane!.width * 100}% - 2px)` }
-          : {}),
+          ? {
+              left: `calc(${lane!.left} * ${usableWidth} + 1px)`,
+              width: `calc(${lane!.width} * ${usableWidth} - 2px)`,
+            }
+          : positioned
+            ? { left: 0, width: `calc${usableWidth}` }
+            : {}),
       }}
       // Always swallow pointerdown, even with no onClick. The day column starts
       // a drag-to-create on any pointerdown that reaches it, and its pointerup
@@ -1903,7 +1919,15 @@ export function WeekGrid({
               const dayEvents = eventsByDay[idx] ?? [];
               const eventLanes = computeEventLanes(dayEvents);
               return dayEvents.map((e, i) => (
-                <WeekGridEvent key={i} e={e} lane={eventLanes[i]} dayIdx={idx} dayDateUtc={d.dateUtc} hitTestDay={hitTestDay} />
+                <WeekGridEvent
+                  key={i}
+                  e={e}
+                  lane={eventLanes[i]}
+                  dayIdx={idx}
+                  dayDateUtc={d.dateUtc}
+                  hitTestDay={hitTestDay}
+                  rightGutterPx={onDayPointerSelect ? CREATE_GUTTER_PX : 0}
+                />
               ));
             })()}
             {overlayLayer?.(idx)}
