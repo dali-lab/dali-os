@@ -4687,7 +4687,7 @@ function ProjectDriveTab({
       disabled
       data-testid={`drive-new-menu-${scopeId}-disabled`}
       title="You don't have edit access to this project"
-      className="shrink-0 inline-flex items-center gap-1.5 rounded-full bg-os-accent px-5 py-2.5 text-sm font-semibold text-os-bg opacity-40 cursor-not-allowed"
+      className="os-add-btn shrink-0 cursor-not-allowed opacity-40"
     >
       <Plus className="w-4 h-4" /> New
       <ChevronDown className="w-3.5 h-3.5 opacity-80" />
@@ -4700,7 +4700,7 @@ function ProjectDriveTab({
         <button
           type="button"
           data-testid={`drive-new-menu-${scopeId}`}
-          className="shrink-0 inline-flex items-center gap-1.5 rounded-full bg-os-accent px-5 py-2.5 text-sm font-semibold text-os-bg transition-colors hover:bg-os-accent-hover"
+          className="os-add-btn shrink-0"
         >
           <Plus className="w-4 h-4" /> New
           <ChevronDown className="w-3.5 h-3.5 opacity-80" />

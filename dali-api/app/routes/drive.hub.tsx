@@ -1035,7 +1035,7 @@ function NewMenu({
         <button
           type="button"
           data-testid={`drive-new-menu-${scope.id}`}
-          className="shrink-0 inline-flex items-center gap-1.5 bg-os-accent text-os-bg font-semibold transition-colors hover:bg-os-accent-hover rounded-full px-5 py-2.5 text-sm"
+          className="os-add-btn shrink-0"
         >
           <Plus className="w-4 h-4" /> New
           <ChevronDown className="w-3.5 h-3.5 opacity-80" />
@@ -1735,7 +1735,7 @@ export default function DriveHub() {
         disabled
         data-testid="drive-new-menu-disabled"
         title="Open a drive to create something"
-        className="shrink-0 inline-flex items-center gap-1.5 bg-os-accent text-os-bg font-semibold rounded-full px-5 py-2.5 text-sm opacity-40 cursor-not-allowed"
+        className="os-add-btn shrink-0 cursor-not-allowed opacity-40"
       >
         <Plus className="w-4 h-4" /> New
         <ChevronDown className="w-3.5 h-3.5 opacity-80" />

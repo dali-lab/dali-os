@@ -69,9 +69,6 @@ import {
   Mail,
   Info,
   PanelRightClose,
-  Clock,
-  MapPin,
-  HardDriveDownload,
   History,
 } from "lucide-react";
 import type { DriveItem } from "~/lib/drive.server";
@@ -92,20 +89,20 @@ import { ProcessLinkPill } from "~/components/drive/ProcessLinkPill";
 const DriveScale = createContext(true);
 
 function useDriveText() {
-  const os = useContext(DriveScale);
   return {
-    /** Font size for a list/column row (and crumbs that match it). */
-    row: os ? "text-base" : "text-sm",
-    /** Padding + gap shared by list and column item rows so the two views
-     *  keep the same line spacing. Kept compact — column panes are narrow, so
-     *  the same px/py that feels fine in a wide list reads as empty margin there. */
-    itemRow: "gap-2 px-2 py-1.5",
-    /** Secondary metadata beside a row — modified, size, path, kind. */
-    meta: os ? "text-sm" : "text-xs",
-    /** Column headers and other all-caps micro-labels. */
-    label: os ? "text-xs" : "text-[11px]",
+    /** Font size for a browser row (.drivepage-node / .drive-file-name: 14px).
+     *  A step below the shell's own rows on purpose — a column pane is 200px
+     *  wide, and the nav's 16px truncates a filename that reads fine here. */
+    row: "text-sm",
+    /** Padding + gap shared by list and column item rows so the two views keep
+     *  the same line spacing (.drivepage-node: 9px 10px, 10px gap). */
+    itemRow: "gap-2.5 px-2.5 py-2",
+    /** Secondary metadata beside a row — modified, size, path, kind (12px). */
+    meta: "text-xs",
+    /** Column headers and other all-caps micro-labels (11px). */
+    label: "text-[11px]",
     /** The "Core only" / "Project" row badges. */
-    badge: os ? "text-xs" : "text-[10px]",
+    badge: "text-[10px]",
   };
 }
 
@@ -1450,10 +1447,7 @@ export function DriveBrowser({
   // nowhere to go greys out rather than disappearing, so the controls beside it
   // never shift sideways.
   const historyPair = (
-    <div
-      data-testid="drive-history"
-      className="inline-flex shrink-0 items-stretch overflow-hidden rounded-full border border-border bg-card"
-    >
+    <div data-testid="drive-history" className="inline-flex shrink-0 items-center gap-1">
       <Tooltip content="Back">
         <button
           type="button"
@@ -1464,16 +1458,11 @@ export function DriveBrowser({
             e.stopPropagation();
             goHistory(-1);
           }}
-          className={cn(
-            "inline-flex items-center justify-center px-2.5 py-1.5 text-muted-foreground transition-colors",
-            "hover:bg-muted/50 hover:text-foreground",
-            "disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground",
-          )}
+          className="os-icon-btn disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-os-grey"
         >
           <ChevronLeft className="w-4 h-4" />
         </button>
       </Tooltip>
-      <span className="w-px self-stretch bg-border" aria-hidden />
       <Tooltip content="Forward">
         <button
           type="button"
@@ -1484,11 +1473,7 @@ export function DriveBrowser({
             e.stopPropagation();
             goHistory(1);
           }}
-          className={cn(
-            "inline-flex items-center justify-center px-2.5 py-1.5 text-muted-foreground transition-colors",
-            "hover:bg-muted/50 hover:text-foreground",
-            "disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground",
-          )}
+          className="os-icon-btn disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-os-grey"
         >
           <ChevronRight className="w-4 h-4" />
         </button>
@@ -1497,7 +1482,7 @@ export function DriveBrowser({
   );
 
   const viewToggle = (
-    <div className="inline-flex shrink-0 overflow-hidden rounded-full border border-border bg-card">
+    <div className="inline-flex shrink-0 items-center gap-1">
       {(
         [
           ["columns", Columns, "Column view"],
@@ -1515,12 +1500,7 @@ export function DriveBrowser({
               e.stopPropagation();
               changeView(mode);
             }}
-            className={cn(
-              "px-2.5 py-1.5",
-              viewMode === mode
-                ? "bg-os-container text-foreground"
-                : "text-muted-foreground hover:bg-muted/50",
-            )}
+            className={cn("os-icon-btn", viewMode === mode && "bg-os-container text-foreground")}
           >
             <Icon className="w-4 h-4" />
           </button>
@@ -1539,7 +1519,7 @@ export function DriveBrowser({
         "relative shrink-0 transition-[width] duration-200 ease-out",
         // Collapsed, it is a circle the size of the header's other controls, so
         // the row reads as one set.
-        searchExpanded ? "w-52" : "w-[30px]",
+        searchExpanded ? "w-52" : "w-8",
       )}
     >
       <Search
@@ -1567,8 +1547,8 @@ export function DriveBrowser({
         }}
         onChange={(e) => onSearchChange(e.target.value)}
         className={cn(
-          "h-[30px] w-full rounded-full border border-border bg-card text-sm text-foreground",
-          "placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30",
+          "h-8 w-full rounded-full border border-border bg-card text-sm text-foreground",
+          "placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/40",
           "pl-8 transition-all duration-200",
           searchExpanded ? "pr-8 cursor-text" : "pr-0 cursor-pointer",
         )}
@@ -1644,8 +1624,8 @@ export function DriveBrowser({
               (search). The page title above no longer has a stray folder name
               hanging under it, and every control that acts on the table now
               sits on the table. */}
-          <div className="relative min-w-0 flex-1 overflow-hidden rounded-lg border border-border bg-card">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-3 py-2">
+          <div className="relative min-w-0 flex-1 overflow-hidden rounded-os-card border border-border bg-card p-5">
+            <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2">
               {historyPair}
               <Breadcrumb
                 currentScope={currentScope}
@@ -1664,7 +1644,7 @@ export function DriveBrowser({
               ref={columnsContainerRef}
               tabIndex={0}
               onKeyDown={onColumnsKeyDown}
-              className="min-w-0 overflow-x-auto focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-os-accent/30"
+              className="min-w-0 overflow-x-auto rounded-os-item border border-border focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-os-accent/30"
               onDragEnter={onFileDragEnter}
               onDragOver={onFileDragOver}
               onDragLeave={onFileDragLeave}
@@ -1675,16 +1655,17 @@ export function DriveBrowser({
               data-testid="drive-columns"
             >
               {uploadOver && (
-                <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-lg border-2 border-dashed border-accent-coral bg-accent-coral/10">
+                <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-os-card border-2 border-dashed border-accent-coral bg-accent-coral/10">
                   <span className="flex items-center gap-2 text-sm font-medium text-accent-coral">
                     <Upload className="w-4 h-4" /> Drop files to upload
                   </span>
                 </div>
               )}
-              {/* No height of its own: the row is as tall as its tallest
-                  column, which caps itself (see MillerColumn), so a shallow
-                  Drive doesn't paint an empty panel down to the fold. */}
-              <div className="flex divide-x divide-border/60 overflow-x-auto">
+              {/* The frame keeps one height (.drivepage-columns: min-height
+                  420px) so stepping into a folder widens the trail instead of
+                  growing the panel and shifting the page under the pointer.
+                  Columns cap themselves at the same figure (see MillerColumn). */}
+              <div className="flex min-h-[420px] divide-x divide-border">
                 {/* Column 0: scope list — hidden in embedded mode (the user is
                     already inside the project context, no cross-scope nav). */}
                 {!embeddedScopeId && (
@@ -1801,14 +1782,15 @@ export function DriveBrowser({
               onDragLeave={onFileDragLeave}
               onDrop={onFileDrop}
               className={cn(
-                "relative min-w-0 overflow-hidden focus:outline-none focus:ring-1 focus:ring-inset focus:ring-os-accent/30",
+                "relative min-w-0 min-h-[420px] overflow-hidden rounded-os-item border border-border",
+                "p-1.5 focus:outline-none focus:ring-1 focus:ring-inset focus:ring-os-accent/30",
                 // Room under the last row for the floating selection bar.
                 // Padding below the content moves nothing above it.
                 stripVisible && "pb-14",
               )}
             >
               {uploadOver && (
-                <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-lg border-2 border-dashed border-accent-coral bg-accent-coral/10">
+                <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-os-card border-2 border-dashed border-accent-coral bg-accent-coral/10">
                   <span className="flex items-center gap-2 text-sm font-medium text-accent-coral">
                     <Upload className="w-4 h-4" /> Drop files to upload
                   </span>
@@ -1888,7 +1870,6 @@ export function DriveBrowser({
 
           {detailsOpen && !columnsActive && (
             <DriveDetailsPane
-              os={true}
               item={detailItem}
               actions={detailActions}
               scopePathLabel={detailPathLabel}
@@ -2089,7 +2070,6 @@ function DriveActionStrip({
 // — the Google-Drive details-pane / Notion side-peek pattern.
 
 function DriveDetailsPane({
-  os,
   item,
   actions,
   scopePathLabel,
@@ -2104,7 +2084,6 @@ function DriveDetailsPane({
   onPreview,
   onClose,
 }: {
-  os: boolean;
   item: DriveItem | null;
   actions: RowActions | null;
   scopePathLabel: string;
@@ -2119,164 +2098,109 @@ function DriveDetailsPane({
   onPreview: (item: DriveItem) => void;
   onClose: () => void;
 }) {
-  const meta = os ? "text-sm" : "text-xs";
+  const t = useDriveText();
   const canFavorite = !!item && (item.type === "doc" || item.type === "folder") && !!onToggleFavorite;
   return (
     <aside
       data-testid="drive-details-pane"
       onClick={(e) => e.stopPropagation()}
-      className="hidden w-72 shrink-0 self-stretch rounded-lg border border-border bg-card md:flex md:flex-col"
+      className="hidden w-[280px] shrink-0 self-stretch rounded-os-card border border-border bg-card md:flex md:flex-col"
     >
-      <div className="flex items-start justify-between gap-2 border-b border-border px-4 py-3">
-        <div className="flex min-w-0 items-center gap-2">
-          {item ? itemIcon(item) : <Info className="h-4 w-4 text-muted-foreground" />}
-          <div className="min-w-0">
-            <div className="truncate font-medium text-foreground">
-              {item ? item.title || "Untitled" : "Details"}
-            </div>
-            {item && <div className={cn("text-muted-foreground", meta)}>{kindLabel(item)}</div>}
-          </div>
-        </div>
+      {/* The close control sits alone at the top: the item's identity is the
+          centred block below, so repeating its name up here would say it
+          twice on a 280px panel. */}
+      <div className="flex justify-end px-3 pt-3">
         <button
           type="button"
           aria-label="Hide details"
           data-testid="drive-details-close"
           onClick={onClose}
-          className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+          className="os-icon-btn"
         >
           <PanelRightClose className="h-4 w-4" />
         </button>
       </div>
 
       {item ? (
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5 pb-5">
+          <div className="flex flex-col items-center text-center">
+            <div className="mb-3.5 flex h-12 w-12 items-center justify-center">
+              {itemIcon(item, "xl")}
+            </div>
+            <span className="text-base font-semibold leading-snug text-foreground break-words">
+              {item.title || "Untitled"}
+            </span>
+            <span className="mt-1 text-[13px] text-muted-foreground">{kindLabel(item)}</span>
+          </div>
+
           {/* Metadata */}
-          <dl className="flex flex-col gap-2.5 px-4 py-3">
-            <DetailRow icon={MapPin} label="Location" value={scopePathLabel || "—"} meta={meta} />
-            <DetailRow icon={Clock} label="Modified" value={relativeTime(item.updatedAt as unknown as string)} meta={meta} />
+          <dl className="mt-4 flex flex-col gap-3.5 border-t border-border pt-3.5">
+            <DetailFact label="Where" value={scopePathLabel || "—"} />
+            <DetailFact label="Modified" value={relativeTime(item.updatedAt as unknown as string)} />
             {item.type === "file" && item.sizeBytes != null && (
-              <DetailRow icon={HardDriveDownload} label="Size" value={formatSize(item.sizeBytes)} meta={meta} />
+              <DetailFact label="Size" value={formatSize(item.sizeBytes)} />
             )}
             {(item.type === "doc" || item.type === "file") &&
               (item as { partnerVisible?: boolean | null }).partnerVisible && (
-                <DetailRow icon={Handshake} label="Sharing" value="Shared with partner" meta={meta} />
+                <DetailFact label="Sharing" value="Shared with partner" />
               )}
           </dl>
 
           {/* Actions */}
-          <div className="flex flex-wrap gap-1.5 border-t border-border px-4 py-3">
+          <div className="mt-4 flex flex-col border-t border-border pt-2">
             {item.type !== "folder" && (
-              <PaneAction icon={FolderOpen} label="Open" onClick={() => onOpenItem(item)} />
+              <DetailAction icon={<FolderOpen />} label="Open" onClick={() => onOpenItem(item)} />
             )}
             {isPreviewable(item) && (
-              <PaneAction icon={Search} label="Preview" onClick={() => onPreview(item)} />
+              <DetailAction icon={<Search />} label="Preview" onClick={() => onPreview(item)} />
             )}
             {canFavorite && (
-              <PaneAction
-                icon={Star}
-                label={item.favorited ? "Unstar" : "Star"}
-                active={item.favorited}
+              <DetailAction
+                icon={<Star className={cn(item.favorited && "fill-current")} />}
+                label={item.favorited ? "Remove from favorites" : "Add to favorites"}
+                active={!!item.favorited}
                 onClick={() => onToggleFavorite!(item)}
               />
             )}
             {canDownload && item.href && (
-              <a
-                href={item.href}
-                download
-                className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-sm text-foreground hover:bg-muted/60"
-              >
-                <Download className="h-3.5 w-3.5" /> Download
-              </a>
+              <DetailAction icon={<Download />} label="Download" href={item.href} />
             )}
             {canRename && actions && (
-              <PaneAction icon={Pencil} label="Rename" onClick={() => actions.onRename(item)} />
+              <DetailAction icon={<Pencil />} label="Rename" onClick={() => actions.onRename(item)} />
             )}
             {canMove && actions && (
-              <PaneAction icon={FolderInput} label="Move" onClick={() => actions.onRequestMove(item)} />
+              <DetailAction icon={<FolderInput />} label="Move to…" onClick={() => actions.onRequestMove(item)} />
             )}
             {canShare && actions?.onShare && (
-              <PaneAction icon={Share2} label="Share" onClick={() => actions.onShare!(item)} />
+              <DetailAction icon={<Share2 />} label="Share…" onClick={() => actions.onShare!(item)} />
             )}
             {canDelete && actions && (
-              <PaneAction icon={Trash2} label="Delete" destructive onClick={() => actions.onDelete(item)} />
+              <DetailAction icon={<Trash2 />} label="Delete" destructive onClick={() => actions.onDelete(item)} />
             )}
           </div>
 
           {/* Activity — the timeline we can show today; version history slots in
               here once per-item revisions are surfaced. */}
-          <div className="border-t border-border px-4 py-3">
-            <h4 className={cn("mb-1.5 font-semibold uppercase tracking-wide text-muted-foreground", os ? "text-xs" : "text-[11px]")}>
+          <div className="mt-4 border-t border-border pt-3.5">
+            <h4 className={`mb-1 ${t.label} font-bold uppercase tracking-[0.5px] text-muted-foreground`}>
               Activity
             </h4>
-            <div className={cn("flex items-center gap-2 text-muted-foreground", meta)}>
+            <div className={`flex items-center gap-2 text-muted-foreground ${t.meta}`}>
               <History className="h-3.5 w-3.5 shrink-0" />
               <span>Last modified {relativeTime(item.updatedAt as unknown as string)}</span>
             </div>
           </div>
         </div>
       ) : (
-        <div className="flex flex-1 flex-col items-center justify-center gap-2 px-4 py-10 text-center">
+        <div className="flex flex-1 flex-col items-center justify-center gap-2 px-5 pb-10 text-center">
           <FolderOpen className="h-8 w-8 text-muted-foreground/60" />
-          <p className={cn("text-muted-foreground", meta)}>Select an item to see its details.</p>
-          <p className={cn("text-muted-foreground/70", meta)}>
+          <p className={`text-muted-foreground ${t.meta}`}>Select an item to see its details.</p>
+          <p className={`text-muted-foreground/70 ${t.meta}`}>
             {restingCount} {restingCount === 1 ? "item" : "items"} here
           </p>
         </div>
       )}
     </aside>
-  );
-}
-
-function DetailRow({
-  icon: Icon,
-  label,
-  value,
-  meta,
-}: {
-  icon: typeof Clock;
-  label: string;
-  value: string;
-  meta: string;
-}) {
-  return (
-    <div className="flex items-start gap-2">
-      <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-      <div className="min-w-0">
-        <dt className={cn("text-muted-foreground", meta)}>{label}</dt>
-        <dd className="truncate text-sm text-foreground" title={value}>{value}</dd>
-      </div>
-    </div>
-  );
-}
-
-function PaneAction({
-  icon: Icon,
-  label,
-  onClick,
-  active,
-  destructive,
-}: {
-  icon: typeof Clock;
-  label: string;
-  onClick: () => void;
-  active?: boolean;
-  destructive?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm",
-        destructive
-          ? "border-border text-destructive hover:bg-destructive/10"
-          : active
-            ? "border-accent-coral/40 bg-accent-coral/10 text-accent-coral"
-            : "border-border text-foreground hover:bg-muted/60",
-      )}
-    >
-      <Icon className={cn("h-3.5 w-3.5", active && "fill-current")} /> {label}
-    </button>
   );
 }
 
@@ -2412,14 +2336,14 @@ function ColumnScopeRow({
       data-row-id={scope.id}
       onClick={(e) => { e.stopPropagation(); onClick(); }}
       onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick(); }}
-      className={`group flex items-center ${t.itemRow} ${t.row} cursor-default select-none ${
+      className={`group flex items-center rounded-lg ${t.itemRow} ${t.row} cursor-default select-none ${
         drop.isOver
           ? "ring-2 ring-accent-coral ring-inset bg-accent-coral/10 text-accent-coral"
           : isHighlighted
             ? isFocusedColumn
-              ? "bg-accent-coral/10 text-accent-coral"
-              : "bg-muted text-foreground"
-            : "hover:bg-muted/50 text-foreground"
+              ? "bg-os-container text-os-accent"
+              : "bg-os-container text-foreground"
+            : "text-foreground hover:bg-os-hover"
       }`}
     >
       {scopeIcon(scope)}
@@ -2492,16 +2416,16 @@ function ColumnItemRow({
       data-row-id={item.id}
       onClick={(e) => { e.stopPropagation(); onClick(e); }}
       onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick(); }}
-      className={`group flex items-center dnd-touch-handle ${t.itemRow} ${t.row} cursor-default select-none ${
+      className={`group flex items-center rounded-lg dnd-touch-handle ${t.itemRow} ${t.row} cursor-default select-none ${
         drag.isDragging ? "opacity-40" : ""
       } ${
         drop.isOver ? "ring-2 ring-inset ring-accent-coral bg-accent-coral/10" : ""
       } ${
         isSelected || (isHighlighted && isFocusedColumn)
-          ? "bg-accent-coral/10 text-accent-coral"
+          ? "bg-os-container text-os-accent"
           : isHighlighted
-            ? "bg-muted text-foreground"
-            : "hover:bg-muted/50 text-foreground"
+            ? "bg-os-container text-foreground"
+            : "text-foreground hover:bg-os-hover"
       }`}
     >
       {itemIcon(item)}
@@ -2566,47 +2490,70 @@ function ColumnItemRow({
  * then a floor that stops them squeezing and hands the overflow to the row's
  * horizontal scroll, the way Finder's columns behave.
  */
-const COLUMN_SIZE = "flex-1 min-w-[15rem]";
+const COLUMN_SIZE = "flex-1 min-w-[12.5rem]";
 
-/** One labelled fact in the preview's detail list. Renders nothing when the
- *  value is empty, so a doc with no size doesn't show a blank row. */
-function PreviewFact({ label, value }: { label: string; value: string }) {
+/** One labelled fact in a details panel. Renders nothing when the value is
+ *  empty, so a doc with no size doesn't show a blank row. */
+function DetailFact({ label, value }: { label: string; value: string }) {
   if (!value) return null;
   return (
-    <div className="flex flex-col gap-0.5">
-      <dt className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{label}</dt>
-      <dd className="text-xs text-foreground break-words">{value}</dd>
+    <div className="flex flex-col gap-1">
+      <dt className="text-[11px] font-bold uppercase tracking-[0.5px] text-muted-foreground">{label}</dt>
+      <dd className="text-sm text-foreground break-words">{value}</dd>
     </div>
   );
 }
 
-function PreviewAction({
+function DetailAction({
   icon,
   label,
   onClick,
+  href,
   testid,
+  active = false,
   destructive = false,
 }: {
   icon: ReactNode;
   label: string;
-  onClick: () => void;
-  testid: string;
+  onClick?: () => void;
+  /** Set for Download, which has to stay an anchor to download anything. */
+  href?: string;
+  testid?: string;
+  active?: boolean;
   destructive?: boolean;
 }) {
+  const cls = cn(
+    "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm font-semibold",
+    "[&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0 [&_svg]:text-muted-foreground",
+    destructive
+      ? "text-destructive [&_svg]:text-destructive hover:bg-destructive/10"
+      : active
+        ? "text-os-accent [&_svg]:text-os-accent hover:bg-os-hover"
+        : "text-foreground hover:bg-os-hover hover:text-os-accent hover:[&_svg]:text-os-accent",
+  );
+  if (href) {
+    return (
+      <a
+        href={href}
+        download
+        data-testid={testid}
+        onClick={(e) => e.stopPropagation()}
+        className={cls}
+      >
+        {icon}
+        {label}
+      </a>
+    );
+  }
   return (
     <button
       type="button"
       data-testid={testid}
       onClick={(e) => {
         e.stopPropagation();
-        onClick();
+        onClick?.();
       }}
-      className={cn(
-        "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm",
-        destructive
-          ? "text-destructive hover:bg-destructive/10"
-          : "text-foreground hover:bg-muted/60",
-      )}
+      className={cls}
     >
       {icon}
       {label}
@@ -2643,74 +2590,73 @@ function LeafPreviewColumn({
       // Clicks inside must not reach the columns container, whose own click
       // clears the leaf selection — the panel would close under the pointer.
       onClick={(e) => e.stopPropagation()}
-      className={`flex ${COLUMN_SIZE} flex-col gap-4 overflow-y-auto p-4 max-h-[calc(100vh-14rem)]`}
+      // A fixed 280px (.drivepage-detail-panel) rather than a share of the row:
+      // it is the end of the trail, not another column, and the columns beside
+      // it shouldn't narrow to make room for its facts.
+      className="flex w-[280px] shrink-0 flex-col overflow-y-auto p-5 max-h-[420px]"
     >
-      <div className="flex flex-col items-center gap-2 text-center">
-        {itemIcon(item, "lg")}
-        <span className="text-sm font-medium text-foreground break-words">
+      <div className="flex flex-col items-center text-center">
+        <div className="mb-3.5 flex h-12 w-12 items-center justify-center">
+          {itemIcon(item, "xl")}
+        </div>
+        <span className="text-base font-semibold leading-snug text-foreground break-words">
           {item.title || "Untitled"}
         </span>
-        <span className="text-xs text-muted-foreground">{kindLabel(item)}</span>
+        <span className="mt-1 text-[13px] text-muted-foreground">{kindLabel(item)}</span>
       </div>
 
-      <dl className="flex flex-col gap-2.5 border-t border-border pt-3">
-        <PreviewFact label="Where" value={path} />
-        <PreviewFact label="Modified" value={relativeTime(item.updatedAt as unknown as string)} />
-        <PreviewFact label="Size" value={formatSize(item.sizeBytes)} />
+      <dl className="mt-4 flex flex-col gap-3.5 border-t border-border pt-3.5">
+        <DetailFact label="Where" value={path} />
+        <DetailFact label="Modified" value={relativeTime(item.updatedAt as unknown as string)} />
+        <DetailFact label="Size" value={formatSize(item.sizeBytes)} />
       </dl>
 
-      <div className="flex flex-col gap-0.5 border-t border-border pt-3">
+      <div className="mt-4 flex flex-col border-t border-border pt-2">
         {canDownload && item.href && (
-          <a
+          <DetailAction
+            testid="drive-leaf-download"
+            icon={<Download />}
+            label="Download"
             href={item.href}
-            download
-            data-testid="drive-leaf-download"
-            onClick={(e) => e.stopPropagation()}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-foreground hover:bg-muted/60"
-          >
-            <Download className="h-3.5 w-3.5" /> Download
-          </a>
+          />
         )}
         {isPageBacked && onToggleFavorite && (
-          <PreviewAction
+          <DetailAction
             testid="drive-leaf-favorite"
-            icon={
-              <Star
-                className={cn("h-3.5 w-3.5", item.favorited && "fill-current text-accent-coral")}
-              />
-            }
+            icon={<Star className={cn(item.favorited && "fill-current")} />}
             label={item.favorited ? "Remove from favorites" : "Add to favorites"}
+            active={!!item.favorited}
             onClick={() => onToggleFavorite(item)}
           />
         )}
         {canShare && actions.onShare && (
-          <PreviewAction
+          <DetailAction
             testid="drive-leaf-share"
-            icon={<Share2 className="h-3.5 w-3.5" />}
+            icon={<Share2 />}
             label="Share…"
             onClick={() => actions.onShare!(item)}
           />
         )}
         {canRename && (
-          <PreviewAction
+          <DetailAction
             testid="drive-leaf-rename"
-            icon={<Pencil className="h-3.5 w-3.5" />}
+            icon={<Pencil />}
             label="Rename"
             onClick={() => actions.onRename(item)}
           />
         )}
         {canMove && (
-          <PreviewAction
+          <DetailAction
             testid="drive-leaf-move"
-            icon={<FolderInput className="h-3.5 w-3.5" />}
+            icon={<FolderInput />}
             label="Move to…"
             onClick={() => actions.onRequestMove(item)}
           />
         )}
         {canDelete && (
-          <PreviewAction
+          <DetailAction
             testid="drive-leaf-delete"
-            icon={<Trash2 className="h-3.5 w-3.5" />}
+            icon={<Trash2 />}
             label="Delete"
             destructive
             onClick={() => actions.onDelete(item)}
@@ -2739,19 +2685,15 @@ function MillerColumn({
   return (
     <div
       data-testid={testid}
-      // Every column shares the row on the same terms (COLUMN_SIZE), the
-      // preview included — it used to be a fixed 16rem beside flexible
-      // siblings, which is what made the widths read as uneven.
-      // The height cap is a column's own, not the frame's: it leaves the page
-      // chrome above visible and scrolls this column past it, while a column
-      // with little in it stays as short as its rows. Columns stretch to the
-      // tallest of them, so the frame ends where the content does.
-      className={`flex ${COLUMN_SIZE} flex-col overflow-y-auto max-h-[calc(100vh-14rem)]`}
+      // Every column shares the row on the same terms (COLUMN_SIZE) and caps
+      // at the frame's own height, scrolling a long folder inside the panel
+      // rather than down the page.
+      className={`flex ${COLUMN_SIZE} flex-col overflow-y-auto max-h-[420px] p-1.5`}
     >
       {isEmpty ? (
-        <p className={`px-3 py-6 text-center ${t.meta} text-muted-foreground italic`}>{emptyMessage}</p>
+        <p className={`px-2.5 py-4 ${t.meta} text-os-muted`}>{emptyMessage}</p>
       ) : (
-        <div className="flex flex-col divide-y divide-border/50">{children}</div>
+        <div className="flex flex-col">{children}</div>
       )}
     </div>
   );
@@ -2770,7 +2712,6 @@ function Breadcrumb({
   onNavigate: (scopeId: string | null, folderId: string | null) => void;
   dragging: boolean;
 }) {
-  const t = useDriveText();
   // Under the redesign the page renders its own "Drive" h1, so the root crumb
   // goes entirely rather than repeating the word right beneath it — the scope
   // crumb leads, and the h1 is the way back to the root.
@@ -2789,7 +2730,7 @@ function Breadcrumb({
     <nav
       aria-label="Breadcrumb"
       data-testid="drive-breadcrumb"
-      className={`flex flex-wrap items-center gap-1 min-w-0 min-h-[1.75rem] ${t.row}`}
+      className="flex flex-wrap items-center gap-2 min-w-0 min-h-[1.75rem] text-base"
     >
       {!os && (
         <button
@@ -2818,6 +2759,7 @@ function Breadcrumb({
           onNavigate={() => onNavigate(currentScope.id, null)}
           dragging={dragging}
           first={os}
+          current={folderCrumbs.length === 0}
         />
       )}
       {collapse && (
@@ -2844,7 +2786,7 @@ function Breadcrumb({
           </Menu>
         </>
       )}
-      {shown.map((c) => (
+      {shown.map((c, i) => (
         <Crumb
           key={c.id}
           label={c.title}
@@ -2853,6 +2795,7 @@ function Breadcrumb({
           destFolderId={c.id}
           onNavigate={() => onNavigate(currentScope!.id, c.id)}
           dragging={dragging}
+          current={i === shown.length - 1}
         />
       ))}
     </nav>
@@ -2867,6 +2810,7 @@ function Crumb({
   onNavigate,
   dragging,
   first = false,
+  current = false,
 }: {
   label: string;
   testid: string;
@@ -2876,6 +2820,8 @@ function Crumb({
   dragging: boolean;
   /** Leads the trail (no root crumb before it), so it takes no separator. */
   first?: boolean;
+  /** Ends the trail — where you are, so it carries the full ink. */
+  current?: boolean;
 }) {
   const drop = useDroppable({
     id: `crumb::${scopeId}::${destFolderId ?? "_root_"}`,
@@ -2893,8 +2839,12 @@ function Crumb({
           e.stopPropagation();
           onNavigate();
         }}
-        className={`inline-flex items-center rounded px-1.5 py-0.5 font-medium truncate max-w-[12rem] ${
-          drop.isOver ? "bg-accent-coral/10 text-accent-coral ring-1 ring-accent-coral/40" : "text-foreground hover:bg-muted/50"
+        className={`inline-flex items-center rounded-md px-1.5 py-0.5 truncate max-w-[12rem] ${
+          drop.isOver
+            ? "bg-accent-coral/10 text-accent-coral ring-1 ring-accent-coral/40"
+            : current
+              ? "font-medium text-foreground hover:bg-os-hover"
+              : "text-muted-foreground hover:bg-os-hover hover:text-foreground"
         }`}
       >
         {label}
@@ -2936,13 +2886,13 @@ function ScopeList({
               onClick={(e) => onRowClick(scope.id, e)}
               onDoubleClick={() => onOpen(scope.id)}
               className={`${GRID_TILE} ${
-                isSelected ? "bg-accent-coral/5" : "hover:bg-muted/40"
+                isSelected ? "bg-os-container/40" : "hover:bg-os-hover"
               }`}
             >
               {scopeIcon(scope, "xl")}
               <span
                 className={`${GRID_LABEL} ${
-                  isSelected ? "bg-accent-coral text-white" : "text-foreground"
+                  isSelected ? "bg-os-accent text-os-bg" : "text-foreground"
                 }`}
               >
                 {label}
@@ -2967,8 +2917,8 @@ function ScopeList({
             data-testid={`drive-scope-${scope.id}`}
             onClick={(e) => onRowClick(scope.id, e)}
             onDoubleClick={() => onOpen(scope.id)}
-            className={`group flex items-center ${t.itemRow} ${t.row} cursor-default select-none rounded-md ${
-              selected.has(scope.id) ? "bg-accent-coral/10" : "hover:bg-muted/50"
+            className={`group flex items-center ${t.itemRow} ${t.row} cursor-default select-none rounded-lg ${
+              selected.has(scope.id) ? "bg-os-container text-os-accent" : "hover:bg-os-hover"
             }`}
           >
             {scopeIcon(scope)}
@@ -3169,16 +3119,16 @@ function ListRow({
         gridTemplateColumns: GRID_COLUMNS,
         ...(drag.transform ? { transform: `translate3d(${drag.transform.x}px, ${drag.transform.y}px, 0)`, transition: "none" } : {}),
       }}
-      className={`group grid items-center dnd-touch-handle ${t.itemRow} rounded-md ${t.row} cursor-default select-none ${
+      className={`group grid items-center dnd-touch-handle ${t.itemRow} rounded-lg ${t.row} cursor-default select-none ${
         drag.isDragging ? "opacity-40" : ""
       } ${
         drop.isOver && isFolder
           ? "bg-accent-coral/10 ring-1 ring-accent-coral/40"
           : selected
-            ? "bg-accent-coral/10"
+            ? "bg-os-container"
             : active
-              ? "bg-muted/40"
-              : "hover:bg-muted/50"
+              ? "bg-os-hover"
+              : "hover:bg-os-hover"
       }`}
     >
       <span className="flex items-center gap-2 min-w-0">
@@ -3283,10 +3233,10 @@ function GridTile({
         drop.isOver && isFolder
           ? "bg-accent-coral/10 ring-2 ring-inset ring-accent-coral"
           : selected
-            ? "bg-accent-coral/5"
+            ? "bg-os-container/40"
             : active
-              ? "bg-muted/40"
-              : "hover:bg-muted/40"
+              ? "bg-os-hover"
+              : "hover:bg-os-hover"
       }`}
     >
       {/* No ⋯ button on a tile: the whole tile is a right-click target for the
@@ -3308,7 +3258,7 @@ function GridTile({
       {itemIcon(item, "xl")}
       <span
         className={`${GRID_LABEL} ${
-          selected ? "bg-accent-coral text-white" : "text-foreground"
+          selected ? "bg-os-accent text-os-bg" : "text-foreground"
         }`}
       >
         {item.title || "Untitled"}
@@ -3358,7 +3308,7 @@ function SearchResults({
           onClick={(e) => onRowClick(hit.item.id, e)}
           onDoubleClick={() => onOpen(hit.item.id)}
           className={`group flex items-center ${t.itemRow} ${t.row} cursor-default select-none rounded-md ${
-            selected.has(hit.item.id) ? "bg-accent-coral/10" : "hover:bg-muted/50"
+            selected.has(hit.item.id) ? "bg-os-container" : "hover:bg-os-hover"
           }`}
         >
           {itemIcon(hit.item)}
