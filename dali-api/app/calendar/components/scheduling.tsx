@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useRevalidator, useSearchParams } from "react-router";
-import { ChevronLeft, ChevronRight, Plus, RefreshCw, Search, Shield, UsersRound, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Mail, Plus, RefreshCw, Search, Shield, UsersRound, X } from "lucide-react";
 import {
   autoUpdate,
   flip,
@@ -27,6 +27,7 @@ import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { NO_REPEAT, RepeatField, repeatSpecToRRule, type RepeatSpec } from "~/calendar/components/RepeatField";
 import { inviteDestinations, inviteOrganizerFields } from "~/calendar/components/composer";
 import type { RsvpStatus } from "~/calendar/lib/types";
+import { isGuestEmail } from "~/calendar/lib/guest-emails";
 import {
   useMeetingNote,
   meetingNoteValid,
@@ -280,6 +281,10 @@ export function CreateScheduledMeetingForm({
   // A specific calendar inside a linked Google account, not just the account.
   const inviteDests = inviteDestinations(calendarLinks);
   const [inviteFrom, setInviteFrom] = useState<string>(inviteDests[0]?.value ?? "");
+  // Email guests are invited by the Google event, so they only apply while one
+  // is being sent.
+  const [guestEmails, setGuestEmails] = useState<string[]>([]);
+  const invitedEmails = inviteFrom ? guestEmails : [];
   // Meeting notes are opt-in — the About / type / location fields only appear
   // once enabled. See MeetingNoteFields for the derive-type-from-project model.
   const note = useMeetingNote();
@@ -367,6 +372,7 @@ export function CreateScheduledMeetingForm({
       if (isCoreMeeting) {
         payload.isCoreMeeting = true;
       }
+      if (invitedEmails.length > 0) payload.guestEmails = invitedEmails;
 
       // If exactly one group is picked and no extra people are added, record the
       // group scope so notifications carry sourceGroupId. Otherwise submit as UserList.
@@ -494,6 +500,8 @@ export function CreateScheduledMeetingForm({
             usersById={usersById}
             groupsById={groupsById}
             resolvedCount={resolvedParticipantIds.length}
+            guestEmails={invitedEmails}
+            onChangeGuestEmails={inviteFrom ? setGuestEmails : undefined}
           />
         </div>
 
@@ -720,6 +728,8 @@ export function ParticipantPicker({
   groupsById,
   resolvedCount,
   responsesByUserId,
+  guestEmails = [],
+  onChangeGuestEmails,
 }: {
   users: UserOption[];
   groups: GroupOption[];
@@ -733,6 +743,10 @@ export function ParticipantPicker({
   // Per-guest RSVP (from the meeting's invite notifications), shown as a dot on
   // each chip when editing an existing meeting. Absent = no response yet.
   responsesByUserId?: Map<string, RsvpStatus>;
+  // People with no DALI profile, invited by address. Omit the handler and the
+  // picker stays members-only.
+  guestEmails?: string[];
+  onChangeGuestEmails?: (emails: string[]) => void;
 }) {
   const { fieldRadius } = useOsChrome();
   const panelClass = usePanelClass();
@@ -754,11 +768,25 @@ export function ParticipantPicker({
     )
     .slice(0, 40);
 
-  // One flat list (groups first, then users) so the arrow keys walk both and
-  // Enter can commit whatever's highlighted.
-  const items: Array<{ kind: "group"; g: GroupOption } | { kind: "user"; u: UserOption }> = [
+  // A typed address with no member behind it can be invited as-is.
+  const inviteEmail =
+    onChangeGuestEmails &&
+    isGuestEmail(q) &&
+    !guestEmails.includes(q) &&
+    !users.some((u) => u.daliEmail?.toLowerCase() === q)
+      ? q
+      : null;
+
+  // One flat list (groups, then users, then a typed email) so the arrow keys
+  // walk all of them and Enter can commit whatever's highlighted.
+  const items: Array<
+    | { kind: "group"; g: GroupOption }
+    | { kind: "user"; u: UserOption }
+    | { kind: "email"; email: string }
+  > = [
     ...filteredGroups.map((g) => ({ kind: "group" as const, g })),
     ...filteredUsers.map((u) => ({ kind: "user" as const, u })),
+    ...(inviteEmail ? [{ kind: "email" as const, email: inviteEmail }] : []),
   ];
   const firstUserIndex = filteredGroups.length;
 
@@ -766,16 +794,18 @@ export function ParticipantPicker({
     const it = items[index];
     if (!it) return;
     if (it.kind === "group") onChangeGroups([...selectedGroupIds, it.g.id]);
-    else onChangeUsers([...selectedUserIds, it.u.id]);
+    else if (it.kind === "user") onChangeUsers([...selectedUserIds, it.u.id]);
+    else onChangeGuestEmails?.([...guestEmails, it.email]);
     setQuery("");
     setActiveIndex(0);
     inputRef.current?.focus();
   }
 
   // Backspace on an empty query peels the most recently added chip — the usual
-  // token-field affordance. Users render after groups, so they come off first.
+  // token-field affordance. Chips come off in reverse render order.
   function removeLast() {
-    if (selectedUserIds.length > 0) onChangeUsers(selectedUserIds.slice(0, -1));
+    if (guestEmails.length > 0 && onChangeGuestEmails) onChangeGuestEmails(guestEmails.slice(0, -1));
+    else if (selectedUserIds.length > 0) onChangeUsers(selectedUserIds.slice(0, -1));
     else if (selectedGroupIds.length > 0) onChangeGroups(selectedGroupIds.slice(0, -1));
   }
 
@@ -894,6 +924,20 @@ export function ParticipantPicker({
             </span>
           );
         })}
+        {guestEmails.map((email) => (
+          <span key={`e:${email}`} className={chip}>
+            <Mail className="h-3 w-3 text-muted-foreground" />
+            {email}
+            <button
+              type="button"
+              onClick={() => onChangeGuestEmails?.(guestEmails.filter((x) => x !== email))}
+              aria-label={`Remove ${email}`}
+              className="opacity-60 hover:opacity-100"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </span>
+        ))}
         <input
           ref={inputRef}
           type="text"
@@ -906,7 +950,11 @@ export function ParticipantPicker({
           aria-autocomplete="list"
           value={query}
           placeholder={
-            selectedUserIds.length + selectedGroupIds.length === 0 ? "Add guests or a group" : ""
+            selectedUserIds.length + selectedGroupIds.length + guestEmails.length === 0
+              ? onChangeGuestEmails
+                ? "Add guests, a group, or an email"
+                : "Add guests or a group"
+              : ""
           }
           className="min-w-[8rem] flex-1 bg-transparent px-1 py-0.5 text-sm text-foreground outline-none placeholder:text-muted-foreground"
           {...getReferenceProps({
@@ -928,9 +976,10 @@ export function ParticipantPicker({
             },
           })}
         />
-        {resolvedCount > 0 && (
+        {resolvedCount + guestEmails.length > 0 && (
           <span className="ml-auto shrink-0 pr-1 text-[11px] text-muted-foreground">
-            {resolvedCount} {resolvedCount === 1 ? "person" : "people"}
+            {resolvedCount + guestEmails.length}{" "}
+            {resolvedCount + guestEmails.length === 1 ? "person" : "people"}
           </span>
         )}
       </div>
@@ -950,11 +999,14 @@ export function ParticipantPicker({
               items.map((it, i) => {
                 const isActive = i === activeIndex;
                 const startsUsers = it.kind === "user" && i === firstUserIndex && firstUserIndex > 0;
+                const startsEmail = it.kind === "email" && i > 0;
                 return (
                   <li
-                    key={it.kind === "group" ? `g:${it.g.id}` : `u:${it.u.id}`}
+                    key={
+                      it.kind === "group" ? `g:${it.g.id}` : it.kind === "user" ? `u:${it.u.id}` : `e:${it.email}`
+                    }
                     role="none"
-                    className={startsUsers ? "mt-1 border-t border-border pt-1" : undefined}
+                    className={startsUsers || startsEmail ? "mt-1 border-t border-border pt-1" : undefined}
                   >
                     <button
                       type="button"
@@ -986,8 +1038,13 @@ export function ParticipantPicker({
                             {it.g.memberIds.length} member{it.g.memberIds.length === 1 ? "" : "s"}
                           </span>
                         </>
-                      ) : (
+                      ) : it.kind === "user" ? (
                         <span className="min-w-0 truncate">{userLabel(it.u)}</span>
+                      ) : (
+                        <span className="inline-flex min-w-0 items-center gap-1.5 truncate">
+                          <Mail className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          Invite {it.email}
+                        </span>
                       )}
                     </button>
                   </li>

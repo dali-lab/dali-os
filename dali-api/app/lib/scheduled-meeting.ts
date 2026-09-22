@@ -24,6 +24,7 @@ import {
   ensureLabMeetingNotesFolder,
 } from "~/lib/pages";
 import { isCore } from "~/lib/roles";
+import { normalizeGuestEmails } from "~/calendar/lib/guest-emails";
 import { expandOccurrences, rruleWithUntil, bareRrule, type OccurrenceException } from "~/lib/meeting-occurrences";
 import type { ScheduledMeeting, MeetingType, AttendanceMode } from "~/generated/prisma/client";
 
@@ -86,7 +87,10 @@ async function buildPerRecipientIcs(args: {
   return byUser;
 }
 
-async function googleAttendeesFor(userIds: string[]): Promise<GoogleAttendee[]> {
+async function googleAttendeesFor(
+  userIds: string[],
+  guestEmails: string[] = [],
+): Promise<GoogleAttendee[]> {
   const users = await prisma.user.findMany({
     where: { id: { in: userIds } },
     select: {
@@ -102,6 +106,9 @@ async function googleAttendeesFor(userIds: string[]): Promise<GoogleAttendee[]> 
     const email = primaryEmail(u);
     if (!email) continue;
     attendees.push({ email, displayName: `${u.firstName} ${u.lastName}`.trim() || email });
+  }
+  for (const email of normalizeGuestEmails(guestEmails, attendees.map((a) => a.email))) {
+    attendees.push({ email });
   }
   return attendees;
 }
@@ -246,6 +253,10 @@ export type CreateScheduledMeetingInput = {
   // participants, and an enabled calendar link) — the link is born on that
   // event and Google's invite carries it. No-op otherwise.
   addMeet?: boolean;
+  // Invitees with no DALI profile — see ScheduledMeeting.guestEmails. They
+  // reach the meeting only through the Google event, so they need a linked
+  // organizer calendar and a start time to be invited.
+  guestEmails?: string[];
 };
 
 export type CreateScheduledMeetingResult =
@@ -463,6 +474,7 @@ export async function createScheduledMeeting(
   // Blank is the same as unset here: an untouched field shouldn't persist as "".
   const location = input.location?.trim() || null;
   const description = input.description?.trim() || null;
+  const guestEmails = normalizeGuestEmails(input.guestEmails ?? []);
 
   const meeting = await prisma.scheduledMeeting.create({
     data: {
@@ -474,6 +486,7 @@ export async function createScheduledMeeting(
       scopeType: input.scope.type,
       scopeId,
       participantUserIds,
+      guestEmails,
       recurrenceRule: input.recurrenceRule ?? null,
       selectedAt: startDate,
       status: startDate ? "Confirmed" : "Searching",
@@ -491,8 +504,13 @@ export async function createScheduledMeeting(
   let externalEventId: string | null = null;
   let meetingUrl: string | null = null;
   let gcalError: string | null = null;
-  if (organizerLink && organizerLink.enabled && startDate && participantUserIds.length > 0) {
-    const attendees = await googleAttendeesFor(participantUserIds);
+  if (
+    organizerLink &&
+    organizerLink.enabled &&
+    startDate &&
+    (participantUserIds.length > 0 || guestEmails.length > 0)
+  ) {
+    const attendees = await googleAttendeesFor(participantUserIds, guestEmails);
     if (attendees.length > 0) {
       const endDate = new Date(startDate.getTime() + input.durationMinutes * 60_000);
       // A recurring insert must name the zone its RRULE expands in — anchor it
@@ -1345,6 +1363,8 @@ export type UpdateScheduledMeetingInput = {
   // MeetingException carries no per-occurrence copy of either field.
   location?: string;
   description?: string;
+  // Omitted leaves the stored guest emails alone; a set list replaces them.
+  guestEmails?: string[];
   // Scoped edit fields (optional, default "all"):
   editScope?: "this" | "following" | "all";
   occurrenceStart?: string;   // ISO of this occurrence's ORIGINAL start
@@ -1378,6 +1398,7 @@ export async function updateScheduledMeeting(
       status: true,
       title: true,
       participantUserIds: true,
+      guestEmails: true,
       selectedAt: true,
       durationMinutes: true,
       ownerCalendarEmail: true,
@@ -1527,6 +1548,7 @@ export async function updateScheduledMeeting(
       isCoreMeeting: meeting.isCoreMeeting,
       location: input.location ?? meeting.location,
       description: input.description ?? meeting.description,
+      guestEmails: input.guestEmails ?? meeting.guestEmails,
     });
 
     if (!newMeetingResult.ok) {
@@ -1537,6 +1559,8 @@ export async function updateScheduledMeeting(
 
   // ── "all" (default) — existing behavior ──────────────────────────────────
   const { participantUserIds, scopeId } = await resolveScope(input.scope);
+  const guestEmails =
+    input.guestEmails !== undefined ? normalizeGuestEmails(input.guestEmails) : meeting.guestEmails;
 
   const startDate = input.startTime ? new Date(input.startTime) : null;
 
@@ -1548,6 +1572,7 @@ export async function updateScheduledMeeting(
       scopeType: input.scope.type,
       scopeId,
       participantUserIds,
+      guestEmails,
       recurrenceRule: input.recurrenceRule ?? null,
       selectedAt: startDate,
       status: startDate ? "Confirmed" : "Searching",
@@ -1597,7 +1622,7 @@ export async function updateScheduledMeeting(
         select: { id: true, enabled: true },
       });
       if (link?.enabled) {
-        const attendees = await googleAttendeesFor(participantUserIds);
+        const attendees = await googleAttendeesFor(participantUserIds, guestEmails);
         const organizerUser = await prisma.user.findUnique({
           where: { id: meeting.organizerId },
           select: { timeZone: true },
@@ -1798,12 +1823,18 @@ export async function trackExternalEventAsMeeting(
             { dartmouthEmail: { in: attendeeEmails, mode: "insensitive" } },
           ],
         },
-        select: { id: true },
+        select: { id: true, daliEmail: true, dartmouthEmail: true },
       })
     : [];
   const participantUserIds = attendees
     .map((u) => u.id)
     .filter((id) => id !== input.actorId);
+  // Everyone else on the Google event stays on it as an email guest, so editing
+  // the tracked meeting later doesn't strip them from Google's guest list.
+  const guestEmails = normalizeGuestEmails(
+    attendeeEmails,
+    attendees.flatMap((u) => [u.daliEmail, u.dartmouthEmail].filter((e): e is string => !!e)),
+  );
 
   const meeting = await prisma.scheduledMeeting.create({
     data: {
@@ -1818,6 +1849,7 @@ export async function trackExternalEventAsMeeting(
       // the meeting page reads to let any lab member see a lab-wide meeting.
       scopeType: "None",
       participantUserIds,
+      guestEmails,
       selectedAt: startDate,
       status: "Confirmed",
       externalEventId,
