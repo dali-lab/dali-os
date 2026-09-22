@@ -1,8 +1,8 @@
 // POST /api/ai/meeting-notes — turns a meeting transcript into notes for the
-// meeting-note document it was recorded on. The transcript is transcribed
+// collaborative document it was recorded on. The transcript is transcribed
 // on-device by the desktop app (see api.meeting-recordings.$id), so no audio
-// reaches the server. Requires the `ai-meeting-notes` flag, edit access to a meeting-note
-// page, and a configured AI provider (503 otherwise). Shares the doc
+// reaches the server. Requires the `ai-meeting-notes` flag, write access to
+// the document's collab room, and a configured AI provider (503 otherwise). Shares the doc
 // assistant's per-user burst limit and daily quota shape.
 //
 // NEVER log the API key, JWT, cookies, or the transcript.
@@ -13,7 +13,7 @@ import { requireAuth } from "~/lib/auth";
 import { generateShortText } from "~/lib/ai.server";
 import { recordTokenUsage } from "~/lib/ai-usage.server";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { getPageAccess } from "~/lib/pageAccess.server";
+import { canRecordInto, documentTitle } from "~/lib/meeting-recording.server";
 import { getUserRoles } from "~/lib/roles";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { prisma } from "~/lib/db";
@@ -70,9 +70,9 @@ export async function action({ request }: Route.ActionArgs) {
     return Response.json({ error: "Invalid JSON" }, { status: 400 });
   }
   const b = (body ?? {}) as Record<string, unknown>;
-  const pageId = typeof b.pageId === "string" ? b.pageId : "";
+  const documentName = typeof b.documentName === "string" ? b.documentName : "";
   const transcript = typeof b.transcript === "string" ? b.transcript.trim().slice(-TRANSCRIPT_MAX) : "";
-  if (!pageId) return Response.json({ error: "pageId is required" }, { status: 400 });
+  if (!documentName) return Response.json({ error: "documentName is required" }, { status: 400 });
   if (!transcript) return Response.json({ error: "Nothing was transcribed." }, { status: 400 });
 
   const roles = await getUserRoles(auth.user.sub, request);
@@ -80,18 +80,11 @@ export async function action({ request }: Route.ActionArgs) {
     return Response.json({ error: "Not available" }, { status: 403 });
   }
 
-  // Only meeting notes, and only for someone who could write the result in.
-  const page = await prisma.page.findUnique({
-    where: { id: pageId },
-    select: {
-      meetingNoteId: true,
-      title: true,
-      meetingNote: { select: { title: true } },
-    },
-  });
-  if (!page?.meetingNoteId) return Response.json({ error: "Not found" }, { status: 404 });
-  const access = await getPageAccess(auth.user.sub, pageId, request);
-  if (!access.canEdit) return Response.json({ error: "Forbidden" }, { status: 403 });
+  // Only for someone who could write the result into the document.
+  if (!(await canRecordInto(auth.user.sub, documentName))) {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
+  const title = await documentTitle(documentName);
 
   const day = new Date().toISOString().slice(0, 10);
   const usage = await prisma.aiUsage.upsert({
@@ -109,7 +102,7 @@ export async function action({ request }: Route.ActionArgs) {
   try {
     const result = await generateShortText({
       system: SYSTEM_PROMPT,
-      prompt: `Meeting: ${page.meetingNote?.title ?? page.title}\n\nTranscript:\n${transcript}`,
+      prompt: `${title ? `Document: ${title}\n\n` : ""}Transcript:\n${transcript}`,
       maxTokens: 2000,
     });
     if (!result) return Response.json({ aiEnabled: false }, { status: 503 });

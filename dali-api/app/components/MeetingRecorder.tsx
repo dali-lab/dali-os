@@ -31,27 +31,30 @@ const APP_WAIT_MS = 10_000;
 // lines we already have (the app may have quit mid-recording).
 const STOP_WAIT_MS = 20_000;
 
-// Shown on a meeting-note document. Recording always happens in the DALI OS
-// desktop app, whichever window started it: the page creates a recording and
+// Shown once above every Drive document the viewer can edit, meeting notes
+// included (documents.$pageId, behind the `ai-meeting-notes` flag). Recording
+// always happens in the DALI OS desktop app, whichever window started it: the
+// page creates a recording and
 // opens its dalios:// link, the app captures the Mac's system audio (everyone
 // on a call) plus the mic and transcribes on-device, and the page polls the
 // lines through the server. On stop, /api/ai/meeting-notes turns them into
 // notes appended to the doc through the live editor.
 export function MeetingRecorder({
-  pageId,
+  documentName,
   onInsert,
-  aiEnabled,
 }: {
-  pageId: string;
-  /** Appends Markdown to the note. False when the editor isn't ready yet. */
+  /** The collab room the notes land in. */
+  documentName: string;
+  /** Appends Markdown to the document. False when the editor isn't ready. */
   onInsert: (markdown: string) => boolean;
-  /** Without an AI provider, the recording still lands as a transcript. */
-  aiEnabled: boolean;
 }) {
   const { panel } = useOsChrome();
   const [phase, setPhase] = useState<Phase>("idle");
   const [recordingId, setRecordingId] = useState<string | null>(null);
   const [link, setLink] = useState<string | null>(null);
+  // From the server: without an AI provider the recording lands as a
+  // transcript only.
+  const [aiEnabled, setAiEnabled] = useState(false);
   // Seconds from earlier sessions of this recording (Stop, then Continue).
   const [recordedSeconds, setRecordedSeconds] = useState(0);
   const [lines, setLines] = useState<TranscriptLine[]>([]);
@@ -150,13 +153,14 @@ export function MeetingRecorder({
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pageId }),
+        body: JSON.stringify({ documentName }),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || typeof json?.id !== "string") {
         setError(json?.error ?? "Couldn't start recording.");
         return;
       }
+      setAiEnabled(json.aiEnabled === true);
       setRecordingId(json.id);
       setLink(json.link);
       setStartedAt(Date.now());
@@ -240,7 +244,7 @@ export function MeetingRecorder({
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pageId, transcript: transcriptText(lines) }),
+        body: JSON.stringify({ documentName, transcript: transcriptText(lines) }),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || typeof json?.markdown !== "string") {

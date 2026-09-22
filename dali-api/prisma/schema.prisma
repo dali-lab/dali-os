@@ -1552,7 +1552,8 @@ model AiUsage {
   @@unique([userId, day])
 }
 
-// A native recording in progress for a meeting-note document. The page creates
+// A native recording in progress for a collaborative document (any DocEditor
+// room the user can write to). The page creates
 // the row and hands its id to the desktop app over a dalios:// link; the app
 // records system audio and the mic, transcribes on-device, and appends lines
 // here with its desktop Session token. The page polls the lines and, once the
@@ -1561,7 +1562,8 @@ model AiUsage {
 // user's stale rows are swept whenever they start a new recording.
 model MeetingRecording {
   id            String                 @id @default(cuid())
-  pageId        String
+  // The collab room the notes land in, e.g. "doc:<pageId>:body".
+  documentName  String
   userId        String
   status        MeetingRecordingStatus @default(Pending)
   // Set by the page's Stop button; the app sees it on its next append.

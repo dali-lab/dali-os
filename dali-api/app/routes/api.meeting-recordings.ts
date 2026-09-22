@@ -1,15 +1,20 @@
-// POST /api/meeting-recordings — start a native recording for a meeting-note
+// POST /api/meeting-recordings — start a native recording for a collaborative
 // document. Creates the MeetingRecording row and returns the dalios:// link the
-// page opens to hand it to the desktop app. Same gate as writing the notes:
-// the `ai-meeting-notes` flag and edit access to a meeting-note page.
+// page opens to hand it to the desktop app. Gated on the `ai-meeting-notes`
+// flag and on write access to the document's collab room (the same check the
+// collab server applies). Also tells the page whether an AI provider is set,
+// so it can offer notes or just the transcript.
 
 import type { Route } from "./+types/api.meeting-recordings";
 import { requireAuth } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { isAiEnabled } from "~/lib/ai.server";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { getPageAccess } from "~/lib/pageAccess.server";
 import { getUserRoles } from "~/lib/roles";
-import { createRecording, recordingDeepLink } from "~/lib/meeting-recording.server";
+import {
+  canRecordInto,
+  createRecording,
+  recordingDeepLink,
+} from "~/lib/meeting-recording.server";
 
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
@@ -18,20 +23,21 @@ export async function action({ request }: Route.ActionArgs) {
     return Response.json({ error: "Method not allowed" }, { status: 405 });
   }
 
-  const body = (await request.json().catch(() => null)) as { pageId?: unknown } | null;
-  const pageId = typeof body?.pageId === "string" ? body.pageId : "";
-  if (!pageId) return Response.json({ error: "pageId is required" }, { status: 400 });
+  const body = (await request.json().catch(() => null)) as { documentName?: unknown } | null;
+  const documentName = typeof body?.documentName === "string" ? body.documentName : "";
+  if (!documentName) return Response.json({ error: "documentName is required" }, { status: 400 });
 
   const roles = await getUserRoles(auth.user.sub, request);
   if (!(await isFeatureEnabled("ai-meeting-notes", auth.user.sub, roles, request))) {
     return Response.json({ error: "Not available" }, { status: 403 });
   }
+  if (!(await canRecordInto(auth.user.sub, documentName))) {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
 
-  const page = await prisma.page.findUnique({ where: { id: pageId }, select: { meetingNoteId: true } });
-  if (!page?.meetingNoteId) return Response.json({ error: "Not found" }, { status: 404 });
-  const access = await getPageAccess(auth.user.sub, pageId, request);
-  if (!access.canEdit) return Response.json({ error: "Forbidden" }, { status: 403 });
-
-  const rec = await createRecording(auth.user.sub, pageId);
-  return Response.json({ id: rec.id, link: recordingDeepLink(rec.id) }, { status: 201 });
+  const rec = await createRecording(auth.user.sub, documentName);
+  return Response.json(
+    { id: rec.id, link: recordingDeepLink(rec.id), aiEnabled: isAiEnabled() },
+    { status: 201 },
+  );
 }

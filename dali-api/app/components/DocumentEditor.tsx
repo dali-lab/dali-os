@@ -118,7 +118,7 @@ export function DocumentEditor({
   // True when the server has an AI provider key configured — shows the AI slash items.
   aiEnabled?: boolean;
   // Hands the live editor to the host page, for surfaces outside the editor
-  // that write into the doc (meeting-note recording).
+  // that write into the doc (meeting recording).
   onEditorReady?: (editor: DocEditorInstance) => void;
 }) {
   const revalidator = useRevalidator();

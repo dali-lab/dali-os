@@ -3,6 +3,8 @@
 // with its cookie session, the app with its desktop Session Bearer token.
 
 import { prisma } from "~/lib/db";
+import { authorizeCollabDoc } from "~/lib/collabAuth";
+import { isPresenceRoom } from "~/collab/roomName";
 import type { MeetingRecording } from "~/generated/prisma/client";
 import type { TranscriptLine } from "~/lib/meeting-transcript";
 
@@ -16,11 +18,27 @@ export function recordingDeepLink(id: string): string {
   return `dalios://record?id=${encodeURIComponent(id)}`;
 }
 
-export async function createRecording(userId: string, pageId: string): Promise<MeetingRecording> {
+/** Whether this user may record into a collab document: the same write
+ *  check the collab server applies to the room itself. */
+export async function canRecordInto(userId: string, documentName: string): Promise<boolean> {
+  if (!documentName || isPresenceRoom(documentName)) return false;
+  const access = await authorizeCollabDoc(userId, documentName);
+  return access.allowed && !access.readOnly;
+}
+
+/** The document's title for the notes prompt, when it's a Drive page. */
+export async function documentTitle(documentName: string): Promise<string | null> {
+  const [entity, id] = documentName.split(":");
+  if (entity !== "doc" || !id) return null;
+  const page = await prisma.page.findUnique({ where: { id }, select: { title: true } });
+  return page?.title ?? null;
+}
+
+export async function createRecording(userId: string, documentName: string): Promise<MeetingRecording> {
   await prisma.meetingRecording.deleteMany({
     where: { userId, createdAt: { lt: new Date(Date.now() - STALE_MS) } },
   });
-  return prisma.meetingRecording.create({ data: { userId, pageId } });
+  return prisma.meetingRecording.create({ data: { userId, documentName } });
 }
 
 /** The row, or null when it doesn't exist or belongs to someone else. */

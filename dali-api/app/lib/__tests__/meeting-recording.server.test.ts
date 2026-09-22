@@ -1,10 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
+vi.mock("~/lib/collabAuth", () => ({ authorizeCollabDoc: vi.fn() }));
 
 import { prisma } from "~/lib/db";
+import { authorizeCollabDoc } from "~/lib/collabAuth";
 import {
   appendLines,
+  canRecordInto,
   cleanLines,
   finishRecording,
   ownRecording,
@@ -16,7 +19,7 @@ import {
 const rec = (over: Record<string, unknown> = {}) =>
   ({
     id: "r1",
-    pageId: "p1",
+    documentName: "doc:p1:body",
     userId: "u1",
     status: "Recording",
     stopRequested: false,
@@ -37,6 +40,23 @@ beforeEach(() => {
 describe("recordingDeepLink", () => {
   it("points the desktop app at the recording", () => {
     expect(recordingDeepLink("abc123")).toBe("dalios://record?id=abc123");
+  });
+});
+
+describe("canRecordInto", () => {
+  it("allows a room the user can write to", async () => {
+    vi.mocked(authorizeCollabDoc).mockResolvedValue({ allowed: true, readOnly: false });
+    expect(await canRecordInto("u1", "interview:i1:notes")).toBe(true);
+  });
+
+  it("refuses a read-only viewer", async () => {
+    vi.mocked(authorizeCollabDoc).mockResolvedValue({ allowed: true, readOnly: true });
+    expect(await canRecordInto("u1", "doc:p1:body")).toBe(false);
+  });
+
+  it("never records into a presence room", async () => {
+    expect(await canRecordInto("u1", "presence:p1")).toBe(false);
+    expect(authorizeCollabDoc).not.toHaveBeenCalled();
   });
 });
 
