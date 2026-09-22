@@ -439,8 +439,8 @@ export default function DocumentPage() {
           checkInQrSvg={attendance.checkInQrSvg}
         />
       )}
-      {attendance && aiMeetingNotes && aiConfigured && canEdit && (
-        <MeetingRecorder pageId={pageId} onInsert={insertMarkdown} />
+      {attendance && aiMeetingNotes && canEdit && (
+        <MeetingRecorder pageId={pageId} onInsert={insertMarkdown} aiEnabled={aiConfigured} />
       )}
       {attendance && (
         <AttendanceChecklist

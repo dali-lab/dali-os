@@ -50,6 +50,9 @@ pub struct AppState {
     // Whether the main window has been shown to the user yet (gates the
     // cold-start splash → app / offline reveal, and is idempotent).
     pub main_revealed: AtomicBool,
+    // Id of the MeetingRecording being captured, if any (recording.rs). Also
+    // drives the tray's "Stop recording" item.
+    pub recording: Mutex<Option<String>>,
 }
 
 impl AppState {
@@ -64,6 +67,7 @@ impl AppState {
             main_load_gen: AtomicU64::new(0),
             main_loaded_gen: AtomicU64::new(0),
             main_revealed: AtomicBool::new(false),
+            recording: Mutex::new(None),
         }
     }
 

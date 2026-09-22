@@ -11,11 +11,14 @@
 	     Shown by macOS the first time the scanner asks for the camera. -->
 	<key>NSCameraUsageDescription</key>
 	<string>DALI OS uses the camera to scan membership wallet passes for event check-in.</string>
-	<!-- Meeting-note recording (MeetingRecorder, dali-api) transcribes the mic
-	     with the webview's speech recognition, which needs both usage strings. -->
+	<!-- Native meeting recording (src/recording.rs + recorder/Recorder.swift):
+	     the mic, on-device speech recognition, and a Core Audio tap on system
+	     audio (macOS 14.2+) each prompt once with these strings. -->
 	<key>NSMicrophoneUsageDescription</key>
 	<string>DALI OS uses the microphone to transcribe meetings you record into meeting notes.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>DALI OS uses speech recognition to turn meetings you record into meeting notes.</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>DALI OS records your computer's audio so meeting notes include everyone on the call.</string>
 </dict>
 </plist>

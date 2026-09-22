@@ -1552,6 +1552,38 @@ model AiUsage {
   @@unique([userId, day])
 }
 
+// A native recording in progress for a meeting-note document. The page creates
+// the row and hands its id to the desktop app over a dalios:// link; the app
+// records system audio and the mic, transcribes on-device, and appends lines
+// here with its desktop Session token. The page polls the lines and, once the
+// recording stops, writes notes into the doc and deletes the row. Transcript
+// text only: no audio ever reaches the server. Rows are owner-only, and a
+// user's stale rows are swept whenever they start a new recording.
+model MeetingRecording {
+  id            String                 @id @default(cuid())
+  pageId        String
+  userId        String
+  status        MeetingRecordingStatus @default(Pending)
+  // Set by the page's Stop button; the app sees it on its next append.
+  stopRequested Boolean                @default(false)
+  // Whether the app is capturing system audio (macOS 14.2+) or the mic only.
+  systemAudio   Boolean                @default(false)
+  // [{ at: seconds since start, text, source: "you" | "others" }]
+  lines         Json                   @default("[]")
+  error         String?
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+
+  @@index([userId])
+}
+
+enum MeetingRecordingStatus {
+  Pending
+  Recording
+  Stopped
+  Failed
+}
+
 // ─── Document Signing ────────────────────────────────────────────────────────
 
 // A named, versioned signable document — the generalization of

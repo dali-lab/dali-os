@@ -19,6 +19,15 @@ describe("transcriptText", () => {
       ]),
     ).toBe("[00:03] hello everyone\n[01:04] # not a heading");
   });
+
+  it("labels speakers and orders the two sources by time", () => {
+    expect(
+      transcriptText([
+        { at: 9, text: "sounds good", source: "you" },
+        { at: 4, text: "can you hear me", source: "others" },
+      ]),
+    ).toBe("[00:04] Others: can you hear me\n[00:09] You: sounds good");
+  });
 });
 
 describe("meetingNotesMarkdown", () => {

@@ -1,7 +1,7 @@
 // POST /api/ai/meeting-notes — turns a meeting transcript into notes for the
-// meeting-note document it was recorded on. The transcript comes from the
-// browser's own speech recognition (MeetingRecorder), so no audio reaches the
-// server. Requires the `ai-meeting-notes` flag, edit access to a meeting-note
+// meeting-note document it was recorded on. The transcript is transcribed
+// on-device by the desktop app (see api.meeting-recordings.$id), so no audio
+// reaches the server. Requires the `ai-meeting-notes` flag, edit access to a meeting-note
 // page, and a configured AI provider (503 otherwise). Shares the doc
 // assistant's per-user burst limit and daily quota shape.
 //
@@ -30,7 +30,7 @@ const AI_DAILY_MAX = 200;
 export const TRANSCRIPT_MAX = 120_000;
 
 const SYSTEM_PROMPT = `You write meeting notes for a university software lab from a raw speech-to-text transcript. \
-The transcript comes from one laptop microphone: there are no speaker names, words may be misheard, and it may start or stop mid-sentence. \
+Each line is "[mm:ss] Speaker: text". "You" is the person who recorded (their microphone) and "Others" is everyone else on the call (the computer's audio); there are no other speaker names. Words may be misheard, and it may start or stop mid-sentence. \
 Write in Markdown with exactly these sections, in order: "### Summary" (2-5 sentences), "### Decisions" (bullets), "### Action items" (bullets as "- [ ] owner: task" when an owner is clear, otherwise "- [ ] task"). \
 Write "None noted." under a section with nothing in it. \
 Only include what the transcript supports. Don't invent names, dates, or numbers, and fix obvious transcription errors only when the meaning is clear. \

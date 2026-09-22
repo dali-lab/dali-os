@@ -742,6 +742,13 @@ export const prisma = {
     upsert: vi.fn(),
     update: vi.fn(),
   },
+  meetingRecording: {
+    create: vi.fn(),
+    findUnique: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+    deleteMany: vi.fn(),
+  },
   outboundMessage: {
     create: vi.fn(),
     findUnique: vi.fn(),
