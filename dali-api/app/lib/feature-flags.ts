@@ -164,6 +164,12 @@ export const FEATURE_FLAGS = [
       "Collaborative Excalidraw whiteboards in Drive — an infinite canvas with shapes, arrows, sticky notes, freehand pen, text, and images, synced live (with multiplayer cursors) through the same Yjs collab backend as documents. Create one from the Drive New menu; it shares, nests, versions, and is searchable like any page. Ships off.",
   },
   {
+    key: "resources",
+    label: "Resources page",
+    description:
+      "A lab-wide Resources document at /resources: one shared collaborative page with no document chrome, read by every lab member and edited by Core/Admin behind an Edit button. Takes the pinned sidebar slot under Calendar, which moves Drive down into General. Ships off; without it the slot stays Drive and /resources is not reachable.",
+  },
+  {
     key: "unified-core-project-meetings",
     label: "Core + project meetings",
     description:
