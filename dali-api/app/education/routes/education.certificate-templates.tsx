@@ -16,6 +16,7 @@ import { DriveFolderBindings } from "~/components/drive/DriveFolderBindings";
 import { Button, buttonClasses } from "~/components/ui/Button";
 import { useDialog } from "~/components/ui/dialog";
 import { uploadFileToS3 } from "~/lib/upload-client";
+import { formatDateShort } from "~/lib/display";
 import { ImageIcon } from "lucide-react";
 
 // Route types aren't generated until the route is registered in routes.ts, so
@@ -253,7 +254,7 @@ export default function CertificateTemplatesPage() {
                 </div>
                 <p className="text-xs text-muted-foreground">
                   {t.fieldCount} {t.fieldCount === 1 ? "field" : "fields"} · Created{" "}
-                  {new Date(t.createdAt).toLocaleDateString()}
+                  {formatDateShort(t.createdAt)}
                 </p>
               </div>
 
