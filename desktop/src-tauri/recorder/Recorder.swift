@@ -9,7 +9,7 @@
 // object per call:
 //   {"type":"started","systemAudio":Bool,"onDevice":Bool}
 //   {"type":"line","source":"you"|"others","at":Double,"text":String}
-//   {"type":"error","message":String}   (fatal; nothing was started)
+//   {"type":"error","message":String}   (fatal; "stopped" follows)
 //   {"type":"stopped"}                   (always the last event)
 //
 // Two audio sources, transcribed separately so every line knows who said it:
@@ -17,10 +17,10 @@
 //               automatic gain so people across the room still register.
 //   - "others": the Mac's system output via a Core Audio process tap (macOS
 //               14.2+). No tap, no "others": older Macs record the mic only.
-// Echo cancellation (Apple's voice processing) is only switched on while the
-// Mac is actually playing sound. It stops call audio from the speakers being
-// transcribed twice, but it's tuned for one person at the keyboard and treats
-// distant voices as noise, so an in-room meeting runs without it.
+// No echo cancellation: enabling Apple's voice processing on the input, even
+// bypassed, turns a built-in mic into a 9-channel stream about 25 dB quieter,
+// which loses anyone across the room. Call audio from the speakers can land
+// in both sources; headphones avoid that.
 // Transcription is SFSpeechRecognizer, on-device whenever the language model is
 // installed. Audio is never written to disk or sent anywhere by this file.
 
@@ -66,11 +66,6 @@ private final class Recorder {
     private var stopSystem: (() -> Void)?
     private var transcribers: [Transcriber] = []
     private var stopping = false
-    private var echoTimer: DispatchSourceTimer?
-    // Last time the system tap heard real sound, guarded by `levelLock` (it's
-    // written from the tap's IO queue).
-    private let levelLock = NSLock()
-    private var lastPlaybackAt = Date.distantPast
 
     init(callback: @escaping DaliRecorderCallback) {
         self.callback = callback
@@ -108,8 +103,12 @@ private final class Recorder {
         let onLine: (String, TimeInterval, String) -> Void = { [weak self] source, at, text in
             self?.emit(["type": "line", "source": source, "at": at, "text": text])
         }
+        let onFatal: (String) -> Void = { [weak self] message in
+            recorderQueue.async { self?.fail(message) }
+        }
 
-        let you = Transcriber(source: "you", startedAt: startedAt, onDevice: onDevice, onLine: onLine)
+        let you = Transcriber(source: "you", startedAt: startedAt, onDevice: onDevice,
+                              onLine: onLine, onFatal: onFatal)
         do {
             mic = try MicCapture { buffer in you.append(buffer) }
         } catch {
@@ -121,48 +120,27 @@ private final class Recorder {
         transcribers.append(you)
 
         if #available(macOS 14.2, *) {
-            let others = Transcriber(source: "others", startedAt: startedAt, onDevice: onDevice, onLine: onLine)
-            let tap = try? SystemAudioCapture(onBuffer: { [weak self] buffer in
-                if rms(buffer) > playbackThreshold { self?.notePlayback() }
-                others.append(buffer)
-            })
-            if let tap {
+            let others = Transcriber(source: "others", startedAt: startedAt, onDevice: onDevice,
+                                     onLine: onLine, onFatal: onFatal)
+            if let tap = try? SystemAudioCapture(onBuffer: { buffer in others.append(buffer) }) {
                 stopSystem = tap.stop
                 transcribers.append(others)
-                watchPlayback()
             }
         }
 
         emit(["type": "started", "systemAudio": stopSystem != nil, "onDevice": onDevice])
     }
 
-    private func notePlayback() {
-        levelLock.lock()
-        lastPlaybackAt = Date()
-        levelLock.unlock()
-    }
-
-    // Echo cancellation follows playback: on within a moment of the Mac
-    // playing sound, off again after a few quiet seconds.
-    private func watchPlayback() {
-        let timer = DispatchSource.makeTimerSource(queue: recorderQueue)
-        timer.schedule(deadline: .now() + 0.5, repeating: 0.5)
-        timer.setEventHandler { [weak self] in
-            guard let self else { return }
-            self.levelLock.lock()
-            let playing = Date().timeIntervalSince(self.lastPlaybackAt) < 3
-            self.levelLock.unlock()
-            self.mic?.setEchoCancellation(playing)
-        }
-        timer.resume()
-        echoTimer = timer
+    // A recognizer that refuses every request would otherwise record silence.
+    private func fail(_ message: String) {
+        guard !stopping else { return }
+        emit(["type": "error", "message": message])
+        stop()
     }
 
     func stop() {
         guard !stopping else { return }
         stopping = true
-        echoTimer?.cancel()
-        echoTimer = nil
         mic?.stop()
         stopSystem?()
         mic = nil
@@ -210,6 +188,7 @@ private final class Transcriber {
     private let startedAt: Date
     private let onDevice: Bool
     private let onLine: (String, TimeInterval, String) -> Void
+    private let onFatal: (String) -> Void
     private let recognizer = SFSpeechRecognizer()
     private let lock = NSLock()
     private var request: SFSpeechAudioBufferRecognitionRequest?
@@ -220,11 +199,13 @@ private final class Transcriber {
     private var ended = false
 
     init(source: String, startedAt: Date, onDevice: Bool,
-         onLine: @escaping (String, TimeInterval, String) -> Void) {
+         onLine: @escaping (String, TimeInterval, String) -> Void,
+         onFatal: @escaping (String) -> Void) {
         self.source = source
         self.startedAt = startedAt
         self.onDevice = onDevice
         self.onLine = onLine
+        self.onFatal = onFatal
         lock.lock()
         rotateLocked()
         lock.unlock()
@@ -291,6 +272,10 @@ private final class Transcriber {
             }
             // Either a final result or an error (a request that heard nothing
             // ends with "no speech detected", which is routine).
+            if let error = error as NSError?, error.domain == "kLSRErrorDomain", error.code == 201 {
+                // "Siri and Dictation are disabled": every request fails this way.
+                self.onFatal("Turn on Dictation in System Settings > Keyboard to record meetings.")
+            }
             if (result?.isFinal ?? false) || error != nil {
                 if delivered { return }
                 delivered = true
@@ -306,9 +291,6 @@ private final class Transcriber {
 }
 
 // MARK: - Levels
-
-// Below this the system tap is treated as silent (roughly -50 dBFS).
-private let playbackThreshold: Float = 0.003
 
 private func rms(_ buffer: AVAudioPCMBuffer) -> Float {
     guard let channels = buffer.floatChannelData, buffer.frameLength > 0 else { return 0 }
@@ -359,26 +341,9 @@ private final class AutoGain {
 private final class MicCapture {
     private let engine = AVAudioEngine()
     private let gain = AutoGain()
-    private var voiceProcessing = false
 
     init(onBuffer: @escaping (AVAudioPCMBuffer) -> Void) throws {
         let input = engine.inputNode
-        // Echo cancellation is available but starts bypassed; the recorder
-        // turns it on only while the Mac is playing sound (see Recorder).
-        do {
-            try input.setVoiceProcessingEnabled(true)
-            voiceProcessing = true
-            input.isVoiceProcessingBypassed = true
-            if #available(macOS 14, *) {
-                // Voice processing ducks other audio by default, which would
-                // make the call quieter for the user.
-                input.voiceProcessingOtherAudioDuckingConfiguration =
-                    AVAudioVoiceProcessingOtherAudioDuckingConfiguration(
-                        enableAdvancedDucking: false, duckingLevel: .min)
-            }
-        } catch {
-            voiceProcessing = false
-        }
         let format = input.outputFormat(forBus: 0)
         let gain = self.gain
         input.installTap(onBus: 0, bufferSize: 4096, format: format) { buffer, _ in
@@ -387,11 +352,6 @@ private final class MicCapture {
         }
         engine.prepare()
         try engine.start()
-    }
-
-    func setEchoCancellation(_ on: Bool) {
-        guard voiceProcessing, engine.inputNode.isVoiceProcessingBypassed == on else { return }
-        engine.inputNode.isVoiceProcessingBypassed = !on
     }
 
     func stop() {
@@ -452,15 +412,21 @@ private final class SystemAudioCapture {
 
             try check(AudioDeviceCreateIOProcIDWithBlock(&procID, aggregateID, ioQueue) {
                 _, inputData, _, _, _ in
-                // The buffer list is only valid for this callback; copy it out
-                // before the recognizer reads it on its own thread.
-                guard let view = AVAudioPCMBuffer(pcmFormat: format, bufferListNoCopy: inputData),
-                      let copy = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: view.frameLength)
+                // The aggregate also delivers its output sub-device's own input
+                // streams (6 channels on a MacBook Pro) ahead of the tap's, so
+                // take only the tap's buffers, which come last. The list is
+                // only valid for this callback; copy it out before the
+                // recognizer reads it on its own thread.
+                let all = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: inputData))
+                let tapBuffers = all.suffix(format.isInterleaved ? 1 : Int(format.channelCount))
+                guard let first = tapBuffers.first, asbd.mBytesPerFrame > 0 else { return }
+                let frames = first.mDataByteSize / asbd.mBytesPerFrame
+                guard frames > 0,
+                      let copy = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames)
                 else { return }
-                copy.frameLength = view.frameLength
-                let src = UnsafeMutableAudioBufferListPointer(view.mutableAudioBufferList)
+                copy.frameLength = frames
                 let dst = UnsafeMutableAudioBufferListPointer(copy.mutableAudioBufferList)
-                for (s, d) in zip(src, dst) {
+                for (s, d) in zip(tapBuffers, dst) {
                     if let from = s.mData, let to = d.mData {
                         memcpy(to, from, Int(min(s.mDataByteSize, d.mDataByteSize)))
                     }
