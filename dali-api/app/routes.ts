@@ -149,6 +149,10 @@ export default [
       "projects/routes/projects.$id.public-view.tsx",
     ),
 
+    // Resources — the lab's shared reference document. One fixed collab room
+    // (no Drive page behind it), read by every lab member, written by Core.
+    route("resources", "routes/resources.tsx"),
+
     // Drive — the unified documents + files + forms + agreements hub. This is the
     // only browsing surface; the old /documents and /forms hubs have been removed
     // (their editor/viewer deep-link routes remain, below).
