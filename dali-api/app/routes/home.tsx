@@ -12,7 +12,7 @@ import MilestoneHero from "~/components/home/MilestoneHero";
 import SearchIcon from "~/components/home/landing/SearchIcon";
 import {
   isLandingBackgroundId,
-  scheduledLandingBackground,
+  scheduledLandingWeek,
 } from "~/components/home/landing/backgrounds/schedule";
 import { isNavbarRoute } from "~/lib/navbar-routes";
 import { currentTermStrict, getUserRoles } from "~/lib/roles";
@@ -70,18 +70,17 @@ export async function loader({ request }: Route.LoaderArgs) {
   const greeting =
     greetingHour < 12 ? "Good morning" : greetingHour < 18 ? "Good afternoon" : "Good evening";
 
-  // This week's background, or `?background=<id>` to preview one before its date.
+  // This week's title and background; `?background=<id>` previews another background.
+  const landing = scheduledLandingWeek(
+    // en-CA formats as YYYY-MM-DD, the schedule's date format.
+    new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date()),
+  );
   const preview = new URL(request.url).searchParams.get("background");
-  const background = isLandingBackgroundId(preview)
-    ? preview
-    : scheduledLandingBackground(
-        // en-CA formats as YYYY-MM-DD, the schedule's date format.
-        new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date()),
-      );
 
   return {
     greeting,
-    background,
+    milestoneTitle: landing.title,
+    background: isLandingBackgroundId(preview) ? preview : landing.id,
     week,
     user: auth.user,
     pages: {
@@ -127,7 +126,7 @@ const HOME_PAGE_LIMIT = 6;
 export const handle = { fitViewport: true, bleedPane: true };
 
 export default function Home() {
-  const { user, greeting, week, background, pages } = useLoaderData<typeof loader>();
+  const { user, greeting, week, milestoneTitle, background, pages } = useLoaderData<typeof loader>();
   const revalidator = useRevalidator();
   const onChanged = () => revalidator.revalidate();
   const firstName = user.firstName || user.email.split("@")[0];
@@ -137,7 +136,7 @@ export default function Home() {
     <div className="relative flex min-h-0 flex-1 flex-col">
       <MilestoneHero
         weekBadge={week ? `Week ${week.index} ${week.dates}` : undefined}
-        milestoneTitle="Lab Kickoff"
+        milestoneTitle={milestoneTitle}
         greeting={greeting}
         userName={firstName}
         search={<HomeSearch />}
