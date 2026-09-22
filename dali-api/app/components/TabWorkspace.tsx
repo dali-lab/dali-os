@@ -2057,7 +2057,9 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onGuideCh
                     // so this grants nothing the top frame doesn't already have —
                     // but WebKit (the desktop shell's WKWebView) blocks capture in
                     // an undelegated subframe, which is why scanning failed there.
-                    allow="camera"
+                    // The microphone is delegated for the same reason, for
+                    // meeting-note recording (MeetingRecorder).
+                    allow="camera; microphone"
                     className="absolute inset-0 w-full h-full border-0"
                     style={{ display: isActive ? 'block' : 'none' }}
                     onLoad={onIframeLoad(tab.id)}

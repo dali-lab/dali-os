@@ -175,6 +175,12 @@ export const FEATURE_FLAGS = [
     description:
       "Let one meeting be both a Core meeting and a project meeting. When a meeting is marked Core, its note's About picker still offers the organizer's projects instead of collapsing to a fixed 'Core' — so a project's team meeting can live as that project's meeting (its note filed in the project's meeting-notes folder) while also showing on the Core hub calendar. Applies to the Events create modal and the Core hub's create modal. Ships off; without it, marking a meeting Core clears any project.",
   },
+  {
+    key: "ai-meeting-notes",
+    label: "AI meeting notes",
+    description:
+      "A Record button on meeting-note documents. The browser's built-in speech recognition (Chrome, Safari) transcribes the microphone live; on stop, Claude turns the transcript into a summary, decisions, and action items and appends them to the note with the full transcript. No audio is uploaded or stored. Only shows when an AI provider is configured. Ships off.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];
