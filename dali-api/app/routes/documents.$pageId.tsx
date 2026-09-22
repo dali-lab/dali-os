@@ -21,7 +21,7 @@ import { CheckInPanel } from "~/components/CheckInPanel";
 import { MeetingRecorder } from "~/components/MeetingRecorder";
 import { appendBlocks } from "~/components/doc";
 import type { DocEditorInstance } from "~/components/doc/schema/build";
-import { isAiEnabled } from "~/lib/ai.server";
+import { pageDocName } from "~/collab/roomName";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { PageIcon } from "~/components/PageIcon";
 import { FolderIcon } from "~/components/FolderIcon";
@@ -364,7 +364,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     subtitle: presenceUser?.subtitle ?? null,
     attendance,
     backlinks,
-    aiConfigured: isAiEnabled(),
   };
 }
 
@@ -392,7 +391,6 @@ export default function DocumentPage() {
     updatedAt,
     attendance,
     backlinks,
-    aiConfigured,
   } = useLoaderData() as Exclude<Awaited<ReturnType<typeof loader>>, Response>;
 
   // Arriving from a comment-mention notification (?comment=<id>): open the
@@ -403,9 +401,10 @@ export default function DocumentPage() {
   const focusCommentId = searchParams.get("comment") ?? undefined;
   const focusMentionUserId = searchParams.get("mention") ?? undefined;
   const whiteboardEnabled = useFeatureFlag("whiteboard");
-  const aiMeetingNotes = useFeatureFlag("ai-meeting-notes");
+  const recordingEnabled = useFeatureFlag("ai-meeting-notes");
 
-  // Meeting-note recording writes into the doc through the live editor.
+  // Meeting recording writes into the doc through the live editor, so
+  // collaborators see the notes arrive like any other edit.
   const editorRef = useRef<DocEditorInstance | null>(null);
   const onEditorReady = useCallback((ed: DocEditorInstance) => {
     editorRef.current = ed;
@@ -439,8 +438,8 @@ export default function DocumentPage() {
           checkInQrSvg={attendance.checkInQrSvg}
         />
       )}
-      {attendance && aiMeetingNotes && aiConfigured && canEdit && (
-        <MeetingRecorder pageId={pageId} onInsert={insertMarkdown} />
+      {recordingEnabled && canEdit && (
+        <MeetingRecorder documentName={pageDocName(pageId)} onInsert={insertMarkdown} />
       )}
       {attendance && (
         <AttendanceChecklist
