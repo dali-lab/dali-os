@@ -104,6 +104,12 @@ export const FEATURE_FLAGS = [
       "The full DALI calendar behind one flag: create / edit / delete events on your linked Google calendars (Google write; Outlook read-only), schedule meetings with an availability heatmap, add your Dartmouth classes (period picker → exact weekly times, synced to Google), and the optional timesheet-to-Google mirror. Ships off; without it the calendar is a read-only busy view.",
   },
   {
+    key: "optimal-times",
+    label: "Find best meeting times",
+    description:
+      "Adds a 'Find best times' button to the meeting scheduler's availability grid. Once people are added, it scans the week and suggests the slots where the most participants (with a linked calendar) are free — one click applies the top pick and lists distinct alternatives with an X/N-free badge, using the same availability the grid already loaded. Ships off.",
+  },
+  {
     key: "google-meet",
     label: "Google Meet",
     description:
