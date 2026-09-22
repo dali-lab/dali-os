@@ -107,7 +107,7 @@ export const FEATURE_FLAGS = [
     key: "optimal-times",
     label: "Find best meeting times",
     description:
-      "Adds a 'Find best times' button to the meeting scheduler's availability grid. Once people are added, it scans the week and suggests the slots where the most participants (with a linked calendar) are free — one click applies the top pick and lists distinct alternatives with an X/N-free badge, using the same availability the grid already loaded. Ships off.",
+      "Suggests the best meeting times in the scheduler. Once people are added, the top 3 slots where the most participants (with a linked calendar) are free show as numbered dotted outlines on the availability grid, with a matching button for each above Starts / Ends that fills in the time. Ships off.",
   },
   {
     key: "google-meet",
