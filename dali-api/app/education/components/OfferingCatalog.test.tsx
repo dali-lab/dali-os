@@ -2,7 +2,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { createRoutesStub } from "react-router";
+import { createRoutesStub, useParams } from "react-router";
 import { OfferingCatalog, type CatalogOffering } from "./OfferingCatalog";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -42,6 +42,11 @@ const OFFERINGS = [
   offering("w1", "Figma Crash Course", "Workshop"),
 ];
 
+function DetailStub() {
+  const { offeringId } = useParams();
+  return createElement("h1", { "data-testid": "detail" }, offeringId);
+}
+
 function mountCatalog() {
   const Stub = createRoutesStub([
     {
@@ -52,17 +57,11 @@ function mountCatalog() {
           to: (id: string) => `/portal/education/${id}`,
         }),
     },
-    // The pane loads the offering's detail route; an empty payload is enough
-    // here, since these cases are about which offering the pane is showing.
+    // Clicking a card navigates here. The stub only has to prove which
+    // offering was opened, so it renders the id and nothing else.
     {
       path: "/portal/education/:offeringId",
-      Component: () => null,
-      loader: () => ({
-        descriptionHtml: "",
-        canApply: false,
-        myStatus: null,
-        offering: { sessions: [] },
-      }),
+      Component: DetailStub,
     },
   ]);
   container = document.createElement("div");
@@ -95,9 +94,10 @@ function clickFilter(label: string) {
   click(btn, `filter "${label}"`);
 }
 
-function paneTitle(): string | null {
-  const pane = container.querySelector("aside");
-  return pane?.querySelector("h2")?.textContent?.trim() ?? null;
+function openedOfferingId(): string | null {
+  return (
+    container.querySelector('[data-testid="detail"]')?.textContent?.trim() ?? null
+  );
 }
 
 afterEach(() => {
@@ -106,37 +106,18 @@ afterEach(() => {
 });
 
 describe("OfferingCatalog selection", () => {
-  it("opens the detail pane for the clicked offering", () => {
+  // Clicking a card used to open a side pane beside the grid. It now leaves the
+  // catalog for the offering's own student detail route.
+  it("navigates to the clicked offering's detail page", () => {
     mountCatalog();
-    expect(paneTitle()).toBeNull();
+    expect(openedOfferingId()).toBeNull();
     clickCard("w1");
-    expect(paneTitle()).toBe("Figma Crash Course");
+    expect(openedOfferingId()).toBe("w1");
   });
 
-  // Regression: the selection used to be resolved against the *filtered* list,
-  // so switching the type filter hid the pane and switching back resurrected
-  // it. Changing what the grid shows must not disturb what the pane shows.
-  it("keeps the pane open when a filter hides the selected card", () => {
+  it("renders no detail pane beside the grid", () => {
     mountCatalog();
-    clickCard("w1");
-    expect(paneTitle()).toBe("Figma Crash Course");
-
-    clickFilter("Miniseries");
-    expect(paneTitle()).toBe("Figma Crash Course");
-
-    clickFilter("All");
-    expect(paneTitle()).toBe("Figma Crash Course");
-  });
-
-  it("closes only when the pane is closed", () => {
-    mountCatalog();
-    clickCard("m1");
-    expect(paneTitle()).toBe("Intro to React");
-
-    click(
-      container.querySelector('button[aria-label="Close details"]'),
-      "close button",
-    );
-    expect(paneTitle()).toBeNull();
+    clickFilter("Workshops");
+    expect(container.querySelector("aside")).toBeNull();
   });
 });

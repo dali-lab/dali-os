@@ -1,7 +1,7 @@
 // Process ↔ folder bindings.
 //
-// A "process" (a Project, an EducationOffering, a HiringCycle, or lab-wide Core
-// governance) points at NORMAL Drive folders that receive its auto-filed
+// A "process" (a Project, a HiringCycle, or lab-wide Core governance) points
+// at NORMAL Drive folders that receive its auto-filed
 // artifacts — a project's meeting-notes folders, an offering's Forms folder,
 // Core's Agreements folder, etc. This replaces the old `Page.systemKey`
 // scaffolding (see the ProcessFolderBinding model in schema.prisma):
@@ -55,7 +55,10 @@ export const FOLDER_SLOTS: Record<ProcessType, FolderSlot[]> = {
     { purpose: "meeting-notes-team", label: "Team meeting assets", defaultTitle: "Team meeting assets" },
     { purpose: "meeting-notes-partner", label: "Partner meeting assets", defaultTitle: "Partner meeting assets" },
   ],
-  EducationOffering: [{ purpose: "forms", label: "Forms", defaultTitle: "Forms" }],
+  // An offering's Drive home is fixed at Education > <the offering>, so it
+  // exposes nothing to repoint. Its Forms folder is created directly in the
+  // offering's own workspace (ensureOfferingFormsFolder in ~/lib/pages).
+  EducationOffering: [],
   // Hiring is a lab-wide singleton (processId = HIRING_PROCESS_ID), parallel to
   // Core: ONE shared, user-configurable folder set for all of hiring, not per
   // cycle. These default to a Core-group scope (Core-only, which covers every

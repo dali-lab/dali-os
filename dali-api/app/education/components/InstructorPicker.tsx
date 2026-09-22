@@ -55,15 +55,15 @@ export function InstructorPicker({
       ))}
 
       {selectedIds.length === 0 ? (
-        <p className="text-xs text-muted-foreground italic">
-          No instructors yet — search below to add one.
+        <p className="text-sm italic text-os-grey">
+          No instructors yet. Search below to add one.
         </p>
       ) : (
         <ul className="flex flex-wrap gap-1.5">
           {selectedIds.map((id) => (
             <li
               key={id}
-              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted px-2 py-1 text-sm text-foreground"
+              className="inline-flex items-center gap-1.5 rounded-full bg-os-well px-3 py-1.5 text-sm text-foreground"
             >
               <Avatar name={byId.get(id)?.name ?? "?"} size="xs" />
               <span className="truncate">{byId.get(id)?.name ?? "Unknown member"}</span>
@@ -71,7 +71,7 @@ export function InstructorPicker({
                 type="button"
                 aria-label={`Remove ${byId.get(id)?.name ?? "instructor"}`}
                 onClick={() => setSelectedIds((ids) => ids.filter((x) => x !== id))}
-                className="text-muted-foreground hover:text-destructive"
+                className="text-os-grey hover:text-destructive"
               >
                 <X className="h-3 w-3" />
               </button>
@@ -93,9 +93,9 @@ export function InstructorPicker({
           containerClassName="w-full sm:max-w-sm"
         />
         {query.trim() !== "" && (
-          <ul className="mt-1 flex flex-col gap-0.5 rounded-md border border-border bg-card p-1 sm:max-w-sm">
+          <ul className="mt-2 flex flex-col gap-0.5 rounded-os-item bg-os-well p-1.5 sm:max-w-sm">
             {results.length === 0 ? (
-              <li className="px-2 py-1.5 text-sm text-muted-foreground italic">
+              <li className="px-2.5 py-2 text-sm italic text-os-grey">
                 No members match that name.
               </li>
             ) : (
@@ -104,7 +104,7 @@ export function InstructorPicker({
                   <button
                     type="button"
                     onClick={() => add(c.id)}
-                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-foreground hover:bg-muted"
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-foreground transition-colors hover:bg-os-container"
                   >
                     <Avatar name={c.name} size="xs" />
                     {c.name}

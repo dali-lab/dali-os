@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   redirect,
   useLoaderData,
@@ -6,6 +6,8 @@ import {
   useSearchParams,
   Form,
   Link,
+  useFetcher,
+  useRevalidator,
 } from "react-router";
 import { Select, type SelectOption } from "~/components/ui/floating";
 import { redirectToLogin } from "~/lib/login-next";
@@ -58,7 +60,18 @@ import {
   postAnnouncement,
   deleteAnnouncement,
 } from "~/education/lib/announcements.server";
-import { builtinDecisionEmail } from "~/education/lib/notifications.server";
+import {
+  listEducationEmails,
+  saveEducationEmail,
+} from "~/education/lib/education-emails.server";
+import {
+  DECISION_EMAIL_SLOTS,
+  EDUCATION_EMAIL_VARIABLES,
+  decisionSlot,
+  unknownVariables,
+  type DecisionSlotStatus,
+  type EducationEmailSlot,
+} from "~/education/lib/education-emails";
 import {
   getAttendanceMatrix,
   getSessionRoster,
@@ -92,10 +105,12 @@ import { prisma } from "~/lib/db";
 import { parseSessionCookie } from "~/lib/cookies";
 import { Button, buttonClasses } from "~/components/ui/Button";
 import { Avatar } from "~/components/ui/Avatar";
-import { DriveFolderBindings } from "~/components/drive/DriveFolderBindings";
-import { X } from "lucide-react";
+import { Upload, X } from "lucide-react";
+import { Modal, ModalHeader, ModalFooter } from "~/components/Modal";
+import { modalCardClass, useOsChrome } from "~/components/os-chrome";
 import { isMultiSession } from "~/education/lib/offering-type";
 import { renderEmail } from "~/lib/email";
+import { uploadFileToS3 } from "~/lib/upload-client";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { TypeBadge, StatusBadge, MyStatusChip } from "~/education/components/OfferingCard";
@@ -113,6 +128,15 @@ export const meta: Route.MetaFunction = ({ data }) => [
 ];
 
 export const handle = {
+  // Offering pages name themselves in their own headers, so the trail above
+  // them only repeated where you already are.
+  hideBreadcrumbs: true,
+  // The page fills the shell's main column instead of growing the document:
+  // the title, badges and tab strip stay put and each tab's content scrolls
+  // under them. Sessions needs it (its side nav has to stay beside the cards),
+  // and every other tab reads better for it. Desktop only — below `md` the
+  // shell isn't height-capped, so the page scrolls normally there.
+  fitViewport: true,
   breadcrumb: (data: { offering: { title: string } } | undefined) =>
     data?.offering.title ?? "Offering",
 };
@@ -159,8 +183,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const [
     instructorCandidates,
     applications,
-    emailTemplates,
-    decisionEmailBindings,
+    educationEmails,
     materials,
     workspaceDocs,
     assignments,
@@ -178,22 +201,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         })
       : Promise.resolve([]),
     listApplications(params.offeringId!),
-    prisma.emailTemplate.findMany({
-      select: {
-        id: true,
-        name: true,
-        versions: {
-          orderBy: { versionNumber: "desc" },
-          take: 1,
-          select: { id: true, versionNumber: true, subject: true, body: true },
-        },
-      },
-      orderBy: { name: "asc" },
-    }),
-    prisma.educationDecisionEmail.findMany({
-      where: { offeringId: params.offeringId! },
-      select: { status: true, emailTemplateVersionId: true },
-    }),
+    listEducationEmails(),
     listMaterialPages(params.offeringId!),
     listWorkspaceDocs(params.offeringId!),
     listAssignments(params.offeringId!),
@@ -388,22 +396,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     // Discussion posts pass through whole — the component renders authors,
     // replies and the announcement/message distinction.
     announcements,
-    emailTemplates: emailTemplates
-      .filter((t) => t.versions.length > 0)
-      .map((t) => ({
-        name: t.name,
-        versionId: t.versions[0]!.id,
-        subject: t.versions[0]!.subject,
-        body: t.versions[0]!.body,
-      })),
-    decisionEmailBindings,
-    // The built-in copy that sends per status when no template is bound — so
-    // the manager can preview the fallback instead of it being invisible.
-    builtinDecisionCopy: {
-      Approved: builtinDecisionEmail("Approved", offering.title),
-      Waitlisted: builtinDecisionEmail("Waitlisted", offering.title),
-      Rejected: builtinDecisionEmail("Rejected", offering.title),
-    },
+    // One email per slot, shared by every course. Keyed by slot so the editor
+    // can tell "not written yet" (nothing sends) from an empty string.
+    educationEmails: Object.fromEntries(
+      educationEmails.map((e) => [e.slot, { subject: e.subject, body: e.body }]),
+    ) as Record<string, { subject: string; body: string }>,
     isCore: core,
     certificateTemplates: certificateTemplates.map((t) => ({
       id: t.id,
@@ -743,12 +740,33 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
   }
 
+  // One email per slot, shared by every course — so it isn't an offering
+  // action. Core owns lab-wide copy, the same rule the certificate-template
+  // binding on this page follows; an invited instructor manages their course,
+  // not the words every course sends.
+  if (intent === "save-education-email") {
+    if (!(await isCore(auth.user.sub)))
+      return Response.json({ error: "Forbidden" }, { status: 403 });
+    const slot = String(formData.get("slot") ?? "");
+    if (!DECISION_EMAIL_SLOTS.some((d) => decisionSlot(d.status) === slot))
+      return Response.json({ error: "Unknown email" }, { status: 400 });
+    await saveEducationEmail(
+      slot as EducationEmailSlot,
+      {
+        subject: String(formData.get("subject") ?? ""),
+        body: String(formData.get("body") ?? ""),
+      },
+      auth.user.sub,
+    );
+    return { ok: true };
+  }
+
   // Pin the offering id from the URL so a form can't retarget another offering.
   formData.set("offeringId", params.offeringId!);
   const result = await runOfferingAction(formData, auth.user.sub);
   if ("error" in result)
     return Response.json({ error: result.error }, { status: result.status });
-  if (formData.get("intent") === "delete-offering") return redirect("/education/manage");
+  if (formData.get("intent") === "delete-offering") return redirect("/education/offerings");
   if (formData.get("intent") === "duplicate-offering" && "id" in result && result.id)
     return redirect(`/education/manage/${result.id}`);
   return result;
@@ -779,6 +797,57 @@ const WEEKDAY_NAMES = [
   "Saturday",
 ] as const;
 
+// A notice the page posts back after an action. One surface, one shape: the
+// old green-50 chip was a brand-shell colour that read as a foreign sticker on
+// the os page.
+const NOTICE_CLASS =
+  "rounded-os-item bg-os-well px-4 py-3 text-sm text-foreground";
+
+// Every block on this page is a titled section: the title and its explanation
+// sit on the page ground, and only the thing you operate on is boxed. Stacking
+// eight self-titled cards instead made the page read as a column of boxes, with
+// each heading trapped inside its own border.
+function ManageSection({
+  title,
+  description,
+  action,
+  children,
+}: {
+  title: string;
+  description?: ReactNode;
+  /** Pinned to the title's right — a "Manage templates" link, a Save button. */
+  action?: ReactNode;
+  children: ReactNode;
+}) {
+  const os = useOsChrome();
+  return (
+    <section className={os.sectionShell}>
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
+        <div className="min-w-0">
+          <h2 className={os.sectionTitle}>{title}</h2>
+          {description && (
+            <p className={cn(os.bodyText, "mt-1 max-w-2xl")}>{description}</p>
+          )}
+        </div>
+        {action}
+      </div>
+      <div className={cn(os.panel, os.panelPad)}>{children}</div>
+    </section>
+  );
+}
+
+// A row nested inside one of those panels: an instructor, an email slot, a
+// feedback binding. The design sinks them into a well rather than drawing a
+// second border inside the card.
+const WELL_ROW_CLASS =
+  "flex items-center justify-between gap-3 rounded-os-item bg-os-well px-4 py-3";
+
+// A stacked field: caption above control. The caption itself wears
+// `.os-field-label`, the design's 11px uppercase cap, so this only owns the
+// column — and `os-form` on the enclosing form dresses the control.
+const FIELD_COL = "flex flex-col gap-2";
+
+
 export default function ManageOffering() {
   const {
     offering,
@@ -792,9 +861,7 @@ export default function ManageOffering() {
     favoriteIds,
     assignments,
     announcements,
-    emailTemplates,
-    decisionEmailBindings,
-    builtinDecisionCopy,
+    educationEmails,
     publishedForms,
     feedbackBindings,
     sessionFeedback,
@@ -838,15 +905,15 @@ export default function ManageOffering() {
       ? applications
       : applications.filter((a) => a.status === appFilter);
 
-  const nextStatuses: { to: string; label: string; variant: "primary" | "secondary" | "destructive" }[] =
-    offering.status === "Draft"
-      ? [{ to: "Published", label: "Publish", variant: "primary" }]
+  // Publishing is a toggle. Archiving isn't a button of its own any more:
+  // close-out archives, and Reopen brings it back — so a closed-out course
+  // shows Reopen instead of a publish toggle that would contradict it.
+  const publishToggle: { to: string; label: string; variant: "primary" | "secondary" } | null =
+    offering.closedOutAt
+      ? null
       : offering.status === "Published"
-        ? [
-            { to: "Draft", label: "Unpublish", variant: "secondary" },
-            { to: "Archived", label: "Archive", variant: "destructive" },
-          ]
-        : [{ to: "Published", label: "Re-publish", variant: "secondary" }];
+        ? { to: "Draft", label: "Unpublish", variant: "secondary" }
+        : { to: "Published", label: "Publish", variant: "primary" };
 
   // Close-out completes the course (issues certificates, emails students). If it
   // hasn't finished running yet, warn hard in the confirm dialog before letting
@@ -858,12 +925,12 @@ export default function ManageOffering() {
     ? {
         title: "Close out this course?",
         description:
-          "Certificates are issued to every approved student meeting the attendance threshold, and each gets an email. Re-running only issues missing certificates.",
+          "Certificates are issued to every approved student meeting the attendance threshold, and each gets an email. The course is archived. Re-running only issues missing certificates.",
         confirmLabel: "Close out",
       }
     : {
         title: "Close out before it's finished?",
-        description: `This course ${offering.endsAt ? `runs until ${formatDateShort(offering.endsAt, tz)} and ` : ""}hasn't finished yet. Closing out now issues certificates to everyone who has already met the attendance threshold and emails them — anyone still to attend is left out, and it moves to Past offerings. You can reopen it afterward.`,
+        description: `This course ${offering.endsAt ? `runs until ${formatDateShort(offering.endsAt, tz)} and ` : ""}hasn't finished yet. Closing out now issues certificates to everyone who has already met the attendance threshold and emails them. Anyone still to attend is left out, and the course is archived. You can reopen it afterward.`,
         confirmLabel: "Close out anyway",
       };
 
@@ -877,14 +944,38 @@ export default function ManageOffering() {
       attendanceMatrix.students.filter((st) => st.marks[s.id] === "Present").length,
     );
   }
-  const materialsBySession = new Map<string, { id: string; title: string }[]>();
+  // Pages and uploaded files are one thing to an instructor ("the material for
+  // week 3"), and both carry a sessionId, so the session card treats them as
+  // one list and remembers which intent each needs on the way back.
+  const allMaterials: {
+    id: string;
+    title: string;
+    kind: "page" | "file";
+    sessionId: string | null;
+    href: string;
+  }[] = [];
   for (const top of materials) {
-    for (const m of [top, ...top.children]) {
-      if (!m.sessionId) continue;
-      const list = materialsBySession.get(m.sessionId) ?? [];
-      list.push({ id: m.id, title: m.title });
-      materialsBySession.set(m.sessionId, list);
+    // A folder holds material, it isn't material — only its children (and
+    // top-level pages, which are never folders when isFolder is false) attach
+    // to a session.
+    for (const m of [...(top.isFolder ? [] : [top]), ...top.children]) {
+      allMaterials.push({
+        id: m.id,
+        title: m.title,
+        kind: "page",
+        sessionId: m.sessionId,
+        href: `/documents/${m.id}`,
+      });
     }
+  }
+  for (const f of offeringFiles) {
+    allMaterials.push({
+      id: f.id,
+      title: f.title,
+      kind: "file",
+      sessionId: f.sessionId,
+      href: f.href,
+    });
   }
   const assignmentsBySession = new Map<string, { id: string; title: string }[]>();
   for (const a of assignments) {
@@ -895,18 +986,18 @@ export default function ManageOffering() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex min-h-0 flex-1 flex-col gap-6">
       <header className="flex items-start justify-between gap-4">
         <div>
           {/* Title first: the badges qualify the offering, so they read better
               under its name than as an eyebrow above it. */}
-          <h1 className="font-heading text-2xl font-bold text-foreground">
+          <h1 className="font-heading text-4xl font-medium text-foreground">
             {offering.title}
           </h1>
-          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+          <div className="mt-3 flex flex-wrap items-center gap-2.5">
             <TypeBadge type={offering.type} />
             <StatusBadge status={offering.status} />
-            <span className="text-sm text-muted-foreground">
+            <span className="text-sm text-os-grey">
               {offering.approvedCount} of {offering.capacity} seats filled
             </span>
           </div>
@@ -916,21 +1007,14 @@ export default function ManageOffering() {
             to={`/education/${offering.id}/hub?as=student`}
             className={buttonClasses("ghost", "sm")}
           >
-            View as student
+            Student view
           </Link>
-          {offering.closedOutAt && (
-            <Form
-              method="post"
-              onSubmit={confirmSubmit({
-                title: "Reopen this course?",
-                description:
-                  "This clears the close-out so the course leaves Past offerings and can be edited and closed out again later. Certificates already issued stay valid.",
-                confirmLabel: "Reopen",
-              })}
-            >
-              <input type="hidden" name="intent" value="reopen-offering" />
-              <Button type="submit" variant="ghost" size="sm">
-                Reopen
+          {publishToggle && (
+            <Form method="post">
+              <input type="hidden" name="intent" value="set-status" />
+              <input type="hidden" name="status" value={publishToggle.to} />
+              <Button type="submit" variant={publishToggle.variant} size="sm">
+                {publishToggle.label}
               </Button>
             </Form>
           )}
@@ -943,25 +1027,32 @@ export default function ManageOffering() {
               {offering.closedOutAt ? "Re-run close-out" : "Close out course"}
             </Button>
           </Form>
-          {nextStatuses.map((s) => (
-            <Form key={s.to} method="post">
-              <input type="hidden" name="intent" value="set-status" />
-              <input type="hidden" name="status" value={s.to} />
-              <Button type="submit" variant={s.variant} size="sm">
-                {s.label}
+          {offering.closedOutAt && (
+            <Form
+              method="post"
+              onSubmit={confirmSubmit({
+                title: "Reopen this course?",
+                description:
+                  "This unarchives the course and clears the close-out, so it leaves Past offerings and can be edited and closed out again later. Certificates already issued stay valid.",
+                confirmLabel: "Reopen",
+              })}
+            >
+              <input type="hidden" name="intent" value="reopen-offering" />
+              <Button type="submit" variant="ghost" size="sm">
+                Reopen
               </Button>
             </Form>
-          ))}
+          )}
         </div>
       </header>
 
       {actionData?.error && (
-        <p className="text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2">
+        <p className="rounded-os-item bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {actionData.error}
         </p>
       )}
       {actionData?.closeOut && (
-        <p className="text-sm text-foreground bg-green-50 border border-green-200 rounded-md px-3 py-2">
+        <p className={NOTICE_CLASS}>
           Close-out complete: {actionData.closeOut.issued} certificate
           {actionData.closeOut.issued === 1 ? "" : "s"} issued
           {actionData.closeOut.alreadyIssued > 0 &&
@@ -972,12 +1063,12 @@ export default function ManageOffering() {
         </p>
       )}
       {actionData?.reopened && (
-        <p className="text-sm text-foreground bg-green-50 border border-green-200 rounded-md px-3 py-2">
+        <p className={NOTICE_CLASS}>
           Course reopened — it's back in the active catalog and can be edited.
         </p>
       )}
       {actionData?.closeOutPreview && (
-        <div className="text-sm bg-card border border-border rounded-md px-3 py-2.5 flex flex-col gap-1">
+        <div className="flex flex-col gap-1 rounded-os-card bg-os-card px-5 py-4 text-sm">
           <p className="font-semibold text-foreground">
             Close-out preview — {actionData.closeOutPreview.eligible.length} would get a
             certificate
@@ -995,7 +1086,7 @@ export default function ManageOffering() {
         </div>
       )}
       {actionData?.bulkApprove && (
-        <p className="text-sm text-foreground bg-green-50 border border-green-200 rounded-md px-3 py-2">
+        <p className={NOTICE_CLASS}>
           Approved {actionData.bulkApprove.approved} pending application
           {actionData.bulkApprove.approved === 1 ? "" : "s"}
           {actionData.bulkApprove.skipped > 0 &&
@@ -1004,67 +1095,75 @@ export default function ManageOffering() {
         </p>
       )}
 
-      <nav className="flex gap-1 border-b border-border">
+      {/* Underlined tabs on the page ground: eight sections is too many for a
+          filled segmented track, which stretches each one into a wide chip. */}
+      {/* Every tab draws its own 2px rule and a trailing spacer carries it to
+          the edge, so the underline is one continuous line. Laying the rule on
+          a wrapper and pulling the row over it leaves the line half-covered
+          under each tab and full-strength in the gaps between them.
+          The active colour is inline because app.css sets `* { border-color }`
+          outside any layer, and an unlayered rule outranks every Tailwind
+          border-colour utility — see the note in the PR/summary. Inactive tabs
+          take that same global default, which is the grey we want. */}
+      <nav className="flex overflow-x-auto">
         {TABS.map((t) => (
           <button
             key={t.key}
             type="button"
             onClick={() => setSearchParams({ tab: t.key }, { preventScrollReset: true })}
-            className={cn(
-              "px-4 py-2 text-sm font-semibold rounded-t-md",
+            style={
               tab === t.key
-                ? "text-accent-coral border-b-2 border-accent-coral"
+                ? { borderBottomColor: "var(--color-os-accent)" }
+                : undefined
+            }
+            className={cn(
+              "shrink-0 whitespace-nowrap border-b-2 px-4 py-3 text-sm font-semibold transition",
+              tab === t.key
+                ? "text-os-accent"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
             {t.label}
           </button>
         ))}
+        <span aria-hidden className="flex-1 border-b-2" />
       </nav>
 
+      {/* One scroll region for whichever tab is open. `min-h-0` is what lets a
+          flex child actually shrink below its content and scroll. */}
+      <div className="flex min-h-0 flex-1 flex-col md:overflow-y-auto md:pr-1">
       {tab === "details" && (
         <div className="flex flex-col gap-6">
           {offering.applicationFormId && (
-            <div className="bg-brand-tint rounded-lg px-4 py-3 flex items-center justify-between gap-4">
-              <p className="text-sm text-foreground">
-                Applicants answer this offering&apos;s application form.
-                Fillers always see the latest saved version.
+            <ManageSection
+              title="Application form"
+              description="What applicants answer. Fillers always see the latest saved version."
+              action={
+                <Link
+                  to={`/forms/edit/${offering.applicationFormId}`}
+                  className={cn(buttonClasses("secondary", "sm"), "shrink-0")}
+                >
+                  Edit form
+                </Link>
+              }
+            >
+              <p className="text-sm text-os-grey">
+                Lives in Drive under Education, with this course.
               </p>
-              <Link
-                to={`/forms/edit/${offering.applicationFormId}`}
-                className={buttonClasses("secondary", "sm") + " shrink-0"}
-              >
-                Edit application form
-              </Link>
-            </div>
+            </ManageSection>
           )}
 
-          <Form
-            method="post"
-            className="bg-card border border-border rounded-lg p-5 flex flex-col gap-4"
-          >
-            <input type="hidden" name="intent" value="update-offering" />
-            <OfferingFields values={offering} typeLocked />
-            <div className="flex justify-end">
-              <Button type="submit" size="sm">
-                Save details
-              </Button>
-            </div>
-          </Form>
+          <ManageSection title="Course details">
+            <Form method="post" className="os-form flex flex-col gap-4">
+              <input type="hidden" name="intent" value="update-offering" />
+              <OfferingFields values={offering} typeLocked />
+              <div className="flex justify-end">
+                <Button type="submit">Save details</Button>
+              </div>
+            </Form>
+          </ManageSection>
 
-          <DriveFolderBindings
-            processType="EducationOffering"
-            processId={offering.id}
-            className="bg-card border border-border rounded-lg p-5"
-          />
-
-          <section className="bg-card border border-border rounded-lg p-5">
-            <h2 className="text-sm font-semibold text-foreground mb-1">
-              Description
-            </h2>
-            <p className="text-xs text-muted-foreground mb-3">
-              Shown on the catalog listing. Edits save live.
-            </p>
+          <ManageSection title="Description">
             {collabToken && offering.descriptionDocId ? (
               <PresenceProvider
                 pageId={`eduoffering:${offering.id}`}
@@ -1080,62 +1179,46 @@ export default function ManageOffering() {
                     userName,
                   }}
                   placeholder="What this offering covers, who it's for, what attendees build…"
-                  className="border border-border rounded-md"
+                  className="rounded-os-item bg-os-well"
                 />
               </PresenceProvider>
             ) : (
-              <p className="text-xs text-muted-foreground italic">
+              <p className="text-sm italic text-os-grey">
                 Sign in again to edit the description.
               </p>
             )}
-          </section>
+          </ManageSection>
 
           {core && (
             <>
-              <Form
-                method="post"
-                className="bg-card border border-border rounded-lg p-5"
+              <ManageSection
+                title="Instructors"
               >
-                <input type="hidden" name="intent" value="set-instructors" />
-                <h2 className="text-sm font-semibold text-foreground mb-1">
-                  Instructors
-                </h2>
-                <p className="text-xs text-muted-foreground mb-3">
-                  Instructors can edit this offering, review applications, and
-                  take attendance.
-                </p>
-                <InstructorPicker
-                  candidates={instructorCandidates}
-                  initialSelectedIds={memberInstructorIds}
-                />
-                <div className="mt-3 flex justify-end">
-                  <Button type="submit" variant="secondary" size="sm">
-                    Save instructors
-                  </Button>
-                </div>
-              </Form>
+                <Form method="post" className="os-form">
+                  <input type="hidden" name="intent" value="set-instructors" />
+                  <InstructorPicker
+                    candidates={instructorCandidates}
+                    initialSelectedIds={memberInstructorIds}
+                  />
+                  <div className="mt-4 flex justify-end">
+                    <Button type="submit" variant="secondary">
+                      Save instructors
+                    </Button>
+                  </div>
+                </Form>
+              </ManageSection>
 
-              <section className="bg-card border border-border rounded-lg p-5">
-                <h2 className="text-sm font-semibold text-foreground mb-1">
-                  External instructors
-                </h2>
-                <p className="text-xs text-muted-foreground mb-3">
-                  Dartmouth students who aren&apos;t DALI members. They sign in
-                  with Dartmouth and get the same management access for this
-                  offering.
-                </p>
-
+              <ManageSection
+                title="External instructors"
+              >
                 {externalInstructors.length > 0 && (
-                  <ul className="flex flex-col gap-1.5 mb-3">
+                  <ul className="mb-4 flex flex-col gap-2">
                     {externalInstructors.map((x) => (
-                      <li
-                        key={x.userId}
-                        className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted px-2.5 py-1.5 text-sm text-foreground"
-                      >
-                        <span className="inline-flex min-w-0 items-center gap-1.5">
+                      <li key={x.userId} className={WELL_ROW_CLASS}>
+                        <span className="inline-flex min-w-0 items-center gap-2 text-sm text-foreground">
                           <Avatar name={x.name} size="xs" />
                           <span className="truncate">{x.name}</span>
-                          <span className="rounded bg-accent-coral/10 px-1.5 py-0.5 text-[10px] font-medium text-accent-coral">
+                          <span className="rounded-full bg-os-container px-2 py-0.5 text-[11px] font-medium text-os-grey">
                             External
                           </span>
                         </span>
@@ -1149,9 +1232,9 @@ export default function ManageOffering() {
                           <button
                             type="submit"
                             aria-label={`Remove ${x.name}`}
-                            className="text-muted-foreground hover:text-destructive"
+                            className="os-icon-btn hover:text-destructive"
                           >
-                            <X className="h-3.5 w-3.5" />
+                            <X className="h-4 w-4" />
                           </button>
                         </Form>
                       </li>
@@ -1161,82 +1244,65 @@ export default function ManageOffering() {
 
                 <Form
                   method="post"
-                  className="flex flex-col gap-2 sm:flex-row sm:items-end"
+                  className="os-form flex flex-col gap-3 sm:flex-row sm:items-center"
                 >
                   <input
                     type="hidden"
                     name="intent"
                     value="invite-external-instructor"
                   />
-                  <div className="flex flex-1 flex-col gap-2 sm:flex-row">
+                  <div className="flex flex-1 flex-col gap-3 sm:flex-row">
                     <input
+                      type="text"
                       name="firstName"
                       required
                       placeholder="First name"
-                      className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                      className="w-full"
                     />
                     <input
+                      type="text"
                       name="lastName"
                       required
                       placeholder="Last name"
-                      className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                      className="w-full"
                     />
                     <input
+                      type="text"
                       name="netId"
                       required
                       placeholder="NetID"
-                      className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 sm:max-w-[8rem]"
+                      className="w-full sm:max-w-[9rem]"
                     />
                   </div>
-                  <Button type="submit" variant="secondary" size="sm">
+                  <Button type="submit" variant="secondary">
                     Invite
                   </Button>
                 </Form>
-              </section>
+              </ManageSection>
             </>
           )}
 
-          <section className="bg-card border border-border rounded-lg p-5">
-            <h2 className="text-sm font-semibold text-foreground mb-1">
-              Decision emails
-            </h2>
-            <p className="text-xs text-muted-foreground mb-3">
-              Pick a template to email applicants when their status changes.
-              Unbound statuses fall back to a short built-in message.
-              Templates are shared across areas — manage them in{" "}
-              <Link to="/admin/email-templates" className="underline">
-                Admin → Email Templates
-              </Link>
-              . <code className="text-[11px]">{"{{domain}}"}</code> carries the
-              offering title.
-            </p>
-            <div className="flex flex-col gap-3">
-              {(["Approved", "Waitlisted", "Rejected"] as const).map((status) => (
-                <DecisionEmailRow
-                  key={status}
-                  status={status}
-                  boundVersionId={
-                    decisionEmailBindings.find((b) => b.status === status)
-                      ?.emailTemplateVersionId ?? ""
-                  }
-                  emailTemplates={emailTemplates}
-                  builtinCopy={builtinDecisionCopy[status]}
-                  offeringTitle={offering.title}
-                />
-              ))}
-            </div>
-          </section>
+          {core && (
+            <ManageSection
+              title="Decision emails"
+            >
+              <div className="flex flex-col gap-2">
+                {DECISION_EMAIL_SLOTS.map((slot) => (
+                  <DecisionEmailRow
+                    key={slot.status}
+                    slot={slot}
+                    email={educationEmails[decisionSlot(slot.status)] ?? null}
+                    offeringTitle={offering.title}
+                  />
+                ))}
+              </div>
+            </ManageSection>
+          )}
 
-          <section className="bg-card border border-border rounded-lg p-5">
-            <h2 className="text-sm font-semibold text-foreground mb-1">
-              Feedback forms
-            </h2>
-            <p className="text-xs text-muted-foreground mb-3">
-              Bind published forms from the Forms system. Session feedback is
-              requested automatically from everyone marked Present; the exit
-              survey goes to instructors at close-out.
-            </p>
-            <div className="flex flex-col gap-3">
+          <ManageSection
+            title="Feedback forms"
+          >
+            <div className="flex flex-col gap-2">
               {(
                 [
                   {
@@ -1251,10 +1317,14 @@ export default function ManageOffering() {
                   },
                 ] as const
               ).map(({ slot, label, tip }) => (
-                <Form key={slot} method="post" className="flex items-center gap-3">
+                <Form
+                  key={slot}
+                  method="post"
+                  className={cn(WELL_ROW_CLASS, "os-form flex-wrap")}
+                >
                   <input type="hidden" name="intent" value="set-form-binding" />
                   <input type="hidden" name="slot" value={slot} />
-                  <span className="text-sm text-foreground w-44 inline-flex items-center gap-1">
+                  <span className="inline-flex w-44 items-center gap-1.5 text-sm font-semibold text-foreground">
                     {label}
                     <InfoTip content={tip} />
                   </span>
@@ -1268,34 +1338,30 @@ export default function ManageOffering() {
                       { value: "", label: "None" },
                       ...publishedForms.map((f) => ({ value: f.id, label: f.name })),
                     ]}
-                    buttonClassName="flex-1 rounded-md border border-border bg-card px-2 py-1.5 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                    buttonClassName="flex-1"
                   />
-                  <Button type="submit" variant="secondary" size="sm">
+                  <Button type="submit" variant="secondary">
                     Save
                   </Button>
                 </Form>
               ))}
             </div>
-          </section>
+          </ManageSection>
 
           {core && certTemplatesOn && (
-            <section className="bg-card border border-border rounded-lg p-5">
-              <div className="mb-1 flex items-center justify-between gap-3">
-                <h2 className="text-sm font-semibold text-foreground">
-                  Completion certificate
-                </h2>
+            <ManageSection
+              title="Completion certificate"
+              description="The design students get when this course is closed out. Leave it on the lab default, or bind a specific template to this offering."
+              action={
                 <Link
                   to="/education/certificate-templates"
-                  className="text-xs font-medium text-accent-coral hover:underline"
+                  className="text-sm font-medium text-os-accent hover:underline"
                 >
-                  Manage templates →
+                  Manage templates
                 </Link>
-              </div>
-              <p className="text-xs text-muted-foreground mb-3">
-                The certificate design students get when this course is closed out. Leave it on the
-                lab default, or bind a specific template to this offering.
-              </p>
-              <Form method="post" className="flex items-center gap-3">
+              }
+            >
+              <Form method="post" className="os-form flex items-center gap-3">
                 <input type="hidden" name="intent" value="bind-certificate-template" />
                 <Select
                   name="templateId"
@@ -1307,22 +1373,22 @@ export default function ManageOffering() {
                       label: t.isDefault ? `${t.name} (default)` : t.name,
                     })),
                   ]}
-                  buttonClassName="flex-1 rounded-md border border-border bg-card px-2 py-1.5 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                  buttonClassName="flex-1"
                 />
-                <Button type="submit" variant="secondary" size="sm">
+                <Button type="submit" variant="secondary">
                   Save
                 </Button>
               </Form>
               {certificateTemplates.length === 0 && (
-                <p className="mt-2 text-xs text-muted-foreground italic">
-                  No templates yet —{" "}
+                <p className="mt-3 text-sm italic text-os-grey">
+                  No templates yet.{" "}
                   <Link to="/education/certificate-templates" className="underline">
-                    create one
+                    Create one
                   </Link>{" "}
                   to override the built-in design.
                 </p>
               )}
-            </section>
+            </ManageSection>
           )}
 
           {core && offering.status === "Draft" && (
@@ -1336,7 +1402,7 @@ export default function ManageOffering() {
               })}
             >
               <input type="hidden" name="intent" value="delete-offering" />
-              <Button type="submit" variant="destructive" size="sm">
+              <Button type="submit" variant="destructive">
                 Delete draft
               </Button>
             </Form>
@@ -1345,25 +1411,63 @@ export default function ManageOffering() {
       )}
 
       {tab === "sessions" && (
-        <div className="flex flex-col gap-4">
+        // A term's worth of sessions is a long scroll of near-identical cards,
+        // so the list of titles stays on screen beside them as the way in.
+        // Both columns fill the page's scroll region and scroll inside it, so
+        // the nav stays put and the two always end on the same line.
+        <div className="flex min-h-0 flex-1 items-stretch gap-6">
+          {offering.sessions.length > 1 && (
+            <nav
+              aria-label="Sessions"
+              className="hidden w-56 shrink-0 flex-col gap-1 overflow-y-auto rounded-os-card bg-os-card p-2 lg:flex"
+            >
+              {offering.sessions.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => {
+                    document
+                      .getElementById(`session-${s.id}`)
+                      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  }}
+                  className="rounded-os-item px-3 py-2 text-left text-sm text-os-grey transition-colors hover:bg-os-well hover:text-foreground"
+                >
+                  <span className="block truncate font-medium text-foreground">
+                    {s.title ? `${s.sequence}. ${s.title}` : `Session ${s.sequence}`}
+                  </span>
+                  <span className="block truncate text-[13px]">
+                    {formatSessionWhen(s.datetime, s.endsAt, tz)}
+                  </span>
+                </button>
+              ))}
+            </nav>
+          )}
+        <div className="flex min-w-0 flex-1 flex-col gap-4 lg:overflow-y-auto lg:pb-2 lg:pr-1">
           {offering.sessions.length === 0 ? (
-            <p className="text-sm text-muted-foreground italic">
+            <p className="rounded-os-card bg-os-card px-6 py-5 text-sm italic text-os-grey">
               No sessions yet.{" "}
               {isMultiSession(offering.type)
                 ? `A ${offering.type.toLowerCase()} needs at least one session before it can publish.`
                 : "Add the workshop's session below."}
             </p>
           ) : (
-            <ul className="flex flex-col gap-3">
+            <ul className="flex flex-col gap-4">
               {offering.sessions.map((s) => (
-                <li key={s.id} className="bg-card border border-border rounded-lg p-4">
-                  <div className="flex items-center justify-between gap-4 mb-3">
-                    <p className="text-sm font-semibold text-foreground">
-                      {s.title ? `${s.sequence}. ${s.title}` : `Session ${s.sequence}`}
-                      <span className="ml-2 font-normal text-muted-foreground text-xs">
+                <li
+                  key={s.id}
+                  id={`session-${s.id}`}
+                  // Clear the sticky nav's own top offset when scrolled to.
+                  className="scroll-mt-4 rounded-os-card bg-os-card p-6"
+                >
+                  <div className="mb-5 flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <h3 className="font-heading text-[19px] font-semibold text-foreground">
+                        {s.title ? `${s.sequence}. ${s.title}` : `Session ${s.sequence}`}
+                      </h3>
+                      <p className="mt-0.5 text-sm text-os-grey">
                         {formatSessionWhen(s.datetime, s.endsAt, tz)}
-                      </span>
-                    </p>
+                      </p>
+                    </div>
                     <Form
                       method="post"
                       onSubmit={confirmSubmit({
@@ -1382,83 +1486,81 @@ export default function ManageOffering() {
                   {/* Topic leads on its own line: it's the session's name and
                       the longest thing you type here, so sharing a row with
                       three short fields left it a stub. */}
-                  <Form method="post" className="flex flex-col gap-3">
+                  <Form method="post" className="os-form flex flex-col gap-4">
                     <input type="hidden" name="intent" value="update-session" />
                     <input type="hidden" name="sessionId" value={s.id} />
-                    <label className="block">
-                      <span className="text-xs font-semibold text-muted-foreground">Topic</span>
+                    <label className={FIELD_COL}>
+                      <span className="os-field-label">Topic</span>
                       <input
                         type="text"
                         name="title"
                         placeholder="e.g. Intro to Figma"
                         defaultValue={s.title ?? ""}
-                        className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
+                        className="w-full"
                       />
                     </label>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                    <label className="block">
-                      <span className="text-xs font-semibold text-muted-foreground">Starts</span>
-                      <DateField
-                        mode="datetime-local"
-                        name="datetime"
-                        required
-                        defaultValue={toDatetimeLocal(s.datetime)}
-                        className="mt-1 w-full"
-                        ariaLabel="Session start date and time"
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="text-xs font-semibold text-muted-foreground">Ends</span>
-                      <DateField
-                        mode="datetime-local"
-                        name="endsAt"
-                        defaultValue={s.endsAt ? toDatetimeLocal(s.endsAt) : ""}
-                        className="mt-1 w-full"
-                        ariaLabel="Session end date and time"
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="text-xs font-semibold text-muted-foreground">Location</span>
-                      <input
-                        type="text"
-                        name="location"
-                        defaultValue={s.location ?? ""}
-                        className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="text-xs font-semibold text-muted-foreground">Recording URL</span>
-                      <input
-                        type="url"
-                        name="recordingUrl"
-                        defaultValue={s.recordingUrl ?? ""}
-                        className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
-                      />
-                    </label>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <label className={FIELD_COL}>
+                        <span className="os-field-label">Starts</span>
+                        <DateField
+                          mode="datetime-local"
+                          name="datetime"
+                          required
+                          defaultValue={toDatetimeLocal(s.datetime)}
+                          className="w-full"
+                          ariaLabel="Session start date and time"
+                        />
+                      </label>
+                      <label className={FIELD_COL}>
+                        <span className="os-field-label">Ends</span>
+                        <DateField
+                          mode="datetime-local"
+                          name="endsAt"
+                          defaultValue={s.endsAt ? toDatetimeLocal(s.endsAt) : ""}
+                          className="w-full"
+                          ariaLabel="Session end date and time"
+                        />
+                      </label>
+                      <label className={FIELD_COL}>
+                        <span className="os-field-label">Location</span>
+                        <input
+                          type="text"
+                          name="location"
+                          defaultValue={s.location ?? ""}
+                          className="w-full"
+                        />
+                      </label>
+                      <label className={FIELD_COL}>
+                        <span className="os-field-label">Recording URL</span>
+                        <input
+                          type="url"
+                          name="recordingUrl"
+                          defaultValue={s.recordingUrl ?? ""}
+                          className="w-full"
+                        />
+                      </label>
                     </div>
-                    <label className="block">
-                      <span className="text-xs font-semibold text-muted-foreground">
-                        Notes for students
-                      </span>
+                    <label className={FIELD_COL}>
+                      <span className="os-field-label">Notes for students</span>
                       <textarea
                         name="notes"
                         rows={2}
                         defaultValue={s.notes ?? ""}
-                        placeholder="Prep work, what to bring, links — students see this on the course page."
-                        className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
+                        placeholder="Prep work, what to bring, links. Students see this on the course page."
+                        className="w-full"
                       />
                     </label>
                     <div className="flex justify-end">
-                      <Button type="submit" variant="secondary" size="sm">
+                      <Button type="submit" variant="secondary">
                         Save
                       </Button>
                     </div>
                   </Form>
                   {/* What this session connects to — attendance, materials and
                       assignments — so the tab isn't just a bare date list. */}
-                  <div className="mt-3 flex flex-col gap-2 border-t border-border pt-3 text-xs">
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                      <span className="text-muted-foreground">
+                  <div className="mt-5 flex flex-col gap-2 rounded-os-item bg-os-well px-4 py-3 text-sm">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <span className="text-os-grey">
                         {totalRosterStudents > 0
                           ? `${presentBySession.get(s.id) ?? 0} of ${totalRosterStudents} present`
                           : "No enrolled students yet"}
@@ -1466,33 +1568,24 @@ export default function ManageOffering() {
                       <button
                         type="button"
                         onClick={() => setSearchParams({ tab: "roster", session: s.id })}
-                        className="font-medium text-accent-teal hover:underline"
+                        className="font-medium text-os-accent hover:underline"
                       >
-                        Take attendance →
+                        Take attendance
                       </button>
                     </div>
-                    {(materialsBySession.get(s.id)?.length ?? 0) > 0 && (
-                      <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
-                        <span className="text-muted-foreground">Materials:</span>
-                        {materialsBySession.get(s.id)!.map((m) => (
-                          <a
-                            key={m.id}
-                            href={`/documents/${m.id}`}
-                            className="text-foreground hover:text-accent-coral hover:underline"
-                          >
-                            {m.title}
-                          </a>
-                        ))}
-                      </div>
-                    )}
+                    <SessionMaterials
+                      offeringId={offering.id}
+                      sessionId={s.id}
+                      materials={allMaterials}
+                    />
                     {(assignmentsBySession.get(s.id)?.length ?? 0) > 0 && (
-                      <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
-                        <span className="text-muted-foreground">Assignments:</span>
+                      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                        <span className="text-os-grey">Assignments:</span>
                         {assignmentsBySession.get(s.id)!.map((a) => (
                           <a
                             key={a.id}
                             href={`/education/manage/assignments/${a.id}`}
-                            className="text-foreground hover:text-accent-coral hover:underline"
+                            className="text-foreground hover:text-os-accent hover:underline"
                           >
                             {a.title}
                           </a>
@@ -1510,7 +1603,6 @@ export default function ManageOffering() {
           <div className="flex flex-wrap items-center gap-2">
             <Button
               type="button"
-              size="sm"
               variant={addSessionOpen ? "secondary" : "primary"}
               onClick={() => setAddSessionOpen((o) => !o)}
             >
@@ -1518,7 +1610,6 @@ export default function ManageOffering() {
             </Button>
             <Button
               type="button"
-              size="sm"
               variant="secondary"
               onClick={() => setGenerateOpen((o) => !o)}
             >
@@ -1533,54 +1624,41 @@ export default function ManageOffering() {
             intent="add-session"
             submitLabel="Add session"
           >
-            <label className="block">
-              <span className="text-xs font-semibold text-muted-foreground">Topic</span>
-              <input
-                type="text"
-                name="title"
-                placeholder="e.g. Intro to Figma"
-                className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
-              />
+            <label className={FIELD_COL}>
+              <span className="os-field-label">Topic</span>
+              <input type="text" name="title" placeholder="e.g. Intro to Figma" />
             </label>
             <div className="grid gap-3 sm:grid-cols-2">
-              <label className="block">
-                <span className="text-xs font-semibold text-muted-foreground">Starts</span>
+              <label className={FIELD_COL}>
+                <span className="os-field-label">Starts</span>
                 <DateField
                   mode="datetime-local"
                   name="datetime"
                   required
-                  className="mt-1 w-full"
+                  className="w-full"
                   ariaLabel="Session start date and time"
                 />
               </label>
-              <label className="block">
-                <span className="text-xs font-semibold text-muted-foreground">Ends</span>
+              <label className={FIELD_COL}>
+                <span className="os-field-label">Ends</span>
                 <DateField
                   mode="datetime-local"
                   name="endsAt"
-                  className="mt-1 w-full"
+                  className="w-full"
                   ariaLabel="Session end date and time"
                 />
               </label>
             </div>
-            <label className="block">
-              <span className="text-xs font-semibold text-muted-foreground">Location</span>
-              <input
-                type="text"
-                name="location"
-                placeholder="Sudikoff 007"
-                className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
-              />
+            <label className={FIELD_COL}>
+              <span className="os-field-label">Location</span>
+              <input type="text" name="location" placeholder="Sudikoff 007" />
             </label>
-            <label className="block">
-              <span className="text-xs font-semibold text-muted-foreground">
-                Notes for students
-              </span>
+            <label className={FIELD_COL}>
+              <span className="os-field-label">Notes for students</span>
               <textarea
                 name="notes"
                 rows={2}
-                placeholder="Prep work, what to bring, links — students see this on the course page."
-                className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
+                placeholder="Prep work, what to bring, links. Students see this on the course page."
               />
             </label>
           </AddFormModal>
@@ -1593,19 +1671,19 @@ export default function ManageOffering() {
             intent="generate-sessions"
             submitLabel="Generate"
           >
-            <label className="block">
-              <span className="text-xs font-semibold text-muted-foreground">Starting the week of</span>
+            <label className={FIELD_COL}>
+              <span className="os-field-label">Starting the week of</span>
               <DateField
                 mode="date"
                 name="startDate"
                 required
-                className="mt-1 w-full"
+                className="w-full"
                 ariaLabel="Series start date"
               />
             </label>
-            <div className="block">
-              <span className="text-xs font-semibold text-muted-foreground">Meets on</span>
-              <div className="mt-1 flex flex-wrap gap-1.5">
+            <div className={FIELD_COL}>
+              <span className="os-field-label">Meets on</span>
+              <div className="flex flex-wrap gap-2">
                 {WEEKDAYS.map((label, i) => (
                   <label
                     key={i}
@@ -1618,7 +1696,7 @@ export default function ManageOffering() {
                       value={i}
                       className="peer sr-only"
                     />
-                    <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border bg-card text-sm font-medium text-muted-foreground transition-colors peer-checked:border-accent-coral peer-checked:bg-accent-coral peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-accent-coral/40">
+                    <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-os-well text-sm font-medium text-os-grey transition-colors peer-checked:bg-os-accent peer-checked:text-os-card peer-focus-visible:ring-2 peer-focus-visible:ring-os-accent/40">
                       {label}
                     </span>
                   </label>
@@ -1626,54 +1704,43 @@ export default function ManageOffering() {
               </div>
             </div>
             <div className="grid gap-3 sm:grid-cols-3">
-              <label className="block">
-                <span className="text-xs font-semibold text-muted-foreground">Starts</span>
+              <label className={FIELD_COL}>
+                <span className="os-field-label">Starts</span>
                 <DateField
                   mode="time"
                   name="startTime"
                   required
-                  className="mt-1 w-full"
+                  className="w-full"
                   ariaLabel="Session start time"
                 />
               </label>
-              <label className="block">
-                <span className="text-xs font-semibold text-muted-foreground">Ends</span>
+              <label className={FIELD_COL}>
+                <span className="os-field-label">Ends</span>
                 <DateField
                   mode="time"
                   name="endTime"
-                  className="mt-1 w-full"
+                  className="w-full"
                   ariaLabel="Session end time"
                 />
               </label>
-              <label className="block">
-                <span className="text-xs font-semibold text-muted-foreground"># of weeks</span>
-                <input
-                  type="number"
-                  name="weeks"
-                  min={1}
-                  max={26}
-                  defaultValue={6}
-                  className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
-                />
+              <label className={FIELD_COL}>
+                <span className="os-field-label">Weeks</span>
+                <input type="number" name="weeks" min={1} max={26} defaultValue={6} />
               </label>
             </div>
-            <label className="block">
-              <span className="text-xs font-semibold text-muted-foreground">Location</span>
-              <input
-                type="text"
-                name="location"
-                placeholder="Sudikoff 007"
-                className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
-              />
+            <label className={FIELD_COL}>
+              <span className="os-field-label">Location</span>
+              <input type="text" name="location" placeholder="Sudikoff 007" />
             </label>
           </AddFormModal>
+        </div>
         </div>
       )}
 
       {tab === "applications" && (
         <div className="flex flex-col gap-3">
           {applications.length === 0 ? (
-            <p className="text-sm text-muted-foreground italic">
+            <p className="rounded-os-card bg-os-card px-6 py-5 text-sm italic text-os-grey">
               No applications yet.
             </p>
           ) : (
@@ -1686,11 +1753,12 @@ export default function ManageOffering() {
                       key={s}
                       type="button"
                       onClick={() => setAppFilter(s)}
-                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                      className={cn(
+                        "rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
                         appFilter === s
-                          ? "bg-accent-coral text-white"
-                          : "bg-muted text-muted-foreground hover:text-foreground"
-                      }`}
+                          ? "bg-os-accent text-os-card"
+                          : "bg-os-well text-os-grey hover:text-foreground",
+                      )}
                     >
                       {s === "all" ? `All ${applications.length}` : `${s} ${appCounts[s] ?? 0}`}
                     </button>
@@ -1707,7 +1775,7 @@ export default function ManageOffering() {
                     })}
                   >
                     <input type="hidden" name="intent" value="approve-all-pending" />
-                    <Button type="submit" size="sm">
+                    <Button type="submit">
                       Approve all {appCounts["Submitted"]} pending
                     </Button>
                   </Form>
@@ -1730,36 +1798,31 @@ export default function ManageOffering() {
       {tab === "roster" && (
         <div className="flex flex-col gap-4">
           {sessionCheckIn && (
-            <section className="bg-card border border-border rounded-lg p-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <h2 className="font-heading font-semibold text-foreground">Self check-in</h2>
-                  <p className="mt-0.5 text-xs text-muted-foreground max-w-md">
-                    Open check-in and project the QR — enrolled students scan it to mark
-                    themselves present, instead of you calling the roll. You can still mark anyone
-                    by hand below.
-                  </p>
-                </div>
+            <ManageSection
+              title="Self check-in"
+              description="Open check-in and project the QR. Students scan it to mark themselves present. You can still mark anyone by hand below."
+              action={
                 <Form method="post" className="shrink-0">
                   <input type="hidden" name="intent" value="set-session-check-in" />
                   <input type="hidden" name="sessionId" value={sessionCheckIn.sessionId} />
                   <input type="hidden" name="open" value={sessionCheckIn.open ? "false" : "true"} />
-                  <Button type="submit" size="sm" variant={sessionCheckIn.open ? "secondary" : "primary"}>
+                  <Button type="submit" variant={sessionCheckIn.open ? "secondary" : "primary"}>
                     {sessionCheckIn.open ? "Close check-in" : "Open self check-in"}
                   </Button>
                 </Form>
-              </div>
+              }
+            >
               {sessionCheckIn.open && sessionCheckIn.checkInQrSvg && sessionCheckIn.checkInUrl && (
-                <div className="mt-4 flex flex-wrap items-center gap-4">
+                <div className="flex flex-wrap items-center gap-5">
                   <div
-                    className="w-40 h-40 shrink-0 rounded-md bg-white p-2 [&_svg]:w-full [&_svg]:h-full"
+                    className="h-44 w-44 shrink-0 rounded-os-item bg-white p-3 [&_svg]:h-full [&_svg]:w-full"
                     dangerouslySetInnerHTML={{ __html: sessionCheckIn.checkInQrSvg }}
                   />
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-foreground">
                       Check-in is open for this session.
                     </p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
+                    <p className="mt-1 text-sm text-os-grey">
                       Students scan the code (signed in) to mark themselves present. Marks appear in
                       the roster below.
                     </p>
@@ -1767,14 +1830,19 @@ export default function ManageOffering() {
                       href={sessionCheckIn.checkInUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className="mt-1 inline-block text-xs text-accent-teal hover:underline break-all"
+                      className="mt-2 inline-block break-all text-sm text-os-accent hover:underline"
                     >
                       {sessionCheckIn.checkInUrl}
                     </a>
                   </div>
                 </div>
               )}
-            </section>
+              {!sessionCheckIn.open && (
+                <p className="text-sm text-os-grey">
+                  Check-in is closed. Open it to show the QR code.
+                </p>
+              )}
+            </ManageSection>
           )}
           <RosterMatrix
             sessions={attendanceMatrix.sessions.map((s) => ({
@@ -1824,10 +1892,8 @@ export default function ManageOffering() {
 
       {tab === "feedback" && (
         <div className="flex flex-col gap-5">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-muted-foreground">
-              Session
-            </span>
+          <div className="os-form flex items-center gap-3">
+            <span className="text-sm text-os-grey">Session</span>
             <Select
               value={feedbackSessionId ?? ""}
               onChange={(value) =>
@@ -1838,16 +1904,15 @@ export default function ManageOffering() {
               }
               options={offering.sessions.map((s) => ({
                 value: s.id,
-                label: `Session ${s.sequence} — ${formatDateTime(s.datetime, tz)}`,
+                label: `Session ${s.sequence}, ${formatDateTime(s.datetime, tz)}`,
               }))}
-              buttonClassName="rounded-md border border-border bg-card px-2 py-1.5 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+              buttonClassName="min-w-[16rem]"
             />
           </div>
 
           {!sessionFeedback ? (
-            <p className="text-sm text-muted-foreground italic">
-              No session-feedback form is bound yet — pick one on the Details
-              tab.
+            <p className="rounded-os-card bg-os-card px-6 py-5 text-sm italic text-os-grey">
+              No session-feedback form is bound yet. Pick one on the Details tab.
             </p>
           ) : (
             <FeedbackResults
@@ -1866,6 +1931,7 @@ export default function ManageOffering() {
           )}
         </div>
       )}
+      </div>
     </div>
   );
 }
@@ -1894,26 +1960,29 @@ function FeedbackResults({
       ? Math.round((results.responded / results.eligible) * 100)
       : null;
   return (
-    <section className="bg-card border border-border rounded-lg p-5 flex flex-col gap-4">
+    <section className="flex flex-col gap-3">
       <div>
-        <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+        <h2 className="font-heading text-[19px] font-semibold text-foreground">
+          {title}
+        </h2>
         {rate !== null && (
-          <p className="text-xs font-medium text-muted-foreground mt-0.5">
+          <p className="mt-1 text-sm text-os-grey">
             {results.responded} of {results.eligible} responded ({rate}%)
           </p>
         )}
         {anonymizedNote && (
-          <p className="text-xs text-muted-foreground mt-0.5">
+          <p className="mt-0.5 text-sm text-os-grey">
             Responses are anonymized and shown in a shuffled order.
           </p>
         )}
       </div>
+      <div className="flex flex-col gap-5 rounded-os-card bg-os-card p-6">
       {results.submissions.length === 0 ? (
-        <p className="text-sm text-muted-foreground italic">No responses yet.</p>
+        <p className="text-sm italic text-os-grey">No responses yet.</p>
       ) : anonymizedNote && results.responded < 3 ? (
-        <p className="text-sm text-muted-foreground italic">
-          Only {results.responded} response{results.responded === 1 ? "" : "s"} so far —
-          individual responses stay hidden until at least 3, to keep them anonymous.
+        <p className="text-sm italic text-os-grey">
+          Only {results.responded} response{results.responded === 1 ? "" : "s"} so far.
+          Individual responses stay hidden until at least 3, to keep them anonymous.
         </p>
       ) : (
         visibleQuestions.map((q) => {
@@ -1940,11 +2009,9 @@ function FeedbackResults({
           const showTally = tally.size > 0 && tally.size <= 8;
           return (
           <div key={q.key}>
-            <h3 className="text-xs font-semibold text-muted-foreground">
-              {q.data.label}
-            </h3>
+            <h3 className="text-sm font-semibold text-foreground">{q.data.label}</h3>
             {(avg !== null || showTally) && (
-              <p className="mt-0.5 text-xs text-muted-foreground">
+              <p className="mt-1 text-sm text-os-grey">
                 {avg !== null && (
                   <span className="font-semibold text-foreground">avg {avg.toFixed(1)}</span>
                 )}
@@ -1956,7 +2023,7 @@ function FeedbackResults({
                     .join(", ")}
               </p>
             )}
-            <ul className="mt-1 flex flex-col gap-1">
+            <ul className="mt-2 flex flex-col gap-1.5">
               {results.submissions.map((s) => {
                 const raw = s.answers[q.key];
                 const value =
@@ -1969,11 +2036,11 @@ function FeedbackResults({
                 return (
                   <li
                     key={s.id}
-                    className="text-sm text-foreground border-l-2 border-border pl-3 whitespace-pre-wrap"
+                    className="whitespace-pre-wrap rounded-os-item bg-os-well px-3.5 py-2.5 text-sm text-foreground"
                   >
                     {value}
                     {s.submitterName && (
-                      <span className="text-xs text-muted-foreground"> — {s.submitterName}</span>
+                      <span className="text-os-grey"> · {s.submitterName}</span>
                     )}
                   </li>
                 );
@@ -1983,76 +2050,269 @@ function FeedbackResults({
           );
         })
       )}
+      </div>
     </section>
   );
 }
 
-// One row of the Decision emails table: bind a template (or fall back to the
-// built-in copy) for a status, with a live preview of exactly what sends —
-// rendered with a sample recipient so the built-in fallback isn't invisible.
-function DecisionEmailRow({
-  status,
-  boundVersionId,
-  emailTemplates,
-  builtinCopy,
-  offeringTitle,
+// What a session's materials are, and the place to change them. The Sessions
+// tab used to state them read-only, which meant filing week 3's slides under
+// week 3 was a trip to the Materials tab and back for every session. Pages and
+// uploaded files are one list here; only the intent they post differs.
+function SessionMaterials({
+  offeringId,
+  sessionId,
+  materials,
 }: {
-  status: "Approved" | "Waitlisted" | "Rejected";
-  boundVersionId: string;
-  emailTemplates: { name: string; versionId: string; subject: string; body: string }[];
-  builtinCopy: { subject: string; body: string };
-  offeringTitle: string;
+  offeringId: string;
+  sessionId: string;
+  materials: {
+    id: string;
+    title: string;
+    kind: "page" | "file";
+    sessionId: string | null;
+    href: string;
+  }[];
 }) {
-  const [selected, setSelected] = useState(boundVersionId);
-  const [showPreview, setShowPreview] = useState(false);
+  const fetcher = useFetcher();
+  const revalidator = useRevalidator();
+  // Upload straight onto the session. Going via the Materials tab to upload and
+  // then back here to file it was the long way round to "here are week 3's
+  // slides", which is the one thing this row is for.
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
-  const source = selected
-    ? emailTemplates.find((t) => t.versionId === selected) ?? builtinCopy
-    : builtinCopy;
-  // Sample render: {{firstName}} → a placeholder name, {{domain}} → the offering
-  // title (education templates carry the title in {{domain}}), matching the send.
-  const preview = renderEmail(source, { firstName: "Alex", domain: offeringTitle });
+  async function upload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const meta = await uploadFileToS3(file, `offering/${offeringId}/materials`);
+      const res = await fetch(`/api/education/${offeringId}/files`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: file.name, sessionId, ...meta }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? "Failed to register file");
+      }
+      revalidator.revalidate();
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+  const attached = materials.filter((m) => m.sessionId === sessionId);
+  // Anything not already on this session, including material attached to
+  // another one — moving it here is the same edit as attaching a loose file.
+  const available = materials.filter((m) => m.sessionId !== sessionId);
+
+  const setSession = (m: { id: string; kind: "page" | "file" }, to: string) =>
+    fetcher.submit(
+      {
+        intent: m.kind === "page" ? "set-material-session" : "set-file-session",
+        [m.kind === "page" ? "pageId" : "fileId"]: m.id,
+        sessionId: to,
+      },
+      { method: "post" },
+    );
+
+  const uploadButton = (
+    <>
+      <input
+        ref={fileInputRef}
+        type="file"
+        onChange={upload}
+        className="hidden"
+        aria-hidden
+        tabIndex={-1}
+      />
+      <button
+        type="button"
+        disabled={uploading}
+        onClick={() => fileInputRef.current?.click()}
+        className="inline-flex items-center gap-1.5 rounded-full bg-os-container px-3 py-1 text-sm text-os-grey transition-colors hover:text-foreground disabled:opacity-60"
+      >
+        <Upload className="h-3.5 w-3.5" aria-hidden />
+        {uploading ? "Uploading…" : "Upload"}
+      </button>
+    </>
+  );
 
   return (
-    <div className="flex flex-col gap-2 rounded-md border border-border/60 p-2">
-      <Form method="post" className="flex items-center gap-3">
-        <input type="hidden" name="intent" value="set-decision-email" />
-        <input type="hidden" name="status" value={status} />
-        <span className="text-sm text-foreground w-24">{status}</span>
-        <Select
-          name="emailTemplateVersionId"
-          value={selected}
-          onChange={setSelected}
-          placeholder="Built-in message (no template)"
-          options={[
-            { value: "", label: "Built-in message (no template)" },
-            ...emailTemplates.map((t) => ({ value: t.versionId, label: t.name })),
-          ]}
-          buttonClassName="flex-1 rounded-md border border-border bg-card px-2 py-1.5 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-        />
-        <button
-          type="button"
-          onClick={() => setShowPreview((v) => !v)}
-          className="text-xs text-muted-foreground hover:text-foreground px-2 py-1.5 rounded-md hover:bg-muted/40 transition-colors shrink-0"
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-os-grey">Materials:</span>
+      {attached.map((m) => (
+        <span
+          key={m.id}
+          className="inline-flex items-center gap-1.5 rounded-full bg-os-container px-3 py-1"
         >
-          {showPreview ? "Hide" : "Preview"}
-        </button>
-        <Button type="submit" variant="secondary" size="sm">
-          Save
-        </Button>
-      </Form>
-      {showPreview && (
-        <div className="rounded-md bg-muted/40 px-3 py-2 text-xs">
-          <p className="text-muted-foreground">
-            {selected ? "Bound template" : "Built-in message"} — sample for “Alex”:
-          </p>
-          <p className="mt-1 font-medium text-foreground">{preview.subject}</p>
-          <div
-            className="mt-1 text-foreground [&_p]:my-1"
-            dangerouslySetInnerHTML={{ __html: preview.html }}
-          />
-        </div>
+          <a href={m.href} className="text-foreground hover:text-os-accent hover:underline">
+            {m.title}
+          </a>
+          <button
+            type="button"
+            onClick={() => setSession(m, "")}
+            aria-label={`Remove ${m.title} from this session`}
+            className="text-os-grey transition-colors hover:text-destructive"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </span>
+      ))}
+      {attached.length === 0 && <span className="text-os-grey">None yet.</span>}
+      {available.length > 0 && (
+        <Select
+          value=""
+          onChange={(id) => {
+            const m = available.find((x) => x.id === id);
+            if (m) setSession(m, sessionId);
+          }}
+          placeholder="Attach existing"
+          options={available.map((m) => ({
+            value: m.id,
+            label: m.sessionId ? `${m.title} (move here)` : m.title,
+          }))}
+          buttonClassName="inline-flex items-center gap-1 rounded-full bg-os-container px-3 py-1 text-sm text-os-grey transition-colors hover:text-foreground"
+        />
       )}
+      {uploadButton}
+      {uploadError && <span className="text-destructive">{uploadError}</span>}
+    </div>
+  );
+}
+
+// One row of the Decision emails list: what the status sends, flagged when no
+// email is written yet, with Edit/Write opening the shared subject and body in
+// a modal. The email is one per status for the whole lab, not per course — the
+// preview renders it against this course so the words can be checked in place.
+function DecisionEmailRow({
+  slot,
+  email,
+  offeringTitle,
+}: {
+  slot: { status: DecisionSlotStatus; label: string; description: string };
+  email: { subject: string; body: string } | null;
+  offeringTitle: string;
+}) {
+  const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
+  const [editing, setEditing] = useState(false);
+  const [subject, setSubject] = useState(email?.subject ?? "");
+  const [body, setBody] = useState(email?.body ?? "");
+  const busy = fetcher.state !== "idle";
+
+  // Close once a save lands; the loader brings the new email back.
+  useEffect(() => {
+    if (fetcher.state === "idle" && fetcher.data?.ok) setEditing(false);
+  }, [fetcher.state, fetcher.data]);
+
+  const open = () => {
+    setSubject(email?.subject ?? "");
+    setBody(email?.body ?? "");
+    setEditing(true);
+  };
+  const save = () =>
+    fetcher.submit(
+      {
+        intent: "save-education-email",
+        slot: decisionSlot(slot.status),
+        subject,
+        body,
+      },
+      { method: "post" },
+    );
+
+  // Soft warning only: an unknown variable still saves.
+  const unknown = [
+    ...new Set([...unknownVariables(subject), ...unknownVariables(body)]),
+  ];
+  const preview = renderEmail({ subject, body }, { firstName: "Alex", domain: offeringTitle });
+  const titleId = `education-email-${slot.status.toLowerCase()}`;
+
+  return (
+    <div className={cn(WELL_ROW_CLASS, "items-start")}>
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <span className="text-sm font-semibold text-foreground">{slot.label}</span>
+        <span className="text-sm text-os-grey">
+          {email ? slot.description : "No email yet. Nothing sends for this status."}
+        </span>
+      </div>
+      <Button type="button" variant="secondary" size="sm" onClick={open}>
+        {email ? "Edit" : "Write"}
+      </Button>
+      <Modal
+        open={editing}
+        onClose={busy ? () => {} : () => setEditing(false)}
+        disableEscape={busy}
+        labelledBy={titleId}
+        containerClassName={modalCardClass("max-w-3xl")}
+      >
+        <ModalHeader
+          titleId={titleId}
+          title={`${slot.label} email`}
+          subtitle="Shared by every course."
+          onClose={() => setEditing(false)}
+        />
+        <div className="os-form flex flex-col gap-4">
+          <label className={FIELD_COL}>
+            <span className="os-field-label">Subject</span>
+            <input
+              type="text"
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              aria-label={`${slot.label} subject`}
+            />
+          </label>
+          <label className={FIELD_COL}>
+            <span className="os-field-label">Body</span>
+            <textarea
+              rows={14}
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              aria-label={`${slot.label} body`}
+            />
+          </label>
+          <p className="text-sm text-os-grey">
+            Supports{" "}
+            {EDUCATION_EMAIL_VARIABLES.map((v, i) => (
+              <span key={v}>
+                {i > 0 && ", "}
+                <code className="rounded bg-os-well px-1.5 py-0.5 font-mono">{`{{${v}}}`}</code>
+              </span>
+            ))}
+            . Leave both fields empty to send nothing for this status.
+          </p>
+          {unknown.length > 0 && (
+            <p className="text-sm text-amber-700">
+              {unknown.map((v) => `{{${v}}}`).join(", ")} won&apos;t be filled in.
+            </p>
+          )}
+          {(subject.trim() || body.trim()) && (
+            <div className="rounded-os-item bg-os-well px-4 py-3 text-sm">
+              <p className="text-os-grey">Sample for “Alex”:</p>
+              <p className="mt-1.5 font-medium text-foreground">{preview.subject}</p>
+              <div
+                className="mt-1 text-foreground [&_p]:my-1"
+                dangerouslySetInnerHTML={{ __html: preview.html }}
+              />
+            </div>
+          )}
+          {fetcher.data?.error && (
+            <p className="text-sm text-destructive">{fetcher.data.error}</p>
+          )}
+        </div>
+        <ModalFooter onCancel={() => setEditing(false)}>
+          <Button type="button" disabled={busy} onClick={save}>
+            {busy ? "Saving…" : "Save"}
+          </Button>
+        </ModalFooter>
+      </Modal>
     </div>
   );
 }

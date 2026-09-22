@@ -105,7 +105,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     const url = new URL(request.url)
     const twin = educationPortalTwin(url.pathname)
     if (twin) return redirect(twin + url.search)
-    if (!url.pathname.startsWith('/education/manage')) return redirect('/portal')
+    const instructorPaths =
+      url.pathname.startsWith('/education/manage') ||
+      url.pathname === '/education/offerings'
+    if (!instructorPaths) return redirect('/portal')
   }
 
   // Hard gate: a lab member who owes a signature on an app-enforced agreement

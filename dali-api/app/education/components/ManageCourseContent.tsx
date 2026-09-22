@@ -32,7 +32,9 @@ import { useActionErrorToast } from "~/lib/useActionErrorToast";
 
 const INPUT =
   "mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm";
-const LABEL = "text-xs font-semibold text-muted-foreground";
+// The design's field caption. Named rather than left to `os-form`'s
+// `label > span` rule, because some of these captions sit in a <div>.
+const LABEL = "os-field-label";
 
 export function ManageMaterials({
   offeringId,
@@ -236,7 +238,7 @@ export function ManageMaterials({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2">
-        <p className="text-xs text-muted-foreground">
+        <p className="text-sm text-os-grey">
           Materials are read-only for students; shared docs are co-edited live. Drag a material or
           uploaded file onto a folder to file it.
         </p>
@@ -257,7 +259,7 @@ export function ManageMaterials({
             trigger={
               <button
                 type="button"
-                className="inline-flex items-center gap-1 rounded-md bg-accent-coral px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-coral/90 transition-colors shrink-0"
+                className="inline-flex shrink-0 items-center gap-1 rounded-full bg-os-accent px-4 py-2 text-sm font-medium text-os-card transition-colors hover:bg-os-accent-hover"
               >
                 <Plus className="w-4 h-4" /> New
                 <ChevronDown className="w-3.5 h-3.5 opacity-80" />
@@ -294,23 +296,23 @@ export function ManageMaterials({
         </div>
       </div>
       {uploadError && (
-        <p className="text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2">
+        <p className="rounded-os-item bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {uploadError}
         </p>
       )}
 
       {empty ? (
-        <p className="text-sm text-muted-foreground italic">
+        <p className="text-sm italic text-os-grey">
           Nothing here yet. Materials, shared docs, and uploaded files show up for students on
-          the course timeline — attach each to a session or leave it for the whole course.
+          the session list students see. Attach each to a session, or leave it for the whole course.
         </p>
       ) : (
         // One list, because that's how students meet them — the badge and icon
         // carry the difference rather than two separate sections.
         <ul
           {...dropProps("root")}
-          className={`rounded-lg border bg-card divide-y divide-border ${
-            dropTarget === "root" ? "border-accent-coral" : "border-border"
+          className={`divide-y divide-os-container rounded-os-card bg-os-card ring-inset ${
+            dropTarget === "root" ? "ring-2 ring-os-accent" : ""
           }`}
         >
           {materials.map((p) => (
@@ -319,15 +321,15 @@ export function ManageMaterials({
               {...(p.isFolder ? dropProps(p.id) : dragProps(p.id, "page"))}
               className={`px-4 py-3 ${p.isFolder ? "" : "cursor-grab active:cursor-grabbing"} ${
                 dragged?.id === p.id ? "opacity-50" : ""
-              } ${dropTarget === p.id ? "bg-accent-coral/10" : ""}`}
+              } ${dropTarget === p.id ? "bg-os-accent/10" : ""}`}
             >
               {p.isFolder ? (
                 // A folder is a container, so it gets no link — only the
                 // materials inside it open.
                 <div className="flex items-center gap-2">
-                  <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                  <Folder className="h-4 w-4 shrink-0 text-os-grey" aria-hidden />
                   <span className="text-sm font-medium text-foreground">{p.title}</span>
-                  <span className="text-xs text-muted-foreground">
+                  <span className="text-sm text-os-grey">
                     {p.children.length} {p.children.length === 1 ? "item" : "items"}
                   </span>
                   <div className="ml-auto">
@@ -494,7 +496,7 @@ export function ManageMaterials({
             type="text"
             name="title"
             required
-            placeholder="Session 1 — Slides & notes"
+            placeholder="Session 1 slides and notes"
             className={INPUT}
           />
         </label>
@@ -616,7 +618,7 @@ function RowMenu({
         <button
           type="button"
           aria-label="Item actions"
-          className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="os-icon-btn shrink-0"
         >
           <MoreHorizontal className="h-4 w-4" />
         </button>
@@ -650,16 +652,16 @@ function FileRow({
 }) {
   return (
     <div className="flex min-w-0 flex-1 items-center gap-2">
-      <Paperclip className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+      <Paperclip className="h-4 w-4 shrink-0 text-os-grey" aria-hidden />
       <a
         href={href}
         target="_blank"
         rel="noopener noreferrer"
-        className="truncate text-sm font-medium text-foreground hover:text-accent-coral"
+        className="truncate text-sm font-medium text-foreground hover:text-os-accent"
       >
         {title}
       </a>
-      <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+      <span className="shrink-0 rounded-full bg-os-well px-2.5 py-0.5 text-[11px] font-semibold text-os-grey">
         File
       </span>
       <div className="ml-auto shrink-0">
@@ -700,18 +702,18 @@ function DocRow({
         className="group flex min-w-0 items-center gap-2 text-left"
       >
         <Icon
-          className={`h-3.5 w-3.5 shrink-0 ${shared ? "text-accent-teal" : "text-muted-foreground"}`}
+          className={`h-4 w-4 shrink-0 ${shared ? "text-os-accent" : "text-os-grey"}`}
           aria-hidden
         />
         <span
-          className={`truncate group-hover:text-accent-coral ${
-            nested ? "text-sm text-muted-foreground" : "text-sm font-medium text-foreground"
+          className={`truncate text-sm group-hover:text-os-accent ${
+            nested ? "text-os-grey" : "font-medium text-foreground"
           }`}
         >
           {title}
         </span>
         {shared && (
-          <span className="shrink-0 rounded-full bg-accent-teal/10 px-2 py-0.5 text-[10px] font-semibold text-accent-teal">
+          <span className="shrink-0 rounded-full bg-os-accent/15 px-2.5 py-0.5 text-[11px] font-semibold text-os-accent">
             Shared
           </span>
         )}
@@ -760,17 +762,17 @@ export function ManageAssignments({
         </Button>
       </div>
       {assignments.length === 0 && (
-        <p className="text-sm text-muted-foreground italic">
-          No assignments yet — enrolled students see these under the Assignments tab of the
+        <p className="text-sm italic text-os-grey">
+          No assignments yet. Enrolled students see these under the Assignments tab of the
           course hub.
         </p>
       )}
       {assignments.map((a) => (
-        <details key={a.id} className="bg-card border border-border rounded-lg px-4 py-3">
+        <details key={a.id} className="rounded-os-card bg-os-card px-6 py-5">
           <summary className="flex items-center justify-between gap-4 cursor-pointer list-none">
             <div>
               <span className="text-sm font-semibold text-foreground">{a.title}</span>
-              <span className="ml-2 text-xs text-muted-foreground">
+              <span className="ml-2 text-sm text-os-grey">
                 {a.sessionSequence != null && `Session ${a.sessionSequence} · `}
                 {a.dueAt ? `Due ${formatDateTime(a.dueAt, tz)}` : "No due date"}
               </span>
@@ -783,7 +785,7 @@ export function ManageAssignments({
             </Link>
           </summary>
 
-          <div className="mt-3 pt-3 border-t border-border flex flex-col gap-4">
+          <div className="os-form mt-4 flex flex-col gap-4 border-t border-os-container pt-4">
             <Form method="post" className="grid gap-3 sm:grid-cols-[2fr_1fr_1fr_20ch_auto] items-end">
               <input type="hidden" name="intent" value="update-assignment" />
               <input type="hidden" name="assignmentId" value={a.id} />
@@ -852,11 +854,11 @@ export function ManageAssignments({
                       userName,
                     }}
                     placeholder="What students should build or hand in…"
-                    className="mt-1 border border-border rounded-md"
+                    className="mt-2 rounded-os-item bg-os-well"
                   />
                 </PresenceProvider>
               ) : (
-                <p className="text-xs text-muted-foreground italic mt-1">
+                <p className="mt-1.5 text-sm italic text-os-grey">
                   Sign in again to edit instructions.
                 </p>
               )}
@@ -964,7 +966,7 @@ export function ManageAnnouncements({
         open={composeOpen}
         onClose={() => setComposeOpen(false)}
         title="New announcement"
-        subtitle="Goes to every approved enrollee — in-app and by email."
+        subtitle="Goes to every approved enrollee, in-app and by email."
         intent="post-announcement"
         submitLabel="Send announcement"
       >
@@ -975,21 +977,21 @@ export function ManageAnnouncements({
             required
             rows={4}
             placeholder="Reminder: bring your laptops tomorrow…"
-            className="mt-1 w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
+            className="w-full"
           />
         </label>
       </AddFormModal>
 
       {announcements.map((a) => (
-        <div key={a.id} className="bg-card border border-border rounded-lg p-4">
-          <p className="text-xs text-muted-foreground">
+        <div key={a.id} className="rounded-os-card bg-os-card p-6">
+          <p className="text-sm text-os-grey">
             {a.authorName} · {formatDateTime(a.sentAt, tz)}
           </p>
           <p className="text-sm text-foreground whitespace-pre-wrap mt-1">{a.body}</p>
         </div>
       ))}
       {announcements.length === 0 && (
-        <p className="text-sm text-muted-foreground italic">Nothing sent yet.</p>
+        <p className="text-sm italic text-os-grey">Nothing sent yet.</p>
       )}
     </div>
   );

@@ -13,6 +13,9 @@ export const meta: Route.MetaFunction = ({ data }) => [
 ];
 
 export const handle = {
+  // Offering pages name themselves in their own headers, so the trail above
+  // them only repeated where you already are.
+  hideBreadcrumbs: true,
   // Flat routes don't nest, so the middle :offeringId is an opaque id the
   // segment walk drops — the course vanishes from the trail. Declare the full
   // trail so the page stays reachable from its offering.
@@ -26,7 +29,7 @@ export const handle = {
     return [
       { label: "Education", to: "/education" },
       { label: data.offeringTitle, to: hub },
-      { label: "Timeline", to: `${hub}?tab=timeline` },
+      { label: "Sessions", to: `${hub}?tab=sessions` },
       { label: data.page.title },
     ];
   },

@@ -24,7 +24,6 @@ import {
   Megaphone,
   Settings,
   Shield,
-  SlidersHorizontal,
   Users,
   UserPlus,
   UsersRound,
@@ -149,7 +148,7 @@ export const NAV_AREAS: NavArea[] = [
     hubPath: "/education",
     subtabs: [
       { label: "Hub", href: "/education", icon: LayoutGrid },
-      { label: "Manage", href: "/education/manage", icon: SlidersHorizontal, gate: (r) => r.isCore || r.isInstructor },
+      { label: "Offerings", href: "/education/offerings", icon: BookOpen },
       { label: "CE Compliance", href: "/education/compliance", icon: Award, gate: (r) => r.isCore },
     ],
   },
@@ -237,7 +236,7 @@ const REGROUPED_AREAS: NavArea[] = [
     hubPath: "/education",
     subtabs: [
       { label: "Hub", href: "/education", icon: LayoutGrid },
-      { label: "Manage", href: "/education/manage", icon: SlidersHorizontal, gate: (r) => r.isCore || r.isInstructor },
+      { label: "Offerings", href: "/education/offerings", icon: BookOpen },
       { label: "CE Compliance", href: "/education/compliance", icon: Award, gate: (r) => r.isCore },
     ],
   },

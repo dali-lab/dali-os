@@ -1,6 +1,8 @@
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
 import { renderEmail } from "~/lib/email";
+import { getEducationEmail } from "~/education/lib/education-emails.server";
+import { decisionSlot } from "~/education/lib/education-emails";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import {
   resolveCandidateEmail,
@@ -58,20 +60,7 @@ const STATUS_COPY: Record<
 };
 
 /**
- * The built-in decision-email copy for a status — what actually sends when no
- * template is bound for (offering, status). Exposed so the offering manager can
- * preview the fallback instead of it being invisible until an applicant gets it.
- */
-export function builtinDecisionEmail(
-  status: Exclude<EduApplicationStatus, "Submitted">,
-  offeringTitle: string,
-): { subject: string; body: string } {
-  const copy = STATUS_COPY[status];
-  return { subject: copy.title(offeringTitle), body: copy.body(offeringTitle) };
-}
-
-/**
- * In-app notification + (when a template is bound for this status) email for
+ * In-app notification + (when the status has an email written) email for
  * an application status change. Email is best-effort — failures are logged,
  * never thrown; the in-app Notification and the portal status page are the
  * fallback surfaces. `promoted` swaps in "a seat opened up" copy.
@@ -133,7 +122,6 @@ export async function notifyApplicationStatus(
     offeringTitle: offering.title,
     status,
     applicant,
-    fallback: { subject: title, body },
   });
 }
 
@@ -378,9 +366,10 @@ export async function notifySessionReminder(args: {
 }
 
 /**
- * Send the bound decision-email template for (offering, status), falling back
- * to the inline copy when no binding exists. Best-effort by contract: dev
- * skips sends, staging redirects, and any failure only logs.
+ * Send the shared decision email for this status. One email per slot, shared
+ * by every course; a slot with no email sends nothing (the in-app
+ * notification above still fires). Best-effort by contract: dev skips sends,
+ * staging redirects, and any failure only logs.
  */
 async function sendDecisionEmail(args: {
   applicationId: string;
@@ -388,28 +377,18 @@ async function sendDecisionEmail(args: {
   offeringTitle: string;
   status: Exclude<EduApplicationStatus, "Submitted">;
   applicant: Recipient;
-  fallback: { subject: string; body: string };
 }): Promise<void> {
   try {
+    const email = await getEducationEmail(decisionSlot(args.status));
+    if (!email) return;
+
     const intended = recipientEmail(args.applicant);
     const { to, redirectedFrom } = resolveCandidateEmail(intended);
     if (!to) return;
 
-    const binding = await prisma.educationDecisionEmail.findUnique({
-      where: {
-        offeringId_status: { offeringId: args.offeringId, status: args.status },
-      },
-      select: {
-        emailTemplateVersion: { select: { subject: true, body: true } },
-      },
-    });
-
     const { subject, html } = renderEmail(
-      binding?.emailTemplateVersion ?? {
-        subject: args.fallback.subject,
-        body: args.fallback.body,
-      },
-      // {{domain}} carries the offering title in education templates.
+      email,
+      // {{domain}} carries the course title in education emails.
       { firstName: args.applicant.firstName, domain: args.offeringTitle },
     );
 

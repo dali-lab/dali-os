@@ -647,11 +647,12 @@ export const prisma = {
     delete: vi.fn(),
     deleteMany: vi.fn(),
   },
-  educationDecisionEmail: {
-    findUnique: vi.fn(),
+  educationEmail: {
+    findUnique: vi.fn().mockResolvedValue(null),
     findMany: vi.fn().mockResolvedValue([]),
     upsert: vi.fn(),
     delete: vi.fn(),
+    deleteMany: vi.fn(),
   },
   educationFormBinding: {
     findUnique: vi.fn(),

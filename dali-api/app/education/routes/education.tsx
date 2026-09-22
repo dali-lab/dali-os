@@ -1,18 +1,16 @@
-import { useLoaderData } from "react-router";
+import { useLoaderData, Link } from "react-router";
+import { CircleAlert, CircleCheck } from "lucide-react";
 import type { Route } from "./+types/education";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { getUserRoles } from "~/lib/roles";
 import { redirectDartmouthToPortal } from "~/education/lib/access.server";
-import { listCatalog, listMyApplications } from "~/education/lib/offerings.server";
+import { listMyApplications } from "~/education/lib/offerings.server";
 import { getStudentDashboard } from "~/education/lib/lms.server";
 import { myCreditStanding } from "~/education/lib/ce-credits.server";
-import { OfferingCard } from "~/education/components/OfferingCard";
-import { OfferingCatalog } from "~/education/components/OfferingCatalog";
 import { StudentDashboard } from "~/education/components/StudentDashboard";
-import { useFeatureFlag } from "~/components/FeatureFlags";
+import { buttonClasses } from "~/components/ui/Button";
+import { cn } from "~/lib/cn";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
-import { Link } from "react-router";
 
 export const meta: Route.MetaFunction = () => [{ title: "Education · DALI OS" }];
 
@@ -22,79 +20,84 @@ export async function loader({ request }: Route.LoaderArgs) {
   const portalRedirect = redirectDartmouthToPortal(auth);
   if (portalRedirect) return portalRedirect;
 
-  const [offerings, myApplications, ceStanding, dashboard, roles] = await Promise.all([
-    listCatalog(auth.user.sub),
+  const [myApplications, ceStanding, dashboard] = await Promise.all([
     listMyApplications(auth.user.sub),
     myCreditStanding(auth.user.sub),
     getStudentDashboard(auth.user.sub),
-    getUserRoles(auth.user.sub),
   ]);
-  return {
-    offerings,
-    myApplications,
-    ceStanding,
-    dashboard,
-    canManage: roles.isCore || roles.isInstructor,
-    isCore: roles.isCore,
-  };
+  return { myApplications, ceStanding, dashboard };
 }
 
-const APPLICATION_STATUS_STYLE: Record<string, string> = {
-  Submitted: "bg-blue-100 text-blue-800",
-  Approved: "bg-green-100 text-green-800",
-  Waitlisted: "bg-amber-100 text-amber-800",
-  Rejected: "bg-red-100 text-red-700",
-  Withdrawn: "bg-muted text-muted-foreground",
+// An application's state is one quiet pill with a colored dot, not a tinted
+// chip — the same shape the rest of the app uses for a status.
+const DOT_TONE = {
+  neutral: "bg-muted-foreground/50",
+  success: "bg-accent-teal",
+  warning: "bg-accent-yellow",
+  danger: "bg-red-500",
+} as const;
+
+const APPLICATION_TONE: Record<string, keyof typeof DOT_TONE> = {
+  Submitted: "success",
+  Approved: "success",
+  Waitlisted: "warning",
+  Rejected: "danger",
+  Withdrawn: "neutral",
 };
 
-export default function EducationCatalog() {
-  const { offerings, myApplications, ceStanding, dashboard, canManage, isCore } =
-    useLoaderData<typeof loader>();
-  const redesign = useFeatureFlag("education-redesign-v2");
-  const tz = useUserTimeZone();
-  const now = Date.now();
-  const isPast = (o: { closedOutAt: string | Date | null; endsAt: string | Date | null }) =>
-    o.closedOutAt != null || (o.endsAt != null && new Date(o.endsAt).getTime() < now);
+function StatusPill({ status }: { status: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-[11px] font-semibold text-foreground">
+      <span
+        className={cn(
+          "h-1.5 w-1.5 rounded-full",
+          DOT_TONE[APPLICATION_TONE[status] ?? "neutral"],
+        )}
+      />
+      {status}
+    </span>
+  );
+}
 
-  // Enrolled courses live in the dashboard's "My courses"; the catalog below is
-  // for offerings the student can still apply to or RSVP for.
-  const upcoming = offerings.filter((o) => !isPast(o) && o.myStatus !== "Approved");
-  const past = offerings.filter(isPast);
+export default function EducationHub() {
+  const { myApplications, ceStanding, dashboard } = useLoaderData<typeof loader>();
+  const tz = useUserTimeZone();
 
   return (
     <div className="flex flex-col gap-6">
-      <header>
-        <h1 className="font-heading text-2xl font-bold text-foreground">
-          Education
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Workshops, miniseries, and fellowships run by the lab. Apply or RSVP to a
-          published offering; once you&apos;re in, the course hub has
-          sessions, materials, and assignments.
-        </p>
-      </header>
+      {/* The CE standing belongs to the header, not to the page body — grouped
+          tightly so it reads as a line under the title rather than as the
+          first section. */}
+      <div className="flex flex-col gap-3">
+        <header>
+          <h1 className="font-heading text-2xl font-bold text-foreground">
+            Education
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Your courses, work, and applications.
+          </p>
+        </header>
 
-      {ceStanding && (
-        <div
-          className={`rounded-lg border px-4 py-3 text-sm ${
-            ceStanding.compliant
-              ? "border-green-200 bg-green-50 text-green-800"
-              : "border-amber-200 bg-amber-50 text-amber-800"
-          }`}
-        >
-          {ceStanding.compliant ? (
-            <>
-              ✓ You&apos;ve earned your CE credit for {ceStanding.termCode} (
-              {ceStanding.credits} this term).
-            </>
-          ) : (
-            <>
-              You need <strong>1 CE credit</strong> this term ({ceStanding.termCode})
-              — you have {ceStanding.credits}. Attend a session to earn one.
-            </>
-          )}
-        </div>
-      )}
+        {ceStanding && (
+          // One quiet strip, not a card: the standing is a single fact, and a
+          // tile-and-heading block that size read as a second page header.
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-border bg-card px-4 py-3">
+            {ceStanding.compliant ? (
+              <CircleCheck className="h-4 w-4 shrink-0 text-accent-teal" />
+            ) : (
+              <CircleAlert className="h-4 w-4 shrink-0 text-accent-yellow" />
+            )}
+            <span className="font-heading text-sm font-semibold text-foreground">
+              CE credit
+            </span>
+            <span className="text-sm text-muted-foreground">
+              {ceStanding.compliant
+                ? `${ceStanding.credits} credit${ceStanding.credits === 1 ? "" : "s"} earned for ${ceStanding.termCode}.`
+                : `You have ${ceStanding.credits} of 1 credit for ${ceStanding.termCode}. Attend a session to earn one.`}
+            </span>
+          </div>
+        )}
+      </div>
 
       <StudentDashboard
         dashboard={dashboard}
@@ -107,92 +110,50 @@ export default function EducationCatalog() {
         }}
       />
 
-      {redesign ? (
-        <OfferingCatalog offerings={offerings} to={(id) => `/education/${id}`} />
-      ) : (
-        <>
-          <section>
-            {dashboard.myCourses.some((c) => !c.isPast) && (
-              <h2 className="font-heading text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                Open &amp; upcoming
-              </h2>
-            )}
-            {upcoming.length === 0 ? (
-              <div className="bg-card border border-border rounded-lg p-8 text-center">
-                <p className="font-heading font-semibold text-foreground">
-                  Nothing open right now
-                </p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Upcoming miniseries and workshops will show up here.
-                </p>
-              </div>
-            ) : (
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {upcoming.map((o) => (
-                  <OfferingCard
-                    key={o.id}
-                    offering={o}
-                    myStatus={o.myStatus}
-                    to={`/education/${o.id}`}
-                  />
-                ))}
-              </div>
-            )}
-          </section>
-
-          {past.length > 0 && (
-            <details className="group">
-              <summary className="cursor-pointer font-heading text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-                Past offerings ({past.length})
-              </summary>
-              <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 opacity-80">
-                {past.map((o) => (
-                  <OfferingCard
-                    key={o.id}
-                    offering={o}
-                    myStatus={o.myStatus}
-                    to={`/education/${o.id}`}
-                  />
-                ))}
-              </div>
-            </details>
-          )}
-        </>
+      {dashboard.myCourses.length === 0 && myApplications.length === 0 && (
+        <div className="rounded-2xl border border-border bg-card p-8 text-center">
+          <p className="font-heading font-semibold text-foreground">
+            You&apos;re not in a course yet
+          </p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Browse the offerings to apply or RSVP.
+          </p>
+          <Link
+            to="/education/offerings"
+            className={cn(buttonClasses("primary", "sm"), "mt-4 inline-flex")}
+          >
+            Browse offerings
+          </Link>
+        </div>
       )}
 
       {myApplications.length > 0 && (
         <section>
-          <h2 className="font-heading text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+          <h2 className="mb-2 font-heading text-sm font-semibold uppercase tracking-wide text-muted-foreground">
             Your applications
           </h2>
-          <ul className="bg-card border border-border rounded-lg divide-y divide-border">
+          <ul className="divide-y divide-border rounded-2xl border border-border bg-card">
             {myApplications.map((a) => (
               <li key={a.id} className="flex items-center justify-between gap-3 px-4 py-3">
                 <div className="min-w-0">
                   <Link
                     to={`/education/${a.offeringId}`}
-                    className="text-sm font-medium text-foreground hover:text-accent-coral truncate"
+                    className="truncate text-sm font-medium text-foreground hover:text-accent-coral"
                   >
                     {a.offeringTitle}
                   </Link>
                   <p className="text-xs text-muted-foreground">{a.offeringType}</p>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex shrink-0 items-center gap-2">
                   {a.certificateId && (
                     <Link
                       to={`/education/certificates/${a.certificateId}`}
                       className="text-xs font-semibold text-accent-coral hover:underline"
                     >
-                      🎓 Certificate
+                      Certificate
                     </Link>
                   )}
-                  <span
-                    className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${
-                      APPLICATION_STATUS_STYLE[a.status] ?? "bg-muted text-muted-foreground"
-                    }`}
-                  >
-                    {a.status}
-                  </span>
+                  <StatusPill status={a.status} />
                 </div>
               </li>
             ))}

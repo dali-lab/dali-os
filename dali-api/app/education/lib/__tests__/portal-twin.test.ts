@@ -32,6 +32,7 @@ describe("educationPortalTwin", () => {
     // No /portal/education/compliance route exists, and /portal/education/:id
     // must not swallow these literal segments as an offering id.
     expect(educationPortalTwin("/education/compliance")).toBeNull();
+    expect(educationPortalTwin("/education/offerings")).toBeNull();
     expect(educationPortalTwin("/education/check-in/s1")).toBeNull();
   });
 
