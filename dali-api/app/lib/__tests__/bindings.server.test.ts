@@ -60,7 +60,7 @@ describe("slot registry", () => {
     for (const hiringSlot of ["hiring-forms", "application-templates", "rubrics"]) {
       expect(FOLDER_SLOTS.Core.map((s) => s.purpose)).not.toContain(hiringSlot);
     }
-    expect(slotFor("Project", "meeting-notes-team")?.defaultTitle).toBe("Team meeting assets");
+    expect(slotFor("Project", "meeting-notes-team")?.defaultTitle).toBe("Team meetings");
     expect(slotFor("Project", "nope")).toBeUndefined();
   });
 
@@ -104,7 +104,7 @@ describe("ensureProcessFolder", () => {
       workspaceType: "Project",
       workspaceId: "p1",
       kind: "Folder",
-      title: "Team meeting assets",
+      title: "Team meetings",
     });
     // Project folders inherit workspace access — no explicit scope.
     expect(folderData.scopeKind).toBeUndefined();

@@ -48,12 +48,13 @@ export const CERTIFICATE_TEMPLATES_PROCESS_ID = "certificate-templates";
 export type FolderSlot = { purpose: string; label: string; defaultTitle: string };
 
 export const FOLDER_SLOTS: Record<ProcessType, FolderSlot[]> = {
-  // "Meeting assets" (not "notes"): these folders now hold a meeting's note doc
-  // and/or its whiteboard. The `purpose` keys stay meeting-notes-* — they're the
+  // Named for what they hold — every team / partner meeting — rather than for
+  // the artifacts inside one: each meeting files its note doc and/or its
+  // whiteboard here. The `purpose` keys stay meeting-notes-* — they're the
   // stable binding keys persisted on existing rows.
   Project: [
-    { purpose: "meeting-notes-team", label: "Team meeting assets", defaultTitle: "Team meeting assets" },
-    { purpose: "meeting-notes-partner", label: "Partner meeting assets", defaultTitle: "Partner meeting assets" },
+    { purpose: "meeting-notes-team", label: "Team meetings", defaultTitle: "Team meetings" },
+    { purpose: "meeting-notes-partner", label: "Partner meetings", defaultTitle: "Partner meetings" },
   ],
   // An offering's Drive home is fixed at Education > <the offering>, so it
   // exposes nothing to repoint. Its Forms folder is created directly in the
