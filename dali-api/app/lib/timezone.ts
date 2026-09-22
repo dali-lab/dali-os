@@ -176,6 +176,31 @@ export function zonedDayStartUtc(
 }
 
 /**
+ * Inverse of a `datetime-local` / `date` input: read the literal wall-clock
+ * string ("YYYY-MM-DDTHH:mm", or "YYYY-MM-DD" → local midnight) as a wall time
+ * in `timezone` and return the matching UTC instant. Returns null for empty or
+ * malformed input. The write-side twin of getZonedParts/formatInTimeZone — use
+ * it instead of `new Date(str)`, which reads the string in the host zone (UTC on
+ * Fly) and silently shifts the stored instant.
+ */
+export function zonedDateTimeLocalToUtc(
+  value: string | null | undefined,
+  timezone: string,
+): Date | null {
+  if (typeof value !== "string") return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/.exec(value.trim());
+  if (!m) return null;
+  return zonedWallTimeUtc(
+    +m[1]!,
+    +m[2]!,
+    +m[3]!,
+    m[4] ? +m[4] : 0,
+    m[5] ? +m[5] : 0,
+    timezone,
+  );
+}
+
+/**
  * The timezone a user's times should be DISPLAYED in. `User.timeZone` is the
  * single source of truth; falls back to the lab's application timezone when the
  * user has never set one or the stored value is invalid. Guarding here protects
