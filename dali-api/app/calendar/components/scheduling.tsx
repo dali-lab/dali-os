@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useRevalidator, useSearchParams } from "react-router";
-import { ChevronLeft, ChevronRight, Mail, Plus, RefreshCw, Search, Shield, Sparkles, UsersRound, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Mail, Plus, RefreshCw, Search, Shield, UsersRound, X } from "lucide-react";
 import {
   autoUpdate,
   flip,
@@ -70,6 +70,7 @@ export function MeetingComposer({ data }: { data: LoaderData }) {
   });
   const [startLocal, setStartLocal] = useState<string>("");
   const [endLocal, setEndLocal] = useState<string>("");
+  const [suggestions, setSuggestions] = useState<SlotSuggestions | null>(null);
 
   const groupsById = new Map(data.groups.map((g) => [g.id, g]));
   const resolvedParticipantIds = (() => {
@@ -106,6 +107,7 @@ export function MeetingComposer({ data }: { data: LoaderData }) {
           selectedStartLocal={startLocal}
           selectedEndLocal={endLocal}
           enableOptimalTimes={optimalTimesEnabled}
+          onSuggestionsChange={setSuggestions}
         />
       </div>
       <aside className="order-1 min-w-0 lg:order-2">
@@ -125,6 +127,7 @@ export function MeetingComposer({ data }: { data: LoaderData }) {
           selectedGroupIds={selectedGroupIds}
           onChangeSelectedGroupIds={setSelectedGroupIds}
           resolvedParticipantIds={resolvedParticipantIds}
+          suggestions={suggestions}
         />
       </aside>
     </div>
@@ -261,6 +264,7 @@ export function CreateScheduledMeetingForm({
   selectedGroupIds,
   onChangeSelectedGroupIds,
   resolvedParticipantIds,
+  suggestions = null,
 }: {
   groups: GroupOption[];
   users: UserOption[];
@@ -277,6 +281,8 @@ export function CreateScheduledMeetingForm({
   selectedGroupIds: string[];
   onChangeSelectedGroupIds: (ids: string[]) => void;
   resolvedParticipantIds: string[];
+  /** Ranked "best times" from the scheduling grid; each fills Starts/Ends on click. */
+  suggestions?: SlotSuggestions | null;
 }) {
   const { panel, panelPad, formClass } = useOsChrome();
   const [title, setTitle] = useState("");
@@ -456,6 +462,38 @@ export function CreateScheduledMeetingForm({
               className={fieldClass}
             />
           </div>
+          {suggestions && suggestions.slots.length > 0 && (
+            <div>
+              <span className={labelClass}>Best times</span>
+              <div className="flex flex-wrap gap-1.5">
+                {suggestions.slots.map((s, i) => {
+                  const active = startLocal === toDatetimeLocal(new Date(s.startMs));
+                  return (
+                    <button
+                      key={s.startMs}
+                      type="button"
+                      onClick={() => {
+                        onStartLocalChange(toDatetimeLocal(new Date(s.startMs)));
+                        onEndLocalChange(toDatetimeLocal(new Date(s.endMs)));
+                      }}
+                      className={cn(
+                        "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium text-foreground transition-colors",
+                        active ? "border-os-accent bg-os-accent/10" : "border-border bg-background hover:bg-muted/50",
+                      )}
+                    >
+                      <span className={cn("h-2 w-2 shrink-0 rounded-full", SUGGESTION_COLORS[i]?.dot)} />
+                      <span>{optimalSlotLabel(s)}</span>
+                      <span className="text-muted-foreground">
+                        {s.freeCount === suggestions.knownCount
+                          ? "All free"
+                          : `${s.freeCount}/${suggestions.knownCount} free`}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label htmlFor="meeting-start" className={labelClass}>
@@ -1064,15 +1102,34 @@ export function ParticipantPicker({
 // "Find best times" search parameters: candidate starts every 15 min within an
 // 8am–9pm band — wide enough for DALI's daytime and evening meetings, tight
 // enough that a dead-of-night gap (everyone's calendar is empty at 3am) never
-// ranks as "everyone free" — and at most 5 distinct suggestions.
+// ranks as "everyone free" — and the top 3 distinct suggestions.
 const OPTIMAL_BAND_START_HOUR = 8;
 const OPTIMAL_BAND_END_HOUR = 21;
 const OPTIMAL_STEP_MINUTES = 15;
-const OPTIMAL_MAX_RESULTS = 5;
+const OPTIMAL_MAX_RESULTS = 3;
 const OPTIMAL_DURATIONS = [15, 30, 45, 60, 90];
 // Bounds for a typed custom length (matches the MCP optimizer's duration range).
 const OPTIMAL_MIN_MINUTES = 5;
 const OPTIMAL_MAX_MINUTES = 480;
+
+export type SlotSuggestions = { slots: RankedSlot[]; knownCount: number };
+
+// Rank colors for suggestions, shared by the grid's dotted outlines and the
+// form's buttons so each time reads as the same suggestion in both places.
+// Picked to stay legible over the green availability gradient.
+const SUGGESTION_COLORS = [
+  { dot: "bg-violet-600 dark:bg-violet-400", border: "border-violet-600 dark:border-violet-400" },
+  { dot: "bg-sky-600 dark:bg-sky-400", border: "border-sky-600 dark:border-sky-400" },
+  { dot: "bg-amber-500 dark:bg-amber-400", border: "border-amber-500 dark:border-amber-400" },
+];
+
+function optimalSlotLabel(s: RankedSlot): string {
+  const start = new Date(s.startMs);
+  const end = new Date(s.endMs);
+  const day = start.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  const time = (d: Date) => d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  return `${day} · ${time(start)}–${time(end)}`;
+}
 
 export function ScheduleWeekGrid({
   participantIds,
@@ -1091,6 +1148,7 @@ export function ScheduleWeekGrid({
   hideAvailability = false,
   weekNav,
   enableOptimalTimes = false,
+  onSuggestionsChange,
 }: {
   participantIds: string[];
   // True when the caller is rendering the current user's own availability
@@ -1133,6 +1191,8 @@ export function ScheduleWeekGrid({
    * site). Off by default so the compact CreateEventModal grid is unchanged.
    */
   enableOptimalTimes?: boolean;
+  /** Receives the ranked suggestions whenever they change (null when none apply). */
+  onSuggestionsChange?: (s: SlotSuggestions | null) => void;
 }) {
   const { panel } = useOsChrome();
   const [data, setData] = useState<GroupAvailResponse | null>(null);
@@ -1142,11 +1202,8 @@ export function ScheduleWeekGrid({
   // this one participant's free intervals so you can read one person's
   // availability at a glance instead of the aggregate gradient.
   const [hoveredUserId, setHoveredUserId] = useState<string | null>(null);
-  // "Find best times": ranked slot suggestions computed on demand from the
-  // availability the grid already loaded (see ~/calendar/lib/optimal-times).
-  // slotMinutes seeds from the meeting's implied duration; both clear whenever
-  // the participants / week / length change so a stale ranking can't linger.
-  const [suggestions, setSuggestions] = useState<RankedSlot[] | null>(null);
+  // Length the "best times" ranking targets; seeds from the meeting's implied
+  // duration.
   const [slotMinutes, setSlotMinutes] = useState<number>(() =>
     Number.isInteger(durationMinutes) &&
     durationMinutes >= OPTIMAL_MIN_MINUTES &&
@@ -1226,12 +1283,6 @@ export function ScheduleWeekGrid({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [participantKey, weekStartIso, weekEndIso, timezone, refreshKey, hideAvailability]);
-
-  // A ranking is only valid for the exact participants / week / length it was
-  // computed for — drop it when any of those move so we never show stale picks.
-  useEffect(() => {
-    setSuggestions(null);
-  }, [participantKey, weekStartIso, slotMinutes]);
 
   // Build the 7-day axis from the week window so empty days still render.
   const weekStart = new Date(weekStartIso);
@@ -1449,49 +1500,29 @@ export function ScheduleWeekGrid({
     }
   }
 
-  // Commit a slot to the form/selection — fills start and a duration-derived
-  // end, the same channel a drag uses. Shared by the top pick and every
-  // alternative pill.
-  const applyOptimalSlot = (s: RankedSlot) => {
-    onSelectRange?.(
-      toDatetimeLocal(new Date(s.startMs)),
-      toDatetimeLocal(new Date(s.endMs)),
-    );
-  };
-
-  // Rank the week's slots by how many KNOWN participants are free, apply the
-  // top pick immediately (one click → a time selected), and keep the rest as
-  // clickable alternatives. perUserFree is already known-only and sorted; the
-  // day anchors come from the same cellMs the gradient uses, so a suggestion's
-  // freeCount matches the "X/N free" the selected block then shows.
-  const findBestTimes = () => {
-    const dayStartMs = days.map((_, i) => cellMs(i, 0));
-    const results = findOptimalSlots({
-      dayStartMs,
-      perUserFree,
-      bandStartHour: OPTIMAL_BAND_START_HOUR,
-      bandEndHour: OPTIMAL_BAND_END_HOUR,
-      stepMinutes: OPTIMAL_STEP_MINUTES,
-      durationMinutes: slotMinutes,
-      maxResults: OPTIMAL_MAX_RESULTS,
-    });
-    setSuggestions(results);
-    if (results.length > 0) applyOptimalSlot(results[0]);
-  };
-
-  const optimalSlotLabel = (s: RankedSlot) => {
-    const start = new Date(s.startMs);
-    const end = new Date(s.endMs);
-    const day = start.toLocaleDateString(undefined, {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-    });
-    const time = (d: Date) => d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-    return `${day} · ${time(start)}–${time(end)}`;
-  };
-  const optimalSlotIsActive = (s: RankedSlot) =>
-    !!selectedStartLocal && selectedStartLocal === toDatetimeLocal(new Date(s.startMs));
+  // Best times, ranked from the availability the grid already loaded (see
+  // ~/calendar/lib/optimal-times). Recomputed every render so it always matches
+  // the current participants / week / length; nothing is auto-applied.
+  // perUserFree is already known-only and sorted, and the day anchors come from
+  // the same cellMs the gradient uses, so each freeCount matches the "X/N free"
+  // the slot shows once picked.
+  const suggestions: RankedSlot[] =
+    enableOptimalTimes && !hideAvailability && !showingSelfOnly && knownCount > 0
+      ? findOptimalSlots({
+          dayStartMs: days.map((_, i) => cellMs(i, 0)),
+          perUserFree,
+          bandStartHour: OPTIMAL_BAND_START_HOUR,
+          bandEndHour: OPTIMAL_BAND_END_HOUR,
+          stepMinutes: OPTIMAL_STEP_MINUTES,
+          durationMinutes: slotMinutes,
+          maxResults: OPTIMAL_MAX_RESULTS,
+        })
+      : [];
+  const suggestionsKey = suggestions.map((x) => `${x.startMs}-${x.endMs}-${x.freeCount}`).join(",");
+  useEffect(() => {
+    onSuggestionsChange?.(suggestions.length > 0 ? { slots: suggestions, knownCount } : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [suggestionsKey, knownCount]);
 
   // Length options for the Combobox: the presets, plus the current value when
   // it's a typed custom one so the trigger can still render its label.
@@ -1558,16 +1589,44 @@ export function ScheduleWeekGrid({
         </>
       )}
       overlayLayer={(dayIdx) => {
-        if (!selectedSlot) return null;
-        if (days[dayIdx]?.dayOfWeek !== selectedSlot.dow) return null;
+        const dayStartMs = cellMs(dayIdx, 0);
+        const dayEndMs = cellMs(dayIdx, 24);
         return (
-          <SelectedSlotBlock
-            startHour={selectedSlot.startHour}
-            duration={selectedSlot.duration}
-            available={selectedSlot.available}
-            busy={selectedSlot.busy}
-            unknown={selectedSlot.unknown}
-          />
+          <>
+            {suggestions.map((s, i) =>
+              s.startMs >= dayStartMs && s.startMs < dayEndMs ? (
+                <div
+                  key={s.startMs}
+                  className={cn(
+                    "pointer-events-none absolute left-0.5 right-0.5 z-20 rounded-sm border-2 border-dotted",
+                    SUGGESTION_COLORS[i]?.border,
+                  )}
+                  style={{
+                    top: ((s.startMs - dayStartMs) / 3_600_000 - GRID_START_H) * HOUR_PX,
+                    height: ((s.endMs - s.startMs) / 3_600_000) * HOUR_PX,
+                  }}
+                >
+                  <span
+                    className={cn(
+                      "absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-semibold text-white",
+                      SUGGESTION_COLORS[i]?.dot,
+                    )}
+                  >
+                    {i + 1}
+                  </span>
+                </div>
+              ) : null,
+            )}
+            {selectedSlot && days[dayIdx]?.dayOfWeek === selectedSlot.dow && (
+              <SelectedSlotBlock
+                startHour={selectedSlot.startHour}
+                duration={selectedSlot.duration}
+                available={selectedSlot.available}
+                busy={selectedSlot.busy}
+                unknown={selectedSlot.unknown}
+              />
+            )}
+          </>
         );
       }}
       onDayPointerSelect={
@@ -1613,74 +1672,30 @@ export function ScheduleWeekGrid({
           {!hideAvailability && error && (
             <div className="px-4 py-2 text-xs text-red-700">{error}</div>
           )}
-          {enableOptimalTimes && !hideAvailability && (
-            <div className="mb-3 flex flex-col gap-2 px-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={findBestTimes}
-                  disabled={loading || knownCount === 0}
-                  className={buttonClasses("secondary", "sm")}
-                >
-                  <Sparkles className="h-3.5 w-3.5" />
-                  Find best times
-                </button>
-                <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  Length
-                  <Combobox
-                    value={String(slotMinutes)}
-                    onChange={(v) => setSlotMinutes(Number(v))}
-                    options={durationOptions}
-                    allowCustom={parseCustomMinutes}
-                    ariaLabel="Meeting length"
-                    placeholder="e.g. 45"
-                    emptyLabel={`Type ${OPTIMAL_MIN_MINUTES}–${OPTIMAL_MAX_MINUTES} min`}
-                    className="w-28 rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground transition-colors hover:bg-muted/40"
-                  />
-                </label>
-                {knownCount === 0 && !loading && (
-                  <span className="text-xs text-muted-foreground">
-                    Add people with a linked calendar to compare availability.
-                  </span>
-                )}
-                {suggestions && suggestions.length === 0 && knownCount > 0 && (
-                  <span className="text-xs text-muted-foreground">
-                    No open slots this week for a {slotMinutes}-min meeting. Try another week or length.
-                  </span>
-                )}
-              </div>
-              {suggestions && suggestions.length > 0 && (
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {suggestions.map((s) => {
-                    const active = optimalSlotIsActive(s);
-                    const everyone = knownCount > 0 && s.freeCount === knownCount;
-                    return (
-                      <button
-                        key={s.startMs}
-                        type="button"
-                        onClick={() => applyOptimalSlot(s)}
-                        className={cn(
-                          "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-                          active
-                            ? "border-os-accent bg-os-accent/10 text-foreground"
-                            : "border-border bg-background text-foreground hover:bg-muted/50",
-                        )}
-                      >
-                        <span>{optimalSlotLabel(s)}</span>
-                        <span
-                          className={cn(
-                            "rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
-                            everyone
-                              ? "bg-green-600 text-white dark:bg-green-500"
-                              : "bg-muted text-muted-foreground",
-                          )}
-                        >
-                          {everyone ? "All free" : `${s.freeCount}/${knownCount} free`}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
+          {enableOptimalTimes && !hideAvailability && !showingSelfOnly && (
+            <div className="mb-3 flex flex-wrap items-center gap-2 px-2">
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                Best times for
+                <Combobox
+                  value={String(slotMinutes)}
+                  onChange={(v) => setSlotMinutes(Number(v))}
+                  options={durationOptions}
+                  allowCustom={parseCustomMinutes}
+                  ariaLabel="Meeting length"
+                  placeholder="e.g. 45"
+                  emptyLabel={`Type ${OPTIMAL_MIN_MINUTES}–${OPTIMAL_MAX_MINUTES} min`}
+                  className="w-28 rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground transition-colors hover:bg-muted/40"
+                />
+              </label>
+              {knownCount === 0 && !loading && (
+                <span className="text-xs text-muted-foreground">
+                  Add people with a linked calendar to compare availability.
+                </span>
+              )}
+              {data && knownCount > 0 && suggestions.length === 0 && (
+                <span className="text-xs text-muted-foreground">
+                  No open slots this week for a {slotMinutes}-min meeting.
+                </span>
               )}
             </div>
           )}
