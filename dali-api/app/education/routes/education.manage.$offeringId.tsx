@@ -104,6 +104,7 @@ import { DocEditor } from "~/components/doc";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { DateField } from "~/components/ui/DateField";
 import { formatDateTime, formatDateShort, formatSessionWhen } from "~/lib/display";
+import { APPLICATION_TZ, zonedDateTimeLocalToUtc } from "~/lib/timezone";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { cn } from "~/lib/cn";
 import { InfoTip } from "~/components/ui/floating";
@@ -606,7 +607,7 @@ export async function action({ request, params }: Route.ActionArgs) {
           offeringId: params.offeringId!,
           sessionId: String(formData.get("sessionId") ?? "") || null,
           title: String(formData.get("title") ?? ""),
-          dueAt: dueAtRaw ? new Date(dueAtRaw) : null,
+          dueAt: dueAtRaw ? zonedDateTimeLocalToUtc(dueAtRaw, APPLICATION_TZ) : null,
           submissionType: String(formData.get("submissionType")) as SubmissionType,
           points: pointsParsed != null && pointsParsed >= 1 ? pointsParsed : null,
           actorId: auth.user.sub,
@@ -621,7 +622,7 @@ export async function action({ request, params }: Route.ActionArgs) {
           assignmentId: String(formData.get("assignmentId") ?? ""),
           offeringId: params.offeringId!,
           title: String(formData.get("title") ?? ""),
-          dueAt: dueAtRaw ? new Date(dueAtRaw) : null,
+          dueAt: dueAtRaw ? zonedDateTimeLocalToUtc(dueAtRaw, APPLICATION_TZ) : null,
           submissionType: String(formData.get("submissionType")) as SubmissionType,
           points: pointsParsed != null && pointsParsed >= 1 ? pointsParsed : null,
           actorId: auth.user.sub,

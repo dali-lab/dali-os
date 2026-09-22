@@ -6,6 +6,7 @@ import { DateField } from "~/components/ui/DateField";
 import { ProjectIconPicker } from "~/projects/components/ProjectIconPicker";
 
 import { Select, type SelectOption, Tooltip, InfoTip } from "~/components/ui/floating";
+import { APPLICATION_TZ, getZonedParts } from "~/lib/timezone";
 import {
   OFFERING_TYPE_DESCRIPTIONS,
   isMultiSession,
@@ -24,13 +25,20 @@ type Values = {
   completionThreshold?: number | null;
 };
 
-/** Date → the local `datetime-local` input format (YYYY-MM-DDTHH:mm). */
+/**
+ * Instant → the `datetime-local` input string (YYYY-MM-DDTHH:mm), rendered in
+ * the lab zone (APPLICATION_TZ/ET). The inverse of zonedDateTimeLocalToUtc, so
+ * an edit form round-trips to the same wall clock the value was saved with.
+ * Zone-explicit (not the host's getHours()) so SSR and client agree — no
+ * hydration flip, and re-saving an untouched field doesn't drift the time.
+ */
 export function toDatetimeLocal(value: string | Date | undefined): string {
   if (!value) return "";
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return "";
+  const { year, month, day, hour, minute } = getZonedParts(d, APPLICATION_TZ);
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${year}-${pad(month)}-${pad(day)}T${pad(hour)}:${pad(minute)}`;
 }
 
 const LABEL = "text-xs font-semibold text-muted-foreground";
