@@ -1570,6 +1570,9 @@ model MeetingRecording {
   systemAudio   Boolean                @default(false)
   // [{ at: seconds since start, text, source: "you" | "others" }]
   lines         Json                   @default("[]")
+  // Seconds recorded across finished sessions. Continue starts a new session
+  // whose lines are stamped from here, so the transcript reads as one.
+  recordedSeconds Float                @default(0)
   error         String?
   createdAt     DateTime               @default(now())
   updatedAt     DateTime               @updatedAt

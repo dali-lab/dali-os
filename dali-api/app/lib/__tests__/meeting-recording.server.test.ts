@@ -10,6 +10,7 @@ import {
   ownRecording,
   recordingDeepLink,
   requestStop,
+  resumeRecording,
 } from "~/lib/meeting-recording.server";
 
 const rec = (over: Record<string, unknown> = {}) =>
@@ -21,6 +22,7 @@ const rec = (over: Record<string, unknown> = {}) =>
     stopRequested: false,
     systemAudio: true,
     lines: [{ at: 1, text: "hi", source: "you" }],
+    recordedSeconds: 0,
     error: null,
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -84,8 +86,8 @@ describe("appendLines", () => {
   });
 
   it("answers an empty heartbeat without writing", async () => {
-    const res = await appendLines(rec({ stopRequested: true }), [], true);
-    expect(res).toEqual({ stopRequested: true });
+    const res = await appendLines(rec({ stopRequested: true, recordedSeconds: 90 }), [], true);
+    expect(res).toEqual({ stopRequested: true, offset: 90 });
     expect(prisma.meetingRecording.update).not.toHaveBeenCalled();
   });
 });
@@ -108,9 +110,32 @@ describe("requestStop", () => {
 
 describe("finishRecording", () => {
   it("records why the app failed", async () => {
-    await finishRecording(rec(), "Mic blocked");
+    await finishRecording(rec(), "Mic blocked", 12);
     expect(prisma.meetingRecording.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { status: "Failed", error: "Mic blocked" } }),
+      expect.objectContaining({
+        data: { status: "Failed", error: "Mic blocked", recordedSeconds: { increment: 12 } },
+      }),
     );
+  });
+
+  it("adds the session's length so Continue picks up after it", async () => {
+    await finishRecording(rec(), null, 61.5);
+    expect(prisma.meetingRecording.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: "Stopped", recordedSeconds: { increment: 61.5 } } }),
+    );
+  });
+});
+
+describe("resumeRecording", () => {
+  it("re-arms a stopped recording for the app", async () => {
+    expect(await resumeRecording(rec({ status: "Stopped", stopRequested: true }))).toBe(true);
+    expect(prisma.meetingRecording.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: "Pending", stopRequested: false, error: null } }),
+    );
+  });
+
+  it("refuses while the app is still recording", async () => {
+    expect(await resumeRecording(rec({ status: "Recording" }))).toBe(false);
+    expect(prisma.meetingRecording.update).not.toHaveBeenCalled();
   });
 });

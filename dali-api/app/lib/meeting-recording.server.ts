@@ -52,19 +52,21 @@ export function cleanLines(raw: unknown): TranscriptLine[] {
   return out;
 }
 
-/** Desktop app: add transcribed lines. Returns whether the page asked to stop. */
+/** Desktop app: add transcribed lines. Returns whether the page asked to stop,
+ *  and the offset this session's timestamps start from. */
 export async function appendLines(
   rec: MeetingRecording,
   lines: TranscriptLine[],
   systemAudio: boolean | undefined,
-): Promise<{ stopRequested: boolean }> {
+): Promise<{ stopRequested: boolean; offset: number }> {
+  const offset = rec.recordedSeconds;
   // The app appends every couple of seconds even when nobody spoke, as its way
   // of hearing a Stop. Answer those without rewriting the transcript.
   const unchanged =
     lines.length === 0 &&
     rec.status !== "Pending" &&
     (systemAudio === undefined || systemAudio === rec.systemAudio);
-  if (unchanged) return { stopRequested: rec.stopRequested };
+  if (unchanged) return { stopRequested: rec.stopRequested, offset };
 
   const merged = [...storedLines(rec), ...lines].slice(-MAX_LINES);
   const updated = await prisma.meetingRecording.update({
@@ -77,7 +79,18 @@ export async function appendLines(
     },
     select: { stopRequested: true },
   });
-  return updated;
+  return { stopRequested: updated.stopRequested, offset };
+}
+
+/** Page: Continue a stopped recording into the same transcript. The app is
+ *  handed the same id again and picks up where the last session ended. */
+export async function resumeRecording(rec: MeetingRecording): Promise<boolean> {
+  if (rec.status !== "Stopped" && rec.status !== "Failed") return false;
+  await prisma.meetingRecording.update({
+    where: { id: rec.id },
+    data: { status: "Pending", stopRequested: false, error: null },
+  });
+  return true;
 }
 
 /** Page: ask the app to stop. A recording the app never picked up just ends. */
@@ -88,12 +101,18 @@ export async function requestStop(rec: MeetingRecording): Promise<void> {
   });
 }
 
-/** Desktop app: the recorder has exited, cleanly or not. */
-export async function finishRecording(rec: MeetingRecording, error: string | null): Promise<void> {
+/** Desktop app: the recorder has exited, cleanly or not, after recording
+ *  `seconds` in this session. */
+export async function finishRecording(
+  rec: MeetingRecording,
+  error: string | null,
+  seconds: number,
+): Promise<void> {
+  const recordedSeconds = { increment: Number.isFinite(seconds) && seconds > 0 ? seconds : 0 };
   await prisma.meetingRecording.update({
     where: { id: rec.id },
     data: error
-      ? { status: "Failed", error: error.slice(0, 500) }
-      : { status: "Stopped" },
+      ? { status: "Failed", error: error.slice(0, 500), recordedSeconds }
+      : { status: "Stopped", recordedSeconds },
   });
 }

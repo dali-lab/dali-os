@@ -1,11 +1,12 @@
 // /api/meeting-recordings/:id — one native recording, owner-only (anyone else
 // gets a 404). Used by two clients with different credentials:
 //   - The page (cookie session): GET to poll the transcript, POST
-//     {action:"stop"} for its Stop button, DELETE once the notes are written
-//     or the recording is discarded.
+//     {action:"stop"} for its Stop button and {action:"resume"} for Continue,
+//     DELETE once the notes are written or the recording is discarded.
 //   - The desktop app (desktop Session Bearer): POST {action:"append", lines,
 //     systemAudio} as phrases are recognized (the reply says whether the page
-//     asked to stop), then {action:"finish", error?} when the recorder exits.
+//     asked to stop, and the offset to stamp lines from), then
+//     {action:"finish", error?, seconds} when the recorder exits.
 // The app's first append doubles as its check that the link it was handed is
 // really this user's recording: it won't open the microphone on a 404.
 //
@@ -20,6 +21,7 @@ import {
   finishRecording,
   ownRecording,
   requestStop,
+  resumeRecording,
   storedLines,
 } from "~/lib/meeting-recording.server";
 
@@ -37,6 +39,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   return Response.json({
     status: rec.status,
     systemAudio: rec.systemAudio,
+    recordedSeconds: rec.recordedSeconds,
     error: rec.error,
     total: lines.length,
     lines: lines.slice(since),
@@ -66,8 +69,17 @@ export async function action({ request, params }: Route.ActionArgs) {
     case "stop":
       await requestStop(rec);
       return Response.json({ ok: true });
+    case "resume":
+      if (!(await resumeRecording(rec))) {
+        return Response.json({ error: "This recording is still running." }, { status: 409 });
+      }
+      return Response.json({ ok: true });
     case "finish":
-      await finishRecording(rec, typeof body.error === "string" && body.error ? body.error : null);
+      await finishRecording(
+        rec,
+        typeof body.error === "string" && body.error ? body.error : null,
+        typeof body.seconds === "number" ? body.seconds : 0,
+      );
       return Response.json({ ok: true });
     default:
       return Response.json({ error: "Unknown action" }, { status: 400 });

@@ -14,11 +14,13 @@
 //
 // One recording at a time. Stop comes from the page (the server's
 // stopRequested, seen on our next append), the tray menu, or the recorder
-// failing on its own.
+// failing on its own. The page's Continue re-opens the same id: the server
+// hands back the seconds already recorded, and this session's lines are
+// stamped from there.
 
 use std::ffi::{c_char, CStr};
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -52,6 +54,9 @@ enum Event {
 struct AppendResp {
     #[serde(rename = "stopRequested", default)]
     stop_requested: bool,
+    // Seconds recorded by earlier sessions of this recording (Continue).
+    #[serde(default)]
+    offset: f64,
 }
 
 // The Swift side calls back on its own threads; this is the hop onto the
@@ -122,10 +127,10 @@ async fn record(app: &AppHandle, id: &str) -> Result<(), String> {
     let url = config::recording_url(id);
 
     // Ownership check before the mic opens. Silent on a link that isn't ours.
-    let check = post(&http, &url, &token, json!({ "action": "append", "lines": [] })).await;
-    if !matches!(&check, Ok(r) if r.status().is_success()) {
-        return Ok(());
-    }
+    let offset = match post(&http, &url, &token, json!({ "action": "append", "lines": [] })).await {
+        Ok(r) if r.status().is_success() => r.json::<AppendResp>().await.map(|r| r.offset).unwrap_or(0.0),
+        _ => return Ok(()),
+    };
 
     if !cfg!(target_os = "macos") {
         let _ = post(&http, &url, &token, json!({ "action": "finish", "error": "Recording needs the DALI OS app for Mac." })).await;
@@ -140,6 +145,7 @@ async fn record(app: &AppHandle, id: &str) -> Result<(), String> {
     unsafe {
         dali_recorder_start(on_event)
     };
+    let session_started = Instant::now();
     tray::rebuild_menu(app);
 
     let mut pending: Vec<Value> = Vec::new();
@@ -163,7 +169,7 @@ async fn record(app: &AppHandle, id: &str) -> Result<(), String> {
                         notify::raise_simple(app, "Recording this meeting", body);
                     }
                     Ok(Event::Line { source, at, text }) => {
-                        pending.push(json!({ "source": source, "at": at, "text": text }));
+                        pending.push(json!({ "source": source, "at": offset + at, "text": text }));
                     }
                     Ok(Event::Error { message }) => error = Some(message),
                     Ok(Event::Stopped) => break,
@@ -191,7 +197,14 @@ async fn record(app: &AppHandle, id: &str) -> Result<(), String> {
         }
         tokio::time::sleep(FLUSH_EVERY).await;
     }
-    let _ = post(&http, &url, &token, json!({ "action": "finish", "error": error.clone() })).await;
+    let seconds = session_started.elapsed().as_secs_f64();
+    let _ = post(
+        &http,
+        &url,
+        &token,
+        json!({ "action": "finish", "error": error.clone(), "seconds": seconds }),
+    )
+    .await;
     match error {
         Some(message) => Err(message),
         None => Ok(()),

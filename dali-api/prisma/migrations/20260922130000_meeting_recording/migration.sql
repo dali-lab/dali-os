@@ -10,6 +10,7 @@ CREATE TABLE "MeetingRecording" (
     "stopRequested" BOOLEAN NOT NULL DEFAULT false,
     "systemAudio" BOOLEAN NOT NULL DEFAULT false,
     "lines" JSONB NOT NULL DEFAULT '[]',
+    "recordedSeconds" DOUBLE PRECISION NOT NULL DEFAULT 0,
     "error" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,

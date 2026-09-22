@@ -17,6 +17,7 @@ type Phase = "idle" | "starting" | "unreachable" | "recording" | "stopping" | "r
 type PollResponse = {
   status: "Pending" | "Recording" | "Stopped" | "Failed";
   systemAudio: boolean;
+  recordedSeconds: number;
   error: string | null;
   total: number;
   lines: TranscriptLine[];
@@ -50,6 +51,9 @@ export function MeetingRecorder({
   const { panel } = useOsChrome();
   const [phase, setPhase] = useState<Phase>("idle");
   const [recordingId, setRecordingId] = useState<string | null>(null);
+  const [link, setLink] = useState<string | null>(null);
+  // Seconds from earlier sessions of this recording (Stop, then Continue).
+  const [recordedSeconds, setRecordedSeconds] = useState(0);
   const [lines, setLines] = useState<TranscriptLine[]>([]);
   const [systemAudio, setSystemAudio] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -57,6 +61,9 @@ export function MeetingRecorder({
   const [now, setNow] = useState(0);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const stopAskedAt = useRef(0);
+  // Lines already fetched. Kept across Continue so a new session only pulls
+  // what's new.
+  const since = useRef(0);
 
   const live = phase === "starting" || phase === "recording" || phase === "stopping";
 
@@ -64,11 +71,11 @@ export function MeetingRecorder({
   useEffect(() => {
     if (!recordingId || !live) return;
     let cancelled = false;
-    let since = 0;
     const created = Date.now();
     async function tick() {
+      const from = since.current;
       try {
-        const res = await fetch(`/api/meeting-recordings/${recordingId}?since=${since}`, {
+        const res = await fetch(`/api/meeting-recordings/${recordingId}?since=${from}`, {
           credentials: "include",
         });
         if (cancelled) return;
@@ -79,9 +86,15 @@ export function MeetingRecorder({
         }
         const data = (await res.json()) as PollResponse;
         if (cancelled) return;
-        if (data.lines.length) setLines((prev) => [...prev, ...data.lines]);
-        since = data.total;
+        // A slow poll can overlap the next one; keep only lines past what an
+        // earlier response already added.
+        if (data.total > since.current) {
+          const fresh = data.lines.slice(since.current - from);
+          setLines((prev) => [...prev, ...fresh]);
+          since.current = data.total;
+        }
         setSystemAudio(data.systemAudio);
+        setRecordedSeconds(data.recordedSeconds);
         if (data.status === "Recording") {
           setPhase((p) => (p === "starting" ? "recording" : p));
         } else if (data.status === "Stopped" || data.status === "Failed") {
@@ -104,7 +117,7 @@ export function MeetingRecorder({
       cancelled = true;
       clearInterval(id);
     };
-    // Re-arming on each live phase change would reset `since`; the id is enough.
+    // Keyed on the id and liveness only; `since` lives in a ref across re-arms.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recordingId, live]);
 
@@ -145,6 +158,7 @@ export function MeetingRecorder({
         return;
       }
       setRecordingId(json.id);
+      setLink(json.link);
       setStartedAt(Date.now());
       setPhase("starting");
       openInApp(json.link);
@@ -165,6 +179,33 @@ export function MeetingRecorder({
     }).catch(() => null);
   }
 
+  // Continue: record another session into the same transcript.
+  async function resume() {
+    if (!recordingId || !link) return;
+    setError(null);
+    const res = await fetch(`/api/meeting-recordings/${recordingId}`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "resume" }),
+    }).catch(() => null);
+    if (!res?.ok) {
+      setError("Couldn't continue recording.");
+      return;
+    }
+    stopAskedAt.current = 0;
+    setStartedAt(Date.now());
+    setPhase("starting");
+    openInApp(link);
+  }
+
+  // Backing out before the app picks up. A continued recording keeps what it
+  // already has; a brand-new one has nothing worth keeping.
+  function cancelStart() {
+    if (lines.length > 0) void stop();
+    else reset();
+  }
+
   function reset() {
     if (recordingId) {
       void fetch(`/api/meeting-recordings/${recordingId}`, {
@@ -173,7 +214,10 @@ export function MeetingRecorder({
       }).catch(() => null);
     }
     setRecordingId(null);
+    setLink(null);
+    setRecordedSeconds(0);
     stopAskedAt.current = 0;
+    since.current = 0;
     setLines([]);
     setError(null);
     setPhase("idle");
@@ -212,7 +256,7 @@ export function MeetingRecorder({
   }
 
   const hasTranscript = lines.length > 0;
-  const duration = hasTranscript ? Math.max(...lines.map((l) => l.at)) : 0;
+  const duration = Math.max(recordedSeconds, hasTranscript ? Math.max(...lines.map((l) => l.at)) : 0);
   const status =
     phase === "idle"
       ? "Records this Mac's audio and mic in the DALI OS app."
@@ -246,7 +290,7 @@ export function MeetingRecorder({
               {status ?? (
                 <span className="inline-flex items-center gap-1.5">
                   <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-500" />
-                  {formatClock((now - startedAt) / 1000)}
+                  {formatClock(recordedSeconds + (now - startedAt) / 1000)}
                   {!systemAudio && " · Mic only"}
                 </span>
               )}
@@ -262,11 +306,15 @@ export function MeetingRecorder({
           )}
           {phase === "unreachable" && (
             <>
-              <IconButton label="Cancel" icon={Trash2} tone="destructive" onClick={reset} />
+              <IconButton label="Cancel" icon={Trash2} tone="destructive" onClick={cancelStart} />
               <a href="/download" className={buttonClasses("secondary", "sm")}>
                 Get the app
               </a>
-              <button type="button" onClick={start} className={buttonClasses("primary", "sm")}>
+              <button
+                type="button"
+                onClick={hasTranscript ? resume : start}
+                className={buttonClasses("primary", "sm")}
+              >
                 Try again
               </button>
             </>
@@ -274,7 +322,7 @@ export function MeetingRecorder({
           {(phase === "starting" || phase === "recording" || phase === "stopping") && (
             <button
               type="button"
-              onClick={phase === "starting" ? reset : stop}
+              onClick={phase === "starting" ? cancelStart : stop}
               disabled={phase === "stopping"}
               className={buttonClasses("secondary", "sm")}
             >
@@ -296,6 +344,14 @@ export function MeetingRecorder({
                 onClick={reset}
                 disabled={phase === "writing"}
               />
+              <button
+                type="button"
+                onClick={resume}
+                disabled={phase === "writing"}
+                className={buttonClasses("secondary", "sm")}
+              >
+                <Mic className="h-3.5 w-3.5" /> Continue
+              </button>
               {aiEnabled && error && hasTranscript && (
                 <button
                   type="button"

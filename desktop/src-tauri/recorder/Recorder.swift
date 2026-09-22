@@ -13,10 +13,14 @@
 //   {"type":"stopped"}                   (always the last event)
 //
 // Two audio sources, transcribed separately so every line knows who said it:
-//   - "you":    the microphone, through AVAudioEngine with voice processing on,
-//               which cancels the call audio coming out of the speakers.
+//   - "you":    the microphone, through AVAudioEngine, boosted by a gentle
+//               automatic gain so people across the room still register.
 //   - "others": the Mac's system output via a Core Audio process tap (macOS
 //               14.2+). No tap, no "others": older Macs record the mic only.
+// Echo cancellation (Apple's voice processing) is only switched on while the
+// Mac is actually playing sound. It stops call audio from the speakers being
+// transcribed twice, but it's tuned for one person at the keyboard and treats
+// distant voices as noise, so an in-room meeting runs without it.
 // Transcription is SFSpeechRecognizer, on-device whenever the language model is
 // installed. Audio is never written to disk or sent anywhere by this file.
 
@@ -62,6 +66,11 @@ private final class Recorder {
     private var stopSystem: (() -> Void)?
     private var transcribers: [Transcriber] = []
     private var stopping = false
+    private var echoTimer: DispatchSourceTimer?
+    // Last time the system tap heard real sound, guarded by `levelLock` (it's
+    // written from the tap's IO queue).
+    private let levelLock = NSLock()
+    private var lastPlaybackAt = Date.distantPast
 
     init(callback: @escaping DaliRecorderCallback) {
         self.callback = callback
@@ -113,18 +122,47 @@ private final class Recorder {
 
         if #available(macOS 14.2, *) {
             let others = Transcriber(source: "others", startedAt: startedAt, onDevice: onDevice, onLine: onLine)
-            if let tap = try? SystemAudioCapture(onBuffer: { buffer in others.append(buffer) }) {
+            let tap = try? SystemAudioCapture(onBuffer: { [weak self] buffer in
+                if rms(buffer) > playbackThreshold { self?.notePlayback() }
+                others.append(buffer)
+            })
+            if let tap {
                 stopSystem = tap.stop
                 transcribers.append(others)
+                watchPlayback()
             }
         }
 
         emit(["type": "started", "systemAudio": stopSystem != nil, "onDevice": onDevice])
     }
 
+    private func notePlayback() {
+        levelLock.lock()
+        lastPlaybackAt = Date()
+        levelLock.unlock()
+    }
+
+    // Echo cancellation follows playback: on within a moment of the Mac
+    // playing sound, off again after a few quiet seconds.
+    private func watchPlayback() {
+        let timer = DispatchSource.makeTimerSource(queue: recorderQueue)
+        timer.schedule(deadline: .now() + 0.5, repeating: 0.5)
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            self.levelLock.lock()
+            let playing = Date().timeIntervalSince(self.lastPlaybackAt) < 3
+            self.levelLock.unlock()
+            self.mic?.setEchoCancellation(playing)
+        }
+        timer.resume()
+        echoTimer = timer
+    }
+
     func stop() {
         guard !stopping else { return }
         stopping = true
+        echoTimer?.cancel()
+        echoTimer = nil
         mic?.stop()
         stopSystem?()
         mic = nil
@@ -267,29 +305,93 @@ private final class Transcriber {
     }
 }
 
+// MARK: - Levels
+
+// Below this the system tap is treated as silent (roughly -50 dBFS).
+private let playbackThreshold: Float = 0.003
+
+private func rms(_ buffer: AVAudioPCMBuffer) -> Float {
+    guard let channels = buffer.floatChannelData, buffer.frameLength > 0 else { return 0 }
+    let n = Int(buffer.frameLength)
+    var sum: Float = 0
+    for c in 0..<Int(buffer.format.channelCount) {
+        let samples = channels[c]
+        for i in 0..<n { sum += samples[i] * samples[i] }
+    }
+    return (sum / Float(n * Int(buffer.format.channelCount))).squareRoot()
+}
+
+// Slow automatic gain for the mic. A voice from across the room arrives far
+// quieter than one at the keyboard, and the recognizer misses a lot of it.
+// Speech is pulled toward a steady level (up to +20 dB), smoothly so words
+// don't pump, and the gain holds through silence so room hiss is never
+// boosted on its own.
+private final class AutoGain {
+    private static let target: Float = 0.06   // about -24 dBFS
+    private static let maxGain: Float = 10
+    private static let noiseFloor: Float = 0.0025
+    private var gain: Float = 1
+
+    func apply(_ buffer: AVAudioPCMBuffer) {
+        guard let channels = buffer.floatChannelData else { return }
+        let level = rms(buffer)
+        if level > Self.noiseFloor {
+            let wanted = min(Self.maxGain, max(1, Self.target / level))
+            // Come down fast (a loud voice shouldn't clip), go up slowly.
+            let rate: Float = wanted < gain ? 0.5 : 0.08
+            gain += (wanted - gain) * rate
+        }
+        guard gain > 1.01 else { return }
+        let n = Int(buffer.frameLength)
+        for c in 0..<Int(buffer.format.channelCount) {
+            let samples = channels[c]
+            for i in 0..<n {
+                // Soft clip so a sudden loud word saturates instead of cracking.
+                let x = samples[i] * gain
+                samples[i] = x / (1 + abs(x))
+            }
+        }
+    }
+}
+
 // MARK: - Microphone
 
 private final class MicCapture {
     private let engine = AVAudioEngine()
+    private let gain = AutoGain()
+    private var voiceProcessing = false
 
     init(onBuffer: @escaping (AVAudioPCMBuffer) -> Void) throws {
         let input = engine.inputNode
-        // Echo cancellation: without it, a call played on the speakers is
-        // transcribed twice, once as "others" and again as "you".
-        try? input.setVoiceProcessingEnabled(true)
-        if #available(macOS 14, *) {
-            // Voice processing ducks other audio by default, which would make
-            // the call quieter for the user.
-            input.voiceProcessingOtherAudioDuckingConfiguration =
-                AVAudioVoiceProcessingOtherAudioDuckingConfiguration(
-                    enableAdvancedDucking: false, duckingLevel: .min)
+        // Echo cancellation is available but starts bypassed; the recorder
+        // turns it on only while the Mac is playing sound (see Recorder).
+        do {
+            try input.setVoiceProcessingEnabled(true)
+            voiceProcessing = true
+            input.isVoiceProcessingBypassed = true
+            if #available(macOS 14, *) {
+                // Voice processing ducks other audio by default, which would
+                // make the call quieter for the user.
+                input.voiceProcessingOtherAudioDuckingConfiguration =
+                    AVAudioVoiceProcessingOtherAudioDuckingConfiguration(
+                        enableAdvancedDucking: false, duckingLevel: .min)
+            }
+        } catch {
+            voiceProcessing = false
         }
         let format = input.outputFormat(forBus: 0)
+        let gain = self.gain
         input.installTap(onBus: 0, bufferSize: 4096, format: format) { buffer, _ in
+            gain.apply(buffer)
             onBuffer(buffer)
         }
         engine.prepare()
         try engine.start()
+    }
+
+    func setEchoCancellation(_ on: Bool) {
+        guard voiceProcessing, engine.inputNode.isVoiceProcessingBypassed == on else { return }
+        engine.inputNode.isVoiceProcessingBypassed = !on
     }
 
     func stop() {
