@@ -8,19 +8,23 @@
 // Everything that happens is reported back through `callback` as one JSON
 // object per call:
 //   {"type":"started","systemAudio":Bool,"onDevice":Bool}
-//   {"type":"line","source":"you"|"others","at":Double,"text":String}
+//   {"type":"line","at":Double,"text":String}
 //   {"type":"error","message":String}   (fatal; "stopped" follows)
 //   {"type":"stopped"}                   (always the last event)
 //
-// Two audio sources, transcribed separately so every line knows who said it:
-//   - "you":    the microphone, through AVAudioEngine, boosted by a gentle
-//               automatic gain so people across the room still register.
-//   - "others": the Mac's system output via a Core Audio process tap (macOS
-//               14.2+). No tap, no "others": older Macs record the mic only.
+// Two audio sources, mixed into one stream and transcribed together:
+//   - the microphone, through AVAudioEngine, boosted by a gentle automatic
+//     gain so people across the room still register.
+//   - the Mac's system output via a Core Audio process tap (macOS 14.2+), so
+//     the other side of a call is heard. Older Macs record the mic only.
+// One stream because the on-device recognizer runs one task per app at a
+// time: opening a second task cancels the first, which then returns "no
+// speech detected" instead of its text. That's also why lines carry no
+// speaker label.
 // No echo cancellation: enabling Apple's voice processing on the input, even
 // bypassed, turns a built-in mic into a 9-channel stream about 25 dB quieter,
-// which loses anyone across the room. Call audio from the speakers can land
-// in both sources; headphones avoid that.
+// which loses anyone across the room. Call audio from the speakers reaches the
+// mic too; headphones avoid the doubling.
 // Transcription is SFSpeechRecognizer, on-device whenever the language model is
 // installed. Audio is never written to disk or sent anywhere by this file.
 
@@ -64,7 +68,7 @@ private final class Recorder {
     private var mic: MicCapture?
     // SystemAudioCapture is 14.2+, so it's held only through its stop action.
     private var stopSystem: (() -> Void)?
-    private var transcribers: [Transcriber] = []
+    private var transcriber: Transcriber?
     private var stopping = false
 
     init(callback: @escaping DaliRecorderCallback) {
@@ -100,32 +104,28 @@ private final class Recorder {
             return
         }
         let onDevice = recognizer.supportsOnDeviceRecognition
-        let onLine: (String, TimeInterval, String) -> Void = { [weak self] source, at, text in
-            self?.emit(["type": "line", "source": source, "at": at, "text": text])
-        }
-        let onFatal: (String) -> Void = { [weak self] message in
-            recorderQueue.async { self?.fail(message) }
-        }
-
-        let you = Transcriber(source: "you", startedAt: startedAt, onDevice: onDevice,
-                              onLine: onLine, onFatal: onFatal)
+        let transcriber = Transcriber(
+            startedAt: startedAt, onDevice: onDevice,
+            onLine: { [weak self] at, text in
+                self?.emit(["type": "line", "at": at, "text": text])
+            },
+            onFatal: { [weak self] message in
+                recorderQueue.async { self?.fail(message) }
+            })
+        let mixer = Mixer { buffer in transcriber.append(buffer) }
         do {
-            mic = try MicCapture { buffer in you.append(buffer) }
+            mic = try MicCapture { buffer in mixer.addMic(buffer) }
         } catch {
             emit(["type": "error", "message": "Couldn't open the microphone."])
             emit(["type": "stopped"])
             finish()
             return
         }
-        transcribers.append(you)
+        self.transcriber = transcriber
 
-        if #available(macOS 14.2, *) {
-            let others = Transcriber(source: "others", startedAt: startedAt, onDevice: onDevice,
-                                     onLine: onLine, onFatal: onFatal)
-            if let tap = try? SystemAudioCapture(onBuffer: { buffer in others.append(buffer) }) {
-                stopSystem = tap.stop
-                transcribers.append(others)
-            }
+        if #available(macOS 14.2, *),
+           let tap = try? SystemAudioCapture(onBuffer: { buffer in mixer.addSystem(buffer) }) {
+            stopSystem = tap.stop
         }
 
         emit(["type": "started", "systemAudio": stopSystem != nil, "onDevice": onDevice])
@@ -146,9 +146,9 @@ private final class Recorder {
         mic = nil
         stopSystem = nil
         let group = DispatchGroup()
-        for t in transcribers {
+        if let transcriber {
             group.enter()
-            t.finish { group.leave() }
+            transcriber.finish { group.leave() }
         }
         // Final phrases usually land well under a second after endAudio; don't
         // hold the stop hostage to a recognizer that never answers.
@@ -174,41 +174,120 @@ private final class Recorder {
     }
 }
 
+// MARK: - Mixing
+
+// Resamples both sources to 16 kHz mono and sums them. The mic drives the
+// output (it always runs); system audio waits in a short FIFO and is mixed
+// into each mic buffer as it arrives. Anything beyond a second of system
+// backlog is dropped, so the two clocks can't drift apart.
+private final class Mixer {
+    static let format = AVAudioFormat(
+        commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false)!
+    private static let maxBacklog = 16_000
+
+    private let out: (AVAudioPCMBuffer) -> Void
+    private let lock = NSLock()
+    private var system: [Float] = []
+    private var micConverter: AVAudioConverter?
+    private var systemConverter: AVAudioConverter?
+
+    init(out: @escaping (AVAudioPCMBuffer) -> Void) {
+        self.out = out
+    }
+
+    func addSystem(_ buffer: AVAudioPCMBuffer) {
+        lock.lock()
+        defer { lock.unlock() }
+        system += Self.convert(buffer, with: &systemConverter)
+        if system.count > Self.maxBacklog { system.removeFirst(system.count - Self.maxBacklog) }
+    }
+
+    func addMic(_ buffer: AVAudioPCMBuffer) {
+        lock.lock()
+        var samples = Self.convert(buffer, with: &micConverter)
+        let n = min(samples.count, system.count)
+        for i in 0..<n { samples[i] += system[i] }
+        system.removeFirst(n)
+        lock.unlock()
+
+        guard !samples.isEmpty,
+              let mixed = AVAudioPCMBuffer(pcmFormat: Self.format, frameCapacity: AVAudioFrameCount(samples.count)),
+              let dst = mixed.floatChannelData?[0]
+        else { return }
+        mixed.frameLength = AVAudioFrameCount(samples.count)
+        for i in 0..<samples.count { dst[i] = max(-1, min(1, samples[i])) }
+        out(mixed)
+    }
+
+    private static func convert(_ buffer: AVAudioPCMBuffer, with converter: inout AVAudioConverter?) -> [Float] {
+        if converter?.inputFormat != buffer.format {
+            converter = AVAudioConverter(from: buffer.format, to: format)
+            converter?.downmix = true
+        }
+        let ratio = format.sampleRate / buffer.format.sampleRate
+        guard let converter,
+              let converted = AVAudioPCMBuffer(
+                pcmFormat: format, frameCapacity: AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 32)
+        else { return [] }
+        var fed = false
+        converter.convert(to: converted, error: nil) { _, status in
+            if fed {
+                status.pointee = .noDataNow
+                return nil
+            }
+            fed = true
+            status.pointee = .haveData
+            return buffer
+        }
+        guard let samples = converted.floatChannelData?[0] else { return [] }
+        return Array(UnsafeBufferPointer(start: samples, count: Int(converted.frameLength)))
+    }
+}
+
 // MARK: - Transcription
 
-// One source's recognizer. A single SFSpeech task only ever grows one long
-// transcription, so we end the request at each pause (or every minute, the
-// server recognizer's limit) and start a fresh one: each finished request
-// becomes one line, stamped with when its speech began.
+// A single SFSpeech task only ever grows one long transcription, so we end the
+// request at each pause (or every 50 seconds) and start a fresh one: each
+// finished request becomes one line, stamped with when its audio began.
+// Only one task may be open at a time (see the header), so the next request
+// waits until the previous one has answered; audio arriving meanwhile is kept
+// in a backlog and fed to the next request when it opens.
 private final class Transcriber {
     private static let pauseSeconds: TimeInterval = 1.2
     private static let maxRequestSeconds: TimeInterval = 50
+    // An ended request that hasn't answered by then is left to finish on its
+    // own; the next one opens anyway.
+    private static let closeTimeout: TimeInterval = 3
+    private static let maxBacklogBuffers = 200
 
-    let source: String
     private let startedAt: Date
     private let onDevice: Bool
-    private let onLine: (String, TimeInterval, String) -> Void
+    private let onLine: (TimeInterval, String) -> Void
     private let onFatal: (String) -> Void
     private let recognizer = SFSpeechRecognizer()
     private let lock = NSLock()
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var requestStartedAt = Date()
     private var lastSpeechAt: Date?
+    // The ended request still owed an answer, and when it was ended.
+    private var closing: SFSpeechAudioBufferRecognitionRequest?
+    private var closingSince = Date()
+    private var backlog: [AVAudioPCMBuffer] = []
+    private var backlogStartedAt = Date()
+    // Earliest a new request may open after one failed on its own, so a
+    // recognizer that fails every request doesn't open one per buffer.
+    private var reopenAt = Date.distantPast
     private var pending = 0
     private var onDrained: (() -> Void)?
     private var ended = false
 
-    init(source: String, startedAt: Date, onDevice: Bool,
-         onLine: @escaping (String, TimeInterval, String) -> Void,
+    init(startedAt: Date, onDevice: Bool,
+         onLine: @escaping (TimeInterval, String) -> Void,
          onFatal: @escaping (String) -> Void) {
-        self.source = source
         self.startedAt = startedAt
         self.onDevice = onDevice
         self.onLine = onLine
         self.onFatal = onFatal
-        lock.lock()
-        rotateLocked()
-        lock.unlock()
     }
 
     func append(_ buffer: AVAudioPCMBuffer) {
@@ -216,11 +295,22 @@ private final class Transcriber {
         defer { lock.unlock() }
         guard !ended else { return }
         let now = Date()
-        let paused = lastSpeechAt.map { now.timeIntervalSince($0) > Self.pauseSeconds } ?? false
-        if paused || now.timeIntervalSince(requestStartedAt) > Self.maxRequestSeconds {
-            rotateLocked()
+        if let request {
+            let paused = lastSpeechAt.map { now.timeIntervalSince($0) > Self.pauseSeconds } ?? false
+            guard paused || now.timeIntervalSince(requestStartedAt) > Self.maxRequestSeconds else {
+                request.append(buffer)
+                return
+            }
+            request.endAudio()
+            closing = request
+            closingSince = now
+            self.request = nil
         }
-        request?.append(buffer)
+        if backlog.isEmpty { backlogStartedAt = now }
+        backlog.append(buffer)
+        if backlog.count > Self.maxBacklogBuffers { backlog.removeFirst() }
+        if closing != nil, now.timeIntervalSince(closingSince) > Self.closeTimeout { closing = nil }
+        if closing == nil, now >= reopenAt { openLocked() }
     }
 
     func finish(_ done: @escaping () -> Void) {
@@ -228,6 +318,7 @@ private final class Transcriber {
         ended = true
         request?.endAudio()
         request = nil
+        if closing == nil, !backlog.isEmpty { openLocked() }
         if pending == 0 {
             lock.unlock()
             done()
@@ -237,55 +328,72 @@ private final class Transcriber {
         lock.unlock()
     }
 
-    // Caller holds `lock`.
-    private func rotateLocked() {
-        request?.endAudio()
+    // Opens a request fed with the backlog. After `finish`, it's ended right
+    // away so the backlog's last words still come back. Caller holds `lock`.
+    private func openLocked() {
         guard let recognizer else { return }
         let req = SFSpeechAudioBufferRecognitionRequest()
         req.shouldReportPartialResults = true
         req.requiresOnDeviceRecognition = onDevice
         if #available(macOS 13, *) { req.addsPunctuation = true }
-        request = req
-        requestStartedAt = Date()
+        requestStartedAt = backlog.isEmpty ? Date() : backlogStartedAt
         lastSpeechAt = nil
         let offset = requestStartedAt.timeIntervalSince(startedAt)
         pending += 1
 
+        // A task cut short answers with an error instead of a final result,
+        // so the latest partial stands in for the text it would have given.
+        var latest: SFTranscription?
         var delivered = false
         recognizer.recognitionTask(with: req) { [weak self] result, error in
             guard let self else { return }
             if let result {
+                latest = result.bestTranscription
                 if !result.isFinal {
                     // Partial result: the speaker is still talking. Only the
-                    // current request's partials move the pause clock.
+                    // open request's partials move the pause clock.
                     self.lock.lock()
                     if self.request === req { self.lastSpeechAt = Date() }
                     self.lock.unlock()
                     return
                 }
-                let text = result.bestTranscription.formattedString
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                if !text.isEmpty {
-                    let at = offset + (result.bestTranscription.segments.first?.timestamp ?? 0)
-                    self.onLine(self.source, at, text)
-                }
             }
-            // Either a final result or an error (a request that heard nothing
-            // ends with "no speech detected", which is routine).
             if let error = error as NSError?, error.domain == "kLSRErrorDomain", error.code == 201 {
                 // "Siri and Dictation are disabled": every request fails this way.
                 self.onFatal("Turn on Dictation in System Settings > Keyboard to record meetings.")
             }
-            if (result?.isFinal ?? false) || error != nil {
-                if delivered { return }
-                delivered = true
-                self.lock.lock()
-                self.pending -= 1
-                let drained = self.pending == 0 ? self.onDrained : nil
-                if drained != nil { self.onDrained = nil }
-                self.lock.unlock()
-                drained?()
+            if delivered { return }
+            delivered = true
+            if let latest {
+                let text = latest.formattedString.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !text.isEmpty {
+                    self.onLine(offset + (latest.segments.first?.timestamp ?? 0), text)
+                }
             }
+            self.lock.lock()
+            self.pending -= 1
+            if self.closing === req { self.closing = nil }
+            if self.request === req {
+                // Ended on its own (a quiet stretch reads as "no speech
+                // detected"). The next buffer opens a new one.
+                self.request = nil
+                if error != nil { self.reopenAt = Date().addingTimeInterval(0.5) }
+            }
+            if self.ended, self.closing == nil, self.request == nil, !self.backlog.isEmpty {
+                self.openLocked()
+            }
+            let drained = self.pending == 0 ? self.onDrained : nil
+            if drained != nil { self.onDrained = nil }
+            self.lock.unlock()
+            drained?()
+        }
+        for buffer in backlog { req.append(buffer) }
+        backlog.removeAll()
+        if ended {
+            req.endAudio()
+            closing = req
+        } else {
+            request = req
         }
     }
 }
