@@ -297,9 +297,6 @@ export function CreateScheduledMeetingForm({
   // Meeting notes are opt-in — the About / type / location fields only appear
   // once enabled. See MeetingNoteFields for the derive-type-from-project model.
   const note = useMeetingNote();
-  const whiteboardEnabled = useFeatureFlag("whiteboard");
-  // Flag: a Core meeting may also be about a project; off = Core clears it.
-  const unifiedCoreProject = useFeatureFlag("unified-core-project-meetings");
   // Self check-in is independent of the meeting note (QR lives on the note when
   // one exists, otherwise on /calendar/check-in/:id).
   const [selfCheckIn, setSelfCheckIn] = useState(false);
@@ -339,13 +336,12 @@ export function CreateScheduledMeetingForm({
   // Prefill "About" when exactly one selected group is a system-managed project
   // group (see GroupOption.projectId) — a default the sender can still change. It
   // fills even while the note is off, so the project is already chosen if they
-  // turn it on; it never enables the note itself. Without the unify flag a Core
-  // meeting's note has no project, so the prefill stays out of its way.
+  // turn it on; it never enables the note itself.
   useEffect(() => {
-    if (selectedGroupIds.length !== 1 || (isCoreMeeting && !unifiedCoreProject)) return;
+    if (selectedGroupIds.length !== 1) return;
     note.applyGroupPrefill(groupsById.get(selectedGroupIds[0]!)?.projectId ?? null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedGroupIds, isCoreMeeting, unifiedCoreProject]);
+  }, [selectedGroupIds]);
 
   // Both pickers filled → derive duration; otherwise fall back to 30 min so
   // "schedule later" (no start/end yet) still produces a valid payload.
@@ -592,13 +588,11 @@ export function CreateScheduledMeetingForm({
               label="Create meeting note"
             />
 
-            {whiteboardEnabled && (
-              <Toggle
-                checked={note.state.whiteboard}
-                onChange={(e) => note.setWhiteboard(e.target.checked)}
-                label="Create whiteboard"
-              />
-            )}
+            <Toggle
+              checked={note.state.whiteboard}
+              onChange={(e) => note.setWhiteboard(e.target.checked)}
+              label="Create whiteboard"
+            />
 
             {(note.state.enabled || note.state.whiteboard) && (
               <MeetingNoteFields
@@ -607,7 +601,6 @@ export function CreateScheduledMeetingForm({
                 fieldClass={fieldClass}
                 labelClass={labelClass}
                 core={isCoreMeeting}
-                allowProjectWhenCore={unifiedCoreProject}
               />
             )}
           </div>

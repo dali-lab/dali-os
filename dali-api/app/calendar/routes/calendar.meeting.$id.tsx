@@ -13,7 +13,6 @@ import { fullName } from "~/lib/display";
 import { AttendanceChecklist, type AttendanceRow } from "~/components/AttendanceChecklist";
 import { CheckInPanel } from "~/components/CheckInPanel";
 import { AttendeeScanner } from "~/components/AttendeeScanner";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { EditMeetingModal } from "~/calendar/components/EditMeetingModal";
 import { AddMeetingNoteButton } from "~/calendar/components/AddMeetingNoteModal";
 import { AddMeetingWhiteboardButton } from "~/calendar/components/AddMeetingWhiteboardModal";
@@ -425,14 +424,10 @@ export default function CalendarMeetingPage() {
       })
     : "Time not set";
   const present = d.rows.filter((r) => r.present).length;
-  // Same gate as the Add-to-Wallet buttons and the standalone scan station;
-  // the /calendar/scan route re-checks both server-side. Require a roster too —
+  // The /calendar/scan route re-checks this server-side. Require a roster too —
   // scanning a passholder into a meeting with no MeetingAttendance rows only ever
   // returns "not invited", so hide the station rather than show a dead scanner.
-  const walletCheckin = useFeatureFlag("wallet-checkin");
-  const whiteboardEnabled = useFeatureFlag("whiteboard");
-  const unifiedCoreProject = useFeatureFlag("unified-core-project-meetings");
-  const canScan = d.canManage && walletCheckin && d.walletConfigured && d.rows.length > 0;
+  const canScan = d.canManage && d.walletConfigured && d.rows.length > 0;
   const [editing, setEditing] = useState(false);
 
   return (
@@ -463,7 +458,7 @@ export default function CalendarMeetingPage() {
         {d.description && (
           <p className="whitespace-pre-wrap text-sm text-foreground">{d.description}</p>
         )}
-        {unifiedCoreProject && d.canSetProject && (
+        {d.canSetProject && (
           <MeetingProjectControl
             meetingId={d.meetingId}
             projectId={d.projectId}
@@ -504,22 +499,21 @@ export default function CalendarMeetingPage() {
               />
             )
           )}
-          {whiteboardEnabled &&
-            (d.whiteboardPageId ? (
-              <Link to={`/whiteboard/${d.whiteboardPageId}`} className={noteBtnClass}>
-                <Shapes className="h-4 w-4 text-muted-foreground" /> Open whiteboard
-              </Link>
-            ) : (
-              d.canAddWhiteboard && (
-                <AddMeetingWhiteboardButton
-                  meetingId={d.meetingId}
-                  isCoreMeeting={d.isCoreMeeting}
-                  hasType={d.hasType}
-                  actionPath="/calendar"
-                  className={noteBtnClass}
-                />
-              )
-            ))}
+          {d.whiteboardPageId ? (
+            <Link to={`/whiteboard/${d.whiteboardPageId}`} className={noteBtnClass}>
+              <Shapes className="h-4 w-4 text-muted-foreground" /> Open whiteboard
+            </Link>
+          ) : (
+            d.canAddWhiteboard && (
+              <AddMeetingWhiteboardButton
+                meetingId={d.meetingId}
+                isCoreMeeting={d.isCoreMeeting}
+                hasType={d.hasType}
+                actionPath="/calendar"
+                className={noteBtnClass}
+              />
+            )
+          )}
         </div>
       </header>
 

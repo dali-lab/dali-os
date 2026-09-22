@@ -9,7 +9,6 @@ import {
   type CatalogOffering,
 } from "~/education/components/OfferingCatalog";
 import { buttonClasses } from "~/components/ui/Button";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 
 export const meta: Route.MetaFunction = () => [{ title: "Offerings · DALI OS" }];
 
@@ -53,7 +52,6 @@ export async function loader({ request }: Route.LoaderArgs) {
 
 export default function EducationOfferings() {
   const { offerings, isCore } = useLoaderData<typeof loader>();
-  const certTemplatesOn = useFeatureFlag("certificate-templates");
 
   return (
     <div className="flex flex-col gap-6">
@@ -69,14 +67,12 @@ export default function EducationOfferings() {
         </div>
         {isCore && (
           <div className="flex shrink-0 items-center gap-2">
-            {certTemplatesOn && (
-              <Link
-                to="/education/certificate-templates"
-                className={buttonClasses("secondary", "sm")}
-              >
-                Certificate templates
-              </Link>
-            )}
+            <Link
+              to="/education/certificate-templates"
+              className={buttonClasses("secondary", "sm")}
+            >
+              Certificate templates
+            </Link>
             <Link to="/education/manage/new" className={buttonClasses("primary", "sm")}>
               New offering
             </Link>

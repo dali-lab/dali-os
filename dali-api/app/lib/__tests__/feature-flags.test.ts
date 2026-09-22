@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  FEATURE_FLAGS,
   evaluateFlag,
   evaluateVariant,
-  isHomeSurface,
   type FeatureFlagDef,
 } from "../feature-flags";
 import type { UserRoles } from "../roles";
@@ -56,8 +54,8 @@ describe("evaluateFlag", () => {
 
 describe("evaluateVariant", () => {
   const def: FeatureFlagDef = {
-    key: "home-surface",
-    label: "Home page",
+    key: "some-variant-flag",
+    label: "Some variant flag",
     description: "",
     variants: [
       { value: "classic", label: "Current home", description: "" },
@@ -89,23 +87,5 @@ describe("evaluateVariant", () => {
   it("falls back when the row names an option the registry has dropped", () => {
     expect(evaluateVariant(def, { ...base, everyone: true, variant: "retired" }, "u1", noRoles))
       .toBe("search");
-  });
-});
-
-describe("home-surface registry entry", () => {
-  const def = FEATURE_FLAGS.find((f) => f.key === "home-surface") as FeatureFlagDef;
-
-  it("offers exactly the three home surfaces", () => {
-    expect(def.variants?.map((v) => v.value)).toEqual(["classic", "search", "calendar"]);
-  });
-
-  it("every option is a surface the home route knows how to render", () => {
-    for (const v of def.variants ?? []) expect(isHomeSurface(v.value)).toBe(true);
-    expect(isHomeSurface(def.defaultVariant)).toBe(true);
-  });
-
-  it("rejects anything else as a surface", () => {
-    expect(isHomeSurface("dashboard")).toBe(false);
-    expect(isHomeSurface(null)).toBe(false);
   });
 });

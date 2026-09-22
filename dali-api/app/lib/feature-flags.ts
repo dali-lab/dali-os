@@ -50,70 +50,10 @@ export type FeatureFlagDef = {
 
 export const FEATURE_FLAGS = [
   {
-    key: "desktop-app",
-    defaultEnabled: true,
-    defaultEveryone: true,
-    label: "Desktop app",
-    description:
-      "Show the desktop-app download banner, /download surfaces, and welcome CTA.",
-  },
-  {
-    key: "home-surface",
-    defaultEnabled: true,
-    defaultEveryone: true,
-    label: "Home page",
-    description:
-      "Which page / renders for the people this flag targets. Everyone it doesn't target keeps the current home — except members on the new left navigation, who get the search-first home with it.",
-    variants: [
-      {
-        value: "classic",
-        label: "Current home",
-        description: "Welcome header, favorites, forms, and the DALI General Calendar week.",
-      },
-      {
-        value: "search",
-        label: "Search-first",
-        description: "DALI mark, search box, shortcut tiles, then tasks and notifications.",
-      },
-      {
-        value: "calendar",
-        label: "Calendar",
-        description: "Opens the calendar (availability, scheduling, timesheet) as the landing page.",
-      },
-    ],
-    defaultVariant: "search",
-  },
-  {
-    key: "wallet-checkin",
-    label: "Wallet check-in",
-    description:
-      "Members can add a DALI membership pass to Apple/Google Wallet; an organizer scans it at a meeting to mark attendance (the inverse of QR self-check-in). Needs the pass-signing certs configured in the environment — the Add-to-Wallet buttons hide when a platform is unconfigured even with this on.",
-  },
-  {
-    key: "nav-preload",
-    defaultEnabled: true,
-    defaultEveryone: true,
-    label: "Preload favorites & recents",
-    description:
-      "After the shell finishes loading, quietly warm the pages in the sidebar's Favorites and Recent lists so opening one from the nav is instant. Skipped on data-saver and 2g connections.",
-  },
-  {
-    key: "calendar-unified",
-    label: "Calendar",
-    description:
-      "The full DALI calendar behind one flag: create / edit / delete events on your linked Google calendars (Google write; Outlook read-only), schedule meetings with an availability heatmap, add your Dartmouth classes (period picker → exact weekly times, synced to Google), and the optional timesheet-to-Google mirror. Ships off; without it the calendar is a read-only busy view.",
-  },
-  {
     key: "optimal-times",
     label: "Find best meeting times",
     description:
       "Suggests the best meeting times in the scheduler. Once people are added, the top 3 slots where the most participants (with a linked calendar) are free show as numbered dotted outlines on the availability grid, with a matching button for each above Starts / Ends that fills in the time. Ships off.",
-  },
-  {
-    key: "google-meet",
-    label: "Google Meet",
-    description:
-      "Attach a Google Meet link to meetings. In the calendar's create-event modal an 'Add Google Meet' toggle mints a Meet link on the organizer's linked Google calendar, so the invite Google sends carries a Join link. When the flag is on for everyone, online hiring interviews also get an auto-generated Meet link — created on the shared hiring calendar (that account must be linked once in the calendar settings) and folded into the existing interview emails. Ships off.",
   },
   {
     key: "infra-dashboard",
@@ -122,28 +62,10 @@ export const FEATURE_FLAGS = [
       "Admin → System → Infrastructure: a cross-project console pulling Fly.io + Neon inventory and usage (no dollar cost — usage only, with links out to each provider's billing) into one place, with scale / limit / provision / cleanup actions. Reads and safe reversible actions are Core; provisioning, quotas, and destructive actions are Admin-only. Ships off.",
   },
   {
-    key: "project-status-bar",
-    label: "Project status bar",
-    description:
-      "A compact work-status strip above the project timeline (Progress tab): task progress, the active sprint's deadline, and attention flags (overdue, unscheduled, in review, stale). Deterministic — no AI. Ships off.",
-  },
-  {
     key: "project-tldr-ai",
     label: "Project AI TL;DR",
     description:
-      "Adds an AI-written one-or-two-sentence summary of the project's work status beneath the status bar. Only shows when the 'Project status bar' flag is also on AND an AI provider is configured. Ships off.",
-  },
-  {
-    key: "mentorship-manage",
-    label: "Manage mentorship pairs",
-    description:
-      "Lets Core hand-create, reassign, and remove mentorship pairs — inline on the Notes grid (Edit pairs) and on each project's Mentorship tab. Pairs are still auto-derived at staffing finalize; manual edits are tagged and preserved across a re-finalize. Ships off.",
-  },
-  {
-    key: "activities",
-    label: "Activities",
-    description:
-      "Time-boxed onboarding activities / site modes — e.g. the onboarding scavenger hunt. While an activity is live for a member, they get a top-bar bar, its on-page codes, and a surface modal (submit + progress + leaderboard) that floats over whatever page they're on; when its window closes the site reverts. Authored in Admin → Activities. Ships off.",
+      "Adds an AI-written one-or-two-sentence summary of the project's work status beneath the status bar. Only shows when an AI provider is configured. Ships off.",
   },
   {
     key: "education-redesign-v2",
@@ -152,34 +74,10 @@ export const FEATURE_FLAGS = [
       "Project-hub-style education catalog — a grid of cover cards with a per-offering emoji, a search field, and a Miniseries/Workshop type filter — on both /education (members) and /portal/education (applicants). Also switches the applicant portal home to conditional action cards (Apply to DALI, Apply to an offering, My applications, My courses) that link to the combined /portal/applications history. The offering emoji picker and the applications page ship regardless; this flag only gates the redesigned surfaces. Ships off.",
   },
   {
-    key: "education-student-hub",
-    label: "Education student hub",
-    description:
-      "Reworks the enrolled student's course hub (member + portal). Adds a Canvas-style People tab (instructors + classmates) and drops that roster from Overview. Removes the separate Workspace tab: shared co-edited docs and uploaded files now attach to a session (or the whole course) and render inline on the session Timeline alongside read-only materials — one place for every resource. Ships off.",
-  },
-  {
-    key: "certificate-templates",
-    label: "Certificate templates",
-    description:
-      "Operator-designed completion certificates. Core uploads a background image and drags the dynamic fields (student name, offering title, dates, instructors, issued date) onto it in a template editor, sets a lab-wide default, and can bind a specific template to an offering. When off, certificates use the built-in DALI design (unchanged). Ships off.",
-  },
-  {
-    key: "whiteboard",
-    label: "Whiteboard",
-    description:
-      "Collaborative Excalidraw whiteboards in Drive — an infinite canvas with shapes, arrows, sticky notes, freehand pen, text, and images, synced live (with multiplayer cursors) through the same Yjs collab backend as documents. Create one from the Drive New menu; it shares, nests, versions, and is searchable like any page. Ships off.",
-  },
-  {
     key: "resources",
     label: "Resources page",
     description:
       "A lab-wide Resources document at /resources: one shared collaborative page with no document chrome, read by every lab member and edited by Core/Admin behind an Edit button. Takes the pinned sidebar slot under Calendar, which moves Drive down into General. Ships off; without it the slot stays Drive and /resources is not reachable.",
-  },
-  {
-    key: "unified-core-project-meetings",
-    label: "Core + project meetings",
-    description:
-      "Let one meeting be both a Core meeting and a project meeting. When a meeting is marked Core, its note's About picker still offers the organizer's projects instead of collapsing to a fixed 'Core' — so a project's team meeting can live as that project's meeting (its note filed in the project's meeting-notes folder) while also showing on the Core hub calendar. Applies to the Events create modal and the Core hub's create modal. Ships off; without it, marking a meeting Core clears any project.",
   },
   {
     key: "ai-meeting-notes",
@@ -190,13 +88,6 @@ export const FEATURE_FLAGS = [
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];
-
-/** The three home pages a member can land on. See the "home-surface" flag. */
-export type HomeSurface = "classic" | "search" | "calendar";
-
-export function isHomeSurface(value: string | null | undefined): value is HomeSurface {
-  return value === "classic" || value === "search" || value === "calendar";
-}
 
 export type FeatureFlagMap = Record<FeatureFlagKey, boolean>;
 

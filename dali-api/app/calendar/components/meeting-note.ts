@@ -14,10 +14,8 @@
 // A Core meeting is a third shape of the same "General" case: Core isn't a
 // project, so a project-less Core note files in Core's own folder and draws no
 // Team/Partner distinction — the picker shows "Core" for the empty answer.
-// Historically Core forbade a project entirely (the picker collapsed to a fixed
-// "Core"); behind the `unified-core-project-meetings` flag a Core meeting may
-// also be about a project, in which case its note is an ordinary project note
-// filed in the project — see the `core`/`allowProjectWhenCore` props on
+// A Core meeting may also be about a project, in which case its note is an
+// ordinary project note filed in the project — see the `core` prop on
 // MeetingNoteFields. Either way this pure model is unchanged: `about` is "" or a
 // projectId, and whether "" means General or Core is decided server-side by the
 // meeting's isCoreMeeting flag.

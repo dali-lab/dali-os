@@ -13,7 +13,6 @@ import {
 } from "react-router";
 import { Select, Menu, Popover } from "~/components/ui/floating";
 import { CalendarDays, CalendarPlus, CalendarX, Check, Globe, Handshake, History, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink, MoreHorizontal, ExternalLink, Star, Mail, Github, Slack, Layers } from "lucide-react";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { DriveFolderBindings } from "~/components/drive/DriveFolderBindings";
 import { useOsChrome } from "~/components/os-chrome";
 import { DomainChips } from "~/components/DomainChips";
@@ -1765,7 +1764,6 @@ export default function ProjectDetail() {
   const [scopeSettingsOpen, setScopeSettingsOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const partnerNames = project.partners.map((p) => p.org.name);
-  const showStatusBar = useFeatureFlag("project-status-bar");
   // Add ▸ Task on the timeline toolbar opens the board's create form; the two
   // are siblings under Progress, so the signal goes up here and back down.
   const [taskCreateNonce, setTaskCreateNonce] = useState(0);
@@ -2033,16 +2031,14 @@ export default function ProjectDetail() {
           // surfaces sharing one tab, and at the page rhythm the board's
           // toolbar read as another row of the timeline card.
           <div className="flex flex-col gap-10">
-            {showStatusBar && (
-              <ProjectStatusBar
-                facts={statusFacts}
-                breakdown={statusBreakdown}
-                projectId={project.id}
-                aiTldr={aiTldr}
-                aiTldrStale={aiTldrStale}
-                aiLineEnabled={aiLineEnabled}
-              />
-            )}
+            <ProjectStatusBar
+              facts={statusFacts}
+              breakdown={statusBreakdown}
+              projectId={project.id}
+              aiTldr={aiTldr}
+              aiTldrStale={aiTldrStale}
+              aiLineEnabled={aiLineEnabled}
+            />
             {planningNode}
             {board}
           </div>

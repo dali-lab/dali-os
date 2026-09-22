@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import { ChevronDown, ScanLine } from "lucide-react";
 import { Checkbox } from "~/components/ui/Checkbox";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { AbsenceNoteButton } from "~/components/AbsenceNoteButton";
 import { Select } from "~/components/ui/floating";
 import { filterPillClass } from "~/components/ui/floating/styles";
@@ -85,7 +84,6 @@ export function AttendanceChecklist({
   // Organizers get a shortcut into the wallet-pass scan station (opens full-tab
   // so the camera isn't squeezed into a doc pane). Gated by the same flag as the
   // member Add-to-Wallet buttons; the scan route re-checks it server-side.
-  const walletCheckin = useFeatureFlag("wallet-checkin");
 
   return (
     <section className="bg-card border border-border rounded-lg p-4">
@@ -104,7 +102,7 @@ export function AttendanceChecklist({
           Attendance
         </button>
         <div className="flex items-center gap-2">
-          {canEdit && walletCheckin && (
+          {canEdit && (
             <a
               href={`/calendar/scan/${meetingId}`}
               target="_blank"

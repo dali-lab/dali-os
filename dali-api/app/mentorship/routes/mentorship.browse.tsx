@@ -27,7 +27,6 @@ import { Select } from "~/components/ui/floating";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { filterPillClass } from "~/components/ui/floating/styles";
 import { useOsChrome } from "~/components/os-chrome";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { useDialog } from "~/components/ui/dialog";
 import { cn } from "~/lib/cn";
 import {
@@ -244,8 +243,7 @@ export default function MentorshipBrowse() {
   const restored = useRef(false);
 
   // Core-only manual pair editing, behind the mentorship-manage flag.
-  const manageFlag = useFeatureFlag("mentorship-manage");
-  const canManage = data.isCore && manageFlag;
+  const canManage = data.isCore;
   const [editing, setEditing] = useState(false);
   const revalidator = useRevalidator();
   const dialog = useDialog();

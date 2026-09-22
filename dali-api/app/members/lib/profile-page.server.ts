@@ -44,7 +44,6 @@ import { NEW_MEMBER_PROFILE_FORM_NAME } from "~/members/lib/profile-form-interpr
 import { normalizeHandle } from "~/lib/handle";
 import { rotateWalletSecret } from "~/lib/wallet-token";
 import { pushWalletPassUpdate } from "~/lib/wallet-apns.server";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { walletAppleConfigured } from "~/lib/wallet-apple.server";
 import { walletGoogleConfigured } from "~/lib/wallet-google.server";
 import { isValidTimezone } from "~/lib/timezone";
@@ -335,13 +334,11 @@ export async function loadProfilePage({
   const adminViewer = await isAdmin(auth.user.sub);
   const canEdit = adminViewer || isSelf;
 
-  // Wallet membership pass — only on your own profile with the flag on. `roles`
-  // is the subject's roles, which is the viewer's own when isSelf, so it's the
-  // right input to the flag check here. Core can also reset a member's pass.
-  const wallet =
-    isSelf && (await isFeatureEnabled("wallet-checkin", auth.user.sub, roles, request))
-      ? { apple: walletAppleConfigured(), google: walletGoogleConfigured() }
-      : null;
+  // Wallet membership pass — only on your own profile. Core can also reset a
+  // member's pass.
+  const wallet = isSelf
+    ? { apple: walletAppleConfigured(), google: walletGoogleConfigured() }
+    : null;
   const canRevokeWalletPass = isSelf || canManageEligibility;
 
   // Inline level editing on the profile is Core-only and reuses the project-hub

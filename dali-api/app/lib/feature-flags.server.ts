@@ -7,13 +7,11 @@ import {
   evaluateFlag,
   evaluateVariant,
   isFeatureFlagKey,
-  isHomeSurface,
   type FeatureFlagDef,
   type FeatureFlagKey,
   type FeatureFlagMap,
   type FlagConfig,
   type FlagVariant,
-  type HomeSurface,
   type RoleTarget,
 } from "~/lib/feature-flags";
 
@@ -118,33 +116,6 @@ export async function isFeatureEnabled(
   return evaluateFlag(config, userId, roles);
 }
 
-// Whether a flag is live for the whole lab (master switch on AND targeting
-// everyone), independent of any single user. For server-side features whose
-// audience isn't the acting user — e.g. hiring automation that provisions a
-// Meet link on the shared hiring calendar, where "which applicant" is not a
-// meaningful target. Role/user-list targeting deliberately does NOT satisfy
-// this: a partially-rolled-out flag stays off for these global paths until it
-// reaches everyone.
-export async function isFeatureEnabledForEveryone(
-  key: FeatureFlagKey,
-  request?: Request,
-): Promise<boolean> {
-  const def = FEATURE_FLAGS.find((f) => f.key === key);
-  if (!def) return false;
-  const byKey = await getFeatureFlagRows(request);
-  const row = byKey.get(key) ?? null;
-  const config: FlagConfig = row
-    ? {
-        enabled: row.enabled,
-        everyone: row.everyone,
-        roles: row.roles,
-        userIds: row.userIds,
-        variant: row.variant,
-      }
-    : defaultConfig(def);
-  return config.enabled && config.everyone;
-}
-
 // Which of a multi-value flag's options applies to this user, or null when the
 // flag doesn't target them.
 export async function resolveFlagVariant(
@@ -167,19 +138,6 @@ export async function resolveFlagVariant(
       }
     : defaultConfig(def);
   return evaluateVariant(def, config, userId, roles);
-}
-
-// Which home page this member lands on. "home-surface" decides when it targets
-// them; untargeted members fall through to the search-first home (the default
-// everyone lands on).
-export async function resolveHomeSurface(
-  userId: string,
-  roles: UserRoles,
-  request?: Request,
-): Promise<HomeSurface> {
-  const chosen = await resolveFlagVariant("home-surface", userId, roles, request);
-  if (isHomeSurface(chosen)) return chosen;
-  return "search";
 }
 
 export type AdminFlagView = {
