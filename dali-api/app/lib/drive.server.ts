@@ -796,22 +796,12 @@ export async function buildLinkedProcessMap(): Promise<Map<string, { label: stri
   // Agreements carry their kind on the row itself (loaded in loadAgreements).
   // The label is derived per-row there rather than here — see loadAgreements.
 
-  // ── Email templates: education offering decision bindings ─────────────────
-  const eduDecisionBindings = await prisma.educationDecisionEmail.findMany({
-    select: {
-      emailTemplateVersion: { select: { templateId: true } },
-      offering: { select: { id: true, title: true } },
-    },
-  });
-  for (const b of eduDecisionBindings) {
-    const tId = b.emailTemplateVersion.templateId;
-    if (!map.has(tId)) {
-      map.set(tId, {
-        label: b.offering.title,
-        href: `/education/manage/${b.offering.id}`,
-      });
-    }
-  }
+  // ── Email templates: no process files one any more ────────────────────────
+  // Hiring's emails stopped being templates in the cycle-timeline rebuild, and
+  // education's in the pass that followed — both are now one editable,
+  // unversioned email per slot (hiring-emails.server.ts,
+  // education-emails.server.ts). Nothing binds an EmailTemplateVersion, so no
+  // template in the library is filed against a cycle or a course.
 
   return map;
 }

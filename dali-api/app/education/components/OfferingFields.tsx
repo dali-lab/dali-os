@@ -8,6 +8,7 @@ import { ProjectIconPicker } from "~/projects/components/ProjectIconPicker";
 import { Select, type SelectOption, Tooltip, InfoTip } from "~/components/ui/floating";
 import { APPLICATION_TZ, getZonedParts } from "~/lib/timezone";
 import {
+  OFFERING_TYPES,
   OFFERING_TYPE_DESCRIPTIONS,
   isMultiSession,
   type OfferingType,
@@ -41,9 +42,13 @@ export function toDatetimeLocal(value: string | Date | undefined): string {
   return `${year}-${pad(month)}-${pad(day)}T${pad(hour)}:${pad(minute)}`;
 }
 
-const LABEL = "text-xs font-semibold text-muted-foreground";
-const INPUT =
-  "mt-1 w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-teal";
+// Both callers (the create page and the Details tab) wrap this set in
+// `os-form`, which dresses the controls themselves — so a field only has to
+// say how wide it is and where it sits under its caption. The caption names
+// `.os-field-label` rather than leaning on `os-form`'s `label > span` rule,
+// because the Icon caption sits in a <div> that rule can't reach.
+const LABEL = "os-field-label";
+const INPUT = "mt-1.5 w-full";
 
 export function OfferingFields({
   values = {},
@@ -64,18 +69,53 @@ export function OfferingFields({
 
   return (
     <>
-      <div className="grid gap-4 sm:grid-cols-2">
+      {/* One grid for the whole set. The fields used to arrive in three
+          differently-shaped clusters (a pair, an icon-plus-title flex row,
+          another pair) with loose paragraphs between them, so nothing lined up
+          down the column. Title leads because it's the field you came to fill;
+          everything else is a pair, and full-width items span both. */}
+      <div className="grid gap-5 sm:grid-cols-2">
+        <label className="block sm:col-span-2">
+          <span className={LABEL}>Title</span>
+          {/* The icon sits with the title rather than under a caption of its
+              own: it's the same thing being named, and a lone picker in a
+              column of text fields read as an orphaned field. */}
+          <span className="mt-1.5 flex items-center gap-3">
+            <ProjectIconPicker iconEmoji={iconEmoji} editing onChange={setIconEmoji} />
+            <input
+              type="text"
+              name="title"
+              required
+              defaultValue={values.title ?? ""}
+              placeholder="e.g. Full-Stack Miniseries 26F"
+              className="w-full"
+            />
+          </span>
+          <input type="hidden" name="iconEmoji" value={iconEmoji ?? ""} />
+        </label>
+
         <label className="block">
           <span className={LABEL}>
             <span className="inline-flex items-center gap-1">
               Type
               <InfoTip
-                content={`${OFFERING_TYPE_DESCRIPTIONS.Workshop} ${OFFERING_TYPE_DESCRIPTIONS.Miniseries} ${OFFERING_TYPE_DESCRIPTIONS.Fellowship}`}
+                content={
+                  // One block per type, rather than the three run together in
+                  // a paragraph nobody could pick a type out of.
+                  <dl className="flex flex-col gap-2">
+                    {OFFERING_TYPES.map((t) => (
+                      <div key={t}>
+                        <dt className="font-semibold">{t}</dt>
+                        <dd>{OFFERING_TYPE_DESCRIPTIONS[t]}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                }
               />
             </span>
           </span>
           <Tooltip
-            content={typeLocked ? "Type can't be changed after an offering is created — it affects how sessions, attendance, and applications are structured." : null}
+            content={typeLocked ? "Type can't be changed after an offering is created. It sets how sessions, attendance and applications work." : null}
             variant="rich"
             placement="top"
           >
@@ -95,6 +135,7 @@ export function OfferingFields({
             </span>
           </Tooltip>
         </label>
+
         <label className="block">
           <span className={LABEL}>Capacity</span>
           <input
@@ -106,35 +147,7 @@ export function OfferingFields({
             className={INPUT}
           />
         </label>
-      </div>
 
-      <div className="flex items-end gap-3">
-        <div className="block">
-          <span className={LABEL}>
-            <span className="inline-flex items-center gap-1">
-              Icon
-              <InfoTip content="An emoji shown on the offering's catalog card. Optional — cards fall back to the title's first letter." />
-            </span>
-          </span>
-          <div className="mt-1 flex h-[38px] items-center">
-            <ProjectIconPicker iconEmoji={iconEmoji} editing onChange={setIconEmoji} />
-          </div>
-          <input type="hidden" name="iconEmoji" value={iconEmoji ?? ""} />
-        </div>
-        <label className="block flex-1">
-          <span className={LABEL}>Title</span>
-          <input
-            type="text"
-            name="title"
-            required
-            defaultValue={values.title ?? ""}
-            placeholder="e.g. Full-Stack Miniseries 26F"
-            className={INPUT}
-          />
-        </label>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2">
         <label className="block">
           <span className={LABEL}>Registration opens</span>
           <DateField
@@ -142,10 +155,11 @@ export function OfferingFields({
             name="registrationOpensAt"
             required
             defaultValue={toDatetimeLocal(values.registrationOpensAt)}
-            className="w-full"
+            className="mt-1.5 w-full"
             ariaLabel="Registration opens"
           />
         </label>
+
         <label className="block">
           <span className={LABEL}>Registration closes</span>
           <DateField
@@ -153,48 +167,52 @@ export function OfferingFields({
             name="registrationClosesAt"
             required
             defaultValue={toDatetimeLocal(values.registrationClosesAt)}
-            className="w-full"
+            className="mt-1.5 w-full"
             ariaLabel="Registration closes"
           />
-        </label>
-      </div>
-      <p className="text-xs text-muted-foreground">
-        Course start and end dates are set automatically from the sessions you add.
-      </p>
-
-      {/* Keyed on type so a new offering's default follows the chosen type:
-          multi-session offerings are reviewed, workshops auto-approve. */}
-      <Checkbox
-        key={selectedType}
-        name="requiresReview"
-        value="true"
-        defaultChecked={values.requiresReview ?? multiSession}
-        label="Applications need instructor review (uncheck for RSVP auto-approval up to capacity)"
-        className="text-sm text-foreground"
-      />
-
-      {multiSession && (
-        <label className="block">
-          <span className={LABEL}>
-            <span className="inline-flex items-center gap-1">
-              Completion threshold (%)
-              <InfoTip content="Students must attend at least this percentage of sessions (excused absences count as attended) to earn a completion certificate. Default is 80%." />
-            </span>
+          <span className="os-field-hint block">
+            Course dates follow the sessions you add.
           </span>
-          <input
-            type="number"
-            name="completionThresholdPct"
-            min={1}
-            max={100}
-            defaultValue={Math.round((values.completionThreshold ?? 0.8) * 100)}
-            className={INPUT}
-          />
-          <p className="mt-1 text-xs text-muted-foreground">
-            Students must attend this percentage of sessions (including excused) to earn a
-            certificate. Default is 80%.
-          </p>
         </label>
-      )}
+
+        {multiSession && (
+          <label className="block">
+            <span className={LABEL}>
+              <span className="inline-flex items-center gap-1">
+                Completion threshold (%)
+                {/* The tip is the only place this rule is stated. It used to be
+                    spelled out twice, in the tip and again in a paragraph
+                    under the field. */}
+                <InfoTip content="Share of sessions a student must attend to earn a certificate. Excused absences count as attended." />
+              </span>
+            </span>
+            <input
+              type="number"
+              name="completionThresholdPct"
+              min={1}
+              max={100}
+              defaultValue={Math.round((values.completionThreshold ?? 0.8) * 100)}
+              className={INPUT}
+            />
+          </label>
+        )}
+
+        <div className="sm:col-span-2">
+          {/* Keyed on type so a new offering's default follows the chosen type:
+              multi-session offerings are reviewed, workshops auto-approve. */}
+          <Checkbox
+            key={selectedType}
+            name="requiresReview"
+            value="true"
+            defaultChecked={values.requiresReview ?? multiSession}
+            label="Applications need instructor review"
+            className="text-sm text-foreground"
+          />
+          <span className="os-field-hint mt-1 block">
+            Off means RSVP: applicants are approved automatically up to capacity.
+          </span>
+        </div>
+      </div>
     </>
   );
 }

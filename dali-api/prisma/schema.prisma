@@ -254,6 +254,7 @@ model User {
   applicationReviewsSubmitted  ApplicationReview[]    @relation("ApplicationReviewSubmittedBy")
   delibsSessionsOpened         DelibsSession[]
   emailTemplateVersionsCreated EmailTemplateVersion[]
+  educationEmailsEdited        EducationEmail[]       @relation("EducationEmailEditor")
 
   // ─── Documents & files ───────────────────────────────────────────────────
   projectFileVersionsUploaded ProjectFileVersion[] @relation("ProjectFileVersionUploader")
@@ -1458,7 +1459,6 @@ model EmailTemplateVersion {
 
   createdById String
   createdBy   User   @relation(fields: [createdById], references: [id])
-  educationDecisionEmails EducationDecisionEmail[]
 
   @@index([templateId, versionNumber])
 }
@@ -3439,7 +3439,6 @@ model EducationOffering {
   applicationQuestions EducationApplicationQuestion[]
   assignments          EducationAssignment[]
   announcements        EducationAnnouncement[]
-  decisionEmails       EducationDecisionEmail[]
   discussionPosts      EducationDiscussionPost[]
   formBindings         EducationFormBinding[]
   formSubmissions      FormSubmission[]
@@ -3694,19 +3693,18 @@ enum EduPostKind {
   Message
 }
 
-// Per-offering binding: which EmailTemplateVersion fires when an application
-// reaches the given status. One row per (offering, status). No row = in-app
-// notification only, no email. Mirrors hiring's CycleDecisionEmail.
-model EducationDecisionEmail {
-  offeringId String
-  offering   EducationOffering @relation(fields: [offeringId], references: [id], onDelete: Cascade)
+// Education's emails: one per slot ("decision:Approved", …; see
+// app/education/lib/education-emails.ts EducationEmailSlot), shared by every
+// course and edited in place, with no versions. No row means that slot sends
+// no email — the in-app notification still fires. Mirrors HiringEmail.
+model EducationEmail {
+  slot      String   @id
+  subject   String
+  body      String
+  updatedAt DateTime @updatedAt
 
-  status EduApplicationStatus
-
-  emailTemplateVersionId String
-  emailTemplateVersion   EmailTemplateVersion @relation(fields: [emailTemplateVersionId], references: [id])
-
-  @@id([offeringId, status])
+  updatedById String?
+  updatedBy   User?   @relation("EducationEmailEditor", fields: [updatedById], references: [id])
 }
 
 // Course discussion board: top-level posts + one reply level (replies to

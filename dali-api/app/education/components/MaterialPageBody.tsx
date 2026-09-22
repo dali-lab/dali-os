@@ -6,7 +6,7 @@ import { PresenceProvider } from "~/components/collab/PresenceProvider";
 // A read-only material renders its content statically (SSR-safe). A shared doc
 // (studentEditable) renders the same live collaborative editor the instructor
 // uses — enrolled students co-edit it in place, which is what lets shared docs
-// live on the timeline instead of a separate Workspace tab (education-student-hub).
+// live with their session instead of a separate Workspace tab.
 
 type DocContent = ComponentProps<typeof DocEditor>["initialContent"];
 
