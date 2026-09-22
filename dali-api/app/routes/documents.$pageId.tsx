@@ -1,3 +1,4 @@
+import { useCallback, useRef } from "react";
 import { Link, redirect, useLoaderData, useSearchParams } from "react-router";
 import QRCode from "qrcode";
 import { Shapes } from "lucide-react";
@@ -17,6 +18,10 @@ import { driveRootCrumbs, workspaceDriveScope } from "~/lib/drive-crumbs";
 import { DocumentEditor } from "~/components/DocumentEditor";
 import { AttendanceChecklist, type AttendanceRow } from "~/components/AttendanceChecklist";
 import { CheckInPanel } from "~/components/CheckInPanel";
+import { MeetingRecorder } from "~/components/MeetingRecorder";
+import { appendBlocks } from "~/components/doc";
+import type { DocEditorInstance } from "~/components/doc/schema/build";
+import { isAiEnabled } from "~/lib/ai.server";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { PageIcon } from "~/components/PageIcon";
 import { FolderIcon } from "~/components/FolderIcon";
@@ -359,6 +364,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     subtitle: presenceUser?.subtitle ?? null,
     attendance,
     backlinks,
+    aiConfigured: isAiEnabled(),
   };
 }
 
@@ -386,6 +392,7 @@ export default function DocumentPage() {
     updatedAt,
     attendance,
     backlinks,
+    aiConfigured,
   } = useLoaderData() as Exclude<Awaited<ReturnType<typeof loader>>, Response>;
 
   // Arriving from a comment-mention notification (?comment=<id>): open the
@@ -396,6 +403,19 @@ export default function DocumentPage() {
   const focusCommentId = searchParams.get("comment") ?? undefined;
   const focusMentionUserId = searchParams.get("mention") ?? undefined;
   const whiteboardEnabled = useFeatureFlag("whiteboard");
+  const aiMeetingNotes = useFeatureFlag("ai-meeting-notes");
+
+  // Meeting-note recording writes into the doc through the live editor.
+  const editorRef = useRef<DocEditorInstance | null>(null);
+  const onEditorReady = useCallback((ed: DocEditorInstance) => {
+    editorRef.current = ed;
+  }, []);
+  const insertMarkdown = useCallback((markdown: string) => {
+    const editor = editorRef.current;
+    if (!editor) return false;
+    appendBlocks(editor, editor.tryParseMarkdownToBlocks(markdown));
+    return true;
+  }, []);
 
   return (
     <div className="flex flex-col gap-4">
@@ -418,6 +438,9 @@ export default function DocumentPage() {
           checkInUrl={attendance.checkInUrl}
           checkInQrSvg={attendance.checkInQrSvg}
         />
+      )}
+      {attendance && aiMeetingNotes && aiConfigured && canEdit && (
+        <MeetingRecorder pageId={pageId} onInsert={insertMarkdown} />
       )}
       {attendance && (
         <AttendanceChecklist
@@ -452,6 +475,7 @@ export default function DocumentPage() {
         backlinks={backlinks}
         focusMentionUserId={focusMentionUserId}
         aiEnabled
+        onEditorReady={onEditorReady}
       />
     </div>
   );

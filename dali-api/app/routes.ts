@@ -717,4 +717,7 @@ export default [
   // AI project TL;DR — cached work-status summary for the Progress-tab status
   // bar. Same provider gating as api/ai/doc, plus the `project-tldr-ai` flag.
   route("api/ai/project-tldr", "routes/api.ai.project-tldr.ts"),
+  // Meeting-note recording: transcript in, notes Markdown out. Behind the
+  // `ai-meeting-notes` flag; same provider gating as api/ai/doc.
+  route("api/ai/meeting-notes", "routes/api.ai.meeting-notes.ts"),
 ] satisfies RouteConfig;
