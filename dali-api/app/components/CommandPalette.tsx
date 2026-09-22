@@ -108,11 +108,11 @@ export const TYPE_META: Record<SearchResultType, { icon: LucideIcon; section: st
 
 const SECTION_ORDER = [
   "People",
-  "Groups",
   "Projects",
   "Education",
   "Partners",
   "Documents",
+  "Groups",
   "Applicants",
   "Forms",
   "Hiring library",
