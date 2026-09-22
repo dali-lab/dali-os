@@ -696,6 +696,17 @@ async function maybeUpdateMeetingFromComposer(
     return Response.json({ error: "Couldn't read the guest list." }, { status: 400 });
   }
 
+  // Absent when the composer had no guest list to edit — leave the stored ones.
+  let guestEmails: string[] | undefined;
+  if (get("guestEmails")) {
+    try {
+      const parsed: unknown = JSON.parse(get("guestEmails"));
+      guestEmails = Array.isArray(parsed) ? parsed.filter((e): e is string => typeof e === "string") : [];
+    } catch {
+      return Response.json({ error: "Couldn't read the guest list." }, { status: 400 });
+    }
+  }
+
   const editScope = (get("scope") || "all") as "this" | "following" | "all";
   const occurrenceStart = get("originalStartIso") || undefined;
   const occurrenceEventId = get("eventId") || undefined;
@@ -712,6 +723,7 @@ async function maybeUpdateMeetingFromComposer(
     recurrenceRule,
     location: get("location").trim(),
     description: get("description").trim(),
+    guestEmails,
     editScope,
     occurrenceStart,
     occurrenceEventId,

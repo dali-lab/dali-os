@@ -1783,6 +1783,10 @@ model ScheduledMeeting {
   scopeId   String?
 
   participantUserIds String[]
+  // Guests with no DALI profile (outside people, shared Google calendars),
+  // invited by address. They only reach Google as event attendees, so they get
+  // Google's invite but no in-app notification or attendance row.
+  guestEmails        String[] @default([])
   selectedAt         DateTime?
   externalEventId    String?
 
