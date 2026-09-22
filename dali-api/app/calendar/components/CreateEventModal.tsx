@@ -156,6 +156,7 @@ export function CreateEventModal({
   // ── Participants / type detection ────────────────────────────────────────
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>(initialUserIds ?? []);
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
+  const [guestEmails, setGuestEmails] = useState<string[]>([]);
 
   const usersById = new Map(data.users.map((u) => [u.id, u]));
   const groupsById = new Map(data.groups.map((g) => [g.id, g]));
@@ -169,7 +170,7 @@ export function CreateEventModal({
     return Array.from(set);
   })();
 
-  const hasGuests = selectedUserIds.length > 0 || selectedGroupIds.length > 0;
+  const hasGuests = selectedUserIds.length > 0 || selectedGroupIds.length > 0 || guestEmails.length > 0;
   const type = hasGuests ? "Meeting" : "Event";
 
   // ── Core meeting ─────────────────────────────────────────────────────────
@@ -370,6 +371,7 @@ export function CreateEventModal({
       if (isCoreMeeting) {
         payload.isCoreMeeting = true;
       }
+      if (guestEmails.length > 0) payload.guestEmails = guestEmails;
       if (selectedGroupIds.length === 1 && selectedUserIds.length === 0) {
         payload.scopeType = "Group";
         payload.groupId = selectedGroupIds[0];
@@ -608,6 +610,8 @@ export function CreateEventModal({
                   usersById={usersById}
                   groupsById={groupsById}
                   resolvedCount={resolvedParticipantIds.length}
+                  guestEmails={guestEmails}
+                  onChangeGuestEmails={inviteDests.length > 0 ? setGuestEmails : undefined}
                 />
               </FieldRow>
 
@@ -780,6 +784,8 @@ export function CreateEventModal({
                   usersById={usersById}
                   groupsById={groupsById}
                   resolvedCount={resolvedParticipantIds.length}
+                  guestEmails={guestEmails}
+                  onChangeGuestEmails={inviteDests.length > 0 ? setGuestEmails : undefined}
                 />
               </FieldRow>
 

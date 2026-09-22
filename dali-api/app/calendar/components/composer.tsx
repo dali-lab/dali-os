@@ -420,6 +420,7 @@ export function EventComposer({
   const [guestCtx, setGuestCtx] = useState<EditContext | null>(null);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
+  const [guestEmails, setGuestEmails] = useState<string[]>([]);
 
   // ── Count this as work ──────────────────────────────────────────────────
   // An event's hours are part of the event, not a separate thing to manage in
@@ -503,6 +504,7 @@ export function EventComposer({
           setSelectedUserIds(ctx.meeting.participantUserIds);
           setSelectedGroupIds([]);
         }
+        setGuestEmails(ctx.meeting.guestEmails);
         setGuestCtx(ctx);
       } catch {
         // Leave the picker in its loading state; saving is blocked until it loads.
@@ -634,6 +636,9 @@ export function EventComposer({
             {canManageMeeting && (
               <input type="hidden" name="meetingScope" value={JSON.stringify(meetingScope)} />
             )}
+            {canManageMeeting && guestCtx && (
+              <input type="hidden" name="guestEmails" value={JSON.stringify(guestEmails)} />
+            )}
             <input type="hidden" name="destination" value={destination} />
             <input type="hidden" name="startIso" value={startIso} />
             <input type="hidden" name="endIso" value={endIso} />
@@ -736,6 +741,8 @@ export function EventComposer({
                       groupsById={guestGroupsById}
                       resolvedCount={resolvedParticipantIds.length}
                       responsesByUserId={guestResponses}
+                      guestEmails={guestEmails}
+                      onChangeGuestEmails={guestCtx.meeting.googleSynced ? setGuestEmails : undefined}
                     />
                   ) : (
                     <span className="text-sm text-muted-foreground">Loading guests…</span>

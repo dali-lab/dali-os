@@ -6,6 +6,7 @@ import { canViewForms, getUserRoles, isCore } from "~/lib/roles";
 import { isCoreGroup } from "~/lib/groups";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { parseJson } from "~/lib/validate";
+import { MAX_GUEST_EMAILS } from "~/calendar/lib/guest-emails";
 import {
   createScheduledMeeting,
   type ScheduledMeetingScope,
@@ -54,6 +55,8 @@ const Base = {
   // (a note whenever meetingType is set).
   note: z.boolean().optional(),
   whiteboard: z.boolean().optional(),
+  // People with no DALI profile, invited by address through the Google event.
+  guestEmails: z.array(z.string().trim().email().max(320)).max(MAX_GUEST_EMAILS).optional(),
 } as const;
 
 const CreateSchema = z
@@ -160,6 +163,7 @@ export async function action({ request }: Route.ActionArgs) {
     attendanceMode: body.attendanceMode,
     isCoreMeeting: coreMeeting,
     addMeet,
+    guestEmails: body.guestEmails,
   });
 
   if (!result.ok) {

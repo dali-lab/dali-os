@@ -128,6 +128,11 @@ export function CreateCoreEventModal({
   );
   // The destination is a calendar, not an account: "<linkId>|<calendarId>".
   const [sendFrom, setSendFrom] = useState(() => defaultSendFrom(calendarLinks));
+  // Email guests are invited by the Google event, so they need a calendar to
+  // send from.
+  const [guestEmails, setGuestEmails] = useState<string[]>([]);
+  const canInviteByEmail = !!splitSendFrom(sendFrom)[0];
+  const invitedEmails = canInviteByEmail ? guestEmails : [];
   const note = useMeetingNote();
 
   // When the unify flag is on, a Core meeting may also be about a project, so
@@ -174,7 +179,8 @@ export function CreateCoreEventModal({
     }
     return Array.from(set);
   })();
-  const hasGuests = selectedUserIds.length > 0 || selectedGroupIds.length > 0;
+  const hasGuests =
+    selectedUserIds.length > 0 || selectedGroupIds.length > 0 || invitedEmails.length > 0;
 
   const duration = durationMinutesBetween(startLocal, endLocal);
   const startEndValid =
@@ -207,6 +213,7 @@ export function CreateCoreEventModal({
         if (calendarId) payload.organizerCalendarId = calendarId;
       }
       Object.assign(payload, meetingNotePayload(note.state));
+      if (invitedEmails.length > 0) payload.guestEmails = invitedEmails;
       // One group and nobody else stays a group-scoped meeting, so the roster
       // keeps resolving as the group changes; anything else is sent as the
       // resolved people. Same rule the Events modal follows.
@@ -214,7 +221,7 @@ export function CreateCoreEventModal({
         payload.scopeType = "Group";
         payload.groupId = selectedGroupIds[0];
       } else if (resolvedParticipantIds.length > 0) {
-        payload.scopeType = "None";
+        payload.scopeType = "UserList";
         payload.participantUserIds = resolvedParticipantIds;
       } else {
         payload.scopeType = "None";
@@ -357,6 +364,8 @@ export function CreateCoreEventModal({
               usersById={usersById}
               groupsById={groupsById}
               resolvedCount={resolvedParticipantIds.length}
+              guestEmails={invitedEmails}
+              onChangeGuestEmails={canInviteByEmail ? setGuestEmails : undefined}
             />
             {!hasGuests && (
               <p className="mt-1 text-xs text-muted-foreground">
