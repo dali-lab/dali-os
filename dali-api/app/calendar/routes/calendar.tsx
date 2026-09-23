@@ -28,6 +28,7 @@ import {
 import { formatPayPeriod, payPeriodFor } from "~/lib/pay-period";
 import { useActionErrorToast } from "~/lib/useActionErrorToast";
 import { useToast } from "~/components/ui/toast";
+import { useDialog } from "~/components/ui/dialog";
 import { loadCalendarData, submitCalendarAction } from "./calendar.server";
 import { timeEntryDayUtc } from "~/calendar/lib/timesheet-day";
 import type { Route } from "./+types/calendar";
@@ -206,6 +207,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   useRefreshOnFocus(refresh);
   const [searchParams] = useSearchParams();
   const toast = useToast();
+  const { confirm } = useDialog();
 
   // Announce the outcome of a Google calendar-link attempt, then strip the
   // one-shot params via history (not setSearchParams, which would re-run the
@@ -404,8 +406,10 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     return getZonedYMD(new Date(fallbackIso), data.timezone);
   };
   // Drag-move/resize of a writable event → patch just its time (new day when the
-  // move crossed columns, new hours), in the display timezone.
-  const moveEvent = (e: ExternalEventDTO, startHour: number, endHour: number, dayIdx?: number) => {
+  // move crossed columns, new hours), in the display timezone. A stray drag
+  // would silently reschedule a real event, so the block holds at the drop
+  // while the user confirms, and snaps back on cancel.
+  const moveEvent = async (e: ExternalEventDTO, startHour: number, endHour: number, dayIdx?: number) => {
     if (!e.eventId || !e.linkId) return;
     const { year, month, day } = dropYmd(e.startIso, dayIdx);
     const toIso = (h: number) => {
@@ -415,6 +419,21 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     const startIso = toIso(startHour);
     const endIso = toIso(endHour);
     setDragOverride({ key: `g:${e.eventId}`, startIso, endIso });
+    const dateLabel = new Date(startIso).toLocaleDateString(undefined, {
+      timeZone: data.timezone,
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    });
+    const ok = await confirm({
+      title: "Change event time?",
+      description: `${e.title || "Untitled event"} will move to ${dateLabel}, ${formatHourMinute(startHour)} to ${formatHourMinute(endHour)}.`,
+      confirmLabel: "Change time",
+    });
+    if (!ok) {
+      setDragOverride(null);
+      return;
+    }
     eventMoveFetcher.submit(
       {
         intent: "event-move",
