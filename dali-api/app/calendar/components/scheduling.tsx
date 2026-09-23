@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useRevalidator, useSearchParams } from "react-router";
-import { ChevronLeft, ChevronRight, Mail, Plus, RefreshCw, Search, Shield, UsersRound, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Mail, RefreshCw, Search, UsersRound, X } from "lucide-react";
 import {
   autoUpdate,
   flip,
@@ -14,28 +14,15 @@ import {
   useRole,
   FloatingPortal,
 } from "@floating-ui/react";
-import { Tooltip, InfoTip, Select, Combobox, type SelectOption } from "~/components/ui/floating";
+import { Tooltip, Combobox, type SelectOption } from "~/components/ui/floating";
 import { usePanelClass } from "~/components/ui/floating/os-styles";
-import { buttonClasses } from "~/components/ui/Button";
-import { Toggle } from "~/components/ui/Toggle";
-import { useFeatureFlag } from "~/components/FeatureFlags";
-import { DateField } from "~/components/ui/DateField";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { fullName } from "~/lib/display";
-import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
-import { NO_REPEAT, RepeatField, repeatSpecToRRule, type RepeatSpec } from "~/calendar/components/RepeatField";
-import { inviteDestinations, inviteOrganizerFields } from "~/calendar/components/composer";
 import type { RsvpStatus } from "~/calendar/lib/types";
 import { isGuestEmail } from "~/calendar/lib/guest-emails";
 import {
-  useMeetingNote,
-  meetingNoteValid,
-  meetingNotePayload,
-  MeetingNoteFields,
-} from "~/calendar/components/MeetingNoteFields";
-import {
-  toDatetimeLocal, durationMinutesBetween, HOURS, HOUR_PX, SNAP_HOURS,
+  toDatetimeLocal, HOURS, HOUR_PX, SNAP_HOURS,
   availabilityTint, dayHourToLocal, shiftWeekParam,
 } from "~/calendar/lib/event-block";
 import {
@@ -51,87 +38,6 @@ import { roleOptionKey, parseRoleOptionKey } from "~/calendar/components/role-fi
 export function userLabel(u: UserOption) {
   const name = fullName(u);
   return name || u.daliEmail || u.id;
-}
-
-// Scheduling as an on-grid overlay: the group free/busy gradient grid on the
-// left (drag to pick a slot), the meeting form docked on the right. Reuses the
-// existing ScheduleWeekGrid + CreateScheduledMeetingForm — the same wiring as
-// the legacy Schedule tab, re-laid-out to sit beside the grid. Week-scoped
-// (scheduling happens within a week); the toolbar's week nav still applies.
-export function MeetingComposer({ data }: { data: LoaderData }) {
-  const [searchParams] = useSearchParams();
-  const optimalTimesEnabled = useFeatureFlag("optimal-times");
-  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
-  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>(() => {
-    const projectParam = searchParams.get("project");
-    if (!projectParam) return [];
-    const g = data.groups.find((grp) => grp.projectId === projectParam);
-    return g ? [g.id] : [];
-  });
-  const [startLocal, setStartLocal] = useState<string>("");
-  const [endLocal, setEndLocal] = useState<string>("");
-  const [suggestions, setSuggestions] = useState<SlotSuggestions | null>(null);
-
-  const groupsById = new Map(data.groups.map((g) => [g.id, g]));
-  const resolvedParticipantIds = (() => {
-    const set = new Set<string>(selectedUserIds);
-    for (const gid of selectedGroupIds) {
-      const g = groupsById.get(gid);
-      if (g) for (const uid of g.memberIds) set.add(uid);
-    }
-    return Array.from(set);
-  })();
-  const duration = durationMinutesBetween(startLocal, endLocal);
-
-  return (
-    <div className="grid min-w-0 gap-4 lg:min-h-[calc(100vh-11rem)] lg:grid-cols-[1fr_390px]">
-      <div className="order-2 min-w-0 lg:order-1">
-        <ScheduleWeekGrid
-          participantIds={
-            resolvedParticipantIds.length > 0
-              ? Array.from(new Set([...resolvedParticipantIds, data.currentUserId]))
-              : [data.currentUserId]
-          }
-          showingSelfOnly={resolvedParticipantIds.length === 0}
-          users={data.users}
-          workingHours={data.workingHours}
-          workingHoursEnabled={data.hasPersistedWorkingHours}
-          durationMinutes={duration}
-          timezone={data.timezone}
-          weekStartIso={data.weekStartIso}
-          weekEndIso={data.weekEndIso}
-          onSelectRange={(s, e) => {
-            setStartLocal(s);
-            setEndLocal(e);
-          }}
-          selectedStartLocal={startLocal}
-          selectedEndLocal={endLocal}
-          enableOptimalTimes={optimalTimesEnabled}
-          onSuggestionsChange={setSuggestions}
-        />
-      </div>
-      <aside className="order-1 min-w-0 lg:order-2">
-        <CreateScheduledMeetingForm
-          groups={data.groups}
-          users={data.users}
-          calendarLinks={data.calendarLinks}
-          myProjects={data.myProjects}
-          canSetSelfCheckIn={data.canSetSelfCheckIn}
-          canMarkCoreMeeting={data.canMarkCoreMeeting}
-          startLocal={startLocal}
-          onStartLocalChange={setStartLocal}
-          endLocal={endLocal}
-          onEndLocalChange={setEndLocal}
-          selectedUserIds={selectedUserIds}
-          onChangeSelectedUserIds={setSelectedUserIds}
-          selectedGroupIds={selectedGroupIds}
-          onChangeSelectedGroupIds={setSelectedGroupIds}
-          resolvedParticipantIds={resolvedParticipantIds}
-          suggestions={suggestions}
-        />
-      </aside>
-    </div>
-  );
 }
 
 export function WeekToolbar({
@@ -245,514 +151,6 @@ export function WeekToolbar({
         </div>
       </div>
     </div>
-  );
-}
-
-export function CreateScheduledMeetingForm({
-  groups,
-  users,
-  calendarLinks,
-  myProjects,
-  canSetSelfCheckIn,
-  canMarkCoreMeeting,
-  startLocal,
-  onStartLocalChange,
-  endLocal,
-  onEndLocalChange,
-  selectedUserIds,
-  onChangeSelectedUserIds,
-  selectedGroupIds,
-  onChangeSelectedGroupIds,
-  resolvedParticipantIds,
-  suggestions = null,
-}: {
-  groups: GroupOption[];
-  users: UserOption[];
-  calendarLinks: CalendarLinkDTO[];
-  myProjects: ProjectOption[];
-  canSetSelfCheckIn: boolean;
-  canMarkCoreMeeting: boolean;
-  startLocal: string;
-  onStartLocalChange: (v: string) => void;
-  endLocal: string;
-  onEndLocalChange: (v: string) => void;
-  selectedUserIds: string[];
-  onChangeSelectedUserIds: (ids: string[]) => void;
-  selectedGroupIds: string[];
-  onChangeSelectedGroupIds: (ids: string[]) => void;
-  resolvedParticipantIds: string[];
-  /** Ranked "best times" from the scheduling grid; each fills Starts/Ends on click. */
-  suggestions?: SlotSuggestions | null;
-}) {
-  const { panel, panelPad, formClass } = useOsChrome();
-  const [title, setTitle] = useState("");
-  const [repeat, setRepeat] = useState<RepeatSpec>(NO_REPEAT);
-  // A specific calendar inside a linked Google account, not just the account.
-  const inviteDests = inviteDestinations(calendarLinks);
-  const [inviteFrom, setInviteFrom] = useState<string>(inviteDests[0]?.value ?? "");
-  // Email guests are invited by the Google event, so they only apply while one
-  // is being sent.
-  const [guestEmails, setGuestEmails] = useState<string[]>([]);
-  const invitedEmails = inviteFrom ? guestEmails : [];
-  // Meeting notes are opt-in — the About / type / location fields only appear
-  // once enabled. See MeetingNoteFields for the derive-type-from-project model.
-  const note = useMeetingNote();
-  const whiteboardEnabled = useFeatureFlag("whiteboard");
-  // Flag: a Core meeting may also be about a project; off = Core clears it.
-  const unifiedCoreProject = useFeatureFlag("unified-core-project-meetings");
-  // Self check-in is independent of the meeting note (QR lives on the note when
-  // one exists, otherwise on /calendar/check-in/:id).
-  const [selfCheckIn, setSelfCheckIn] = useState(false);
-  // Core-only: lift this meeting onto the Core hub calendar without touching
-  // who's invited. Inviting the Core group ticks it as a default (see below).
-  const [coreMeeting, setCoreMeeting] = useState(false);
-  const revalidator = useRevalidator();
-  const [status, setStatus] = useState<
-    | null
-    | {
-        ok: true;
-        count: number;
-        gcalError?: string | null;
-        notePageId?: string | null;
-        whiteboardPageId?: string | null;
-        meetingId?: string | null;
-        selfCheckIn?: boolean;
-      }
-    | { ok: false; error: string }
-  >(null);
-  const [submitting, setSubmitting] = useState(false);
-
-  const usersById = new Map(users.map((u) => [u.id, u]));
-  const groupsById = new Map(groups.map((g) => [g.id, g]));
-  // Inviting the Core group (systemKey "core") puts the meeting on the Core
-  // calendar by construction — the manual toggle below is for everything else
-  // Core needs to see (a project or ad-hoc meeting whose invite list stays put).
-  const coreSelected = selectedGroupIds.some((gid) => groupsById.get(gid)?.systemKey === "core");
-  const isCoreMeeting = coreSelected || (canMarkCoreMeeting && coreMeeting);
-
-  // Inviting Core pre-ticks the Core-meeting box; unticking it again is allowed,
-  // and the server keeps a Core-scoped meeting on the Core calendar regardless.
-  useEffect(() => {
-    if (coreSelected) setCoreMeeting(true);
-  }, [coreSelected]);
-
-  // Prefill "About" when exactly one selected group is a system-managed project
-  // group (see GroupOption.projectId) — a default the sender can still change. It
-  // fills even while the note is off, so the project is already chosen if they
-  // turn it on; it never enables the note itself. Without the unify flag a Core
-  // meeting's note has no project, so the prefill stays out of its way.
-  useEffect(() => {
-    if (selectedGroupIds.length !== 1 || (isCoreMeeting && !unifiedCoreProject)) return;
-    note.applyGroupPrefill(groupsById.get(selectedGroupIds[0]!)?.projectId ?? null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedGroupIds, isCoreMeeting, unifiedCoreProject]);
-
-  // Both pickers filled → derive duration; otherwise fall back to 30 min so
-  // "schedule later" (no start/end yet) still produces a valid payload.
-  const duration = durationMinutesBetween(startLocal, endLocal);
-  const startEndValid =
-    !startLocal || !endLocal || new Date(endLocal).getTime() > new Date(startLocal).getTime();
-  const meetingTypeValid = meetingNoteValid(note.state);
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    setSubmitting(true);
-    setStatus(null);
-    try {
-      const payload: Record<string, unknown> = {
-        title: title.trim(),
-        durationMinutes: duration,
-      };
-      const rrule = repeatSpecToRRule(repeat);
-      if (rrule) payload.recurrenceRule = rrule;
-      if (startLocal) {
-        // datetime-local has no timezone; interpret it in the browser's zone
-        // and send a real ISO string with offset.
-        const localDate = new Date(startLocal);
-        if (!isNaN(localDate.getTime())) {
-          payload.startTime = localDate.toISOString();
-        }
-      }
-      Object.assign(payload, inviteOrganizerFields(inviteFrom));
-      Object.assign(payload, meetingNotePayload(note.state));
-      if (canSetSelfCheckIn) {
-        payload.attendanceMode = selfCheckIn ? "SelfCheckIn" : "Roster";
-      }
-      if (isCoreMeeting) {
-        payload.isCoreMeeting = true;
-      }
-      if (invitedEmails.length > 0) payload.guestEmails = invitedEmails;
-
-      // If exactly one group is picked and no extra people are added, record the
-      // group scope so notifications carry sourceGroupId. Otherwise submit as UserList.
-      if (selectedGroupIds.length === 1 && selectedUserIds.length === 0) {
-        payload.scopeType = "Group";
-        payload.groupId = selectedGroupIds[0];
-      } else if (resolvedParticipantIds.length > 0) {
-        payload.scopeType = "UserList";
-        payload.participantUserIds = resolvedParticipantIds;
-      } else {
-        payload.scopeType = "None";
-      }
-
-      const res = await fetch("/api/scheduled-meetings", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        setStatus({ ok: false, error: json.error ?? "Failed to create meeting" });
-      } else {
-        setStatus({
-          ok: true,
-          count: json.notifiedCount ?? 0,
-          gcalError: json.gcalError ?? null,
-          notePageId: json.notePageId ?? null,
-          whiteboardPageId: json.whiteboardPageId ?? null,
-          meetingId: json.meeting?.id ?? null,
-          selfCheckIn,
-        });
-        setTitle("");
-        setRepeat(NO_REPEAT);
-        onStartLocalChange("");
-        onEndLocalChange("");
-        onChangeSelectedUserIds([]);
-        onChangeSelectedGroupIds([]);
-        note.reset();
-        setSelfCheckIn(false);
-        setCoreMeeting(false);
-        // This composer sits on the calendar page next to the grid, and its
-        // POST goes out through plain fetch() — invisible to the router, so
-        // without this the meeting you just scheduled is missing from the grid
-        // beside it until the next navigation or window focus.
-        revalidator.revalidate();
-      }
-    } catch (err) {
-      setStatus({ ok: false, error: err instanceof Error ? err.message : "Network error" });
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  const canSubmit =
-    title.trim().length > 0 && duration > 0 && startEndValid && meetingTypeValid && !submitting;
-
-  const fieldClass =
-    "w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/40";
-  const labelClass = "block text-sm font-medium text-foreground mb-1";
-
-  return (
-    <section className={cn(panel, panelPad)}>
-      <h2 className="font-heading font-semibold text-foreground mb-4">Create Meeting</h2>
-      <form onSubmit={submit} className={cn("space-y-5", formClass)}>
-        {/* Essentials */}
-        <div className="space-y-3">
-          <div>
-            <label htmlFor="meeting-title" className={labelClass}>
-              Title
-            </label>
-            <input
-              id="meeting-title"
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              required
-              className={fieldClass}
-            />
-          </div>
-          {suggestions && suggestions.slots.length > 0 && (
-            <div>
-              <span className={labelClass}>Best times</span>
-              <div className="flex flex-wrap gap-1.5">
-                {suggestions.slots.map((s, i) => {
-                  const active = startLocal === toDatetimeLocal(new Date(s.startMs));
-                  return (
-                    <button
-                      key={s.startMs}
-                      type="button"
-                      onClick={() => {
-                        onStartLocalChange(toDatetimeLocal(new Date(s.startMs)));
-                        onEndLocalChange(toDatetimeLocal(new Date(s.endMs)));
-                      }}
-                      className={cn(
-                        "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium text-foreground transition-colors",
-                        active ? "border-os-accent bg-os-accent/10" : "border-border bg-background hover:bg-muted/50",
-                      )}
-                    >
-                      <span className={cn("h-2 w-2 shrink-0 rounded-full", SUGGESTION_COLORS[i]?.dot)} />
-                      <span>{optimalSlotLabel(s)}</span>
-                      <span className="text-muted-foreground">
-                        {s.freeCount === suggestions.knownCount
-                          ? "All free"
-                          : `${s.freeCount}/${suggestions.knownCount} free`}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label htmlFor="meeting-start" className={labelClass}>
-                Starts <span className="text-muted-foreground font-normal">(optional)</span>
-              </label>
-              <DateField
-                mode="datetime-local"
-                value={startLocal}
-                onChange={(next) => {
-                  onStartLocalChange(next);
-                  if (next && (!endLocal || new Date(endLocal).getTime() <= new Date(next).getTime())) {
-                    const d = new Date(next);
-                    d.setMinutes(d.getMinutes() + (duration > 0 ? duration : 30));
-                    onEndLocalChange(toDatetimeLocal(d));
-                  }
-                }}
-                className="w-full"
-                ariaLabel="Starts"
-              />
-            </div>
-            <div>
-              <label htmlFor="meeting-end" className={labelClass}>
-                Ends
-              </label>
-              <DateField
-                mode="datetime-local"
-                value={endLocal}
-                min={startLocal || undefined}
-                onChange={(value) => onEndLocalChange(value)}
-                className="w-full"
-                ariaLabel="Ends"
-              />
-              {!startEndValid && (
-                <p className="mt-1 text-xs text-red-600">End must be after start.</p>
-              )}
-            </div>
-          </div>
-          <ParticipantPicker
-            users={users}
-            groups={groups}
-            selectedUserIds={selectedUserIds}
-            selectedGroupIds={selectedGroupIds}
-            onChangeUsers={onChangeSelectedUserIds}
-            onChangeGroups={onChangeSelectedGroupIds}
-            usersById={usersById}
-            groupsById={groupsById}
-            resolvedCount={resolvedParticipantIds.length}
-            guestEmails={invitedEmails}
-            onChangeGuestEmails={inviteFrom ? setGuestEmails : undefined}
-          />
-        </div>
-
-        {/* Secondary scheduling details — quieter, less visual weight */}
-        <div className="flex flex-col gap-4 pt-1 border-t border-border">
-          <div className="pt-3">
-            <RepeatField
-              value={repeat}
-              onChange={setRepeat}
-              anchorLocal={startLocal}
-              labelClassName={labelClass}
-              fieldClassName={fieldClass}
-            />
-          </div>
-          <div>
-            <label htmlFor="organizer-calendar" className={labelClass}>
-              Send invite from
-            </label>
-            {inviteDests.length === 0 ? (
-              <p className="text-xs text-muted-foreground pt-2">
-                No Google calendar linked. Link one in My Availability to send Gmail invites.
-              </p>
-            ) : (
-              <Select
-                value={inviteFrom}
-                onChange={(v) => setInviteFrom(v)}
-                options={[
-                  { value: "", label: "No invite (in-app notification only)" },
-                  ...inviteDests,
-                ]}
-                buttonClassName={`${fieldClass} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
-              />
-            )}
-          </div>
-        </div>
-
-        {/* Optional add-ons */}
-        <div className="space-y-3 pt-1 border-t border-border">
-          <p className="pt-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Optional
-          </p>
-
-          <div className="rounded-md border border-border bg-muted/20 p-3 space-y-3">
-            <Toggle
-              checked={note.state.enabled}
-              onChange={(e) => note.setEnabled(e.target.checked)}
-              label="Create meeting note"
-            />
-
-            {whiteboardEnabled && (
-              <Toggle
-                checked={note.state.whiteboard}
-                onChange={(e) => note.setWhiteboard(e.target.checked)}
-                label="Create whiteboard"
-              />
-            )}
-
-            {(note.state.enabled || note.state.whiteboard) && (
-              <MeetingNoteFields
-                note={note}
-                myProjects={myProjects}
-                fieldClass={fieldClass}
-                labelClass={labelClass}
-                core={isCoreMeeting}
-                allowProjectWhenCore={unifiedCoreProject}
-              />
-            )}
-          </div>
-
-          {canMarkCoreMeeting ? (
-            <div className="rounded-md border border-border bg-muted/20 p-3">
-              <Toggle
-                checked={coreSelected || coreMeeting}
-                disabled={coreSelected}
-                onChange={(e) => setCoreMeeting(e.target.checked)}
-                label="Core meeting"
-                description={
-                  coreSelected
-                    ? "The Core group is invited, so this is already on the Core calendar."
-                    : "Adds this to the Core hub calendar. Doesn't change who's invited."
-                }
-              />
-            </div>
-          ) : (
-            coreSelected && (
-              <div className="flex items-start gap-2 rounded-md border border-accent-teal/40 bg-accent-teal/10 p-3 text-xs text-foreground">
-                <Shield className="mt-0.5 h-4 w-4 shrink-0 text-accent-teal" />
-                <span>The Core group is invited, so this is already on the Core calendar.</span>
-              </div>
-            )
-          )}
-
-          {canSetSelfCheckIn && (
-            <div className="rounded-md border border-border bg-muted/20 p-3">
-              <Toggle
-                checked={selfCheckIn}
-                onChange={(e) => setSelfCheckIn(e.target.checked)}
-                label="Self check-in (QR)"
-              />
-            </div>
-          )}
-        </div>
-
-        <div className="flex items-center justify-between gap-3 pt-1">
-          <div className="text-sm min-w-0">
-            {status?.ok === true && !status.gcalError && (
-              <span className="text-green-700">
-                Meeting created. Notified {status.count} participant
-                {status.count === 1 ? "" : "s"}.
-                {status.notePageId && (
-                  <>
-                    {" "}
-                    {/* Not target="_blank": the desktop shell is a single
-                        webview with no window to open into, so the click did
-                        nothing at all. Embedded in the web workspace this opens
-                        a tab; standalone it just navigates. */}
-                    <a
-                      href={`/documents/${status.notePageId}`}
-                      onClick={(e) => {
-                        if (
-                          requestOpenTabIfEmbedded(
-                            `/documents/${status.notePageId}`,
-                            "Meeting note",
-                          )
-                        )
-                          e.preventDefault();
-                      }}
-                      className="underline font-medium"
-                    >
-                      View meeting note
-                    </a>
-                  </>
-                )}
-                {status.whiteboardPageId && (
-                  <>
-                    {" "}
-                    <a
-                      href={`/whiteboard/${status.whiteboardPageId}`}
-                      onClick={(e) => {
-                        if (
-                          requestOpenTabIfEmbedded(
-                            `/whiteboard/${status.whiteboardPageId}`,
-                            "Whiteboard",
-                          )
-                        )
-                          e.preventDefault();
-                      }}
-                      className="underline font-medium"
-                    >
-                      View whiteboard
-                    </a>
-                  </>
-                )}
-                {status.selfCheckIn && !status.notePageId && status.meetingId && (
-                  <>
-                    {" "}
-                    <a
-                      href={`/calendar/check-in/${status.meetingId}`}
-                      onClick={(e) => {
-                        if (
-                          requestOpenTabIfEmbedded(
-                            `/calendar/check-in/${status.meetingId}`,
-                            "Check-in",
-                          )
-                        )
-                          e.preventDefault();
-                      }}
-                      className="underline font-medium"
-                    >
-                      Open check-in / QR
-                    </a>
-                  </>
-                )}
-              </span>
-            )}
-            {status?.ok === true && status.gcalError && (
-              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
-                <div className="font-medium">
-                  Meeting created, but the Google Calendar invite didn't go out.
-                </div>
-                <div className="text-xs mt-0.5">
-                  Notified {status.count} participant{status.count === 1 ? "" : "s"} in-app.{" "}
-                  {/insufficient.*scope|insufficientPermissions|invalid_grant|unauthorized/i.test(
-                    status.gcalError,
-                  ) ? (
-                    <>
-                      Your linked Google account is missing calendar-write permission.{" "}
-                      <a href="/oauth/calendar/google/start" className="underline font-medium">
-                        Reconnect Google Calendar
-                      </a>{" "}
-                      to send invites.
-                    </>
-                  ) : (
-                    <>Details: {status.gcalError}</>
-                  )}
-                </div>
-              </div>
-            )}
-            {status?.ok === false && <span className="text-red-700">{status.error}</span>}
-          </div>
-          <button
-            type="submit"
-            disabled={!canSubmit}
-            className={buttonClasses("primary", "sm")}
-          >
-            {submitting ? "Creating…" : "Create meeting"}
-          </button>
-        </div>
-      </form>
-    </section>
   );
 }
 
@@ -1129,6 +527,55 @@ function optimalSlotLabel(s: RankedSlot): string {
   const day = start.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
   const time = (d: Date) => d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
   return `${day} · ${time(start)}–${time(end)}`;
+}
+
+// The ranked "best times" as clickable pills, colour-matched to the grid's
+// dotted outlines (SUGGESTION_COLORS). Picking one fills the meeting's start +
+// end. Rendered by whichever surface owns the create form (the create modal),
+// fed the grid's suggestions via ScheduleWeekGrid's onSuggestionsChange.
+export function OptimalTimePills({
+  suggestions,
+  selectedStartLocal,
+  onPick,
+  label = "Best times",
+}: {
+  suggestions: SlotSuggestions | null;
+  selectedStartLocal?: string;
+  onPick: (startLocal: string, endLocal: string) => void;
+  label?: string;
+}) {
+  if (!suggestions || suggestions.slots.length === 0) return null;
+  return (
+    <div>
+      <span className="mb-1 block text-xs font-medium text-muted-foreground">{label}</span>
+      <div className="flex flex-wrap gap-1.5">
+        {suggestions.slots.map((s, i) => {
+          const active = selectedStartLocal === toDatetimeLocal(new Date(s.startMs));
+          return (
+            <button
+              key={s.startMs}
+              type="button"
+              onClick={() =>
+                onPick(toDatetimeLocal(new Date(s.startMs)), toDatetimeLocal(new Date(s.endMs)))
+              }
+              className={cn(
+                "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium text-foreground transition-colors",
+                active ? "border-os-accent bg-os-accent/10" : "border-border bg-background hover:bg-muted/50",
+              )}
+            >
+              <span className={cn("h-2 w-2 shrink-0 rounded-full", SUGGESTION_COLORS[i]?.dot)} />
+              <span>{optimalSlotLabel(s)}</span>
+              <span className="text-muted-foreground">
+                {s.freeCount === suggestions.knownCount
+                  ? "All free"
+                  : `${s.freeCount}/${suggestions.knownCount} free`}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 export function ScheduleWeekGrid({
