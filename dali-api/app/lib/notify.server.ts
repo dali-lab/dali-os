@@ -53,11 +53,11 @@ export type NotifyResult = { inApp: number; emailed: number; slackDmed: number }
 // on every deploy, so real members' Slack ids live there and a staging job
 // would DM real people. (Email needs no gate here — sendEmail() itself skips
 // on dev and redirects on staging.)
-function slackDmAllowed(): boolean {
+export function slackDmAllowed(): boolean {
   return getAppEnv() === "prod" || process.env.NOTIFY_SLACK_DM_OVERRIDE === "1";
 }
 
-function absoluteLink(link: string | null | undefined): string | null {
+export function absoluteLink(link: string | null | undefined): string | null {
   if (!link) return null;
   if (/^https?:\/\//.test(link)) return link;
   return `${getFrontendUrl()}${link.startsWith("/") ? "" : "/"}${link}`;

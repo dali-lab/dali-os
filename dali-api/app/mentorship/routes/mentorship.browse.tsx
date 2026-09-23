@@ -8,7 +8,7 @@ import {
   useRevalidator,
   useSearchParams,
 } from "react-router";
-import { LayoutTemplate, PencilLine } from "lucide-react";
+import { LayoutTemplate, PencilLine, Send } from "lucide-react";
 import type { Route } from "./+types/mentorship.browse";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -21,6 +21,7 @@ import {
 } from "../lib/visibility";
 import { isCore, currentTerm } from "~/lib/roles";
 import { TemplatesModal } from "../components/TemplatesModal";
+import { NudgeModal } from "../components/NudgeModal";
 import { MentorGrid, type MentorGridEdit } from "../components/MentorGrid";
 import { EmptyState } from "../components/EmptyState";
 import { Select } from "~/components/ui/floating";
@@ -29,9 +30,11 @@ import { filterPillClass } from "~/components/ui/floating/styles";
 import { useOsChrome } from "~/components/os-chrome";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { useDialog } from "~/components/ui/dialog";
+import { useToast } from "~/components/ui/toast";
 import { cn } from "~/lib/cn";
 import {
   buildGrid,
+  isUnfilled,
   type MentorGridResult,
 } from "../lib/mentor-grid.server";
 import {
@@ -68,6 +71,11 @@ type LoaderData = {
     statuses: FilterOption[];
   };
   grid: MentorGridResult;
+  // Mentors with at least one unfilled note in the current term/project/domain
+  // scope (ignoring the status + text-search view lenses, to match what the
+  // nudge action re-derives server-side). Feeds the bulk-nudge recipient
+  // preview and the per-mentor nudge buttons.
+  nudgeRecipients: { id: string; name: string; count: number }[];
   isCore: boolean;
   viewerId: string;
   collabToken: string | null;
@@ -159,8 +167,12 @@ export async function loader({ request }: Route.LoaderArgs) {
       id: t.id,
       label: t.id === current?.id ? `${t.code} · current` : t.code,
     })),
-    // Vibe filter options — the note's at-a-glance status.
-    statuses: VIBES.map((v) => ({ id: v, label: VIBE_META[v].label })),
+    // Vibe filter options — the note's at-a-glance status — plus a synthetic
+    // "Not filled in" (a due week with no rating recorded).
+    statuses: [
+      ...VIBES.map((v) => ({ id: v, label: VIBE_META[v].label })),
+      { id: "unfilled", label: "Not filled in" },
+    ],
   };
 
   // The grid is a mentor → mentees → weeks matrix, scoped to one term. Without
@@ -175,18 +187,34 @@ export async function loader({ request }: Route.LoaderArgs) {
       })
     : { weeks: [], currentWeek: null, mentors: [], termSelected: false };
 
-  // Status (vibe) filter: keep only mentee rows with at least one weekly note
-  // of the selected vibe, and drop mentors left with no matching rows.
+  // Who's behind on notes, computed over the full project/domain/term scope
+  // (before the status/search view lenses) so it matches what the nudge action
+  // re-derives server-side.
+  const nudgeRecipients = grid.mentors
+    .map((m) => ({
+      id: m.mentor.id,
+      name: `${m.mentor.firstName} ${m.mentor.lastName}`.trim(),
+      count: m.rows.reduce(
+        (acc, r) => acc + r.cells.filter(isUnfilled).length,
+        0,
+      ),
+    }))
+    .filter((r) => r.count > 0);
+
+  // Status filter: "unfilled" keeps rows with a due week that has no rating;
+  // a vibe keeps rows with at least one weekly note of that vibe. Either way,
+  // drop mentors left with no matching rows.
   if (filters.status) {
+    const rowMatches =
+      filters.status === "unfilled"
+        ? (r: MentorGridResult["mentors"][number]["rows"][number]) =>
+            r.cells.some(isUnfilled)
+        : (r: MentorGridResult["mentors"][number]["rows"][number]) =>
+            r.cells.some((c) => c.vibe === filters.status);
     grid = {
       ...grid,
       mentors: grid.mentors
-        .map((m) => ({
-          ...m,
-          rows: m.rows.filter((r) =>
-            r.cells.some((c) => c.vibe === filters.status),
-          ),
-        }))
+        .map((m) => ({ ...m, rows: m.rows.filter(rowMatches) }))
         .filter((m) => m.rows.length > 0),
     };
   }
@@ -200,6 +228,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     filters,
     options,
     grid,
+    nudgeRecipients,
     isCore: await isCore(auth.user.sub),
     viewerId: auth.user.sub,
     collabToken: parseSessionCookie(request),
@@ -240,8 +269,19 @@ export default function MentorshipBrowse() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [nudgeOpen, setNudgeOpen] = useState(false);
+  const [nudgingId, setNudgingId] = useState<string | null>(null);
   const [query, setQuery] = useState(data.filters.query);
   const restored = useRef(false);
+  const toast = useToast();
+
+  // Core-only Slack nudge (behind the mentorship-nudge flag).
+  const nudgeFlag = useFeatureFlag("mentorship-nudge");
+  const canNudge = data.isCore && nudgeFlag;
+  const unfilledById = useMemo(
+    () => new Map(data.nudgeRecipients.map((r) => [r.id, r.count])),
+    [data.nudgeRecipients],
+  );
 
   // Core-only manual pair editing, behind the mentorship-manage flag.
   const manageFlag = useFeatureFlag("mentorship-manage");
@@ -298,6 +338,41 @@ export default function MentorshipBrowse() {
         }
       : undefined;
 
+  async function nudgeMentor(mentorId: string) {
+    setNudgingId(mentorId);
+    try {
+      const res = await fetch("/api/mentorship/nudge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          termId: data.filters.termId,
+          projectId: data.filters.projectId,
+          domainId: data.filters.domainId,
+          mentorId,
+        }),
+      });
+      if (!res.ok) throw new Error(`nudge failed: ${res.status}`);
+      const d = (await res.json()) as {
+        messaged: string[];
+        skippedNoSlack: string[];
+        sentInEnv: boolean;
+      };
+      if (!d.sentInEnv) {
+        toast("Slack DMs are prod-only — nothing was sent in this environment.", {
+          variant: "info",
+        });
+      } else if (d.skippedNoSlack.length) {
+        toast.error(`${d.skippedNoSlack[0]} has no linked Slack account.`);
+      } else {
+        toast.success(`Reminder sent to ${d.messaged[0] ?? "mentor"}.`);
+      }
+    } catch {
+      toast.error("Couldn't send the reminder. Try again.");
+    } finally {
+      setNudgingId(null);
+    }
+  }
+
   // Remember the last-applied filter query and restore it on a fresh visit (no
   // filter params). Running once guards against clobbering an explicit "Clear".
   // `embed` is a dev-preview marker, not a filter — ignore it either way.
@@ -340,6 +415,16 @@ export default function MentorshipBrowse() {
               {editing ? "Done editing" : "Edit pairs"}
             </button>
           )}
+          {canNudge && (
+            <button
+              type="button"
+              onClick={() => setNudgeOpen(true)}
+              className="os-edit-btn"
+            >
+              <Send className={cn("w-4 h-4", "text-os-grey")} aria-hidden />
+              Message unfilled
+            </button>
+          )}
           {data.isCore && (
             <button
               type="button"
@@ -376,6 +461,20 @@ export default function MentorshipBrowse() {
           onClose={() => setTemplatesOpen(false)}
           collabToken={data.collabToken}
           userName={data.userName}
+        />
+      )}
+
+      {canNudge && (
+        <NudgeModal
+          open={nudgeOpen}
+          onClose={() => setNudgeOpen(false)}
+          termId={data.filters.termId}
+          projectId={data.filters.projectId}
+          domainId={data.filters.domainId}
+          recipients={data.nudgeRecipients.map((r) => ({
+            name: r.name,
+            count: r.count,
+          }))}
         />
       )}
 
@@ -471,6 +570,15 @@ export default function MentorshipBrowse() {
             termId={data.filters.termId}
             highlightMissing={data.isCore}
             edit={gridEdit}
+            nudge={
+              canNudge
+                ? {
+                    count: unfilledById.get(group.mentor.id) ?? 0,
+                    busy: nudgingId === group.mentor.id,
+                    onNudge: () => nudgeMentor(group.mentor.id),
+                  }
+                : undefined
+            }
           />
         ))
       )}

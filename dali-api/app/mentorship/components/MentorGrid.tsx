@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Send, Trash2 } from "lucide-react";
 import { Avatar } from "~/components/ui/Avatar";
 import { Select, Tooltip } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
@@ -35,6 +35,14 @@ function fullName(u: GridPerson) {
 // viewer is the mentor, so it labels the section "My mentees" instead).
 // `highlightMissing` flags due-but-unwritten weeks in red — reserved for
 // core/admin oversight; for a plain mentor the gaps read neutrally.
+// Core-only Slack nudge for this mentor (behind the mentorship-nudge flag).
+// Shown only when the mentor has at least one unfilled note.
+export type MentorGridNudge = {
+  count: number;
+  busy: boolean;
+  onNudge: () => void;
+};
+
 export function MentorGrid({
   group,
   weeks,
@@ -43,6 +51,7 @@ export function MentorGrid({
   highlightMissing,
   heading,
   edit,
+  nudge,
 }: {
   group: GridMentorGroup;
   weeks: number[];
@@ -51,23 +60,39 @@ export function MentorGrid({
   highlightMissing: boolean;
   heading?: string;
   edit?: MentorGridEdit;
+  nudge?: MentorGridNudge;
 }) {
   const { panel, panelPad, heading: headingClass } = useOsChrome();
   return (
     <section className={cn(panel, panelPad, "flex flex-col gap-3")}>
-      <h2 className={headingClass}>
-        {heading ?? (
-          <>
-            <Avatar
-              photoUrl={group.mentor.photoUrl}
-              name={fullName(group.mentor)}
-              size="xs"
-              userId={group.mentor.id}
-            />
-            {fullName(group.mentor)}
-          </>
+      <div className="flex items-center justify-between gap-3">
+        <h2 className={headingClass}>
+          {heading ?? (
+            <>
+              <Avatar
+                photoUrl={group.mentor.photoUrl}
+                name={fullName(group.mentor)}
+                size="xs"
+                userId={group.mentor.id}
+              />
+              {fullName(group.mentor)}
+            </>
+          )}
+        </h2>
+        {nudge && nudge.count > 0 && (
+          <Tooltip content={`Slack-DM ${fullName(group.mentor)} about their ${nudge.count} unfilled note${nudge.count === 1 ? "" : "s"}`}>
+            <button
+              type="button"
+              onClick={nudge.onNudge}
+              disabled={nudge.busy}
+              className="os-edit-btn shrink-0 disabled:opacity-50"
+            >
+              <Send className="w-3.5 h-3.5 text-os-grey" aria-hidden />
+              {nudge.busy ? "Sending…" : "Nudge"}
+            </button>
+          </Tooltip>
         )}
-      </h2>
+      </div>
       <div className="overflow-x-auto">
         <table className="border-separate border-spacing-1 text-sm">
           <thead>
@@ -208,15 +233,22 @@ function GridCellView({
 
   // Submitted: open the existing note, colored by its vibe.
   if (cell.state === "submitted") {
-    const swatch = cell.vibe ? VIBE_META[cell.vibe].dot : "bg-muted-foreground/40";
-    const vibeLabel = cell.vibe ? VIBE_META[cell.vibe].label : "no vibe set";
+    // A started note with no rating still reads as "not filled in". Under Core
+    // oversight, flag it (amber dashed) like a missing cell so the grid matches
+    // the "Not filled in" filter; otherwise it's a neutral gray dot.
+    const cls = cell.vibe
+      ? `${VIBE_META[cell.vibe].dot} text-white`
+      : highlightMissing
+      ? "border border-dashed border-amber-400 text-amber-500"
+      : "bg-muted-foreground/40 text-white";
+    const vibeLabel = cell.vibe ? VIBE_META[cell.vibe].label : "no rating yet";
     const vibeDesc = cell.vibe === "Good"
       ? "Mentor marked this week as going well."
       : cell.vibe === "Ok"
       ? "Mentor flagged some areas to work on."
       : cell.vibe === "Bad"
       ? "Mentor flagged something concerning — follow up."
-      : "No overall vibe was recorded for this week.";
+      : "This week's note has no rating yet — not filled in.";
     return (
       <Tooltip
         content={`Week ${cell.week} · ${vibeLabel}. ${vibeDesc}`}
@@ -224,7 +256,7 @@ function GridCellView({
       >
         <Link
           to={`/mentorship/notes/${cell.noteId}`}
-          className={`${base} ${swatch} text-white hover:ring-2 hover:ring-offset-1 hover:ring-border`}
+          className={`${base} ${cls} hover:ring-2 hover:ring-offset-1 hover:ring-border`}
         >
           <span className="sr-only">Open note</span>
         </Link>
