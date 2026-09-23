@@ -510,7 +510,7 @@ export function EpicSprintManager({
                     icon={<Calendar className="h-4 w-4" aria-hidden />}
                     onClick={() => {
                       setAddMenuOpen(false);
-                      navigate(`/calendar?tab=schedule&project=${projectId}`);
+                      navigate(`/calendar?compose=meeting&project=${projectId}`);
                     }}
                   />
                 </>
