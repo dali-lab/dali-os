@@ -104,6 +104,12 @@ export const FEATURE_FLAGS = [
       "The full DALI calendar behind one flag: create / edit / delete events on your linked Google calendars (Google write; Outlook read-only), schedule meetings with an availability heatmap, add your Dartmouth classes (period picker → exact weekly times, synced to Google), and the optional timesheet-to-Google mirror. Ships off; without it the calendar is a read-only busy view.",
   },
   {
+    key: "optimal-times",
+    label: "Find best meeting times",
+    description:
+      "Suggests the best meeting times in the scheduler. Once people are added, the top 3 slots where the most participants (with a linked calendar) are free show as numbered dotted outlines on the availability grid, with a matching button for each above Starts / Ends that fills in the time. Ships off.",
+  },
+  {
     key: "google-meet",
     label: "Google Meet",
     description:
@@ -162,6 +168,30 @@ export const FEATURE_FLAGS = [
     label: "BetterAuth login",
     description:
       "Route sign-in through the new BetterAuth substrate (email/password, one-time verification links, optional Google) across the member / Dartmouth / partner doors, and let requireAuth accept a BetterAuth session alongside a legacy one. This is a login-mechanism switch, so it's read as a GLOBAL toggle (enabled + everyone) — role/user targeting does not apply. Ships off; flipping it on is the Phase-1 cutover and forces a global re-login.",
+  },
+  {
+    key: "whiteboard",
+    label: "Whiteboard",
+    description:
+      "Collaborative Excalidraw whiteboards in Drive — an infinite canvas with shapes, arrows, sticky notes, freehand pen, text, and images, synced live (with multiplayer cursors) through the same Yjs collab backend as documents. Create one from the Drive New menu; it shares, nests, versions, and is searchable like any page. Ships off.",
+  },
+  {
+    key: "resources",
+    label: "Resources page",
+    description:
+      "A lab-wide Resources document at /resources: one shared collaborative page with no document chrome, read by every lab member and edited by Core/Admin behind an Edit button. Takes the pinned sidebar slot under Calendar, which moves Drive down into General. Ships off; without it the slot stays Drive and /resources is not reachable.",
+  },
+  {
+    key: "unified-core-project-meetings",
+    label: "Core + project meetings",
+    description:
+      "Let one meeting be both a Core meeting and a project meeting. When a meeting is marked Core, its note's About picker still offers the organizer's projects instead of collapsing to a fixed 'Core' — so a project's team meeting can live as that project's meeting (its note filed in the project's meeting-notes folder) while also showing on the Core hub calendar. Applies to the Events create modal and the Core hub's create modal. Ships off; without it, marking a meeting Core clears any project.",
+  },
+  {
+    key: "ai-meeting-notes",
+    label: "AI meeting notes",
+    description:
+      "A Record button on meeting-note documents, in the browser or the desktop app. Recording always runs in the DALI OS macOS app: it captures system audio (everyone on a call, macOS 14.2+) and the mic, transcribes on-device with Apple's speech recognition, and streams the transcript to the page. On stop, Claude turns it into a summary, decisions, and action items appended to the note with the full transcript. No audio is uploaded or stored. Needs a desktop release newer than 0.1.6. Without an AI provider it adds the transcript only. Ships off.",
   },
 ] as const satisfies readonly FeatureFlagDef[];
 

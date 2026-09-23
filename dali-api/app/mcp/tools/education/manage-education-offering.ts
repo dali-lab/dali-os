@@ -1,18 +1,25 @@
 // MCP tool: manage_education_offering — create, update, set status, set
 // instructors, duplicate, invite/remove external instructors, set form bindings,
-// or configure decision emails. All mutations go through runOfferingAction or
+// or write a decision email. All mutations go through runOfferingAction or
 // the appropriate lib server function, which is the same path the HTTP routes
 // use, keeping validation/business logic in one place.
 //
 // Access tiers match the HTTP routes:
 //   create / set_instructors / delete / duplicate / invite_external_instructor /
-//   remove_external_instructor           → Core only
-//   update / set_status / set_form_binding / set_decision_email
+//   remove_external_instructor / set_decision_email
+//                                        → Core only
+//   update / set_status / set_form_binding
 //                                        → instructor or Core (isOfferingManager)
 
 import { runOfferingAction } from "~/education/lib/offerings.server";
 import { isOfferingManager } from "~/education/lib/access.server";
 import { setFormBinding } from "~/education/lib/feedback.server";
+import { saveEducationEmail } from "~/education/lib/education-emails.server";
+import {
+  DECISION_EMAIL_SLOTS,
+  decisionSlot,
+  type DecisionSlotStatus,
+} from "~/education/lib/education-emails";
 import { isCore } from "~/lib/roles";
 import {
   requireForAction,
@@ -26,7 +33,7 @@ import {
 export const MANAGE_EDUCATION_OFFERING_TOOL = {
   name: "manage_education_offering",
   description:
-    "Create, update, set status, set instructors, duplicate, invite/remove external instructors, bind feedback forms, or configure decision emails for an education offering. Actions: create (Core only) · update (instructor/Core) · set_status (instructor/Core) · set_instructors (Core only) · delete (Core, Draft only) · duplicate (Core only) · invite_external_instructor (Core only) · remove_external_instructor (Core only) · set_form_binding (instructor/Core) · set_decision_email (instructor/Core).",
+    "Create, update, set status, set instructors, duplicate, invite/remove external instructors, bind feedback forms, or configure decision emails for an education offering. Actions: create (Core only) · update (instructor/Core) · set_status (instructor/Core) · set_instructors (Core only) · delete (Core, Draft only) · duplicate (Core only) · invite_external_instructor (Core only) · remove_external_instructor (Core only) · set_form_binding (instructor/Core) · set_decision_email (Core only).",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -113,13 +120,18 @@ export const MANAGE_EDUCATION_OFFERING_TOOL = {
       },
       decisionStatus: {
         type: "string",
-        enum: ["Approved", "Waitlisted", "Rejected"],
+        enum: ["Approved", "Waitlisted", "Rejected", "Withdrawn"],
         description: "set_decision_email: which application status to configure.",
       },
-      emailTemplateVersionId: {
+      subject: {
         type: "string",
         description:
-          "set_decision_email: email template version ID to send. Omit or empty to clear the binding.",
+          "set_decision_email: subject line. Supports {{firstName}} and {{domain}} (the course title). Shared by every course.",
+      },
+      body: {
+        type: "string",
+        description:
+          "set_decision_email: email body. Pass an empty subject and body to turn the status off (nothing sends).",
       },
     },
     required: ["action"],
@@ -150,7 +162,8 @@ type Args = {
   slot?: string;
   formId?: string | null;
   decisionStatus?: string;
-  emailTemplateVersionId?: string;
+  subject?: string;
+  body?: string;
 };
 
 export async function runManageEducationOffering(ctx: McpCtx, args: Args) {
@@ -180,20 +193,20 @@ export async function runManageEducationOffering(ctx: McpCtx, args: Args) {
     invite_external_instructor: ["offeringId", "netId", "firstName", "lastName"],
     remove_external_instructor: ["offeringId", "userId"],
     set_form_binding: ["offeringId", "slot"],
-    set_decision_email: ["offeringId", "decisionStatus"],
+    set_decision_email: ["decisionStatus"],
   });
 
   // Per-action access gate before touching the DB.
   if (
     args.action === "update" ||
     args.action === "set_status" ||
-    args.action === "set_form_binding" ||
-    args.action === "set_decision_email"
+    args.action === "set_form_binding"
   ) {
     if (!(await isOfferingManager(ctx.user.id, args.offeringId!))) {
       throw new McpForbiddenError();
     }
   } else if (
+    args.action === "set_decision_email" ||
     args.action === "set_instructors" ||
     args.action === "delete" ||
     args.action === "duplicate" ||
@@ -205,6 +218,21 @@ export async function runManageEducationOffering(ctx: McpCtx, args: Args) {
     }
   }
   // create: runOfferingAction re-checks isCore internally.
+
+  // One decision email per status, shared by every course — so it isn't an
+  // offering action and doesn't go through runOfferingAction.
+  if (args.action === "set_decision_email") {
+    const status = args.decisionStatus as DecisionSlotStatus;
+    if (!DECISION_EMAIL_SLOTS.some((d) => d.status === status)) {
+      throw new McpInvalidError("Unknown decision status");
+    }
+    await saveEducationEmail(
+      decisionSlot(status),
+      { subject: args.subject ?? "", body: args.body ?? "" },
+      ctx.user.id,
+    );
+    return { ok: true, id: args.offeringId ?? null };
+  }
 
   // set_form_binding uses the feedback server fn directly (not runOfferingAction).
   if (args.action === "set_form_binding") {
@@ -231,7 +259,6 @@ export async function runManageEducationOffering(ctx: McpCtx, args: Args) {
     duplicate: "duplicate-offering",
     invite_external_instructor: "invite-external-instructor",
     remove_external_instructor: "remove-external-instructor",
-    set_decision_email: "set-decision-email",
   };
   const intent = intentMap[args.action];
 
@@ -266,11 +293,6 @@ export async function runManageEducationOffering(ctx: McpCtx, args: Args) {
   if (args.lastName) fd.set("lastName", args.lastName);
   // remove_external_instructor
   if (args.userId) fd.set("userId", args.userId);
-  // set_decision_email
-  if (args.decisionStatus) fd.set("status", args.decisionStatus);
-  if (args.emailTemplateVersionId !== undefined) {
-    fd.set("emailTemplateVersionId", args.emailTemplateVersionId);
-  }
 
   const result = await runOfferingAction(fd, ctx.user.id);
 

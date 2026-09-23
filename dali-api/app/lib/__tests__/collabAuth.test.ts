@@ -30,8 +30,10 @@ vi.mock("~/partners/lib/partner-access", () => ({
   partnerHasProjectAccess: vi.fn().mockResolvedValue(false),
 }));
 
-vi.mock("~/hiring/lib/confidentiality", () => ({
-  getCycleConfidentialityState: vi.fn().mockResolvedValue({ status: "signed", activeVersionId: "v1" }),
+vi.mock("~/hiring/lib/confidentiality", async (importOriginal) => ({
+  // Keep the pure access helpers real; only the DB-backed state is stubbed.
+  ...(await importOriginal<typeof import("~/hiring/lib/confidentiality")>()),
+  getCycleConfidentialityState: vi.fn().mockResolvedValue({ status: "signed", activeVersionId: "v1", exempt: false }),
 }));
 
 // The doc: branch now delegates to getPageAccess. Mock it so collabAuth tests
@@ -66,7 +68,7 @@ beforeEach(() => {
   (isProjectMember as any).mockResolvedValue(false);
   (isLabMember as any).mockResolvedValue(false);
   (partnerHasProjectAccess as any).mockResolvedValue(false);
-  (getCycleConfidentialityState as any).mockResolvedValue({ status: "signed", activeVersionId: "v1" });
+  (getCycleConfidentialityState as any).mockResolvedValue({ status: "signed", activeVersionId: "v1", exempt: false });
   (prisma as any).interview.findUnique.mockResolvedValue({ applicationCycleId: "cycle1" });
   vi.mocked(getPageAccess).mockResolvedValue({
     canView: false,
@@ -84,6 +86,30 @@ describe("authorizeCollabDoc", () => {
 
   it("rejects unknown entity types", async () => {
     expect(await authorizeCollabDoc("user1", "unknown:id:field")).toMatchObject(denied());
+  });
+
+  describe("resources doc", () => {
+    it("lets Core write", async () => {
+      (isCore as any).mockResolvedValue(true);
+      expect(await authorizeCollabDoc("user1", "resources:lab:body")).toEqual(allowed());
+    });
+
+    it("connects a non-Core lab member read-only", async () => {
+      (isLabMember as any).mockResolvedValue(true);
+      expect(await authorizeCollabDoc("user1", "resources:lab:body")).toEqual({
+        allowed: true,
+        readOnly: true,
+      });
+    });
+
+    it("rejects anyone outside the lab", async () => {
+      expect(await authorizeCollabDoc("user1", "resources:lab:body")).toMatchObject(denied());
+    });
+
+    it("rejects an invented resources room — there is exactly one", async () => {
+      (isCore as any).mockResolvedValue(true);
+      expect(await authorizeCollabDoc("user1", "resources:other:body")).toMatchObject(denied());
+    });
   });
 
   describe("review docs", () => {
@@ -160,6 +186,7 @@ describe("authorizeCollabDoc", () => {
       (getCycleConfidentialityState as any).mockResolvedValue({
         status: "unsigned",
         activeVersionId: "v1",
+        exempt: false,
       });
       (isCore as any).mockResolvedValue(true);
       expect(

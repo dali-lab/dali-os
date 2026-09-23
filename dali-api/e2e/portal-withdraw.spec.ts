@@ -27,7 +27,8 @@ test.describe('portal: withdraw application', () => {
 
     // The hiring tracker should show the withdrawn state too.
     await page.getByRole('link', { name: /back to portal/i }).click();
-    await page.waitForURL(/\/portal\/hiring$/);
+    // The tracker link carries ?cycle= now that a portal can list several cycles.
+    await page.waitForURL(/\/portal\/hiring(\?|$)/);
     await expect(page.getByText(/application withdrawn/i)).toBeVisible();
   });
 });

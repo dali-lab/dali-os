@@ -121,6 +121,8 @@ const CORE: RoleFlags = { ...NOBODY, isCore: true, canViewForms: true, canViewSt
 // nav-regroup was retired — the role-grouped set is the only nav, and areasFor
 // ignores flags. An empty map documents that at the call sites.
 const REGROUP = {};
+// The `resources` flag: Resources takes the pinned slot, Drive moves to General.
+const RESOURCES = { resources: true };
 
 describe("area sets", () => {
   it("collapses to five areas", () => {
@@ -291,6 +293,17 @@ describe("areaForPath", () => {
     expect(areaForPath("/drive/abc123", REGROUP)).toBeUndefined();
   });
 
+  it("hands Drive urls to General once the resources flag moves it there", () => {
+    expect(areaForPath("/drive", RESOURCES)?.key).toBe("projects");
+    expect(areaForPath("/drive?type=file", RESOURCES)?.key).toBe("projects");
+    expect(areaForPath("/drive?type=agreement", RESOURCES)?.key).toBe("projects");
+    expect(areaForPath("/drive/abc123", RESOURCES)?.key).toBe("projects");
+  });
+
+  it("leaves Resources unowned — it is the pin, not an area sub-tab", () => {
+    expect(areaForPath("/resources", RESOURCES)).toBeUndefined();
+  });
+
   it("owns and highlights the Agreements console at its plain /core URL", () => {
     const core = areasFor(REGROUP).find((a) => a.key === "core")!;
     expect(areaForPath("/core/agreements", REGROUP)?.key).toBe("core");
@@ -318,11 +331,27 @@ describe("isPinnedActive", () => {
     expect(isPinnedActive("/projects", "/drive", REGROUP)).toBe(false);
     expect(isPinnedActive("/core/staffing", "/drive", REGROUP)).toBe(false);
   });
+
+  it("lights the Resources pin, and not on Drive, behind the flag", () => {
+    expect(isPinnedActive("/resources", "/resources", RESOURCES)).toBe(true);
+    expect(isPinnedActive("/resources?comment=1", "/resources", RESOURCES)).toBe(true);
+    // Drive is a General sub-tab there, so an area owns it and no pin lights.
+    expect(isPinnedActive("/drive", "/resources", RESOURCES)).toBe(false);
+  });
 });
 
 describe("pinnedNavItems", () => {
-  it("pins Drive", () => {
+  it("pins Drive by default", () => {
     expect(pinnedNavItems(REGROUP).map((i) => i.href)).toEqual(["/drive"]);
     expect(pinnedNavItems().map((i) => i.href)).toEqual(["/drive"]);
+  });
+
+  it("swaps the pin for Resources behind the flag, keeping Drive in General", () => {
+    expect(pinnedNavItems(RESOURCES).map((i) => i.href)).toEqual(["/resources"]);
+    const general = areasFor(RESOURCES).find((a) => a.key === "projects")!;
+    expect(general.subtabs.map((t) => t.href)).toContain("/drive");
+    // Flag off, Drive is the pin and General does NOT carry it.
+    expect(areasFor(REGROUP).find((a) => a.key === "projects")!.subtabs.map((t) => t.href))
+      .not.toContain("/drive");
   });
 });

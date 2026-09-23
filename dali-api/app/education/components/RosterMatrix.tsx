@@ -32,10 +32,14 @@ export type PerformanceSubmissions = Record<
   Record<string, { grade: string | null; score: number | null }>
 >;
 
+// The three answers an instructor gives. "Unmarked" isn't one of them: it's
+// the state a student is already in, so it needs no button.
+const MARK_CHOICES = ["Present", "Absent", "Excused"] as const;
+
 const MARK_STYLE: Record<Status, { icon: typeof Check; className: string; label: string }> = {
   Present: { icon: Check, className: "text-accent-green", label: "Present" },
   Absent: { icon: X, className: "text-destructive", label: "Absent" },
-  Excused: { icon: Minus, className: "text-muted-foreground", label: "Excused" },
+  Excused: { icon: Minus, className: "text-os-grey", label: "Excused" },
 };
 
 export function RosterMatrix({
@@ -74,31 +78,41 @@ export function RosterMatrix({
 
   if (sessions.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground italic">
-        Add a session first — attendance is marked per session.
+      <p className="text-sm italic text-os-grey">
+        Add a session first. Attendance is marked per session.
       </p>
     );
   }
   if (students.length === 0) {
-    return <p className="text-sm text-muted-foreground italic">No approved students yet.</p>;
+    return <p className="text-sm italic text-os-grey">No approved students yet.</p>;
   }
 
   return (
     <div className="flex flex-col gap-3">
-      {/* View toggle + session picker + actions */}
-      <div className="flex flex-wrap items-center gap-2">
-        {/* Attendance | Performance toggle */}
-        <div className="flex rounded-md border border-border overflow-hidden text-sm shrink-0">
+      {/* Toolbar. The toggle is alone in a left group and the per-view controls
+          live in a right one, so switching views can't reflow the row under the
+          pointer — the toggle used to sit in one wrapping row with the session
+          picker and the action button, and losing them on the way to
+          Performance moved the button you had just clicked. */}
+      {/* min-h pins the row: the session picker is a hair taller than the
+          buttons beside it, so losing it on the way to Performance still moved
+          the toggle by a pixel or two. */}
+      <div className="flex min-h-[44px] flex-wrap items-center justify-between gap-3">
+        {/* A toggle, not navigation — so this one stays a filled segmented
+            control while the page's sections are underlined tabs. Both states
+            are the same box; only the fill changes. */}
+        <div className="flex shrink-0 gap-1 rounded-os-item bg-os-well p-1 text-sm">
           {(["attendance", "performance"] as const).map((v) => (
             <button
               key={v}
               type="button"
               onClick={() => switchView(v)}
+              aria-pressed={view === v}
               className={cn(
-                "px-3 py-1.5 font-medium capitalize",
+                "rounded-os-item px-4 py-1.5 font-medium transition-colors",
                 view === v
-                  ? "bg-accent-coral text-white"
-                  : "text-muted-foreground hover:bg-muted/40",
+                  ? "bg-os-accent text-os-card"
+                  : "text-os-grey hover:text-foreground",
               )}
             >
               {v === "attendance" ? "Attendance" : "Performance"}
@@ -106,46 +120,36 @@ export function RosterMatrix({
           ))}
         </div>
 
-        {view === "attendance" && (
-          <label className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-muted-foreground">Session</span>
-            <Select
-              value={activeSessionId ?? ""}
-              onChange={(value) => onSelectSession(value)}
-              options={sessions.map((s) => ({
-                value: s.id,
-                label: `Session ${s.sequence} — ${formatSessionDate(s.datetime)}`,
-              }))}
-              buttonClassName="rounded-md border border-border bg-card px-2 py-1.5 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-            />
-          </label>
-        )}
-
-        {view === "attendance" && active && !marking && (
-          <Button
-            type="button"
-            size="sm"
-            variant="primary"
-            onClick={() => setMarking(true)}
-          >
-            Take attendance
-          </Button>
-        )}
-        {view === "attendance" && marking && (
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            onClick={() => setMarking(false)}
-          >
-            Back to roster
-          </Button>
-        )}
-
-        <span className="ml-auto text-xs text-muted-foreground">
-          {students.length} {students.length === 1 ? "student" : "students"} ·{" "}
-          {sessions.length} {sessions.length === 1 ? "session" : "sessions"}
-        </span>
+        <div className="flex flex-wrap items-center gap-3">
+          {view === "attendance" && (
+            <label className="os-form flex items-center gap-2">
+              <span className="text-sm text-os-grey">Session</span>
+              <Select
+                value={activeSessionId ?? ""}
+                onChange={(value) => onSelectSession(value)}
+                options={sessions.map((s) => ({
+                  value: s.id,
+                  label: `Session ${s.sequence}, ${formatSessionDate(s.datetime)}`,
+                }))}
+                buttonClassName="min-w-[16rem]"
+              />
+            </label>
+          )}
+          {view === "attendance" && active && (
+            <Button
+              type="button"
+              size="sm"
+              variant={marking ? "secondary" : "primary"}
+              onClick={() => setMarking(!marking)}
+            >
+              {marking ? "Done" : "Take attendance"}
+            </Button>
+          )}
+          <span className="text-sm text-os-grey">
+            {students.length} {students.length === 1 ? "student" : "students"} ·{" "}
+            {sessions.length} {sessions.length === 1 ? "session" : "sessions"}
+          </span>
+        </div>
       </div>
 
       {view === "attendance" && marking && active ? (
@@ -155,11 +159,11 @@ export function RosterMatrix({
           onSaved={() => setMarking(false)}
         />
       ) : view === "attendance" ? (
-        <div className="overflow-x-auto rounded-lg border border-border bg-card">
+        <div className="overflow-x-auto rounded-os-card bg-os-card">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-border">
-                <th className="sticky left-0 z-10 bg-card px-4 py-2.5 text-left font-medium text-muted-foreground">
+              <tr className="border-b border-os-container">
+                <th className="sticky left-0 z-10 bg-os-card px-5 py-3 text-left font-medium text-os-grey">
                   Student
                 </th>
                 {sessions.map((s) => (
@@ -167,8 +171,8 @@ export function RosterMatrix({
                     key={s.id}
                     className={`px-2 py-2.5 text-center font-medium ${
                       s.id === activeSessionId
-                        ? "bg-accent-coral/10 text-accent-coral"
-                        : "text-muted-foreground"
+                        ? "bg-os-accent/10 text-os-accent"
+                        : "text-os-grey"
                     }`}
                   >
                     <Tooltip content={formatSessionDate(s.datetime)}>
@@ -182,7 +186,7 @@ export function RosterMatrix({
                     </Tooltip>
                   </th>
                 ))}
-                <th className="px-4 py-2.5 text-right font-medium text-muted-foreground whitespace-nowrap">
+                <th className="whitespace-nowrap px-5 py-3 text-right font-medium text-os-grey">
                   <span className="inline-flex items-center gap-1">
                     Attended
                     <InfoTip
@@ -197,8 +201,8 @@ export function RosterMatrix({
               {students.map((st) => {
                 const pct = Math.round((st.attended / sessions.length) * 100);
                 return (
-                  <tr key={st.applicationId} className="hover:bg-muted/40">
-                    <td className="sticky left-0 z-10 bg-card px-4 py-2 font-medium text-foreground whitespace-nowrap">
+                  <tr key={st.applicationId} className="hover:bg-os-well/60">
+                    <td className="sticky left-0 z-10 whitespace-nowrap bg-os-card px-5 py-2.5 font-medium text-foreground">
                       {st.name}
                     </td>
                     {sessions.map((s) => {
@@ -209,7 +213,7 @@ export function RosterMatrix({
                         <td
                           key={s.id}
                           className={`px-2 py-2 text-center ${
-                            s.id === activeSessionId ? "bg-accent-coral/5" : ""
+                            s.id === activeSessionId ? "bg-os-accent/5" : ""
                           }`}
                         >
                           {Icon && style ? (
@@ -221,7 +225,7 @@ export function RosterMatrix({
                             </Tooltip>
                           ) : (
                             <Tooltip content="Not yet marked for this session">
-                              <span className="text-muted-foreground/40">
+                              <span className="text-os-grey/50">
                                 ·
                               </span>
                             </Tooltip>
@@ -238,7 +242,7 @@ export function RosterMatrix({
                           pct >= 75
                             ? "text-accent-green"
                             : pct >= 50
-                              ? "text-muted-foreground"
+                              ? "text-os-grey"
                               : "text-destructive"
                         }
                       >
@@ -280,18 +284,18 @@ function PerformanceTable({
 }) {
   return (
     <div className="flex flex-col gap-2">
-      <p className="text-xs text-muted-foreground">
+      <p className="text-sm text-os-grey">
         Completion is attendance-based — assignment scores are informational only and do not gate
         course completion.
       </p>
-      <div className="overflow-x-auto rounded-lg border border-border bg-card">
+      <div className="overflow-x-auto rounded-os-card bg-os-card">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-border">
-              <th className="sticky left-0 z-10 bg-card px-4 py-2.5 text-left font-medium text-muted-foreground">
+            <tr className="border-b border-os-container">
+              <th className="sticky left-0 z-10 bg-os-card px-5 py-3 text-left font-medium text-os-grey">
                 Student
               </th>
-              <th className="px-3 py-2.5 text-right font-medium text-muted-foreground whitespace-nowrap">
+              <th className="whitespace-nowrap px-3 py-3 text-right font-medium text-os-grey">
                 <span className="inline-flex items-center gap-1">
                   Attendance %
                   <InfoTip
@@ -303,7 +307,7 @@ function PerformanceTable({
               {assignments.map((a) => (
                 <Tooltip key={a.id} content={a.title}>
                   <th
-                    className="px-3 py-2.5 text-center font-medium text-muted-foreground max-w-[120px]"
+                    className="max-w-[120px] px-3 py-3 text-center font-medium text-os-grey"
                   >
                     <span className="block truncate max-w-[120px]">{a.title}</span>
                     {a.points != null && (
@@ -312,7 +316,7 @@ function PerformanceTable({
                   </th>
                 </Tooltip>
               ))}
-              <th className="px-4 py-2.5 text-center font-medium text-muted-foreground whitespace-nowrap">
+              <th className="whitespace-nowrap px-5 py-3 text-center font-medium text-os-grey">
                 <span className="inline-flex items-center gap-1">
                   Completion
                   <InfoTip
@@ -335,8 +339,8 @@ function PerformanceTable({
                   : 0;
               const eligible = completionByApp[st.applicationId] ?? false;
               return (
-                <tr key={st.applicationId} className="hover:bg-muted/40">
-                  <td className="sticky left-0 z-10 bg-card px-4 py-2 font-medium text-foreground whitespace-nowrap">
+                <tr key={st.applicationId} className="hover:bg-os-well/60">
+                  <td className="sticky left-0 z-10 whitespace-nowrap bg-os-card px-5 py-2.5 font-medium text-foreground">
                     {st.name}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">
@@ -345,7 +349,7 @@ function PerformanceTable({
                         pct >= 80
                           ? "text-accent-green"
                           : pct >= 50
-                            ? "text-muted-foreground"
+                            ? "text-os-grey"
                             : "text-destructive"
                       }
                     >
@@ -368,7 +372,7 @@ function PerformanceTable({
                     return (
                       <Tooltip key={a.id} content={display === "—" ? "No submission" : display}>
                         <td
-                          className="px-3 py-2 text-center text-muted-foreground tabular-nums"
+                          className="px-3 py-2.5 text-center tabular-nums text-os-grey"
                         >
                           {display}
                         </td>
@@ -382,7 +386,7 @@ function PerformanceTable({
                         Eligible
                       </span>
                     ) : (
-                      <span className="text-xs text-muted-foreground">Below threshold</span>
+                      <span className="text-sm text-os-grey">Below threshold</span>
                     )}
                   </td>
                 </tr>
@@ -413,49 +417,67 @@ function MarkingList({
         // for marking a session is seeing it land in the overview.
         queueMicrotask(onSaved);
       }}
-      className="rounded-lg border border-border bg-muted/40"
+      className="os-form rounded-os-card bg-os-card"
     >
       <input type="hidden" name="intent" value="save-attendance" />
       <input type="hidden" name="sessionId" value={sessionId} />
-      <ul className="divide-y divide-border">
-        {students.map((st) => (
-          <li
-            key={st.applicationId}
-            className="flex items-center justify-between gap-4 bg-card px-4 py-2.5 first:rounded-t-lg"
-          >
-            <span className="text-sm text-foreground">{st.name}</span>
-            <select
-              name={`mark-${st.applicationId}`}
-              defaultValue={st.marks[sessionId] ?? ""}
-              aria-label={`Attendance for ${st.name}`}
-              className="rounded-md border border-border bg-card px-2 py-1 text-sm"
-            >
-              <option value="">Unmarked</option>
-              <option value="Present">Present</option>
-              <option value="Absent">Absent</option>
-              <option value="Excused">Excused</option>
-            </select>
-          </li>
-        ))}
-      </ul>
-      <div className="flex items-center gap-2 rounded-b-lg border-t border-border bg-muted/40 px-4 py-3">
-        <Button type="submit" size="sm">
-          Save attendance
-        </Button>
+      <div className="flex items-center justify-between gap-3 border-b border-os-container px-5 py-3">
+        <span className="text-sm text-os-grey">
+          Tap a student&apos;s answer, then save.
+        </span>
         <button
           type="button"
           onClick={(e) => {
             const form = e.currentTarget.closest("form");
             form
-              ?.querySelectorAll<HTMLSelectElement>('select[name^="mark-"]')
+              ?.querySelectorAll<HTMLInputElement>('input[value="Present"]')
               .forEach((el) => {
-                el.value = "Present";
+                el.checked = true;
               });
           }}
-          className="text-xs font-semibold text-accent-coral hover:underline"
+          className="text-sm font-medium text-os-accent hover:underline"
         >
-          Mark all Present
+          Mark all present
         </button>
+      </div>
+      <ul>
+        {students.map((st) => (
+          <li
+            key={st.applicationId}
+            className="flex flex-wrap items-center justify-between gap-3 border-b border-os-container px-5 py-3 last:border-0"
+          >
+            <span className="text-sm text-foreground">{st.name}</span>
+            {/* One tap per student. A four-option dropdown each meant open,
+                aim, pick, repeat for a whole room — the three answers are
+                short enough to just be buttons, and "unmarked" is simply the
+                state you leave alone. */}
+            <fieldset className="flex shrink-0 gap-1 rounded-os-item bg-os-well p-1">
+              <legend className="sr-only">Attendance for {st.name}</legend>
+              {MARK_CHOICES.map((choice) => (
+                <label
+                  key={choice}
+                  className="relative cursor-pointer select-none text-sm"
+                >
+                  <input
+                    type="radio"
+                    name={`mark-${st.applicationId}`}
+                    value={choice}
+                    defaultChecked={st.marks[sessionId] === choice}
+                    className="peer sr-only"
+                  />
+                  <span className="block rounded-os-item px-3.5 py-1.5 font-medium text-os-grey transition-colors peer-checked:bg-os-accent peer-checked:text-os-card peer-focus-visible:ring-2 peer-focus-visible:ring-os-accent/40">
+                    {choice}
+                  </span>
+                </label>
+              ))}
+            </fieldset>
+          </li>
+        ))}
+      </ul>
+      <div className="flex items-center gap-2 border-t border-os-container px-5 py-4">
+        <Button type="submit" size="sm">
+          Save attendance
+        </Button>
       </div>
     </Form>
   );

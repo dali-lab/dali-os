@@ -3,7 +3,7 @@ import { currentTerm, getActiveCoreCycleTermIds } from "~/lib/roles";
 import { coreCycleTermIds } from "~/lib/core-cycle";
 import { commencementDate } from "~/lib/membership-status";
 import { notifyAdminsOfPromotion } from "~/lib/promotion-notify.server";
-import type { AcceptContext, AcceptResult } from "./internal-cycles.server";
+import type { AcceptContext, AcceptResult } from "./applicant-groups.server";
 
 // The single synthetic "CORE" domain backs Core cycles: every Core
 // application, reviewer, and decision hangs off it so the domain-keyed

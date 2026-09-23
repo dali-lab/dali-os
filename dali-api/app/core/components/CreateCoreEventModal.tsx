@@ -1,7 +1,8 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRevalidator } from "react-router";
 import { CalendarDays, Clock, UsersRound, X } from "lucide-react";
 import { cn } from "~/lib/cn";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import { Toggle } from "~/components/ui/Toggle";
 import { DateField } from "~/components/ui/DateField";
 import { Select } from "~/components/ui/floating";
@@ -78,6 +79,10 @@ function sendFromOptions(links: CoreCalendarLink[]) {
   );
 }
 
+/** Shape of the writable destinations from /api/move-destinations — the same
+ *  authorized set the Events create form feeds the About picker. */
+type MoveDestination = { type: "Lab" | "Project"; id: string | null; label: string };
+
 /** Default to the first account's primary calendar — where an invite sent
  *  without a thought should come from. */
 function defaultSendFrom(links: CoreCalendarLink[]) {
@@ -123,7 +128,41 @@ export function CreateCoreEventModal({
   );
   // The destination is a calendar, not an account: "<linkId>|<calendarId>".
   const [sendFrom, setSendFrom] = useState(() => defaultSendFrom(calendarLinks));
+  // Email guests are invited by the Google event, so they need a calendar to
+  // send from.
+  const [guestEmails, setGuestEmails] = useState<string[]>([]);
+  const canInviteByEmail = !!splitSendFrom(sendFrom)[0];
+  const invitedEmails = canInviteByEmail ? guestEmails : [];
   const note = useMeetingNote();
+
+  // When the unify flag is on, a Core meeting may also be about a project, so
+  // offer the organizer's writable projects in the note's About picker — the same
+  // authorized set the Events form feeds it. Picking a project files the note in
+  // that project; the meeting still lands on the Core calendar.
+  const unifiedCoreProject = useFeatureFlag("unified-core-project-meetings");
+  const [myProjects, setMyProjects] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    if (!unifiedCoreProject) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/move-destinations", { credentials: "include" });
+        const json = await res.json();
+        const dests = (json.destinations ?? []) as MoveDestination[];
+        if (!cancelled) {
+          setMyProjects(
+            dests.filter((d) => d.type === "Project" && d.id).map((d) => ({ id: d.id!, name: d.label })),
+          );
+        }
+      } catch {
+        // No projects → About offers only "Core"; the modal still works.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [unifiedCoreProject]);
+
   const [status, setStatus] = useState<
     null | { ok: true; count: number; notePageId: string | null } | { ok: false; error: string }
   >(null);
@@ -140,7 +179,8 @@ export function CreateCoreEventModal({
     }
     return Array.from(set);
   })();
-  const hasGuests = selectedUserIds.length > 0 || selectedGroupIds.length > 0;
+  const hasGuests =
+    selectedUserIds.length > 0 || selectedGroupIds.length > 0 || invitedEmails.length > 0;
 
   const duration = durationMinutesBetween(startLocal, endLocal);
   const startEndValid =
@@ -173,6 +213,7 @@ export function CreateCoreEventModal({
         if (calendarId) payload.organizerCalendarId = calendarId;
       }
       Object.assign(payload, meetingNotePayload(note.state));
+      if (invitedEmails.length > 0) payload.guestEmails = invitedEmails;
       // One group and nobody else stays a group-scoped meeting, so the roster
       // keeps resolving as the group changes; anything else is sent as the
       // resolved people. Same rule the Events modal follows.
@@ -180,7 +221,7 @@ export function CreateCoreEventModal({
         payload.scopeType = "Group";
         payload.groupId = selectedGroupIds[0];
       } else if (resolvedParticipantIds.length > 0) {
-        payload.scopeType = "None";
+        payload.scopeType = "UserList";
         payload.participantUserIds = resolvedParticipantIds;
       } else {
         payload.scopeType = "None";
@@ -323,6 +364,8 @@ export function CreateCoreEventModal({
               usersById={usersById}
               groupsById={groupsById}
               resolvedCount={resolvedParticipantIds.length}
+              guestEmails={invitedEmails}
+              onChangeGuestEmails={canInviteByEmail ? setGuestEmails : undefined}
             />
             {!hasGuests && (
               <p className="mt-1 text-xs text-muted-foreground">
@@ -365,10 +408,14 @@ export function CreateCoreEventModal({
               <div className="mt-3 pt-1">
                 <MeetingNoteFields
                   note={note}
+                  myProjects={myProjects}
                   fieldClass={fieldClass}
                   labelClass={labelClass}
-                  // Everything this modal makes is Core's, so the note is too.
+                  // Everything this modal makes is Core's; with the unify flag the
+                  // note may still be about a project (filed there), otherwise it
+                  // collapses to a project-less Core note.
                   core
+                  allowProjectWhenCore={unifiedCoreProject}
                 />
               </div>
             )}

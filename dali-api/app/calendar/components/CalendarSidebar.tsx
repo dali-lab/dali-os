@@ -321,8 +321,12 @@ function CalendarSidebarContent({
       </div>
 
       {/* Scheduling someone is a calendar act — in timesheet mode the rail is
-          about hours already worked, so the search box only gets in the way. */}
-      {!layers.logged && <MeetWith users={data.users} onPick={onMeetWith} />}
+          about hours already worked, so the search box only gets in the way.
+          A viewer with nobody to search (the portal calendar withholds the lab
+          directory) gets no box at all rather than one that can never answer. */}
+      {!layers.logged && data.users.length > 0 && (
+        <MeetWith users={data.users} onPick={onMeetWith} />
+      )}
 
       {/* Which calendars to draw is a question about events. In timesheet
           mode the grid draws logged hours, so the whole group goes with

@@ -53,3 +53,13 @@ describe("DateField value contract", () => {
     expect(triggerText()).toContain("Pick a day");
   });
 });
+
+describe("DateField calendar", () => {
+  it("marks today in the open calendar", () => {
+    mount(createElement(DateField, { mode: "date", name: "d", value: "", onChange: () => {} }));
+    const trigger = container.querySelector("button[aria-haspopup='dialog']") as HTMLButtonElement;
+    act(() => trigger.click());
+    const today = document.querySelector("[data-datefield-popover] [aria-current='date']");
+    expect(today?.textContent).toBe(String(new Date().getDate()));
+  });
+});

@@ -40,25 +40,41 @@ describe("meetingNotePayload", () => {
 
   it("project path → Team/Partner + projectId, no label/location", () => {
     expect(meetingNotePayload(base({ enabled: true, about: "proj_1", subtype: "Team" }))).toEqual({
+      note: true,
+      whiteboard: false,
       meetingType: "Team",
       projectId: "proj_1",
     });
     expect(
       meetingNotePayload(base({ enabled: true, about: "proj_9", subtype: "Partner" })),
-    ).toEqual({ meetingType: "Partner", projectId: "proj_9" });
+    ).toEqual({ note: true, whiteboard: false, meetingType: "Partner", projectId: "proj_9" });
   });
 
   it("project Other → Other + trimmed label + projectId", () => {
     expect(
       meetingNotePayload(base({ enabled: true, about: "proj_1", subtype: "Other", label: " Review " })),
-    ).toEqual({ meetingType: "Other", meetingTypeLabel: "Review", projectId: "proj_1" });
+    ).toEqual({
+      note: true,
+      whiteboard: false,
+      meetingType: "Other",
+      meetingTypeLabel: "Review",
+      projectId: "proj_1",
+    });
   });
 
   it("General path → Other + trimmed label, no projectId", () => {
     expect(meetingNotePayload(base({ enabled: true, about: "", label: "  Sync  " }))).toEqual({
+      note: true,
+      whiteboard: false,
       meetingType: "Other",
       meetingTypeLabel: "Sync",
     });
+  });
+
+  it("sets the whiteboard flag when only the board is requested", () => {
+    expect(
+      meetingNotePayload(base({ enabled: false, whiteboard: true, about: "proj_1", subtype: "Team" })),
+    ).toEqual({ note: false, whiteboard: true, meetingType: "Team", projectId: "proj_1" });
   });
 
   it("omits noteLocation for the Lab-wide default (null or Lab top level)", () => {
@@ -114,6 +130,8 @@ describe("the Core shape", () => {
 
   it("emits the General payload, never a project one", () => {
     expect(meetingNotePayload(base({ enabled: true, about: "", label: CORE_NOTE_LABEL }))).toEqual({
+      note: true,
+      whiteboard: false,
       meetingType: "Other",
       meetingTypeLabel: CORE_NOTE_LABEL,
     });

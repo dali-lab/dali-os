@@ -4,6 +4,7 @@ import type { Route } from "./+types/domain-lead.application.$id";
 import { prisma } from "~/lib/db";
 import { recordRouteVisit } from "~/lib/user-pages.server";
 import { requireAuth } from "~/lib/auth";
+import { isDomainLeadForCycle } from "~/lib/roles";
 import { redirectToLogin } from "~/lib/login-next";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { presignAnswers } from "~/hiring/lib/presign";
@@ -22,9 +23,12 @@ import {
   type InterviewNotesData,
 } from "~/hiring/components/InterviewNotesCard";
 import {
-  DecisionHistoryList,
-  type DecisionHistoryRow,
-} from "~/hiring/components/DecisionHistoryList";
+  ApplicationTimeline,
+  StageMoveControl,
+} from "~/hiring/components/ApplicationTimeline";
+import { Pill, type PillTone, SetupCard } from "~/hiring/components/cycle-setup/SetupCard";
+import { buildApplicationTimeline } from "~/hiring/lib/application-timeline";
+import { findRound, parseTimeline } from "~/hiring/lib/cycle-timeline";
 import { buildCriteriaLabelMap } from "~/hiring/lib/rubric-criteria";
 import {
   inferDomainApplicationStatus,
@@ -32,42 +36,26 @@ import {
 } from "~/hiring/lib/domain-application-status";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
 import type { Question } from "~/types";
-import { RECOMMENDATION_COLORS } from "~/hiring/lib/labels";
+import { RECOMMENDATION_TONES } from "~/hiring/lib/labels";
 
-// bg + text + an explicit same-hue border (e.g. red pill → red border), so the
-// outline always matches the pill and never falls back to the neutral gray
-// border from the global `*` rule. Mirrors the dashboard's DECISION_COLORS:
-// `-300` light borders read clearly (not the faint `-200`), with dark variants.
-const STATUS_BADGE: Record<string, { bg: string; label: string }> = {
-  ApplicationOpen: { bg: "bg-muted text-foreground/80 border-current/30", label: "Draft" },
-  Pending: { bg: "bg-yellow-100 text-yellow-800 border-yellow-300 dark:border-yellow-700", label: "Pending Review" },
-  Rejected: { bg: "bg-red-100 text-red-700 border-red-300 dark:bg-red-900/30 dark:text-red-400 dark:border-red-700", label: "Rejected" },
-  InvitedToInterview: { bg: "bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-700", label: "Invited to Interview" },
-  InterviewScheduled: { bg: "bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-700", label: "Interview Scheduled" },
-  PostInterviewPending: { bg: "bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-700", label: "Post-Interview" },
-  Accepted: { bg: "bg-green-100 text-green-700 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700", label: "Accepted" },
-  AcceptedElsewhere: { bg: "bg-muted text-foreground/70 border-current/30", label: "Accepted elsewhere" },
-  Waitlisted: { bg: "bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-700", label: "Waitlisted" },
+// One status per application, in the shared pill vocabulary: the dot carries
+// the state and the chip stays quiet.
+const STATUS_BADGE: Record<string, { tone: PillTone; label: string }> = {
+  ApplicationOpen: { tone: "neutral", label: "Draft" },
+  Pending: { tone: "warning", label: "Pending review" },
+  Rejected: { tone: "danger", label: "Rejected" },
+  InvitedToInterview: { tone: "accent", label: "Invited to interview" },
+  InterviewScheduled: { tone: "accent", label: "Interview scheduled" },
+  PostInterviewPending: { tone: "accent", label: "Post-interview" },
+  Accepted: { tone: "success", label: "Accepted" },
+  AcceptedElsewhere: { tone: "neutral", label: "Accepted elsewhere" },
+  Waitlisted: { tone: "warning", label: "Waitlisted" },
 };
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const user = (data as any)?.application?.user;
   const name = [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim();
   return [{ title: `${name || "Application"} · Domain lead · DALI OS` }];
-};
-
-export const handle = {
-  breadcrumb: (data: unknown) => {
-    const user = (
-      data as
-        | { application?: { user?: { firstName?: string; lastName?: string } } }
-        | undefined
-    )?.application?.user;
-    return (
-      [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim() ||
-      undefined
-    );
-  },
 };
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -80,7 +68,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
 
   if (domainLeadAssignments.length === 0) {
-    return redirect("/hiring/reviewer");
+    return redirect("/hiring");
   }
 
   const leadDomainIds = domainLeadAssignments.map((a) => a.domainId);
@@ -216,6 +204,65 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     })),
   }));
 
+  // Delibs boards reference applicants inside columnOrder JSON, not by FK, so
+  // find this application's column on each of the domain's boards.
+  const [delibsSessions, cycleTimelineRow, canMoveStage] = await Promise.all([
+    prisma.delibsSession.findMany({
+      where: { domainId: daDomainId, applicationCycleId: da.application.applicationCycleId },
+      select: { id: true, roundId: true, status: true, columnOrder: true, updatedAt: true },
+    }),
+    prisma.applicationCycle.findUnique({
+      where: { id: da.application.applicationCycleId },
+      select: { timeline: true },
+    }),
+    // The same rule the decisions endpoint enforces: this page is already
+    // limited to leads of this domain, so only the Core-cycle carve-out is left.
+    isDomainLeadForCycle(auth.user.sub, da.application.applicationCycleId),
+  ]);
+  const cycleTimeline = parseTimeline(cycleTimelineRow?.timeline);
+  const delibs = delibsSessions
+    .map((s) => {
+      const cols = (s.columnOrder ?? {}) as Record<string, unknown>;
+      let column: string | null = null;
+      for (const [name, ids] of Object.entries(cols)) {
+        if (Array.isArray(ids) && ids.includes(da.id)) {
+          column = name;
+          break;
+        }
+      }
+      return {
+        id: s.id,
+        label: findRound(cycleTimeline, s.roundId)?.label ?? "Delib round",
+        status: s.status,
+        column,
+        updatedAt: s.updatedAt.toISOString(),
+      };
+    })
+    .filter((s) => s.column !== null);
+
+  // A domain lead sees everything on their own applications, so no entry is
+  // filtered out here.
+  const timeline = buildApplicationTimeline({
+    statusUpdates: da.application.statusUpdates,
+    decisions: (da.decisions ?? []).map((d: any) => ({
+      id: d.id,
+      type: d.type,
+      stage: d.stage,
+      notes: d.notes,
+      waitlistRank: d.waitlistRank,
+      createdAt: d.createdAt,
+      madeByName:
+        [d.madeBy?.firstName, d.madeBy?.lastName].filter(Boolean).join(" ").trim() || null,
+    })),
+    delibs,
+    interviews: (da.interviews ?? []).map((iv: any) => ({
+      id: iv.id,
+      startTime: iv.startTime,
+      endTime: iv.endTime,
+      status: iv.status,
+    })),
+  });
+
   const cycleStatus = (da.application.applicationCycle.statusUpdates[0]?.newStatus ?? "Draft") as ApplicationCycleStatus;
   const inferredStatus = inferDomainApplicationStatus(
     { ...da, application: { statusUpdates: da.application.statusUpdates } } as any,
@@ -273,17 +320,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       },
       inferredStatus,
       criteriaByKey,
+      timeline,
+      canMoveStage,
     };
 }
 
 export default function DomainLeadApplicationView() {
-  const { domainApplication: da, application, inferredStatus, criteriaByKey } =
+  const { domainApplication: da, application, inferredStatus, criteriaByKey, timeline, canMoveStage } =
     useLoaderData<typeof loader>() as any;
 
   const generalQuestions: any[] = application.generalChallengeVersion?.questions ?? [];
   const challengeQuestions: any[] = da.challengeVersion?.questions ?? [];
   const reviews: any[] = da.reviews ?? [];
-  const decisions: any[] = da.decisions ?? [];
   const interview = da.interviews?.[0] ?? null;
   const statusInfo = STATUS_BADGE[inferredStatus] ?? STATUS_BADGE.Pending;
 
@@ -324,12 +372,12 @@ export default function DomainLeadApplicationView() {
         domainName={da.domain?.name ?? da.challengeVersion?.domain?.name}
         cycleName={application.applicationCycle.name}
         statusSlot={
-          <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold border ${statusInfo.bg}`}>
+          <Pill dot={statusInfo.tone}>
             {statusInfo.label}
             {inferredStatus === "AcceptedElsewhere" && (
-              <InfoTip content="Applicant accepted an offer from another DALI domain — this application is closed and sibling pending applications are automatically withdrawn." />
+              <InfoTip content="This applicant accepted an offer from another DALI domain, so this application is closed and their other pending applications are withdrawn." />
             )}
-          </span>
+          </Pill>
         }
       />
 
@@ -372,12 +420,13 @@ export default function DomainLeadApplicationView() {
             </DetailCard>
           )}
 
-          {/* Decision history */}
-          {decisions.length > 0 && (
-            <DetailCard title="Decision History" className="overflow-hidden">
-              <DecisionHistoryList decisions={decisions.map(toDecisionHistoryRow)} />
-            </DetailCard>
-          )}
+          {/* Every stage change in one list: delibs, interviews, decisions.
+              The move control sits in the body, not the title row: this column
+              is too narrow for a select beside the heading. */}
+          <SetupCard title="Decisions" description="Every stage change, oldest first.">
+            {canMoveStage && <StageMoveControl domainApplicationId={da.id} />}
+            <ApplicationTimeline entries={timeline} />
+          </SetupCard>
         </div>
       </div>
     </div>
@@ -406,16 +455,6 @@ function toInterviewNotesData(interview: any): InterviewNotesData {
   };
 }
 
-function toDecisionHistoryRow(d: any): DecisionHistoryRow {
-  return {
-    id: d.id,
-    type: d.type,
-    stage: d.stage,
-    waitlistRank: d.waitlistRank,
-    createdAt: d.createdAt,
-  };
-}
-
 function ReviewCard({
   review,
   criteriaByKey,
@@ -437,16 +476,14 @@ function ReviewCard({
         <div className="flex items-center gap-2">
           <Avatar photoUrl={review.reviewerPhotoUrl} name={name} size="sm" className="shrink-0" />
           <span className="text-sm font-medium text-foreground">{name}</span>
-          {isSubmitted ? (
-            <span className="text-xs text-green-700 bg-green-100 px-1.5 py-0.5 rounded font-medium">Submitted</span>
-          ) : (
-            <span className="text-xs text-yellow-700 bg-yellow-100 px-1.5 py-0.5 rounded font-medium">In Progress</span>
-          )}
+          <Pill dot={isSubmitted ? "success" : "warning"}>
+            {isSubmitted ? "Submitted" : "In progress"}
+          </Pill>
         </div>
         {review.overallRecommendation && (
-          <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${RECOMMENDATION_COLORS[review.overallRecommendation] ?? "bg-muted text-foreground/80"}`}>
+          <Pill dot={RECOMMENDATION_TONES[review.overallRecommendation] ?? "neutral"}>
             {review.overallRecommendation}
-          </span>
+          </Pill>
         )}
       </div>
 

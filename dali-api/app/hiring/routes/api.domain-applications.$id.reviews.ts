@@ -99,9 +99,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "A general application rubric must be set before assigning reviewers to applications" }, { status: 400 });
   }
 
-  // Fellowship cycles use only the cycle-level general rubric; per-domain
-  // rubrics aren't part of that flow, so skip the per-domain check.
-  if (cycle.cycleType !== "Fellowship") {
+  // The per-domain rubric scores the challenge, so only cycles with challenges
+  // need one; the rest review against the general rubric alone.
+  if (cycle.hasChallenges) {
     const domainCycle = await prisma.domainApplicationCycle.findUnique({
       where: { domainId_applicationCycleId: { domainId, applicationCycleId: cycle.id } },
     });

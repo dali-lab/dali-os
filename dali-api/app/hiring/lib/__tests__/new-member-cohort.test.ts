@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
+vi.mock("~/hiring/lib/cycles", () => ({ getActiveCycles: vi.fn() }));
 
 import { prisma } from "~/lib/db";
+import { getActiveCycles } from "~/hiring/lib/cycles";
 import {
   getNewMemberCohortIds,
   isNewMemberCohort,
@@ -15,10 +17,11 @@ const mockPrisma = prisma as unknown as Record<
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(getActiveCycles).mockResolvedValue([]);
 });
 
 describe("getNewMemberCohortIds", () => {
-  it("returns the userIds accepted in the latest General + Fellowship cycles", async () => {
+  it("returns the userIds accepted in the latest Students + Interns cycles", async () => {
     // Standard, then Fellowship (Promise.all preserves call order).
     mockPrisma.applicationCycle.findFirst
       .mockResolvedValueOnce({ id: "cycle-standard" })
@@ -65,5 +68,29 @@ describe("isNewMemberCohort", () => {
     mockPrisma.applicationCycle.findFirst.mockResolvedValue({ id: "cycle-standard" });
     mockPrisma.application.findFirst.mockResolvedValue(null);
     expect(await isNewMemberCohort("u1")).toBe(false);
+  });
+});
+
+describe("getNewMemberCohortIds with overlapping cycles", () => {
+  it("also counts a still-active cycle of the same group that has hires", async () => {
+    mockPrisma.applicationCycle.findFirst
+      .mockResolvedValueOnce({ id: "cycle-newer" })
+      .mockResolvedValueOnce(null);
+    vi.mocked(getActiveCycles).mockResolvedValue([
+      { id: "cycle-older-active", applicants: "Students" },
+      { id: "cycle-core", applicants: "LabMembers" },
+    ] as any);
+    mockPrisma.applicationCycle.findMany = vi.fn().mockResolvedValue([{ id: "cycle-older-active" }]);
+    mockPrisma.application.findMany.mockResolvedValue([{ userId: "u1" }, { userId: "u2" }]);
+
+    await getNewMemberCohortIds();
+
+    // Lab members cycles never count: only the Students cycle is probed.
+    expect(mockPrisma.applicationCycle.findMany.mock.calls[0][0].where.id).toEqual({
+      in: ["cycle-older-active"],
+    });
+    expect(mockPrisma.application.findMany.mock.calls[0][0].where.applicationCycleId).toEqual({
+      in: ["cycle-newer", "cycle-older-active"],
+    });
   });
 });

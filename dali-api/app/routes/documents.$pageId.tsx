@@ -1,5 +1,8 @@
-import { redirect, useLoaderData, useSearchParams } from "react-router";
+import { useCallback, useRef } from "react";
+import { Link, redirect, useLoaderData, useSearchParams } from "react-router";
 import QRCode from "qrcode";
+import { Shapes } from "lucide-react";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import type { Route } from "./+types/documents.$pageId";
 import { prisma } from "~/lib/db";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
@@ -15,6 +18,10 @@ import { driveRootCrumbs, workspaceDriveScope } from "~/lib/drive-crumbs";
 import { DocumentEditor } from "~/components/DocumentEditor";
 import { AttendanceChecklist, type AttendanceRow } from "~/components/AttendanceChecklist";
 import { CheckInPanel } from "~/components/CheckInPanel";
+import { MeetingRecorder } from "~/components/MeetingRecorder";
+import { appendBlocks } from "~/components/doc";
+import type { DocEditorInstance } from "~/components/doc/schema/build";
+import { pageDocName } from "~/collab/roomName";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { PageIcon } from "~/components/PageIcon";
 import { FolderIcon } from "~/components/FolderIcon";
@@ -177,6 +184,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     return redirect(`/drive?scope=${scope}&folder=${page.id}`);
   }
 
+  // Whiteboards are Excalidraw canvases, not text documents — send any stale
+  // /documents/:id entry point (bookmark, recents, search hit) to the canvas.
+  if (page.kind === "Whiteboard") {
+    return redirect(`/whiteboard/${page.id}`);
+  }
+
   // After the gate, so a 404 never lands in someone's recents. Detached — a
   // failed bookkeeping write must not cost the reader their document.
   recordPageVisit(auth.user.sub, page.id, request);
@@ -238,6 +251,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     | {
         meetingId: string;
         meetingLabel: string;
+        /** The meeting's linked whiteboard, when it has one (whiteboard flag). */
+        whiteboardPageId: string | null;
         canMark: boolean;
         rows: AttendanceRow[];
         selfCheckIn: boolean;
@@ -256,6 +271,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         meetingType: true,
         meetingTypeLabel: true,
         attendanceMode: true,
+        whiteboardPage: { select: { id: true } },
         attendance: {
           select: {
             userId: true,
@@ -287,6 +303,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       attendance = {
         meetingId: meeting.id,
         meetingLabel: label,
+        whiteboardPageId: meeting.whiteboardPage?.id ?? null,
         canMark,
         rows: meeting.attendance.map((a) => ({
           userId: a.userId,
@@ -383,9 +400,34 @@ export default function DocumentPage() {
   const [searchParams] = useSearchParams();
   const focusCommentId = searchParams.get("comment") ?? undefined;
   const focusMentionUserId = searchParams.get("mention") ?? undefined;
+  const whiteboardEnabled = useFeatureFlag("whiteboard");
+  const recordingEnabled = useFeatureFlag("ai-meeting-notes");
+
+  // Meeting recording writes into the doc through the live editor, so
+  // collaborators see the notes arrive like any other edit.
+  const editorRef = useRef<DocEditorInstance | null>(null);
+  const onEditorReady = useCallback((ed: DocEditorInstance) => {
+    editorRef.current = ed;
+  }, []);
+  const insertMarkdown = useCallback((markdown: string) => {
+    const editor = editorRef.current;
+    if (!editor) return false;
+    appendBlocks(editor, editor.tryParseMarkdownToBlocks(markdown));
+    return true;
+  }, []);
 
   return (
     <div className="flex flex-col gap-4">
+      {whiteboardEnabled && attendance?.whiteboardPageId && (
+        // This meeting also has a whiteboard — link across to it (the board
+        // carries the matching link back).
+        <Link
+          to={`/whiteboard/${attendance.whiteboardPageId}`}
+          className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-foreground transition-colors hover:bg-muted"
+        >
+          <Shapes className="h-4 w-4 text-muted-foreground" /> Open meeting whiteboard
+        </Link>
+      )}
       {attendance?.selfCheckIn && (
         <CheckInPanel
           meetingId={attendance.meetingId}
@@ -395,6 +437,9 @@ export default function DocumentPage() {
           checkInUrl={attendance.checkInUrl}
           checkInQrSvg={attendance.checkInQrSvg}
         />
+      )}
+      {recordingEnabled && canEdit && (
+        <MeetingRecorder documentName={pageDocName(pageId)} onInsert={insertMarkdown} />
       )}
       {attendance && (
         <AttendanceChecklist
@@ -429,6 +474,7 @@ export default function DocumentPage() {
         backlinks={backlinks}
         focusMentionUserId={focusMentionUserId}
         aiEnabled
+        onEditorReady={onEditorReady}
       />
     </div>
   );

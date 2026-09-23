@@ -30,6 +30,7 @@ import type { Level } from "~/lib/level";
 import { dedupeLiveAssignments } from "../lib/staffing-board";
 import { publishCycleChange } from "../lib/staffing-events.server";
 import { derivePairings, findDomainsMissingMentors } from "../lib/mentorship-pairings";
+import { grantTeamRepos } from "../lib/github-team-sync";
 
 // POST /api/staffing/finalize
 //
@@ -51,7 +52,8 @@ import { derivePairings, findDomainsMissingMentors } from "../lib/mentorship-pai
 //                  created (a group needs no password). Env-gated; reports
 //                  "skipped" when the Admin SDK isn't configured.
 //   - github:      get-or-create the project's GITHUB_ORG team (from
-//                  Project.githubTeamSlug) and add the confirmed roster.
+//                  Project.githubTeamSlug), add the confirmed roster, and grant
+//                  the team push access to each of the project's repos.
 
 // The User fields resolveSlackIdsForInvite needs: stored id + emails to look up.
 const SLACK_INVITE_USER_SELECT = {
@@ -741,9 +743,11 @@ export async function action({ request }: Route.ActionArgs) {
 
   // ── github ───────────────────────────────────────────────────────────────
   // Get-or-create the project's org team (Project.githubTeamSlug, persistent
-  // across terms) and add the confirmed roster. Re-runnable: ensureTeam and the
-  // membership PUT are both idempotent, and we never remove anyone. Roster
-  // members without a stored githubUsername are skipped and reported.
+  // across terms), add the confirmed roster, and grant the team push on each of
+  // the project's repos (so members inherit repo access via the team).
+  // Re-runnable: ensureTeam, the membership PUT, and the repo-permission PUT are
+  // all idempotent, and we never remove anyone. Roster members without a stored
+  // githubUsername are skipped and reported.
   if (selected.has("github")) {
     // The slug is editable in the Finalize modal; an edit overrides (and is
     // persisted to) Project.githubTeamSlug, so it no longer has to be pre-set on
@@ -801,6 +805,13 @@ export async function action({ request }: Route.ActionArgs) {
           }
         }
         const added = withHandle.size - needs2fa.length - failed.length;
+        // Grant the team push on each of the project's repos so confirmed
+        // members inherit repo access through their team membership — adding
+        // people to the team alone gives them nothing. Add-only, idempotent,
+        // per-repo isolation (unparseable = skipped, missing = reported).
+        const repoResults = await grantTeamRepos(team.slug, project.repoUrls);
+        const reposGranted = repoResults.filter((r) => r.status === "granted").length;
+        const repoErrors = repoResults.filter((r) => r.status === "error");
         // Persist the slug if the lead changed it (so future runs reuse it).
         if (slug !== project.githubTeamSlug) {
           await prisma.project.update({
@@ -810,14 +821,19 @@ export async function action({ request }: Route.ActionArgs) {
         }
 
         results.github = {
-          status: failed.length > 0 ? "error" : "ok",
+          status: failed.length > 0 || repoErrors.length > 0 ? "error" : "ok",
           message: summarize(
             `${team.slug}${team.created ? " (new)" : ""}`,
             `${added} added`,
+            reposGranted > 0 && `${reposGranted} repo${reposGranted === 1 ? "" : "s"} granted`,
             missing.length > 0 && `${missing.length} no GitHub username: ${missing.join(", ")}`,
             needs2fa.length > 0 &&
               `${needs2fa.length} must enable two-factor auth on GitHub before they can join: ${needs2fa.join(", ")}`,
             failed.length > 0 && `${failed.length} failed — ${failed.join("; ")}`,
+            repoErrors.length > 0 &&
+              `${repoErrors.length} repo error${repoErrors.length === 1 ? "" : "s"}: ${repoErrors
+                .map((r) => r.message)
+                .join("; ")}`,
           ),
         };
       } catch (err) {

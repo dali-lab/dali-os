@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
+import { MAX_GUEST_EMAILS } from "~/calendar/lib/guest-emails";
 import {
   updateScheduledMeeting,
   type ScheduledMeetingScope,
@@ -19,6 +20,8 @@ const Base = {
   // Omitted leaves the stored value alone; "" clears it (here and on Google).
   location: z.string().trim().max(500).optional(),
   description: z.string().trim().max(5000).optional(),
+  // People with no DALI profile, invited by address through the Google event.
+  guestEmails: z.array(z.string().trim().email().max(320)).max(MAX_GUEST_EMAILS).optional(),
 } as const;
 
 const UpdateSchema = z.discriminatedUnion("scopeType", [
@@ -69,6 +72,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     recurrenceRule: body.recurrenceRule,
     location: body.location,
     description: body.description,
+    guestEmails: body.guestEmails,
   });
 
   if (!result.ok) {

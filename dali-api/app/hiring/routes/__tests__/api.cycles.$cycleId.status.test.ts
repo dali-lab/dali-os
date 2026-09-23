@@ -9,8 +9,8 @@ vi.mock("~/hiring/lib/cycles");
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isCore } from "~/lib/roles";
-import { autoCloseIfExpired, findOtherActiveCycleId } from "~/hiring/lib/cycles";
+import { isCycleAdmin } from "~/lib/roles";
+import { autoCloseIfExpired } from "~/hiring/lib/cycles";
 import { action } from "~/hiring/routes/api.cycles.$cycleId.status";
 
 const HIRING_LEAD_ID = "hiring-lead-1";
@@ -39,9 +39,8 @@ beforeEach(() => {
     ok: true,
     user: { sub: HIRING_LEAD_ID, email: "lead@x.com", type: "user" },
   } as any);
-  vi.mocked(isCore).mockResolvedValue(true);
+  vi.mocked(isCycleAdmin).mockResolvedValue(true);
   vi.mocked(autoCloseIfExpired).mockResolvedValue(undefined as any);
-  vi.mocked(findOtherActiveCycleId).mockResolvedValue(null);
 });
 
 function makeOpenRequest() {
@@ -56,20 +55,26 @@ function setupCycle({
   domains,
   challengeVersionDomainIds,
   closeDate = new Date("2099-01-01"),
+  overrides = {},
 }: {
   domains: Array<{ domainId: string; isReady: boolean }>;
   challengeVersionDomainIds: (string | null)[];
   closeDate?: Date | null;
+  overrides?: Record<string, unknown>;
 }) {
   mockPrisma.applicationCycle.findUniqueOrThrow.mockResolvedValue({
     id: CYCLE_ID,
     closeDate,
+    applicants: "Students",
+    hasChallenges: false,
+    applicationFormId: "form-1",
     statusUpdates: [{ newStatus: "Draft" }],
     domains,
     challengeVersions: challengeVersionDomainIds.map((domainId, i) => ({
       challengeVersionId: `cv-${i}`,
       challengeVersion: { domainId },
     })),
+    ...overrides,
   });
   mockPrisma.challengeVersion.findMany.mockResolvedValue(
     challengeVersionDomainIds
@@ -135,5 +140,28 @@ describe("POST /api/hiring/cycles/:cycleId/status — Draft → Open all-domains
 
     expect(res.status).toBe(400);
     expect(mockPrisma.applicationCycleStatusUpdate.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/hiring/cycles/:cycleId/status — Draft → Open stage checks", () => {
+  const readyDomains = [{ domainId: "d-1", isReady: true }];
+  const open = () =>
+    action({ request: makeOpenRequest(), params: { cycleId: CYCLE_ID }, context: {} } as any);
+
+  it("requires a challenge per domain when the cycle has challenges", async () => {
+    setupCycle({ domains: readyDomains, challengeVersionDomainIds: [], overrides: { hasChallenges: true } });
+    (mockPrisma as any).cycleDomainForm = { findMany: vi.fn().mockResolvedValue([]) };
+
+    const res = await open();
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/challenge/);
+  });
+
+  it("requires the application form when the cycle has no challenges", async () => {
+    setupCycle({ domains: readyDomains, challengeVersionDomainIds: [], overrides: { applicationFormId: null } });
+
+    const res = await open();
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/application form/);
   });
 });

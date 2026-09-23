@@ -23,6 +23,8 @@ export type EditContext = {
     scopeType: "None" | "Group" | "UserList" | "Project";
     groupId: string | null;
     participantUserIds: string[];
+    guestEmails: string[];
+    googleSynced: boolean;
     organizerId: string;
     upcoming: boolean;
   };
@@ -107,6 +109,7 @@ export function EditMeetingModal({
   const [description, setDescription] = useState("");
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
+  const [guestEmails, setGuestEmails] = useState<string[]>([]);
   const [recurrenceRule, setRecurrenceRule] = useState<string | null>(null);
 
   const [saving, setSaving] = useState(false);
@@ -143,6 +146,7 @@ export function EditMeetingModal({
         setRecurrenceRule(data.meeting.recurrenceRule);
         setLocation(data.meeting.location ?? "");
         setDescription(data.meeting.description ?? "");
+        setGuestEmails(data.meeting.guestEmails);
         if (data.meeting.scopeType === "Group" && data.meeting.groupId) {
           // Anyone on the meeting who isn't in the group was invited on top of
           // it; select them too so saving doesn't drop them.
@@ -214,6 +218,7 @@ export function EditMeetingModal({
         durationMinutes,
         location: location.trim(),
         description: description.trim(),
+        guestEmails,
       };
       const local = new Date(`${date}T${startTime}`);
       if (!isNaN(local.getTime())) payload.startTime = local.toISOString();
@@ -296,6 +301,8 @@ export function EditMeetingModal({
               groupsById={groupsById}
               resolvedCount={resolvedParticipantIds.length}
               responsesByUserId={guestResponses}
+              guestEmails={guestEmails}
+              onChangeGuestEmails={ctx.meeting.googleSynced ? setGuestEmails : undefined}
             />
           </FieldRow>
 

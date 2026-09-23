@@ -82,6 +82,30 @@ export function currentDecisionId(decisions: DecisionRow[]): string | null {
   return best?.id ?? null;
 }
 
+// The Draft waiting to be finalized, if any: a Draft with no Final or Released
+// sibling of the same type. Decision is append-only, so finalizing doesn't edit
+// the Draft — it writes a Final row whose parent is the Draft — which is why
+// "already finalized" is a question about siblings rather than about this row.
+//
+// One definition, shared by every surface that offers the action: the domain
+// lead dashboard's Interviews and Reviews tables, and the Decisions card on an
+// application's own page.
+export function findFinalizableDraft<T extends DecisionRow>(
+  decisions: T[],
+): T | null {
+  return (
+    decisions.find(
+      (d) =>
+        d.stage === "Draft" &&
+        !decisions.some(
+          (other) =>
+            other.type === d.type &&
+            (other.stage === "Final" || other.stage === "Released"),
+        ),
+    ) ?? null
+  );
+}
+
 export type PrePipelinePill = "Reviewing" | "InterviewScheduled" | "PostInterview";
 
 type PrePipelineInput = {

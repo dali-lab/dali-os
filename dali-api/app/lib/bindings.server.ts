@@ -1,7 +1,7 @@
 // Process ↔ folder bindings.
 //
-// A "process" (a Project, an EducationOffering, a HiringCycle, or lab-wide Core
-// governance) points at NORMAL Drive folders that receive its auto-filed
+// A "process" (a Project, a HiringCycle, or lab-wide Core governance) points
+// at NORMAL Drive folders that receive its auto-filed
 // artifacts — a project's meeting-notes folders, an offering's Forms folder,
 // Core's Agreements folder, etc. This replaces the old `Page.systemKey`
 // scaffolding (see the ProcessFolderBinding model in schema.prisma):
@@ -48,11 +48,18 @@ export const CERTIFICATE_TEMPLATES_PROCESS_ID = "certificate-templates";
 export type FolderSlot = { purpose: string; label: string; defaultTitle: string };
 
 export const FOLDER_SLOTS: Record<ProcessType, FolderSlot[]> = {
+  // Named for what they hold — every team / partner meeting — rather than for
+  // the artifacts inside one: each meeting files its note doc and/or its
+  // whiteboard here. The `purpose` keys stay meeting-notes-* — they're the
+  // stable binding keys persisted on existing rows.
   Project: [
-    { purpose: "meeting-notes-team", label: "Team meeting notes", defaultTitle: "Team meeting notes" },
-    { purpose: "meeting-notes-partner", label: "Partner meeting notes", defaultTitle: "Partner meeting notes" },
+    { purpose: "meeting-notes-team", label: "Team meetings", defaultTitle: "Team meetings" },
+    { purpose: "meeting-notes-partner", label: "Partner meetings", defaultTitle: "Partner meetings" },
   ],
-  EducationOffering: [{ purpose: "forms", label: "Forms", defaultTitle: "Forms" }],
+  // An offering's Drive home is fixed at Education > <the offering>, so it
+  // exposes nothing to repoint. Its Forms folder is created directly in the
+  // offering's own workspace (ensureOfferingFormsFolder in ~/lib/pages).
+  EducationOffering: [],
   // Hiring is a lab-wide singleton (processId = HIRING_PROCESS_ID), parallel to
   // Core: ONE shared, user-configurable folder set for all of hiring, not per
   // cycle. These default to a Core-group scope (Core-only, which covers every
@@ -63,7 +70,7 @@ export const FOLDER_SLOTS: Record<ProcessType, FolderSlot[]> = {
     { purpose: "rubrics", label: "Rubrics", defaultTitle: "Rubrics" },
   ],
   Core: [
-    { purpose: "meeting-notes", label: "Meeting notes", defaultTitle: "Meeting notes" },
+    { purpose: "meeting-notes", label: "Meeting assets", defaultTitle: "Meeting assets" },
     { purpose: "agreements", label: "Agreements", defaultTitle: "Agreements" },
     { purpose: "email-templates", label: "Email templates", defaultTitle: "Templates" },
     { purpose: "education-templates", label: "Education templates", defaultTitle: "Education Templates" },
@@ -72,7 +79,7 @@ export const FOLDER_SLOTS: Record<ProcessType, FolderSlot[]> = {
   // workspace, but no Core-group scope, so these folders are the communal shelf
   // every member can see and edit.
   Lab: [
-    { purpose: "meeting-notes", label: "Meeting notes", defaultTitle: "Meeting notes" },
+    { purpose: "meeting-notes", label: "Meeting assets", defaultTitle: "Meeting assets" },
   ],
   // Lab-wide singleton (processId = CERTIFICATE_TEMPLATES_PROCESS_ID): the one
   // Core-scoped folder every uploaded certificate-template background files into.

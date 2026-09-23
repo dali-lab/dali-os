@@ -40,7 +40,7 @@ const mockPrisma = prisma as unknown as {
     findMany: ReturnType<typeof vi.fn>;
   };
   domainApplication: { findUnique: ReturnType<typeof vi.fn> };
-  cycleDecisionEmail: { findUnique: ReturnType<typeof vi.fn> };
+  hiringEmail: { findUnique: ReturnType<typeof vi.fn> };
   user: { findUnique: ReturnType<typeof vi.fn> };
   delibsSession: {
     findUnique: ReturnType<typeof vi.fn>;
@@ -60,7 +60,7 @@ beforeEach(() => {
   (mockPrisma as any).gmailIntegration = { findFirst: vi.fn() };
   (mockPrisma as any).decision = { findUnique: vi.fn(), findFirst: vi.fn(), create: vi.fn(), findMany: vi.fn() };
   (mockPrisma as any).domainApplication = { findUnique: vi.fn() };
-  (mockPrisma as any).cycleDecisionEmail = { findUnique: vi.fn() };
+  (mockPrisma as any).hiringEmail = { findUnique: vi.fn() };
   (mockPrisma as any).user = { findUnique: vi.fn() };
   (mockPrisma as any).delibsSession = { findUnique: vi.fn(), update: vi.fn() };
   (mockPrisma as any).$transaction = vi.fn(async (fn: any) => fn(mockPrisma));
@@ -146,13 +146,11 @@ describe("Decision lineage (parentDecisionId)", () => {
       application: {
         userId: "applicant-user-id",
         applicationCycleId: "cycle-1",
-        applicationCycle: { cycleType: "Standard" },
+        applicationCycle: { applicants: "Students" },
         user: { firstName: "Test", dartmouthEmail: null, netId: null },
       },
     });
-    mockPrisma.cycleDecisionEmail.findUnique.mockResolvedValue({
-      emailTemplateVersion: { id: "etv-1", subject: "s", body: "b" },
-    });
+    mockPrisma.hiringEmail.findUnique.mockResolvedValue({ subject: "s", body: "b" });
     mockPrisma.gmailIntegration.findFirst.mockResolvedValue(null);
 
     const req = new Request("http://localhost/api/decisions/dec-final/release", { method: "POST" });
@@ -169,7 +167,8 @@ describe("Decision lineage (parentDecisionId)", () => {
     vi.mocked(isDomainLead).mockResolvedValue(true);
     mockPrisma.delibsSession.findUnique.mockResolvedValue({
       id: "session-1",
-      type: "Final",
+      roundId: "final",
+      applicationCycle: { timeline: null },
       columnOrder: { Accept: ["da-a"], Waitlist: ["da-w"], Reject: ["da-r"] },
     });
     mockPrisma.decision.create.mockResolvedValue({});

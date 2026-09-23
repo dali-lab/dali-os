@@ -41,6 +41,14 @@ export function Combobox<T extends string = string>({
   icon,
   /** Shown in place of the list when nothing matches what was typed. */
   emptyLabel = "No matches",
+  /**
+   * Let a typed value that isn't already an option be committed. Given the
+   * trimmed query, return the option to offer for it (e.g. parse "45" into a
+   * "45 min" row) or null to reject. The row is appended to the filtered list
+   * and chosen like any other; the caller must include the committed value in
+   * `options` so the trigger can render its label once selected.
+   */
+  allowCustom,
 }: {
   value: T;
   options: SelectOption<T>[];
@@ -52,6 +60,7 @@ export function Combobox<T extends string = string>({
   className?: string;
   icon?: ReactNode;
   emptyLabel?: string;
+  allowCustom?: (query: string) => SelectOption<T> | null;
 }) {
   const panelClass = usePanelClass();
   const [open, setOpen] = useState(false);
@@ -66,10 +75,19 @@ export function Combobox<T extends string = string>({
   // Typing filters; opening without typing shows everything, so the control
   // still works as a plain dropdown for anyone who never touches the keyboard.
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return options;
-    return options.filter((o) => o.label.toLowerCase().includes(q));
-  }, [options, query]);
+    const q = query.trim();
+    const ql = q.toLowerCase();
+    const base = ql ? options.filter((o) => o.label.toLowerCase().includes(ql)) : options;
+    // Offer a typed-but-unlisted value (e.g. a custom number) as its own row so
+    // Enter/click can commit it — unless it already resolves to a known option.
+    if (allowCustom && q) {
+      const custom = allowCustom(q);
+      if (custom && !options.some((o) => o.value === custom.value)) {
+        return [...base, custom];
+      }
+    }
+    return base;
+  }, [options, query, allowCustom]);
 
   function close() {
     setOpen(false);

@@ -1,3 +1,4 @@
+import { redirect } from "react-router";
 import { prisma } from "~/lib/db";
 import { requireAuth, forbidden, redirectApplicantToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -58,7 +59,9 @@ import {
 import { publishNotificationChange } from "~/lib/notify-stream.server";
 import {
   attachMeetingNote,
+  attachMeetingWhiteboard,
   cancelScheduledMeeting,
+  setMeetingProject,
   trackExternalEventAsMeeting,
   updateScheduledMeeting,
   type ScheduledMeetingScope,
@@ -185,7 +188,9 @@ async function meetingsForExternalEvents(
       organizerId: true,
       externalEventId: true,
       isCoreMeeting: true,
+      meetingType: true,
       notePage: { select: { id: true } },
+      whiteboardPage: { select: { id: true } },
       timeEntries: { where: { userId }, select: { id: true }, take: 1 },
     },
   });
@@ -196,12 +201,15 @@ async function meetingsForExternalEvents(
     byExternalId.set(m.externalEventId, {
       meetingId: m.id,
       notePageId: m.notePage?.id ?? null,
+      whiteboardPageId: m.whiteboardPage?.id ?? null,
+      hasType: m.meetingType != null,
       onTimesheet: m.timeEntries.length > 0,
       isCoreMeeting: m.isCoreMeeting,
       canMarkCoreMeeting,
-      // Adding notes after the fact is the organizer's or Core's call — the same
-      // authority attachMeetingNote re-checks server-side.
+      // Adding notes/whiteboards after the fact is the organizer's or Core's
+      // call — the same authority the attach* helpers re-check server-side.
       canAddNote: isOrganizer || canMarkCoreMeeting,
+      canAddWhiteboard: isOrganizer || canMarkCoreMeeting,
       canInvite: isOrganizer || canMarkCoreMeeting,
     });
   }
@@ -688,6 +696,17 @@ async function maybeUpdateMeetingFromComposer(
     return Response.json({ error: "Couldn't read the guest list." }, { status: 400 });
   }
 
+  // Absent when the composer had no guest list to edit — leave the stored ones.
+  let guestEmails: string[] | undefined;
+  if (get("guestEmails")) {
+    try {
+      const parsed: unknown = JSON.parse(get("guestEmails"));
+      guestEmails = Array.isArray(parsed) ? parsed.filter((e): e is string => typeof e === "string") : [];
+    } catch {
+      return Response.json({ error: "Couldn't read the guest list." }, { status: 400 });
+    }
+  }
+
   const editScope = (get("scope") || "all") as "this" | "following" | "all";
   const occurrenceStart = get("originalStartIso") || undefined;
   const occurrenceEventId = get("eventId") || undefined;
@@ -704,6 +723,7 @@ async function maybeUpdateMeetingFromComposer(
     recurrenceRule,
     location: get("location").trim(),
     description: get("description").trim(),
+    guestEmails,
     editScope,
     occurrenceStart,
     occurrenceEventId,
@@ -1071,22 +1091,33 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
       return { intent, meetingId: get("meetingId"), onTimesheet: asBool(get("onTimesheet")) };
     case "set-meeting-core":
       return { intent, meetingId: get("meetingId"), isCoreMeeting: asBool(get("isCoreMeeting")) };
-    case "add-meeting-note": {
+    case "set-meeting-project":
+      return {
+        intent,
+        meetingId: get("meetingId"),
+        projectId: get("projectId") || undefined,
+        meetingType: get("meetingType") || undefined,
+        meetingTypeLabel: get("meetingTypeLabel") || undefined,
+      };
+    case "add-meeting-note":
+    case "add-meeting-whiteboard": {
       // noteLocation is a nested object, so it rides across as a JSON string
-      // (same pattern as seed-working-hours' `days`).
+      // (same pattern as seed-working-hours' `days`). meetingType is optional for
+      // the whiteboard intent (a meeting with a note reuses its type), so an
+      // empty field coerces to undefined rather than a failing enum value.
       let noteLocation: unknown = undefined;
       const locRaw = get("noteLocation");
       if (locRaw) {
         try {
           noteLocation = JSON.parse(locRaw);
         } catch {
-          // Leave undefined; the note falls back to its default destination.
+          // Leave undefined; the asset falls back to its default destination.
         }
       }
       return {
         intent,
         meetingId: get("meetingId"),
-        meetingType: get("meetingType"),
+        meetingType: get("meetingType") || undefined,
         meetingTypeLabel: get("meetingTypeLabel") || undefined,
         projectId: get("projectId") || undefined,
         noteLocation,
@@ -1141,13 +1172,32 @@ export async function loadParticipantOptions(
   return { groups, users: [...users, ...extraGroupMembers] };
 }
 
-export async function loadCalendarData(request: Request) {
+/**
+ * @param opts.portal true when this is the /portal/calendar mount — the same
+ *   calendar, read for a non-member (a Dartmouth student, or an external
+ *   instructor). They get the personal half of it: their own working hours,
+ *   their own linked Google calendars and events, and their classes this term.
+ *   The lab's member and group directory is withheld, so the participant picker
+ *   is empty and no meeting can be addressed to a member from there.
+ */
+export async function loadCalendarData(
+  request: Request,
+  opts: { portal?: boolean } = {},
+) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  const portalRedirect = redirectApplicantToPortal(auth);
-  if (portalRedirect) return portalRedirect;
+  if (!opts.portal) {
+    const portalRedirect = redirectApplicantToPortal(auth);
+    if (portalRedirect) return portalRedirect;
+  }
 
   const userId = auth.user.sub;
+
+  // Keyed on the DALIMember row rather than the auth type, the same way the
+  // member shell decides who it is for: a non-member instructor authenticates
+  // as a "member" account and still belongs on the portal copy.
+  const labMember = await isLabMember(userId, request);
+  if (opts.portal && labMember) return redirect("/calendar");
 
   // Resolve the current term once and reuse it everywhere in this loader so
   // the per-request cache in roles.ts eliminates redundant DB reads.
@@ -1157,7 +1207,9 @@ export async function loadCalendarData(request: Request) {
   // Members + groups for the participant picker (shared with the meeting
   // edit-context endpoint). Kicked off here so it runs alongside the fan-out
   // below; awaited once the rest resolves.
-  const participantOptionsP = loadParticipantOptions(request);
+  const participantOptionsP = labMember
+    ? loadParticipantOptions(request)
+    : Promise.resolve({ groups: [] as GroupOption[], users: [] as UserOption[] });
 
   const [
     settings,
@@ -1550,11 +1602,24 @@ export async function loadCalendarData(request: Request) {
   return data;
 }
 
+// The intents that write lab records rather than the viewer's own calendar:
+// meeting notes and their Drive pages, the Core-meeting marker, the logged-time
+// link on a meeting, promoting a Google event into a DALI meeting, and
+// subscribing to the lab's general calendar. The portal calendar posts here
+// too, so these stay member-only — everything else (working hours, linked
+// calendars, Google events, classes this term, one's own time entries) is the
+// viewer's own data and is open to a non-member.
+const MEMBER_ONLY_CALENDAR_INTENTS = new Set([
+  "subscribe-general-calendar",
+  "toggle-meeting-time-entry",
+  "set-meeting-core",
+  "add-meeting-note",
+  "track-event-as-meeting",
+]);
+
 export async function submitCalendarAction(request: Request) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
-  if (auth.user.type === "applicant")
-    return forbidden(request);
 
   const userId = auth.user.sub;
   // Any write here can change what the next read should return, so drop this
@@ -1566,6 +1631,12 @@ export async function submitCalendarAction(request: Request) {
   // Classes-this-term intents carry their own shape (period/custom + Google
   // destination), so they're handled before the Zod-validated calendar action.
   const rawIntent = typeof raw.intent === "string" ? raw.intent : "";
+  if (
+    MEMBER_ONLY_CALENDAR_INTENTS.has(rawIntent) &&
+    !(await isLabMember(userId, request))
+  ) {
+    return forbidden(request);
+  }
   if (rawIntent.startsWith("class-")) {
     return handleClassAction(rawIntent, raw, userId, request);
   }
@@ -1954,6 +2025,26 @@ export async function submitCalendarAction(request: Request) {
       return null;
     }
 
+    case "set-meeting-project": {
+      // Behind the unify flag — 404 (not 403) so a disabled feature isn't leaked.
+      // setMeetingProject re-checks organizer/Core + project membership.
+      const roles = await getUserRoles(userId, request);
+      if (!(await isFeatureEnabled("unified-core-project-meetings", userId, roles, request))) {
+        return Response.json({ error: "Not found" }, { status: 404 });
+      }
+      const result = await setMeetingProject({
+        meetingId: input.meetingId,
+        actorId: userId,
+        projectId: input.projectId,
+        meetingType: input.meetingType,
+        meetingTypeLabel: input.meetingTypeLabel ?? null,
+      });
+      if (!result.ok) {
+        return Response.json({ error: result.error }, { status: result.status });
+      }
+      return Response.json({ ok: true });
+    }
+
     case "add-meeting-note": {
       const result = await attachMeetingNote({
         meetingId: input.meetingId,
@@ -1967,6 +2058,27 @@ export async function submitCalendarAction(request: Request) {
         return Response.json({ error: result.error }, { status: result.status });
       }
       return Response.json({ ok: true, notePageId: result.notePageId });
+    }
+
+    case "add-meeting-whiteboard": {
+      // Whiteboards ship behind a flag — don't create one for a caller who
+      // can't see the feature. 404 (not 403) so a disabled feature isn't leaked.
+      const roles = await getUserRoles(userId, request);
+      if (!(await isFeatureEnabled("whiteboard", userId, roles, request))) {
+        return Response.json({ error: "Not found" }, { status: 404 });
+      }
+      const result = await attachMeetingWhiteboard({
+        meetingId: input.meetingId,
+        actorId: userId,
+        meetingType: input.meetingType ?? null,
+        meetingTypeLabel: input.meetingTypeLabel ?? null,
+        projectId: input.projectId ?? null,
+        noteLocation: input.noteLocation ?? null,
+      });
+      if (!result.ok) {
+        return Response.json({ error: result.error }, { status: result.status });
+      }
+      return Response.json({ ok: true, whiteboardPageId: result.whiteboardPageId });
     }
 
     case "track-event-as-meeting": {

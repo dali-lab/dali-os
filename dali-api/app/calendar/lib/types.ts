@@ -188,6 +188,11 @@ export type RsvpStatus = "Accepted" | "Declined" | "Tentative" | "Pending";
 export type EventMeetingDTO = {
   meetingId: string;
   notePageId: string | null;
+  /** The meeting's linked whiteboard, when it has one (whiteboard flag). */
+  whiteboardPageId: string | null;
+  /** The meeting already records a type (e.g. it has a note): an added
+   *  whiteboard reuses it and skips the About/type step. */
+  hasType: boolean;
   /** Whether the viewer already has a TimeEntry for this meeting. */
   onTimesheet: boolean;
   isCoreMeeting: boolean;
@@ -197,6 +202,9 @@ export type EventMeetingDTO = {
    *  that doesn't have one yet — gates the popover's "Add meeting notes"
    *  affordance. Moot once `notePageId` is set. */
   canAddNote: boolean;
+  /** Same authority as canAddNote, for the "Add whiteboard" affordance. Moot
+   *  once `whiteboardPageId` is set. Rendering is also gated on the flag. */
+  canAddWhiteboard: boolean;
   /** Whether the viewer (organizer or Core) may invite more people to the
    *  meeting — including after it has happened. Gates the popover's "Invite". */
   canInvite: boolean;

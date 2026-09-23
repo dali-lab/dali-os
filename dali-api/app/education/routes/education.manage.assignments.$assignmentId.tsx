@@ -22,6 +22,9 @@ export const meta: Route.MetaFunction = ({ data }) => [
 ];
 
 export const handle = {
+  // Offering pages name themselves in their own headers, so the trail above
+  // them only repeated where you already are.
+  hideBreadcrumbs: true,
   // The manage-assignment URL has no offering segment (flat route), so the
   // offering vanishes from the segment walk — declare the full trail back to
   // the offering's Assignments tab (replacing the old inline back link).
@@ -34,7 +37,7 @@ export const handle = {
     const manage = `/education/manage/${data.offeringId}`;
     return [
       { label: "Education", to: "/education" },
-      { label: "Manage", to: "/education/manage" },
+      { label: "Offerings", to: "/education/offerings" },
       { label: data.offeringTitle, to: manage },
       { label: "Assignments", to: `${manage}?tab=assignments` },
       { label: data.assignment.title },

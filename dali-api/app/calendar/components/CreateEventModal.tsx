@@ -11,6 +11,8 @@ import { useFeatureFlag } from "~/components/FeatureFlags";
 import {
   ScheduleWeekGrid,
   ParticipantPicker,
+  OptimalTimePills,
+  type SlotSuggestions,
 } from "~/calendar/components/scheduling";
 import {
   NO_REPEAT,
@@ -45,6 +47,9 @@ export type CreateEventModalProps = {
   /** Guests to open with already invited — the "Meet with" flow passes one
    *  person so the availability grid is useful the moment the modal opens. */
   initialUserIds?: string[];
+  /** Groups to open with already invited — a project's "Schedule meeting"
+   *  deep link passes that project's group so the whole team is preselected. */
+  initialGroupIds?: string[];
   onClose: () => void;
 };
 
@@ -118,6 +123,7 @@ export function CreateEventModal({
   startLocal: initStart,
   endLocal: initEnd,
   initialUserIds,
+  initialGroupIds,
   onClose,
 }: CreateEventModalProps) {
   // ── Destination (writable Google calendars) ──────────────────────────────
@@ -155,7 +161,8 @@ export function CreateEventModal({
 
   // ── Participants / type detection ────────────────────────────────────────
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>(initialUserIds ?? []);
-  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
+  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>(initialGroupIds ?? []);
+  const [guestEmails, setGuestEmails] = useState<string[]>([]);
 
   const usersById = new Map(data.users.map((u) => [u.id, u]));
   const groupsById = new Map(data.groups.map((g) => [g.id, g]));
@@ -169,7 +176,7 @@ export function CreateEventModal({
     return Array.from(set);
   })();
 
-  const hasGuests = selectedUserIds.length > 0 || selectedGroupIds.length > 0;
+  const hasGuests = selectedUserIds.length > 0 || selectedGroupIds.length > 0 || guestEmails.length > 0;
   const type = hasGuests ? "Meeting" : "Event";
 
   // ── Core meeting ─────────────────────────────────────────────────────────
@@ -182,18 +189,24 @@ export function CreateEventModal({
   }, [coreSelected]);
   const isCoreMeeting = coreSelected || (data.canMarkCoreMeeting && coreMeeting);
 
+  // Flag: a Core meeting may also be about a project (its note stays a project
+  // note; Core is just extra hub visibility). Off = marking Core clears any
+  // project, as before.
+  const unifiedCoreProject = useFeatureFlag("unified-core-project-meetings");
+
   // ── Meeting note fields (only shown in Meeting mode) ─────────────────────
   // Derive-type-from-project model; see MeetingNoteFields.
   const note = useMeetingNote();
 
   // Prefill "About" when exactly one invited group is a project group — a default
-  // the sender can still change; it never enables the note on its own. A Core
-  // meeting's note has no project, so the prefill stays out of its way.
+  // the sender can still change; it never enables the note on its own. Without the
+  // unify flag a Core meeting's note has no project, so the prefill stays out of
+  // its way; with it, a Core project meeting still prefills its project.
   useEffect(() => {
-    if (selectedGroupIds.length !== 1 || isCoreMeeting) return;
+    if (selectedGroupIds.length !== 1 || (isCoreMeeting && !unifiedCoreProject)) return;
     note.applyGroupPrefill(groupsById.get(selectedGroupIds[0]!)?.projectId ?? null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedGroupIds, isCoreMeeting]);
+  }, [selectedGroupIds, isCoreMeeting, unifiedCoreProject]);
 
   // Send the invite from a specific calendar, not just an account — the same
   // sub-calendars the event destination offers. Starts on the event default
@@ -207,6 +220,11 @@ export function CreateEventModal({
   // The link is minted on the selected Google calendar, so the option only
   // makes sense with a Google destination and real guests.
   const meetEnabled = useFeatureFlag("google-meet");
+  const whiteboardEnabled = useFeatureFlag("whiteboard");
+  const optimalTimesEnabled = useFeatureFlag("optimal-times");
+  // Ranked "best times" reported up by the availability grid; rendered as
+  // clickable pills below it (see OptimalTimePills).
+  const [optimalSuggestions, setOptimalSuggestions] = useState<SlotSuggestions | null>(null);
   const [addMeet, setAddMeet] = useState(false);
   const canAddMeet = meetEnabled && !!inviteFrom && hasGuests;
 
@@ -287,7 +305,13 @@ export function CreateEventModal({
   const revalidator = useRevalidator();
   const [meetingStatus, setMeetingStatus] = useState<
     | null
-    | { ok: true; count: number; gcalError?: string | null; notePageId?: string | null }
+    | {
+        ok: true;
+        count: number;
+        gcalError?: string | null;
+        notePageId?: string | null;
+        whiteboardPageId?: string | null;
+      }
     | { ok: false; error: string }
   >(null);
   const [submitting, setSubmitting] = useState(false);
@@ -357,6 +381,7 @@ export function CreateEventModal({
       if (isCoreMeeting) {
         payload.isCoreMeeting = true;
       }
+      if (guestEmails.length > 0) payload.guestEmails = guestEmails;
       if (selectedGroupIds.length === 1 && selectedUserIds.length === 0) {
         payload.scopeType = "Group";
         payload.groupId = selectedGroupIds[0];
@@ -382,6 +407,7 @@ export function CreateEventModal({
           count: json.notifiedCount ?? 0,
           gcalError: json.gcalError ?? null,
           notePageId: json.notePageId ?? null,
+          whiteboardPageId: json.whiteboardPageId ?? null,
         });
         // If isWork, log the organizer's time against the meeting we just
         // created — linked by its id so it shows as an accent on the meeting
@@ -519,9 +545,17 @@ export function CreateEventModal({
               selectedEndLocal={selectedEndLocal || undefined}
               compact
               hideAvailability={!hasGuests}
+              enableOptimalTimes={optimalTimesEnabled}
+              onSuggestionsChange={setOptimalSuggestions}
               weekNav={{ onShift: shiftWeek, onToday: goToThisWeek }}
             />
           </div>
+
+          <OptimalTimePills
+            suggestions={optimalSuggestions}
+            selectedStartLocal={selectedStartLocal || undefined}
+            onPick={handleSelectRange}
+          />
 
           {availCaption && (
             <p className="text-center text-xs text-muted-foreground">{availCaption}</p>
@@ -594,6 +628,8 @@ export function CreateEventModal({
                   usersById={usersById}
                   groupsById={groupsById}
                   resolvedCount={resolvedParticipantIds.length}
+                  guestEmails={guestEmails}
+                  onChangeGuestEmails={inviteDests.length > 0 ? setGuestEmails : undefined}
                 />
               </FieldRow>
 
@@ -766,6 +802,8 @@ export function CreateEventModal({
                   usersById={usersById}
                   groupsById={groupsById}
                   resolvedCount={resolvedParticipantIds.length}
+                  guestEmails={guestEmails}
+                  onChangeGuestEmails={inviteDests.length > 0 ? setGuestEmails : undefined}
                 />
               </FieldRow>
 
@@ -898,7 +936,8 @@ export function CreateEventModal({
                 </div>
               )}
 
-              {/* Meeting notes toggle */}
+              {/* Meeting assets: a note doc and/or a whiteboard, sharing the
+                  same About/type. The fields appear once either is enabled. */}
               <div className="rounded-md border border-border bg-muted/20 p-3">
                 <Toggle
                   checked={note.state.enabled}
@@ -906,7 +945,17 @@ export function CreateEventModal({
                   label="Create meeting note"
                   description="Starts a shared note doc linked to this meeting."
                 />
-                {note.state.enabled && (
+                {whiteboardEnabled && (
+                  <div className="mt-3">
+                    <Toggle
+                      checked={note.state.whiteboard}
+                      onChange={(e) => note.setWhiteboard(e.target.checked)}
+                      label="Create whiteboard"
+                      description="Starts a shared whiteboard canvas linked to this meeting."
+                    />
+                  </div>
+                )}
+                {(note.state.enabled || note.state.whiteboard) && (
                   <div className="mt-3 pt-1">
                     <MeetingNoteFields
                       note={note}
@@ -914,6 +963,7 @@ export function CreateEventModal({
                       fieldClass={fieldClass}
                       labelClass={labelClass}
                       core={isCoreMeeting}
+                      allowProjectWhenCore={unifiedCoreProject}
                     />
                   </div>
                 )}
@@ -932,6 +982,17 @@ export function CreateEventModal({
                       {" "}
                       <a href={`/documents/${meetingStatus.notePageId}`} className="underline font-medium">
                         View meeting note
+                      </a>
+                    </>
+                  )}
+                  {meetingStatus.whiteboardPageId && (
+                    <>
+                      {" "}
+                      <a
+                        href={`/whiteboard/${meetingStatus.whiteboardPageId}`}
+                        className="underline font-medium"
+                      >
+                        View whiteboard
                       </a>
                     </>
                   )}

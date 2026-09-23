@@ -18,6 +18,9 @@ export const meta: Route.MetaFunction = ({ data }) => [
 ];
 
 export const handle = {
+  // Offering pages name themselves in their own headers, so the trail above
+  // them only repeated where you already are.
+  hideBreadcrumbs: true,
   // Flat routes drop the opaque middle :offeringId, so the course would vanish
   // from the trail — declare the full trail back to the offering's assignments.
   breadcrumbTrail: (

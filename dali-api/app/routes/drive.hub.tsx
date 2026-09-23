@@ -18,7 +18,9 @@ import {
   RotateCcw,
   MoreHorizontal,
   X,
+  Shapes,
 } from "lucide-react";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import { useState, useCallback, useEffect, useRef, useId, useMemo } from "react";
 import type { ReactNode } from "react";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
@@ -545,6 +547,7 @@ function folderAndDescendants(items: DriveItem[], folderId: string): Set<string>
 type ScopeActions = {
   createDoc: () => Promise<void>;
   createFolder: () => Promise<void>;
+  createWhiteboard: () => Promise<void>;
   rename: (item: DriveItem) => Promise<void>;
   remove: (item: DriveItem) => Promise<void>;
   /** Delete request without the confirm/toast — used by bulk delete. */
@@ -610,7 +613,7 @@ function makeScopeActions({
   const createParent = currentFolderId ?? rootParent;
 
   async function createPage(
-    pageKind: "FreeForm" | "Folder",
+    pageKind: "FreeForm" | "Folder" | "Whiteboard",
     title: string,
     parentPageId: string | null,
   ): Promise<string | null> {
@@ -619,6 +622,7 @@ function makeScopeActions({
       fd.set("intent", "create");
       fd.set("title", title);
       fd.set("isFolder", pageKind === "Folder" ? "true" : "false");
+      fd.set("kind", pageKind);
       if (parentPageId) fd.set("parentPageId", parentPageId);
       const res = await fetch("/api/notes", { method: "POST", body: fd, credentials: "include" });
       if (!res.ok) return null;
@@ -701,6 +705,20 @@ function makeScopeActions({
     } else {
       toast.error("Couldn't create the folder");
     }
+  }
+
+  async function createWhiteboard() {
+    const name = await dialog.prompt({
+      title: "New whiteboard",
+      label: "Name",
+      defaultValue: "Untitled whiteboard",
+      confirmLabel: "Create",
+      validate: (v) => (v.trim() ? null : "Enter a name"),
+    });
+    if (name === null) return;
+    const id = await createPage("Whiteboard", name.trim(), createParent);
+    if (id) window.location.assign(`/whiteboard/${id}`);
+    else toast.error("Couldn't create the whiteboard");
   }
 
   async function rename(item: DriveItem) {
@@ -903,7 +921,7 @@ function makeScopeActions({
     revalidate();
   }
 
-  return { createDoc, createFolder, rename, remove, deleteItem, performMove };
+  return { createDoc, createFolder, createWhiteboard, rename, remove, deleteItem, performMove };
 }
 
 // ── New menu (contextual to the current location) ────────────────────────────
@@ -952,6 +970,7 @@ function NewMenu({
   const label = scope.id === "mine" ? "My Drive" : isLab ? "Lab" : scope.label;
   const dialog = useDialog();
   const toast = useToast();
+  const whiteboardEnabled = useFeatureFlag("whiteboard");
   const isEducation = scopeKindOf(scope.id) === "education-group";
   const docBlock = isEducation ? educationCreateBlock(scope.items, currentFolderId, "FreeForm") : null;
   const folderBlock = isEducation ? educationCreateBlock(scope.items, currentFolderId, "Folder") : null;
@@ -1016,7 +1035,7 @@ function NewMenu({
         <button
           type="button"
           data-testid={`drive-new-menu-${scope.id}`}
-          className="shrink-0 inline-flex items-center gap-1.5 bg-os-accent text-os-bg font-semibold transition-colors hover:bg-os-accent-hover rounded-full px-5 py-2.5 text-sm"
+          className="os-add-btn shrink-0"
         >
           <Plus className="w-4 h-4" /> New
           <ChevronDown className="w-3.5 h-3.5 opacity-80" />
@@ -1041,6 +1060,17 @@ function NewMenu({
           New folder
         </CreateLabel>
       </Menu.Item>
+      {whiteboardEnabled && (
+        <Menu.Item
+          icon={<Shapes className="w-3.5 h-3.5" />}
+          disabled={docBlock !== null}
+          onSelect={() => void actions.createWhiteboard()}
+        >
+          <CreateLabel testId={`drive-new-whiteboard-${scope.id}`} blockedReason={docBlock}>
+            New whiteboard
+          </CreateLabel>
+        </Menu.Item>
+      )}
       {canViewForms && (
         <Menu.Item icon={<ClipboardList className="w-3.5 h-3.5" />} onSelect={() => void createForm()}>
           <span data-testid="drive-new-form">New form</span>
@@ -1705,7 +1735,7 @@ export default function DriveHub() {
         disabled
         data-testid="drive-new-menu-disabled"
         title="Open a drive to create something"
-        className="shrink-0 inline-flex items-center gap-1.5 bg-os-accent text-os-bg font-semibold rounded-full px-5 py-2.5 text-sm opacity-40 cursor-not-allowed"
+        className="os-add-btn shrink-0 cursor-not-allowed opacity-40"
       >
         <Plus className="w-4 h-4" /> New
         <ChevronDown className="w-3.5 h-3.5 opacity-80" />

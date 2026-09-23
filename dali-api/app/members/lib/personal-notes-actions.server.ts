@@ -46,7 +46,12 @@ async function requireOwnedParentFolder(
 
 export async function createNote(
   ownerId: string,
-  input: { title?: string; parentPageId?: string | null; isFolder?: boolean },
+  input: {
+    title?: string;
+    parentPageId?: string | null;
+    isFolder?: boolean;
+    kind?: "FreeForm" | "Folder" | "Whiteboard";
+  },
 ): Promise<{ id: string }> {
   const parentPageId = input.parentPageId ?? null;
   if (parentPageId) {
@@ -65,7 +70,7 @@ export async function createNote(
       workspaceId: ownerId,
       parentPageId,
       title: input.title?.trim() || (input.isFolder ? "Untitled folder" : "Untitled"),
-      kind: input.isFolder ? "Folder" : "FreeForm",
+      kind: input.kind ?? (input.isFolder ? "Folder" : "FreeForm"),
       position: last ? last.position + 1 : 0,
       createdById: ownerId,
     },

@@ -8,6 +8,7 @@ import {
 import { interpretIntentForm } from "../app/projects/lib/intent-form-interpreter.js";
 import { replaceIntentSet } from "../app/projects/lib/intent-validation.js";
 import { syncDefaultGroups } from "../app/lib/groups.js";
+import { seedEducationDemo } from "./seeds/education-demo.js";
 import {
   ensureEducationTemplates,
   createOfferingApplicationForm,
@@ -2258,6 +2259,14 @@ async function main() {
   }
 
   // ── Interviewer availability ──────────────────────────────────────────────
+  // Scheduling reads each interviewer's DALI OS calendar. Seeded interviewers
+  // have no linked calendar, so their weekday working hours are their free
+  // time. Those hours are read in the MEMBER's own zone (User.timeZone, which
+  // the browser sets on first visit) and then intersected with the interview
+  // window's daily hours, which are read in the CYCLE's zone — so a span that
+  // only clears the window in one of the two zones makes the member silently
+  // unbookable. A 9-to-5 span overlaps the cycle's 9am-6pm window whether it
+  // is read as Eastern or as UTC, which is what an e2e login writes.
   const availabilityWindows: { startTime: Date; endTime: Date }[] = [];
   const cursor = new Date(interviewStart);
   while (cursor <= interviewEnd) {
@@ -2275,17 +2284,13 @@ async function main() {
   const allInterviewers = await prisma.cycleInterviewer.findMany({
     where: { applicationCycleId: cycle.id },
   });
-
-  for (const interviewer of allInterviewers) {
-    await prisma.interviewerAvailability.deleteMany({
-      where: { cycleInterviewerId: interviewer.id },
-    });
-    for (const w of availabilityWindows) {
-      await prisma.interviewerAvailability.create({
-        data: { cycleInterviewerId: interviewer.id, startTime: w.startTime, endTime: w.endTime },
-      });
-    }
-  }
+  const interviewerUserIds = [...new Set(allInterviewers.map((i) => i.userId))];
+  await prisma.workingHoursDay.deleteMany({ where: { userId: { in: interviewerUserIds } } });
+  await prisma.workingHoursDay.createMany({
+    data: interviewerUserIds.flatMap((userId) =>
+      [1, 2, 3, 4, 5].map((dayOfWeek) => ({ userId, dayOfWeek, startMinute: 9 * 60, endMinute: 17 * 60 })),
+    ),
+  });
 
   // ── Fall 2026 review + delibs + decision + interview seeding ─────────────
   // Look up every CycleReviewer by its user.id (Phase 2 — hiring FKs key on
@@ -2508,16 +2513,16 @@ async function main() {
   }
 
   // ── Initial DelibsSessions (Closed) ───────────────────────────────────────
-  // Each domain's Initial delibs was run and closed: decided-interview cards
+  // Each domain's first delib round ("first" in the standard timeline) was run and closed: decided-interview cards
   // went to the Interview column, rejects to the Reject column. Harper is
   // deliberately absent from the Design session because her review isn't
   // all-submitted yet (delibs eligibility requires `every submittedAt != null`).
   await prisma.delibsSession.upsert({
     where: {
-      domainId_applicationCycleId_type: {
+      domainId_applicationCycleId_roundId: {
         domainId: engDomain.id,
         applicationCycleId: cycle.id,
-        type: "Initial",
+        roundId: "first",
       },
     },
     update: {
@@ -2531,7 +2536,7 @@ async function main() {
     create: {
       domainId: engDomain.id,
       applicationCycleId: cycle.id,
-      type: "Initial",
+      roundId: "first",
       status: "Closed",
       openedById: engLead.id,
       columnOrder: {
@@ -2544,10 +2549,10 @@ async function main() {
 
   await prisma.delibsSession.upsert({
     where: {
-      domainId_applicationCycleId_type: {
+      domainId_applicationCycleId_roundId: {
         domainId: designDomain.id,
         applicationCycleId: cycle.id,
-        type: "Initial",
+        roundId: "first",
       },
     },
     update: {
@@ -2561,7 +2566,7 @@ async function main() {
     create: {
       domainId: designDomain.id,
       applicationCycleId: cycle.id,
-      type: "Initial",
+      roundId: "first",
       status: "Closed",
       openedById: designLeadUser.id,
       columnOrder: {
@@ -2574,10 +2579,10 @@ async function main() {
 
   await prisma.delibsSession.upsert({
     where: {
-      domainId_applicationCycleId_type: {
+      domainId_applicationCycleId_roundId: {
         domainId: pmDomain.id,
         applicationCycleId: cycle.id,
-        type: "Initial",
+        roundId: "first",
       },
     },
     update: {
@@ -2591,7 +2596,7 @@ async function main() {
     create: {
       domainId: pmDomain.id,
       applicationCycleId: cycle.id,
-      type: "Initial",
+      roundId: "first",
       status: "Closed",
       openedById: pmLeadUser.id,
       columnOrder: {
@@ -2789,7 +2794,7 @@ async function main() {
   console.log(`  Winter 2027: emma(eng), liam(eng+design), sofia(design), noah(pm), olivia(eng), ethan(pm+eng), ava(design+pm), mason(eng/draft)`);
   console.log(`  Domain lead: ${engLead.firstName} ${engLead.lastName} → Engineering`);
   console.log(`  ${reviewerData.length} reviewers + ${reviewerData.length} interviewers seeded for Fall 2026`);
-  console.log(`  ${allInterviewers.length} interviewers × ${availabilityWindows.length} availability blocks`);
+  console.log(`  ${interviewerUserIds.length} interviewers with weekday working hours`);
   console.log(`  ${reviewSpecs.length} ApplicationReviews + ${decisionSpecs.length * 3} Decisions + ${interviewBookings.length} booked interviews for Fall 2026`);
 
   // ── Email templates (versioned, keyed by EmailTemplateType) ─────────────────
@@ -2886,54 +2891,26 @@ async function main() {
     }
   }
 
-  // Bind Fall 2026 (the active seeded cycle) to the four DecisionType slots.
-  for (const dt of ['Rejected', 'InvitedToInterview', 'Accepted', 'Waitlisted'] as const) {
+  // Hiring's shared emails (one per slot, used by every cycle), seeded from
+  // the templates above.
+  const hiringSlots = [
+    ...(['Rejected', 'InvitedToInterview', 'Accepted', 'Waitlisted'] as const).map((t) => ({ slot: `decision:${t}`, tmpl: t })),
+    ...(['ApplicationReceived', 'ApplicationExtensionNotice', 'InterviewInviteMentor', 'InterviewConfirmedApplicant', 'InterviewCancelledApplicant', 'InterviewCancelledInterviewer', 'InterviewLocationChanged'] as const).map((t) => ({ slot: `notification:${t}`, tmpl: t })),
+  ]
+  for (const { slot, tmpl } of hiringSlots) {
     const version = await prisma.emailTemplateVersion.findFirst({
-      where: { templateId: `tmpl_${dt.toLowerCase()}` },
+      where: { templateId: `tmpl_${tmpl.toLowerCase()}` },
       orderBy: { versionNumber: 'desc' },
     })
     if (version) {
-      await prisma.cycleDecisionEmail.upsert({
-        where: {
-          applicationCycleId_decisionType: {
-            applicationCycleId: cycle.id,
-            decisionType: dt,
-          },
-        },
-        update: { emailTemplateVersionId: version.id },
-        create: {
-          applicationCycleId: cycle.id,
-          decisionType: dt,
-          emailTemplateVersionId: version.id,
-        },
+      await prisma.hiringEmail.upsert({
+        where: { slot },
+        update: { subject: version.subject, body: version.body },
+        create: { slot, subject: version.subject, body: version.body },
       })
     }
   }
-
-  // Bind Fall 2026 to all NotificationType slots.
-  for (const nt of ['ApplicationReceived', 'ApplicationExtensionNotice', 'InterviewInviteMentor', 'InterviewConfirmedApplicant', 'InterviewCancelledApplicant', 'InterviewCancelledInterviewer', 'InterviewLocationChanged'] as const) {
-    const version = await prisma.emailTemplateVersion.findFirst({
-      where: { templateId: `tmpl_${nt.toLowerCase()}` },
-      orderBy: { versionNumber: 'desc' },
-    })
-    if (version) {
-      await prisma.cycleNotificationEmail.upsert({
-        where: {
-          applicationCycleId_notificationType: {
-            applicationCycleId: cycle.id,
-            notificationType: nt,
-          },
-        },
-        update: { emailTemplateVersionId: version.id },
-        create: {
-          applicationCycleId: cycle.id,
-          notificationType: nt,
-          emailTemplateVersionId: version.id,
-        },
-      })
-    }
-  }
-  console.log(`  ${seedTemplates.length} email templates seeded (2 legacy + 7 new + Fall 2026 decision + notification bindings)`)
+  console.log(`  ${seedTemplates.length} email templates seeded (2 legacy + 7 new), plus hiring's shared emails`)
   console.log(`  ${reviewSpecs.length} ApplicationReviews + ${decisionSpecs.filter(s => s.type === "InvitedToInterview").length * 3 + decisionSpecs.filter(s => s.type !== "InvitedToInterview").length * 2} Decisions + ${interviewBookings.length} booked interviews for Fall 2026`);
 
   // ── Partners + projects ────────────────────────────────────────────────────
@@ -4575,6 +4552,13 @@ async function main() {
       await createOfferingApplicationForm(offering.id, admin.id);
       await createOfferingApplicationForm(workshop.id, admin.id);
 
+      // Fills the miniseries out into a running course — roster, attendance,
+      // assignments, materials, discussion. See prisma/seeds/education-demo.ts.
+      const eduDemo = await seedEducationDemo(prisma, {
+        adminId: admin.id,
+        termId: term26S.id,
+      });
+
       // Lab-workspace Page + a NotificationPreference row for the admin.
       await prisma.page.deleteMany({
         where: { workspaceType: "Lab", title: "Lab Handbook" },
@@ -4676,6 +4660,10 @@ async function main() {
           `+ term-status / role-requests / staffing-assignments / essentiality / ` +
           `epic-sprint-task / mentorship / partner-user / partner-portal-demo / templates / offering / ` +
           `page / notifications / job-codes`,
+      );
+      console.log(
+        `  Intro to React demo: ${eduDemo.enrolled} enrolled, ${eduDemo.waitlisted} waitlisted, ` +
+          `${eduDemo.sessions} sessions, ${eduDemo.assignments} assignments, ${eduDemo.materials} material pages`,
       );
     }
   }

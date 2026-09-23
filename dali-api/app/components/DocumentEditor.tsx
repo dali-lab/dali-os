@@ -9,7 +9,7 @@ import {
 } from "react";
 import { useNavigate, useRevalidator } from "react-router";
 import { Check, CloudOff, Copy, FileDown, FolderInput, History, LayoutTemplate, Link, Loader2, MessageSquare, MoreHorizontal, Printer, Search, Star, Upload, Users } from "lucide-react";
-import { DocEditor, stripBlockIds, type DocSyncState, type TocHeading } from "~/components/doc";
+import { DocEditor, appendBlocks, stripBlockIds, type DocSyncState, type TocHeading } from "~/components/doc";
 import type { DocEditorInstance } from "~/components/doc/schema/build";
 import { DocCommentsPanel, useDocThreadCount } from "~/components/doc/comments";
 import { pageDocName } from "~/collab/roomName";
@@ -76,6 +76,7 @@ export function DocumentEditor({
   favorited: initialFavorited = false,
   workspaceType,
   workspaceId = null,
+  onEditorReady,
 }: {
   pageId: string;
   initialTitle: string;
@@ -116,6 +117,9 @@ export function DocumentEditor({
   workspaceId?: string | null;
   // True when the server has an AI provider key configured — shows the AI slash items.
   aiEnabled?: boolean;
+  // Hands the live editor to the host page, for surfaces outside the editor
+  // that write into the doc (meeting recording).
+  onEditorReady?: (editor: DocEditorInstance) => void;
 }) {
   const revalidator = useRevalidator();
   const navigate = useNavigate();
@@ -441,28 +445,11 @@ export function DocumentEditor({
   }
 
   // Imports (Markdown file, template) replace an empty doc or append to an
-  // existing one. Both replaceBlocks/insertBlocks are single ProseMirror
-  // transactions so the entire import is one undo step.
+  // existing one.
   function insertImportedBlocks(
     newBlocks: Parameters<DocEditorInstance["replaceBlocks"]>[1],
   ) {
-    const editor = editorRef.current;
-    if (!editor || !newBlocks.length) return;
-
-    const doc = editor.document;
-    const isEmpty =
-      doc.length === 1 &&
-      doc[0].type === "paragraph" &&
-      (!Array.isArray(doc[0].content) || doc[0].content.length === 0);
-
-    if (isEmpty) {
-      // Replace the single empty paragraph.
-      editor.replaceBlocks(editor.document, newBlocks);
-    } else {
-      // Append after the last block.
-      const lastBlock = doc[doc.length - 1];
-      editor.insertBlocks(newBlocks, lastBlock, "after");
-    }
+    if (editorRef.current) appendBlocks(editorRef.current, newBlocks);
   }
 
   // Import Markdown: reads the picked .md/.markdown/.txt file client-side and
@@ -990,7 +977,7 @@ export function DocumentEditor({
               <DocEditor
                 features="document"
                 editable={canEdit}
-                onEditorReady={(ed) => { editorRef.current = ed; liveEditorRef.current = ed; }}
+                onEditorReady={(ed) => { editorRef.current = ed; liveEditorRef.current = ed; onEditorReady?.(ed); }}
                 collab={{
                   documentName,
                   token: collabToken,

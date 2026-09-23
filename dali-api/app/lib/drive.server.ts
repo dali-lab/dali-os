@@ -63,6 +63,9 @@ export type DriveItem =
     }
   | {
       type: "doc";
+      /** True when the underlying Page.kind is Whiteboard — drives the Drive
+       *  icon and the /whiteboard/:id open href (vs the /documents/:id editor). */
+      isWhiteboard?: boolean;
       id: string;
       title: string;
       parentFolderId: string | null;
@@ -195,7 +198,7 @@ async function loadLabPages(userSub: string, request?: Request): Promise<DriveIt
       workspaceType: "Lab",
       workspaceId: null,
       archivedAt: null,
-      kind: { in: ["Folder", "FreeForm", "Structured"] },
+      kind: { in: ["Folder", "FreeForm", "Structured", "Whiteboard"] },
     },
     orderBy: { position: "asc" },
     select: {
@@ -241,12 +244,16 @@ async function loadLabPages(userSub: string, request?: Request): Promise<DriveIt
           }
         : {
             type: "doc",
+            isWhiteboard: row.kind === "Whiteboard",
             id: row.id,
             title: row.title,
             parentFolderId: row.parentPageId,
             iconEmoji: row.iconEmoji,
             updatedAt: row.updatedAt,
-            href: `/documents/${row.id}`,
+            href:
+              row.kind === "Whiteboard"
+                ? `/whiteboard/${row.id}`
+                : `/documents/${row.id}`,
           },
     );
   }
@@ -263,7 +270,7 @@ async function loadProjectPages(projectId: string): Promise<DriveItem[]> {
       workspaceType: "Project",
       workspaceId: projectId,
       archivedAt: null,
-      kind: { in: ["Folder", "FreeForm", "Structured"] },
+      kind: { in: ["Folder", "FreeForm", "Structured", "Whiteboard"] },
     },
     orderBy: { position: "asc" },
     select: {
@@ -291,12 +298,16 @@ async function loadProjectPages(projectId: string): Promise<DriveItem[]> {
         }
       : {
           type: "doc",
+          isWhiteboard: row.kind === "Whiteboard",
           id: row.id,
           title: row.title,
           parentFolderId: row.parentPageId,
           iconEmoji: row.iconEmoji,
           updatedAt: row.updatedAt,
-          href: `/documents/${row.id}`,
+          href:
+            row.kind === "Whiteboard"
+              ? `/whiteboard/${row.id}`
+              : `/documents/${row.id}`,
           partnerVisible: row.partnerVisible,
         },
   );
@@ -342,7 +353,7 @@ async function loadEducationPages(offeringId: string): Promise<DriveItem[]> {
       workspaceType: "EducationOffering",
       workspaceId: offeringId,
       archivedAt: null,
-      kind: { in: ["Folder", "FreeForm", "Structured"] },
+      kind: { in: ["Folder", "FreeForm", "Structured", "Whiteboard"] },
     },
     orderBy: { position: "asc" },
     select: {
@@ -368,12 +379,16 @@ async function loadEducationPages(offeringId: string): Promise<DriveItem[]> {
         }
       : {
           type: "doc",
+          isWhiteboard: row.kind === "Whiteboard",
           id: row.id,
           title: row.title,
           parentFolderId: row.parentPageId,
           iconEmoji: row.iconEmoji,
           updatedAt: row.updatedAt,
-          href: `/documents/${row.id}`,
+          href:
+            row.kind === "Whiteboard"
+              ? `/whiteboard/${row.id}`
+              : `/documents/${row.id}`,
         },
   );
 }
@@ -387,7 +402,7 @@ async function loadMemberPages(userSub: string): Promise<DriveItem[]> {
       workspaceType: "Member",
       workspaceId: userSub,
       archivedAt: null,
-      kind: { in: ["Folder", "FreeForm", "Structured"] },
+      kind: { in: ["Folder", "FreeForm", "Structured", "Whiteboard"] },
     },
     orderBy: { position: "asc" },
     select: {
@@ -413,12 +428,16 @@ async function loadMemberPages(userSub: string): Promise<DriveItem[]> {
         }
       : {
           type: "doc",
+          isWhiteboard: row.kind === "Whiteboard",
           id: row.id,
           title: row.title,
           parentFolderId: row.parentPageId,
           iconEmoji: row.iconEmoji,
           updatedAt: row.updatedAt,
-          href: `/documents/${row.id}`,
+          href:
+            row.kind === "Whiteboard"
+              ? `/whiteboard/${row.id}`
+              : `/documents/${row.id}`,
         },
   );
 }
@@ -777,56 +796,12 @@ export async function buildLinkedProcessMap(): Promise<Map<string, { label: stri
   // Agreements carry their kind on the row itself (loaded in loadAgreements).
   // The label is derived per-row there rather than here — see loadAgreements.
 
-  // ── Email templates: hiring decision bindings ─────────────────────────────
-  const cycleDecisionBindings = await prisma.cycleDecisionEmail.findMany({
-    select: {
-      emailTemplateVersion: { select: { templateId: true } },
-      applicationCycle: { select: { id: true, name: true } },
-    },
-  });
-  for (const b of cycleDecisionBindings) {
-    const tId = b.emailTemplateVersion.templateId;
-    if (!map.has(tId)) {
-      map.set(tId, {
-        label: `Hiring – ${b.applicationCycle.name}`,
-        href: `/hiring/lead/cycle/${b.applicationCycle.id}`,
-      });
-    }
-  }
-
-  // ── Email templates: hiring notification bindings ─────────────────────────
-  const cycleNotifBindings = await prisma.cycleNotificationEmail.findMany({
-    select: {
-      emailTemplateVersion: { select: { templateId: true } },
-      applicationCycle: { select: { id: true, name: true } },
-    },
-  });
-  for (const b of cycleNotifBindings) {
-    const tId = b.emailTemplateVersion.templateId;
-    if (!map.has(tId)) {
-      map.set(tId, {
-        label: `Hiring – ${b.applicationCycle.name}`,
-        href: `/hiring/lead/cycle/${b.applicationCycle.id}`,
-      });
-    }
-  }
-
-  // ── Email templates: education offering decision bindings ─────────────────
-  const eduDecisionBindings = await prisma.educationDecisionEmail.findMany({
-    select: {
-      emailTemplateVersion: { select: { templateId: true } },
-      offering: { select: { id: true, title: true } },
-    },
-  });
-  for (const b of eduDecisionBindings) {
-    const tId = b.emailTemplateVersion.templateId;
-    if (!map.has(tId)) {
-      map.set(tId, {
-        label: b.offering.title,
-        href: `/education/manage/${b.offering.id}`,
-      });
-    }
-  }
+  // ── Email templates: no process files one any more ────────────────────────
+  // Hiring's emails stopped being templates in the cycle-timeline rebuild, and
+  // education's in the pass that followed — both are now one editable,
+  // unversioned email per slot (hiring-emails.server.ts,
+  // education-emails.server.ts). Nothing binds an EmailTemplateVersion, so no
+  // template in the library is filed against a cycle or a course.
 
   return map;
 }

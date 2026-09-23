@@ -13,6 +13,7 @@ mod nav;
 mod notify;
 mod pairing;
 mod poller;
+mod recording;
 mod state;
 mod tray;
 mod updater;

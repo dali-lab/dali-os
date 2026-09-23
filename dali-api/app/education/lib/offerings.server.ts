@@ -9,6 +9,7 @@ import { notifyExternalInstructorInvite } from "./notifications.server";
 import { createOfferingApplicationForm } from "./application-form.server";
 import type { OfferingStatus, OfferingType } from "~/generated/prisma/client";
 import { isMultiSession, isOfferingType } from "./offering-type";
+import { APPLICATION_TZ, zonedDateTimeLocalToUtc } from "~/lib/timezone";
 
 // ─── Reads ───────────────────────────────────────────────────────────────────
 
@@ -367,10 +368,12 @@ type ActionResult = { ok: true; id?: string } | { error: string; status: number 
 
 const bad = (error: string, status = 400): ActionResult => ({ error, status });
 
+// datetime-local / date inputs carry no zone. A session or registration window
+// is a lab-local wall time, so anchor it to APPLICATION_TZ (ET) rather than the
+// host zone (UTC on Fly). Displays already render in the viewer's zone, so this
+// makes the round trip match what the instructor typed.
 function parseDate(value: FormDataEntryValue | null): Date | null {
-  if (typeof value !== "string" || !value) return null;
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? null : d;
+  return zonedDateTimeLocalToUtc(typeof value === "string" ? value : null, APPLICATION_TZ);
 }
 
 function validateRegistrationWindow(o: {
@@ -537,18 +540,16 @@ export async function runOfferingAction(
       // The caller supplies a new datetime for the first session; we preserve
       // the spacing between all sessions and between registration window + first
       // session. If the source has no sessions, we copy dates as-is.
-      const firstSessionDateRaw = formData.get("firstSessionDate");
-      const newFirstSession =
-        typeof firstSessionDateRaw === "string" && firstSessionDateRaw
-          ? new Date(firstSessionDateRaw)
-          : null;
+      // Parsed the same (ET-anchored) way sessions are stored, so the delta
+      // against the stored first-session instant is a true wall-clock shift.
+      const newFirstSession = parseDate(formData.get("firstSessionDate"));
 
       const oldFirstSession =
         src.sessions.length > 0 ? src.sessions[0].datetime : null;
 
       // deltaMs > 0 means the clone is shifted into the future; null means no shift.
       const deltaMs =
-        newFirstSession && oldFirstSession && !Number.isNaN(newFirstSession.getTime())
+        newFirstSession && oldFirstSession
           ? newFirstSession.getTime() - oldFirstSession.getTime()
           : null;
 
@@ -757,9 +758,9 @@ export async function runOfferingAction(
           Math.max(1, Number.parseInt(String(formData.get("weeks") ?? "1"), 10) || 1),
         );
         // Anchor on the calendar date in UTC so getUTCDay() and the date string
-        // stay off-by-one-proof; the time is then appended and parsed the same
-        // way a single add-session datetime-local is, keeping timezone handling
-        // identical across both paths.
+        // stay off-by-one-proof; the wall-clock time is then combined with each
+        // date and anchored to APPLICATION_TZ (ET) — identical to the single
+        // add-session path, which routes through parseDate.
         const anchor = new Date(`${startDate}T00:00:00Z`);
         const anchorDay = anchor.getUTCDay();
         const uniqueWeekdays = [...new Set(weekdays)];
@@ -769,10 +770,12 @@ export async function runOfferingAction(
             const dateStr = new Date(anchor.getTime() + offsetDays * 86_400_000)
               .toISOString()
               .slice(0, 10);
-            const datetime = new Date(`${dateStr}T${startTime}`);
-            const endsAt = /^\d{2}:\d{2}$/.test(endTime) ? new Date(`${dateStr}T${endTime}`) : null;
-            if (Number.isNaN(datetime.getTime())) continue;
-            draft.push({ datetime, endsAt: endsAt && !Number.isNaN(endsAt.getTime()) ? endsAt : null });
+            const datetime = parseDate(`${dateStr}T${startTime}`);
+            const endsAt = /^\d{2}:\d{2}$/.test(endTime)
+              ? parseDate(`${dateStr}T${endTime}`)
+              : null;
+            if (!datetime) continue;
+            draft.push({ datetime, endsAt });
           }
         }
       } else {
@@ -872,36 +875,6 @@ export async function runOfferingAction(
       });
       await recomputeOfferingDates(offeringId);
       return { ok: true };
-    }
-
-    case "set-decision-email": {
-      const status = formData.get("status");
-      if (status !== "Approved" && status !== "Waitlisted" && status !== "Rejected")
-        return bad("Invalid decision-email status");
-      const versionId = String(formData.get("emailTemplateVersionId") ?? "");
-      if (!versionId) {
-        await prisma.educationDecisionEmail.deleteMany({
-          where: { offeringId, status },
-        });
-      } else {
-        const version = await prisma.emailTemplateVersion.findUnique({
-          where: { id: versionId },
-          select: { id: true },
-        });
-        if (!version) return bad("Email template version not found", 404);
-        await prisma.educationDecisionEmail.upsert({
-          where: { offeringId_status: { offeringId, status } },
-          create: { offeringId, status, emailTemplateVersionId: versionId },
-          update: { emailTemplateVersionId: versionId },
-        });
-      }
-      await logAuditEvent({
-        action: "education.decision-email.bind",
-        userId: actorId,
-        targetId: offeringId,
-        metadata: { status, emailTemplateVersionId: versionId || null },
-      });
-      return { ok: true, id: offeringId };
     }
 
     case "set-instructors": {

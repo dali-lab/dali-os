@@ -656,11 +656,12 @@ export const prisma = {
     delete: vi.fn(),
     deleteMany: vi.fn(),
   },
-  educationDecisionEmail: {
-    findUnique: vi.fn(),
+  educationEmail: {
+    findUnique: vi.fn().mockResolvedValue(null),
     findMany: vi.fn().mockResolvedValue([]),
     upsert: vi.fn(),
     delete: vi.fn(),
+    deleteMany: vi.fn(),
   },
   educationFormBinding: {
     findUnique: vi.fn(),
@@ -749,6 +750,13 @@ export const prisma = {
   aiUsage: {
     upsert: vi.fn(),
     update: vi.fn(),
+  },
+  meetingRecording: {
+    create: vi.fn(),
+    findUnique: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+    deleteMany: vi.fn(),
   },
   outboundMessage: {
     create: vi.fn(),

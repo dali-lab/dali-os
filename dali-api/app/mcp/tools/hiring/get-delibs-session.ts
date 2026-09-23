@@ -6,13 +6,14 @@
 
 import { prisma } from "~/lib/db";
 import { hasCycleAccess } from "~/lib/roles";
-import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
+import { confidentialityCleared, getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
+import { findRound, parseTimeline } from "~/hiring/lib/cycle-timeline";
 import { McpNotFoundError, McpForbiddenError } from "../../registry";
 
 export const GET_DELIBS_SESSION_TOOL = {
   name: "get_delibs_session",
   description:
-    "Get a deliberation session's board state: columns with candidate domainApplicationIds, session type (Initial/Final), status, and domain. Requires cycle access and a signed confidentiality agreement.",
+    "Get a deliberation session's board state: columns with candidate domainApplicationIds, round (id, label, and whether it's the final round), status, and domain. Requires cycle access and a signed confidentiality agreement.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -35,6 +36,7 @@ export async function runGetDelibsSession(userId: string, input: Input): Promise
     where: { id: input.delibsSessionId },
     include: {
       domain: { select: { id: true, name: true, displayName: true } },
+      applicationCycle: { select: { timeline: true } },
     },
   });
 
@@ -45,7 +47,7 @@ export async function runGetDelibsSession(userId: string, input: Input): Promise
   }
 
   const confState = await getCycleConfidentialityState(userId, session.applicationCycleId);
-  if (confState.status !== "signed") {
+  if (!confidentialityCleared(confState)) {
     throw new McpForbiddenError(
       `Confidentiality agreement required (${confState.status}). Sign it in the web app first.`,
     );
@@ -61,7 +63,10 @@ export async function runGetDelibsSession(userId: string, input: Input): Promise
           name: session.domain.displayName ?? session.domain.name,
         }
       : null,
-    type: session.type,
+    round: (() => {
+      const r = findRound(parseTimeline(session.applicationCycle.timeline), session.roundId);
+      return { id: session.roundId, label: r?.label ?? null, isFinal: r?.isFinal ?? null };
+    })(),
     status: session.status,
     columnOrder: session.columnOrder,
     createdAt: session.createdAt.toISOString(),

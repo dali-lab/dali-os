@@ -12,20 +12,6 @@ export const meta: Route.MetaFunction = ({ data }) => {
   return [{ title: `${name || "Confidentiality agreement"} · DALI OS` }];
 };
 
-export const handle = {
-  // Agreements live in Core now (the Core Agreements folder + the /core/agreements
-  // compliance console); the bare hiring prefix has no page.
-  breadcrumbTrail: (data: unknown) => {
-    const name = (data as { agreement?: { name?: string } } | undefined)
-      ?.agreement?.name;
-    return [
-      { label: "Hiring", to: "/hiring" },
-      { label: "Agreements", to: "/core/agreements" },
-      { label: name || "Agreement" },
-    ];
-  },
-};
-
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);

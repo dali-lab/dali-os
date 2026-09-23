@@ -29,6 +29,7 @@ export {
   insertSigningField,
   insertVariable,
   insertAdminSignature,
+  appendBlocks,
   type InsertSigningFieldOpts,
 } from "./insert";
 

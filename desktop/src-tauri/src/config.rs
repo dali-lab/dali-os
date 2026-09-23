@@ -35,6 +35,12 @@ pub const STREAM_STALL_SECS: u64 = 90;
 // Unread notifications listed in the tray menu.
 pub const TRAY_RECENT_MAX: usize = 5;
 
+/// One native meeting recording (recording.rs). `id` is validated as
+/// alphanumeric by the caller.
+pub fn recording_url(id: &str) -> String {
+    format!("{PROD_ORIGIN}/api/meeting-recordings/{id}")
+}
+
 pub fn pair_start_url() -> String {
     format!("{PROD_ORIGIN}/auth/pair/start")
 }

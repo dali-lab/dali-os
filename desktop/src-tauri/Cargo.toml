@@ -1,6 +1,6 @@
 [package]
 name = "dali-os-desktop"
-version = "0.1.6"
+version = "0.1.9"
 description = "DALI OS desktop shell"
 authors = ["DALI Lab"]
 edition = "2021"
@@ -12,6 +12,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+# Reads `swiftc -print-target-info` when linking the Swift meeting recorder.
+serde_json = "1"
 
 [dependencies]
 tauri = { version = "2", features = ["tray-icon", "image-png"] }

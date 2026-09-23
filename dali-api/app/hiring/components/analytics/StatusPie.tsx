@@ -1,5 +1,4 @@
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
-import { useNavigate, useSearchParams } from "react-router";
 import { useChartColors } from "~/components/analytics/useChartColors";
 
 export interface StatusSlice {
@@ -11,6 +10,8 @@ export interface StatusSlice {
 interface Props {
   data: StatusSlice[];
   selectedStatus: string | null;
+  /** Clicking the selected slice again passes null (clears the filter). */
+  onSelect: (status: string | null) => void;
 }
 
 function renderSliceLabel(props: any) {
@@ -29,9 +30,7 @@ function renderSliceLabel(props: any) {
   );
 }
 
-export function StatusPie({ data, selectedStatus }: Props) {
-  const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+export function StatusPie({ data, selectedStatus, onSelect }: Props) {
   const colors = useChartColors();
 
   const palette = [
@@ -67,21 +66,18 @@ export function StatusPie({ data, selectedStatus }: Props) {
 
   if (total === 0) {
     return (
-      <div className="flex items-center justify-center h-96 text-muted-foreground">
+      <div className="flex items-center justify-center h-72 text-muted-foreground">
         No applications match the current filter.
       </div>
     );
   }
 
   function handleClick(slice: StatusSlice) {
-    const params = new URLSearchParams(searchParams);
-    if (selectedStatus === slice.status) params.delete("status");
-    else params.set("status", slice.status);
-    navigate({ search: `?${params.toString()}` });
+    onSelect(selectedStatus === slice.status ? null : slice.status);
   }
 
   return (
-    <div className="w-full h-80 sm:h-[480px] overflow-hidden">
+    <div className="w-full h-72 sm:h-80 overflow-hidden">
       <ResponsiveContainer width="100%" height="100%">
         <PieChart>
           <Pie
