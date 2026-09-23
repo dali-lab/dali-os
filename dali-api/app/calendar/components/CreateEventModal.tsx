@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useFetcher, useRevalidator } from "react-router";
 import { AlignLeft, CalendarDays, Clock, MapPin, Repeat, UsersRound, Video, X } from "lucide-react";
 import { cn } from "~/lib/cn";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
 import { TimeField as TimeComboField } from "~/components/ui/TimeField";
@@ -10,6 +11,8 @@ import { Toggle } from "~/components/ui/Toggle";
 import {
   ScheduleWeekGrid,
   ParticipantPicker,
+  OptimalTimePills,
+  type SlotSuggestions,
 } from "~/calendar/components/scheduling";
 import {
   NO_REPEAT,
@@ -44,6 +47,9 @@ export type CreateEventModalProps = {
   /** Guests to open with already invited — the "Meet with" flow passes one
    *  person so the availability grid is useful the moment the modal opens. */
   initialUserIds?: string[];
+  /** Groups to open with already invited — a project's "Schedule meeting"
+   *  deep link passes that project's group so the whole team is preselected. */
+  initialGroupIds?: string[];
   onClose: () => void;
 };
 
@@ -117,6 +123,7 @@ export function CreateEventModal({
   startLocal: initStart,
   endLocal: initEnd,
   initialUserIds,
+  initialGroupIds,
   onClose,
 }: CreateEventModalProps) {
   // ── Destination (writable Google calendars) ──────────────────────────────
@@ -154,7 +161,7 @@ export function CreateEventModal({
 
   // ── Participants / type detection ────────────────────────────────────────
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>(initialUserIds ?? []);
-  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
+  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>(initialGroupIds ?? []);
   const [guestEmails, setGuestEmails] = useState<string[]>([]);
 
   const usersById = new Map(data.users.map((u) => [u.id, u]));
@@ -206,6 +213,10 @@ export function CreateEventModal({
   // ── Google Meet ──────────────────────────────────────────────────────────
   // The link is minted on the selected Google calendar, so the option only
   // makes sense with a Google destination and real guests.
+  const optimalTimesEnabled = useFeatureFlag("optimal-times");
+  // Ranked "best times" reported up by the availability grid; rendered as
+  // clickable pills below it (see OptimalTimePills).
+  const [optimalSuggestions, setOptimalSuggestions] = useState<SlotSuggestions | null>(null);
   const [addMeet, setAddMeet] = useState(false);
   const canAddMeet = !!inviteFrom && hasGuests;
 
@@ -526,9 +537,17 @@ export function CreateEventModal({
               selectedEndLocal={selectedEndLocal || undefined}
               compact
               hideAvailability={!hasGuests}
+              enableOptimalTimes={optimalTimesEnabled}
+              onSuggestionsChange={setOptimalSuggestions}
               weekNav={{ onShift: shiftWeek, onToday: goToThisWeek }}
             />
           </div>
+
+          <OptimalTimePills
+            suggestions={optimalSuggestions}
+            selectedStartLocal={selectedStartLocal || undefined}
+            onPick={handleSelectRange}
+          />
 
           {availCaption && (
             <p className="text-center text-xs text-muted-foreground">{availCaption}</p>

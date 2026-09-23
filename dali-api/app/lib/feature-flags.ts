@@ -68,6 +68,12 @@ export const FEATURE_FLAGS = [
       "Adds an AI-written one-or-two-sentence summary of the project's work status beneath the status bar. Only shows when an AI provider is configured. Ships off.",
   },
   {
+    key: "mentorship-nudge",
+    label: "Nudge mentors on Slack",
+    description:
+      "Adds Core-only buttons on the Mentorship notes grid to Slack-DM mentors who haven't filled in their notes — a bulk 'Message mentors who haven't filled in' button (with an editable message + recipient preview) and a per-mentor nudge. Each mentor also gets an in-app notification. The Slack DM is force-sent regardless of the mentor's notification preferences, but stays prod-gated (staging/dev report 'not sent' unless NOTIFY_SLACK_DM_OVERRIDE=1). Ships off.",
+  },
+  {
     key: "education-redesign-v2",
     label: "Education redesign",
     description:

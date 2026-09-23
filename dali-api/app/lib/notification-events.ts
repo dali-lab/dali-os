@@ -28,6 +28,7 @@ export type EventDef = {
     | "Documents"
     | "Hiring"
     | "Education"
+    | "Mentorship"
     | "Announcements"
     | "Forms"
     | "Onboarding";
@@ -99,6 +100,16 @@ export const EVENT_TYPES = {
     area: "Meetings",
     label: "Class schedule changes",
     description: "When a class you added has a new time or room on the Dartmouth timetable.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
+  "mentorship.note_reminder": {
+    kind: "General",
+    area: "Mentorship",
+    label: "Mentorship note reminders",
+    description:
+      "When Core reminds you to fill in your weekly mentorship notes.",
+    // Slack is force-sent by the nudge action itself (bypassing this
+    // preference on purpose), so notify() must not also DM here.
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   "task.due_reminder": {

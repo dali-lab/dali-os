@@ -28,6 +28,7 @@ import {
 import { formatPayPeriod, payPeriodFor } from "~/lib/pay-period";
 import { useActionErrorToast } from "~/lib/useActionErrorToast";
 import { useToast } from "~/components/ui/toast";
+import { useDialog } from "~/components/ui/dialog";
 import { loadCalendarData, submitCalendarAction } from "./calendar.server";
 import { timeEntryDayUtc } from "~/calendar/lib/timesheet-day";
 import type { Route } from "./+types/calendar";
@@ -89,7 +90,6 @@ import {
 import { useCalendarView, ymdUtc } from "~/calendar/lib/use-calendar-view";
 import { MonthGrid } from "~/calendar/components/MonthGrid";
 import { AgendaView } from "~/calendar/components/AgendaView";
-import { MeetingComposer, type AddingMode, ParticipantPicker, userLabel } from "~/calendar/components/scheduling";
 import { CreateEventModal } from "~/calendar/components/CreateEventModal";
 import { TimesheetEditPopover, TimesheetDragPopover, LogHoursDialog } from "~/calendar/components/timesheet";
 import { CalendarSettingsModal } from "~/calendar/components/CalendarSettingsModal";
@@ -206,6 +206,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   useRefreshOnFocus(refresh);
   const [searchParams] = useSearchParams();
   const toast = useToast();
+  const { confirm } = useDialog();
 
   // Announce the outcome of a Google calendar-link attempt, then strip the
   // one-shot params via history (not setSearchParams, which would re-run the
@@ -237,12 +238,6 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // One screen now. Availability is a modal and the timesheet is a way of
-  // viewing the same grid, so the only other "mode" left is the legacy
-  // meeting-scheduling deep link.
-  const [mode, setMode] = useState<"browse" | "meeting">(() =>
-    searchParams.get("tab") === "schedule" ? "meeting" : "browse",
-  );
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Per-role colours for logged time, persisted like the hidden-calendar set.
@@ -324,15 +319,46 @@ function CalendarScreen({ data }: { data: LoaderData }) {
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createModalSlot, setCreateModalSlot] = useState<{ startLocal: string; endLocal: string } | null>(null);
-  // Guests the modal opens with — the sidebar's "Meet with" seeds one person.
+  // Guests the modal opens with — the sidebar's "Meet with" seeds one person,
+  // a project's "Schedule meeting" seeds its whole group.
   const [createModalUsers, setCreateModalUsers] = useState<string[]>([]);
-  // Every create path (grid drag, New button) lands here. Passing no slot opens
-  // the modal on its own defaults.
-  const openCreateModal = (startLocal?: string, endLocal?: string, userIds: string[] = []) => {
+  const [createModalGroups, setCreateModalGroups] = useState<string[]>([]);
+  // Every create path (grid drag, New button, project deep link) lands here.
+  // Passing no slot opens the modal on its own defaults.
+  const openCreateModal = (
+    startLocal?: string,
+    endLocal?: string,
+    userIds: string[] = [],
+    groupIds: string[] = [],
+  ) => {
     setCreateModalSlot(startLocal && endLocal ? { startLocal, endLocal } : null);
     setCreateModalUsers(userIds);
+    setCreateModalGroups(groupIds);
     setCreateModalOpen(true);
   };
+
+  // Deep link from a project's "Schedule meeting": open the create modal
+  // preselected with that project's group. Mount-only; strip the params via
+  // history (like the calendar_linked cleanup above) so a refresh or Back
+  // doesn't reopen it, and without re-running the heavy calendar loader.
+  useEffect(() => {
+    if (searchParams.get("compose") !== "meeting") return;
+    const projectId = searchParams.get("project");
+    const groupIds = projectId
+      ? data.groups.filter((g) => g.projectId === projectId).map((g) => g.id)
+      : [];
+    openCreateModal(undefined, undefined, [], groupIds);
+    const next = new URLSearchParams(searchParams);
+    next.delete("compose");
+    next.delete("project");
+    const qs = next.toString();
+    window.history.replaceState(
+      null,
+      "",
+      qs ? `${window.location.pathname}?${qs}` : window.location.pathname,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // Search bar (anchored to its toolbar button). Null anchor = closed.
   const [searchAnchor, setSearchAnchor] = useState<DOMRect | null>(null);
   // Anchored popover that replaced the old settings modal: working-hours edit
@@ -379,8 +405,10 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     return getZonedYMD(new Date(fallbackIso), data.timezone);
   };
   // Drag-move/resize of a writable event → patch just its time (new day when the
-  // move crossed columns, new hours), in the display timezone.
-  const moveEvent = (e: ExternalEventDTO, startHour: number, endHour: number, dayIdx?: number) => {
+  // move crossed columns, new hours), in the display timezone. A stray drag
+  // would silently reschedule a real event, so the block holds at the drop
+  // while the user confirms, and snaps back on cancel.
+  const moveEvent = async (e: ExternalEventDTO, startHour: number, endHour: number, dayIdx?: number) => {
     if (!e.eventId || !e.linkId) return;
     const { year, month, day } = dropYmd(e.startIso, dayIdx);
     const toIso = (h: number) => {
@@ -390,6 +418,21 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     const startIso = toIso(startHour);
     const endIso = toIso(endHour);
     setDragOverride({ key: `g:${e.eventId}`, startIso, endIso });
+    const dateLabel = new Date(startIso).toLocaleDateString(undefined, {
+      timeZone: data.timezone,
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    });
+    const ok = await confirm({
+      title: "Change event time?",
+      description: `${e.title || "Untitled event"} will move to ${dateLabel}, ${formatHourMinute(startHour)} to ${formatHourMinute(endHour)}.`,
+      confirmLabel: "Change time",
+    });
+    if (!ok) {
+      setDragOverride(null);
+      return;
+    }
     eventMoveFetcher.submit(
       {
         intent: "event-move",
@@ -482,7 +525,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     Boolean(searchAnchor) ||
     Boolean(hoursAnchor);
   useEffect(() => {
-    if (mode !== "browse" || anyModalOpen) return;
+    if (anyModalOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const t = e.target as HTMLElement | null;
@@ -503,7 +546,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     return () => window.removeEventListener("keydown", onKey);
     // changeView/goToday/navigate close over view + focusDate (derived from
     // rangeStartIso); re-bind when the visible range or view changes.
-  }, [mode, anyModalOpen, view, rangeStartIso]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [anyModalOpen, view, rangeStartIso]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Live time overrides so a block draws at its pending position instead of the
   // stored one: the composer's edit-in-progress (draftEdit) and a just-dropped
@@ -730,7 +773,6 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       {/* The date navigator belongs to the grid. Availability has no date at
           all, and Timesheet brings its own pay-period navigator, so neither
           wants this row above it. */}
-      {mode === "browse" && (
       <header className="flex shrink-0 flex-wrap items-center gap-3">
         <div className="flex items-center gap-1">
           <button type="button" className={navBtn} onClick={() => navigate(-1)} aria-label="Previous">
@@ -750,8 +792,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
         <h1 className="font-heading text-xl font-semibold text-foreground">{rangeLabel}</h1>
 
         <div className="ml-auto flex items-center gap-2">
-          {mode === "browse" && (
-            <>
+          <>
 
               {/* What the grid *is*, where the view switcher used to sit. The
                   view (month/week/day/agenda) moved to the rail, above the
@@ -792,21 +833,10 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                 {timesheetCreateMode ? "Log hours" : "Add event"}
               </button>
             </>
-          )}
         </div>
       </header>
-      )}
 
-      {/* The composer is a form, not a grid: it can run taller than the window,
-          so inside a viewport-bounded shell it carries its own scrollport
-          rather than overflowing one it doesn't own. */}
-      {mode === "meeting" ? (
-        <section className="flex min-h-0 flex-1 flex-col gap-3 md:overflow-y-auto">
-          <BackToCalendarBar label="Schedule a meeting" onBack={() => setMode("browse")} />
-          <MeetingComposer data={data} />
-        </section>
-      ) : (
-        <div className="flex min-h-0 min-w-0 flex-1 gap-5 max-md:min-h-[22rem]">
+      <div className="flex min-h-0 min-w-0 flex-1 gap-5 max-md:min-h-[22rem]">
           <CalendarSidebar
             data={data}
             focusDate={focusDate}
@@ -922,7 +952,6 @@ function CalendarScreen({ data }: { data: LoaderData }) {
               )}
           </section>
         </div>
-      )}
       {logHours && (
         <LogHoursDialog
           startLocal={logHours.startLocal}
@@ -974,28 +1003,15 @@ function CalendarScreen({ data }: { data: LoaderData }) {
           startLocal={createModalSlot?.startLocal}
           endLocal={createModalSlot?.endLocal}
           initialUserIds={createModalUsers}
+          initialGroupIds={createModalGroups}
           onClose={() => {
             setCreateModalOpen(false);
             setCreateModalSlot(null);
             setCreateModalUsers([]);
+            setCreateModalGroups([]);
           }}
         />
       )}
-    </div>
-  );
-}
-
-function BackToCalendarBar({ label, onBack }: { label: string; onBack: () => void }) {
-  return (
-    <div className="flex items-center gap-2">
-      <button
-        type="button"
-        onClick={onBack}
-        className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
-      >
-        <ChevronLeft className="h-4 w-4" /> Calendar
-      </button>
-      <span className="text-sm font-medium text-foreground">{label}</span>
     </div>
   );
 }

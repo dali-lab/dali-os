@@ -40,7 +40,6 @@ enum Event {
         system_audio: bool,
     },
     Line {
-        source: String,
         at: f64,
         text: String,
     },
@@ -168,8 +167,8 @@ async fn record(app: &AppHandle, id: &str) -> Result<(), String> {
                         };
                         notify::raise_simple(app, "Recording this meeting", body);
                     }
-                    Ok(Event::Line { source, at, text }) => {
-                        pending.push(json!({ "source": source, "at": offset + at, "text": text }));
+                    Ok(Event::Line { at, text }) => {
+                        pending.push(json!({ "at": offset + at, "text": text }));
                     }
                     Ok(Event::Error { message }) => error = Some(message),
                     Ok(Event::Stopped) => break,
