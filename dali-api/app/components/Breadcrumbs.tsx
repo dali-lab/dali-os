@@ -168,7 +168,6 @@ const DROPPED_SEGMENTS = new Set([
   'responses', // /forms/responses/:formId
   'file', // /documents/file/:fileId — the fileId segment supplies its own sub-trail
   'application', // /hiring/{reviewer,domain-lead}/application/:id — the :id leaf names the applicant
-  'notes', // /mentorship/notes/:id — leaf breadcrumb links back to /mentorship/browse
   // /calendar/check-in/:id — no /calendar/check-in index; leaf breadcrumb names the meeting
   'check-in',
 ])
@@ -239,10 +238,13 @@ export function Breadcrumbs() {
   const matches = useMatches()
   const { pathname, search } = useLocation()
   // A page can suppress the trail entirely via handle.hideBreadcrumbs. Hiring
-  // drops it section-wide; its sidebar sub-tabs are the wayfinding there.
+  // and Mentorship drop it section-wide; their sidebar sub-tabs are the
+  // wayfinding there.
   if (
     pathname === '/hiring' ||
     pathname.startsWith('/hiring/') ||
+    pathname === '/mentorship' ||
+    pathname.startsWith('/mentorship/') ||
     matches.some((m) => (m as { handle?: Handle }).handle?.hideBreadcrumbs)
   ) {
     return null
