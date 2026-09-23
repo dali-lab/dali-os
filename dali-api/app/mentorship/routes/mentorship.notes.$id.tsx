@@ -141,18 +141,18 @@ export default function MentorNoteEditor() {
     "idle",
   );
 
-  // The vibe is a discrete choice, so persist it immediately (no debounce).
-  // Clicking the active vibe again clears it back to "no vibe set".
+  // The vibe is a discrete choice, so persist it immediately (no debounce). It's
+  // required (a note without one reads as "not filled in" on the grid), so
+  // picking is one-way — clicking the active vibe again doesn't clear it.
   async function pickVibe(next: Vibe) {
-    if (!data.canEdit) return;
-    const value = vibe === next ? null : next;
-    setVibe(value);
+    if (!data.canEdit || vibe === next) return;
+    setVibe(next);
     setStatus("saving");
     try {
       const res = await fetch(`/api/mentorship/notes/${data.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ vibe: value }),
+        body: JSON.stringify({ vibe: next }),
       });
       if (!res.ok) throw new Error(`save failed: ${res.status}`);
       setStatus("saved");
