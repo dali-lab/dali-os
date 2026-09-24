@@ -95,47 +95,34 @@ describe("POST /signup action flag-OFF", () => {
   });
 });
 
-// ── Action — Google ───────────────────────────────────────────────────────────
-
-describe("POST /signup action Google", () => {
-  it("dartmouth door redirects to BetterAuth Google URL with door=dartmouth", async () => {
-    const res = (await action({
-      request: makePostRequest({ door: "dartmouth", provider: "google" }),
-    } as any)) as Response;
-    expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("https://accounts.google.com/oauth");
-    expect(mockSignInSocial).toHaveBeenCalledWith(
-      expect.objectContaining({
-        body: { provider: "google", callbackURL: "/welcome?door=dartmouth" },
-      }),
-    );
-  });
-
-  it("partner door uses /welcome?door=partner callbackURL", async () => {
-    await action({
-      request: makePostRequest({ door: "partner", provider: "google" }),
-    } as any);
-    expect(mockSignInSocial).toHaveBeenCalledWith(
-      expect.objectContaining({
-        body: { provider: "google", callbackURL: "/welcome?door=partner" },
-      }),
-    );
-  });
-});
-
 // ── Action — email magic link ─────────────────────────────────────────────────
 
-describe("POST /signup action email-link — member door (Google-only)", () => {
-  it("does not send a magic link; redirects back to the member door", async () => {
-    const res = (await action({
+describe("POST /signup action email-link — member door", () => {
+  it("sends a magic link for an @dali.dartmouth.edu email and returns sent=true", async () => {
+    const result = await action({
       request: makePostRequest({
         door: "member",
         provider: "email-link",
         email: "ada@dali.dartmouth.edu",
       }),
-    } as any)) as Response;
-    expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/signup?door=member");
+    } as any);
+    expect(result).toMatchObject({ sent: true, email: "ada@dali.dartmouth.edu" });
+    expect(mockSignInMagicLink).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({ callbackURL: "/welcome?door=member" }),
+      }),
+    );
+  });
+
+  it("rejects a non-@dali.dartmouth.edu email", async () => {
+    const result = await action({
+      request: makePostRequest({
+        door: "member",
+        provider: "email-link",
+        email: "ada@gmail.com",
+      }),
+    } as any);
+    expect(result).toMatchObject({ error: expect.stringContaining("@dali.dartmouth.edu") });
     expect(mockSignInMagicLink).not.toHaveBeenCalled();
   });
 });
