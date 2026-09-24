@@ -31,11 +31,15 @@ struct StatusPanel: View {
     }
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(room?.name ?? "Room")
-                    .font(OS.font(36, .medium))
-                    .foregroundStyle(OS.fg)
+        let free = RoomSnapshot(items: items, now: now).current == nil
+        return HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .center, spacing: 14) {
+                    Text(room?.name ?? "Room")
+                        .font(OS.font(36, .medium))
+                        .foregroundStyle(OS.fg)
+                    OSStatusPill(text: free ? "Available" : "In use", dot: free ? OS.green : OS.danger, size: 17)
+                }
                 let detail = [room?.description, room?.capacity.map { "Seats \($0)" }].compactMap { $0 }
                 if !detail.isEmpty {
                     Text(detail.joined(separator: " · "))
@@ -56,28 +60,18 @@ struct StatusPanel: View {
     }
 
     private func status(_ snapshot: RoomSnapshot) -> some View {
-        let free = snapshot.current == nil
-        let tone = free ? OS.green : OS.danger
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 18) {
-                Circle().fill(tone).frame(width: 30, height: 30)
-                Text(free ? "Available" : "In use")
-                    .font(OS.font(72, .bold))
-                    .foregroundStyle(tone)
-            }
-            Text(statusDetail(snapshot))
-                .font(OS.font(22, .medium))
-                .foregroundStyle(OS.grey)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .osCard(padding: 28)
+        Text(statusDetail(snapshot))
+            .font(OS.font(34, .medium))
+            .foregroundStyle(OS.fg)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .osCard(padding: 28)
     }
 
     private func statusDetail(_ snapshot: RoomSnapshot) -> String {
         if let current = snapshot.current {
             let left = Duration.seconds(current.end.timeIntervalSince(now))
                 .formatted(.units(allowed: [.hours, .minutes], width: .wide))
-            return "Until \(current.end.formatted(date: .omitted, time: .shortened)), \(left) left"
+            return "In use until \(current.end.formatted(date: .omitted, time: .shortened)), \(left) left"
         }
         if let next = snapshot.next {
             return "Free until \(next.start.formatted(date: .omitted, time: .shortened))"

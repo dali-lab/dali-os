@@ -101,7 +101,7 @@ struct DayTimelineView: View {
         let height = max(scale.y(for: item.end) - top, 22)
         let category = DisplayTheme.category(for: item)
         return VStack(alignment: .leading, spacing: 2) {
-            if height > 44 {
+            if height > 54 {
                 Text(item.title)
                     .font(OS.font(16, .semibold))
                     .lineLimit(height > 60 ? 2 : 1)
@@ -111,7 +111,7 @@ struct DayTimelineView: View {
                     + Text("  \(item.timeRange)").font(OS.font(14).monospacedDigit()))
                     .lineLimit(1)
             }
-            if height > 44 {
+            if height > 54 {
                 Text("\(item.timeRange) · \(item.durationText)")
                     .font(OS.font(14).monospacedDigit())
             }

@@ -100,14 +100,15 @@ struct OSPillButtonStyle: ButtonStyle {
 struct OSStatusPill: View {
     let text: String
     let dot: Color
+    var size: CGFloat = 14
 
     var body: some View {
-        HStack(spacing: 8) {
-            Circle().fill(dot).frame(width: 8, height: 8)
-            Text(text).font(OS.font(14, .semibold)).foregroundStyle(OS.fg)
+        HStack(spacing: size * 0.6) {
+            Circle().fill(dot).frame(width: size * 0.6, height: size * 0.6)
+            Text(text).font(OS.font(size, .semibold)).foregroundStyle(OS.fg)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        .padding(.horizontal, size * 0.85)
+        .padding(.vertical, size * 0.45)
         .background(OS.card, in: .capsule)
     }
 }
