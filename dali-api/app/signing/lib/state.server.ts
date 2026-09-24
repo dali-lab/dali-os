@@ -9,6 +9,7 @@ import { currentTerm } from "~/lib/roles";
 import { isUserActiveInTerm, resolveGroupMembers } from "~/lib/groups";
 import { isNewMemberCohort } from "~/hiring/lib/new-member-cohort.server";
 import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
+import { bakeSigningBody } from "~/lib/signing-fields";
 import { isStaffedInTerm, isStaffedMentorInTerm } from "./staffing-audience.server";
 import { AUDIENCE_RESOLVERS } from "./audiences";
 
@@ -369,6 +370,70 @@ export async function getBindingStateForUser(
   if (!b) return { status: "not_found" };
   const signed = b.signatures.some((s) => s.versionId === b.versionId);
   return { status: signed ? "signed" : "unsigned" };
+}
+
+// The signed copy to render/download for `userId` in `roleKey`: their own
+// frozen snapshot with the COUNTERPART party's captured signature overlaid, so a
+// co-signed mentorship agreement shows BOTH signatures instead of a party's
+// snapshot (frozen at their own sign time, with the other line still blank). A
+// mentor's copy fills in a mentee's countersignature (paired via
+// MentorshipPair); a mentee's copy fills in their mentor's signature. The
+// counterpart field stays an unfilled placeholder until that party signs (a
+// pending countersignature). Returns null only when the binding is gone.
+export async function getSignedCopyBody(
+  bindingId: string,
+  userId: string,
+  roleKey: string,
+): Promise<unknown | null> {
+  const binding = await prisma.signingBinding.findUnique({
+    where: { id: bindingId },
+    select: { versionId: true, termId: true, version: { select: { body: true } } },
+  });
+  if (!binding) return null;
+
+  const mine = await prisma.signingSignature.findUnique({
+    where: { bindingId_signerUserId_roleKey: { bindingId, signerUserId: userId, roleKey } },
+    select: { frozenBody: true },
+  });
+  const base = mine?.frozenBody ?? binding.version.body;
+
+  // Only the mentorship member/mentee pairing has a counterpart to overlay.
+  if (!binding.termId || (roleKey !== "member" && roleKey !== "mentee")) return base;
+
+  const counterpartIds =
+    roleKey === "member"
+      ? (
+          await prisma.mentorshipPair.findMany({
+            where: { mentorUserId: userId, termId: binding.termId },
+            select: { menteeUserId: true },
+          })
+        ).map((p) => p.menteeUserId)
+      : (
+          await prisma.mentorshipPair.findMany({
+            where: { menteeUserId: userId, termId: binding.termId },
+            select: { mentorUserId: true },
+          })
+        ).map((p) => p.mentorUserId);
+  if (counterpartIds.length === 0) return base;
+
+  // The counterpart's captured signature on the in-force version — earliest
+  // signer when the user has several (deterministic; single line to fill).
+  const counterSig = await prisma.signingSignature.findFirst({
+    where: {
+      bindingId,
+      roleKey: roleKey === "member" ? "mentee" : "member",
+      versionId: binding.versionId,
+      signerUserId: { in: counterpartIds },
+    },
+    orderBy: { signedAt: "asc" },
+    select: { fieldValues: true },
+  });
+  if (!counterSig?.fieldValues || typeof counterSig.fieldValues !== "object") return base;
+  // The counterpart's fieldValues only carry their own role's field ids, so
+  // this fills the counterpart signature without touching the signer's fields.
+  return bakeSigningBody(base, {
+    fieldValues: counterSig.fieldValues as Record<string, unknown>,
+  });
 }
 
 export type MenteeCountersignState = "not_owed" | "owed" | "signed";

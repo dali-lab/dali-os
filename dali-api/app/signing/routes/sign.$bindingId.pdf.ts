@@ -7,7 +7,11 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { renderDocumentPdf } from "~/lib/pdf/document-pdf.server";
-import { getBindingStateForUser, menteeCountersignState } from "~/signing/lib/state.server";
+import {
+  getBindingStateForUser,
+  menteeCountersignState,
+  getSignedCopyBody,
+} from "~/signing/lib/state.server";
 import type { PMNode } from "~/collab/export-html";
 import type { DocBlock } from "~/collab/blocknote-server";
 
@@ -39,16 +43,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     memberState.status === "signed" ? "member" : menteeState === "signed" ? "mentee" : null;
   if (!roleKey) return redirect(`/sign/${bindingId}`);
 
-  const mine = await prisma.signingSignature.findUnique({
-    where: {
-      bindingId_signerUserId_roleKey: { bindingId, signerUserId: userId, roleKey },
-    },
-    select: { frozenBody: true },
-  });
-
-  // frozenBody is null for seeded/legacy signatures; fall back to the version body,
-  // matching the behaviour of the UI-route loader (mine?.frozenBody ?? binding.version.body).
-  const signedRaw = mine?.frozenBody ?? binding.version.body;
+  // Compose the co-signed copy (signer's frozen snapshot + the counterpart's
+  // signature overlaid), same as the UI route. frozenBody is null for
+  // seeded/legacy signatures; fall back to the version body.
+  const signedRaw = (await getSignedCopyBody(bindingId, userId, roleKey)) ?? binding.version.body;
   if (!signedRaw) return redirect(`/sign/${bindingId}`);
 
   // A render failure must return a readable error, not the SPA's HTML error

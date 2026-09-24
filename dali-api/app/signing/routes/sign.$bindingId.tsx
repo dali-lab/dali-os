@@ -17,6 +17,7 @@ import {
   getBindingStateForUser,
   getSignerCohortsForBinding,
   menteeCountersignState,
+  getSignedCopyBody,
 } from "~/signing/lib/state.server";
 import type { SigningAudience } from "~/generated/prisma/enums";
 import { AUDIENCE_RESOLVERS } from "~/signing/lib/audiences";
@@ -147,13 +148,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   let signedLegacyHtml: string | null = null;
   let signedBlocks: DocBlock[] | null = null;
   if (status === "signed") {
-    const mine = await prisma.signingSignature.findUnique({
-      where: {
-        bindingId_signerUserId_roleKey: { bindingId, signerUserId: userId, roleKey: signerRole },
-      },
-      select: { frozenBody: true },
-    });
-    signedRaw = mine?.frozenBody ?? binding.version.body;
+    // Compose the co-signed copy: the signer's frozen snapshot with the
+    // counterpart's signature overlaid (a mentor's copy shows the mentee's
+    // countersignature and vice versa), instead of a snapshot with the other
+    // party's line permanently blank.
+    signedRaw = (await getSignedCopyBody(bindingId, userId, signerRole)) ?? binding.version.body;
     if (looksLikeProseMirrorDoc(signedRaw)) {
       signedLegacyHtml = renderNodes((signedRaw as PMNode).content);
     } else {
