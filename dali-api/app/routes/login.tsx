@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { useEffect, useState } from "react";
 import { Form, Link, redirect, useActionData, useLoaderData, useNavigation, useSearchParams } from "react-router";
 import type { Route } from "./+types/login";
 import { requireAuth } from "~/lib/auth";
@@ -208,6 +209,51 @@ function LoginBetterAuth({ next, actionData }: {
   const passwordError = actionData && "error" in actionData ? actionData.error : null;
   const sent = actionData && "sent" in actionData && actionData.sent ? actionData : null;
 
+  const [passkeyError, setPasskeyError] = useState<string | null>(null);
+  const [passkeyBusy, setPasskeyBusy] = useState(false);
+
+  async function signInWithPasskey() {
+    setPasskeyError(null);
+    setPasskeyBusy(true);
+    try {
+      const { authClient } = await import("~/lib/auth-client");
+      const { error } = await authClient.signIn.passkey();
+      if (error) {
+        setPasskeyError("Couldn't sign in with a passkey. Try again, or use your email.");
+        return;
+      }
+      // Session cookie is set; full reload so every loader sees the new session.
+      window.location.href = next ?? "/";
+    } catch {
+      setPasskeyError("Couldn't sign in with a passkey. Try again, or use your email.");
+    } finally {
+      setPasskeyBusy(false);
+    }
+  }
+
+  // Conditional UI: if the platform supports it, silently offer any saved
+  // passkey through the email field's autofill — no click needed. Best-effort;
+  // unsupported browsers or a dismissed prompt just fall through to the form.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const available =
+          typeof PublicKeyCredential !== "undefined" &&
+          (await PublicKeyCredential.isConditionalMediationAvailable?.());
+        if (!available || cancelled) return;
+        const { authClient } = await import("~/lib/auth-client");
+        const { error } = await authClient.signIn.passkey({ autoFill: true });
+        if (!error && !cancelled) window.location.href = next ?? "/";
+      } catch {
+        // No conditional mediation / user dismissed — ignore.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [next]);
+
   if (sent) {
     return (
       <div className="flex flex-col gap-4">
@@ -241,24 +287,43 @@ function LoginBetterAuth({ next, actionData }: {
 
   return (
     <div className="flex flex-col gap-4">
-      {passwordError && (
+      {(passwordError || passkeyError) && (
         <p className="text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3">
-          {passwordError}
+          {passwordError ?? passkeyError}
         </p>
       )}
 
+      {/* Passkey — the fast path for anyone who set one up. `webauthn` on the
+          email field also lets supported browsers surface saved passkeys in the
+          autofill dropdown (see the conditional-UI effect above). */}
+      <button
+        type="button"
+        onClick={() => void signInWithPasskey()}
+        disabled={submitting || passkeyBusy}
+        className="w-full rounded-xl border border-border bg-card text-dark-blue font-heading font-semibold py-3 hover:border-accent-coral transition disabled:opacity-50"
+      >
+        {passkeyBusy ? "Waiting for passkey…" : "Sign in with a passkey"}
+      </button>
+
+      {/* or divider */}
+      <div className="flex items-center gap-3">
+        <span className="h-px flex-1 bg-border" />
+        <span className="text-xs text-muted-foreground">or</span>
+        <span className="h-px flex-1 bg-border" />
+      </div>
+
       {/* One email, two ways in: a password (instant) or a sign-in link emailed
           to the same address (no password needed — the low-friction path most
-          apps promote alongside password). Passkeys layer on top later. Password
-          is NOT `required` so the "Email me a sign-in link" button can submit
-          with just the email; the server validates each provider. */}
+          apps promote alongside password). Password is NOT `required` so the
+          "Email me a sign-in link" button can submit with just the email; the
+          server validates each provider. */}
       <Form method="post" className="flex flex-col gap-3">
         {next && <input type="hidden" name="next" value={next} />}
         <input
           type="email"
           name="email"
           required
-          autoComplete="email"
+          autoComplete="email webauthn"
           placeholder="you@email.com"
           className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral"
         />

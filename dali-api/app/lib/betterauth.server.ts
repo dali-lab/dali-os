@@ -1,6 +1,7 @@
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { bearer, magicLink, admin } from "better-auth/plugins";
+import { passkey } from "@better-auth/passkey";
 
 import { prisma } from "~/lib/db";
 import { getApiBaseUrl, getFrontendUrl, getAppEnv } from "~/lib/app-env";
@@ -223,6 +224,19 @@ export const auth = betterAuth({
       defaultRole: "user",
       adminRoles: ["admin"],
       impersonationSessionDuration: 60 * 60, // 1h (spec §8)
+    }),
+    // passkey: WebAuthn credentials for fast repeat sign-in (Face ID / Touch ID
+    // / security keys), on top of the passwordless-first magic link. rpID is the
+    // registrable domain the browser binds credentials to (host only, no scheme
+    // or port); origin is the full app URL. Both derive from getApiBaseUrl() so
+    // local dev (localhost) and Fly (the real host) each get the right values —
+    // a mismatched rpID/origin makes every WebAuthn ceremony fail. Adds the
+    // `Passkey` table (see the migration). No cookieCache is enabled, so a
+    // deleted passkey stops working immediately.
+    passkey({
+      rpID: new URL(getApiBaseUrl()).hostname,
+      rpName: "DALI OS",
+      origin: getApiBaseUrl(),
     }),
     // Deferred plugins (do NOT add these until their schemas are in place):
     //   deviceAuthorization() — Phase 2: desktop Tauri device-code flow
