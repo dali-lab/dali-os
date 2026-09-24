@@ -28,8 +28,10 @@ struct RoomDisplayView: View {
                                 isOffline: store.isOffline,
                                 onBook: { booking = .now(minutes: $0) }
                             )
-                            .frame(width: landscape ? proxy.size.width * 0.46 : nil,
-                                   height: landscape ? nil : proxy.size.height * 0.55)
+                            // Portrait: only as tall as its content, so the
+                            // timeline below gets the rest of the screen.
+                            .frame(width: landscape ? proxy.size.width * 0.46 : nil)
+                            .fixedSize(horizontal: false, vertical: !landscape)
                             schedule(now: now)
                         }
                     }
@@ -61,7 +63,7 @@ struct RoomDisplayView: View {
                     .font(.title2.weight(.semibold))
                     // Hidden admin entry for whoever mounts the iPad.
                     .onLongPressGesture(minimumDuration: 3) { showingAdmin = true }
-                Text("Tap an open time to book, or press and drag to choose how long")
+                Text("Tap an open time to book, or drag across open time to choose how long")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
