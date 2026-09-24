@@ -88,6 +88,23 @@ export async function getBetterAuthUser(request: Request): Promise<AuthUser | nu
   return toAuthUser(session.user as BetterAuthSessionUser);
 }
 
+// Impersonation state for the current request. The BetterAuth admin plugin
+// stamps the acting session row with `impersonatedBy` = the admin's user id
+// when they "log in as" a member (see /admin/impersonate). Returns null for a
+// normal session, no session, or when the field is absent — callers treat that
+// as "not impersonating". The generated session type doesn't yet expose the
+// admin-plugin column, hence the local narrowing.
+export async function getImpersonationState(
+  request: Request,
+): Promise<{ impersonatedBy: string } | null> {
+  const session = await auth.api.getSession({ headers: request.headers });
+  const impersonatedBy = (
+    session?.session as { impersonatedBy?: string | null } | undefined
+  )?.impersonatedBy;
+  if (!impersonatedBy) return null;
+  return { impersonatedBy };
+}
+
 // Coexistence entry point used by requireAuth (~/lib/auth.ts): returns both the
 // AuthUser AND the BetterAuth session id (used where the legacy AuthSuccess
 // exposed a hashed session id — the active-sessions UI, an analytics rate-limit
