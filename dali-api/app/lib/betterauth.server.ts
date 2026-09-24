@@ -130,6 +130,12 @@ export const auth = betterAuth({
       // and later in relationship-first routing (Phase 1).
       clientId: process.env.GOOGLE_CLIENT_ID ?? "",
       clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
+      // Always show Google's account chooser. Without this, Google silently
+      // reuses whichever account the browser is already signed into — someone
+      // with a personal + a @dali account gets logged into the wrong one and
+      // can't reach DALI OS. Restores what legacy login did (oauth.authorize.ts
+      // set prompt=select_account); BetterAuth's default omits it.
+      prompt: "select_account",
     },
   },
 
