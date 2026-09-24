@@ -48,6 +48,11 @@ export const TEMPLATE_VARIABLES_REGISTRY = {
   today: { description: "The date the document is signed (Eastern Time).", contexts: ["signing"] },
   memberName: { description: "The signer's full name.", contexts: ["signing"] },
   supervisorName: { description: "The DALI staff supervisor's name.", contexts: ["signing"] },
+  menteeName: {
+    description:
+      "The mentee's full name. On a mentee's copy this is the mentee; on a mentor's copy it's the mentee(s) they mentor this term.",
+    contexts: ["signing"],
+  },
 } as const satisfies Record<string, TemplateVariableDef>;
 
 export type TemplateVariableName = keyof typeof TEMPLATE_VARIABLES_REGISTRY;

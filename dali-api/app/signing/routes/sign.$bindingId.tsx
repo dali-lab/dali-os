@@ -17,11 +17,13 @@ import {
   getBindingStateForUser,
   getSignerCohortsForBinding,
   menteeCountersignState,
+  getSignedCopyBody,
 } from "~/signing/lib/state.server";
 import type { SigningAudience } from "~/generated/prisma/enums";
 import { AUDIENCE_RESOLVERS } from "~/signing/lib/audiences";
+import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { recordSignature } from "~/signing/lib/sign.server";
-import { notifyCountersignRequest } from "~/signing/lib/notify.server";
+import { notifyCountersignRequest, sendCoSignedReceipts } from "~/signing/lib/notify.server";
 import { resolveSigningVariablesForSigner } from "~/signing/lib/variables.server";
 import { SigningFillView } from "~/signing/components/SigningFillView";
 
@@ -76,7 +78,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       id: true,
       versionId: true,
       termId: true,
-      document: { select: { name: true, audience: true } },
+      document: { select: { name: true, audience: true, requiresMenteeCountersign: true } },
       version: { select: { body: true } },
       term: { select: { code: true } },
       signatures: {
@@ -100,10 +102,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!signing) return redirect("/");
   const { role: signerRole, status } = signing;
 
+  // Drives the "signed" screen copy: on a co-signed agreement a mentor's receipt
+  // is deferred until the mentee countersigns, so we don't claim it was emailed.
+  const coSigned =
+    binding.document.requiresMenteeCountersign &&
+    (await isFeatureEnabledForEveryone("mentee-countersign", request));
+
   const supervisorName = binding.signatures[0]?.typedName ?? "";
   const variables = await resolveSigningVariablesForSigner(userId, {
     supervisorName,
     termCode: binding.term?.code ?? undefined,
+    role: signerRole,
+    termId: binding.termId ?? undefined,
   });
 
   // Convert-on-read: the fill surface and field validation walk block JSON;
@@ -147,13 +157,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   let signedLegacyHtml: string | null = null;
   let signedBlocks: DocBlock[] | null = null;
   if (status === "signed") {
-    const mine = await prisma.signingSignature.findUnique({
-      where: {
-        bindingId_signerUserId_roleKey: { bindingId, signerUserId: userId, roleKey: signerRole },
-      },
-      select: { frozenBody: true },
-    });
-    signedRaw = mine?.frozenBody ?? binding.version.body;
+    // Compose the co-signed copy: the signer's frozen snapshot with the
+    // counterpart's signature overlaid (a mentor's copy shows the mentee's
+    // countersignature and vice versa), instead of a snapshot with the other
+    // party's line permanently blank.
+    signedRaw = (await getSignedCopyBody(bindingId, userId, signerRole)) ?? binding.version.body;
     if (looksLikeProseMirrorDoc(signedRaw)) {
       signedLegacyHtml = renderNodes((signedRaw as PMNode).content);
     } else {
@@ -171,6 +179,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     fields,
     status,
     signerRole,
+    coSigned,
     next,
   };
 }
@@ -199,7 +208,10 @@ export async function action({ request, params }: Route.ActionArgs) {
   const userId = auth.user.sub;
   const binding = await prisma.signingBinding.findUnique({
     where: { id: bindingId },
-    select: { termId: true, document: { select: { audience: true } } },
+    select: {
+      termId: true,
+      document: { select: { audience: true, requiresMenteeCountersign: true } },
+    },
   });
   if (!binding) return { error: "Agreement not found." };
   const signing = await resolveSigning(
@@ -214,21 +226,45 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
   const roleKey = signing.role;
 
+  // Co-signed receipt handling: when the countersign flow is live, hold the
+  // thank-you email so it carries BOTH signatures. A mentor with mentees waits
+  // for the countersignature; the mentee's sign then emails the fully co-signed
+  // copy to the mentee AND their signed mentor(s). A mentorless mentor (or the
+  // flag off / a non-countersign doc) still gets an immediate receipt — nothing
+  // is coming to wait for.
+  const countersignActive =
+    binding.document.requiresMenteeCountersign &&
+    (await isFeatureEnabledForEveryone("mentee-countersign", request));
+  let deferReceipt = false;
+  if (roleKey === "mentee") {
+    deferReceipt = true; // the co-signed receipts are sent below instead
+  } else if (countersignActive && binding.termId) {
+    const menteeCount = await prisma.mentorshipPair.count({
+      where: { mentorUserId: userId, termId: binding.termId },
+    });
+    deferReceipt = menteeCount > 0;
+  }
+
   const result = await recordSignature({
     bindingId,
     signerUserId: userId,
     fieldValues,
     request,
     roleKey,
+    sendReceipt: !deferReceipt,
   });
   if (!result.ok) return { error: result.error };
 
-  // A mentor just signed a countersign agreement → ask their mentees to
-  // countersign. Fire-and-forget (like the signature receipt): the signature is
-  // already durably recorded, and the notify no-ops unless the doc opts in.
+  // Fire-and-forget follow-ups (the signature is already durably recorded). A
+  // mentor signing a countersign agreement asks their mentees to countersign; a
+  // mentee countersigning sends the co-signed receipt to everyone who's signed.
   if (roleKey === "member") {
     void notifyCountersignRequest(bindingId, userId).catch((err) =>
       console.error("[signing] countersign notify failed:", err),
+    );
+  } else if (roleKey === "mentee") {
+    void sendCoSignedReceipts(bindingId, userId).catch((err) =>
+      console.error("[signing] co-signed receipts failed:", err),
     );
   }
 
@@ -249,10 +285,16 @@ export default function SignBindingPage() {
         <div className="space-y-1">
           <div className="flex items-center gap-3">
             <ShieldCheck className="w-6 h-6 text-green-600" />
-            <h1 className="text-2xl font-bold text-foreground">You have signed {data.name}</h1>
+            <h1 className="text-2xl font-bold text-foreground">
+              You have {data.signerRole === "mentee" ? "countersigned" : "signed"} {data.name}
+            </h1>
           </div>
           <p className="text-sm text-muted-foreground">
-            Thanks for signing. A copy has been emailed to you and is available to download below.
+            {data.signerRole === "mentee"
+              ? "Thanks for countersigning. A co-signed copy has been emailed to you and is available to download below."
+              : data.coSigned
+                ? "Thanks for signing. Once your mentee countersigns, the fully signed copy is emailed to you both — and it's always available to download below."
+                : "Thanks for signing. A copy has been emailed to you and is available to download below."}
           </p>
         </div>
         <article className="bg-card border border-border rounded-lg p-6">

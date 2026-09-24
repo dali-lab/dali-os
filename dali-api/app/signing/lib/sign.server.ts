@@ -24,6 +24,11 @@ export interface RecordSignatureArgs {
   // keeps one signature per (binding, signer, role). Defaults to "member" so
   // every existing caller is unchanged.
   roleKey?: string;
+  // Whether to email the signer their thank-you receipt now. Defaults true.
+  // The co-signed mentorship flow passes false so the route can defer the
+  // mentor's receipt until the mentee countersigns and send both parties the
+  // fully co-signed copy instead of a half-signed one.
+  sendReceipt?: boolean;
 }
 
 export type RecordSignatureResult =
@@ -39,6 +44,7 @@ export async function recordSignature(
     select: {
       id: true,
       versionId: true,
+      termId: true,
       version: { select: { body: true } },
       document: { select: { name: true } },
       term: { select: { code: true } },
@@ -78,6 +84,8 @@ export async function recordSignature(
 
   const variables = await resolveSigningVariablesForSigner(args.signerUserId, {
     termCode: binding.term?.code ?? undefined,
+    role: roleKey === "mentee" ? "mentee" : "member",
+    termId: binding.termId ?? undefined,
   });
   const frozenBody = bakeSigningBody(body, {
     fieldValues: args.fieldValues,
@@ -126,13 +134,18 @@ export async function recordSignature(
   // The signature is already durably recorded, and rendering the PDF (headless
   // Chromium) + sending the mail can take a couple seconds; the signer must not
   // wait on it. Runs in the background on the persistent server; errors are
-  // logged, never surfaced (a receipt failure never fails the sign).
-  void sendSignatureReceipt({
-    signerUserId: args.signerUserId,
-    bindingId: args.bindingId,
-    documentName: binding.document.name,
-    frozenBody,
-  }).catch((err) => console.error("[signing] receipt send failed:", err));
+  // logged, never surfaced (a receipt failure never fails the sign). Skipped
+  // when the caller defers it (co-signed mentorship receipts, sent once both
+  // parties have signed).
+  if (args.sendReceipt ?? true) {
+    void sendSignatureReceipt({
+      signerUserId: args.signerUserId,
+      bindingId: args.bindingId,
+      versionId: binding.versionId,
+      documentName: binding.document.name,
+      frozenBody,
+    }).catch((err) => console.error("[signing] receipt send failed:", err));
+  }
 
   return { ok: true };
 }

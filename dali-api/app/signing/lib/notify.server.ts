@@ -13,6 +13,7 @@ import { renderDocumentPdf } from "~/lib/pdf/document-pdf.server";
 import type { PMNode } from "~/collab/export-html";
 import type { DocBlock } from "~/collab/blocknote-server";
 import { AUDIENCE_RESOLVERS } from "./audiences";
+import { getSignedCopyBody } from "./state.server";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 
 function escapeHtml(s: string): string {
@@ -37,6 +38,10 @@ function safeFilename(s: string): string {
 export async function sendSignatureReceipt(args: {
   signerUserId: string;
   bindingId: string;
+  // Pins the receipt's dedup to the in-force version so a re-published version
+  // sends a fresh receipt (and a deferred co-signed receipt isn't shadowed by
+  // an earlier version's). Optional for back-compat.
+  versionId?: string;
   documentName: string;
   frozenBody: unknown;
 }): Promise<void> {
@@ -91,7 +96,7 @@ export async function sendSignatureReceipt(args: {
   const { id } = await enqueueOutbound({
     channel: "email",
     purpose: "General",
-    dedupKey: `signing.receipt:${args.bindingId}:${args.signerUserId}`,
+    dedupKey: `signing.receipt:${args.bindingId}:${args.versionId ?? "x"}:${args.signerUserId}`,
     target: to,
     recipientUserId: args.signerUserId,
     subject: `Signed: ${args.documentName}`,
@@ -219,4 +224,67 @@ export async function notifyCountersignRequest(
       dedupKey: `countersign.request:${bindingId}:${binding.versionId}:${userId}`,
     })),
   });
+}
+
+// Send the fully co-signed receipt to a mentee who just countersigned AND to
+// each of their mentors who has signed the in-force version — the mentor's
+// deferred receipt, now that both signatures exist. Every recipient's PDF is
+// composed via getSignedCopyBody so it shows both parties. Fire-and-forget;
+// sendSignatureReceipt dedups per (binding, version, recipient), so a mentor
+// with several mentees is emailed once (on the first countersignature). No-op
+// unless the document opts in.
+export async function sendCoSignedReceipts(
+  bindingId: string,
+  menteeUserId: string,
+): Promise<void> {
+  const binding = await prisma.signingBinding.findUnique({
+    where: { id: bindingId },
+    select: {
+      versionId: true,
+      termId: true,
+      document: { select: { name: true, requiresMenteeCountersign: true } },
+    },
+  });
+  if (!binding || !binding.document.requiresMenteeCountersign) return;
+  const documentName = binding.document.name;
+
+  const send = async (userId: string, roleKey: string) => {
+    const body = await getSignedCopyBody(bindingId, userId, roleKey);
+    if (body == null) return;
+    await sendSignatureReceipt({
+      signerUserId: userId,
+      bindingId,
+      versionId: binding.versionId,
+      documentName,
+      frozenBody: body,
+    });
+  };
+
+  // The mentee's own co-signed copy.
+  await send(menteeUserId, "mentee").catch((err) =>
+    console.error("[signing] mentee co-signed receipt failed:", err),
+  );
+
+  // Their mentor(s) who have already signed the in-force version.
+  if (!binding.termId) return;
+  const pairs = await prisma.mentorshipPair.findMany({
+    where: { menteeUserId, termId: binding.termId },
+    select: { mentorUserId: true },
+  });
+  const mentorIds = [...new Set(pairs.map((p) => p.mentorUserId))];
+  if (mentorIds.length === 0) return;
+  const signedMentors = await prisma.signingSignature.findMany({
+    where: {
+      bindingId,
+      roleKey: "member",
+      versionId: binding.versionId,
+      signerUserId: { in: mentorIds },
+    },
+    select: { signerUserId: true },
+  });
+  for (const m of signedMentors) {
+    await send(m.signerUserId, "member").catch((err) =>
+      console.error("[signing] mentor co-signed receipt failed:", err),
+    );
+  }
 }
