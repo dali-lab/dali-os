@@ -26,6 +26,7 @@ import { TabWorkspace } from '~/components/TabWorkspace'
 import { useAttentionFeed } from '~/components/NotificationBell'
 import { TasksDrawer, attentionCount } from '~/components/AttentionPanel'
 import { DesktopBanner } from '~/components/DesktopBanner'
+import { ImpersonationBanner } from '~/components/ImpersonationBanner'
 import { ActivityLauncher } from '~/components/activities/ActivityLauncher'
 import { CommandPalette } from '~/components/CommandPalette'
 import { PageDocButton, GuideTopbarButton, ShellGuideProvider } from '~/components/page-docs/PageDocButton'
@@ -68,6 +69,8 @@ interface LayoutOSProps {
   isInstructor?: boolean
   /** Starred pages/routes, most-recently pinned first — carried by the top bar. */
   favorites?: FavoritePage[]
+  /** True when this session is an admin "log in as" — shows the exit banner. */
+  impersonating?: boolean
   focusMode?: boolean
   /** The routed page fills the shell's main column instead of growing past it
    *  (see `handle.fitViewport`) — the shell is then bounded to the window and
@@ -103,6 +106,7 @@ export function LayoutOS({
   isLabMentor = false,
   isInstructor = false,
   favorites = [],
+  impersonating = false,
   focusMode = false,
   fitViewport = false,
   children,
@@ -815,6 +819,13 @@ export function LayoutOS({
           !focusMode && mainPad,
         )}
       >
+        {/* Impersonation is a session-mode indicator, so it sits above the top
+            bar and shows even in focus mode. */}
+        {impersonating && (
+          <ImpersonationBanner
+            userName={`${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || user.email}
+          />
+        )}
         {/* `shrink-0` so a bounded shell takes the height out of the page's
             own scrollport rather than squashing the favourites bar. */}
         {!focusMode && <div className="hidden shrink-0 md:block">{topBar}</div>}

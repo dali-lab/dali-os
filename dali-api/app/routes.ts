@@ -304,6 +304,7 @@ export default [
 
   // Partner auth (no layout).
   route("partner/login", "partners/routes/partner.login.tsx"),
+  route("partner/set-password", "partners/routes/partner.set-password.tsx"),
   route("partner/auth/verify", "partners/routes/partner.auth.verify.tsx"),
   route("partner/invite/:token", "partners/routes/partner.invite.$token.tsx"),
   route("partner/onboarding", "partners/routes/partner.onboarding.tsx"),
@@ -329,8 +330,14 @@ export default [
   // anywhere yet — reachable by direct URL.
   route("download", "routes/download.tsx"),
 
-  // Login (no layout)
+  // Login / signup / onboarding (no layout)
   route("login", "routes/login.tsx"),
+  route("signup", "routes/signup.tsx"),
+  route("welcome", "routes/welcome.tsx"),
+  route("login/dartmouth", "routes/login.dartmouth.tsx"),
+  route("login/dartmouth/set-password", "routes/login.dartmouth.set-password.tsx"),
+  route("login/forgot-password", "routes/login.forgot-password.tsx"),
+  route("login/reset-password", "routes/login.reset-password.tsx"),
   route("dev-login", "routes/dev-login.ts"),
   route("dev-login-as", "routes/dev-login-as.ts"),
   route("logout", "routes/logout.ts"),
@@ -687,6 +694,10 @@ export default [
   route("admin/authorize-gmail", "routes/admin.authorize-gmail.ts"),
   route("admin/authorize-gmail/callback", "routes/admin.authorize-gmail.callback.ts"),
 
+  // BetterAuth admin impersonation (flag-gated on `betterauth`).
+  route("admin/impersonate", "routes/admin.impersonate.ts"),
+  route("admin/stop-impersonating", "routes/admin.stop-impersonating.ts"),
+
   // Email sending
   route("api/email/send", "routes/api.email.send.ts"),
 
@@ -718,6 +729,12 @@ export default [
   // AI project TL;DR — cached work-status summary for the Progress-tab status
   // bar. Same provider gating as api/ai/doc, plus the `project-tldr-ai` flag.
   route("api/ai/project-tldr", "routes/api.ai.project-tldr.ts"),
+
+  // BetterAuth catch-all: all /api/auth/* requests (sign-in, sign-up, session,
+  // callback, etc.) are forwarded to the BetterAuth handler. Phase 0 scaffolding
+  // — not wired into existing auth flows yet.
+  route("api/auth/*", "routes/api.auth.$.ts"),
+
   // Meeting-note recording: transcript in, notes Markdown out. Behind the
   // `ai-meeting-notes` flag; same provider gating as api/ai/doc.
   route("api/ai/meeting-notes", "routes/api.ai.meeting-notes.ts"),

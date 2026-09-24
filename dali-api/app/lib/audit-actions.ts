@@ -167,6 +167,9 @@ export const AUDIT_ACTIONS = [
   // Payroll export: Technigala termly hire roster changes.
   "payroll.technigala.add",
   "payroll.technigala.remove",
+  // BetterAuth admin impersonation.
+  "admin.impersonate.start",
+  "admin.impersonate.stop",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
