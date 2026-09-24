@@ -1,24 +1,45 @@
 import { useState, type MouseEvent, type ReactNode } from "react";
 import { useRevalidator } from "react-router";
-import { Check, ExternalLink, CalendarClock, X } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowRight,
+  Calendar,
+  CalendarClock,
+  Check,
+  CheckCircle2,
+  Clock,
+  ExternalLink,
+  Eye,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import { useDialog } from "~/components/ui/dialog";
+import { useToast } from "~/components/ui/toast";
+import { IconButton } from "~/components/ui/IconButton";
+import { Tooltip } from "~/components/ui/floating";
+import { Modal } from "~/components/Modal";
+import { SegmentedTabButtons } from "~/components/AreaPillNav";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import { RsvpButtons, notifyTasksChanged } from "~/components/RsvpButtons";
 import { buttonClasses } from "~/components/ui/Button";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
+import { cn } from "~/lib/cn";
+import { projectWorkMeta, type ProjectWorkItem } from "~/lib/project-work";
+import { EVENT_TYPES, isEventType } from "~/lib/notification-events";
 // The client mirror of ~/lib/tasks' `Task`, so the shell's panel pulls in no
 // server code (see NotificationBell).
 import type { OpenTask } from "~/components/NotificationBell";
 
 /* ------------------------------------------------------------------ */
-/* The attention stack: open tasks plus notifications (incl. meeting-   */
-/* invite RSVP) still waiting on the user. Lives in the shell's bell    */
-/* panel — it used to be a banner on Home, but the front door is not    */
-/* where you look for a thing you have to answer, and the bell is       */
-/* reachable from every route.                                          */
+/* The attention stack: open tasks, notifications (incl. meeting-invite */
+/* RSVP) still waiting on the user and, behind the my-project-work      */
+/* flag, their assigned project tasks. Rendered by the shell's bell     */
+/* drawer and the My Tasks page, split into Project work and Meetings & */
+/* events tabs.                                                         */
 /*                                                                      */
-/* Poll-driven, not loader-driven: the shell feeds it from the same      */
-/* /api/notifications poll that backs the bell's count (see             */
-/* NotificationBell), so acting on a card converges through             */
+/* The drawer is poll-driven, not loader-driven: the shell feeds it     */
+/* from the same /api/notifications poll that backs the bell's count    */
+/* (see NotificationBell), so acting on a card converges through        */
 /* notifyTasksChanged() rather than a route revalidation.               */
 /* ------------------------------------------------------------------ */
 
@@ -27,6 +48,7 @@ import type { OpenTask } from "~/components/NotificationBell";
 export type AttentionNotification = {
   id: string;
   kind: "General" | "MeetingInvite" | "MeetingReminder" | "SystemAnnouncement" | "Education";
+  eventType?: string;
   title: string;
   body: string | null;
   link: string | null;
@@ -111,69 +133,385 @@ export function hasAttentionContent(
   return tasks.length > 0 || extraNotifications(tasks, notifications).length > 0;
 }
 
-/** Count for the bell badge and the panel header: open tasks + unread extras. */
+/**
+ * Count for the bell badge and the drawer header: every card the drawer shows,
+ * less read invites kept only for their RSVP. Pings folded into their project
+ * task's card don't count twice.
+ */
 export function attentionCount(
   tasks: OpenTask[],
   notifications: AttentionNotification[],
+  projectTasks: ProjectWorkItem[] = [],
 ): number {
-  const unread = extraNotifications(tasks, notifications).filter(
-    (n) => !n.readAt,
+  const { work, admin } = splitFeed(tasks, notifications, projectTasks);
+  return [...work, ...admin].filter(
+    (c) => c.type !== "notification" || !c.notification.readAt,
   ).length;
-  return tasks.length + unread;
 }
 
-export function AttentionPanel({
+/* ------------------------------------------------------------------ */
+/* Tabs                                                                 */
+/* ------------------------------------------------------------------ */
+
+export type FeedCard =
+  | { type: "task"; task: OpenTask }
+  | { type: "notification"; notification: AttentionNotification }
+  // `pings`: unread Tasks-area notifications about this same task (due
+  // reminder, assignment, comments), folded in rather than shown twice and
+  // cleared when the card is acted on.
+  | { type: "project"; item: ProjectWorkItem; pings: string[] };
+
+export type FeedTab = "work" | "admin";
+
+export const FEED_TAB_LABELS: Record<FeedTab, string> = {
+  work: "Project work",
+  admin: "Meetings & events",
+};
+
+// The registry's "Tasks" area is the project-work events: task.* and sprint
+// wrap-ups. Everything else (meetings, forms, announcements, hiring…) is admin.
+function isProjectWorkEvent(eventType: string | null | undefined): boolean {
+  return isEventType(eventType) && EVENT_TYPES[eventType].area === "Tasks";
+}
+
+// Which project task a ping is about: task.* events link to the board with
+// `?task=<id>`.
+function pingTaskId(link: string | null): string | null {
+  if (!link) return null;
+  try {
+    return new URL(link, "http://x").searchParams.get("task");
+  } catch {
+    return null;
+  }
+}
+
+export function splitFeed(
+  tasks: OpenTask[],
+  notifications: AttentionNotification[],
+  projectTasks: ProjectWorkItem[],
+): Record<FeedTab, FeedCard[]> {
+  const pingsByTask = new Map<string, string[]>(projectTasks.map((p) => [p.id, []]));
+  const work: FeedCard[] = [];
+  const admin: FeedCard[] = [];
+
+  function place(
+    card: FeedCard,
+    id: string,
+    eventType: string | null | undefined,
+    link: string | null,
+    unread: boolean,
+  ) {
+    if (!isProjectWorkEvent(eventType)) return admin.push(card);
+    const folded = pingsByTask.get(pingTaskId(link) ?? "");
+    if (folded && unread) return folded.push(id);
+    work.push(card);
+  }
+
+  for (const task of tasks) {
+    place({ type: "task", task }, task.id, task.eventType, task.link, true);
+  }
+  for (const notification of extraNotifications(tasks, notifications)) {
+    place(
+      { type: "notification", notification },
+      notification.id,
+      notification.eventType,
+      notification.link,
+      !notification.readAt,
+    );
+  }
+  work.unshift(
+    ...projectTasks.map((item): FeedCard => ({
+      type: "project",
+      item,
+      pings: pingsByTask.get(item.id)!,
+    })),
+  );
+  return { work, admin };
+}
+
+function cardKey(card: FeedCard): string {
+  if (card.type === "task") return `t:${card.task.id}`;
+  if (card.type === "notification") return `n:${card.notification.id}`;
+  return `p:${card.item.id}`;
+}
+
+/* ------------------------------------------------------------------ */
+/* The drawer (bell)                                                    */
+/* ------------------------------------------------------------------ */
+
+export function TasksDrawer({
+  open,
+  onClose,
   tasks,
   notifications,
+  projectTasks,
   onOpen,
-  headerAction,
+  seeAll,
 }: {
+  open: boolean;
+  onClose: () => void;
   tasks: OpenTask[];
   notifications: AttentionNotification[];
+  projectTasks: ProjectWorkItem[];
   onOpen?: OpenLink;
-  headerAction?: ReactNode;
+  seeAll?: ReactNode;
 }) {
-  const extras = extraNotifications(tasks, notifications);
-  const count = attentionCount(tasks, notifications);
+  const showWork = useFeatureFlag("my-project-work");
+  const [tab, setTab] = useState<FeedTab>("work");
+  const feed = splitFeed(tasks, notifications, projectTasks);
+  const count = attentionCount(tasks, notifications, projectTasks);
 
-  if (tasks.length === 0 && extras.length === 0) {
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      labelledBy="tasks-drawer-title"
+      className="fixed inset-0 z-50 flex justify-end bg-os-overlay"
+      containerClassName="flex h-full w-full max-w-[480px] flex-col border-l border-os-container bg-os-card shadow-[-24px_0_60px_var(--color-os-shadow)] outline-none motion-safe:animate-detail-panel"
+    >
+      <div className="flex items-center gap-2 px-6 pt-6 pb-4">
+        <h2 id="tasks-drawer-title" className="flex-1 text-lg font-bold text-foreground">
+          Tasks ({count})
+        </h2>
+        {seeAll}
+        <IconButton label="Close" icon={X} onClick={onClose} className="h-9 w-9" iconClassName="h-5 w-5" />
+      </div>
+      {showWork && (
+        <div className="px-5 pb-3.5">
+          <FeedTabs tab={tab} onChange={setTab} feed={feed} stretch />
+        </div>
+      )}
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 pb-6">
+        <TaskFeed
+          cards={showWork ? feed[tab] : [...feed.admin, ...feed.work]}
+          tab={showWork ? tab : undefined}
+          onOpen={onOpen}
+        />
+      </div>
+    </Modal>
+  );
+}
+
+export function FeedTabs({
+  tab,
+  onChange,
+  feed,
+  stretch,
+}: {
+  tab: FeedTab;
+  onChange: (tab: FeedTab) => void;
+  feed: Record<FeedTab, FeedCard[]>;
+  stretch?: boolean;
+}) {
+  return (
+    <SegmentedTabButtons
+      label="Task type"
+      stretch={stretch}
+      items={(["work", "admin"] as const).map((key) => ({
+        label: FEED_TAB_LABELS[key],
+        count: feed[key].length,
+        active: tab === key,
+        onClick: () => onChange(key),
+      }))}
+    />
+  );
+}
+
+/** The cards for one tab, or its empty state. `grid` lays them two-up (page). */
+export function TaskFeed({
+  cards,
+  tab,
+  onOpen,
+  grid = false,
+}: {
+  cards: FeedCard[];
+  tab?: FeedTab;
+  onOpen?: OpenLink;
+  grid?: boolean;
+}) {
+  if (cards.length === 0) {
     return (
-      <div className="flex items-center justify-between gap-3 p-3">
-        <p className="text-xs text-muted-foreground">You&apos;re all caught up.</p>
-        {headerAction}
+      <div className="m-auto flex flex-col items-center gap-2.5 py-10 text-center text-os-grey">
+        <CheckCircle2 className="h-5 w-5" aria-hidden />
+        <strong className="text-base text-foreground">You&apos;re all caught up</strong>
+        <span className="text-sm">
+          {tab === "work"
+            ? "New project tasks will show up here."
+            : tab === "admin"
+              ? "New invites and events will show up here."
+              : "New tasks will show up here."}
+        </span>
       </div>
     );
   }
-
   return (
-    <div className="flex flex-col gap-3 p-3">
-      <div className="flex items-center justify-between gap-3">
-        <span className="font-heading text-sm font-semibold text-foreground">
-          {count > 0
-            ? `${count} ${count === 1 ? "item needs" : "items need"} your attention`
-            : "Your notifications"}
-        </span>
-        {headerAction}
-      </div>
-
-      {tasks.length > 0 && (
-        <div className="flex flex-col gap-2">
-          {tasks.map((t) => (
-            <TaskCard key={t.id} task={t} onOpen={onOpen} />
-          ))}
-        </div>
+    <div
+      className={cn(
+        grid ? "grid grid-cols-1 gap-3.5 lg:grid-cols-2" : "flex flex-col gap-3",
       )}
-
-      {extras.length > 0 && (
-        <div
-          className={`flex flex-col gap-2 ${tasks.length > 0 ? "border-t border-border pt-3" : ""}`}
-        >
-          {extras.map((n) => (
-            <NotificationCard key={n.id} notification={n} onOpen={onOpen} />
-          ))}
-        </div>
-      )}
+    >
+      {cards.map((card) => (
+        <FeedCardView key={cardKey(card)} card={card} onOpen={onOpen} filled={grid} />
+      ))}
     </div>
+  );
+}
+
+function FeedCardView({
+  card,
+  onOpen,
+  filled,
+}: {
+  card: FeedCard;
+  onOpen?: OpenLink;
+  filled: boolean;
+}) {
+  if (card.type === "task") return <TaskCard task={card.task} onOpen={onOpen} filled={filled} />;
+  if (card.type === "notification") {
+    return <NotificationCard notification={card.notification} onOpen={onOpen} filled={filled} />;
+  }
+  return (
+    <ProjectTaskCard item={card.item} pings={card.pings} onOpen={onOpen} filled={filled} />
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Card pieces                                                          */
+/* ------------------------------------------------------------------ */
+
+// One line of card text, cut with an ellipsis. The full text shows on hover,
+// but only when it was actually cut (measured on enter, not on every render).
+function Truncated({
+  as = "span",
+  text,
+  className,
+}: {
+  as?: "span" | "p" | "h3";
+  text: string;
+  className?: string;
+}) {
+  const Tag = as as "span";
+  const [cut, setCut] = useState(false);
+  return (
+    <Tooltip content={text} variant="rich" disabled={!cut}>
+      <Tag
+        className={cn("block min-w-0 truncate", className)}
+        onMouseEnter={(e) => setCut(e.currentTarget.scrollWidth > e.currentTarget.clientWidth)}
+      >
+        {text}
+      </Tag>
+    </Tooltip>
+  );
+}
+
+// Every card is the same shape: up to three single-line rows of text in a
+// fixed-height block (leading-5 / 6 / 5 plus two gaps = 76px), then the
+// actions. So the buttons sit at the same place on every card, and `h-full` +
+// `mt-auto` keeps them bottom-aligned across a grid row. Drawer cards are
+// outlined on the drawer's card fill; page cards take the fill themselves.
+export function CardShell({
+  filled,
+  project,
+  title,
+  body,
+  meta,
+  children,
+}: {
+  filled: boolean;
+  project?: string;
+  title: string;
+  body?: string | null;
+  meta: ReactNode;
+  children?: ReactNode;
+}) {
+  return (
+    <article
+      className={cn(
+        "flex h-full min-w-0 flex-col rounded-2xl border border-os-container px-[18px] py-4",
+        filled && "bg-os-card",
+      )}
+    >
+      <div className="flex min-h-[76px] flex-col gap-1.5">
+        {project && (
+          <span className="flex min-w-0 items-center gap-1.5 text-xs font-bold leading-5 text-os-muted">
+            <i className="h-[7px] w-[7px] shrink-0 rounded-full bg-os-accent" aria-hidden />
+            <Truncated text={project} />
+          </span>
+        )}
+        <Truncated
+          as="h3"
+          text={title}
+          className="text-[15.5px] font-bold leading-6 text-foreground"
+        />
+        {body && (
+          <Truncated as="p" text={body} className="text-[13px] leading-5 text-os-grey" />
+        )}
+        {meta}
+      </div>
+      {children && <div className="mt-auto flex flex-wrap gap-2 pt-3.5">{children}</div>}
+    </article>
+  );
+}
+
+export function Meta({
+  icon: Icon,
+  lead,
+  warn = false,
+  text,
+}: {
+  icon?: LucideIcon;
+  /** Drawn before the text in place of an icon (a status dot). */
+  lead?: ReactNode;
+  warn?: boolean;
+  text: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex min-w-0 items-center gap-[7px] text-[13px] leading-5",
+        warn ? "text-os-amber" : "text-os-grey",
+      )}
+    >
+      {Icon && <Icon className="h-[15px] w-[15px] shrink-0" aria-hidden />}
+      {lead}
+      <Truncated text={text} />
+    </div>
+  );
+}
+
+export const ctaClass = (primary: boolean) =>
+  buttonClasses(primary ? "primary" : "secondary", "md", "min-h-10");
+export const ctaIcon = "h-[15px] w-[15px]";
+
+export function CtaLink({
+  href,
+  label,
+  onOpen,
+  icon: Icon,
+  primary = false,
+  children,
+  onBeforeOpen,
+}: {
+  href: string;
+  label: string;
+  onOpen?: OpenLink;
+  icon: LucideIcon;
+  primary?: boolean;
+  children: ReactNode;
+  onBeforeOpen?: () => void;
+}) {
+  return (
+    <a
+      href={href}
+      onClick={(e) => {
+        onBeforeOpen?.();
+        openTarget(e, href, label, onOpen);
+      }}
+      className={ctaClass(primary)}
+    >
+      <Icon className={ctaIcon} aria-hidden />
+      {children}
+    </a>
   );
 }
 
@@ -187,47 +525,38 @@ export function AttentionPanel({
 /*     Confirm is how the user says "handled".                           */
 /* ------------------------------------------------------------------ */
 
-function TaskCard({ task: t, onOpen }: { task: OpenTask; onOpen?: OpenLink }) {
+function TaskCard({
+  task: t,
+  onOpen,
+  filled,
+}: {
+  task: OpenTask;
+  onOpen?: OpenLink;
+  filled: boolean;
+}) {
   const revalidator = useRevalidator();
   const { confirm: confirmDialog } = useDialog();
   const [confirming, setConfirming] = useState(false);
   const [dismissing, setDismissing] = useState(false);
-  // Same full-width card as NotificationCard below. The tasks used to be a
-  // horizontal strip of fixed-width tiles, which clipped a row of actions
-  // (Accept / Maybe / Decline) at the tile's border.
-  const cls =
-    "block bg-card border border-border shadow-brand-1 border-l-4 border-l-accent-coral rounded-md px-3 py-2.5";
 
   const meta = t.dueAt ? (
-    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground mt-1">
-      <CalendarClock className="w-3 h-3" />
-      {formatDeadline(t.dueAt)}
-    </span>
+    <Meta icon={CalendarClock} text={formatDeadline(t.dueAt)} />
   ) : (
-    <span className="block text-[11px] text-muted-foreground mt-1">
-      {t.source === "meeting" ? "Awaiting your response" : "Action needed"}
-    </span>
+    <Meta text={t.source === "meeting" ? "Awaiting your response" : "Action needed"} />
   );
-
-  const title = (
-    <span className="block text-sm font-semibold text-foreground truncate">
-      {t.title}
-    </span>
+  const shell = (children?: ReactNode) => (
+    <CardShell filled={filled} title={t.title} meta={meta}>
+      {children}
+    </CardShell>
   );
 
   // Meeting invites clear only on RSVP, never on a click — Accept/Maybe/Decline
   // inline. The RSVP revalidates, dropping the answered invite.
   if (t.source === "meeting") {
-    return (
-      <div className={cls}>
-        {title}
-        {meta}
-        <RsvpButtons notificationId={t.id} />
-      </div>
-    );
+    return shell(<RsvpButtons notificationId={t.id} size="md" className="gap-2" />);
   }
 
-  // A form todo self-clears on submit, so the tile links to the form. But a
+  // A form todo self-clears on submit, so the card links to the form. But a
   // recipient who won't (or can't) fill it would otherwise be stuck with it
   // forever — the /read endpoint refuses a plain read — so offer a confirmed
   // Dismiss that clears the reminder without submitting (intent=dismiss).
@@ -235,7 +564,7 @@ function TaskCard({ task: t, onOpen }: { task: OpenTask; onOpen?: OpenLink }) {
     const ok = await confirmDialog({
       title: "Dismiss this reminder?",
       description:
-        "You haven't submitted this form. Dismissing removes it from your tasks — you can still find it in History.",
+        "You haven't submitted this form. Dismissing removes it from your tasks. You can still find it in History.",
       confirmLabel: "Dismiss",
     });
     if (!ok) return;
@@ -254,42 +583,27 @@ function TaskCard({ task: t, onOpen }: { task: OpenTask; onOpen?: OpenLink }) {
     }
   }
 
-  if (t.formTodo) {
-    return (
-      <div className={cls}>
-        <a
-          href={t.link!}
-          onClick={(e) => openTarget(e, t.link!, t.title, onOpen)}
-          className="block hover:opacity-80 transition-opacity"
-        >
-          {title}
-          {meta}
-        </a>
-        <button
-          type="button"
-          onClick={dismissForm}
-          disabled={dismissing}
-          className={buttonClasses("secondary", "sm", "mt-2 gap-1")}
-        >
-          <X className="w-3 h-3" />
+  if (t.formTodo && t.link) {
+    return shell(
+      <>
+        <CtaLink href={t.link} label={t.title} onOpen={onOpen} icon={ArrowRight} primary>
+          Open form
+        </CtaLink>
+        <button type="button" onClick={dismissForm} disabled={dismissing} className={ctaClass(false)}>
+          <X className={ctaIcon} aria-hidden />
           {dismissing ? "Dismissing…" : "Dismiss"}
         </button>
-      </div>
+      </>,
     );
   }
 
   // Other self-clearing tasks that merely link (onboarding, an apply-to-cycle
-  // task): the whole tile is the link and there's no Confirm.
+  // task): opening is the action, there's no Confirm.
   if (t.hasAction && t.link) {
-    return (
-      <a
-        href={t.link}
-        onClick={(e) => openTarget(e, t.link!, t.title, onOpen)}
-        className={`${cls} hover:border-accent-coral/50 transition-colors`}
-      >
-        {title}
-        {meta}
-      </a>
+    return shell(
+      <CtaLink href={t.link} label={t.title} onOpen={onOpen} icon={ArrowRight} primary>
+        Open
+      </CtaLink>,
     );
   }
 
@@ -310,32 +624,18 @@ function TaskCard({ task: t, onOpen }: { task: OpenTask; onOpen?: OpenLink }) {
     }
   }
 
-  return (
-    <div className={cls}>
-      {title}
-      {meta}
-      <div className="flex flex-wrap items-center gap-1.5 mt-2">
-        <button
-          type="button"
-          onClick={confirm}
-          disabled={confirming}
-          className={buttonClasses("primary", "sm", "gap-1")}
-        >
-          <Check className="w-3 h-3" />
-          {confirming ? "Confirming…" : "Confirm"}
-        </button>
-        {t.link && (
-          <a
-            href={t.link}
-            onClick={(e) => openTarget(e, t.link!, t.title, onOpen)}
-            className={buttonClasses("secondary", "sm", "gap-1")}
-          >
-            <ExternalLink className="w-3 h-3" />
-            Open
-          </a>
-        )}
-      </div>
-    </div>
+  return shell(
+    <>
+      <button type="button" onClick={confirm} disabled={confirming} className={ctaClass(true)}>
+        <Check className={ctaIcon} aria-hidden />
+        {confirming ? "Confirming…" : "Confirm"}
+      </button>
+      {t.link && (
+        <CtaLink href={t.link} label={t.title} onOpen={onOpen} icon={ExternalLink}>
+          Open
+        </CtaLink>
+      )}
+    </>,
   );
 }
 
@@ -346,15 +646,15 @@ function TaskCard({ task: t, onOpen }: { task: OpenTask; onOpen?: OpenLink }) {
 function NotificationCard({
   notification,
   onOpen,
+  filled,
 }: {
   notification: AttentionNotification;
   onOpen?: OpenLink;
+  filled: boolean;
 }) {
   const revalidator = useRevalidator();
-  const isUnread = !notification.readAt;
   const isInvite =
     notification.kind === "MeetingInvite" && !!notification.scheduledMeetingId;
-  const accent = isUnread ? "border-l-accent-coral" : "border-l-accent-teal";
   const [rsvp, setRsvp] = useState<AttentionNotification["rsvp"]>(notification.rsvp);
   const [dismissing, setDismissing] = useState(false);
 
@@ -375,79 +675,166 @@ function NotificationCard({
     }
   }
 
+  const meta = (
+    <Meta
+      icon={isInvite ? Calendar : Clock}
+      text={rsvp ?? relativeTime(notification.createdAt)}
+    />
+  );
+
   return (
-    <div
-      className={`group bg-card border border-border shadow-brand-1 border-l-4 ${accent} rounded-md px-3 py-2.5 flex items-start gap-3`}
+    <CardShell
+      filled={filled}
+      title={notification.title}
+      body={notification.body}
+      meta={meta}
     >
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-sm font-semibold text-foreground truncate">
-            {notification.title}
-          </span>
-          <div className="flex items-center gap-1.5 flex-shrink-0">
-            {notification.link && (
-              <a
-                href={notification.link}
-                onClick={(e) => {
-                  if (!notification.readAt && !isInvite) {
-                    // keepalive: true so the POST survives the navigation the
-                    // anchor's default action may start. Meeting invites clear
-                    // only via RSVP — never via link.
-                    fetch(`/api/notifications/${notification.id}/read`, {
-                      method: "POST",
-                      credentials: "include",
-                      keepalive: true,
-                    });
-                  }
-                  openTarget(e, notification.link!, notification.title, onOpen);
-                }}
-                className="text-muted-foreground hover:text-foreground"
-                aria-label="Open linked page"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-              </a>
-            )}
-            {!isInvite && (
-              <button
-                type="button"
-                onClick={dismiss}
-                disabled={dismissing}
-                className={buttonClasses("secondary", "sm", "gap-1")}
-                aria-label="Dismiss notification"
-              >
-                <Check className="w-3 h-3" />
-                {dismissing ? "Dismissing…" : "Dismiss"}
-              </button>
-            )}
-          </div>
-        </div>
-        {notification.body && (
-          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
-            {notification.body}
-          </p>
-        )}
-        <div className="flex items-center gap-2 mt-1.5">
-          <span className="text-[10px] text-muted-foreground/70">
-            {relativeTime(notification.createdAt)}
-          </span>
-          {rsvp && (
-            <span
-              className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded ${
-                rsvp === "Accepted"
-                  ? "bg-green-100 text-green-800"
-                  : rsvp === "Declined"
-                    ? "bg-red-100 text-red-800"
-                    : "bg-yellow-100 text-yellow-800"
-              }`}
+      {isInvite && !rsvp ? (
+        <RsvpButtons
+          notificationId={notification.id}
+          onResponded={setRsvp}
+          size="md"
+          className="gap-2"
+        />
+      ) : (
+        <>
+          {notification.link && (
+            <CtaLink
+              href={notification.link}
+              label={notification.title}
+              onOpen={onOpen}
+              icon={ExternalLink}
+              primary
+              // keepalive so the POST survives the navigation the anchor may
+              // start. Meeting invites clear only via RSVP, never via link.
+              onBeforeOpen={() => {
+                if (notification.readAt || isInvite) return;
+                fetch(`/api/notifications/${notification.id}/read`, {
+                  method: "POST",
+                  credentials: "include",
+                  keepalive: true,
+                });
+              }}
             >
-              {rsvp}
-            </span>
+              Open
+            </CtaLink>
           )}
-        </div>
-        {isInvite && !rsvp && (
-          <RsvpButtons notificationId={notification.id} onResponded={setRsvp} />
-        )}
-      </div>
-    </div>
+          {!isInvite && (
+            <button
+              type="button"
+              onClick={dismiss}
+              disabled={dismissing}
+              className={ctaClass(!notification.link)}
+            >
+              <Check className={ctaIcon} aria-hidden />
+              {dismissing ? "Dismissing…" : "Dismiss"}
+            </button>
+          )}
+        </>
+      )}
+    </CardShell>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Project task card (Project work tab)                                 */
+/* ------------------------------------------------------------------ */
+
+const WORK_META_ICON = {
+  overdue: AlertTriangle,
+  stale: AlertTriangle,
+  review: Eye,
+  due: Clock,
+  none: Calendar,
+} as const;
+
+function ProjectTaskCard({
+  item,
+  pings,
+  onOpen,
+  filled,
+}: {
+  item: ProjectWorkItem;
+  pings: string[];
+  onOpen?: OpenLink;
+  filled: boolean;
+}) {
+  const revalidator = useRevalidator();
+  const toast = useToast();
+  const [state, setState] = useState<"idle" | "saving" | "done">("idle");
+  const meta = projectWorkMeta(item);
+
+  // The folded pings were only pointing at this task, so acting on it clears
+  // them. keepalive: Open task may navigate away mid-request.
+  function clearPings() {
+    return Promise.all(
+      pings.map((id) =>
+        fetch(`/api/notifications/${id}/read`, {
+          method: "POST",
+          credentials: "include",
+          keepalive: true,
+        }).catch(() => undefined),
+      ),
+    );
+  }
+
+  // Same endpoint as a drag into the Done column, so assignee notifications and
+  // the GitHub mirror follow. Hidden at once; the poll converges the count.
+  async function markDone() {
+    setState("saving");
+    try {
+      const res = await fetch(`/api/tasks/${item.id}/move`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status: "Done", position: 0 }),
+      });
+      if (!res.ok) throw new Error();
+      // Before the refresh: with the task gone, an uncleared ping would
+      // surface as its own card.
+      await clearPings();
+      setState("done");
+      toast.success("Marked done");
+      revalidator.revalidate();
+      notifyTasksChanged();
+    } catch {
+      setState("idle");
+      toast.error("Couldn't mark this task done.");
+    }
+  }
+
+  if (state === "done") return null;
+
+  return (
+    <CardShell
+      filled={filled}
+      project={item.projectName}
+      title={item.title}
+      meta={
+        <Meta icon={WORK_META_ICON[meta.kind]} warn={meta.warn} text={meta.text} />
+      }
+    >
+      <CtaLink
+        href={item.link}
+        label={item.title}
+        onOpen={onOpen}
+        icon={ArrowRight}
+        primary
+        onBeforeOpen={() => {
+          if (pings.length) void clearPings().then(notifyTasksChanged);
+        }}
+      >
+        Open task
+      </CtaLink>
+      <button
+        type="button"
+        onClick={markDone}
+        disabled={state === "saving"}
+        className={ctaClass(false)}
+      >
+        <Check className={ctaIcon} aria-hidden />
+        {state === "saving" ? "Saving…" : "Mark done"}
+      </button>
+    </CardShell>
   );
 }

@@ -1,32 +1,42 @@
 import { useEffect, useMemo, useState } from "react";
 import { redirect, useLoaderData, useSearchParams } from "react-router";
-import {
-  ListTodo,
-  History as HistoryIcon,
-  ExternalLink,
-  RotateCcw,
-  Check,
-  X,
-} from "lucide-react";
+import { ExternalLink, RotateCcw } from "lucide-react";
 import { SearchInput } from "~/components/ui/SearchInput";
-import { IconButton } from "~/components/ui/IconButton";
+import { buttonClasses } from "~/components/ui/Button";
 import { SegmentedTabButtons } from "~/components/AreaPillNav";
-import { useDialog } from "~/components/ui/dialog";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import {
   listOpenTasks,
+  listMyProjectTasks,
   listNotificationHistory,
   type Task,
   type NotificationHistoryItem,
   type NotificationHistoryResult,
   type NotificationState,
 } from "~/lib/tasks";
-import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
+import { listMyNotifications } from "~/lib/notifications";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { getUserRoles } from "~/lib/roles";
+import type { ProjectWorkItem } from "~/lib/project-work";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { formatInTimeZone, getZonedYMD, zonedDayLabel } from "~/lib/timezone";
 import { RsvpButtons } from "~/components/RsvpButtons";
-import { TASKS_CHANGED_EVENT } from "~/components/NotificationBell";
+import { useFeatureFlag } from "~/components/FeatureFlags";
+import { useOsChrome } from "~/components/os-chrome";
+import {
+  CardShell,
+  CtaLink,
+  FEED_TAB_LABELS,
+  Meta,
+  TaskFeed,
+  ctaClass,
+  ctaIcon,
+  attentionCount,
+  splitFeed,
+  type AttentionNotification,
+  type FeedTab,
+} from "~/components/AttentionPanel";
 import type { Route } from "./+types/notifications";
 
 export const meta: Route.MetaFunction = () => [
@@ -37,8 +47,13 @@ export const handle = {
   breadcrumb: () => "My Tasks",
 };
 
-// Tab is driven by ?tab=open|history (default open). The History tab fetches
-// incrementally from /api/notifications with the additive history params.
+// Tab is driven by ?tab=work|open|history. `open` is the notification feed
+// (Meetings & events once project work is on); `work` needs the
+// my-project-work flag and falls back to `open` without it. The History tab
+// fetches incrementally from /api/notifications with the additive history
+// params. The open tabs render the same cards as the bell's drawer.
+type PageTab = "work" | "open" | "history";
+
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
@@ -46,42 +61,49 @@ export async function loader({ request }: Route.LoaderArgs) {
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return partnerRedirect;
 
+  const userId = auth.user.sub;
   const url = new URL(request.url);
-  const tab = url.searchParams.get("tab") === "history" ? "history" : "open";
+  const roles = await getUserRoles(userId);
+  const showWork = await isFeatureEnabled("my-project-work", userId, roles, request);
 
-  if (tab === "history") {
-    const status =
-      (url.searchParams.get("status") as "open" | "cleared" | "all") ?? "all";
-    const history = await listNotificationHistory(auth.user.sub, {
-      status:
-        status === "open" || status === "cleared" || status === "all"
-          ? status
-          : "all",
+  const [tasks, { items }, projectTasks] = await Promise.all([
+    listOpenTasks(userId),
+    listMyNotifications(userId),
+    showWork ? listMyProjectTasks(userId) : ([] as ProjectWorkItem[]),
+  ]);
+  const notifications: AttentionNotification[] = items.map((n) => ({
+    id: n.id,
+    kind: n.kind,
+    eventType: n.eventType,
+    title: n.title,
+    body: n.body,
+    link: n.link,
+    readAt: n.readAt?.toISOString() ?? null,
+    createdAt: n.createdAt.toISOString(),
+    scheduledMeetingId: n.scheduledMeetingId,
+    rsvp: n.rsvp,
+  }));
+
+  let history: NotificationHistoryResult | null = null;
+  if (url.searchParams.get("tab") === "history") {
+    const status = url.searchParams.get("status");
+    history = await listNotificationHistory(userId, {
+      status: status === "open" || status === "cleared" ? status : "all",
     });
-    return { tab, tasks: [] as Task[], history };
   }
 
-  const tasks = await listOpenTasks(auth.user.sub);
-  return { tab, tasks, history: null as NotificationHistoryResult | null };
+  return { tasks, notifications, projectTasks, history };
 }
 
-const STATE_STYLES: Record<NotificationState, string> = {
-  Open: "bg-accent-coral/15 text-accent-coral",
-  Submitted: "bg-emerald-500/15 text-emerald-600",
-  Cleared: "bg-muted text-muted-foreground",
-  Cancelled: "bg-amber-500/15 text-amber-600",
-  Expired: "bg-zinc-500/15 text-zinc-500",
+// History state as the status line's leading dot (quiet, like other status
+// pills), not a tinted chip.
+const STATE_DOT: Record<NotificationState, string> = {
+  Open: "bg-os-accent",
+  Submitted: "bg-os-green",
+  Cleared: "bg-os-grey",
+  Cancelled: "bg-red-500",
+  Expired: "bg-os-muted",
 };
-
-function StateBadge({ state }: { state: NotificationState }) {
-  return (
-    <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATE_STYLES[state]}`}
-    >
-      {state}
-    </span>
-  );
-}
 
 // Group history rows into Today / Yesterday / <date> buckets, preserving the
 // newest-first order the server returns. The day boundary is computed in the
@@ -103,115 +125,6 @@ function timeLabel(iso: string, tz: string): string {
     hour: "numeric",
     minute: "2-digit",
   });
-}
-
-function openLink(link: string, label: string) {
-  if (!requestOpenTabIfEmbedded(link, label)) {
-    window.location.assign(link);
-  }
-}
-
-function OpenTab({ tasks }: { tasks: Task[] }) {
-  const [items, setItems] = useState(tasks);
-  const { confirm } = useDialog();
-  // Re-sync when the loader hands down a fresh list (revalidation, tab switch).
-  useEffect(() => setItems(tasks), [tasks]);
-
-  // Most tasks clear by "Mark as read": POST /read sets readAt and drops the
-  // sidebar count. Self-clearing tasks are the exception — meeting invites
-  // clear by RSVPing, onboarding by finishing it (both `hasAction`, no manual
-  // dismiss). Form todos are also `hasAction`, but a recipient who won't fill
-  // the form gets a "Dismiss" instead (see `dismiss`) so they aren't stuck.
-  async function post(id: string, intent?: "dismiss") {
-    setItems((prev) => prev.filter((t) => t.id !== id));
-    try {
-      await fetch(`/api/notifications/${id}/read`, {
-        method: "POST",
-        credentials: "include",
-        keepalive: true,
-        ...(intent
-          ? {
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ intent }),
-            }
-          : {}),
-      });
-    } finally {
-      window.dispatchEvent(new Event(TASKS_CHANGED_EVENT));
-    }
-  }
-
-  function markRead(id: string) {
-    return post(id);
-  }
-
-  // A form todo normally clears only on submit. Dismissing it clears the
-  // reminder without submitting, so confirm the intent first.
-  async function dismiss(id: string) {
-    const ok = await confirm({
-      title: "Dismiss this reminder?",
-      description:
-        "You haven't submitted this form. Dismissing removes it from your tasks — you can still find it in History.",
-      confirmLabel: "Dismiss",
-    });
-    if (!ok) return;
-    await post(id, "dismiss");
-  }
-
-  if (items.length === 0) {
-    return (
-      <p className="text-sm text-muted-foreground py-8 text-center">
-        You're all caught up — no open tasks.
-      </p>
-    );
-  }
-  return (
-    <ul className="flex flex-col gap-2">
-      {items.map((t) => (
-        <li
-          key={t.id}
-          className="flex items-start gap-3 rounded-lg border border-border bg-card px-4 py-3"
-        >
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-foreground truncate">
-              {t.title}
-            </p>
-            {t.body && (
-              <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
-                {t.body}
-              </p>
-            )}
-            {t.source === "meeting" ? (
-              <RsvpButtons notificationId={t.id} />
-            ) : null}
-          </div>
-          <div className="flex flex-shrink-0 items-center gap-1 -mr-1.5 -mt-1">
-            {t.link && (
-              <IconButton
-                label={t.source === "meeting" ? "Open calendar" : "Open"}
-                icon={ExternalLink}
-                onClick={() => openLink(t.link!, t.title)}
-              />
-            )}
-            {t.source !== "meeting" && !t.hasAction && (
-              <IconButton
-                label="Mark as read"
-                icon={Check}
-                onClick={() => void markRead(t.id)}
-              />
-            )}
-            {t.source !== "meeting" && t.formTodo && (
-              <IconButton
-                label="Dismiss"
-                icon={X}
-                onClick={() => void dismiss(t.id)}
-              />
-            )}
-          </div>
-        </li>
-      ))}
-    </ul>
-  );
 }
 
 function HistoryTab({
@@ -356,54 +269,63 @@ function HistoryTab({
               <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 {g.label}
               </h2>
-              <ul className="flex flex-col gap-2">
+              <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-2">
                 {g.rows.map((n) => (
-                  <li
+                  <CardShell
                     key={n.id}
-                    className="flex items-start gap-3 rounded-lg border border-border bg-card px-4 py-3"
+                    filled
+                    title={n.title}
+                    body={n.body}
+                    meta={
+                      <Meta
+                        lead={
+                          <i
+                            className={`h-2 w-2 shrink-0 rounded-full ${STATE_DOT[n.state]}`}
+                            aria-hidden
+                          />
+                        }
+                        text={[
+                          n.state,
+                          n.sender,
+                          `sent ${timeLabel(n.sentAt, tz)}`,
+                          n.clearedAt && `cleared ${timeLabel(n.clearedAt, tz)}`,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      />
+                    }
                   >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-sm font-medium text-foreground">
-                          {n.title}
-                        </p>
-                        <StateBadge state={n.state} />
-                      </div>
-                      {n.body && (
-                        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
-                          {n.body}
-                        </p>
-                      )}
-                      <p className="text-[11px] text-muted-foreground mt-1">
-                        {n.sender ? `${n.sender} · ` : ""}
-                        sent {timeLabel(n.sentAt, tz)}
-                        {n.clearedAt ? ` · cleared ${timeLabel(n.clearedAt, tz)}` : ""}
-                      </p>
-                      {n.canRsvp ? <RsvpButtons notificationId={n.id} /> : null}
-                    </div>
-                    <div className="flex flex-shrink-0 items-center gap-1 -mr-1.5 -mt-1">
-                      {/* RSVP-able notifications (meeting invites) already
-                          have inline RSVP buttons, so the extra "Open calendar"
-                          link is redundant — it just dumps you on the calendar.
-                          Keep the link only for non-RSVP notifications. */}
-                      {n.link && !n.canRsvp && (
-                        <IconButton
-                          label={n.state === "Submitted" ? "View" : "Open"}
-                          icon={ExternalLink}
-                          onClick={() => openLink(n.link!, n.title)}
-                        />
-                      )}
-                      {n.clearedAt && (
-                        <IconButton
-                          label="Mark unread"
-                          icon={RotateCcw}
-                          onClick={() => void markUnread(n.id)}
-                        />
-                      )}
-                    </div>
-                  </li>
+                    {n.canRsvp ? (
+                      <RsvpButtons notificationId={n.id} size="md" className="gap-2" />
+                    ) : n.link || n.clearedAt ? (
+                      <>
+                        {/* Invites carry RSVP instead: their link only dumps
+                            you on the calendar. */}
+                        {n.link && (
+                          <CtaLink
+                            href={n.link}
+                            label={n.title}
+                            icon={ExternalLink}
+                            primary
+                          >
+                            {n.state === "Submitted" ? "View" : "Open"}
+                          </CtaLink>
+                        )}
+                        {n.clearedAt && (
+                          <button
+                            type="button"
+                            onClick={() => void markUnread(n.id)}
+                            className={ctaClass(false)}
+                          >
+                            <RotateCcw className={ctaIcon} aria-hidden />
+                            Mark unread
+                          </button>
+                        )}
+                      </>
+                    ) : null}
+                  </CardShell>
                 ))}
-              </ul>
+              </div>
             </div>
           ))}
           {cursor && (
@@ -411,7 +333,7 @@ function HistoryTab({
               type="button"
               onClick={() => void loadMore()}
               disabled={loading}
-              className="self-center rounded-lg border border-border bg-card px-4 py-1.5 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-50"
+              className={buttonClasses("secondary", "md", "self-center")}
             >
               {loading ? "Loading…" : "Load more"}
             </button>
@@ -425,58 +347,66 @@ function HistoryTab({
 export default function NotificationsRoute() {
   const data = useLoaderData<typeof loader>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const tab = searchParams.get("tab") === "history" ? "history" : "open";
+  const showWork = useFeatureFlag("my-project-work");
+  const { pageTitle } = useOsChrome();
 
-  function switchTab(next: "open" | "history") {
+  const raw = searchParams.get("tab");
+  const tab: PageTab =
+    raw === "history"
+      ? "history"
+      : raw === "open" || !showWork
+        ? "open"
+        : "work";
+
+  function switchTab(next: PageTab) {
     const params = new URLSearchParams(searchParams);
-    if (next === "open") params.delete("tab");
-    else params.set("tab", "history");
+    params.set("tab", next);
+    params.delete("status");
     setSearchParams(params);
   }
+
+  const tasks: Task[] = data.tasks;
+  const feed = splitFeed(tasks, data.notifications, data.projectTasks);
+  const count = attentionCount(tasks, data.notifications, data.projectTasks);
+  const feedTab: FeedTab = tab === "work" ? "work" : "admin";
 
   const initialStatus =
     (searchParams.get("status") as "open" | "cleared" | "all") || "all";
 
+  const tabs: { key: PageTab; label: string; count?: number }[] = showWork
+    ? [
+        { key: "work", label: FEED_TAB_LABELS.work, count: feed.work.length },
+        { key: "open", label: FEED_TAB_LABELS.admin, count: feed.admin.length },
+        { key: "history", label: "History" },
+      ]
+    : [
+        { key: "open", label: "Open", count: feed.admin.length + feed.work.length },
+        { key: "history", label: "History" },
+      ];
+
   return (
     <div className="w-full flex flex-col gap-6">
-      <div>
-        <h1 className="font-heading text-2xl font-bold text-foreground">
-          My Tasks
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Your open tasks and the full history of everything you've been sent.
-        </p>
-      </div>
-
-      <div className="flex items-center gap-1 border-b border-border">
-        <button
-          type="button"
-          onClick={() => switchTab("open")}
-          className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-            tab === "open"
-              ? "border-accent-coral text-foreground"
-              : "border-transparent text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          <ListTodo className="w-4 h-4" /> Open
-        </button>
-        <button
-          type="button"
-          onClick={() => switchTab("history")}
-          className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-            tab === "history"
-              ? "border-accent-coral text-foreground"
-              : "border-transparent text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          <HistoryIcon className="w-4 h-4" /> History
-        </button>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <h1 className={pageTitle}>My Tasks ({count})</h1>
+        <SegmentedTabButtons
+          label="Task type"
+          items={tabs.map((t) => ({
+            label: t.label,
+            count: t.count,
+            active: tab === t.key,
+            onClick: () => switchTab(t.key),
+          }))}
+        />
       </div>
 
       {tab === "history" && data.history ? (
         <HistoryTab initial={data.history} initialStatus={initialStatus} />
       ) : (
-        <OpenTab tasks={data.tasks} />
+        <TaskFeed
+          grid
+          cards={showWork ? feed[feedTab] : [...feed.admin, ...feed.work]}
+          tab={showWork ? feedTab : undefined}
+        />
       )}
     </div>
   );

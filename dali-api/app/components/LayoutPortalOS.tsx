@@ -4,7 +4,7 @@ import { Bell, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Search, Settings, X 
 import { Tooltip } from '~/components/ui/floating'
 import { userInitials } from '~/lib/display'
 import { useAttentionFeed } from '~/components/NotificationBell'
-import { AttentionPanel, attentionCount } from '~/components/AttentionPanel'
+import { TasksDrawer, attentionCount } from '~/components/AttentionPanel'
 import { CommandPalette } from '~/components/CommandPalette'
 import { useShellNav } from '~/components/shell-nav'
 import { useOsShellRoot } from '~/lib/os-shell'
@@ -89,46 +89,12 @@ export function LayoutPortalOS({ user, photoUrl, fitViewport = false, children }
   }
 
   const initials = userInitials(user)
-  const { tasks: openTasks, items: feedItems } = useAttentionFeed()
-  const taskCount = attentionCount(openTasks, feedItems)
+  const { tasks: openTasks, items: feedItems, projectTasks } = useAttentionFeed()
+  const taskCount = attentionCount(openTasks, feedItems, projectTasks)
 
-  /* ---------------- Attention panel (bell, top bar) ---------------- */
-  // Click-to-open rather than hover: the cards carry buttons, and a hover panel
-  // closes under the pointer on the way to one. Fixed-positioned so the top
-  // bar's overflow can't clip it, but still a DOM child of the bell so the
-  // outside-click handler treats acting on a card as a click inside.
-  const bellRef = useRef<HTMLDivElement | null>(null)
-  const [bellPanel, setBellPanel] = useState<{ top: number; right: number } | null>(null)
-
-  const bellAnchor = useCallback(() => {
-    const rect = bellRef.current?.getBoundingClientRect()
-    return rect ? { top: rect.bottom + 8, right: window.innerWidth - rect.right } : null
-  }, [])
-
-  const placeBellPanel = useCallback(() => setBellPanel(bellAnchor()), [bellAnchor])
-  const closeBellPanel = useCallback(() => setBellPanel(null), [])
-  const toggleBellPanel = useCallback(
-    () => setBellPanel((open) => (open ? null : bellAnchor())),
-    [bellAnchor],
-  )
-
-  useEffect(() => {
-    if (!bellPanel) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeBellPanel()
-    }
-    const onDown = (e: MouseEvent) => {
-      if (!bellRef.current?.contains(e.target as Node)) closeBellPanel()
-    }
-    document.addEventListener('keydown', onKey)
-    document.addEventListener('mousedown', onDown)
-    window.addEventListener('resize', placeBellPanel)
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      document.removeEventListener('mousedown', onDown)
-      window.removeEventListener('resize', placeBellPanel)
-    }
-  }, [bellPanel, closeBellPanel, placeBellPanel])
+  /* ---------------- Tasks drawer (bell, top bar) ---------------- */
+  const [bellOpen, setBellOpen] = useState(false)
+  const closeBellPanel = useCallback(() => setBellOpen(false), [])
 
   /* ---------------- Rail ---------------- */
 
@@ -273,55 +239,39 @@ export function LayoutPortalOS({ user, photoUrl, fitViewport = false, children }
   // where the member shell has one would read as something broken.
   const topBar = (
     <div className="os-nav-edge-b flex items-center justify-end gap-4 border-l-2 border-os-bg bg-os-nav px-6 py-4">
-      <div ref={bellRef} className="relative">
-        <Tooltip content={`Notifications — ${taskCount} need${taskCount === 1 ? 's' : ''} your attention`}>
-          <button
-            type="button"
-            onClick={toggleBellPanel}
-            aria-haspopup="dialog"
-            aria-expanded={!!bellPanel}
-            aria-label={`Notifications — ${taskCount} need${taskCount === 1 ? 's' : ''} your attention`}
-            className="os-topbar-btn pl-3"
-          >
-            <Bell className="h-5 w-5" />
-            <span
-              className={cn(
-                'flex h-6 w-6 items-center justify-center rounded-full text-sm font-black',
-                taskCount > 0 ? 'bg-os-accent text-os-bg' : 'bg-os-container text-os-grey',
-              )}
-            >
-              {taskCount > 99 ? '99+' : taskCount}
-            </span>
-          </button>
-        </Tooltip>
-
-        {bellPanel && (
-          <div
-            role="dialog"
-            aria-label="Notifications"
-            style={{
-              top: bellPanel.top,
-              right: bellPanel.right,
-              maxHeight: `calc(100vh - ${Math.round(bellPanel.top) + 16}px)`,
-            }}
+      <Tooltip content={`Notifications, ${taskCount} need${taskCount === 1 ? 's' : ''} your attention`}>
+        <button
+          type="button"
+          onClick={() => setBellOpen((o) => !o)}
+          aria-haspopup="dialog"
+          aria-expanded={bellOpen}
+          aria-label={`Notifications, ${taskCount} need${taskCount === 1 ? 's' : ''} your attention`}
+          className="os-topbar-btn pl-3"
+        >
+          <Bell className="h-5 w-5" />
+          <span
             className={cn(
-              'fixed z-50 hidden w-[22rem] flex-col overflow-y-auto md:flex motion-safe:animate-area-menu',
-              osMenuClass,
+              'flex h-6 w-6 items-center justify-center rounded-full text-sm font-black',
+              taskCount > 0 ? 'bg-os-accent text-os-bg' : 'bg-os-container text-os-grey',
             )}
           >
-            {/* No "See all" — the browsable history lives at /notifications,
-                which is a member route. The panel is the whole feed here. */}
-            <AttentionPanel
-              tasks={openTasks}
-              notifications={feedItems}
-              onOpen={(url, label) => {
-                closeBellPanel()
-                openInWorkspace({ url, label })
-              }}
-            />
-          </div>
-        )}
-      </div>
+            {taskCount > 99 ? '99+' : taskCount}
+          </span>
+        </button>
+      </Tooltip>
+      {/* No "See all": the browsable history lives at /notifications, which
+          is a member route. The drawer is the whole feed here. */}
+      <TasksDrawer
+        open={bellOpen}
+        onClose={closeBellPanel}
+        tasks={openTasks}
+        notifications={feedItems}
+        projectTasks={projectTasks}
+        onOpen={(url, label) => {
+          closeBellPanel()
+          openInWorkspace({ url, label })
+        }}
+      />
     </div>
   )
 

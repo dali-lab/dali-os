@@ -5,6 +5,11 @@ import { applicantGroup } from "~/hiring/lib/applicant-groups.server";
 import { ONBOARDING_EVENT_TYPE } from "~/members/lib/welcome.server";
 import { fullName } from "~/lib/display";
 import { NOT_CANCELLED_MEETING, liveMeetingPingClauses } from "~/lib/notifications";
+import {
+  OPEN_WORK_STATUSES,
+  projectTaskLink,
+  type ProjectWorkItem,
+} from "~/lib/project-work";
 
 // A "task" (todo) is any unread notification — every NotificationKind counts.
 // The Tasks sidebar, Home attention banner, and sidebar count all read this
@@ -41,6 +46,9 @@ export type Task = {
   link: string | null;
   createdAt: string;
   source: "meeting" | "reminder" | "announcement" | "general";
+  // Registry event (notification-events.ts); null for the synthetic
+  // apply-to-cycle task, which has no notification row.
+  eventType: string | null;
   dueAt: string | null;
   // True when the task clears by completing its own action: RSVPing a meeting
   // invite or submitting an attached form. Those carry their own
@@ -235,11 +243,45 @@ async function getInternalCycleApplyTask(
     link: applicantGroup(applicants, cycle.id).portalPath,
     createdAt: (app?.statusUpdates[0]?.createdAt ?? new Date()).toISOString(),
     source: "general",
+    eventType: null,
     dueAt: cycle.closeDate ? cycle.closeDate.toISOString() : null,
     // Clears by self-action (submit / withdraw in the portal) — no Confirm button.
     hasAction: true,
     formTodo: false,
   };
+}
+
+/** Open project tasks assigned to a user, soonest deadline first. */
+export async function listMyProjectTasks(userId: string): Promise<ProjectWorkItem[]> {
+  const rows = await prisma.task.findMany({
+    where: {
+      assignees: { some: { userId } },
+      status: { in: [...OPEN_WORK_STATUSES] },
+      archivedAt: null,
+      project: { status: { not: "Archived" } },
+    },
+    orderBy: [{ dueAt: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }],
+    take: 50,
+    select: {
+      id: true,
+      title: true,
+      status: true,
+      dueAt: true,
+      activityAt: true,
+      projectId: true,
+      project: { select: { name: true } },
+    },
+  });
+  return rows.map((t) => ({
+    id: t.id,
+    title: t.title,
+    projectId: t.projectId,
+    projectName: t.project.name,
+    status: t.status as ProjectWorkItem["status"],
+    dueAt: t.dueAt?.toISOString() ?? null,
+    activityAt: t.activityAt.toISOString(),
+    link: projectTaskLink(t.projectId, t.id),
+  }));
 }
 
 /** Open tasks for a user, newest first, with deadlines resolved. */
@@ -346,6 +388,7 @@ export async function listOpenTasks(userId: string, request?: Request): Promise<
       link: formLink ?? n.link,
       createdAt: n.createdAt.toISOString(),
       source,
+      eventType: n.eventType,
       dueAt,
       hasAction,
       formTodo,
