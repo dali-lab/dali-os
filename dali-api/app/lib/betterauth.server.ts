@@ -122,22 +122,12 @@ export const auth = betterAuth({
     },
   },
 
-  socialProviders: {
-    google: {
-      // No `hd` (hosted-domain) restriction: we accept any Google account at
-      // signup. Domain classification (dartmouth.edu vs partner vs public) happens
-      // downstream in the databaseHooks.user.create.before stub (§5 of the spec)
-      // and later in relationship-first routing (Phase 1).
-      clientId: process.env.GOOGLE_CLIENT_ID ?? "",
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
-      // Always show Google's account chooser. Without this, Google silently
-      // reuses whichever account the browser is already signed into — someone
-      // with a personal + a @dali account gets logged into the wrong one and
-      // can't reach DALI OS. Restores what legacy login did (oauth.authorize.ts
-      // set prompt=select_account); BetterAuth's default omits it.
-      prompt: "select_account",
-    },
-  },
+  // No social providers. Sign-in is passwordless-first: a magic link to the
+  // verified email (all doors), with an optional password as a fallback and
+  // passkeys for fast repeat sign-in. Google SSO was removed deliberately —
+  // not every account we admit is Google-backed (Dartmouth faculty/staff on
+  // Microsoft, partners on any provider), and one consistent method across all
+  // three doors beats a per-door split.
 
   account: {
     accountLinking: {

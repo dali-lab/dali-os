@@ -64,21 +64,14 @@ export async function action({ request }: Route.ActionArgs) {
 
   if (!isValidDoor(door)) return redirect("/signup");
 
-  if (provider === "google") {
-    const result = await auth.api.signInSocial({
-      body: { provider: "google", callbackURL: `/welcome?door=${door}` },
-      headers: request.headers,
-    });
-    return redirect(result.url!);
-  }
-
-  // Email / magic-link signup
+  // Email / magic-link signup — the only method on every door now that Google
+  // is gone.
   if (provider === "email-link") {
-    // Member door is Google-only (@dali emails are Google accounts) — no
-    // magic-link path, even if a request is crafted for it.
-    if (door === "member") return redirect(`/signup?door=member`);
-
-    if (door === "dartmouth") {
+    if (door === "member") {
+      if (!email.endsWith("@dali.dartmouth.edu")) {
+        return { error: "Use your @dali.dartmouth.edu email address.", door, sent: false as const };
+      }
+    } else if (door === "dartmouth") {
       if (!email.endsWith("@dartmouth.edu")) {
         return { error: "Use your @dartmouth.edu email address.", door, sent: false as const };
       }
@@ -173,9 +166,6 @@ function DoorSignup({ door, actionData }: {
 
   const sent = actionData && "sent" in actionData && actionData.sent ? actionData : null;
   const formError = actionData && "error" in actionData ? actionData.error : null;
-  // @dali.dartmouth.edu emails are Google accounts, so the member door is
-  // Google-only — no magic-link email path.
-  const hasEmail = door !== "member";
 
   return (
     <>
@@ -183,7 +173,7 @@ function DoorSignup({ door, actionData }: {
         {DOOR_BLURBS[door]}
       </p>
 
-      {hasEmail && sent ? (
+      {sent ? (
         <div className="rounded-2xl bg-brand-tint p-6">
           <p className="font-heading font-semibold text-dark-blue mb-1">
             Check your email
@@ -211,48 +201,27 @@ function DoorSignup({ door, actionData }: {
             </p>
           )}
 
-          {/* Continue with Google */}
-          <Form method="post" className={hasEmail ? "mb-4" : ""}>
+          {/* Magic-link signup — one method for every door. We email a sign-in
+              link to the verified address; the click lands on /welcome to
+              finish setup. */}
+          <Form method="post" className="flex flex-col gap-3">
             <input type="hidden" name="door" value={door} />
-            <input type="hidden" name="provider" value="google" />
+            <input type="hidden" name="provider" value="email-link" />
+            <input
+              type="email"
+              name="email"
+              required
+              placeholder={EMAIL_PLACEHOLDERS[door]}
+              className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral"
+            />
             <button
               type="submit"
               disabled={submitting}
-              className="w-full rounded-xl border border-border bg-card text-dark-blue font-heading font-semibold py-3 hover:border-accent-coral transition disabled:opacity-50"
+              className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
             >
-              Continue with Google
+              {submitting ? "Sending…" : "Continue with email"}
             </button>
           </Form>
-
-          {/* Email link — omitted on the member door (@dali emails are Google). */}
-          {hasEmail && (
-            <>
-              <div className="flex items-center gap-3 mb-4">
-                <span className="h-px flex-1 bg-border" />
-                <span className="text-xs text-muted-foreground">or</span>
-                <span className="h-px flex-1 bg-border" />
-              </div>
-
-              <Form method="post" className="flex flex-col gap-3">
-                <input type="hidden" name="door" value={door} />
-                <input type="hidden" name="provider" value="email-link" />
-                <input
-                  type="email"
-                  name="email"
-                  required
-                  placeholder={EMAIL_PLACEHOLDERS[door]}
-                  className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral"
-                />
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
-                >
-                  {submitting ? "Sending…" : "Continue with email"}
-                </button>
-              </Form>
-            </>
-          )}
         </>
       )}
 
