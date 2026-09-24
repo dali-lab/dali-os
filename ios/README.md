@@ -44,7 +44,7 @@ Debug builds default to **staging**. You can switch between Production, Staging,
 
 The iPad then gets its own token, which is stored in the Keychain. The token only works on `/api/room-display/*`, for that one room. Revoke it from the same page. To unpair from the iPad, press and hold the date above the timeline for 3 seconds.
 
-**Demo mode (debug builds only).** Enter `DEMO-ROOM` or `DEMO-EVENT` as the setup code to see the display with sample data and no server. The simulator has no camera, so the scanner offers **Simulate a scan**.
+**Demo mode (debug builds only).** Enter `DEMO-ROOM` or `DEMO-EVENT` as the setup code to see the display with sample data and no server. To open the display already in use, launch with the argument `-demoDisplay busy`. The simulator has no camera, so the scanner offers **Simulate a scan**.
 
 **Kiosk setup.** On the iPad:
 - Settings → Accessibility → **Guided Access** on, then triple-click the side button in the app to lock it.

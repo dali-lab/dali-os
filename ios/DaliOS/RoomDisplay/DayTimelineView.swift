@@ -44,11 +44,13 @@ struct DayTimelineView: View {
             )
             ZStack(alignment: .topLeading) {
                 grid(scale)
+                // Under the blocks: the booking in progress is outlined
+                // instead, so the line never strikes through its text.
+                nowLine(scale)
                 ForEach(items, id: \.occurrenceID) { item in
                     block(item, scale)
                 }
                 if let draft { draftBlock(draft, scale) }
-                nowLine(scale)
             }
             .padding(.top, labelHeight / 2)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -128,6 +130,11 @@ struct DayTimelineView: View {
         // Fade past blocks toward the card without going see-through, so the
         // hour lines don't show through them.
         .overlay(OS.card.opacity(item.end <= now ? 0.5 : 0), in: .rect(cornerRadius: OS.itemRadius))
+        .overlay {
+            if item.start <= now, item.end > now {
+                RoundedRectangle(cornerRadius: OS.itemRadius).strokeBorder(OS.danger, lineWidth: 2)
+            }
+        }
         .padding(.leading, gutter)
         .padding(.trailing, 16)
         .offset(y: top)

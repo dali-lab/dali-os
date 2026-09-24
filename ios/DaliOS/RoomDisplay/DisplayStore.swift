@@ -109,7 +109,7 @@ final class DisplayStore {
     /// `-demoDisplay [event]`. Unpair (long-press the date) to leave.
     static let demoCodes = ["DEMOROOM": false, "DEMOEVENT": true]
 
-    func startDemo(event: Bool) {
+    func startDemo(event: Bool, busy: Bool = false) {
         let now = Date.now
         func at(_ minutes: Double) -> Date { now.addingTimeInterval(minutes * 60) }
         func org(_ first: String, _ last: String) -> ScheduleItem.Organizer {
@@ -126,6 +126,7 @@ final class DisplayStore {
             ScheduleItem(kind: .meeting, id: "d", title: "DALI Lab Night", start: at(event ? -10 : 240), end: at(event ? 110 : 360),
                          organizer: org("Sam", "Rivera"), isEvent: true),
         ]
+        if busy { _ = demoBook(DateInterval(start: at(-20), duration: 50 * 60)) }
         currentEvent = event ? items.last : nil
         isDemo = true
         isPaired = true

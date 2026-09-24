@@ -14,11 +14,8 @@ struct StatusPanel: View {
         let snapshot = RoomSnapshot(items: items, now: now)
         VStack(alignment: .leading, spacing: 20) {
             header
-            status(snapshot)
-            if let current = snapshot.current {
-                itemCard(label: "Now", item: current)
-            }
-            if let next = snapshot.next {
+            StatusHero(snapshot: snapshot)
+            if let next = snapshot.next, snapshot.current != nil {
                 itemCard(label: "Next", item: next)
             }
             Spacer(minLength: 0)
@@ -31,15 +28,11 @@ struct StatusPanel: View {
     }
 
     private var header: some View {
-        let free = RoomSnapshot(items: items, now: now).current == nil
-        return HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .center, spacing: 14) {
-                    Text(room?.name ?? "Room")
-                        .font(OS.font(36, .medium))
-                        .foregroundStyle(OS.fg)
-                    OSStatusPill(text: free ? "Available" : "In use", dot: free ? OS.green : OS.danger, size: 17)
-                }
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(room?.name ?? "Room")
+                    .font(OS.font(36, .medium))
+                    .foregroundStyle(OS.fg)
                 let detail = [room?.description, room?.capacity.map { "Seats \($0)" }].compactMap { $0 }
                 if !detail.isEmpty {
                     Text(detail.joined(separator: " · "))
@@ -57,26 +50,6 @@ struct StatusPanel: View {
                 }
             }
         }
-    }
-
-    private func status(_ snapshot: RoomSnapshot) -> some View {
-        Text(statusDetail(snapshot))
-            .font(OS.font(34, .medium))
-            .foregroundStyle(OS.fg)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .osCard(padding: 28)
-    }
-
-    private func statusDetail(_ snapshot: RoomSnapshot) -> String {
-        if let current = snapshot.current {
-            let left = Duration.seconds(current.end.timeIntervalSince(now))
-                .formatted(.units(allowed: [.hours, .minutes], width: .wide))
-            return "In use until \(current.end.formatted(date: .omitted, time: .shortened)), \(left) left"
-        }
-        if let next = snapshot.next {
-            return "Free until \(next.start.formatted(date: .omitted, time: .shortened))"
-        }
-        return "Free for the rest of the day"
     }
 
     private func itemCard(label: String, item: ScheduleItem) -> some View {
