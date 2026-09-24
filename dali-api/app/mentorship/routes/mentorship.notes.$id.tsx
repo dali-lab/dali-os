@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { redirect, useLoaderData } from "react-router";
-import { Trash2, Smile, Meh, Frown } from "lucide-react";
+import { Smile, Meh, Frown } from "lucide-react";
 import type { Route } from "./+types/mentorship.notes.$id";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -11,15 +11,16 @@ import { parseSessionCookie } from "~/lib/cookies";
 import { DocEditor } from "~/components/doc";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { Tooltip, InfoTip } from "~/components/ui/floating";
-import { useDialog } from "~/components/ui/dialog";
 import { canViewMentorship, canViewMentorNote } from "../lib/visibility";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { VIBES, VIBE_META, type Vibe } from "../lib/vibe";
+import { weekNumberInTerm } from "../lib/week";
 
 type LoaderData = {
   id: string;
   weekOfIso: string;
+  weekNumber: number | null;
   contentJson: unknown;
   vibe: Vibe | null;
   mentor: { id: string; firstName: string; lastName: string };
@@ -40,7 +41,6 @@ export const meta: Route.MetaFunction = () => [
   { title: "Mentor note · DALI OS" },
 ];
 
-// Suppresses the breadcrumb trail (see layout wayfinding contract).
 export const handle = {
   docKey: "mentorship.notes",
   docTitle: "Mentorship notes",
@@ -90,7 +90,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }),
     prisma.term.findUnique({
       where: { id: note.termId },
-      select: { code: true },
+      select: { code: true, startDate: true },
     }),
     prisma.domain.findUnique({
       where: { id: note.domainId },
@@ -106,6 +106,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const data: LoaderData = {
     id: note.id,
     weekOfIso: note.weekOf.toISOString(),
+    weekNumber: term ? weekNumberInTerm(note.weekOf, term.startDate) : null,
     // Read view renders blocks; legacy rows still hold ProseMirror JSON until
     // their first collab edit, so normalize server-side.
     contentJson: ensureBlocks(note.contentJson),
@@ -127,15 +128,21 @@ function fmt(d: string) {
     month: "short",
     day: "numeric",
     year: "numeric",
+    // weekOf is a Monday at UTC midnight; local time would show Sunday in the US.
+    timeZone: "UTC",
   });
 }
+
+// Cancel BlockNote's drag-handle gutter (theme.css: 0.75rem mobile, 54px sm+)
+// so body text lines up with the page header.
+const EDITOR_CLASS =
+  "min-h-[24rem] -ml-3 w-[calc(100%+0.75rem)] sm:-ml-[54px] sm:w-[calc(100%+54px)]";
 
 const VIBE_ICON = { Good: Smile, Ok: Meh, Bad: Frown } as const;
 
 export default function MentorNoteEditor() {
   const data = useLoaderData() as LoaderData;
-  const dialog = useDialog();
-  const { pageTitle, bodyText, iconBtn } = useOsChrome();
+  const { pageTitle, bodyText } = useOsChrome();
   const [vibe, setVibe] = useState<Vibe | null>(data.vibe);
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">(
     "idle",
@@ -161,28 +168,14 @@ export default function MentorNoteEditor() {
     }
   }
 
-  async function handleDelete() {
-    if (
-      !(await dialog.confirm({
-        title: "Delete this note?",
-        description: "This cannot be undone.",
-        confirmLabel: "Delete",
-        tone: "destructive",
-      }))
-    )
-      return;
-    const res = await fetch(`/api/mentorship/notes/${data.id}`, {
-      method: "DELETE",
-    });
-    if (res.ok) {
-      window.location.assign("/mentorship");
-    }
-  }
-
   return (
     <main className="flex flex-col gap-4 w-full min-w-0">
       <header className="flex flex-col gap-1">
         <h1 className={pageTitle}>Notes on {fullName(data.mentee)}</h1>
+        <p className="text-base text-os-grey">
+          {data.weekNumber != null && `Week ${data.weekNumber} · `}
+          {fmt(data.weekOfIso)}
+        </p>
         <p className={cn(bodyText, "inline-flex items-center gap-1")}>
           Author: {fullName(data.mentor)}
           <InfoTip content="Mentor notes are visible to all lab mentors and Core members — not to the mentee. Only the author or Core can edit a note." />
@@ -195,7 +188,7 @@ export default function MentorNoteEditor() {
           <span className="text-accent-coral ml-0.5" aria-hidden>
             *
           </span>
-          <InfoTip content="An at-a-glance signal for this week's note. Excellent = things are going well; Room for improvement = something to address; Concerning = needs follow-up. Visible to mentors and Core — not to the mentee." />
+          <InfoTip content="How this week went. Excellent means things are going well, Room for improvement means something to work on, Concerning means it needs follow-up. Mentors and Core can see this, the mentee can't." />
           :
         </span>
         <div className="flex items-center gap-1.5">
@@ -237,35 +230,17 @@ export default function MentorNoteEditor() {
             return vibeButton;
           })}
         </div>
-      </div>
-
-      <div className={cn("flex items-center justify-between", bodyText)}>
-        <span>
-          {data.canEdit
-            ? status === "saving"
-              ? "Saving…"
-              : status === "saved"
-              ? "Saved"
-              : status === "error"
-              ? "Save failed — try again"
-              : "Auto-saves as you type"
-            : "Read only"}
+        <span className={cn(bodyText, "ml-auto")}>
+          {!data.canEdit
+            ? "Read only"
+            : status === "saving"
+            ? "Saving…"
+            : status === "saved"
+            ? "Saved"
+            : status === "error"
+            ? "Save failed, try again"
+            : null}
         </span>
-        {data.canEdit && (
-          <Tooltip content="Delete note">
-            <button
-              type="button"
-              onClick={handleDelete}
-              aria-label="Delete note"
-              className={cn(
-                "inline-flex items-center justify-center",
-                iconBtn,
-              )}
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-          </Tooltip>
-        )}
       </div>
 
       {data.canEdit && data.collabToken ? (
@@ -277,14 +252,14 @@ export default function MentorNoteEditor() {
             userName: data.userName,
           }}
           placeholder="What went well, what's blocked, what to follow up on…"
-          className="min-h-[24rem] w-full"
+          className={EDITOR_CLASS}
         />
       ) : (
         <DocEditor
           features="notes"
           editable={false}
           initialContent={data.contentJson}
-          className="min-h-[24rem] w-full"
+          className={EDITOR_CLASS}
         />
       )}
     </main>

@@ -8,6 +8,7 @@ import { prisma } from "~/lib/db";
 import { currentTerm } from "~/lib/roles";
 import { isUserActiveInTerm, resolveGroupMembers } from "~/lib/groups";
 import { isNewMemberCohort } from "~/hiring/lib/new-member-cohort.server";
+import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { isStaffedInTerm, isStaffedMentorInTerm } from "./staffing-audience.server";
 import { AUDIENCE_RESOLVERS } from "./audiences";
 
@@ -107,6 +108,10 @@ export interface OutstandingBinding {
   documentId: string;
   documentName: string;
   versionId: string;
+  // Which slot this user owes on the binding. "member" is the normal signer
+  // obligation (audience-derived); "mentee" is a mentorship-agreement
+  // countersignature owed because one of the user's mentors signed it.
+  role: "member" | "mentee";
 }
 
 // Every app-enforced binding this user still owes a member signature on.
@@ -117,10 +122,14 @@ export interface OutstandingBinding {
 // staffing, so a member staffed in the upcoming term owes it now. A PAST term's
 // binding never blocks the app once the term has rolled by. App-scoped (Once)
 // bindings gate on the current term.
-export async function listOutstandingBindings(userId: string): Promise<OutstandingBinding[]> {
+export async function listOutstandingBindings(
+  userId: string,
+  opts: { includeMentee?: boolean; request?: Request } = {},
+): Promise<OutstandingBinding[]> {
+  const includeMentee = opts.includeMentee ?? true;
   const { exempt, isMember } = await baseMemberFlag(userId);
   if (exempt) return [];
-  const current = await currentTerm();
+  const current = await currentTerm(opts.request);
 
   const bindings = await prisma.signingBinding.findMany({
     where: {
@@ -133,11 +142,19 @@ export async function listOutstandingBindings(userId: string): Promise<Outstandi
       termId: true,
       term: { select: { id: true, sortKey: true } },
       document: {
-        select: { id: true, name: true, audience: true, audienceGroupId: true },
+        select: {
+          id: true,
+          name: true,
+          audience: true,
+          audienceGroupId: true,
+          requiresMenteeCountersign: true,
+        },
       },
+      // Both roles this user might hold on the binding: "member" answers the
+      // normal signer gate; "mentee" is read by the countersignature pass below.
       signatures: {
-        where: { signerUserId: userId, roleKey: "member" },
-        select: { versionId: true },
+        where: { signerUserId: userId, roleKey: { in: ["member", "mentee"] } },
+        select: { versionId: true, roleKey: true },
       },
     },
   });
@@ -189,15 +206,89 @@ export async function listOutstandingBindings(userId: string): Promise<Outstandi
       userGroupIds,
     });
     if (!inAudience) continue;
-    const signed = b.signatures.some((s) => s.versionId === b.versionId);
+    const signed = b.signatures.some(
+      (s) => s.roleKey === "member" && s.versionId === b.versionId,
+    );
     if (signed) continue;
     out.push({
       bindingId: b.id,
       documentId: b.document.id,
       documentName: b.document.name,
       versionId: b.versionId,
+      role: "member",
     });
   }
+
+  // Mentee countersignatures — a parallel obligation the audience machinery
+  // doesn't express (a mentee is not in the Mentors audience). Runs only when
+  // the feature is live for everyone and the caller opts in (the web gate/inbox
+  // do; MCP does not — it can't sign a countersignature yet). All lookups are
+  // batched OUTSIDE the per-binding loop to keep this hot path free of
+  // per-binding round-trips (mirrors the userGroupIds precompute above).
+  if (
+    includeMentee &&
+    current &&
+    (await isFeatureEnabledForEveryone("mentee-countersign", opts.request))
+  ) {
+    // Candidate bindings: opt-in doc, term-scoped, current-or-upcoming (a past
+    // term's agreement never blocks the app, matching the member rule above).
+    const candidates = bindings.filter(
+      (b) =>
+        b.document.requiresMenteeCountersign &&
+        b.termId &&
+        b.term &&
+        b.term.sortKey >= current.sortKey &&
+        // Already countersigned the in-force version → nothing owed. Checked
+        // first so a later re-finalize / mentor un-sign can't re-gate someone.
+        !b.signatures.some((s) => s.roleKey === "mentee" && s.versionId === b.versionId),
+    );
+    if (candidates.length > 0) {
+      const termIds = [...new Set(candidates.map((b) => b.termId as string))];
+      const pairs = await prisma.mentorshipPair.findMany({
+        where: { menteeUserId: userId, termId: { in: termIds } },
+        select: { mentorUserId: true, termId: true },
+      });
+      const mentorsByTerm = new Map<string, Set<string>>();
+      for (const p of pairs) {
+        let set = mentorsByTerm.get(p.termId);
+        if (!set) mentorsByTerm.set(p.termId, (set = new Set()));
+        set.add(p.mentorUserId);
+      }
+      const allMentorIds = [...new Set(pairs.map((p) => p.mentorUserId))];
+      // Which of my mentors have signed each candidate binding's in-force
+      // version (keyed signer:version so an old-version mentor sig doesn't count).
+      const signedMentorKeys = new Set<string>();
+      if (allMentorIds.length > 0) {
+        const mentorSigs = await prisma.signingSignature.findMany({
+          where: {
+            bindingId: { in: candidates.map((b) => b.id) },
+            roleKey: "member",
+            signerUserId: { in: allMentorIds },
+          },
+          select: { bindingId: true, signerUserId: true, versionId: true },
+        });
+        for (const s of mentorSigs) {
+          signedMentorKeys.add(`${s.bindingId}:${s.signerUserId}:${s.versionId}`);
+        }
+      }
+      for (const b of candidates) {
+        const myMentors = mentorsByTerm.get(b.termId as string);
+        if (!myMentors || myMentors.size === 0) continue; // not a mentee here
+        const anyMentorSigned = [...myMentors].some((m) =>
+          signedMentorKeys.has(`${b.id}:${m}:${b.versionId}`),
+        );
+        if (!anyMentorSigned) continue;
+        out.push({
+          bindingId: b.id,
+          documentId: b.document.id,
+          documentName: b.document.name,
+          versionId: b.versionId,
+          role: "mentee",
+        });
+      }
+    }
+  }
+
   return out;
 }
 
@@ -220,7 +311,9 @@ export async function listMySignedDocuments(userId: string): Promise<SignedDocum
   const sigs = await prisma.signingSignature.findMany({
     where: {
       signerUserId: userId,
-      roleKey: "member",
+      // Member signatures and mentee countersignatures both belong in the
+      // personal archive; the pre-signed "supervisor" role never does.
+      roleKey: { in: ["member", "mentee"] },
       binding: { document: { gateScope: { not: "HiringCycle" }, archivedAt: null } },
     },
     select: {
@@ -255,18 +348,20 @@ export type BindingSignState =
   | { status: "unsigned" }
   | { status: "signed" };
 
-// State of one binding for one member (has this user signed the in-force
-// version as "member"?).
+// State of one binding for one signer, in a given role (has this user signed
+// the in-force version as `roleKey`?). Defaults to "member"; the mentee fill
+// flow passes "mentee" to read the countersignature slot.
 export async function getBindingStateForUser(
   userId: string,
   bindingId: string,
+  roleKey: string = "member",
 ): Promise<BindingSignState> {
   const b = await prisma.signingBinding.findUnique({
     where: { id: bindingId },
     select: {
       versionId: true,
       signatures: {
-        where: { signerUserId: userId, roleKey: "member" },
+        where: { signerUserId: userId, roleKey },
         select: { versionId: true },
       },
     },
@@ -276,9 +371,74 @@ export async function getBindingStateForUser(
   return { status: signed ? "signed" : "unsigned" };
 }
 
+export type MenteeCountersignState = "not_owed" | "owed" | "signed";
+
+// Whether `userId` owes / has completed a mentee countersignature on one
+// binding. The single-binding analog of the mentee pass in
+// listOutstandingBindings; shared by the sign route + PDF route so the gate,
+// the fill flow, and the app-gate all agree. Predicate order matters: a
+// completed countersignature short-circuits FIRST, so a later re-finalize
+// (which rewrites non-manual MentorshipPair rows) or a mentor un-signing can
+// never re-gate someone who already countersigned.
+export async function menteeCountersignState(
+  userId: string,
+  bindingId: string,
+  request?: Request,
+): Promise<MenteeCountersignState> {
+  const b = await prisma.signingBinding.findUnique({
+    where: { id: bindingId },
+    select: {
+      versionId: true,
+      termId: true,
+      document: { select: { requiresMenteeCountersign: true, gateScope: true } },
+      term: { select: { sortKey: true } },
+      signatures: {
+        where: { signerUserId: userId, roleKey: "mentee" },
+        select: { versionId: true },
+      },
+    },
+  });
+  if (!b) return "not_owed";
+  if (b.signatures.some((s) => s.versionId === b.versionId)) return "signed";
+  if (
+    !b.document.requiresMenteeCountersign ||
+    b.document.gateScope !== "App" ||
+    !b.termId ||
+    !b.term
+  ) {
+    return "not_owed";
+  }
+  if (!(await isFeatureEnabledForEveryone("mentee-countersign", request))) return "not_owed";
+  const current = await currentTerm(request);
+  if (!current || b.term.sortKey < current.sortKey) return "not_owed";
+
+  const pairs = await prisma.mentorshipPair.findMany({
+    where: { menteeUserId: userId, termId: b.termId },
+    select: { mentorUserId: true },
+  });
+  if (pairs.length === 0) return "not_owed";
+
+  const mentorSigned = await prisma.signingSignature.findFirst({
+    where: {
+      bindingId,
+      roleKey: "member",
+      versionId: b.versionId,
+      signerUserId: { in: pairs.map((p) => p.mentorUserId) },
+    },
+    select: { id: true },
+  });
+  return mentorSigned ? "owed" : "not_owed";
+}
+
 // App-gate helper for the layout loader: the first App-scoped binding the user
-// still owes, or null. The layout redirects to /sign when non-null.
-export async function getAppGateOutstanding(userId: string): Promise<OutstandingBinding | null> {
-  const outstanding = await listOutstandingBindings(userId);
+// still owes, or null. The layout redirects to /sign when non-null. Includes
+// mentee countersignatures (the layout gate blocks a mentee until they
+// countersign, same as a mentor); pass `request` so the flag + term lookups are
+// request-cached.
+export async function getAppGateOutstanding(
+  userId: string,
+  request?: Request,
+): Promise<OutstandingBinding | null> {
+  const outstanding = await listOutstandingBindings(userId, { includeMentee: true, request });
   return outstanding[0] ?? null;
 }

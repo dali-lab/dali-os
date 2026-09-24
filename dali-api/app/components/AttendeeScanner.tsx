@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Camera, CheckCircle2, RefreshCw, XCircle } from "lucide-react";
+import { Camera, CheckCircle2, Maximize2, Minimize2, RefreshCw, XCircle } from "lucide-react";
+import { cn } from "~/lib/cn";
 
 // Organizer/kiosk scan station for wallet-pass check-in. The member shows their
 // DALI membership pass; this reads the QR barcode and POSTs the signed token to
@@ -21,8 +22,10 @@ import { Camera, CheckCircle2, RefreshCw, XCircle } from "lucide-react";
 // box that still claimed to be "scanning". `runIdRef` makes every start check
 // that it is still the current one before touching the video element.
 
+type ScannedMember = { id: string; firstName: string; lastName: string; photoUrl: string | null };
+
 type ScanResult =
-  | { kind: "success"; member: { firstName: string; lastName: string; photoUrl: string | null } }
+  | { kind: "success"; member: ScannedMember }
   | { kind: "error"; message: string };
 
 // Minimal shape of the native BarcodeDetector (absent from the TS DOM lib).
@@ -32,6 +35,8 @@ type NativeBarcodeDetector = {
 type NativeBarcodeDetectorCtor = new (opts: { formats: string[] }) => NativeBarcodeDetector;
 
 const RESCAN_DEBOUNCE_MS = 3000;
+const overlayBtnClass =
+  "inline-flex h-10 w-10 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur-sm transition-colors hover:bg-black/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70";
 const FEEDBACK_MS = 2500;
 // A camera that has produced no frame by now is not going to; surface it as an
 // error with a retry rather than spinning on "Starting camera…" forever.
@@ -108,12 +113,19 @@ function waitForFirstFrame(video: HTMLVideoElement): Promise<void> {
 export function AttendeeScanner({
   meetingId,
   disabled,
+  onMarked,
 }: {
   meetingId: string;
   disabled?: boolean;
+  /** Called with the member's id once the server has marked them present. */
+  onMarked?: (userId: string) => void;
 }) {
+  const rootRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [status, setStatus] = useState<"starting" | "scanning" | "error">("starting");
+  const [expanded, setExpanded] = useState(false);
+  const onMarkedRef = useRef(onMarked);
+  onMarkedRef.current = onMarked;
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [result, setResult] = useState<ScanResult | null>(null);
   // Bumped by the retry button to re-run the start effect.
@@ -143,16 +155,17 @@ export function AttendeeScanner({
         });
         const body = (await res.json().catch(() => null)) as {
           ok?: boolean;
-          member?: { firstName: string; lastName: string; photoUrl: string | null };
+          member?: ScannedMember;
           error?: string;
         } | null;
         if (res.ok && body?.ok && body.member) {
           setResult({ kind: "success", member: body.member });
+          onMarkedRef.current?.(body.member.id);
         } else {
           setResult({ kind: "error", message: body?.error ?? "Scan failed" });
         }
       } catch {
-        setResult({ kind: "error", message: "Network error — try again" });
+        setResult({ kind: "error", message: "Network error. Try again." });
       } finally {
         busyRef.current = false;
       }
@@ -262,11 +275,65 @@ export function AttendeeScanner({
     };
   }, [disabled, handleToken, attempt]);
 
+  // Fullscreen is the page overlay (fixed, always works) plus the browser's
+  // own fullscreen on top where it's allowed. Leaving browser fullscreen with
+  // Escape or the system gesture drops the overlay too.
+  const nativeFullscreenRef = useRef(false);
+
+  const exitFullscreen = useCallback(() => {
+    setExpanded(false);
+    nativeFullscreenRef.current = false;
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+  }, []);
+
+  function enterFullscreen() {
+    setExpanded(true);
+    void rootRef.current
+      ?.requestFullscreen?.()
+      .then(() => {
+        nativeFullscreenRef.current = true;
+      })
+      .catch(() => {});
+  }
+
+  useEffect(() => {
+    if (!expanded) return;
+    const onChange = () => {
+      if (!document.fullscreenElement && nativeFullscreenRef.current) {
+        nativeFullscreenRef.current = false;
+        setExpanded(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") exitFullscreen();
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.addEventListener("fullscreenchange", onChange);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("fullscreenchange", onChange);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [expanded, exitFullscreen]);
+
   return (
-    <div className="relative w-full max-w-md mx-auto aspect-square rounded-2xl overflow-hidden bg-black border border-border">
+    <div
+      ref={rootRef}
+      className={cn(
+        "overflow-hidden bg-black",
+        expanded
+          ? "fixed inset-0 z-50"
+          : "relative aspect-[4/3] w-full rounded-os-item",
+      )}
+    >
+      {/* Always mirrored, like a selfie view, so a pass moved left moves left on
+          screen. Decoding reads the raw frames, so this is display only. */}
       <video
         ref={videoRef}
-        className="absolute inset-0 w-full h-full object-cover"
+        className="absolute inset-0 h-full w-full object-cover"
+        style={{ transform: "scaleX(-1)" }}
         muted
         autoPlay
         playsInline
@@ -275,9 +342,26 @@ export function AttendeeScanner({
       {/* Reticle */}
       {status === "scanning" && !result && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="w-2/3 h-2/3 rounded-xl border-2 border-white/70 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]" />
+          <div
+            className={cn(
+              "aspect-square rounded-3xl border-2 border-white/70 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]",
+              expanded ? "w-[min(66vw,66vh)]" : "h-2/3",
+            )}
+          />
         </div>
       )}
+
+      <div className="absolute right-4 top-4 z-10 flex gap-2">
+        <button
+          type="button"
+          onClick={expanded ? exitFullscreen : enterFullscreen}
+          aria-label={expanded ? "Exit full screen" : "Full screen"}
+          title={expanded ? "Exit full screen" : "Full screen"}
+          className={overlayBtnClass}
+        >
+          {expanded ? <Minimize2 className="h-5 w-5" aria-hidden /> : <Maximize2 className="h-5 w-5" aria-hidden />}
+        </button>
+      </div>
 
       {status === "starting" && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-white/90">
@@ -293,7 +377,7 @@ export function AttendeeScanner({
           <button
             type="button"
             onClick={() => setAttempt((n) => n + 1)}
-            className="inline-flex items-center gap-1.5 rounded-md border border-white/40 px-3 py-1.5 text-sm font-medium hover:bg-white/10"
+            className="inline-flex items-center gap-1.5 rounded-full border border-white/40 px-4 py-2 text-sm font-medium hover:bg-white/10"
           >
             <RefreshCw className="w-4 h-4" aria-hidden /> Try again
           </button>

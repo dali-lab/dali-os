@@ -215,6 +215,18 @@ export const EVENT_TYPES = {
     timeSensitive: true,
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
   },
+  "document.countersign_request": {
+    kind: "General",
+    area: "Documents",
+    label: "Agreements to countersign",
+    description:
+      "When your mentor has signed a mentorship agreement and you're required to countersign it.",
+    // Same hard-gate workflow surface as sign_request — the mentee is blocked
+    // until they countersign, so the in-app row can't be muted.
+    lockedInApp: true,
+    timeSensitive: true,
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
+  },
   "staffing.assigned": {
     kind: "General",
     area: "Staffing",

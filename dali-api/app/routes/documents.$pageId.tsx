@@ -26,6 +26,7 @@ import { ProjectIcon } from "~/components/ProjectIcon";
 import { PageIcon } from "~/components/PageIcon";
 import { FolderIcon } from "~/components/FolderIcon";
 import { redirectToLogin } from "~/lib/login-next";
+import { walletTokensConfigured } from "~/lib/wallet-token";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const t = (data as { title?: string } | undefined)?.title;
@@ -260,6 +261,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         viewerPresent: boolean;
         checkInUrl: string | null;
         checkInQrSvg: string | null;
+        walletConfigured: boolean;
       }
     | null = null;
   if (page.meetingNoteId) {
@@ -315,6 +317,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         viewerPresent: viewerRow?.present ?? false,
         checkInUrl,
         checkInQrSvg,
+        walletConfigured: walletTokensConfigured(),
       };
     }
   }
@@ -445,6 +448,7 @@ export default function DocumentPage() {
           meetingId={attendance.meetingId}
           meetingLabel={attendance.meetingLabel}
           canEdit={attendance.canMark}
+          canScan={attendance.walletConfigured}
           attendees={attendance.rows}
         />
       )}

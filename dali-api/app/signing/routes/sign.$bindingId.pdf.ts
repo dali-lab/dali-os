@@ -7,8 +7,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { renderDocumentPdf } from "~/lib/pdf/document-pdf.server";
-import { getBindingStateForUser, getSignerCohortsForBinding } from "~/signing/lib/state.server";
-import { AUDIENCE_RESOLVERS } from "~/signing/lib/audiences";
+import { getBindingStateForUser, menteeCountersignState } from "~/signing/lib/state.server";
 import type { PMNode } from "~/collab/export-html";
 import type { DocBlock } from "~/collab/blocknote-server";
 
@@ -23,24 +22,26 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     select: {
       id: true,
       termId: true,
-      document: { select: { name: true, audience: true } },
+      document: { select: { name: true } },
       version: { select: { body: true } },
     },
   });
   if (!binding) return redirect("/sign");
 
-  const [state, cohorts] = await Promise.all([
-    getBindingStateForUser(userId, bindingId),
-    getSignerCohortsForBinding(userId, binding.termId),
+  // Which role's signed copy to stream. A mentee's countersigned copy lives
+  // under roleKey "mentee"; everyone else's under "member". If they've signed
+  // neither, bounce to the sign page (which gates access itself).
+  const [memberState, menteeState] = await Promise.all([
+    getBindingStateForUser(userId, bindingId, "member"),
+    menteeCountersignState(userId, bindingId, request),
   ]);
-
-  const inAudience = AUDIENCE_RESOLVERS[binding.document.audience].includes(cohorts);
-  if (state.status !== "signed" && !inAudience) return redirect("/");
-  if (state.status !== "signed") return redirect(`/sign/${bindingId}`);
+  const roleKey =
+    memberState.status === "signed" ? "member" : menteeState === "signed" ? "mentee" : null;
+  if (!roleKey) return redirect(`/sign/${bindingId}`);
 
   const mine = await prisma.signingSignature.findUnique({
     where: {
-      bindingId_signerUserId_roleKey: { bindingId, signerUserId: userId, roleKey: "member" },
+      bindingId_signerUserId_roleKey: { bindingId, signerUserId: userId, roleKey },
     },
     select: { frozenBody: true },
   });

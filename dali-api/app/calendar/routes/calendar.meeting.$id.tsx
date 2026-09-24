@@ -1,9 +1,14 @@
-import { useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link, useFetcher, useLoaderData } from "react-router";
 import QRCode from "qrcode";
-import { FileText, Users, ScanLine, Shield, Video, Pencil, Clock, MapPin, Shapes, FolderKanban } from "lucide-react";
+import { FileText, Users, Shield, Video, Pencil, Clock, MapPin, Shapes, Plus, QrCode } from "lucide-react";
 import { Select } from "~/components/ui/floating";
 import { Radio } from "~/components/ui/Radio";
+import { IconButton } from "~/components/ui/IconButton";
+import { Modal, ModalFooter, ModalHeader } from "~/components/Modal";
+import { useOsChrome } from "~/components/os-chrome";
+import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { cn } from "~/lib/cn";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
@@ -12,7 +17,6 @@ import { walletTokensConfigured } from "~/lib/wallet-token";
 import { fullName } from "~/lib/display";
 import { AttendanceChecklist, type AttendanceRow } from "~/components/AttendanceChecklist";
 import { CheckInPanel } from "~/components/CheckInPanel";
-import { AttendeeScanner } from "~/components/AttendeeScanner";
 import { EditMeetingModal } from "~/calendar/components/EditMeetingModal";
 import { AddMeetingNoteButton } from "~/calendar/components/AddMeetingNoteModal";
 import { AddMeetingWhiteboardButton } from "~/calendar/components/AddMeetingWhiteboardModal";
@@ -159,6 +163,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     // call, as updateScheduledMeeting enforces.
     canInvite: auth.user.sub === meeting.organizerId || roles.isCore,
     selfCheckIn,
+    // Switching an existing meeting to self check-in is the same authority as
+    // editing it, narrowed to the roles that may create one (the create API's
+    // canViewForms gate). The action re-checks both.
+    canEnableSelfCheckIn:
+      !selfCheckIn && (auth.user.sub === meeting.organizerId || roles.isCore) && roles.canViewForms,
     rows: meeting.attendance.map((a) => ({
       userId: a.userId,
       name: fullName(a.user) || a.user.daliEmail || a.userId,
@@ -180,6 +189,45 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   };
 }
 
+// Turn on self check-in for a meeting created without it, so its QR code and
+// link appear. The roster is backfilled the way attachMeetingNote does it, since
+// check-in only marks people who already have an attendance row.
+export async function action({ request, params }: Route.ActionArgs) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return redirectToLogin(request);
+  if (auth.user.type === "applicant") {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
+  const form = await request.formData();
+  if (form.get("intent") !== "enable-self-check-in") {
+    return Response.json({ error: "Unknown intent" }, { status: 400 });
+  }
+
+  const meeting = await prisma.scheduledMeeting.findUnique({
+    where: { id: params.id },
+    select: { id: true, organizerId: true, participantUserIds: true, status: true },
+  });
+  if (!meeting || meeting.status === "Cancelled") {
+    return Response.json({ error: "Not found" }, { status: 404 });
+  }
+  const roles = await getUserRoles(auth.user.sub);
+  const canEdit = auth.user.sub === meeting.organizerId || roles.isCore;
+  if (!canEdit || !roles.canViewForms) {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  await prisma.scheduledMeeting.update({
+    where: { id: meeting.id },
+    data: { attendanceMode: "SelfCheckIn" },
+  });
+  const attendeeIds = Array.from(new Set([...meeting.participantUserIds, meeting.organizerId]));
+  await prisma.meetingAttendance.createMany({
+    data: attendeeIds.map((userId) => ({ scheduledMeetingId: meeting.id, userId })),
+    skipDuplicates: true,
+  });
+  return Response.json({ ok: true });
+}
+
 function ProposedTimesCard({
   meetingId,
   proposals,
@@ -187,21 +235,33 @@ function ProposedTimesCard({
   meetingId: string;
   proposals: { id: string; proposedStartIso: string; proposerName: string }[];
 }) {
+  const { card, sectionTitle } = useOsChrome();
   const fetcher = useFetcher<{ ok?: boolean; error?: string; gcalError?: string | null }>();
 
   if (proposals.length === 0) return null;
 
+  function respond(action: "accept" | "decline", proposalId: string) {
+    fetcher.submit(
+      { action, proposalId },
+      {
+        method: "post",
+        action: `/api/scheduled-meetings/${meetingId}/proposal`,
+        encType: "application/json",
+      },
+    );
+  }
+
   return (
-    <section className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4">
-      <h2 className="flex items-center gap-2 font-heading text-lg font-semibold text-foreground">
-        <Clock className="h-4 w-4 text-muted-foreground" /> Proposed times
+    <section className={cn(card, "flex flex-col gap-5 p-6")}>
+      <h2 className={cn(sectionTitle, "flex items-center gap-2")}>
+        <Clock className="h-5 w-5 text-os-grey" /> Proposed times
       </h2>
-      <ul className="flex flex-col gap-3">
+      <ul className="flex flex-col gap-4">
         {proposals.map((p) => (
-          <li key={p.id} className="flex flex-wrap items-center justify-between gap-2">
+          <li key={p.id} className="flex flex-col gap-3">
             <div>
-              <span className="text-sm font-medium text-foreground">{p.proposerName}</span>
-              <span className="ml-2 text-sm text-muted-foreground">
+              <p className="text-base font-medium text-foreground">{p.proposerName}</p>
+              <p className="text-sm text-os-grey">
                 {new Date(p.proposedStartIso).toLocaleString(undefined, {
                   weekday: "short",
                   month: "short",
@@ -209,40 +269,22 @@ function ProposedTimesCard({
                   hour: "numeric",
                   minute: "2-digit",
                 })}
-              </span>
+              </p>
             </div>
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 disabled={fetcher.state !== "idle"}
-                onClick={() =>
-                  fetcher.submit(
-                    { action: "accept", proposalId: p.id },
-                    {
-                      method: "post",
-                      action: `/api/scheduled-meetings/${meetingId}/proposal`,
-                      encType: "application/json",
-                    },
-                  )
-                }
-                className="inline-flex items-center rounded-md bg-accent-teal px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-teal/90 disabled:opacity-60"
+                onClick={() => respond("accept", p.id)}
+                className="os-btn-primary os-btn-primary--sm disabled:opacity-60"
               >
                 Accept
               </button>
               <button
                 type="button"
                 disabled={fetcher.state !== "idle"}
-                onClick={() =>
-                  fetcher.submit(
-                    { action: "decline", proposalId: p.id },
-                    {
-                      method: "post",
-                      action: `/api/scheduled-meetings/${meetingId}/proposal`,
-                      encType: "application/json",
-                    },
-                  )
-                }
-                className="inline-flex items-center rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-60"
+                onClick={() => respond("decline", p.id)}
+                className="os-btn-ghost py-1.5 disabled:opacity-60"
               >
                 Decline
               </button>
@@ -250,11 +292,9 @@ function ProposedTimesCard({
           </li>
         ))}
       </ul>
-      {fetcher.data?.error && (
-        <p className="text-sm text-destructive">{fetcher.data.error}</p>
-      )}
+      {fetcher.data?.error && <p className="text-sm text-destructive">{fetcher.data.error}</p>}
       {fetcher.data?.gcalError && (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-os-grey">
           Rescheduled, but Google Calendar sync failed: {fetcher.data.gcalError}
         </p>
       )}
@@ -262,53 +302,65 @@ function ProposedTimesCard({
   );
 }
 
-const noteBtnClass =
-  "inline-flex w-fit items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted";
+// The design's outlined pill: every secondary action in the header row wears
+// it, so "Add a project" reads as the same kind of control as "Add meeting notes".
+const actionBtnClass = "os-edit-btn";
+
+type MeetingTypeChoice = "Team" | "Partner" | "Other";
 
 // Add or change the meeting's project after creation (behind the
 // unified-core-project-meetings flag). Posts `set-meeting-project` to the
 // calendar action, which sets the type/project and re-files the note into the
 // project's meeting-notes folder. Shown only to the organizer or Core.
-function MeetingProjectControl({
+function MeetingProjectModal({
   meetingId,
   projectId,
-  projectName,
   meetingType,
+  onClose,
 }: {
   meetingId: string;
   projectId: string | null;
-  projectName: string | null;
   meetingType: "Team" | "Partner" | "Other" | null;
+  onClose: () => void;
 }) {
-  const fetcher = useFetcher<{ error?: string }>();
-  const [open, setOpen] = useState(false);
+  const { formClass, formTrigger } = useOsChrome();
+  const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [selProject, setSelProject] = useState(projectId ?? "");
-  const [subtype, setSubtype] = useState<"Team" | "Partner" | "Other">(
+  const [subtype, setSubtype] = useState<MeetingTypeChoice>(
     meetingType === "Partner" ? "Partner" : meetingType === "Other" ? "Other" : "Team",
   );
   const [label, setLabel] = useState("");
 
-  async function openPicker() {
-    setOpen(true);
-    if (projects.length === 0) {
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
       try {
         // Same authorized set the create form's About picker uses (Projects
-        // only) — all projects for Core, own for a member.
+        // only): all projects for Core, own for a member.
         const res = await fetch("/api/move-destinations", { credentials: "include" });
         const json = await res.json();
         const dests = (json.destinations ?? []) as { type: string; id: string | null; label: string }[];
-        setProjects(
-          dests.filter((x) => x.type === "Project" && x.id).map((x) => ({ id: x.id!, name: x.label })),
-        );
+        if (!cancelled) {
+          setProjects(
+            dests.filter((x) => x.type === "Project" && x.id).map((x) => ({ id: x.id!, name: x.label })),
+          );
+        }
       } catch {
-        // Leave empty — the picker still renders, just with no options to pick.
+        // Leave empty. The picker still renders, just with no options to pick.
       }
-    }
-  }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-  const canSubmit =
-    !!selProject && (subtype !== "Other" || label.trim().length > 0) && fetcher.state === "idle";
+  useEffect(() => {
+    if (fetcher.state === "idle" && fetcher.data?.ok) onClose();
+  }, [fetcher.state, fetcher.data, onClose]);
+
+  const submitting = fetcher.state !== "idle";
+  const canSubmit = !!selProject && (subtype !== "Other" || label.trim().length > 0) && !submitting;
 
   function submit() {
     if (!canSubmit) return;
@@ -320,100 +372,72 @@ function MeetingProjectControl({
     };
     if (subtype === "Other") fields.meetingTypeLabel = label.trim();
     fetcher.submit(fields, { method: "post", action: "/calendar" });
-    setOpen(false);
-  }
-
-  const fieldClass =
-    "w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/40";
-
-  if (!open) {
-    return (
-      <div className="flex flex-wrap items-center gap-2 text-sm">
-        <FolderKanban className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-        {projectId ? (
-          <>
-            <span className="text-muted-foreground">Project:</span>
-            <Link
-              to={`/projects/${projectId}`}
-              className="font-medium text-foreground hover:underline"
-            >
-              {projectName ?? "Project"}
-            </Link>
-            <button
-              type="button"
-              onClick={openPicker}
-              className="text-xs text-muted-foreground hover:text-foreground hover:underline"
-            >
-              Change
-            </button>
-          </>
-        ) : (
-          <button
-            type="button"
-            onClick={openPicker}
-            className="text-muted-foreground hover:text-foreground hover:underline"
-          >
-            Add a project
-          </button>
-        )}
-        {fetcher.data?.error && <span className="text-xs text-red-600">{fetcher.data.error}</span>}
-      </div>
-    );
   }
 
   return (
-    <div className="flex flex-col gap-2 rounded-md border border-border bg-muted/20 p-3 text-sm">
-      <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
-        Project
-      </span>
-      <Select
-        value={selProject}
-        onChange={setSelProject}
-        options={[
-          { value: "", label: "Select a project…" },
-          ...projects.map((p) => ({ value: p.id, label: p.name })),
-        ]}
-        buttonClassName={`${fieldClass} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
+    <Modal open onClose={onClose} labelledBy="meeting-project-title">
+      <ModalHeader
+        titleId="meeting-project-title"
+        title={projectId ? "Change project" : "Add a project"}
+        subtitle="Files the meeting's note in the project and puts it on the project's calendar."
+        onClose={onClose}
       />
-      <div className="flex items-center gap-4 pt-1">
-        <Radio name="mp-subtype" checked={subtype === "Team"} onChange={() => setSubtype("Team")} label="Team" />
-        <Radio name="mp-subtype" checked={subtype === "Partner"} onChange={() => setSubtype("Partner")} label="Partner" />
-        <Radio name="mp-subtype" checked={subtype === "Other"} onChange={() => setSubtype("Other")} label="Other" />
+      <div className={cn(formClass, "flex flex-col gap-5")}>
+        <div className="flex flex-col gap-2">
+          <span className="os-field-label">Project</span>
+          <Select
+            value={selProject}
+            onChange={setSelProject}
+            options={[
+              { value: "", label: "Select a project…" },
+              ...projects.map((p) => ({ value: p.id, label: p.name })),
+            ]}
+            buttonClassName={formTrigger}
+          />
+        </div>
+        <div className="flex flex-col gap-2">
+          <span className="os-field-label">Meeting type</span>
+          <div className="flex items-center gap-5">
+            <Radio name="mp-subtype" checked={subtype === "Team"} onChange={() => setSubtype("Team")} label="Team" />
+            <Radio name="mp-subtype" checked={subtype === "Partner"} onChange={() => setSubtype("Partner")} label="Partner" />
+            <Radio name="mp-subtype" checked={subtype === "Other"} onChange={() => setSubtype("Other")} label="Other" />
+          </div>
+          {subtype === "Other" && (
+            <input
+              type="text"
+              aria-label="Meeting type name"
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="e.g. Design review"
+              maxLength={80}
+              className="w-full"
+            />
+          )}
+        </div>
+        {fetcher.data?.error && <p className="text-sm text-destructive">{fetcher.data.error}</p>}
       </div>
-      {subtype === "Other" && (
-        <input
-          aria-label="Meeting type name"
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
-          placeholder="e.g. Design review"
-          maxLength={80}
-          className={fieldClass}
-        />
-      )}
-      <p className="text-xs text-muted-foreground">
-        Files the meeting's note in the project and shows it on the project's calendar. Stays on the
-        Core calendar if it's a Core meeting.
-      </p>
-      <div className="flex items-center gap-2 pt-1">
-        <button
-          type="button"
-          disabled={!canSubmit}
-          onClick={submit}
-          className="inline-flex items-center rounded-md bg-os-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-os-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {fetcher.state === "idle" ? "Save" : "Saving…"}
+      <ModalFooter onCancel={onClose}>
+        <button type="button" disabled={!canSubmit} onClick={submit} className="os-btn-primary disabled:opacity-50">
+          {submitting ? "Saving…" : "Save"}
         </button>
-        <button type="button" onClick={() => setOpen(false)} className={noteBtnClass}>
-          Cancel
-        </button>
-      </div>
+      </ModalFooter>
+    </Modal>
+  );
+}
+
+function Fact({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <span className="os-field-label">{label}</span>
+      <div className="flex min-w-0 items-center gap-2 text-base text-foreground">{children}</div>
     </div>
   );
 }
 
 export default function CalendarMeetingPage() {
   const d = useLoaderData<typeof loader>();
-  // Format in the viewer's own timezone (browser locale) — no server tz needed.
+  const { card, pageTitle, sectionTitle } = useOsChrome();
+  // Format in the viewer's own timezone (browser locale). No server tz needed.
   const when = d.selectedAtIso
     ? new Date(d.selectedAtIso).toLocaleString(undefined, {
         weekday: "short",
@@ -424,84 +448,61 @@ export default function CalendarMeetingPage() {
       })
     : "Time not set";
   const present = d.rows.filter((r) => r.present).length;
-  // The /calendar/scan route re-checks this server-side. Require a roster too —
-  // scanning a passholder into a meeting with no MeetingAttendance rows only ever
-  // returns "not invited", so hide the station rather than show a dead scanner.
-  const canScan = d.canManage && d.walletConfigured && d.rows.length > 0;
+  const pct = d.rows.length > 0 ? Math.round((present / d.rows.length) * 100) : 0;
+  // Same gate as the Add-to-Wallet buttons and the standalone scan station;
+  // the /calendar/scan route re-checks both server-side. The checklist only
+  // renders with a roster, since scanning into a meeting with no
+  // MeetingAttendance rows only ever returns "not invited".
   const [editing, setEditing] = useState(false);
+  const [projectOpen, setProjectOpen] = useState(false);
+  const selfCheckInFetcher = useFetcher<{ ok?: boolean; error?: string }>();
+  const showProject = d.projectId || d.canSetProject;
 
   return (
     // Full-bleed and left-aligned: the app shell already supplies the page
     // gutters, so this surface only owns its vertical rhythm.
-    <div className="flex w-full flex-col items-stretch gap-5 text-left">
-      <header className="flex flex-col gap-2">
+    <div className="flex w-full flex-col items-stretch gap-10 pb-10 text-left">
+      <header className="flex flex-col gap-5">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-full bg-accent-teal/15 px-2 py-0.5 text-xs font-medium text-accent-teal">
-            {d.typeLabel}
-          </span>
+          <Pill tone="accent">{d.typeLabel}</Pill>
           {d.isCoreMeeting && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-accent-yellow/20 px-2 py-0.5 text-xs font-medium text-foreground">
-              <Shield className="h-3 w-3" /> Core
-            </span>
+            <Pill>
+              <Shield className="h-3.5 w-3.5" /> Core
+            </Pill>
           )}
         </div>
-        <h1 className="font-heading text-2xl font-bold text-foreground">{d.meetingLabel}</h1>
-        <p className="text-sm text-muted-foreground">
-          {when}
-          {d.organizerName ? ` · ${d.organizerName}` : ""}
-        </p>
-        {d.location && (
-          <p className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
-            <MapPin className="h-3.5 w-3.5 shrink-0" /> {d.location}
-          </p>
-        )}
+        <h1 className={pageTitle}>{d.meetingLabel}</h1>
         {d.description && (
-          <p className="whitespace-pre-wrap text-sm text-foreground">{d.description}</p>
+          <p className="max-w-3xl whitespace-pre-wrap text-base text-os-grey">{d.description}</p>
         )}
-        {d.canSetProject && (
-          <MeetingProjectControl
-            meetingId={d.meetingId}
-            projectId={d.projectId}
-            projectName={d.projectName}
-            meetingType={d.meetingType}
-          />
-        )}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-3">
           {d.meetingUrl && (
-            <a
-              href={d.meetingUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex w-fit items-center gap-1.5 rounded-md bg-accent-teal px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-teal/90"
-            >
+            <a href={d.meetingUrl} target="_blank" rel="noreferrer" className="os-btn-primary">
               <Video className="h-4 w-4" /> Join Google Meet
             </a>
           )}
           {d.notePageId ? (
-            <Link
-              to={`/documents/${d.notePageId}`}
-              className={noteBtnClass}
-            >
-              <FileText className="h-4 w-4 text-muted-foreground" /> Open meeting note
+            <Link to={`/documents/${d.notePageId}`} className={actionBtnClass}>
+              <FileText className="h-4 w-4" /> Open meeting note
             </Link>
           ) : (
             d.canAddNote && (
               // A meeting created before notes existed (or with the note
               // toggle off) has no doc and, unless it synced to Google, never
-              // appears on the calendar grid either — so this page is the only
+              // appears on the calendar grid either, so this page is the only
               // place its organizer can start one. The action lives on
               // /calendar, which is also where the grid's popover posts it.
               <AddMeetingNoteButton
                 meetingId={d.meetingId}
                 isCoreMeeting={d.isCoreMeeting}
                 actionPath="/calendar"
-                className={noteBtnClass}
+                className={actionBtnClass}
               />
             )
           )}
           {d.whiteboardPageId ? (
-            <Link to={`/whiteboard/${d.whiteboardPageId}`} className={noteBtnClass}>
-              <Shapes className="h-4 w-4 text-muted-foreground" /> Open whiteboard
+            <Link to={`/whiteboard/${d.whiteboardPageId}`} className={actionBtnClass}>
+              <Shapes className="h-4 w-4" /> Open whiteboard
             </Link>
           ) : (
             d.canAddWhiteboard && (
@@ -510,37 +511,89 @@ export default function CalendarMeetingPage() {
                 isCoreMeeting={d.isCoreMeeting}
                 hasType={d.hasType}
                 actionPath="/calendar"
-                className={noteBtnClass}
+                className={actionBtnClass}
               />
             )
+          )}
+          {d.canSetProject && !d.projectId && (
+            <button type="button" onClick={() => setProjectOpen(true)} className={actionBtnClass}>
+              <Plus className="h-4 w-4" /> Add a project
+            </button>
+          )}
+          {d.canInvite && (
+            <button type="button" onClick={() => setEditing(true)} className={actionBtnClass}>
+              <Pencil className="h-4 w-4" /> Edit event
+            </button>
           )}
         </div>
       </header>
 
-      <section className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4">
-        <div className="flex items-center justify-between">
-          <h2 className="flex items-center gap-2 font-heading text-lg font-semibold text-foreground">
-            <Users className="h-4 w-4 text-muted-foreground" /> Attendance
+      <div className={cn(card, "grid gap-6 p-6 sm:grid-cols-2 lg:grid-cols-4")}>
+        <Fact label="When">{when}</Fact>
+        {d.organizerName && <Fact label="Organizer">{d.organizerName}</Fact>}
+        {d.location && (
+          <Fact label="Location">
+            <MapPin className="h-4 w-4 shrink-0 text-os-grey" />
+            <span className="truncate">{d.location}</span>
+          </Fact>
+        )}
+        {showProject && d.projectId && (
+          <Fact label="Project">
+            <Link to={`/projects/${d.projectId}`} className="truncate font-medium hover:underline">
+              {d.projectName ?? "Project"}
+            </Link>
+            {d.canSetProject && (
+              <IconButton label="Change project" icon={Pencil} onClick={() => setProjectOpen(true)} />
+            )}
+          </Fact>
+        )}
+      </div>
+
+      {editing && <EditMeetingModal meetingId={d.meetingId} onClose={() => setEditing(false)} />}
+      {projectOpen && (
+        <MeetingProjectModal
+          meetingId={d.meetingId}
+          projectId={d.projectId}
+          meetingType={d.meetingType}
+          onClose={() => setProjectOpen(false)}
+        />
+      )}
+
+      <section className="flex flex-col gap-6">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <h2 className={cn(sectionTitle, "flex items-center gap-2.5 text-2xl")}>
+            <Users className="h-6 w-6 text-os-accent" /> Attendance
           </h2>
-          <div className="flex items-center gap-3">
-            {d.canManage && d.rows.length > 0 && (
-              <span className="text-sm text-muted-foreground">
-                {present}/{d.rows.length} present
-              </span>
-            )}
-            {d.canInvite && (
+          {d.canEnableSelfCheckIn && (
+            <selfCheckInFetcher.Form method="post">
+              <input type="hidden" name="intent" value="enable-self-check-in" />
               <button
-                type="button"
-                onClick={() => setEditing(true)}
-                className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted"
+                type="submit"
+                disabled={selfCheckInFetcher.state !== "idle"}
+                className={cn(actionBtnClass, "disabled:opacity-50")}
               >
-                <Pencil className="h-4 w-4 text-muted-foreground" /> Edit event
+                <QrCode className="h-4 w-4" />
+                {selfCheckInFetcher.state !== "idle" ? "Turning on…" : "Turn on self check-in"}
               </button>
-            )}
-          </div>
+            </selfCheckInFetcher.Form>
+          )}
         </div>
-        {editing && (
-          <EditMeetingModal meetingId={d.meetingId} onClose={() => setEditing(false)} />
+        {selfCheckInFetcher.data?.error && (
+          <p className="text-sm text-destructive">{selfCheckInFetcher.data.error}</p>
+        )}
+
+        {d.canManage && d.rows.length > 0 && (
+          <div className="flex items-center gap-4">
+            <div className="h-3 max-w-xl flex-1 overflow-hidden rounded-full bg-os-container">
+              <div
+                className="h-full rounded-full bg-os-accent transition-[width] duration-300"
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            <span className="text-base font-medium tabular-nums text-foreground">
+              {present} of {d.rows.length} present
+            </span>
+          </div>
         )}
 
         {d.selfCheckIn && (d.canManage || d.viewerInvited) && (
@@ -554,31 +607,24 @@ export default function CalendarMeetingPage() {
           />
         )}
 
+        {/* The scanner is the point of opening this page during an event, so
+            the camera comes up on its own. /calendar/scan/:id stays as the
+            kiosk for a door station. */}
         {d.canManage && d.rows.length > 0 && (
           <AttendanceChecklist
             meetingId={d.meetingId}
             meetingLabel={d.meetingLabel}
             canEdit
             canNote={d.canManage}
+            canScan={d.walletConfigured}
+            defaultScanning
+            plain
             attendees={d.rows}
           />
         )}
 
-        {/* The scanner is the point of opening this page during an event, so the
-            camera comes up on its own rather than hiding behind a click into a
-            second tab. /calendar/scan/:id stays as the full-screen kiosk for a
-            door station; this is the in-page version for marking a few people. */}
-        {canScan && (
-          <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
-            <p className="flex items-center gap-2 text-sm font-medium text-foreground">
-              <ScanLine className="h-4 w-4 text-muted-foreground" /> Scan wallet passes
-            </p>
-            <AttendeeScanner meetingId={d.meetingId} />
-          </div>
-        )}
-
         {!d.canManage && !d.selfCheckIn && (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-base text-os-grey">
             {d.viewerPresent
               ? "You're marked present for this meeting."
               : "Your attendance will be marked by the organizer."}

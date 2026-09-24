@@ -120,7 +120,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     const gateExempt =
       path === '/sign' || path.startsWith('/sign/') || path.startsWith('/logout')
     if (isLabMember && !gateExempt) {
-      const outstanding = await timed(request, 'appGate', () => getAppGateOutstanding(auth.user.sub))
+      const outstanding = await timed(request, 'appGate', () => getAppGateOutstanding(auth.user.sub, request))
       if (outstanding) {
         return redirect(
           `/sign/${outstanding.bindingId}?next=${encodeURIComponent(path + url.search)}`,

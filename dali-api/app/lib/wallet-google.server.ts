@@ -64,9 +64,6 @@ export async function buildGoogleWalletSaveUrl(
   );
 
   const classId = `${issuerId}.dali_membership`;
-  // userId is a cuid — alphanumeric characters only, safe for Google's
-  // ^[a-zA-Z0-9._-]+$ object-id rule.
-  const objectId = `${issuerId}.member_${userId}`;
 
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -81,6 +78,14 @@ export async function buildGoogleWalletSaveUrl(
 
   const memberSecret = await ensureWalletSecret(userId);
   const barcodeValue = signWalletToken(userId, memberSecret);
+  // A save-JWT never updates an object that already exists: Google keeps the
+  // first barcode it saw for that id forever. Keying the id to the barcode
+  // means a rotated member secret, or a pass first saved from another
+  // environment sharing this issuer, gets a fresh object instead of a stale
+  // one that fails verification. userId is a cuid and the digest is hex, both
+  // safe for Google's ^[a-zA-Z0-9._-]+$ object-id rule.
+  const barcodeKey = crypto.createHash("sha256").update(barcodeValue).digest("hex").slice(0, 12);
+  const objectId = `${issuerId}.member_${userId}_${barcodeKey}`;
 
   const genericClass = { id: classId };
 

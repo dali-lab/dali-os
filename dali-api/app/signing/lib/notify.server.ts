@@ -8,6 +8,7 @@ import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
 import { type EmailAttachment } from "~/lib/gmail";
 import { getFrontendUrl } from "~/lib/app-env";
+import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { renderDocumentPdf } from "~/lib/pdf/document-pdf.server";
 import type { PMNode } from "~/collab/export-html";
 import type { DocBlock } from "~/collab/blocknote-server";
@@ -162,6 +163,60 @@ export async function notifySignRequest(
       dedupKey: opts.force
         ? null
         : `signing.request:${bindingId}:${binding.versionId}:${p.id}`,
+    })),
+  });
+}
+
+// Ask a mentor's mentees to countersign the mentorship agreement the mentor
+// just signed. Fired fire-and-forget from the sign action AFTER a mentor's
+// signature is recorded (never from recordSignature itself — that's shared with
+// MCP + the mentee's own sign). Idempotent: a per-(binding, version, mentee)
+// forever dedupKey means a SECOND mentor signing later doesn't re-nudge a mentee
+// already asked, and mentees who've already countersigned the in-force version
+// are filtered out. No-op unless the feature is live and the document opts in.
+export async function notifyCountersignRequest(
+  bindingId: string,
+  mentorUserId: string,
+): Promise<void> {
+  if (!(await isFeatureEnabledForEveryone("mentee-countersign"))) return;
+
+  const binding = await prisma.signingBinding.findUnique({
+    where: { id: bindingId },
+    select: {
+      id: true,
+      versionId: true,
+      termId: true,
+      document: { select: { name: true, gateScope: true, requiresMenteeCountersign: true } },
+    },
+  });
+  if (!binding || !binding.termId) return;
+  if (binding.document.gateScope !== "App" || !binding.document.requiresMenteeCountersign) return;
+
+  const [pairs, countersigned] = await Promise.all([
+    prisma.mentorshipPair.findMany({
+      where: { mentorUserId, termId: binding.termId },
+      select: { menteeUserId: true },
+    }),
+    prisma.signingSignature.findMany({
+      where: { bindingId, roleKey: "mentee", versionId: binding.versionId },
+      select: { signerUserId: true },
+    }),
+  ]);
+  const done = new Set(countersigned.map((s) => s.signerUserId));
+  const menteeIds = [...new Set(pairs.map((p) => p.menteeUserId))].filter((id) => !done.has(id));
+  if (menteeIds.length === 0) return;
+
+  await notify({
+    eventType: "document.countersign_request",
+    message: {
+      title: "Countersign your mentorship agreement",
+      body: binding.document.name,
+      link: `/sign/${bindingId}`,
+      isTodo: true,
+    },
+    recipients: menteeIds.map((userId) => ({
+      userId,
+      dedupKey: `countersign.request:${bindingId}:${binding.versionId}:${userId}`,
     })),
   });
 }

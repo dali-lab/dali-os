@@ -74,6 +74,12 @@ export const FEATURE_FLAGS = [
       "Adds Core-only buttons on the Mentorship notes grid to Slack-DM mentors who haven't filled in their notes — a bulk 'Message mentors who haven't filled in' button (with an editable message + recipient preview) and a per-mentor nudge. Each mentor also gets an in-app notification. The Slack DM is force-sent regardless of the mentor's notification preferences, but stays prod-gated (staging/dev report 'not sent' unless NOTIFY_SLACK_DM_OVERRIDE=1). Ships off.",
   },
   {
+    key: "mentee-countersign",
+    label: "Mentee countersignatures",
+    description:
+      "Turns mentorship agreements into co-signed documents: once a mentor signs the term's agreement, each of their mentees is required to countersign the same document (they see the mentor's completed copy and add their own signature). Mentees are hard-gated until they countersign, exactly like mentors, and get a 'please countersign' notification when a mentor signs. Only documents with 'Require mentee countersignature' turned on are affected. All-or-nothing (targeting a subset of users would gate some mentees while their mentors are gated for everyone). Ships off.",
+  },
+  {
     key: "education-redesign-v2",
     label: "Education redesign",
     description:
@@ -90,6 +96,12 @@ export const FEATURE_FLAGS = [
     label: "AI meeting notes",
     description:
       "A Record button on meeting-note documents, in the browser or the desktop app. Recording always runs in the DALI OS macOS app: it captures system audio (everyone on a call, macOS 14.2+) and the mic, transcribes on-device with Apple's speech recognition, and streams the transcript to the page. On stop, Claude turns it into a summary, decisions, and action items appended to the note with the full transcript. No audio is uploaded or stored. Needs a desktop release newer than 0.1.6. Without an AI provider it adds the transcript only. Ships off.",
+  },
+  {
+    key: "my-project-work",
+    label: "Project work in My Tasks",
+    description:
+      "Adds a Project work tab to the notification drawer and My Tasks page: the open project tasks you're assigned to (To do, In progress, In review), flagged when overdue or stale, with Open task and Mark done. They also count toward the bell badge. Meetings, invites and other notifications move to a Meetings & events tab. Ships off.",
   },
 ] as const satisfies readonly FeatureFlagDef[];
 

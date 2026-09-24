@@ -515,9 +515,9 @@ export function CreateEventModal({
         {/* ── Left panel: availability grid — only shown once there are guests
             (a solo event has no availability worth previewing). ───────────── */}
         {hasGuests && (
-        <div className="flex w-full sm:w-[58%] shrink-0 flex-col gap-3 border-b sm:border-b-0 sm:border-r border-border bg-muted/20 p-5">
+        <div className="flex min-h-0 w-full sm:w-[58%] shrink-0 flex-col gap-3 overflow-y-auto border-b sm:border-b-0 sm:border-r border-border bg-muted/20 p-5">
           {/* Availability grid — compact + no self-only tint when no guests */}
-          <div className="min-h-0 flex-1 overflow-hidden">
+          <div className="shrink-0">
             <ScheduleWeekGrid
               participantIds={
                 hasGuests
