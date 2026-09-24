@@ -17,6 +17,10 @@ export const AUDIT_ACTIONS = [
   // Desktop shell self-update. The download/install is client↔S3 (off-server),
   // so the app reports a completed install back to land it in the audit trail.
   "desktop.update",
+  "room.create",
+  "room.update",
+  "room.display.create",
+  "room.display.revoke",
   "role.change",
   "decision.finalize",
   "decision.release",

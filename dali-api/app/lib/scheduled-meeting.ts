@@ -217,6 +217,8 @@ export type CreateScheduledMeetingInput = {
   /** Stored on the meeting and mirrored onto the Google event / ICS invite. */
   location?: string | null;
   description?: string | null;
+  /** The DALI room this meeting occupies. The caller checks it's free (assertMeetingRoomFree). */
+  roomId?: string | null;
   // Meeting-asset fields. When meetingType is set, the meeting records its type
   // and a MeetingAttendance row is fanned out per participant (incl. the
   // organizer). meetingTypeLabel supplies the display label — required when
@@ -483,6 +485,7 @@ export async function createScheduledMeeting(
       durationMinutes: input.durationMinutes,
       location,
       description,
+      roomId: input.roomId ?? null,
       scopeType: input.scope.type,
       scopeId,
       participantUserIds,
@@ -1088,6 +1091,10 @@ export async function markMeetingAttendance(
   userId: string,
   present: boolean,
   markedByUserId: string,
+  // Walk-ins: add a roster row for someone who wasn't invited instead of
+  // rejecting them. Scan stations pass this for SelfCheckIn events, where
+  // any DALI member who shows up counts.
+  opts: { addIfMissing?: boolean } = {},
 ): Promise<MarkMeetingAttendanceResult> {
   const meeting = await prisma.scheduledMeeting.findUnique({
     where: { id: meetingId },
@@ -1098,13 +1105,14 @@ export async function markMeetingAttendance(
   const attendance = await prisma.meetingAttendance.findUnique({
     where: { scheduledMeetingId_userId: { scheduledMeetingId: meeting.id, userId } },
   });
-  if (!attendance) {
+  if (!attendance && !opts.addIfMissing) {
     return { ok: false, error: "User was not invited to this meeting", status: 400 };
   }
 
-  await prisma.meetingAttendance.update({
+  await prisma.meetingAttendance.upsert({
     where: { scheduledMeetingId_userId: { scheduledMeetingId: meeting.id, userId } },
-    data: { present, markedByUserId, markedAt: new Date() },
+    create: { scheduledMeetingId: meeting.id, userId, present, markedByUserId, markedAt: new Date() },
+    update: { present, markedByUserId, markedAt: new Date() },
   });
 
   if (present) {
@@ -1363,6 +1371,9 @@ export type UpdateScheduledMeetingInput = {
   // MeetingException carries no per-occurrence copy of either field.
   location?: string;
   description?: string;
+  // Omitted leaves the room alone; null clears it. A room belongs to the whole
+  // series, so a scope="this" edit ignores it. The caller checks it's free.
+  roomId?: string | null;
   // Omitted leaves the stored guest emails alone; a set list replaces them.
   guestEmails?: string[];
   // Scoped edit fields (optional, default "all"):
@@ -1415,6 +1426,7 @@ export async function updateScheduledMeeting(
       projectId: true,
       location: true,
       description: true,
+      roomId: true,
     },
   });
   if (!meeting) return { ok: false, error: "Not found", status: 404 };
@@ -1548,6 +1560,7 @@ export async function updateScheduledMeeting(
       isCoreMeeting: meeting.isCoreMeeting,
       location: input.location ?? meeting.location,
       description: input.description ?? meeting.description,
+      roomId: input.roomId !== undefined ? input.roomId : meeting.roomId,
       guestEmails: input.guestEmails ?? meeting.guestEmails,
     });
 
@@ -1578,6 +1591,7 @@ export async function updateScheduledMeeting(
       status: startDate ? "Confirmed" : "Searching",
       ...(input.location !== undefined ? { location: input.location.trim() || null } : {}),
       ...(input.description !== undefined ? { description: input.description.trim() || null } : {}),
+      ...(input.roomId !== undefined ? { roomId: input.roomId } : {}),
     },
   });
 

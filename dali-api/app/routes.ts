@@ -113,6 +113,8 @@ export default [
     route("core/access/roles", "core/routes/core.access.roles.tsx"),
     route("core/access/domains", "core/routes/core.access.domains.tsx"),
     route("core/drive-folders", "core/routes/core.drive-folders.tsx"),
+    route("core/rooms", "rooms/routes/core.rooms.tsx"),
+    route("rooms", "rooms/routes/rooms.tsx"),
     route("core/communications", "core/routes/core.communications.tsx"),
     route("core/communications/announcements", "core/routes/core.communications.announcements.tsx"),
     route("core/communications/email", "core/routes/core.communications.email.tsx"),
@@ -445,6 +447,16 @@ export default [
     "api/scheduled-meetings/:id/scan-attendee",
     "calendar/routes/api.scheduled-meetings.$id.scan-attendee.ts",
   ),
+  // Rooms: member booking + the door display (its own bearer token, see
+  // app/lib/room-display.server.ts).
+  route("api/rooms", "rooms/routes/api.rooms.ts"),
+  route("api/rooms/:id/schedule", "rooms/routes/api.rooms.$id.schedule.ts"),
+  route("api/rooms/:id/bookings", "rooms/routes/api.rooms.$id.bookings.ts"),
+  route("api/room-bookings/:id/cancel", "rooms/routes/api.room-bookings.$id.cancel.ts"),
+  route("api/room-display/activate", "rooms/routes/api.room-display.activate.ts"),
+  route("api/room-display/schedule", "rooms/routes/api.room-display.schedule.ts"),
+  route("api/room-display/book", "rooms/routes/api.room-display.book.ts"),
+  route("api/room-display/scan", "rooms/routes/api.room-display.scan.ts"),
   // Organizer/Core PDF of the self-check-in QR (print / project at the event).
   route(
     "api/scheduled-meetings/:id/check-in-qr.pdf",

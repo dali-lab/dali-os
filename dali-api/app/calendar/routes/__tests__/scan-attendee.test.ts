@@ -85,7 +85,7 @@ describe("scan-attendee action", () => {
       member: { id: "u2", firstName: "Ada", lastName: "Lovelace", photoUrl: "https://cdn/ada.jpg" },
     });
     // The operator (op1) is the markedBy; the member comes from the token.
-    expect(markMeetingAttendance).toHaveBeenCalledWith("m1", "u2", true, "op1");
+    expect(markMeetingAttendance).toHaveBeenCalledWith("m1", "u2", true, "op1", { addIfMissing: false });
   });
 
   it("scans a SelfCheckIn all-lab event that has no meetingType", async () => {
@@ -97,13 +97,53 @@ describe("scan-attendee action", () => {
       organizerId: "op1",
       projectId: null,
       meetingType: null,
+      attendanceMode: "SelfCheckIn",
       selectedAt: new Date(),
       durationMinutes: 60,
     });
     const res = await callAction();
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ ok: true });
-    expect(markMeetingAttendance).toHaveBeenCalledWith("m1", "u2", true, "op1");
+    expect(markMeetingAttendance).toHaveBeenCalledWith("m1", "u2", true, "op1", { addIfMissing: false });
+  });
+
+  it("admits an uninvited DALI member at a SelfCheckIn event", async () => {
+    m.scheduledMeeting.mockResolvedValue({
+      id: "m1",
+      organizerId: "op1",
+      projectId: null,
+      attendanceMode: "SelfCheckIn",
+    });
+    m.user.mockResolvedValue({
+      id: "u2",
+      firstName: "Ada",
+      lastName: "Lovelace",
+      photoUrl: null,
+      daliEmail: "ada@dali.dartmouth.edu",
+      walletPassSecret: "sec",
+    });
+    const res = await callAction();
+    expect(res.status).toBe(200);
+    expect(markMeetingAttendance).toHaveBeenCalledWith("m1", "u2", true, "op1", { addIfMissing: true });
+  });
+
+  it("keeps a Roster meeting invite-only even for DALI members", async () => {
+    m.scheduledMeeting.mockResolvedValue({
+      id: "m1",
+      organizerId: "op1",
+      projectId: null,
+      attendanceMode: "Roster",
+    });
+    m.user.mockResolvedValue({
+      id: "u2",
+      firstName: "Ada",
+      lastName: "Lovelace",
+      photoUrl: null,
+      daliEmail: "ada@dali.dartmouth.edu",
+      walletPassSecret: "sec",
+    });
+    await callAction();
+    expect(markMeetingAttendance).toHaveBeenCalledWith("m1", "u2", true, "op1", { addIfMissing: false });
   });
 
   it("403s an operator who isn't organizer, Core, or a project member", async () => {
@@ -137,7 +177,7 @@ describe("scan-attendee action", () => {
     });
     const res = await callAction();
     expect(res.status).toBe(200);
-    expect(markMeetingAttendance).toHaveBeenCalledWith("m1", "u2", true, "op1");
+    expect(markMeetingAttendance).toHaveBeenCalledWith("m1", "u2", true, "op1", { addIfMissing: false });
   });
 
   it("400s a structurally invalid token without touching the DB", async () => {

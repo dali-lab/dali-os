@@ -236,9 +236,12 @@ model User {
   partnerContact PartnerContact?
 
   // ─── Phase 1: OAuth / magic-link back-relations ───────────────────────────
-  oauthGrants    OAuthGrant[]
-  oneTimeTokens  OneTimeToken[]
-  devicePairings DevicePairing[]
+  oauthGrants           OAuthGrant[]
+  oneTimeTokens         OneTimeToken[]
+  devicePairings        DevicePairing[]
+  roomBookings          RoomBooking[]   @relation("RoomBookingUser")
+  roomBookingsCancelled RoomBooking[]   @relation("RoomBookingCancelledBy")
+  roomDisplaysCreated   RoomDisplay[]
 
   // ─── Phase 1: Gmail integration (single per User) ─────────────────────────
   gmailIntegrations     GmailIntegration[]
@@ -267,13 +270,13 @@ model User {
   pageDocsLastEdited PageDoc[] @relation("PageDocLastEditedBy")
 
   // ─── Payroll: Reconcile back-relation ─────────────────────────────────────
-  timesheetImports TimesheetImport[]
-  customHires      CustomHire[]
+  timesheetImports     TimesheetImport[]
+  customHires          CustomHire[]
   chartStringsAuthored ProjectChartString[] @relation("ChartStringCreatedBy")
 
   // ─── Public showcase ──────────────────────────────────────────────────────
   projectShowcasesUpdated ProjectShowcase[] @relation("ProjectShowcaseUpdatedBy")
-  hiringEmailsEdited HiringEmail[] @relation("HiringEmailEditor")
+  hiringEmailsEdited      HiringEmail[]     @relation("HiringEmailEditor")
 }
 
 // A DALI lab member. userId is optional because a member may be known (e.g. via daliEmail)
@@ -382,11 +385,11 @@ model ApplicationCycle {
   domains              DomainApplicationCycle[]
   domainChallengeForms CycleDomainForm[]
 
-  interviewConfig    InterviewConfig?
-  cycleReviewers     CycleReviewer[]
-  cycleInterviewers  CycleInterviewer[]
-  interviews         Interview[]
-  delibsSessions     DelibsSession[]
+  interviewConfig   InterviewConfig?
+  cycleReviewers    CycleReviewer[]
+  cycleInterviewers CycleInterviewer[]
+  interviews        Interview[]
+  delibsSessions    DelibsSession[]
 
   signingBindings SigningBinding[]
 }
@@ -1053,7 +1056,7 @@ model CollabDocumentVersion {
 // column — the same raw upsert writes both, which keeps this schema and the
 // database in agreement for `prisma migrate diff`. See lib/doc-search.server.ts.
 model PageSearchIndex {
-  pageId String @id
+  pageId  String                   @id
   // Flattened body text (one line per block), truncated to INDEX_MAX_CHARS.
   content String
   // to_tsvector('english', content) — written by indexPageBody, never by Prisma.
@@ -1561,23 +1564,23 @@ model AiUsage {
 // text only: no audio ever reaches the server. Rows are owner-only, and a
 // user's stale rows are swept whenever they start a new recording.
 model MeetingRecording {
-  id            String                 @id @default(cuid())
+  id              String                 @id @default(cuid())
   // The collab room the notes land in, e.g. "doc:<pageId>:body".
-  documentName  String
-  userId        String
-  status        MeetingRecordingStatus @default(Pending)
+  documentName    String
+  userId          String
+  status          MeetingRecordingStatus @default(Pending)
   // Set by the page's Stop button; the app sees it on its next append.
-  stopRequested Boolean                @default(false)
+  stopRequested   Boolean                @default(false)
   // Whether the app is capturing system audio (macOS 14.2+) or the mic only.
-  systemAudio   Boolean                @default(false)
+  systemAudio     Boolean                @default(false)
   // [{ at: seconds since start, text, source: "you" | "others" }]
-  lines         Json                   @default("[]")
+  lines           Json                   @default("[]")
   // Seconds recorded across finished sessions. Continue starts a new session
   // whose lines are stamped from here, so the transcript reads as one.
-  recordedSeconds Float                @default(0)
-  error         String?
-  createdAt     DateTime               @default(now())
-  updatedAt     DateTime               @updatedAt
+  recordedSeconds Float                  @default(0)
+  error           String?
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
 
   @@index([userId])
 }
@@ -1719,7 +1722,7 @@ model SigningBinding {
   // N ago" in the UI. Null = never reminded.
   lastRemindedAt DateTime?
 
-  signatures               SigningSignature[]
+  signatures SigningSignature[]
 
   @@unique([documentId, scopeKey])
   @@index([cycleId])
@@ -1810,18 +1813,25 @@ enum CalProvider {
 }
 
 model ScheduledMeeting {
-  id               String  @id @default(cuid())
-  organizerId      String
-  organizer        User    @relation(fields: [organizerId], references: [id])
-  title            String
-  durationMinutes  Int
+  id              String @id @default(cuid())
+  organizerId     String
+  organizer       User   @relation(fields: [organizerId], references: [id])
+  title           String
+  durationMinutes Int
 
   // What the organizer typed into the invite form. Mirrored onto the linked
   // Google event (and the ICS we send when no Google event mirrors it), and
   // kept here so the meeting still carries them when there's nothing to
   // mirror to — an unlinked organizer, or a meeting with no guests.
-  location         String?
-  description      String?
+  location    String?
+  description String?
+
+  // The DALI room this meeting occupies, if any. Puts the meeting on that
+  // room's schedule (so it blocks room bookings and shows on the door display)
+  // and, for SelfCheckIn events, turns the door display into a pass scanner
+  // while it runs. `location` stays free text for everything else.
+  roomId String?
+  room   Room?   @relation(fields: [roomId], references: [id], onDelete: SetNull)
 
   scopeType ScopeType
   // Untyped at DB layer — dispatched in app code by scopeType.
@@ -1831,7 +1841,7 @@ model ScheduledMeeting {
   // Guests with no DALI profile (outside people, shared Google calendars),
   // invited by address. They only reach Google as event attendees, so they get
   // Google's invite but no in-app notification or attendance row.
-  guestEmails        String[] @default([])
+  guestEmails        String[]  @default([])
   selectedAt         DateTime?
   externalEventId    String?
 
@@ -1840,10 +1850,10 @@ model ScheduledMeeting {
   // the organizer's linked Google calendar when the organizer opts in at create
   // time (see createGoogleCalendarEvent `addMeet`). videoProvider records which
   // service produced it. Both null = no video link.
-  meetingUrl         String?
-  videoProvider      VideoProvider?
+  meetingUrl    String?
+  videoProvider VideoProvider?
 
-  status             MeetingStatus @default(Searching)
+  status MeetingStatus @default(Searching)
 
   // RFC 5545 RRULE for recurring meetings.
   recurrenceRule String?
@@ -1898,6 +1908,8 @@ model ScheduledMeeting {
   timeProposals MeetingTimeProposal[]
 
   createdAt DateTime @default(now())
+
+  @@index([roomId])
 }
 
 enum ScopeType {
@@ -1949,11 +1961,11 @@ model MeetingAttendance {
 // is the per-device APNs token we push an empty payload to when the member's
 // pass changes, nudging the phone to re-fetch the updated pass.
 model WalletPassRegistration {
-  id                       String   @id @default(cuid())
-  deviceLibraryIdentifier  String
-  serialNumber             String
-  pushToken                String
-  createdAt                DateTime @default(now())
+  id                      String   @id @default(cuid())
+  deviceLibraryIdentifier String
+  serialNumber            String
+  pushToken               String
+  createdAt               DateTime @default(now())
 
   user User @relation(fields: [serialNumber], references: [id], onDelete: Cascade)
 
@@ -1967,32 +1979,32 @@ model WalletPassRegistration {
 // checked/unchecked); Manual rows are user-authored entries — from the
 // create-event modal's "count as work" toggle or the timesheet ledger.
 model TimeEntry {
-  id                 String          @id @default(cuid())
-  userId             String
-  source             TimeEntrySource
-  scheduledMeetingId String?
+  id                     String          @id @default(cuid())
+  userId                 String
+  source                 TimeEntrySource
+  scheduledMeetingId     String?
   // Which concrete paid role (ProjectAssignment / CoreAssignment /
   // InstructorAssignment / DomainLeadAssignment / AdminMembership) this entry
   // is attributed to. Untyped at DB layer — dispatched in app code by
   // assignmentType, same pattern as ScheduledMeeting.scopeType/scopeId. Null
   // for legacy/unattributed rows (the export route's "unassigned" bucket).
-  assignmentType     AssignmentType?
-  roleRefId          String?
+  assignmentType         AssignmentType?
+  roleRefId              String?
   // Denormalized from the resolved role when assignmentType == Project, so
   // existing project-grouped readers (export, project hour totals) keep
   // working without joining through ProjectAssignment.
-  projectId          String?
-  date               DateTime
-  hours              Float
-  note               String?
+  projectId              String?
+  date                   DateTime
+  hours                  Float
+  note                   String?
   // Optional precise time range, used to render this entry as a block on the
   // Timesheet tab's week grid (alongside external/manual calendar blocks).
   // Null for entries added via the plain date+hours form (no time-of-day
   // picked) — those still show in the ledger list, just not on the grid.
   // Set automatically for Meeting-sourced rows from the meeting's start time
   // + duration, and for grid drag-created Manual rows from the dragged range.
-  startTime          DateTime?
-  endTime            DateTime?
+  startTime              DateTime?
+  endTime                DateTime?
   // Google Timesheet mirror (Phase 3). Soft pointers — no FK — same pattern as
   // MemberClass.linkId/calendarId. Null until the user enables the sync and the
   // entry is first pushed to Google. Set to null when the mirror event is deleted.
@@ -2006,12 +2018,12 @@ model TimeEntry {
   // lives on a real one). Null for entries logged straight onto the timesheet.
   sourceEventId          String?
   sourceCalendarLinkId   String?
-  createdAt          DateTime        @default(now())
-  updatedAt          DateTime        @updatedAt
+  createdAt              DateTime        @default(now())
+  updatedAt              DateTime        @updatedAt
 
-  user        User              @relation(fields: [userId], references: [id])
-  meeting     ScheduledMeeting? @relation(fields: [scheduledMeetingId], references: [id])
-  project     Project?          @relation(fields: [projectId], references: [id])
+  user    User              @relation(fields: [userId], references: [id])
+  meeting ScheduledMeeting? @relation(fields: [scheduledMeetingId], references: [id])
+  project Project?          @relation(fields: [projectId], references: [id])
 
   @@unique([scheduledMeetingId, userId])
   // One work log per event per user — lets the composer upsert on re-save
@@ -2220,23 +2232,23 @@ model MeetingReminderLog {
 
 // Per-user calendar preferences. Lazily upserted on first write.
 model UserAvailabilitySettings {
-  id                    String   @id @default(cuid())
-  userId                String   @unique
+  id                      String   @id @default(cuid())
+  userId                  String   @unique
   // IANA zone, e.g. "America/New_York". Working hours are interpreted in this zone.
-  timezone              String   @default("America/New_York")
-  defaultEventBufferMin Int      @default(15)
+  timezone                String   @default("America/New_York")
+  defaultEventBufferMin   Int      @default(15)
   // ── Phase 3: DALI Timesheet Google mirror ─────────────────────────────────
   // Opt-in flag. When true, work TimeEntry rows with startTime+endTime are
   // mirrored one-way to a "DALI Timesheet" calendar on the user's DALI Google
   // link. Off by default — see app/lib/timesheet-mirror.server.ts.
-  timesheetGoogleSync    Boolean @default(false)
+  timesheetGoogleSync     Boolean  @default(false)
   // The UserCalendarLink (DALI @dali.dartmouth.edu Google account) hosting the
   // timesheet calendar. Soft pointer — no FK — matches the MemberClass pattern.
   timesheetCalendarLinkId String?
   // The Google calendar id of the "DALI Timesheet" calendar on that link.
   timesheetCalendarId     String?
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id])
 }
@@ -2346,28 +2358,28 @@ model MemberClass {
 // Rows are a disposable cache: the sync replaces a term's set on each run, so a
 // wiped table self-heals. Only current + upcoming terms are ever synced.
 model CourseOffering {
-  id         String   @id @default(cuid())
-  termId     String
-  oracleTerm String // "202609" as fetched, for debugging
-  crn        String
-  subject    String // "COSC"
-  number     String // "52" (Dartmouth's zero-padding stripped)
-  section    String // "01"
-  title      String
-  periodCode String? // "10","2A"… plugs into getPeriod(); null/"ARR" when unscheduled
-  periodText String? // human "MWF 10:10-11:15" — shown as a hint when the code is unknown
-  building   String?
-  room       String?
-  instructor String?
-  crosslist  String?
-  distributive String? // "TAS", "QDS"… (distributive/world-culture code)
-  enrollLimit  Int? // seat cap, null when unlimited/unknown
+  id            String   @id @default(cuid())
+  termId        String
+  oracleTerm    String // "202609" as fetched, for debugging
+  crn           String
+  subject       String // "COSC"
+  number        String // "52" (Dartmouth's zero-padding stripped)
+  section       String // "01"
+  title         String
+  periodCode    String? // "10","2A"… plugs into getPeriod(); null/"ARR" when unscheduled
+  periodText    String? // human "MWF 10:10-11:15" — shown as a hint when the code is unknown
+  building      String?
+  room          String?
+  instructor    String?
+  crosslist     String?
+  distributive  String? // "TAS", "QDS"… (distributive/world-culture code)
+  enrollLimit   Int? // seat cap, null when unlimited/unknown
   enrollCurrent Int? // current enrollment, for an open/closed badge
   // Lowercased "subject number title" for one case-insensitive contains match.
-  searchText String
-  syncedAt   DateTime @default(now())
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  searchText    String
+  syncedAt      DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   term Term @relation(fields: [termId], references: [id], onDelete: Cascade)
 
@@ -2579,7 +2591,7 @@ model ProjectAssignment {
 // domain); we allow multiple mentors per mentee in the same scope (rare but
 // supported, e.g. a Domain Lead + project P3 co-mentorship).
 model MentorshipPair {
-  id           String @id @default(cuid())
+  id           String  @id @default(cuid())
   menteeUserId String
   mentorUserId String
   projectId    String
@@ -2693,10 +2705,10 @@ model InstructorAssignment {
 // level/domain/pay column (those live as constants). One hire per member per
 // term.
 model TechnigalaAssignment {
-  id        String   @id @default(cuid())
-  userId    String
-  termId    String
-  createdAt DateTime @default(now())
+  id          String   @id @default(cuid())
+  userId      String
+  termId      String
+  createdAt   DateTime @default(now())
   // Free-form actor userId of whoever added the hire — not an FK so the record
   // survives user deletion (mirrors AdminMembership.grantedBy).
   createdById String?
@@ -3466,7 +3478,7 @@ model EducationOffering {
 
   // Optional per-offering Google Workspace identity. Falls back to a shared
   // education identity if not set.
-  calendarEmail        String?
+  calendarEmail String?
 
   // The application/RSVP form for this offering, built with the shared Forms
   // system. Cloned from an education template at offering creation; fillers
@@ -3508,7 +3520,7 @@ enum OfferingStatus {
 }
 
 model EducationSession {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   offeringId     String
   sequence       Int
   // Optional topic/title for the session (e.g. "Intro to Figma"). Null falls
@@ -3532,7 +3544,7 @@ model EducationSession {
   // Stamped when an instructor opens self-check-in for this session (students
   // scan a projected QR to mark themselves Present). Null = closed. Read
   // alongside the session's time window in app/education/lib/session-checkin.
-  checkInOpenAt  DateTime?
+  checkInOpenAt DateTime?
 
   // Stamped when session-feedback todos/emails have been fanned out for this
   // session (first attendance save). Guards against duplicate fan-out.
@@ -3855,26 +3867,26 @@ model EducationCertificate {
 // to PDF by drawing the background full-page and overlaying each field's text.
 // See app/education/lib/certificate-templates.server.ts.
 model CertificateTemplate {
-  id                    String    @id @default(cuid())
-  name                  String
+  id               String    @id @default(cuid())
+  name             String
   // The background image lives in Drive as a ProjectFile (auto-filed into the
   // CertificateTemplates folder binding). Loose FK — the file's current version
   // holds the S3 key + content type, so replacing the file in Drive updates the
   // certificate. See certificate-templates.server.ts.
-  backgroundFileId      String
+  backgroundFileId String
   // Intrinsic pixel size of the background. The PDF page is sized to match
   // (1px = 1pt) so a field's fractional x/y maps to the same spot in the editor
   // preview and the rendered PDF regardless of display scale.
-  bgWidth               Int
-  bgHeight              Int
+  bgWidth          Int
+  bgHeight         Int
   // Placed fields: [{ key, x, y, fontSize, color, align, bold }] — x/y are 0..1
   // fractions of the page. `key` is one of the CERTIFICATE_FIELD_KEYS registry.
-  fields                Json      @default("[]")
+  fields           Json      @default("[]")
   // At most one template is the lab-wide default (enforced in the setter).
-  isDefault             Boolean   @default(false)
-  archivedAt            DateTime?
-  createdAt             DateTime  @default(now())
-  createdById           String
+  isDefault        Boolean   @default(false)
+  archivedAt       DateTime?
+  createdAt        DateTime  @default(now())
+  createdById      String
 }
 
 // Per-offering certificate template override. The lab-wide default lives on
@@ -4868,32 +4880,32 @@ model FeatureFlag {
 // so a removed term/group just stops matching and never cascades. Per-user
 // participation lives in ActivityEvent; progress/leaderboards derive from it.
 model Activity {
-  id               String         @id @default(cuid())
+  id               String          @id @default(cuid())
   // Registry-validated mechanic key: "scavenger_hunt" | "theme" | … (app code).
   kind             String
   termId           String?
   name             String
   // Draft | Published | Archived. "Live right now" (Active/Ended) is DERIVED
   // from status=Published + the window, not stored (see isActivityActive).
-  status           ActivityStatus @default(Draft)
+  status           ActivityStatus  @default(Draft)
   startsAt         DateTime
   endsAt           DateTime
   // Audience (mirrors FeatureFlag targeting): union of everyone / role / group /
   // explicit participant. audienceRoles holds ROLE_TARGETS keys.
-  audienceEveryone Boolean        @default(false)
-  audienceRoles    String[]       @default([])
+  audienceEveryone Boolean         @default(false)
+  audienceRoles    String[]        @default([])
   assignedGroupId  String?
   // Individual | Team. Team turns the activity into a group competition: points
   // and the leaderboard are pooled per ActivityTeam instead of per member.
   scoring          ActivityScoring @default(Individual)
   // Target headcount per team, used when auto-assigning. Advisory only — hand
   // edits may leave a team over or under it.
-  teamSize         Int            @default(2)
+  teamSize         Int             @default(2)
   // Mechanic content, validated by a per-kind zod schema in app code.
-  config           Json           @default("{}")
+  config           Json            @default("{}")
   createdById      String
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
 
   participants ActivityParticipant[]
   teams        ActivityTeam[]
@@ -4964,6 +4976,7 @@ enum ActivityScoring {
   Individual
   Team
 }
+
 // ─── Infrastructure Dashboard ────────────────────────────────────────────────
 
 // Cloud infra config lives on Project (flyOrgSlug / neonOrgId / flyReadTokenEnc
@@ -5996,7 +6009,7 @@ model ProjectChartString {
   fundingType ProjectFundingType?
 
   /// False once a later row replaces this one. See the partial unique indexes.
-  isCurrent Boolean @default(true)
+  isCurrent       Boolean @default(true)
   /// The row this one replaces. Reverse pointer: a replacement records its own
   /// provenance on insert, so no existing row's history is rewritten.
   supersedesId    String? @unique
@@ -6007,11 +6020,11 @@ model ProjectChartString {
   createdById String
 
   /// Restrict, not Cascade: deleting a project must not take payroll history.
-  project    Project?            @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  term       Term                @relation(fields: [termId], references: [id])
-  supersedes ProjectChartString? @relation("ChartStringSupersession", fields: [supersedesId], references: [id], onDelete: Restrict)
+  project      Project?            @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  term         Term                @relation(fields: [termId], references: [id])
+  supersedes   ProjectChartString? @relation("ChartStringSupersession", fields: [supersedesId], references: [id], onDelete: Restrict)
   supersededBy ProjectChartString? @relation("ChartStringSupersession")
-  createdBy  User                @relation("ChartStringCreatedBy", fields: [createdById], references: [id])
+  createdBy    User                @relation("ChartStringCreatedBy", fields: [createdById], references: [id])
 
   @@index([projectId, termId])
   @@index([projectCode])
@@ -6043,4 +6056,91 @@ enum ProjectFundingType {
   DALI_PTAEO
   /// A PTAEO that belongs to someone else, usually another Dartmouth unit.
   OTHER_PTAEO
+}
+
+// ---------------------------------------------------------------------------
+// Rooms. A bookable DALI space. A room's schedule is its RoomBookings plus the
+// ScheduledMeetings pointed at it (roomId), expanded per occurrence; the two
+// never overlap (enforced in app/lib/rooms.server.ts). Managed by Core at
+// /core/rooms.
+// ---------------------------------------------------------------------------
+
+model Room {
+  id          String    @id @default(cuid())
+  name        String
+  // Free-text "where is it" for people who haven't been there, e.g. "Sudikoff 1st floor".
+  description String?
+  capacity    Int?
+  // Archived rooms drop off booking pickers and reject new bookings, but keep
+  // their history and still resolve on old meetings.
+  archivedAt  DateTime?
+
+  bookings RoomBooking[]
+  displays RoomDisplay[]
+  meetings ScheduledMeeting[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum RoomBookingSource {
+  Web
+  Display
+  App
+}
+
+// A lightweight hold on a room with no invitees ("I need the room 2-3pm").
+// Meetings and events claim a room through ScheduledMeeting.roomId instead.
+model RoomBooking {
+  id     String @id @default(cuid())
+  roomId String
+  room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation("RoomBookingUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  // Optional; the display falls back to "<first name>'s booking".
+  title  String?
+  start  DateTime
+  end    DateTime
+  source RoomBookingSource @default(Web)
+
+  // Soft-cancel so an early "I'm done" on the display frees the rest of the
+  // slot without erasing that the room was used.
+  cancelledAt       DateTime?
+  cancelledByUserId String?
+  cancelledBy       User?     @relation("RoomBookingCancelledBy", fields: [cancelledByUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([roomId, start])
+  @@index([userId, start])
+}
+
+// A paired door display (the iPad outside a room). It authenticates with its
+// own bearer token, NOT a user Session, so it can only do what the
+// /api/room-display/* routes allow for its one room. Paired from /core/rooms:
+// Core mints a short-lived setup code, the iPad redeems it once for the token.
+model RoomDisplay {
+  id     String @id @default(cuid())
+  roomId String
+  room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  label  String
+
+  // sha256(raw setup code), base64url. Short human-typed code, 10 min TTL,
+  // single use; the redeem route is IP rate-limited. Null once redeemed.
+  setupCodeHash      String?   @unique
+  setupCodeExpiresAt DateTime?
+
+  // sha256(raw display token), base64url. Set when the setup code is redeemed.
+  tokenHash   String?   @unique
+  activatedAt DateTime?
+  lastSeenAt  DateTime?
+  revokedAt   DateTime?
+
+  createdByUserId String?
+  createdBy       User?   @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([roomId])
 }

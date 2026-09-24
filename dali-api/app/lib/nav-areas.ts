@@ -7,6 +7,7 @@ import {
   ClipboardList,
   ClipboardPen,
   Clock,
+  DoorOpen,
   Files,
   FileSignature,
   FileText,
@@ -326,6 +327,20 @@ function withDriveInGeneral(areas: NavArea[]): NavArea[] {
   );
 }
 
+// Behind the `room-booking` flag: booking lives in General next to the other
+// lab-wide member pages, and room/door-display management in Core.
+function withRooms(areas: NavArea[]): NavArea[] {
+  return areas.map((a) => {
+    if (a.key === "projects") {
+      return { ...a, subtabs: [...a.subtabs, { label: "Rooms", href: "/rooms", icon: DoorOpen }] };
+    }
+    if (a.key === "core") {
+      return { ...a, subtabs: [...a.subtabs, { label: "Rooms", href: "/core/rooms", icon: DoorOpen }] };
+    }
+    return a;
+  });
+}
+
 /**
  * The area set for one viewer. REGROUPED_AREAS is the base nav; NAV_AREAS
  * survives only to keep favourites saved under the old nav resolvable (see
@@ -334,8 +349,10 @@ function withDriveInGeneral(areas: NavArea[]): NavArea[] {
 export function areasFor(flags: Partial<FeatureFlagMap> = {}): NavArea[] {
   // Deep-link email templates directly into Drive (agreements has its own Core
   // console page at /core/agreements).
-  const areas = applyDriveSpacesSubstitutions(REGROUPED_AREAS);
-  return flags.resources ? withDriveInGeneral(areas) : areas;
+  let areas = applyDriveSpacesSubstitutions(REGROUPED_AREAS);
+  if (flags.resources) areas = withDriveInGeneral(areas);
+  if (flags["room-booking"]) areas = withRooms(areas);
+  return areas;
 }
 
 /**
@@ -358,7 +375,7 @@ export function pinnedNavItems(flags: Partial<FeatureFlagMap> = {}): SubTab[] {
 // favorite saved under the old nav still resolves its area and icon.
 const ALL_AREAS: NavArea[] = [
   ...NAV_AREAS,
-  ...areasFor(),
+  ...areasFor({ "room-booking": true }),
 ];
 
 // These matchers are handed a live URL, not a bare pathname: in tab mode the

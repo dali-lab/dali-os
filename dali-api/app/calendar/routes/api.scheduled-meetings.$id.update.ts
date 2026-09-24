@@ -8,6 +8,9 @@ import {
   updateScheduledMeeting,
   type ScheduledMeetingScope,
 } from "~/lib/scheduled-meeting";
+import { prisma } from "~/lib/db";
+import { assertMeetingRoomFree } from "~/lib/rooms.server";
+import { isRoomBookingEnabled } from "~/rooms/lib/access.server";
 
 // Edit is deliberately narrower than create: title, time, location, description,
 // and the guest list. Meeting type, project, note, and attendance mode are fixed
@@ -20,6 +23,8 @@ const Base = {
   // Omitted leaves the stored value alone; "" clears it (here and on Google).
   location: z.string().trim().max(500).optional(),
   description: z.string().trim().max(5000).optional(),
+  // Omitted leaves the room alone; null clears it (room-booking flag).
+  roomId: z.string().min(1).nullable().optional(),
   // People with no DALI profile, invited by address through the Google event.
   guestEmails: z.array(z.string().trim().email().max(320)).max(MAX_GUEST_EMAILS).optional(),
 } as const;
@@ -64,6 +69,31 @@ export async function action({ request, params }: Route.ActionArgs) {
     scope = { type: "None" };
   }
 
+  const roomId =
+    body.roomId !== undefined && (await isRoomBookingEnabled(auth.user.sub, request))
+      ? body.roomId
+      : undefined;
+  // A retimed meeting must still fit its room, so check the room it will end
+  // up in whether or not this edit changed it.
+  const current = await prisma.scheduledMeeting.findUnique({
+    where: { id: params.id! },
+    select: { roomId: true },
+  });
+  const effectiveRoomId = roomId !== undefined ? roomId : (current?.roomId ?? null);
+  if (effectiveRoomId && body.startTime) {
+    const free = await assertMeetingRoomFree({
+      roomId: effectiveRoomId,
+      meetingId: params.id!,
+      selectedAt: new Date(body.startTime),
+      durationMinutes: body.durationMinutes,
+      recurrenceRule: body.recurrenceRule ?? null,
+    });
+    // A room archived since it was picked shouldn't block unrelated edits.
+    if (!free.ok && (roomId !== undefined || free.status === 409)) {
+      return withCors(request, Response.json({ error: free.error }, { status: free.status }));
+    }
+  }
+
   const result = await updateScheduledMeeting(params.id!, auth.user.sub, {
     title: body.title,
     durationMinutes: body.durationMinutes,
@@ -72,6 +102,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     recurrenceRule: body.recurrenceRule,
     location: body.location,
     description: body.description,
+    roomId,
     guestEmails: body.guestEmails,
   });
 

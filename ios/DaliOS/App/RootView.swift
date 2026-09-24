@@ -1,7 +1,17 @@
 import SwiftUI
 
-/// Tab bar on iPhone, collapsible sidebar on iPad — `.sidebarAdaptable` picks per size class.
+/// iPad runs as a room door display; iPhone gets the member app (not built yet).
 struct RootView: View {
+    var body: some View {
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            RoomDisplayRoot()
+        } else {
+            MemberTabs()
+        }
+    }
+}
+
+struct MemberTabs: View {
     @State private var selection: AppTab = .home
 
     var body: some View {

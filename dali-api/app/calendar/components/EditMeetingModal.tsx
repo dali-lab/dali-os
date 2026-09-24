@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRevalidator } from "react-router";
-import { AlignLeft, Clock, MapPin, UsersRound } from "lucide-react";
+import { AlignLeft, Clock, DoorOpen, MapPin, UsersRound } from "lucide-react";
 import { Modal, ModalHeader, ModalFooter } from "~/components/Modal";
 import { modalCardClass } from "~/components/os-chrome";
 import { DateField } from "~/components/ui/DateField";
 import { TimeField } from "~/components/ui/TimeField";
 import { ParticipantPicker } from "~/calendar/components/scheduling";
+import { useFeatureFlag } from "~/components/FeatureFlags";
+import { RoomPicker } from "~/rooms/components/RoomPicker";
 
 // Shape of GET /api/scheduled-meetings/:id/edit-context.
 export type EditContext = {
@@ -19,6 +21,7 @@ export type EditContext = {
     durationMinutes: number;
     recurrenceRule: string | null;
     location: string | null;
+    roomId: string | null;
     description: string | null;
     scopeType: "None" | "Group" | "UserList" | "Project";
     groupId: string | null;
@@ -106,6 +109,8 @@ export function EditMeetingModal({
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
   const [location, setLocation] = useState("");
+  const roomBooking = useFeatureFlag("room-booking");
+  const [roomId, setRoomId] = useState("");
   const [description, setDescription] = useState("");
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
@@ -145,6 +150,7 @@ export function EditMeetingModal({
         setEndTime(end);
         setRecurrenceRule(data.meeting.recurrenceRule);
         setLocation(data.meeting.location ?? "");
+        setRoomId(data.meeting.roomId ?? "");
         setDescription(data.meeting.description ?? "");
         setGuestEmails(data.meeting.guestEmails);
         if (data.meeting.scopeType === "Group" && data.meeting.groupId) {
@@ -220,6 +226,7 @@ export function EditMeetingModal({
         description: description.trim(),
         guestEmails,
       };
+      if (roomBooking) payload.roomId = roomId || null;
       const local = new Date(`${date}T${startTime}`);
       if (!isNaN(local.getTime())) payload.startTime = local.toISOString();
       if (recurrenceRule) payload.recurrenceRule = recurrenceRule;
@@ -361,6 +368,25 @@ export function EditMeetingModal({
               placeholder="Video call, room, or address"
             />
           </div>
+
+          {roomBooking && (
+            <div>
+              <span className={labelClass}>
+                <span className="inline-flex items-center gap-1">
+                  <DoorOpen className="h-3 w-3" /> Room
+                </span>
+              </span>
+              <RoomPicker
+                enabled={roomBooking}
+                value={roomId}
+                onChange={(id, room) => {
+                  setRoomId(id);
+                  if (room && !location.trim()) setLocation(room.name);
+                }}
+                className={fieldClass}
+              />
+            </div>
+          )}
 
           {/* Description */}
           <div>

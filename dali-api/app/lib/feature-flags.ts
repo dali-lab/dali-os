@@ -92,6 +92,12 @@ export const FEATURE_FLAGS = [
       "A lab-wide Resources document at /resources: one shared collaborative page with no document chrome, read by every lab member and edited by Core/Admin behind an Edit button. Takes the pinned sidebar slot under Calendar, which moves Drive down into General. Ships off; without it the slot stays Drive and /resources is not reachable.",
   },
   {
+    key: "room-booking",
+    label: "Room booking",
+    description:
+      "Book DALI rooms from the web (Room booking, pinned under Resources), put a room on a meeting or event, and manage rooms and their door displays (Core ▸ Rooms). The iPad door displays authenticate with their own token and don't read this flag. Ships off.",
+  },
+  {
     key: "ai-meeting-notes",
     label: "AI meeting notes",
     description:

@@ -55,13 +55,15 @@ export async function action({ request, params }: Route.ActionArgs) {
       id: true,
       organizerId: true,
       projectId: true,
+      attendanceMode: true,
     },
   });
   // Any real meeting is scannable — don't require a meetingType. An all-lab /
   // general attendance event created as SelfCheckIn carries no meetingType but
   // still has a roster (MeetingAttendance rows); the self-check-in route accepts
   // it, so the scan station must too. markMeetingAttendance rejects non-invitees
-  // below, which is what keeps a scheduling poll out.
+  // below (except walk-ins at a SelfCheckIn event), which is what keeps a
+  // scheduling poll out.
   //
   // Deliberately NOT window-gated, unlike self-check-in. This is an operator
   // marking someone else present, and the operator can already do exactly that
@@ -93,6 +95,7 @@ export async function action({ request, params }: Route.ActionArgs) {
           firstName: true,
           lastName: true,
           photoUrl: true,
+          daliEmail: true,
           walletPassSecret: true,
         },
       })
@@ -113,7 +116,11 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Invalid or revoked pass" }, { status: 400 }));
   }
 
-  const result = await markMeetingAttendance(meeting.id, scanned.id, true, auth.user.sub);
+  // At an event (SelfCheckIn), any DALI member who shows up counts, invited or
+  // not; regular meetings stay roster-only.
+  const result = await markMeetingAttendance(meeting.id, scanned.id, true, auth.user.sub, {
+    addIfMissing: meeting.attendanceMode === "SelfCheckIn" && !!scanned.daliEmail,
+  });
   if (!result.ok) {
     // Most likely: the scanned member isn't on this meeting's roster.
     return withCors(request, Response.json({ error: result.error }, { status: result.status }));

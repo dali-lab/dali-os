@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useFetcher, useRevalidator } from "react-router";
-import { AlignLeft, CalendarDays, Clock, MapPin, Repeat, UsersRound, Video, X } from "lucide-react";
+import { AlignLeft, CalendarDays, Clock, DoorOpen, MapPin, Repeat, UsersRound, Video, X } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { Checkbox } from "~/components/ui/Checkbox";
@@ -8,6 +8,7 @@ import { DateField } from "~/components/ui/DateField";
 import { TimeField as TimeComboField } from "~/components/ui/TimeField";
 import { Select } from "~/components/ui/floating";
 import { Toggle } from "~/components/ui/Toggle";
+import { RoomPicker } from "~/rooms/components/RoomPicker";
 import {
   ScheduleWeekGrid,
   ParticipantPicker,
@@ -143,6 +144,8 @@ export function CreateEventModal({
   const [startTime, setStartTime] = useState<string>(() => extractTime(initStart ?? ""));
   const [endTime, setEndTime] = useState<string>(() => extractTime(initEnd ?? ""));
   const [location, setLocation] = useState("");
+  const roomBooking = useFeatureFlag("room-booking");
+  const [roomId, setRoomId] = useState("");
   const [description, setDescription] = useState("");
   const [destination, setDestination] = useState(defaultDest);
 
@@ -360,6 +363,7 @@ export function CreateEventModal({
         durationMinutes,
       };
       if (location.trim()) payload.location = location.trim();
+      if (roomBooking && roomId) payload.roomId = roomId;
       if (description.trim()) payload.description = description.trim();
       if (selectedStartLocal) {
         const d = new Date(selectedStartLocal);
@@ -893,6 +897,25 @@ export function CreateEventModal({
                   className={fieldClass}
                 />
               </div>
+
+              {roomBooking && (
+                <div>
+                  <span className={labelClass}>
+                    <span className="inline-flex items-center gap-1">
+                      <DoorOpen className="h-3 w-3" /> Room
+                    </span>
+                  </span>
+                  <RoomPicker
+                    enabled={roomBooking}
+                    value={roomId}
+                    onChange={(id, room) => {
+                      setRoomId(id);
+                      if (room && !location.trim()) setLocation(room.name);
+                    }}
+                    className={fieldClass}
+                  />
+                </div>
+              )}
 
               {/* Description */}
               <div>
