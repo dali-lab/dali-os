@@ -180,6 +180,7 @@ model User {
   sessions                      Session[]
   authSessions                  AuthSession[]
   accounts                      Account[]
+  passkeys                      Passkey[]
   rubricVersions                RubricVersion[]
   authoredSigningVersions       SigningDocumentVersion[]       @relation("SigningVersionAuthor")
   signingSignatures             SigningSignature[]             @relation("SigningSigner")
@@ -1513,6 +1514,31 @@ model Verification {
   updatedAt  DateTime @updatedAt
 
   @@index([identifier])
+}
+
+// WebAuthn passkeys (@better-auth/passkey plugin). One row per registered
+// credential; a user may hold several. Field shape is dictated by the plugin's
+// schema (src/schema.ts) — do not rename columns. `counter` is the WebAuthn
+// signature counter, `aaguid` identifies the authenticator model (nullable;
+// privacy-preserving platforms like Apple report all-zeros), `transports` is a
+// comma-joined list. The Prisma accessor `passkey` is what the plugin's adapter
+// calls (model: "passkey").
+model Passkey {
+  id           String    @id @default(cuid())
+  name         String?
+  publicKey    String
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credentialID String
+  counter      Int
+  deviceType   String
+  backedUp     Boolean
+  transports   String?
+  createdAt    DateTime? @default(now())
+  aaguid       String?
+
+  @@index([userId])
+  @@index([credentialID])
 }
 
 // ─── Email Templates ────────────────────────────────────────────────────────

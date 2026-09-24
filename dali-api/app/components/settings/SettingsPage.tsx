@@ -8,6 +8,7 @@ import { WorkspaceSettingsBlock } from "~/components/settings/WorkspaceSettingsB
 import { CalendarSettingsBlock } from "~/components/settings/CalendarSettingsBlock";
 import { SlackSettingsBlock } from "~/components/settings/SlackSettingsBlock";
 import { SessionsSettingsBlock } from "~/components/settings/SessionsSettingsBlock";
+import { PasskeysSettingsBlock } from "~/components/settings/PasskeysSettingsBlock";
 import { ConnectedAppsSettingsBlock } from "~/components/settings/ConnectedAppsSettingsBlock";
 import { NotificationsSettingsBlock } from "~/components/settings/NotificationsSettingsBlock";
 import type { loadSettingsPageData } from "~/lib/settings-page.server";
@@ -148,6 +149,12 @@ export function SettingsPage({
               sessions={data.sessions}
               currentSessionId={data.currentSessionId}
             />
+            <div className="mt-8 border-t border-border pt-6">
+              <h3 className="mb-1 font-heading text-sm font-semibold text-foreground">
+                Passkeys
+              </h3>
+              <PasskeysSettingsBlock />
+            </div>
           </SettingsBlock>
         )}
 
