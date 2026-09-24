@@ -61,6 +61,16 @@ const FIELD_TYPE_TIP: Partial<Record<string, string>> = {
   textField: "Member types a short freeform response.",
 };
 
+// Short helper text for each mentee field in the "Mentee field" menu. The
+// mentee fills these when they countersign, after their mentor has signed.
+const MENTEE_FIELD_TIP: Partial<Record<string, string>> = {
+  signatureField: "Draws or types their signature.",
+  dateField: "Auto-fills the countersign date.",
+  initialField: "Enters their initials.",
+  checkboxField: "Checks a box to acknowledge.",
+  textField: "Types a short response.",
+};
+
 type PersonResult = { userId: string; name: string; email: string | null };
 
 // "Supervisor signature" button: search the directory, pick a signatory, and drop a
@@ -178,16 +188,10 @@ function SigningInsertControls({
   // When true (a mentee-countersign doc), also offer a mentee signature field.
   allowMentee: boolean;
 }) {
-  const insertField = (type: SigningFieldType) => {
+  const insertField = (type: SigningFieldType, role: string = "member") => {
     if (!editor) return;
     editor.focus();
-    insertSigningField(editor, { type, role: "member" });
-  };
-
-  const insertMenteeSignature = () => {
-    if (!editor) return;
-    editor.focus();
-    insertSigningField(editor, { type: "signatureField", role: "mentee" });
+    insertSigningField(editor, { type, role });
   };
 
   const handleVariable = (name: string) => {
@@ -215,19 +219,31 @@ function SigningInsertControls({
         </Tooltip>
       ))}
       {allowMentee && (
-        <Tooltip content="Mentee draws or types their signature to countersign — filled by the mentee after their mentor signs, not by the mentor.">
-          <button
-            type="button"
-            disabled={!editor}
-            onMouseDown={(e) => {
-              e.preventDefault();
-              insertMenteeSignature();
-            }}
-            className="inline-flex items-center gap-1 rounded border border-border bg-card px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/40 disabled:opacity-40"
-          >
-            <PenLine className="w-3 h-3" /> Mentee signature
-          </button>
-        </Tooltip>
+        <Menu
+          align="left"
+          ariaLabel="Insert mentee field"
+          trigger={
+            <Tooltip content="Insert a field the mentee fills when they countersign, after their mentor signs.">
+              <button
+                type="button"
+                disabled={!editor}
+                className="inline-flex items-center gap-1 rounded border border-border bg-card px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/40 disabled:opacity-40"
+              >
+                + Mentee field
+                <ChevronDown className="w-3 h-3" />
+              </button>
+            </Tooltip>
+          }
+        >
+          {MEMBER_FIELD_TYPES.map((type) => (
+            <Menu.Item key={type} onSelect={() => insertField(type, "mentee")}>
+              {FIELD_LABEL[type]}
+              {MENTEE_FIELD_TIP[type] ? (
+                <span className="ml-2 text-muted-foreground">{MENTEE_FIELD_TIP[type]}</span>
+              ) : null}
+            </Menu.Item>
+          ))}
+        </Menu>
       )}
       <AdminSignatureButton editor={editor} />
       <Menu
