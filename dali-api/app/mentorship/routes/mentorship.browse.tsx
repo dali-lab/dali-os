@@ -28,7 +28,6 @@ import { Select } from "~/components/ui/floating";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { filterPillClass } from "~/components/ui/floating/styles";
 import { useOsChrome } from "~/components/os-chrome";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 import { cn } from "~/lib/cn";
@@ -43,6 +42,7 @@ import {
   usePairMutations,
   useRoster,
 } from "../components/pair-editing";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import { VIBES, VIBE_META } from "../lib/vibe";
 
 export const meta: Route.MetaFunction = () => [
@@ -284,8 +284,7 @@ export default function MentorshipBrowse() {
   );
 
   // Core-only manual pair editing, behind the mentorship-manage flag.
-  const manageFlag = useFeatureFlag("mentorship-manage");
-  const canManage = data.isCore && manageFlag;
+  const canManage = data.isCore;
   const [editing, setEditing] = useState(false);
   const revalidator = useRevalidator();
   const dialog = useDialog();

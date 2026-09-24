@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import { ChevronDown, ScanLine } from "lucide-react";
 import { AttendeeScanner } from "~/components/AttendeeScanner";
 import { Checkbox } from "~/components/ui/Checkbox";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { AbsenceNoteButton } from "~/components/AbsenceNoteButton";
 import { Select } from "~/components/ui/floating";
 import { filterPillClass } from "~/components/ui/floating/styles";
@@ -64,9 +63,7 @@ export function AttendanceChecklist({
   // folded; the header count still says how many are in.
   const [folded, setFolded] = useState(!plain && attendees.length > COLLAPSE_OVER);
   const expanded = !folded;
-  const walletCheckin = useFeatureFlag("wallet-checkin");
-  const showScan = canScan && walletCheckin;
-  const [scanning, setScanning] = useState(showScan && defaultScanning);
+  const [scanning, setScanning] = useState(canScan && defaultScanning);
 
   const ordered = useMemo(() => sortAttendees(rows, sort), [rows, sort]);
 
@@ -173,7 +170,7 @@ export function AttendanceChecklist({
           </button>
         )}
         <div className="flex items-center gap-2">
-          {canEdit && showScan && (
+          {canEdit && canScan && (
             <button
               type="button"
               onClick={() => {

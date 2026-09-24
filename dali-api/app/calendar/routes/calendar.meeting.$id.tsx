@@ -17,7 +17,6 @@ import { walletTokensConfigured } from "~/lib/wallet-token";
 import { fullName } from "~/lib/display";
 import { AttendanceChecklist, type AttendanceRow } from "~/components/AttendanceChecklist";
 import { CheckInPanel } from "~/components/CheckInPanel";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { EditMeetingModal } from "~/calendar/components/EditMeetingModal";
 import { AddMeetingNoteButton } from "~/calendar/components/AddMeetingNoteModal";
 import { AddMeetingWhiteboardButton } from "~/calendar/components/AddMeetingWhiteboardModal";
@@ -454,12 +453,10 @@ export default function CalendarMeetingPage() {
   // the /calendar/scan route re-checks both server-side. The checklist only
   // renders with a roster, since scanning into a meeting with no
   // MeetingAttendance rows only ever returns "not invited".
-  const whiteboardEnabled = useFeatureFlag("whiteboard");
-  const unifiedCoreProject = useFeatureFlag("unified-core-project-meetings");
   const [editing, setEditing] = useState(false);
   const [projectOpen, setProjectOpen] = useState(false);
   const selfCheckInFetcher = useFetcher<{ ok?: boolean; error?: string }>();
-  const showProject = unifiedCoreProject && (d.projectId || d.canSetProject);
+  const showProject = d.projectId || d.canSetProject;
 
   return (
     // Full-bleed and left-aligned: the app shell already supplies the page
@@ -503,23 +500,22 @@ export default function CalendarMeetingPage() {
               />
             )
           )}
-          {whiteboardEnabled &&
-            (d.whiteboardPageId ? (
-              <Link to={`/whiteboard/${d.whiteboardPageId}`} className={actionBtnClass}>
-                <Shapes className="h-4 w-4" /> Open whiteboard
-              </Link>
-            ) : (
-              d.canAddWhiteboard && (
-                <AddMeetingWhiteboardButton
-                  meetingId={d.meetingId}
-                  isCoreMeeting={d.isCoreMeeting}
-                  hasType={d.hasType}
-                  actionPath="/calendar"
-                  className={actionBtnClass}
-                />
-              )
-            ))}
-          {unifiedCoreProject && d.canSetProject && !d.projectId && (
+          {d.whiteboardPageId ? (
+            <Link to={`/whiteboard/${d.whiteboardPageId}`} className={actionBtnClass}>
+              <Shapes className="h-4 w-4" /> Open whiteboard
+            </Link>
+          ) : (
+            d.canAddWhiteboard && (
+              <AddMeetingWhiteboardButton
+                meetingId={d.meetingId}
+                isCoreMeeting={d.isCoreMeeting}
+                hasType={d.hasType}
+                actionPath="/calendar"
+                className={actionBtnClass}
+              />
+            )
+          )}
+          {d.canSetProject && !d.projectId && (
             <button type="button" onClick={() => setProjectOpen(true)} className={actionBtnClass}>
               <Plus className="h-4 w-4" /> Add a project
             </button>

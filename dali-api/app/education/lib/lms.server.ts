@@ -63,7 +63,7 @@ export async function listWorkspaceDocs(offeringId: string) {
       studentEditable: true,
     },
     orderBy: [{ position: "asc" }],
-    // sessionId places the doc on the student timeline (education-student-hub);
+    // sessionId places the doc on the student timeline;
     // null = a whole-course shared doc.
     select: { id: true, title: true, sessionId: true },
   });

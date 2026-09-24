@@ -20,7 +20,6 @@ import {
   X,
   Shapes,
 } from "lucide-react";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { useState, useCallback, useEffect, useRef, useId, useMemo } from "react";
 import type { ReactNode } from "react";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
@@ -970,7 +969,6 @@ function NewMenu({
   const label = scope.id === "mine" ? "My Drive" : isLab ? "Lab" : scope.label;
   const dialog = useDialog();
   const toast = useToast();
-  const whiteboardEnabled = useFeatureFlag("whiteboard");
   const isEducation = scopeKindOf(scope.id) === "education-group";
   const docBlock = isEducation ? educationCreateBlock(scope.items, currentFolderId, "FreeForm") : null;
   const folderBlock = isEducation ? educationCreateBlock(scope.items, currentFolderId, "Folder") : null;
@@ -1060,17 +1058,15 @@ function NewMenu({
           New folder
         </CreateLabel>
       </Menu.Item>
-      {whiteboardEnabled && (
-        <Menu.Item
-          icon={<Shapes className="w-3.5 h-3.5" />}
-          disabled={docBlock !== null}
-          onSelect={() => void actions.createWhiteboard()}
-        >
-          <CreateLabel testId={`drive-new-whiteboard-${scope.id}`} blockedReason={docBlock}>
-            New whiteboard
-          </CreateLabel>
-        </Menu.Item>
-      )}
+      <Menu.Item
+        icon={<Shapes className="w-3.5 h-3.5" />}
+        disabled={docBlock !== null}
+        onSelect={() => void actions.createWhiteboard()}
+      >
+        <CreateLabel testId={`drive-new-whiteboard-${scope.id}`} blockedReason={docBlock}>
+          New whiteboard
+        </CreateLabel>
+      </Menu.Item>
       {canViewForms && (
         <Menu.Item icon={<ClipboardList className="w-3.5 h-3.5" />} onSelect={() => void createForm()}>
           <span data-testid="drive-new-form">New form</span>

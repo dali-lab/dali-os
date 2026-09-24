@@ -403,7 +403,6 @@ export default function DocumentPage() {
   const [searchParams] = useSearchParams();
   const focusCommentId = searchParams.get("comment") ?? undefined;
   const focusMentionUserId = searchParams.get("mention") ?? undefined;
-  const whiteboardEnabled = useFeatureFlag("whiteboard");
   const recordingEnabled = useFeatureFlag("ai-meeting-notes");
 
   // Meeting recording writes into the doc through the live editor, so
@@ -421,7 +420,7 @@ export default function DocumentPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      {whiteboardEnabled && attendance?.whiteboardPageId && (
+      {attendance?.whiteboardPageId && (
         // This meeting also has a whiteboard — link across to it (the board
         // carries the matching link back).
         <Link

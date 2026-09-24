@@ -1,20 +1,16 @@
 import type { Route } from "./+types/api.timetable.courses";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isLabMember, getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { isLabMember } from "~/lib/roles";
 import { refreshSubjectOfferings } from "~/lib/timetable-cache.server";
 
-// Shared gate: a logged-in lab member with the calendar feature on. Returns the
-// userId on success, or a Response to short-circuit.
+// Shared gate: a logged-in lab member. Returns the userId on success, or a
+// Response to short-circuit.
 async function gate(request: Request): Promise<string | Response> {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
   const userId = auth.user.sub;
   if (!(await isLabMember(userId))) return Response.json({ error: "Forbidden" }, { status: 403 });
-  const roles = await getUserRoles(userId, request);
-  if (!(await isFeatureEnabled("calendar-unified", userId, roles, request)))
-    return Response.json({ error: "Forbidden" }, { status: 403 });
   return userId;
 }
 
@@ -50,9 +46,8 @@ export async function action({ request }: Route.ActionArgs) {
 // pre-synced CourseOffering cache (populated by the timetable-sync job) for the
 // given term, matching on the lowercased "subject number title" text. Returns
 // enough per section to autofill title / period / location and to record which
-// section was picked. Lab-member gated + behind the calendar-unified flag, the
-// same audience/gate as the composer itself, so it isn't a public catalog when
-// classes are off.
+// section was picked. Lab-member gated, the same audience as the composer
+// itself, so it isn't a public catalog.
 
 const LIMIT = 20;
 

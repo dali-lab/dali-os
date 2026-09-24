@@ -28,7 +28,6 @@ import { loadShellUser } from '~/lib/shell-user.server'
 import { resolveFeatureFlags } from '~/lib/feature-flags.server'
 import { FeatureFlagsProvider } from '~/components/FeatureFlags'
 import { resolveActiveActivitiesForUser } from '~/lib/activities.server'
-import { ACTIVITIES_FLAG } from '~/lib/activities'
 import { ActivitiesProvider } from '~/components/activities/ActivitiesProvider'
 import { ActivityOverlay } from '~/components/activities/ActivityChrome'
 import { InstructorChrome } from '~/components/InstructorChrome'
@@ -205,19 +204,17 @@ export async function loader({ request }: Route.LoaderArgs) {
   // of tabless; also cookie-backed so there's no flash of the sidebar.
   const focus = isFocusRequest(request)
 
-  // Activities (specs/activities.md): the time-boxed "mode" layer, gated on its
-  // own flag. Resolved with the current path so the overlay payload only carries
-  // THIS route's codes — the answers for other routes never reach the client.
-  const activeActivities = flags[ACTIVITIES_FLAG]
-    ? await timed(request, 'activities', () =>
-        resolveActiveActivitiesForUser(
-          auth.user.sub,
-          roles,
-          new Date(),
-          new URL(request.url).pathname,
-        ),
-      )
-    : []
+  // Activities (specs/activities.md): the time-boxed "mode" layer. Resolved
+  // with the current path so the overlay payload only carries THIS route's
+  // codes — the answers for other routes never reach the client.
+  const activeActivities = await timed(request, 'activities', () =>
+    resolveActiveActivitiesForUser(
+      auth.user.sub,
+      roles,
+      new Date(),
+      new URL(request.url).pathname,
+    ),
+  )
 
   // Per-user display timezone, threaded to every descendant via
   // useUserTimeZone() so client formatting matches the server (hydration-safe).
@@ -560,7 +557,7 @@ export default function AppLayoutRoute() {
           idle. Mounted here, not in Layout, so it runs under both shells and
           exactly once per document — the embedded branch returns above, so a
           workspace iframe never starts a second round of prefetches. */}
-      {(flags['nav-preload'] ?? false) && <NavPreloader favorites={favorites} recents={recents} />}
+      <NavPreloader favorites={favorites} recents={recents} />
       <LaunchWelcome firstName={user.firstName || user.email.split('@')[0]} hasCalendarLink={hasCalendarLink} shouldShowTour={shouldShowTour} tabless={tabless} />
       <TimeZonePrompt userTimeZone={userTimeZone} userTimeZoneIsExplicit={userTimeZoneIsExplicit} dismissedZone={tzDismissedZone} />
       </ActivitiesProvider>

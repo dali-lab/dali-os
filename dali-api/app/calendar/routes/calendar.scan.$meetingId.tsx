@@ -3,7 +3,6 @@ import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { getUserRoles, isProjectMember } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { walletTokensConfigured } from "~/lib/wallet-token";
 import { AttendeeScanner } from "~/components/AttendeeScanner";
 import { useOsChrome } from "~/components/os-chrome";
@@ -30,9 +29,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (portalRedirect) throw portalRedirect;
 
   const roles = await getUserRoles(auth.user.sub);
-  if (!(await isFeatureEnabled("wallet-checkin", auth.user.sub, roles, request))) {
-    throw new Response("Not found", { status: 404 });
-  }
 
   const meeting = await prisma.scheduledMeeting.findUnique({
     where: { id: params.meetingId },

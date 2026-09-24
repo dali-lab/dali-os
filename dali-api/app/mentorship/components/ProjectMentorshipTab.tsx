@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useFetcher } from "react-router";
 import { ChevronRight, Handshake, PencilLine, Trash2 } from "lucide-react";
 import { useOsChrome } from "~/components/os-chrome";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { useDialog } from "~/components/ui/dialog";
 import { Select } from "~/components/ui/floating";
 import { cn } from "~/lib/cn";
@@ -78,8 +77,7 @@ export function ProjectMentorshipTab({ projectId, currentTermId, isCore }: Props
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const manageFlag = useFeatureFlag("mentorship-manage");
-  const canManage = isCore && manageFlag && Boolean(currentTermId);
+  const canManage = isCore && Boolean(currentTermId);
   const [editing, setEditing] = useState(false);
   const dialog = useDialog();
 
