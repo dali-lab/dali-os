@@ -33,7 +33,7 @@ struct PassScanPanel: View {
             }
             overlay
         }
-        .clipShape(.rect(cornerRadius: 28))
+        .clipShape(.rect(cornerRadius: OS.cardRadius))
     }
 
     @ViewBuilder
@@ -43,26 +43,29 @@ struct PassScanPanel: View {
             VStack {
                 Spacer()
                 Label(prompt, systemImage: "qrcode.viewfinder")
-                    .font(.title2.weight(.semibold))
+                    .font(OS.font(20, .semibold))
+                    .foregroundStyle(OS.fg)
                     .padding(.horizontal, 24)
                     .padding(.vertical, 14)
-                    .background(.ultraThinMaterial, in: .capsule)
+                    .background(OS.card, in: .capsule)
+                    .shadow(color: OS.shadow, radius: 20, y: 8)
                     .padding(.bottom, 32)
             }
         case .working:
             ProgressView()
                 .controlSize(.extraLarge)
+                .tint(OS.accent)
                 .padding(40)
-                .background(.ultraThinMaterial, in: .rect(cornerRadius: 24))
+                .background(OS.card, in: .rect(cornerRadius: OS.cardRadius))
         case .success(let member):
             resultCard(
                 symbol: "checkmark.circle.fill",
-                tint: .green,
+                tint: OS.green,
                 title: successTitle(member),
                 detail: "\(member.firstName) \(member.lastName)"
             )
         case .failure(let message):
-            resultCard(symbol: "xmark.octagon.fill", tint: .red, title: "Couldn't scan that pass", detail: message)
+            resultCard(symbol: "xmark.circle.fill", tint: OS.danger, title: "Couldn't scan that pass", detail: message)
         }
     }
 
@@ -72,32 +75,38 @@ struct PassScanPanel: View {
                 .font(.system(size: 88))
                 .foregroundStyle(tint)
             Text(title)
-                .font(.largeTitle.bold())
+                .font(OS.font(32, .semibold))
+                .foregroundStyle(OS.fg)
                 .multilineTextAlignment(.center)
             Text(detail)
-                .font(.title3)
-                .foregroundStyle(.secondary)
+                .font(OS.font(19))
+                .foregroundStyle(OS.grey)
                 .multilineTextAlignment(.center)
         }
         .padding(48)
         .frame(maxWidth: 520)
-        .background(.regularMaterial, in: .rect(cornerRadius: 32))
+        // Floating, so this is the one thing that casts a shadow.
+        .background(OS.card, in: .rect(cornerRadius: OS.cardRadius))
+        .shadow(color: OS.shadow, radius: 32, y: 12)
         .transition(.scale.combined(with: .opacity))
     }
 
     private var noCamera: some View {
         VStack(spacing: 16) {
             Image(systemName: "video.slash")
-                .font(.system(size: 56))
-                .foregroundStyle(.secondary)
+                .font(.system(size: 48))
+                .foregroundStyle(OS.grey)
             Text("Camera unavailable")
-                .font(.title3.weight(.semibold))
+                .font(OS.font(19, .semibold))
+                .foregroundStyle(OS.fg)
             #if DEBUG
             Button("Simulate a scan") { handle("simulated-\(UUID().uuidString)") }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-            TextField("…or paste a real pass token", text: $debugToken)
-                .textFieldStyle(.roundedBorder)
+                .buttonStyle(OSPillButtonStyle())
+            TextField("Or paste a real pass token", text: $debugToken)
+                .font(OS.font(14))
+                .padding(12)
+                .background(OS.card, in: .rect(cornerRadius: OS.fieldRadius))
+                .overlay(RoundedRectangle(cornerRadius: OS.fieldRadius).strokeBorder(OS.container))
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
                 .frame(maxWidth: 420)
@@ -108,7 +117,7 @@ struct PassScanPanel: View {
             #endif
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.secondarySystemBackground))
+        .background(OS.card)
     }
 
     private func handle(_ code: String) {

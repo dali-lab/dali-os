@@ -1,13 +1,11 @@
 import SwiftUI
 
 enum DisplayTheme {
-    static let available = Color(red: 0.13, green: 0.60, blue: 0.36)
-    static let busy = Color(red: 0.80, green: 0.20, blue: 0.22)
-    static let event = Color(red: 0.36, green: 0.29, blue: 0.82)
-
-    static func tint(for item: ScheduleItem) -> Color {
-        if item.isEvent { return event }
-        return item.kind == .meeting ? .blue : .teal
+    /// Record-type colors from the category palette: bookings slate, meetings
+    /// blue, DALI events violet.
+    static func category(for item: ScheduleItem) -> OS.Category {
+        if item.isEvent { return OS.violet }
+        return item.kind == .meeting ? OS.blue : OS.slate
     }
 }
 

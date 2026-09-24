@@ -33,11 +33,14 @@ struct BookingSheet: View {
                 }
             )
             .padding(24)
+            .background(OS.bg.ignoresSafeArea())
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .font(OS.font(17, .semibold))
+                        .tint(OS.accent)
                 }
             }
         }

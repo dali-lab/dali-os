@@ -12,7 +12,7 @@ struct DayTimelineView: View {
 
     @State private var draft: SlotPicker.Slot?
 
-    private let gutter: CGFloat = 64
+    private let gutter: CGFloat = 72
     private let labelHeight: CGFloat = 16
     /// Movement below this is a tap, not a drag.
     private let dragThreshold: CGFloat = 10
@@ -84,11 +84,11 @@ struct DayTimelineView: View {
             HStack(alignment: .center, spacing: 8) {
                 Text(calendar.date(bySettingHour: hour % 24, minute: 0, second: 0, of: dayStart)!,
                      format: .dateTime.hour())
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .font(OS.font(12, .semibold).monospacedDigit())
+                    .foregroundStyle(OS.muted)
                     .frame(width: gutter - 8, alignment: .trailing)
                 Rectangle()
-                    .fill(Color(.separator))
+                    .fill(OS.container)
                     .frame(height: 1)
             }
             .frame(height: labelHeight)
@@ -99,62 +99,57 @@ struct DayTimelineView: View {
     private func block(_ item: ScheduleItem, _ scale: Scale) -> some View {
         let top = scale.y(for: max(item.start, dayStart))
         let height = max(scale.y(for: item.end) - top, 22)
-        let tint = DisplayTheme.tint(for: item)
-        return HStack(spacing: 0) {
-            Rectangle().fill(tint).frame(width: 5)
-            VStack(alignment: .leading, spacing: 2) {
-                if height > 44 {
-                    Text(item.title)
-                        .font(.headline)
-                        .lineLimit(height > 60 ? 2 : 1)
-                } else {
-                    // One line: title and time side by side.
-                    (Text(item.title).font(.headline)
-                        + Text("  \(item.timeRange)").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary))
-                        .lineLimit(1)
-                }
-                if height > 44 {
-                    Text("\(item.timeRange) · \(item.durationText)")
-                        .font(.subheadline.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
-                if height > 76 {
-                    Text(item.isEvent ? "DALI event · \(item.organizerName)" : item.organizerName)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
+        let category = DisplayTheme.category(for: item)
+        return VStack(alignment: .leading, spacing: 2) {
+            if height > 44 {
+                Text(item.title)
+                    .font(OS.font(16, .semibold))
+                    .lineLimit(height > 60 ? 2 : 1)
+            } else {
+                // One line: title and time side by side.
+                (Text(item.title).font(OS.font(16, .semibold))
+                    + Text("  \(item.timeRange)").font(OS.font(14).monospacedDigit()))
+                    .lineLimit(1)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, height > 30 ? 6 : 1)
-            Spacer(minLength: 0)
+            if height > 44 {
+                Text("\(item.timeRange) · \(item.durationText)")
+                    .font(OS.font(14).monospacedDigit())
+            }
+            if height > 76 {
+                Text(item.isEvent ? "DALI event · \(item.organizerName)" : item.organizerName)
+                    .font(OS.font(14))
+            }
         }
-        .frame(height: height, alignment: .top)
-        .background(tint.opacity(0.16))
-        .background(Color(.systemBackground))
-        .clipShape(.rect(cornerRadius: 10))
-        .opacity(item.end <= now ? 0.45 : 1)
+        .foregroundStyle(category.ink)
+        .padding(.horizontal, 12)
+        .padding(.vertical, height > 30 ? 6 : 1)
+        .frame(maxWidth: .infinity, minHeight: height, maxHeight: height, alignment: .topLeading)
+        .background(category.fill, in: .rect(cornerRadius: OS.itemRadius))
+        // Fade past blocks toward the card without going see-through, so the
+        // hour lines don't show through them.
+        .overlay(OS.card.opacity(item.end <= now ? 0.5 : 0), in: .rect(cornerRadius: OS.itemRadius))
         .padding(.leading, gutter)
-        .padding(.trailing, 12)
+        .padding(.trailing, 16)
         .offset(y: top)
     }
 
     private func draftBlock(_ slot: SlotPicker.Slot, _ scale: Scale) -> some View {
         let top = scale.y(for: slot.interval.start)
         let height = max(scale.y(for: slot.interval.end) - top, 22)
-        let tint = slot.isValid ? DisplayTheme.available : DisplayTheme.busy
+        let tint = slot.isValid ? OS.accent : OS.danger
         return HStack(spacing: 8) {
             Text(slot.isValid ? "New booking" : "Not available")
-                .font(.headline)
+                .font(OS.font(16, .semibold))
             Text("\(slot.interval.start.formatted(date: .omitted, time: .shortened)) – \(slot.interval.end.formatted(date: .omitted, time: .shortened))")
-                .font(.subheadline.monospacedDigit())
+                .font(OS.font(14).monospacedDigit())
         }
         .foregroundStyle(tint)
         .padding(.horizontal, 12)
         .frame(maxWidth: .infinity, minHeight: height, maxHeight: height, alignment: .leading)
-        .background(tint.opacity(0.18), in: .rect(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(tint, style: StrokeStyle(lineWidth: 2, dash: [6, 4])))
+        .background(tint.opacity(0.12), in: .rect(cornerRadius: OS.itemRadius))
+        .overlay(RoundedRectangle(cornerRadius: OS.itemRadius).strokeBorder(tint, style: StrokeStyle(lineWidth: 2, dash: [6, 4])))
         .padding(.leading, gutter)
-        .padding(.trailing, 12)
+        .padding(.trailing, 16)
         .offset(y: top)
         .allowsHitTesting(false)
     }
@@ -164,8 +159,8 @@ struct DayTimelineView: View {
         let top = scale.y(for: now)
         if top >= 0, top <= CGFloat(hours.count - 1) * scale.hourHeight {
             HStack(spacing: 0) {
-                Circle().fill(DisplayTheme.busy).frame(width: 12, height: 12)
-                Rectangle().fill(DisplayTheme.busy).frame(height: 2)
+                Circle().fill(OS.danger).frame(width: 12, height: 12)
+                Rectangle().fill(OS.danger).frame(height: 2)
             }
             .padding(.leading, gutter - 6)
             .offset(y: top - 6)

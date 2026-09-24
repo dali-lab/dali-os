@@ -11,52 +11,62 @@ struct DisplaySetupView: View {
     var body: some View {
         @Bindable var settings = settings
 
-        VStack(spacing: 28) {
-            Image(systemName: "door.left.hand.open")
-                .font(.system(size: 64))
-                .foregroundStyle(.tint)
-            VStack(spacing: 8) {
-                Text("Set up room display")
-                    .font(.largeTitle.bold())
-                Text("In DALI OS, go to Core ▸ Rooms, pick the room this iPad is mounted outside, and choose Add display. Enter the code it shows.")
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
+        VStack(alignment: .leading, spacing: 20) {
+            Text("Set up room display")
+                .font(OS.font(36, .medium))
+                .foregroundStyle(OS.fg)
+            Text("In DALI OS, open Core ▸ Rooms, pick the room this iPad is mounted outside, and choose Add display. Enter the code it shows.")
+                .font(OS.font(17))
+                .foregroundStyle(OS.grey)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Setup code").osEyebrow()
+                TextField("XXXX-XXXX", text: $code)
+                    .font(OS.font(32, .semibold))
+                    .tracking(4)
+                    .foregroundStyle(OS.fg)
+                    .textInputAutocapitalization(.characters)
+                    .autocorrectionDisabled()
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(OS.well, in: .rect(cornerRadius: OS.fieldRadius))
+                    .overlay(RoundedRectangle(cornerRadius: OS.fieldRadius).strokeBorder(OS.container))
+                    .onSubmit(activate)
+                if let error {
+                    Text(error)
+                        .font(OS.font(14, .semibold))
+                        .foregroundStyle(OS.danger)
+                }
             }
-            TextField("XXXX-XXXX", text: $code)
-                .font(.system(size: 40, weight: .semibold, design: .monospaced))
-                .multilineTextAlignment(.center)
-                .textInputAutocapitalization(.characters)
-                .autocorrectionDisabled()
-                .padding(.vertical, 14)
-                .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 16))
-                .frame(maxWidth: 420)
-                .onSubmit(activate)
-            if let error {
-                Text(error).foregroundStyle(.red)
-            }
+            .padding(.top, 8)
+
             Button(action: activate) {
                 Group {
-                    if isWorking { ProgressView() } else { Text("Pair display") }
+                    if isWorking { ProgressView().tint(OS.bg) } else { Text("Pair display") }
                 }
-                .font(.title3.weight(.semibold))
-                .frame(maxWidth: 420, minHeight: 44)
+                .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(OSPillButtonStyle())
             .disabled(code.trimmingCharacters(in: .whitespaces).isEmpty || isWorking)
+            .opacity(code.trimmingCharacters(in: .whitespaces).isEmpty ? 0.5 : 1)
 
             #if DEBUG
-            Picker("Server", selection: $settings.environment) {
-                ForEach(AppEnvironment.allCases) { env in
-                    Text(env.displayName).tag(env)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Server").osEyebrow()
+                Picker("Server", selection: $settings.environment) {
+                    ForEach(AppEnvironment.allCases) { env in
+                        Text(env.displayName).tag(env)
+                    }
                 }
+                .pickerStyle(.segmented)
             }
-            .pickerStyle(.segmented)
-            .frame(maxWidth: 420)
+            .padding(.top, 8)
             #endif
         }
-        .padding(48)
-        .frame(maxWidth: 640)
+        .frame(maxWidth: 520)
+        .osCard(padding: 36)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(OS.bg.ignoresSafeArea())
     }
 
     private func activate() {

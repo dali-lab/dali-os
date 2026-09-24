@@ -18,8 +18,8 @@ struct RoomDisplayView: View {
                         EventCheckInView(event: event, room: store.room, now: now)
                     } else {
                         let layout = landscape
-                            ? AnyLayout(HStackLayout(spacing: 0))
-                            : AnyLayout(VStackLayout(spacing: 0))
+                            ? AnyLayout(HStackLayout(alignment: .top, spacing: 24))
+                            : AnyLayout(VStackLayout(spacing: 24))
                         layout {
                             StatusPanel(
                                 room: store.room,
@@ -30,15 +30,17 @@ struct RoomDisplayView: View {
                             )
                             // Portrait: only as tall as its content, so the
                             // timeline below gets the rest of the screen.
-                            .frame(width: landscape ? proxy.size.width * 0.46 : nil)
+                            .frame(width: landscape ? (proxy.size.width - 72) * 0.46 : nil)
                             .fixedSize(horizontal: false, vertical: !landscape)
                             schedule(now: now)
                         }
+                        .padding(24)
+                        .padding(.top, 12)
                     }
                 }
             }
         }
-        .ignoresSafeArea()
+        .background(OS.bg.ignoresSafeArea())
         .task(id: scenePhase) {
             guard scenePhase == .active else { return }
             while !Task.isCancelled {
@@ -60,19 +62,20 @@ struct RoomDisplayView: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(now, format: .dateTime.weekday(.wide).month(.wide).day())
-                    .font(.title2.weight(.semibold))
+                    .font(OS.font(19, .semibold))
+                    .foregroundStyle(OS.fg)
                     // Hidden admin entry for whoever mounts the iPad.
                     .onLongPressGesture(minimumDuration: 3) { showingAdmin = true }
                 Text("Tap an open time to book, or drag across open time to choose how long")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .font(OS.font(14))
+                    .foregroundStyle(OS.grey)
             }
-            .padding(.horizontal, 28)
-            .padding(.top, 36)
-            .padding(.bottom, 8)
+            .padding(.horizontal, 24)
+            .padding(.top, 24)
+            .padding(.bottom, 12)
             DayTimelineView(items: store.items, now: now) { booking = .slot($0) }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.systemBackground))
+        .background(OS.card, in: .rect(cornerRadius: OS.cardRadius))
     }
 }

@@ -9,24 +9,23 @@ struct EventCheckInView: View {
     @Environment(DisplayStore.self) private var store
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 28) {
+        VStack(alignment: .leading, spacing: 24) {
             HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("DALI EVENT · CHECK IN")
-                        .font(.headline.weight(.bold))
-                        .opacity(0.8)
+                VStack(alignment: .leading, spacing: 8) {
+                    OSStatusPill(text: "DALI event check-in", dot: OS.violet.ink)
                     Text(event.title)
-                        .font(.system(size: 52, weight: .bold, design: .rounded))
+                        .font(OS.font(48, .medium))
+                        .foregroundStyle(OS.fg)
                         .lineLimit(2)
-                    Text("\(event.timeRange) · \(room?.name ?? "")")
-                        .font(.title2.monospacedDigit())
-                        .opacity(0.85)
+                    Text([event.timeRange, room?.name].compactMap { $0 }.joined(separator: " · "))
+                        .font(OS.font(20).monospacedDigit())
+                        .foregroundStyle(OS.grey)
                 }
                 Spacer()
                 Text(now, format: .dateTime.hour().minute())
-                    .font(.largeTitle.monospacedDigit().weight(.semibold))
+                    .font(OS.font(36, .medium).monospacedDigit())
+                    .foregroundStyle(OS.fg)
             }
-            .foregroundStyle(.white)
 
             PassScanPanel(
                 prompt: "Hold your DALI pass up to the camera",
@@ -34,8 +33,8 @@ struct EventCheckInView: View {
                 successTitle: { member in "Welcome, \(member.firstName)!" }
             )
         }
-        .padding(40)
+        .padding(36)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(DisplayTheme.event.gradient)
+        .background(OS.bg.ignoresSafeArea())
     }
 }

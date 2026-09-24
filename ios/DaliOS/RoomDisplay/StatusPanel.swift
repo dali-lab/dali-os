@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// The glanceable half of the door display: free/busy in color big enough to
-/// read from down the hall, the current and next booking, and walk-up booking.
+/// The glanceable half of the door display: free/busy big enough to read from
+/// down the hall, the current and next booking, and walk-up booking. Sits on
+/// the page ground; only the status and the bookings are cards.
 struct StatusPanel: View {
     let room: DisplayRoom?
     let items: [ScheduleItem]
@@ -9,14 +10,10 @@ struct StatusPanel: View {
     let isOffline: Bool
     let onBook: (Int) -> Void
 
-    private var snapshot: RoomSnapshot { RoomSnapshot(items: items, now: now) }
-
     var body: some View {
-        let snapshot = snapshot
-        let color = snapshot.current == nil ? DisplayTheme.available : DisplayTheme.busy
-        VStack(alignment: .leading, spacing: 28) {
+        let snapshot = RoomSnapshot(items: items, now: now)
+        VStack(alignment: .leading, spacing: 20) {
             header
-            Spacer(minLength: 0)
             status(snapshot)
             if let current = snapshot.current {
                 itemCard(label: "Now", item: current)
@@ -29,49 +26,58 @@ struct StatusPanel: View {
                 bookNow(snapshot.bookableMinutes)
             }
         }
-        .padding(40)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .foregroundStyle(.white)
-        .background(color.gradient)
-        .animation(.easeInOut, value: snapshot.current?.occurrenceID)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .animation(.easeInOut(duration: 0.15), value: snapshot.current?.occurrenceID)
     }
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(room?.name ?? "Room")
-                    .font(.largeTitle.bold())
-                if let detail = [room?.description, room?.capacity.map { "Seats \($0)" }]
-                    .compactMap({ $0 }).joined(separator: " · ").nilIfEmpty {
-                    Text(detail).font(.title3).opacity(0.85)
+                    .font(OS.font(36, .medium))
+                    .foregroundStyle(OS.fg)
+                let detail = [room?.description, room?.capacity.map { "Seats \($0)" }].compactMap { $0 }
+                if !detail.isEmpty {
+                    Text(detail.joined(separator: " · "))
+                        .font(OS.font(17))
+                        .foregroundStyle(OS.grey)
                 }
             }
             Spacer()
-            VStack(alignment: .trailing, spacing: 4) {
+            VStack(alignment: .trailing, spacing: 8) {
                 Text(now, format: .dateTime.hour().minute())
-                    .font(.largeTitle.monospacedDigit().weight(.semibold))
+                    .font(OS.font(36, .medium).monospacedDigit())
+                    .foregroundStyle(OS.fg)
                 if isOffline {
-                    Label("Offline", systemImage: "wifi.slash").font(.subheadline.weight(.semibold))
+                    OSStatusPill(text: "Offline", dot: OS.amber)
                 }
             }
         }
     }
 
     private func status(_ snapshot: RoomSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(snapshot.current == nil ? "Available" : "In use")
-                .font(.system(size: 76, weight: .bold, design: .rounded))
+        let free = snapshot.current == nil
+        let tone = free ? OS.green : OS.danger
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 18) {
+                Circle().fill(tone).frame(width: 30, height: 30)
+                Text(free ? "Available" : "In use")
+                    .font(OS.font(72, .bold))
+                    .foregroundStyle(tone)
+            }
             Text(statusDetail(snapshot))
-                .font(.title2.weight(.medium))
-                .opacity(0.9)
+                .font(OS.font(22, .medium))
+                .foregroundStyle(OS.grey)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .osCard(padding: 28)
     }
 
     private func statusDetail(_ snapshot: RoomSnapshot) -> String {
         if let current = snapshot.current {
             let left = Duration.seconds(current.end.timeIntervalSince(now))
                 .formatted(.units(allowed: [.hours, .minutes], width: .wide))
-            return "Until \(current.end.formatted(date: .omitted, time: .shortened)) · \(left) left"
+            return "Until \(current.end.formatted(date: .omitted, time: .shortened)), \(left) left"
         }
         if let next = snapshot.next {
             return "Free until \(next.start.formatted(date: .omitted, time: .shortened))"
@@ -81,44 +87,33 @@ struct StatusPanel: View {
 
     private func itemCard(label: String, item: ScheduleItem) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(label.uppercased())
-                .font(.caption.weight(.bold))
-                .opacity(0.75)
+            Text(label).osEyebrow()
             Text(item.title)
-                .font(.title2.weight(.semibold))
+                .font(OS.font(22, .semibold))
+                .foregroundStyle(OS.fg)
                 .lineLimit(2)
             Text("\(item.timeRange) · \(item.durationText) · \(item.organizerName)")
-                .font(.body.monospacedDigit())
-                .opacity(0.85)
+                .font(OS.font(15).monospacedDigit())
+                .foregroundStyle(OS.grey)
         }
-        .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.white.opacity(0.14), in: .rect(cornerRadius: 20))
+        .osCard(padding: 20)
     }
 
     private func bookNow(_ options: [Int]) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("BOOK NOW")
-                .font(.caption.weight(.bold))
-                .opacity(0.75)
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Book now").osEyebrow()
             HStack(spacing: 12) {
                 ForEach(options, id: \.self) { minutes in
                     Button {
                         onBook(minutes)
                     } label: {
                         Text(Duration.seconds(minutes * 60).formatted(.units(allowed: [.hours, .minutes], width: .abbreviated)))
-                            .font(.title3.weight(.semibold))
                             .frame(maxWidth: .infinity, minHeight: 56)
                     }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(DisplayTheme.available)
-                    .background(.white, in: .rect(cornerRadius: 16))
+                    .buttonStyle(OSPillButtonStyle(size: 19))
                 }
             }
         }
     }
-}
-
-private extension String {
-    var nilIfEmpty: String? { isEmpty ? nil : self }
 }
