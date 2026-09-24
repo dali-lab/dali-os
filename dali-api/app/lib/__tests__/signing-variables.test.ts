@@ -34,6 +34,7 @@ describe("signing variables", () => {
       today: "",
       memberName: "Ada Lovelace",
       supervisorName: "",
+      menteeName: "",
     });
   });
 });
