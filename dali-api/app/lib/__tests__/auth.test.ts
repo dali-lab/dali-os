@@ -333,6 +333,24 @@ describe("validateCasTicket", () => {
     vi.unstubAllGlobals();
   });
 
+  it("decodes HTML entities in the CAS name (e.g. O'Neill)", async () => {
+    const xml = `<?xml version="1.0"?>
+<cas:serviceResponse xmlns:cas="http://www.yale.edu/tp/cas">
+  <cas:authenticationSuccess>
+    <cas:user>f007g87</cas:user>
+    <cas:netid>f007g87</cas:netid>
+    <cas:name>Liam O&#39;Neill</cas:name>
+  </cas:authenticationSuccess>
+</cas:serviceResponse>`;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(xml, { status: 200 }),
+    ));
+    const out = await validateCasTicket("ticket-x", "https://example.com/cb");
+    expect(out.firstName).toBe("Liam");
+    expect(out.lastName).toBe("O'Neill");
+    vi.unstubAllGlobals();
+  });
+
   it("throws when CAS returns a failure document", async () => {
     const xml = `<?xml version="1.0"?>
 <cas:serviceResponse xmlns:cas="http://www.yale.edu/tp/cas">

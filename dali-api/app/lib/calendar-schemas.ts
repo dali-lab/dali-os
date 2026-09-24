@@ -247,7 +247,7 @@ export const AddMeetingNoteSchema = z.object({
 // Post-hoc "Add whiteboard" — the whiteboard counterpart of AddMeetingNoteSchema.
 // The type fields are optional: a meeting that already has a note/type reuses it
 // (the board files alongside), so the modal only sends them for a note-less
-// meeting. The action re-checks the caller may file it and gates on the flag.
+// meeting. The action re-checks the caller may file it.
 export const AddMeetingWhiteboardSchema = z.object({
   intent: z.literal("add-meeting-whiteboard"),
   meetingId: z.string().min(1),

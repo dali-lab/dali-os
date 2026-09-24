@@ -171,14 +171,23 @@ function AdminSignatureButton({ editor }: { editor: DocEditorInstance | null }) 
 function SigningInsertControls({
   editor,
   examples,
+  allowMentee,
 }: {
   editor: DocEditorInstance | null;
   examples: Record<string, string>;
+  // When true (a mentee-countersign doc), also offer a mentee signature field.
+  allowMentee: boolean;
 }) {
   const insertField = (type: SigningFieldType) => {
     if (!editor) return;
     editor.focus();
     insertSigningField(editor, { type, role: "member" });
+  };
+
+  const insertMenteeSignature = () => {
+    if (!editor) return;
+    editor.focus();
+    insertSigningField(editor, { type: "signatureField", role: "mentee" });
   };
 
   const handleVariable = (name: string) => {
@@ -205,6 +214,21 @@ function SigningInsertControls({
           </button>
         </Tooltip>
       ))}
+      {allowMentee && (
+        <Tooltip content="Mentee draws or types their signature to countersign — filled by the mentee after their mentor signs, not by the mentor.">
+          <button
+            type="button"
+            disabled={!editor}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              insertMenteeSignature();
+            }}
+            className="inline-flex items-center gap-1 rounded border border-border bg-card px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/40 disabled:opacity-40"
+          >
+            <PenLine className="w-3 h-3" /> Mentee signature
+          </button>
+        </Tooltip>
+      )}
       <AdminSignatureButton editor={editor} />
       <Menu
         align="left"
@@ -430,6 +454,26 @@ export function SigningDocumentDetail() {
     submit({ intent: "update", [field]: value }, { method: "post" });
   }
 
+  // Toggle the mentee-countersign opt-in. Same live-agreement confirm as
+  // changeConfig (turning it on obliges the current signers' mentees).
+  async function changeCountersign(value: string) {
+    const next = value === "true";
+    if (next === !!document.requiresMenteeCountersign) return;
+    if (boundCount > 0) {
+      const ok = await dialog.confirm({
+        title: next ? "Require mentee countersignatures?" : "Stop requiring countersignatures?",
+        description: next
+          ? `This agreement has ${boundCount} binding${
+              boundCount !== 1 ? "s" : ""
+            } in force — mentees of anyone who has signed will be asked to countersign immediately.`
+          : "Mentees will no longer be asked to countersign. Existing countersignatures are kept.",
+        confirmLabel: next ? "Require" : "Turn off",
+      });
+      if (!ok) return;
+    }
+    submit({ intent: "update", requiresMenteeCountersign: String(next) }, { method: "post" });
+  }
+
   // Editable config pills (enforcement / audience / cadence) + read-only slug.
   const metaBadges = (
     <>
@@ -457,6 +501,24 @@ export function SigningDocumentDetail() {
         options={CADENCE_OPTIONS}
         onSelect={(v) => changeConfig("cadence", v)}
       />
+      {/* Mentee countersignature — only meaningful on a mentor-audience
+          agreement, so it's surfaced there. Requires a "mentee" signature field
+          in the body and the mentee-countersign feature flag to take effect. */}
+      {document.audience === "Mentors" && (
+        <span className="inline-flex items-center gap-1">
+          <ConfigPill
+            label="Mentee countersign"
+            value={document.requiresMenteeCountersign ? "Required" : "Off"}
+            selected={document.requiresMenteeCountersign ? "true" : "false"}
+            options={[
+              { value: "false", label: "Off" },
+              { value: "true", label: "Required (mentees countersign)" },
+            ]}
+            onSelect={(v) => changeCountersign(v)}
+          />
+          <InfoTip content="When on, a mentee must countersign this agreement after their mentor signs it. Add a Mentee signature field to the body (Insert row). Needs the mentee-countersign feature flag on." />
+        </span>
+      )}
       <span className="rounded bg-muted px-2 py-0.5">slug: {document.slug}</span>
     </>
   );
@@ -522,7 +584,14 @@ export function SigningDocumentDetail() {
           // place when one is still editable, else appends a new version.
           <Form method="post" className="space-y-4" onSubmit={() => setIsCreating(false)}>
             <input type="hidden" name="intent" value="save-version" />
-            <input type="hidden" name="roles" value="member" />
+            {/* Roles the version carries. "mentee" is added for a countersign
+                doc so the metadata reflects the second signer (cosmetic — the
+                runtime derives roles from the placed fields). */}
+            <input
+              type="hidden"
+              name="roles"
+              value={document.requiresMenteeCountersign ? "member,mentee" : "member"}
+            />
             <div>
               <div className="mb-1 flex items-center justify-between">
                 <label className="block text-sm font-medium text-foreground/80">Body</label>
@@ -568,7 +637,11 @@ export function SigningDocumentDetail() {
                 </div>
               ) : (
                 <div className="rounded-lg border border-border bg-card">
-                  <SigningInsertControls editor={editorInstance} examples={previewVariables} />
+                  <SigningInsertControls
+                    editor={editorInstance}
+                    examples={previewVariables}
+                    allowMentee={!!document.requiresMenteeCountersign}
+                  />
                   {collabConfig ? (
                     // Collab mode: the Y.Doc is the source of truth.
                     // Room is seeded from latestVersionBody on first open (see
@@ -798,6 +871,12 @@ function BindingsPanel() {
         const counterSigners = b.signatures
           .filter((s) => s.roleKey === "supervisor")
           .map((s) => s.typedName || fullName(s.signer) || UNKNOWN_LABEL);
+        // Mentee countersignatures on this binding (only relevant when the doc
+        // opts in). Linkable to each mentee's signed copy, like the signed list.
+        const menteeSigs = b.signatures
+          .filter((s) => s.roleKey === "mentee" && s.versionId === b.version.id)
+          .map((s) => ({ id: s.id, name: fullName(s.signer) || s.typedName || UNKNOWN_LABEL }))
+          .sort((a, z) => a.name.localeCompare(z.name));
         const roster = rosters[b.id];
         return (
           <div key={b.id} className="rounded-lg border border-border p-4">
@@ -814,6 +893,23 @@ function BindingsPanel() {
                 ? ` · ${roster.signed.length} of ${roster.signed.length + roster.outstanding.length} signed`
                 : ` · ${roster.signed.length} signature${roster.signed.length !== 1 ? "s" : ""}`}
             </p>
+            {document.requiresMenteeCountersign && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Countersigned by {menteeSigs.length} mentee{menteeSigs.length !== 1 ? "s" : ""}
+                {menteeSigs.length > 0 ? ": " : ""}
+                {menteeSigs.map((s, i) => (
+                  <span key={s.id}>
+                    {i > 0 ? ", " : ""}
+                    <Link
+                      to={`/core/agreements/${document.id}/signature/${s.id}`}
+                      className="text-accent-coral hover:underline"
+                    >
+                      {s.name}
+                    </Link>
+                  </span>
+                ))}
+              </p>
+            )}
 
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <div>

@@ -2,6 +2,10 @@ import { prisma } from "~/lib/db";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { weekNumberInTerm, weekStartForNumber, weeksInTerm } from "./week";
 import type { Vibe } from "./vibe";
+// Pure predicate lives in a client-safe module so its unit test needn't pull in
+// prisma; re-exported here so existing server call sites keep importing it from
+// the grid module.
+export { isUnfilled } from "./grid-cell";
 
 // The mentor → mentee → week matrix shared by the Mentorship notes page and the
 // hub. Each pair (mentor, mentee, project, domain) is one row; each shown week

@@ -1,6 +1,6 @@
 // Server-side Activities resolution + authoring (specs/activities.md §7). The
-// layout loader calls resolveActiveActivitiesForUser once per navigation (gated
-// on the `activities` flag) and plumbs the result to the client; the surface
+// layout loader calls resolveActiveActivitiesForUser once per navigation and
+// plumbs the result to the client; the surface
 // route uses getActivityForMember + the mechanic registry; the admin routes use
 // the CRUD helpers. `kind` is validated against the registry, never a DB enum.
 

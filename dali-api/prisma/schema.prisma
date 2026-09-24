@@ -1723,6 +1723,14 @@ model SigningDocument {
   letterheadImageUrl String?
   footerText         String?
 
+  // When true, a mentor signing this agreement (a roleKey "member" signature)
+  // obliges each of their mentees for that term to COUNTERSIGN — one roleKey
+  // "mentee" signature per (binding, mentee), gated + notified like the mentor
+  // obligation. Off = single-party (mentor-only) signing, unchanged. The
+  // mentee-countersign feature flag is the global switch; this is the per-doc
+  // opt-in (set on the mentorship agreement).
+  requiresMenteeCountersign Boolean @default(false)
+
   archivedAt DateTime?
 
   versions SigningDocumentVersion[]

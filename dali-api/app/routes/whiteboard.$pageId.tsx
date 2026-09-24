@@ -7,8 +7,6 @@ import { parseSessionCookie } from "~/lib/cookies";
 import { getPresenceUser } from "~/lib/presence-user";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { recordPageVisit } from "~/lib/user-pages.server";
-import { getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
 import { driveRootCrumbs } from "~/lib/drive-crumbs";
 import { Shapes } from "lucide-react";
@@ -103,13 +101,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (auth.user.type === "applicant") return redirect("/portal");
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return partnerRedirect;
-
-  // Whiteboards ship behind a flag; gate the deep link so a disabled feature
-  // isn't reachable by URL. 404 (not redirect) so existence isn't leaked.
-  const roles = await getUserRoles(auth.user.sub);
-  if (!(await isFeatureEnabled("whiteboard", auth.user.sub, roles, request))) {
-    throw new Response("Not found", { status: 404 });
-  }
 
   const page = await prisma.page.findUnique({
     where: { id: params.pageId },

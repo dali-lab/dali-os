@@ -17,6 +17,13 @@ export interface RecordSignatureArgs {
   signerUserId: string;
   fieldValues: Record<string, unknown>;
   request: Request;
+  // Which party's slot this signature fills. "member" is the primary signer
+  // (a member / mentor); "mentee" is a mentee countersigning a mentorship
+  // agreement. Validation + the sig field lookup key off this role, and the
+  // row is written under it — the @@unique([bindingId, signerUserId, roleKey])
+  // keeps one signature per (binding, signer, role). Defaults to "member" so
+  // every existing caller is unchanged.
+  roleKey?: string;
 }
 
 export type RecordSignatureResult =
@@ -26,6 +33,7 @@ export type RecordSignatureResult =
 export async function recordSignature(
   args: RecordSignatureArgs,
 ): Promise<RecordSignatureResult> {
+  const roleKey = args.roleKey ?? "member";
   const binding = await prisma.signingBinding.findUnique({
     where: { id: args.bindingId },
     select: {
@@ -45,19 +53,19 @@ export async function recordSignature(
   const body = ensureBlocks(binding.version.body);
   const fields = collectSigningFields(body);
 
-  // Validate every required field for the member role is filled.
+  // Validate every required field for the acting role is filled.
   for (const f of fields) {
-    if (f.role !== "member" || !f.required) continue;
+    if (f.role !== roleKey || !f.required) continue;
     const v = args.fieldValues[f.fieldId];
     const filled =
       f.type === "checkboxField" ? v === true || v === "true" : v != null && String(v).trim() !== "";
     if (!filled) return { ok: false, error: "Please complete all required fields before signing." };
   }
 
-  // The typed-name affirmation is the member's signature/initial field value;
+  // The typed-name affirmation is the signer's signature/initial field value;
   // fall back to their known name so the record is never blank.
   const sigField = fields.find(
-    (f) => f.role === "member" && (f.type === "signatureField" || f.type === "initialField"),
+    (f) => f.role === roleKey && (f.type === "signatureField" || f.type === "initialField"),
   );
   let typedName = sigField ? String(args.fieldValues[sigField.fieldId] ?? "").trim() : "";
   if (!typedName) {
@@ -81,14 +89,14 @@ export async function recordSignature(
       bindingId_signerUserId_roleKey: {
         bindingId: args.bindingId,
         signerUserId: args.signerUserId,
-        roleKey: "member",
+        roleKey,
       },
     },
     create: {
       bindingId: args.bindingId,
       versionId: binding.versionId,
       signerUserId: args.signerUserId,
-      roleKey: "member",
+      roleKey,
       typedName,
       ip: getClientIp(args.request) ?? null,
       userAgent: args.request.headers.get("user-agent") || null,

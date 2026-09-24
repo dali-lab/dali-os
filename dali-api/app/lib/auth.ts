@@ -173,6 +173,24 @@ export function sessionIdHash(raw: string): string {
 
 // dartmouth cas (sso) ticket validation — unrelated to session auth
 
+// CAS serializes names with XML/HTML entities — Dartmouth emits an apostrophe as
+// the numeric reference "&#39;", so "O'Neill" arrives as "O&#39;Neill". The name
+// regex captures that literal text verbatim; decode it before storing or the
+// entity string is what shows up (e.g. the audit log rendered "Liam O&#39;Neill").
+// Handles numeric (decimal + hex, so accented letters survive too) and the named
+// XML entities. &amp; is decoded LAST so an escaped "&amp;#39;" resolves to
+// "&#39;", not "'".
+function decodeCasEntities(s: string): string {
+  return s
+    .replace(/&#x([0-9a-f]+);/gi, (_m, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_m, dec) => String.fromCodePoint(parseInt(dec, 10)))
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&apos;/gi, "'")
+    .replace(/&amp;/gi, "&");
+}
+
 export async function validateCasTicket(ticket: string, serviceUrl: string) {
   const casBase = process.env.CAS_BASE_URL ?? "https://login.dartmouth.edu/cas";
   const url = `${casBase}/serviceValidate?ticket=${encodeURIComponent(ticket)}&service=${encodeURIComponent(serviceUrl)}`;
@@ -187,7 +205,7 @@ export async function validateCasTicket(ticket: string, serviceUrl: string) {
   const nameMatch = xml.match(/<cas:name>([^<]+)<\/cas:name>/);
 
   const netId = netIdMatch?.[1] ?? userMatch[1].trim();
-  const fullName = nameMatch?.[1]?.trim() ?? "";
+  const fullName = decodeCasEntities(nameMatch?.[1] ?? "").trim();
 
   const nameParts = fullName.split(" ");
   const firstName = nameParts[0] || netId;

@@ -30,8 +30,7 @@ import type { ProjectTldrResponse } from "~/routes/api.ai.project-tldr";
 // The compact work-status strip above the project timeline (Progress tab).
 // Two layers: a deterministic chip row (progress, active sprint, attention
 // flags) computed in the loader, and — when the `project-tldr-ai` flag is on
-// and a provider is configured — an AI one-liner cached on the project. The
-// whole bar is gated by `project-status-bar` at the call site.
+// and a provider is configured — an AI one-liner cached on the project.
 //
 // Every chip explains *why* on hover: the counts alone read as bare numbers, so
 // each one opens a rich tooltip naming the tasks behind it (which are overdue,

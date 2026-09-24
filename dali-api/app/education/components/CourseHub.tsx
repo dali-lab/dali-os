@@ -9,7 +9,6 @@ import {
   type DiscussionPost as OfferingDiscussionPost,
 } from "./OfferingDiscussion";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { cn } from "~/lib/cn";
 import { DocEditor } from "~/components/doc";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
@@ -91,14 +90,6 @@ const TABS = [
   { key: "overview", label: "Overview" },
   { key: "sessions", label: "Sessions" },
   { key: "discussions", label: "Discussions" },
-] as const;
-
-// education-student-hub: the reworked tab set. A Canvas-style People tab
-// replaces the roster that used to sit inside Overview.
-const V2_TABS = [
-  { key: "overview", label: "Overview" },
-  { key: "sessions", label: "Sessions" },
-  { key: "discussions", label: "Discussions" },
   { key: "people", label: "People" },
 ] as const;
 
@@ -119,17 +110,10 @@ export function CourseHub({
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const tz = useUserTimeZone();
-  const v2 = useFeatureFlag("education-student-hub");
   // `timeline` was this tab's key before it was renamed; a bookmark or an old
   // link still lands on the sessions it always did rather than on nothing.
   const rawTab = searchParams.get("tab") ?? "overview";
   const tab = rawTab === "timeline" ? "sessions" : rawTab;
-
-  // education-student-hub adds a People tab; otherwise the two sets are the
-  // same. There is no Workspace tab in either: a shared doc is a material the
-  // class writes in rather than reads, so it belongs with the other material
-  // for its session, not in a separate place you had to know to look.
-  const tabs = v2 ? V2_TABS : TABS;
 
   // Assignments awaiting this student's submission (past-due ones can't be
   // submitted anymore, so they don't count) — surfaced as a tab badge on
@@ -143,7 +127,7 @@ export function CourseHub({
   return (
     <div className="flex flex-col gap-5">
       <nav className="flex overflow-x-auto">
-        {tabs.map((t) => (
+        {TABS.map((t) => (
           <button
             key={t.key}
             type="button"
@@ -173,14 +157,14 @@ export function CourseHub({
           materials={data.materials}
           assignments={data.assignments}
           sharedDocs={data.workspaceDocs}
-          files={v2 ? data.files : []}
+          files={data.files}
           basePath={basePath}
           tz={tz}
           isManager={data.isManager}
         />
       )}
 
-      {v2 && tab === "people" && (
+      {tab === "people" && (
         <PeopleTab instructors={data.instructors} classmates={data.classmates} />
       )}
 
@@ -227,53 +211,6 @@ export function CourseHub({
                 No description yet.
               </p>
             )}
-
-            {!v2 && data.instructors.length > 0 && (
-              <div className="mt-4 border-t border-os-container pt-4">
-                <p className="text-xs font-semibold text-os-grey">
-                  {data.instructors.length === 1 ? "Instructor" : "Instructors"}
-                </p>
-                <ul className="mt-2 flex flex-wrap gap-2">
-                  {data.instructors.map((i) => (
-                    <li
-                      key={i.id}
-                      className="inline-flex items-center gap-2 rounded-full bg-os-well px-3 py-1"
-                    >
-                      <Avatar photoUrl={i.photoUrl} name={i.name} size="xs" />
-                      <span className="text-sm text-foreground">{i.name}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {!v2 && data.classmates.length > 0 && (
-              <div className="mt-4 border-t border-os-container pt-4">
-                <p className="text-xs font-semibold text-os-grey">
-                  Taking this course · {data.classmates.length}
-                </p>
-                <ul className="mt-2 flex flex-wrap gap-2">
-                  {data.classmates.map((c) => (
-                    <li
-                      key={c.id}
-                      className={`inline-flex items-center gap-2 rounded-md border px-2 py-1 ${
-                        c.isMe
-                          ? "border-os-accent/30 bg-os-accent/5"
-                          : "border-os-container bg-os-card"
-                      }`}
-                    >
-                      <Avatar photoUrl={c.photoUrl} name={c.name} size="xs" />
-                      <span className="text-sm text-foreground">{c.name}</span>
-                      {c.isMe && (
-                        <span className="text-[10px] font-semibold uppercase tracking-wide text-os-accent">
-                          You
-                        </span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
           </section>
 
         </div>
@@ -317,8 +254,8 @@ export function CourseHub({
 
 // A single thing attached to a session or the whole course on the student
 // timeline: a read-only material page, a co-edited shared doc, or an uploaded
-// file. Under education-student-hub these three live together instead of in
-// separate Materials / shared-doc / Files buckets.
+// file. These three live together instead of in separate Materials /
+// shared-doc / Files buckets.
 type TimelineResource =
   | { kind: "material"; id: string; title: string }
   | { kind: "shared"; id: string; title: string }
@@ -394,8 +331,7 @@ function ResourceCard({ r, basePath }: { r: TimelineResource; basePath: string }
   );
 }
 
-/** Canvas-style roster: instructors and students, each as an avatar row.
- *  education-student-hub — this is the People tab (was a block in Overview). */
+/** Canvas-style roster: instructors and students, each as an avatar row. */
 function PeopleTab({
   instructors,
   classmates,
@@ -641,8 +577,8 @@ function SessionTimeline({
   sessions,
   materials,
   assignments,
-  sharedDocs = [],
-  files = [],
+  sharedDocs,
+  files,
   basePath,
   tz,
   isManager,
@@ -650,10 +586,9 @@ function SessionTimeline({
   sessions: HubData["sessions"];
   materials: HubData["materials"];
   assignments: HubData["assignments"];
-  /** education-student-hub: co-edited docs + uploaded files placed on the
-   *  timeline. Empty (the defaults) on the classic hub. */
-  sharedDocs?: HubData["workspaceDocs"];
-  files?: HubData["files"];
+  /** Co-edited docs + uploaded files placed on the timeline. */
+  sharedDocs: HubData["workspaceDocs"];
+  files: HubData["files"];
   basePath: string;
   tz: string;
   isManager: boolean;

@@ -8,21 +8,32 @@ interface SigningFillViewProps {
   /** BlockNote block JSON — the loader normalizes legacy bodies on read. */
   body: unknown;
   variables: Record<string, string>;
-  // The member-role fields, used to seed date values and validate required ones.
+  // All placeable fields; filtered to the acting signer's role below.
   fields: SigningFieldRef[];
   next: string | null;
   // Server-side rejection from the sign action (e.g. the required-field
   // re-check), surfaced in the rail so a failed submit isn't silent.
   error?: string | null;
+  // The role the current signer fills. "member" is the normal signer (a member
+  // / mentor); "mentee" is a mentee countersigning — their fields go live while
+  // the mentor's already-signed fields render read-only.
+  signerRole?: string;
 }
 
-// Renders the agreement read-only except the current member's fields, which are
+// Renders the agreement read-only except the current signer's fields, which are
 // interactive (fill mode keeps them live under editable=false). Captured values
 // live in host React state keyed by fieldId — never in the document — and are
-// posted as JSON; the submit button unlocks once every required member field is
-// filled (the hard gate, re-checked server-side by recordSignature).
-export function SigningFillView({ body, variables, fields, next, error }: SigningFillViewProps) {
-  const memberFields = fields.filter((f) => f.role === "member");
+// posted as JSON; the submit button unlocks once every required field for this
+// role is filled (the hard gate, re-checked server-side by recordSignature).
+export function SigningFillView({
+  body,
+  variables,
+  fields,
+  next,
+  error,
+  signerRole = "member",
+}: SigningFillViewProps) {
+  const memberFields = fields.filter((f) => f.role === signerRole);
   const articleRef = useRef<HTMLElement>(null);
 
   // Seed date fields with the resolved sign date so they're captured too.
@@ -76,7 +87,7 @@ export function SigningFillView({ body, variables, fields, next, error }: Signin
           initialContent={body}
           signing={{
             mode: "fill",
-            signerRole: "member",
+            signerRole,
             variables,
             values,
             onFieldChange: (fieldId, value) =>
