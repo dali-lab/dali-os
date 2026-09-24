@@ -6,12 +6,22 @@ import { resolveScannedMember } from "~/lib/wallet-scan.server";
 import { displayUnauthorized, requireRoomDisplay } from "~/lib/room-display.server";
 import { createRoomBooking } from "~/lib/rooms.server";
 
-const BodySchema = z.object({
-  memberToken: z.string().min(1),
-  minutes: z.number().int().min(5).max(240),
-});
+// Either "now for N minutes" (the Book now buttons; the server's clock picks
+// the start so a skewed iPad can't shift it) or an explicit slot dragged out on
+// the display's timeline.
+const BodySchema = z.union([
+  z.object({
+    memberToken: z.string().min(1),
+    minutes: z.number().int().min(5).max(240),
+  }),
+  z.object({
+    memberToken: z.string().min(1),
+    start: z.coerce.date(),
+    end: z.coerce.date(),
+  }),
+]);
 
-// POST /api/room-display/book — walk-up "Book now" at the door. The booker is
+// POST /api/room-display/book — booking at the door. The booker is
 // whoever's wallet pass was scanned; the display itself has no one to book as.
 export async function action({ request }: Route.ActionArgs) {
   if (request.method !== "POST") {
@@ -29,12 +39,14 @@ export async function action({ request }: Route.ActionArgs) {
   const member = await resolveScannedMember(body.memberToken, `room-display-book(display=${display.id})`);
   if (!member) return Response.json({ error: "Invalid or revoked pass" }, { status: 400 });
 
-  const start = new Date();
+  const now = new Date();
+  const [start, end] =
+    "minutes" in body ? [now, new Date(now.getTime() + body.minutes * 60_000)] : [body.start, body.end];
   const result = await createRoomBooking({
     roomId: display.room.id,
     userId: member.id,
     start,
-    end: new Date(start.getTime() + body.minutes * 60_000),
+    end,
     source: "Display",
   });
   if (!result.ok) return Response.json({ error: result.error }, { status: result.status });

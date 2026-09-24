@@ -5,7 +5,7 @@ import SwiftUI
 struct RoomDisplayView: View {
     @Environment(DisplayStore.self) private var store
     @Environment(\.scenePhase) private var scenePhase
-    @State private var bookingMinutes: Int?
+    @State private var booking: BookingRequest?
     @State private var showingAdmin = false
 
     var body: some View {
@@ -26,7 +26,7 @@ struct RoomDisplayView: View {
                                 items: store.items,
                                 now: now,
                                 isOffline: store.isOffline,
-                                onBook: { bookingMinutes = $0 }
+                                onBook: { booking = .now(minutes: $0) }
                             )
                             .frame(width: landscape ? proxy.size.width * 0.46 : nil,
                                    height: landscape ? nil : proxy.size.height * 0.55)
@@ -44,8 +44,8 @@ struct RoomDisplayView: View {
                 try? await Task.sleep(for: DisplayStore.refreshInterval)
             }
         }
-        .sheet(item: $bookingMinutes) { minutes in
-            BookNowSheet(minutes: minutes)
+        .sheet(item: $booking) { request in
+            BookingSheet(request: request)
         }
         .confirmationDialog("Room display", isPresented: $showingAdmin) {
             Button("Unpair this display", role: .destructive) { store.unpair() }
@@ -56,20 +56,21 @@ struct RoomDisplayView: View {
 
     private func schedule(now: Date) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(now, format: .dateTime.weekday(.wide).month(.wide).day())
-                .font(.title2.weight(.semibold))
-                .padding(.horizontal, 28)
-                .padding(.top, 36)
-                .padding(.bottom, 8)
-                // Hidden admin entry for whoever mounts the iPad.
-                .onLongPressGesture(minimumDuration: 3) { showingAdmin = true }
-            DayTimelineView(items: store.items, now: now)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(now, format: .dateTime.weekday(.wide).month(.wide).day())
+                    .font(.title2.weight(.semibold))
+                    // Hidden admin entry for whoever mounts the iPad.
+                    .onLongPressGesture(minimumDuration: 3) { showingAdmin = true }
+                Text("Tap an open time to book, or press and drag to choose how long")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 28)
+            .padding(.top, 36)
+            .padding(.bottom, 8)
+            DayTimelineView(items: store.items, now: now) { booking = .slot($0) }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.systemBackground))
     }
-}
-
-extension Int: @retroactive Identifiable {
-    public var id: Int { self }
 }

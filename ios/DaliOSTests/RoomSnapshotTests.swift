@@ -36,12 +36,51 @@ struct RoomSnapshotTests {
         #expect(snapshot.freeMinutes == nil)
         #expect(snapshot.bookableMinutes == RoomSnapshot.bookNowOptions)
     }
+}
 
-    @Test func bookedFractionMergesOverlapsAndClipsToTheDay() {
-        let dayStart = now
-        let dayEnd = now.addingTimeInterval(100 * 60)
-        let items = [item(-10, 20), item(10, 30), item(90, 120)]
-        // Covered: 0–30 (merged, clipped at start) + 90–100 (clipped at end) = 40 of 100.
-        #expect(abs(RoomSnapshot.bookedFraction(items, dayStart: dayStart, dayEnd: dayEnd) - 0.4) < 0.0001)
+struct SlotPickerTests {
+    // A quarter-hour boundary, so snapping is easy to read.
+    private let now = Date(timeIntervalSinceReferenceDate: 800_000_100)
+    private var base: Date { Date(timeIntervalSinceReferenceDate: 800_000_100 - 800_000_100.truncatingRemainder(dividingBy: 900)) }
+
+    private func at(_ minutes: Double) -> Date { base.addingTimeInterval(minutes * 60) }
+
+    private func item(_ startMin: Double, _ endMin: Double) -> ScheduleItem {
+        ScheduleItem(
+            kind: .booking, id: "\(startMin)", title: "b", start: at(startMin), end: at(endMin),
+            organizer: .init(id: "u", firstName: "A", lastName: "B"), isEvent: false
+        )
+    }
+
+    @Test func dragSnapsOutwardToQuarterHours() {
+        let slot = SlotPicker(items: [], now: now).drag(from: at(67), to: at(125))
+        #expect(slot.interval == DateInterval(start: at(60), end: at(135)))
+        #expect(slot.isValid)
+    }
+
+    @Test func draggingUpwardWorksToo() {
+        let slot = SlotPicker(items: [], now: now).drag(from: at(125), to: at(67))
+        #expect(slot.interval == DateInterval(start: at(60), end: at(135)))
+    }
+
+    @Test func dragAcrossABookingIsInvalid() {
+        let slot = SlotPicker(items: [item(90, 120)], now: now).drag(from: at(60), to: at(150))
+        #expect(!slot.isValid)
+    }
+
+    @Test func dragStartingInThePastStartsNow() {
+        let slot = SlotPicker(items: [], now: at(20)).drag(from: at(0), to: at(60))
+        #expect(slot.interval.start == at(20))
+        #expect(slot.isValid)
+    }
+
+    @Test func tapPicksThirtyMinutesShortenedBeforeTheNextBooking() {
+        let picker = SlotPicker(items: [item(75, 120)], now: now)
+        #expect(picker.tap(at: at(122))?.interval == DateInterval(start: at(120), end: at(150)))
+        #expect(picker.tap(at: at(62))?.interval == DateInterval(start: at(60), end: at(75)))
+    }
+
+    @Test func tapOnABookingPicksNothing() {
+        #expect(SlotPicker(items: [item(60, 120)], now: now).tap(at: at(80)) == nil)
     }
 }

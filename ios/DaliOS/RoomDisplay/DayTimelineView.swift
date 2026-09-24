@@ -1,10 +1,15 @@
 import SwiftUI
 
 /// Today's schedule as a vertical calendar day: each booking is a block sized
-/// by its duration, with a line at the current time.
+/// by its duration, with a line at the current time. Tap an open time, or
+/// press and drag, to pick a slot to book.
 struct DayTimelineView: View {
     let items: [ScheduleItem]
     let now: Date
+    let onSelect: (DateInterval) -> Void
+
+    @State private var draft: SlotPicker.Slot?
+    @State private var dragAnchor: Date?
 
     private let hourHeight: CGFloat = 84
     private let gutter: CGFloat = 64
@@ -33,13 +38,45 @@ struct DayTimelineView: View {
                     ForEach(items, id: \.occurrenceID) { item in
                         block(item)
                     }
+                    if let draft { draftBlock(draft) }
                     nowLine
                 }
                 .frame(height: CGFloat(hours.count - 1) * hourHeight + 24)
+                .contentShape(Rectangle())
+                .coordinateSpace(.named(Self.space))
+                .onTapGesture(coordinateSpace: .named(Self.space)) { location in
+                    if let slot = picker.tap(at: date(atY: location.y)), slot.isValid {
+                        onSelect(slot.interval)
+                    }
+                }
+                // Long-press first so a plain swipe still scrolls the day.
+                .gesture(
+                    LongPressGesture(minimumDuration: 0.25)
+                        .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.space)))
+                        .onChanged { value in
+                            guard case .second(true, let drag?) = value else { return }
+                            let anchor = dragAnchor ?? date(atY: drag.startLocation.y)
+                            dragAnchor = anchor
+                            draft = picker.drag(from: anchor, to: date(atY: drag.location.y))
+                        }
+                        .onEnded { _ in
+                            if let draft, draft.isValid { onSelect(draft.interval) }
+                            draft = nil
+                            dragAnchor = nil
+                        }
+                )
                 .padding(.vertical, 12)
             }
             .onAppear { proxy.scrollTo(max(hours.lowerBound, calendar.component(.hour, from: now) - 1), anchor: .top) }
         }
+    }
+
+    private static let space = "timeline"
+
+    private var picker: SlotPicker { SlotPicker(items: items, now: now) }
+
+    private func date(atY y: CGFloat) -> Date {
+        dayStart.addingTimeInterval((Double(y / hourHeight) + Double(hours.lowerBound)) * 3600)
     }
 
     private func y(for date: Date) -> CGFloat {
@@ -104,6 +141,28 @@ struct DayTimelineView: View {
         .padding(.leading, gutter)
         .padding(.trailing, 12)
         .offset(y: top)
+    }
+
+    private func draftBlock(_ slot: SlotPicker.Slot) -> some View {
+        let top = y(for: slot.interval.start)
+        let height = max(y(for: slot.interval.end) - top, 28)
+        let tint = slot.isValid ? DisplayTheme.available : DisplayTheme.busy
+        return VStack(alignment: .leading, spacing: 2) {
+            Text(slot.isValid ? "New booking" : "Not available")
+                .font(.headline)
+            Text("\(slot.interval.start.formatted(date: .omitted, time: .shortened)) – \(slot.interval.end.formatted(date: .omitted, time: .shortened))")
+                .font(.subheadline.monospacedDigit())
+        }
+        .foregroundStyle(tint)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, minHeight: height, maxHeight: height, alignment: .topLeading)
+        .background(tint.opacity(0.18), in: .rect(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(tint, style: StrokeStyle(lineWidth: 2, dash: [6, 4])))
+        .padding(.leading, gutter)
+        .padding(.trailing, 12)
+        .offset(y: top)
+        .allowsHitTesting(false)
     }
 
     @ViewBuilder

@@ -98,21 +98,20 @@ struct RoomSnapshot {
         if fitting.isEmpty, free >= Self.minimumBookingMinutes { return [free] }
         return fitting
     }
+}
 
-    /// Share of [dayStart, dayEnd] covered by bookings, merging overlaps.
-    static func bookedFraction(_ items: [ScheduleItem], dayStart: Date, dayEnd: Date) -> Double {
-        let total = dayEnd.timeIntervalSince(dayStart)
-        guard total > 0 else { return 0 }
-        var covered: TimeInterval = 0
-        var cursor = dayStart
-        for item in items.sorted(by: { $0.start < $1.start }) {
-            let start = max(item.start, cursor, dayStart)
-            let end = min(item.end, dayEnd)
-            if end > start {
-                covered += end.timeIntervalSince(start)
-                cursor = end
-            }
+/// What the person at the door asked to book: "now for N minutes" (the Book
+/// now buttons) or a slot picked on the timeline.
+enum BookingRequest: Identifiable, Hashable {
+    case now(minutes: Int)
+    case slot(DateInterval)
+
+    var id: Self { self }
+
+    var interval: DateInterval {
+        switch self {
+        case .now(let minutes): DateInterval(start: .now, duration: TimeInterval(minutes * 60))
+        case .slot(let interval): interval
         }
-        return covered / total
     }
 }

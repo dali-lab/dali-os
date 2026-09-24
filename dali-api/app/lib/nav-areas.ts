@@ -327,18 +327,14 @@ function withDriveInGeneral(areas: NavArea[]): NavArea[] {
   );
 }
 
-// Behind the `room-booking` flag: booking lives in General next to the other
-// lab-wide member pages, and room/door-display management in Core.
+// Behind the `room-booking` flag: room/door-display management in Core. The
+// member-facing booking page is pinned under Resources (see pinnedNavItems).
 function withRooms(areas: NavArea[]): NavArea[] {
-  return areas.map((a) => {
-    if (a.key === "projects") {
-      return { ...a, subtabs: [...a.subtabs, { label: "Rooms", href: "/rooms", icon: DoorOpen }] };
-    }
-    if (a.key === "core") {
-      return { ...a, subtabs: [...a.subtabs, { label: "Rooms", href: "/core/rooms", icon: DoorOpen }] };
-    }
-    return a;
-  });
+  return areas.map((a) =>
+    a.key === "core"
+      ? { ...a, subtabs: [...a.subtabs, { label: "Rooms", href: "/core/rooms", icon: DoorOpen }] }
+      : a,
+  );
 }
 
 /**
@@ -363,10 +359,15 @@ export function areasFor(flags: Partial<FeatureFlagMap> = {}): NavArea[] {
  * General in that case (see areasFor), so it is never dropped from the nav.
  */
 export function pinnedNavItems(flags: Partial<FeatureFlagMap> = {}): SubTab[] {
-  return flags.resources
+  const items: SubTab[] = flags.resources
     ? [{ label: "Resources", href: "/resources", icon: Library }]
     : [{ label: "Drive", href: "/drive", icon: HardDrive }];
+  // Room booking sits under Resources: it's the other everyday lab utility.
+  if (flags["room-booking"]) items.push(ROOM_BOOKING_PIN);
+  return items;
 }
+
+const ROOM_BOOKING_PIN: SubTab = { label: "Room booking", href: "/rooms", icon: DoorOpen };
 
 // Both area sets at once. isAreaSubtabPath and the icon map are read from places
 // with no flag context — the favorites star (FavoriteRouteButton), the

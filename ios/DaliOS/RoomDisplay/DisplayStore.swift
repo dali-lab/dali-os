@@ -71,15 +71,22 @@ final class DisplayStore {
         }
     }
 
-    func book(minutes: Int, memberToken: String) async throws -> BookResponse {
+    func book(_ request: BookingRequest, memberToken: String) async throws -> BookResponse {
         #if DEBUG
-        if isDemo { return demoBook(minutes: minutes) }
+        if isDemo { return demoBook(request.interval) }
         #endif
-        struct Body: Encodable { let memberToken: String; let minutes: Int }
-        let response: BookResponse = try await client.post(
-            "api/room-display/book",
-            body: Body(memberToken: memberToken, minutes: minutes)
-        )
+        let response: BookResponse
+        switch request {
+        case .now(let minutes):
+            struct Body: Encodable { let memberToken: String; let minutes: Int }
+            response = try await client.post("api/room-display/book", body: Body(memberToken: memberToken, minutes: minutes))
+        case .slot(let interval):
+            struct Body: Encodable { let memberToken: String; let start: Date; let end: Date }
+            response = try await client.post(
+                "api/room-display/book",
+                body: Body(memberToken: memberToken, start: interval.start, end: interval.end)
+            )
+        }
         await refresh()
         return response
     }
@@ -126,15 +133,13 @@ final class DisplayStore {
 
     private static let demoMember = ScannedMember(id: "demo", firstName: "Alex", lastName: "Kim", photoUrl: nil)
 
-    private func demoBook(minutes: Int) -> BookResponse {
-        let start = Date.now
-        let end = start.addingTimeInterval(TimeInterval(minutes * 60))
+    private func demoBook(_ interval: DateInterval) -> BookResponse {
         items.append(ScheduleItem(
-            kind: .booking, id: UUID().uuidString, title: "Alex's booking", start: start, end: end,
+            kind: .booking, id: UUID().uuidString, title: "Alex's booking", start: interval.start, end: interval.end,
             organizer: ScheduleItem.Organizer(id: "demo", firstName: "Alex", lastName: "Kim"), isEvent: false
         ))
         items.sort { $0.start < $1.start }
-        return BookResponse(booking: .init(id: "demo", start: start, end: end), member: Self.demoMember)
+        return BookResponse(booking: .init(id: "demo", start: interval.start, end: interval.end), member: Self.demoMember)
     }
     #endif
 

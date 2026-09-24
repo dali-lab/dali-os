@@ -91,6 +91,15 @@ describe("room-display book", () => {
     expect(input.end.getTime() - input.start.getTime()).toBe(30 * 60_000);
   });
 
+  it("books an explicit slot dragged out on the timeline", async () => {
+    const start = new Date("2026-09-24T18:00:00Z");
+    const end = new Date("2026-09-24T19:00:00Z");
+    vi.mocked(parseJson).mockResolvedValue({ memberToken: "tok", start, end } as never);
+    vi.mocked(createRoomBooking).mockResolvedValue({ ok: true, value: { id: "b1", start, end } });
+    expect((await book(post("/api/room-display/book"))).status).toBe(201);
+    expect(vi.mocked(createRoomBooking).mock.calls[0]![0]).toMatchObject({ roomId: "r1", userId: "u2", start, end });
+  });
+
   it("passes a conflict through", async () => {
     vi.mocked(createRoomBooking).mockResolvedValue({ ok: false, error: "The room is already booked then", status: 409 });
     expect((await book(post("/api/room-display/book"))).status).toBe(409);

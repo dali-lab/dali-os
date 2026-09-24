@@ -28,7 +28,6 @@ struct StatusPanel: View {
             if !snapshot.bookableMinutes.isEmpty {
                 bookNow(snapshot.bookableMinutes)
             }
-            utilization
         }
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -116,25 +115,6 @@ struct StatusPanel: View {
                     .background(.white, in: .rect(cornerRadius: 16))
                 }
             }
-        }
-    }
-
-    private var utilization: some View {
-        let calendar = Calendar.current
-        let dayStart = calendar.date(bySettingHour: 8, minute: 0, second: 0, of: now)!
-        let dayEnd = calendar.date(bySettingHour: 22, minute: 0, second: 0, of: now)!
-        let fraction = RoomSnapshot.bookedFraction(items, dayStart: dayStart, dayEnd: dayEnd)
-        return VStack(alignment: .leading, spacing: 8) {
-            Text("Booked \(fraction.formatted(.percent.precision(.fractionLength(0)))) of today (8am–10pm)")
-                .font(.subheadline.weight(.medium))
-                .opacity(0.85)
-            GeometryReader { proxy in
-                Capsule().fill(.white.opacity(0.25))
-                    .overlay(alignment: .leading) {
-                        Capsule().fill(.white).frame(width: proxy.size.width * fraction)
-                    }
-            }
-            .frame(height: 8)
         }
     }
 }
