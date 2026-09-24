@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { ChevronDown, ScanLine } from "lucide-react";
+import { AttendeeScanner } from "~/components/AttendeeScanner";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { AbsenceNoteButton } from "~/components/AbsenceNoteButton";
@@ -35,6 +36,9 @@ export function AttendanceChecklist({
   meetingLabel,
   canEdit,
   canNote = false,
+  canScan = false,
+  defaultScanning = false,
+  plain = false,
   attendees,
 }: {
   meetingId: string;
@@ -45,6 +49,12 @@ export function AttendanceChecklist({
    *  which a plain document editor doesn't satisfy, so a surface only opts in
    *  when it has resolved that same gate. */
   canNote?: boolean;
+  /** Offer the wallet-pass scanner. Still gated on the wallet-checkin flag. */
+  canScan?: boolean;
+  /** Start with the camera on, for a page opened to take attendance. */
+  defaultScanning?: boolean;
+  /** Drop the card and the fold, for a page that titles the section itself. */
+  plain?: boolean;
   attendees: AttendanceRow[];
 }) {
   const [rows, setRows] = useState(attendees);
@@ -52,7 +62,11 @@ export function AttendanceChecklist({
   const [sort, setSort] = useState<AttendeeSort>("name-asc");
   // A big roster would push the note itself below the fold, so it starts
   // folded; the header count still says how many are in.
-  const [expanded, setExpanded] = useState(attendees.length <= COLLAPSE_OVER);
+  const [folded, setFolded] = useState(!plain && attendees.length > COLLAPSE_OVER);
+  const expanded = !folded;
+  const walletCheckin = useFeatureFlag("wallet-checkin");
+  const showScan = canScan && walletCheckin;
+  const [scanning, setScanning] = useState(showScan && defaultScanning);
 
   const ordered = useMemo(() => sortAttendees(rows, sort), [rows, sort]);
 
@@ -82,39 +96,96 @@ export function AttendanceChecklist({
   }
 
   const presentCount = rows.filter((r) => r.present).length;
-  // Organizers get a shortcut into the wallet-pass scan station (opens full-tab
-  // so the camera isn't squeezed into a doc pane). Gated by the same flag as the
-  // member Add-to-Wallet buttons; the scan route re-checks it server-side.
-  const walletCheckin = useFeatureFlag("wallet-checkin");
+
+  function markScanned(userId: string) {
+    setRows((prev) => prev.map((r) => (r.userId === userId ? { ...r, present: true } : r)));
+  }
+
+  const roster = (
+    <ul
+      id={`attendance-${meetingId}`}
+      className={cn(
+        "grid grid-cols-1 sm:grid-cols-2",
+        plain ? "gap-x-8 gap-y-1" : "gap-x-6 gap-y-1.5",
+      )}
+    >
+      {ordered.map((r) => (
+        <li key={r.userId} className={cn(plain && "rounded-os-item px-3 py-2.5 transition-colors hover:bg-os-hover")}>
+          <div className="flex min-w-0 items-start justify-between gap-2">
+            <Checkbox
+              checked={r.present}
+              disabled={!canEdit || pendingIds.has(r.userId)}
+              onChange={(e) => toggle(r.userId, e.target.checked)}
+              label={r.name}
+            />
+            {/* Notes belong to an absence, so the editor follows whoever
+                isn't checked in. A note left behind on someone later marked
+                present keeps its button too, so nothing written becomes
+                uneditable. */}
+            {canNote && (!r.present || r.absenceNote) && (
+              <AbsenceNoteButton
+                meetingId={meetingId}
+                userId={r.userId}
+                name={r.name}
+                note={r.absenceNote ?? null}
+                onSaved={(note) =>
+                  setRows((prev) =>
+                    prev.map((row) =>
+                      row.userId === r.userId ? { ...row, absenceNote: note } : row,
+                    ),
+                  )
+                }
+              />
+            )}
+          </div>
+          {canNote && r.absenceNote && (
+            <p className="ml-6 mt-1 text-xs text-muted-foreground italic break-words">
+              {r.absenceNote}
+            </p>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
 
   return (
-    <section className="bg-card border border-border rounded-lg p-4">
-      <div className={cn("flex flex-wrap items-center justify-between gap-2", expanded && "mb-2")}>
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          aria-expanded={expanded}
-          aria-controls={`attendance-${meetingId}`}
-          className="inline-flex items-center gap-1.5 rounded-md font-heading font-semibold text-foreground"
-        >
-          <ChevronDown
-            className={cn("w-4 h-4 text-muted-foreground transition-transform", !expanded && "-rotate-90")}
-            aria-hidden
-          />
-          Attendance
-        </button>
+    <section className={cn(!plain && "bg-card border border-border rounded-lg p-4")}>
+      <div
+        className={cn(
+          "flex flex-wrap items-center gap-2",
+          plain ? "mb-4 justify-end" : "justify-between",
+          !plain && expanded && "mb-2",
+        )}
+      >
+        {!plain && (
+          <button
+            type="button"
+            onClick={() => setFolded((v) => !v)}
+            aria-expanded={expanded}
+            aria-controls={`attendance-${meetingId}`}
+            className="inline-flex items-center gap-1.5 rounded-md font-heading font-semibold text-foreground"
+          >
+            <ChevronDown
+              className={cn("w-4 h-4 text-muted-foreground transition-transform", !expanded && "-rotate-90")}
+              aria-hidden
+            />
+            Attendance
+          </button>
+        )}
         <div className="flex items-center gap-2">
-          {canEdit && walletCheckin && (
-            <a
-              href={`/calendar/scan/${meetingId}`}
-              target="_blank"
-              rel="noreferrer"
-              className={buttonClasses("primary", "sm")}
-              title="Scan members' wallet passes to mark them present"
+          {canEdit && showScan && (
+            <button
+              type="button"
+              onClick={() => {
+                setScanning((v) => !v);
+                setFolded(false);
+              }}
+              aria-pressed={scanning}
+              className={buttonClasses(scanning ? "secondary" : "primary", plain ? "md" : "sm")}
             >
-              <ScanLine className="w-3.5 h-3.5" aria-hidden />
-              Scan attendees
-            </a>
+              <ScanLine className="w-4 h-4" aria-hidden />
+              {scanning ? "Stop scanning" : "Scan passes"}
+            </button>
           )}
           {expanded && rows.length > 1 && (
             <Select
@@ -126,51 +197,24 @@ export function AttendanceChecklist({
               buttonClassName={filterPillClass()}
             />
           )}
-          <span className="text-sm text-muted-foreground tabular-nums">
-            {presentCount} of {rows.length} present
-          </span>
+          {!plain && (
+            <span className="text-sm text-muted-foreground tabular-nums">
+              {presentCount} of {rows.length} present
+            </span>
+          )}
         </div>
       </div>
-      {expanded && (
-        <ul id={`attendance-${meetingId}`} className="grid grid-cols-1 gap-x-6 gap-y-1.5 sm:grid-cols-2">
-          {ordered.map((r) => (
-            <li key={r.userId}>
-              <div className="flex min-w-0 items-start justify-between gap-2">
-                <Checkbox
-                  checked={r.present}
-                  disabled={!canEdit || pendingIds.has(r.userId)}
-                  onChange={(e) => toggle(r.userId, e.target.checked)}
-                  label={r.name}
-                />
-                {/* Notes belong to an absence, so the editor follows whoever
-                    isn't checked in. A note left behind on someone later marked
-                    present keeps its button too, so nothing written becomes
-                    uneditable. */}
-                {canNote && (!r.present || r.absenceNote) && (
-                  <AbsenceNoteButton
-                    meetingId={meetingId}
-                    userId={r.userId}
-                    name={r.name}
-                    note={r.absenceNote ?? null}
-                    onSaved={(note) =>
-                      setRows((prev) =>
-                        prev.map((row) =>
-                          row.userId === r.userId ? { ...row, absenceNote: note } : row,
-                        ),
-                      )
-                    }
-                  />
-                )}
-              </div>
-              {canNote && r.absenceNote && (
-                <p className="ml-6 mt-1 text-xs text-muted-foreground italic break-words">
-                  {r.absenceNote}
-                </p>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
+      {expanded &&
+        (scanning ? (
+          <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,480px)]">
+            <div className="lg:order-2">
+              <AttendeeScanner meetingId={meetingId} onMarked={markScanned} />
+            </div>
+            <div className="min-w-0 lg:order-1">{roster}</div>
+          </div>
+        ) : (
+          roster
+        ))}
       {expanded && !canEdit && (
         <p className="mt-2 text-xs text-muted-foreground">
           Only the organizer or a project editor can mark attendance.
