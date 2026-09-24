@@ -31,6 +31,11 @@ struct RoomSnapshotTests {
         #expect(RoomSnapshot(items: [item(3, 30)], now: now).bookableMinutes.isEmpty)
     }
 
+    @Test func presetsAreFifteenThirtyOneHourTwoHours() {
+        #expect(RoomSnapshot.bookNowOptions == [15, 30, 60, 120])
+        #expect(RoomSnapshot(items: [item(100, 160)], now: now).bookableMinutes == [15, 30, 60])
+    }
+
     @Test func freeForTheRestOfTheDayOffersEveryPreset() {
         let snapshot = RoomSnapshot(items: [item(-60, -30)], now: now)
         #expect(snapshot.freeMinutes == nil)

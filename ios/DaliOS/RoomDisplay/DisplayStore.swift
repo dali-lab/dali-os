@@ -121,9 +121,9 @@ final class DisplayStore {
                          organizer: org("Maya", "Chen"), isEvent: false),
             ScheduleItem(kind: .booking, id: "b", title: "Jordan's booking", start: at(-90), end: at(-30),
                          organizer: org("Jordan", "Lee"), isEvent: false),
-            ScheduleItem(kind: .booking, id: "c", title: "Interview prep", start: at(event ? -120 : 40), end: at(event ? -100 : 100),
+            ScheduleItem(kind: .booking, id: "c", title: "Interview prep", start: at(event ? -120 : 150), end: at(event ? -100 : 210),
                          organizer: org("Priya", "Patel"), isEvent: false),
-            ScheduleItem(kind: .meeting, id: "d", title: "DALI Lab Night", start: at(event ? -10 : 180), end: at(event ? 110 : 300),
+            ScheduleItem(kind: .meeting, id: "d", title: "DALI Lab Night", start: at(event ? -10 : 240), end: at(event ? 110 : 360),
                          organizer: org("Sam", "Rivera"), isEvent: true),
         ]
         currentEvent = event ? items.last : nil

@@ -68,7 +68,7 @@ struct ScanResponse: Decodable {
 
 /// What the room is doing at `now`, derived from the day's schedule.
 struct RoomSnapshot {
-    static let bookNowOptions = [15, 30, 60, 90]
+    static let bookNowOptions = [15, 30, 60, 120]
     /// Shortest walk-up booking the server accepts.
     static let minimumBookingMinutes = 5
 
