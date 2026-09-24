@@ -112,6 +112,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const variables = await resolveSigningVariablesForSigner(userId, {
     supervisorName,
     termCode: binding.term?.code ?? undefined,
+    role: signerRole,
+    termId: binding.termId ?? undefined,
   });
 
   // Convert-on-read: the fill surface and field validation walk block JSON;

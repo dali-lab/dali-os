@@ -17,6 +17,7 @@ export const SIGNING_VARIABLE_DESCRIPTIONS = {
   today: TEMPLATE_VARIABLES_REGISTRY.today.description,
   memberName: TEMPLATE_VARIABLES_REGISTRY.memberName.description,
   supervisorName: TEMPLATE_VARIABLES_REGISTRY.supervisorName.description,
+  menteeName: TEMPLATE_VARIABLES_REGISTRY.menteeName.description,
 } as const;
 
 export type SigningVariableName = keyof typeof SIGNING_VARIABLE_DESCRIPTIONS;
@@ -46,6 +47,7 @@ export interface SigningVariableInputs {
   today?: string;
   memberName?: string;
   supervisorName?: string;
+  menteeName?: string;
 }
 
 export function resolveSigningVariables(
@@ -57,5 +59,6 @@ export function resolveSigningVariables(
     today: inputs.today ?? "",
     memberName: inputs.memberName ?? "",
     supervisorName: inputs.supervisorName ?? "",
+    menteeName: inputs.menteeName ?? "",
   };
 }

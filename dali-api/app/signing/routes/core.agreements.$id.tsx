@@ -128,6 +128,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }),
     memberName: "Jane Member",
     supervisorName: "DALI Staff",
+    menteeName: "Jordan Rivera",
   };
 
   const collabToken = parseSessionCookie(request);
