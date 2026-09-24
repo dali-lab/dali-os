@@ -7,6 +7,13 @@
 	objects = {
 
 /* Begin PBXContainerItemProxy section */
+		DA0500000000000000000003 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = DA0000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = DA0100000000000000000001;
+			remoteInfo = DaliOS;
+		};
 		DA0500000000000000000001 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = DA0000000000000000000001 /* Project object */;
@@ -17,11 +24,17 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		DA0200000000000000000003 /* DaliOSUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DaliOSUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		DA0200000000000000000001 /* DaliOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DaliOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		DA0200000000000000000002 /* DaliOSTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DaliOSTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		DA0300000000000000000003 /* DaliOSUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = DaliOSUITests;
+			sourceTree = "<group>";
+		};
 		DA0300000000000000000001 /* DaliOS */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = DaliOS;
@@ -35,6 +48,13 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		DA0600000000000000000003 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		DA0600000000000000000001 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -57,6 +77,7 @@
 			children = (
 				DA0300000000000000000001 /* DaliOS */,
 				DA0300000000000000000002 /* DaliOSTests */,
+				DA0300000000000000000003 /* DaliOSUITests */,
 				DA0400000000000000000002 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -66,6 +87,7 @@
 			children = (
 				DA0200000000000000000001 /* DaliOS.app */,
 				DA0200000000000000000002 /* DaliOSTests.xctest */,
+				DA0200000000000000000003 /* DaliOSUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -73,6 +95,27 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		DA0100000000000000000003 /* DaliOSUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = DA0900000000000000000004 /* Build configuration list for PBXNativeTarget "DaliOSUITests" */;
+			buildPhases = (
+				DA0700000000000000000003 /* Sources */,
+				DA0600000000000000000003 /* Frameworks */,
+				DA0800000000000000000003 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				DA0500000000000000000004 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				DA0300000000000000000003 /* DaliOSUITests */,
+			);
+			name = DaliOSUITests;
+			productName = DaliOSUITests;
+			productReference = DA0200000000000000000003 /* DaliOSUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 		DA0100000000000000000001 /* DaliOS */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = DA0900000000000000000002 /* Build configuration list for PBXNativeTarget "DaliOS" */;
@@ -131,6 +174,10 @@
 						CreatedOnToolsVersion = 16.0;
 						TestTargetID = DA0100000000000000000001;
 					};
+					DA0100000000000000000003 = {
+						CreatedOnToolsVersion = 16.0;
+						TestTargetID = DA0100000000000000000001;
+					};
 				};
 			};
 			buildConfigurationList = DA0900000000000000000001 /* Build configuration list for PBXProject "DaliOS" */;
@@ -149,11 +196,19 @@
 			targets = (
 				DA0100000000000000000001 /* DaliOS */,
 				DA0100000000000000000002 /* DaliOSTests */,
+				DA0100000000000000000003 /* DaliOSUITests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		DA0800000000000000000003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		DA0800000000000000000001 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -171,6 +226,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		DA0700000000000000000003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		DA0700000000000000000001 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -188,6 +250,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		DA0500000000000000000004 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = DA0100000000000000000001 /* DaliOS */;
+			targetProxy = DA0500000000000000000003 /* PBXContainerItemProxy */;
+		};
 		DA0500000000000000000002 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = DA0100000000000000000001 /* DaliOS */;
@@ -196,6 +263,38 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		DA0A00000000000000000007 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = JQ28K6Y7JE;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = edu.dartmouth.dali.os.ios.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = DaliOS;
+			};
+			name = Debug;
+		};
+		DA0A00000000000000000008 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = JQ28K6Y7JE;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = edu.dartmouth.dali.os.ios.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = DaliOS;
+			};
+			name = Release;
+		};
 		DA0A00000000000000000001 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -344,6 +443,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		DA0900000000000000000004 /* Build configuration list for PBXNativeTarget "DaliOSUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DA0A00000000000000000007 /* Debug */,
+				DA0A00000000000000000008 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		DA0900000000000000000001 /* Build configuration list for PBXProject "DaliOS" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

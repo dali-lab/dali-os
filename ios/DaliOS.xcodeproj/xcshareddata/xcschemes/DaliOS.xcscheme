@@ -39,6 +39,17 @@
                ReferencedContainer = "container:DaliOS.xcodeproj">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "DA0100000000000000000003"
+               BuildableName = "DaliOSUITests.xctest"
+               BlueprintName = "DaliOSUITests"
+               ReferencedContainer = "container:DaliOS.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction
