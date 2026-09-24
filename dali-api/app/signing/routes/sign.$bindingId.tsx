@@ -12,12 +12,45 @@ import { DocEditor, looksLikeProseMirrorDoc } from "~/components/doc";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { renderNodes, type PMNode } from "~/collab/export-html";
 import type { DocBlock } from "~/collab/blocknote-server";
-import { collectSigningFields } from "~/lib/signing-fields";
-import { getBindingStateForUser, getSignerCohortsForBinding } from "~/signing/lib/state.server";
+import { collectSigningFields, bakeSigningBody } from "~/lib/signing-fields";
+import {
+  getBindingStateForUser,
+  getSignerCohortsForBinding,
+  menteeCountersignState,
+} from "~/signing/lib/state.server";
+import type { SigningAudience } from "~/generated/prisma/enums";
 import { AUDIENCE_RESOLVERS } from "~/signing/lib/audiences";
 import { recordSignature } from "~/signing/lib/sign.server";
+import { notifyCountersignRequest } from "~/signing/lib/notify.server";
 import { resolveSigningVariablesForSigner } from "~/signing/lib/variables.server";
 import { SigningFillView } from "~/signing/components/SigningFillView";
+
+// Which slot this user fills on a binding, and whether they've completed it.
+// Prefer an outstanding member obligation (a mentor signs before their mentee);
+// then a mentee countersignature; then a completed member copy so a signed
+// mentor can still reopen theirs. null = no access. Shared by the loader (which
+// also needs the status) and the action (which must re-derive the role
+// server-side rather than trust a client-posted value).
+async function resolveSigning(
+  userId: string,
+  bindingId: string,
+  audience: SigningAudience,
+  termId: string | null,
+  request: Request,
+): Promise<{ role: "member" | "mentee"; status: "signed" | "unsigned" } | null> {
+  const [memberState, menteeState, cohorts] = await Promise.all([
+    getBindingStateForUser(userId, bindingId, "member"),
+    menteeCountersignState(userId, bindingId, request),
+    getSignerCohortsForBinding(userId, termId),
+  ]);
+  const inMemberAudience = AUDIENCE_RESOLVERS[audience].includes(cohorts);
+  if (inMemberAudience && memberState.status !== "signed") return { role: "member", status: "unsigned" };
+  if (menteeState !== "not_owed") {
+    return { role: "mentee", status: menteeState === "signed" ? "signed" : "unsigned" };
+  }
+  if (memberState.status === "signed") return { role: "member", status: "signed" };
+  return null;
+}
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `${(data as { name?: string } | undefined)?.name ?? "Sign"} · DALI OS` },
@@ -55,15 +88,17 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
   if (!binding) return redirect("/sign");
 
-  const [state, cohorts] = await Promise.all([
-    getBindingStateForUser(userId, bindingId),
-    getSignerCohortsForBinding(userId, binding.termId),
-  ]);
-
-  // Gate direct access: only members in the audience (or someone who already
-  // signed) may open this. Confidentiality (HiringCycle) never lands here.
-  const inAudience = AUDIENCE_RESOLVERS[binding.document.audience].includes(cohorts);
-  if (state.status !== "signed" && !inAudience) return redirect("/");
+  // Gate direct access + pick the slot this user fills. Confidentiality
+  // (HiringCycle) never lands here.
+  const signing = await resolveSigning(
+    userId,
+    bindingId,
+    binding.document.audience,
+    binding.termId,
+    request,
+  );
+  if (!signing) return redirect("/");
+  const { role: signerRole, status } = signing;
 
   const supervisorName = binding.signatures[0]?.typedName ?? "";
   const variables = await resolveSigningVariablesForSigner(userId, {
@@ -73,7 +108,36 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   // Convert-on-read: the fill surface and field validation walk block JSON;
   // legacy ProseMirror version rows are normalized here (never rewritten).
-  const body = ensureBlocks(binding.version.body);
+  let body = ensureBlocks(binding.version.body);
+
+  // Mentee countersigning: bake their mentor's captured member fields into the
+  // body so the mentor's completed signature renders read-only while the mentee
+  // fills their own "mentee" fields. Use the EARLIEST-signed mentor when the
+  // mentee has more than one (deterministic; the mentee owes a single ack).
+  if (signerRole === "mentee") {
+    const pairs = await prisma.mentorshipPair.findMany({
+      where: { menteeUserId: userId, termId: binding.termId ?? undefined },
+      select: { mentorUserId: true },
+    });
+    if (pairs.length > 0) {
+      const mentorSig = await prisma.signingSignature.findFirst({
+        where: {
+          bindingId,
+          roleKey: "member",
+          versionId: binding.versionId,
+          signerUserId: { in: pairs.map((p) => p.mentorUserId) },
+        },
+        orderBy: { signedAt: "asc" },
+        select: { fieldValues: true },
+      });
+      if (mentorSig?.fieldValues && typeof mentorSig.fieldValues === "object") {
+        body = bakeSigningBody(body, {
+          fieldValues: mentorSig.fieldValues as Record<string, unknown>,
+        }) as DocBlock[];
+      }
+    }
+  }
+
   const fields = collectSigningFields(body);
 
   // The signed copy is the FROZEN body: pre-migration signatures are legacy
@@ -82,10 +146,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   let signedRaw: unknown = null;
   let signedLegacyHtml: string | null = null;
   let signedBlocks: DocBlock[] | null = null;
-  if (state.status === "signed") {
+  if (status === "signed") {
     const mine = await prisma.signingSignature.findUnique({
       where: {
-        bindingId_signerUserId_roleKey: { bindingId, signerUserId: userId, roleKey: "member" },
+        bindingId_signerUserId_roleKey: { bindingId, signerUserId: userId, roleKey: signerRole },
       },
       select: { frozenBody: true },
     });
@@ -105,7 +169,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     signedBlocks,
     variables,
     fields,
-    status: state.status,
+    status,
+    signerRole,
     next,
   };
 }
@@ -128,13 +193,44 @@ export async function action({ request, params }: Route.ActionArgs) {
     return { error: "Could not read your inputs — please try again." };
   }
 
+  // Re-derive the role server-side (never trust a client-posted role): the same
+  // gate the loader used decides whether this is a member signature or a mentee
+  // countersignature.
+  const userId = auth.user.sub;
+  const binding = await prisma.signingBinding.findUnique({
+    where: { id: bindingId },
+    select: { termId: true, document: { select: { audience: true } } },
+  });
+  if (!binding) return { error: "Agreement not found." };
+  const signing = await resolveSigning(
+    userId,
+    bindingId,
+    binding.document.audience,
+    binding.termId,
+    request,
+  );
+  if (!signing || signing.status === "signed") {
+    return { error: "You can't sign this document right now." };
+  }
+  const roleKey = signing.role;
+
   const result = await recordSignature({
     bindingId,
-    signerUserId: auth.user.sub,
+    signerUserId: userId,
     fieldValues,
     request,
+    roleKey,
   });
   if (!result.ok) return { error: result.error };
+
+  // A mentor just signed a countersign agreement → ask their mentees to
+  // countersign. Fire-and-forget (like the signature receipt): the signature is
+  // already durably recorded, and the notify no-ops unless the doc opts in.
+  if (roleKey === "member") {
+    void notifyCountersignRequest(bindingId, userId).catch((err) =>
+      console.error("[signing] countersign notify failed:", err),
+    );
+  }
 
   // Land on the signed confirmation view (not the inbox) so the signer gets an
   // explicit "you're done" screen with the emailed-copy note + download. Carry
@@ -198,7 +294,9 @@ export default function SignBindingPage() {
     <div className="max-w-3xl mx-auto py-10 space-y-6">
       <h1 className="text-2xl font-bold text-foreground">{data.name}</h1>
       <p className="text-sm text-muted-foreground">
-        Please read the agreement below and complete your fields to sign.
+        {data.signerRole === "mentee"
+          ? "Your mentor has signed this agreement. Review it below and add your signature to countersign."
+          : "Please read the agreement below and complete your fields to sign."}
       </p>
       <SigningFillView
         body={data.body}
@@ -206,6 +304,7 @@ export default function SignBindingPage() {
         fields={data.fields}
         next={data.next}
         error={actionData?.error}
+        signerRole={data.signerRole}
       />
     </div>
   );

@@ -281,10 +281,16 @@ export async function action({ request, params }: Route.ActionArgs) {
       audience?: SigningAudience;
       cadence?: SigningCadence;
       audienceGroupId?: string | null;
+      requiresMenteeCountersign?: boolean;
     } = {};
     if (SCOPES.includes(gateScope)) data.gateScope = gateScope;
     if (AUDIENCES.includes(audience)) data.audience = audience;
     if (CADENCES.includes(cadence)) data.cadence = cadence;
+    // Mentee-countersign opt-in (a toggle in the Settings box).
+    const countersign = formData.get("requiresMenteeCountersign");
+    if (countersign !== null) {
+      data.requiresMenteeCountersign = countersign === "true" || countersign === "on";
+    }
     // Group targeting: an explicit groupId pins a fixed group; its absence (the
     // one-click "Active this term" pill) means the binding's term group. Any
     // non-Group audience clears the stored group so it can't linger.

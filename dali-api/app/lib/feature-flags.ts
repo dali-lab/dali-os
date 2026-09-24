@@ -146,6 +146,12 @@ export const FEATURE_FLAGS = [
       "Adds Core-only buttons on the Mentorship notes grid to Slack-DM mentors who haven't filled in their notes — a bulk 'Message mentors who haven't filled in' button (with an editable message + recipient preview) and a per-mentor nudge. Each mentor also gets an in-app notification. The Slack DM is force-sent regardless of the mentor's notification preferences, but stays prod-gated (staging/dev report 'not sent' unless NOTIFY_SLACK_DM_OVERRIDE=1). Ships off.",
   },
   {
+    key: "mentee-countersign",
+    label: "Mentee countersignatures",
+    description:
+      "Turns mentorship agreements into co-signed documents: once a mentor signs the term's agreement, each of their mentees is required to countersign the same document (they see the mentor's completed copy and add their own signature). Mentees are hard-gated until they countersign, exactly like mentors, and get a 'please countersign' notification when a mentor signs. Only documents with 'Require mentee countersignature' turned on are affected. All-or-nothing (targeting a subset of users would gate some mentees while their mentors are gated for everyone). Ships off.",
+  },
+  {
     key: "activities",
     label: "Activities",
     description:
