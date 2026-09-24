@@ -38,4 +38,25 @@ describe("export-pdf renderer robustness", () => {
     ] as never);
     expect(isPdf(pdf)).toBe(true);
   });
+
+  it("renders a table (cells as tableCell objects or bare inline arrays)", async () => {
+    const pdf = await renderBlocksToPdf("Doc", [
+      {
+        id: "t",
+        type: "table",
+        props: {},
+        content: {
+          type: "tableContent",
+          columnWidths: [200, null],
+          headerRows: 1,
+          rows: [
+            { cells: [[{ type: "text", text: "A" }], { type: "tableCell", content: [{ type: "text", text: "B" }] }] },
+            { cells: [[{ type: "text", text: "1" }]] },
+          ],
+        },
+        children: [],
+      },
+    ] as never);
+    expect(isPdf(pdf)).toBe(true);
+  });
 });
