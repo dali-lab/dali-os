@@ -91,22 +91,28 @@ export async function action({ request }: Route.ActionArgs) {
   // The flag is checked here so that even if a crafted form posts these values
   // while the flag is off, the action falls through to the legacy handlers.
 
-  if (provider === "google-ba") {
+  if (provider === "magic-link") {
     const betterAuthOn = await isFeatureEnabledForEveryone("betterauth", request);
     if (betterAuthOn) {
-      // Member Google sign-in via BetterAuth. BetterAuth handles the OAuth
-      // state, cookie, and callback — we just initiate and redirect to its URL.
-      const result = await auth.api.signInSocial({
-        body: { provider: "google", callbackURL: next ?? "/" },
-        headers: request.headers,
-      });
-      // result.url is always present when callbackURL is set (redirect flow).
-      // The union type includes an undefined variant for the token flow, so we
-      // assert the string here; if somehow url is missing, a brief error page
-      // is preferable to an uncaught runtime crash.
-      return redirect(result.url!);
+      const email = String(formData.get("email") ?? "").trim().toLowerCase();
+      if (!email.includes("@")) {
+        return { error: "Enter a valid email address." };
+      }
+      // Anti-enumeration: always return the neutral "sent" response, whether or
+      // not the address has an account and whether or not the send succeeds. The
+      // link carries `next` so the click lands where the user was headed.
+      try {
+        await auth.api.signInMagicLink({
+          body: { email, callbackURL: next ?? "/" },
+          headers: request.headers,
+        });
+      } catch {
+        // Swallowed — neutral response in all cases.
+      }
+      return { sent: true as const, email };
     }
-    // Flag off — fall through to legacy google branch below.
+    // Flag off — no magic-link sign-in on the legacy login.
+    return redirect("/login");
   }
 
   if (provider === "password") {
@@ -114,6 +120,9 @@ export async function action({ request }: Route.ActionArgs) {
     if (betterAuthOn) {
       const email = String(formData.get("email") ?? "").trim().toLowerCase();
       const password = String(formData.get("password") ?? "");
+      if (!password) {
+        return { error: "Enter your password, or use a sign-in link instead." };
+      }
       try {
         // returnHeaders: true → { headers: Headers, response: { token, user, ... } }
         // We forward BetterAuth's Set-Cookie so the session persists.
@@ -197,39 +206,52 @@ function LoginBetterAuth({ next, actionData }: {
   const submitting = navigation.state === "submitting";
 
   const passwordError = actionData && "error" in actionData ? actionData.error : null;
+  const sent = actionData && "sent" in actionData && actionData.sent ? actionData : null;
+
+  if (sent) {
+    return (
+      <div className="flex flex-col gap-4">
+        <div className="rounded-2xl bg-brand-tint p-6">
+          <p className="font-heading font-semibold text-dark-blue mb-1">
+            Check your email
+          </p>
+          <p className="text-sm text-muted-foreground">
+            We sent a sign-in link to{" "}
+            <span className="font-medium text-dark-blue">{sent.email}</span>.
+            Open it to finish signing in. Links expire in a few minutes.
+          </p>
+          <div className="mt-4">
+            <a
+              href="/login"
+              className="text-sm text-muted-foreground hover:text-foreground"
+            >
+              Use a different email
+            </a>
+          </div>
+        </div>
+        <p className="text-center text-sm text-muted-foreground mt-2">
+          New to DALI?{" "}
+          <Link to="/signup" className="underline hover:text-foreground">
+            Create an account
+          </Link>
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Continue with Google */}
-      <Form method="post">
-        <input type="hidden" name="provider" value="google-ba" />
-        {next && <input type="hidden" name="next" value={next} />}
-        <button
-          type="submit"
-          disabled={submitting}
-          className="w-full rounded-xl border border-border bg-card text-dark-blue font-heading font-semibold py-3 hover:border-accent-coral transition disabled:opacity-50"
-        >
-          Continue with Google
-        </button>
-      </Form>
-
-      {/* or divider */}
-      <div className="flex items-center gap-3">
-        <span className="h-px flex-1 bg-border" />
-        <span className="text-xs text-muted-foreground">or</span>
-        <span className="h-px flex-1 bg-border" />
-      </div>
-
       {passwordError && (
         <p className="text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3">
           {passwordError}
         </p>
       )}
 
-      {/* Email + password. Magic links are for account creation only (/signup),
-          not sign-in. "Forgot password?" reuses the same email field via a
-          formNoValidate submit, so there's never a second stray email input —
-          and it doubles as recovery for anyone who skipped setting a password. */}
+      {/* One email, two ways in: a password (instant) or a sign-in link emailed
+          to the same address (no password needed — the low-friction path most
+          apps promote alongside password). Passkeys layer on top later. Password
+          is NOT `required` so the "Email me a sign-in link" button can submit
+          with just the email; the server validates each provider. */}
       <Form method="post" className="flex flex-col gap-3">
         {next && <input type="hidden" name="next" value={next} />}
         <input
@@ -243,7 +265,6 @@ function LoginBetterAuth({ next, actionData }: {
         <input
           type="password"
           name="password"
-          required
           autoComplete="current-password"
           placeholder="Password"
           className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral"
@@ -256,6 +277,15 @@ function LoginBetterAuth({ next, actionData }: {
           className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
         >
           {submitting ? "Signing in…" : "Sign in"}
+        </button>
+        <button
+          type="submit"
+          name="provider"
+          value="magic-link"
+          disabled={submitting}
+          className="w-full rounded-xl border border-border bg-card text-dark-blue font-heading font-semibold py-3 hover:border-accent-coral transition disabled:opacity-50"
+        >
+          Email me a sign-in link
         </button>
         <div className="flex justify-end">
           <Link

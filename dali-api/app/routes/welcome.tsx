@@ -41,7 +41,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   return {
     email: user.email,
     door,
-    // needsName: Google signups already have a name; magic-link signups don't.
+    // Magic-link signups arrive without a name (no Google to supply one), so
+    // ask for it when the session user has no firstName yet.
     needsName: !user.firstName,
   };
 }
@@ -188,7 +189,8 @@ export default function Welcome() {
             Set a password <span className="font-normal text-muted-foreground">(optional)</span>
           </label>
           <p className="text-xs text-muted-foreground mb-3">
-            Lets you sign in with your email — no Google or link needed.
+            Lets you sign in with a password instead of waiting on an emailed
+            link. You can always use the link.
           </p>
           <div className="flex flex-col gap-3">
             <input

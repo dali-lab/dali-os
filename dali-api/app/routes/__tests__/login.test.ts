@@ -270,8 +270,8 @@ function makeFlagOnRequest(ip: string, body: Record<string, string>) {
   });
 }
 
-// Magic links are account-creation only (/signup) — /login offers Google +
-// email/password, so there is no magic-link branch to test here.
+// /login is passwordless-first: a magic link to the email, an optional
+// password, and (later) passkeys. No Google.
 
 describe("POST /login password (flag-ON)", () => {
   it("signs in with email + password and forwards the session cookie", async () => {
@@ -309,16 +309,57 @@ describe("POST /login password (flag-ON)", () => {
   });
 });
 
-describe("POST /login google-ba (flag-ON)", () => {
-  it("redirects to BetterAuth Google URL", async () => {
+describe("POST /login magic-link (flag-ON)", () => {
+  it("emails a sign-in link and returns a neutral sent response", async () => {
     mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
-    const res = (await action({
-      request: makeFlagOnRequest("1.2.3.4", { provider: "google-ba" }),
-    } as any)) as Response;
-    expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("https://accounts.google.com/oauth");
-    expect(mockSignInSocial).toHaveBeenCalledWith(
-      expect.objectContaining({ body: expect.objectContaining({ provider: "google" }) }),
+    const result = await action({
+      request: makeFlagOnRequest("1.2.3.4", {
+        provider: "magic-link",
+        email: "ada@dartmouth.edu",
+      }),
+    } as any);
+    expect(result).toMatchObject({ sent: true, email: "ada@dartmouth.edu" });
+    expect(mockSignInMagicLink).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({ email: "ada@dartmouth.edu", callbackURL: "/" }),
+      }),
     );
+  });
+
+  it("carries a safe next into the magic-link callbackURL", async () => {
+    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
+    await action({
+      request: makeFlagOnRequest("1.2.3.4", {
+        provider: "magic-link",
+        email: "ada@dartmouth.edu",
+        next: "/calendar/check-in/m1",
+      }),
+    } as any);
+    expect(mockSignInMagicLink).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({ callbackURL: "/calendar/check-in/m1" }),
+      }),
+    );
+  });
+
+  it("still returns a neutral sent response when the send throws (anti-enumeration)", async () => {
+    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
+    mockSignInMagicLink.mockRejectedValue(new Error("boom"));
+    const result = await action({
+      request: makeFlagOnRequest("1.2.3.4", {
+        provider: "magic-link",
+        email: "nobody@dartmouth.edu",
+      }),
+    } as any);
+    expect(result).toMatchObject({ sent: true, email: "nobody@dartmouth.edu" });
+  });
+
+  it("rejects an email with no @", async () => {
+    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
+    const result = await action({
+      request: makeFlagOnRequest("1.2.3.4", { provider: "magic-link", email: "notanemail" }),
+    } as any);
+    expect(result).toMatchObject({ error: expect.stringContaining("valid email") });
+    expect(mockSignInMagicLink).not.toHaveBeenCalled();
   });
 });

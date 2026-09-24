@@ -1,12 +1,9 @@
-import { randomBytes } from "node:crypto";
 import { useEffect, useState } from "react";
 import { Form, redirect, useActionData, useNavigation } from "react-router";
 import type { Route } from "./+types/partner.login";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { checkRateLimit } from "~/lib/rate-limit";
-import { getApiBaseUrl, getAppEnv } from "~/lib/app-env";
-import { buildGoogleAuthUrl } from "~/lib/google-oauth";
 import {
   issuePartnerMagicLink,
   normalizeEmail,
@@ -19,8 +16,6 @@ import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 // UI resend cooldown. The server independently rate-limits (3 sends per
 // email per 15 minutes) — this just keeps the button from being mashed.
 const RESEND_COOLDOWN_S = 30;
-
-const OAUTH_STATE_COOKIE = "__dali_oauth_state";
 
 export const meta: Route.MetaFunction = () => [
   { title: "DALI OS · Partner sign in" },
@@ -45,48 +40,10 @@ export async function action({ request }: Route.ActionArgs) {
   const betterAuthOn = await isFeatureEnabledForEveryone("betterauth", request);
   const formData = await request.formData();
 
-  // Google sign-in — works for returning partners AND first-timers (the
-  // callback routes unknown verified emails into /partner/onboarding, same
-  // destination as the magic link). Same state-cookie shape as /login, minus
-  // the @dali.dartmouth.edu hint.
-  if (formData.get("provider") === "google") {
-    const limited = checkRateLimit(request, { max: 5, windowMs: 60_000 });
-    if (limited) return limited;
-
-    if (betterAuthOn) {
-      // BetterAuth handles the OAuth redirect. Partners are not provisioned as
-      // DALI members — the create.after @dali hook only fires for @dali.dartmouth.edu
-      // addresses, so a partner Google account becomes a non-member account.
-      const result = await auth.api.signInSocial({
-        body: { provider: "google", callbackURL: "/welcome?door=partner" },
-        headers: request.headers,
-      });
-      return redirect(result.url!);
-    }
-
-    const state = randomBytes(32).toString("base64url");
-    const secure = getAppEnv() !== "dev";
-    const stateCookie = [
-      `${OAUTH_STATE_COOKIE}=${state}`,
-      "Path=/auth/callback/google",
-      "Max-Age=600",
-      "HttpOnly",
-      "SameSite=Lax",
-      ...(secure ? ["Secure"] : []),
-    ].join("; ");
-    const headers = new Headers();
-    headers.append("Set-Cookie", stateCookie);
-    headers.set(
-      "Location",
-      buildGoogleAuthUrl({
-        clientId: process.env.GOOGLE_CLIENT_ID!,
-        redirectUri: `${getApiBaseUrl()}/auth/callback/google`,
-        scopes: ["openid", "email", "profile"],
-        state,
-      }),
-    );
-    return new Response(null, { status: 302, headers });
-  }
+  // Rate-limit every submit (the removed Google branch used to own this). The
+  // server also independently throttles magic-link sends per email.
+  const limited = checkRateLimit(request, { max: 5, windowMs: 60_000 });
+  if (limited) return limited;
 
   const email = String(formData.get("email") ?? "");
   if (!email.includes("@")) {
@@ -199,21 +156,6 @@ export default function PartnerLogin() {
                 {actionData.error}
               </p>
             )}
-            <Form method="post">
-              <input type="hidden" name="provider" value="google" />
-              <button
-                type="submit"
-                disabled={submitting}
-                className="w-full rounded-xl border border-border bg-card text-dark-blue font-heading font-semibold py-3 hover:border-accent-coral transition disabled:opacity-50"
-              >
-                Continue with Google
-              </button>
-            </Form>
-            <div className="my-5 flex items-center gap-3">
-              <span className="h-px flex-1 bg-border" />
-              <span className="text-xs text-muted-foreground">or</span>
-              <span className="h-px flex-1 bg-border" />
-            </div>
             <Form method="post" className="flex flex-col gap-4">
               <input
                 type="email"
