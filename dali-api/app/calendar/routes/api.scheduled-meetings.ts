@@ -10,7 +10,7 @@ import {
   createScheduledMeeting,
   type ScheduledMeetingScope,
 } from "~/lib/scheduled-meeting";
-import { assertMeetingRoomFree } from "~/lib/rooms.server";
+import { assertMeetingRoomsFree } from "~/lib/rooms.server";
 import { isRoomBookingEnabled } from "~/rooms/lib/access.server";
 
 const Base = {
@@ -21,9 +21,9 @@ const Base = {
   // Stored on the meeting and mirrored onto the Google event / ICS invite.
   location: z.string().trim().max(500).optional(),
   description: z.string().trim().max(5000).optional(),
-  // The DALI room the meeting occupies (room-booking flag). Must be free for
-  // every occurrence; see assertMeetingRoomFree.
-  roomId: z.string().min(1).nullable().optional(),
+  // The DALI rooms the meeting occupies (room-booking flag). Each must be free
+  // for every occurrence; see assertMeetingRoomsFree.
+  roomIds: z.array(z.string().min(1)).max(10).optional(),
   organizerCalendarLinkId: z.string().min(1).optional(),
   // Which calendar inside that account the invite lands on. Omitted = the
   // account's primary, which is what every caller got before it was askable.
@@ -135,11 +135,13 @@ export async function action({ request }: Route.ActionArgs) {
     scope = { type: "None" };
   }
 
-  const roomId =
-    body.roomId && (await isRoomBookingEnabled(auth.user.sub, request)) ? body.roomId : null;
-  if (roomId && body.startTime) {
-    const free = await assertMeetingRoomFree({
-      roomId,
+  const roomIds =
+    body.roomIds?.length && (await isRoomBookingEnabled(auth.user.sub, request))
+      ? [...new Set(body.roomIds)]
+      : [];
+  if (roomIds.length && body.startTime) {
+    const free = await assertMeetingRoomsFree({
+      roomIds,
       selectedAt: new Date(body.startTime),
       durationMinutes: body.durationMinutes,
       recurrenceRule: body.recurrenceRule ?? null,
@@ -159,7 +161,7 @@ export async function action({ request }: Route.ActionArgs) {
     recurrenceRule: body.recurrenceRule,
     location: body.location,
     description: body.description,
-    roomId,
+    roomIds,
     organizerCalendarLinkId: body.organizerCalendarLinkId,
     organizerCalendarId: body.organizerCalendarId,
     meetingType: body.meetingType,

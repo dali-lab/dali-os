@@ -1017,6 +1017,7 @@ describe("updateScheduledMeeting", () => {
         isCoreMeeting: false,
         meetingTypeLabel: null,
         projectId: null,
+        rooms: [{ id: "room-1" }],
       }),
     );
     p.userCalendarLink.findUnique.mockResolvedValue({ id: "link-1", enabled: true, externalEmail: "org@test.com", userId: "org-1" });
@@ -1058,6 +1059,10 @@ describe("updateScheduledMeeting", () => {
     );
     // A new Google event must be created for the new series
     expect(createGoogleCalendarEvent).toHaveBeenCalled();
+    // The new series keeps the rooms the original occupied.
+    expect(mockCreate.scheduledMeeting.create.mock.calls[0]![0].data.rooms).toEqual({
+      connect: [{ id: "room-1" }],
+    });
   });
 });
 

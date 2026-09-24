@@ -64,7 +64,7 @@ export async function getRoomSchedule(
     }),
     db.scheduledMeeting.findMany({
       where: {
-        roomId,
+        rooms: { some: { id: roomId } },
         status: "Confirmed",
         selectedAt: { not: null, lt: new Date(windowEnd.getTime() + OCCURRENCE_SCAN_BAND_MS) },
         ...(opts.excludeMeetingId ? { id: { not: opts.excludeMeetingId } } : {}),
@@ -136,8 +136,8 @@ export type RoomWriteResult<T> =
   | { ok: true; value: T }
   | { ok: false; error: string; status: number };
 
-function conflictError(c: RoomScheduleItem) {
-  return { ok: false as const, error: `The room is already booked then ("${c.title}")`, status: 409 };
+function conflictError(c: RoomScheduleItem, roomName = "The room") {
+  return { ok: false as const, error: `${roomName} is already booked then ("${c.title}")`, status: 409 };
 }
 
 export async function createRoomBooking(input: {
@@ -204,19 +204,33 @@ export async function cancelRoomBooking(bookingId: string, actorUserId: string) 
 }
 
 /**
- * Reject a meeting's room claim if any of its occurrences (the next
- * MEETING_CONFLICT_HORIZON for a series) collides with the room's schedule.
- * Called by the meeting create/update routes before they write roomId.
+ * Reject a meeting's room claims if any of its occurrences (the next
+ * MEETING_CONFLICT_HORIZON for a series) collides with any of the rooms'
+ * schedules. Called by the meeting create/update routes before they write the
+ * rooms. `newRoomIds` are the rooms this write adds: only those must exist and
+ * be unarchived, so a room archived after it was picked doesn't block
+ * unrelated edits (defaults to all of `roomIds`).
  */
-export async function assertMeetingRoomFree(input: {
-  roomId: string;
+export async function assertMeetingRoomsFree(input: {
+  roomIds: string[];
+  newRoomIds?: string[];
   meetingId?: string;
   selectedAt: Date;
   durationMinutes: number;
   recurrenceRule: string | null;
 }): Promise<RoomWriteResult<null>> {
-  const room = await prisma.room.findUnique({ where: { id: input.roomId }, select: { archivedAt: true } });
-  if (!room || room.archivedAt) return { ok: false, error: "Room not found", status: 404 };
+  const adding = new Set(input.newRoomIds ?? input.roomIds);
+  const rooms = await prisma.room.findMany({
+    where: { id: { in: input.roomIds } },
+    select: { id: true, name: true, archivedAt: true },
+  });
+  const byId = new Map(rooms.map((r) => [r.id, r]));
+  const active = [];
+  for (const id of input.roomIds) {
+    const room = byId.get(id);
+    if (room && !room.archivedAt) active.push(room);
+    else if (adding.has(id)) return { ok: false, error: "Room not found", status: 404 };
+  }
 
   const horizonStart = new Date(Math.max(input.selectedAt.getTime(), Date.now()) - 60 * 60_000);
   const horizonEnd = input.recurrenceRule
@@ -225,15 +239,17 @@ export async function assertMeetingRoomFree(input: {
   const occurrences = expandOccurrences(input, [], horizonStart, horizonEnd);
   if (occurrences.length === 0) return { ok: true, value: null };
 
-  const schedule = await getRoomSchedule(
-    input.roomId,
-    occurrences[0].start,
-    occurrences[occurrences.length - 1].end,
-    { excludeMeetingId: input.meetingId },
-  );
-  for (const occ of occurrences) {
-    const conflict = schedule.find((s) => overlaps(s, occ.start, occ.end));
-    if (conflict) return conflictError(conflict);
+  for (const room of active) {
+    const schedule = await getRoomSchedule(
+      room.id,
+      occurrences[0].start,
+      occurrences[occurrences.length - 1].end,
+      { excludeMeetingId: input.meetingId },
+    );
+    for (const occ of occurrences) {
+      const conflict = schedule.find((s) => overlaps(s, occ.start, occ.end));
+      if (conflict) return conflictError(conflict, room.name);
+    }
   }
   return { ok: true, value: null };
 }

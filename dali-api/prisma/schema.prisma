@@ -1826,12 +1826,12 @@ model ScheduledMeeting {
   location    String?
   description String?
 
-  // The DALI room this meeting occupies, if any. Puts the meeting on that
-  // room's schedule (so it blocks room bookings and shows on the door display)
-  // and, for SelfCheckIn events, turns the door display into a pass scanner
-  // while it runs. `location` stays free text for everything else.
-  roomId String?
-  room   Room?   @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  // The DALI rooms this meeting occupies (a big event can span several). Puts
+  // the meeting on each room's schedule (so it blocks room bookings and shows
+  // on the door displays) and, for SelfCheckIn events, turns each room's door
+  // display into a pass scanner while it runs. `location` stays free text for
+  // everything else.
+  rooms Room[]
 
   scopeType ScopeType
   // Untyped at DB layer — dispatched in app code by scopeType.
@@ -1908,8 +1908,6 @@ model ScheduledMeeting {
   timeProposals MeetingTimeProposal[]
 
   createdAt DateTime @default(now())
-
-  @@index([roomId])
 }
 
 enum ScopeType {

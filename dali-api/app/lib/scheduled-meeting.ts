@@ -217,8 +217,8 @@ export type CreateScheduledMeetingInput = {
   /** Stored on the meeting and mirrored onto the Google event / ICS invite. */
   location?: string | null;
   description?: string | null;
-  /** The DALI room this meeting occupies. The caller checks it's free (assertMeetingRoomFree). */
-  roomId?: string | null;
+  /** The DALI rooms this meeting occupies. The caller checks they're free (assertMeetingRoomsFree). */
+  roomIds?: string[];
   // Meeting-asset fields. When meetingType is set, the meeting records its type
   // and a MeetingAttendance row is fanned out per participant (incl. the
   // organizer). meetingTypeLabel supplies the display label — required when
@@ -485,7 +485,7 @@ export async function createScheduledMeeting(
       durationMinutes: input.durationMinutes,
       location,
       description,
-      roomId: input.roomId ?? null,
+      ...(input.roomIds?.length ? { rooms: { connect: input.roomIds.map((id) => ({ id })) } } : {}),
       scopeType: input.scope.type,
       scopeId,
       participantUserIds,
@@ -1371,9 +1371,10 @@ export type UpdateScheduledMeetingInput = {
   // MeetingException carries no per-occurrence copy of either field.
   location?: string;
   description?: string;
-  // Omitted leaves the room alone; null clears it. A room belongs to the whole
-  // series, so a scope="this" edit ignores it. The caller checks it's free.
-  roomId?: string | null;
+  // Omitted leaves the rooms alone; a list (possibly empty) replaces them.
+  // Rooms belong to the whole series, so a scope="this" edit ignores them.
+  // The caller checks they're free.
+  roomIds?: string[];
   // Omitted leaves the stored guest emails alone; a set list replaces them.
   guestEmails?: string[];
   // Scoped edit fields (optional, default "all"):
@@ -1426,7 +1427,7 @@ export async function updateScheduledMeeting(
       projectId: true,
       location: true,
       description: true,
-      roomId: true,
+      rooms: { select: { id: true } },
     },
   });
   if (!meeting) return { ok: false, error: "Not found", status: 404 };
@@ -1560,7 +1561,7 @@ export async function updateScheduledMeeting(
       isCoreMeeting: meeting.isCoreMeeting,
       location: input.location ?? meeting.location,
       description: input.description ?? meeting.description,
-      roomId: input.roomId !== undefined ? input.roomId : meeting.roomId,
+      roomIds: input.roomIds ?? meeting.rooms.map((r) => r.id),
       guestEmails: input.guestEmails ?? meeting.guestEmails,
     });
 
@@ -1591,7 +1592,7 @@ export async function updateScheduledMeeting(
       status: startDate ? "Confirmed" : "Searching",
       ...(input.location !== undefined ? { location: input.location.trim() || null } : {}),
       ...(input.description !== undefined ? { description: input.description.trim() || null } : {}),
-      ...(input.roomId !== undefined ? { roomId: input.roomId } : {}),
+      ...(input.roomIds !== undefined ? { rooms: { set: input.roomIds.map((id) => ({ id })) } } : {}),
     },
   });
 

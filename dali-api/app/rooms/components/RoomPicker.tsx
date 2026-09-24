@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
-import { Select } from "~/components/ui/floating";
+import { MultiSelect } from "~/components/ui/floating";
 
 export type RoomOption = { id: string; name: string };
 
 /**
- * "Which DALI room" picker for the meeting composer. Renders nothing when the
- * `room-booking` flag is off (the caller passes `enabled`). `onChange` also
- * hands back the room's name so the caller can prefill Location.
+ * "Which DALI rooms" picker for the meeting composer: a big event can span
+ * several. Renders nothing when the `room-booking` flag is off (the caller
+ * passes `enabled`). `onChange` also hands back the chosen rooms so the caller
+ * can prefill Location.
  */
 export function RoomPicker({
   enabled,
@@ -15,8 +16,8 @@ export function RoomPicker({
   className,
 }: {
   enabled: boolean;
-  value: string;
-  onChange: (roomId: string, room: RoomOption | null) => void;
+  value: string[];
+  onChange: (roomIds: string[], rooms: RoomOption[]) => void;
   className?: string;
 }) {
   const [rooms, setRooms] = useState<RoomOption[] | null>(null);
@@ -40,11 +41,12 @@ export function RoomPicker({
   if (!enabled || !rooms || rooms.length === 0) return null;
 
   return (
-    <Select
-      ariaLabel="Room"
-      value={value}
-      onChange={(id) => onChange(id, rooms.find((r) => r.id === id) ?? null)}
-      options={[{ value: "", label: "No room" }, ...rooms.map((r) => ({ value: r.id, label: r.name }))]}
+    <MultiSelect
+      ariaLabel="Rooms"
+      placeholder="No room"
+      values={value}
+      onChange={(ids) => onChange(ids, rooms.filter((r) => ids.includes(r.id)))}
+      options={rooms.map((r) => ({ value: r.id, label: r.name }))}
       buttonClassName={className}
     />
   );

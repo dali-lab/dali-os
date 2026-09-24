@@ -145,7 +145,7 @@ export function CreateEventModal({
   const [endTime, setEndTime] = useState<string>(() => extractTime(initEnd ?? ""));
   const [location, setLocation] = useState("");
   const roomBooking = useFeatureFlag("room-booking");
-  const [roomId, setRoomId] = useState("");
+  const [roomIds, setRoomIds] = useState<string[]>([]);
   const [description, setDescription] = useState("");
   const [destination, setDestination] = useState(defaultDest);
 
@@ -363,7 +363,7 @@ export function CreateEventModal({
         durationMinutes,
       };
       if (location.trim()) payload.location = location.trim();
-      if (roomBooking && roomId) payload.roomId = roomId;
+      if (roomBooking && roomIds.length) payload.roomIds = roomIds;
       if (description.trim()) payload.description = description.trim();
       if (selectedStartLocal) {
         const d = new Date(selectedStartLocal);
@@ -902,15 +902,15 @@ export function CreateEventModal({
                 <div>
                   <span className={labelClass}>
                     <span className="inline-flex items-center gap-1">
-                      <DoorOpen className="h-3 w-3" /> Room
+                      <DoorOpen className="h-3 w-3" /> Rooms
                     </span>
                   </span>
                   <RoomPicker
                     enabled={roomBooking}
-                    value={roomId}
-                    onChange={(id, room) => {
-                      setRoomId(id);
-                      if (room && !location.trim()) setLocation(room.name);
+                    value={roomIds}
+                    onChange={(ids, rooms) => {
+                      setRoomIds(ids);
+                      if (rooms.length && !location.trim()) setLocation(rooms.map((r) => r.name).join(", "));
                     }}
                     className={fieldClass}
                   />

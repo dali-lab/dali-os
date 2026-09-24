@@ -9,7 +9,7 @@ import {
   type ScheduledMeetingScope,
 } from "~/lib/scheduled-meeting";
 import { prisma } from "~/lib/db";
-import { assertMeetingRoomFree } from "~/lib/rooms.server";
+import { assertMeetingRoomsFree } from "~/lib/rooms.server";
 import { isRoomBookingEnabled } from "~/rooms/lib/access.server";
 
 // Edit is deliberately narrower than create: title, time, location, description,
@@ -23,8 +23,9 @@ const Base = {
   // Omitted leaves the stored value alone; "" clears it (here and on Google).
   location: z.string().trim().max(500).optional(),
   description: z.string().trim().max(5000).optional(),
-  // Omitted leaves the room alone; null clears it (room-booking flag).
-  roomId: z.string().min(1).nullable().optional(),
+  // Omitted leaves the rooms alone; a list (possibly empty) replaces them
+  // (room-booking flag).
+  roomIds: z.array(z.string().min(1)).max(10).optional(),
   // People with no DALI profile, invited by address through the Google event.
   guestEmails: z.array(z.string().trim().email().max(320)).max(MAX_GUEST_EMAILS).optional(),
 } as const;
@@ -69,27 +70,28 @@ export async function action({ request, params }: Route.ActionArgs) {
     scope = { type: "None" };
   }
 
-  const roomId =
-    body.roomId !== undefined && (await isRoomBookingEnabled(auth.user.sub, request))
-      ? body.roomId
+  const roomIds =
+    body.roomIds !== undefined && (await isRoomBookingEnabled(auth.user.sub, request))
+      ? [...new Set(body.roomIds)]
       : undefined;
-  // A retimed meeting must still fit its room, so check the room it will end
-  // up in whether or not this edit changed it.
+  // A retimed meeting must still fit its rooms, so check the rooms it will end
+  // up in whether or not this edit changed them.
   const current = await prisma.scheduledMeeting.findUnique({
     where: { id: params.id! },
-    select: { roomId: true },
+    select: { rooms: { select: { id: true } } },
   });
-  const effectiveRoomId = roomId !== undefined ? roomId : (current?.roomId ?? null);
-  if (effectiveRoomId && body.startTime) {
-    const free = await assertMeetingRoomFree({
-      roomId: effectiveRoomId,
+  const currentIds = current?.rooms.map((r) => r.id) ?? [];
+  const effectiveRoomIds = roomIds ?? currentIds;
+  if (effectiveRoomIds.length && body.startTime) {
+    const free = await assertMeetingRoomsFree({
+      roomIds: effectiveRoomIds,
+      newRoomIds: effectiveRoomIds.filter((id) => !currentIds.includes(id)),
       meetingId: params.id!,
       selectedAt: new Date(body.startTime),
       durationMinutes: body.durationMinutes,
       recurrenceRule: body.recurrenceRule ?? null,
     });
-    // A room archived since it was picked shouldn't block unrelated edits.
-    if (!free.ok && (roomId !== undefined || free.status === 409)) {
+    if (!free.ok) {
       return withCors(request, Response.json({ error: free.error }, { status: free.status }));
     }
   }
@@ -102,7 +104,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     recurrenceRule: body.recurrenceRule,
     location: body.location,
     description: body.description,
-    roomId,
+    roomIds,
     guestEmails: body.guestEmails,
   });
 

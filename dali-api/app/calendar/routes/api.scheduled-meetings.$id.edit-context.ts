@@ -34,7 +34,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       externalEventId: true,
       location: true,
       description: true,
-      roomId: true,
+      rooms: { select: { id: true } },
     },
   });
   if (!meeting || meeting.status === "Cancelled") {
@@ -72,7 +72,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         recurrenceRule: meeting.recurrenceRule,
         location: meeting.location,
         description: meeting.description,
-        roomId: meeting.roomId,
+        roomIds: meeting.rooms.map((r) => r.id),
         scopeType: meeting.scopeType,
         groupId: meeting.scopeType === "Group" ? meeting.scopeId : null,
         participantUserIds: meeting.participantUserIds,

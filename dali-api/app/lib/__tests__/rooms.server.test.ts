@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db", () => {
   const prisma = {
-    room: { findUnique: vi.fn() },
+    room: { findUnique: vi.fn(), findMany: vi.fn() },
     roomBooking: { findMany: vi.fn(), create: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
     scheduledMeeting: { findMany: vi.fn() },
     $executeRaw: vi.fn(),
@@ -15,7 +15,7 @@ vi.mock("~/lib/scheduled-meeting", () => ({ CHECK_IN_GRACE_MIN: 15 }));
 
 import { prisma } from "~/lib/db";
 import {
-  assertMeetingRoomFree,
+  assertMeetingRoomsFree,
   cancelRoomBooking,
   createRoomBooking,
   currentEvent,
@@ -24,7 +24,7 @@ import {
 } from "~/lib/rooms.server";
 
 const m = prisma as unknown as {
-  room: { findUnique: ReturnType<typeof vi.fn> };
+  room: { findUnique: ReturnType<typeof vi.fn>; findMany: ReturnType<typeof vi.fn> };
   roomBooking: {
     findMany: ReturnType<typeof vi.fn>;
     create: ReturnType<typeof vi.fn>;
@@ -57,6 +57,9 @@ beforeEach(() => {
   m.roomBooking.findMany.mockResolvedValue([]);
   m.scheduledMeeting.findMany.mockResolvedValue([]);
   m.room.findUnique.mockResolvedValue({ archivedAt: null });
+  m.room.findMany.mockImplementation(({ where }: { where: { id: { in: string[] } } }) =>
+    where.id.in.map((id) => ({ id, name: id === "r2" ? "Lounge" : "Studio", archivedAt: null })),
+  );
   m.roomBooking.create.mockImplementation(({ data }: { data: { start: Date; end: Date } }) => ({
     id: "b-new",
     start: data.start,
@@ -194,30 +197,40 @@ describe("cancelRoomBooking", () => {
   });
 });
 
-describe("assertMeetingRoomFree", () => {
-  it("409s when a meeting occurrence collides with a booking", async () => {
+describe("assertMeetingRoomsFree", () => {
+  it("409s when a meeting occurrence collides with a booking, naming the room", async () => {
     const start = new Date(Date.now() + 24 * H);
-    m.roomBooking.findMany.mockResolvedValue([
-      { id: "b1", title: null, start, end: new Date(start.getTime() + H), user: ada },
-    ]);
-    const res = await assertMeetingRoomFree({
-      roomId: "r1",
+    m.roomBooking.findMany.mockImplementation(({ where }: { where: { roomId: string } }) =>
+      where.roomId === "r2" ? [{ id: "b1", title: null, start, end: new Date(start.getTime() + H), user: ada }] : [],
+    );
+    const res = await assertMeetingRoomsFree({
+      roomIds: ["r1", "r2"],
       selectedAt: new Date(start.getTime() + 30 * 60_000),
       durationMinutes: 60,
       recurrenceRule: null,
     });
     expect(res).toMatchObject({ ok: false, status: 409 });
+    expect(res.ok === false && res.error).toContain("Lounge");
   });
 
-  it("passes when the room is free and excludes the meeting itself", async () => {
-    const res = await assertMeetingRoomFree({
-      roomId: "r1",
+  it("passes when every room is free and excludes the meeting itself", async () => {
+    const res = await assertMeetingRoomsFree({
+      roomIds: ["r1", "r2"],
       meetingId: "m1",
       selectedAt: new Date(Date.now() + 24 * H),
       durationMinutes: 60,
       recurrenceRule: "FREQ=WEEKLY",
     });
     expect(res.ok).toBe(true);
+    expect(m.scheduledMeeting.findMany).toHaveBeenCalledTimes(2);
     expect(m.scheduledMeeting.findMany.mock.calls[0]![0].where.id).toEqual({ not: "m1" });
+    expect(m.scheduledMeeting.findMany.mock.calls[1]![0].where.rooms).toEqual({ some: { id: "r2" } });
+  });
+
+  it("404s a newly added archived room but tolerates one already on the meeting", async () => {
+    m.room.findMany.mockResolvedValue([{ id: "r1", name: "Studio", archivedAt: new Date() }]);
+    const base = { selectedAt: new Date(Date.now() + 24 * H), durationMinutes: 60, recurrenceRule: null };
+    expect(await assertMeetingRoomsFree({ ...base, roomIds: ["r1"] })).toMatchObject({ ok: false, status: 404 });
+    expect((await assertMeetingRoomsFree({ ...base, roomIds: ["r1"], newRoomIds: [] })).ok).toBe(true);
   });
 });

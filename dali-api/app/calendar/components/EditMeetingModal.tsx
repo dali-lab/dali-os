@@ -21,7 +21,7 @@ export type EditContext = {
     durationMinutes: number;
     recurrenceRule: string | null;
     location: string | null;
-    roomId: string | null;
+    roomIds: string[];
     description: string | null;
     scopeType: "None" | "Group" | "UserList" | "Project";
     groupId: string | null;
@@ -110,7 +110,7 @@ export function EditMeetingModal({
   const [endTime, setEndTime] = useState("");
   const [location, setLocation] = useState("");
   const roomBooking = useFeatureFlag("room-booking");
-  const [roomId, setRoomId] = useState("");
+  const [roomIds, setRoomIds] = useState<string[]>([]);
   const [description, setDescription] = useState("");
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
@@ -150,7 +150,7 @@ export function EditMeetingModal({
         setEndTime(end);
         setRecurrenceRule(data.meeting.recurrenceRule);
         setLocation(data.meeting.location ?? "");
-        setRoomId(data.meeting.roomId ?? "");
+        setRoomIds(data.meeting.roomIds ?? []);
         setDescription(data.meeting.description ?? "");
         setGuestEmails(data.meeting.guestEmails);
         if (data.meeting.scopeType === "Group" && data.meeting.groupId) {
@@ -226,7 +226,7 @@ export function EditMeetingModal({
         description: description.trim(),
         guestEmails,
       };
-      if (roomBooking) payload.roomId = roomId || null;
+      if (roomBooking) payload.roomIds = roomIds;
       const local = new Date(`${date}T${startTime}`);
       if (!isNaN(local.getTime())) payload.startTime = local.toISOString();
       if (recurrenceRule) payload.recurrenceRule = recurrenceRule;
@@ -373,15 +373,15 @@ export function EditMeetingModal({
             <div>
               <span className={labelClass}>
                 <span className="inline-flex items-center gap-1">
-                  <DoorOpen className="h-3 w-3" /> Room
+                  <DoorOpen className="h-3 w-3" /> Rooms
                 </span>
               </span>
               <RoomPicker
                 enabled={roomBooking}
-                value={roomId}
-                onChange={(id, room) => {
-                  setRoomId(id);
-                  if (room && !location.trim()) setLocation(room.name);
+                value={roomIds}
+                onChange={(ids, rooms) => {
+                  setRoomIds(ids);
+                  if (rooms.length && !location.trim()) setLocation(rooms.map((r) => r.name).join(", "));
                 }}
                 className={fieldClass}
               />
