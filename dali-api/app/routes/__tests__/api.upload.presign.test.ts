@@ -3,6 +3,8 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
 }));
+// Factory mock: the real roles module reaches ~/lib/db.
+vi.mock("~/lib/roles", () => ({ isLabMember: vi.fn() }));
 vi.mock("~/lib/s3", () => ({
   getUploadPost: vi.fn(),
   getDownloadUrl: vi.fn(),
@@ -12,6 +14,7 @@ vi.mock("~/lib/s3", () => ({
 
 import { requireAuth } from "~/lib/auth";
 import { getUploadPost, isS3Configured } from "~/lib/s3";
+import { isLabMember } from "~/lib/roles";
 import { _resetForTests } from "~/lib/rate-limit";
 import { MAX_FILE_STORE_BYTES, MAX_UPLOAD_BYTES } from "~/lib/file-validation";
 import { action } from "~/routes/api.upload.presign";
@@ -46,6 +49,7 @@ beforeEach(() => {
     user: { sub: USER_ID, email: "u@x.com", type: "user" },
   } as any);
   vi.mocked(getUploadPost).mockResolvedValue(PRESIGNED_POST as any);
+  vi.mocked(isLabMember).mockResolvedValue(true);
 });
 
 describe("POST /api/upload/presign response shape", () => {
@@ -234,6 +238,49 @@ describe("POST /api/upload/presign response shape", () => {
       });
     },
   );
+
+  it("reads the tier off a key the client already scoped", async () => {
+    const res = await action({
+      request: makeRequest({
+        key: "uploads/project-files/proj1/uuid-deck.pdf",
+        contentType: "application/pdf",
+        contentLength: 50 * 1024 * 1024,
+      }),
+    } as any);
+    expect(res.status).toBe(200);
+    expect(getUploadPost).toHaveBeenCalledWith(
+      "uploads/project-files/proj1/uuid-deck.pdf",
+      "application/pdf",
+      { maxBytes: MAX_FILE_STORE_BYTES, expiresIn: 900 },
+    );
+  });
+
+  it("keeps a non-member (partner, applicant) at 10 MB even in the file store", async () => {
+    vi.mocked(isLabMember).mockResolvedValue(false);
+    const big = await action({
+      request: makeRequest({
+        key: "drive-files/uuid-deck.pdf",
+        contentType: "application/pdf",
+        contentLength: 50 * 1024 * 1024,
+      }),
+    } as any);
+    expect(big.status).toBe(413);
+    expect((await big.json()).error).toContain("10 MB");
+
+    const small = await action({
+      request: makeRequest({ key: "drive-files/uuid-deck.pdf", contentType: "application/pdf" }),
+    } as any);
+    expect(small.status).toBe(200);
+    expect(getUploadPost).toHaveBeenCalledWith("uploads/drive-files/uuid-deck.pdf", "application/pdf", {
+      maxBytes: MAX_UPLOAD_BYTES,
+      expiresIn: 300,
+    });
+  });
+
+  it("doesn't look up membership for an ordinary upload", async () => {
+    await action({ request: makeRequest({ key: "avatars/me.png", contentType: "image/png" }) } as any);
+    expect(isLabMember).not.toHaveBeenCalled();
+  });
 
   it("returns 413 past 100 MB even in the file store", async () => {
     const res = await action({

@@ -19,6 +19,12 @@ const FILE_STORE_PREFIXES = ["project-files/", "lab-files/", "drive-files/"];
 
 export type UploadCap = { maxBytes: number; label: string; expiresIn: number };
 
+export const DEFAULT_UPLOAD_CAP: UploadCap = {
+  maxBytes: MAX_UPLOAD_BYTES,
+  label: MAX_UPLOAD_LABEL,
+  expiresIn: 300,
+};
+
 /** The size cap and presigned-POST lifetime for an upload key. Accepts the key
  *  with or without its `uploads/` scope, since the browser builds the prefix
  *  and the presign route adds the scope. Shared by the client pre-check and
@@ -30,7 +36,7 @@ export function uploadCapForKey(key: string): UploadCap {
     // turn the response into a curl call first.
     return { maxBytes: MAX_FILE_STORE_BYTES, label: MAX_FILE_STORE_LABEL, expiresIn: 900 };
   }
-  return { maxBytes: MAX_UPLOAD_BYTES, label: MAX_UPLOAD_LABEL, expiresIn: 300 };
+  return DEFAULT_UPLOAD_CAP;
 }
 
 // Defense-in-depth: known-dangerous types/extensions rejected regardless of

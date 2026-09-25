@@ -88,7 +88,7 @@ describe("create_project_file_upload", () => {
   it("builds a curl command with literal policy fields and the file part last", async () => {
     const { curl } = await runCreateProjectFileUpload("u1", input);
 
-    expect(curl.startsWith("curl -sS --fail-with-body -X POST 'https://bucket.s3.amazonaws.com/'")).toBe(true);
+    expect(curl.startsWith("curl -sS -w '\nHTTP %{http_code}\n' -X POST 'https://bucket.s3.amazonaws.com/'")).toBe(true);
     expect(curl).toContain("--form-string 'Policy=eyJleHAiOiJ9'");
     expect(curl).toContain("--form-string 'Content-Type=application/pdf'");
     expect(curl.endsWith("-F 'file=@/path/to/Final_Deck.pdf'")).toBe(true);
@@ -114,6 +114,13 @@ describe("create_project_file_upload", () => {
       runCreateProjectFileUpload("u1", { ...input, sizeBytes: MAX_FILE_STORE_BYTES + 1 }),
     ).rejects.toMatchObject({ status: 400, message: "File too large (max 100 MB)" });
     expect(getUploadPost).not.toHaveBeenCalled();
+  });
+
+  it.each([-1, 1.5])("refuses a malformed sizeBytes (%s)", async (sizeBytes) => {
+    await expect(runCreateProjectFileUpload("u1", { ...input, sizeBytes })).rejects.toMatchObject({
+      status: 400,
+      message: "sizeBytes must be a non-negative integer",
+    });
   });
 
   it("accepts a declared 90 MB file", async () => {
@@ -184,6 +191,7 @@ describe("finalize_project_file_upload", () => {
     ["a non-project upload", "uploads/avatars/me.png"],
     ["a bare prefix", "uploads/project-files/p1/"],
     ["a traversal", "uploads/project-files/p1/../p2/x.pdf"],
+    ["a nested path", "uploads/project-files/p1/sub/x.pdf"],
   ])("refuses %s", async (_label, key) => {
     await expect(runFinalizeProjectFileUpload("u1", { projectId: "p1", key })).rejects.toMatchObject({
       status: 400,
@@ -229,6 +237,39 @@ describe("finalize_project_file_upload", () => {
     await expect(
       runFinalizeProjectFileUpload("u1", { projectId: "p1", key: KEY, fileName: "payload.exe" }),
     ).rejects.toMatchObject({ status: 400, message: "File type not allowed" });
+  });
+
+  it("finalizes the exact key create minted, even for a name with '..' in it", async () => {
+    const { key } = await runCreateProjectFileUpload("u1", {
+      projectId: "p1",
+      fileName: "draft..final.pdf",
+      contentType: "application/pdf",
+    });
+    const res = await runFinalizeProjectFileUpload("u1", { projectId: "p1", key });
+    expect(res).toMatchObject({ fileId: "f1", key });
+    expect(txVersion.create.mock.calls[0][0].data.fileName).toBe("draft..final.pdf");
+  });
+
+  it("defaults the file name to the whole segment when the key has no uuid", async () => {
+    await runFinalizeProjectFileUpload("u1", { projectId: "p1", key: "uploads/project-files/p1/report.pdf" });
+    expect(txVersion.create.mock.calls[0][0].data.fileName).toBe("report.pdf");
+  });
+
+  it("refuses an object whose stored type is blocked, whatever the name", async () => {
+    vi.mocked(headObject).mockResolvedValue({ sizeBytes: 10, contentType: "application/x-msdownload" });
+    await expect(runFinalizeProjectFileUpload("u1", { projectId: "p1", key: KEY })).rejects.toMatchObject({
+      status: 400,
+      message: "File type not allowed",
+    });
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("points at the POST when storage can't find the key (403 without ListBucket)", async () => {
+    vi.mocked(headObject).mockRejectedValue(Object.assign(new Error("Forbidden"), { name: "Unknown" }));
+    await expect(runFinalizeProjectFileUpload("u1", { projectId: "p1", key: KEY })).rejects.toMatchObject({
+      status: 400,
+      message: expect.stringContaining("HTTP 204"),
+    });
   });
 
   it("maps an unconfigured bucket to a plain message", async () => {

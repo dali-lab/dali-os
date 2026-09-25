@@ -30,7 +30,7 @@ import { createProjectFileWithVersion, rawUploadSrc } from "../upload-project-fi
 
 export const CREATE_PROJECT_FILE_UPLOAD_TOOL = {
   name: "create_project_file_upload",
-  description: `Start uploading a file of up to ${MAX_FILE_STORE_LABEL} to a project, without base64. Returns a presigned S3 POST (uploadUrl + fields) and a ready curl command: run it with the local file path, expect HTTP 204, then call finalize_project_file_upload with the returned key to add the file to the project's Files list. To add the upload as a new version of an existing file instead, pass the key to manage_project_file add_version and skip finalize. The link expires after 15 minutes. If you send the POST yourself, send every field before the file part — S3 ignores fields after it. Requires Core or being staffed on the project.`,
+  description: `Start uploading a file of up to ${MAX_FILE_STORE_LABEL} to a project, without base64. Returns a presigned S3 POST (uploadUrl + fields) and a ready curl command for a POSIX shell: run it with the local file path, expect HTTP 204, then call finalize_project_file_upload with the returned key to add the file to the project's Files list. To add the upload as a new version of an existing file instead, pass the key to manage_project_file add_version and skip finalize. The link expires after 15 minutes. If you send the POST yourself, send every field before the file part — S3 ignores fields after it. Requires Core or being staffed on the project.`,
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -45,7 +45,7 @@ export const CREATE_PROJECT_FILE_UPLOAD_TOOL = {
         type: "string",
         minLength: 1,
         maxLength: 200,
-        description: "MIME type. S3 rejects the POST if the file part is sent as anything else.",
+        description: "MIME type. It is signed into the upload: the Content-Type form field must match it exactly (the curl command sends it).",
       },
       sizeBytes: {
         type: "number",
@@ -69,6 +69,7 @@ export const FINALIZE_PROJECT_FILE_UPLOAD_TOOL = {
       key: {
         type: "string",
         minLength: 1,
+        maxLength: 1024,
         description: "The key returned by create_project_file_upload.",
       },
       fileName: {
@@ -115,9 +116,10 @@ function shellQuote(value: string): string {
 }
 
 /** `--form-string` for the policy fields so curl never reads a value as `@file`
- *  or splits a `;` inside a Content-Type; `-F` only for the file part, last. */
+ *  or splits a `;` inside a Content-Type; `-F` only for the file part, last.
+ *  Prints the status on its own line: 204 on success, S3's error XML otherwise. */
 function curlCommand(url: string, fields: Record<string, string>, fileName: string): string {
-  const parts = ["curl", "-sS", "--fail-with-body", "-X", "POST", shellQuote(url)];
+  const parts = ["curl", "-sS", "-w", shellQuote("\nHTTP %{http_code}\n"), "-X", "POST", shellQuote(url)];
   for (const [name, value] of Object.entries(fields)) {
     parts.push("--form-string", shellQuote(`${name}=${value}`));
   }
@@ -170,7 +172,7 @@ export async function runCreateProjectFileUpload(callerId: string, input: Create
     maxBytes: cap.maxBytes,
     expiresAt: new Date(Date.now() + cap.expiresIn * 1000).toISOString(),
     curl: curlCommand(url, fields, safeName),
-    next: "Replace /path/to/… with the local file path and run the curl command; HTTP 204 means stored. Then call finalize_project_file_upload with this key, or manage_project_file add_version to make it a new version of an existing file.",
+    next: "Replace /path/to/… with the local file path and run the curl command; a final line of HTTP 204 means stored. Then call finalize_project_file_upload with this key, or manage_project_file add_version to make it a new version of an existing file.",
   };
 }
 
@@ -178,10 +180,13 @@ export async function runFinalizeProjectFileUpload(callerId: string, input: Fina
   await requireEditableProject(callerId, input.projectId);
 
   // Only keys minted for this project: a key from another project, or any other
-  // upload, would otherwise become readable to this project's members.
+  // upload, would otherwise become readable to this project's members. Create
+  // mints exactly one segment after the prefix (safeName has no '/'), so any
+  // further '/' — including a '../' — is not ours. A name like 'draft..pdf' is.
   const key = input.key.trim();
   const prefix = projectKeyPrefix(input.projectId);
-  if (!key.startsWith(prefix) || key.length === prefix.length || key.includes("..")) {
+  const rest = key.slice(prefix.length);
+  if (!key.startsWith(prefix) || rest === "" || rest.includes("/")) {
     throw new McpInvalidError(
       "key is not an upload for this project — pass the key create_project_file_upload returned",
     );
@@ -203,7 +208,9 @@ export async function runFinalizeProjectFileUpload(callerId: string, input: Fina
     throw new McpInvalidError(
       err instanceof Error && /not configured/.test(err.message)
         ? "File storage is not configured in this environment"
-        : "Could not read the upload from storage",
+        : // Without s3:ListBucket, S3 answers a missing key with 403, not 404 —
+          // so this can also just mean the POST never happened.
+          "Could not find the upload in storage. Make sure the POST from create_project_file_upload returned HTTP 204, then retry.",
     );
   }
   if (!stored) {

@@ -52,7 +52,8 @@ export async function uploadFileToS3(
   const uploadRes = await fetch(url, { method: "POST", body: formData });
   if (!uploadRes.ok) {
     const text = await uploadRes.text().catch(() => "");
-    if (uploadRes.status === 403 && /EntityTooLarge/i.test(text)) {
+    // S3 names the error in the body; don't depend on which 4xx carries it.
+    if (/EntityTooLarge/i.test(text)) {
       throw new Error(`File too large (max ${cap.label})`);
     }
     throw new Error("Upload to storage failed");
