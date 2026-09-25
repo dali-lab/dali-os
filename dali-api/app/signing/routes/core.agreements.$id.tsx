@@ -131,6 +131,24 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     menteeName: "Jordan Rivera",
   };
 
+  // Who "Put in force" would send a sign request to right now: the audience for
+  // the scope an activate targets (current term for PerTerm, lab-wide otherwise —
+  // matching resolveAdminScope, which the activate action calls with no termId).
+  // Surfaced in the activation confirm dialog so an operator sees exactly who
+  // they'll notify before binding — the same preview the agreements console
+  // shows. null for a non-enumerable audience (Manual / HiringParticipants).
+  const activateResolver = AUDIENCE_RESOLVERS[document.audience];
+  const pendingRecipients: string[] | null = activateResolver.enumerable
+    ? (
+        await activateResolver.listMembers({
+          termId: document.cadence === "PerTerm" ? (termNow?.id ?? undefined) : undefined,
+          audienceGroupId: document.audienceGroupId,
+        })
+      )
+        .map((p) => `${p.firstName} ${p.lastName}`.trim())
+        .sort()
+    : null;
+
   const collabToken = parseSessionCookie(request);
   const collabRoomName = signingDraftName(params.id!);
   const collabUserName =
@@ -142,6 +160,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     rosters,
     lockedVersionIds,
     variablePreview,
+    pendingRecipients,
     currentTermCode: termNow?.code ?? "",
     collabToken,
     collabRoomName,
