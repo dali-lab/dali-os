@@ -259,10 +259,17 @@ function LoginBetterAuth({ next, actionData }: {
         {actionError && (
           <p className="text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3">{actionError}</p>
         )}
+        {/* Anti-enumeration: we never confirm whether the account exists, so the
+            copy is conditional — a real account gets a code, an unknown or
+            mistyped address gets nothing but sees the same screen. Honest
+            phrasing keeps the no-account case from waiting on a code that will
+            never arrive. */}
         <div className="rounded-2xl bg-brand-tint p-4">
           <p className="text-sm text-muted-foreground">
-            We sent a 6-digit code to{" "}
-            <span className="font-medium text-dark-blue">{codeSent.email}</span>.
+            If there's a DALI OS account for{" "}
+            <span className="font-medium text-dark-blue">{codeSent.email}</span>,
+            we've emailed a 6-digit code. Enter it below. Codes expire in 10
+            minutes.
           </p>
         </div>
         <Form method="post" className="flex flex-col gap-3">
@@ -302,6 +309,14 @@ function LoginBetterAuth({ next, actionData }: {
             Use a different email
           </a>
         </div>
+        {/* Shown unconditionally (to real and no-account visitors alike), so it
+            gives the no-account case a way forward without confirming existence. */}
+        <p className="text-center text-xs text-muted-foreground">
+          New to DALI OS?{" "}
+          <Link to="/signup" className="underline hover:text-foreground">
+            Create an account
+          </Link>
+        </p>
       </div>
     );
   }
