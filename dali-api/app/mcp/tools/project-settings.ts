@@ -26,7 +26,7 @@ export class ProjectSettingsNotFoundError extends Error {
 export const GET_PROJECT_SETTINGS_TOOL = {
   name: "get_project_settings",
   description:
-    "Read a project's configuration: its planned terms, declared domains, the per-domain-per-term scope grid, repos, deployment URL, and its Slack/GitHub/Google identities. Complements `get_project_overview`, which covers the live working state instead. Payroll chart strings are not included.",
+    "Read a project's configuration: its planned terms, declared domains, the per-domain-per-term scope grid, repos, Figma files, deployment URL, and its Slack/GitHub/Google identities. Complements `get_project_overview`, which covers the live working state instead. Payroll chart strings are not included.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -53,6 +53,7 @@ export type ProjectSettings = {
   terms: string[];
   domains: { id: string; code: string; displayName: string }[];
   repoUrls: string[];
+  figmaUrls: string[];
   deploymentUrl: string | null;
   slackChannelName: string | null;
   slackChannelId: string | null;
@@ -80,6 +81,7 @@ export async function runGetProjectSettings(
       imageUrl: true,
       termCount: true,
       repoUrls: true,
+      figmaUrls: true,
       deploymentUrl: true,
       slackChannelName: true,
       slackChannelId: true,
@@ -116,6 +118,7 @@ export async function runGetProjectSettings(
       .map((t) => t.term.code),
     domains: project.domains.map((d) => d.domain),
     repoUrls: project.repoUrls,
+    figmaUrls: project.figmaUrls,
     deploymentUrl: project.deploymentUrl,
     slackChannelName: project.slackChannelName,
     slackChannelId: project.slackChannelId,
