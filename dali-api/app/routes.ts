@@ -364,6 +364,10 @@ export default [
   route("oauth/calendar/google/start", "routes/oauth.calendar.google.start.ts"),
   route("integrations/calendar/google/callback", "routes/integrations.calendar.google.callback.ts"),
 
+  // Apple Associated Domains — binds the desktop app to this origin for passkeys
+  // (webcredentials). See the route file + desktop/src-tauri/entitlements.plist.
+  route(".well-known/apple-app-site-association", "routes/well-known.apple-app-site-association.ts"),
+
   // MCP foundation (no layout)
   route(".well-known/oauth-authorization-server", "routes/well-known.oauth-authorization-server.ts"),
   route(
