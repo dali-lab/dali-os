@@ -7,13 +7,15 @@
 //   3. Other same-origin navigations → allow, and re-arm the offline watchdog
 //      (so a retry that lands unreachable falls back to the offline page again).
 //   4. Cross-origin navigations → open in the system browser, not the webview.
+//   5. Our own `dalios://` links (a meeting note's Record button) → handled
+//      in-process, without a round trip through Launch Services.
 
 use tauri::{AppHandle, Manager};
 use tauri_plugin_opener::OpenerExt;
 use url::Url;
 
 use crate::{
-    config,
+    config, deeplink,
     state::{AppState, AuthState},
     window,
 };
@@ -44,7 +46,11 @@ pub fn on_navigation(app: &AppHandle, url: &Url) -> bool {
         {
             return true;
         }
-        // Other non-web schemes (mailto:, tel:, dalios: …) → hand off to the OS.
+        if url.scheme() == config::DEEP_LINK_SCHEME {
+            deeplink::handle_urls(app, std::slice::from_ref(url));
+            return false;
+        }
+        // Other non-web schemes (mailto:, tel: …) → hand off to the OS.
         let _ = app.opener().open_url(url.to_string(), None::<&str>);
         return false;
     }

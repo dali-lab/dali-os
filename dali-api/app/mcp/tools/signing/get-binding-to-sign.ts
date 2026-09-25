@@ -86,6 +86,8 @@ export async function runGetBindingToSign(ctx: McpCtx, args: Args) {
   const variables = await resolveSigningVariablesForSigner(userId, {
     supervisorName,
     termCode: binding.term?.code ?? undefined,
+    role: "member",
+    termId: binding.termId ?? undefined,
   });
 
   // Convert legacy ProseMirror body to block JSON on read (never rewritten to DB).

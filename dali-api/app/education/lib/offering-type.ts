@@ -15,10 +15,12 @@ export function isMultiSession(type: OfferingType): boolean {
   return type !== "Workshop";
 }
 
+// What each type is, without its own name in front: callers that show the
+// name (the type badge, the picker's list) would otherwise repeat it.
 export const OFFERING_TYPE_DESCRIPTIONS: Record<OfferingType, string> = {
-  Workshop: "Workshop: single-session event with RSVP-style approval. No ongoing attendance.",
-  Miniseries: "Miniseries: multi-session course within one term, with reviewed applications and attendance tracking.",
-  Fellowship: "Fellowship: multi-session program spanning multiple terms, with reviewed applications and attendance tracking.",
+  Workshop: "Single session with RSVP-style approval. No ongoing attendance.",
+  Miniseries: "Several sessions inside one term, with reviewed applications and attendance.",
+  Fellowship: "Several sessions across multiple terms, with reviewed applications and attendance.",
 };
 
 export const OFFERING_TYPE_TINT: Record<OfferingType, string> = {

@@ -24,6 +24,7 @@ const AREA_ORDER = [
   "Tasks",
   "Staffing",
   "Documents",
+  "Mentorship",
   "Announcements",
   "Forms",
   "Hiring",

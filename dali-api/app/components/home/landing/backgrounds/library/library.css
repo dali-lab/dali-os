@@ -1,0 +1,409 @@
+/*
+ * Late-night library background: one static room image, with everything that moves as its
+ * own pre-rendered sprite animated only by transform/opacity (see LibraryBackground.tsx).
+ * The room is a 4075×1545 frame scaled to cover the page.
+ */
+
+.landing[data-background='library'] {
+  /* Darkest tone in the room art, so any uncovered edge blends in. */
+  --room-dark: #0b1220;
+  background: var(--room-dark);
+}
+
+html:has(.landing[data-background='library']),
+body:has(.landing[data-background='library']) {
+  background: #0b1220;
+}
+
+.landing-background {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* The room <img> covers its group; sprites below use the same cover scaling. */
+.landing-background .landing-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: cover;
+  object-position: center;
+}
+
+/*
+ * Parallax groups. useLandingScene moves each as one GPU layer (transform); the gem group
+ * sits "closer" and moves further. Both share one oversized box, so everything inside a
+ * group stays aligned, and each is a size container so sprites can scale with it.
+ */
+.landing-parallax {
+  position: absolute;
+  inset: -48px;
+  container-type: size;
+  will-change: transform;
+}
+
+canvas.landing-layer {
+  display: block;
+  pointer-events: none;
+}
+
+/*
+ * A sprite: a small pre-rendered element pinned to a region of the 4075×1545 frame
+ * (--x, --y, --w, --h in frame units), scaled like the room (cover, centred). Its own
+ * animations are transform/opacity, which the GPU composites without repainting.
+ */
+.landing-sprite {
+  --s: max(100cqw / 4075, 100cqh / 1545);
+  position: absolute;
+  left: calc(50cqw + (var(--x) - 2037.5) * var(--s));
+  top: calc(50cqh + (var(--y) - 772.5) * var(--s));
+  width: calc(var(--w) * var(--s));
+  height: calc(var(--h) * var(--s));
+  pointer-events: none;
+}
+
+.landing-sprite > svg,
+.landing-gem > svg {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/*
+ * Keeps white text readable over the lit room. Stacked layouts darken top and bottom, where
+ * the content sits; desktop darkens the right-hand column instead (see the desktop rule).
+ */
+.landing-scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    0deg,
+    rgba(11, 18, 32, 0.8) 0%,
+    rgba(11, 18, 32, 0.45) 50%,
+    rgba(11, 18, 32, 0.8) 100%
+  );
+}
+
+/* ---------- Load-in and ambient animation ---------- */
+
+/*
+ * Load-in timeline:
+ *   0–2.6s   the scene fades in and the camera pans gently left → right as it zooms out
+ *   0.6–2s   the scrim settles in, dimming the room once the text starts to arrive
+ *   1.1–2.7s lamps switch on one by one, left to right, with a flicker
+ *   1.6–3.2s the floating gems fade in, left to right
+ *   0.9–2.5s the content rises in, in reading order (--content-start, landing.css)
+ *
+ * Every loop below animates only opacity or transform on its own sprite, so the GPU
+ * composites it without repainting. The one exception is the brief lamp switch-on.
+ */
+.landing[data-background='library'] {
+  --lamp-start: 1100ms;
+  --gem-start: 1600ms;
+  --content-start: 900ms;
+}
+
+.landing-background {
+  /* Pan from the left: start shifted right (showing more of the room's left) and zoomed. */
+  transform-origin: center;
+  animation:
+    landing-pan-in 2600ms var(--ease-launch) both,
+    landing-fade-in 900ms var(--ease-gentle) both;
+}
+
+@keyframes landing-pan-in {
+  from {
+    translate: 6% 0;
+    scale: 1.14;
+  }
+}
+
+@keyframes landing-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.landing-scrim {
+  animation: landing-fade-in 1400ms var(--ease-gentle) 600ms both;
+}
+
+/* ---- Lamps */
+
+/* A lamp switching on (load-in only): dark, a bright catch, a stutter, then steady. */
+@keyframes landing-lamp-on {
+  0% { filter: brightness(0); }
+  28% { filter: brightness(1.7); }
+  42% { filter: brightness(0.3); }
+  58% { filter: brightness(1.35); }
+  72% { filter: brightness(0.8); }
+  100% { filter: brightness(1); }
+}
+
+.landing-lamp {
+  --near: 0;
+}
+
+/* Warm light over the halo traced into the room; screen-blended, so it only brightens. */
+.landing-lamp-halo,
+.landing-lamp-hover {
+  background: radial-gradient(
+    closest-side,
+    rgba(255, 227, 160, 0.85),
+    rgba(255, 207, 115, 0.45) 45%,
+    rgba(255, 207, 115, 0)
+  );
+  mix-blend-mode: screen;
+}
+
+.landing-lamp-halo {
+  animation:
+    landing-halo-flicker var(--flicker-duration) ease-in-out var(--flicker-delay) infinite,
+    landing-lamp-on 800ms ease-out calc(var(--lamp-start) + var(--lamp-order) * 260ms) backwards;
+}
+
+/* Swells as the cursor comes near (--near, 0–1). */
+.landing-lamp-hover {
+  opacity: calc(var(--near) * 0.8);
+}
+
+@keyframes landing-halo-flicker {
+  0%,
+  100% { opacity: 0.85; }
+  6% { opacity: 0.35; }
+  9% { opacity: 0.8; }
+  17% { opacity: 0.55; }
+  25% { opacity: 0.95; }
+  36% { opacity: 0.45; }
+  39% { opacity: 0.75; }
+  51% { opacity: 0.6; }
+  58% { opacity: 0.25; }
+  61% { opacity: 0.8; }
+  74% { opacity: 0.5; }
+  86% { opacity: 1; }
+}
+
+/* The export's blurred lamp light: an irregular, candle-like flicker. */
+.landing-lamp-glow {
+  animation:
+    landing-lamp-flicker var(--flicker-duration) ease-in-out var(--flicker-delay) infinite,
+    landing-lamp-on 800ms ease-out calc(var(--lamp-start) + var(--lamp-order) * 260ms) backwards;
+}
+
+@keyframes landing-lamp-flicker {
+  0%,
+  100% { opacity: 1; scale: 1.06; }
+  6% { opacity: 0.6; scale: 0.97; }
+  9% { opacity: 0.95; scale: 1.04; }
+  17% { opacity: 0.75; scale: 1; }
+  25% { opacity: 1; scale: 1.08; }
+  37% { opacity: 0.68; scale: 0.98; }
+  40% { opacity: 0.92; scale: 1.03; }
+  52% { opacity: 0.8; scale: 1; }
+  59% { opacity: 0.5; scale: 0.95; }
+  62% { opacity: 0.9; scale: 1.04; }
+  75% { opacity: 0.72; scale: 0.99; }
+  87% { opacity: 1; scale: 1.07; }
+}
+
+/* The bright core under each shade breathes more gently. */
+.landing-lamp-core {
+  animation:
+    landing-lamp-breathe var(--flicker-duration) ease-in-out var(--flicker-delay) infinite,
+    landing-lamp-on 800ms ease-out calc(var(--lamp-start) + var(--lamp-order) * 260ms) backwards;
+}
+
+@keyframes landing-lamp-breathe {
+  0%,
+  100% { opacity: 1; }
+  50% { opacity: 0.72; }
+}
+
+/* ---- Gems */
+
+/*
+ * The magnet layer is moved by script (lean toward the cursor) and spins when clicked.
+ * Only the gem's own shapes catch pointer events (not its glow, and not the rest of the
+ * background), so clicks elsewhere pass through.
+ */
+.landing-gem-magnet {
+  --glow-color: 255, 255, 255;
+  will-change: transform;
+}
+
+.landing-gem svg * {
+  pointer-events: visiblePainted;
+  cursor: pointer;
+}
+
+.landing-gem-magnet.is-spinning {
+  animation: landing-gem-spin 950ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+@keyframes landing-gem-spin {
+  0% { rotate: 0deg; scale: 1; }
+  30% { scale: 1.3; }
+  100% { rotate: 360deg; scale: 1; }
+}
+
+/*
+ * The float: a sine-like bob, a slower tilt-and-breathe sway (so the motion never visibly
+ * repeats) and the load-in fade. Distances are frame units (× --s), so they scale with
+ * the art.
+ */
+.landing-gem {
+  position: absolute;
+  inset: 0;
+  animation:
+    landing-gem-bob calc(5.6s * var(--gem-speed)) ease-in-out var(--gem-phase) infinite alternate,
+    landing-gem-sway calc(8.8s * var(--gem-speed)) ease-in-out var(--gem-phase) infinite alternate,
+    landing-fade-in 1100ms var(--ease-gentle) calc(var(--gem-start) + var(--gem-order) * 170ms) both;
+}
+
+@keyframes landing-gem-bob {
+  from { translate: 0 calc(var(--s) * -20); }
+  to { translate: 0 calc(var(--s) * 20); }
+}
+
+@keyframes landing-gem-sway {
+  from { rotate: -5deg; scale: 0.98; }
+  to { rotate: 5deg; scale: 1.02; }
+}
+
+/* A soft halo in the gem's colour swells and fades (and flashes when the gem is clicked). */
+.landing-gem-pulse {
+  position: absolute;
+  inset: 22%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(var(--glow-color), 0.7), rgba(var(--glow-color), 0));
+  animation: landing-gem-pulse calc(5s * var(--gem-speed)) ease-in-out var(--gem-phase) infinite;
+}
+
+@keyframes landing-gem-pulse {
+  0%,
+  100% { opacity: 0.15; scale: 0.7; }
+  50% { opacity: 0.85; scale: 1.1; }
+}
+
+.landing-gem-magnet.is-spinning .landing-gem-pulse {
+  animation: landing-gem-flash 950ms ease-out;
+}
+
+@keyframes landing-gem-flash {
+  0% { opacity: 0.4; scale: 0.8; }
+  30% { opacity: 1; scale: 1.5; }
+  100% { opacity: 0.4; scale: 1; }
+}
+
+/* ---- The night outside the windows (screen-blended, so only its light shows) */
+
+.landing-window {
+  mix-blend-mode: screen;
+}
+
+/* Clouds drifting past the moon: the window light and its spill slowly swell and fade. */
+.landing-moonlight,
+.landing-moon-spill {
+  animation: landing-moon-clouds 22s ease-in-out infinite;
+}
+
+.landing-moon-spill {
+  background: radial-gradient(closest-side, rgba(125, 158, 230, 0.36), rgba(125, 158, 230, 0));
+}
+
+@keyframes landing-moon-clouds {
+  0%,
+  100% { opacity: 0.85; }
+  18% { opacity: 1; }
+  34% { opacity: 0.45; }
+  47% { opacity: 0.6; }
+  63% { opacity: 0.25; }
+  80% { opacity: 0.95; }
+}
+
+/* Stars twinkle in four groups, each on its own phase. */
+.landing-stars {
+  animation: landing-twinkle calc(3s + var(--star-group) * 0.9s) ease-in-out calc(var(--star-group) * -1.3s)
+    infinite alternate;
+}
+
+@keyframes landing-twinkle {
+  from { opacity: 0.25; }
+  to { opacity: 1; }
+}
+
+/* Streaks across the panes every 14s (px are frame units inside the SVG). */
+.landing-shooting-star {
+  opacity: 0;
+  animation: landing-shooting-star 14s linear 4s infinite;
+}
+
+@keyframes landing-shooting-star {
+  0%,
+  86% {
+    opacity: 0;
+    transform: translate(1190px, 230px) rotate(26deg) scaleX(0.4);
+  }
+  88% {
+    opacity: 1;
+  }
+  93%,
+  100% {
+    opacity: 0;
+    transform: translate(1480px, 372px) rotate(26deg) scaleX(1);
+  }
+}
+
+/* The clock's second hand is a thin warm line; it ticks (redrawn each second). */
+.landing-clock-second {
+  opacity: 0.85;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Loops hold still (landing.css); the load-in is skipped so everything is simply there. */
+  .landing-background,
+  .landing-scrim {
+    animation: none !important;
+  }
+
+  /* Paused at their start, the switch-on and fade-in would leave lamps dark and gems hidden. */
+  .landing-lamp-halo,
+  .landing-lamp-glow,
+  .landing-lamp-core {
+    filter: none !important;
+  }
+
+  .landing-gem {
+    opacity: 1 !important;
+  }
+}
+
+@container landing (min-width: 900px) and (min-aspect-ratio: 11/10) {
+  /*
+   * Shift the room left so the lit tables clear the content column. The container is widened
+   * to the left rather than using object-position, so the room <img> and the sprites (which
+   * share its cover scaling) stay aligned with each other.
+   */
+  .landing-background {
+    left: -14cqw;
+  }
+
+  .landing-scrim {
+    background:
+      linear-gradient(
+        90deg,
+        rgba(11, 18, 32, 0) 30%,
+        rgba(11, 18, 32, 0.5) 55%,
+        rgba(11, 18, 32, 0.82) 78%,
+        rgba(11, 18, 32, 0.88) 100%
+      ),
+      linear-gradient(0deg, rgba(11, 18, 32, 0.45) 0%, rgba(11, 18, 32, 0.1) 60%);
+  }
+}

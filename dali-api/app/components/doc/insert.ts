@@ -42,6 +42,25 @@ export function insertSigningField(
   return fieldId;
 }
 
+/**
+ * Replace an empty doc with `blocks`, or append them after the last block.
+ * Either way it's one ProseMirror transaction, so the whole insert is one undo
+ * step. Used by imports (Markdown file, template) and meeting-note recording.
+ */
+export function appendBlocks(
+  editor: DocEditorInstance,
+  blocks: Parameters<DocEditorInstance["replaceBlocks"]>[1],
+): void {
+  if (!blocks.length) return;
+  const doc = editor.document;
+  const isEmpty =
+    doc.length === 1 &&
+    doc[0].type === "paragraph" &&
+    (!Array.isArray(doc[0].content) || doc[0].content.length === 0);
+  if (isEmpty) editor.replaceBlocks(editor.document, blocks);
+  else editor.insertBlocks(blocks, doc[doc.length - 1], "after");
+}
+
 /** Insert a merge variable ({{name}}) at the caret. */
 export function insertVariable(editor: DocEditorInstance, name: string): void {
   editor.insertInlineContent([{ type: "variable", props: { name, value: "" } }, " "]);

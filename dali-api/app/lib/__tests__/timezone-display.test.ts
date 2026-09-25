@@ -8,6 +8,7 @@ import {
   zonedDayLabel,
   formatZoneLabel,
   formatDualTime,
+  zonedDateTimeLocalToUtc,
 } from "~/lib/timezone";
 
 // A winter (standard-time) instant and a summer (DST) instant. Both are safe
@@ -103,6 +104,39 @@ describe("formatZoneLabel", () => {
   it("returns the raw value for an invalid zone", () => {
     expect(formatZoneLabel("garbage")).toBe("garbage");
     expect(formatZoneLabel(null)).toBe("");
+  });
+});
+
+describe("zonedDateTimeLocalToUtc", () => {
+  it("reads a datetime-local string as a wall time in the given zone", () => {
+    // 2:00 PM entered for a summer date is 18:00Z in ET (EDT, UTC-4).
+    expect(zonedDateTimeLocalToUtc("2026-07-01T14:00", "America/New_York")!.toISOString()).toBe(
+      "2026-07-01T18:00:00.000Z",
+    );
+    // Winter date shifts by an hour (EST, UTC-5).
+    expect(zonedDateTimeLocalToUtc("2026-03-05T14:30", "America/New_York")!.toISOString()).toBe(
+      "2026-03-05T19:30:00.000Z",
+    );
+  });
+
+  it("round-trips with formatInTimeZone — the wall clock survives", () => {
+    // The bug this guards: input parsed zone-naive shows shifted on display.
+    const instant = zonedDateTimeLocalToUtc("2026-07-01T14:00", APPLICATION_TZ)!;
+    expect(
+      formatInTimeZone(instant, APPLICATION_TZ, { hour: "numeric", minute: "2-digit" }),
+    ).toBe("2:00 PM");
+  });
+
+  it("treats a date-only string as local midnight", () => {
+    expect(zonedDateTimeLocalToUtc("2026-07-01", "America/New_York")!.toISOString()).toBe(
+      "2026-07-01T04:00:00.000Z",
+    );
+  });
+
+  it("returns null for empty or malformed input", () => {
+    expect(zonedDateTimeLocalToUtc("", APPLICATION_TZ)).toBeNull();
+    expect(zonedDateTimeLocalToUtc(null, APPLICATION_TZ)).toBeNull();
+    expect(zonedDateTimeLocalToUtc("not-a-date", APPLICATION_TZ)).toBeNull();
   });
 });
 

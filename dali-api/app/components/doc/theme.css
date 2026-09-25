@@ -74,6 +74,24 @@
   }
 }
 
+/* Inline links. With no rule of our own they fell to the browser's default link
+ * colour, and the shell declares `color-scheme: dark`, so that default is the
+ * dark-mode pale blue-violet — on the light paper it is the one colour on the
+ * page that is both not ours and barely legible. The accent is defined per mode
+ * (app.css flips it for html.light), so one declaration reads in both; the
+ * underline means the link is still marked as a link without relying on colour.
+ * Scoped to inline content so the bookmark/embed card, itself an <a>, keeps its
+ * own neutral card styling. */
+.dali-doc .bn-inline-content a[href] {
+  color: var(--color-os-accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+.dali-doc .bn-inline-content a[href]:hover {
+  color: var(--color-os-accent-hover);
+}
+
 /* ── 3. Callout block ──────────────────────────────────────────────────── */
 
 /* The colored box (default 💡 = amber). */

@@ -52,7 +52,7 @@ export async function listMaterialPages(offeringId: string) {
 /**
  * Collaborative "workspace" docs for an offering — pages marked studentEditable
  * that enrolled students co-edit live (a shared scratchpad / group doc), shown
- * in the hub's Workspace tab. Flat list (no nesting) in v1.
+ * alongside the session they belong to. Flat list (no nesting) in v1.
  */
 export async function listWorkspaceDocs(offeringId: string) {
   return prisma.page.findMany({
@@ -63,7 +63,7 @@ export async function listWorkspaceDocs(offeringId: string) {
       studentEditable: true,
     },
     orderBy: [{ position: "asc" }],
-    // sessionId places the doc on the student timeline (education-student-hub);
+    // sessionId places the doc on the student timeline;
     // null = a whole-course shared doc.
     select: { id: true, title: true, sessionId: true },
   });
@@ -135,7 +135,7 @@ export async function createMaterialPage(args: {
   title: string;
   parentPageId?: string | null;
   // A shared collaborative "workspace" doc enrolled students can co-edit
-  // (Workspace tab) vs a read-only material page (default).
+  // (co-edited by the class) vs a read-only material page (default).
   studentEditable?: boolean;
   /** A Folder groups materials and is never opened as a document itself. */
   kind?: "FreeForm" | "Folder";
@@ -487,7 +487,10 @@ export async function getStudentDashboard(userId: string) {
 
   for (const app of apps) {
     const off = app.offering;
-    if (off.status === "Archived") continue;
+    // Archived-and-closed-out is a course this student finished, so it belongs
+    // in their past bucket (close-out archives). An archive with no close-out
+    // is a course that was pulled, which shouldn't linger on the dashboard.
+    if (off.status === "Archived" && off.closedOutAt == null) continue;
     const present = new Set(
       app.attendances.filter((a) => a.status === "Present").map((a) => a.sessionId),
     );

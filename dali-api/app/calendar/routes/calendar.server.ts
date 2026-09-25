@@ -15,7 +15,6 @@ import {
   type RoleInstance,
 } from "~/lib/roles";
 import type { ScopeType } from "~/generated/prisma/client";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { resolveTermFilter } from "~/lib/terms";
 import {
   createClass,
@@ -35,7 +34,6 @@ import {
   removeTimeEntryFromGoogle,
 } from "~/lib/timesheet-mirror.server";
 import {
-  fetchBusyEvents,
   fetchCalendarEvents,
   createGoogleCalendarEvent,
   patchGoogleCalendarEvent,
@@ -629,8 +627,7 @@ async function handleEventRsvp(opts: {
   return null;
 }
 
-// Create / edit / move / delete a Google Calendar event (calendar-unified
-// flag). `destination` is "linkId:calendarId". Times arrive as ISO (timed) or a
+// Create / edit / move / delete a Google Calendar event. `destination` is "linkId:calendarId". Times arrive as ISO (timed) or a
 // date (all-day, end exclusive). For recurring events the `scope` (this /
 // following / all) decides whether we touch the instance, the master, or split
 // the series.
@@ -696,6 +693,17 @@ async function maybeUpdateMeetingFromComposer(
     return Response.json({ error: "Couldn't read the guest list." }, { status: 400 });
   }
 
+  // Absent when the composer had no guest list to edit — leave the stored ones.
+  let guestEmails: string[] | undefined;
+  if (get("guestEmails")) {
+    try {
+      const parsed: unknown = JSON.parse(get("guestEmails"));
+      guestEmails = Array.isArray(parsed) ? parsed.filter((e): e is string => typeof e === "string") : [];
+    } catch {
+      return Response.json({ error: "Couldn't read the guest list." }, { status: 400 });
+    }
+  }
+
   const editScope = (get("scope") || "all") as "this" | "following" | "all";
   const occurrenceStart = get("originalStartIso") || undefined;
   const occurrenceEventId = get("eventId") || undefined;
@@ -712,6 +720,7 @@ async function maybeUpdateMeetingFromComposer(
     recurrenceRule,
     location: get("location").trim(),
     description: get("description").trim(),
+    guestEmails,
     editScope,
     occurrenceStart,
     occurrenceEventId,
@@ -777,10 +786,6 @@ async function handleEventAction(
   request: Request,
 ): Promise<Response | null> {
   const get = (k: string) => (typeof raw[k] === "string" ? (raw[k] as string) : "");
-  const roles = await getUserRoles(userId, request);
-  if (!(await isFeatureEnabled("calendar-unified", userId, roles, request))) {
-    return Response.json({ error: "Not enabled" }, { status: 403 });
-  }
   // A meeting-backed event is edited through its own DALI update path (roster +
   // notifications + Google sync), before the link-ownership gate below.
   if (intent === "event-update") {
@@ -953,10 +958,6 @@ async function handleCalendarAction(
   request: Request,
 ): Promise<Response | null> {
   const get = (k: string) => (typeof raw[k] === "string" ? (raw[k] as string) : "");
-  const roles = await getUserRoles(userId, request);
-  if (!(await isFeatureEnabled("calendar-unified", userId, roles, request))) {
-    return Response.json({ error: "Not enabled" }, { status: 403 });
-  }
   const linkId = get("linkId");
   if (!linkId) return Response.json({ error: "Missing account" }, { status: 400 });
   try {
@@ -1362,13 +1363,13 @@ export async function loadCalendarData(
   // if a single link errors — surface the error on the link card.
   //
   // Dedup: each Google link's calendar list (used for both color tinting in
-  // fetchBusyEvents and for the SubCalendar UI) is fetched ONCE per link and
+  // fetchCalendarEvents and for the SubCalendar UI) is fetched ONCE per link and
   // the result is threaded into both consumers, eliminating a second HTTP hit
   // per Google account.
   //
   // Step 1: fetch one valid token per Google link (one DB read each, with
   // optional refresh), then use each token to fetch the calendar list. Both
-  // results are shared with fetchBusyEvents so the full request makes exactly
+  // results are shared with fetchCalendarEvents so the full request makes exactly
   // one token read and one calendarList HTTP call per linked Google account.
   const googleLinks = links.filter((l) => l.provider === "Google");
   const prefetchedTokens = new Map<string, string>();
@@ -1384,30 +1385,23 @@ export async function loadCalendarData(
       }
     }),
   );
-  // Map of linkId → list (undefined if fetch failed); passed to fetchBusyEvents
-  // so it skips re-fetching the list inside fetchBusyForLink.
+  // Map of linkId → list (undefined if fetch failed); passed to
+  // fetchCalendarEvents so it skips re-fetching the list per link.
   const prefetchedCalendarLists = new Map(
     calendarListResults.map(({ linkId, items }) => [linkId, items]),
   );
 
-  // Resolve roles + flags once, up front — the calendar-crud read (all events,
-  // with edit identity) replaces the busy-only read when the flag is on.
   const roles = await getUserRoles(userId, request);
-  const crudEnabled = await isFeatureEnabled("calendar-unified", userId, roles, request);
 
   let ingestionError: string | null = null;
-  const externalCacheKey = `${userId}:${crudEnabled ? "crud" : "busy"}:${fetchStart.getTime()}:${fetchEnd.getTime()}`;
+  const externalCacheKey = `${userId}:${fetchStart.getTime()}:${fetchEnd.getTime()}`;
   const [externalRaw, calendarLinks] = await Promise.all([
     // Read every calendar on each account ("all"), not just the ones counting
     // toward availability: the grid's per-calendar Show toggle filters this
     // client-side, so a calendar missing here can never be shown.
-    cachedExternalRead<CalendarEvent[] | Awaited<ReturnType<typeof fetchBusyEvents>>>(
-      externalCacheKey,
-      () =>
-        crudEnabled
-          ? fetchCalendarEvents(userId, fetchStart, fetchEnd, prefetchedCalendarLists, prefetchedTokens, "all")
-          : fetchBusyEvents(userId, fetchStart, fetchEnd, prefetchedCalendarLists, prefetchedTokens, "all"),
-    ).catch((err): CalendarEvent[] | Awaited<ReturnType<typeof fetchBusyEvents>> => {
+    cachedExternalRead<CalendarEvent[]>(externalCacheKey, () =>
+      fetchCalendarEvents(userId, fetchStart, fetchEnd, prefetchedCalendarLists, prefetchedTokens, "all"),
+    ).catch((err): CalendarEvent[] => {
       ingestionError = err instanceof Error ? err.message : "Failed to fetch external events";
       return [];
     }),
@@ -1456,88 +1450,67 @@ export async function loadCalendarData(
   // round-trip.
   const generalCalendar = generalCalendarState(calendarLinks);
 
-  // Map the external read to display DTOs. The crud read carries edit identity
-  // (eventId/linkId/writable/allDay); the busy read is title/time only. Events
-  // from the DALI Timesheet mirror calendar are dropped — the logged-time layer
-  // already shows those hours, so keeping them would double every work block.
-  const crudEvents = crudEnabled
-    ? (externalRaw as CalendarEvent[]).filter(
-        (e) => !timesheetCalendarId || e.calendarId !== timesheetCalendarId,
-      )
-    : [];
+  // Map the external read to display DTOs, with edit identity
+  // (eventId/linkId/writable/allDay). Events from the DALI Timesheet mirror
+  // calendar are dropped — the logged-time layer already shows those hours, so
+  // keeping them would double every work block.
+  const crudEvents = externalRaw.filter(
+    (e) => !timesheetCalendarId || e.calendarId !== timesheetCalendarId,
+  );
   // One query for the whole window, not one per event.
-  const eventMeetings = crudEnabled
-    ? await meetingsForExternalEvents(crudEvents, userId, canMarkCoreMeeting, roles.isLabMember)
-    : new Map<string, EventMeetingDTO>();
+  const eventMeetings = await meetingsForExternalEvents(
+    crudEvents,
+    userId,
+    canMarkCoreMeeting,
+    roles.isLabMember,
+  );
 
-  // "Track in DALI" is offered only on the lab's own general calendar. Any
-  // external event *could* be given a meeting, but offering it on someone's
-  // dentist appointment is noise — the general calendar is where the lab's
-  // untracked events actually are.
-  const canTrackEvents = crudEnabled && canMarkCoreMeeting;
+  const externalEvents: ExternalEventDTO[] = crudEvents.map((e) => ({
+    startIso: e.startIso,
+    endIso: e.endIso,
+    title: e.title || "Busy",
+    color: e.color ?? null,
+    calendarId: e.calendarId,
+    eventId: e.eventId,
+    linkId: e.linkId,
+    allDay: e.allDay,
+    writable: e.writable,
+    recurringEventId: e.recurringEventId ?? null,
+    description: e.description,
+    location: e.location,
+    organizerName: e.organizerName,
+    attendees: externalAttendees(e.attendees),
+    links: externalLinks(e.meetingUrl, e.htmlLink),
+    rsvp: e.responseStatus ? GOOGLE_RSVP_LABEL[e.responseStatus] : undefined,
+    meeting: e.eventId ? eventMeetings.get(e.eventId) : undefined,
+    // "Track in DALI" is offered only on the lab's own general calendar. Any
+    // external event *could* be given a meeting, but offering it on someone's
+    // dentist appointment is noise — the general calendar is where the lab's
+    // untracked events actually are.
+    canTrackAsMeeting:
+      canMarkCoreMeeting &&
+      isGeneralCalendarEvent(e.calendarId) &&
+      Boolean(e.eventId) &&
+      !eventMeetings.has(e.eventId),
+  }));
 
-  const externalEvents: ExternalEventDTO[] = crudEnabled
-    ? crudEvents.map((e) => ({
-        startIso: e.startIso,
-        endIso: e.endIso,
-        title: e.title || "Busy",
-        color: e.color ?? null,
-        calendarId: e.calendarId,
-        eventId: e.eventId,
-        linkId: e.linkId,
-        allDay: e.allDay,
-        writable: e.writable,
-        recurringEventId: e.recurringEventId ?? null,
-        description: e.description,
-        location: e.location,
-        organizerName: e.organizerName,
-        attendees: externalAttendees(e.attendees),
-        links: externalLinks(e.meetingUrl, e.htmlLink),
-        rsvp: e.responseStatus ? GOOGLE_RSVP_LABEL[e.responseStatus] : undefined,
-        meeting: e.eventId ? eventMeetings.get(e.eventId) : undefined,
-        canTrackAsMeeting:
-          canTrackEvents &&
-          isGeneralCalendarEvent(e.calendarId) &&
-          Boolean(e.eventId) &&
-          !eventMeetings.has(e.eventId),
-      }))
-    : (externalRaw as Awaited<ReturnType<typeof fetchBusyEvents>>)
-        .filter((e) => !timesheetCalendarId || e.calendarId !== timesheetCalendarId)
-        .map((e) => ({
-          startIso: e.start,
-          endIso: e.end,
-          title: e.title ?? "Busy",
-          color: e.color ?? null,
-          calendarId: e.calendarId ?? null,
-          description: e.description,
-          location: e.location,
-          organizerName: e.organizerName,
-          attendees: externalAttendees(e.attendees),
-          links: externalLinks(e.meetingUrl, e.htmlLink),
-        }));
-
-  // Classes (same calendar-unified flag as CRUD). Load all current+upcoming
-  // terms for the modal picker.
-  const classesEnabled = crudEnabled;
+  // Classes: load all current+upcoming terms for the modal picker.
   let memberClasses: MemberClassDTO[] = [];
   let classDestinations: ClassDestinationDTO[] = [];
-  let classTerms: { id: string; code: string }[] = [];
-  if (classesEnabled) {
-    // Resolve current+upcoming term ids for the modal's term selector.
-    const termFilter = await resolveTermFilter(request, { default: "upcoming" });
-    const selectableTermIds = termFilter.termIds ?? [];
-    classTerms = termFilter.terms
-      .filter((t) => selectableTermIds.includes(t.id))
-      .map((t) => ({ id: t.id, code: t.code }));
+  // Resolve current+upcoming term ids for the modal's term selector.
+  const termFilter = await resolveTermFilter(request, { default: "upcoming" });
+  const selectableTermIds = termFilter.termIds ?? [];
+  const classTerms = termFilter.terms
+    .filter((t) => selectableTermIds.includes(t.id))
+    .map((t) => ({ id: t.id, code: t.code }));
 
-    if (selectableTermIds.length > 0) {
-      const classRows = await prisma.memberClass.findMany({
-        where: { userId, termId: { in: selectableTermIds } },
-        orderBy: { createdAt: "asc" },
-      });
-      memberClasses = classRows.map((r) => toMemberClassDTO(r, calendarLinks));
-      classDestinations = buildClassDestinations(calendarLinks);
-    }
+  if (selectableTermIds.length > 0) {
+    const classRows = await prisma.memberClass.findMany({
+      where: { userId, termId: { in: selectableTermIds } },
+      orderBy: { createdAt: "asc" },
+    });
+    memberClasses = classRows.map((r) => toMemberClassDTO(r, calendarLinks));
+    classDestinations = buildClassDestinations(calendarLinks);
   }
 
   const data: LoaderData = {
@@ -1577,12 +1550,10 @@ export async function loadCalendarData(
       startTime: t.startTime ? t.startTime.toISOString() : null,
       endTime: t.endTime ? t.endTime.toISOString() : null,
     })),
-    classesEnabled,
     classTerm: term ? { id: term.id, code: term.code } : null,
     classTerms,
     memberClasses,
     classDestinations,
-    crudEnabled,
     timesheetGoogleSync: settings?.timesheetGoogleSync ?? false,
     defaultEventDest: readCookie(request, "dali_event_dest"),
     defaultEventDurationMin: parseDurationCookie(readCookie(request, "dali_event_duration")),
@@ -2014,12 +1985,7 @@ export async function submitCalendarAction(request: Request) {
     }
 
     case "set-meeting-project": {
-      // Behind the unify flag — 404 (not 403) so a disabled feature isn't leaked.
-      // setMeetingProject re-checks organizer/Core + project membership.
-      const roles = await getUserRoles(userId, request);
-      if (!(await isFeatureEnabled("unified-core-project-meetings", userId, roles, request))) {
-        return Response.json({ error: "Not found" }, { status: 404 });
-      }
+      // setMeetingProject checks organizer/Core + project membership.
       const result = await setMeetingProject({
         meetingId: input.meetingId,
         actorId: userId,
@@ -2049,12 +2015,6 @@ export async function submitCalendarAction(request: Request) {
     }
 
     case "add-meeting-whiteboard": {
-      // Whiteboards ship behind a flag — don't create one for a caller who
-      // can't see the feature. 404 (not 403) so a disabled feature isn't leaked.
-      const roles = await getUserRoles(userId, request);
-      if (!(await isFeatureEnabled("whiteboard", userId, roles, request))) {
-        return Response.json({ error: "Not found" }, { status: 404 });
-      }
       const result = await attachMeetingWhiteboard({
         meetingId: input.meetingId,
         actorId: userId,

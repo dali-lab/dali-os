@@ -2,15 +2,23 @@
 // (cold start / second launch argv) and the deep-link plugin's on_open_url
 // (running instance). A notification click that fires `dalios://notify?link=/x`
 // focuses the window and navigates the webview to the target route.
+// `dalios://record?id=<id>` starts a native meeting recording (recording.rs),
+// from a meeting note open in this app or in any browser.
 
 use tauri::{AppHandle, Manager};
 use url::Url;
 
-use crate::{config, window};
+use crate::{config, recording, window};
 
 pub fn handle_urls(app: &AppHandle, urls: &[Url]) {
     for u in urls {
         if u.scheme() != config::DEEP_LINK_SCHEME {
+            continue;
+        }
+        if u.host_str() == Some("record") {
+            if let Some(id) = u.query_pairs().find(|(k, _)| k == "id") {
+                recording::start(app, id.1.into_owned());
+            }
             continue;
         }
         let target = u

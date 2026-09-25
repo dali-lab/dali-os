@@ -16,6 +16,7 @@ import {
 } from "~/components/AnalyticsErrorReporter";
 import { NavigationProgress } from "~/components/NavigationProgress";
 import { ThemeSync } from "~/components/ThemeSync";
+import { PasskeyEnrollmentPrompt } from "~/components/passkey/PasskeyEnrollmentPrompt";
 import { ErrorScreen } from "~/components/ErrorScreen";
 import { StaleBuildWatcher } from "~/components/StaleBuildWatcher";
 import { buttonClasses } from "~/components/ui/Button";
@@ -104,6 +105,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </PresenceStatusProvider>
           </DialogProvider>
         </ToastProvider>
+        {/* One-time in-app passkey enrollment offer; self-gates on eligibility
+            + WebAuthn support + surface (see the component). */}
+        <PasskeyEnrollmentPrompt />
         <AnalyticsErrorReporter />
         <StaleBuildWatcher />
         <ScrollRestoration />

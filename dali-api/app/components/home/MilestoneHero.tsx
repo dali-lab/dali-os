@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react'
 import { useEffect, useId, useRef, useState } from 'react'
 import CardBevel from './landing/CardBevel'
-import { LandingSky, LandingStage } from './landing/LandingArt'
+import LandingBackground from './landing/backgrounds/LandingBackground'
+import type { LandingBackgroundId } from './landing/backgrounds/schedule'
 import { useLandingMotion } from './landing/useLandingMotion'
 import './landing/landing.css'
 
@@ -26,10 +27,12 @@ export interface MilestoneHeroProps {
   recentsHeading?: string
   /** The search control — the page owns its behavior; see `landing-search-*` for styling. */
   search?: ReactNode
+  /** Which art sits behind the content; see landing/backgrounds/schedule.ts. */
+  background: LandingBackgroundId
   className?: string
 }
 
-/** Milestones landing page, built from the Figma export "2_Deep_Space 14". */
+/** Milestones landing page: the content column over a swappable animated background. */
 export default function MilestoneHero({
   weekBadge,
   milestoneTitle,
@@ -38,6 +41,7 @@ export default function MilestoneHero({
   recents = [],
   recentsHeading = 'Favorites and Recently Visited',
   search,
+  background,
   className,
 }: MilestoneHeroProps) {
   const id = useId()
@@ -48,9 +52,8 @@ export default function MilestoneHero({
 
   return (
     <div className="landing-frame">
-      <main ref={landingRef} className={joinClasses('landing', className)}>
-        <LandingSky />
-        <LandingStage />
+      <main ref={landingRef} className={joinClasses('landing', className)} data-background={background}>
+        <LandingBackground id={background} />
 
         <div className="landing-content">
           {(weekBadge || milestoneTitle) && (

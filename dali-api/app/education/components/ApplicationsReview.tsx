@@ -60,31 +60,31 @@ export function WaitlistOrder({ applications }: { applications: ReviewApplicatio
   if (waitlisted.length === 0) return null;
 
   return (
-    <section className="rounded-lg border border-border bg-card p-4">
+    <section className="rounded-os-card bg-os-card p-6">
       <div className="flex items-center gap-1.5">
         <h3 className="font-heading text-sm font-semibold text-foreground">
           Waitlist order
         </h3>
         <InfoTip content="When a seat opens before registration closes, students are enrolled automatically from the top of this list down. Use the arrows to change who's next in line." />
       </div>
-      <p className="mt-0.5 text-xs text-muted-foreground">
-        #1 is next up. Reordering only changes who gets promoted first — it
+      <p className="mt-1 text-sm text-os-grey">
+        #1 is next up. Reordering only changes who gets promoted first. It
         doesn't approve, reject, or email anyone.
       </p>
       <ol className="mt-3 flex flex-col gap-1.5">
         {waitlisted.map((a, i) => (
           <li
             key={a.id}
-            className="flex items-center gap-3 rounded-md border border-border bg-background px-3 py-2"
+            className="flex items-center gap-3 rounded-os-item bg-os-well px-4 py-3"
           >
-            <span className="w-7 shrink-0 text-sm font-semibold tabular-nums text-muted-foreground">
+            <span className="w-7 shrink-0 text-sm font-semibold tabular-nums text-os-grey">
               #{a.waitlistRank}
             </span>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-medium text-foreground">
                 {applicantName(a)}
               </span>
-              <span className="block truncate text-xs text-muted-foreground">
+              <span className="block truncate text-sm text-os-grey">
                 {applicantEmail(a)}
               </span>
             </span>
@@ -129,7 +129,7 @@ function ReorderButton({
         type="submit"
         disabled={disabled}
         aria-label={label}
-        className="flex rounded-md border border-border p-1 text-muted-foreground transition-colors enabled:hover:bg-muted enabled:hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
+        className="os-icon-btn disabled:cursor-not-allowed disabled:opacity-30"
       >
         {direction === "up" ? (
           <ChevronUp className="h-4 w-4" />
@@ -161,7 +161,7 @@ export function ApplicationsReview({
 
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] items-start">
-      <ul className="flex flex-col gap-1 rounded-lg border border-border bg-card p-1.5 lg:max-h-[70vh] lg:overflow-y-auto">
+      <ul className="flex flex-col gap-1 rounded-os-card bg-os-card p-2 lg:max-h-[70vh] lg:overflow-y-auto">
         {applications.map((a) => {
           const active = selected?.id === a.id;
           return (
@@ -170,16 +170,16 @@ export function ApplicationsReview({
                 type="button"
                 onClick={() => setSelectedId(a.id)}
                 aria-current={active ? "true" : undefined}
-                className={`w-full rounded-md border-l-2 px-2.5 py-2 text-left transition-colors ${
+                className={`w-full rounded-os-item border-l-2 px-3 py-2.5 text-left transition-colors ${
                   active
-                    ? "border-l-accent-coral bg-muted"
-                    : "border-l-transparent hover:bg-muted/50"
+                    ? "border-l-os-accent bg-os-well"
+                    : "border-l-transparent hover:bg-os-well/60"
                 }`}
               >
                 <span className="flex items-center gap-2 min-w-0">
                   <span
                     className={`truncate text-sm font-medium ${
-                      active ? "text-accent-coral" : "text-foreground"
+                      active ? "text-os-accent" : "text-foreground"
                     }`}
                   >
                     {applicantName(a)}
@@ -190,7 +190,7 @@ export function ApplicationsReview({
                       variant="rich"
                       placement="top"
                     >
-                      <span className="shrink-0 text-xs text-muted-foreground cursor-default">
+                      <span className="shrink-0 cursor-default text-sm text-os-grey">
                         #{a.waitlistRank}
                       </span>
                     </Tooltip>
@@ -198,7 +198,7 @@ export function ApplicationsReview({
                 </span>
                 <span className="mt-0.5 flex items-center gap-2 min-w-0">
                   {statusChip(a.status)}
-                  <span className="truncate text-xs text-muted-foreground">
+                  <span className="truncate text-sm text-os-grey">
                     {applicantEmail(a)}
                   </span>
                 </span>
@@ -216,7 +216,7 @@ export function ApplicationsReview({
           formatSubmitted={formatSubmitted}
         />
       ) : (
-        <p className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground italic">
+        <p className="rounded-os-card bg-os-card p-6 text-sm italic text-os-grey">
           Pick an applicant to read their responses.
         </p>
       )}
@@ -235,30 +235,30 @@ function ApplicationDetail({
 }) {
   const confirmSubmit = useConfirmSubmit();
   return (
-    <div className="flex flex-col gap-4 rounded-lg border border-border bg-card p-4">
+    <div className="flex flex-col gap-5 rounded-os-card bg-os-card p-6">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <h3 className="font-heading text-base font-semibold text-foreground">
             {applicantName(a)}
           </h3>
-          <p className="text-xs text-muted-foreground">{applicantEmail(a)}</p>
+          <p className="text-sm text-os-grey">{applicantEmail(a)}</p>
         </div>
         <div className="flex items-center gap-2">
           {statusChip(a.status)}
-          <span className="text-xs text-muted-foreground">
+          <span className="text-sm text-os-grey">
             {formatSubmitted(a.submittedAt)}
           </span>
         </div>
       </div>
 
-      <div className="border-t border-border pt-4">
+      <div className="border-t border-os-container pt-5">
         {a.formSubmission ? (
           <ApplicationAnswers
             questions={(a.formSubmission.formVersion.questions as Question[]) ?? []}
             answers={(a.formSubmission.answers as Record<string, unknown>) ?? {}}
           />
         ) : (
-          <p className="text-xs text-muted-foreground italic">No answers recorded.</p>
+          <p className="text-sm italic text-os-grey">No answers recorded.</p>
         )}
       </div>
 
@@ -266,7 +266,7 @@ function ApplicationDetail({
 
       {/* Decisions sit last: you read the answers, write your note, then decide.
           Putting them above the notes asked for the verdict first. */}
-      <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
+      <div className="flex flex-wrap items-center gap-2 border-t border-os-container pt-5">
         {DECISIONS.filter((s) => s !== a.status).map((s) => (
           <Form
             key={s}
@@ -335,17 +335,17 @@ function NotesFields({ application: a }: { application: ReviewApplication }) {
   const saving = fetcher.state !== "idle";
 
   return (
-    <div className="flex flex-col gap-3 border-t border-border pt-4">
+    <div className="os-form flex flex-col gap-4 border-t border-os-container pt-5">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-semibold text-muted-foreground">Notes</span>
-        <span className="text-[11px] text-muted-foreground" aria-live="polite">
+        <span className="os-field-label">Notes</span>
+        <span className="text-sm text-os-grey" aria-live="polite">
           {saving ? "Saving…" : dirty.current ? "Saved" : ""}
         </span>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 items-start">
         <label className="block">
-          <span className="text-xs font-semibold text-muted-foreground inline-flex items-center gap-1">
-            Feedback to student — shared with their certificate
+          <span className="os-field-label inline-flex items-center gap-1">
+            Feedback to student, shared with their certificate
             <InfoTip content="This note is visible to the student. It's included with their completion certificate and shown on their course page." />
           </span>
           <textarea
@@ -356,13 +356,13 @@ function NotesFields({ application: a }: { application: ReviewApplication }) {
               setFeedback(e.target.value);
             }}
             placeholder="Overall performance feedback the student will see…"
-            className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
+            className="mt-2 w-full"
           />
         </label>
         <label className="block">
-          <span className="text-xs font-semibold text-amber-800 inline-flex items-center gap-1">
-            Internal note — hiring only, never shown to the student
-            <InfoTip content="Visible only to instructors and Core members. Used as a hiring signal when this student applies to DALI — the student never sees it." />
+          <span className="os-field-label inline-flex items-center gap-1 !text-amber-800">
+            Internal note, hiring only, never shown to the student
+            <InfoTip content="Visible only to instructors and Core members. Used as a hiring signal when this student applies to DALI. The student never sees it." />
           </span>
           <textarea
             rows={4}
@@ -372,7 +372,7 @@ function NotesFields({ application: a }: { application: ReviewApplication }) {
               setInternalNote(e.target.value);
             }}
             placeholder="Engagement/competency signal for future hiring…"
-            className="mt-1 w-full rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-sm"
+            className="mt-2 w-full !border-amber-300 !bg-amber-50"
           />
         </label>
       </div>

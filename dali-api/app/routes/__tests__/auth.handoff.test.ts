@@ -4,6 +4,7 @@ const mockUpdateMany = vi.hoisted(() => vi.fn());
 const mockFindFirst = vi.hoisted(() => vi.fn());
 const mockIssueSession = vi.hoisted(() => vi.fn());
 const mockLogAuditEvent = vi.hoisted(() => vi.fn());
+const mockIsFeatureEnabledForEveryone = vi.hoisted(() => vi.fn().mockResolvedValue(false));
 
 vi.mock("~/lib/db", () => ({
   prisma: {
@@ -12,6 +13,15 @@ vi.mock("~/lib/db", () => ({
 }));
 vi.mock("~/lib/session", () => ({ issueSession: mockIssueSession }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: mockLogAuditEvent }));
+vi.mock("~/lib/feature-flags.server", () => ({
+  isFeatureEnabledForEveryone: mockIsFeatureEnabledForEveryone,
+}));
+vi.mock("~/lib/betterauth-session.server", () => ({
+  mintBetterAuthSession: vi.fn(),
+}));
+vi.mock("~/lib/betterauth-cookie.server", () => ({
+  appendBetterAuthSessionCookie: vi.fn(),
+}));
 
 import { loader } from "~/routes/auth.handoff";
 import { TABLESS_COOKIE } from "~/lib/tabless";

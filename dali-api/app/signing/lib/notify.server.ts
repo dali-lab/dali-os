@@ -8,10 +8,12 @@ import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
 import { type EmailAttachment } from "~/lib/gmail";
 import { getFrontendUrl } from "~/lib/app-env";
+import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { renderDocumentPdf } from "~/lib/pdf/document-pdf.server";
 import type { PMNode } from "~/collab/export-html";
 import type { DocBlock } from "~/collab/blocknote-server";
 import { AUDIENCE_RESOLVERS } from "./audiences";
+import { getSignedCopyBody } from "./state.server";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 
 function escapeHtml(s: string): string {
@@ -36,6 +38,10 @@ function safeFilename(s: string): string {
 export async function sendSignatureReceipt(args: {
   signerUserId: string;
   bindingId: string;
+  // Pins the receipt's dedup to the in-force version so a re-published version
+  // sends a fresh receipt (and a deferred co-signed receipt isn't shadowed by
+  // an earlier version's). Optional for back-compat.
+  versionId?: string;
   documentName: string;
   frozenBody: unknown;
 }): Promise<void> {
@@ -90,7 +96,7 @@ export async function sendSignatureReceipt(args: {
   const { id } = await enqueueOutbound({
     channel: "email",
     purpose: "General",
-    dedupKey: `signing.receipt:${args.bindingId}:${args.signerUserId}`,
+    dedupKey: `signing.receipt:${args.bindingId}:${args.versionId ?? "x"}:${args.signerUserId}`,
     target: to,
     recipientUserId: args.signerUserId,
     subject: `Signed: ${args.documentName}`,
@@ -164,4 +170,121 @@ export async function notifySignRequest(
         : `signing.request:${bindingId}:${binding.versionId}:${p.id}`,
     })),
   });
+}
+
+// Ask a mentor's mentees to countersign the mentorship agreement the mentor
+// just signed. Fired fire-and-forget from the sign action AFTER a mentor's
+// signature is recorded (never from recordSignature itself — that's shared with
+// MCP + the mentee's own sign). Idempotent: a per-(binding, version, mentee)
+// forever dedupKey means a SECOND mentor signing later doesn't re-nudge a mentee
+// already asked, and mentees who've already countersigned the in-force version
+// are filtered out. No-op unless the feature is live and the document opts in.
+export async function notifyCountersignRequest(
+  bindingId: string,
+  mentorUserId: string,
+): Promise<void> {
+  if (!(await isFeatureEnabledForEveryone("mentee-countersign"))) return;
+
+  const binding = await prisma.signingBinding.findUnique({
+    where: { id: bindingId },
+    select: {
+      id: true,
+      versionId: true,
+      termId: true,
+      document: { select: { name: true, gateScope: true, requiresMenteeCountersign: true } },
+    },
+  });
+  if (!binding || !binding.termId) return;
+  if (binding.document.gateScope !== "App" || !binding.document.requiresMenteeCountersign) return;
+
+  const [pairs, countersigned] = await Promise.all([
+    prisma.mentorshipPair.findMany({
+      where: { mentorUserId, termId: binding.termId },
+      select: { menteeUserId: true },
+    }),
+    prisma.signingSignature.findMany({
+      where: { bindingId, roleKey: "mentee", versionId: binding.versionId },
+      select: { signerUserId: true },
+    }),
+  ]);
+  const done = new Set(countersigned.map((s) => s.signerUserId));
+  const menteeIds = [...new Set(pairs.map((p) => p.menteeUserId))].filter((id) => !done.has(id));
+  if (menteeIds.length === 0) return;
+
+  await notify({
+    eventType: "document.countersign_request",
+    message: {
+      title: "Countersign your mentorship agreement",
+      body: binding.document.name,
+      link: `/sign/${bindingId}`,
+      isTodo: true,
+    },
+    recipients: menteeIds.map((userId) => ({
+      userId,
+      dedupKey: `countersign.request:${bindingId}:${binding.versionId}:${userId}`,
+    })),
+  });
+}
+
+// Send the fully co-signed receipt to a mentee who just countersigned AND to
+// each of their mentors who has signed the in-force version — the mentor's
+// deferred receipt, now that both signatures exist. Every recipient's PDF is
+// composed via getSignedCopyBody so it shows both parties. Fire-and-forget;
+// sendSignatureReceipt dedups per (binding, version, recipient), so a mentor
+// with several mentees is emailed once (on the first countersignature). No-op
+// unless the document opts in.
+export async function sendCoSignedReceipts(
+  bindingId: string,
+  menteeUserId: string,
+): Promise<void> {
+  const binding = await prisma.signingBinding.findUnique({
+    where: { id: bindingId },
+    select: {
+      versionId: true,
+      termId: true,
+      document: { select: { name: true, requiresMenteeCountersign: true } },
+    },
+  });
+  if (!binding || !binding.document.requiresMenteeCountersign) return;
+  const documentName = binding.document.name;
+
+  const send = async (userId: string, roleKey: string) => {
+    const body = await getSignedCopyBody(bindingId, userId, roleKey);
+    if (body == null) return;
+    await sendSignatureReceipt({
+      signerUserId: userId,
+      bindingId,
+      versionId: binding.versionId,
+      documentName,
+      frozenBody: body,
+    });
+  };
+
+  // The mentee's own co-signed copy.
+  await send(menteeUserId, "mentee").catch((err) =>
+    console.error("[signing] mentee co-signed receipt failed:", err),
+  );
+
+  // Their mentor(s) who have already signed the in-force version.
+  if (!binding.termId) return;
+  const pairs = await prisma.mentorshipPair.findMany({
+    where: { menteeUserId, termId: binding.termId },
+    select: { mentorUserId: true },
+  });
+  const mentorIds = [...new Set(pairs.map((p) => p.mentorUserId))];
+  if (mentorIds.length === 0) return;
+  const signedMentors = await prisma.signingSignature.findMany({
+    where: {
+      bindingId,
+      roleKey: "member",
+      versionId: binding.versionId,
+      signerUserId: { in: mentorIds },
+    },
+    select: { signerUserId: true },
+  });
+  for (const m of signedMentors) {
+    await send(m.signerUserId, "member").catch((err) =>
+      console.error("[signing] mentor co-signed receipt failed:", err),
+    );
+  }
 }

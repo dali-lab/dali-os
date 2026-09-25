@@ -634,6 +634,39 @@ describe("createScheduledMeeting — location and description", () => {
     );
   });
 
+  it("invites email guests through the Google event even with no members invited", async () => {
+    p.userCalendarLink.findUnique.mockResolvedValue({
+      id: "link-1",
+      userId: "org-1",
+      externalEmail: "org@dali.dartmouth.edu",
+      enabled: true,
+    });
+    p.user.findMany.mockResolvedValue([]);
+    vi.mocked(createGoogleCalendarEvent).mockResolvedValue({
+      eventId: "gcal-1",
+      htmlLink: null,
+      meetUrl: null,
+    });
+
+    const res = await createScheduledMeeting({
+      ...base,
+      scope: { type: "None" },
+      organizerCalendarLinkId: "link-1",
+      guestEmails: ["Partner@Example.com", "not-an-email"],
+    });
+
+    expect(res.ok).toBe(true);
+    expect(p.scheduledMeeting.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ guestEmails: ["partner@example.com"] }),
+      }),
+    );
+    expect(createGoogleCalendarEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ attendees: [{ email: "partner@example.com" }] }),
+    );
+    expect(mockNotify).not.toHaveBeenCalled();
+  });
+
   it("carries both into the ICS and the invite body when we send the invite ourselves", async () => {
     const res = await createScheduledMeeting(base);
 

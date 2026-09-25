@@ -149,6 +149,10 @@ export default [
       "projects/routes/projects.$id.public-view.tsx",
     ),
 
+    // Resources — the lab's shared reference document. One fixed collab room
+    // (no Drive page behind it), read by every lab member, written by Core.
+    route("resources", "routes/resources.tsx"),
+
     // Drive — the unified documents + files + forms + agreements hub. This is the
     // only browsing surface; the old /documents and /forms hubs have been removed
     // (their editor/viewer deep-link routes remain, below).
@@ -189,6 +193,8 @@ export default [
     // so /education/manage/* isn't captured as an offering id.
     route("education", "education/routes/education.tsx"),
     route("education/compliance", "education/routes/education.compliance.tsx"),
+    // Browse-and-manage card list. Literal, so it must precede education/:offeringId.
+    route("education/offerings", "education/routes/education.offerings.tsx"),
     route("education/manage", "education/routes/education.manage.tsx"),
     route("education/manage/new", "education/routes/education.manage.new.tsx"),
     route("education/manage/assignments/:assignmentId", "education/routes/education.manage.assignments.$assignmentId.tsx"),
@@ -221,6 +227,7 @@ export default [
     // endpoint the Drive and editor POST to.
     route("api/forms", "routes/api.forms.ts"),
     route("api/folder-bindings", "routes/api.folder-bindings.ts"),
+    route("api/passkey-prompt", "routes/api.passkey-prompt.ts"),
     route("forms/edit/:formId", "forms/routes/forms.edit.$formId.tsx"),
     route("forms/preview-resolve", "forms/routes/forms.preview-resolve.ts"),
     route("forms/responses/:formId", "forms/routes/forms.responses.$formId.tsx"),
@@ -298,6 +305,7 @@ export default [
 
   // Partner auth (no layout).
   route("partner/login", "partners/routes/partner.login.tsx"),
+  route("partner/set-password", "partners/routes/partner.set-password.tsx"),
   route("partner/auth/verify", "partners/routes/partner.auth.verify.tsx"),
   route("partner/invite/:token", "partners/routes/partner.invite.$token.tsx"),
   route("partner/onboarding", "partners/routes/partner.onboarding.tsx"),
@@ -323,8 +331,12 @@ export default [
   // anywhere yet — reachable by direct URL.
   route("download", "routes/download.tsx"),
 
-  // Login (no layout)
+  // Login / signup / onboarding (no layout)
   route("login", "routes/login.tsx"),
+  route("signup", "routes/signup.tsx"),
+  route("welcome", "routes/welcome.tsx"),
+  route("login/dartmouth", "routes/login.dartmouth.tsx"),
+  route("login/dartmouth/set-password", "routes/login.dartmouth.set-password.tsx"),
   route("dev-login", "routes/dev-login.ts"),
   route("dev-login-as", "routes/dev-login-as.ts"),
   route("logout", "routes/logout.ts"),
@@ -681,6 +693,10 @@ export default [
   route("admin/authorize-gmail", "routes/admin.authorize-gmail.ts"),
   route("admin/authorize-gmail/callback", "routes/admin.authorize-gmail.callback.ts"),
 
+  // BetterAuth admin impersonation (flag-gated on `betterauth`).
+  route("admin/impersonate", "routes/admin.impersonate.ts"),
+  route("admin/stop-impersonating", "routes/admin.stop-impersonating.ts"),
+
   // Email sending
   route("api/email/send", "routes/api.email.send.ts"),
 
@@ -700,6 +716,7 @@ export default [
   // Mentorship API — weekly notes, templates, mentor↔mentee pairs.
   route("api/mentorship/notes", "mentorship/routes/api.mentorship.notes.ts"),
   route("api/mentorship/notes/:id", "mentorship/routes/api.mentorship.notes.$id.ts"),
+  route("api/mentorship/nudge", "mentorship/routes/api.mentorship.nudge.ts"),
   route("api/mentorship/templates", "mentorship/routes/api.mentorship.templates.ts"),
   route("api/mentorship/templates/:id", "mentorship/routes/api.mentorship.templates.$id.ts"),
   route("api/mentorship/pairs", "mentorship/routes/api.mentorship.pairs.ts"),
@@ -711,4 +728,18 @@ export default [
   // AI project TL;DR — cached work-status summary for the Progress-tab status
   // bar. Same provider gating as api/ai/doc, plus the `project-tldr-ai` flag.
   route("api/ai/project-tldr", "routes/api.ai.project-tldr.ts"),
+
+  // BetterAuth catch-all: all /api/auth/* requests (sign-in, sign-up, session,
+  // callback, etc.) are forwarded to the BetterAuth handler. Phase 0 scaffolding
+  // — not wired into existing auth flows yet.
+  route("api/auth/*", "routes/api.auth.$.ts"),
+
+  // Meeting-note recording: transcript in, notes Markdown out. Behind the
+  // `ai-meeting-notes` flag; same provider gating as api/ai/doc.
+  route("api/ai/meeting-notes", "routes/api.ai.meeting-notes.ts"),
+  // Native meeting recording: the page creates a row, the desktop app appends
+  // on-device transcript lines to it, the page polls them. Desktop app depends
+  // on these (see desktop/src-tauri/src/recording.rs).
+  route("api/meeting-recordings", "routes/api.meeting-recordings.ts"),
+  route("api/meeting-recordings/:id", "routes/api.meeting-recordings.$id.ts"),
 ] satisfies RouteConfig;

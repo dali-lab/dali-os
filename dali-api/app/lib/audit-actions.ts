@@ -7,6 +7,7 @@ export const AUDIT_ACTIONS = [
   "login.success",
   "login.failure",
   "logout",
+  "auth.passkey.register",
   "auth.token.invalid",
   "auth.token.malformed",
   "pairing.start",
@@ -167,6 +168,9 @@ export const AUDIT_ACTIONS = [
   // Payroll export: Technigala termly hire roster changes.
   "payroll.technigala.add",
   "payroll.technigala.remove",
+  // BetterAuth admin impersonation.
+  "admin.impersonate.start",
+  "admin.impersonate.stop",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

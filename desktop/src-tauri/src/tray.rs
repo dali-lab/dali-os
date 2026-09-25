@@ -9,7 +9,7 @@ use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, Wry};
 
-use crate::{commands, state::AppState, window};
+use crate::{commands, recording, state::AppState, window};
 
 const TRAY_ID: &str = "main-tray";
 // Keeps long notification titles from blowing out the menu width.
@@ -32,6 +32,22 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         .unwrap_or_default();
 
     let menu = Menu::new(app)?;
+    let recording = app
+        .state::<AppState>()
+        .recording
+        .lock()
+        .map(|g| g.is_some())
+        .unwrap_or(false);
+    if recording {
+        menu.append(&MenuItem::with_id(
+            app,
+            "stop-recording",
+            "● Stop recording",
+            true,
+            None::<&str>,
+        )?)?;
+        menu.append(&PredefinedMenuItem::separator(app)?)?;
+    }
     for (i, n) in recent.iter().enumerate() {
         let prefix = if n.urgent { "⏰ " } else { "" };
         let label = format!("{prefix}{}", truncated(&n.title));
@@ -66,6 +82,17 @@ pub fn refresh(app: &AppHandle, unread: i64) {
     }
 }
 
+/// Rebuild just the menu (recording started or stopped), leaving the unread
+/// count beside the icon alone.
+pub fn rebuild_menu(app: &AppHandle) {
+    let Some(tray) = app.tray_by_id(TRAY_ID) else {
+        return;
+    };
+    if let Ok(menu) = build_menu(app) {
+        let _ = tray.set_menu(Some(menu));
+    }
+}
+
 pub fn install(app: &AppHandle) -> tauri::Result<()> {
     let menu = build_menu(app)?;
 
@@ -90,6 +117,7 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
             }
             match id {
                 "open" => window::show_main(app),
+                "stop-recording" => recording::stop(),
                 "signout" => {
                     let handle = app.clone();
                     tauri::async_runtime::spawn(async move {

@@ -45,7 +45,9 @@ describe("slot registry", () => {
       "meeting-notes-team",
       "meeting-notes-partner",
     ]);
-    expect(FOLDER_SLOTS.EducationOffering.map((s) => s.purpose)).toEqual(["forms"]);
+    // An offering's Drive home is fixed at Education > the offering, so it
+    // exposes nothing to repoint — see ensureOfferingFormsFolder in ~/lib/pages.
+    expect(FOLDER_SLOTS.EducationOffering).toEqual([]);
     // Core files its own meeting notes the way a project does — see
     // ensureCoreMeetingNotesFolder.
     expect(FOLDER_SLOTS.Core.map((s) => s.purpose)).toContain("meeting-notes");
@@ -58,7 +60,7 @@ describe("slot registry", () => {
     for (const hiringSlot of ["hiring-forms", "application-templates", "rubrics"]) {
       expect(FOLDER_SLOTS.Core.map((s) => s.purpose)).not.toContain(hiringSlot);
     }
-    expect(slotFor("Project", "meeting-notes-team")?.defaultTitle).toBe("Team meeting assets");
+    expect(slotFor("Project", "meeting-notes-team")?.defaultTitle).toBe("Team meetings");
     expect(slotFor("Project", "nope")).toBeUndefined();
   });
 
@@ -102,7 +104,7 @@ describe("ensureProcessFolder", () => {
       workspaceType: "Project",
       workspaceId: "p1",
       kind: "Folder",
-      title: "Team meeting assets",
+      title: "Team meetings",
     });
     // Project folders inherit workspace access — no explicit scope.
     expect(folderData.scopeKind).toBeUndefined();

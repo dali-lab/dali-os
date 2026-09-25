@@ -11,6 +11,8 @@ import { checkRateLimit, getClientIp } from "~/lib/rate-limit";
 import { getApiBaseUrl } from "~/lib/app-env";
 import { logAuditEvent } from "~/lib/audit";
 import { issueSession, hashSessionId, revokeSession } from "~/lib/session";
+import { mintBetterAuthSession } from "~/lib/betterauth-session.server";
+import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import {
   hashCode,
   generateRawCode,
@@ -91,13 +93,44 @@ export async function action({ request }: Route.ActionArgs) {
 
   // Mint the keychain desktop Session (Bearer for the background poller). Longer
   // absolute TTL than the webview cookie so notifications don't lapse mid-month.
-  const desktop = await issueSession({
-    userId: row.userId,
-    absoluteTtlMs: DESKTOP_ABSOLUTE_TTL_MS,
-    userAgent: desktopPollerUserAgent({ host: row.deviceLabel }),
-    ip: getClientIp(request),
-  });
-  const desktopSessionId = hashSessionId(desktop.rawId);
+  // Flag-gated: when betterauth is on, mint a BetterAuth session so the poller's
+  // Bearer token is verified by requireAuth via auth.api.getSession. The pairing
+  // contract (request/response shape, DevicePairing model, single-mint guard) is
+  // unchanged — only the session store backing the token changes.
+  let desktopToken: string;
+  let desktopSessionId: string;
+  let absoluteExpiresAt: Date;
+  let revokeOnRaceLoss: () => Promise<void>;
+
+  if (await isFeatureEnabledForEveryone("betterauth", request)) {
+    const s = await mintBetterAuthSession({
+      userId: row.userId,
+      expiresInSec: DESKTOP_ABSOLUTE_TTL_MS / 1000,
+      userAgent: desktopPollerUserAgent({ host: row.deviceLabel }),
+      ipAddress: getClientIp(request),
+    });
+    desktopToken = s.token;
+    desktopSessionId = s.sessionId; // store the AuthSession.id directly
+    absoluteExpiresAt = s.expiresAt;
+    revokeOnRaceLoss = async () => {
+      // BetterAuth session revocation: delete the row by id
+      const ctx = await (await import("~/lib/betterauth.server")).auth.$context;
+      await ctx.internalAdapter.deleteSession(desktopToken);
+    };
+  } else {
+    const desktop = await issueSession({
+      userId: row.userId,
+      absoluteTtlMs: DESKTOP_ABSOLUTE_TTL_MS,
+      userAgent: desktopPollerUserAgent({ host: row.deviceLabel }),
+      ip: getClientIp(request),
+    });
+    desktopToken = desktop.rawId;
+    desktopSessionId = hashSessionId(desktop.rawId);
+    absoluteExpiresAt = desktop.absoluteExpiresAt;
+    revokeOnRaceLoss = async () => {
+      await revokeSession(desktopSessionId, { hashed: true });
+    };
+  }
 
   // Mint the one-time handoff code (planted into the webview cookie jar by
   // /auth/handoff). 60s, single-use.
@@ -116,7 +149,7 @@ export async function action({ request }: Route.ActionArgs) {
     },
   });
   if (claim.count === 0) {
-    await revokeSession(desktopSessionId, { hashed: true });
+    await revokeOnRaceLoss();
     return Response.json({ status: "already_used" });
   }
 
@@ -124,9 +157,9 @@ export async function action({ request }: Route.ActionArgs) {
 
   return Response.json({
     status: "approved",
-    desktopToken: desktop.rawId,
+    desktopToken,
     handoffCode,
     handoffUrl: `${getApiBaseUrl()}/auth/handoff?code=${encodeURIComponent(handoffCode)}`,
-    absoluteExpiresAt: desktop.absoluteExpiresAt.toISOString(),
+    absoluteExpiresAt: absoluteExpiresAt.toISOString(),
   });
 }

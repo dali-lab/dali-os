@@ -1,34 +1,41 @@
-import { randomBytes } from "node:crypto";
 import { useEffect, useState } from "react";
 import { Form, redirect, useActionData, useNavigation } from "react-router";
 import type { Route } from "./+types/partner.login";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { checkRateLimit } from "~/lib/rate-limit";
-import { getApiBaseUrl, getAppEnv } from "~/lib/app-env";
-import { buildGoogleAuthUrl } from "~/lib/google-oauth";
 import {
   issuePartnerMagicLink,
   normalizeEmail,
+  classifyPartnerEmail,
 } from "~/partners/lib/magic-link.server";
+import { sendMemberEmailConflictEmail } from "~/partners/lib/partner-emails.server";
+import { auth } from "~/lib/betterauth.server";
+import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 
 // UI resend cooldown. The server independently rate-limits (3 sends per
 // email per 15 minutes) — this just keeps the button from being mashed.
 const RESEND_COOLDOWN_S = 30;
-
-const OAUTH_STATE_COOKIE = "__dali_oauth_state";
 
 export const meta: Route.MetaFunction = () => [
   { title: "DALI OS · Partner sign in" },
 ];
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const auth = await requireAuth(request);
-  if (!auth.ok) return {};
-  if (auth.user.type === "member") return redirect("/");
-  if (auth.user.type === "dartmouth") return redirect("/portal");
+  const betterAuthOn = await isFeatureEnabledForEveryone("betterauth", request);
+  const existingAuth = await requireAuth(request);
+  if (!existingAuth.ok) {
+    // Flag ON: partners sign in on the unified /login screen (email code +
+    // passkey), same as members and Dartmouth students. Flag OFF: fall through
+    // to the legacy partner magic-link login below. This route stays as a thin
+    // flag-gated redirect until cutover cleanup, when it's deleted outright.
+    if (betterAuthOn) return redirect("/login");
+    return { betterAuthOn };
+  }
+  if (existingAuth.user.type === "member") return redirect("/");
+  if (existingAuth.user.type === "dartmouth") return redirect("/portal");
   const partnerContact = await prisma.partnerContact.findUnique({
-    where: { userId: auth.user.sub },
+    where: { userId: existingAuth.user.sub },
     select: { id: true },
   });
   // A contact row means they've been through at least one auth flow previously;
@@ -37,43 +44,41 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 export async function action({ request }: Route.ActionArgs) {
+  const betterAuthOn = await isFeatureEnabledForEveryone("betterauth", request);
   const formData = await request.formData();
 
-  // Google sign-in — works for returning partners AND first-timers (the
-  // callback routes unknown verified emails into /partner/onboarding, same
-  // destination as the magic link). Same state-cookie shape as /login, minus
-  // the @dali.dartmouth.edu hint.
-  if (formData.get("provider") === "google") {
-    const limited = checkRateLimit(request, { max: 5, windowMs: 60_000 });
-    if (limited) return limited;
-    const state = randomBytes(32).toString("base64url");
-    const secure = getAppEnv() !== "dev";
-    const stateCookie = [
-      `${OAUTH_STATE_COOKIE}=${state}`,
-      "Path=/auth/callback/google",
-      "Max-Age=600",
-      "HttpOnly",
-      "SameSite=Lax",
-      ...(secure ? ["Secure"] : []),
-    ].join("; ");
-    const headers = new Headers();
-    headers.append("Set-Cookie", stateCookie);
-    headers.set(
-      "Location",
-      buildGoogleAuthUrl({
-        clientId: process.env.GOOGLE_CLIENT_ID!,
-        redirectUri: `${getApiBaseUrl()}/auth/callback/google`,
-        scopes: ["openid", "email", "profile"],
-        state,
-      }),
-    );
-    return new Response(null, { status: 302, headers });
-  }
+  // Rate-limit every submit (the removed Google branch used to own this). The
+  // server also independently throttles magic-link sends per email.
+  const limited = checkRateLimit(request, { max: 5, windowMs: 60_000 });
+  if (limited) return limited;
 
   const email = String(formData.get("email") ?? "");
   if (!email.includes("@")) {
     return { error: "Enter a valid email address" };
   }
+
+  if (betterAuthOn) {
+    // Member-conflict guard: a @dali/member email must NOT get a partner magic
+    // link — it gets the redirect-to-/login conflict email + neutral response.
+    const identity = await classifyPartnerEmail(normalizeEmail(email));
+    if (identity.kind === "member-conflict") {
+      await sendMemberEmailConflictEmail(normalizeEmail(email));
+      return { sent: true, email: normalizeEmail(email) };
+    }
+    // BetterAuth magic-link: callbackURL points to /welcome?door=partner so
+    // first-time partners finish setup at the unified welcome page.
+    try {
+      await auth.api.signInMagicLink({
+        body: { email: normalizeEmail(email), callbackURL: "/welcome?door=partner" },
+        headers: request.headers,
+      });
+    } catch {
+      // Treat send errors as a neutral outcome — never reveal whether the address
+      // is in the system. The member-conflict branch above already handled that case.
+    }
+    return { sent: true, email: normalizeEmail(email) };
+  }
+
   const result = await issuePartnerMagicLink(email, request);
   if ("rateLimited" in result) return result.rateLimited;
   // Identical response whether or not the address maps to an account. Every
@@ -158,21 +163,6 @@ export default function PartnerLogin() {
                 {actionData.error}
               </p>
             )}
-            <Form method="post">
-              <input type="hidden" name="provider" value="google" />
-              <button
-                type="submit"
-                disabled={submitting}
-                className="w-full rounded-xl border border-border bg-card text-dark-blue font-heading font-semibold py-3 hover:border-accent-coral transition disabled:opacity-50"
-              >
-                Continue with Google
-              </button>
-            </Form>
-            <div className="my-5 flex items-center gap-3">
-              <span className="h-px flex-1 bg-border" />
-              <span className="text-xs text-muted-foreground">or</span>
-              <span className="h-px flex-1 bg-border" />
-            </div>
             <Form method="post" className="flex flex-col gap-4">
               <input
                 type="email"
@@ -186,7 +176,7 @@ export default function PartnerLogin() {
                 disabled={submitting}
                 className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
               >
-                {submitting ? "Sending…" : "Email me a sign-in link"}
+                {submitting ? "Sending…" : "Continue with email"}
               </button>
             </Form>
 

@@ -32,7 +32,7 @@ export default function SignInboxPage() {
       ) : (
         <ul className="space-y-3">
           {outstanding.map((o) => (
-            <li key={o.bindingId}>
+            <li key={`${o.bindingId}:${o.role}`}>
               <Link
                 to={`/sign/${o.bindingId}`}
                 className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card p-4 shadow-sm hover:shadow-md transition-shadow"
@@ -43,7 +43,9 @@ export default function SignInboxPage() {
                   </span>
                   <span className="font-medium text-foreground truncate">{o.documentName}</span>
                 </span>
-                <span className="text-sm font-medium text-accent-coral shrink-0">Review &amp; sign →</span>
+                <span className="text-sm font-medium text-accent-coral shrink-0">
+                  {o.role === "mentee" ? "Countersign →" : "Review & sign →"}
+                </span>
               </Link>
             </li>
           ))}

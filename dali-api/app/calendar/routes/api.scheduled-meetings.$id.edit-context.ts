@@ -30,6 +30,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       scopeType: true,
       scopeId: true,
       participantUserIds: true,
+      guestEmails: true,
+      externalEventId: true,
       location: true,
       description: true,
     },
@@ -72,6 +74,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         scopeType: meeting.scopeType,
         groupId: meeting.scopeType === "Group" ? meeting.scopeId : null,
         participantUserIds: meeting.participantUserIds,
+        guestEmails: meeting.guestEmails,
+        // Email guests are invited through the Google event, so they can only
+        // be added while one exists.
+        googleSynced: meeting.externalEventId !== null,
         organizerId: meeting.organizerId,
         // Inviting to a finished meeting adds to the roster without sending an
         // invite; the invite modal says so.

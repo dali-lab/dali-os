@@ -1,3 +1,4 @@
+import { useCallback, useRef } from "react";
 import { Link, redirect, useLoaderData, useSearchParams } from "react-router";
 import QRCode from "qrcode";
 import { Shapes } from "lucide-react";
@@ -17,10 +18,15 @@ import { driveRootCrumbs, workspaceDriveScope } from "~/lib/drive-crumbs";
 import { DocumentEditor } from "~/components/DocumentEditor";
 import { AttendanceChecklist, type AttendanceRow } from "~/components/AttendanceChecklist";
 import { CheckInPanel } from "~/components/CheckInPanel";
+import { MeetingRecorder } from "~/components/MeetingRecorder";
+import { appendBlocks } from "~/components/doc";
+import type { DocEditorInstance } from "~/components/doc/schema/build";
+import { pageDocName } from "~/collab/roomName";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { PageIcon } from "~/components/PageIcon";
 import { FolderIcon } from "~/components/FolderIcon";
 import { redirectToLogin } from "~/lib/login-next";
+import { walletTokensConfigured } from "~/lib/wallet-token";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const t = (data as { title?: string } | undefined)?.title;
@@ -255,6 +261,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         viewerPresent: boolean;
         checkInUrl: string | null;
         checkInQrSvg: string | null;
+        walletConfigured: boolean;
       }
     | null = null;
   if (page.meetingNoteId) {
@@ -310,6 +317,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         viewerPresent: viewerRow?.present ?? false,
         checkInUrl,
         checkInQrSvg,
+        walletConfigured: walletTokensConfigured(),
       };
     }
   }
@@ -395,11 +403,24 @@ export default function DocumentPage() {
   const [searchParams] = useSearchParams();
   const focusCommentId = searchParams.get("comment") ?? undefined;
   const focusMentionUserId = searchParams.get("mention") ?? undefined;
-  const whiteboardEnabled = useFeatureFlag("whiteboard");
+  const recordingEnabled = useFeatureFlag("ai-meeting-notes");
+
+  // Meeting recording writes into the doc through the live editor, so
+  // collaborators see the notes arrive like any other edit.
+  const editorRef = useRef<DocEditorInstance | null>(null);
+  const onEditorReady = useCallback((ed: DocEditorInstance) => {
+    editorRef.current = ed;
+  }, []);
+  const insertMarkdown = useCallback((markdown: string) => {
+    const editor = editorRef.current;
+    if (!editor) return false;
+    appendBlocks(editor, editor.tryParseMarkdownToBlocks(markdown));
+    return true;
+  }, []);
 
   return (
     <div className="flex flex-col gap-4">
-      {whiteboardEnabled && attendance?.whiteboardPageId && (
+      {attendance?.whiteboardPageId && (
         // This meeting also has a whiteboard — link across to it (the board
         // carries the matching link back).
         <Link
@@ -419,11 +440,15 @@ export default function DocumentPage() {
           checkInQrSvg={attendance.checkInQrSvg}
         />
       )}
+      {recordingEnabled && canEdit && (
+        <MeetingRecorder documentName={pageDocName(pageId)} onInsert={insertMarkdown} />
+      )}
       {attendance && (
         <AttendanceChecklist
           meetingId={attendance.meetingId}
           meetingLabel={attendance.meetingLabel}
           canEdit={attendance.canMark}
+          canScan={attendance.walletConfigured}
           attendees={attendance.rows}
         />
       )}
@@ -452,6 +477,7 @@ export default function DocumentPage() {
         backlinks={backlinks}
         focusMentionUserId={focusMentionUserId}
         aiEnabled
+        onEditorReady={onEditorReady}
       />
     </div>
   );

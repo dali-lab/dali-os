@@ -1,6 +1,7 @@
 import { useId, type ReactNode } from "react";
 import { Form } from "react-router";
 import { Modal, ModalHeader } from "~/components/Modal";
+import { modalCardClass } from "~/components/os-chrome";
 import { Button } from "~/components/ui/Button";
 
 // Every "add X" on the manage page opens one of these instead of expanding a
@@ -39,26 +40,27 @@ export function AddFormModal({
       open={open}
       onClose={onClose}
       labelledBy={titleId}
-      containerClassName="bg-card rounded-2xl shadow-brand-2 max-w-lg w-full p-5 sm:p-6 my-auto max-h-[85vh] overflow-y-auto"
+      containerClassName={modalCardClass("max-w-lg")}
     >
       <ModalHeader titleId={titleId} title={title} subtitle={subtitle} onClose={onClose} />
-      <Form method="post" onSubmit={() => queueMicrotask(onClose)} className="flex flex-col gap-3">
+      {/* `os-form` dresses every field the caller passes — native inputs and
+          the Select / DateField triggers alike — so an "add X" modal never
+          hand-rolls its own field classes. */}
+      <Form
+        method="post"
+        onSubmit={() => queueMicrotask(onClose)}
+        className="os-form flex flex-col gap-4"
+      >
         <input type="hidden" name="intent" value={intent} />
         {Object.entries(hiddenFields ?? {}).map(([name, value]) => (
           <input key={name} type="hidden" name={name} value={value} />
         ))}
         {children}
         <div className="flex items-center justify-end gap-2 pt-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-sm font-medium text-muted-foreground hover:text-foreground"
-          >
+          <button type="button" onClick={onClose} className="os-btn-ghost">
             Cancel
           </button>
-          <Button type="submit" size="sm">
-            {submitLabel}
-          </Button>
+          <Button type="submit">{submitLabel}</Button>
         </div>
       </Form>
     </Modal>

@@ -1,0 +1,11 @@
+-- An education offering no longer binds a Drive folder.
+--
+-- Its Drive home is fixed at Education > the offering (the offering's own
+-- workspace, which the Education space renders as that folder), and its Forms
+-- folder is created there directly by ensureOfferingFormsFolder in
+-- app/lib/pages.ts. The "Drive folders" settings section is gone with it, so
+-- these rows have nothing left reading or writing them.
+--
+-- Only the binding rows go. The folder pages they pointed at are ordinary
+-- pages and are left alone, as is every form already filed in one.
+DELETE FROM "ProcessFolderBinding" WHERE "processType" = 'EducationOffering';

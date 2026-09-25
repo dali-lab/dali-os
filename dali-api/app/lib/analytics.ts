@@ -39,6 +39,7 @@ const TRACKED_PREFIXES = [
   "/admin",
   "/core",
   "/drive",
+  "/resources",
   "/internal-processes",
   "/calendar",
   "/profile",

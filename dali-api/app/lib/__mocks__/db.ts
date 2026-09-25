@@ -238,6 +238,15 @@ export const prisma = {
     upsert: vi.fn(),
     deleteMany: vi.fn(),
   },
+  // Default to no rows → every flag resolves to its registry default (off),
+  // including `betterauth`. requireAuth's BetterAuth-coexistence fallback and
+  // the login/partner door loaders call prisma.featureFlag via
+  // isFeatureEnabledForEveryone, so this must exist for those code paths.
+  featureFlag: {
+    findMany: vi.fn().mockResolvedValue([]),
+    findUnique: vi.fn(),
+    upsert: vi.fn(),
+  },
   projectAssignment: {
     findMany: vi.fn().mockResolvedValue([]),
     findFirst: vi.fn(),
@@ -647,11 +656,12 @@ export const prisma = {
     delete: vi.fn(),
     deleteMany: vi.fn(),
   },
-  educationDecisionEmail: {
-    findUnique: vi.fn(),
+  educationEmail: {
+    findUnique: vi.fn().mockResolvedValue(null),
     findMany: vi.fn().mockResolvedValue([]),
     upsert: vi.fn(),
     delete: vi.fn(),
+    deleteMany: vi.fn(),
   },
   educationFormBinding: {
     findUnique: vi.fn(),
@@ -740,6 +750,13 @@ export const prisma = {
   aiUsage: {
     upsert: vi.fn(),
     update: vi.fn(),
+  },
+  meetingRecording: {
+    create: vi.fn(),
+    findUnique: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+    deleteMany: vi.fn(),
   },
   outboundMessage: {
     create: vi.fn(),

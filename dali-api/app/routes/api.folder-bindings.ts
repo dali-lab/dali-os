@@ -3,7 +3,6 @@ import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore, isProjectMember } from "~/lib/roles";
-import { isOfferingManager } from "~/education/lib/access.server";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import {
@@ -28,7 +27,11 @@ import {
 // section of a project / offering / cycle / Core settings surface (see
 // app/lib/bindings.server.ts). Authorization is per process type.
 
-const PROCESS_TYPES = ["Project", "EducationOffering", "HiringCycle", "Core", "Lab", "CertificateTemplates"] as const;
+// Which process types expose configurable bindings. EducationOffering is
+// deliberately absent: an offering's Drive home is fixed at Education > the
+// offering, so there is nothing to repoint (the enum value stays because old
+// binding rows still carry it).
+const PROCESS_TYPES = ["Project", "HiringCycle", "Core", "Lab", "CertificateTemplates"] as const;
 
 // Can `userId` manage the folder bindings of this process? Mirrors each area's
 // existing "manage settings" gate; Core role is a superset everywhere.
@@ -43,21 +46,21 @@ async function canManageProcess(
     case "Project":
       return isProjectMember(userId, processId, request);
     case "EducationOffering":
-      return isOfferingManager(userId, processId);
     case "HiringCycle":
     case "Core":
     case "Lab":
     case "CertificateTemplates":
       // Hiring + Core governance bindings are Core-only (Core check above), and
       // so is repointing the Lab drive's shared folders and the certificate
-      // backgrounds — deciding where auto-filing lands is a Core decision.
+      // backgrounds: deciding where auto-filing lands is a Core decision.
+      // EducationOffering has no bindings to manage at all.
       return false;
   }
 }
 
 // The workspace whose folders are offered as "choose existing" candidates for
-// this process. Projects/offerings show their own workspace; Core/hiring show
-// the Lab workspace.
+// this process. A project shows its own workspace; Core/hiring show the Lab
+// workspace.
 function candidateWhere(processType: ProcessType, processId: string) {
   const base = { kind: "Folder" as const, archivedAt: null };
   switch (processType) {
@@ -65,6 +68,7 @@ function candidateWhere(processType: ProcessType, processId: string) {
       return { ...base, workspaceType: "Project" as const, workspaceId: processId };
     case "EducationOffering":
       return { ...base, workspaceType: "EducationOffering" as const, workspaceId: processId };
+    // Unreachable via PROCESS_TYPES, kept because the enum still has the value.
     case "HiringCycle":
     case "Core":
     case "Lab":
@@ -90,7 +94,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
   const processTypeRaw = url.searchParams.get("processType");
   const processIdRaw = url.searchParams.get("processId") ?? "";
-  if (!processTypeRaw || !PROCESS_TYPES.includes(processTypeRaw as ProcessType)) {
+  if (!processTypeRaw || !(PROCESS_TYPES as readonly string[]).includes(processTypeRaw)) {
     return withCors(request, Response.json({ error: "Bad processType" }, { status: 400 }));
   }
   const processType = processTypeRaw as ProcessType;

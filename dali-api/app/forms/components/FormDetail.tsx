@@ -325,8 +325,8 @@ export function FormDetail() {
   }
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-center gap-2 flex-wrap">
+    <div className="space-y-8">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
         <div className="flex-1 min-w-[12rem]">
           <FormNameInput formId={form.id} name={form.name} />
         </div>
@@ -469,7 +469,7 @@ export function FormDetail() {
           }
         />
       ) : selectedVersion ? (
-        <div className="max-w-4xl mx-auto space-y-4">
+        <div className="space-y-4">
           <div className="flex items-center gap-3 flex-wrap">
             <div className="inline-flex p-1 rounded-full bg-os-container">
               {(["questions", "results"] as const).map((v) => (
@@ -590,7 +590,7 @@ export function FormDetail() {
           )}
         </div>
       ) : (
-        <div className="max-w-4xl mx-auto text-center py-12 rounded-os-card bg-os-card">
+        <div className="text-center py-12 rounded-os-card bg-os-card">
           <FileText className="mx-auto h-12 w-12 text-muted-foreground/70" />
           <h3 className="mt-2 text-sm font-medium text-foreground">No versions</h3>
           <div className="mt-6">

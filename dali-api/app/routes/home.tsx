@@ -10,10 +10,13 @@ import { FavoriteStar } from "~/components/FavoriteStar";
 import { FavoriteRouteButton } from "~/components/FavoriteRouteButton";
 import MilestoneHero from "~/components/home/MilestoneHero";
 import SearchIcon from "~/components/home/landing/SearchIcon";
+import {
+  isLandingBackgroundId,
+  scheduledLandingWeek,
+} from "~/components/home/landing/backgrounds/schedule";
 import { isNavbarRoute } from "~/lib/navbar-routes";
-import { currentTermStrict, getUserRoles } from "~/lib/roles";
+import { currentTermStrict } from "~/lib/roles";
 import { termWeekNumber } from "~/lib/terms.shared";
-import { resolveHomeSurface } from "~/lib/feature-flags.server";
 import { TYPE_META } from "~/components/CommandPalette";
 import { MIN_QUERY_LENGTH, type SearchResult } from "~/lib/search";
 import { Avatar } from "~/components/ui/Avatar";
@@ -31,14 +34,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (auth.user.type === "applicant") return redirect("/portal");
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return partnerRedirect;
-
-  // Which home this member gets — see the "home-surface" flag. The calendar
-  // surface is the real /calendar route rather than a copy of it here: it owns
-  // its own loader, action, and sub-tab chrome, so home hands the member over
-  // instead of trying to re-host all three.
-  const roles = await getUserRoles(auth.user.sub, request);
-  const surface = await resolveHomeSurface(auth.user.sub, roles, request);
-  if (surface === "calendar") return redirect("/calendar");
 
   const me = await loadShellUser(auth.user.sub, request);
   const tz = resolveUserTimeZone(me);
@@ -66,8 +61,17 @@ export async function loader({ request }: Route.LoaderArgs) {
   const greeting =
     greetingHour < 12 ? "Good morning" : greetingHour < 18 ? "Good afternoon" : "Good evening";
 
+  // This week's title and background; `?background=<id>` previews another background.
+  const landing = scheduledLandingWeek(
+    // en-CA formats as YYYY-MM-DD, the schedule's date format.
+    new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date()),
+  );
+  const preview = new URL(request.url).searchParams.get("background");
+
   return {
     greeting,
+    milestoneTitle: landing.title,
+    background: isLandingBackgroundId(preview) ? preview : landing.id,
     week,
     user: auth.user,
     pages: {
@@ -113,7 +117,7 @@ const HOME_PAGE_LIMIT = 6;
 export const handle = { fitViewport: true, bleedPane: true };
 
 export default function Home() {
-  const { user, greeting, week, pages } = useLoaderData<typeof loader>();
+  const { user, greeting, week, milestoneTitle, background, pages } = useLoaderData<typeof loader>();
   const revalidator = useRevalidator();
   const onChanged = () => revalidator.revalidate();
   const firstName = user.firstName || user.email.split("@")[0];
@@ -123,10 +127,11 @@ export default function Home() {
     <div className="relative flex min-h-0 flex-1 flex-col">
       <MilestoneHero
         weekBadge={week ? `Week ${week.index} ${week.dates}` : undefined}
-        milestoneTitle="Lab Kickoff"
+        milestoneTitle={milestoneTitle}
         greeting={greeting}
         userName={firstName}
         search={<HomeSearch />}
+        background={background}
         recentsHeading="Favorites + Recently Visited"
         // A brand-new account (nothing starred, nothing opened) gets no card
         // row at all — the search field is the only thing to do.

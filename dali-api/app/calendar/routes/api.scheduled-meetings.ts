@@ -2,10 +2,10 @@ import type { Route } from "./+types/api.scheduled-meetings";
 import { z } from "zod";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { canViewForms, getUserRoles, isCore } from "~/lib/roles";
+import { canViewForms, isCore } from "~/lib/roles";
 import { isCoreGroup } from "~/lib/groups";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { parseJson } from "~/lib/validate";
+import { MAX_GUEST_EMAILS } from "~/calendar/lib/guest-emails";
 import {
   createScheduledMeeting,
   type ScheduledMeetingScope,
@@ -45,15 +45,16 @@ const Base = {
   // Core-only marker that lifts the meeting onto the Core hub calendar without
   // changing its participant scope. Gated below, not by the schema.
   isCoreMeeting: z.boolean().optional(),
-  // Opt in to a Google Meet link. Only honored when the google-meet flag is on
-  // for the caller and the meeting is pushed to a linked Google calendar.
+  // Opt in to a Google Meet link. Only honored when the meeting is pushed to a
+  // linked Google calendar.
   addMeet: z.boolean().optional(),
   // Which meeting assets to create (both file under the resolved location). From
-  // the create form's toggles; a whiteboard is additionally gated on the
-  // feature flag server-side. Omitting `note` keeps the pre-whiteboard default
+  // the create form's toggles. Omitting `note` keeps the pre-whiteboard default
   // (a note whenever meetingType is set).
   note: z.boolean().optional(),
   whiteboard: z.boolean().optional(),
+  // People with no DALI profile, invited by address through the Google event.
+  guestEmails: z.array(z.string().trim().email().max(320)).max(MAX_GUEST_EMAILS).optional(),
 } as const;
 
 const CreateSchema = z
@@ -129,16 +130,6 @@ export async function action({ request }: Route.ActionArgs) {
     scope = { type: "None" };
   }
 
-  const roles = await getUserRoles(auth.user.sub, request);
-  // Only mint a Meet link when the feature is on for this user; the create
-  // helper further requires an actual Google-calendar push for it to take hold.
-  const addMeet =
-    !!body.addMeet && (await isFeatureEnabled("google-meet", auth.user.sub, roles, request));
-  // Whiteboards ship behind a flag — never create one for a caller who can't see
-  // the feature, even if the field is posted.
-  const createWhiteboard =
-    !!body.whiteboard && (await isFeatureEnabled("whiteboard", auth.user.sub, roles, request));
-
   const result = await createScheduledMeeting({
     organizerId: auth.user.sub,
     organizerEmail: auth.user.email,
@@ -156,10 +147,11 @@ export async function action({ request }: Route.ActionArgs) {
     projectId: body.projectId,
     noteLocation: body.noteLocation,
     createNote: body.note,
-    createWhiteboard,
+    createWhiteboard: body.whiteboard,
     attendanceMode: body.attendanceMode,
     isCoreMeeting: coreMeeting,
-    addMeet,
+    addMeet: body.addMeet,
+    guestEmails: body.guestEmails,
   });
 
   if (!result.ok) {

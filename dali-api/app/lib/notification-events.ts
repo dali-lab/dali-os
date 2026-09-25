@@ -28,6 +28,7 @@ export type EventDef = {
     | "Documents"
     | "Hiring"
     | "Education"
+    | "Mentorship"
     | "Announcements"
     | "Forms"
     | "Onboarding";
@@ -99,6 +100,16 @@ export const EVENT_TYPES = {
     area: "Meetings",
     label: "Class schedule changes",
     description: "When a class you added has a new time or room on the Dartmouth timetable.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
+  "mentorship.note_reminder": {
+    kind: "General",
+    area: "Mentorship",
+    label: "Mentorship note reminders",
+    description:
+      "When Core reminds you to fill in your weekly mentorship notes.",
+    // Slack is force-sent by the nudge action itself (bypassing this
+    // preference on purpose), so notify() must not also DM here.
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   "task.due_reminder": {
@@ -200,6 +211,18 @@ export const EVENT_TYPES = {
       "When you're required to review and sign an agreement (e.g. a term or mentorship agreement).",
     // The in-app row is the workflow surface (links to the signing page) and is
     // a hard-gate requirement, so it can't be muted.
+    lockedInApp: true,
+    timeSensitive: true,
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
+  },
+  "document.countersign_request": {
+    kind: "General",
+    area: "Documents",
+    label: "Agreements to countersign",
+    description:
+      "When your mentor has signed a mentorship agreement and you're required to countersign it.",
+    // Same hard-gate workflow surface as sign_request — the mentee is blocked
+    // until they countersign, so the in-app row can't be muted.
     lockedInApp: true,
     timeSensitive: true,
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },

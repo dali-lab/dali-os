@@ -796,9 +796,11 @@ export function StaffingBoard({
             card={card}
             projectNames={projectNames}
             onOpenBid={() => setOpenBid({ userId: card.userId, columnKey: card.columnKey })}
-            // Remove (×): external-mentor cards remove their placement; on the
-            // Unassigned column a roster card's × removes them from the board;
-            // on a project column it removes them from just that project.
+            // Remove (×): external-mentor cards remove their placement; a project
+            // column card removes them from just that project (any member, bid or
+            // not); on the Unassigned column the × removes a manual board add —
+            // it's hidden for bidders there, since board-member DELETE never
+            // touches a bid, so a bidder would just reappear.
             onRemove={
               card.isExternalMentor
                 ? canManage && card.externalMentorId
@@ -807,7 +809,9 @@ export function StaffingBoard({
                 : !canManage
                   ? undefined
                   : card.columnKey === UNASSIGNED
-                    ? () => handleRemoveMember(card.userId)
+                    ? card.manuallyAdded
+                      ? () => handleRemoveMember(card.userId)
+                      : undefined
                     : () => void removeFromProject(card.userId, card.columnKey)
             }
             draggable={canManage}

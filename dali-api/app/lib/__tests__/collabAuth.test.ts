@@ -88,6 +88,30 @@ describe("authorizeCollabDoc", () => {
     expect(await authorizeCollabDoc("user1", "unknown:id:field")).toMatchObject(denied());
   });
 
+  describe("resources doc", () => {
+    it("lets Core write", async () => {
+      (isCore as any).mockResolvedValue(true);
+      expect(await authorizeCollabDoc("user1", "resources:lab:body")).toEqual(allowed());
+    });
+
+    it("connects a non-Core lab member read-only", async () => {
+      (isLabMember as any).mockResolvedValue(true);
+      expect(await authorizeCollabDoc("user1", "resources:lab:body")).toEqual({
+        allowed: true,
+        readOnly: true,
+      });
+    });
+
+    it("rejects anyone outside the lab", async () => {
+      expect(await authorizeCollabDoc("user1", "resources:lab:body")).toMatchObject(denied());
+    });
+
+    it("rejects an invented resources room — there is exactly one", async () => {
+      (isCore as any).mockResolvedValue(true);
+      expect(await authorizeCollabDoc("user1", "resources:other:body")).toMatchObject(denied());
+    });
+  });
+
   describe("review docs", () => {
     it("allows the reviewer who owns the review", async () => {
       mockPrisma.applicationReview.findUnique.mockResolvedValue({
