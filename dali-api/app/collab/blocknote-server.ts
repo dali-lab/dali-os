@@ -205,6 +205,12 @@ let editorSingleton: ServerBlockNoteEditor<any, any, any> | null = null;
 export function getServerEditor(): ServerBlockNoteEditor<any, any, any> {
   if (!editorSingleton) {
     editorSingleton = ServerBlockNoteEditor.create({ schema: serverSchema as any });
+    // server-util's default jsdom has an opaque origin, where localStorage
+    // throws. BlockNote's toggle wrapper (toggle list items, toggle headings)
+    // reads localStorage during blocksToFullHTML, so any doc with a toggle
+    // failed the full-HTML render. A real origin gives it an in-memory store.
+    (editorSingleton as unknown as { jsdom: { reconfigure(o: { url: string }): void } }).jsdom
+      .reconfigure({ url: "http://localhost/" });
   }
   return editorSingleton;
 }
