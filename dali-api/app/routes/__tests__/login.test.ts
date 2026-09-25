@@ -313,7 +313,7 @@ describe("POST /login email-code (flag-ON)", () => {
 });
 
 describe("POST /login verify-code (flag-ON)", () => {
-  it("verifies the OTP and forwards the session cookie", async () => {
+  it("verifies the OTP, forwards the session cookie, and routes through the passkey offer", async () => {
     mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
     const baHeaders = new Headers({ "Set-Cookie": "dali.session_token=abc; Path=/" });
     mockSignInEmailOTP.mockResolvedValue({ headers: baHeaders });
@@ -325,6 +325,8 @@ describe("POST /login verify-code (flag-ON)", () => {
       }),
     } as any)) as Response;
     expect(res.status).toBe(302);
+    // First-time passkey nudge: land on /welcome (which gates it), not straight home.
+    expect(res.headers.get("Location")).toBe("/welcome?step=passkey&next=%2F");
     expect(mockSignInEmailOTP).toHaveBeenCalledWith(
       expect.objectContaining({
         body: expect.objectContaining({ email: "ada@dartmouth.edu", otp: "123456" }),

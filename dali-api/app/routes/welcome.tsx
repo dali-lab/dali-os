@@ -4,6 +4,8 @@ import type { Route } from "./+types/welcome";
 import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { getBetterAuthUser } from "~/lib/betterauth-compat.server";
 import { captureDartmouthIdentity } from "~/lib/dartmouth-capture.server";
+import { pickSafeLoginNext } from "~/lib/login-next";
+import { shouldOfferPasskey, setPasskeyPromptDismissed } from "~/lib/passkey-prompt.server";
 import { prisma } from "~/lib/db";
 import AuthShell from "~/components/auth/AuthShell";
 
@@ -32,23 +34,25 @@ export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
   const doorParam = url.searchParams.get("door");
 
-  // If no valid door, the user ended up here via /login (not /signup).
-  // Nothing to set up — send them to the app.
-  if (!isValidDoor(doorParam)) return redirect("/");
-
-  const door: Door = doorParam;
-
-  // Two-step welcome: the setup form (name + optional password), then a passkey
-  // offer. The action redirects here with step=passkey once setup is done —
-  // right after the first sign-in is the highest-converting moment to register
-  // one (eBay's data: ~75% of all passkey enrollments happen here).
+  // The passkey offer is reached two ways: post-signup (carries ?door=) and
+  // first-time post-login (carries ?next=). Handle it before the door guard,
+  // since the login path has no door. Right after the first sign-in is the
+  // highest-converting moment to enroll one (eBay: ~75% of enrollments here).
   if (url.searchParams.get("step") === "passkey") {
-    return {
-      step: "passkey" as const,
-      door,
-      destination: DOOR_DESTINATIONS[door],
-    };
+    const destination = isValidDoor(doorParam)
+      ? DOOR_DESTINATIONS[doorParam]
+      : pickSafeLoginNext(url.searchParams.get("next")) ?? "/";
+    // Don't nag: skip if they already have a passkey or dismissed the offer on
+    // this device — straight to where they were headed.
+    if (!(await shouldOfferPasskey(request, user.sub))) {
+      return redirect(destination);
+    }
+    return { step: "passkey" as const, destination };
   }
+
+  // The setup step is the signup flow only, so it requires a valid door.
+  if (!isValidDoor(doorParam)) return redirect("/");
+  const door: Door = doorParam;
 
   return {
     step: "setup" as const,
@@ -68,6 +72,17 @@ export async function action({ request }: Route.ActionArgs) {
   if (!user) return redirect("/login");
 
   const formData = await request.formData();
+  const intent = String(formData.get("intent") ?? "");
+
+  // "Not now" on the passkey offer — remember the dismissal on this device so we
+  // don't re-prompt on the next login, then continue where they were headed.
+  if (intent === "dismiss-passkey") {
+    const headers = new Headers();
+    setPasskeyPromptDismissed(headers);
+    const dest = pickSafeLoginNext(String(formData.get("next") ?? "")) ?? "/";
+    return redirect(dest, { headers });
+  }
+
   const door = String(formData.get("door") ?? "");
   const formFullName = String(formData.get("fullName") ?? "").trim();
 
@@ -267,12 +282,16 @@ function PasskeyStep({ destination }: { destination: string }) {
         >
           {busy ? "Waiting for passkey…" : "Set up a passkey"}
         </button>
-        <a
-          href={destination}
-          className="w-full rounded-xl border border-border bg-card text-dark-blue font-heading font-semibold py-3 text-center hover:border-accent-coral transition"
-        >
-          Not now
-        </a>
+        <Form method="post">
+          <input type="hidden" name="intent" value="dismiss-passkey" />
+          <input type="hidden" name="next" value={destination} />
+          <button
+            type="submit"
+            className="w-full rounded-xl border border-border bg-card text-dark-blue font-heading font-semibold py-3 text-center hover:border-accent-coral transition"
+          >
+            Not now
+          </button>
+        </Form>
       </div>
     </AuthShell>
   );
