@@ -44,6 +44,10 @@ export async function sendSignatureReceipt(args: {
   versionId?: string;
   documentName: string;
   frozenBody: unknown;
+  // Extra dedup discriminator. A mentor with several mentees gets one co-signed
+  // copy per mentee, so their receipts pass the countersigning mentee's id here
+  // to keep the per-(binding, version, signer) key from collapsing them into one.
+  dedupExtra?: string;
 }): Promise<void> {
   const user = await prisma.user.findUnique({
     where: { id: args.signerUserId },
@@ -96,7 +100,9 @@ export async function sendSignatureReceipt(args: {
   const { id } = await enqueueOutbound({
     channel: "email",
     purpose: "General",
-    dedupKey: `signing.receipt:${args.bindingId}:${args.versionId ?? "x"}:${args.signerUserId}`,
+    dedupKey: `signing.receipt:${args.bindingId}:${args.versionId ?? "x"}:${args.signerUserId}${
+      args.dedupExtra ? `:${args.dedupExtra}` : ""
+    }`,
     target: to,
     recipientUserId: args.signerUserId,
     subject: `Signed: ${args.documentName}`,
@@ -248,8 +254,13 @@ export async function sendCoSignedReceipts(
   if (!binding || !binding.document.requiresMenteeCountersign) return;
   const documentName = binding.document.name;
 
-  const send = async (userId: string, roleKey: string) => {
-    const body = await getSignedCopyBody(bindingId, userId, roleKey);
+  const send = async (
+    userId: string,
+    roleKey: string,
+    counterpartUserId?: string,
+    dedupExtra?: string,
+  ) => {
+    const body = await getSignedCopyBody(bindingId, userId, roleKey, counterpartUserId);
     if (body == null) return;
     await sendSignatureReceipt({
       signerUserId: userId,
@@ -257,15 +268,20 @@ export async function sendCoSignedReceipts(
       versionId: binding.versionId,
       documentName,
       frozenBody: body,
+      dedupExtra,
     });
   };
 
-  // The mentee's own co-signed copy.
+  // The mentee's own co-signed copy (shows their mentor's signature).
   await send(menteeUserId, "mentee").catch((err) =>
     console.error("[signing] mentee co-signed receipt failed:", err),
   );
 
-  // Their mentor(s) who have already signed the in-force version.
+  // Their mentor(s) who have already signed the in-force version. Each is sent a
+  // copy showing THIS mentee's countersignature, deduped per (mentor, mentee) so
+  // a mentor with several mentees receives one co-signed copy for each rather
+  // than only the first mentee to countersign (one shared binding, so without
+  // this the copy overlay + receipt dedup both collapse to the earliest signer).
   if (!binding.termId) return;
   const pairs = await prisma.mentorshipPair.findMany({
     where: { menteeUserId, termId: binding.termId },
@@ -283,7 +299,7 @@ export async function sendCoSignedReceipts(
     select: { signerUserId: true },
   });
   for (const m of signedMentors) {
-    await send(m.signerUserId, "member").catch((err) =>
+    await send(m.signerUserId, "member", menteeUserId, menteeUserId).catch((err) =>
       console.error("[signing] mentor co-signed receipt failed:", err),
     );
   }
