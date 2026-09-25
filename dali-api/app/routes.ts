@@ -227,6 +227,7 @@ export default [
     // endpoint the Drive and editor POST to.
     route("api/forms", "routes/api.forms.ts"),
     route("api/folder-bindings", "routes/api.folder-bindings.ts"),
+    route("api/passkey-prompt", "routes/api.passkey-prompt.ts"),
     route("forms/edit/:formId", "forms/routes/forms.edit.$formId.tsx"),
     route("forms/preview-resolve", "forms/routes/forms.preview-resolve.ts"),
     route("forms/responses/:formId", "forms/routes/forms.responses.$formId.tsx"),
