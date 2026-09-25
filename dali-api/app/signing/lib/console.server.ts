@@ -188,7 +188,10 @@ export async function getAgreementsOverview(
     signatureId: s.id,
     documentId: s.binding.documentId,
     documentName: s.binding.document.name,
-    signerName: s.typedName || fullName(s.signer ?? {}) || "Someone",
+    // Prefer the signer's ACCOUNT name; typedName is whatever they typed into
+    // their signature/initials field (often just initials, e.g. "AF"), so it's
+    // only a last-resort fallback when the signer relation is missing.
+    signerName: fullName(s.signer ?? {}) || s.typedName || "Someone",
     signedAt: s.signedAt,
   }));
 
