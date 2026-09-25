@@ -165,6 +165,16 @@ export const auth = betterAuth({
     cookiePrefix: "dali",
     useSecureCookies: getAppEnv() !== "dev",
 
+    // Resolve the real client IP for BetterAuth's per-IP rate limiting. On Fly,
+    // Fly-Client-IP carries a single, un-spoofable client address (Fly's edge
+    // sets it). BetterAuth's default (x-forwarded-for) can't be trusted without
+    // a configured proxy chain — it rejects any multi-value header — and Fly's
+    // XFF has multiple entries, so it was collapsing every request into one
+    // shared per-path bucket. Mirrors app/lib/rate-limit.ts's precedence.
+    ipAddress: {
+      ipAddressHeaders: ["fly-client-ip", "x-forwarded-for"],
+    },
+
     database: {
       // Defer row-id generation to the DB's own @default(cuid()) clauses.
       // CROSS-TASK DEPENDENCY: every BetterAuth model added to schema.prisma
