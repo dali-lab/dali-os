@@ -133,7 +133,14 @@ export async function action({ request }: Route.ActionArgs) {
             responseHeaders.append("Set-Cookie", value);
           }
         });
-        return redirect(next ?? "/", { headers: responseHeaders });
+        // First-time passkey nudge: route a successful code sign-in through the
+        // passkey offer, then on to where they were headed. /welcome gates it —
+        // no prompt if they already have a passkey or dismissed the offer.
+        const dest = next ?? "/";
+        return redirect(
+          `/welcome?step=passkey&next=${encodeURIComponent(dest)}`,
+          { headers: responseHeaders },
+        );
       } catch {
         // Wrong/expired code — stay on the code screen with an inline message.
         return {
