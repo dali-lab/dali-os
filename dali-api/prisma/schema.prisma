@@ -2940,7 +2940,8 @@ model Project {
   // Git repositories for this project (URLs). Empty by default.
   repoUrls String[] @default([])
 
-  // Figma files for this project (URLs), listed next to the repos. Empty by default.
+  // Figma files for this project (URLs). Empty by default. Same shape as
+  // repoUrls — a first-class list of design links shown on the detail page.
   figmaUrls String[] @default([])
 
   // Live deployment / hosted URL for the project (e.g. a Fly/Vercel app).

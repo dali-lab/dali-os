@@ -1,8 +1,4 @@
-import {
-  MAX_UPLOAD_BYTES,
-  MAX_UPLOAD_LABEL,
-  fileMatchesAccept,
-} from "~/lib/file-validation";
+import { fileMatchesAccept, uploadCapForKey } from "~/lib/file-validation";
 
 export type UploadedFileMeta = {
   s3Key: string;
@@ -19,16 +15,20 @@ export async function uploadFileToS3(
   keyPrefix: string,
   accept?: string,
 ): Promise<UploadedFileMeta> {
-  if (file.size > MAX_UPLOAD_BYTES) {
-    throw new Error(`File too large (max ${MAX_UPLOAD_LABEL})`);
+  const contentType = file.type || "application/octet-stream";
+  const safeName = file.name.replace(/[^A-Za-z0-9._-]/g, "_");
+  const key = `${keyPrefix.replace(/^\/+|\/+$/g, "")}/${crypto.randomUUID()}-${safeName}`;
+
+  // The cap depends on where the file goes: 100 MB for project files and the
+  // Drive, 10 MB for everything else. Read off the built key, not the prefix —
+  // callers pass prefixes with and without a trailing slash.
+  const cap = uploadCapForKey(key);
+  if (file.size > cap.maxBytes) {
+    throw new Error(`File too large (max ${cap.label})`);
   }
   if (accept && !fileMatchesAccept(file.name, file.type, accept)) {
     throw new Error(`File type not allowed. Accepted: ${accept}`);
   }
-
-  const contentType = file.type || "application/octet-stream";
-  const safeName = file.name.replace(/[^A-Za-z0-9._-]/g, "_");
-  const key = `${keyPrefix.replace(/^\/+|\/+$/g, "")}/${crypto.randomUUID()}-${safeName}`;
 
   const presignRes = await fetch("/api/upload/presign", {
     method: "POST",
@@ -52,8 +52,9 @@ export async function uploadFileToS3(
   const uploadRes = await fetch(url, { method: "POST", body: formData });
   if (!uploadRes.ok) {
     const text = await uploadRes.text().catch(() => "");
-    if (uploadRes.status === 403 && /EntityTooLarge/i.test(text)) {
-      throw new Error(`File too large (max ${MAX_UPLOAD_LABEL})`);
+    // S3 names the error in the body; don't depend on which 4xx carries it.
+    if (/EntityTooLarge/i.test(text)) {
+      throw new Error(`File too large (max ${cap.label})`);
     }
     throw new Error("Upload to storage failed");
   }

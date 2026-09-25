@@ -39,6 +39,7 @@ import { action, loader } from "~/routes/login";
 
 const mockRequireAuth = vi.mocked(requireAuth);
 const mockMemberFind = vi.mocked(prisma.dALIMember.findUnique);
+const mockUserFindFirst = vi.mocked(prisma.user.findFirst);
 
 function loaderRequest() {
   return new Request("http://localhost/login");
@@ -290,6 +291,30 @@ describe("POST /login email-code (flag-ON)", () => {
     );
   });
 
+  it("resolves an alias to the canonical login email and delivers the code there", async () => {
+    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
+    // A member types their @dartmouth; it's recorded as an alias whose canonical
+    // login email is their @dali. The code must go to the canonical, but the
+    // screen keeps showing what they typed (no mapping leak).
+    mockUserFindFirst.mockResolvedValue({ email: "ada@dali.dartmouth.edu" } as any);
+    const result = await action({
+      request: makeFlagOnRequest("1.2.3.4", {
+        provider: "email-code",
+        email: "ada@dartmouth.edu",
+      }),
+    } as any);
+    expect(result).toMatchObject({
+      codeSent: true,
+      email: "ada@dartmouth.edu", // displayed = typed
+      identifier: "ada@dali.dartmouth.edu", // verify + delivery = canonical
+    });
+    expect(mockSendVerificationOTP).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({ email: "ada@dali.dartmouth.edu", type: "sign-in" }),
+      }),
+    );
+  });
+
   it("still advances to the code screen when the send throws (anti-enumeration)", async () => {
     mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
     mockSendVerificationOTP.mockRejectedValue(new Error("boom"));
@@ -320,7 +345,7 @@ describe("POST /login verify-code (flag-ON)", () => {
     const res = (await action({
       request: makeFlagOnRequest("1.2.3.4", {
         provider: "verify-code",
-        email: "ada@dartmouth.edu",
+        identifier: "ada@dartmouth.edu",
         otp: "123456",
       }),
     } as any)) as Response;
@@ -342,7 +367,7 @@ describe("POST /login verify-code (flag-ON)", () => {
     const result = await action({
       request: makeFlagOnRequest("1.2.3.4", {
         provider: "verify-code",
-        email: "ada@dartmouth.edu",
+        identifier: "ada@dartmouth.edu",
         otp: "000000",
       }),
     } as any);
@@ -360,7 +385,7 @@ describe("POST /login verify-code (flag-ON)", () => {
     const result = await action({
       request: makeFlagOnRequest("1.2.3.4", {
         provider: "verify-code",
-        email: "ada@dartmouth.edu",
+        identifier: "ada@dartmouth.edu",
         otp: "000000",
       }),
     } as any);

@@ -1657,7 +1657,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     return redirect(`/projects/${params.id}`);
   }
 
-  // Details form: calendar email, repos, Figma files, deployment. (Description, name/status,
+  // Details form: calendar email, repos, deployment. (Description, name/status,
   // and the image banner are saved by their own segments above.)
   const calendarEmailRaw = (form.get("calendarEmail") as string | null)?.trim() ?? "";
   const repoUrlsRaw = (form.get("repoUrls") as string | null) ?? "";
@@ -1690,14 +1690,17 @@ export async function action({ request, params }: Route.ActionArgs) {
           .replace(/\s+/g, "-")
           .slice(0, 80);
 
-  // URL-list textareas: one URL per line, blanks dropped.
-  const urlLines = (raw: string) =>
-    raw
-      .split("\n")
-      .map((s) => s.trim())
-      .filter(Boolean);
-  const repoUrls = urlLines(repoUrlsRaw);
-  const figmaUrls = urlLines(figmaUrlsRaw);
+  // repoUrls textarea: one URL per line, blanks dropped.
+  const repoUrls = repoUrlsRaw
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  // figmaUrls textarea: one URL per line, blanks dropped. Same shape as repos.
+  const figmaUrls = figmaUrlsRaw
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
 
   // termCount is the *expected* span length (≥1), an independent target; the
   // actual terms live in the ProjectTerm set (intent=terms). Blank/invalid
@@ -2794,35 +2797,17 @@ function DetailsReadOs({
 }) {
   const [showMore, setShowMore] = useState(false);
   const repoName = (url: string) => url.replace(/\/+$/, "").split("/").pop() || url;
-  // figma.com/{design,file,proto,board,…}/<key>/<File-Name>?… → "File Name".
+  // figma.com/{file|design}/{key}/{name} — show the readable name segment, with
+  // dashes turned back into spaces; fall back to "Figma" for a bare file URL.
   const figmaName = (url: string) => {
     try {
       const name = new URL(url).pathname.split("/").filter(Boolean)[2];
-      if (name) return decodeURIComponent(name).replace(/-/g, " ");
+      return name ? decodeURIComponent(name).replace(/-/g, " ") : "Figma";
     } catch {
-      // not a parseable URL; fall through
+      return "Figma";
     }
-    return repoName(url);
   };
   const dash = <span className="text-os-muted">—</span>;
-  const linkChips = (urls: string[], label: (url: string) => string) =>
-    urls.length > 0 ? (
-      <div className="flex flex-wrap justify-end gap-1.5">
-        {urls.map((url) => (
-          <a
-            key={url}
-            href={url}
-            target="_blank"
-            rel="noreferrer"
-            className="rounded-full bg-os-container px-2.5 py-0.5 text-xs font-medium text-foreground transition-colors hover:text-accent-coral"
-          >
-            {label(url)}
-          </a>
-        ))}
-      </div>
-    ) : (
-      dash
-    );
   const ic = OS_DETAIL_ICON;
 
   return (
@@ -2863,11 +2848,43 @@ function DetailsReadOs({
       </DetailRow>
 
       <DetailRow icon={<Layers className={ic} />} label="Repositories">
-        {linkChips(project.repoUrls, repoName)}
+        {project.repoUrls.length > 0 ? (
+          <div className="flex flex-wrap justify-end gap-1.5">
+            {project.repoUrls.map((url) => (
+              <a
+                key={url}
+                href={url}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-full bg-os-container px-2.5 py-0.5 text-xs font-medium text-foreground transition-colors hover:text-accent-coral"
+              >
+                {repoName(url)}
+              </a>
+            ))}
+          </div>
+        ) : (
+          dash
+        )}
       </DetailRow>
 
       <DetailRow icon={<Figma className={ic} />} label="Figma">
-        {linkChips(project.figmaUrls, figmaName)}
+        {project.figmaUrls.length > 0 ? (
+          <div className="flex flex-wrap justify-end gap-1.5">
+            {project.figmaUrls.map((url) => (
+              <a
+                key={url}
+                href={url}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-full bg-os-container px-2.5 py-0.5 text-xs font-medium text-foreground transition-colors hover:text-accent-coral"
+              >
+                {figmaName(url)}
+              </a>
+            ))}
+          </div>
+        ) : (
+          dash
+        )}
       </DetailRow>
 
       <DetailRow icon={<Globe className={ic} />} label="Deployment">
@@ -2992,7 +3009,7 @@ function DetailsEditOs({
           name="figmaUrls"
           rows={3}
           defaultValue={project.figmaUrls.join("\n")}
-          placeholder="https://www.figma.com/design/…"
+          placeholder="https://figma.com/design/…"
           className={cn(field, "resize-y font-mono")}
         />
       </DetailEditRow>

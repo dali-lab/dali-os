@@ -77,4 +77,20 @@ describe("getSignedCopyBody", () => {
     h.binding = null;
     expect(await getSignedCopyBody("missing", "alice", "member")).toBeNull();
   });
+
+  // Multiple mentees on one shared binding: a mentor's copy can be composed for a
+  // SPECIFIC mentee (so each mentee's countersignature reaches the mentor),
+  // rather than always the earliest.
+  it("overlays a specific counterpart when counterpartUserId is given", async () => {
+    h.pairs = [{ menteeUserId: "bob" }, { menteeUserId: "carol" }];
+    h.counterSig = { fieldValues: { "f-mentee": "Carol Mentee" } };
+    const body = await getSignedCopyBody("b1", "alice", "member", "carol");
+    expect(fieldValue(body, "f-mentee")).toBe("Carol Mentee");
+  });
+
+  it("returns the base copy when the requested counterpart isn't a real pair", async () => {
+    h.pairs = [{ menteeUserId: "bob" }];
+    const body = await getSignedCopyBody("b1", "alice", "member", "stranger");
+    expect(fieldValue(body, "f-mentee")).toBe(""); // never overlays a non-pair
+  });
 });

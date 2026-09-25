@@ -51,6 +51,7 @@ export async function runGetProjectOverview(input: Input) {
       status: true,
       imageUrl: true,
       repoUrls: true,
+      figmaUrls: true,
       overviewPageId: true,
       prdPageId: true,
       projectTerms: {
@@ -130,6 +131,7 @@ export async function runGetProjectOverview(input: Input) {
     status: project.status,
     imageUrl: project.imageUrl,
     repoUrls: project.repoUrls,
+    figmaUrls: project.figmaUrls,
     overviewPageId: project.overviewPageId,
     prdPageId: project.prdPageId,
     termCodes,

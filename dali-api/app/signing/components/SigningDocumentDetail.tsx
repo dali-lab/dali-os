@@ -45,6 +45,7 @@ import {
   AUDIENCE_SHORT,
   CADENCE_SHORT,
 } from "~/signing/lib/document-config";
+import { recipientSummary } from "~/signing/lib/recipient-summary";
 import type { loader } from "~/signing/routes/core.agreements.$id";
 
 // The signer fills these; the pre-signed supervisor signature is placed separately.
@@ -276,7 +277,7 @@ function SigningInsertControls({
 }
 
 export function SigningDocumentDetail() {
-  const { document, variablePreview, currentTermCode, lockedVersionIds, collabToken, collabRoomName, collabUserName, currentUserId } =
+  const { document, variablePreview, currentTermCode, lockedVersionIds, pendingRecipients, collabToken, collabRoomName, collabUserName, currentUserId } =
     useLoaderData<typeof loader>();
   const actionData = useActionData<{ error?: string }>();
   const tz = useUserTimeZone();
@@ -758,7 +759,7 @@ export function SigningDocumentDetail() {
                       method="post"
                       onSubmit={confirmSubmit({
                         title: "Put in force & send sign requests?",
-                        description: `"${document.name}" will be put in force and a sign request will be sent to everyone in the configured audience.`,
+                        description: `"${document.name}" will be put in force and a sign request will be sent to ${recipientSummary(pendingRecipients)}.`,
                         confirmLabel: "Send",
                       })}
                     >

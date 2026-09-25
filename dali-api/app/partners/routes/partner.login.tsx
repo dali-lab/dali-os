@@ -24,7 +24,14 @@ export const meta: Route.MetaFunction = () => [
 export async function loader({ request }: Route.LoaderArgs) {
   const betterAuthOn = await isFeatureEnabledForEveryone("betterauth", request);
   const existingAuth = await requireAuth(request);
-  if (!existingAuth.ok) return { betterAuthOn };
+  if (!existingAuth.ok) {
+    // Flag ON: partners sign in on the unified /login screen (email code +
+    // passkey), same as members and Dartmouth students. Flag OFF: fall through
+    // to the legacy partner magic-link login below. This route stays as a thin
+    // flag-gated redirect until cutover cleanup, when it's deleted outright.
+    if (betterAuthOn) return redirect("/login");
+    return { betterAuthOn };
+  }
   if (existingAuth.user.type === "member") return redirect("/");
   if (existingAuth.user.type === "dartmouth") return redirect("/portal");
   const partnerContact = await prisma.partnerContact.findUnique({

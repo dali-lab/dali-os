@@ -384,6 +384,10 @@ export async function getSignedCopyBody(
   bindingId: string,
   userId: string,
   roleKey: string,
+  // When set, overlay THIS specific counterpart's captured signature rather than
+  // the earliest. Lets a mentor with several mentees be sent one co-signed copy
+  // per mentee (each showing that mentee) instead of only the first to sign.
+  counterpartUserId?: string,
 ): Promise<unknown | null> {
   const binding = await prisma.signingBinding.findUnique({
     where: { id: bindingId },
@@ -400,7 +404,7 @@ export async function getSignedCopyBody(
   // Only the mentorship member/mentee pairing has a counterpart to overlay.
   if (!binding.termId || (roleKey !== "member" && roleKey !== "mentee")) return base;
 
-  const counterpartIds =
+  let counterpartIds =
     roleKey === "member"
       ? (
           await prisma.mentorshipPair.findMany({
@@ -414,6 +418,11 @@ export async function getSignedCopyBody(
             select: { mentorUserId: true },
           })
         ).map((p) => p.mentorUserId);
+  // Narrow to the requested counterpart, dropping it if they aren't actually a
+  // pair — so a bad id can never overlay a stranger's signature.
+  if (counterpartUserId) {
+    counterpartIds = counterpartIds.includes(counterpartUserId) ? [counterpartUserId] : [];
+  }
   if (counterpartIds.length === 0) return base;
 
   // The counterpart's captured signature on the in-force version — earliest

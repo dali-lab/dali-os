@@ -4,7 +4,8 @@
 // Actions:
 //   rename     — update the display title. Requires: fileId, title.
 //   add_version — append a new version from an already-uploaded s3Key (use
-//                 upload_project_file to obtain the key). Requires: fileId,
+//                 upload_project_file, or create_project_file_upload for a
+//                 large file, to obtain the key). Requires: fileId,
 //                 s3Key, fileName, contentType, sizeBytes.
 //
 // Note: get_project_file (below) returns signed download URLs per version.
@@ -17,12 +18,13 @@ import { logAuditEvent } from "~/lib/audit";
 import { notifyFileNewVersion } from "~/projects/lib/file-notifications.server";
 import { McpNotFoundError, McpForbiddenError, McpInvalidError, requireForAction } from "./errors";
 import { canEditProject } from "../access";
+import { isBlockedUpload } from "~/lib/file-validation";
 
 export const MANAGE_PROJECT_FILE_TOOL = {
   name: "manage_project_file",
   description: `Rename a project file or append a new version. action must be:
 - \`rename\`: update the file's display name. Requires: fileId, title.
-- \`add_version\`: append a new uploaded version. Obtain s3Key via upload_project_file first. Requires: fileId, s3Key, fileName, contentType, sizeBytes.
+- \`add_version\`: append a new uploaded version. Obtain s3Key via upload_project_file, or via create_project_file_upload for a file over ~9 MB (after its POST succeeds; do not also finalize it). Requires: fileId, s3Key, fileName, contentType, sizeBytes.
 
 Requires Core or project-member access. Only project-workspace files are in scope.`,
   inputSchema: {
@@ -49,7 +51,7 @@ Requires Core or project-member access. Only project-workspace files are in scop
       s3Key: {
         type: "string",
         minLength: 1,
-        description: "S3 key returned by upload_project_file (add_version only).",
+        description: "S3 key returned by upload_project_file or create_project_file_upload (add_version only).",
       },
       fileName: {
         type: "string",
@@ -126,9 +128,18 @@ export async function runManageProjectFile(callerId: string, input: Input) {
   }
 
   // add_version
+  // Both key producers (upload_project_file, create_project_file_upload) mint
+  // under this project's prefix. Anything else — another project's upload —
+  // would become readable to this project's members as a version.
   const s3Key = input.s3Key!;
-  if (!s3Key.startsWith("uploads/")) {
-    throw new McpInvalidError("Invalid file key — must start with 'uploads/'");
+  const prefix = `uploads/project-files/${file.projectId}/`;
+  if (!s3Key.startsWith(prefix) || s3Key.slice(prefix.length).includes("/")) {
+    throw new McpInvalidError(
+      "Invalid file key — pass the key upload_project_file or create_project_file_upload returned for this file's project",
+    );
+  }
+  if (isBlockedUpload(input.fileName!, input.contentType!)) {
+    throw new McpInvalidError("File type not allowed");
   }
   const sizeBytes = input.sizeBytes!;
   if (!Number.isInteger(sizeBytes) || sizeBytes < 0) {
