@@ -3,7 +3,6 @@ import { Form, redirect, useActionData, useLoaderData, useNavigation } from "rea
 import type { Route } from "./+types/welcome";
 import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { getBetterAuthUser } from "~/lib/betterauth-compat.server";
-import { auth } from "~/lib/betterauth.server";
 import { captureDartmouthIdentity } from "~/lib/dartmouth-capture.server";
 import { prisma } from "~/lib/db";
 import AuthShell from "~/components/auth/AuthShell";
@@ -70,10 +69,7 @@ export async function action({ request }: Route.ActionArgs) {
 
   const formData = await request.formData();
   const door = String(formData.get("door") ?? "");
-  const intent = String(formData.get("intent") ?? "finish");
   const formFullName = String(formData.get("fullName") ?? "").trim();
-  const password = String(formData.get("password") ?? "");
-  const confirmPassword = String(formData.get("confirmPassword") ?? "");
 
   if (!isValidDoor(door)) return redirect("/");
 
@@ -128,22 +124,8 @@ export async function action({ request }: Route.ActionArgs) {
     }
   }
 
-  // Optional password — only set when intent=finish AND a password was provided.
-  if (intent === "finish" && password) {
-    if (password.length < 8) {
-      return { error: "Password must be at least 8 characters." };
-    }
-    if (password !== confirmPassword) {
-      return { error: "Passwords do not match." };
-    }
-    await auth.api.setPassword({
-      body: { newPassword: password },
-      headers: request.headers,
-    });
-  }
-  // intent=skip → skip password entirely.
-
-  // On to the passkey offer rather than straight to the app.
+  // Setup only captures the name and runs door provisioning — the credential
+  // itself is a passkey, offered on the next step.
   return redirect(`/welcome?door=${door}&step=passkey`);
 }
 
@@ -213,54 +195,15 @@ function SetupStep({
           </div>
         )}
 
-        {/* Optional password section */}
-        <div className="mt-2">
-          <label className="block text-sm font-medium text-dark-blue mb-0.5">
-            Set a password <span className="font-normal text-muted-foreground">(optional)</span>
-          </label>
-          <p className="text-xs text-muted-foreground mb-3">
-            Lets you sign in with a password instead of waiting on an emailed
-            link. You can always use the link.
-          </p>
-          <div className="flex flex-col gap-3">
-            <input
-              id="password"
-              type="password"
-              name="password"
-              autoComplete="new-password"
-              placeholder="At least 8 characters"
-              className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral"
-            />
-            <input
-              id="confirmPassword"
-              type="password"
-              name="confirmPassword"
-              autoComplete="new-password"
-              placeholder="Re-enter your password"
-              className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral"
-            />
-          </div>
-        </div>
-
-        {/* Submit buttons */}
+        {/* Continue → the passkey offer. Passkeys are the only credential; there
+            is no password to set here. */}
         <div className="flex flex-col gap-2 mt-2">
           <button
             type="submit"
-            name="intent"
-            value="finish"
             disabled={submitting}
             className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
           >
-            {submitting ? "Finishing…" : "Finish"}
-          </button>
-          <button
-            type="submit"
-            name="intent"
-            value="skip"
-            disabled={submitting}
-            className="w-full rounded-xl border border-border bg-card text-dark-blue font-heading font-semibold py-3 hover:border-accent-coral transition disabled:opacity-50"
-          >
-            Skip for now
+            {submitting ? "Saving…" : "Continue"}
           </button>
         </div>
       </Form>

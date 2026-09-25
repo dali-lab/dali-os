@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // Hoist mocks before imports.
 const mockGetBetterAuthUser = vi.hoisted(() => vi.fn());
-const mockSetPassword = vi.hoisted(() => vi.fn());
 const mockCaptureDartmouthIdentity = vi.hoisted(() => vi.fn());
 const mockIsFeatureEnabledForEveryone = vi.hoisted(() => vi.fn());
 const mockUserUpdate = vi.hoisted(() => vi.fn());
@@ -15,14 +14,6 @@ vi.mock("~/lib/db", () => ({
 
 vi.mock("~/lib/betterauth-compat.server", () => ({
   getBetterAuthUser: mockGetBetterAuthUser,
-}));
-
-vi.mock("~/lib/betterauth.server", () => ({
-  auth: {
-    api: {
-      setPassword: mockSetPassword,
-    },
-  },
 }));
 
 vi.mock("~/lib/feature-flags.server", () => ({
@@ -76,7 +67,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
   mockGetBetterAuthUser.mockResolvedValue(DARTMOUTH_USER);
-  mockSetPassword.mockResolvedValue(undefined);
   mockCaptureDartmouthIdentity.mockResolvedValue({ netIdCaptured: false });
   mockUserUpdate.mockResolvedValue({});
 });
@@ -198,81 +188,6 @@ describe("POST /welcome action — dartmouth door", () => {
       request: makePostRequest({ door: "dartmouth", intent: "skip" }),
     } as any);
     expect(result).toMatchObject({ error: expect.stringContaining("full name") });
-  });
-});
-
-// ── Action — skip path ────────────────────────────────────────────────────────
-
-describe("POST /welcome action — skip path", () => {
-  it("does not call setPassword when intent=skip (even if password is provided)", async () => {
-    await action({
-      request: makePostRequest({
-        door: "dartmouth",
-        fullName: "Ada Lovelace",
-        intent: "skip",
-        password: "somesecret",
-        confirmPassword: "somesecret",
-      }),
-    } as any);
-    expect(mockSetPassword).not.toHaveBeenCalled();
-  });
-});
-
-// ── Action — finish path with password ───────────────────────────────────────
-
-describe("POST /welcome action — finish path with password", () => {
-  it("calls setPassword when password is provided with intent=finish", async () => {
-    await action({
-      request: makePostRequest({
-        door: "dartmouth",
-        fullName: "Ada Lovelace",
-        intent: "finish",
-        password: "secretpass",
-        confirmPassword: "secretpass",
-      }),
-    } as any);
-    expect(mockSetPassword).toHaveBeenCalledWith(
-      expect.objectContaining({ body: { newPassword: "secretpass" } }),
-    );
-  });
-
-  it("rejects passwords that are too short", async () => {
-    const result = await action({
-      request: makePostRequest({
-        door: "dartmouth",
-        fullName: "Ada Lovelace",
-        intent: "finish",
-        password: "short",
-        confirmPassword: "short",
-      }),
-    } as any);
-    expect(result).toMatchObject({ error: expect.stringContaining("8 characters") });
-    expect(mockSetPassword).not.toHaveBeenCalled();
-  });
-
-  it("rejects mismatched passwords", async () => {
-    const result = await action({
-      request: makePostRequest({
-        door: "dartmouth",
-        fullName: "Ada Lovelace",
-        intent: "finish",
-        password: "secretpass",
-        confirmPassword: "different",
-      }),
-    } as any);
-    expect(result).toMatchObject({ error: expect.stringContaining("do not match") });
-    expect(mockSetPassword).not.toHaveBeenCalled();
-  });
-
-  it("finish without password does not call setPassword", async () => {
-    await action({
-      request: makePostRequest({
-        door: "dartmouth",
-        fullName: "Ada Lovelace",
-        intent: "finish",
-      }),
-    } as any);
-    expect(mockSetPassword).not.toHaveBeenCalled();
   });
 });
 

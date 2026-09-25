@@ -146,39 +146,6 @@ export async function action({ request }: Route.ActionArgs) {
     return redirect("/login");
   }
 
-  if (provider === "password") {
-    const betterAuthOn = await isFeatureEnabledForEveryone("betterauth", request);
-    if (betterAuthOn) {
-      const email = String(formData.get("email") ?? "").trim().toLowerCase();
-      const password = String(formData.get("password") ?? "");
-      if (!password) {
-        return { error: "Enter your password, or use a sign-in link instead." };
-      }
-      try {
-        // returnHeaders: true → { headers: Headers, response: { token, user, ... } }
-        // We forward BetterAuth's Set-Cookie so the session persists.
-        const { headers: baHeaders } = await auth.api.signInEmail({
-          body: { email, password },
-          headers: request.headers,
-          returnHeaders: true,
-        });
-        const responseHeaders = new Headers();
-        // Preserve any login-next cookie we already built.
-        if (next) setLoginNextCookie(responseHeaders, next);
-        // Forward all Set-Cookie headers from BetterAuth (session cookie).
-        baHeaders.forEach((value, key) => {
-          if (key.toLowerCase() === "set-cookie") {
-            responseHeaders.append("Set-Cookie", value);
-          }
-        });
-        return redirect(next ?? "/", { headers: responseHeaders });
-      } catch {
-        return { error: "Incorrect email or password." };
-      }
-    }
-    // Flag off — fall through (no legacy equivalent; return nothing meaningful).
-  }
-
   // --- Legacy (flag-off) branches ---
 
   if (provider === "cas") {
@@ -242,11 +209,6 @@ function LoginBetterAuth({ next, actionData }: {
 
   const [passkeyError, setPasskeyError] = useState<string | null>(null);
   const [passkeyBusy, setPasskeyBusy] = useState(false);
-  // Identifier-first: collect the email, then reveal the methods for it. `stage`
-  // gates that reveal; `revealPassword` is the secondary password disclosure.
-  const [email, setEmail] = useState("");
-  const [stage, setStage] = useState<"email" | "methods">("email");
-  const [revealPassword, setRevealPassword] = useState(false);
 
   async function signInWithPasskey() {
     setPasskeyError(null);
@@ -352,8 +314,39 @@ function LoginBetterAuth({ next, actionData }: {
         </p>
       )}
 
-      {/* Passkey — offered up front (it needs no email). `webauthn` on the email
-          field below also surfaces saved passkeys in autofill (the effect above). */}
+      {/* Primary path: enter your email, we send a 6-digit sign-in code. The
+          `webauthn` autocomplete token lets a saved passkey surface in this
+          field's autofill (the conditional-UI effect above). */}
+      <Form method="post" className="flex flex-col gap-3">
+        <input type="hidden" name="provider" value="email-code" />
+        {next && <input type="hidden" name="next" value={next} />}
+        <input
+          type="email"
+          name="email"
+          required
+          autoFocus
+          autoComplete="username webauthn"
+          placeholder="you@email.com"
+          className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral"
+        />
+        <button
+          type="submit"
+          disabled={submitting}
+          className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
+        >
+          {submitting ? "Sending…" : "Email me a 6-digit code"}
+        </button>
+      </Form>
+
+      {/* or divider */}
+      <div className="flex items-center gap-3">
+        <span className="h-px flex-1 bg-border" />
+        <span className="text-xs text-muted-foreground">or</span>
+        <span className="h-px flex-1 bg-border" />
+      </div>
+
+      {/* Passkey — secondary. A discoverable credential needs no email, so a
+          returning user signs in with one tap (Face ID / Touch ID / device). */}
       <button
         type="button"
         onClick={() => void signInWithPasskey()}
@@ -363,118 +356,9 @@ function LoginBetterAuth({ next, actionData }: {
         {passkeyBusy ? "Waiting for passkey…" : "Sign in with a passkey"}
       </button>
 
-      {/* or divider */}
-      <div className="flex items-center gap-3">
-        <span className="h-px flex-1 bg-border" />
-        <span className="text-xs text-muted-foreground">or</span>
-        <span className="h-px flex-1 bg-border" />
-      </div>
-
-      {stage === "email" ? (
-        // Step 1 — identifier only. Reveal the methods once we have an email.
-        <div className="flex flex-col gap-3">
-          <input
-            type="email"
-            name="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && email.includes("@")) {
-                e.preventDefault();
-                setStage("methods");
-              }
-            }}
-            required
-            autoFocus
-            autoComplete="username webauthn"
-            placeholder="you@email.com"
-            className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral"
-          />
-          <button
-            type="button"
-            onClick={() => email.includes("@") && setStage("methods")}
-            disabled={!email.includes("@")}
-            className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
-          >
-            Continue
-          </button>
-        </div>
-      ) : (
-        // Step 2 — the methods for this email: a 6-digit code (primary, survives
-        // the laptop→phone handoff) or a password (secondary, revealed on tap).
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center justify-between gap-2">
-            <span className="min-w-0 truncate text-sm font-medium text-dark-blue">{email}</span>
-            <button
-              type="button"
-              onClick={() => {
-                setStage("email");
-                setRevealPassword(false);
-              }}
-              className="shrink-0 text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
-            >
-              Change
-            </button>
-          </div>
-
-          <Form method="post">
-            <input type="hidden" name="provider" value="email-code" />
-            <input type="hidden" name="email" value={email} />
-            {next && <input type="hidden" name="next" value={next} />}
-            <button
-              type="submit"
-              disabled={submitting}
-              className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
-            >
-              {submitting ? "Sending…" : "Email me a 6-digit code"}
-            </button>
-          </Form>
-
-          {!revealPassword ? (
-            <button
-              type="button"
-              onClick={() => setRevealPassword(true)}
-              className="text-center text-sm text-muted-foreground hover:text-foreground"
-            >
-              Sign in with a password instead
-            </button>
-          ) : (
-            <Form method="post" className="flex flex-col gap-3">
-              <input type="hidden" name="provider" value="password" />
-              <input type="hidden" name="email" value={email} />
-              {next && <input type="hidden" name="next" value={next} />}
-              <input
-                type="password"
-                name="password"
-                required
-                autoFocus
-                autoComplete="current-password"
-                placeholder="Password"
-                className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral"
-              />
-              <button
-                type="submit"
-                disabled={submitting}
-                className="w-full rounded-xl border border-border bg-card text-dark-blue font-heading font-semibold py-3 hover:border-accent-coral transition disabled:opacity-50"
-              >
-                {submitting ? "Signing in…" : "Sign in"}
-              </button>
-              <div className="flex justify-end">
-                <Link
-                  to="/login/forgot-password"
-                  className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
-                >
-                  Forgot password?
-                </Link>
-              </div>
-            </Form>
-          )}
-        </div>
-      )}
-
       {/* Crossover to signup */}
       <p className="text-center text-sm text-muted-foreground mt-2">
-        New to DALI?{" "}
+        New to DALI OS?{" "}
         <Link to="/signup" className="underline hover:text-foreground">
           Create an account
         </Link>

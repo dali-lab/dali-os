@@ -13,8 +13,6 @@ vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 // BetterAuth server mock — used by the flag-ON action branches.
 const mockSignInMagicLink = vi.hoisted(() => vi.fn());
 const mockSignInSocial = vi.hoisted(() => vi.fn());
-const mockSignInEmail = vi.hoisted(() => vi.fn());
-const mockRequestPasswordReset = vi.hoisted(() => vi.fn());
 const mockSendVerificationOTP = vi.hoisted(() => vi.fn());
 const mockSignInEmailOTP = vi.hoisted(() => vi.fn());
 vi.mock("~/lib/betterauth.server", () => ({
@@ -22,8 +20,6 @@ vi.mock("~/lib/betterauth.server", () => ({
     api: {
       signInMagicLink: mockSignInMagicLink,
       signInSocial: mockSignInSocial,
-      signInEmail: mockSignInEmail,
-      requestPasswordReset: mockRequestPasswordReset,
       sendVerificationOTP: mockSendVerificationOTP,
       signInEmailOTP: mockSignInEmailOTP,
     },
@@ -81,8 +77,6 @@ beforeEach(() => {
   mockSendVerificationOTP.mockResolvedValue({ success: true });
   mockSignInEmailOTP.mockResolvedValue({ headers: new Headers() });
   mockSignInSocial.mockResolvedValue({ url: "https://accounts.google.com/oauth" });
-  mockSignInEmail.mockResolvedValue({ headers: new Headers() });
-  mockRequestPasswordReset.mockResolvedValue(undefined);
 });
 
 describe("POST /login rate limiting", () => {
@@ -276,44 +270,8 @@ function makeFlagOnRequest(ip: string, body: Record<string, string>) {
   });
 }
 
-// /login is passwordless-first: a magic link to the email, an optional
-// password, and (later) passkeys. No Google.
-
-describe("POST /login password (flag-ON)", () => {
-  it("signs in with email + password and forwards the session cookie", async () => {
-    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
-    const baHeaders = new Headers({ "Set-Cookie": "dali.session_token=abc; Path=/" });
-    mockSignInEmail.mockResolvedValue({ headers: baHeaders });
-    const res = (await action({
-      request: makeFlagOnRequest("1.2.3.4", {
-        provider: "password",
-        email: "ada@dartmouth.edu",
-        password: "secretpass",
-      }),
-    } as any)) as Response;
-    expect(res.status).toBe(302);
-    expect(mockSignInEmail).toHaveBeenCalledWith(
-      expect.objectContaining({
-        body: expect.objectContaining({ email: "ada@dartmouth.edu", password: "secretpass" }),
-      }),
-    );
-    const cookies = res.headers.getSetCookie?.() ?? [res.headers.get("Set-Cookie")!];
-    expect(cookies.some((c: string) => c.includes("dali.session_token="))).toBe(true);
-  });
-
-  it("returns a neutral error on bad credentials", async () => {
-    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
-    mockSignInEmail.mockRejectedValue(new Error("invalid"));
-    const result = await action({
-      request: makeFlagOnRequest("1.2.3.4", {
-        provider: "password",
-        email: "ada@dartmouth.edu",
-        password: "wrong",
-      }),
-    } as any);
-    expect(result).toMatchObject({ error: expect.stringContaining("Incorrect") });
-  });
-});
+// /login is passwordless: enter your email, we send a 6-digit sign-in code;
+// passkeys are the fast repeat-login method. No password, no Google.
 
 describe("POST /login email-code (flag-ON)", () => {
   it("sends a sign-in OTP and advances to the code screen", async () => {
