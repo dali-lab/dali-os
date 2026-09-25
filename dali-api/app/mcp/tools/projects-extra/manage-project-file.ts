@@ -18,6 +18,7 @@ import { logAuditEvent } from "~/lib/audit";
 import { notifyFileNewVersion } from "~/projects/lib/file-notifications.server";
 import { McpNotFoundError, McpForbiddenError, McpInvalidError, requireForAction } from "./errors";
 import { canEditProject } from "../access";
+import { isBlockedUpload } from "~/lib/file-validation";
 
 export const MANAGE_PROJECT_FILE_TOOL = {
   name: "manage_project_file",
@@ -127,9 +128,18 @@ export async function runManageProjectFile(callerId: string, input: Input) {
   }
 
   // add_version
+  // Both key producers (upload_project_file, create_project_file_upload) mint
+  // under this project's prefix. Anything else — another project's upload —
+  // would become readable to this project's members as a version.
   const s3Key = input.s3Key!;
-  if (!s3Key.startsWith("uploads/")) {
-    throw new McpInvalidError("Invalid file key — must start with 'uploads/'");
+  const prefix = `uploads/project-files/${file.projectId}/`;
+  if (!s3Key.startsWith(prefix) || s3Key.slice(prefix.length).includes("/")) {
+    throw new McpInvalidError(
+      "Invalid file key — pass the key upload_project_file or create_project_file_upload returned for this file's project",
+    );
+  }
+  if (isBlockedUpload(input.fileName!, input.contentType!)) {
+    throw new McpInvalidError("File type not allowed");
   }
   const sizeBytes = input.sizeBytes!;
   if (!Number.isInteger(sizeBytes) || sizeBytes < 0) {

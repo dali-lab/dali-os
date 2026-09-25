@@ -88,7 +88,8 @@ describe("create_project_file_upload", () => {
   it("builds a curl command with literal policy fields and the file part last", async () => {
     const { curl } = await runCreateProjectFileUpload("u1", input);
 
-    expect(curl.startsWith("curl -sS -w '\nHTTP %{http_code}\n' -X POST 'https://bucket.s3.amazonaws.com/'")).toBe(true);
+    expect(curl.startsWith("curl -sS -w '\\nHTTP %{http_code}\\n' -X POST 'https://bucket.s3.amazonaws.com/'")).toBe(true);
+    expect(curl).not.toContain("\n");
     expect(curl).toContain("--form-string 'Policy=eyJleHAiOiJ9'");
     expect(curl).toContain("--form-string 'Content-Type=application/pdf'");
     expect(curl.endsWith("-F 'file=@/path/to/Final_Deck.pdf'")).toBe(true);

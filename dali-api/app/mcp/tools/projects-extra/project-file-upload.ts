@@ -119,7 +119,8 @@ function shellQuote(value: string): string {
  *  or splits a `;` inside a Content-Type; `-F` only for the file part, last.
  *  Prints the status on its own line: 204 on success, S3's error XML otherwise. */
 function curlCommand(url: string, fields: Record<string, string>, fileName: string): string {
-  const parts = ["curl", "-sS", "-w", shellQuote("\nHTTP %{http_code}\n"), "-X", "POST", shellQuote(url)];
+  // A literal backslash-n: curl expands it, and the command stays on one line.
+  const parts = ["curl", "-sS", "-w", shellQuote("\\nHTTP %{http_code}\\n"), "-X", "POST", shellQuote(url)];
   for (const [name, value] of Object.entries(fields)) {
     parts.push("--form-string", shellQuote(`${name}=${value}`));
   }
