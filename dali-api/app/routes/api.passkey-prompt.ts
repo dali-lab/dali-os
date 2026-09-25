@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.passkey-prompt";
-import { requireAuth } from "~/lib/auth";
+import { getBetterAuthUser } from "~/lib/betterauth-compat.server";
 import { prisma } from "~/lib/db";
 import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import {
@@ -20,18 +20,25 @@ import { logAuditEvent } from "~/lib/audit";
 //        recorded in the audit log.
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const auth = await requireAuth(request);
-  if (!auth.ok) return { offer: false };
-  // Passkeys only exist under BetterAuth; never offer while the flag is off.
+  // Require a real BetterAuth session — not just any session. Enrollment
+  // (authClient.passkey.addPasskey) hits a BetterAuth endpoint that only accepts
+  // a BetterAuth session, so right after the flag flip a user is still on a
+  // legacy session (requireAuth would honor it) and offering the prompt then
+  // 401s the ceremony. The legacy→BetterAuth session upgrade converts them
+  // first; only once they hold a BetterAuth session do we offer.
+  const user = await getBetterAuthUser(request);
+  if (!user) return { offer: false };
+  // Belt-and-suspenders: a BetterAuth session implies the flag is live, but keep
+  // the explicit gate so a stale session can't surface the prompt flag-off.
   if (!(await isFeatureEnabledForEveryone("betterauth", request))) {
     return { offer: false };
   }
-  return { offer: await shouldOfferPasskey(request, auth.user.sub) };
+  return { offer: await shouldOfferPasskey(request, user.sub) };
 }
 
 export async function action({ request }: Route.ActionArgs) {
-  const auth = await requireAuth(request);
-  if (!auth.ok) return Response.json({ ok: false }, { status: 401 });
+  const user = await getBetterAuthUser(request);
+  if (!user) return Response.json({ ok: false }, { status: 401 });
 
   const form = await request.formData();
   const intent = String(form.get("intent") ?? "");
@@ -40,13 +47,13 @@ export async function action({ request }: Route.ActionArgs) {
   if (intent === "enrolled") {
     // Trust but verify: only suppress + record if a passkey actually landed.
     const count = await prisma.passkey.count({
-      where: { userId: auth.user.sub },
+      where: { userId: user.sub },
     });
     if (count > 0) {
       setPasskeyPromptDismissed(headers);
       await logAuditEvent({
         action: "auth.passkey.register",
-        userId: auth.user.sub,
+        userId: user.sub,
         metadata: { passkeyCount: count, via: "prompt" },
         request,
       });
