@@ -116,9 +116,10 @@ export const auth = betterAuth({
     // grantId→OAuthGrant, absolute expiry) which must keep working through the
     // phased cutover and is dropped only at cleanup. Avoids a model collision.
     modelName: "authSession",
-    // 30-day rolling session; updateAge keeps the token fresh after 24 h of use.
+    // 30-day rolling session; updateAge slides the expiry forward at most once
+    // per 72 h of use (fewer session-refresh writes; the 30-day max is unchanged).
     expiresIn: 60 * 60 * 24 * 30,
-    updateAge: 60 * 60 * 24,
+    updateAge: 60 * 60 * 72,
     // NOTE: do NOT enable `cookieCache` here. It breaks revocation (a banned or
     // deprovisioned user would continue to pass session checks until the cookie
     // expires) and also bypasses the per-request membership check the MCP
