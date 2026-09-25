@@ -119,22 +119,32 @@ copy over any addresses the survivor lacks, then delete the duplicate.
   onto the survivor where the survivor's column is null and the value is free.
 - Recompute the survivor's canonical `email` after absorbing.
 
-### G3. Alias population (so `@dartmouth` login works for `@dali` members)
+### G3. Alias population (so `@dartmouth` login works for `@dali` members) — operational, not code
 
-For the alias resolver to accept a member's `@dartmouth` address, that address
-must be recorded on their row. **Deferred to the resolver PR (piece #2), not the
-backfill** — the Dartmouth directory only resolves by *name* (`searchDirectory
-ByName`), there is no clean `netId → email` lookup, and a name-fuzzy match is too
-weak to write into a `@unique` identity column unattended. The safe path:
+Decision (Kiran, 2026-09-25): populate `dartmouthEmail` on member rows
+**operationally**, not via a directory lookup or an onboarding-capture step.
 
-- Populate `dartmouthEmail` **lazily, via proof-of-inbox**: when a signed-in
-  member verifies their `@dartmouth` address once (a small authenticated "add
-  this email" step in piece #2), record it. That is real proof, not a guess.
-- Never *derive* `netid@dartmouth.edu` blindly — the real address is often
-  `first.last.YY@dartmouth.edu`; a wrong value is a wrong unique identity.
+- **Existing members:** a one-time backfill (Kiran) writes each member's
+  `@dartmouth` address. Not a directory guess — the directory only resolves by
+  *name* (`searchDirectoryByName`), with no clean `netId → email`, which is too
+  weak to write into a `@unique` column unattended.
+- **Future members:** captured by the application funnel. An applicant verifies
+  their `@dartmouth` at Dartmouth-door signup and `captureDartmouthIdentity`
+  writes `dartmouthEmail`; `promoteToMember` reuses that same row on hire, so the
+  address is present before promotion.
 
-Until then a member simply logs in with `@dali`. Nothing breaks; the alias is
-additive.
+Consequence: the login alias-resolver (#2) may assume `dartmouthEmail` is present
+on member rows — no lazy proof-of-inbox capture required.
+
+**Gap to close for "all future via hiring":** the manual add/promote path
+(`promoteToMember` from the `/members` directory) attaches only a `DALIMember`
+marker and captures no email, so a hand-added member (never went through a cycle)
+gets no `dartmouthEmail`. Either route all member creation through the funnel, or
+have the manual-add path require the `@dartmouth` address. Follow-up.
+
+To support the one-time backfill, this script's dry-run reports member rows
+(`daliEmail` set) that are **missing a `dartmouthEmail`** — the exact set Kiran
+needs to cover.
 
 ## Safety & sequencing
 

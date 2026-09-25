@@ -325,6 +325,12 @@ for (const user of allUsers) {
 
 const dupGroups = groupBySharedAddress(allUsers);
 
+// Member rows (have a @dali address) that lack a @dartmouth alias — the set the
+// one-time operational backfill needs to cover so @dartmouth login resolves.
+const membersMissingDartmouth = allUsers.filter(
+  (u) => u.daliEmail && !u.dartmouthEmail,
+);
+
 // ── Step 4: report ───────────────────────────────────────────────────────────
 
 log("── Summary " + "─".repeat(54));
@@ -335,7 +341,19 @@ log(`  Would set emailVerified: ${wouldSetEmailVerified}`);
 log(`  Same-email collisions:   ${collisions.length}  (email not written for these)`);
 log(`  No-email rows:           ${noEmailUsers.length}  (all address columns null)`);
 log(`  Duplicate groups:        ${dupGroups.length}  (rows sharing a real address)`);
+log(`  Members missing @dartmouth: ${membersMissingDartmouth.length}  (need the one-time alias backfill)`);
 log();
+
+if (membersMissingDartmouth.length > 0) {
+  log("── Members missing a @dartmouth alias " + "─".repeat(26));
+  for (const u of membersMissingDartmouth.slice(0, NO_EMAIL_LIST_LIMIT)) {
+    log(`  ${u.id}  ${resolveName(u) || "(no name)"}  ${u.daliEmail}`);
+  }
+  if (membersMissingDartmouth.length > NO_EMAIL_LIST_LIMIT) {
+    log(`  … and ${membersMissingDartmouth.length - NO_EMAIL_LIST_LIMIT} more (truncated)`);
+  }
+  log();
+}
 
 if (collisions.length > 0) {
   log("── Same-email collisions (email skipped) " + "─".repeat(24));
