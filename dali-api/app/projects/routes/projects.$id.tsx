@@ -12,7 +12,7 @@ import {
   type ShouldRevalidateFunctionArgs,
 } from "react-router";
 import { Select, Menu, Popover } from "~/components/ui/floating";
-import { CalendarDays, CalendarPlus, CalendarX, Check, Globe, Handshake, History, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink, MoreHorizontal, ExternalLink, Star, Mail, Github, Slack, Layers } from "lucide-react";
+import { CalendarDays, CalendarPlus, CalendarX, Check, Globe, Handshake, History, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink, MoreHorizontal, ExternalLink, Star, Mail, Github, Slack, Layers, Figma } from "lucide-react";
 import { DriveFolderBindings } from "~/components/drive/DriveFolderBindings";
 import { useOsChrome } from "~/components/os-chrome";
 import { DomainChips } from "~/components/DomainChips";
@@ -318,6 +318,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       imageUrl: true,
       iconEmoji: true,
       repoUrls: true,
+      figmaUrls: true,
       deploymentUrl: true,
       githubTeamSlug: true,
       slackChannelName: true,
@@ -1228,6 +1229,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         imageUrl: project.imageUrl,
         imageUrlResolved,
         repoUrls: project.repoUrls,
+        figmaUrls: project.figmaUrls,
         deploymentUrl: project.deploymentUrl,
         githubTeamSlug: project.githubTeamSlug,
         slackChannelName: project.slackChannelName,
@@ -1655,10 +1657,11 @@ export async function action({ request, params }: Route.ActionArgs) {
     return redirect(`/projects/${params.id}`);
   }
 
-  // Details form: calendar email, repos, deployment. (Description, name/status,
+  // Details form: calendar email, repos, Figma files, deployment. (Description, name/status,
   // and the image banner are saved by their own segments above.)
   const calendarEmailRaw = (form.get("calendarEmail") as string | null)?.trim() ?? "";
   const repoUrlsRaw = (form.get("repoUrls") as string | null) ?? "";
+  const figmaUrlsRaw = (form.get("figmaUrls") as string | null) ?? "";
   const deploymentUrlRaw = (form.get("deploymentUrl") as string | null)?.trim() ?? "";
   const termCountRaw = (form.get("termCount") as string | null) ?? "";
   const githubTeamRaw = (form.get("githubTeamSlug") as string | null)?.trim() ?? "";
@@ -1687,11 +1690,14 @@ export async function action({ request, params }: Route.ActionArgs) {
           .replace(/\s+/g, "-")
           .slice(0, 80);
 
-  // repoUrls textarea: one URL per line, blanks dropped.
-  const repoUrls = repoUrlsRaw
-    .split("\n")
-    .map((s) => s.trim())
-    .filter(Boolean);
+  // URL-list textareas: one URL per line, blanks dropped.
+  const urlLines = (raw: string) =>
+    raw
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  const repoUrls = urlLines(repoUrlsRaw);
+  const figmaUrls = urlLines(figmaUrlsRaw);
 
   // termCount is the *expected* span length (≥1), an independent target; the
   // actual terms live in the ProjectTerm set (intent=terms). Blank/invalid
@@ -1704,6 +1710,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     data: {
       calendarEmail: calendarEmailRaw === "" ? null : calendarEmailRaw,
       repoUrls,
+      figmaUrls,
       deploymentUrl: deploymentUrlRaw === "" ? null : deploymentUrlRaw,
       termCount,
       githubTeamSlug,
@@ -2787,7 +2794,35 @@ function DetailsReadOs({
 }) {
   const [showMore, setShowMore] = useState(false);
   const repoName = (url: string) => url.replace(/\/+$/, "").split("/").pop() || url;
+  // figma.com/{design,file,proto,board,…}/<key>/<File-Name>?… → "File Name".
+  const figmaName = (url: string) => {
+    try {
+      const name = new URL(url).pathname.split("/").filter(Boolean)[2];
+      if (name) return decodeURIComponent(name).replace(/-/g, " ");
+    } catch {
+      // not a parseable URL; fall through
+    }
+    return repoName(url);
+  };
   const dash = <span className="text-os-muted">—</span>;
+  const linkChips = (urls: string[], label: (url: string) => string) =>
+    urls.length > 0 ? (
+      <div className="flex flex-wrap justify-end gap-1.5">
+        {urls.map((url) => (
+          <a
+            key={url}
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-full bg-os-container px-2.5 py-0.5 text-xs font-medium text-foreground transition-colors hover:text-accent-coral"
+          >
+            {label(url)}
+          </a>
+        ))}
+      </div>
+    ) : (
+      dash
+    );
   const ic = OS_DETAIL_ICON;
 
   return (
@@ -2828,23 +2863,11 @@ function DetailsReadOs({
       </DetailRow>
 
       <DetailRow icon={<Layers className={ic} />} label="Repositories">
-        {project.repoUrls.length > 0 ? (
-          <div className="flex flex-wrap justify-end gap-1.5">
-            {project.repoUrls.map((url) => (
-              <a
-                key={url}
-                href={url}
-                target="_blank"
-                rel="noreferrer"
-                className="rounded-full bg-os-container px-2.5 py-0.5 text-xs font-medium text-foreground transition-colors hover:text-accent-coral"
-              >
-                {repoName(url)}
-              </a>
-            ))}
-          </div>
-        ) : (
-          dash
-        )}
+        {linkChips(project.repoUrls, repoName)}
+      </DetailRow>
+
+      <DetailRow icon={<Figma className={ic} />} label="Figma">
+        {linkChips(project.figmaUrls, figmaName)}
       </DetailRow>
 
       <DetailRow icon={<Globe className={ic} />} label="Deployment">
@@ -2956,6 +2979,20 @@ function DetailsEditOs({
           rows={3}
           defaultValue={project.repoUrls.join("\n")}
           placeholder="https://github.com/dali-lab/…"
+          className={cn(field, "resize-y font-mono")}
+        />
+      </DetailEditRow>
+
+      <DetailEditRow
+        icon={<Figma className={ic} />}
+        label="Figma"
+        hint="One URL per line"
+      >
+        <textarea
+          name="figmaUrls"
+          rows={3}
+          defaultValue={project.figmaUrls.join("\n")}
+          placeholder="https://www.figma.com/design/…"
           className={cn(field, "resize-y font-mono")}
         />
       </DetailEditRow>
