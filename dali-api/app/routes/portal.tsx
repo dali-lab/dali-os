@@ -2,6 +2,7 @@ import { redirect, useLoaderData, Link } from "react-router";
 import type { Route } from "./+types/portal";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { maybeUpgradeLegacyToBetterAuth } from "~/lib/betterauth-upgrade.server";
 import { redirectToLogin } from "~/lib/login-next";
 import { getActiveCycles } from "~/hiring/lib/cycles";
 import { applicantPortalPath } from "~/hiring/lib/applicant-groups";
@@ -23,6 +24,14 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return redirectToLogin(request);
   // Lab members have the full app; the portal is the non-member surface.
   if (auth.user.type === "member") return redirect("/");
+
+  // TEMPORARY (remove ~1 week post-cutover): migrate a validated legacy session
+  // to a BetterAuth session, then reload so the new cookie takes effect.
+  const upgradeHeaders = await maybeUpgradeLegacyToBetterAuth(request, auth);
+  if (upgradeHeaders) {
+    const u = new URL(request.url);
+    return redirect(u.pathname + u.search, { headers: upgradeHeaders });
+  }
 
   const [cycles, offerings, me, upcomingSessions, instructorAssignments] =
     await Promise.all([
