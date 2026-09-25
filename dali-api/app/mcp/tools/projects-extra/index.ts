@@ -14,6 +14,12 @@ import { ARCHIVE_DONE_TASKS_TOOL, runArchiveDoneTasks } from "./archive-done-tas
 import { LIST_ARCHIVED_TASKS_TOOL, runListArchivedTasks } from "./list-archived-tasks";
 import { MANAGE_PROJECT_FILE_TOOL, runManageProjectFile } from "./manage-project-file";
 import { GET_PROJECT_FILE_TOOL, runGetProjectFile } from "./get-project-file";
+import {
+  CREATE_PROJECT_FILE_UPLOAD_TOOL,
+  runCreateProjectFileUpload,
+  FINALIZE_PROJECT_FILE_UPLOAD_TOOL,
+  runFinalizeProjectFileUpload,
+} from "./project-file-upload";
 import { PROVISION_EPIC_DESCRIPTION_DOC_TOOL, runProvisionEpicDescriptionDoc } from "./provision-epic-description-doc";
 import {
   LIST_PROJECT_CHART_STRINGS_TOOL,
@@ -74,6 +80,14 @@ export const PROJECTS_EXTRA_TOOLS: McpTool[] = [
   {
     def: GET_PROJECT_FILE_TOOL,
     run: (ctx, args) => runGetProjectFile(ctx.user.id, args as any),
+  },
+  {
+    def: CREATE_PROJECT_FILE_UPLOAD_TOOL,
+    run: (ctx, args) => runCreateProjectFileUpload(ctx.user.id, args as any),
+  },
+  {
+    def: FINALIZE_PROJECT_FILE_UPLOAD_TOOL,
+    run: (ctx, args) => runFinalizeProjectFileUpload(ctx.user.id, args as any),
   },
   {
     def: PROVISION_EPIC_DESCRIPTION_DOC_TOOL,

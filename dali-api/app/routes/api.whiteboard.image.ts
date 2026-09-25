@@ -1,6 +1,8 @@
 import { requireAuth } from "~/lib/auth";
 import { getObjectBytes } from "~/lib/s3";
 
+const WHITEBOARD_KEY_PREFIX = "uploads/whiteboard-images/";
+
 // GET /api/whiteboard/image?key=uploads/whiteboard-images/...
 //
 // Streams a whiteboard image's bytes from S3 SAME-ORIGIN. Unlike
@@ -17,9 +19,12 @@ export async function loader({ request }: { request: Request }) {
   const auth = await requireAuth(request);
   if (!auth.ok) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
+  // Whiteboard images only. This route reads the whole object into memory, and
+  // Drive / project files can be 100 MB — any other uploads/ key would let a
+  // few requests exhaust the machine (#1783).
   const key = new URL(request.url).searchParams.get("key");
-  if (!key || !key.startsWith("uploads/")) {
-    return Response.json({ error: "key must be an uploads/ object key" }, { status: 400 });
+  if (!key || !key.startsWith(WHITEBOARD_KEY_PREFIX) || key.includes("..")) {
+    return Response.json({ error: "key must be a whiteboard image key" }, { status: 400 });
   }
 
   try {
