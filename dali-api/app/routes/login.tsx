@@ -92,27 +92,57 @@ export async function action({ request }: Route.ActionArgs) {
   // The flag is checked here so that even if a crafted form posts these values
   // while the flag is off, the action falls through to the legacy handlers.
 
-  if (provider === "magic-link") {
+  if (provider === "email-code") {
     const betterAuthOn = await isFeatureEnabledForEveryone("betterauth", request);
     if (betterAuthOn) {
       const email = String(formData.get("email") ?? "").trim().toLowerCase();
       if (!email.includes("@")) {
         return { error: "Enter a valid email address." };
       }
-      // Anti-enumeration: always return the neutral "sent" response, whether or
-      // not the address has an account and whether or not the send succeeds. The
-      // link carries `next` so the click lands where the user was headed.
+      // Anti-enumeration: always advance to the code screen. The emailOTP plugin
+      // has disableSignUp, so a non-existent address silently receives nothing.
       try {
-        await auth.api.signInMagicLink({
-          body: { email, callbackURL: next ?? "/" },
+        await auth.api.sendVerificationOTP({
+          body: { email, type: "sign-in" },
           headers: request.headers,
         });
       } catch {
         // Swallowed — neutral response in all cases.
       }
-      return { sent: true as const, email };
+      return { codeSent: true as const, email };
     }
-    // Flag off — no magic-link sign-in on the legacy login.
+    // Flag off — no code sign-in on the legacy login.
+    return redirect("/login");
+  }
+
+  if (provider === "verify-code") {
+    const betterAuthOn = await isFeatureEnabledForEveryone("betterauth", request);
+    if (betterAuthOn) {
+      const email = String(formData.get("email") ?? "").trim().toLowerCase();
+      const otp = String(formData.get("otp") ?? "").trim();
+      try {
+        const { headers: baHeaders } = await auth.api.signInEmailOTP({
+          body: { email, otp },
+          headers: request.headers,
+          returnHeaders: true,
+        });
+        const responseHeaders = new Headers();
+        if (next) setLoginNextCookie(responseHeaders, next);
+        baHeaders.forEach((value, key) => {
+          if (key.toLowerCase() === "set-cookie") {
+            responseHeaders.append("Set-Cookie", value);
+          }
+        });
+        return redirect(next ?? "/", { headers: responseHeaders });
+      } catch {
+        // Wrong/expired code — stay on the code screen with an inline message.
+        return {
+          codeSent: true as const,
+          email,
+          error: "That code didn't match. Check it and try again, or request a new one.",
+        };
+      }
+    }
     return redirect("/login");
   }
 
@@ -206,11 +236,17 @@ function LoginBetterAuth({ next, actionData }: {
   const navigation = useNavigation();
   const submitting = navigation.state === "submitting";
 
-  const passwordError = actionData && "error" in actionData ? actionData.error : null;
-  const sent = actionData && "sent" in actionData && actionData.sent ? actionData : null;
+  const actionError = actionData && "error" in actionData ? actionData.error : null;
+  const codeSent =
+    actionData && "codeSent" in actionData && actionData.codeSent ? actionData : null;
 
   const [passkeyError, setPasskeyError] = useState<string | null>(null);
   const [passkeyBusy, setPasskeyBusy] = useState(false);
+  // Identifier-first: collect the email, then reveal the methods for it. `stage`
+  // gates that reveal; `revealPassword` is the secondary password disclosure.
+  const [email, setEmail] = useState("");
+  const [stage, setStage] = useState<"email" | "methods">("email");
+  const [revealPassword, setRevealPassword] = useState(false);
 
   async function signInWithPasskey() {
     setPasskeyError(null);
@@ -254,48 +290,70 @@ function LoginBetterAuth({ next, actionData }: {
     };
   }, [next]);
 
-  if (sent) {
+  // Server sent a code — collect it. A wrong code returns here with an error.
+  if (codeSent) {
     return (
       <div className="flex flex-col gap-4">
-        <div className="rounded-2xl bg-brand-tint p-6">
-          <p className="font-heading font-semibold text-dark-blue mb-1">
-            Check your email
-          </p>
+        {actionError && (
+          <p className="text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3">{actionError}</p>
+        )}
+        <div className="rounded-2xl bg-brand-tint p-4">
           <p className="text-sm text-muted-foreground">
-            We sent a sign-in link to{" "}
-            <span className="font-medium text-dark-blue">{sent.email}</span>.
-            Open it to finish signing in. Links expire in a few minutes.
+            We sent a 6-digit code to{" "}
+            <span className="font-medium text-dark-blue">{codeSent.email}</span>.
           </p>
-          <div className="mt-4">
-            <a
-              href="/login"
-              className="text-sm text-muted-foreground hover:text-foreground"
-            >
-              Use a different email
-            </a>
-          </div>
         </div>
-        <p className="text-center text-sm text-muted-foreground mt-2">
-          New to DALI?{" "}
-          <Link to="/signup" className="underline hover:text-foreground">
-            Create an account
-          </Link>
-        </p>
+        <Form method="post" className="flex flex-col gap-3">
+          <input type="hidden" name="provider" value="verify-code" />
+          <input type="hidden" name="email" value={codeSent.email} />
+          {next && <input type="hidden" name="next" value={next} />}
+          <input
+            type="text"
+            name="otp"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            autoComplete="one-time-code"
+            maxLength={6}
+            required
+            autoFocus
+            placeholder="123456"
+            className="w-full rounded-xl border border-border bg-card px-4 py-3 text-center text-lg tracking-[0.4em] focus:outline-none focus:ring-2 focus:ring-accent-coral"
+          />
+          <button
+            type="submit"
+            disabled={submitting}
+            className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
+          >
+            {submitting ? "Verifying…" : "Verify code"}
+          </button>
+        </Form>
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <Form method="post">
+            <input type="hidden" name="provider" value="email-code" />
+            <input type="hidden" name="email" value={codeSent.email} />
+            {next && <input type="hidden" name="next" value={next} />}
+            <button type="submit" disabled={submitting} className="hover:text-foreground underline underline-offset-2 disabled:opacity-50">
+              Resend code
+            </button>
+          </Form>
+          <a href="/login" className="hover:text-foreground">
+            Use a different email
+          </a>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-4">
-      {(passwordError || passkeyError) && (
+      {(actionError || passkeyError) && (
         <p className="text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3">
-          {passwordError ?? passkeyError}
+          {actionError ?? passkeyError}
         </p>
       )}
 
-      {/* Passkey — the fast path for anyone who set one up. `webauthn` on the
-          email field also lets supported browsers surface saved passkeys in the
-          autofill dropdown (see the conditional-UI effect above). */}
+      {/* Passkey — offered up front (it needs no email). `webauthn` on the email
+          field below also surfaces saved passkeys in autofill (the effect above). */}
       <button
         type="button"
         onClick={() => void signInWithPasskey()}
@@ -312,55 +370,107 @@ function LoginBetterAuth({ next, actionData }: {
         <span className="h-px flex-1 bg-border" />
       </div>
 
-      {/* One email, two ways in: a password (instant) or a sign-in link emailed
-          to the same address (no password needed — the low-friction path most
-          apps promote alongside password). Password is NOT `required` so the
-          "Email me a sign-in link" button can submit with just the email; the
-          server validates each provider. */}
-      <Form method="post" className="flex flex-col gap-3">
-        {next && <input type="hidden" name="next" value={next} />}
-        <input
-          type="email"
-          name="email"
-          required
-          autoComplete="email webauthn"
-          placeholder="you@email.com"
-          className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral"
-        />
-        <input
-          type="password"
-          name="password"
-          autoComplete="current-password"
-          placeholder="Password"
-          className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral"
-        />
-        <button
-          type="submit"
-          name="provider"
-          value="password"
-          disabled={submitting}
-          className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
-        >
-          {submitting ? "Signing in…" : "Sign in"}
-        </button>
-        <button
-          type="submit"
-          name="provider"
-          value="magic-link"
-          disabled={submitting}
-          className="w-full rounded-xl border border-border bg-card text-dark-blue font-heading font-semibold py-3 hover:border-accent-coral transition disabled:opacity-50"
-        >
-          Email me a sign-in link
-        </button>
-        <div className="flex justify-end">
-          <Link
-            to="/login/forgot-password"
-            className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+      {stage === "email" ? (
+        // Step 1 — identifier only. Reveal the methods once we have an email.
+        <div className="flex flex-col gap-3">
+          <input
+            type="email"
+            name="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && email.includes("@")) {
+                e.preventDefault();
+                setStage("methods");
+              }
+            }}
+            required
+            autoFocus
+            autoComplete="username webauthn"
+            placeholder="you@email.com"
+            className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral"
+          />
+          <button
+            type="button"
+            onClick={() => email.includes("@") && setStage("methods")}
+            disabled={!email.includes("@")}
+            className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
           >
-            Forgot password?
-          </Link>
+            Continue
+          </button>
         </div>
-      </Form>
+      ) : (
+        // Step 2 — the methods for this email: a 6-digit code (primary, survives
+        // the laptop→phone handoff) or a password (secondary, revealed on tap).
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="min-w-0 truncate text-sm font-medium text-dark-blue">{email}</span>
+            <button
+              type="button"
+              onClick={() => {
+                setStage("email");
+                setRevealPassword(false);
+              }}
+              className="shrink-0 text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+            >
+              Change
+            </button>
+          </div>
+
+          <Form method="post">
+            <input type="hidden" name="provider" value="email-code" />
+            <input type="hidden" name="email" value={email} />
+            {next && <input type="hidden" name="next" value={next} />}
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
+            >
+              {submitting ? "Sending…" : "Email me a 6-digit code"}
+            </button>
+          </Form>
+
+          {!revealPassword ? (
+            <button
+              type="button"
+              onClick={() => setRevealPassword(true)}
+              className="text-center text-sm text-muted-foreground hover:text-foreground"
+            >
+              Sign in with a password instead
+            </button>
+          ) : (
+            <Form method="post" className="flex flex-col gap-3">
+              <input type="hidden" name="provider" value="password" />
+              <input type="hidden" name="email" value={email} />
+              {next && <input type="hidden" name="next" value={next} />}
+              <input
+                type="password"
+                name="password"
+                required
+                autoFocus
+                autoComplete="current-password"
+                placeholder="Password"
+                className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral"
+              />
+              <button
+                type="submit"
+                disabled={submitting}
+                className="w-full rounded-xl border border-border bg-card text-dark-blue font-heading font-semibold py-3 hover:border-accent-coral transition disabled:opacity-50"
+              >
+                {submitting ? "Signing in…" : "Sign in"}
+              </button>
+              <div className="flex justify-end">
+                <Link
+                  to="/login/forgot-password"
+                  className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+                >
+                  Forgot password?
+                </Link>
+              </div>
+            </Form>
+          )}
+        </div>
+      )}
 
       {/* Crossover to signup */}
       <p className="text-center text-sm text-muted-foreground mt-2">

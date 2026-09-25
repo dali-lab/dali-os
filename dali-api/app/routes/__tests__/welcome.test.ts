@@ -114,9 +114,14 @@ describe("GET /welcome loader", () => {
     expect(res.headers.get("Location")).toBe("/");
   });
 
-  it("valid door=dartmouth returns email + door + needsName=true (no firstName)", async () => {
+  it("valid door=dartmouth returns the setup step with email + door + needsName=true", async () => {
     const result = await loader({ request: makeRequest() } as any);
-    expect(result).toEqual({ email: "ada@dartmouth.edu", door: "dartmouth", needsName: true });
+    expect(result).toEqual({
+      step: "setup",
+      email: "ada@dartmouth.edu",
+      door: "dartmouth",
+      needsName: true,
+    });
   });
 
   it("user with firstName has needsName=false", async () => {
@@ -124,7 +129,14 @@ describe("GET /welcome loader", () => {
     const result = await loader({
       request: makeRequest("http://localhost/welcome?door=member"),
     } as any);
-    expect(result).toMatchObject({ needsName: false });
+    expect(result).toMatchObject({ step: "setup", needsName: false });
+  });
+
+  it("step=passkey returns the passkey step with the door's destination", async () => {
+    const result = await loader({
+      request: makeRequest("http://localhost/welcome?door=partner&step=passkey"),
+    } as any);
+    expect(result).toEqual({ step: "passkey", door: "partner", destination: "/partner" });
   });
 });
 
@@ -162,7 +174,7 @@ describe("POST /welcome action — dartmouth door", () => {
       }),
     } as any)) as Response;
     expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/portal");
+    expect(res.headers.get("Location")).toBe("/welcome?door=dartmouth&step=passkey");
     expect(mockCaptureDartmouthIdentity).toHaveBeenCalledWith(
       expect.objectContaining({ userId: DARTMOUTH_USER.sub, fullName: "Ada Lovelace" }),
     );
@@ -267,21 +279,21 @@ describe("POST /welcome action — finish path with password", () => {
 // ── Action — door routing ─────────────────────────────────────────────────────
 
 describe("POST /welcome action — door destinations", () => {
-  it("member door redirects to /", async () => {
+  it("member door setup advances to the passkey step (carrying the door)", async () => {
     mockGetBetterAuthUser.mockResolvedValue(MEMBER_USER);
     const res = (await action({
       request: makePostRequest({ door: "member", intent: "skip" }),
     } as any)) as Response;
     expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/");
+    expect(res.headers.get("Location")).toBe("/welcome?door=member&step=passkey");
   });
 
-  it("partner door redirects to /partner", async () => {
+  it("partner door setup advances to the passkey step (carrying the door)", async () => {
     mockGetBetterAuthUser.mockResolvedValue(PARTNER_USER);
     const res = (await action({
       request: makePostRequest({ door: "partner", intent: "skip", fullName: "Ada Lovelace" }),
     } as any)) as Response;
     expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/partner");
+    expect(res.headers.get("Location")).toBe("/welcome?door=partner&step=passkey");
   });
 });
