@@ -1,9 +1,11 @@
+import { useEffect, useState } from "react";
 import { Form, redirect, useActionData, useLoaderData, useNavigation } from "react-router";
 import type { Route } from "./+types/welcome";
 import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { getBetterAuthUser } from "~/lib/betterauth-compat.server";
-import { auth } from "~/lib/betterauth.server";
 import { captureDartmouthIdentity } from "~/lib/dartmouth-capture.server";
+import { pickSafeLoginNext } from "~/lib/login-next";
+import { shouldOfferPasskey, setPasskeyPromptDismissed } from "~/lib/passkey-prompt.server";
 import { prisma } from "~/lib/db";
 import AuthShell from "~/components/auth/AuthShell";
 
@@ -32,13 +34,28 @@ export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
   const doorParam = url.searchParams.get("door");
 
-  // If no valid door, the user ended up here via /login (not /signup).
-  // Nothing to set up — send them to the app.
-  if (!isValidDoor(doorParam)) return redirect("/");
+  // The passkey offer is reached two ways: post-signup (carries ?door=) and
+  // first-time post-login (carries ?next=). Handle it before the door guard,
+  // since the login path has no door. Right after the first sign-in is the
+  // highest-converting moment to enroll one (eBay: ~75% of enrollments here).
+  if (url.searchParams.get("step") === "passkey") {
+    const destination = isValidDoor(doorParam)
+      ? DOOR_DESTINATIONS[doorParam]
+      : pickSafeLoginNext(url.searchParams.get("next")) ?? "/";
+    // Don't nag: skip if they already have a passkey or dismissed the offer on
+    // this device — straight to where they were headed.
+    if (!(await shouldOfferPasskey(request, user.sub))) {
+      return redirect(destination);
+    }
+    return { step: "passkey" as const, destination };
+  }
 
+  // The setup step is the signup flow only, so it requires a valid door.
+  if (!isValidDoor(doorParam)) return redirect("/");
   const door: Door = doorParam;
 
   return {
+    step: "setup" as const,
     email: user.email,
     door,
     // Magic-link signups arrive without a name (no Google to supply one), so
@@ -55,11 +72,19 @@ export async function action({ request }: Route.ActionArgs) {
   if (!user) return redirect("/login");
 
   const formData = await request.formData();
+  const intent = String(formData.get("intent") ?? "");
+
+  // "Not now" on the passkey offer — remember the dismissal on this device so we
+  // don't re-prompt on the next login, then continue where they were headed.
+  if (intent === "dismiss-passkey") {
+    const headers = new Headers();
+    setPasskeyPromptDismissed(headers);
+    const dest = pickSafeLoginNext(String(formData.get("next") ?? "")) ?? "/";
+    return redirect(dest, { headers });
+  }
+
   const door = String(formData.get("door") ?? "");
-  const intent = String(formData.get("intent") ?? "finish");
   const formFullName = String(formData.get("fullName") ?? "").trim();
-  const password = String(formData.get("password") ?? "");
-  const confirmPassword = String(formData.get("confirmPassword") ?? "");
 
   if (!isValidDoor(door)) return redirect("/");
 
@@ -114,26 +139,28 @@ export async function action({ request }: Route.ActionArgs) {
     }
   }
 
-  // Optional password — only set when intent=finish AND a password was provided.
-  if (intent === "finish" && password) {
-    if (password.length < 8) {
-      return { error: "Password must be at least 8 characters." };
-    }
-    if (password !== confirmPassword) {
-      return { error: "Passwords do not match." };
-    }
-    await auth.api.setPassword({
-      body: { newPassword: password },
-      headers: request.headers,
-    });
-  }
-  // intent=skip → skip password entirely.
-
-  return redirect(DOOR_DESTINATIONS[door]);
+  // Setup only captures the name and runs door provisioning — the credential
+  // itself is a passkey, offered on the next step.
+  return redirect(`/welcome?door=${door}&step=passkey`);
 }
 
 export default function Welcome() {
-  const { email, door, needsName } = useLoaderData<typeof loader>();
+  const data = useLoaderData<typeof loader>();
+  if (data.step === "passkey") {
+    return <PasskeyStep destination={data.destination} />;
+  }
+  return <SetupStep email={data.email} door={data.door} needsName={data.needsName} />;
+}
+
+function SetupStep({
+  email,
+  door,
+  needsName,
+}: {
+  email: string;
+  door: Door;
+  needsName: boolean;
+}) {
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const submitting = navigation.state === "submitting";
@@ -183,57 +210,89 @@ export default function Welcome() {
           </div>
         )}
 
-        {/* Optional password section */}
-        <div className="mt-2">
-          <label className="block text-sm font-medium text-dark-blue mb-0.5">
-            Set a password <span className="font-normal text-muted-foreground">(optional)</span>
-          </label>
-          <p className="text-xs text-muted-foreground mb-3">
-            Lets you sign in with a password instead of waiting on an emailed
-            link. You can always use the link.
-          </p>
-          <div className="flex flex-col gap-3">
-            <input
-              id="password"
-              type="password"
-              name="password"
-              autoComplete="new-password"
-              placeholder="At least 8 characters"
-              className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral"
-            />
-            <input
-              id="confirmPassword"
-              type="password"
-              name="confirmPassword"
-              autoComplete="new-password"
-              placeholder="Re-enter your password"
-              className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral"
-            />
-          </div>
-        </div>
-
-        {/* Submit buttons */}
+        {/* Continue → the passkey offer. Passkeys are the only credential; there
+            is no password to set here. */}
         <div className="flex flex-col gap-2 mt-2">
           <button
             type="submit"
-            name="intent"
-            value="finish"
             disabled={submitting}
             className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
           >
-            {submitting ? "Finishing…" : "Finish"}
-          </button>
-          <button
-            type="submit"
-            name="intent"
-            value="skip"
-            disabled={submitting}
-            className="w-full rounded-xl border border-border bg-card text-dark-blue font-heading font-semibold py-3 hover:border-accent-coral transition disabled:opacity-50"
-          >
-            Skip for now
+            {submitting ? "Saving…" : "Continue"}
           </button>
         </div>
       </Form>
+    </AuthShell>
+  );
+}
+
+// Post-setup passkey offer. Registration is a client-side WebAuthn ceremony via
+// the browser BetterAuth client (dynamically imported so it never loads on the
+// server). Benefit-framed copy ("sign in faster") outperforms security framing.
+function PasskeyStep({ destination }: { destination: string }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
+
+  // No WebAuthn at all → nothing to offer; go straight to the app so this step
+  // is never a dead end.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (typeof PublicKeyCredential === "undefined") {
+      window.location.href = destination;
+      return;
+    }
+    setReady(true);
+  }, [destination]);
+
+  async function setUpPasskey() {
+    setBusy(true);
+    setError(null);
+    try {
+      const { authClient } = await import("~/lib/auth-client");
+      const { error: err } = await authClient.passkey.addPasskey();
+      if (err) {
+        setError("Couldn't set up a passkey. You can add one anytime in Settings.");
+        return;
+      }
+      window.location.href = destination;
+    } catch {
+      setError("Couldn't set up a passkey. You can add one anytime in Settings.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // While deciding support (or redirecting), render nothing — avoids a flash of
+  // the prompt on browsers that can't do WebAuthn.
+  if (!ready) return null;
+
+  return (
+    <AuthShell heading="Sign in faster next time" error={error}>
+      <p className="text-muted-foreground mb-6 -mt-2">
+        Set up a passkey and next time you can sign in with Face ID, Touch ID, or
+        your device — no code or password to type.
+      </p>
+      <div className="flex flex-col gap-2">
+        <button
+          type="button"
+          onClick={() => void setUpPasskey()}
+          disabled={busy}
+          className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
+        >
+          {busy ? "Waiting for passkey…" : "Set up a passkey"}
+        </button>
+        <Form method="post">
+          <input type="hidden" name="intent" value="dismiss-passkey" />
+          <input type="hidden" name="next" value={destination} />
+          <button
+            type="submit"
+            className="w-full rounded-xl border border-border bg-card text-dark-blue font-heading font-semibold py-3 text-center hover:border-accent-coral transition"
+          >
+            Not now
+          </button>
+        </Form>
+      </div>
     </AuthShell>
   );
 }

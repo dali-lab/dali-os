@@ -19,7 +19,11 @@ async function authorized(request: Request): Promise<boolean> {
   if (secret && header === secret) return true;
 
   const auth = await requireAuth(request);
-  if (!auth.ok || auth.user.type === "applicant") return false;
+  if (!auth.ok) return false;
+  // Authorize on the AdminMembership row, not the derived `type`. isAdmin is
+  // authoritative (an applicant is never an admin), so the old
+  // `type === "applicant"` pre-guard was redundant and would wrongly reject a
+  // legitimate admin whose type happened to derive to something else.
   return isAdmin(auth.user.sub);
 }
 

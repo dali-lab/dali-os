@@ -2,27 +2,20 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // Hoist mocks before imports.
 const mockGetBetterAuthUser = vi.hoisted(() => vi.fn());
-const mockSetPassword = vi.hoisted(() => vi.fn());
 const mockCaptureDartmouthIdentity = vi.hoisted(() => vi.fn());
 const mockIsFeatureEnabledForEveryone = vi.hoisted(() => vi.fn());
 const mockUserUpdate = vi.hoisted(() => vi.fn());
+const mockPasskeyCount = vi.hoisted(() => vi.fn());
 
 vi.mock("~/lib/db", () => ({
   prisma: {
     user: { update: mockUserUpdate },
+    passkey: { count: mockPasskeyCount },
   },
 }));
 
 vi.mock("~/lib/betterauth-compat.server", () => ({
   getBetterAuthUser: mockGetBetterAuthUser,
-}));
-
-vi.mock("~/lib/betterauth.server", () => ({
-  auth: {
-    api: {
-      setPassword: mockSetPassword,
-    },
-  },
 }));
 
 vi.mock("~/lib/feature-flags.server", () => ({
@@ -76,9 +69,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
   mockGetBetterAuthUser.mockResolvedValue(DARTMOUTH_USER);
-  mockSetPassword.mockResolvedValue(undefined);
   mockCaptureDartmouthIdentity.mockResolvedValue({ netIdCaptured: false });
   mockUserUpdate.mockResolvedValue({});
+  mockPasskeyCount.mockResolvedValue(0);
 });
 
 // ── Loader ────────────────────────────────────────────────────────────────────
@@ -114,9 +107,14 @@ describe("GET /welcome loader", () => {
     expect(res.headers.get("Location")).toBe("/");
   });
 
-  it("valid door=dartmouth returns email + door + needsName=true (no firstName)", async () => {
+  it("valid door=dartmouth returns the setup step with email + door + needsName=true", async () => {
     const result = await loader({ request: makeRequest() } as any);
-    expect(result).toEqual({ email: "ada@dartmouth.edu", door: "dartmouth", needsName: true });
+    expect(result).toEqual({
+      step: "setup",
+      email: "ada@dartmouth.edu",
+      door: "dartmouth",
+      needsName: true,
+    });
   });
 
   it("user with firstName has needsName=false", async () => {
@@ -124,7 +122,41 @@ describe("GET /welcome loader", () => {
     const result = await loader({
       request: makeRequest("http://localhost/welcome?door=member"),
     } as any);
-    expect(result).toMatchObject({ needsName: false });
+    expect(result).toMatchObject({ step: "setup", needsName: false });
+  });
+
+  it("step=passkey (signup, door) offers the passkey step with the door's destination", async () => {
+    const result = await loader({
+      request: makeRequest("http://localhost/welcome?door=partner&step=passkey"),
+    } as any);
+    expect(result).toEqual({ step: "passkey", destination: "/partner" });
+  });
+
+  it("step=passkey (post-login, next) offers it with the safe next as destination", async () => {
+    const result = await loader({
+      request: makeRequest("http://localhost/welcome?step=passkey&next=%2Fcalendar"),
+    } as any);
+    expect(result).toEqual({ step: "passkey", destination: "/calendar" });
+  });
+
+  it("step=passkey skips (redirects) when the user already has a passkey", async () => {
+    mockPasskeyCount.mockResolvedValue(1);
+    const res = (await loader({
+      request: makeRequest("http://localhost/welcome?door=partner&step=passkey"),
+    } as any)) as Response;
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/partner");
+  });
+
+  it("step=passkey skips when the dismissal cookie is present (no DB hit)", async () => {
+    const res = (await loader({
+      request: new Request("http://localhost/welcome?door=member&step=passkey", {
+        headers: { cookie: "dali_pk_prompt=1" },
+      }),
+    } as any)) as Response;
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/");
+    expect(mockPasskeyCount).not.toHaveBeenCalled();
   });
 });
 
@@ -162,7 +194,7 @@ describe("POST /welcome action — dartmouth door", () => {
       }),
     } as any)) as Response;
     expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/portal");
+    expect(res.headers.get("Location")).toBe("/welcome?door=dartmouth&step=passkey");
     expect(mockCaptureDartmouthIdentity).toHaveBeenCalledWith(
       expect.objectContaining({ userId: DARTMOUTH_USER.sub, fullName: "Ada Lovelace" }),
     );
@@ -189,99 +221,46 @@ describe("POST /welcome action — dartmouth door", () => {
   });
 });
 
-// ── Action — skip path ────────────────────────────────────────────────────────
-
-describe("POST /welcome action — skip path", () => {
-  it("does not call setPassword when intent=skip (even if password is provided)", async () => {
-    await action({
-      request: makePostRequest({
-        door: "dartmouth",
-        fullName: "Ada Lovelace",
-        intent: "skip",
-        password: "somesecret",
-        confirmPassword: "somesecret",
-      }),
-    } as any);
-    expect(mockSetPassword).not.toHaveBeenCalled();
-  });
-});
-
-// ── Action — finish path with password ───────────────────────────────────────
-
-describe("POST /welcome action — finish path with password", () => {
-  it("calls setPassword when password is provided with intent=finish", async () => {
-    await action({
-      request: makePostRequest({
-        door: "dartmouth",
-        fullName: "Ada Lovelace",
-        intent: "finish",
-        password: "secretpass",
-        confirmPassword: "secretpass",
-      }),
-    } as any);
-    expect(mockSetPassword).toHaveBeenCalledWith(
-      expect.objectContaining({ body: { newPassword: "secretpass" } }),
-    );
-  });
-
-  it("rejects passwords that are too short", async () => {
-    const result = await action({
-      request: makePostRequest({
-        door: "dartmouth",
-        fullName: "Ada Lovelace",
-        intent: "finish",
-        password: "short",
-        confirmPassword: "short",
-      }),
-    } as any);
-    expect(result).toMatchObject({ error: expect.stringContaining("8 characters") });
-    expect(mockSetPassword).not.toHaveBeenCalled();
-  });
-
-  it("rejects mismatched passwords", async () => {
-    const result = await action({
-      request: makePostRequest({
-        door: "dartmouth",
-        fullName: "Ada Lovelace",
-        intent: "finish",
-        password: "secretpass",
-        confirmPassword: "different",
-      }),
-    } as any);
-    expect(result).toMatchObject({ error: expect.stringContaining("do not match") });
-    expect(mockSetPassword).not.toHaveBeenCalled();
-  });
-
-  it("finish without password does not call setPassword", async () => {
-    await action({
-      request: makePostRequest({
-        door: "dartmouth",
-        fullName: "Ada Lovelace",
-        intent: "finish",
-      }),
-    } as any);
-    expect(mockSetPassword).not.toHaveBeenCalled();
-  });
-});
-
 // ── Action — door routing ─────────────────────────────────────────────────────
 
 describe("POST /welcome action — door destinations", () => {
-  it("member door redirects to /", async () => {
+  it("member door setup advances to the passkey step (carrying the door)", async () => {
     mockGetBetterAuthUser.mockResolvedValue(MEMBER_USER);
     const res = (await action({
       request: makePostRequest({ door: "member", intent: "skip" }),
     } as any)) as Response;
     expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/");
+    expect(res.headers.get("Location")).toBe("/welcome?door=member&step=passkey");
   });
 
-  it("partner door redirects to /partner", async () => {
+  it("partner door setup advances to the passkey step (carrying the door)", async () => {
     mockGetBetterAuthUser.mockResolvedValue(PARTNER_USER);
     const res = (await action({
       request: makePostRequest({ door: "partner", intent: "skip", fullName: "Ada Lovelace" }),
     } as any)) as Response;
     expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/partner");
+    expect(res.headers.get("Location")).toBe("/welcome?door=partner&step=passkey");
+  });
+});
+
+// ── Action — dismiss passkey ──────────────────────────────────────────────────
+
+describe("POST /welcome action — dismiss passkey", () => {
+  it("sets the dismissal cookie and redirects to the safe next", async () => {
+    const res = (await action({
+      request: makePostRequest({ intent: "dismiss-passkey", next: "/tasks" }),
+    } as any)) as Response;
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/tasks");
+    const cookies = res.headers.getSetCookie?.() ?? [res.headers.get("Set-Cookie")!];
+    expect(cookies.some((c: string) => c.includes("dali_pk_prompt=1"))).toBe(true);
+  });
+
+  it("falls back to / when next is unsafe", async () => {
+    const res = (await action({
+      request: makePostRequest({ intent: "dismiss-passkey", next: "//evil.com" }),
+    } as any)) as Response;
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/");
   });
 });

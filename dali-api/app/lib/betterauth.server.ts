@@ -1,6 +1,6 @@
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
-import { bearer, magicLink, admin } from "better-auth/plugins";
+import { bearer, magicLink, admin, emailOTP } from "better-auth/plugins";
 import { passkey } from "@better-auth/passkey";
 
 import { prisma } from "~/lib/db";
@@ -54,39 +54,11 @@ export const auth = betterAuth({
     },
   },
 
+  // Passwordless by design: sign-in is a one-time email code (emailOTP) plus
+  // passkeys. No password credential exists, so email+password sign-in and the
+  // reset-password endpoints stay off entirely.
   emailAndPassword: {
-    enabled: true,
-    requireEmailVerification: true,
-
-    // Callback signature (from @better-auth/core 1.7.5 types):
-    //   (data: { user: User; url: string; token: string }, request?: Request) => Promise<void>
-    sendResetPassword: async (data, _request) => {
-      const { user, url } = data;
-      if (getAppEnv() === "dev") {
-        console.info(`[betterauth:reset-password:dev] ${url}`);
-      }
-      const { id: outboundId } = await enqueueOutbound({
-        channel: "email",
-        purpose: "General",
-        dedupKey: `auth.reset_password:${user.id}:${Date.now()}`,
-        target: user.email,
-        recipientUserId: user.id,
-        subject: "Reset your DALI OS password",
-        bodyHtml: `
-  <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; color: #1f2937;">
-    <p>Someone requested a password reset for your DALI OS account. Use the button below to set a new password. This link expires in one hour.</p>
-    <p style="margin: 24px 0;">
-      <a href="${url}" style="background: #1e3a8a; color: #fff; padding: 10px 20px; border-radius: 8px; text-decoration: none;">Reset your password</a>
-    </p>
-    <p style="color: #6b7280; font-size: 13px;">If you didn't request this, you can ignore this email — your password won't be changed.</p>
-    <p style="color: #6b7280; font-size: 12px; margin-top: 32px;">
-      DALI Lab · Dartmouth College
-    </p>
-  </div>`,
-        eventType: "auth.reset_password",
-      });
-      await drainNow([outboundId]);
-    },
+    enabled: false,
   },
 
   emailVerification: {
@@ -123,30 +95,28 @@ export const auth = betterAuth({
     },
   },
 
-  // No social providers. Sign-in is passwordless-first: a magic link to the
-  // verified email (all doors), with an optional password as a fallback and
-  // passkeys for fast repeat sign-in. Google SSO was removed deliberately —
-  // not every account we admit is Google-backed (Dartmouth faculty/staff on
-  // Microsoft, partners on any provider), and one consistent method across all
-  // three doors beats a per-door split.
-
-  account: {
-    accountLinking: {
-      enabled: true,
-      // Google is trusted: a verified google email is sufficient proof of
-      // ownership to link an OAuth account to an existing email/password row.
-      trustedProviders: ["google"],
-    },
-  },
+  // No social providers, so there is nothing to link: sign-in is passwordless
+  // (magic link + email code, all three doors) with passkeys for fast repeat
+  // sign-in. Google SSO was removed deliberately — not every account we admit is
+  // Google-backed (Dartmouth faculty/staff on Microsoft, partners on any
+  // provider), and one consistent method across all three doors beats a per-door
+  // split. The former `account.accountLinking.trustedProviders: ["google"]` is
+  // gone with it: emailOTP/magicLink operate on the User by verified email (no
+  // separate provider Account rows to link), and passkeys attach to the already
+  // authenticated user, so cross-account linking never enters the passwordless
+  // flow. Joining a member's @dali row to their @dartmouth identity, if we ever
+  // want it, must be an explicit proof-of-both-inboxes step, never an implicit
+  // trust rule here.
 
   session: {
     // Map to a NEW `AuthSession` table, NOT the bespoke `Session` (sha256-id,
     // grantId→OAuthGrant, absolute expiry) which must keep working through the
     // phased cutover and is dropped only at cleanup. Avoids a model collision.
     modelName: "authSession",
-    // 30-day rolling session; updateAge keeps the token fresh after 24 h of use.
+    // 30-day rolling session; updateAge slides the expiry forward at most once
+    // per 72 h of use (fewer session-refresh writes; the 30-day max is unchanged).
     expiresIn: 60 * 60 * 24 * 30,
-    updateAge: 60 * 60 * 24,
+    updateAge: 60 * 60 * 72,
     // NOTE: do NOT enable `cookieCache` here. It breaks revocation (a banned or
     // deprovisioned user would continue to pass session checks until the cookie
     // expires) and also bypasses the per-request membership check the MCP
@@ -164,6 +134,16 @@ export const auth = betterAuth({
   advanced: {
     cookiePrefix: "dali",
     useSecureCookies: getAppEnv() !== "dev",
+
+    // Resolve the real client IP for BetterAuth's per-IP rate limiting. On Fly,
+    // Fly-Client-IP carries a single, un-spoofable client address (Fly's edge
+    // sets it). BetterAuth's default (x-forwarded-for) can't be trusted without
+    // a configured proxy chain — it rejects any multi-value header — and Fly's
+    // XFF has multiple entries, so it was collapsing every request into one
+    // shared per-path bucket. Mirrors app/lib/rate-limit.ts's precedence.
+    ipAddress: {
+      ipAddressHeaders: ["fly-client-ip", "x-forwarded-for"],
+    },
 
     database: {
       // Defer row-id generation to the DB's own @default(cuid()) clauses.
@@ -208,6 +188,43 @@ export const auth = betterAuth({
     </p>
   </div>`,
           eventType: "auth.magic_link",
+        });
+        await drainNow([outboundId]);
+      },
+    }),
+    // emailOTP: a 6-digit sign-in code, offered on /login as the primary
+    // passwordless method. Codes survive the laptop→phone handoff that breaks
+    // magic links (you type the code back into the tab you started in), which is
+    // exactly the returning-user case. disableSignUp keeps it SIGN-IN ONLY — a
+    // non-existent address gets a neutral no-op, never a code or a new account;
+    // accounts are still created through /signup's magic link + /welcome. Rides
+    // the `verification` table (same as magicLink), so no schema change.
+    emailOTP({
+      otpLength: 6,
+      expiresIn: 60 * 10, // 10 min
+      disableSignUp: true,
+      async sendVerificationOTP({ email, otp, type }) {
+        // Only the sign-in code reaches a surface today; other types are unused.
+        if (getAppEnv() === "dev") {
+          console.info(`[betterauth:email-otp:dev] ${type} ${otp}`);
+        }
+        const { id: outboundId } = await enqueueOutbound({
+          channel: "email",
+          purpose: "General",
+          // Fresh key per code so a resend always delivers.
+          dedupKey: `auth.email_otp:${email}:${otp}`,
+          target: email,
+          subject: "Your DALI OS sign-in code",
+          bodyHtml: `
+  <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; color: #1f2937;">
+    <p>Your DALI OS sign-in code is:</p>
+    <p style="font-size: 30px; font-weight: 700; letter-spacing: 6px; margin: 20px 0; color: #1e3a8a;">${otp}</p>
+    <p style="color: #6b7280; font-size: 13px;">Enter it on the sign-in page. It expires in 10 minutes. If you didn't request this, you can ignore this email.</p>
+    <p style="color: #6b7280; font-size: 12px; margin-top: 32px;">
+      DALI Lab · Dartmouth College
+    </p>
+  </div>`,
+          eventType: "auth.email_otp",
         });
         await drainNow([outboundId]);
       },

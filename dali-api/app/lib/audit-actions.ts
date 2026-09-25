@@ -7,6 +7,7 @@ export const AUDIT_ACTIONS = [
   "login.success",
   "login.failure",
   "logout",
+  "auth.passkey.register",
   "auth.token.invalid",
   "auth.token.malformed",
   "pairing.start",
