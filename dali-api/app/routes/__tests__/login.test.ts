@@ -15,6 +15,8 @@ const mockSignInMagicLink = vi.hoisted(() => vi.fn());
 const mockSignInSocial = vi.hoisted(() => vi.fn());
 const mockSignInEmail = vi.hoisted(() => vi.fn());
 const mockRequestPasswordReset = vi.hoisted(() => vi.fn());
+const mockSendVerificationOTP = vi.hoisted(() => vi.fn());
+const mockSignInEmailOTP = vi.hoisted(() => vi.fn());
 vi.mock("~/lib/betterauth.server", () => ({
   auth: {
     api: {
@@ -22,6 +24,8 @@ vi.mock("~/lib/betterauth.server", () => ({
       signInSocial: mockSignInSocial,
       signInEmail: mockSignInEmail,
       requestPasswordReset: mockRequestPasswordReset,
+      sendVerificationOTP: mockSendVerificationOTP,
+      signInEmailOTP: mockSignInEmailOTP,
     },
   },
 }));
@@ -74,6 +78,8 @@ beforeEach(() => {
   // Default: betterauth flag is OFF for existing legacy tests.
   mockIsFeatureEnabledForEveryone.mockResolvedValue(false);
   mockSignInMagicLink.mockResolvedValue(undefined);
+  mockSendVerificationOTP.mockResolvedValue({ success: true });
+  mockSignInEmailOTP.mockResolvedValue({ headers: new Headers() });
   mockSignInSocial.mockResolvedValue({ url: "https://accounts.google.com/oauth" });
   mockSignInEmail.mockResolvedValue({ headers: new Headers() });
   mockRequestPasswordReset.mockResolvedValue(undefined);
@@ -309,57 +315,81 @@ describe("POST /login password (flag-ON)", () => {
   });
 });
 
-describe("POST /login magic-link (flag-ON)", () => {
-  it("emails a sign-in link and returns a neutral sent response", async () => {
+describe("POST /login email-code (flag-ON)", () => {
+  it("sends a sign-in OTP and advances to the code screen", async () => {
     mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
     const result = await action({
       request: makeFlagOnRequest("1.2.3.4", {
-        provider: "magic-link",
+        provider: "email-code",
         email: "ada@dartmouth.edu",
       }),
     } as any);
-    expect(result).toMatchObject({ sent: true, email: "ada@dartmouth.edu" });
-    expect(mockSignInMagicLink).toHaveBeenCalledWith(
+    expect(result).toMatchObject({ codeSent: true, email: "ada@dartmouth.edu" });
+    expect(mockSendVerificationOTP).toHaveBeenCalledWith(
       expect.objectContaining({
-        body: expect.objectContaining({ email: "ada@dartmouth.edu", callbackURL: "/" }),
+        body: expect.objectContaining({ email: "ada@dartmouth.edu", type: "sign-in" }),
       }),
     );
   });
 
-  it("carries a safe next into the magic-link callbackURL", async () => {
+  it("still advances to the code screen when the send throws (anti-enumeration)", async () => {
     mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
-    await action({
-      request: makeFlagOnRequest("1.2.3.4", {
-        provider: "magic-link",
-        email: "ada@dartmouth.edu",
-        next: "/calendar/check-in/m1",
-      }),
-    } as any);
-    expect(mockSignInMagicLink).toHaveBeenCalledWith(
-      expect.objectContaining({
-        body: expect.objectContaining({ callbackURL: "/calendar/check-in/m1" }),
-      }),
-    );
-  });
-
-  it("still returns a neutral sent response when the send throws (anti-enumeration)", async () => {
-    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
-    mockSignInMagicLink.mockRejectedValue(new Error("boom"));
+    mockSendVerificationOTP.mockRejectedValue(new Error("boom"));
     const result = await action({
       request: makeFlagOnRequest("1.2.3.4", {
-        provider: "magic-link",
+        provider: "email-code",
         email: "nobody@dartmouth.edu",
       }),
     } as any);
-    expect(result).toMatchObject({ sent: true, email: "nobody@dartmouth.edu" });
+    expect(result).toMatchObject({ codeSent: true, email: "nobody@dartmouth.edu" });
   });
 
   it("rejects an email with no @", async () => {
     mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
     const result = await action({
-      request: makeFlagOnRequest("1.2.3.4", { provider: "magic-link", email: "notanemail" }),
+      request: makeFlagOnRequest("1.2.3.4", { provider: "email-code", email: "notanemail" }),
     } as any);
     expect(result).toMatchObject({ error: expect.stringContaining("valid email") });
-    expect(mockSignInMagicLink).not.toHaveBeenCalled();
+    expect(mockSendVerificationOTP).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /login verify-code (flag-ON)", () => {
+  it("verifies the OTP and forwards the session cookie", async () => {
+    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
+    const baHeaders = new Headers({ "Set-Cookie": "dali.session_token=abc; Path=/" });
+    mockSignInEmailOTP.mockResolvedValue({ headers: baHeaders });
+    const res = (await action({
+      request: makeFlagOnRequest("1.2.3.4", {
+        provider: "verify-code",
+        email: "ada@dartmouth.edu",
+        otp: "123456",
+      }),
+    } as any)) as Response;
+    expect(res.status).toBe(302);
+    expect(mockSignInEmailOTP).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({ email: "ada@dartmouth.edu", otp: "123456" }),
+      }),
+    );
+    const cookies = res.headers.getSetCookie?.() ?? [res.headers.get("Set-Cookie")!];
+    expect(cookies.some((c: string) => c.includes("dali.session_token="))).toBe(true);
+  });
+
+  it("stays on the code screen with an error when the code is wrong", async () => {
+    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
+    mockSignInEmailOTP.mockRejectedValue(new Error("invalid otp"));
+    const result = await action({
+      request: makeFlagOnRequest("1.2.3.4", {
+        provider: "verify-code",
+        email: "ada@dartmouth.edu",
+        otp: "000000",
+      }),
+    } as any);
+    expect(result).toMatchObject({
+      codeSent: true,
+      email: "ada@dartmouth.edu",
+      error: expect.stringContaining("didn't match"),
+    });
   });
 });

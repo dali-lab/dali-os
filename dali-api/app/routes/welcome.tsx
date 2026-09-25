@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Form, redirect, useActionData, useLoaderData, useNavigation } from "react-router";
 import type { Route } from "./+types/welcome";
 import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
@@ -38,7 +39,20 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const door: Door = doorParam;
 
+  // Two-step welcome: the setup form (name + optional password), then a passkey
+  // offer. The action redirects here with step=passkey once setup is done —
+  // right after the first sign-in is the highest-converting moment to register
+  // one (eBay's data: ~75% of all passkey enrollments happen here).
+  if (url.searchParams.get("step") === "passkey") {
+    return {
+      step: "passkey" as const,
+      door,
+      destination: DOOR_DESTINATIONS[door],
+    };
+  }
+
   return {
+    step: "setup" as const,
     email: user.email,
     door,
     // Magic-link signups arrive without a name (no Google to supply one), so
@@ -129,11 +143,27 @@ export async function action({ request }: Route.ActionArgs) {
   }
   // intent=skip → skip password entirely.
 
-  return redirect(DOOR_DESTINATIONS[door]);
+  // On to the passkey offer rather than straight to the app.
+  return redirect(`/welcome?door=${door}&step=passkey`);
 }
 
 export default function Welcome() {
-  const { email, door, needsName } = useLoaderData<typeof loader>();
+  const data = useLoaderData<typeof loader>();
+  if (data.step === "passkey") {
+    return <PasskeyStep destination={data.destination} />;
+  }
+  return <SetupStep email={data.email} door={data.door} needsName={data.needsName} />;
+}
+
+function SetupStep({
+  email,
+  door,
+  needsName,
+}: {
+  email: string;
+  door: Door;
+  needsName: boolean;
+}) {
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const submitting = navigation.state === "submitting";
@@ -234,6 +264,73 @@ export default function Welcome() {
           </button>
         </div>
       </Form>
+    </AuthShell>
+  );
+}
+
+// Post-setup passkey offer. Registration is a client-side WebAuthn ceremony via
+// the browser BetterAuth client (dynamically imported so it never loads on the
+// server). Benefit-framed copy ("sign in faster") outperforms security framing.
+function PasskeyStep({ destination }: { destination: string }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
+
+  // No WebAuthn at all → nothing to offer; go straight to the app so this step
+  // is never a dead end.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (typeof PublicKeyCredential === "undefined") {
+      window.location.href = destination;
+      return;
+    }
+    setReady(true);
+  }, [destination]);
+
+  async function setUpPasskey() {
+    setBusy(true);
+    setError(null);
+    try {
+      const { authClient } = await import("~/lib/auth-client");
+      const { error: err } = await authClient.passkey.addPasskey();
+      if (err) {
+        setError("Couldn't set up a passkey. You can add one anytime in Settings.");
+        return;
+      }
+      window.location.href = destination;
+    } catch {
+      setError("Couldn't set up a passkey. You can add one anytime in Settings.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // While deciding support (or redirecting), render nothing — avoids a flash of
+  // the prompt on browsers that can't do WebAuthn.
+  if (!ready) return null;
+
+  return (
+    <AuthShell heading="Sign in faster next time" error={error}>
+      <p className="text-muted-foreground mb-6 -mt-2">
+        Set up a passkey and next time you can sign in with Face ID, Touch ID, or
+        your device — no code or password to type.
+      </p>
+      <div className="flex flex-col gap-2">
+        <button
+          type="button"
+          onClick={() => void setUpPasskey()}
+          disabled={busy}
+          className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
+        >
+          {busy ? "Waiting for passkey…" : "Set up a passkey"}
+        </button>
+        <a
+          href={destination}
+          className="w-full rounded-xl border border-border bg-card text-dark-blue font-heading font-semibold py-3 text-center hover:border-accent-coral transition"
+        >
+          Not now
+        </a>
+      </div>
     </AuthShell>
   );
 }

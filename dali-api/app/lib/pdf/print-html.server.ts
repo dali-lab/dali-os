@@ -10,6 +10,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { blocksToFullHtml, type DocBlock } from "~/collab/blocknote-server";
 import { getObjectBytes } from "~/lib/s3";
+import type { PageTypography } from "~/lib/page-typography";
 
 const require = createRequire(import.meta.url);
 
@@ -20,8 +21,10 @@ let blocknoteCssCache: string | null = null;
 function blocknoteCss(): string {
   if (blocknoteCssCache !== null) return blocknoteCssCache;
   const candidates = [
-    () => require.resolve("@blocknote/core/dist/style.css"),
-    () => join(dirname(require.resolve("@blocknote/core/package.json")), "dist/style.css"),
+    // The package's exports map only exposes the sheet as "./style.css" —
+    // "dist/style.css" and "package.json" are not resolvable subpaths.
+    () => require.resolve("@blocknote/core/style.css"),
+    () => join(dirname(require.resolve("@blocknote/core")), "style.css"),
   ];
   for (const resolve of candidates) {
     try {
@@ -36,30 +39,96 @@ function blocknoteCss(): string {
   return blocknoteCssCache;
 }
 
-// Print + brand layer: page geometry, a sans body (system stack — the brand's
-// Open Sans/Dosis fall back cleanly), a document title, and light styling for
-// signing fields so signature/initial/text values read as filled-in lines.
+// Print layer: page geometry plus the doc editor's own look (app.css os light
+// tokens + components/doc/theme.css), so the PDF reads like the paper on screen.
+// BlockNote scopes its table rules under .bn-editor, so the body is wrapped in
+// one (see documentToPrintHtml); the rules below undo that class's editing
+// chrome. Brand fonts load from Google Fonts in the app — the render has no
+// network, so each stack falls back to the installed sans.
 const PRINT_CSS = `
   @page { size: Letter; margin: 0.85in; }
   html, body { padding: 0; margin: 0; background: #fff; }
   body {
-    font-family: "Open Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    color: #1f2937;
+    --doc-font: "Mulish", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-family: var(--doc-font);
+    color: #13293a;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
+  body.doc-font-serif { --doc-font: ui-serif, Georgia, Cambria, "Times New Roman", serif; }
+  body.doc-font-mono { --doc-font: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   .pdf-title {
-    font-family: "Dosis", ui-sans-serif, system-ui, sans-serif;
-    font-size: 26px;
-    font-weight: 700;
-    color: #1E5779;
-    margin: 0 0 6px 0;
+    font-family: var(--doc-font);
+    font-size: 36px;
+    font-weight: 500;
+    line-height: 1.25;
+    margin: 0 0 16px 0;
   }
-  .pdf-title-rule { height: 3px; width: 64px; background: #FF8B81; border-radius: 2px; margin-bottom: 20px; }
-  /* Neutralise the editor's interactive chrome for a clean printed page. */
+  body.doc-small .pdf-title { font-size: 30px; }
+  .bn-default-styles { font-family: var(--doc-font); color: inherit; }
+  body.doc-small .bn-editor { font-size: 14px; }
   .bn-editor { padding: 0 !important; }
   .bn-block-outer { margin: 0; }
-  a { color: #1E5779; }
+  /* Headings and table rows shouldn't strand across a page break. */
+  .bn-block-content[data-content-type="heading"] { break-after: avoid; }
+  tr { break-inside: avoid; }
+
+  a { color: #0f6e7d; }
+  .bn-inline-content a[href] { text-decoration: underline; text-underline-offset: 2px; }
+
+  /* Tables: BlockNote's cell borders apply via the .bn-editor wrapper; drop the
+     gutter it reserves for the (absent) add-row/column handles. */
+  .bn-block-content[data-content-type="table"] { display: block; }
+  .bn-editor [data-content-type="table"] .tableWrapper { padding: 0; overflow: visible; }
+  .bn-editor [data-content-type="table"] table { border-collapse: collapse; table-layout: fixed; max-width: 100%; }
+  .bn-editor [data-content-type="table"] th,
+  .bn-editor [data-content-type="table"] td { vertical-align: top; }
+  /* Column widths as in the editor: a resized column carries its width on the
+     <col>; the rest take the default width BlockNote puts on the table. */
+  .bn-editor [data-content-type="table"] col:not([style*="width"]) {
+    width: var(--default-cell-min-width, 120px);
+  }
+
+  /* Toggles print expanded: the button is interactive chrome, the children are content. */
+  .bn-toggle-button { display: none; }
+  .bn-block:has(> .bn-block-content > div > .bn-toggle-wrapper) > .bn-block-group { display: block !important; }
+
+  /* Page break: the break itself comes from BlockNote's print rule; hide the on-screen line. */
+  .bn-block-content[data-content-type="pageBreak"] > div { border-top: none; margin: 0; }
+
+  /* Callout: the tinted box from the editor (theme.css section 3). */
+  .bn-block:has(> .bn-block-content[data-content-type="callout"]) {
+    background: #fdf8e6;
+    border: 1px solid #f5e0a3;
+    border-left: 3px solid #eab308;
+    border-radius: 8px;
+    padding: 6px 12px;
+    margin: 4px 0;
+  }
+  .bn-block:has(> .bn-block-content[data-emoji="🚨"]) { background: #fdecec; border-color: #f4bebe; border-left-color: #dc2626; }
+  .bn-block:has(> .bn-block-content[data-emoji="✅"]) { background: #e9f6ee; border-color: #b9e3c7; border-left-color: #16a34a; }
+  .bn-block:has(> .bn-block-content[data-emoji="📌"]) { background: #e8f3f4; border-color: #b3d6da; border-left-color: #0f6e7d; }
+  [data-callout] { display: flex; align-items: flex-start; gap: 8px; width: 100%; }
+  [data-callout] > span { flex: none; width: 20px; text-align: center; }
+  [data-callout] > div { flex: 1; min-width: 0; }
+  .bn-block:has(> .bn-block-content[data-content-type="callout"]) > .bn-block-group { margin-left: 28px; }
+
+  /* Bookmark/embed card. */
+  a[data-embed] {
+    display: block;
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #ccd7e2;
+    border-radius: 8px;
+    color: inherit;
+    font-weight: 500;
+    text-decoration: none;
+  }
+
+  /* Mention chips, as in the editor. */
+  [data-mention-id] { border-radius: 4px; padding: 1px 4px; font-weight: 500; color: #c2410c; background: #ffe8e6; }
+  [data-page-mention-id] { border-radius: 4px; padding: 1px 4px; font-weight: 500; background: #eef2f6; }
+
   /* Filled signing values read as underlined lines; the checkbox glyph stays inline. */
   [data-inline-content-type="signatureField"],
   [data-inline-content-type="initialField"],
@@ -112,9 +181,22 @@ export async function inlineUploadImages(html: string): Promise<string> {
   });
 }
 
-// Full standalone HTML document for `blocks`, titled `title`. Async because the
-// block→HTML conversion runs through the server BlockNote editor.
-export async function documentToPrintHtml(title: string, blocks: DocBlock[]): Promise<string> {
+function typographyClasses(t: PageTypography | undefined): string {
+  if (!t) return "";
+  const classes: string[] = [];
+  if (t.font !== "default") classes.push(`doc-font-${t.font}`);
+  if (t.smallText) classes.push("doc-small");
+  return classes.join(" ");
+}
+
+// Full standalone HTML document for `blocks`, titled `title`, honoring the
+// page's "Aa" typography prefs when given. Async because the block→HTML
+// conversion runs through the server BlockNote editor.
+export async function documentToPrintHtml(
+  title: string,
+  blocks: DocBlock[],
+  typography?: PageTypography,
+): Promise<string> {
   const body = await inlineUploadImages(await blocksToFullHtml(blocks));
   return `<!doctype html>
 <html lang="en">
@@ -123,10 +205,9 @@ export async function documentToPrintHtml(title: string, blocks: DocBlock[]): Pr
 <style>${blocknoteCss()}</style>
 <style>${PRINT_CSS}</style>
 </head>
-<body>
+<body class="${typographyClasses(typography)}">
 <h1 class="pdf-title">${escapeHtml(title)}</h1>
-<div class="pdf-title-rule"></div>
-<div class="bn-container bn-default-styles">${body}</div>
+<div class="bn-container bn-default-styles"><div class="bn-editor">${body}</div></div>
 </body>
 </html>`;
 }

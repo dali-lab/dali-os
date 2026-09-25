@@ -1,5 +1,5 @@
 import PDFDocument from "pdfkit";
-import type { DocBlock, DocInline, DocTableCell } from "./blocknote-server";
+import type { DocBlock, DocInline, DocTableCell, DocTableContent } from "./blocknote-server";
 import { ensureBlocks } from "./legacy/pm-to-blocknote";
 import type { PMNode } from "./export-html";
 import {
@@ -89,10 +89,10 @@ function cellRuns(cell: DocTableCell | DocInline[]): Run[] {
 }
 
 function fontFor(run: Run): string {
-  if (run.bold && run.italic) return "Times-BoldItalic";
-  if (run.bold) return "Times-Bold";
-  if (run.italic) return "Times-Italic";
-  return "Times-Roman";
+  if (run.bold && run.italic) return "Helvetica-BoldOblique";
+  if (run.bold) return "Helvetica-Bold";
+  if (run.italic) return "Helvetica-Oblique";
+  return "Helvetica";
 }
 
 function writeInline(doc: PDFKit.PDFDocument, runs: Run[], fontSize: number) {
@@ -147,11 +147,76 @@ function renderChildren(doc: PDFKit.PDFDocument, block: DocBlock) {
   doc.x = prev;
 }
 
+const CELL_PAD_X = 6;
+const CELL_PAD_Y = 4;
+const TABLE_FONT_SIZE = 10.5;
+
+// Bordered grid, one row at a time so a row that doesn't fit moves to the next
+// page whole. Columns share the width in proportion to the editor's column
+// widths (unset columns get the average of the set ones); header rows/cols bold.
+function renderTable(doc: PDFKit.PDFDocument, content: DocTableContent | undefined) {
+  const rows = (content?.rows ?? []).map((row) =>
+    (row.cells ?? []).map((cell) =>
+      cellRuns(cell)
+        .map((r) => r.text)
+        .join(""),
+    ),
+  );
+  const colCount = Math.max(0, ...rows.map((r) => r.length));
+  if (colCount === 0) return;
+
+  const left = doc.x;
+  const available = doc.page.width - doc.page.margins.right - left;
+  const set = (content?.columnWidths ?? []).filter((w): w is number => typeof w === "number" && w > 0);
+  const fallback = set.length ? set.reduce((a, b) => a + b, 0) / set.length : 1;
+  const weights = Array.from({ length: colCount }, (_, i) => {
+    const w = content?.columnWidths?.[i];
+    return typeof w === "number" && w > 0 ? w : fallback;
+  });
+  const total = weights.reduce((a, b) => a + b, 0);
+  const widths = weights.map((w) => (w / total) * available);
+  const headerRows = content?.headerRows ?? 0;
+  const headerCols = content?.headerCols ?? 0;
+
+  doc.fontSize(TABLE_FONT_SIZE);
+  let y = doc.y;
+  rows.forEach((cells, r) => {
+    const fonts = widths.map((_, c) => (r < headerRows || c < headerCols ? "Helvetica-Bold" : "Helvetica"));
+    const height =
+      Math.max(
+        ...widths.map((w, c) => {
+          doc.font(fonts[c]);
+          return doc.heightOfString(cells[c] || " ", { width: w - CELL_PAD_X * 2 });
+        }),
+      ) +
+      CELL_PAD_Y * 2;
+    if (y + height > doc.page.height - doc.page.margins.bottom && y > doc.page.margins.top) {
+      doc.addPage();
+      y = doc.page.margins.top;
+    }
+    // Stroke state resets on addPage, so set it per row.
+    doc.strokeColor("#dddddd").lineWidth(0.75);
+    let x = left;
+    widths.forEach((w, c) => {
+      if (r < headerRows) doc.rect(x, y, w, height).fill("#f5f7f9");
+      doc.rect(x, y, w, height).stroke();
+      doc
+        .font(fonts[c])
+        .fillColor("#1a1a1a")
+        .text(cells[c] ?? "", x + CELL_PAD_X, y + CELL_PAD_Y, { width: w - CELL_PAD_X * 2 });
+      x += w;
+    });
+    y += height;
+  });
+  doc.x = left;
+  doc.y = y;
+}
+
 function renderBlock(doc: PDFKit.PDFDocument, block: DocBlock, listPrefix?: string) {
   switch (block.type) {
     case "paragraph": {
       if (listPrefix) {
-        doc.font("Times-Roman").fontSize(12).text(listPrefix, { continued: true });
+        doc.font("Helvetica").fontSize(12).text(listPrefix, { continued: true });
       }
       writeInline(doc, blockRuns(block), 12);
       doc.moveDown(0.5);
@@ -169,14 +234,14 @@ function renderBlock(doc: PDFKit.PDFDocument, block: DocBlock, listPrefix?: stri
       break;
     }
     case "bulletListItem": {
-      doc.font("Times-Roman").fontSize(12).text(listPrefix ?? "•  ", { continued: true });
+      doc.font("Helvetica").fontSize(12).text(listPrefix ?? "•  ", { continued: true });
       writeInline(doc, blockRuns(block), 12);
       doc.moveDown(0.3);
       renderChildren(doc, block);
       break;
     }
     case "numberedListItem": {
-      doc.font("Times-Roman").fontSize(12).text(listPrefix ?? "1.  ", { continued: true });
+      doc.font("Helvetica").fontSize(12).text(listPrefix ?? "1.  ", { continued: true });
       writeInline(doc, blockRuns(block), 12);
       doc.moveDown(0.3);
       renderChildren(doc, block);
@@ -184,14 +249,14 @@ function renderBlock(doc: PDFKit.PDFDocument, block: DocBlock, listPrefix?: stri
     }
     case "checkListItem": {
       const box = block.props?.checked === true ? "[x]  " : "[ ]  ";
-      doc.font("Times-Roman").fontSize(12).text(box, { continued: true });
+      doc.font("Helvetica").fontSize(12).text(box, { continued: true });
       writeInline(doc, blockRuns(block), 12);
       doc.moveDown(0.3);
       renderChildren(doc, block);
       break;
     }
     case "quote":
-      doc.font("Times-Italic").fontSize(12).fillColor("#555");
+      doc.font("Helvetica-Oblique").fontSize(12).fillColor("#555");
       doc.text(blockText(block) || " ");
       doc.fillColor("#1a1a1a");
       doc.moveDown(0.5);
@@ -223,7 +288,7 @@ function renderBlock(doc: PDFKit.PDFDocument, block: DocBlock, listPrefix?: stri
         typeof block.props?.caption === "string" && block.props.caption
           ? block.props.caption
           : "";
-      doc.font("Times-Italic").fontSize(11).fillColor("#555");
+      doc.font("Helvetica-Oblique").fontSize(11).fillColor("#555");
       doc.text(caption ? `[Image: ${caption}]` : "[Image]");
       doc.fillColor("#1a1a1a");
       doc.moveDown(0.5);
@@ -242,11 +307,11 @@ function renderBlock(doc: PDFKit.PDFDocument, block: DocBlock, listPrefix?: stri
           : "";
       const label = caption || name;
       if (url) {
-        doc.font("Times-Roman").fontSize(12).fillColor("#1155cc");
+        doc.font("Helvetica").fontSize(12).fillColor("#1155cc");
         doc.text(label, { link: url, underline: true });
         doc.fillColor("#1a1a1a");
       } else {
-        doc.font("Times-Italic").fontSize(11).fillColor("#555");
+        doc.font("Helvetica-Oblique").fontSize(11).fillColor("#555");
         doc.text(`[File: ${label || "attachment"}]`);
         doc.fillColor("#1a1a1a");
       }
@@ -261,7 +326,7 @@ function renderBlock(doc: PDFKit.PDFDocument, block: DocBlock, listPrefix?: stri
         typeof block.props?.caption === "string" && block.props.caption
           ? block.props.caption
           : "";
-      doc.font("Times-Italic").fontSize(11).fillColor("#555");
+      doc.font("Helvetica-Oblique").fontSize(11).fillColor("#555");
       if (url) {
         const label = caption ? `[Video: ${caption}]` : "[Video]";
         doc.text(label, { link: url, underline: true });
@@ -284,31 +349,17 @@ function renderBlock(doc: PDFKit.PDFDocument, block: DocBlock, listPrefix?: stri
     case "callout": {
       // Render like a blockquote (italic, gray) — pdfkit's core fonts have no
       // emoji glyph, so the marker is dropped rather than rendered as tofu.
-      doc.font("Times-Italic").fontSize(12).fillColor("#555");
+      doc.font("Helvetica-Oblique").fontSize(12).fillColor("#555");
       doc.text(blockText(block) || " ");
       renderChildren(doc, block);
       doc.fillColor("#1a1a1a");
       doc.moveDown(0.3);
       break;
     }
-    case "table": {
-      const content = block.content as
-        | { rows?: { cells?: (DocTableCell | DocInline[])[] }[] }
-        | undefined;
-      doc.font("Times-Roman").fontSize(11).fillColor("#1a1a1a");
-      for (const row of content?.rows ?? []) {
-        const cells = (row.cells ?? []).map((cell) =>
-          cellRuns(cell)
-            .map((r) => r.text)
-            .join("")
-            .replace(/\s+/g, " ")
-            .trim(),
-        );
-        doc.text(cells.join("   |   "));
-      }
+    case "table":
+      renderTable(doc, block.content as DocTableContent | undefined);
       doc.moveDown(0.5);
       break;
-    }
     case "columnList":
     case "column": {
       // pdfkit has no flow-around layout, so columns are flattened: each
@@ -341,7 +392,7 @@ export function renderBlocksToPdf(title: string, blocks: DocBlock[]): Promise<Bu
     doc.moveDown(0.8);
 
     if (blocks.length === 0) {
-      doc.font("Times-Italic").fontSize(12).fillColor("#777").text("This document is empty.");
+      doc.font("Helvetica-Oblique").fontSize(12).fillColor("#777").text("This document is empty.");
     } else {
       renderBlockList(doc, blocks);
     }

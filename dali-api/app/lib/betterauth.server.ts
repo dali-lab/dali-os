@@ -1,6 +1,6 @@
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
-import { bearer, magicLink, admin } from "better-auth/plugins";
+import { bearer, magicLink, admin, emailOTP } from "better-auth/plugins";
 import { passkey } from "@better-auth/passkey";
 
 import { prisma } from "~/lib/db";
@@ -218,6 +218,43 @@ export const auth = betterAuth({
     </p>
   </div>`,
           eventType: "auth.magic_link",
+        });
+        await drainNow([outboundId]);
+      },
+    }),
+    // emailOTP: a 6-digit sign-in code, offered on /login as the primary
+    // passwordless method. Codes survive the laptop→phone handoff that breaks
+    // magic links (you type the code back into the tab you started in), which is
+    // exactly the returning-user case. disableSignUp keeps it SIGN-IN ONLY — a
+    // non-existent address gets a neutral no-op, never a code or a new account;
+    // accounts are still created through /signup's magic link + /welcome. Rides
+    // the `verification` table (same as magicLink), so no schema change.
+    emailOTP({
+      otpLength: 6,
+      expiresIn: 60 * 10, // 10 min
+      disableSignUp: true,
+      async sendVerificationOTP({ email, otp, type }) {
+        // Only the sign-in code reaches a surface today; other types are unused.
+        if (getAppEnv() === "dev") {
+          console.info(`[betterauth:email-otp:dev] ${type} ${otp}`);
+        }
+        const { id: outboundId } = await enqueueOutbound({
+          channel: "email",
+          purpose: "General",
+          // Fresh key per code so a resend always delivers.
+          dedupKey: `auth.email_otp:${email}:${otp}`,
+          target: email,
+          subject: "Your DALI OS sign-in code",
+          bodyHtml: `
+  <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; color: #1f2937;">
+    <p>Your DALI OS sign-in code is:</p>
+    <p style="font-size: 30px; font-weight: 700; letter-spacing: 6px; margin: 20px 0; color: #1e3a8a;">${otp}</p>
+    <p style="color: #6b7280; font-size: 13px;">Enter it on the sign-in page. It expires in 10 minutes. If you didn't request this, you can ignore this email.</p>
+    <p style="color: #6b7280; font-size: 12px; margin-top: 32px;">
+      DALI Lab · Dartmouth College
+    </p>
+  </div>`,
+          eventType: "auth.email_otp",
         });
         await drainNow([outboundId]);
       },
