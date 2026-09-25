@@ -4,6 +4,35 @@ export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 export const MAX_UPLOAD_LABEL = "10 MB";
 
+/** Project files and Lab Documents (Drive) — decks, recordings, datasets. */
+export const MAX_FILE_STORE_BYTES = 100 * 1024 * 1024;
+
+export const MAX_FILE_STORE_LABEL = "100 MB";
+
+// Key prefixes (under uploads/) that land in the ProjectFile store: the project
+// Files tab and task attachments, a non-project file's new version, and the
+// Drive hub (Lab and My Drive share one prefix). Keyed by prefix rather than by
+// caller permission on purpose — any signed-in member can already create a My
+// Drive file, so a permission check at presign time would narrow nothing;
+// access is decided where the file is registered.
+const FILE_STORE_PREFIXES = ["project-files/", "lab-files/", "drive-files/"];
+
+export type UploadCap = { maxBytes: number; label: string; expiresIn: number };
+
+/** The size cap and presigned-POST lifetime for an upload key. Accepts the key
+ *  with or without its `uploads/` scope, since the browser builds the prefix
+ *  and the presign route adds the scope. Shared by the client pre-check and
+ *  the signed policy so the two can't disagree. */
+export function uploadCapForKey(key: string): UploadCap {
+  const unscoped = key.replace(/^\/+/, "").replace(/^uploads\//, "");
+  if (FILE_STORE_PREFIXES.some((p) => unscoped.startsWith(p))) {
+    // 15 minutes: a 100 MB body on a slow link, or an MCP agent that has to
+    // turn the response into a curl call first.
+    return { maxBytes: MAX_FILE_STORE_BYTES, label: MAX_FILE_STORE_LABEL, expiresIn: 900 };
+  }
+  return { maxBytes: MAX_UPLOAD_BYTES, label: MAX_UPLOAD_LABEL, expiresIn: 300 };
+}
+
 // Defense-in-depth: known-dangerous types/extensions rejected regardless of
 // what a caller's `accept` config says. Shared by the presign route and the
 // MCP upload tool so the two upload paths can't drift.

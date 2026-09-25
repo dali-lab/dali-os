@@ -13,7 +13,7 @@ vi.mock("~/lib/s3", () => ({
 import { requireAuth } from "~/lib/auth";
 import { getUploadPost, isS3Configured } from "~/lib/s3";
 import { _resetForTests } from "~/lib/rate-limit";
-import { MAX_UPLOAD_BYTES } from "~/lib/file-validation";
+import { MAX_FILE_STORE_BYTES, MAX_UPLOAD_BYTES } from "~/lib/file-validation";
 import { action } from "~/routes/api.upload.presign";
 
 const USER_ID = "user-1";
@@ -204,6 +204,60 @@ describe("POST /api/upload/presign response shape", () => {
     } as any);
     expect(res.status).toBe(413);
     expect(getUploadPost).not.toHaveBeenCalled();
+  });
+
+  it("signs the 10 MB policy for keys outside the file store", async () => {
+    const res = await action({
+      request: makeRequest({ key: "avatars/me.png", contentType: "image/png", contentLength: 1024 }),
+    } as any);
+    expect(res.status).toBe(200);
+    expect(getUploadPost).toHaveBeenCalledWith("uploads/avatars/me.png", "image/png", {
+      maxBytes: MAX_UPLOAD_BYTES,
+      expiresIn: 300,
+    });
+  });
+
+  it.each(["project-files/proj1/uuid-deck.pdf", "drive-files/uuid-deck.pdf", "lab-files/uuid-deck.pdf"])(
+    "accepts a 50 MB file under %s and signs the 100 MB policy",
+    async (key) => {
+      const res = await action({
+        request: makeRequest({
+          key,
+          contentType: "application/pdf",
+          contentLength: 50 * 1024 * 1024,
+        }),
+      } as any);
+      expect(res.status).toBe(200);
+      expect(getUploadPost).toHaveBeenCalledWith(`uploads/${key}`, "application/pdf", {
+        maxBytes: MAX_FILE_STORE_BYTES,
+        expiresIn: 900,
+      });
+    },
+  );
+
+  it("returns 413 past 100 MB even in the file store", async () => {
+    const res = await action({
+      request: makeRequest({
+        key: "project-files/proj1/uuid-huge.zip",
+        contentType: "application/zip",
+        contentLength: MAX_FILE_STORE_BYTES + 1,
+      }),
+    } as any);
+    expect(res.status).toBe(413);
+    expect((await res.json()).error).toContain("100 MB");
+    expect(getUploadPost).not.toHaveBeenCalled();
+  });
+
+  it("still returns 413 for an 11 MB avatar", async () => {
+    const res = await action({
+      request: makeRequest({
+        key: "avatars/me.png",
+        contentType: "image/png",
+        contentLength: 11 * 1024 * 1024,
+      }),
+    } as any);
+    expect(res.status).toBe(413);
+    expect((await res.json()).error).toContain("10 MB");
   });
 
   it("returns 400 when contentLength is malformed", async () => {

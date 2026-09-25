@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { fileMatchesAccept, MAX_UPLOAD_BYTES } from "~/lib/file-validation";
+import {
+  fileMatchesAccept,
+  MAX_FILE_STORE_BYTES,
+  MAX_UPLOAD_BYTES,
+  uploadCapForKey,
+} from "~/lib/file-validation";
 
 describe("fileMatchesAccept", () => {
   it("accepts any file when accept is empty or undefined", () => {
@@ -52,5 +57,35 @@ describe("fileMatchesAccept", () => {
 describe("MAX_UPLOAD_BYTES", () => {
   it("is 10 MB", () => {
     expect(MAX_UPLOAD_BYTES).toBe(10 * 1024 * 1024);
+  });
+});
+
+describe("uploadCapForKey", () => {
+  it.each([
+    "project-files/proj1/uuid-deck.pdf",
+    "uploads/project-files/proj1/uuid-deck.pdf",
+    "lab-files/uuid-recording.mp4",
+    "drive-files/uuid-dataset.zip",
+    "uploads/drive-files/uuid-dataset.zip",
+  ])("gives the file store 100 MB: %s", (key) => {
+    const cap = uploadCapForKey(key);
+    expect(cap.maxBytes).toBe(MAX_FILE_STORE_BYTES);
+    expect(cap.maxBytes).toBe(100 * 1024 * 1024);
+    expect(cap.label).toBe("100 MB");
+    expect(cap.expiresIn).toBe(900);
+  });
+
+  it.each([
+    "avatars/uuid-me.png",
+    "uploads/doc-images/uuid-header.jpg",
+    "page-docs/uuid-demo.mp4",
+    "whiteboard-images/uuid.png",
+    // A look-alike segment deeper in the key doesn't count.
+    "avatars/project-files/uuid.png",
+  ])("keeps everything else at 10 MB: %s", (key) => {
+    const cap = uploadCapForKey(key);
+    expect(cap.maxBytes).toBe(MAX_UPLOAD_BYTES);
+    expect(cap.label).toBe("10 MB");
+    expect(cap.expiresIn).toBe(300);
   });
 });

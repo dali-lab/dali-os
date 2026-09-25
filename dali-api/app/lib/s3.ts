@@ -1,4 +1,10 @@
-import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3'
+import {
+  S3Client,
+  GetObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+  NotFound,
+} from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { createPresignedPost, type PresignedPost } from '@aws-sdk/s3-presigned-post'
 import { MAX_UPLOAD_BYTES } from './file-validation'
@@ -34,16 +40,18 @@ const s3 = new S3Client({
 // client to S3. Unlike presigned PUT, the policy includes server-bound
 // conditions that S3 enforces — the client cannot exceed the size cap or
 // upload a different content type, even if it ignores its own pre-checks.
+// Callers pass the cap for the key (`uploadCapForKey`); the default is the
+// general 10 MB limit.
 export async function getUploadPost(
   key: string,
   contentType: string,
-  expiresIn = 300,
+  { maxBytes = MAX_UPLOAD_BYTES, expiresIn = 300 }: { maxBytes?: number; expiresIn?: number } = {},
 ): Promise<PresignedPost> {
   return createPresignedPost(s3, {
     Bucket: BUCKET!,
     Key: key,
     Conditions: [
-      ['content-length-range', 0, MAX_UPLOAD_BYTES],
+      ['content-length-range', 0, maxBytes],
       ['eq', '$Content-Type', contentType],
       ['starts-with', '$key', 'uploads/'],
     ],
@@ -66,6 +74,25 @@ export async function putObject(
   await s3.send(
     new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: body, ContentType: contentType }),
   )
+}
+
+// Size and stored Content-Type of an object, without reading it. Null when the
+// key doesn't exist — how a caller tells "the client never finished the POST"
+// from a real storage error. Used to record what actually landed rather than
+// what a client said it would upload.
+export async function headObject(
+  key: string,
+): Promise<{ sizeBytes: number; contentType: string | null } | null> {
+  if (!isS3Configured()) {
+    throw new Error("AWS S3 is not configured")
+  }
+  try {
+    const res = await s3.send(new HeadObjectCommand({ Bucket: BUCKET, Key: key }))
+    return { sizeBytes: res.ContentLength ?? 0, contentType: res.ContentType ?? null }
+  } catch (err) {
+    if (err instanceof NotFound) return null
+    throw err
+  }
 }
 
 // Generate a presigned URL for reading a private file.

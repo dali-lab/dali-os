@@ -4,16 +4,17 @@
 //
 // The client uploads directly to S3 via multipart POST using the returned
 // url + fields. S3 enforces content-length-range and Content-Type via the
-// signed policy, so a malicious client cannot exceed the size cap.
+// signed policy, so a malicious client cannot exceed the size cap. The cap
+// depends on the key: 100 MB for the project-file / Drive store, 10 MB for
+// everything else (`uploadCapForKey`).
 // After upload, store the key in the DB and use GET /api/upload/url?key=... to read it.
 
 import { requireAuth } from "~/lib/auth";
 import { getUploadPost, isS3Configured } from '~/lib/s3'
 import {
-  MAX_UPLOAD_BYTES,
-  MAX_UPLOAD_LABEL,
   fileMatchesAccept,
   isBlockedUpload,
+  uploadCapForKey,
 } from '~/lib/file-validation'
 import { checkRateLimit } from '~/lib/rate-limit'
 
@@ -51,6 +52,10 @@ export async function action({ request }: { request: Request }) {
 
     const fileName = filenameFromKey(key)
 
+    // Scope all keys under uploads/ to avoid collisions with other bucket contents
+    const scopedKey = key.startsWith('uploads/') ? key : `uploads/${key}`
+    const cap = uploadCapForKey(scopedKey)
+
     // Defense-in-depth: block known-dangerous types regardless of what the
     // caller's `accept` config says. Runs unconditionally so a misconfigured
     // challenge accept string can't accidentally permit executables.
@@ -71,9 +76,9 @@ export async function action({ request }: { request: Request }) {
       if (typeof contentLength !== 'number' || !Number.isFinite(contentLength) || contentLength < 0) {
         return Response.json({ error: 'contentLength must be a non-negative number' }, { status: 400 })
       }
-      if (contentLength > MAX_UPLOAD_BYTES) {
+      if (contentLength > cap.maxBytes) {
         return Response.json(
-                  { error: `File too large (max ${MAX_UPLOAD_LABEL})` },
+                  { error: `File too large (max ${cap.label})` },
                   { status: 413 },
                 )
       }
@@ -91,10 +96,10 @@ export async function action({ request }: { request: Request }) {
       )
     }
 
-    // Scope all keys under uploads/ to avoid collisions with other bucket contents
-    const scopedKey = key.startsWith('uploads/') ? key : `uploads/${key}`
-
-    const { url, fields } = await getUploadPost(scopedKey, contentType)
+    const { url, fields } = await getUploadPost(scopedKey, contentType, {
+      maxBytes: cap.maxBytes,
+      expiresIn: cap.expiresIn,
+    })
     return Response.json({ url, fields, key: scopedKey })
   } catch (err) {
     console.error('Upload presign error:', err)

@@ -4,7 +4,8 @@
 // Actions:
 //   rename     — update the display title. Requires: fileId, title.
 //   add_version — append a new version from an already-uploaded s3Key (use
-//                 upload_project_file to obtain the key). Requires: fileId,
+//                 upload_project_file, or create_project_file_upload for a
+//                 large file, to obtain the key). Requires: fileId,
 //                 s3Key, fileName, contentType, sizeBytes.
 //
 // Note: get_project_file (below) returns signed download URLs per version.
@@ -22,7 +23,7 @@ export const MANAGE_PROJECT_FILE_TOOL = {
   name: "manage_project_file",
   description: `Rename a project file or append a new version. action must be:
 - \`rename\`: update the file's display name. Requires: fileId, title.
-- \`add_version\`: append a new uploaded version. Obtain s3Key via upload_project_file first. Requires: fileId, s3Key, fileName, contentType, sizeBytes.
+- \`add_version\`: append a new uploaded version. Obtain s3Key via upload_project_file, or via create_project_file_upload for a file over ~9 MB (after its POST succeeds; do not also finalize it). Requires: fileId, s3Key, fileName, contentType, sizeBytes.
 
 Requires Core or project-member access. Only project-workspace files are in scope.`,
   inputSchema: {
@@ -49,7 +50,7 @@ Requires Core or project-member access. Only project-workspace files are in scop
       s3Key: {
         type: "string",
         minLength: 1,
-        description: "S3 key returned by upload_project_file (add_version only).",
+        description: "S3 key returned by upload_project_file or create_project_file_upload (add_version only).",
       },
       fileName: {
         type: "string",
