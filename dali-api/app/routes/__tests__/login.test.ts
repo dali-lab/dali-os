@@ -352,4 +352,70 @@ describe("POST /login verify-code (flag-ON)", () => {
       error: expect.stringContaining("didn't match"),
     });
   });
+
+  it("steers to a fresh code when attempts on the code are exhausted (FORBIDDEN)", async () => {
+    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
+    // BetterAuth throws a FORBIDDEN APIError once the per-code attempt cap is hit.
+    mockSignInEmailOTP.mockRejectedValue({ status: "FORBIDDEN" });
+    const result = await action({
+      request: makeFlagOnRequest("1.2.3.4", {
+        provider: "verify-code",
+        email: "ada@dartmouth.edu",
+        otp: "000000",
+      }),
+    } as any);
+    expect(result).toMatchObject({
+      codeSent: true,
+      email: "ada@dartmouth.edu",
+      error: expect.stringContaining("Request a new one"),
+    });
+  });
+});
+
+describe("POST /login rate-limit scoping (flag-ON)", () => {
+  it("throttles code sends but keeps the user on the code screen (no raw 429)", async () => {
+    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
+    const send = () =>
+      action({
+        request: makeFlagOnRequest("7.7.7.7", {
+          provider: "email-code",
+          email: "ada@dartmouth.edu",
+        }),
+      } as any);
+    for (let i = 0; i < 5; i++) await send();
+    const result = await send();
+    expect(result).toMatchObject({
+      codeSent: true,
+      email: "ada@dartmouth.edu",
+      error: expect.stringContaining("several codes"),
+    });
+    // The throttled 6th attempt did not dispatch another email.
+    expect(mockSendVerificationOTP).toHaveBeenCalledTimes(5);
+  });
+
+  it("does not coarse-limit verify attempts, even after the send bucket is full", async () => {
+    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
+    const ip = "7.7.7.8";
+    for (let i = 0; i < 5; i++) {
+      await action({
+        request: makeFlagOnRequest(ip, {
+          provider: "email-code",
+          email: "ada@dartmouth.edu",
+        }),
+      } as any);
+    }
+    // A typo-fixing user posts verify-code several times on the same IP; each
+    // still reaches BetterAuth (which caps attempts per code) instead of 429ing.
+    for (let i = 0; i < 6; i++) {
+      const res = (await action({
+        request: makeFlagOnRequest(ip, {
+          provider: "verify-code",
+          email: "ada@dartmouth.edu",
+          otp: "123456",
+        }),
+      } as any)) as Response;
+      expect(res.status).toBe(302);
+    }
+    expect(mockSignInEmailOTP).toHaveBeenCalledTimes(6);
+  });
 });
