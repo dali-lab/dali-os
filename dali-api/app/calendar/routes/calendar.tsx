@@ -882,7 +882,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                   clickDurationHours={data.defaultEventDurationMin / 60}
                   markPayPeriodBounds={layers.logged}
                   backgroundLayer={(dayIdx) =>
-                    layers.workingHours
+                    layers.workingHours && !data.portal
                       ? workingHoursStripeLayer(data.workingHours, days[dayIdx].dayOfWeek, {
                           enabled: data.hasPersistedWorkingHours,
                         })

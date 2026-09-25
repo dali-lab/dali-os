@@ -1514,6 +1514,7 @@ export async function loadCalendarData(
   }
 
   const data: LoaderData = {
+    portal: Boolean(opts.portal),
     timezone,
     defaultEventBufferMin: bufferMin,
     workingHours,
@@ -1565,15 +1566,27 @@ export async function loadCalendarData(
 // meeting notes and their Drive pages, the Core-meeting marker, the logged-time
 // link on a meeting, promoting a Google event into a DALI meeting, and
 // subscribing to the lab's general calendar. The portal calendar posts here
-// too, so these stay member-only — everything else (working hours, linked
-// calendars, Google events, classes this term, one's own time entries) is the
-// viewer's own data and is open to a non-member.
+// too, so these stay member-only — everything else (linked calendars, Google
+// events, classes this term, one's own time entries) is the viewer's own data
+// and is open to a non-member.
 const MEMBER_ONLY_CALENDAR_INTENTS = new Set([
   "subscribe-general-calendar",
   "toggle-meeting-time-entry",
   "set-meeting-core",
   "add-meeting-note",
   "track-event-as-meeting",
+]);
+
+// Working hours are a lab-availability concept the portal view doesn't offer:
+// the grid overlay and the Settings modal's "Working hours" section are both
+// hidden for a non-member. This write path is shared with the member calendar,
+// so the intents are blocked for a non-member here too — the portal UI can't
+// reach them, and a hand-crafted POST shouldn't be able to either.
+const WORKING_HOURS_INTENTS = new Set([
+  "set-working-segments",
+  "seed-working-hours",
+  "copy-weekdays",
+  "reset-working-hours",
 ]);
 
 export async function submitCalendarAction(request: Request) {
@@ -1591,7 +1604,7 @@ export async function submitCalendarAction(request: Request) {
   // destination), so they're handled before the Zod-validated calendar action.
   const rawIntent = typeof raw.intent === "string" ? raw.intent : "";
   if (
-    MEMBER_ONLY_CALENDAR_INTENTS.has(rawIntent) &&
+    (MEMBER_ONLY_CALENDAR_INTENTS.has(rawIntent) || WORKING_HOURS_INTENTS.has(rawIntent)) &&
     !(await isLabMember(userId, request))
   ) {
     return forbidden(request);

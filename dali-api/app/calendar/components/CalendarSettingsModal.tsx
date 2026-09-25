@@ -55,7 +55,10 @@ export function CalendarSettingsModal({
 }) {
   const [section, setSection] = useState<SectionId>("calendars");
   const { panel, cardPad } = useOsChrome();
-  const active = SECTIONS.find((s) => s.id === section)!;
+  // Working hours are a lab-availability concept, so the portal (a non-member
+  // Dartmouth applicant) doesn't get that section.
+  const sections = data.portal ? SECTIONS.filter((s) => s.id !== "hours") : SECTIONS;
+  const active = sections.find((s) => s.id === section) ?? sections[0];
 
   return (
     <Modal
@@ -84,7 +87,7 @@ export function CalendarSettingsModal({
           aria-label="Settings sections"
           className="hidden w-56 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-border p-2 sm:flex"
         >
-          {SECTIONS.map((s) => {
+          {sections.map((s) => {
             const Icon = s.icon;
             return (
               <button
@@ -110,7 +113,7 @@ export function CalendarSettingsModal({
           <SegmentedTabButtons
             className="mb-4 sm:hidden"
             label="Settings section"
-            items={SECTIONS.map((s) => ({
+            items={sections.map((s) => ({
               label: s.label,
               icon: s.icon,
               active: s.id === section,
