@@ -54,39 +54,11 @@ export const auth = betterAuth({
     },
   },
 
+  // Passwordless by design: sign-in is a one-time email code (emailOTP) plus
+  // passkeys. No password credential exists, so email+password sign-in and the
+  // reset-password endpoints stay off entirely.
   emailAndPassword: {
-    enabled: true,
-    requireEmailVerification: true,
-
-    // Callback signature (from @better-auth/core 1.7.5 types):
-    //   (data: { user: User; url: string; token: string }, request?: Request) => Promise<void>
-    sendResetPassword: async (data, _request) => {
-      const { user, url } = data;
-      if (getAppEnv() === "dev") {
-        console.info(`[betterauth:reset-password:dev] ${url}`);
-      }
-      const { id: outboundId } = await enqueueOutbound({
-        channel: "email",
-        purpose: "General",
-        dedupKey: `auth.reset_password:${user.id}:${Date.now()}`,
-        target: user.email,
-        recipientUserId: user.id,
-        subject: "Reset your DALI OS password",
-        bodyHtml: `
-  <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; color: #1f2937;">
-    <p>Someone requested a password reset for your DALI OS account. Use the button below to set a new password. This link expires in one hour.</p>
-    <p style="margin: 24px 0;">
-      <a href="${url}" style="background: #1e3a8a; color: #fff; padding: 10px 20px; border-radius: 8px; text-decoration: none;">Reset your password</a>
-    </p>
-    <p style="color: #6b7280; font-size: 13px;">If you didn't request this, you can ignore this email — your password won't be changed.</p>
-    <p style="color: #6b7280; font-size: 12px; margin-top: 32px;">
-      DALI Lab · Dartmouth College
-    </p>
-  </div>`,
-        eventType: "auth.reset_password",
-      });
-      await drainNow([outboundId]);
-    },
+    enabled: false,
   },
 
   emailVerification: {

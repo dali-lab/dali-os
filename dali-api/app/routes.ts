@@ -336,8 +336,6 @@ export default [
   route("welcome", "routes/welcome.tsx"),
   route("login/dartmouth", "routes/login.dartmouth.tsx"),
   route("login/dartmouth/set-password", "routes/login.dartmouth.set-password.tsx"),
-  route("login/forgot-password", "routes/login.forgot-password.tsx"),
-  route("login/reset-password", "routes/login.reset-password.tsx"),
   route("dev-login", "routes/dev-login.ts"),
   route("dev-login-as", "routes/dev-login-as.ts"),
   route("logout", "routes/logout.ts"),
