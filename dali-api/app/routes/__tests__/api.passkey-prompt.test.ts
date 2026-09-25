@@ -2,18 +2,18 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 const mockCount = vi.hoisted(() => vi.fn());
 vi.mock("~/lib/db", () => ({ prisma: { passkey: { count: mockCount } } }));
-vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
+vi.mock("~/lib/betterauth-compat.server", () => ({ getBetterAuthUser: vi.fn() }));
 vi.mock("~/lib/feature-flags.server", () => ({
   isFeatureEnabledForEveryone: vi.fn(),
 }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 
-import { requireAuth } from "~/lib/auth";
+import { getBetterAuthUser } from "~/lib/betterauth-compat.server";
 import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { logAuditEvent } from "~/lib/audit";
 import { loader, action } from "~/routes/api.passkey-prompt";
 
-const mockRequireAuth = vi.mocked(requireAuth);
+const mockGetBAUser = vi.mocked(getBetterAuthUser);
 const mockFlag = vi.mocked(isFeatureEnabledForEveryone);
 const mockAudit = vi.mocked(logAuditEvent);
 
@@ -35,7 +35,7 @@ function cookiesOf(res: Response): string[] {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockRequireAuth.mockResolvedValue({ ok: true, user: { sub: "u1", type: "member" } } as any);
+  mockGetBAUser.mockResolvedValue({ sub: "u1", email: "u1@x.edu", type: "member" } as any);
   mockFlag.mockResolvedValue(true);
   mockCount.mockResolvedValue(0 as any);
   mockAudit.mockResolvedValue(undefined as any);
@@ -46,8 +46,10 @@ describe("GET /api/passkey-prompt (eligibility)", () => {
     expect(await loader({ request: get() } as any)).toEqual({ offer: true });
   });
 
-  it("does not offer when unauthenticated", async () => {
-    mockRequireAuth.mockResolvedValue({ ok: false } as any);
+  it("does not offer without a BetterAuth session (e.g. a legacy session)", async () => {
+    // The bug this guards: right after the flag flip a user is still on a legacy
+    // session; offering enrollment then 401s addPasskey (a BetterAuth endpoint).
+    mockGetBAUser.mockResolvedValue(null);
     expect(await loader({ request: get() } as any)).toEqual({ offer: false });
   });
 
@@ -91,8 +93,8 @@ describe("POST /api/passkey-prompt (act)", () => {
     expect(mockAudit).not.toHaveBeenCalled();
   });
 
-  it("rejects an unauthenticated POST", async () => {
-    mockRequireAuth.mockResolvedValue({ ok: false } as any);
+  it("rejects a POST without a BetterAuth session", async () => {
+    mockGetBAUser.mockResolvedValue(null);
     const res = (await action({ request: post("dismiss") } as any)) as Response;
     expect(res.status).toBe(401);
   });
