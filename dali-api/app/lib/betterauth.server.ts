@@ -95,21 +95,18 @@ export const auth = betterAuth({
     },
   },
 
-  // No social providers. Sign-in is passwordless-first: a magic link to the
-  // verified email (all doors), with an optional password as a fallback and
-  // passkeys for fast repeat sign-in. Google SSO was removed deliberately —
-  // not every account we admit is Google-backed (Dartmouth faculty/staff on
-  // Microsoft, partners on any provider), and one consistent method across all
-  // three doors beats a per-door split.
-
-  account: {
-    accountLinking: {
-      enabled: true,
-      // Google is trusted: a verified google email is sufficient proof of
-      // ownership to link an OAuth account to an existing email/password row.
-      trustedProviders: ["google"],
-    },
-  },
+  // No social providers, so there is nothing to link: sign-in is passwordless
+  // (magic link + email code, all three doors) with passkeys for fast repeat
+  // sign-in. Google SSO was removed deliberately — not every account we admit is
+  // Google-backed (Dartmouth faculty/staff on Microsoft, partners on any
+  // provider), and one consistent method across all three doors beats a per-door
+  // split. The former `account.accountLinking.trustedProviders: ["google"]` is
+  // gone with it: emailOTP/magicLink operate on the User by verified email (no
+  // separate provider Account rows to link), and passkeys attach to the already
+  // authenticated user, so cross-account linking never enters the passwordless
+  // flow. Joining a member's @dali row to their @dartmouth identity, if we ever
+  // want it, must be an explicit proof-of-both-inboxes step, never an implicit
+  // trust rule here.
 
   session: {
     // Map to a NEW `AuthSession` table, NOT the bespoke `Session` (sha256-id,

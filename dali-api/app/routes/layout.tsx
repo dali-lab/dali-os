@@ -10,6 +10,7 @@ import { LaunchWelcome } from '~/components/LaunchWelcome'
 import { NavPreloader } from '~/components/NavPreloader'
 import { TimeZonePrompt } from '~/components/TimeZonePrompt'
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth"
+import { maybeUpgradeLegacyToBetterAuth } from "~/lib/betterauth-upgrade.server"
 import { redirectToLogin } from '~/lib/login-next';
 import { getUserRoles, isLabMentor } from '~/lib/roles'
 import { getAppGateOutstanding } from '~/signing/lib/state.server'
@@ -57,6 +58,16 @@ export async function loader({ request }: Route.LoaderArgs) {
     return redirectToLogin(request)
   }
   if (auth.user.type === 'applicant') return redirect('/portal')
+
+  // TEMPORARY (remove ~1 week post-cutover): silently migrate a validated legacy
+  // session to a BetterAuth session, then reload the same URL so the new cookie
+  // takes effect. Self-limiting — it clears the legacy cookie, so the fast-path
+  // skips it on the reload and it runs at most once per user.
+  const __betterauthUpgrade = await maybeUpgradeLegacyToBetterAuth(request, auth)
+  if (__betterauthUpgrade) {
+    const __u = new URL(request.url)
+    return redirect(__u.pathname + __u.search, { headers: __betterauthUpgrade })
+  }
 
   // Onboarding is NOT a hard gate: a new member can use the whole app freely.
   // Their onboarding lives as a persistent task (the welcome notification) that

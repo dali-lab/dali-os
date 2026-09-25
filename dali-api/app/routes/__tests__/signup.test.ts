@@ -32,6 +32,9 @@ vi.mock("~/partners/lib/partner-emails.server", () => ({
 }));
 
 import { loader, action } from "~/routes/signup";
+import { prisma } from "~/lib/db";
+
+const mockUserFindFirst = vi.mocked(prisma.user.findFirst);
 
 function makeUrl(path = "/signup") {
   return new Request(`http://localhost${path}`);
@@ -54,6 +57,8 @@ beforeEach(() => {
   mockSignInMagicLink.mockResolvedValue(undefined);
   mockSendMemberEmailConflictEmail.mockResolvedValue(undefined);
   mockClassifyPartnerEmail.mockResolvedValue({ kind: "new" });
+  // Default: no existing account, so signups proceed to the signup magic link.
+  mockUserFindFirst.mockResolvedValue(null as any);
 });
 
 // ── Loader ────────────────────────────────────────────────────────────────────
@@ -152,6 +157,28 @@ describe("POST /signup action email-link — dartmouth door", () => {
     expect(mockSignInMagicLink).toHaveBeenCalledWith(
       expect.objectContaining({
         body: expect.objectContaining({ callbackURL: "/welcome?door=dartmouth" }),
+      }),
+    );
+  });
+});
+
+describe("POST /signup duplicate guard (member/dartmouth)", () => {
+  it("signs an existing account into its canonical email instead of a new signup", async () => {
+    // A member's @dartmouth alias already belongs to their @dali account.
+    mockUserFindFirst.mockResolvedValue({ email: "ada@dali.dartmouth.edu" } as any);
+    const result = await action({
+      request: makePostRequest({
+        door: "dartmouth",
+        provider: "email-link",
+        email: "ada@dartmouth.edu",
+      }),
+    } as any);
+    // Neutral response still shows what they typed.
+    expect(result).toMatchObject({ sent: true, email: "ada@dartmouth.edu" });
+    // The link goes to the canonical email (sign-in), not a new /welcome signup.
+    expect(mockSignInMagicLink).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({ email: "ada@dali.dartmouth.edu", callbackURL: "/" }),
       }),
     );
   });
