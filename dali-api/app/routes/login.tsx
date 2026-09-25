@@ -4,7 +4,7 @@ import { Form, Link, redirect, useActionData, useLoaderData, useNavigation, useS
 import type { Route } from "./+types/login";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
-import { checkRateLimit } from "~/lib/rate-limit";
+import { checkRateLimit, getClientIp } from "~/lib/rate-limit";
 import { getApiBaseUrl, getAppEnv, getCasBaseUrl } from "~/lib/app-env";
 import { buildGoogleAuthUrl } from "~/lib/google-oauth";
 import {
@@ -65,12 +65,6 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 export async function action({ request }: Route.ActionArgs) {
-  const limited = checkRateLimit(request, {
-    max: RATE_LIMIT_MAX,
-    windowMs: RATE_LIMIT_WINDOW_MS,
-  });
-  if (limited) return limited;
-
   const formData = await request.formData();
   const provider = formData.get("provider") as string;
   const next = pickSafeLoginNext(
@@ -79,18 +73,16 @@ export async function action({ request }: Route.ActionArgs) {
       : null,
   );
 
-  const state = randomBytes(32).toString("base64url");
-  const apiBase = getApiBaseUrl();
-  const casBase = getCasBaseUrl();
-  const secure = getAppEnv() !== "dev";
-
-  const headers = new Headers();
-  if (next) setLoginNextCookie(headers, next);
-
   // --- BetterAuth-gated branches ---
   // These only handle requests that explicitly target the BetterAuth paths.
   // The flag is checked here so that even if a crafted form posts these values
   // while the flag is off, the action falls through to the legacy handlers.
+  //
+  // Rate limiting is scoped per action, not blanket per request: only code
+  // sends and the legacy OAuth redirects are throttled. Verifying a code is
+  // deliberately not coarse-limited here — BetterAuth caps attempts per code —
+  // so a user fixing a typo never trips a limit and gets bounced off the code
+  // screen.
 
   if (provider === "email-code") {
     const betterAuthOn = await isFeatureEnabledForEveryone("betterauth", request);
@@ -98,6 +90,23 @@ export async function action({ request }: Route.ActionArgs) {
       const email = String(formData.get("email") ?? "").trim().toLowerCase();
       if (!email.includes("@")) {
         return { error: "Enter a valid email address." };
+      }
+      // Throttle code sends (each dispatches an email). This also bounds
+      // brute-forcing, since every fresh code needs a send. On a hit, keep the
+      // user on the code screen instead of returning a raw 429 — a real person
+      // resending a few times should still be able to enter an earlier code.
+      const sendLimited = checkRateLimit(
+        request,
+        { max: RATE_LIMIT_MAX, windowMs: RATE_LIMIT_WINDOW_MS },
+        `send-code:${getClientIp(request)}`,
+      );
+      if (sendLimited) {
+        return {
+          codeSent: true as const,
+          email,
+          error:
+            "You've requested several codes. Enter the most recent one below, or wait a minute to request a new one.",
+        };
       }
       // Anti-enumeration: always advance to the code screen. The emailOTP plugin
       // has disableSignUp, so a non-existent address silently receives nothing.
@@ -141,12 +150,18 @@ export async function action({ request }: Route.ActionArgs) {
           `/welcome?step=passkey&next=${encodeURIComponent(dest)}`,
           { headers: responseHeaders },
         );
-      } catch {
-        // Wrong/expired code — stay on the code screen with an inline message.
+      } catch (err) {
+        // Stay on the code screen with an inline message. BetterAuth caps
+        // attempts per code (default 3), then deletes the code and throws
+        // FORBIDDEN — a dead code can't be retried, so steer them to a new one.
+        const exhausted =
+          (err as { status?: string } | null)?.status === "FORBIDDEN";
         return {
           codeSent: true as const,
           email,
-          error: "That code didn't match. Check it and try again, or request a new one.",
+          error: exhausted
+            ? "Too many tries on that code. Request a new one below, then enter it."
+            : "That code didn't match. Check it and try again, or request a new one.",
         };
       }
     }
@@ -154,6 +169,20 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   // --- Legacy (flag-off) branches ---
+  // Coarse per-IP throttle on the OAuth/CAS redirect kickoff.
+  const limited = checkRateLimit(request, {
+    max: RATE_LIMIT_MAX,
+    windowMs: RATE_LIMIT_WINDOW_MS,
+  });
+  if (limited) return limited;
+
+  const state = randomBytes(32).toString("base64url");
+  const apiBase = getApiBaseUrl();
+  const casBase = getCasBaseUrl();
+  const secure = getAppEnv() !== "dev";
+
+  const headers = new Headers();
+  if (next) setLoginNextCookie(headers, next);
 
   if (provider === "cas") {
     // Dartmouth CAS login — redirect to CAS with service URL pointing to our callback
