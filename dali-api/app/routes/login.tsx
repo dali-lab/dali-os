@@ -22,6 +22,28 @@ const RATE_LIMIT_WINDOW_MS = 60_000;
 
 export const meta: Route.MetaFunction = () => [{ title: "DALI OS · Sign in" }];
 
+// Alias resolution: BetterAuth resolves a sign-in by the single canonical
+// `email` column, but a person may enter any address on their account — most
+// often a member typing their @dartmouth instead of their @dali. Map whatever
+// they typed to their canonical login email so (a) the code is delivered there
+// and (b) the verify step's findUserByEmail can locate the row. An address that
+// matches no user falls through unchanged, so the downstream emailOTP no-op
+// (disableSignUp) stays neutral and never reveals whether an account exists.
+async function resolveLoginIdentifier(typed: string): Promise<string> {
+  const user = await prisma.user.findFirst({
+    where: {
+      OR: [
+        { email: typed },
+        { daliEmail: typed },
+        { dartmouthEmail: typed },
+        { personalEmail: typed },
+      ],
+    },
+    select: { email: true },
+  });
+  return user?.email ?? typed;
+}
+
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (auth.ok) {
@@ -91,6 +113,10 @@ export async function action({ request }: Route.ActionArgs) {
       if (!email.includes("@")) {
         return { error: "Enter a valid email address." };
       }
+      // Resolve an alias (e.g. a member's @dartmouth) to their canonical login
+      // email; the code is delivered there. `email` stays the typed address for
+      // display so we never reveal the mapping; `identifier` is what verify uses.
+      const identifier = await resolveLoginIdentifier(email);
       // Throttle code sends (each dispatches an email). This also bounds
       // brute-forcing, since every fresh code needs a send. On a hit, keep the
       // user on the code screen instead of returning a raw 429 — a real person
@@ -104,6 +130,7 @@ export async function action({ request }: Route.ActionArgs) {
         return {
           codeSent: true as const,
           email,
+          identifier,
           error:
             "You've requested several codes. Enter the most recent one below, or wait a minute to request a new one.",
         };
@@ -112,13 +139,13 @@ export async function action({ request }: Route.ActionArgs) {
       // has disableSignUp, so a non-existent address silently receives nothing.
       try {
         await auth.api.sendVerificationOTP({
-          body: { email, type: "sign-in" },
+          body: { email: identifier, type: "sign-in" },
           headers: request.headers,
         });
       } catch {
         // Swallowed — neutral response in all cases.
       }
-      return { codeSent: true as const, email };
+      return { codeSent: true as const, email, identifier };
     }
     // Flag off — no code sign-in on the legacy login.
     return redirect("/login");
@@ -127,11 +154,16 @@ export async function action({ request }: Route.ActionArgs) {
   if (provider === "verify-code") {
     const betterAuthOn = await isFeatureEnabledForEveryone("betterauth", request);
     if (betterAuthOn) {
-      const email = String(formData.get("email") ?? "").trim().toLowerCase();
+      // `identifier` is the canonical email the code was sent against;
+      // `displayEmail` is the address the user typed, kept only for redisplay so
+      // an alias never surfaces the mapping on a wrong-code retry.
+      const identifier = String(formData.get("identifier") ?? "").trim().toLowerCase();
+      const displayEmail =
+        String(formData.get("displayEmail") ?? "").trim().toLowerCase() || identifier;
       const otp = String(formData.get("otp") ?? "").trim();
       try {
         const { headers: baHeaders } = await auth.api.signInEmailOTP({
-          body: { email, otp },
+          body: { email: identifier, otp },
           headers: request.headers,
           returnHeaders: true,
         });
@@ -158,7 +190,8 @@ export async function action({ request }: Route.ActionArgs) {
           (err as { status?: string } | null)?.status === "FORBIDDEN";
         return {
           codeSent: true as const,
-          email,
+          email: displayEmail,
+          identifier,
           error: exhausted
             ? "Too many tries on that code. Request a new one below, then enter it."
             : "That code didn't match. Check it and try again, or request a new one.",
@@ -310,7 +343,8 @@ function LoginBetterAuth({ next, actionData }: {
         </div>
         <Form method="post" className="flex flex-col gap-3">
           <input type="hidden" name="provider" value="verify-code" />
-          <input type="hidden" name="email" value={codeSent.email} />
+          <input type="hidden" name="identifier" value={codeSent.identifier} />
+          <input type="hidden" name="displayEmail" value={codeSent.email} />
           {next && <input type="hidden" name="next" value={next} />}
           <input
             type="text"

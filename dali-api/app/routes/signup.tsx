@@ -4,6 +4,7 @@ import type { Route } from "./+types/signup";
 import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { requireAuth } from "~/lib/auth";
 import { auth } from "~/lib/betterauth.server";
+import { prisma } from "~/lib/db";
 import {
   classifyPartnerEmail,
   normalizeEmail,
@@ -87,17 +88,49 @@ export async function action({ request }: Route.ActionArgs) {
       }
     }
 
+    const normalized = normalizeEmail(email);
+
+    // Duplicate guard: if this address (or any alias of it) already belongs to
+    // an account, sign them into their canonical email instead of sending a
+    // signup link — a member's @dartmouth must resolve to their existing @dali
+    // account, never spawn a separate student row. Partner keeps its own
+    // member-conflict handling above and falls through to the signup send.
+    if (door === "member" || door === "dartmouth") {
+      const existing = await prisma.user.findFirst({
+        where: {
+          OR: [
+            { email: normalized },
+            { daliEmail: normalized },
+            { dartmouthEmail: normalized },
+            { personalEmail: normalized },
+          ],
+        },
+        select: { email: true },
+      });
+      if (existing) {
+        try {
+          await auth.api.signInMagicLink({
+            body: { email: existing.email ?? normalized, callbackURL: "/" },
+            headers: request.headers,
+          });
+        } catch {
+          // Swallowed — neutral response in all cases.
+        }
+        return { sent: true as const, email: normalized, door };
+      }
+    }
+
     // Anti-enumeration: always return neutral "sent" response, regardless of
     // whether the address exists or the send succeeds.
     try {
       await auth.api.signInMagicLink({
-        body: { email: normalizeEmail(email), callbackURL: `/welcome?door=${door}` },
+        body: { email: normalized, callbackURL: `/welcome?door=${door}` },
         headers: request.headers,
       });
     } catch {
       // Swallowed — neutral response in all cases.
     }
-    return { sent: true as const, email: normalizeEmail(email), door };
+    return { sent: true as const, email: normalized, door };
   }
 
   return redirect(`/signup?door=${door}`);

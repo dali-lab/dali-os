@@ -173,15 +173,61 @@ After `--apply` on staging:
 5. The no-email report is empty or entirely explainable (husk/partner rows with
    no address yet).
 
-## Relationship to the other two pieces
+## #2 — Login alias resolver (implemented here)
 
-- **#2 Alias resolver** (separate PR): the `/login` + `/signup` change that
-  makes either recorded address resolve to the one account. Depends on G3 having
-  populated the aliases.
-- **#3 type-as-authz audit** (separate PR): grep every privilege check that
-  reads `type`/door and confirm it reads a membership/role row instead. This is
-  what actually guarantees a member's `@dartmouth` login (or a student's account)
-  can't cross privileges.
+`/login` now maps any address on a person's row to their canonical login email
+before sending the code:
+
+- `resolveLoginIdentifier(typed)` looks up a user by `email` / `daliEmail` /
+  `dartmouthEmail` / `personalEmail` and returns their canonical `email`; an
+  unknown address falls through unchanged → a neutral emailOTP no-op, so nothing
+  is revealed.
+- The code is delivered to the **canonical** (`@dali`) inbox; the screen keeps
+  displaying the **typed** address (a hidden `identifier` carries the canonical
+  to the verify step) so a member's `@dartmouth` → `@dali` mapping never leaks,
+  even on a wrong-code retry.
+
+`/signup` gained a **duplicate guard**: on the member/dartmouth doors, if the
+entered address (or any alias) already belongs to an account, it signs them into
+their canonical email instead of sending a signup link — so a member's
+`@dartmouth` can never spawn a separate student row. Response stays neutral
+(anti-enumeration).
+
+Manual member creation (`/members` add) gained an **optional `@dartmouth`
+field** so a hand-added member's alias is captured at creation (with a
+uniqueness guard), closing the manual-add gap noted in G3.
+
+## #3 — Type-as-authorization audit (findings)
+
+Swept every read of the derived `type` (member/dartmouth/partner) and login
+door. 46 sites; the principle: **authorization must read membership/role rows
+(`DALIMember`, `isCore`, `AdminMembership`, `PartnerContact`, eligibility), never
+the derived `type` or the door.** Findings:
+
+- **Fixed here — `app/jobs/routes/internal.jobs.tick.ts`:** dropped the
+  `type === "applicant"` pre-guard; `isAdmin()` (AdminMembership row) is the
+  authoritative gate and the type check would wrongly reject a mis-typed admin.
+- **Documented, not changed (routing with a row-gate behind it):**
+  - `partners/lib/partner-auth.server.ts` (`requirePartnerAccount` /
+    `requirePartnerCandidate`) redirects `type === "member"`/`"dartmouth"` before
+    the `PartnerContact`/`DALIMember` checks. This is **documented, deliberate
+    routing** (the residual-bucket comment), and the row checks are the real
+    gate. Real but narrow edge: a person who is both a member and a partner
+    contact gets bounced. Needs a product call before changing routing.
+  - `education/lib/access.server.ts` + `education/routes/education.$offeringId.tsx`
+    route member-shell vs portal by `type` alongside an `isManager` row check.
+    The row check is authoritative; the `type` branch is a routing convenience.
+    Tied to the education-redesign flags — change with care.
+  - `calendar/routes/api.scheduled-meetings.ts` gates meeting creation on
+    `type === "applicant"` — under BetterAuth `type` is never "applicant", so the
+    guard is dead; the correct gate is a project-membership/role row. Follow-up.
+  - Numerous `portal.*` / `hiring.*` / `layout.tsx` redirects key landing pages
+    on `type` — routing hints, safe as long as their loaders gate data on rows
+    (spot-checks held). Left as-is.
+
+Net: no data-access privilege gates on `type` remain in scope; the flagged items
+are routing redirects backed by authoritative row checks. The `type` string
+stays a display/routing hint, as intended.
 
 ## Decisions (Kiran, 2026-09-24)
 
