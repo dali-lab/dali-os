@@ -325,7 +325,7 @@ export default function SignBindingPage() {
             {data.signerRole === "mentee"
               ? "Thanks for countersigning. A co-signed copy has been emailed to you and is available to download below."
               : data.coSigned
-                ? "Thanks for signing. Once your mentee countersigns, the fully signed copy is emailed to you both — and it's always available to download below."
+                ? "Thanks for signing. As each mentee you mentor countersigns, you're emailed their co-signed copy. It's always available to download below."
                 : "Thanks for signing. A copy has been emailed to you and is available to download below."}
           </p>
         </div>
