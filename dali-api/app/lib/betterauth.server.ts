@@ -95,30 +95,28 @@ export const auth = betterAuth({
     },
   },
 
-  // No social providers. Sign-in is passwordless-first: a magic link to the
-  // verified email (all doors), with an optional password as a fallback and
-  // passkeys for fast repeat sign-in. Google SSO was removed deliberately —
-  // not every account we admit is Google-backed (Dartmouth faculty/staff on
-  // Microsoft, partners on any provider), and one consistent method across all
-  // three doors beats a per-door split.
-
-  account: {
-    accountLinking: {
-      enabled: true,
-      // Google is trusted: a verified google email is sufficient proof of
-      // ownership to link an OAuth account to an existing email/password row.
-      trustedProviders: ["google"],
-    },
-  },
+  // No social providers, so there is nothing to link: sign-in is passwordless
+  // (magic link + email code, all three doors) with passkeys for fast repeat
+  // sign-in. Google SSO was removed deliberately — not every account we admit is
+  // Google-backed (Dartmouth faculty/staff on Microsoft, partners on any
+  // provider), and one consistent method across all three doors beats a per-door
+  // split. The former `account.accountLinking.trustedProviders: ["google"]` is
+  // gone with it: emailOTP/magicLink operate on the User by verified email (no
+  // separate provider Account rows to link), and passkeys attach to the already
+  // authenticated user, so cross-account linking never enters the passwordless
+  // flow. Joining a member's @dali row to their @dartmouth identity, if we ever
+  // want it, must be an explicit proof-of-both-inboxes step, never an implicit
+  // trust rule here.
 
   session: {
     // Map to a NEW `AuthSession` table, NOT the bespoke `Session` (sha256-id,
     // grantId→OAuthGrant, absolute expiry) which must keep working through the
     // phased cutover and is dropped only at cleanup. Avoids a model collision.
     modelName: "authSession",
-    // 30-day rolling session; updateAge keeps the token fresh after 24 h of use.
+    // 30-day rolling session; updateAge slides the expiry forward at most once
+    // per 72 h of use (fewer session-refresh writes; the 30-day max is unchanged).
     expiresIn: 60 * 60 * 24 * 30,
-    updateAge: 60 * 60 * 24,
+    updateAge: 60 * 60 * 72,
     // NOTE: do NOT enable `cookieCache` here. It breaks revocation (a banned or
     // deprovisioned user would continue to pass session checks until the cookie
     // expires) and also bypasses the per-request membership check the MCP
