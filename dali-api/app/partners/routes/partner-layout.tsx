@@ -2,6 +2,7 @@ import {
   Link,
   NavLink,
   Outlet,
+  redirect,
   useLoaderData,
   useLocation,
   useRouteError,
@@ -10,6 +11,7 @@ import { ChevronDown } from "lucide-react";
 import type { Route } from "./+types/partner-layout";
 import { prisma } from "~/lib/db";
 import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
+import { maybeUpgradeLegacyToBetterAuth } from "~/lib/betterauth-upgrade.server";
 import { partnerProjectsWhereForOrgs } from "~/partners/lib/partner-access";
 import { userInitials } from "~/lib/display";
 import { resolvePhotoUrl } from "~/lib/photo";
@@ -23,6 +25,17 @@ import { Menu } from "~/components/ui/floating";
 // the guard itself.
 export async function loader({ request }: Route.LoaderArgs) {
   const ctx = await requirePartnerAccount(request);
+
+  // TEMPORARY (remove ~1 week post-cutover): migrate a validated legacy session
+  // to a BetterAuth session, then reload so the new cookie takes effect. Reuses
+  // ctx.auth; the helper's __dali_sid fast-path makes this zero-cost once the
+  // legacy cookie is gone. Same migration as the member/portal loaders.
+  const upgradeHeaders = await maybeUpgradeLegacyToBetterAuth(request, ctx.auth);
+  if (upgradeHeaders) {
+    const u = new URL(request.url);
+    return redirect(u.pathname + u.search, { headers: upgradeHeaders });
+  }
+
   const orgIds = ctx.memberships.map((m) => m.orgId);
 
   const me = await prisma.user.findUnique({
