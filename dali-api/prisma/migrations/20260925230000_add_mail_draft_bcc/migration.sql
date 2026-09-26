@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "MailDraft" ADD COLUMN "bcc" TEXT NOT NULL DEFAULT '';

@@ -187,6 +187,11 @@ model User {
 
   // ─── Calendar / scheduling relations ───────────────────────────────────────
   calendarLinks        UserCalendarLink[]
+  mailAccounts         MailAccount[]
+  mailDrafts           MailDraft[]
+  mailComments         MailComment[]
+  mailSubscriptions    MailSubscription[]
+  mailConnections      MailAccountConnection[]
   scheduledMeetings    ScheduledMeeting[]
   meetingTimeProposals MeetingTimeProposal[]
   availabilitySettings UserAvailabilitySettings?
@@ -1930,6 +1935,156 @@ enum CalProvider {
   Outlook
 }
 
+// ─── Email (unified inbox) ──────────────────────────────────────────────────
+
+// A mailbox shown in the Email tab's unified inbox. Personal accounts belong
+// to one member; Project accounts are a project's Workspace account
+// (Project.calendarEmail), read by its current-term team; Shared accounts are
+// admin-picked addresses read by Core. Mail itself stays in the provider and
+// is fetched live; only drafts and comments are stored here.
+model MailAccount {
+  id            String          @id @default(cuid())
+  kind          MailAccountKind
+  provider      MailProvider    @default(Gmail)
+  address       String
+  displayName   String?
+  // "user:<id>" | "project:<id>" | "shared". Makes an address unique per owner
+  // without relying on nullable-column uniqueness.
+  scopeKey      String
+  userId        String?
+  projectId     String?
+  // Encrypted at rest; never logged. Null until someone signs in to the account.
+  oauthTokens   String?
+  connectedById String?
+  connectedAt   DateTime?
+  syncError     String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  user     User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project  Project?      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  drafts      MailDraft[]
+  comments    MailComment[]
+  categories  MailCategoryAccount[]
+  connections MailAccountConnection[]
+
+  @@unique([scopeKey, address])
+  @@index([userId])
+  @@index([projectId])
+}
+
+enum MailAccountKind {
+  Personal
+  Project
+  Shared
+}
+
+// An admin-curated set of Shared inboxes. Admins pick the inboxes and who may
+// subscribe (people and/or groups); someone in that audience opts in, then
+// signs in to each inbox themselves (MailAccountConnection). Personal and
+// current-term project inboxes never need a category.
+model MailCategory {
+  id               String   @id @default(cuid())
+  name             String
+  description      String   @default("")
+  audienceUserIds  String[] @default([])
+  // GroupDefinition ids, resolved at read time so dynamic groups stay current.
+  audienceGroupIds String[] @default([])
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  accounts      MailCategoryAccount[]
+  subscriptions MailSubscription[]
+}
+
+model MailCategoryAccount {
+  categoryId String
+  accountId  String
+
+  category MailCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  account  MailAccount  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@id([categoryId, accountId])
+  @@index([accountId])
+}
+
+// A person's opt-in to a category. Only honored while they're in its audience.
+model MailSubscription {
+  categoryId String
+  userId     String
+  createdAt  DateTime @default(now())
+
+  category MailCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  user     User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([categoryId, userId])
+  @@index([userId])
+}
+
+// One person's own sign-in to a Shared inbox. Shared inboxes are read with the
+// viewer's connection, never a teammate's, so access follows who actually
+// signed in to the account.
+model MailAccountConnection {
+  id          String   @id @default(cuid())
+  accountId   String
+  userId      String
+  // Encrypted at rest; never logged.
+  oauthTokens String
+  syncError   String?
+  connectedAt DateTime @default(now())
+
+  account MailAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, userId])
+  @@index([userId])
+}
+
+enum MailProvider {
+  Gmail
+}
+
+// A draft written in DALI OS. Shared drafts are visible to and editable by
+// everyone who can read the account; private ones only by their creator.
+model MailDraft {
+  id          String    @id @default(cuid())
+  accountId   String
+  // Provider thread this replies to; null for a new message.
+  threadId    String?
+  to          String    @default("")
+  cc          String    @default("")
+  bcc         String    @default("")
+  subject     String    @default("")
+  body        String    @default("")
+  shared      Boolean   @default(false)
+  createdById String
+  updatedById String
+  sentAt      DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  account   MailAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdBy User        @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([accountId, sentAt])
+}
+
+// An internal note on an email thread. Never sent; visible to everyone who can
+// read the account.
+model MailComment {
+  id        String   @id @default(cuid())
+  accountId String
+  threadId  String
+  authorId  String
+  body      String
+  createdAt DateTime @default(now())
+
+  account MailAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  author  User        @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, threadId])
+}
+
 model ScheduledMeeting {
   id               String  @id @default(cuid())
   organizerId      String
@@ -3000,6 +3155,7 @@ model Project {
   projectTerms      ProjectTerm[]
   termStatuses      ProjectTermStatus[]
   assignments       ProjectAssignment[]
+  mailAccounts      MailAccount[]
   roleRequests      ProjectRoleRequest[]
   mentorshipPairs   MentorshipPair[]
   externalMentors   ExternalMentor[]

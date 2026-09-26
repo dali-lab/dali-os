@@ -109,6 +109,12 @@ export const FEATURE_FLAGS = [
     description:
       "Adds a Project work tab to the notification drawer and My Tasks page: the open project tasks you're assigned to (To do, In progress, In review), flagged when overdue or stale, with Open task and Mark done. They also count toward the bell badge. Meetings, invites and other notifications move to a Meetings & events tab. Ships off.",
   },
+  {
+    key: "email",
+    label: "Email",
+    description:
+      "An Email tab under Calendar: one unified inbox across a member's connected Gmail accounts (their DALI address and any other Google account), their current project's team account, and shared inboxes from categories they subscribe to (admins manage categories on Email Senders; each subscriber signs in to shared inboxes themselves). Includes AI drafting, proofreading suggestions, rephrasing and translation, recipient autocomplete, shared drafts, private comments on threads, unread counts, and plain-English search. Ships off.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

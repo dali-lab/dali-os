@@ -10,6 +10,7 @@ import {
   HelpCircle,
   Home,
   LogOut,
+  Mail,
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
@@ -53,6 +54,8 @@ import {
   type RoleFlags,
 } from '~/lib/nav-areas'
 import { useFeatureFlag } from '~/components/FeatureFlags'
+import { UnreadBadge } from '~/email/components/UnreadBadge'
+import { useEmailUnread } from '~/email/lib/use-email-unread'
 
 interface LayoutOSProps {
   user: { email: string; firstName?: string; lastName?: string }
@@ -243,6 +246,8 @@ export function LayoutOS({
   // whether Drive is a General sub-tab, so every nav matcher below has to be
   // handed the same map — a pin and an area disagreeing would light both.
   const navFlags = { resources: useFeatureFlag('resources') }
+  const emailEnabled = useFeatureFlag('email')
+  const emailUnread = useEmailUnread(emailEnabled, path)
   const areas = visibleAreas(roleFlags, navFlags)
   const routeArea = areaForPath(path, navFlags)
   const pinned = pinnedNavItems(navFlags)
@@ -269,11 +274,13 @@ export function LayoutOS({
     ? 'My Tasks'
     : path.startsWith('/calendar')
       ? 'Calendar'
-      : path.startsWith('/settings')
-        ? 'Settings'
-        : path.startsWith('/help')
-          ? 'Help'
-          : (pinnedLabel ?? routeArea?.label)
+      : path.startsWith('/email')
+        ? 'Email'
+        : path.startsWith('/settings')
+          ? 'Settings'
+          : path.startsWith('/help')
+            ? 'Help'
+            : (pinnedLabel ?? routeArea?.label)
 
   const initials = userInitials(user)
   const { tasks: openTasks, items: feedItems, projectTasks } = useAttentionFeed()
@@ -404,6 +411,28 @@ export function LayoutOS({
               {!collapsed && 'Calendar'}
             </button>
           </Tooltip>
+          {emailEnabled && (
+            <Tooltip
+              content={collapsed ? (emailUnread > 0 ? `Email · ${emailUnread} unread` : 'Email') : ''}
+              placement="right"
+            >
+              <button
+                type="button"
+                {...tabClickProps({ url: '/email', label: 'Email' })}
+                className={cn(railRowClass(path.startsWith('/email'), collapsed), 'relative')}
+              >
+                <Mail className="h-5 w-5 flex-shrink-0 opacity-85" />
+                {!collapsed && 'Email'}
+                {collapsed ? (
+                  emailUnread > 0 && (
+                    <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-accent-yellow" aria-hidden />
+                  )
+                ) : (
+                  <UnreadBadge count={emailUnread} className="ml-auto" />
+                )}
+              </button>
+            </Tooltip>
+          )}
           {pinned.map((item) => {
             const Icon = item.icon
             const active = isPinnedActive(path, item.href, navFlags)
@@ -889,6 +918,7 @@ export function LayoutOS({
         tabless={tabless}
         focusMode={focusMode}
         roles={roleFlags}
+        flags={{ email: emailEnabled }}
         onOpen={openFromPalette}
       />
     </div>

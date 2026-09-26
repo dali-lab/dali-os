@@ -40,7 +40,7 @@ export interface EventAttendee {
 // client for a popover that lists the first handful.
 const MAX_ATTENDEES = 50;
 
-interface StoredTokens {
+export interface StoredTokens {
   accessToken: string;
   refreshToken: string;
   expiresAt: string | null; // ISO
@@ -59,7 +59,7 @@ const REFRESH_BUFFER_MS = 60_000;
 
 // ─── Token management ──────────────────────────────────────────────────────
 
-function parseStoredTokens(cipher: string): StoredTokens {
+export function parseStoredTokens(cipher: string): StoredTokens {
   const raw = decrypt(cipher);
   const parsed = JSON.parse(raw) as StoredTokens;
   if (typeof parsed.refreshToken !== "string") {
