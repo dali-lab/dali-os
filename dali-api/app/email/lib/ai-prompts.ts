@@ -89,7 +89,8 @@ export function htmlToText(html: string): string {
   return sanitized
     .replace(/<\s*br\s*\/?>/gi, "\n")
     .replace(/<\/(p|div|tr|h[1-6]|li)>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
+    .replace(/</g, "")
+    .replace(/>/g, "")
     .replace(/&nbsp;/g, " ")
     .replace(/&amp;/g, "&")
     .replace(/\n{3,}/g, "\n\n")
