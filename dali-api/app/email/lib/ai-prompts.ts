@@ -78,8 +78,15 @@ export function threadToContext(
 
 // Rough HTML → text for model context only; never rendered.
 export function htmlToText(html: string): string {
-  return html
-    .replace(/<(style|script)[\s\S]*?<\/\1>/gi, "")
+  const scriptStylePattern = /<(style|script)[\s\S]*?<\/\1>/gi;
+  let sanitized = html;
+  let previous: string;
+  do {
+    previous = sanitized;
+    sanitized = sanitized.replace(scriptStylePattern, "");
+  } while (sanitized !== previous);
+
+  return sanitized
     .replace(/<\s*br\s*\/?>/gi, "\n")
     .replace(/<\/(p|div|tr|h[1-6]|li)>/gi, "\n")
     .replace(/<[^>]+>/g, "")
