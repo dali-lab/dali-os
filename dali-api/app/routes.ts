@@ -367,6 +367,10 @@ export default [
   route("oauth/mail/google/start", "routes/oauth.mail.google.start.ts"),
   route("integrations/mail/google/callback", "routes/integrations.mail.google.callback.ts"),
 
+  // Apple Associated Domains — binds the desktop app to this origin for passkeys
+  // (webcredentials). See the route file + desktop/src-tauri/entitlements.plist.
+  route(".well-known/apple-app-site-association", "routes/well-known.apple-app-site-association.ts"),
+
   // MCP foundation (no layout)
   route(".well-known/oauth-authorization-server", "routes/well-known.oauth-authorization-server.ts"),
   route(
