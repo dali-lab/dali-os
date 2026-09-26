@@ -82,17 +82,17 @@ async function main() {
     prisma.domain.upsert({
       where: { code: "UIUX" },
       update: { displayName: "Design" },
-      create: { name: "Design", code: "UIUX", displayName: "Design" },
+      create: { id: "domain-design", name: "Design", code: "UIUX", displayName: "Design" },
     }),
     prisma.domain.upsert({
       where: { code: "Fullstack" },
       update: { displayName: "Engineering" },
-      create: { name: "Engineering", code: "Fullstack", displayName: "Engineering" },
+      create: { id: "domain-eng", name: "Engineering", code: "Fullstack", displayName: "Engineering" },
     }),
     prisma.domain.upsert({
       where: { code: "PM" },
       update: { displayName: "Product" },
-      create: { name: "Product", code: "PM", displayName: "Product" },
+      create: { id: "domain-pm", name: "Product", code: "PM", displayName: "Product" },
     }),
   ]);
 
