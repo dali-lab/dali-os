@@ -12,7 +12,7 @@ import { buildEncryptedTokens } from "~/lib/google-calendar";
 import { requireAuth } from "~/lib/auth";
 import { CAL_STATE_COOKIE, GOOGLE_CALENDAR_SCOPE } from "~/routes/oauth.calendar.google.start";
 import { getApiBaseUrl } from "~/lib/app-env";
-import { exchangeGoogleCode, GoogleOAuthError } from "~/lib/google-oauth";
+import { exchangeGoogleCode, GoogleOAuthError, resolveGoogleEmail } from "~/lib/google-oauth";
 
 function parseCookies(request: Request): Record<string, string> {
   const header = request.headers.get("Cookie") ?? "";
@@ -98,7 +98,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     return redirectToCalendar("calendar_link_error=no_refresh_token");
   }
 
-  const externalEmail = await resolveExternalEmail(tokens.id_token, tokens.access_token);
+  const externalEmail = await resolveGoogleEmail(tokens.id_token, tokens.access_token);
   if (!externalEmail) {
     return redirectToCalendar("calendar_link_error=no_email");
   }
@@ -135,32 +135,4 @@ export async function loader({ request }: Route.LoaderArgs) {
   });
 
   return redirectToCalendar("calendar_linked=1");
-}
-
-async function resolveExternalEmail(
-  idToken: string | undefined,
-  accessToken: string,
-): Promise<string | null> {
-  if (idToken) {
-    const payload = decodeIdTokenPayload(idToken);
-    if (payload && typeof payload.email === "string") return payload.email;
-  }
-  const res = await fetch("https://openidconnect.googleapis.com/v1/userinfo", {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  if (!res.ok) return null;
-  const data = (await res.json()) as { email?: string };
-  return data.email ?? null;
-}
-
-function decodeIdTokenPayload(idToken: string): { email?: string } | null {
-  const parts = idToken.split(".");
-  if (parts.length !== 3) return null;
-  try {
-    const padded = parts[1] + "=".repeat((4 - (parts[1].length % 4)) % 4);
-    const json = Buffer.from(padded, "base64").toString("utf8");
-    return JSON.parse(json);
-  } catch {
-    return null;
-  }
 }

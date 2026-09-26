@@ -96,3 +96,32 @@ export function buildGoogleAuthUrl(opts: {
   if (opts.includeGrantedScopes) params.set("include_granted_scopes", "true");
   return `${GOOGLE_AUTH_URL}?${params.toString()}`;
 }
+
+// The signed-in Google address: from the id_token when present, else userinfo.
+export async function resolveGoogleEmail(
+  idToken: string | undefined,
+  accessToken: string,
+): Promise<string | null> {
+  if (idToken) {
+    const payload = decodeIdTokenPayload(idToken);
+    if (payload && typeof payload.email === "string") return payload.email;
+  }
+  const res = await fetch("https://openidconnect.googleapis.com/v1/userinfo", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) return null;
+  const data = (await res.json()) as { email?: string };
+  return data.email ?? null;
+}
+
+function decodeIdTokenPayload(idToken: string): { email?: string } | null {
+  const parts = idToken.split(".");
+  if (parts.length !== 3) return null;
+  try {
+    const padded = parts[1] + "=".repeat((4 - (parts[1].length % 4)) % 4);
+    const json = Buffer.from(padded, "base64").toString("utf8");
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}

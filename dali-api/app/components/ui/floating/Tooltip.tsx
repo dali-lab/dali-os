@@ -108,13 +108,16 @@ export const Tooltip = forwardRef<
   const ref = useMergeRefs([refs.setReference, forwardedRef as never, childRef as never]);
   const trigger = isValidElement(children)
     ? cloneElement(children, {
-        ref,
         // Merge our own reference props (hover/focus) with any injected by a
         // parent floating primitive so both sets of handlers reach the button.
         ...getReferenceProps({
           ...(children.props as Record<string, unknown>),
           ...(rest as Record<string, unknown>),
         }),
+        // Last: in React 19 `ref` is an ordinary prop, so the child's own
+        // (often null, e.g. IconButton's unforwarded ref) would otherwise
+        // replace the merged one and leave the tooltip with no anchor.
+        ref,
       } as Record<string, unknown>)
     : children;
 

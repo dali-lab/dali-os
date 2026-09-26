@@ -130,7 +130,7 @@ export const ADMIN_CLUSTERS: AdminCluster[] = [
         to: "/admin/email-senders",
         icon: Mail,
         description:
-          "The Gmail send-as account and daily cap backing each email purpose.",
+          "The Gmail send-as account and daily cap backing each email purpose, and the shared-inbox categories people subscribe to in Email.",
       },
       {
         key: "outbound-messages",
