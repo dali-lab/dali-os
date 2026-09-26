@@ -5,6 +5,10 @@
 //
 // This is separate from /auth/callback/google (login) so the two flows don't
 // have to share a redirect URI or disambiguate via a state-prefix hack.
+//
+// The Email tab's mailbox connect also returns here (its redirect URI is this
+// one, already registered with Google); it's recognised by its own state
+// cookie and finished in ~/email/lib/mail-connect.server.
 
 import type { Route } from "./+types/integrations.calendar.google.callback";
 import { prisma } from "~/lib/db";
@@ -13,6 +17,7 @@ import { requireAuth } from "~/lib/auth";
 import { CAL_STATE_COOKIE, GOOGLE_CALENDAR_SCOPE } from "~/routes/oauth.calendar.google.start";
 import { getApiBaseUrl } from "~/lib/app-env";
 import { exchangeGoogleCode, GoogleOAuthError, resolveGoogleEmail } from "~/lib/google-oauth";
+import { completeMailConnect, isMailConnectCallback } from "~/email/lib/mail-connect.server";
 
 function parseCookies(request: Request): Record<string, string> {
   const header = request.headers.get("Cookie") ?? "";
@@ -43,6 +48,8 @@ export async function action() {
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
+  if (isMailConnectCallback(request)) return completeMailConnect(request);
+
   const auth = await requireAuth(request);
   if (!auth.ok) {
     return new Response(null, { status: 302, headers: { Location: "/login" } });

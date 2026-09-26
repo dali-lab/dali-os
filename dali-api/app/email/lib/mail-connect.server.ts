@@ -1,9 +1,12 @@
-// GET /integrations/mail/google/callback
 // Finishes the mailbox connect started by /oauth/mail/google/start: exchanges
 // the code, confirms Gmail access was granted and that the signed-in address
 // is the one this target expects, then stores the encrypted tokens.
+//
+// Google returns here through the calendar-link callback, whose redirect URI
+// is already registered on the OAuth client in every environment — so a
+// mailbox connect needs no Google Cloud change. That route hands a request
+// over when isMailConnectCallback() recognises it by this flow's own cookie.
 
-import type { Route } from "./+types/integrations.mail.google.callback";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { getApiBaseUrl } from "~/lib/app-env";
@@ -11,7 +14,13 @@ import { buildEncryptedTokens } from "~/lib/google-calendar";
 import { exchangeGoogleCode, GoogleOAuthError, resolveGoogleEmail } from "~/lib/google-oauth";
 import { GMAIL_MODIFY_SCOPE } from "~/email/lib/gmail-mailbox.server";
 import { expectedConnectAddress, parseConnectTarget } from "~/email/lib/access.server";
-import { MAIL_STATE_COOKIE } from "~/routes/oauth.mail.google.start";
+
+export const MAIL_STATE_COOKIE = "__dali_mail_oauth_state";
+
+/** The redirect URI both halves of the mailbox connect send to Google. */
+export function mailConnectRedirectUri(): string {
+  return `${getApiBaseUrl()}/integrations/calendar/google/callback`;
+}
 
 function readStateCookie(request: Request): string | null {
   for (const part of (request.headers.get("Cookie") ?? "").split(";")) {
@@ -31,7 +40,14 @@ function redirectToEmail(qs: string) {
   });
 }
 
-export async function loader({ request }: Route.LoaderArgs) {
+/** Whether a callback request belongs to a mailbox connect (its state matches this flow's cookie). */
+export function isMailConnectCallback(request: Request): boolean {
+  const state = new URL(request.url).searchParams.get("state");
+  const [cookieState] = (readStateCookie(request) ?? "").split(".");
+  return Boolean(state && cookieState && cookieState === state);
+}
+
+export async function completeMailConnect(request: Request): Promise<Response> {
   const auth = await requireAuth(request);
   if (!auth.ok) return new Response(null, { status: 302, headers: { Location: "/login" } });
   const userId = auth.user.sub;
@@ -56,7 +72,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   try {
     tokens = await exchangeGoogleCode({
       code,
-      redirectUri: `${getApiBaseUrl()}/integrations/mail/google/callback`,
+      redirectUri: mailConnectRedirectUri(),
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
     });
