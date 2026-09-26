@@ -10,6 +10,7 @@ import {
   UsersRound,
 } from "lucide-react";
 import { DetailEditRow, DetailRow, OS_DETAIL_ICON } from "~/components/os-page";
+import { InfoTip } from "~/components/ui/floating";
 import { PhotoUploadField } from "~/components/PhotoUploadField";
 import { buttonClasses } from "~/components/ui/Button";
 import { formatZoneLabel } from "~/lib/timezone";
@@ -115,7 +116,7 @@ function ProfileEdit({
       <DetailEditRow
         icon={<Mail className={ic} />}
         label="Email"
-        hint="The address you sign in with — it can't be changed here."
+        infoTip={<InfoTip content="The address you sign in with — it can't be changed here." />}
       >
         <input aria-label="Email" value={email} readOnly className={`${FIELD} bg-muted text-muted-foreground`} />
       </DetailEditRow>
@@ -156,7 +157,7 @@ function ProfileEdit({
       <DetailEditRow
         icon={<Phone className={ic} />}
         label="Phone"
-        hint="Used to reach you about interviews."
+        infoTip={<InfoTip content="Used to reach you about interviews." />}
       >
         <input
           name="phoneNumber"
@@ -170,7 +171,7 @@ function ProfileEdit({
       <DetailEditRow
         icon={<Clock className={ic} />}
         label="Time zone"
-        hint="Session times across the portal show in this zone."
+        infoTip={<InfoTip content="Session times across the portal show in this zone." />}
       >
         <select
           name="timeZone"

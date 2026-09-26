@@ -11,7 +11,7 @@ import {
   useSubmit,
   type ShouldRevalidateFunctionArgs,
 } from "react-router";
-import { Select, Menu, Popover } from "~/components/ui/floating";
+import { Select, Menu, Popover, InfoTip } from "~/components/ui/floating";
 import { CalendarDays, CalendarPlus, CalendarX, Check, Globe, Handshake, History, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink, MoreHorizontal, ExternalLink, Star, Mail, Github, Slack, Layers } from "lucide-react";
 import { DriveFolderBindings } from "~/components/drive/DriveFolderBindings";
 import { useOsChrome } from "~/components/os-chrome";
@@ -2949,7 +2949,7 @@ function DetailsEditOs({
       <DetailEditRow
         icon={<Layers className={ic} />}
         label="Repositories"
-        hint="One URL per line"
+        infoTip={<InfoTip content="One URL per line" />}
       >
         <textarea
           name="repoUrls"
@@ -2983,7 +2983,7 @@ function DetailsEditOs({
       <DetailEditRow
         icon={<CalendarDays className={ic} />}
         label="Terms required"
-        hint="The planned span, not the terms staffed so far"
+        infoTip={<InfoTip content="The planned span, not the terms staffed so far" />}
       >
         <input
           name="termCount"

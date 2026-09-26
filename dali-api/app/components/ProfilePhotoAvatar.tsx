@@ -24,12 +24,16 @@ export function ProfilePhotoAvatar({
   name,
   initialPreviewUrl,
   canEdit,
+  size = "md",
 }: {
   userId: string;
   name: string;
   initialPreviewUrl: string | null;
   canEdit: boolean;
+  size?: "md" | "lg";
 }) {
+  const dim = size === "lg" ? "w-[168px] h-[168px]" : "w-32 h-32";
+  const rounded = size === "lg" ? "rounded-os-card" : "rounded-os-item";
   const fetcher = useFetcher();
   const fileRef = useRef<HTMLInputElement>(null);
   const tint = useInitialsTint();
@@ -151,17 +155,20 @@ export function ProfilePhotoAvatar({
 
   return (
     <div className="flex flex-col items-center gap-1">
-      <div className="relative w-32 h-32">
+      <div className={cn("relative", dim)}>
         {previewUrl ? (
           <img
             src={previewUrl}
             alt=""
-            className="w-32 h-32 rounded-os-item object-cover border border-os-container"
+            className={cn(dim, rounded, "object-cover border border-os-container")}
           />
         ) : (
           <div
             className={cn(
-              "w-32 h-32 rounded-os-item border border-os-container flex items-center justify-center font-bold text-3xl",
+              dim,
+              rounded,
+              "border border-os-container flex items-center justify-center font-bold",
+              size === "lg" ? "text-5xl" : "text-3xl",
               tint,
             )}
           >
@@ -170,7 +177,7 @@ export function ProfilePhotoAvatar({
         )}
 
         {busy && (
-          <div className="absolute inset-0 rounded-os-item bg-black/40 flex items-center justify-center">
+          <div className={cn("absolute inset-0 bg-black/40 flex items-center justify-center", rounded)}>
             <span className="inline-block w-6 h-6 border-2 border-white/40 border-t-white rounded-full animate-spin" />
           </div>
         )}

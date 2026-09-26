@@ -5,6 +5,8 @@ import { prisma } from "~/lib/db";
 import { listCalendarsForLink } from "~/lib/google-calendar";
 import { isAdmin } from "~/lib/roles";
 import { jobByName, resolveJobSettings } from "~/jobs/registry";
+import { walletAppleConfigured } from "~/lib/wallet-apple.server";
+import { walletGoogleConfigured } from "~/lib/wallet-google.server";
 
 export type CalendarLinkDTO = {
   id: string;
@@ -230,6 +232,10 @@ export async function loadSettingsPageData(request: Request) {
         weeklyWeekday: weekly.sendWeekday ?? 1,
       },
       isAdmin: viewerIsAdmin,
+    },
+    wallet: {
+      apple: walletAppleConfigured(),
+      google: walletGoogleConfigured(),
     },
   };
 }

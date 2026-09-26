@@ -80,34 +80,19 @@ async function main() {
   // where displayName is the real catalog label (e.g. "UI/UX Design").
   const [designDomain, engDomain, pmDomain] = await Promise.all([
     prisma.domain.upsert({
-      where: { id: "domain-design" },
-      update: { code: "UIUX", displayName: "Design" },
-      create: {
-        id: "domain-design",
-        name: "Design",
-        code: "UIUX",
-        displayName: "Design",
-      },
+      where: { code: "UIUX" },
+      update: { displayName: "Design" },
+      create: { name: "Design", code: "UIUX", displayName: "Design" },
     }),
     prisma.domain.upsert({
-      where: { id: "domain-eng" },
-      update: { code: "Fullstack", displayName: "Engineering" },
-      create: {
-        id: "domain-eng",
-        name: "Engineering",
-        code: "Fullstack",
-        displayName: "Engineering",
-      },
+      where: { code: "Fullstack" },
+      update: { displayName: "Engineering" },
+      create: { name: "Engineering", code: "Fullstack", displayName: "Engineering" },
     }),
     prisma.domain.upsert({
-      where: { id: "domain-pm" },
-      update: { code: "PM", displayName: "Product" },
-      create: {
-        id: "domain-pm",
-        name: "Product",
-        code: "PM",
-        displayName: "Product",
-      },
+      where: { code: "PM" },
+      update: { displayName: "Product" },
+      create: { name: "Product", code: "PM", displayName: "Product" },
     }),
   ]);
 
@@ -2991,9 +2976,9 @@ async function main() {
       status: "UnderReview" as const,
       summary: "Touchscreen kiosks that let visitors explore the permanent collection by theme.",
       domains: [
-        { domainId: "domain-design", expectedMembers: 2, expectedChallenges: "Kiosk UX, wayfinding, and an accessible browsing flow for all ages." },
-        { domainId: "domain-eng", expectedMembers: 3, expectedChallenges: "Offline-capable kiosk app + a CMS the curators can update." },
-        { domainId: "domain-pm", expectedMembers: 1, expectedChallenges: "Scope with curatorial staff; coordinate the on-site install." },
+        { domainId: designDomain.id, expectedMembers: 2, expectedChallenges: "Kiosk UX, wayfinding, and an accessible browsing flow for all ages." },
+        { domainId: engDomain.id, expectedMembers: 3, expectedChallenges: "Offline-capable kiosk app + a CMS the curators can update." },
+        { domainId: pmDomain.id, expectedMembers: 1, expectedChallenges: "Scope with curatorial staff; coordinate the on-site install." },
       ],
     },
     {
@@ -3004,8 +2989,8 @@ async function main() {
       status: "Accepted" as const,
       summary: "Match current students with alumni mentors by industry and interest.",
       domains: [
-        { domainId: "domain-eng", expectedMembers: 2, expectedChallenges: "Matching algorithm + scheduling integration." },
-        { domainId: "domain-pm", expectedMembers: 1, expectedChallenges: "Define the matching rubric with the alumni office." },
+        { domainId: engDomain.id, expectedMembers: 2, expectedChallenges: "Matching algorithm + scheduling integration." },
+        { domainId: pmDomain.id, expectedMembers: 1, expectedChallenges: "Define the matching rubric with the alumni office." },
       ],
     },
     {
@@ -3016,7 +3001,7 @@ async function main() {
       status: "ApplicationSubmitted" as const,
       summary: "Real-time dashboard for shared lab equipment sensor data.",
       domains: [
-        { domainId: "domain-eng", expectedMembers: 3, expectedChallenges: "Time-series ingestion + live dashboard." },
+        { domainId: engDomain.id, expectedMembers: 3, expectedChallenges: "Time-series ingestion + live dashboard." },
       ],
     },
   ];
