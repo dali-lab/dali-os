@@ -76,21 +76,25 @@ export function threadToContext(
   return joined.length > MAX_CONTEXT_CHARS ? joined.slice(-MAX_CONTEXT_CHARS) : joined;
 }
 
-// Rough HTML → text for model context only; never rendered.
-export function htmlToText(html: string): string {
-  const scriptStylePattern = /<(style|script)[\s\S]*?<\/\1>/gi;
-  let sanitized = html;
+// Removes every match, re-running until nothing changes, so a nested or
+// split-up tag (`<scr<script>ipt>`) can't reassemble after one pass.
+function removeAll(text: string, pattern: RegExp): string {
   let previous: string;
   do {
-    previous = sanitized;
-    sanitized = sanitized.replace(scriptStylePattern, "");
-  } while (sanitized !== previous);
+    previous = text;
+    text = text.replace(pattern, "");
+  } while (text !== previous);
+  return text;
+}
 
-  return sanitized
+// Rough HTML → text for model context only; never rendered. Still stripped
+// thoroughly: no tag, and no stray angle bracket, survives.
+export function htmlToText(html: string): string {
+  const withBreaks = removeAll(html, /<(style|script)\b[\s\S]*?<\/\1\s*>/gi)
     .replace(/<\s*br\s*\/?>/gi, "\n")
-    .replace(/<\/(p|div|tr|h[1-6]|li)>/gi, "\n")
-    .replace(/</g, "")
-    .replace(/>/g, "")
+    .replace(/<\/(p|div|tr|h[1-6]|li)>/gi, "\n");
+  return removeAll(withBreaks, /<[^<>]*>/g)
+    .replace(/[<>]/g, "")
     .replace(/&nbsp;/g, " ")
     .replace(/&amp;/g, "&")
     .replace(/\n{3,}/g, "\n\n")

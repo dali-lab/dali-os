@@ -55,6 +55,12 @@ describe("threadToContext", () => {
   it("falls back to text from HTML", () => {
     expect(htmlToText("<style>p{}</style><p>Hi&nbsp;there</p><br>Bye")).toBe("Hi there\n\nBye");
   });
+
+  it("leaves no tag behind when tags are nested or split", () => {
+    expect(htmlToText("<scr<script>x</script>ipt>alert(1)</script>Hi")).toBe("Hi");
+    expect(htmlToText("<<b>i>bold</i>")).toBe("bold");
+    expect(htmlToText("1 < 2")).toBe("1  2");
+  });
 });
 
 describe("senderName / senderAddress", () => {
