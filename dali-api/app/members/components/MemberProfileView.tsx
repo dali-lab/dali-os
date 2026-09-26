@@ -17,20 +17,23 @@ import {
   Github,
   Globe,
   GraduationCap,
+  Layers,
   Linkedin,
+  Lock,
   LogOut,
   Mail,
   MapPin,
   MessageSquare,
+  Pencil,
   Phone,
   Plus,
+  Shield,
   Smartphone,
   User as UserIcon,
   Utensils,
   Wallet,
   X,
 } from "lucide-react";
-import { EditableSection } from "~/components/EditableSection";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { ProfilePhotoAvatar } from "~/components/ProfilePhotoAvatar";
 import { Avatar } from "~/components/ui/Avatar";
@@ -41,7 +44,6 @@ import {
   DetailEditRow,
   DetailRow,
   HeroClusterLabel,
-  OS_DETAIL_CARD,
   OS_DETAIL_ICON,
   OsTabBar,
 } from "~/components/os-page";
@@ -69,13 +71,12 @@ import { NewBadge, BirthdayBadge } from "~/members/components/WarmthBadges";
 // strip, and the same sections — a title on the page ground with its content on
 // one card under it. See app/components/os-page.tsx for the shared parts.
 
-const TABS = ["profile", "activity", "drive", "mentorship"] as const;
+const TABS = ["profile", "activity", "mentorship"] as const;
 type Tab = (typeof TABS)[number];
 
 const TAB_LABELS: Record<Tab, string> = {
   profile: "Profile",
   activity: "Activity",
-  drive: "Drive",
   mentorship: "Mentorship",
 };
 
@@ -225,6 +226,7 @@ export function MemberProfileView({
         member={member}
         photoUrlResolved={photoUrlResolved}
         canEdit={canEdit}
+        isSelf={isSelf}
         isStaff={isStaff}
         isAlumni={isAlumni}
         termCode={termCode}
@@ -241,17 +243,6 @@ export function MemberProfileView({
         )}
         active={tab}
         onSelect={setTab}
-        trailing={
-          isSelf ? (
-            <a
-              href="/logout"
-              className="ml-auto -mb-px inline-flex items-center gap-1.5 px-2 py-1.5 text-sm font-medium text-os-grey transition-colors hover:text-foreground"
-            >
-              <LogOut className="w-4 h-4" />
-              Log out
-            </a>
-          ) : null
-        }
       />
 
       {actionError && (
@@ -265,31 +256,31 @@ export function MemberProfileView({
           page's tab body. */}
       <div className="flex flex-col gap-6 min-h-[25vh]">
         {tab === "profile" && (
-          <>
-            <PersonalSection member={member} canEdit={canEdit} />
-
-            <DomainsSection
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <AboutCard member={member} canEdit={canEdit} />
+            <ContactCard member={member} canEdit={canEdit} />
+            <DomainsCard
               roleLabels={roleLabels}
               eligibilities={member.domainEligibilities}
               allDomains={allDomains}
               canManage={canManageEligibility}
               allowedLevels={allowedLevels}
             />
-
-            <ComplianceBlock compliance={compliance} isSelf={isSelf} />
-
-            {(wallet || (canRevokeWalletPass && !isSelf)) && (
-              <WalletSection
+            <AccountCard member={member} canEdit={canEdit} />
+            {!isSelf && canRevokeWalletPass && (
+              <WalletCard
                 wallet={wallet}
                 isSelf={isSelf}
                 canRevoke={canRevokeWalletPass}
               />
             )}
-          </>
+          </div>
         )}
 
         {tab === "activity" && (
           <>
+            <AchievementsBlock achievements={achievements} />
+
             <ActivitySection
               isSelf={isSelf}
               termCode={termCode}
@@ -299,24 +290,12 @@ export function MemberProfileView({
               canEditLevel={canManageEligibility}
             />
 
-            <AchievementsBlock achievements={achievements} />
-
             {hasEducation && data.education && (
               <EducationSection education={data.education} />
             )}
-          </>
-        )}
 
-        {tab === "drive" && (
-          <PersonalNotesRail
-            ownerId={member.id}
-            ownerFirstName={member.firstName}
-            isSelf={isSelf}
-            notes={notes}
-            sharedWithMe={sharedWithMe}
-            favoriteIds={favoriteIds}
-            onOpenNote={openNote}
-          />
+            <ComplianceBlock compliance={compliance} isSelf={isSelf} asCard />
+          </>
         )}
 
         {tab === "mentorship" && mentorshipPanel && (
@@ -351,6 +330,7 @@ function MemberHeader({
   member,
   photoUrlResolved,
   canEdit,
+  isSelf,
   isStaff,
   isAlumni,
   termCode,
@@ -362,6 +342,7 @@ function MemberHeader({
   member: ProfileMember;
   photoUrlResolved: string | null;
   canEdit: boolean;
+  isSelf: boolean;
   isStaff: boolean;
   isAlumni: boolean;
   termCode: string | null;
@@ -371,21 +352,20 @@ function MemberHeader({
   showBirthday: boolean;
 }) {
   return (
-    // No cover band: a member has a portrait, not a banner image, so the photo
-    // stands where a project's icon does — inline with the title — rather than
-    // in a strip of its own with nothing else to hold.
-    <header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-5">
-      <div className="flex min-w-0 items-center gap-5">
-        <ProfilePhotoAvatar
-          userId={member.id}
-          name={`${member.firstName} ${member.lastName}`}
-          initialPreviewUrl={photoUrlResolved}
-          canEdit={canEdit}
-        />
+    <header className="flex items-start gap-7">
+      <ProfilePhotoAvatar
+        userId={member.id}
+        name={`${member.firstName} ${member.lastName}`}
+        initialPreviewUrl={photoUrlResolved}
+        canEdit={canEdit}
+        size="lg"
+      />
 
-        <div className="min-w-0 flex flex-col gap-2">
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="font-heading text-[32px] font-medium text-foreground">
+      <div className="min-w-0 flex flex-col gap-3 pt-2 flex-1">
+        {/* Name row */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h1 className="font-heading text-[32px] font-medium text-foreground leading-none">
               {member.firstName} {member.lastName}
             </h1>
             {member.handle && (
@@ -397,428 +377,714 @@ function MemberHeader({
               <span className="text-[13px] text-os-muted">{member.pronouns}</span>
             )}
           </div>
-
-          {(isStaff || isAlumni || member.gradProgram || showNewBadge || showBirthday) && (
-            <div className="flex flex-wrap items-center gap-2">
-              {isStaff && (
-                <span className={cn(HERO_PILL, "bg-os-accent/15 text-os-accent")}>
-                  Staff
-                </span>
-              )}
-              {isAlumni && (
-                <span className={cn(HERO_PILL, "bg-os-container text-os-grey")}>
-                  Alumni
-                </span>
-              )}
-              {member.gradProgram && (
-                <span className={cn(HERO_PILL, "bg-os-container text-foreground")}>
-                  {member.gradProgram}
-                </span>
-              )}
-              {showNewBadge && <NewBadge />}
-              {showBirthday && <BirthdayBadge />}
-            </div>
-          )}
-
-          {presenceLabel && (
-            <p className="flex items-center gap-1.5 text-xs text-os-grey">
-              <Tooltip
-                content={
-                  presenceState === "active"
-                    ? "Active now — seen within the last minute."
-                    : "Recently active — last seen more than a minute ago."
-                }
-                variant="rich"
-              >
-                <span
-                  aria-hidden
-                  className={`w-1.5 h-1.5 rounded-full ${
-                    presenceState === "active"
-                      ? "bg-accent-green"
-                      : "border border-accent-yellow bg-background"
-                  }`}
-                />
-              </Tooltip>
-              {presenceLabel}
-            </p>
+          {isSelf && (
+            <a
+              href="/logout"
+              className="shrink-0 inline-flex items-center gap-1 text-[12px] font-semibold text-destructive border border-destructive/30 hover:bg-destructive/10 px-2.5 py-1 rounded-full transition-colors mt-1"
+            >
+              <LogOut className="w-3 h-3" />
+              Log out
+            </a>
           )}
         </div>
-      </div>
 
-      {/* The design's hero-meta clusters, as the project page draws them. */}
-      <div className="flex flex-wrap items-center gap-6">
-        <HeroClusterLabel label="Term">
-          {termCode ? (
-            <span className={cn(HERO_PILL, "bg-os-container text-foreground")}>
-              {termCode}
-            </span>
-          ) : (
-            <span className="text-[13px] text-os-muted">No term</span>
-          )}
-        </HeroClusterLabel>
+        {/* Status / warmth badges + presence */}
+        {(isStaff || isAlumni || member.gradProgram || showNewBadge || showBirthday || presenceLabel) && (
+          <div className="flex flex-wrap items-center gap-2">
+            {isStaff && (
+              <span className={cn(HERO_PILL, "bg-os-accent/15 text-os-accent")}>
+                Staff
+              </span>
+            )}
+            {isAlumni && (
+              <span className={cn(HERO_PILL, "bg-os-container text-os-grey")}>
+                Alumni
+              </span>
+            )}
+            {member.gradProgram && (
+              <span className={cn(HERO_PILL, "bg-os-container text-foreground")}>
+                {member.gradProgram}
+              </span>
+            )}
+            {showNewBadge && <NewBadge />}
+            {showBirthday && <BirthdayBadge />}
+            {presenceLabel && (
+              <p className="flex items-center gap-1.5 text-xs text-os-grey">
+                <Tooltip
+                  content={
+                    presenceState === "active"
+                      ? "Active now — seen within the last minute."
+                      : "Recently active — last seen more than a minute ago."
+                  }
+                  variant="rich"
+                >
+                  <span
+                    aria-hidden
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      presenceState === "active"
+                        ? "bg-accent-green"
+                        : "border border-accent-yellow bg-background"
+                    }`}
+                  />
+                </Tooltip>
+                {presenceLabel}
+              </p>
+            )}
+          </div>
+        )}
 
-        <HeroClusterLabel label="Roles">
-          {member.domainEligibilities.length === 0 ? (
-            <span className="text-[13px] text-os-muted">No roles yet</span>
-          ) : (
-            <DomainChips
-              items={member.domainEligibilities.map((e) => ({
-                id: e.domain.id,
-                name: e.domain.displayName,
-              }))}
-            />
-          )}
-        </HeroClusterLabel>
+        {/* Term + Roles clusters */}
+        <div className="flex flex-col gap-3.5">
+          <HeroClusterLabel label="Roles">
+            {member.domainEligibilities.length === 0 ? (
+              <span className="text-[13px] text-os-muted">No roles yet</span>
+            ) : (
+              <DomainChips
+                items={member.domainEligibilities.map((e) => ({
+                  id: e.domain.id,
+                  name: e.domain.displayName,
+                }))}
+              />
+            )}
+          </HeroClusterLabel>
+
+          <HeroClusterLabel label="Term">
+            {termCode ? (
+              <span className={cn(HERO_PILL, "bg-os-container text-foreground")}>
+                {termCode}
+              </span>
+            ) : (
+              <span className="text-[13px] text-os-muted">No term</span>
+            )}
+          </HeroClusterLabel>
+        </div>
       </div>
     </header>
   );
 }
 
-// ─── Sections ───────────────────────────────────────────────────────────────
+// ─── Profile card helpers ────────────────────────────────────────────────────
 
-/** A read-only section: its title on the page ground, its body on one card. */
-function Section({
+/** Shared colored-icon header for each profile grid card. */
+function CardHeader({
+  icon,
+  iconBg,
+  iconColor,
   title,
-  aside,
-  children,
+  trailing,
 }: {
+  icon: ReactNode;
+  iconBg: string;
+  iconColor: string;
   title: string;
-  /** A control or note beside the title (a link, a permission caveat). */
-  aside?: ReactNode;
-  children: ReactNode;
+  trailing?: ReactNode;
 }) {
-  const { sectionShell, sectionTitle } = useOsChrome();
   return (
-    <section className={sectionShell}>
-      <div className="flex items-center justify-between gap-2">
-        <h2 className={sectionTitle}>{title}</h2>
-        {aside}
+    <div className="flex items-center gap-3 px-5 pt-4 pb-3">
+      <span
+        className="w-[34px] h-[34px] rounded-[10px] flex items-center justify-center shrink-0"
+        style={{ background: iconBg, color: iconColor }}
+      >
+        {icon}
+      </span>
+      <h3 className="text-[15px] font-bold text-foreground flex-1">{title}</h3>
+      {trailing && <div className="shrink-0">{trailing}</div>}
+    </div>
+  );
+}
+
+/** Inline edit / cancel+save controls for a profile card header. */
+function CardEditControls({
+  editing,
+  onEdit,
+  onCancel,
+  onSave,
+  busy,
+}: {
+  editing: boolean;
+  onEdit: () => void;
+  onCancel: () => void;
+  onSave: () => void;
+  busy?: boolean;
+}) {
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="text-[12px] font-semibold text-os-grey hover:text-foreground px-2.5 py-1 rounded-full hover:bg-os-container transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={busy}
+          className="text-[12px] font-semibold bg-os-accent text-os-bg px-3 py-1 rounded-full hover:bg-os-accent-hover transition-colors disabled:opacity-50"
+        >
+          Save
+        </button>
       </div>
-      {children}
-    </section>
-  );
-}
-
-/** A sub-heading inside a section's card, above a list. */
-function SubHeading({ children }: { children: ReactNode }) {
+    );
+  }
   return (
-    <h3 className="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-widest text-os-grey">
-      {children}
-    </h3>
+    <button
+      type="button"
+      onClick={onEdit}
+      className="inline-flex items-center gap-1 text-[12px] font-semibold text-os-grey hover:text-foreground border border-os-container hover:border-os-container-hi px-2.5 py-1 rounded-full transition-colors"
+    >
+      <Pencil className="w-3 h-3" />
+      Edit
+    </button>
   );
 }
 
-/** A row in one of those lists — a link or a fact, on the card's well. */
-const LIST_ROW =
-  "flex items-center justify-between gap-2 rounded-os-item bg-os-well px-3 py-2";
+// Hidden inputs for all personal text fields NOT owned by the current card.
+// Required so the `profile` action doesn't clear fields it doesn't receive.
+function PersonalHiddenFields({
+  member,
+  exclude,
+}: {
+  member: ProfileMember;
+  exclude: ReadonlySet<string>;
+}) {
+  const fields: Array<[string, string]> = [
+    ["firstName", member.firstName],
+    ["lastName", member.lastName],
+    ["pronouns", member.pronouns ?? ""],
+    ["major", member.major ?? ""],
+    ["classYear", member.classYear?.toString() ?? ""],
+    ["hometown", member.hometown ?? ""],
+    ["birthday", birthdayInputValue(member.birthday)],
+    ["dietaryRestrictions", member.dietaryRestrictions ?? ""],
+    ["phoneNumber", member.phoneNumber ?? ""],
+    ["personalEmail", member.personalEmail ?? ""],
+    ["githubUsername", member.githubUsername ?? ""],
+    ["linkedinUrl", member.linkedinUrl ?? ""],
+    ["personalSite", member.personalSite ?? ""],
+    ["timeZone", member.timeZone ?? ""],
+    ["netId", member.netId ?? ""],
+    ["handle", member.handle ?? ""],
+  ];
+  return (
+    <>
+      {fields
+        .filter(([name]) => !exclude.has(name))
+        .map(([name, value]) => (
+          <input key={name} type="hidden" name={name} value={value} />
+        ))}
+    </>
+  );
+}
 
-function PersonalSection({
+// ─── About card ─────────────────────────────────────────────────────────────
+
+const ABOUT_FIELDS = new Set([
+  "major",
+  "classYear",
+  "hometown",
+  "birthday",
+  "dietaryRestrictions",
+]);
+
+function AboutCard({
   member,
   canEdit,
 }: {
   member: ProfileMember;
   canEdit: boolean;
 }) {
+  const [editing, setEditing] = useState(false);
+  const [resetKey, setResetKey] = useState(0);
   const submit = useSubmit();
   const formRef = useRef<HTMLFormElement | null>(null);
   const { formClass } = useOsChrome();
+  const ic = OS_DETAIL_ICON;
+  const dash = <span className="text-os-muted">—</span>;
+
+  function cancel() {
+    setResetKey((k) => k + 1);
+    setEditing(false);
+  }
+
+  function save() {
+    if (formRef.current) submit(formRef.current);
+    setEditing(false);
+  }
 
   return (
-    <EditableSection
-      title="Personal"
-      canEdit={canEdit}
-      onSave={() => {
-        if (formRef.current) submit(formRef.current);
-      }}
-    >
-      {({ editing }) => (
-        <Form
-          method="post"
-          ref={formRef}
-          className={cn("w-full", editing && formClass)}
-        >
-          <input type="hidden" name="intent" value="profile" />
+    <Form method="post" ref={formRef} className="h-full">
+      <input type="hidden" name="intent" value="profile" />
+      <PersonalHiddenFields member={member} exclude={ABOUT_FIELDS} />
+      <article className="rounded-os-card bg-os-card overflow-hidden h-full">
+        <CardHeader
+          icon={<UserIcon className="w-[17px] h-[17px]" />}
+          iconBg="rgba(185,162,242,0.14)"
+          iconColor="#b9a2f2"
+          title="About"
+          trailing={
+            canEdit && (
+              <CardEditControls
+                editing={editing}
+                onEdit={() => setEditing(true)}
+                onCancel={cancel}
+                onSave={save}
+              />
+            )
+          }
+        />
+        <div key={resetKey} className={cn("px-5 pb-5", editing && cn(formClass, "grid grid-cols-[max-content_1fr]"))}>
           {editing ? (
-            <PersonalEdit member={member} />
+            <>
+              <DetailEditRow icon={<GraduationCap className={ic} />} label="Major">
+                <input
+                  name="major"
+                  type="text"
+                  defaultValue={member.major ?? ""}
+                  className="w-full"
+                />
+              </DetailEditRow>
+              <DetailEditRow
+                icon={<GraduationCap className={ic} />}
+                label="Class year"
+              >
+                <input
+                  name="classYear"
+                  type="number"
+                  defaultValue={member.classYear?.toString() ?? ""}
+                  className="w-full"
+                />
+              </DetailEditRow>
+              <DetailEditRow icon={<MapPin className={ic} />} label="Hometown">
+                <input
+                  name="hometown"
+                  type="text"
+                  defaultValue={member.hometown ?? ""}
+                  className="w-full"
+                />
+              </DetailEditRow>
+              <DetailEditRow icon={<Cake className={ic} />} label="Birthday">
+                <DateField
+                  mode="date"
+                  name="birthday"
+                  defaultValue={birthdayInputValue(member.birthday)}
+                  ariaLabel="Birthday"
+                  className="w-full"
+                />
+              </DetailEditRow>
+              <DetailEditRow
+                icon={<Utensils className={ic} />}
+                label="Dietary restrictions"
+              >
+                <textarea
+                  name="dietaryRestrictions"
+                  rows={2}
+                  defaultValue={member.dietaryRestrictions ?? ""}
+                  className="w-full resize-y"
+                />
+              </DetailEditRow>
+            </>
           ) : (
-            <PersonalRead member={member} />
+            <>
+              <DetailRow icon={<GraduationCap className={ic} />} label="Major">
+                {member.major ?? dash}
+              </DetailRow>
+              <DetailRow
+                icon={<GraduationCap className={ic} />}
+                label="Class year"
+              >
+                {member.classYear?.toString() ?? dash}
+              </DetailRow>
+              <DetailRow icon={<MapPin className={ic} />} label="Hometown">
+                {member.hometown ?? dash}
+              </DetailRow>
+              <DetailRow icon={<Cake className={ic} />} label="Birthday">
+                {formatBirthday(member.birthday) ?? dash}
+              </DetailRow>
+              <DetailRow icon={<Utensils className={ic} />} label="Dietary">
+                {member.dietaryRestrictions ?? dash}
+              </DetailRow>
+            </>
           )}
-        </Form>
-      )}
-    </EditableSection>
+        </div>
+      </article>
+    </Form>
   );
 }
 
-// The read view: the same hairlined facts card the project page states its
-// details in. Every field shows, empty ones as a dash, so the shape of the
-// section doesn't change with how much a member has filled in.
-function PersonalRead({ member }: { member: ProfileMember }) {
+// ─── Contact card ────────────────────────────────────────────────────────────
+
+const CONTACT_FIELDS = new Set([
+  "phoneNumber",
+  "personalEmail",
+  "githubUsername",
+  "linkedinUrl",
+  "personalSite",
+  "timeZone",
+]);
+
+function ContactCard({
+  member,
+  canEdit,
+}: {
+  member: ProfileMember;
+  canEdit: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [resetKey, setResetKey] = useState(0);
+  const submit = useSubmit();
+  const formRef = useRef<HTMLFormElement | null>(null);
+  const { formClass } = useOsChrome();
   const ic = OS_DETAIL_ICON;
   const dash = <span className="text-os-muted">—</span>;
   const emails = memberEmails(member);
 
+  function cancel() {
+    setResetKey((k) => k + 1);
+    setEditing(false);
+  }
+
+  function save() {
+    if (formRef.current) submit(formRef.current);
+    setEditing(false);
+  }
+
   return (
-    <div className={OS_DETAIL_CARD}>
-      <DetailRow icon={<AtSign className={ic} />} label="Handle">
-        {member.handle ? `@${member.handle}` : dash}
-      </DetailRow>
+    <Form method="post" ref={formRef} className="h-full">
+      <input type="hidden" name="intent" value="profile" />
+      <PersonalHiddenFields member={member} exclude={CONTACT_FIELDS} />
+      <article className="rounded-os-card bg-os-card overflow-hidden h-full">
+        <CardHeader
+          icon={<Mail className="w-[17px] h-[17px]" />}
+          iconBg="rgba(121,211,195,0.13)"
+          iconColor="#79d3c3"
+          title="Contact"
+          trailing={
+            canEdit && (
+              <CardEditControls
+                editing={editing}
+                onEdit={() => setEditing(true)}
+                onCancel={cancel}
+                onSave={save}
+              />
+            )
+          }
+        />
+        <div key={resetKey} className={cn("px-5 pb-5", editing && cn(formClass, "grid grid-cols-[max-content_1fr]"))}>
+          {editing ? (
+            <>
+              <DetailEditRow
+                icon={<Mail className={ic} />}
+                label="Email"
+                infoTip={<InfoTip content="DALI and Dartmouth emails are managed by your institution." />}
+              >
+                <EmailListEdit
+                  daliEmail={member.daliEmail}
+                  dartmouthEmail={member.dartmouthEmail}
+                  personalEmail={member.personalEmail}
+                />
+              </DetailEditRow>
+              <DetailEditRow icon={<Phone className={ic} />} label="Phone">
+                <input
+                  name="phoneNumber"
+                  type="text"
+                  inputMode="tel"
+                  defaultValue={member.phoneNumber ?? ""}
+                  className="w-full"
+                />
+              </DetailEditRow>
+              <DetailEditRow
+                icon={<Globe className={ic} />}
+                label="Personal site"
+              >
+                <input
+                  name="personalSite"
+                  type="url"
+                  defaultValue={member.personalSite ?? ""}
+                  className="w-full"
+                />
+              </DetailEditRow>
+              <DetailEditRow icon={<Clock className={ic} />} label="Time zone">
+                <TimeZoneField
+                  name="timeZone"
+                  defaultValue={member.timeZone ?? ""}
+                />
+              </DetailEditRow>
+              <DetailEditRow
+                icon={<Github className={ic} />}
+                label="GitHub username"
+              >
+                <input
+                  name="githubUsername"
+                  type="text"
+                  defaultValue={member.githubUsername ?? ""}
+                  className="w-full"
+                />
+              </DetailEditRow>
+              <DetailEditRow
+                icon={<Linkedin className={ic} />}
+                label="LinkedIn URL"
+              >
+                <input
+                  name="linkedinUrl"
+                  type="url"
+                  defaultValue={member.linkedinUrl ?? ""}
+                  className="w-full"
+                />
+              </DetailEditRow>
+            </>
+          ) : (
+            <>
+              <DetailRow icon={<Mail className={ic} />} label="Email">
+                {emails.length === 0 ? (
+                  dash
+                ) : (
+                  <span className="flex flex-col items-end gap-0.5">
+                    {emails.map((e) => (
+                      <span key={e} className="break-all">
+                        {e}
+                      </span>
+                    ))}
+                  </span>
+                )}
+              </DetailRow>
+              <DetailRow icon={<Phone className={ic} />} label="Phone">
+                {member.phoneNumber ?? dash}
+              </DetailRow>
+              <DetailRow icon={<Globe className={ic} />} label="Personal site">
+                {member.personalSite ? (
+                  <a
+                    href={member.personalSite}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-os-accent hover:underline break-all"
+                  >
+                    {member.personalSite
+                      .replace(/^https?:\/\//, "")
+                      .replace(/\/$/, "")}
+                  </a>
+                ) : (
+                  dash
+                )}
+              </DetailRow>
+              <DetailRow icon={<Clock className={ic} />} label="Time zone">
+                {member.timeZone ? formatZoneLabel(member.timeZone) : dash}
+              </DetailRow>
+              <DetailRow icon={<Github className={ic} />} label="GitHub">
+                {member.githubUsername ? (
+                  <a
+                    href={`https://github.com/${member.githubUsername}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-os-accent hover:underline break-all"
+                  >
+                    {member.githubUsername}
+                  </a>
+                ) : (
+                  dash
+                )}
+              </DetailRow>
+              <DetailRow icon={<Linkedin className={ic} />} label="LinkedIn">
+                {member.linkedinUrl ? (
+                  <a
+                    href={member.linkedinUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-os-accent hover:underline break-all"
+                  >
+                    {member.linkedinUrl
+                      .replace(/^https?:\/\//, "")
+                      .replace(/\/$/, "")}
+                  </a>
+                ) : (
+                  dash
+                )}
+              </DetailRow>
+            </>
+          )}
+        </div>
+      </article>
+    </Form>
+  );
+}
 
-      <DetailRow icon={<GraduationCap className={ic} />} label="Major">
-        {member.major ?? dash}
-      </DetailRow>
+// ─── Account card ────────────────────────────────────────────────────────────
 
-      <DetailRow icon={<GraduationCap className={ic} />} label="Class year">
-        {member.classYear?.toString() ?? dash}
-      </DetailRow>
+const ACCOUNT_FIELDS = new Set(["pronouns", "handle", "netId"]);
 
-      <DetailRow icon={<MapPin className={ic} />} label="Hometown">
-        {member.hometown ?? dash}
-      </DetailRow>
+function AccountCard({
+  member,
+  canEdit,
+}: {
+  member: ProfileMember;
+  canEdit: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [resetKey, setResetKey] = useState(0);
+  const submit = useSubmit();
+  const formRef = useRef<HTMLFormElement | null>(null);
+  const { formClass } = useOsChrome();
+  const ic = OS_DETAIL_ICON;
+  const dash = <span className="text-os-muted">—</span>;
 
-      <DetailRow icon={<Cake className={ic} />} label="Birthday">
-        {formatBirthday(member.birthday) ?? dash}
-      </DetailRow>
+  function cancel() {
+    setResetKey((k) => k + 1);
+    setEditing(false);
+  }
 
-      <DetailRow icon={<Clock className={ic} />} label="Time zone">
-        {member.timeZone ? formatZoneLabel(member.timeZone) : dash}
-      </DetailRow>
+  function save() {
+    if (formRef.current) submit(formRef.current);
+    setEditing(false);
+  }
 
-      <DetailRow icon={<Phone className={ic} />} label="Phone">
-        {member.phoneNumber ?? dash}
-      </DetailRow>
+  return (
+    <Form method="post" ref={formRef} className="h-full">
+      <input type="hidden" name="intent" value="profile" />
+      <PersonalHiddenFields member={member} exclude={ACCOUNT_FIELDS} />
+      <article className="rounded-os-card bg-os-card overflow-hidden h-full">
+        <CardHeader
+          icon={<Fingerprint className="w-[17px] h-[17px]" />}
+          iconBg="rgba(124,212,148,0.13)"
+          iconColor="#7cd494"
+          title="Account"
+          trailing={
+            canEdit && (
+              <CardEditControls
+                editing={editing}
+                onEdit={() => setEditing(true)}
+                onCancel={cancel}
+                onSave={save}
+              />
+            )
+          }
+        />
+        <div key={resetKey} className={cn("px-5 pb-5", editing && cn(formClass, "grid grid-cols-[max-content_1fr]"))}>
+          {editing ? (
+            <>
+              <DetailEditRow icon={<UserIcon className={ic} />} label="Pronouns">
+                <input
+                  name="pronouns"
+                  type="text"
+                  defaultValue={member.pronouns ?? ""}
+                  className="w-full"
+                />
+              </DetailEditRow>
+              <DetailEditRow
+                icon={<AtSign className={ic} />}
+                label="Handle"
+                infoTip={<InfoTip content="How people @mention you" />}
+              >
+                <input
+                  name="handle"
+                  type="text"
+                  defaultValue={member.handle ?? ""}
+                  className="w-full"
+                />
+              </DetailEditRow>
+              <DetailEditRow icon={<Fingerprint className={ic} />} label="NetID">
+                <input
+                  name="netId"
+                  type="text"
+                  defaultValue={member.netId ?? ""}
+                  className="w-full"
+                />
+              </DetailEditRow>
+            </>
+          ) : (
+            <>
+              <DetailRow icon={<UserIcon className={ic} />} label="Pronouns">
+                {member.pronouns ?? dash}
+              </DetailRow>
+              <DetailRow icon={<AtSign className={ic} />} label="Handle">
+                {member.handle ? `@${member.handle}` : dash}
+              </DetailRow>
+              <DetailRow icon={<Fingerprint className={ic} />} label="NetID">
+                {member.netId ?? dash}
+              </DetailRow>
+            </>
+          )}
+        </div>
+      </article>
+    </Form>
+  );
+}
 
-      <DetailRow icon={<Fingerprint className={ic} />} label="NetID">
-        {member.netId ?? dash}
-      </DetailRow>
+// ─── Domains card ────────────────────────────────────────────────────────────
 
-      <DetailRow icon={<Mail className={ic} />} label="Emails">
-        {emails.length === 0 ? (
-          dash
-        ) : (
-          <span className="flex flex-col items-end gap-0.5">
-            {emails.map((e) => (
-              <span key={e} className="break-all">
-                {e}
+function DomainsCard({
+  roleLabels = [],
+  eligibilities,
+  allDomains,
+  canManage,
+  allowedLevels,
+}: {
+  roleLabels?: string[];
+  eligibilities: ProfileMember["domainEligibilities"];
+  allDomains: Array<{ id: string; displayName: string }>;
+  canManage: boolean;
+  allowedLevels: readonly Level[];
+}) {
+  const assignedDomainIds = new Set(eligibilities.map((e) => e.domain.id));
+  const available = allDomains.filter((d) => !assignedDomainIds.has(d.id));
+
+  return (
+    <article className="rounded-os-card bg-os-card overflow-hidden h-full">
+      <CardHeader
+        icon={<Layers className="w-[17px] h-[17px]" />}
+        iconBg="rgba(245,154,184,0.14)"
+        iconColor="#f59ab8"
+        title="Roles, domains & levels"
+        trailing={
+          !canManage ? (
+            <span className="text-[11px] text-os-muted">Core or Admin only</span>
+          ) : undefined
+        }
+      />
+      <div className="px-5 pb-5 flex flex-col gap-2">
+        {roleLabels.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-1">
+            {roleLabels.map((r) => (
+              <span
+                key={r}
+                className="inline-flex items-center rounded-full bg-os-accent/15 px-3.5 py-[5px] text-[13px] font-semibold text-os-accent"
+              >
+                {r}
               </span>
             ))}
-          </span>
+          </div>
         )}
-      </DetailRow>
-
-      <DetailRow icon={<Utensils className={ic} />} label="Dietary restrictions">
-        {member.dietaryRestrictions ?? dash}
-      </DetailRow>
-
-      <DetailRow icon={<Github className={ic} />} label="GitHub">
-        {member.githubUsername ? (
-          <a
-            href={`https://github.com/${member.githubUsername}`}
-            target="_blank"
-            rel="noreferrer"
-            className="text-os-accent hover:underline break-all"
-          >
-            {member.githubUsername}
-          </a>
-        ) : (
-          dash
+        {eligibilities.length === 0 && !canManage && (
+          <p className="text-sm text-os-muted italic">
+            No domain eligibilities yet.
+          </p>
         )}
-      </DetailRow>
-
-      <DetailRow icon={<Linkedin className={ic} />} label="LinkedIn">
-        {member.linkedinUrl ? (
-          <a
-            href={member.linkedinUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="text-os-accent hover:underline break-all"
-          >
-            {member.linkedinUrl.replace(/^https?:\/\//, "").replace(/\/$/, "")}
-          </a>
-        ) : (
-          dash
+        {eligibilities.map((e) => (
+          <EligibilityRow
+            key={e.id}
+            eligibility={e}
+            canManage={canManage}
+            allowedLevels={allowedLevels}
+          />
+        ))}
+        {canManage && available.length > 0 && (
+          <AddEligibility domains={available} allowedLevels={allowedLevels} />
         )}
-      </DetailRow>
-
-      <DetailRow icon={<Globe className={ic} />} label="Personal site">
-        {member.personalSite ? (
-          <a
-            href={member.personalSite}
-            target="_blank"
-            rel="noreferrer"
-            className="text-os-accent hover:underline break-all"
-          >
-            {member.personalSite.replace(/^https?:\/\//, "").replace(/\/$/, "")}
-          </a>
-        ) : (
-          dash
-        )}
-      </DetailRow>
-    </div>
+        {canManage &&
+          available.length === 0 &&
+          eligibilities.length === allDomains.length && (
+            <p className="text-xs text-os-muted">
+              All active domains are assigned.
+            </p>
+          )}
+      </div>
+    </article>
   );
 }
 
-// The same card and rows with a field where each value was. Every field the
-// `profile` intent writes is rendered — that write replaces the whole set, so
-// a field left out of the form would be cleared rather than kept.
-function PersonalEdit({ member }: { member: ProfileMember }) {
-  const ic = OS_DETAIL_ICON;
-  const field = "w-full";
+// ─── Wallet card ─────────────────────────────────────────────────────────────
 
-  return (
-    <div className={OS_DETAIL_CARD}>
-      <DetailEditRow icon={<UserIcon className={ic} />} label="First name">
-        <input
-          name="firstName"
-          type="text"
-          defaultValue={member.firstName}
-          required
-          className={field}
-        />
-      </DetailEditRow>
-
-      <DetailEditRow icon={<UserIcon className={ic} />} label="Last name">
-        <input
-          name="lastName"
-          type="text"
-          defaultValue={member.lastName}
-          required
-          className={field}
-        />
-      </DetailEditRow>
-
-      <DetailEditRow icon={<UserIcon className={ic} />} label="Pronouns">
-        <input
-          name="pronouns"
-          type="text"
-          defaultValue={member.pronouns ?? ""}
-          className={field}
-        />
-      </DetailEditRow>
-
-      <DetailEditRow
-        icon={<AtSign className={ic} />}
-        label="Handle"
-        hint="How people @mention you"
-      >
-        <input
-          name="handle"
-          type="text"
-          defaultValue={member.handle ?? ""}
-          className={field}
-        />
-      </DetailEditRow>
-
-      <DetailEditRow icon={<GraduationCap className={ic} />} label="Major">
-        <input
-          name="major"
-          type="text"
-          defaultValue={member.major ?? ""}
-          className={field}
-        />
-      </DetailEditRow>
-
-      <DetailEditRow icon={<GraduationCap className={ic} />} label="Class year">
-        <input
-          name="classYear"
-          type="number"
-          defaultValue={member.classYear?.toString() ?? ""}
-          className={field}
-        />
-      </DetailEditRow>
-
-      <DetailEditRow icon={<MapPin className={ic} />} label="Hometown">
-        <input
-          name="hometown"
-          type="text"
-          defaultValue={member.hometown ?? ""}
-          className={field}
-        />
-      </DetailEditRow>
-
-      <DetailEditRow icon={<Cake className={ic} />} label="Birthday">
-        <DateField
-          mode="date"
-          name="birthday"
-          defaultValue={birthdayInputValue(member.birthday)}
-          ariaLabel="Birthday"
-        />
-      </DetailEditRow>
-
-      <DetailEditRow icon={<Clock className={ic} />} label="Time zone">
-        <TimeZoneField name="timeZone" defaultValue={member.timeZone ?? ""} />
-      </DetailEditRow>
-
-      <DetailEditRow icon={<Phone className={ic} />} label="Phone">
-        <input
-          name="phoneNumber"
-          type="text"
-          inputMode="tel"
-          defaultValue={member.phoneNumber ?? ""}
-          className={field}
-        />
-      </DetailEditRow>
-
-      <DetailEditRow icon={<Fingerprint className={ic} />} label="NetID">
-        <input
-          name="netId"
-          type="text"
-          defaultValue={member.netId ?? ""}
-          className={field}
-        />
-      </DetailEditRow>
-
-      <DetailEditRow icon={<Mail className={ic} />} label="Personal email">
-        <input
-          name="personalEmail"
-          type="email"
-          defaultValue={member.personalEmail ?? ""}
-          className={field}
-        />
-      </DetailEditRow>
-
-      <DetailEditRow icon={<Github className={ic} />} label="GitHub username">
-        <input
-          name="githubUsername"
-          type="text"
-          defaultValue={member.githubUsername ?? ""}
-          className={field}
-        />
-      </DetailEditRow>
-
-      <DetailEditRow icon={<Linkedin className={ic} />} label="LinkedIn URL">
-        <input
-          name="linkedinUrl"
-          type="url"
-          defaultValue={member.linkedinUrl ?? ""}
-          className={field}
-        />
-      </DetailEditRow>
-
-      <DetailEditRow icon={<Globe className={ic} />} label="Personal site">
-        <input
-          name="personalSite"
-          type="url"
-          defaultValue={member.personalSite ?? ""}
-          className={field}
-        />
-      </DetailEditRow>
-
-      <DetailEditRow
-        icon={<Utensils className={ic} />}
-        label="Dietary restrictions"
-      >
-        <textarea
-          name="dietaryRestrictions"
-          rows={2}
-          defaultValue={member.dietaryRestrictions ?? ""}
-          className={cn(field, "resize-y")}
-        />
-      </DetailEditRow>
-    </div>
-  );
-}
-
-function WalletSection({
+function WalletCard({
   wallet,
   isSelf,
   canRevoke,
@@ -827,7 +1093,6 @@ function WalletSection({
   isSelf: boolean;
   canRevoke: boolean;
 }) {
-  const { panel } = useOsChrome();
   const revokeFetcher = useFetcher<{ error?: string } | null>();
   const [googleBusy, setGoogleBusy] = useState(false);
   const [googleError, setGoogleError] = useState<string | null>(null);
@@ -838,7 +1103,9 @@ function WalletSection({
     setGoogleBusy(true);
     setGoogleError(null);
     try {
-      const res = await fetch("/api/wallet/google/save-url", { credentials: "include" });
+      const res = await fetch("/api/wallet/google/save-url", {
+        credentials: "include",
+      });
       const body = (await res.json().catch(() => null)) as
         | { url?: string; error?: string }
         | null;
@@ -855,8 +1122,14 @@ function WalletSection({
   }
 
   return (
-    <Section title="Membership pass">
-      <div className={cn(panel, "p-5 flex flex-col gap-3")}>
+    <article className="rounded-os-card bg-os-card overflow-hidden h-full">
+      <CardHeader
+        icon={<Wallet className="w-[17px] h-[17px]" />}
+        iconBg="rgba(168,211,222,0.14)"
+        iconColor="#a8d3de"
+        title="Membership pass"
+      />
+      <div className="px-5 pb-5 flex flex-col gap-3">
         <p className="text-sm text-os-grey">
           {isSelf
             ? "Add your DALI pass to your phone's wallet, then show it at a meeting to check in — no sign-in needed."
@@ -892,7 +1165,9 @@ function WalletSection({
             Wallet passes aren't configured on this server yet.
           </p>
         )}
-        {googleError && <p className="text-xs text-destructive">{googleError}</p>}
+        {googleError && (
+          <p className="text-xs text-destructive">{googleError}</p>
+        )}
 
         {canRevoke && (
           <div className="pt-3 border-t border-os-container">
@@ -913,7 +1188,11 @@ function WalletSection({
                   disabled={revoking}
                   className="px-3 py-1.5 rounded-full bg-destructive text-white text-[13px] font-semibold hover:brightness-95 disabled:opacity-50"
                 >
-                  {revoking ? "Resetting…" : isSelf ? "Reset pass" : "Revoke pass"}
+                  {revoking
+                    ? "Resetting…"
+                    : isSelf
+                      ? "Reset pass"
+                      : "Revoke pass"}
                 </button>
                 <button
                   type="button"
@@ -940,9 +1219,46 @@ function WalletSection({
           </div>
         )}
       </div>
-    </Section>
+    </article>
   );
 }
+
+// ─── Sections (Activity, Education, Eligibility rows) ───────────────────────
+
+/** A read-only section: its title on the page ground, its body on one card. */
+function Section({
+  title,
+  aside,
+  children,
+}: {
+  title: string;
+  aside?: ReactNode;
+  children: ReactNode;
+}) {
+  const { sectionShell, sectionTitle } = useOsChrome();
+  return (
+    <section className={sectionShell}>
+      <div className="flex items-center justify-between gap-2">
+        <h2 className={sectionTitle}>{title}</h2>
+        {aside}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/** A sub-heading inside a section's card, above a list. */
+function SubHeading({ children }: { children: ReactNode }) {
+  return (
+    <h3 className="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-widest text-os-grey">
+      {children}
+    </h3>
+  );
+}
+
+/** A row in one of those lists — a link or a fact, on the card's well. */
+const LIST_ROW =
+  "flex items-center justify-between gap-2 rounded-os-item bg-os-well px-3 py-2";
 
 function ActivitySection({
   isSelf,
@@ -957,13 +1273,9 @@ function ActivitySection({
   projectAssignments: ProfilePageData["projectAssignments"];
   pendingReviews: number;
   showReviewsRow: boolean;
-  /** Core viewers get the inline P1/P2/P3 editor on each project row — this is
-   *  where assignment levels are changed now that the project hub links here. */
   canEditLevel: boolean;
 }) {
   const { panel, sectionShell, sectionTitle } = useOsChrome();
-  // The project hub deep-links to this card (#project-assignments) to change a
-  // level. Scroll it into view and flash it so the target is obvious.
   const location = useLocation();
   const cardRef = useRef<HTMLDivElement>(null);
   const [highlight, setHighlight] = useState(false);
@@ -1013,8 +1325,6 @@ function ActivitySection({
           <ul className="flex flex-col gap-1.5">
             {projectAssignments.map((a) =>
               canEditLevel ? (
-                // The level control is interactive, so the project link can't
-                // wrap the whole row — split them.
                 <li key={a.id} className={LIST_ROW}>
                   <Link
                     to={`/projects/${a.project.id}`}
@@ -1032,7 +1342,10 @@ function ActivitySection({
                 <li key={a.id}>
                   <Link
                     to={`/projects/${a.project.id}`}
-                    className={cn(LIST_ROW, "hover:bg-os-container transition-colors")}
+                    className={cn(
+                      LIST_ROW,
+                      "hover:bg-os-container transition-colors",
+                    )}
                   >
                     <span className="flex items-center gap-1.5 min-w-0 text-sm font-medium text-foreground">
                       <ProjectIcon iconEmoji={a.project.iconEmoji} />
@@ -1222,77 +1535,7 @@ function EducationSection({
   );
 }
 
-// ─── Roles, domains & levels ────────────────────────────────────────────────
-
-function DomainsSection({
-  roleLabels = [],
-  eligibilities,
-  allDomains,
-  canManage,
-  allowedLevels,
-}: {
-  /** Core titles and Domain Lead posts held this term. */
-  roleLabels?: string[];
-  eligibilities: ProfileMember["domainEligibilities"];
-  allDomains: Array<{ id: string; displayName: string }>;
-  canManage: boolean;
-  allowedLevels: readonly Level[];
-}) {
-  const { panel } = useOsChrome();
-  const assignedDomainIds = new Set(eligibilities.map((e) => e.domain.id));
-  const available = allDomains.filter((d) => !assignedDomainIds.has(d.id));
-
-  return (
-    <Section
-      title="Roles, domains & levels"
-      aside={
-        !canManage ? (
-          <span className="text-xs text-os-muted">Only Core or Admin can edit.</span>
-        ) : undefined
-      }
-    >
-      <div className={cn(panel, "p-5 flex flex-col gap-3")}>
-        {roleLabels.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {roleLabels.map((r) => (
-              <span
-                key={r}
-                className="inline-flex items-center rounded-full bg-os-accent/15 px-3.5 py-[5px] text-[13px] font-semibold text-os-accent"
-              >
-                {r}
-              </span>
-            ))}
-          </div>
-        )}
-        {eligibilities.length === 0 && !canManage && (
-          <p className="text-sm text-os-muted italic">
-            No domain eligibilities yet.
-          </p>
-        )}
-        <div className="flex flex-col gap-2">
-          {eligibilities.map((e) => (
-            <EligibilityRow
-              key={e.id}
-              eligibility={e}
-              canManage={canManage}
-              allowedLevels={allowedLevels}
-            />
-          ))}
-        </div>
-        {canManage && available.length > 0 && (
-          <AddEligibility domains={available} allowedLevels={allowedLevels} />
-        )}
-        {canManage &&
-          available.length === 0 &&
-          eligibilities.length === allDomains.length && (
-            <p className="text-xs text-os-muted">
-              All active domains are assigned.
-            </p>
-          )}
-      </div>
-    </Section>
-  );
-}
+// ─── Eligibility rows (used by DomainsCard) ──────────────────────────────────
 
 function EligibilityRow({
   eligibility,
@@ -1462,18 +1705,85 @@ function AddEligibility({
   );
 }
 
+// ─── Email list edit ─────────────────────────────────────────────────────────
+
+function EmailListEdit({
+  daliEmail,
+  dartmouthEmail,
+  personalEmail,
+}: {
+  daliEmail: string | null;
+  dartmouthEmail: string | null;
+  personalEmail: string | null;
+}) {
+  const [entries, setEntries] = useState<string[]>(
+    personalEmail ? [personalEmail] : [],
+  );
+
+  function add() {
+    setEntries((prev) => [...prev, ""]);
+  }
+
+  function remove(i: number) {
+    setEntries((prev) => prev.filter((_, idx) => idx !== i));
+  }
+
+  function update(i: number, val: string) {
+    setEntries((prev) => prev.map((e, idx) => (idx === i ? val : e)));
+  }
+
+  const locked = [daliEmail, dartmouthEmail].filter(Boolean) as string[];
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      {locked.map((email) => (
+        <div
+          key={email}
+          className="flex items-center gap-2 rounded-os-item bg-os-well px-3 py-1.5 text-sm text-os-grey"
+        >
+          <Lock className="w-3 h-3 shrink-0" />
+          <span className="truncate">{email}</span>
+        </div>
+      ))}
+      {entries.map((email, i) => (
+        <div key={i} className="flex items-center gap-1.5">
+          <input
+            name="personalEmail"
+            type="email"
+            value={email}
+            onChange={(e) => update(i, e.target.value)}
+            className="w-full"
+          />
+          <button
+            type="button"
+            onClick={() => remove(i)}
+            aria-label="Remove email"
+            className="shrink-0 text-os-muted hover:text-destructive transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={add}
+        className="self-start inline-flex items-center gap-1 text-[12px] font-medium text-os-muted hover:text-foreground transition-colors"
+      >
+        <Plus className="w-3.5 h-3.5" />
+        Add email
+      </button>
+    </div>
+  );
+}
+
 // ─── Field plumbing ─────────────────────────────────────────────────────────
 
-// Every linked address, regardless of which one is primary.
 function memberEmails(member: ProfileMember): string[] {
   return [member.daliEmail, member.dartmouthEmail, member.personalEmail].filter(
     (e): e is string => Boolean(e),
   );
 }
 
-// Full IANA zone list from the runtime's ICU data — identical in Node (SSR) and
-// the browser, so the rendered <option> set is stable across hydration. Falls
-// back to the app zone if the runtime predates Intl.supportedValuesOf.
 function timeZoneOptions(): string[] {
   const supportedValuesOf = (
     Intl as unknown as { supportedValuesOf?: (key: string) => string[] }
@@ -1495,7 +1805,6 @@ function TimeZoneField({
   defaultValue: string;
 }) {
   const zones = timeZoneOptions();
-  // A stored value outside the canonical list (legacy/rare) still shows selected.
   const options =
     defaultValue && !zones.includes(defaultValue) ? [defaultValue, ...zones] : zones;
   return (
@@ -1515,8 +1824,6 @@ function TimeZoneField({
   );
 }
 
-// Birthday is stored at UTC midnight; format from UTC components so a viewer
-// in a negative-offset timezone doesn't see the previous day.
 function formatBirthday(value: string | null): string | null {
   if (!value) return null;
   const d = new Date(value);
@@ -1529,8 +1836,6 @@ function formatBirthday(value: string | null): string | null {
   });
 }
 
-// <input type="date"> wants YYYY-MM-DD, anchored in UTC to match how the
-// value was stored.
 function birthdayInputValue(value: string | null): string {
   if (!value) return "";
   const d = new Date(value);
@@ -1541,9 +1846,8 @@ function birthdayInputValue(value: string | null): string {
   return `${y}-${m}-${day}`;
 }
 
-// Mentorship pairings + notes link for a viewed-other user. The loader gates
-// `mentorshipPanel` so this only renders when the viewer is a lab mentor or
-// Core looking at someone else's profile, never on their own.
+// ─── Mentorship panel ────────────────────────────────────────────────────────
+
 function MentorshipPanel({
   data,
   memberId,

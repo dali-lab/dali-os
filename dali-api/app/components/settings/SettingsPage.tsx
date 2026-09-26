@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Bell, Cable, KeyRound, Palette } from "lucide-react";
+import { Bell, Cable, KeyRound, Palette, SlidersHorizontal } from "lucide-react";
 import { useDesktopVersion } from "~/lib/desktop";
 import { UnderlineTabButtons } from "~/components/AreaPillNav";
 import { SettingsBlock } from "~/components/settings/SettingsBlock";
@@ -11,9 +11,11 @@ import { SessionsSettingsBlock } from "~/components/settings/SessionsSettingsBlo
 import { PasskeysSettingsBlock } from "~/components/settings/PasskeysSettingsBlock";
 import { ConnectedAppsSettingsBlock } from "~/components/settings/ConnectedAppsSettingsBlock";
 import { NotificationsSettingsBlock } from "~/components/settings/NotificationsSettingsBlock";
+import { WalletSettingsBlock } from "~/components/settings/WalletSettingsBlock";
 import type { loadSettingsPageData } from "~/lib/settings-page.server";
 
 const TABS = [
+  { id: "general", label: "General", icon: SlidersHorizontal },
   { id: "appearance", label: "Appearance", icon: Palette },
   { id: "notifications", label: "Notifications", icon: Bell },
   { id: "integrations", label: "Integrations", icon: Cable },
@@ -26,6 +28,8 @@ type TabId = (typeof TABS)[number]["id"];
 // #connected-apps and friends still land on the right tab, and on a merged
 // tab we scroll to the block the hash actually named.
 const HASH_TO_TAB: Record<string, TabId> = {
+  general: "general",
+  "membership-pass": "general",
   appearance: "appearance",
   workspace: "appearance",
   notifications: "notifications",
@@ -44,9 +48,9 @@ export function SettingsPage({
 }) {
   const desktopVersion = useDesktopVersion();
 
-  // One tab at a time, Appearance by default. The hash is the source of truth
+  // One tab at a time, General by default. The hash is the source of truth
   // so deep links and back/forward keep working; clicking a tab writes it.
-  const [active, setActive] = useState<TabId>("appearance");
+  const [active, setActive] = useState<TabId>("general");
   useEffect(() => {
     const sync = () => {
       const hash = window.location.hash.slice(1);
@@ -84,6 +88,16 @@ export function SettingsPage({
       />
 
       <div className="flex flex-col gap-4">
+        {active === "general" && (
+          <SettingsBlock
+            id="membership-pass"
+            title="Membership pass"
+            description="Add your DALI pass to Apple or Google Wallet and check in at meetings without signing in."
+          >
+            <WalletSettingsBlock wallet={data.wallet} />
+          </SettingsBlock>
+        )}
+
         {active === "appearance" && (
           <>
             <SettingsBlock
