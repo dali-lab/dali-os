@@ -1,23 +1,22 @@
 // GET /oauth/mail/google/start?target=personal|project:<id>|shared:<accountId>
-// Starts the Google sign-in that connects a mailbox to the Email tab. The
-// callback is /integrations/mail/google/callback, registered separately with
-// the Google OAuth client (like the calendar-link flow).
+// Starts the Google sign-in that connects a mailbox to the Email tab. Google
+// returns through the calendar-link callback (already registered on the OAuth
+// client), which hands the request to ~/email/lib/mail-connect.server.
 
 import type { Route } from "./+types/oauth.mail.google.start";
 import { randomBytes } from "node:crypto";
 import { requireAuth } from "~/lib/auth";
-import { getApiBaseUrl } from "~/lib/app-env";
 import { buildGoogleAuthUrl } from "~/lib/google-oauth";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { getUserRoles } from "~/lib/roles";
 import { GMAIL_MODIFY_SCOPE } from "~/email/lib/gmail-mailbox.server";
+import { MAIL_STATE_COOKIE, mailConnectRedirectUri } from "~/email/lib/mail-connect.server";
 import {
   expectedConnectAddress,
   parseConnectTarget,
   serializeConnectTarget,
 } from "~/email/lib/access.server";
 
-export const MAIL_STATE_COOKIE = "__dali_mail_oauth_state";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -40,7 +39,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const state = randomBytes(16).toString("hex");
   const authUrl = buildGoogleAuthUrl({
     clientId,
-    redirectUri: `${getApiBaseUrl()}/integrations/mail/google/callback`,
+    redirectUri: mailConnectRedirectUri(),
     scopes: ["openid", "email", GMAIL_MODIFY_SCOPE],
     state,
     accessType: "offline",
