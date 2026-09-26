@@ -27,17 +27,16 @@
 	     entitlement above (NSMicrophoneUsageDescription drives the prompt). -->
 	<key>com.apple.security.device.audio-input</key>
 	<true/>
-	<!-- Associated Domains (webcredentials): lets WebAuthn passkeys engage the
-	     platform authenticator (Touch ID) for os.dali.dartmouth.edu inside the
-	     WKWebView. Pairs with the AASA served at
-	     https://os.dali.dartmouth.edu/.well-known/apple-app-site-association.
-	     Plain string, no $(AppIdentifierPrefix) expansion, so it is safe under
-	     the plain-codesign flow (unlike keychain-access-groups). Requires the
-	     Associated Domains capability on the App ID edu.dartmouth.dali.os in the
-	     Apple Developer portal, and a signed/notarized build to verify. -->
-	<key>com.apple.developer.associated-domains</key>
-	<array>
-		<string>webcredentials:os.dali.dartmouth.edu</string>
-	</array>
+	<!-- Desktop passkeys need com.apple.developer.associated-domains
+	     (webcredentials:os.dali.dartmouth.edu) — but that is DELIBERATELY NOT here.
+	     A com.apple.developer.* entitlement makes AMFI reject the app at launch
+	     ("can't be opened" / RBSRequestError 5 / errno 163) on any build that is
+	     not signed AND provisioned for it, so keeping it in this committed file
+	     breaks local/ad-hoc builds and would brick a notarized release whose App
+	     ID isn't provisioned. It is instead applied only in the CI signed-release
+	     build (see desktop-release.yml), which embeds a Developer ID provisioning
+	     profile for App ID edu.dartmouth.dali.os with the Associated Domains
+	     capability. Pairs with the AASA served at
+	     /.well-known/apple-app-site-association. -->
 </dict>
 </plist>
