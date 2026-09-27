@@ -60,8 +60,9 @@ export async function runGetAttendanceOverview(ctx: McpCtx, args: Args) {
       project: { select: { id: true, name: true } },
       organizer: { select: { firstName: true, lastName: true, daliEmail: true } },
       attendance: {
-        orderBy: { user: { lastName: "asc" } },
+        orderBy: [{ occurrenceStart: "asc" }, { user: { lastName: "asc" } }],
         select: {
+          occurrenceStart: true,
           present: true,
           markedAt: true,
           user: { select: { id: true, firstName: true, lastName: true, daliEmail: true } },
@@ -98,6 +99,9 @@ export async function runGetAttendanceOverview(ctx: McpCtx, args: Args) {
           ((a.user.firstName ?? "") + " " + (a.user.lastName ?? "")).trim() ||
           a.user.daliEmail ||
           a.user.id,
+        // A recurring meeting has a roster per occurrence, so one person can
+        // appear once per occurrence.
+        occurrenceStart: a.occurrenceStart.toISOString(),
         present: a.present,
         markedAt: a.markedAt?.toISOString() ?? null,
       })),

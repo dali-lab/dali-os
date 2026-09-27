@@ -18,12 +18,15 @@ export const ABSENCE_NOTE_MAX = 280;
 // from /attendance itself.
 export function AbsenceNoteButton({
   meetingId,
+  occurrenceStart,
   userId,
   name,
   note,
   onSaved,
 }: {
   meetingId: string;
+  /** Which occurrence's roster the note is on (ISO original start). */
+  occurrenceStart: string;
   userId: string;
   name: string;
   note: string | null;
@@ -52,7 +55,7 @@ export function AbsenceNoteButton({
     if (next === null) return;
     const trimmed = next.trim();
     fetcher.submit(
-      { intent: "set-absence-note", meetingId, userId, note: trimmed },
+      { intent: "set-absence-note", meetingId, occurrenceStart, userId, note: trimmed },
       { method: "post", action: "/attendance" },
     );
     onSaved?.(trimmed || null);

@@ -47,13 +47,16 @@ const MEETING_BASE = {
   attendanceMode: "Roster",
   projectId: "p1",
   selectedAt: new Date("2026-09-15T14:00:00Z"),
+  createdAt: new Date("2026-09-01T12:00:00Z"),
+  externalEventId: null,
+  participantUserIds: [] as string[],
   durationMinutes: 60,
   status: "Confirmed",
   isCoreMeeting: false,
   meetingUrl: null,
   recurrenceRule: null,
   organizer: { firstName: "Alice", lastName: "Smith" },
-  notePage: { id: "page1" },
+  notePages: [{ id: "page1", meetingOccurrenceStart: new Date("2026-09-15T14:00:00Z") }],
   attendance: [],
 };
 
@@ -98,6 +101,7 @@ describe("get_meeting", () => {
       ...MEETING_BASE,
       attendance: [
         {
+          occurrenceStart: new Date("2026-09-15T14:00:00Z"),
           userId: "u2",
           present: true,
           markedAt: new Date("2026-09-15T14:05:00Z"),
@@ -130,6 +134,7 @@ describe("get_meeting", () => {
       ...MEETING_BASE,
       attendance: [
         {
+          occurrenceStart: new Date("2026-09-15T14:00:00Z"),
           userId: "u-attendee",
           present: false,
           markedAt: null,
@@ -143,6 +148,38 @@ describe("get_meeting", () => {
     const out = await runGetMeeting("u-attendee", { meetingId: "m1" });
     expect(out.canManage).toBe(false);
     expect(out.roster).toHaveLength(1);
+  });
+
+  it("reads one occurrence's note and roster of a recurring meeting", async () => {
+    const row = (occurrence: string, present: boolean) => ({
+      occurrenceStart: new Date(occurrence),
+      userId: "u2",
+      present,
+      markedAt: null,
+      user: { firstName: "Bob", lastName: "Jones", daliEmail: null },
+    });
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue({
+      ...MEETING_BASE,
+      recurrenceRule: "FREQ=WEEKLY",
+      notePages: [
+        { id: "page-wk1", meetingOccurrenceStart: new Date("2026-09-15T14:00:00Z") },
+        { id: "page-wk2", meetingOccurrenceStart: new Date("2026-09-22T14:00:00Z") },
+      ],
+      attendance: [row("2026-09-15T14:00:00Z", true), row("2026-09-22T14:00:00Z", false)],
+    });
+    (mockPrisma as unknown as { meetingException: unknown }).meetingException = {
+      findMany: vi.fn().mockResolvedValue([]),
+    };
+    vi.mocked(isCore).mockResolvedValue(false);
+    vi.mocked(isProjectMember).mockResolvedValue(false);
+
+    const out = await runGetMeeting("u-org", {
+      meetingId: "m1",
+      occurrenceStart: "2026-09-22T14:00:00.000Z",
+    });
+    expect(out.startsAt).toBe("2026-09-22T14:00:00.000Z");
+    expect(out.notePageId).toBe("page-wk2");
+    expect(out.roster).toEqual([expect.objectContaining({ userId: "u2", present: false })]);
   });
 
   it("uses meetingTypeLabel for Other type", async () => {

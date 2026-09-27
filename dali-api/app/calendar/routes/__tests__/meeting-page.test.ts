@@ -33,7 +33,11 @@ function meeting(over: Record<string, unknown> = {}) {
     attendanceMode: "Roster",
     projectId: "p1",
     selectedAt: new Date("2026-01-05T15:00:00.000Z"),
+    createdAt: new Date("2026-01-01T12:00:00.000Z"),
     durationMinutes: 60,
+    recurrenceRule: null,
+    externalEventId: null,
+    exceptions: [],
     status: "Scheduled",
     scopeType: "Project",
     isCoreMeeting: false,
@@ -41,17 +45,14 @@ function meeting(over: Record<string, unknown> = {}) {
     participantUserIds: ["member-1"],
     organizer: { firstName: "Ada", lastName: "Lovelace" },
     // The case this is all about: a meeting that predates meeting notes.
-    notePage: null,
-    attendance: [
-      { userId: "member-1", present: false, user: { firstName: "Bo", lastName: "Ng", daliEmail: null } },
-    ],
+    notePages: [],
     ...over,
   };
 }
 
-function load() {
+function load(query = "") {
   return loader({
-    request: new Request(`http://localhost/calendar/meeting/m1`),
+    request: new Request(`http://localhost/calendar/meeting/m1${query}`),
     params: { id: "m1" },
     context: {},
   } as never) as Promise<{ canAddNote: boolean; notePageId: string | null }>;
@@ -63,6 +64,64 @@ beforeEach(() => {
   mockIsProjectMember.mockResolvedValue(false);
   mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(meeting());
   mockPrisma.meetingTimeProposal.findMany.mockResolvedValue([]);
+  mockPrisma.meetingAttendance.findFirst.mockResolvedValue({ id: "row" });
+  mockPrisma.meetingAttendance.findMany.mockResolvedValue([
+    { userId: "member-1", present: false, user: { firstName: "Bo", lastName: "Ng", daliEmail: null } },
+  ]);
+});
+
+describe("meeting page — one occurrence of a recurring meeting", () => {
+  const weekly = () =>
+    meeting({
+      recurrenceRule: "FREQ=WEEKLY",
+      notePages: [
+        { id: "note-wk1", meetingOccurrenceStart: new Date("2026-01-05T15:00:00.000Z") },
+        { id: "note-wk2", meetingOccurrenceStart: new Date("2026-01-12T15:00:00.000Z") },
+      ],
+    });
+
+  it("opens the requested week's note and roster, with its neighbours", async () => {
+    mockAuth.mockResolvedValue({ ok: true, user: { sub: "organizer-1", type: "member" } });
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(weekly());
+
+    const d = (await load("?occurrence=2026-01-12T15:00:00.000Z")) as unknown as {
+      notePageId: string | null;
+      occurrenceStart: string;
+      prevOccurrence: { start: string } | null;
+      nextOccurrence: { start: string } | null;
+    };
+
+    expect(d.notePageId).toBe("note-wk2");
+    expect(d.occurrenceStart).toBe("2026-01-12T15:00:00.000Z");
+    expect(d.prevOccurrence?.start).toBe("2026-01-05T15:00:00.000Z");
+    expect(d.nextOccurrence?.start).toBe("2026-01-19T15:00:00.000Z");
+    // Week 2's roster, made on the spot from the invite list.
+    expect(mockPrisma.meetingAttendance.createMany).toHaveBeenCalledWith({
+      data: [
+        { scheduledMeetingId: "m1", occurrenceStart: new Date("2026-01-12T15:00:00.000Z"), userId: "member-1" },
+        { scheduledMeetingId: "m1", occurrenceStart: new Date("2026-01-12T15:00:00.000Z"), userId: "organizer-1" },
+      ],
+      skipDuplicates: true,
+    });
+    expect(mockPrisma.meetingAttendance.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { scheduledMeetingId: "m1", occurrenceStart: new Date("2026-01-12T15:00:00.000Z") },
+      }),
+    );
+  });
+
+  it("offers to start a week's note once the meeting keeps notes", async () => {
+    mockAuth.mockResolvedValue({ ok: true, user: { sub: "member-1", type: "member" } });
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(weekly());
+
+    const d = (await load("?occurrence=2026-01-19T15:00:00.000Z")) as unknown as {
+      notePageId: string | null;
+      canOpenNote: boolean;
+    };
+
+    expect(d.notePageId).toBeNull();
+    expect(d.canOpenNote).toBe(true);
+  });
 });
 
 describe("meeting page — adding a note after the fact", () => {
@@ -122,10 +181,11 @@ describe("meeting page — turning on self check-in later", () => {
       where: { id: "m1" },
       data: { attendanceMode: "SelfCheckIn" },
     });
+    const occurrenceStart = new Date("2026-01-05T15:00:00.000Z");
     expect(mockPrisma.meetingAttendance.createMany).toHaveBeenCalledWith({
       data: [
-        { scheduledMeetingId: "m1", userId: "member-1" },
-        { scheduledMeetingId: "m1", userId: "organizer-1" },
+        { scheduledMeetingId: "m1", occurrenceStart, userId: "member-1" },
+        { scheduledMeetingId: "m1", occurrenceStart, userId: "organizer-1" },
       ],
       skipDuplicates: true,
     });

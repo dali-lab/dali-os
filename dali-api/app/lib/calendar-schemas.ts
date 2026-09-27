@@ -203,6 +203,9 @@ export const ToggleMeetingTimeEntrySchema = z.object({
   intent: z.literal("toggle-meeting-time-entry"),
   meetingId: z.string().min(1),
   onTimesheet: z.boolean(),
+  // Which occurrence of a recurring meeting (its original start); omitted = the
+  // first. Each occurrence logs its own hours.
+  occurrence: isoString.optional(),
 });
 
 // "Mark as a Core meeting" on a meeting's detail popover — the same flag the
@@ -225,13 +228,16 @@ export const SetMeetingProjectSchema = z.object({
   meetingTypeLabel: z.string().optional(),
 });
 
-// "Add meeting notes" on a note-less meeting's detail popover — creates the
-// notes doc after the fact with the same About/Type/Name/location choices the
-// create form collects. The action re-checks that the caller may file it.
+// "Add meeting notes" on a meeting's detail popover — creates one occurrence's
+// notes doc. The first note collects the same About/Type/Name/location choices
+// the create form does; after that the meeting knows its type, so later
+// occurrences send only `occurrence`. The action re-checks that the caller may
+// file it.
 export const AddMeetingNoteSchema = z.object({
   intent: z.literal("add-meeting-note"),
   meetingId: z.string().min(1),
-  meetingType: z.enum(["Team", "Partner", "Other"]),
+  occurrence: isoString.optional(),
+  meetingType: z.enum(["Team", "Partner", "Other"]).optional(),
   meetingTypeLabel: z.string().optional(),
   projectId: z.string().optional(),
   noteLocation: z

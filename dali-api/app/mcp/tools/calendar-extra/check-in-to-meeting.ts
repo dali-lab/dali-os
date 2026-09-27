@@ -61,7 +61,7 @@ export async function runCheckInToMeeting(userId: string, input: Input) {
     throw new McpForbiddenError("Check-in window has closed");
   }
 
-  const result = await markMeetingAttendance(meeting.id, userId, true, userId);
+  const result = await markMeetingAttendance(meeting.id, userId, true, userId, new Date());
   if (!result.ok) {
     const status = result.status ?? 400;
     if (status === 404) throw new McpNotFoundError(result.error ?? "Not found");

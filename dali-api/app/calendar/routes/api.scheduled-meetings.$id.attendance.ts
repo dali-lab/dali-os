@@ -5,11 +5,12 @@ import { requireAuth, forbidden } from "~/lib/auth";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
-import { markMeetingAttendance } from "~/lib/scheduled-meeting";
+import { markMeetingAttendance, parseOccurrenceParam } from "~/lib/scheduled-meeting";
 
 // POST /api/scheduled-meetings/:id/attendance
 //
-// Toggle whether an invited participant was present at a meeting. Only
+// Toggle whether an invited participant was present at one occurrence of a
+// meeting (`occurrence`, omitted = the first). Only
 // meetings created with a meetingType (project-scoped or Lab-workspace — see
 // createScheduledMeeting) have MeetingAttendance rows; this 404s otherwise.
 // The TimeEntry sync (upsert on present, delete otherwise) lives in
@@ -22,6 +23,7 @@ import { markMeetingAttendance } from "~/lib/scheduled-meeting";
 const BodySchema = z.object({
   userId: z.string().min(1),
   present: z.boolean(),
+  occurrence: z.string().optional(),
 });
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -54,7 +56,13 @@ export async function action({ request, params }: Route.ActionArgs) {
   const canEdit = auth.user.sub === meeting.organizerId || core || member;
   if (!canEdit) return forbidden(request);
 
-  const result = await markMeetingAttendance(meeting.id, body.userId, body.present, auth.user.sub);
+  const result = await markMeetingAttendance(
+    meeting.id,
+    body.userId,
+    body.present,
+    auth.user.sub,
+    parseOccurrenceParam(body.occurrence),
+  );
   if (!result.ok) {
     return withCors(request, Response.json({ error: result.error }, { status: result.status }));
   }

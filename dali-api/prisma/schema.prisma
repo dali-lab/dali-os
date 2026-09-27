@@ -2157,14 +2157,16 @@ model ScheduledMeeting {
 
   // Set when the sender picks a meeting type at invite time. Drives auto-
   // creation of a meeting-note Page under `project`'s shared documents
-  // (see notePage) plus a MeetingAttendance row per participant.
+  // (see notePages) plus a MeetingAttendance row per participant.
   // meetingTypeLabel is required (app-level) when meetingType == Other and
   // supplies the note's display label ("<label> meeting note (<date>)").
   meetingType      MeetingType?
   meetingTypeLabel String?
   projectId        String?
   project          Project?     @relation(fields: [projectId], references: [id])
-  notePage         Page?        @relation("MeetingNotePage")
+  // One note doc per occurrence (keyed by Page.meetingOccurrenceStart), so a
+  // recurring series gets a fresh doc each week rather than one shared doc.
+  notePages        Page[]       @relation("MeetingNotePage")
   whiteboardPage   Page?        @relation("MeetingWhiteboardPage")
 
   // Roster (default): organizer/Core check people off by hand via
@@ -2226,10 +2228,16 @@ model MeetingAttendance {
   // (e.g. "excused - travelling"). Optional and independent of `present`.
   absenceNote        String?
 
+  // Which occurrence of the meeting this row is for: the occurrence's ORIGINAL
+  // start (pre-exception), resolved by resolveOccurrence in
+  // app/lib/meeting-occurrences.ts. A one-off meeting has a single key, its
+  // selectedAt (createdAt while unscheduled).
+  occurrenceStart    DateTime
+
   meeting ScheduledMeeting @relation(fields: [scheduledMeetingId], references: [id])
   user    User             @relation(fields: [userId], references: [id])
 
-  @@unique([scheduledMeetingId, userId])
+  @@unique([scheduledMeetingId, occurrenceStart, userId])
   @@index([userId])
 }
 
@@ -2285,6 +2293,10 @@ model TimeEntry {
   // + duration, and for grid drag-created Manual rows from the dragged range.
   startTime          DateTime?
   endTime            DateTime?
+  // Meeting-sourced rows: which occurrence of scheduledMeetingId these hours
+  // are for (same key as MeetingAttendance.occurrenceStart), so each week of a
+  // recurring meeting logs its own hours. Null when scheduledMeetingId is.
+  occurrenceStart    DateTime?
   // Google Timesheet mirror (Phase 3). Soft pointers — no FK — same pattern as
   // MemberClass.linkId/calendarId. Null until the user enables the sync and the
   // entry is first pushed to Google. Set to null when the mirror event is deleted.
@@ -2305,7 +2317,7 @@ model TimeEntry {
   meeting     ScheduledMeeting? @relation(fields: [scheduledMeetingId], references: [id])
   project     Project?          @relation(fields: [projectId], references: [id])
 
-  @@unique([scheduledMeetingId, userId])
+  @@unique([scheduledMeetingId, occurrenceStart, userId])
   // One work log per event per user — lets the composer upsert on re-save
   // instead of stacking a second entry every time the event is edited.
   @@unique([sourceEventId, userId])
@@ -4743,10 +4755,13 @@ model Page {
   pinnedAt DateTime?
 
   // Set when this page was auto-created as a meeting's attendance-tracking
-  // note (see ScheduledMeeting.notePage / meetingType). Lets the document
+  // note (see ScheduledMeeting.notePages / meetingType). Lets the document
   // route know to render the AttendanceChecklist above the editor.
-  meetingNoteId String?           @unique
-  meetingNote   ScheduledMeeting? @relation("MeetingNotePage", fields: [meetingNoteId], references: [id])
+  // meetingOccurrenceStart says which occurrence the note is for (same key as
+  // MeetingAttendance.occurrenceStart) — one note per occurrence.
+  meetingNoteId          String?
+  meetingNote            ScheduledMeeting? @relation("MeetingNotePage", fields: [meetingNoteId], references: [id])
+  meetingOccurrenceStart DateTime?
 
   // Set when this page is a meeting's linked whiteboard (kind = Whiteboard).
   // Parallel to meetingNoteId: a meeting can have a note doc and/or a whiteboard,
@@ -4796,6 +4811,7 @@ model Page {
   // saved once (or picked up by the doc-search-index sweep).
   searchIndex PageSearchIndex?
 
+  @@unique([meetingNoteId, meetingOccurrenceStart])
   @@index([workspaceType, workspaceId, parentPageId])
   @@index([archivedAt])
   // Trigram index behind the typo-tolerant title match in doc-search.server.ts

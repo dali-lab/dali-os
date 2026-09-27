@@ -113,7 +113,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Invalid or revoked pass" }, { status: 400 }));
   }
 
-  const result = await markMeetingAttendance(meeting.id, scanned.id, true, auth.user.sub);
+  // A pass is scanned at the door, so it counts toward the occurrence
+  // happening now.
+  const result = await markMeetingAttendance(meeting.id, scanned.id, true, auth.user.sub, new Date());
   if (!result.ok) {
     // Most likely: the scanned member isn't on this meeting's roster.
     return withCors(request, Response.json({ error: result.error }, { status: result.status }));

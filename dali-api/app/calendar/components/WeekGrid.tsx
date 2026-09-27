@@ -15,7 +15,8 @@ import { notifyTasksChanged } from "~/components/RsvpButtons";
 import { cn } from "~/lib/cn";
 import { getZonedHourFraction, getZonedYMD } from "~/lib/timezone";
 import { isPayPeriodEnd, isPayPeriodStart } from "~/lib/pay-period";
-import { AddMeetingNoteButton } from "~/calendar/components/AddMeetingNoteModal";
+import { AddMeetingNoteButton, OpenMeetingNoteButton } from "~/calendar/components/AddMeetingNoteModal";
+import { meetingOccurrenceHref } from "~/lib/meeting-occurrences";
 import { AddMeetingWhiteboardButton } from "~/calendar/components/AddMeetingWhiteboardModal";
 import { TrackEventButton } from "~/calendar/components/TrackEventButton";
 import type {
@@ -599,6 +600,7 @@ export function MeetingDetailToggles({ meeting }: { meeting: NonNullable<EventBl
             {
               intent: "toggle-meeting-time-entry",
               meetingId: meeting.meetingId,
+              occurrence: meeting.occurrenceStart,
               onTimesheet: String(ev.target.checked),
             },
             { method: "post", action: meeting.actionPath },
@@ -1104,7 +1106,7 @@ export function WeekGridEvent({
                 >
                   <div className="flex flex-wrap gap-2">
                     <Link
-                      to={`/calendar/meeting/${e.meeting.meetingId}`}
+                      to={meetingOccurrenceHref(e.meeting.meetingId, e.meeting.occurrenceStart)}
                       className={popoverActionBtn}
                     >
                       <Users className="h-3.5 w-3.5 text-os-grey" /> Attendance
@@ -1116,9 +1118,17 @@ export function WeekGridEvent({
                       >
                         <FileText className="h-3.5 w-3.5 text-os-grey" /> Meeting note
                       </Link>
+                    ) : e.meeting.canOpenNote ? (
+                      <OpenMeetingNoteButton
+                        meetingId={e.meeting.meetingId}
+                        occurrenceStart={e.meeting.occurrenceStart}
+                        actionPath={e.meeting.actionPath}
+                        className={popoverActionBtn}
+                      />
                     ) : e.meeting.canAddNote ? (
                       <AddMeetingNoteButton
                         meetingId={e.meeting.meetingId}
+                        occurrenceStart={e.meeting.occurrenceStart}
                         isCoreMeeting={e.meeting.isCoreMeeting}
                         actionPath={e.meeting.actionPath}
                         className={popoverActionBtn}
