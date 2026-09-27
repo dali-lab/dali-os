@@ -96,29 +96,23 @@ export async function completeMailConnect(request: Request): Promise<Response> {
     refreshToken: tokens.refresh_token,
     expiresInSec: tokens.expires_in ?? null,
   });
-  const connected = { oauthTokens, connectedById: userId, connectedAt: new Date(), syncError: null };
-
-  if (target.kind === "Shared") {
-    // Shared inboxes are signed in to per person, never once for everyone.
-    await prisma.mailAccountConnection.upsert({
-      where: { accountId_userId: { accountId: target.accountId, userId } },
-      create: { accountId: target.accountId, userId, oauthTokens },
-      update: { oauthTokens, syncError: null, connectedAt: new Date() },
-    });
-  } else {
-    const scopeKey = `project:${target.projectId}`;
-    await prisma.mailAccount.upsert({
-      where: { scopeKey_address: { scopeKey, address } },
-      create: {
-        kind: target.kind,
-        address,
-        scopeKey,
-        projectId: target.projectId,
-        ...connected,
-      },
-      update: connected,
-    });
-  }
+  // Every inbox is signed in to per person, never once for everyone.
+  const accountId =
+    target.kind === "Shared"
+      ? target.accountId
+      : (
+          await prisma.mailAccount.upsert({
+            where: { scopeKey_address: { scopeKey: `project:${target.projectId}`, address } },
+            create: { kind: "Project", address, scopeKey: `project:${target.projectId}`, projectId: target.projectId },
+            update: {},
+            select: { id: true },
+          })
+        ).id;
+  await prisma.mailAccountConnection.upsert({
+    where: { accountId_userId: { accountId, userId } },
+    create: { accountId, userId, oauthTokens },
+    update: { oauthTokens, syncError: null, connectedAt: new Date() },
+  });
 
   return redirectToEmail("mail_connected=1");
 }

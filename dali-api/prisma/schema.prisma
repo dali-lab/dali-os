@@ -192,6 +192,7 @@ model User {
   mailComments         MailComment[]
   mailSubscriptions    MailSubscription[]
   mailConnections      MailAccountConnection[]
+  mailInboxArchives    MailInboxArchive[]
   scheduledMeetings    ScheduledMeeting[]
   meetingTimeProposals MeetingTimeProposal[]
   availabilitySettings UserAvailabilitySettings?
@@ -1967,6 +1968,7 @@ model MailAccount {
   comments    MailComment[]
   categories  MailCategoryAccount[]
   connections MailAccountConnection[]
+  archives    MailInboxArchive[]
 
   @@unique([scopeKey, address])
   @@index([userId])
@@ -2037,6 +2039,20 @@ model MailAccountConnection {
   user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([accountId, userId])
+  @@index([userId])
+}
+
+// A person hiding an inbox from their own Email tab (e.g. a past project's).
+// Restorable from the Inboxes panel; teammates are unaffected.
+model MailInboxArchive {
+  accountId String
+  userId    String
+  createdAt DateTime @default(now())
+
+  account MailAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([accountId, userId])
   @@index([userId])
 }
 

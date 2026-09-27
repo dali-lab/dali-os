@@ -5,8 +5,8 @@ vi.mock("~/lib/db", () => ({
     projectAssignment: { findMany: vi.fn() },
     mailSubscription: { findMany: vi.fn() },
     mailCategory: { findMany: vi.fn() },
-    mailAccount: { findMany: vi.fn() },
-    project: { findUnique: vi.fn() },
+    mailAccount: { findMany: vi.fn(), createMany: vi.fn() },
+    project: { findUnique: vi.fn(), findMany: vi.fn() },
   },
 }));
 vi.mock("~/lib/roles", () => ({ currentTerm: vi.fn() }));
@@ -54,23 +54,36 @@ describe("readableMailAccounts", () => {
     expect(where.OR).toContainEqual({ kind: "Shared", id: { in: [] } });
   });
 
-  it("reads a Shared inbox with the viewer's own sign-in, never the account's", async () => {
+  it("reads every inbox with the viewer's own sign-in, never the account's", async () => {
     db.mailSubscription.findMany.mockResolvedValue([]);
     db.mailAccount.findMany.mockResolvedValue([
-      { id: "a1", kind: "Shared", oauthTokens: "legacy-team-token", syncError: null, connections: [] },
+      { id: "a1", kind: "Shared", oauthTokens: "legacy-team-token", syncError: null, connections: [], archives: [] },
       {
         id: "a2",
         kind: "Shared",
         oauthTokens: null,
         syncError: null,
         connections: [{ id: "c2", oauthTokens: "my-token", syncError: null }],
+        archives: [],
       },
-      { id: "p1", kind: "Project", oauthTokens: "team-token", syncError: null, connections: [] },
+      { id: "p1", kind: "Project", oauthTokens: "legacy-team-token", syncError: null, connections: [], archives: [{ userId: "me" }] },
     ]);
     const [a1, a2, p1] = await readableMailAccounts("me", request);
-    expect(a1).toMatchObject({ oauthTokens: null, connectionId: null });
+    expect(a1).toMatchObject({ oauthTokens: null, connectionId: null, archived: false });
     expect(a2).toMatchObject({ oauthTokens: "my-token", connectionId: "c2" });
-    expect(p1).toMatchObject({ oauthTokens: "team-token", connectionId: null });
+    expect(p1).toMatchObject({ oauthTokens: null, connectionId: null, archived: true });
+  });
+
+  it("gives each current project with a project email its inbox", async () => {
+    db.mailSubscription.findMany.mockResolvedValue([]);
+    vi.mocked(currentTerm).mockResolvedValue({ id: "t1" } as never);
+    db.projectAssignment.findMany.mockResolvedValue([{ projectId: "p1" }]);
+    db.project.findMany.mockResolvedValue([{ id: "p1", calendarEmail: "DaliOS@dali.dartmouth.edu" }]);
+    await readableMailAccounts("me", request);
+    expect(db.mailAccount.createMany).toHaveBeenCalledWith({
+      data: [{ kind: "Project", address: "dalios@dali.dartmouth.edu", scopeKey: "project:p1", projectId: "p1" }],
+      skipDuplicates: true,
+    });
   });
 });
 
@@ -92,7 +105,7 @@ describe("expectedConnectAddress", () => {
   it("lets a subscriber sign in to a Shared inbox as that inbox", async () => {
     db.mailSubscription.findMany.mockResolvedValue([]);
     db.mailAccount.findMany.mockResolvedValue([
-      { id: "a1", kind: "Shared", address: "partners@x.edu", oauthTokens: null, syncError: null, connections: [] },
+      { id: "a1", kind: "Shared", address: "partners@x.edu", oauthTokens: null, syncError: null, connections: [], archives: [] },
     ]);
     expect(await expectedConnectAddress("me", { kind: "Shared", accountId: "a1" }, request)).toBe("partners@x.edu");
   });

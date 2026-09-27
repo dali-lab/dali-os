@@ -23,9 +23,10 @@ const DAY = 24 * HOUR;
 const ME = "Alex Chen <alex.chen@dali.dartmouth.edu>";
 
 const ACCOUNTS: EmailPageData["accounts"] = [
-  { id: "deserto", kind: "Project", address: "deserto@dali.dartmouth.edu", label: "Deserto", projectId: "p-deserto", connected: true, syncError: null },
-  { id: "partners", kind: "Shared", address: "partners@dali.dartmouth.edu", label: "Partnerships", projectId: null, connected: true, syncError: null },
-  { id: "hiring", kind: "Shared", address: "hiring@dali.dartmouth.edu", label: "Hiring", projectId: null, connected: true, syncError: "Sign-in expired. Reconnect this account." },
+  { id: "deserto", kind: "Project", address: "deserto@dali.dartmouth.edu", label: "Deserto", projectId: "p-deserto", connected: true, syncError: null, archived: false },
+  { id: "bloom", kind: "Project", address: "bloom@dali.dartmouth.edu", label: "Bloom", projectId: "p-bloom", connected: false, syncError: null, archived: false },
+  { id: "partners", kind: "Shared", address: "partners@dali.dartmouth.edu", label: "Partnerships", projectId: null, connected: true, syncError: null, archived: false },
+  { id: "hiring", kind: "Shared", address: "hiring@dali.dartmouth.edu", label: "Hiring", projectId: null, connected: true, syncError: "Sign-in expired. Reconnect this account.", archived: false },
 ];
 
 type DemoThread = FeedThread & { messages: MailMessage[] };
@@ -264,10 +265,6 @@ export function demoEmailPage(request: Request): EmailPageData {
     unread,
     selected,
     drafts: DRAFTS,
-    projects: [
-      { id: "p-deserto", name: "Deserto", address: "deserto@dali.dartmouth.edu", connected: true },
-      { id: "p-bloom", name: "Bloom", address: "bloom@dali.dartmouth.edu", connected: false },
-    ],
     categories: [
       {
         id: "cat-partners",

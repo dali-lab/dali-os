@@ -1,5 +1,5 @@
 import { Link, useFetcher } from "react-router";
-import { Settings2, Unplug } from "lucide-react";
+import { Archive, ArchiveRestore, Settings2, Unplug } from "lucide-react";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { modalCardClass } from "~/components/os-chrome";
 import { buttonClasses } from "~/components/ui/Button";
@@ -39,8 +39,7 @@ function Row({ title, subtitle, children }: { title: string; subtitle?: string; 
 export function AccountsModal({ data, onClose }: { data: EmailPageData; onClose: () => void }) {
   const fetcher = useFetcher<{ error?: string }>();
   const dialog = useDialog();
-  const byProject = (projectId: string) =>
-    data.accounts.find((a) => a.kind === "Project" && a.projectId === projectId);
+  const projectInboxes = data.accounts.filter((a) => a.kind === "Project");
 
   const disconnect = async (accountId: string, label: string) => {
     const ok = await dialog.confirm({
@@ -64,27 +63,33 @@ export function AccountsModal({ data, onClose }: { data: EmailPageData; onClose:
     <Modal open onClose={onClose} labelledBy="mail-accounts-title" containerClassName={modalCardClass("max-w-lg")}>
       <ModalHeader titleId="mail-accounts-title" title="Inboxes" onClose={onClose} />
       <div className="flex flex-col gap-6">
-        {data.projects.length > 0 && (
+        {projectInboxes.length > 0 && (
           <div>
             <p className={heading}>Project team</p>
             <div className={section}>
-              {data.projects.map((p) => {
-                const account = byProject(p.id);
-                return (
-                  <Row key={p.id} title={p.name} subtitle={p.address}>
-                    <StatusDot error={account?.syncError} />
-                    {p.connected && account && !account.syncError ? (
-                      <IconButton label="Disconnect" icon={Unplug} onClick={() => disconnect(account.id, p.name)} />
-                    ) : (
-                      <a className={connectBtn} href={connectHref(`project:${p.id}`)}>Connect</a>
-                    )}
-                  </Row>
-                );
-              })}
+              {projectInboxes.map((a) => (
+                <Row key={a.id} title={a.label} subtitle={a.archived ? `${a.address} · Archived` : a.address}>
+                  <StatusDot error={a.syncError} />
+                  {a.connected && !a.syncError ? (
+                    <IconButton label="Disconnect" icon={Unplug} onClick={() => disconnect(a.id, a.label)} />
+                  ) : (
+                    <a className={connectBtn} href={connectHref(`project:${a.projectId}`)}>
+                      {a.syncError ? "Reconnect" : "Sign in"}
+                    </a>
+                  )}
+                  <IconButton
+                    label={a.archived ? "Restore to your list" : "Archive"}
+                    icon={a.archived ? ArchiveRestore : Archive}
+                    onClick={() =>
+                      fetcher.submit({ intent: a.archived ? "restoreInbox" : "archiveInbox", accountId: a.id }, { method: "post" })
+                    }
+                  />
+                </Row>
+              ))}
             </div>
             <p className={note}>
-              Added automatically while you&apos;re staffed on the project this term. Sign in as the project account once
-              and your whole team sees it.
+              Added for each project you&apos;re staffed on this term. Everyone signs in for themselves. Archive an inbox
+              to hide it from your list.
             </p>
           </div>
         )}

@@ -62,7 +62,8 @@ export default function EmailPage() {
   const [railCollapsed, setRailCollapsed] = useState(false);
   const [readerExpanded, setReaderExpanded] = useState(false);
 
-  const connected = data.accounts.filter((a) => a.connected);
+  const inboxes = data.accounts.filter((a) => !a.archived);
+  const connected = inboxes.filter((a) => a.connected);
   const dotFor = (accountId: string) => inboxDot(data.accounts.findIndex((a) => a.id === accountId));
   const labelFor = (accountId: string) => data.accounts.find((a) => a.id === accountId)?.label ?? "";
   const selectedRef = params.get("t");
@@ -189,12 +190,12 @@ export default function EmailPage() {
         </div>
       </div>
 
-      {data.accounts.length === 0 ? (
+      {inboxes.length === 0 ? (
         <div className="mx-auto mt-10 flex max-w-md flex-col items-center gap-3 rounded-os-card bg-os-card p-8 text-center">
           <Inbox className="h-8 w-8 text-os-muted" />
           <p className="font-heading text-xl font-medium text-foreground">One inbox for all your mail</p>
           <p className="text-sm text-os-muted">
-            Connect your DALI email, your project team account, and any other Google account.
+            Your project inboxes show up here while you&apos;re staffed, along with any shared inboxes you join.
           </p>
           <Button onClick={() => setAccountsOpen(true)}>Connect an inbox</Button>
           {import.meta.env.DEV && (
@@ -229,7 +230,7 @@ export default function EmailPage() {
                   All inboxes
                   <UnreadBadge count={totalUnread} className="ml-auto" />
                 </Link>
-                {data.accounts.map((a) => (
+                {inboxes.map((a) => (
                   <Link
                     key={a.id}
                     to={withParams({ inbox: a.id, view: null, t: null, in: null })}
@@ -406,7 +407,7 @@ export default function EmailPage() {
                 </div>
                 <Composer
                   key={composing}
-                  accounts={data.accounts}
+                  accounts={inboxes}
                   accountId={openDraft?.accountId ?? data.inbox ?? connected[0]?.id ?? ""}
                   threadId={null}
                   draft={openDraft}
@@ -422,7 +423,7 @@ export default function EmailPage() {
                 <ThreadView
                   key={selectedRef}
                   thread={data.selected}
-                  accounts={data.accounts}
+                  accounts={inboxes}
                   drafts={data.drafts}
                   aiEnabled={data.aiEnabled}
                   directory={directory}

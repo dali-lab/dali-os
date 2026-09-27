@@ -10,7 +10,6 @@ import { getUserRoles, type UserRoles } from "~/lib/roles";
 import { demoEmailAction, demoEmailPage, isEmailDemo } from "~/email/lib/demo-data.server";
 import {
   categoriesForUser,
-  currentProjectIds,
   findReadableAccount,
   mailAccountLabel,
   readableMailAccounts,
@@ -90,7 +89,7 @@ async function loadFeed(accounts: ReadableMailAccount[], query: string) {
 
 // Unread total across every inbox the user can read, for the sidebar badge.
 export async function loadUnreadTotal(request: Request, userId: string): Promise<number> {
-  const accounts = (await readableMailAccounts(userId, request)).filter((a) => a.oauthTokens);
+  const accounts = (await readableMailAccounts(userId, request)).filter((a) => a.oauthTokens && !a.archived);
   const counts = await loadUnreadCounts(accounts);
   return Object.values(counts).reduce((sum, n) => sum + n, 0);
 }
@@ -109,11 +108,8 @@ async function loadLiveEmailPage(request: Request, userId: string, roles: UserRo
   const searchAccounts = url.searchParams.get("in")?.split(",").filter(Boolean) ?? [];
   const selectedRef = parseThreadRef(url.searchParams.get("t"));
 
-  const [accounts, projectIds] = await Promise.all([
-    readableMailAccounts(userId, request),
-    currentProjectIds(userId, request),
-  ]);
-  const connected = accounts.filter((a) => a.oauthTokens);
+  const accounts = await readableMailAccounts(userId, request);
+  const connected = accounts.filter((a) => a.oauthTokens && !a.archived);
   const feedAccounts = connected.filter((a) =>
     inbox ? a.id === inbox : searchAccounts.length === 0 || searchAccounts.includes(a.id),
   );
@@ -122,7 +118,7 @@ async function loadLiveEmailPage(request: Request, userId: string, roles: UserRo
     ? connected.find((a) => a.id === selectedRef.accountId) ?? null
     : null;
 
-  const [feed, selected, drafts, projects, categories, myConnections, unread] = await Promise.all([
+  const [feed, selected, drafts, categories, myConnections, unread] = await Promise.all([
     view === "inbox" ? loadFeed(feedAccounts, query) : { threads: [], errors: [] },
     selectedAccount && selectedRef
       ? loadThread(userId, selectedAccount, selectedRef.threadId)
@@ -132,11 +128,6 @@ async function loadLiveEmailPage(request: Request, userId: string, roles: UserRo
       orderBy: { updatedAt: "desc" },
       take: 100,
       include: { createdBy: { select: { firstName: true, lastName: true } } },
-    }),
-    prisma.project.findMany({
-      where: { id: { in: projectIds }, calendarEmail: { not: null } },
-      select: { id: true, name: true, calendarEmail: true },
-      orderBy: { name: "asc" },
     }),
     categoriesForUser(userId),
     prisma.mailAccountConnection.findMany({ where: { userId }, select: { accountId: true, syncError: true } }),
@@ -165,6 +156,7 @@ async function loadLiveEmailPage(request: Request, userId: string, roles: UserRo
       projectId: a.projectId,
       connected: Boolean(a.oauthTokens),
       syncError: a.syncError,
+      archived: a.archived,
     })),
     feed: { threads: feed.threads, errors: feed.errors },
     unread,
@@ -182,12 +174,6 @@ async function loadLiveEmailPage(request: Request, userId: string, roles: UserRo
       mine: d.createdById === userId,
       author: `${d.createdBy.firstName} ${d.createdBy.lastName}`.trim(),
       updatedAt: d.updatedAt.toISOString(),
-    })),
-    projects: projects.map((p) => ({
-      id: p.id,
-      name: p.name,
-      address: p.calendarEmail!,
-      connected: accounts.some((a) => a.projectId === p.id && a.oauthTokens),
     })),
     // Shared-inbox categories open to this user. Signing in to an inbox is
     // each subscriber's own step, so its status is theirs alone.
@@ -302,15 +288,22 @@ export async function submitEmailAction(request: Request) {
   }
 
   if (intent === "disconnect") {
-    if (account.kind === "Shared") {
-      // Only your own sign-in; teammates keep theirs.
-      await prisma.mailAccountConnection.deleteMany({ where: { accountId: account.id, userId } });
-    } else {
-      await prisma.mailAccount.update({
-        where: { id: account.id },
-        data: { oauthTokens: null, connectedById: null, connectedAt: null, syncError: null },
-      });
-    }
+    // Only your own sign-in; teammates keep theirs.
+    await prisma.mailAccountConnection.deleteMany({ where: { accountId: account.id, userId } });
+    return { ok: true };
+  }
+
+  if (intent === "archiveInbox") {
+    await prisma.mailInboxArchive.upsert({
+      where: { accountId_userId: { accountId: account.id, userId } },
+      create: { accountId: account.id, userId },
+      update: {},
+    });
+    return { ok: true };
+  }
+
+  if (intent === "restoreInbox") {
+    await prisma.mailInboxArchive.deleteMany({ where: { accountId: account.id, userId } });
     return { ok: true };
   }
 
