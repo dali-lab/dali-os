@@ -90,7 +90,7 @@ export async function action({ request }: Route.ActionArgs) {
   let prompt: string;
   let accountIds: string[] = [];
   if (task === "search") {
-    const accounts = await readableMailAccounts(userId, request);
+    const accounts = (await readableMailAccounts(userId, request)).filter((a) => !a.archived);
     accountIds = accounts.map((a) => a.id);
     system = searchSystemPrompt(
       new Date().toISOString().slice(0, 10),

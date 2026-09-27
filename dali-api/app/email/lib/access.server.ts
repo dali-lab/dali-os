@@ -1,8 +1,10 @@
 // Who can read which mailbox in the Email tab:
-// - Project: members staffed on the project this term — automatic.
+// - Project: members staffed on the project this term. Every current project
+//   with a project email gets its inbox automatically.
 // - Shared: people subscribed to a category (MailCategory) that holds it,
-//   while they're in that category's audience. Each reads it with their own
-//   sign-in (MailAccountConnection), never a teammate's.
+//   while they're in that category's audience.
+// Either way each person reads with their own sign-in (MailAccountConnection),
+// never a teammate's, and may archive an inbox to hide it from their own list.
 
 import type { MailAccountKind } from "~/generated/prisma/enums";
 import { prisma } from "~/lib/db";
@@ -67,11 +69,31 @@ async function subscribedSharedAccountIds(userId: string): Promise<string[]> {
   return [...ids];
 }
 
+// Gives each of these projects its inbox row, so staffed members see it
+// before anyone has signed in.
+async function ensureProjectInboxes(projectIds: string[]) {
+  if (projectIds.length === 0) return;
+  const projects = await prisma.project.findMany({
+    where: { id: { in: projectIds }, calendarEmail: { not: null } },
+    select: { id: true, calendarEmail: true },
+  });
+  await prisma.mailAccount.createMany({
+    data: projects.map((p) => ({
+      kind: "Project" as const,
+      address: p.calendarEmail!.toLowerCase(),
+      scopeKey: `project:${p.id}`,
+      projectId: p.id,
+    })),
+    skipDuplicates: true,
+  });
+}
+
 export async function readableMailAccounts(userId: string, request: Request) {
   const [projectIds, sharedIds] = await Promise.all([
     currentProjectIds(userId, request),
     subscribedSharedAccountIds(userId),
   ]);
+  await ensureProjectInboxes(projectIds);
   const rows = await prisma.mailAccount.findMany({
     where: {
       OR: [
@@ -82,16 +104,19 @@ export async function readableMailAccounts(userId: string, request: Request) {
     include: {
       project: { select: { name: true } },
       connections: { where: { userId }, select: { id: true, oauthTokens: true, syncError: true } },
+      archives: { where: { userId }, select: { userId: true } },
     },
     orderBy: [{ kind: "asc" }, { address: "asc" }],
   });
-  // A Shared inbox carries the viewer's own tokens, so everything downstream
+  // Every inbox carries the viewer's own tokens, so everything downstream
   // (feed, send, unread) reads it as them.
-  return rows.map(({ connections: [mine], ...a }) =>
-    a.kind === "Shared"
-      ? { ...a, oauthTokens: mine?.oauthTokens ?? null, syncError: mine?.syncError ?? null, connectionId: mine?.id ?? null }
-      : { ...a, connectionId: null },
-  );
+  return rows.map(({ connections: [mine], archives, ...a }) => ({
+    ...a,
+    oauthTokens: mine?.oauthTokens ?? null,
+    syncError: mine?.syncError ?? null,
+    connectionId: mine?.id ?? null,
+    archived: archives.length > 0,
+  }));
 }
 
 export type ReadableMailAccount = Awaited<ReturnType<typeof readableMailAccounts>>[number];
@@ -146,7 +171,7 @@ export async function expectedConnectAddress(
     if (!projectIds.includes(target.projectId) || !project?.calendarEmail) return undefined;
     return project.calendarEmail;
   }
-  // A Shared inbox: anyone subscribed to it signs in for themselves.
+  // A Shared inbox: anyone subscribed to it signs in.
   const account = await findReadableAccount(userId, target.accountId, request);
   return account?.kind === "Shared" ? account.address : undefined;
 }
