@@ -83,7 +83,6 @@ describe("shortDate", () => {
 describe("connect targets", () => {
   it("round-trips through the OAuth state", () => {
     for (const t of [
-      { kind: "Personal" as const },
       { kind: "Project" as const, projectId: "p1" },
       { kind: "Shared" as const, accountId: "m1" },
     ]) {
@@ -94,6 +93,7 @@ describe("connect targets", () => {
   it("rejects unknown targets", () => {
     expect(parseConnectTarget("project:")).toBeNull();
     expect(parseConnectTarget("admin:x")).toBeNull();
+    expect(parseConnectTarget("personal")).toBeNull();
     expect(parseConnectTarget(null)).toBeNull();
   });
 });

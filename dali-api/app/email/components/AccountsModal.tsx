@@ -1,5 +1,5 @@
 import { Link, useFetcher } from "react-router";
-import { Plus, Settings2, Unplug } from "lucide-react";
+import { Settings2, Unplug } from "lucide-react";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { modalCardClass } from "~/components/os-chrome";
 import { buttonClasses } from "~/components/ui/Button";
@@ -39,8 +39,6 @@ function Row({ title, subtitle, children }: { title: string; subtitle?: string; 
 export function AccountsModal({ data, onClose }: { data: EmailPageData; onClose: () => void }) {
   const fetcher = useFetcher<{ error?: string }>();
   const dialog = useDialog();
-  const personal = data.accounts.filter((a) => a.kind === "Personal");
-  const hasDali = personal.some((a) => a.address === data.daliEmail?.toLowerCase());
   const byProject = (projectId: string) =>
     data.accounts.find((a) => a.kind === "Project" && a.projectId === projectId);
 
@@ -66,30 +64,6 @@ export function AccountsModal({ data, onClose }: { data: EmailPageData; onClose:
     <Modal open onClose={onClose} labelledBy="mail-accounts-title" containerClassName={modalCardClass("max-w-lg")}>
       <ModalHeader titleId="mail-accounts-title" title="Inboxes" onClose={onClose} />
       <div className="flex flex-col gap-6">
-        <div>
-          <p className={heading}>Yours</p>
-          <div className={section}>
-            {personal.map((a) => (
-              <Row key={a.id} title={a.address}>
-                <StatusDot error={a.syncError} />
-                {a.syncError && <a className={connectBtn} href={connectHref("personal")}>Reconnect</a>}
-                <IconButton label="Disconnect" icon={Unplug} onClick={() => disconnect(a.id, a.address)} />
-              </Row>
-            ))}
-            {!hasDali && data.daliEmail && (
-              <Row title={data.daliEmail} subtitle="Your DALI email">
-                <a className={connectBtn} href={connectHref("personal")}>Connect</a>
-              </Row>
-            )}
-            <Row title="Another Google account" subtitle="Gmail or any Google Workspace address">
-              <a className={connectBtn} href={connectHref("personal")}>
-                <Plus className="h-3.5 w-3.5" />
-                Add
-              </a>
-            </Row>
-          </div>
-        </div>
-
         {data.projects.length > 0 && (
           <div>
             <p className={heading}>Project team</p>

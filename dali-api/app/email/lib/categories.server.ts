@@ -2,8 +2,8 @@
 // Senders. Admins create a category, add its inbox addresses, and pick who may
 // subscribe (people and/or groups). People in that audience opt in from the
 // Email tab's Inboxes panel and sign in to each inbox themselves — admins
-// never connect an account here. Personal and current-term project inboxes
-// are automatic and never need a category.
+// never connect an account here. Current-term project inboxes are automatic
+// and never need a category.
 
 import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";

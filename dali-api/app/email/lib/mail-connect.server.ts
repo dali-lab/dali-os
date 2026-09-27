@@ -87,7 +87,7 @@ export async function completeMailConnect(request: Request): Promise<Response> {
 
   const address = (await resolveGoogleEmail(tokens.id_token, tokens.access_token))?.toLowerCase();
   if (!address) return redirectToEmail("mail_error=no_email");
-  if (expected !== null && address !== expected.toLowerCase()) {
+  if (address !== expected.toLowerCase()) {
     return redirectToEmail("mail_error=wrong_account");
   }
 
@@ -106,16 +106,14 @@ export async function completeMailConnect(request: Request): Promise<Response> {
       update: { oauthTokens, syncError: null, connectedAt: new Date() },
     });
   } else {
-    const scopeKey =
-      target.kind === "Personal" ? `user:${userId}` : `project:${target.projectId}`;
+    const scopeKey = `project:${target.projectId}`;
     await prisma.mailAccount.upsert({
       where: { scopeKey_address: { scopeKey, address } },
       create: {
         kind: target.kind,
         address,
         scopeKey,
-        userId: target.kind === "Personal" ? userId : null,
-        projectId: target.kind === "Project" ? target.projectId : null,
+        projectId: target.projectId,
         ...connected,
       },
       update: connected,

@@ -65,12 +65,12 @@ describe("readableMailAccounts", () => {
         syncError: null,
         connections: [{ id: "c2", oauthTokens: "my-token", syncError: null }],
       },
-      { id: "p1", kind: "Personal", oauthTokens: "personal-token", syncError: null, connections: [] },
+      { id: "p1", kind: "Project", oauthTokens: "team-token", syncError: null, connections: [] },
     ]);
     const [a1, a2, p1] = await readableMailAccounts("me", request);
     expect(a1).toMatchObject({ oauthTokens: null, connectionId: null });
     expect(a2).toMatchObject({ oauthTokens: "my-token", connectionId: "c2" });
-    expect(p1).toMatchObject({ oauthTokens: "personal-token", connectionId: null });
+    expect(p1).toMatchObject({ oauthTokens: "team-token", connectionId: null });
   });
 });
 

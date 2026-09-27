@@ -1,5 +1,4 @@
 // Who can read which mailbox in the Email tab:
-// - Personal: its owner.
 // - Project: members staffed on the project this term — automatic.
 // - Shared: people subscribed to a category (MailCategory) that holds it,
 //   while they're in that category's audience. Each reads it with their own
@@ -76,7 +75,6 @@ export async function readableMailAccounts(userId: string, request: Request) {
   const rows = await prisma.mailAccount.findMany({
     where: {
       OR: [
-        { scopeKey: `user:${userId}` },
         { kind: "Project", projectId: { in: projectIds } },
         { kind: "Shared", id: { in: sharedIds } },
       ],
@@ -116,12 +114,10 @@ export function mailAccountLabel(a: {
 
 // Connect targets, as carried through the OAuth round trip.
 export type ConnectTarget =
-  | { kind: "Personal" }
   | { kind: "Project"; projectId: string }
   | { kind: "Shared"; accountId: string };
 
 export function parseConnectTarget(raw: string | null): ConnectTarget | null {
-  if (raw === "personal") return { kind: "Personal" };
   const [kind, id] = (raw ?? "").split(":");
   if (kind === "project" && id) return { kind: "Project", projectId: id };
   if (kind === "shared" && id) return { kind: "Shared", accountId: id };
@@ -129,18 +125,16 @@ export function parseConnectTarget(raw: string | null): ConnectTarget | null {
 }
 
 export function serializeConnectTarget(t: ConnectTarget): string {
-  if (t.kind === "Personal") return "personal";
   return t.kind === "Project" ? `project:${t.projectId}` : `shared:${t.accountId}`;
 }
 
-// The address a connect must sign in as (null = any Google account), or
-// undefined when the user may not connect this target.
+// The address a connect must sign in as, or undefined when the user may not
+// connect this target.
 export async function expectedConnectAddress(
   userId: string,
   target: ConnectTarget,
   request: Request,
-): Promise<string | null | undefined> {
-  if (target.kind === "Personal") return null;
+): Promise<string | undefined> {
   if (target.kind === "Project") {
     const [projectIds, project] = await Promise.all([
       currentProjectIds(userId, request),

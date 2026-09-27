@@ -23,8 +23,6 @@ const DAY = 24 * HOUR;
 const ME = "Alex Chen <alex.chen@dali.dartmouth.edu>";
 
 const ACCOUNTS: EmailPageData["accounts"] = [
-  { id: "dali", kind: "Personal", address: "alex.chen@dali.dartmouth.edu", label: "alex.chen@dali.dartmouth.edu", projectId: null, connected: true, syncError: null },
-  { id: "gmail", kind: "Personal", address: "alexchen.dev@gmail.com", label: "alexchen.dev@gmail.com", projectId: null, connected: true, syncError: null },
   { id: "deserto", kind: "Project", address: "deserto@dali.dartmouth.edu", label: "Deserto", projectId: "p-deserto", connected: true, syncError: null },
   { id: "partners", kind: "Shared", address: "partners@dali.dartmouth.edu", label: "Partnerships", projectId: null, connected: true, syncError: null },
   { id: "hiring", kind: "Shared", address: "hiring@dali.dartmouth.edu", label: "Hiring", projectId: null, connected: true, syncError: "Sign-in expired. Reconnect this account." },
@@ -104,7 +102,7 @@ const THREADS: DemoThread[] = [
       </div>`,
     }),
   ]),
-  thread("dali", "t-figma-review", false, [
+  thread("deserto", "t-figma-review", false, [
     msg("m4", {
       from: "Sam Rivera <sam.rivera@dali.dartmouth.edu>",
       subject: "Figma review notes",
@@ -123,28 +121,6 @@ const THREADS: DemoThread[] = [
       subject: "Re: Figma review notes",
       date: ago(3 * HOUR + 20),
       text: "Perfect. Ping me when it's ready and I'll do a final look.",
-    }),
-  ]),
-  thread("dali", "t-reimbursement", true, [
-    msg("m7", {
-      from: "DALI Lab <systems@dali.dartmouth.edu>",
-      subject: "Your reimbursement was approved",
-      date: ago(7 * HOUR),
-      html: `<table width="100%" style="font-family:Arial,sans-serif;background:#f5f7fb;padding:24px"><tr><td>
-        <table width="480" align="center" style="background:#fff;border-radius:12px;padding:24px">
-          <tr><td><h2 style="margin:0 0 12px;color:#1f3cff">Reimbursement approved</h2>
-          <p>Your request for <b>$42.18</b> (team dinner supplies) was approved and will be paid in the next payroll cycle.</p>
-          <p><a href="https://example.com" style="background:#1f3cff;color:#fff;padding:10px 16px;border-radius:999px;text-decoration:none">View request</a></p>
-          </td></tr></table></td></tr></table>`,
-    }),
-  ]),
-  thread("gmail", "t-flight", false, [
-    msg("m8", {
-      from: "Delta <no-reply@delta.example>",
-      subject: "Your trip to San Francisco is confirmed",
-      date: ago(1 * DAY + 2 * HOUR),
-      to: "alexchen.dev@gmail.com",
-      text: "Confirmation #DL4K9Q\nBOS to SFO, Dec 18, 7:05 AM\nSeat 22C",
     }),
   ]),
   thread("partners", "t-invoice", false, [
@@ -170,23 +146,6 @@ const THREADS: DemoThread[] = [
       date: ago(2 * DAY),
       to: "deserto@dali.dartmouth.edu",
       text: "A moderate severity vulnerability was found in axios < 1.7.4. Upgrade to 1.7.4 or later.",
-    }),
-  ]),
-  thread("dali", "t-mentor", false, [
-    msg("m12", {
-      from: "Chris Ortiz <chris.ortiz@dali.dartmouth.edu>",
-      subject: "Mentorship check-in this week?",
-      date: ago(2 * DAY + 5 * HOUR),
-      text: "Hey! Want to grab coffee Thursday to talk about your term goals? Collis at 11 works for me.",
-    }),
-  ]),
-  thread("gmail", "t-newsletter", false, [
-    msg("m13", {
-      from: "Figma <news@figma.example>",
-      subject: "What's new in Dev Mode",
-      date: ago(4 * DAY),
-      to: "alexchen.dev@gmail.com",
-      html: `<div style="font-family:Inter,Arial,sans-serif;max-width:520px"><h1 style="font-size:22px">Dev Mode, now faster</h1><p>Inspect, compare changes and jump to code in fewer clicks.</p></div>`,
     }),
   ]),
   thread("partners", "t-thanks", false, [
@@ -227,7 +186,7 @@ const DRAFTS: EmailPageData["drafts"] = [
   },
   {
     id: "demo-draft-new",
-    accountId: "dali",
+    accountId: "deserto",
     threadId: null,
     to: "sam.rivera@dali.dartmouth.edu",
     cc: "",
@@ -300,7 +259,6 @@ export function demoEmailPage(request: Request): EmailPageData {
     ask: url.searchParams.get("ask") ?? "",
     aiEnabled: isAiEnabled(),
     isAdmin: true,
-    daliEmail: "alex.chen@dali.dartmouth.edu",
     accounts: ACCOUNTS,
     feed: { threads, errors: inbox && inbox !== "hiring" ? [] : ["hiring"] },
     unread,
