@@ -190,11 +190,6 @@ export function noteForOccurrence<T extends { meetingOccurrenceStart: Date | nul
   return notes.find((n) => n.meetingOccurrenceStart?.getTime() === occurrenceStart.getTime()) ?? null;
 }
 
-/** A meeting's page opened on one occurrence — its roster and notes. */
-export function meetingOccurrenceHref(meetingId: string, occurrenceStart: string): string {
-  return `/calendar/meeting/${meetingId}?occurrence=${encodeURIComponent(occurrenceStart)}`;
-}
-
 /** RRULE UTC "UNTIL" in basic format (YYYYMMDDTHHMMSSZ). */
 export function rruleUntilBasic(d: Date): string {
   return d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");

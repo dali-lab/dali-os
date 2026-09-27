@@ -17,7 +17,7 @@ import { requireAuth } from "~/lib/auth";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
-import { meetingOccurrenceHref } from "~/lib/meeting-occurrences";
+import { meetingOccurrenceHref } from "~/calendar/lib/meeting-href";
 import { parseOccurrenceParam } from "~/lib/scheduled-meeting";
 import { fullName, formatDateShort, formatDateTime } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";

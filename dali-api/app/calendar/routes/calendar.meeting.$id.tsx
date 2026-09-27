@@ -29,12 +29,8 @@ import { getUserRoles, isProjectMember } from "~/lib/roles";
 import { walletTokensConfigured } from "~/lib/wallet-token";
 import { fullName } from "~/lib/display";
 import { AttendanceChecklist, type AttendanceRow } from "~/components/AttendanceChecklist";
-import {
-  expandOccurrences,
-  meetingOccurrenceHref,
-  noteForOccurrence,
-  resolveOccurrence,
-} from "~/lib/meeting-occurrences";
+import { expandOccurrences, noteForOccurrence, resolveOccurrence } from "~/lib/meeting-occurrences";
+import { meetingOccurrenceHref } from "~/calendar/lib/meeting-href";
 import {
   ensureOccurrenceRoster,
   parseOccurrenceParam,
