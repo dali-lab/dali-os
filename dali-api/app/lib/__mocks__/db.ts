@@ -376,12 +376,17 @@ export const prisma = {
   },
   meetingAttendance: {
     findUnique: vi.fn(),
+    findFirst: vi.fn().mockResolvedValue(null),
     findMany: vi.fn().mockResolvedValue([]),
     create: vi.fn(),
+    upsert: vi.fn(),
     createMany: vi.fn().mockResolvedValue({ count: 0 }),
     update: vi.fn(),
     updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+  },
+  meetingException: {
+    findMany: vi.fn().mockResolvedValue([]),
   },
   meetingReminderLog: {
     create: vi.fn(),

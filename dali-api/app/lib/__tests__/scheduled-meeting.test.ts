@@ -40,6 +40,7 @@ import {
   cancelScheduledMeeting,
   createScheduledMeeting,
   isWithinCheckInWindow,
+  markMeetingAttendance,
   meetingIsUpcoming,
   setMeetingProject,
   trackExternalEventAsMeeting,
@@ -422,8 +423,9 @@ describe("setMeetingProject", () => {
     participantUserIds: ["u2"],
     status: "Confirmed",
     selectedAt: new Date("2026-09-10T15:00:00.000Z"),
+    createdAt: new Date("2026-09-01T12:00:00.000Z"),
     meetingType: null as string | null,
-    notePage: null as { id: string; kind: string } | null,
+    notePages: [] as { id: string; kind: string; meetingOccurrenceStart: Date | null }[],
     whiteboardPage: null as { id: string; kind: string } | null,
   };
 
@@ -437,7 +439,9 @@ describe("setMeetingProject", () => {
       ...baseMeeting,
       // Already had a type (a Core note), so no attendance backfill.
       meetingType: "Other",
-      notePage: { id: "note-1", kind: "FreeForm" },
+      notePages: [
+        { id: "note-1", kind: "FreeForm", meetingOccurrenceStart: new Date("2026-09-10T15:00:00.000Z") },
+      ],
     });
 
     const res = await setMeetingProject({
@@ -526,6 +530,7 @@ describe("createScheduledMeeting — attendance roster", () => {
     p.scheduledMeeting.create.mockResolvedValue({
       id: "m1",
       ownerCalendarEmail: "org@dali.dartmouth.edu",
+      createdAt: new Date("2026-09-01T12:00:00.000Z"),
     });
     p.meetingAttendance.createMany.mockResolvedValue({});
     mockNotify.mockResolvedValue({ inApp: 2 });
@@ -544,12 +549,15 @@ describe("createScheduledMeeting — attendance roster", () => {
     });
 
     expect(res.ok).toBe(true);
+    // Unscheduled, so the roster sits on the meeting's only key: its createdAt.
+    const occurrenceStart = new Date("2026-09-01T12:00:00.000Z");
     expect(p.meetingAttendance.createMany).toHaveBeenCalledWith({
       data: [
-        { scheduledMeetingId: "m1", userId: "u2" },
-        { scheduledMeetingId: "m1", userId: "u3" },
-        { scheduledMeetingId: "m1", userId: "org-1" },
+        { scheduledMeetingId: "m1", occurrenceStart, userId: "u2" },
+        { scheduledMeetingId: "m1", occurrenceStart, userId: "u3" },
+        { scheduledMeetingId: "m1", occurrenceStart, userId: "org-1" },
       ],
+      skipDuplicates: true,
     });
   });
 
@@ -759,7 +767,13 @@ describe("updateScheduledMeeting", () => {
     expect(res.ok).toBe(true);
     // u4 added, u3 removed, u2 + organizer retained (rows untouched).
     expect(p.meetingAttendance.createMany).toHaveBeenCalledWith({
-      data: [{ scheduledMeetingId: "m1", userId: "u4" }],
+      data: [
+        {
+          scheduledMeetingId: "m1",
+          occurrenceStart: new Date("2026-09-11T16:00:00.000Z"),
+          userId: "u4",
+        },
+      ],
       skipDuplicates: true,
     });
     expect(p.meetingAttendance.deleteMany).toHaveBeenCalledWith({
@@ -1092,8 +1106,15 @@ describe("attachMeetingNote", () => {
     participantUserIds: ["org-1", "u2"],
     isCoreMeeting: false,
     selectedAt: new Date("2026-09-10T15:00:00Z"),
+    createdAt: new Date("2026-09-01T12:00:00Z"),
+    durationMinutes: 60,
+    recurrenceRule: null,
+    externalEventId: null,
     status: "Confirmed",
-    notePage: null,
+    meetingType: null,
+    meetingTypeLabel: null,
+    projectId: null,
+    notePages: [],
     ...over,
   });
 
@@ -1101,6 +1122,10 @@ describe("attachMeetingNote", () => {
     mockIsCore.mockResolvedValue(false);
     p.scheduledMeeting.update.mockResolvedValue({});
     p.meetingAttendance.createMany.mockResolvedValue({ count: 0 });
+    // Earlier suites swap this model out for their own stub.
+    (prisma as unknown as { meetingException: unknown }).meetingException = {
+      findMany: vi.fn().mockResolvedValue([]),
+    };
   });
 
   it("404s a missing meeting", async () => {
@@ -1117,17 +1142,102 @@ describe("attachMeetingNote", () => {
     expect(p.scheduledMeeting.update).not.toHaveBeenCalled();
   });
 
-  it("409s when the meeting already has a note", async () => {
-    p.scheduledMeeting.findUnique.mockResolvedValue(meetingRow({ notePage: { id: "page-x" } }));
+  it("hands back the note an occurrence already has instead of making another", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(
+      meetingRow({
+        meetingType: "Other",
+        notePages: [
+          {
+            id: "page-x",
+            meetingOccurrenceStart: new Date("2026-09-10T15:00:00Z"),
+            workspaceType: "Lab",
+            workspaceId: null,
+            parentPageId: null,
+          },
+        ],
+      }),
+    );
+
+    const res = await attachMeetingNote({ meetingId: "m1", actorId: "u2" });
+
+    expect(res).toEqual({ ok: true, notePageId: "page-x" });
+    expect(createLabMeetingPage).not.toHaveBeenCalled();
+  });
+
+  it("gives a later occurrence of a recurring meeting its own note, filed beside the first", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(
+      meetingRow({
+        recurrenceRule: "FREQ=WEEKLY",
+        meetingType: "Other",
+        meetingTypeLabel: "Standup",
+        notePages: [
+          {
+            id: "page-week-1",
+            meetingOccurrenceStart: new Date("2026-09-10T15:00:00Z"),
+            workspaceType: "Lab",
+            workspaceId: null,
+            parentPageId: "folder-standups",
+          },
+        ],
+      }),
+    );
+    vi.mocked(prisma.page.findUnique).mockResolvedValue({
+      kind: "Folder",
+      archivedAt: null,
+      workspaceType: "Lab",
+      workspaceId: null,
+    } as never);
+
+    // A plain participant (not organizer/Core) opening week 3.
+    const res = await attachMeetingNote({
+      meetingId: "m1",
+      actorId: "u2",
+      occurrence: new Date("2026-09-24T15:00:00Z"),
+    });
+
+    expect(res).toEqual({ ok: true, notePageId: "page-lab" });
+    expect(createLabMeetingPage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        parentPageId: "folder-standups",
+        meetingNoteId: "m1",
+        meetingOccurrenceStart: new Date("2026-09-24T15:00:00Z"),
+      }),
+    );
+    // The meeting already knew its type; nothing to record.
+    expect(p.scheduledMeeting.update).not.toHaveBeenCalled();
+    expect(p.meetingAttendance.createMany).toHaveBeenCalledWith({
+      data: [
+        { scheduledMeetingId: "m1", occurrenceStart: new Date("2026-09-24T15:00:00Z"), userId: "org-1" },
+        { scheduledMeetingId: "m1", occurrenceStart: new Date("2026-09-24T15:00:00Z"), userId: "u2" },
+      ],
+      skipDuplicates: true,
+    });
+  });
+
+  it("keeps a later occurrence's note to people in the meeting", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(
+      meetingRow({
+        recurrenceRule: "FREQ=WEEKLY",
+        meetingType: "Other",
+        notePages: [
+          {
+            id: "page-week-1",
+            meetingOccurrenceStart: new Date("2026-09-10T15:00:00Z"),
+            workspaceType: "Lab",
+            workspaceId: null,
+            parentPageId: null,
+          },
+        ],
+      }),
+    );
 
     const res = await attachMeetingNote({
       meetingId: "m1",
-      actorId: "org-1",
-      meetingType: "Other",
-      meetingTypeLabel: "Sync",
+      actorId: "intruder",
+      occurrence: new Date("2026-09-24T15:00:00Z"),
     });
 
-    expect(res).toEqual({ ok: false, error: "This meeting already has a notes doc", status: 409 });
+    expect(res).toEqual({ ok: false, error: "Only people in this meeting can add its notes", status: 403 });
   });
 
   it("403s a non-organizer who isn't Core", async () => {
@@ -1172,10 +1282,11 @@ describe("attachMeetingNote", () => {
       where: { id: "m1" },
       data: { meetingType: "Other", meetingTypeLabel: "All-hands", projectId: null },
     });
+    const occurrenceStart = new Date("2026-09-10T15:00:00Z");
     expect(p.meetingAttendance.createMany).toHaveBeenCalledWith({
       data: [
-        { scheduledMeetingId: "m1", userId: "org-1" },
-        { scheduledMeetingId: "m1", userId: "u2" },
+        { scheduledMeetingId: "m1", occurrenceStart, userId: "org-1" },
+        { scheduledMeetingId: "m1", occurrenceStart, userId: "u2" },
       ],
       skipDuplicates: true,
     });
@@ -1273,7 +1384,7 @@ describe("trackExternalEventAsMeeting", () => {
     });
   });
 
-  it("binds a series to its master, so one note covers every occurrence", async () => {
+  it("binds a series to its master, so every occurrence finds the one meeting", async () => {
     const p = arrange();
 
     await trackExternalEventAsMeeting({ ...input, recurringEventId: "gcal-master" });
@@ -1291,8 +1402,16 @@ describe("trackExternalEventAsMeeting", () => {
     expect(p.meetingAttendance!.createMany).toHaveBeenCalledWith(
       expect.objectContaining({
         data: [
-          { scheduledMeetingId: "m-new", userId: "u-ally" },
-          { scheduledMeetingId: "m-new", userId: "core-1" },
+          {
+            scheduledMeetingId: "m-new",
+            occurrenceStart: new Date("2026-09-15T18:00:00.000Z"),
+            userId: "u-ally",
+          },
+          {
+            scheduledMeetingId: "m-new",
+            occurrenceStart: new Date("2026-09-15T18:00:00.000Z"),
+            userId: "core-1",
+          },
         ],
         skipDuplicates: true,
       }),
@@ -1398,5 +1517,72 @@ describe("isWithinCheckInWindow", () => {
     expect(
       isWithinCheckInWindow({ selectedAt: null, durationMinutes: 60, recurrenceRule: null }, []),
     ).toBe(false);
+  });
+});
+
+describe("markMeetingAttendance", () => {
+  const p = prisma as unknown as {
+    scheduledMeeting: { findUnique: ReturnType<typeof vi.fn> };
+    meetingAttendance: { findFirst: ReturnType<typeof vi.fn>; upsert: ReturnType<typeof vi.fn> };
+    timeEntry: { upsert: ReturnType<typeof vi.fn>; deleteMany: ReturnType<typeof vi.fn> };
+  };
+
+  beforeEach(() => {
+    p.scheduledMeeting.findUnique.mockResolvedValue({
+      id: "m1",
+      projectId: "proj-1",
+      organizerId: "org-1",
+      participantUserIds: ["u2"],
+      durationMinutes: 60,
+      selectedAt: new Date("2026-09-10T15:00:00Z"),
+      createdAt: new Date("2026-09-01T12:00:00Z"),
+      recurrenceRule: "FREQ=WEEKLY",
+      externalEventId: null,
+    });
+    p.meetingAttendance.upsert.mockResolvedValue({});
+    p.timeEntry.upsert.mockResolvedValue({});
+    (prisma as unknown as { meetingException: unknown }).meetingException = {
+      findMany: vi.fn().mockResolvedValue([]),
+    };
+  });
+
+  it("marks one week of a recurring meeting and logs that week's hours", async () => {
+    const week3 = new Date("2026-09-24T15:00:00Z");
+    const res = await markMeetingAttendance("m1", "u2", true, "org-1", week3);
+
+    expect(res).toEqual({ ok: true });
+    const key = { scheduledMeetingId: "m1", occurrenceStart: week3, userId: "u2" };
+    expect(p.meetingAttendance.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { scheduledMeetingId_occurrenceStart_userId: key } }),
+    );
+    expect(p.timeEntry.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { scheduledMeetingId_occurrenceStart_userId: key },
+        create: expect.objectContaining({
+          ...key,
+          source: "Meeting",
+          date: week3,
+          startTime: week3,
+          endTime: new Date("2026-09-24T16:00:00Z"),
+          hours: 1,
+        }),
+      }),
+    );
+  });
+
+  it("clears only that week's hours when marked absent", async () => {
+    const week2 = new Date("2026-09-17T15:00:00Z");
+    await markMeetingAttendance("m1", "u2", false, "org-1", week2);
+
+    expect(p.timeEntry.deleteMany).toHaveBeenCalledWith({
+      where: { scheduledMeetingId: "m1", occurrenceStart: week2, userId: "u2" },
+    });
+  });
+
+  it("refuses someone who isn't on the roster", async () => {
+    p.meetingAttendance.findFirst.mockResolvedValue(null);
+    const res = await markMeetingAttendance("m1", "stranger", true, "org-1");
+    expect(res).toEqual({ ok: false, error: "User was not invited to this meeting", status: 400 });
+    expect(p.meetingAttendance.upsert).not.toHaveBeenCalled();
   });
 });

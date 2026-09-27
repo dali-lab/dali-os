@@ -4,12 +4,14 @@
 import { prisma } from "~/lib/db";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { fullName } from "~/lib/display";
+import { noteForOccurrence } from "~/lib/meeting-occurrences";
+import { parseOccurrenceParam, resolveMeetingOccurrence } from "~/lib/scheduled-meeting";
 import { McpNotFoundError, McpForbiddenError } from "../../registry";
 
 export const GET_MEETING_DEF = {
   name: "get_meeting",
   description:
-    "Fetch full detail for a scheduled meeting: time, duration, URL, meeting type, Core flag, note page, and the attendance roster. Accessible to the organizer, Core members, project members, and any invited attendee.",
+    "Fetch full detail for a scheduled meeting: time, duration, URL, meeting type, Core flag, note page, and the attendance roster. A recurring meeting keeps a separate note and roster per occurrence; pass occurrenceStart to pick one (default: the first). Accessible to the organizer, Core members, project members, and any invited attendee.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -18,6 +20,10 @@ export const GET_MEETING_DEF = {
         minLength: 1,
         description: "ScheduledMeeting.id.",
       },
+      occurrenceStart: {
+        type: "string",
+        description: "For a recurring meeting, when the occurrence starts (ISO 8601).",
+      },
     },
     required: ["meetingId"],
     additionalProperties: false,
@@ -25,7 +31,7 @@ export const GET_MEETING_DEF = {
   requiredScope: "mcp:read" as const,
 };
 
-type Input = { meetingId: string };
+type Input = { meetingId: string; occurrenceStart?: string };
 
 export async function runGetMeeting(callerId: string, input: Input) {
   const meeting = await prisma.scheduledMeeting.findUnique({
@@ -39,15 +45,19 @@ export async function runGetMeeting(callerId: string, input: Input) {
       attendanceMode: true,
       projectId: true,
       selectedAt: true,
+      createdAt: true,
+      externalEventId: true,
+      participantUserIds: true,
       durationMinutes: true,
       status: true,
       isCoreMeeting: true,
       meetingUrl: true,
       recurrenceRule: true,
       organizer: { select: { firstName: true, lastName: true } },
-      notePage: { select: { id: true } },
+      notePages: { select: { id: true, meetingOccurrenceStart: true } },
       attendance: {
         select: {
+          occurrenceStart: true,
           userId: true,
           present: true,
           markedAt: true,
@@ -68,8 +78,14 @@ export async function runGetMeeting(callerId: string, input: Input) {
     meeting.projectId ? isProjectMember(callerId, meeting.projectId) : Promise.resolve(false),
   ]);
   const canManage = callerId === meeting.organizerId || core || projectMember;
-  const viewerRow = meeting.attendance.find((a) => a.userId === callerId);
-  if (!canManage && !viewerRow) throw new McpForbiddenError();
+  const invited =
+    meeting.participantUserIds.includes(callerId) ||
+    meeting.attendance.some((a) => a.userId === callerId);
+  if (!canManage && !invited) throw new McpForbiddenError();
+
+  const occurrence = await resolveMeetingOccurrence(meeting, parseOccurrenceParam(input.occurrenceStart));
+  const key = occurrence.originalStart.getTime();
+  const roster = meeting.attendance.filter((a) => a.occurrenceStart.getTime() === key);
 
   const typeLabel =
     meeting.meetingType === "Other"
@@ -80,7 +96,7 @@ export async function runGetMeeting(callerId: string, input: Input) {
     meetingId: meeting.id,
     title: meeting.title,
     status: meeting.status,
-    startsAt: meeting.selectedAt?.toISOString() ?? null,
+    startsAt: meeting.selectedAt ? occurrence.start.toISOString() : null,
     durationMinutes: meeting.durationMinutes,
     meetingUrl: meeting.meetingUrl,
     recurrenceRule: meeting.recurrenceRule,
@@ -90,9 +106,9 @@ export async function runGetMeeting(callerId: string, input: Input) {
     attendanceMode: meeting.attendanceMode,
     projectId: meeting.projectId,
     organizerName: fullName(meeting.organizer),
-    notePageId: meeting.notePage?.id ?? null,
+    notePageId: noteForOccurrence(meeting.notePages, occurrence.originalStart)?.id ?? null,
     canManage,
-    roster: meeting.attendance.map((a) => ({
+    roster: roster.map((a) => ({
       userId: a.userId,
       name: fullName(a.user) || a.user.daliEmail || a.userId,
       present: a.present,

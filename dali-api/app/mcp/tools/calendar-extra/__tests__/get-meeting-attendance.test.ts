@@ -88,6 +88,7 @@ describe("get_meeting_attendance", () => {
   it("returns attendance roster for Core caller", async () => {
     const mockAttendance = [
       {
+        occurrenceStart: new Date("2026-08-10T14:00:00Z"),
         userId: "u2",
         present: true,
         markedAt: new Date("2026-08-10T14:05:00Z"),
@@ -105,6 +106,11 @@ describe("get_meeting_attendance", () => {
       organizerId: "u-org",
       projectId: null,
       meetingType: "Lab",
+      selectedAt: new Date("2026-08-10T14:00:00Z"),
+      createdAt: new Date("2026-08-01T12:00:00Z"),
+      durationMinutes: 60,
+      recurrenceRule: null,
+      externalEventId: null,
       attendance: mockAttendance,
     });
     vi.mocked(isCore).mockResolvedValue(true);

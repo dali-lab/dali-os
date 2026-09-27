@@ -59,12 +59,20 @@ import {
   attachMeetingNote,
   attachMeetingWhiteboard,
   cancelScheduledMeeting,
+  parseOccurrenceParam,
+  resolveMeetingOccurrence,
   setMeetingProject,
   trackExternalEventAsMeeting,
   updateScheduledMeeting,
   type ScheduledMeetingScope,
 } from "~/lib/scheduled-meeting";
-import { rruleWithUntil, bareRrule } from "~/lib/meeting-occurrences";
+import {
+  rruleWithUntil,
+  bareRrule,
+  googleInstanceOriginalStart,
+  noteForOccurrence,
+  resolveOccurrence,
+} from "~/lib/meeting-occurrences";
 import { getZonedYMD, resolveUserTimeZone, zonedDayStartUtc } from "~/lib/timezone";
 import { fetchWindow, parseAnchor, parseView, viewWindow, weekWindow } from "~/calendar/lib/view-window";
 import type {
@@ -134,7 +142,9 @@ function externalLinks(meetingUrl?: string, htmlLink?: string): EventLinkDTO[] {
  * attach them to. A meeting DALI created records the Google event it made in
  * `externalEventId`; recurring series match on the master id, which every
  * expanded instance carries — so each occurrence of a weekly team meeting finds
- * the same meeting (and the same notes doc).
+ * the same meeting. Each instance then resolves to its own occurrence of it
+ * (resolveOccurrence), which is what picks that week's notes doc and whether
+ * that week is on the viewer's timesheet.
  *
  * Normally only meetings the viewer is part of are returned: seeing an event on
  * someone's shared calendar isn't grounds for reaching its attendance page.
@@ -187,39 +197,57 @@ async function meetingsForExternalEvents(
       externalEventId: true,
       isCoreMeeting: true,
       meetingType: true,
-      notePage: { select: { id: true } },
+      participantUserIds: true,
+      selectedAt: true,
+      createdAt: true,
+      durationMinutes: true,
+      recurrenceRule: true,
+      exceptions: {
+        select: { originalStart: true, overrideStart: true, overrideDurationMin: true, cancelled: true },
+      },
+      notePages: { select: { id: true, meetingOccurrenceStart: true } },
       whiteboardPage: { select: { id: true } },
-      timeEntries: { where: { userId }, select: { id: true }, take: 1 },
+      timeEntries: { where: { userId }, select: { occurrenceStart: true } },
     },
   });
-  const byExternalId = new Map<string, EventMeetingDTO>();
+  const byExternalId = new Map<string, (typeof meetings)[number]>();
   for (const m of meetings) {
-    if (!m.externalEventId) continue;
+    if (m.externalEventId) byExternalId.set(m.externalEventId, m);
+  }
+  // Re-key onto the ids the events themselves carry, so an instance of a
+  // recurring meeting resolves through its master — then down to its own
+  // occurrence.
+  const byEventId = new Map<string, EventMeetingDTO>();
+  for (const e of events) {
+    if (!e.eventId) continue;
+    const m =
+      byExternalId.get(e.eventId) ??
+      (e.recurringEventId ? byExternalId.get(e.recurringEventId) : undefined);
+    if (!m) continue;
+    const at = googleInstanceOriginalStart(e.eventId, e.recurringEventId) ?? new Date(e.startIso);
+    const occurrence = resolveOccurrence(m, m.exceptions, at);
+    const key = occurrence.originalStart.getTime();
     const isOrganizer = m.organizerId === userId;
-    byExternalId.set(m.externalEventId, {
+    byEventId.set(e.eventId, {
       meetingId: m.id,
-      notePageId: m.notePage?.id ?? null,
+      occurrenceStart: occurrence.originalStart.toISOString(),
+      notePageId: noteForOccurrence(m.notePages, occurrence.originalStart)?.id ?? null,
       whiteboardPageId: m.whiteboardPage?.id ?? null,
       hasType: m.meetingType != null,
-      onTimesheet: m.timeEntries.length > 0,
+      onTimesheet: m.timeEntries.some((t) => t.occurrenceStart?.getTime() === key),
       isCoreMeeting: m.isCoreMeeting,
       canMarkCoreMeeting,
       // Adding notes/whiteboards after the fact is the organizer's or Core's
       // call — the same authority the attach* helpers re-check server-side.
+      // Once the meeting has notes, anyone in it opens the next occurrence's.
       canAddNote: isOrganizer || canMarkCoreMeeting,
+      canOpenNote:
+        m.meetingType != null &&
+        m.notePages.length > 0 &&
+        (isOrganizer || canMarkCoreMeeting || m.participantUserIds.includes(userId)),
       canAddWhiteboard: isOrganizer || canMarkCoreMeeting,
       canInvite: isOrganizer || canMarkCoreMeeting,
     });
-  }
-  // Re-key onto the ids the events themselves carry, so an instance of a
-  // recurring meeting resolves through its master.
-  const byEventId = new Map<string, EventMeetingDTO>();
-  for (const e of events) {
-    if (!e.eventId) continue;
-    const hit =
-      byExternalId.get(e.eventId) ??
-      (e.recurringEventId ? byExternalId.get(e.recurringEventId) : undefined);
-    if (hit) byEventId.set(e.eventId, hit);
   }
   return byEventId;
 }
@@ -1077,7 +1105,12 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
     case "delete-time-entry":
       return { intent, id: get("id") };
     case "toggle-meeting-time-entry":
-      return { intent, meetingId: get("meetingId"), onTimesheet: asBool(get("onTimesheet")) };
+      return {
+        intent,
+        meetingId: get("meetingId"),
+        onTimesheet: asBool(get("onTimesheet")),
+        occurrence: get("occurrence") || undefined,
+      };
     case "set-meeting-core":
       return { intent, meetingId: get("meetingId"), isCoreMeeting: asBool(get("isCoreMeeting")) };
     case "set-meeting-project":
@@ -1106,6 +1139,7 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
       return {
         intent,
         meetingId: get("meetingId"),
+        occurrence: get("occurrence") || undefined,
         meetingType: get("meetingType") || undefined,
         meetingTypeLabel: get("meetingTypeLabel") || undefined,
         projectId: get("projectId") || undefined,
@@ -1355,7 +1389,8 @@ export async function loadCalendarData(
         note: true,
         startTime: true,
         endTime: true,
-        meeting: { select: { notePage: { select: { id: true } } } },
+        occurrenceStart: true,
+        meeting: { select: { notePages: { select: { id: true, meetingOccurrenceStart: true } } } },
       },
     });
 
@@ -1540,7 +1575,10 @@ export async function loadCalendarData(
       scheduledMeetingId: t.scheduledMeetingId,
       sourceEventId: t.sourceEventId,
       manualBlockId: null,
-      meetingNotePageId: t.meeting?.notePage?.id ?? null,
+      meetingNotePageId:
+        t.meeting && t.occurrenceStart
+          ? (noteForOccurrence(t.meeting.notePages, t.occurrenceStart)?.id ?? null)
+          : null,
       assignmentType: t.assignmentType,
       roleRefId: t.roleRefId,
       projectId: t.projectId,
@@ -1805,14 +1843,27 @@ export async function submitCalendarAction(request: Request) {
         // Logged against a real meeting: link it (so the meeting block shows a
         // role accent rather than a second block) and DON'T mirror to the
         // Timesheet calendar — the meeting is already on the real calendar.
-        await prisma.timeEntry.upsert({
-          where: {
-            scheduledMeetingId_userId: {
-              scheduledMeetingId: input.scheduledMeetingId,
-              userId,
-            },
+        const meeting = await prisma.scheduledMeeting.findUnique({
+          where: { id: input.scheduledMeetingId },
+          select: {
+            id: true,
+            selectedAt: true,
+            createdAt: true,
+            durationMinutes: true,
+            recurrenceRule: true,
+            externalEventId: true,
           },
-          create: { userId, source: "Meeting", scheduledMeetingId: input.scheduledMeetingId, ...common },
+        });
+        if (!meeting) return Response.json({ error: "Not found" }, { status: 404 });
+        const occurrence = await resolveMeetingOccurrence(meeting, common.startTime);
+        const key = {
+          scheduledMeetingId: meeting.id,
+          occurrenceStart: occurrence.originalStart,
+          userId,
+        };
+        await prisma.timeEntry.upsert({
+          where: { scheduledMeetingId_occurrenceStart_userId: key },
+          create: { ...key, source: "Meeting", ...common },
           update: common,
         });
         return null;
@@ -1911,6 +1962,8 @@ export async function submitCalendarAction(request: Request) {
           durationMinutes: true,
           selectedAt: true,
           createdAt: true,
+          recurrenceRule: true,
+          externalEventId: true,
           organizerId: true,
           participantUserIds: true,
           scopeType: true,
@@ -1922,13 +1975,15 @@ export async function submitCalendarAction(request: Request) {
       if (!(await canActOnMeeting(meeting, userId, request))) {
         return Response.json({ error: "You weren't invited to this meeting" }, { status: 403 });
       }
+      const occurrence = await resolveMeetingOccurrence(meeting, parseOccurrenceParam(input.occurrence));
+      const key = { scheduledMeetingId: meeting.id, occurrenceStart: occurrence.originalStart, userId };
       if (!input.onTimesheet) {
         // Clean up the Google mirror event (if any) before removing the row.
         const existing = await prisma.timeEntry.findUnique({
-          where: { scheduledMeetingId_userId: { scheduledMeetingId: meeting.id, userId } },
+          where: { scheduledMeetingId_occurrenceStart_userId: key },
         });
         if (existing) await removeTimeEntryFromGoogle(existing).catch(() => {});
-        await prisma.timeEntry.deleteMany({ where: { scheduledMeetingId: meeting.id, userId } });
+        await prisma.timeEntry.deleteMany({ where: key });
         return null;
       }
       if (!meeting.selectedAt) {
@@ -1937,9 +1992,9 @@ export async function submitCalendarAction(request: Request) {
           { status: 400 },
         );
       }
-      const startTime = meeting.selectedAt;
-      const endTime = new Date(startTime.getTime() + meeting.durationMinutes * 60_000);
-      const hours = meeting.durationMinutes / 60;
+      const startTime = occurrence.start;
+      const endTime = occurrence.end;
+      const hours = (endTime.getTime() - startTime.getTime()) / 3_600_000;
       // Same shape attendance produces (`markMeetingAttendance`), minus the
       // MeetingAttendance flip — logging your own hours isn't a claim that the
       // organizer marked you present. The role is left unset: the Timesheet
@@ -1949,11 +2004,10 @@ export async function submitCalendarAction(request: Request) {
       // copy on the Timesheet calendar would just duplicate it. Meeting-logged
       // time surfaces in DALI as a role accent on the meeting block instead.
       await prisma.timeEntry.upsert({
-        where: { scheduledMeetingId_userId: { scheduledMeetingId: meeting.id, userId } },
+        where: { scheduledMeetingId_occurrenceStart_userId: key },
         create: {
-          userId,
+          ...key,
           source: "Meeting",
-          scheduledMeetingId: meeting.id,
           projectId: meeting.projectId,
           date: startTime,
           hours,
@@ -2003,6 +2057,7 @@ export async function submitCalendarAction(request: Request) {
       const result = await attachMeetingNote({
         meetingId: input.meetingId,
         actorId: userId,
+        occurrence: parseOccurrenceParam(input.occurrence),
         meetingType: input.meetingType,
         meetingTypeLabel: input.meetingTypeLabel ?? null,
         projectId: input.projectId ?? null,

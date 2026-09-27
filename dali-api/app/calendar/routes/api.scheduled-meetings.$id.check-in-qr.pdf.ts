@@ -18,7 +18,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       organizerId: true,
       attendanceMode: true,
       status: true,
-      notePage: { select: { id: true } },
+      recurrenceRule: true,
+      notePages: { select: { id: true }, take: 1 },
     },
   });
   if (!meeting || meeting.attendanceMode !== "SelfCheckIn" || meeting.status === "Cancelled") {
@@ -29,10 +30,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!canShare) return new Response("Not found", { status: 404 });
 
   const origin = new URL(request.url).origin;
-  // Mirror the URL encoded into the on-page QR: note page when one exists,
-  // otherwise the standalone check-in surface.
-  const checkInUrl = meeting.notePage
-    ? `${origin}/documents/${meeting.notePage.id}`
+  // Mirror the URL encoded into the on-page QR: the note page when the meeting
+  // has just the one, otherwise the standalone check-in surface — a recurring
+  // meeting's printed code is reused every week, and each week has its own note.
+  const note = meeting.recurrenceRule ? undefined : meeting.notePages[0];
+  const checkInUrl = note
+    ? `${origin}/documents/${note.id}`
     : `${origin}/calendar/check-in/${meeting.id}`;
 
   const pdf = await renderCheckInQrPdf({

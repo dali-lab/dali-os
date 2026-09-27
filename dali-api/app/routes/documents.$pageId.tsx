@@ -5,6 +5,7 @@ import { Shapes } from "lucide-react";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import type { Route } from "./+types/documents.$pageId";
 import { prisma } from "~/lib/db";
+import { ensureOccurrenceRoster } from "~/lib/scheduled-meeting";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { parseSessionCookie } from "~/lib/cookies";
 import { fullName } from "~/lib/display";
@@ -126,6 +127,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       parentPageId: true,
       archivedAt: true,
       meetingNoteId: true,
+      meetingOccurrenceStart: true,
       iconEmoji: true,
       coverImageUrl: true,
       isTemplate: true,
@@ -251,6 +253,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   let attendance:
     | {
         meetingId: string;
+        /** The occurrence this note is for — its roster is that occurrence's. */
+        occurrenceStart: string;
         meetingLabel: string;
         /** The meeting's linked whiteboard, when it has one (whiteboard flag). */
         whiteboardPageId: string | null;
@@ -270,44 +274,56 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       select: {
         id: true,
         organizerId: true,
+        participantUserIds: true,
+        selectedAt: true,
+        createdAt: true,
+        recurrenceRule: true,
         meetingType: true,
         meetingTypeLabel: true,
         attendanceMode: true,
         whiteboardPage: { select: { id: true } },
-        attendance: {
-          select: {
-            userId: true,
-            present: true,
-            user: { select: { firstName: true, lastName: true, daliEmail: true } },
-          },
-        },
       },
     });
     if (meeting) {
+      const occurrenceStart = page.meetingOccurrenceStart ?? meeting.selectedAt ?? meeting.createdAt;
+      await ensureOccurrenceRoster(meeting, occurrenceStart);
+      const rows = await prisma.meetingAttendance.findMany({
+        where: { scheduledMeetingId: meeting.id, occurrenceStart },
+        select: {
+          userId: true,
+          present: true,
+          user: { select: { firstName: true, lastName: true, daliEmail: true } },
+        },
+      });
       const label =
         meeting.meetingType === "Other"
           ? meeting.meetingTypeLabel || "Other"
           : (meeting.meetingType ?? "Meeting");
       const canMark = canEdit || auth.user.sub === meeting.organizerId;
-      const viewerRow = meeting.attendance.find((a) => a.userId === auth.user.sub);
+      const viewerRow = rows.find((a) => a.userId === auth.user.sub);
       const selfCheckIn = meeting.attendanceMode === "SelfCheckIn";
 
       // Only the organizer/Core need the QR/link to display at the event —
       // everyone else just sees the check-in button below if they scanned it.
+      // A recurring meeting's code points at its check-in page instead of this
+      // week's note, since the same printed code is used every week.
       let checkInUrl: string | null = null;
       let checkInQrSvg: string | null = null;
       if (selfCheckIn && canMark) {
         const origin = new URL(request.url).origin;
-        checkInUrl = `${origin}/documents/${page.id}`;
+        checkInUrl = meeting.recurrenceRule
+          ? `${origin}/calendar/check-in/${meeting.id}`
+          : `${origin}/documents/${page.id}`;
         checkInQrSvg = await QRCode.toString(checkInUrl, { type: "svg", margin: 1, width: 180 });
       }
 
       attendance = {
         meetingId: meeting.id,
+        occurrenceStart: occurrenceStart.toISOString(),
         meetingLabel: label,
         whiteboardPageId: meeting.whiteboardPage?.id ?? null,
         canMark,
-        rows: meeting.attendance.map((a) => ({
+        rows: rows.map((a) => ({
           userId: a.userId,
           name: fullName(a.user) || a.user.daliEmail || a.userId,
           present: a.present,
@@ -446,6 +462,7 @@ export default function DocumentPage() {
       {attendance && (
         <AttendanceChecklist
           meetingId={attendance.meetingId}
+          occurrenceStart={attendance.occurrenceStart}
           meetingLabel={attendance.meetingLabel}
           canEdit={attendance.canMark}
           canScan={attendance.walletConfigured}

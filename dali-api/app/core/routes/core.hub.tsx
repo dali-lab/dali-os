@@ -13,7 +13,7 @@ import { fullName } from "~/lib/display";
 import { loadShellUser } from "~/lib/shell-user.server";
 import { resolveUserTimeZone } from "~/lib/timezone";
 import { fetchGeneralCalendarEvents } from "~/lib/general-calendar";
-import { expandOccurrences } from "~/lib/meeting-occurrences";
+import { expandOccurrences, noteForOccurrence } from "~/lib/meeting-occurrences";
 import { coreCalendarMeetingWhere } from "~/core/lib/core-calendar";
 import { listCalendarsForLink } from "~/lib/google-calendar";
 import { listAllGroups } from "~/lib/groups";
@@ -133,7 +133,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         organizerId: true,
         participantUserIds: true,
         organizer: { select: { firstName: true, lastName: true } },
-        notePage: { select: { id: true, title: true } },
+        notePages: { select: { id: true, meetingOccurrenceStart: true } },
         whiteboardPage: { select: { id: true } },
         meetingType: true,
         // The guest list and everyone's answer: an invite notification per
@@ -142,7 +142,7 @@ export async function loader({ request }: Route.LoaderArgs) {
           where: { kind: "MeetingInvite" },
           select: { id: true, recipientUserId: true, rsvp: true },
         },
-        timeEntries: { where: { userId: auth.user.sub }, select: { id: true }, take: 1 },
+        timeEntries: { where: { userId: auth.user.sub }, select: { occurrenceStart: true } },
         exceptions: {
           select: {
             originalStart: true,
@@ -284,12 +284,13 @@ export async function loader({ request }: Route.LoaderArgs) {
         })),
     ];
     const myInvite = m.notifications.find((n) => n.recipientUserId === auth.user.sub);
-    const meeting: EventMeetingDTO = {
+    const meetingFor = (originalStart: Date): EventMeetingDTO => ({
       meetingId: m.id,
-      notePageId: m.notePage?.id ?? null,
+      occurrenceStart: originalStart.toISOString(),
+      notePageId: noteForOccurrence(m.notePages, originalStart)?.id ?? null,
       whiteboardPageId: m.whiteboardPage?.id ?? null,
       hasType: m.meetingType != null,
-      onTimesheet: m.timeEntries.length > 0,
+      onTimesheet: m.timeEntries.some((t) => t.occurrenceStart?.getTime() === originalStart.getTime()),
       isCoreMeeting: true,
       // Everything on this calendar is here *because* it's a Core meeting, so
       // clearing the flag from here would delete the block you clicked.
@@ -297,13 +298,15 @@ export async function loader({ request }: Route.LoaderArgs) {
       // This page is Core-gated, so every viewer may add a note (the organizer
       // and Core are exactly who attachMeetingNote allows).
       canAddNote: true,
+      canOpenNote: m.meetingType != null && m.notePages.length > 0,
       canAddWhiteboard: true,
       canInvite: true,
       // The toggles are the Events page's action; the Core hub only shows them.
       actionPath: "/calendar",
-    };
+    });
     for (const occ of expandOccurrences(m, m.exceptions, scanStart, scanEnd)) {
       const id = `${m.id}:${occ.originalStart.toISOString()}`;
+      const meeting = meetingFor(occ.originalStart);
       if (occ.start < gridEnd && occ.end > gridStart) {
         events.push({
           id,
@@ -334,7 +337,7 @@ export async function loader({ request }: Route.LoaderArgs) {
           id,
           title: m.title,
           startAt: occ.start.toISOString(),
-          notePageId: m.notePage?.id ?? null,
+          notePageId: meeting.notePageId,
         });
       }
     }

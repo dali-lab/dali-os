@@ -184,9 +184,13 @@ export type RsvpStatus = "Accepted" | "Declined" | "Tentative" | "Pending";
 /** The DALI meeting behind a Google event, matched on ScheduledMeeting
  *  .externalEventId. Carries what the detail popover offers beyond the Google
  *  event itself: the meeting page, its notes doc, and the two per-viewer
- *  toggles. */
+ *  toggles — all for the one occurrence this event is. */
 export type EventMeetingDTO = {
   meetingId: string;
+  /** Which occurrence of the meeting this event is (its original start, ISO).
+   *  Notes, attendance and logged hours are all kept per occurrence. */
+  occurrenceStart: string;
+  /** This occurrence's notes doc. */
   notePageId: string | null;
   /** The meeting's linked whiteboard, when it has one (whiteboard flag). */
   whiteboardPageId: string | null;
@@ -202,6 +206,9 @@ export type EventMeetingDTO = {
    *  that doesn't have one yet — gates the popover's "Add meeting notes"
    *  affordance. Moot once `notePageId` is set. */
   canAddNote: boolean;
+  /** The meeting already keeps notes, so this occurrence's doc can be made on
+   *  the spot — by anyone in the meeting, with no type to pick. */
+  canOpenNote: boolean;
   /** Same authority as canAddNote, for the "Add whiteboard" affordance. Moot
    *  once `whiteboardPageId` is set. */
   canAddWhiteboard: boolean;

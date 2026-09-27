@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { useFetcher } from "react-router";
-import { Plus, X } from "lucide-react";
+import { useFetcher, useNavigate } from "react-router";
+import { FileText, Plus, X } from "lucide-react";
 import {
   useMeetingNote,
   meetingNoteValid,
@@ -24,15 +24,59 @@ const fieldClass =
 const labelClass =
   "block text-[11px] font-bold text-muted-foreground uppercase tracking-[0.08em] mb-2";
 
+/** "Meeting note" for an occurrence of a meeting that already keeps notes but
+ *  has none for this occurrence yet: makes that occurrence's doc (the meeting's
+ *  type and filing are already known, so there's nothing to ask) and opens it. */
+export function OpenMeetingNoteButton({
+  meetingId,
+  occurrenceStart,
+  actionPath,
+  className,
+}: {
+  meetingId: string;
+  occurrenceStart: string;
+  actionPath?: string;
+  className?: string;
+}) {
+  const fetcher = useFetcher<{ ok?: boolean; error?: string; notePageId?: string }>();
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (fetcher.state === "idle" && fetcher.data?.notePageId) {
+      navigate(`/documents/${fetcher.data.notePageId}`);
+    }
+  }, [fetcher.state, fetcher.data, navigate]);
+  return (
+    <>
+      <button
+        type="button"
+        className={className}
+        disabled={fetcher.state !== "idle"}
+        onClick={() =>
+          fetcher.submit(
+            { intent: "add-meeting-note", meetingId, occurrence: occurrenceStart },
+            { method: "post", ...(actionPath ? { action: actionPath } : {}) },
+          )
+        }
+      >
+        <FileText className="h-3.5 w-3.5 text-os-grey" /> Meeting note
+      </button>
+      {fetcher.data?.error && <p className="w-full text-[12px] text-red-600">{fetcher.data.error}</p>}
+    </>
+  );
+}
+
 /** The popover's "Add meeting notes" button + the modal it opens. Rendered only
  *  when the meeting has no note yet and the viewer may add one. */
 export function AddMeetingNoteButton({
   meetingId,
+  occurrenceStart,
   isCoreMeeting,
   actionPath,
   className,
 }: {
   meetingId: string;
+  /** Which occurrence the first note is for (ISO); omitted = the first. */
+  occurrenceStart?: string;
   isCoreMeeting: boolean;
   /** Route the action posts to; defaults to the current route. */
   actionPath?: string;
@@ -47,6 +91,7 @@ export function AddMeetingNoteButton({
       {open && (
         <AddMeetingNoteModal
           meetingId={meetingId}
+          occurrenceStart={occurrenceStart}
           isCoreMeeting={isCoreMeeting}
           actionPath={actionPath}
           onClose={() => setOpen(false)}
@@ -58,11 +103,13 @@ export function AddMeetingNoteButton({
 
 function AddMeetingNoteModal({
   meetingId,
+  occurrenceStart,
   isCoreMeeting,
   actionPath,
   onClose,
 }: {
   meetingId: string;
+  occurrenceStart?: string;
   isCoreMeeting: boolean;
   actionPath?: string;
   onClose: () => void;
@@ -133,6 +180,7 @@ function AddMeetingNoteModal({
       meetingId,
       meetingType: String(payload.meetingType ?? "Other"),
     };
+    if (occurrenceStart) fields.occurrence = occurrenceStart;
     if (payload.meetingTypeLabel) fields.meetingTypeLabel = String(payload.meetingTypeLabel);
     if (payload.projectId) fields.projectId = String(payload.projectId);
     if (payload.noteLocation) fields.noteLocation = JSON.stringify(payload.noteLocation);

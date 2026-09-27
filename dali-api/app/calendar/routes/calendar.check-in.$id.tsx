@@ -3,6 +3,7 @@ import QRCode from "qrcode";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
+import { resolveMeetingOccurrence } from "~/lib/scheduled-meeting";
 import { CheckInPanel } from "~/components/CheckInPanel";
 import { redirectToLogin } from "~/lib/login-next";
 import type { Route } from "./+types/calendar.check-in.$id";
@@ -36,9 +37,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       organizerId: true,
       attendanceMode: true,
       status: true,
+      participantUserIds: true,
+      selectedAt: true,
+      createdAt: true,
+      durationMinutes: true,
+      recurrenceRule: true,
+      externalEventId: true,
       attendance: {
         where: { userId: auth.user.sub },
-        select: { present: true },
+        select: { present: true, occurrenceStart: true },
       },
     },
   });
@@ -46,7 +53,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw new Response("Not found", { status: 404 });
   }
 
-  const viewerRow = meeting.attendance[0];
+  // Check-in is always into the occurrence happening now.
+  const now = await resolveMeetingOccurrence(meeting, new Date());
+  const viewerRow = meeting.attendance.find(
+    (a) => a.occurrenceStart.getTime() === now.originalStart.getTime(),
+  );
+  const invited =
+    meeting.attendance.length > 0 ||
+    meeting.organizerId === auth.user.sub ||
+    meeting.participantUserIds.includes(auth.user.sub);
   const canShare = (await isCore(auth.user.sub)) || auth.user.sub === meeting.organizerId;
 
   let checkInUrl: string | null = null;
@@ -60,7 +75,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   return {
     meetingId: meeting.id,
     meetingLabel: meeting.title,
-    viewerInvited: viewerRow !== undefined,
+    viewerInvited: invited,
     viewerPresent: viewerRow?.present ?? false,
     checkInUrl,
     checkInQrSvg,

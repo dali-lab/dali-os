@@ -4,7 +4,7 @@
 
 import { prisma } from "~/lib/db";
 import { isCore, isProjectMember } from "~/lib/roles";
-import { markMeetingAttendance } from "~/lib/scheduled-meeting";
+import { markMeetingAttendance, parseOccurrenceParam } from "~/lib/scheduled-meeting";
 import { McpNotFoundError, McpForbiddenError, McpInvalidError } from "../../registry";
 
 export const MARK_MEETING_ATTENDANCE_DEF = {
@@ -28,6 +28,11 @@ export const MARK_MEETING_ATTENDANCE_DEF = {
         type: "boolean",
         description: "true = present, false = absent.",
       },
+      occurrenceStart: {
+        type: "string",
+        description:
+          "For a recurring meeting, when the occurrence to mark starts (ISO 8601). Omit for a one-off meeting or its first occurrence.",
+      },
     },
     required: ["meetingId", "userId", "present"],
     additionalProperties: false,
@@ -35,7 +40,7 @@ export const MARK_MEETING_ATTENDANCE_DEF = {
   requiredScope: "mcp:write" as const,
 };
 
-type Input = { meetingId: string; userId: string; present: boolean };
+type Input = { meetingId: string; userId: string; present: boolean; occurrenceStart?: string };
 
 export async function runMarkMeetingAttendance(callerId: string, input: Input) {
   const meeting = await prisma.scheduledMeeting.findUnique({
@@ -54,7 +59,13 @@ export async function runMarkMeetingAttendance(callerId: string, input: Input) {
   const canEdit = callerId === meeting.organizerId || core || member;
   if (!canEdit) throw new McpForbiddenError();
 
-  const result = await markMeetingAttendance(meeting.id, input.userId, input.present, callerId);
+  const result = await markMeetingAttendance(
+    meeting.id,
+    input.userId,
+    input.present,
+    callerId,
+    parseOccurrenceParam(input.occurrenceStart),
+  );
   if (!result.ok) {
     const status = result.status ?? 400;
     if (status === 404) throw new McpNotFoundError(result.error ?? "Not found");

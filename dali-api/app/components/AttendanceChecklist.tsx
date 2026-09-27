@@ -32,6 +32,7 @@ const COLLAPSE_OVER = 8;
 // feeds the Timesheet tab. See app/calendar/routes/api.scheduled-meetings.$id.attendance.ts.
 export function AttendanceChecklist({
   meetingId,
+  occurrenceStart,
   meetingLabel,
   canEdit,
   canNote = false,
@@ -41,6 +42,9 @@ export function AttendanceChecklist({
   attendees,
 }: {
   meetingId: string;
+  /** Which occurrence this roster is (ISO original start) — each occurrence of
+   *  a recurring meeting keeps its own attendance. */
+  occurrenceStart: string;
   meetingLabel: string;
   canEdit: boolean;
   /** Whether this viewer may read and write absence notes. Narrower than
@@ -75,7 +79,7 @@ export function AttendanceChecklist({
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, present: next }),
+        body: JSON.stringify({ userId, present: next, occurrence: occurrenceStart }),
       });
       if (!res.ok) {
         // Revert on failure.
@@ -122,6 +126,7 @@ export function AttendanceChecklist({
             {canNote && (!r.present || r.absenceNote) && (
               <AbsenceNoteButton
                 meetingId={meetingId}
+                occurrenceStart={occurrenceStart}
                 userId={r.userId}
                 name={r.name}
                 note={r.absenceNote ?? null}

@@ -5,7 +5,7 @@ import {
   resolveMonthWindow,
   toMonthEvent,
 } from "~/lib/week-events";
-import { expandOccurrences } from "~/lib/meeting-occurrences";
+import { expandOccurrences, noteForOccurrence } from "~/lib/meeting-occurrences";
 import { resolveUserTimeZone } from "~/lib/timezone";
 import type { TimelineEpic } from "~/projects/components/EpicsTimeline";
 
@@ -77,7 +77,7 @@ export async function buildProjectCalendar(opts: {
       selectedAt: true,
       durationMinutes: true,
       recurrenceRule: true,
-      notePage: { select: { id: true } },
+      notePages: { select: { id: true, meetingOccurrenceStart: true } },
       exceptions: {
         select: {
           originalStart: true,
@@ -99,14 +99,15 @@ export async function buildProjectCalendar(opts: {
       new Date(gridEnd.getTime() + OCCURRENCE_GUARD_MS),
     );
     for (const occ of occurrences) {
+      const note = noteForOccurrence(m.notePages, occ.originalStart);
       const mapped = toMonthEvent(
         {
           id: `${m.id}:${occ.originalStart.toISOString()}`,
           kind: "meeting",
           label: m.title,
           start: occ.start,
-          // Clicking the chip opens the meeting's notes when it has any.
-          href: m.notePage ? `/documents/${m.notePage.id}` : null,
+          // Clicking the chip opens that occurrence's notes when it has any.
+          href: note ? `/documents/${note.id}` : null,
         },
         dayIndexByKey,
         timeZone,
