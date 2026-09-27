@@ -369,7 +369,7 @@ export function Composer({
             }}
           />
         )}
-        {account && account.kind !== "Personal" && (
+        {account && (
           <Toggle
             label="Share draft with team"
             checked={shared}

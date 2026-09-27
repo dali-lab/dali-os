@@ -339,11 +339,7 @@ export default function EmailPage() {
                   <a
                     className={buttonClasses("secondary", "sm")}
                     href={connectHref(
-                      openInbox.kind === "Shared"
-                        ? `shared:${openInbox.id}`
-                        : openInbox.kind === "Project"
-                          ? `project:${openInbox.projectId}`
-                          : "personal",
+                      openInbox.kind === "Shared" ? `shared:${openInbox.id}` : `project:${openInbox.projectId}`,
                     )}
                   >
                     Sign in

@@ -109,10 +109,9 @@ async function loadLiveEmailPage(request: Request, userId: string, roles: UserRo
   const searchAccounts = url.searchParams.get("in")?.split(",").filter(Boolean) ?? [];
   const selectedRef = parseThreadRef(url.searchParams.get("t"));
 
-  const [accounts, projectIds, me] = await Promise.all([
+  const [accounts, projectIds] = await Promise.all([
     readableMailAccounts(userId, request),
     currentProjectIds(userId, request),
-    prisma.user.findUnique({ where: { id: userId }, select: { daliEmail: true } }),
   ]);
   const connected = accounts.filter((a) => a.oauthTokens);
   const feedAccounts = connected.filter((a) =>
@@ -158,7 +157,6 @@ async function loadLiveEmailPage(request: Request, userId: string, roles: UserRo
     ask: url.searchParams.get("ask") ?? "",
     aiEnabled: isAiEnabled(),
     isAdmin: roles.isAdmin,
-    daliEmail: me?.daliEmail ?? null,
     accounts: accounts.map((a) => ({
       id: a.id,
       kind: a.kind,
@@ -307,8 +305,6 @@ export async function submitEmailAction(request: Request) {
     if (account.kind === "Shared") {
       // Only your own sign-in; teammates keep theirs.
       await prisma.mailAccountConnection.deleteMany({ where: { accountId: account.id, userId } });
-    } else if (account.kind === "Personal") {
-      await prisma.mailAccount.delete({ where: { id: account.id } });
     } else {
       await prisma.mailAccount.update({
         where: { id: account.id },
@@ -351,7 +347,7 @@ export async function submitEmailAction(request: Request) {
       bcc: field(form, "bcc"),
       subject: field(form, "subject"),
       body: String(form.get("body") ?? ""),
-      shared: account.kind !== "Personal" && form.get("shared") === "on",
+      shared: form.get("shared") === "on",
       updatedById: userId,
     };
     const draftId = field(form, "draftId");
@@ -378,14 +374,8 @@ export async function submitEmailAction(request: Request) {
         references = last?.references;
         if (!subject && last) subject = /^re:/i.test(last.subject) ? last.subject : `Re: ${last.subject}`;
       }
-      const sender =
-        account.kind === "Personal"
-          ? await prisma.user
-              .findUnique({ where: { id: userId }, select: { firstName: true, lastName: true } })
-              .then((u) => (u ? `${u.firstName} ${u.lastName}`.trim() : null))
-          : mailAccountLabel(account);
       await sendMessage(token, {
-        from: fromHeader(sender, account.address),
+        from: fromHeader(mailAccountLabel(account), account.address),
         to: data.to,
         cc: data.cc,
         bcc: data.bcc,
