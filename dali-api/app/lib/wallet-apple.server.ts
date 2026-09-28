@@ -3,6 +3,7 @@ import path from "node:path";
 import { PKPass } from "passkit-generator";
 import { prisma } from "~/lib/db";
 import { walletTokensConfigured, signWalletToken, ensureWalletSecret, signWalletAuthToken } from "~/lib/wallet-token";
+import { resolveWalletPassFields } from "~/lib/wallet-pass-fields.server";
 import { getApiBaseUrl } from "~/lib/app-env";
 
 // Apple Wallet (.pkpass) pass generator for DALI membership passes. Signs passes
@@ -45,21 +46,16 @@ export function walletAppleConfigured(): boolean {
  * Throws if the user is not found or env is misconfigured.
  */
 export async function buildAppleWalletPass(userId: string): Promise<Buffer> {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: {
-      firstName: true,
-      lastName: true,
-      classYear: true,
-      walletPassUpdatedAt: true,
-      daliMember: { select: { onboardedAt: true } },
-    },
-  });
-  if (!user) throw new Error(`User not found: ${userId}`);
+  // Shared with the Google pass so both platforms show the same face.
+  const fields = await resolveWalletPassFields(userId); // throws if user not found
 
   // Baseline the update tag on first download so the web-service
   // "passes updated since" query always has a non-null timestamp to compare.
-  if (!user.walletPassUpdatedAt) {
+  const existing = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { walletPassUpdatedAt: true },
+  });
+  if (!existing?.walletPassUpdatedAt) {
     await prisma.user.update({
       where: { id: userId },
       data: { walletPassUpdatedAt: new Date() },
@@ -83,8 +79,10 @@ export async function buildAppleWalletPass(userId: string): Promise<Buffer> {
       organizationName: "DALI Lab",
       description: "DALI Membership",
       serialNumber: userId,
-      // Official DALI blue (#1E5779) — fills the whole card face (no strip).
-      backgroundColor: "rgb(30, 87, 121)",
+      logoText: "Digital Applied Learning and Innovation Lab",
+      // Deep DALI navy (#0C2C47) — matches the block-band strip so it blends
+      // into the card face.
+      backgroundColor: "rgb(12, 44, 71)",
       foregroundColor: "rgb(255, 255, 255)",
       labelColor: "rgb(199, 218, 231)",
       // webServiceURL + authenticationToken enable Apple's PassKit web service:
@@ -95,25 +93,30 @@ export async function buildAppleWalletPass(userId: string): Promise<Buffer> {
     },
   );
 
-  // storeCard: flat-color membership card with name + secondary fields below
-  // (setting the type resets the field arrays).
+  // storeCard: membership card with the block-band strip up top and the member
+  // name + field grid below (setting the type resets the field arrays).
   pass.type = "storeCard";
 
-  // Primary field: member name, shown prominently on the card face.
-  pass.primaryFields.push({ key: "member", value: `${user.firstName} ${user.lastName}` });
+  // Primary field: member name, shown prominently over the strip's navy base.
+  pass.primaryFields.push({ key: "member", value: fields.name });
 
-  // Secondary fields: onboarding-based "member since" + Dartmouth class year.
-  // Both are staleness-proof (they don't change term to term), so a static pass
-  // stays correct; each is omitted when we don't have the value.
-  if (user.daliMember?.onboardedAt) {
-    pass.secondaryFields.push({
-      key: "memberSince",
-      label: "MEMBER SINCE",
-      value: String(user.daliMember.onboardedAt.getFullYear()),
-    });
+  // Field grid mirroring the card design: Domain + Class on the first row
+  // (secondary), Member since + Core on the second (auxiliary). Every cell is
+  // omitted when we don't have the value, so a partially-onboarded member still
+  // gets a valid pass. The values here are staleness-proof (they don't change
+  // term to term), so a static pass stays correct.
+  if (fields.domainCode) {
+    pass.secondaryFields.push({ key: "domain", label: "DOMAIN", value: fields.domainCode });
   }
-  if (user.classYear) {
-    pass.secondaryFields.push({ key: "class", label: "CLASS", value: `'${String(user.classYear).slice(-2)}` });
+  if (fields.classYearShort) {
+    pass.secondaryFields.push({ key: "class", label: "CLASS", value: fields.classYearShort });
+  }
+  if (fields.memberSinceTerm) {
+    pass.auxiliaryFields.push({ key: "memberSince", label: "MEMBER SINCE", value: fields.memberSinceTerm });
+  }
+  // Core badge: shown only for Core members, hidden otherwise.
+  if (fields.isCore) {
+    pass.auxiliaryFields.push({ key: "core", label: "ROLE", value: "Core" });
   }
 
   // Barcode: signed member token as a QR code.
@@ -121,14 +124,19 @@ export async function buildAppleWalletPass(userId: string): Promise<Buffer> {
   const token = signWalletToken(userId, memberSecret);
   pass.setBarcodes({ format: "PKBarcodeFormatQR", message: token, messageEncoding: "iso-8859-1" });
 
-  // Images: white icon/logo for the dark card. No strip image — the flat
-  // backgroundColor fills the whole card face.
+  // Images: white icon/logo for the dark card, plus the block-band strip. On
+  // storeCard the strip renders below the logo row with the primary field (name)
+  // overlaid on its lower-left, so the strip art keeps the block band up top and
+  // navy along the bottom for the name to read against (see generate-wallet-pattern.mjs).
   const iconBuf = readBrandAsset("icon-white.png");
   const logoBuf = readBrandAsset("logo-white.png");
   pass.addBuffer("icon.png", iconBuf);
   pass.addBuffer("icon@2x.png", iconBuf);
   pass.addBuffer("logo.png", logoBuf);
   pass.addBuffer("logo@2x.png", logoBuf);
+  pass.addBuffer("strip.png", readBrandAsset("wallet-strip.png"));
+  pass.addBuffer("strip@2x.png", readBrandAsset("wallet-strip-2x.png"));
+  pass.addBuffer("strip@3x.png", readBrandAsset("wallet-strip-3x.png"));
 
   return pass.getAsBuffer();
 }

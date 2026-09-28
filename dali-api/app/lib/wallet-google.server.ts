@@ -14,12 +14,12 @@
 // Wallet app.
 
 import crypto from "node:crypto";
-import { prisma } from "~/lib/db";
 import {
   walletTokensConfigured,
   signWalletToken,
   ensureWalletSecret,
 } from "~/lib/wallet-token";
+import { resolveWalletPassFields } from "~/lib/wallet-pass-fields.server";
 
 /** base64url-encode a string or Buffer. */
 function b64url(input: string | Buffer): string {
@@ -65,16 +65,8 @@ export async function buildGoogleWalletSaveUrl(
 
   const classId = `${issuerId}.dali_membership`;
 
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: {
-      firstName: true,
-      lastName: true,
-      classYear: true,
-      daliMember: { select: { onboardedAt: true } },
-    },
-  });
-  if (!user) throw new Error(`User not found: ${userId}`);
+  // Shared with the Apple pass so both platforms show the same face.
+  const fields = await resolveWalletPassFields(userId); // throws if user not found
 
   const memberSecret = await ensureWalletSecret(userId);
   const barcodeValue = signWalletToken(userId, memberSecret);
@@ -89,18 +81,21 @@ export async function buildGoogleWalletSaveUrl(
 
   const genericClass = { id: classId };
 
-  // Onboarding-based "member since" + class year, mirroring the Apple pass.
-  // Each omitted when unknown; both are staleness-proof.
+  // Field grid mirroring the Apple pass and the card design: Domain, Class,
+  // Member since (onboarding term), and a Core badge. Each omitted when unknown;
+  // all are staleness-proof (they don't change term to term).
   const textModulesData: Array<{ id: string; header: string; body: string }> = [];
-  if (user.daliMember?.onboardedAt) {
-    textModulesData.push({
-      id: "member_since",
-      header: "Member since",
-      body: String(user.daliMember.onboardedAt.getFullYear()),
-    });
+  if (fields.domainCode) {
+    textModulesData.push({ id: "domain", header: "Domain", body: fields.domainCode });
   }
-  if (user.classYear) {
-    textModulesData.push({ id: "class", header: "Class", body: `'${String(user.classYear).slice(-2)}` });
+  if (fields.classYearShort) {
+    textModulesData.push({ id: "class", header: "Class", body: fields.classYearShort });
+  }
+  if (fields.memberSinceTerm) {
+    textModulesData.push({ id: "member_since", header: "Member since", body: fields.memberSinceTerm });
+  }
+  if (fields.isCore) {
+    textModulesData.push({ id: "role", header: "Role", body: "Core" });
   }
 
   const genericObject = {
@@ -111,13 +106,13 @@ export async function buildGoogleWalletSaveUrl(
       defaultValue: { language: "en-US", value: "DALI Lab" },
     },
     header: {
-      defaultValue: {
-        language: "en-US",
-        value: `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim(),
-      },
+      defaultValue: { language: "en-US", value: fields.name },
     },
-    hexBackgroundColor: "#1E5779",
+    // Deep DALI navy — matches the Apple pass and the hero block band.
+    hexBackgroundColor: "#0C2C47",
     logo: { sourceUri: { uri: `${origin}/logo-white.png` } },
+    // Colorful DALI block band as the full-width hero banner.
+    heroImage: { sourceUri: { uri: `${origin}/wallet-hero.png` } },
     textModulesData,
     barcode: { type: "QR_CODE", value: barcodeValue },
   };
