@@ -95,6 +95,7 @@ The `desktop/` directory is a Tauri v2 macOS shell — a thin native wrapper aro
 
 - Don't add features, refactors, or abstractions beyond what the issue asks for.
 - Don't add comments explaining what well-named code does. Only comment the non-obvious *why*.
+- Prefer encoding a behavior in a test over describing it in a verbose comment. If code must behave a specific way, write a test that asserts it — the test documents and enforces the behavior; a long comment does neither.
 - Don't introduce new dependencies to solve something the existing stack already handles.
 - Adhere to DRY principles, add what is needed for the issue and not more
 - **Reuse existing components before building a new one.** Search `app/components/` (and `app/components/ui/`) for what you need first — the app already ships shared primitives: `SearchInput` (search/filter boxes), `Select` / `Combobox` / `Menu` / `ContextMenu` (`ui/floating`), `Checkbox` / `Radio` / `Toggle`, `DateField`, `Modal`, and `useDialog()` / `useToast()` / `useConfirmSubmit()` for confirm/alert/prompt. Extend the shared component (e.g. add a size or variant prop) rather than hand-rolling a one-off — one-offs drift from the design system and are exactly what causes visual inconsistency. Native form controls (`<input>`, `<select>`, `window.confirm`) are not the convention for new UI.
