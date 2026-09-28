@@ -86,6 +86,34 @@ The same cert/key double as the APNs credential for silent pass updates
 
 ---
 
+## Releasing a design change to already-installed passes
+
+New downloads always get the current design. Passes **already on phones** need a
+one-time push per design change, because the two platforms behave differently:
+
+- **Apple** re-fetches the whole `.pkpass` when we send an APNs update, so it
+  restyles in place.
+- **Google** save-JWTs never update an object Google already stored — re-tapping
+  "Add to Google Wallet" is a no-op and deleting + re-adding shows the old design
+  again. The only fix is a REST `patch` of each existing object.
+
+Both are handled by one script:
+
+```
+npx tsx scripts/wallet-broadcast-restyle.ts           # dry run (counts only)
+npx tsx scripts/wallet-broadcast-restyle.ts --commit  # patch Google + re-push Apple
+```
+
+Run it **in the target environment** (e.g. `fly ssh console` on the prod app) so
+it uses that environment's wallet credentials, database, and `API_BASE_URL`
+(Google fetches the pass images from that origin, and patched barcodes must verify
+against that environment's `WALLET_PASS_SECRET`). It's idempotent — safe to re-run
+— and only needed once per design change. The Google patch also refreshes each
+pass's barcode to the member's current token, so it self-heals passes whose secret
+rotated since they were saved.
+
+---
+
 ## Pass artwork
 
 The colorful block band on the pass is generated, not hand-drawn. To change it,
