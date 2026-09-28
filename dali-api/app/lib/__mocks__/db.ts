@@ -67,7 +67,10 @@ export const prisma = {
   },
   staffingCycleFormBinding: {
     findFirst: vi.fn(),
+    findUnique: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
+    update: vi.fn(),
+    upsert: vi.fn(),
   },
   partnerApplicationFormBinding: {
     findFirst: vi.fn(),

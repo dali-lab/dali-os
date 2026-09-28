@@ -4,7 +4,17 @@ import { describe, it, expect, vi } from "vitest";
 // client, which isn't built during the unit-test CI job. pickStaffingBinding
 // never touches prisma, so the mock is inert.
 vi.mock("~/lib/db");
-import { pickStaffingBinding } from "~/projects/lib/form-slots";
+import {
+  pickStaffingBinding,
+  isGateAudience,
+  setSlotGate,
+} from "~/projects/lib/form-slots";
+import { prisma } from "~/lib/db";
+
+const mockPrisma = prisma as unknown as Record<
+  string,
+  Record<string, ReturnType<typeof vi.fn>>
+>;
 
 // Shape mirrors the subset of StaffingCycleFormBinding that submitMemberForm
 // selects on. Dates are explicit so the tie-break order is unambiguous.
@@ -69,5 +79,69 @@ describe("pickStaffingBinding", () => {
     ];
     const picked = pickStaffingBinding(bindings, null);
     expect(picked?.slot).toBe("intent-to-work");
+  });
+});
+
+describe("isGateAudience", () => {
+  it("accepts the gate-audience subset and rejects everything else", () => {
+    expect(isGateAudience("Members")).toBe(true);
+    expect(isGateAudience("Group")).toBe(true);
+    // Excluded from the staffing app-lock even though they're valid signing
+    // audiences.
+    expect(isGateAudience("Manual")).toBe(false);
+    expect(isGateAudience("HiringParticipants")).toBe(false);
+    expect(isGateAudience("nonsense")).toBe(false);
+  });
+});
+
+describe("setSlotGate", () => {
+  it("errors when no form is bound to the slot yet", async () => {
+    vi.resetAllMocks();
+    mockPrisma.staffingCycleFormBinding.findUnique.mockResolvedValue(null);
+    const result = await setSlotGate("cyc-1", "intent-to-work", "Members", null, "u-1");
+    expect(result.ok).toBe(false);
+    expect(mockPrisma.staffingCycleFormBinding.update).not.toHaveBeenCalled();
+  });
+
+  it("clears gateAudienceGroupId for a non-Group audience", async () => {
+    vi.resetAllMocks();
+    mockPrisma.staffingCycleFormBinding.findUnique.mockResolvedValue({ id: "b-1" });
+    mockPrisma.staffingCycleFormBinding.update.mockResolvedValue({});
+    const result = await setSlotGate("cyc-1", "project-bids", "Members", "grp-1", "u-1");
+    expect(result.ok).toBe(true);
+    expect(mockPrisma.staffingCycleFormBinding.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          gateAudience: "Members",
+          gateAudienceGroupId: null,
+        }),
+      }),
+    );
+  });
+
+  it("keeps the group id for a Group audience, and null audience turns the lock off", async () => {
+    vi.resetAllMocks();
+    mockPrisma.staffingCycleFormBinding.findUnique.mockResolvedValue({ id: "b-1" });
+    mockPrisma.staffingCycleFormBinding.update.mockResolvedValue({});
+
+    await setSlotGate("cyc-1", "project-bids", "Group", "grp-1", "u-1");
+    expect(mockPrisma.staffingCycleFormBinding.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          gateAudience: "Group",
+          gateAudienceGroupId: "grp-1",
+        }),
+      }),
+    );
+
+    await setSlotGate("cyc-1", "project-bids", null, null, "u-1");
+    expect(mockPrisma.staffingCycleFormBinding.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          gateAudience: null,
+          gateAudienceGroupId: null,
+        }),
+      }),
+    );
   });
 });

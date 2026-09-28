@@ -123,40 +123,60 @@ describe("submitMemberForm one-response gate", () => {
     expect(mockPrisma.formSubmission.findFirst).not.toHaveBeenCalled();
   });
 
-  it("lets slot-bound forms resubmit regardless of the toggle", async () => {
+  const LEVEL_UP_BINDING = {
+    slot: "level-up",
+    columnMapping: null,
+    updatedAt: new Date("2026-07-01"),
+    staffingCycle: {
+      id: "cyc-1",
+      termId: "term-1",
+      maxPreferencesPerMember: 3,
+    },
+  };
+
+  it("409s a second slot-bound submission (one-and-done)", async () => {
     mockPrisma.form.findUnique.mockResolvedValue(
-      formRow({
-        oneResponsePerMember: true,
-        cycleBindings: [
-          {
-            slot: "level-up",
-            columnMapping: null,
-            updatedAt: new Date("2026-07-01"),
-            staffingCycle: {
-              id: "cyc-1",
-              termId: "term-1",
-              maxPreferencesPerMember: 3,
-            },
-          },
-        ],
-      }),
+      formRow({ cycleBindings: [LEVEL_UP_BINDING] }),
     );
-    // Even with a prior ordinary-looking row on file, the slot branch is
-    // taken before the gate can run.
     mockPrisma.formSubmission.findFirst.mockResolvedValue({
       id: "sub-0",
-      createdAt: new Date(),
+      createdAt: new Date("2026-07-01T12:00:00Z"),
     });
+
+    const result = await submit();
+
+    expect(result).toEqual({
+      error: "You've already filled out this form.",
+      status: 409,
+    });
+    // Keyed on the bound tuple, not the unscoped ordinary where-clause.
+    expect(mockPrisma.formSubmission.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { userId: "user-1", staffingCycleId: "cyc-1", slot: "level-up" },
+      }),
+    );
+    expect(mockPrisma.formSubmission.create).not.toHaveBeenCalled();
+    expect(mockNotify).not.toHaveBeenCalled();
+  });
+
+  it("accepts a first slot-bound submission and records it once", async () => {
+    mockPrisma.form.findUnique.mockResolvedValue(
+      formRow({ cycleBindings: [LEVEL_UP_BINDING] }),
+    );
+    mockPrisma.formSubmission.findFirst.mockResolvedValue(null);
 
     const result = await submit();
 
     expect(result).toEqual({ ok: true });
     expect(mockPrisma.formSubmission.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ slot: "level-up" }),
+        data: expect.objectContaining({
+          slot: "level-up",
+          staffingCycleId: "cyc-1",
+        }),
       }),
     );
-    expect(mockPrisma.formSubmission.findFirst).not.toHaveBeenCalled();
+    expect(mockNotify).toHaveBeenCalledTimes(1);
   });
 
   it("lets education-context fills resubmit regardless of the toggle", async () => {
@@ -202,19 +222,48 @@ describe("ordinaryFillBlock", () => {
     expect(mockPrisma.formSubmission.findFirst).not.toHaveBeenCalled();
   });
 
-  it("returns null for a slot-bound form even with a prior submission", async () => {
+  it("blocks a slot-bound form once the member has submitted", async () => {
+    const at = new Date("2026-07-01T12:00:00Z");
     mockPrisma.form.findUnique.mockResolvedValue({
-      oneResponsePerMember: true,
+      // Independent of oneResponsePerMember — bound forms are one-and-done.
+      oneResponsePerMember: false,
       cycleBindings: [
         {
           slot: "project-bids",
           updatedAt: new Date(),
-          staffingCycle: { termId: "term-1" },
+          staffingCycle: { id: "cyc-1", termId: "term-1" },
         },
       ],
     });
+    mockPrisma.formSubmission.findFirst.mockResolvedValue({
+      id: "sub-0",
+      createdAt: at,
+    });
+    expect(await ordinaryFillBlock("form-1", "user-1")).toEqual({ at });
+    expect(mockPrisma.formSubmission.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          userId: "user-1",
+          staffingCycleId: "cyc-1",
+          slot: "project-bids",
+        },
+      }),
+    );
+  });
+
+  it("returns null for a slot-bound form the member hasn't submitted", async () => {
+    mockPrisma.form.findUnique.mockResolvedValue({
+      oneResponsePerMember: false,
+      cycleBindings: [
+        {
+          slot: "project-bids",
+          updatedAt: new Date(),
+          staffingCycle: { id: "cyc-1", termId: "term-1" },
+        },
+      ],
+    });
+    mockPrisma.formSubmission.findFirst.mockResolvedValue(null);
     expect(await ordinaryFillBlock("form-1", "user-1")).toBeNull();
-    expect(mockPrisma.formSubmission.findFirst).not.toHaveBeenCalled();
   });
 
   it("returns the first submission's timestamp when blocked", async () => {
