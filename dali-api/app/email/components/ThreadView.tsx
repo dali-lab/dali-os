@@ -113,7 +113,7 @@ export function ThreadView({
                   </div>
                   {m.attachments.length > 0 && (
                     <div className="mt-3 flex flex-wrap gap-1.5">
-                      {m.attachments.map((att) => {
+                      {m.attachments.map((att, index) => {
                         const chip = (
                           <>
                             <Paperclip className="h-3 w-3 shrink-0" />
@@ -127,15 +127,15 @@ export function ThreadView({
                         // fetched from Gmail, so it stays a plain, non-clickable chip.
                         return att.attachmentId ? (
                           <a
-                            key={att.attachmentId}
-                            href={`/api/email/attachment?account=${encodeURIComponent(accountId)}&thread=${encodeURIComponent(threadId)}&message=${encodeURIComponent(m.id)}&attachment=${encodeURIComponent(att.attachmentId)}&name=${encodeURIComponent(att.filename)}`}
+                            key={`${att.attachmentId}-${index}`}
+                            href={`/api/email/attachment?account=${encodeURIComponent(accountId)}&thread=${encodeURIComponent(threadId)}&message=${encodeURIComponent(m.id)}&index=${index}`}
                             download={att.filename}
                             className={cn(chipClass, "hover:bg-os-container-hi")}
                           >
                             {chip}
                           </a>
                         ) : (
-                          <span key={att.filename} className={chipClass}>
+                          <span key={`${att.filename}-${index}`} className={chipClass}>
                             {chip}
                           </span>
                         );

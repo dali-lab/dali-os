@@ -34,7 +34,17 @@ export async function getMailboxToken(account: {
       ? prisma.mailAccountConnection.update({ where: { id: account.connectionId }, data })
       : prisma.mailAccount.update({ where: { id: account.id }, data });
   if (!account.oauthTokens) throw new MailboxError("Account is not connected");
-  const t = parseStoredTokens(account.oauthTokens);
+  let t;
+  try {
+    t = parseStoredTokens(account.oauthTokens);
+  } catch {
+    // Tokens can't be decrypted — e.g. this environment's encryption key differs
+    // from the one they were sealed with (staging is restored from a prod
+    // snapshot). Surface it as a per-inbox error rather than a raw crypto throw,
+    // so one unreadable inbox degrades gracefully instead of 500-ing the whole
+    // mail surface.
+    throw new MailboxError("Stored tokens could not be read");
+  }
   if (t.expiresAt && new Date(t.expiresAt).getTime() > Date.now() + REFRESH_BUFFER_MS) {
     return t.accessToken;
   }
