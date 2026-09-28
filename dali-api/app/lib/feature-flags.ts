@@ -50,6 +50,12 @@ export type FeatureFlagDef = {
 
 export const FEATURE_FLAGS = [
   {
+    key: "bound-form-lock",
+    label: "Lock the app to a staffing form",
+    description:
+      "Lets a staffing manager mark a bound form (Intent to Work / Project Bids / Level Up) as required: members in the chosen audience are redirected to fill it before they can use the rest of the app, the same way an unsigned app-enforced agreement gates them. Filling it once clears the lock; it can't be re-filled. Full-time staff and members outside the audience are never gated. Ships off.",
+  },
+  {
     key: "optimal-times",
     label: "Find best meeting times",
     description:

@@ -11,9 +11,11 @@ import { applyEligibilityWithNotify } from "~/admin/lib/eligibility.server";
 import { ensureStaffingCycle } from "../lib/staffing-cycle";
 import {
   getSlotBinding,
+  isGateAudience,
   listSelectableForms,
   setSlotBinding,
   setSlotColumnMapping,
+  setSlotGate,
 } from "../lib/form-slots";
 import { SubmissionFilters } from "../components/SubmissionFilters";
 import { SlotAdvancedSettingsModal } from "../components/SlotAdvancedSettingsModal";
@@ -329,8 +331,12 @@ export async function action({ request }: Route.ActionArgs) {
   const form = await request.formData();
   const intent = String(form.get("intent"));
 
-  // Form binding and mapping: managers only.
-  if (intent === "set-slot-form" || intent === "set-slot-mapping") {
+  // Form binding, mapping and app-lock: managers only.
+  if (
+    intent === "set-slot-form" ||
+    intent === "set-slot-mapping" ||
+    intent === "set-slot-gate"
+  ) {
     if (!(await canManageStaffing(auth.user.sub)))
       return Response.json({ error: "Forbidden" }, { status: 403 });
 
@@ -367,6 +373,17 @@ export async function action({ request }: Route.ActionArgs) {
         mapping as ColumnMapping,
         auth.user.sub,
       );
+      if (!result.ok)
+        return Response.json({ error: result.error }, { status: 400 });
+      return Response.json({ ok: true });
+    }
+
+    if (intent === "set-slot-gate") {
+      const raw = String(form.get("gateAudience") ?? "");
+      const audience = raw === "" ? null : raw;
+      if (audience !== null && !isGateAudience(audience))
+        return Response.json({ error: "Invalid audience." }, { status: 400 });
+      const result = await setSlotGate(cycle.id, SLOT, audience, null, auth.user.sub);
       if (!result.ok)
         return Response.json({ error: result.error }, { status: 400 });
       return Response.json({ ok: true });

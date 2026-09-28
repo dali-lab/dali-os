@@ -4527,6 +4527,12 @@ model FormSubmission {
   partnerApplication   PartnerApplication?
   educationApplication EducationApplication?
 
+  // One submission per member per bound staffing slot. Postgres treats NULLs as
+  // distinct, so this only constrains rows where all three columns are set (the
+  // staffing slot fills — "intent-to-work"/"project-bids"/"level-up"); ordinary
+  // fills (slot+cycle null) and education submissions (cycle null, differing by
+  // session) are unaffected. Backs the app-level 409 gate in submitMemberForm.
+  @@unique([userId, staffingCycleId, slot])
   @@index([userId, formVersionId])
   @@index([formId])
   @@index([formVersionId])
@@ -4555,6 +4561,15 @@ model StaffingCycleFormBinding {
   // termId? }] }. Null = not mapped yet (the slot can't interpret submissions
   // until a manager defines this). App-layer validated (see slot-roles.ts).
   columnMapping Json?
+
+  // Optional app-lock: when gateAudience is set, members in that audience are
+  // hard-gated into filling this bound form before they can use the app (mirrors
+  // a SigningDocument with gateScope=App). Null = not gated. Reuses the signing
+  // SigningAudience enum + resolvers; gateAudienceGroupId targets a specific
+  // group when gateAudience=Group. Enforced in the layout gate behind the
+  // `bound-form-lock` flag (see app/forms/lib/gate.server.ts).
+  gateAudience        SigningAudience?
+  gateAudienceGroupId String?
 
   staffingCycle StaffingCycle @relation(fields: [staffingCycleId], references: [id], onDelete: Cascade)
   form          Form          @relation(fields: [formId], references: [id], onDelete: Cascade)

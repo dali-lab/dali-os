@@ -1,5 +1,23 @@
 import { prisma } from "~/lib/db";
+import type { SigningAudience } from "~/generated/prisma/enums";
 import { parseColumnMapping, type ColumnMapping } from "./slot-roles";
+
+// Audiences an operator can lock a bound form to (a subset of the signing
+// SigningAudience enum, whose resolvers the gate reuses). Manual/HiringParticipants
+// are excluded — Manual means "off" (represented as a null gateAudience) and
+// hiring participation is gated inside hiring, not the staffing app-lock.
+export const GATE_AUDIENCES = [
+  "NewMembers",
+  "Members",
+  "Mentors",
+  "Group",
+] as const satisfies readonly SigningAudience[];
+
+export type GateAudience = (typeof GATE_AUDIENCES)[number];
+
+export function isGateAudience(value: string): value is GateAudience {
+  return (GATE_AUDIENCES as readonly string[]).includes(value);
+}
 
 // A "form slot" is a named place in the app that expects an admin-chosen
 // generic Form, scoped to one staffing cycle (i.e. per term). Intent to Work
@@ -60,6 +78,10 @@ export type SlotBinding = {
   // The saved question→column mapping for this binding, parsed/defended.
   // null = not mapped yet (the slot can't interpret submissions).
   mapping: ColumnMapping | null;
+  // App-lock config: null = not gated. When set, members in this audience are
+  // hard-gated into filling the form before using the app (see gate.server.ts).
+  gateAudience: SigningAudience | null;
+  gateAudienceGroupId: string | null;
 } | null;
 
 export async function getSlotBinding(
@@ -71,6 +93,8 @@ export async function getSlotBinding(
     select: {
       updatedAt: true,
       columnMapping: true,
+      gateAudience: true,
+      gateAudienceGroupId: true,
       form: {
         select: { id: true, name: true, published: true, publicToken: true },
       },
@@ -84,6 +108,8 @@ export async function getSlotBinding(
     publicToken: row.form.publicToken,
     updatedAt: row.updatedAt.toISOString(),
     mapping: parseColumnMapping(row.columnMapping),
+    gateAudience: row.gateAudience,
+    gateAudienceGroupId: row.gateAudienceGroupId,
   };
 }
 
@@ -128,6 +154,35 @@ export async function setSlotBinding(
     where: { staffingCycleId_slot: { staffingCycleId, slot } },
     create: { staffingCycleId, slot, formId, updatedById: userId },
     update: { formId, updatedById: userId },
+  });
+  return { ok: true };
+}
+
+// Set (or clear) the app-lock audience for a bound slot. `audience === null`
+// turns the lock off. The binding must already exist — you lock the app to a
+// form only after binding one. gateAudienceGroupId is reserved for a future
+// specific-group option; it's cleared unless the audience is Group.
+export async function setSlotGate(
+  staffingCycleId: string,
+  slot: Slot,
+  audience: GateAudience | null,
+  groupId: string | null,
+  userId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const binding = await prisma.staffingCycleFormBinding.findUnique({
+    where: { staffingCycleId_slot: { staffingCycleId, slot } },
+    select: { id: true },
+  });
+  if (!binding)
+    return { ok: false, error: "Bind a form before locking the app to it." };
+
+  await prisma.staffingCycleFormBinding.update({
+    where: { id: binding.id },
+    data: {
+      gateAudience: audience,
+      gateAudienceGroupId: audience === "Group" ? groupId : null,
+      updatedById: userId,
+    },
   });
   return { ok: true };
 }

@@ -216,10 +216,27 @@ export async function existingOrdinarySubmission(
   });
 }
 
-// Loader-side twin of submitMemberForm's ordinary-branch 409 gate: the fill
-// page uses this to show the "already filled out" panel instead of the form.
-// Must mirror the submit gate exactly — same binding detection (a slot-bound
-// form's replace semantics win over the toggle), same where-clause.
+// The member's submission for a bound staffing slot (intent-to-work /
+// project-bids / level-up). Keyed on (userId, cycle, slot) — the tuple the
+// @@unique on FormSubmission enforces — so it's one row at most. Backs both the
+// submit-time 409 gate and the fill-page "already filled" panel.
+export async function existingBoundSubmission(
+  userId: string,
+  staffingCycleId: string,
+  slot: string,
+): Promise<{ id: string; createdAt: Date } | null> {
+  return prisma.formSubmission.findFirst({
+    where: { userId, staffingCycleId, slot },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, createdAt: true },
+  });
+}
+
+// Loader-side twin of submitMemberForm's 409 gate: the fill page uses this to
+// show the "already filled out" panel instead of the form. Must mirror the
+// submit gate exactly — same binding detection, same where-clauses. Bound
+// staffing forms are one-and-done (independent of oneResponsePerMember);
+// ordinary forms block only when oneResponsePerMember is set.
 export async function ordinaryFillBlock(
   formId: string,
   userId: string,
@@ -232,14 +249,23 @@ export async function ordinaryFillBlock(
         select: {
           slot: true,
           updatedAt: true,
-          staffingCycle: { select: { termId: true } },
+          staffingCycle: { select: { id: true, termId: true } },
         },
       },
     },
   });
-  if (!form?.oneResponsePerMember) return null;
+  if (!form) return null;
   const term = await currentTerm();
-  if (pickStaffingBinding(form.cycleBindings, term?.id ?? null)) return null;
+  const bound = pickStaffingBinding(form.cycleBindings, term?.id ?? null);
+  if (bound) {
+    const existing = await existingBoundSubmission(
+      userId,
+      bound.staffingCycle.id,
+      bound.slot,
+    );
+    return existing ? { at: existing.createdAt } : null;
+  }
+  if (!form.oneResponsePerMember) return null;
   const existing = await existingOrdinarySubmission(formId, userId);
   return existing ? { at: existing.createdAt } : null;
 }
@@ -651,6 +677,16 @@ export async function submitMemberForm(args: {
   // staffing rows for this submission.
   const slot = staffingBinding.slot as Slot;
   const cycle = staffingBinding.staffingCycle;
+
+  // One submission per member per bound slot. Unlike the ordinary branch this
+  // isn't opt-in (oneResponsePerMember) — a bound staffing form is one-and-done,
+  // so re-opening it after submitting shows the "already filled" panel. The
+  // @@unique([userId, staffingCycleId, slot]) on FormSubmission is the race-safe
+  // backstop; this check is the friendly 409.
+  if (await existingBoundSubmission(args.userId, cycle.id, slot)) {
+    return { error: "You've already filled out this form.", status: 409 };
+  }
+
   const mapping = parseColumnMapping(staffingBinding.columnMapping);
   const mapCheck = validateMapping(slot, questions, mapping);
   // A genuinely broken mapping (wrong question type, stale key) can't be
