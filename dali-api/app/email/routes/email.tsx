@@ -253,10 +253,8 @@ export default function EmailPage() {
 
           <section
             className={cn(
-              "min-h-0 w-full flex-col gap-3",
-              // With nothing open the list fills its column; cap it so rows
-              // don't stretch the whole viewport (still full width on mobile).
-              !readerOpen ? "flex max-w-2xl" : expanded ? "hidden" : "hidden md:flex md:w-[360px] md:shrink-0",
+              "min-h-0 w-full min-w-0 flex-col gap-3",
+              !readerOpen ? "flex flex-1" : expanded ? "hidden" : "hidden md:flex md:w-[360px] md:shrink-0",
             )}
             aria-label="Messages"
           >
@@ -387,7 +385,7 @@ export default function EmailPage() {
             </div>
           </section>
 
-          <section className={cn("min-h-0 flex-1 overflow-y-auto", !readerOpen && "hidden")} aria-label="Reader">
+          <section className={cn("min-h-0 min-w-0 flex-1 overflow-y-auto", !readerOpen && "hidden")} aria-label="Reader">
             {readerOpen && (
               <Button
                 variant="ghost"
