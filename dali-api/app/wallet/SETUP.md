@@ -97,7 +97,23 @@ one-time push per design change, because the two platforms behave differently:
   "Add to Google Wallet" is a no-op and deleting + re-adding shows the old design
   again. The only fix is a REST `patch` of each existing object.
 
-Both are handled by one script:
+### Automatic (the normal path)
+
+Bump `WALLET_PASS_DESIGN_VERSION` in `app/lib/wallet-pass-version.ts` in the same
+change that alters the pass face, and deploy. The `wallet-pass-release` background
+job notices the new version on its next tick (~5 min after deploy), runs the
+restyle broadcast once (Google REST patch + Apple re-push), and records the version
+in `WalletPassReleaseLog` so it never re-runs for it. Every other tick is a no-op.
+Nothing to run by hand — that's the whole rollout.
+
+If you change the artwork/fields but *don't* bump the version, installed passes
+keep the old look (new saves still update). So: change the design → bump the
+version.
+
+### Manual (backfill / re-run)
+
+The same broadcast is also a script, for a forced re-run or to roll out without a
+version bump:
 
 ```
 npx tsx scripts/wallet-broadcast-restyle.ts           # dry run (counts only)
@@ -107,10 +123,11 @@ npx tsx scripts/wallet-broadcast-restyle.ts --commit  # patch Google + re-push A
 Run it **in the target environment** (e.g. `fly ssh console` on the prod app) so
 it uses that environment's wallet credentials, database, and `API_BASE_URL`
 (Google fetches the pass images from that origin, and patched barcodes must verify
-against that environment's `WALLET_PASS_SECRET`). It's idempotent — safe to re-run
-— and only needed once per design change. The Google patch also refreshes each
-pass's barcode to the member's current token, so it self-heals passes whose secret
-rotated since they were saved.
+against that environment's `WALLET_PASS_SECRET`). It's idempotent — safe to re-run.
+The Google patch also refreshes each pass's barcode to the member's current token,
+so it self-heals passes whose secret rotated since they were saved.
+
+The job and the script share one implementation (`app/lib/wallet-broadcast.server.ts`).
 
 ---
 

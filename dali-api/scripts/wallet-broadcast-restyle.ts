@@ -26,12 +26,7 @@
 
 import { prisma } from "../app/lib/db";
 import { getApiBaseUrl } from "../app/lib/app-env";
-import {
-  walletGoogleConfigured,
-  patchAllGoogleWalletObjects,
-} from "../app/lib/wallet-google.server";
-import { walletAppleConfigured } from "../app/lib/wallet-apple.server";
-import { pushAllWalletPassUpdates } from "../app/lib/wallet-apns.server";
+import { runWalletRestyleBroadcast } from "../app/lib/wallet-broadcast.server";
 
 async function main() {
   const commit = process.argv.includes("--commit");
@@ -42,26 +37,19 @@ async function main() {
       "\n",
   );
 
-  // Google: patch existing objects in place.
-  if (walletGoogleConfigured()) {
-    const g = await patchAllGoogleWalletObjects(origin, commit);
-    console.log(
-      `Google: ${g.total} object(s) — ${g.patched} ${commit ? "patched" : "to patch"}, ` +
-        `${g.skipped} skipped, ${g.failed} failed.`,
-    );
-  } else {
-    console.log("Google: not configured — skipped.");
-  }
+  const { google, apple } = await runWalletRestyleBroadcast(commit, origin);
 
-  // Apple: re-push registered devices.
-  if (walletAppleConfigured()) {
-    const a = await pushAllWalletPassUpdates(commit);
-    console.log(
-      `Apple: ${a.users} member(s) with installed passes ${commit ? "re-pushed" : "to re-push"}.`,
-    );
-  } else {
-    console.log("Apple: not configured — skipped.");
-  }
+  console.log(
+    google.configured
+      ? `Google: ${google.total} object(s) — ${google.patched} ${commit ? "patched" : "to patch"}, ` +
+          `${google.skipped} skipped, ${google.failed} failed.`
+      : "Google: not configured — skipped.",
+  );
+  console.log(
+    apple.configured
+      ? `Apple: ${apple.users} member(s) with installed passes ${commit ? "re-pushed" : "to re-push"}.`
+      : "Apple: not configured — skipped.",
+  );
 
   console.log(`\nDone.${commit ? "" : " (dry run — pass --commit to write)"}`);
 }
