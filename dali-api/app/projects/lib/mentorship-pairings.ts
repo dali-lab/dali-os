@@ -32,15 +32,51 @@ type Tx = {
   };
 };
 
-// Auto-derive MentorshipPair rows for one (project, term). For each domain
-// staffed on the project: every mentee gets paired to every mentor in the same
-// domain. A member's role defaults to their level (P3 → mentor, P1/P2 →
-// mentee); `roleOverride` (from the staffing board's per-card role badge, keyed
-// by userId) flips it when present.
+// Assign each mentee to exactly one mentor, balancing load across the mentors.
+// Least-loaded mentor wins, seeded by `seededLoad` (existing manual pairs) so a
+// hand-assigned mentee still counts toward their mentor's share. Ties break by
+// mentor order, which keeps the result deterministic. Returns one row per
+// mentee (none if there are no mentors).
+export function assignOneToOne(
+  mentees: string[],
+  mentors: string[],
+  seededLoad?: Map<string, number>,
+): { menteeUserId: string; mentorUserId: string }[] {
+  if (mentors.length === 0) return [];
+  const load = new Map<string, number>();
+  for (const m of mentors) load.set(m, seededLoad?.get(m) ?? 0);
+
+  const out: { menteeUserId: string; mentorUserId: string }[] = [];
+  for (const menteeUserId of mentees) {
+    let best = mentors[0];
+    let bestLoad = load.get(best)!;
+    for (const m of mentors) {
+      const l = load.get(m)!;
+      if (l < bestLoad) {
+        best = m;
+        bestLoad = l;
+      }
+    }
+    out.push({ menteeUserId, mentorUserId: best });
+    load.set(best, bestLoad + 1);
+  }
+  return out;
+}
+
+// Auto-derive MentorshipPair rows for one (project, term). Each mentee is
+// assigned exactly one mentor in the same domain; when a domain has several
+// mentors, mentees are load-balanced across them (see assignOneToOne). A
+// member's role defaults to their level (P3 → mentor, P1/P2 → mentee);
+// `roleOverride` (from the staffing board's per-card role badge, keyed by
+// userId) flips it when present.
 //
-// Replaces all existing MentorshipPair rows for this project+term, then writes
-// the derived set — so a domain move (e.g. Fullstack → UI/UX) drops the old
-// mentor link instead of leaving it behind. Returns the count of pairs created.
+// Hand-created pairs (manual:true) are preserved: a mentee who already has a
+// manual pair in a domain keeps it (they're skipped here), and that mentor's
+// existing share seeds the balance so auto assignment fills around it.
+//
+// Replaces all AUTO (manual:false) rows for this project+term, then writes the
+// derived set — so a domain move (e.g. Fullstack → UI/UX) drops the old mentor
+// link instead of leaving it behind. Returns the count of pairs created.
 export async function derivePairings(
   tx: Tx,
   projectId: string,
@@ -77,16 +113,21 @@ export async function derivePairings(
     bucketFor(em.domainId).mentors.push(em.userId);
   }
 
-  // Hand-created pairs (Core, via the manual editor) are preserved across a
-  // re-finalize. Skip any auto pair that would exact-duplicate one so a manual
-  // link isn't shadowed by an identical derived row.
+  // Manual pairs are one-to-one already; group them by domain so we can leave
+  // their mentees be and seed the balancer with the mentor's existing share.
   const manualPairs = await tx.mentorshipPair.findMany({
     where: { projectId, termId, manual: true },
     select: { menteeUserId: true, mentorUserId: true, domainId: true },
   });
-  const manualKeys = new Set(
-    manualPairs.map((p) => `${p.menteeUserId}|${p.mentorUserId}|${p.domainId}`),
-  );
+  const manualByDomain = new Map<
+    string,
+    { menteeUserId: string; mentorUserId: string }[]
+  >();
+  for (const p of manualPairs) {
+    const arr = manualByDomain.get(p.domainId) ?? [];
+    arr.push({ menteeUserId: p.menteeUserId, mentorUserId: p.mentorUserId });
+    manualByDomain.set(p.domainId, arr);
+  }
 
   const toCreate: {
     menteeUserId: string;
@@ -97,11 +138,22 @@ export async function derivePairings(
   }[] = [];
   for (const [domainId, { mentees, mentors }] of byDomain) {
     if (mentors.length === 0) continue;
-    for (const menteeUserId of mentees) {
-      for (const mentorUserId of mentors) {
-        if (manualKeys.has(`${menteeUserId}|${mentorUserId}|${domainId}`)) continue;
-        toCreate.push({ menteeUserId, mentorUserId, projectId, termId, domainId });
+    const mentorSet = new Set(mentors);
+    const manual = manualByDomain.get(domainId) ?? [];
+    const manualMentees = new Set(manual.map((p) => p.menteeUserId));
+    const seededLoad = new Map<string, number>();
+    for (const p of manual) {
+      if (mentorSet.has(p.mentorUserId)) {
+        seededLoad.set(p.mentorUserId, (seededLoad.get(p.mentorUserId) ?? 0) + 1);
       }
+    }
+    const unassigned = mentees.filter((m) => !manualMentees.has(m));
+    for (const { menteeUserId, mentorUserId } of assignOneToOne(
+      unassigned,
+      mentors,
+      seededLoad,
+    )) {
+      toCreate.push({ menteeUserId, mentorUserId, projectId, termId, domainId });
     }
   }
 
