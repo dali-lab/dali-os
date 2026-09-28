@@ -6,6 +6,8 @@ import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isAiEnabled } from "~/lib/ai.server";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { deleteObject, getObjectBytes } from "~/lib/s3";
+import { isBlockedUpload } from "~/lib/file-validation";
 import { getUserRoles, type UserRoles } from "~/lib/roles";
 import { demoEmailAction, demoEmailPage, isEmailDemo } from "~/email/lib/demo-data.server";
 import {
@@ -29,6 +31,10 @@ import {
 
 const THREADS_PER_INBOX = 20;
 const DEFAULT_QUERY = "in:inbox";
+// Keep the whole message comfortably under Gmail's simple-send ceiling once
+// base64 inflates the bytes by ~33%.
+const MAX_ATTACHMENTS_BYTES = 25 * 1024 * 1024;
+const ATTACHMENT_KEY_PREFIX = "uploads/email-attachments/";
 
 export type FeedThread = ThreadSummary & { accountId: string };
 
@@ -127,7 +133,10 @@ async function loadLiveEmailPage(request: Request, userId: string, roles: UserRo
       where: { accountId: { in: connected.map((a) => a.id) }, ...draftVisibleTo(userId) },
       orderBy: { updatedAt: "desc" },
       take: 100,
-      include: { createdBy: { select: { firstName: true, lastName: true } } },
+      include: {
+        createdBy: { select: { firstName: true, lastName: true } },
+        attachments: { orderBy: { createdAt: "asc" }, select: { id: true, filename: true, contentType: true, sizeBytes: true } },
+      },
     }),
     categoriesForUser(userId),
     prisma.mailAccountConnection.findMany({ where: { userId }, select: { accountId: true, syncError: true } }),
@@ -174,6 +183,8 @@ async function loadLiveEmailPage(request: Request, userId: string, roles: UserRo
       mine: d.createdById === userId,
       author: `${d.createdBy.firstName} ${d.createdBy.lastName}`.trim(),
       updatedAt: d.updatedAt.toISOString(),
+      // s3Key stays server-side; the client only needs to label and remove.
+      attachments: d.attachments,
     })),
     // Shared-inbox categories open to this user. Signing in to an inbox is
     // each subscriber's own step, so its status is theirs alone.
@@ -239,6 +250,38 @@ function fromHeader(name: string | null, address: string): string {
   return safe ? `"${safe}" <${address}>` : address;
 }
 
+// Create or update the draft from the compose form. Shared by save/send and by
+// attach, so a not-yet-saved compose gets a draft row before a file is pinned
+// to it.
+async function upsertDraftFromForm(form: FormData, accountId: string, userId: string) {
+  const data = {
+    accountId,
+    threadId: field(form, "threadId") || null,
+    to: field(form, "to"),
+    cc: field(form, "cc"),
+    bcc: field(form, "bcc"),
+    subject: field(form, "subject"),
+    body: String(form.get("body") ?? ""),
+    shared: form.get("shared") === "on",
+    updatedById: userId,
+  };
+  const draftId = field(form, "draftId");
+  const existing = draftId
+    ? await prisma.mailDraft.findFirst({ where: { id: draftId, accountId, ...draftVisibleTo(userId) } })
+    : null;
+  return existing
+    ? prisma.mailDraft.update({ where: { id: existing.id }, data })
+    : prisma.mailDraft.create({ data: { ...data, createdById: userId } });
+}
+
+function draftAttachments(draftId: string) {
+  return prisma.mailDraftAttachment.findMany({
+    where: { draftId },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, filename: true, contentType: true, sizeBytes: true },
+  });
+}
+
 export async function submitEmailAction(request: Request) {
   const user = await requireEmailUser(request);
   const form = await request.formData();
@@ -281,10 +324,39 @@ export async function submitEmailAction(request: Request) {
   const threadId = field(form, "threadId") || null;
 
   if (intent === "deleteDraft") {
-    await prisma.mailDraft.deleteMany({
+    const where = { id: field(form, "draftId"), accountId: account.id, ...draftVisibleTo(userId) };
+    const rows = await prisma.mailDraftAttachment.findMany({ where: { draft: where }, select: { s3Key: true } });
+    await prisma.mailDraft.deleteMany({ where });
+    await Promise.all(rows.map((r) => deleteObject(r.s3Key).catch(() => {})));
+    return { ok: true };
+  }
+
+  if (intent === "attach") {
+    const s3Key = field(form, "s3Key");
+    const filename = field(form, "filename");
+    const contentType = field(form, "contentType") || "application/octet-stream";
+    const sizeBytes = Number(field(form, "sizeBytes")) || 0;
+    if (!s3Key.startsWith(ATTACHMENT_KEY_PREFIX) || isBlockedUpload(filename, contentType)) {
+      return Response.json({ error: "That file can't be attached." }, { status: 400 });
+    }
+    const draft = await upsertDraftFromForm(form, account.id, userId);
+    await prisma.mailDraftAttachment.create({ data: { draftId: draft.id, s3Key, filename, contentType, sizeBytes } });
+    return Response.json({ ok: true, draftId: draft.id, attachments: await draftAttachments(draft.id) });
+  }
+
+  if (intent === "detach") {
+    const draft = await prisma.mailDraft.findFirst({
       where: { id: field(form, "draftId"), accountId: account.id, ...draftVisibleTo(userId) },
     });
-    return { ok: true };
+    if (!draft) return Response.json({ error: "Draft not found." }, { status: 404 });
+    const row = await prisma.mailDraftAttachment.findFirst({
+      where: { id: field(form, "attachmentId"), draftId: draft.id },
+    });
+    if (row) {
+      await prisma.mailDraftAttachment.delete({ where: { id: row.id } });
+      await deleteObject(row.s3Key).catch(() => {});
+    }
+    return Response.json({ ok: true, draftId: draft.id, attachments: await draftAttachments(draft.id) });
   }
 
   if (intent === "disconnect") {
@@ -332,51 +404,51 @@ export async function submitEmailAction(request: Request) {
   }
 
   if (intent === "saveDraft" || intent === "send") {
-    const data = {
-      accountId: account.id,
-      threadId,
-      to: field(form, "to"),
-      cc: field(form, "cc"),
-      bcc: field(form, "bcc"),
-      subject: field(form, "subject"),
-      body: String(form.get("body") ?? ""),
-      shared: form.get("shared") === "on",
-      updatedById: userId,
-    };
-    const draftId = field(form, "draftId");
-    const existing = draftId
-      ? await prisma.mailDraft.findFirst({
-          where: { id: draftId, accountId: account.id, ...draftVisibleTo(userId) },
-        })
-      : null;
-    const draft = existing
-      ? await prisma.mailDraft.update({ where: { id: existing.id }, data })
-      : await prisma.mailDraft.create({ data: { ...data, createdById: userId } });
+    const draft = await upsertDraftFromForm(form, account.id, userId);
 
     if (intent === "saveDraft") return { ok: true, draftId: draft.id };
 
-    if (!data.to) return Response.json({ error: "Add a recipient.", draftId: draft.id }, { status: 400 });
+    if (!draft.to) return Response.json({ error: "Add a recipient.", draftId: draft.id }, { status: 400 });
+
+    const attachmentRows = await prisma.mailDraftAttachment.findMany({ where: { draftId: draft.id } });
+    if (attachmentRows.reduce((sum, a) => sum + a.sizeBytes, 0) > MAX_ATTACHMENTS_BYTES) {
+      return Response.json({ error: "Attachments are too large to send.", draftId: draft.id }, { status: 400 });
+    }
+    let attachments: { filename: string; contentType: string; bytes: Buffer }[];
+    try {
+      attachments = await Promise.all(
+        attachmentRows.map(async (a) => ({
+          filename: a.filename,
+          contentType: a.contentType,
+          bytes: (await getObjectBytes(a.s3Key)).body,
+        })),
+      );
+    } catch {
+      return Response.json({ error: "Couldn't load an attachment. Your draft is saved.", draftId: draft.id }, { status: 502 });
+    }
+
     try {
       const token = await getMailboxToken(account);
       let inReplyTo: string | undefined;
       let references: string | undefined;
-      let subject = data.subject;
-      if (threadId) {
-        const last = (await getThread(token, threadId)).at(-1);
+      let subject = draft.subject;
+      if (draft.threadId) {
+        const last = (await getThread(token, draft.threadId)).at(-1);
         inReplyTo = last?.messageId || undefined;
         references = last?.references;
         if (!subject && last) subject = /^re:/i.test(last.subject) ? last.subject : `Re: ${last.subject}`;
       }
       await sendMessage(token, {
         from: fromHeader(mailAccountLabel(account), account.address),
-        to: data.to,
-        cc: data.cc,
-        bcc: data.bcc,
+        to: draft.to,
+        cc: draft.cc,
+        bcc: draft.bcc,
         subject,
-        body: data.body,
-        threadId,
+        body: draft.body,
+        threadId: draft.threadId,
         inReplyTo,
         references,
+        attachments,
       });
     } catch (err) {
       if (err instanceof MailboxError) {

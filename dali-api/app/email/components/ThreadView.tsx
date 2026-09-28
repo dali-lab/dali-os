@@ -7,6 +7,7 @@ import { IconButton } from "~/components/ui/IconButton";
 import { MailBody } from "~/email/components/MailBody";
 import { Composer, type RecipientDirectory } from "~/email/components/Composer";
 import { cn } from "~/lib/cn";
+import { formatBytes } from "~/lib/upload-client";
 import { senderAddress, senderName, shortDate } from "~/email/lib/format";
 import type { EmailPageData } from "~/email/lib/email.server";
 
@@ -112,12 +113,33 @@ export function ThreadView({
                   </div>
                   {m.attachments.length > 0 && (
                     <div className="mt-3 flex flex-wrap gap-1.5">
-                      {m.attachments.map((name) => (
-                        <span key={name} className="inline-flex items-center gap-1 rounded-full bg-os-container px-2.5 py-0.5 text-xs text-foreground">
-                          <Paperclip className="h-3 w-3" />
-                          {name}
-                        </span>
-                      ))}
+                      {m.attachments.map((att) => {
+                        const chip = (
+                          <>
+                            <Paperclip className="h-3 w-3 shrink-0" />
+                            <span className="truncate">{att.filename}</span>
+                            {att.size > 0 && <span className="shrink-0 text-os-muted">{formatBytes(att.size)}</span>}
+                          </>
+                        );
+                        const chipClass =
+                          "inline-flex max-w-full items-center gap-1 rounded-full bg-os-container px-2.5 py-0.5 text-xs text-foreground";
+                        // A part whose bytes came inline (no attachmentId) can't be
+                        // fetched from Gmail, so it stays a plain, non-clickable chip.
+                        return att.attachmentId ? (
+                          <a
+                            key={att.attachmentId}
+                            href={`/api/email/attachment?account=${encodeURIComponent(accountId)}&thread=${encodeURIComponent(threadId)}&message=${encodeURIComponent(m.id)}&attachment=${encodeURIComponent(att.attachmentId)}&name=${encodeURIComponent(att.filename)}`}
+                            download={att.filename}
+                            className={cn(chipClass, "hover:bg-os-container-hi")}
+                          >
+                            {chip}
+                          </a>
+                        ) : (
+                          <span key={att.filename} className={chipClass}>
+                            {chip}
+                          </span>
+                        );
+                      })}
                     </div>
                   )}
                 </div>

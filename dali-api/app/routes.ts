@@ -738,6 +738,7 @@ export default [
   route("api/ai/email", "routes/api.ai.email.ts"),
   route("api/email/contacts", "routes/api.email.contacts.ts"),
   route("api/email/unread", "routes/api.email.unread.ts"),
+  route("api/email/attachment", "routes/api.email.attachment.ts"),
 
   // BetterAuth catch-all: all /api/auth/* requests (sign-in, sign-up, session,
   // callback, etc.) are forwarded to the BetterAuth handler. Phase 0 scaffolding
