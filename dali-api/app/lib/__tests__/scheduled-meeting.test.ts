@@ -619,6 +619,7 @@ describe("createScheduledMeeting — location and description", () => {
     });
     vi.mocked(createGoogleCalendarEvent).mockResolvedValue({
       eventId: "gcal-1",
+      iCalUID: "gcal-1@google.com",
       htmlLink: null,
       meetUrl: null,
     });
@@ -652,6 +653,7 @@ describe("createScheduledMeeting — location and description", () => {
     p.user.findMany.mockResolvedValue([]);
     vi.mocked(createGoogleCalendarEvent).mockResolvedValue({
       eventId: "gcal-1",
+      iCalUID: "gcal-1@google.com",
       htmlLink: null,
       meetUrl: null,
     });
@@ -1050,7 +1052,7 @@ describe("updateScheduledMeeting", () => {
       meetingUrl: null,
     });
     p.meetingAttendance.createMany.mockResolvedValue({});
-    vi.mocked(createGoogleCalendarEvent).mockResolvedValue({ eventId: "gcal-new", htmlLink: null, meetUrl: null });
+    vi.mocked(createGoogleCalendarEvent).mockResolvedValue({ eventId: "gcal-new", iCalUID: "gcal-new@google.com", htmlLink: null, meetUrl: null });
 
     const res = await updateScheduledMeeting("m1", "org-1", {
       title: "New series title",
@@ -1320,6 +1322,7 @@ describe("attachMeetingNote", () => {
 describe("trackExternalEventAsMeeting", () => {
   const GOOGLE_EVENT = {
     id: "gcal-evt-1",
+    iCalUID: "gcal-evt-1@google.com",
     summary: "  All-hands  ",
     recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TU"],
     startIso: "2026-09-15T18:00:00.000Z",
