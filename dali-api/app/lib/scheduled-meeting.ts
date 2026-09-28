@@ -553,6 +553,9 @@ export async function createScheduledMeeting(
           where: { id: meeting.id },
           data: {
             externalEventId,
+            // Stable RFC 5545 join key — see ScheduledMeeting.iCalUID. Captured
+            // at push time so new meetings never depend on the mutable event id.
+            iCalUID: result.iCalUID,
             // Google's own invite carries the join link; we store it too so the
             // meeting page can show a Join button and MCP can return it.
             ...(meetingUrl ? { meetingUrl, videoProvider: "GoogleMeet" as const } : {}),

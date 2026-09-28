@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   expandOccurrences,
   googleInstanceOriginalStart,
+  matchMeetingForEvent,
   resolveOccurrence,
 } from "~/lib/meeting-occurrences";
 
@@ -188,5 +189,50 @@ describe("googleInstanceOriginalStart", () => {
     expect(googleInstanceOriginalStart("abc", null)).toBeNull();
     expect(googleInstanceOriginalStart("xyz_20260722T150000Z", "abc")).toBeNull();
     expect(googleInstanceOriginalStart("abc_moved", "abc")).toBeNull();
+  });
+});
+
+describe("matchMeetingForEvent", () => {
+  const meeting = { id: "m1", externalEventId: "master", iCalUID: "uid-123@google.com" };
+  const byExternalId = new Map([["master", meeting]]);
+  const byICalUID = new Map([["uid-123@google.com", meeting]]);
+
+  it("matches a detached instance (no recurringEventId) by its stable iCalUID", () => {
+    // Google handed this copy the instance id but dropped recurringEventId, so
+    // neither the instance id nor a master reaches byExternalId — the regression
+    // that showed a linked meeting as a plain Google event. iCalUID recovers it.
+    const event = {
+      eventId: "master_20260928T130000Z",
+      recurringEventId: null,
+      iCalUID: "uid-123@google.com",
+    };
+    expect(matchMeetingForEvent(event, byICalUID, byExternalId)).toBe(meeting);
+  });
+
+  it("matches a well-formed recurring instance through its master id", () => {
+    const event = {
+      eventId: "master_20260921T130000Z",
+      recurringEventId: "master",
+      iCalUID: "uid-123@google.com",
+    };
+    expect(matchMeetingForEvent(event, byICalUID, byExternalId)).toBe(meeting);
+  });
+
+  it("prefers iCalUID over a stale externalEventId collision", () => {
+    // A row still keyed on an old master resolves by UID even if the event's
+    // own id no longer matches anything in byExternalId.
+    const event = { eventId: "new-master_20260928T130000Z", recurringEventId: "new-master", iCalUID: "uid-123@google.com" };
+    expect(matchMeetingForEvent(event, byICalUID, byExternalId)).toBe(meeting);
+  });
+
+  it("falls back to externalEventId when the row has no iCalUID yet", () => {
+    // Pre-backfill row: byICalUID is empty, event id still bridges to the master.
+    const event = { eventId: "master_20260928T130000Z", recurringEventId: "master", iCalUID: "uid-123@google.com" };
+    expect(matchMeetingForEvent(event, new Map(), byExternalId)).toBe(meeting);
+  });
+
+  it("returns null when nothing matches", () => {
+    const event = { eventId: "other_20260928T130000Z", recurringEventId: "other", iCalUID: "other-uid@google.com" };
+    expect(matchMeetingForEvent(event, byICalUID, byExternalId)).toBeNull();
   });
 });

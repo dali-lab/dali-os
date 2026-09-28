@@ -70,6 +70,7 @@ import {
   rruleWithUntil,
   bareRrule,
   googleInstanceOriginalStart,
+  matchMeetingForEvent,
   noteForOccurrence,
   resolveOccurrence,
 } from "~/lib/meeting-occurrences";
@@ -164,6 +165,8 @@ async function meetingsForExternalEvents(
   viewerIsLabMember: boolean,
 ): Promise<Map<string, EventMeetingDTO>> {
   const seriesIds = new Set<string>();
+  // Stable RFC 5545 UIDs seen on the fetched events — the durable join key.
+  const uidSet = new Set<string>();
   // Ids that reach the viewer through the general calendar, which admits any
   // lab member rather than only the invited.
   const labWideIds = new Set<string>();
@@ -177,24 +180,41 @@ async function meetingsForExternalEvents(
       seriesIds.add(e.recurringEventId);
       if (labWide) labWideIds.add(e.recurringEventId);
     }
+    if (e.iCalUID) uidSet.add(e.iCalUID);
   }
-  if (seriesIds.size === 0) return new Map();
+  if (seriesIds.size === 0 && uidSet.size === 0) return new Map();
   const invited = [
     { organizerId: userId },
     { participantUserIds: { has: userId } },
   ];
   const meetings = await prisma.scheduledMeeting.findMany({
     where: {
-      externalEventId: { in: [...seriesIds] },
       status: { not: "Cancelled" },
-      OR: labWideIds.size > 0
-        ? [...invited, { externalEventId: { in: [...labWideIds] } }]
-        : invited,
+      AND: [
+        // Identity: the mutable event id (externalEventId) OR the stable RFC 5545
+        // UID. The UID resolves an instance Google handed us detached — with no
+        // recurringEventId to reach the master — which externalEventId can't.
+        {
+          OR:
+            uidSet.size > 0
+              ? [{ externalEventId: { in: [...seriesIds] } }, { iCalUID: { in: [...uidSet] } }]
+              : [{ externalEventId: { in: [...seriesIds] } }],
+        },
+        // Access: the invited (organizer/participant), plus any lab member for an
+        // event on the general calendar.
+        {
+          OR:
+            labWideIds.size > 0
+              ? [...invited, { externalEventId: { in: [...labWideIds] } }]
+              : invited,
+        },
+      ],
     },
     select: {
       id: true,
       organizerId: true,
       externalEventId: true,
+      iCalUID: true,
       isCoreMeeting: true,
       meetingType: true,
       participantUserIds: true,
@@ -210,19 +230,44 @@ async function meetingsForExternalEvents(
       timeEntries: { where: { userId }, select: { occurrenceStart: true } },
     },
   });
+  // Stable-key + fallback indexes. iCalUID is shared across every attendee copy
+  // and every instance of a series (see matchMeetingForEvent); externalEventId
+  // is the mutable per-copy id we fall back to for un-backfilled rows.
   const byExternalId = new Map<string, (typeof meetings)[number]>();
+  const byICalUID = new Map<string, (typeof meetings)[number]>();
   for (const m of meetings) {
     if (m.externalEventId) byExternalId.set(m.externalEventId, m);
+    if (m.iCalUID) byICalUID.set(m.iCalUID, m);
+  }
+  // Backfill pass: a row whose iCalUID is still null resolves here through its
+  // event id, so learn the UID off the event — index it in-memory so this
+  // request's other (possibly detached) instances resolve by the stable key,
+  // and persist it so a later single-instance view no longer needs a well-formed
+  // sibling in the window. Best-effort; a failed write just retries next read.
+  const heal = new Map<string, string>();
+  for (const e of events) {
+    if (!e.iCalUID || byICalUID.has(e.iCalUID)) continue;
+    const m =
+      (e.eventId ? byExternalId.get(e.eventId) : undefined) ??
+      (e.recurringEventId ? byExternalId.get(e.recurringEventId) : undefined);
+    if (!m) continue;
+    byICalUID.set(e.iCalUID, m);
+    if (!m.iCalUID) heal.set(m.id, e.iCalUID);
+  }
+  if (heal.size > 0) {
+    await Promise.all(
+      [...heal].map(([id, iCalUID]) =>
+        prisma.scheduledMeeting.update({ where: { id }, data: { iCalUID } }).catch(() => {}),
+      ),
+    );
   }
   // Re-key onto the ids the events themselves carry, so an instance of a
-  // recurring meeting resolves through its master — then down to its own
-  // occurrence.
+  // recurring meeting resolves through its master (or, detached, its stable
+  // iCalUID) — then down to its own occurrence.
   const byEventId = new Map<string, EventMeetingDTO>();
   for (const e of events) {
     if (!e.eventId) continue;
-    const m =
-      byExternalId.get(e.eventId) ??
-      (e.recurringEventId ? byExternalId.get(e.recurringEventId) : undefined);
+    const m = matchMeetingForEvent(e, byICalUID, byExternalId);
     if (!m) continue;
     const at = googleInstanceOriginalStart(e.eventId, e.recurringEventId) ?? new Date(e.startIso);
     const occurrence = resolveOccurrence(m, m.exceptions, at);

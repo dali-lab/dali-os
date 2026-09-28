@@ -599,7 +599,7 @@ describe("createGoogleCalendarEvent", () => {
 
   it("sends an explicit timeZone on start/end — Google rejects a recurring insert without one", async () => {
     mockValidToken();
-    const fetchMock = mockFetchOnce({ id: "evt1", htmlLink: "https://cal/evt1" });
+    const fetchMock = mockFetchOnce({ id: "evt1", iCalUID: "evt1@google.com", htmlLink: "https://cal/evt1" });
     const result = await createGoogleCalendarEvent({
       linkId: "link1",
       summary: "Weekly sync",
@@ -619,7 +619,7 @@ describe("createGoogleCalendarEvent", () => {
       timeZone: "America/Los_Angeles",
     });
     expect(body.recurrence).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=WE"]);
-    expect(result).toEqual({ eventId: "evt1", htmlLink: "https://cal/evt1", meetUrl: null });
+    expect(result).toEqual({ eventId: "evt1", iCalUID: "evt1@google.com", htmlLink: "https://cal/evt1", meetUrl: null });
   });
 
   it("falls back to the lab zone when the caller passes none", async () => {
