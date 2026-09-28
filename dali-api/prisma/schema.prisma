@@ -2127,6 +2127,14 @@ model ScheduledMeeting {
   selectedAt         DateTime?
   externalEventId    String?
 
+  // RFC 5545 UID of the pushed Google event. Unlike externalEventId (the mutable
+  // per-copy event id), the iCalUID is stable across every attendee's copy and
+  // every instance of a recurring series, so the calendar can tie a fetched
+  // Google event back to this meeting even when Google drops recurringEventId on
+  // a detached instance. Primary join key on the calendar read path; backfilled
+  // for pre-existing rows. Null = never pushed to Google / not yet backfilled.
+  iCalUID            String?
+
   // Optional video conference for the meeting. meetingUrl is the join link
   // (surfaced as a "Join" button and carried in notifications); it's minted on
   // the organizer's linked Google calendar when the organizer opts in at create
@@ -2192,6 +2200,8 @@ model ScheduledMeeting {
   timeProposals MeetingTimeProposal[]
 
   createdAt DateTime @default(now())
+
+  @@index([iCalUID])
 }
 
 enum ScopeType {

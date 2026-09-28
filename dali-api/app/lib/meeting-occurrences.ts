@@ -182,6 +182,38 @@ export function googleInstanceOriginalStart(eventId: string, recurringEventId?: 
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+/**
+ * Resolve which DALI meeting a fetched Google event belongs to.
+ *
+ * `iCalUID` (the RFC5545 UID) is the primary key: Google shares it across every
+ * attendee's copy of an event AND across every instance of a recurring series,
+ * so it holds even when Google hands one copy a *detached* instance — the
+ * instance id but no `recurringEventId` — which is exactly the case that makes a
+ * meeting silently fall back to a plain Google event on the calendar.
+ *
+ * `externalEventId` (the mutable Google event id / recurring-master id) stays as
+ * the fallback for meeting rows whose `iCalUID` hasn't been backfilled yet.
+ */
+export function matchMeetingForEvent<M>(
+  event: { eventId?: string | null; recurringEventId?: string | null; iCalUID?: string | null },
+  byICalUID: Map<string, M>,
+  byExternalId: Map<string, M>,
+): M | null {
+  if (event.iCalUID) {
+    const byUid = byICalUID.get(event.iCalUID);
+    if (byUid) return byUid;
+  }
+  if (event.eventId) {
+    const byId = byExternalId.get(event.eventId);
+    if (byId) return byId;
+  }
+  if (event.recurringEventId) {
+    const byMaster = byExternalId.get(event.recurringEventId);
+    if (byMaster) return byMaster;
+  }
+  return null;
+}
+
 /** The note among a meeting's notePages that belongs to one occurrence. */
 export function noteForOccurrence<T extends { meetingOccurrenceStart: Date | null }>(
   notes: T[],

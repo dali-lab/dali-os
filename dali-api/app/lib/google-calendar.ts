@@ -185,6 +185,7 @@ async function extractGoogleErrorDetail(res: Response): Promise<string> {
 
 interface GoogleEvent {
   id?: string;
+  iCalUID?: string;
   summary?: string;
   description?: string;
   location?: string;
@@ -554,6 +555,8 @@ export interface CalendarEvent {
   htmlLink?: string;
   meetingUrl?: string;
   recurringEventId?: string;
+  /** RFC 5545 UID — stable across attendee copies and recurring instances. */
+  iCalUID?: string;
   /** The calendar's backgroundColor hex, for per-calendar tinting. */
   color?: string;
   /** True when the viewer's access role for this calendar is owner or writer. */
@@ -583,7 +586,7 @@ async function fetchAllEventsForCalendar(
     orderBy: "startTime",
     maxResults: "250",
     fields:
-      "items(id,recurringEventId,summary,description,location,status,transparency," +
+      "items(id,iCalUID,recurringEventId,summary,description,location,status,transparency," +
       "start(dateTime,date),end(dateTime,date)," +
       "htmlLink,hangoutLink,conferenceData(entryPoints(entryPointType,uri))," +
       "organizer(email,displayName,self)," +
@@ -644,6 +647,7 @@ async function fetchAllEventsForCalendar(
       htmlLink: ev.htmlLink,
       meetingUrl: conferenceUrl(ev),
       recurringEventId: (ev as { recurringEventId?: string }).recurringEventId,
+      iCalUID: ev.iCalUID,
       color,
       writable,
       responseStatus,
@@ -806,7 +810,7 @@ export type CreateGoogleEventInput = {
 
 export async function createGoogleCalendarEvent(
   input: CreateGoogleEventInput,
-): Promise<{ eventId: string; htmlLink: string | null; meetUrl: string | null }> {
+): Promise<{ eventId: string; iCalUID: string | null; htmlLink: string | null; meetUrl: string | null }> {
   const token = await getValidAccessTokenForLink(input.linkId);
   const calendarId = encodeURIComponent(input.calendarId ?? "primary");
   const timeZone = input.timeZone ?? APPLICATION_TZ;
@@ -865,7 +869,7 @@ export async function createGoogleCalendarEvent(
       conferenceUrl(data) ??
       (await fetchEventMeetUrl(token, calendarId, data.id).catch(() => null));
   }
-  return { eventId: data.id, htmlLink: data.htmlLink ?? null, meetUrl };
+  return { eventId: data.id, iCalUID: data.iCalUID ?? null, htmlLink: data.htmlLink ?? null, meetUrl };
 }
 
 /** Re-read a just-created event's Meet link. Called when events.insert returned
@@ -1073,6 +1077,7 @@ export async function getGoogleEvent(opts: {
   eventId: string;
 }): Promise<{
   id: string;
+  iCalUID: string | null;
   recurrence: string[];
   startIso: string | null;
   startDate: string | null;
@@ -1090,7 +1095,7 @@ export async function getGoogleEvent(opts: {
   const calendarId = encodeURIComponent(opts.calendarId ?? "primary");
   const params = new URLSearchParams({
     fields:
-      "id,summary,description,location,recurrence,start(dateTime,date),end(dateTime,date),attendees(email)",
+      "id,iCalUID,summary,description,location,recurrence,start(dateTime,date),end(dateTime,date),attendees(email)",
   });
   const res = await fetch(
     `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${encodeURIComponent(opts.eventId)}?${params}`,
@@ -1102,6 +1107,7 @@ export async function getGoogleEvent(opts: {
   }
   const data = (await res.json()) as {
     id?: string;
+    iCalUID?: string;
     summary?: string;
     description?: string;
     location?: string;
@@ -1112,6 +1118,7 @@ export async function getGoogleEvent(opts: {
   };
   return {
     id: data.id ?? opts.eventId,
+    iCalUID: data.iCalUID ?? null,
     recurrence: data.recurrence ?? [],
     startIso: data.start?.dateTime ?? null,
     startDate: data.start?.date ?? null,

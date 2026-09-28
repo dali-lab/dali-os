@@ -16,9 +16,21 @@ export type RosterMember = {
   lastName: string;
   domainId: string;
   level: "P1" | "P2" | "P3";
+  // Present when the roster is loaded with a cycleId (see useRoster). Reflects
+  // the P3-default plus the staffing board's role override; older callers that
+  // don't pass a cycle get undefined and fall back to level.
+  isMentor?: boolean;
+  // A cycle external mentor appended to the pool (not on the project roster).
+  external?: boolean;
 };
 export type RosterDomain = { id: string; code: string; displayName: string };
 export type RosterData = { domains: RosterDomain[]; members: RosterMember[] };
+
+// Whether a roster member counts as a mentor: the server's isMentor when
+// present (role override aware), else the P3-level default.
+export function isMentorMember(m: RosterMember): boolean {
+  return m.isMentor ?? m.level === "P3";
+}
 
 export function memberName(m: { firstName: string; lastName: string }): string {
   return `${m.firstName} ${m.lastName}`.trim();
@@ -30,11 +42,14 @@ const EMPTY_ROSTER: RosterData = { domains: [], members: [] };
  * Lazily loads a project's roster (staffed members + domains) for the editor's
  * pickers. Fetches only while `enabled` and both ids are present; clears
  * otherwise. Core-only endpoint — a non-Core caller just gets an empty roster.
+ * Pass `cycleId` (the finalize reviewer does) to fold in role overrides and the
+ * cycle's external mentors; omit it for post-cycle editing on the project tab.
  */
 export function useRoster(
   projectId: string | null,
   termId: string | null,
   enabled: boolean,
+  cycleId?: string | null,
 ): { roster: RosterData; loading: boolean } {
   const [roster, setRoster] = useState<RosterData>(EMPTY_ROSTER);
   const [loading, setLoading] = useState(false);
@@ -46,10 +61,9 @@ export function useRoster(
     }
     let cancelled = false;
     setLoading(true);
-    fetch(
-      `/api/mentorship/roster?projectId=${encodeURIComponent(projectId)}&termId=${encodeURIComponent(termId)}`,
-      { credentials: "include" },
-    )
+    const params = new URLSearchParams({ projectId, termId });
+    if (cycleId) params.set("cycleId", cycleId);
+    fetch(`/api/mentorship/roster?${params.toString()}`, { credentials: "include" })
       .then((r) => (r.ok ? r.json() : null))
       .then((d: RosterData | null) => {
         if (!cancelled) setRoster(d ?? EMPTY_ROSTER);
@@ -63,7 +77,7 @@ export function useRoster(
     return () => {
       cancelled = true;
     };
-  }, [projectId, termId, enabled]);
+  }, [projectId, termId, enabled, cycleId]);
 
   return { roster, loading };
 }
