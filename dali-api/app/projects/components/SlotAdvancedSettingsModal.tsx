@@ -9,6 +9,7 @@ import { Modal, ModalHeader } from "~/components/Modal";
 import { modalCardClass } from "~/components/os-chrome";
 import { SlotFormPicker } from "./SlotFormPicker";
 import { SlotColumnMapper } from "./SlotColumnMapper";
+import { SlotGateControl } from "./SlotGateControl";
 import type { Slot } from "~/projects/lib/form-slots";
 import type { ColumnMapping } from "~/projects/lib/slot-roles";
 
@@ -20,6 +21,7 @@ type Binding = {
   published: boolean;
   publicToken: string | null;
   mapping: ColumnMapping | null;
+  gateAudience: string | null;
 } | null;
 
 type FormQuestion = {
@@ -79,6 +81,13 @@ export function SlotAdvancedSettingsModal({
             questions={formQuestions}
             mapping={binding.mapping}
             cycleTerms={cycleTerms}
+            canManage={canManage}
+          />
+        )}
+        {binding && (
+          <SlotGateControl
+            slotLabel={slotLabel}
+            gateAudience={binding.gateAudience}
             canManage={canManage}
           />
         )}

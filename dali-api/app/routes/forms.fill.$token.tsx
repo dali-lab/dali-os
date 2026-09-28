@@ -1,4 +1,4 @@
-import { redirect, useLoaderData } from "react-router";
+import { Link, redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/forms.fill.$token";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -69,13 +69,23 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const form = await loadPublicForm(params.token!, userId);
   if (!form) throw new Response("Not found", { status: 404 });
 
-  // One-response gate (Form.oneResponsePerMember): education-context fills
-  // are per-session and exempt; anonymous fills have no identity to key on;
-  // ordinaryFillBlock also exempts slot-bound forms, mirroring
-  // submitMemberForm's 409 gate.
+  // Already-submitted gate: education-context fills are per-session and exempt;
+  // anonymous fills have no identity to key on. ordinaryFillBlock returns the
+  // prior submission for a bound staffing form (one-and-done) or for an ordinary
+  // oneResponsePerMember form, mirroring submitMemberForm's 409 gate.
   const block =
     userId && !educationSessionId && !educationOfferingId
       ? await ordinaryFillBlock(form.formId, userId)
+      : null;
+
+  // Where to send the member after they submit — carried by the app-lock gate
+  // (layout.tsx) as ?next so a gated fill returns them to the page they were
+  // headed for. Local paths only (leading single slash), to avoid an open
+  // redirect off a hand-crafted link.
+  const nextParam = url.searchParams.get("next");
+  const next =
+    nextParam && nextParam.startsWith("/") && !nextParam.startsWith("//")
+      ? nextParam
       : null;
 
   // loadPublicForm doesn't echo the token back; the submit endpoint is
@@ -86,6 +96,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     token: params.token!,
     educationSessionId,
     educationOfferingId,
+    next,
     alreadySubmitted: block ? { at: block.at.toISOString() } : null,
   };
 }
@@ -123,6 +134,14 @@ export default function MemberFormFill() {
             })}
             .
           </p>
+          {data.next && (
+            <Link
+              to={data.next}
+              className="mt-6 inline-block px-4 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90"
+            >
+              Continue
+            </Link>
+          )}
         </div>
       </MemberFormShell>
     );
@@ -131,6 +150,7 @@ export default function MemberFormFill() {
     <MemberFormShell allowExit>
       <MemberFormFillView
         data={data}
+        next={data.next}
         extraBody={
           data.educationSessionId || data.educationOfferingId
             ? {

@@ -10,9 +10,11 @@ import { prisma } from "~/lib/db";
 import { ensureStaffingCycle } from "../lib/staffing-cycle";
 import {
   getSlotBinding,
+  isGateAudience,
   listSelectableForms,
   setSlotBinding,
   setSlotColumnMapping,
+  setSlotGate,
 } from "../lib/form-slots";
 import { SubmissionFilters } from "../components/SubmissionFilters";
 import { SlotAdvancedSettingsModal } from "../components/SlotAdvancedSettingsModal";
@@ -250,6 +252,17 @@ export async function action({ request }: Route.ActionArgs) {
       mapping as ColumnMapping,
       auth.user.sub,
     );
+    if (!result.ok)
+      return Response.json({ error: result.error }, { status: 400 });
+    return Response.json({ ok: true });
+  }
+
+  if (intent === "set-slot-gate") {
+    const raw = String(form.get("gateAudience") ?? "");
+    const audience = raw === "" ? null : raw;
+    if (audience !== null && !isGateAudience(audience))
+      return Response.json({ error: "Invalid audience." }, { status: 400 });
+    const result = await setSlotGate(cycle.id, SLOT, audience, null, auth.user.sub);
     if (!result.ok)
       return Response.json({ error: result.error }, { status: 400 });
     return Response.json({ ok: true });

@@ -14,6 +14,7 @@ import { maybeUpgradeLegacyToBetterAuth } from "~/lib/betterauth-upgrade.server"
 import { redirectToLogin } from '~/lib/login-next';
 import { getUserRoles, isLabMentor } from '~/lib/roles'
 import { getAppGateOutstanding } from '~/signing/lib/state.server'
+import { getBoundFormGateOutstanding } from '~/forms/lib/gate.server'
 import { getActiveCycles } from '~/hiring/lib/cycles'
 import { prisma } from '~/lib/db'
 import { resolvePhotoUrl } from '~/lib/photo'
@@ -135,6 +136,25 @@ export async function loader({ request }: Route.LoaderArgs) {
       if (outstanding) {
         return redirect(
           `/sign/${outstanding.bindingId}?next=${encodeURIComponent(path + url.search)}`,
+        )
+      }
+    }
+  }
+
+  // Bound-form app-lock: the staffing analog of the signing gate above, behind
+  // the `bound-form-lock` flag. A member in a locked staffing form's audience
+  // who hasn't filled it is redirected to the fill page until they do. Exempt
+  // the fill surface itself, /logout, and /sign (don't fight the signing gate).
+  {
+    const url = new URL(request.url)
+    const path = url.pathname
+    const gateExempt =
+      path.startsWith('/forms/fill/') || path.startsWith('/logout') || path.startsWith('/sign')
+    if (isLabMember && !gateExempt) {
+      const owed = await timed(request, 'formGate', () => getBoundFormGateOutstanding(auth.user.sub, roles, request))
+      if (owed) {
+        return redirect(
+          `/forms/fill/${owed.token}?next=${encodeURIComponent(path + url.search)}`,
         )
       }
     }
@@ -277,6 +297,9 @@ const LAYOUT_MUTATING_ACTION_PREFIXES = [
   '/members',
   // Signing clears the hard gate — revalidate the shell so the gate re-checks.
   '/sign',
+  // Submitting a bound staffing form clears its app-lock — revalidate so the
+  // gate re-checks (the fill posts to the /api/forms/fill resource route).
+  '/api/forms/fill',
 ]
 
 export function shouldRevalidate({ formAction, currentUrl, nextUrl, defaultShouldRevalidate }: ShouldRevalidateFunctionArgs) {

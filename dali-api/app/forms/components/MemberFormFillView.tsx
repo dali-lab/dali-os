@@ -39,11 +39,17 @@ export function MemberFormFillView({
   // Optional extra fields merged into the submit body (e.g. the education
   // session/offering context the fill URL carried).
   extraBody,
+  // Optional local path to return to after submitting — carried by the app-lock
+  // gate so a required fill lands the member back where they were headed. Shown
+  // as a "Continue" button on the done screen.
+  next,
 }: {
   data: MemberFormData;
   doneContent?: React.ReactNode;
   extraBody?: Record<string, string | null>;
+  next?: string | null;
 }) {
+  const navigate = useNavigate();
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [state, setState] = useState<"idle" | "submitting" | "done">("idle");
   const [error, setError] = useState<string | null>(null);
@@ -103,6 +109,13 @@ export function MemberFormFillView({
               Your response to “{data.name}” has been recorded.
             </p>
           </>
+        )}
+        {next && (
+          <div className="mt-6">
+            <Button variant="primary" size="sm" onClick={() => navigate(next)}>
+              Continue
+            </Button>
+          </div>
         )}
       </div>
     );
