@@ -8,8 +8,11 @@ import { canViewMentorship, mentorshipPairWhere } from "../lib/visibility";
 // GET    /api/mentorship/pairs — list pairs. Every lab mentor (and Core/Admin)
 //        sees all pairs lab-wide.
 //        Filters: projectId, termId, mentorUserId, menteeUserId.
-// POST   /api/mentorship/pairs — manual create. Core only.
-//        Body: { menteeUserId, mentorUserId, projectId, termId, domainId }
+// POST   /api/mentorship/pairs — assign a mentee's mentor. Core only.
+//        Body: { menteeUserId, mentorUserId, projectId, termId, domainId }.
+//        One mentor per mentee per (project, term, domain): if the mentee is
+//        already paired in that domain the existing row is reassigned (and any
+//        stray extra rows collapsed) rather than a second mentor added.
 // PATCH  /api/mentorship/pairs — reassign a pair's mentor. Core only.
 //        Body: { id, mentorUserId }. Marks the pair manual so it survives a
 //        staffing re-finalize.
@@ -192,19 +195,31 @@ export async function action({ request }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Invalid body" }, { status: 400 }));
   }
 
-  // Avoid creating an exact duplicate (no unique constraint on the model).
-  const dupe = await prisma.mentorshipPair.findFirst({
+  // One mentor per mentee per (project, term, domain). If the mentee is already
+  // paired in this domain, reassign that row to the new mentor and collapse any
+  // stray extras — never add a second mentor.
+  const existing = await prisma.mentorshipPair.findMany({
     where: {
       menteeUserId: body.menteeUserId,
-      mentorUserId: body.mentorUserId,
       projectId: body.projectId,
       termId: body.termId,
       domainId: body.domainId,
     },
     select: { id: true },
   });
-  if (dupe) {
-    return withCors(request, Response.json({ id: dupe.id, created: false }));
+  if (existing.length > 0) {
+    const [keep, ...extra] = existing;
+    if (extra.length > 0) {
+      await prisma.mentorshipPair.deleteMany({
+        where: { id: { in: extra.map((e) => e.id) } },
+      });
+    }
+    const updated = await prisma.mentorshipPair.update({
+      where: { id: keep.id },
+      data: { mentorUserId: body.mentorUserId, manual: true },
+      select: { id: true },
+    });
+    return withCors(request, Response.json({ id: updated.id, created: false }));
   }
   const created = await prisma.mentorshipPair.create({
     data: {

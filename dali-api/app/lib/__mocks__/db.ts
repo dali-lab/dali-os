@@ -429,6 +429,7 @@ export const prisma = {
     findFirst: vi.fn(),
     findUnique: vi.fn(),
     create: vi.fn(),
+    update: vi.fn(),
     delete: vi.fn(),
     deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   },

@@ -6,6 +6,7 @@ import { cn } from "~/lib/cn";
 import { Button } from "~/components/ui/Button";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { useDialog } from "~/components/ui/dialog";
+import { PairingReviewPanel } from "~/mentorship/components/PairingReviewPanel";
 
 type Automation = "assignments" | "slack" | "gmail" | "github";
 
@@ -54,6 +55,7 @@ export function FinalizeModal({
   open,
   onClose,
   cycleId,
+  termId,
   projectId,
   projectName,
   defaultSlackChannel,
@@ -62,6 +64,7 @@ export function FinalizeModal({
   open: boolean;
   onClose: () => void;
   cycleId: string;
+  termId: string;
   projectId: string;
   projectName: string;
   // Pre-fill for the editable channel/team fields. Slack defaults to the
@@ -381,6 +384,18 @@ export function FinalizeModal({
           );
         })}
       </ul>
+
+      {results?.assignments?.status === "ok" && (
+        <div className="mt-4 border-t border-border pt-3">
+          <p className="text-sm font-medium text-foreground">Review pairings</p>
+          <p className="text-xs text-muted-foreground mb-2">
+            Each mentee has one mentor. Reassign to rebalance before you finish.
+          </p>
+          <div className="max-h-[40vh] overflow-y-auto pr-1">
+            <PairingReviewPanel projectId={projectId} termId={termId} cycleId={cycleId} />
+          </div>
+        </div>
+      )}
 
       {/* Save/Cancel persist the channel + slug fields (synced to the project
           details page) without running automations. Shown only when edited. */}
