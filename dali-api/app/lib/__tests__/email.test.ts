@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   interpolate,
   bodyToHtml,
+  escapeHtml,
   renderEmail,
   sanitizeRichEmailHtml,
   htmlToPlainText,
@@ -114,6 +115,32 @@ describe("bodyToHtml", () => {
     const out = bodyToHtml('<a href="javascript:alert(1)">click</a>');
     expect(out).not.toContain("javascript:");
     expect(out).not.toContain("<a ");
+  });
+});
+
+describe("escapeHtml", () => {
+  it("escapes the HTML-significant characters", () => {
+    expect(escapeHtml(`<a href="x">Tom & "Jerry"</a>`)).toBe(
+      "&lt;a href=&quot;x&quot;&gt;Tom &amp; &quot;Jerry&quot;&lt;/a&gt;",
+    );
+  });
+
+  it("escapes & before the other entities so output isn't double-encoded", () => {
+    expect(escapeHtml("a < b")).toBe("a &lt; b");
+    expect(escapeHtml("&lt;")).toBe("&amp;lt;");
+  });
+
+  it("neutralizes a script payload spliced into a hand-built body", () => {
+    // The education portal emails interpolate names/titles straight into an
+    // HTML string; escapeHtml is what keeps that from injecting markup.
+    const out = `<p>Hi ${escapeHtml('<script>alert(1)</script>')},</p>`;
+    expect(out).not.toContain("<script");
+    expect(out).toContain("&lt;script&gt;");
+  });
+
+  it("leaves ordinary title text untouched apart from the metacharacters", () => {
+    expect(escapeHtml("Design & Build")).toBe("Design &amp; Build");
+    expect(escapeHtml("Intro to React")).toBe("Intro to React");
   });
 });
 

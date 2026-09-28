@@ -11,8 +11,11 @@ vi.mock("~/lib/tasks", async (importOriginal) => ({
     await importOriginal<typeof import("~/lib/tasks")>()
   ).SELF_CLEARING_FORM_TODO,
   listOpenTasks: vi.fn(),
+  listMyProjectTasks: vi.fn(),
   listNotificationHistory: vi.fn(),
 }));
+vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn(async () => ({})) }));
+vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/lib/notifications", async (importOriginal) => ({
   // annotateDesktopFeed stays real — the legacy-payload test covers the
   // desktop/urgent derivation it adds.
@@ -25,9 +28,11 @@ import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import {
   listOpenTasks,
+  listMyProjectTasks,
   listNotificationHistory,
   SELF_CLEARING_FORM_TODO,
 } from "~/lib/tasks";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import {
   listMyNotifications,
   listRetiredMeetingPingIds,
@@ -53,6 +58,8 @@ beforeEach(() => {
     { id: "t1", title: "Do it", link: "/x" },
   ] as any);
   vi.mocked(listRetiredMeetingPingIds).mockResolvedValue(["stale-1"]);
+  vi.mocked(isFeatureEnabled).mockResolvedValue(false);
+  vi.mocked(listMyProjectTasks).mockResolvedValue([{ id: "w1" }] as any);
   vi.mocked(listNotificationHistory).mockResolvedValue({
     items: [{ id: "h1" }],
     nextCursor: null,
@@ -81,8 +88,17 @@ describe("GET /api/notifications", () => {
       // Stale-unread rows the feed hid: the desktop shell retires the banners
       // it already delivered for them.
       retiredIds: ["stale-1"],
+      projectTasks: [],
     });
     expect(listNotificationHistory).not.toHaveBeenCalled();
+    expect(listMyProjectTasks).not.toHaveBeenCalled();
+  });
+
+  it("adds assigned project tasks when my-project-work is on, outside taskCount", async () => {
+    vi.mocked(isFeatureEnabled).mockResolvedValue(true);
+    const json = await (await loader({ request: req() } as any)).json();
+    expect(json.projectTasks).toEqual([{ id: "w1" }]);
+    expect(json.taskCount).toBe(1);
   });
 
   it("returns the history payload when a history param is present", async () => {

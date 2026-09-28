@@ -41,11 +41,13 @@ const MEETING_ROW = {
   organizer: { firstName: "Alice", lastName: "Smith", daliEmail: "alice@dali.dartmouth.edu" },
   attendance: [
     {
+      occurrenceStart: new Date("2026-09-10T14:00:00Z"),
       present: true,
       markedAt: new Date("2026-09-10T14:05:00Z"),
       user: { id: "u-1", firstName: "Bob", lastName: "Jones", daliEmail: "bob@dali.dartmouth.edu" },
     },
     {
+      occurrenceStart: new Date("2026-09-10T14:00:00Z"),
       present: false,
       markedAt: null,
       user: { id: "u-2", firstName: "Carol", lastName: "Lee", daliEmail: "carol@dali.dartmouth.edu" },

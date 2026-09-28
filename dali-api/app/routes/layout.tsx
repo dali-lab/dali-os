@@ -10,9 +10,11 @@ import { LaunchWelcome } from '~/components/LaunchWelcome'
 import { NavPreloader } from '~/components/NavPreloader'
 import { TimeZonePrompt } from '~/components/TimeZonePrompt'
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth"
+import { maybeUpgradeLegacyToBetterAuth } from "~/lib/betterauth-upgrade.server"
 import { redirectToLogin } from '~/lib/login-next';
 import { getUserRoles, isLabMentor } from '~/lib/roles'
 import { getAppGateOutstanding } from '~/signing/lib/state.server'
+import { getBoundFormGateOutstanding } from '~/forms/lib/gate.server'
 import { getActiveCycles } from '~/hiring/lib/cycles'
 import { prisma } from '~/lib/db'
 import { resolvePhotoUrl } from '~/lib/photo'
@@ -28,7 +30,6 @@ import { loadShellUser } from '~/lib/shell-user.server'
 import { resolveFeatureFlags } from '~/lib/feature-flags.server'
 import { FeatureFlagsProvider } from '~/components/FeatureFlags'
 import { resolveActiveActivitiesForUser } from '~/lib/activities.server'
-import { ACTIVITIES_FLAG } from '~/lib/activities'
 import { ActivitiesProvider } from '~/components/activities/ActivitiesProvider'
 import { ActivityOverlay } from '~/components/activities/ActivityChrome'
 import { InstructorChrome } from '~/components/InstructorChrome'
@@ -58,6 +59,16 @@ export async function loader({ request }: Route.LoaderArgs) {
     return redirectToLogin(request)
   }
   if (auth.user.type === 'applicant') return redirect('/portal')
+
+  // TEMPORARY (remove ~1 week post-cutover): silently migrate a validated legacy
+  // session to a BetterAuth session, then reload the same URL so the new cookie
+  // takes effect. Self-limiting — it clears the legacy cookie, so the fast-path
+  // skips it on the reload and it runs at most once per user.
+  const __betterauthUpgrade = await maybeUpgradeLegacyToBetterAuth(request, auth)
+  if (__betterauthUpgrade) {
+    const __u = new URL(request.url)
+    return redirect(__u.pathname + __u.search, { headers: __betterauthUpgrade })
+  }
 
   // Onboarding is NOT a hard gate: a new member can use the whole app freely.
   // Their onboarding lives as a persistent task (the welcome notification) that
@@ -121,10 +132,29 @@ export async function loader({ request }: Route.LoaderArgs) {
     const gateExempt =
       path === '/sign' || path.startsWith('/sign/') || path.startsWith('/logout')
     if (isLabMember && !gateExempt) {
-      const outstanding = await timed(request, 'appGate', () => getAppGateOutstanding(auth.user.sub))
+      const outstanding = await timed(request, 'appGate', () => getAppGateOutstanding(auth.user.sub, request))
       if (outstanding) {
         return redirect(
           `/sign/${outstanding.bindingId}?next=${encodeURIComponent(path + url.search)}`,
+        )
+      }
+    }
+  }
+
+  // Bound-form app-lock: the staffing analog of the signing gate above, behind
+  // the `bound-form-lock` flag. A member in a locked staffing form's audience
+  // who hasn't filled it is redirected to the fill page until they do. Exempt
+  // the fill surface itself, /logout, and /sign (don't fight the signing gate).
+  {
+    const url = new URL(request.url)
+    const path = url.pathname
+    const gateExempt =
+      path.startsWith('/forms/fill/') || path.startsWith('/logout') || path.startsWith('/sign')
+    if (isLabMember && !gateExempt) {
+      const owed = await timed(request, 'formGate', () => getBoundFormGateOutstanding(auth.user.sub, roles, request))
+      if (owed) {
+        return redirect(
+          `/forms/fill/${owed.token}?next=${encodeURIComponent(path + url.search)}`,
         )
       }
     }
@@ -205,19 +235,17 @@ export async function loader({ request }: Route.LoaderArgs) {
   // of tabless; also cookie-backed so there's no flash of the sidebar.
   const focus = isFocusRequest(request)
 
-  // Activities (specs/activities.md): the time-boxed "mode" layer, gated on its
-  // own flag. Resolved with the current path so the overlay payload only carries
-  // THIS route's codes — the answers for other routes never reach the client.
-  const activeActivities = flags[ACTIVITIES_FLAG]
-    ? await timed(request, 'activities', () =>
-        resolveActiveActivitiesForUser(
-          auth.user.sub,
-          roles,
-          new Date(),
-          new URL(request.url).pathname,
-        ),
-      )
-    : []
+  // Activities (specs/activities.md): the time-boxed "mode" layer. Resolved
+  // with the current path so the overlay payload only carries THIS route's
+  // codes — the answers for other routes never reach the client.
+  const activeActivities = await timed(request, 'activities', () =>
+    resolveActiveActivitiesForUser(
+      auth.user.sub,
+      roles,
+      new Date(),
+      new URL(request.url).pathname,
+    ),
+  )
 
   // Per-user display timezone, threaded to every descendant via
   // useUserTimeZone() so client formatting matches the server (hydration-safe).
@@ -226,6 +254,20 @@ export async function loader({ request }: Route.LoaderArgs) {
   const userTimeZone = resolveUserTimeZone(me)
   const userTimeZoneIsExplicit = isValidTimezone(me?.timeZone)
   const tzDismissedZone = readDismissedTimeZone(request)
+
+  // BetterAuth impersonation: when the `betterauth` flag is live for this user
+  // and their session was started by an admin's "log in as", surface the exit
+  // banner. Gated on the flag so the extra session read never runs in the
+  // default (flag-off) path, and wrapped so the probe can't break the shell.
+  let impersonating = false
+  if (flags['betterauth']) {
+    try {
+      const { getImpersonationState } = await import('~/lib/betterauth-compat.server')
+      impersonating = (await getImpersonationState(request)) !== null
+    } catch {
+      // never let the impersonation probe fault the layout
+    }
+  }
 
   // Pageview is fire-and-forget — never blocks the response.
   recordPageView({
@@ -237,7 +279,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const __loaderTotal = performance.now() - __loaderStart
   if (__loaderTotal >= 400) console.log(`[perf-total] layout loader ${__loaderTotal.toFixed(0)}ms`)
 
-  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, instructorChrome, favorites: sidebarPages.favorites, recents: sidebarPages.recents, flags, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities }
+  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, instructorChrome, favorites: sidebarPages.favorites, recents: sidebarPages.recents, flags, impersonating, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities }
 }
 
 // Layout data (roles, avatar, hiring access) changes rarely, but default
@@ -255,6 +297,9 @@ const LAYOUT_MUTATING_ACTION_PREFIXES = [
   '/members',
   // Signing clears the hard gate — revalidate the shell so the gate re-checks.
   '/sign',
+  // Submitting a bound staffing form clears its app-lock — revalidate so the
+  // gate re-checks (the fill posts to the /api/forms/fill resource route).
+  '/api/forms/fill',
 ]
 
 export function shouldRevalidate({ formAction, currentUrl, nextUrl, defaultShouldRevalidate }: ShouldRevalidateFunctionArgs) {
@@ -268,7 +313,7 @@ export function shouldRevalidate({ formAction, currentUrl, nextUrl, defaultShoul
 }
 
 export default function AppLayoutRoute() {
-  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, instructorChrome, favorites, recents, flags, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities } = useLoaderData<typeof loader>()
+  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, instructorChrome, favorites, recents, flags, impersonating, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities } = useLoaderData<typeof loader>()
 
   // Non-member (external instructor) shell: the lightweight, sidebar-free chrome
   // for the education-management routes they're allowed into. Rendered before the
@@ -552,7 +597,7 @@ export default function AppLayoutRoute() {
       {/* Above Layout, not inside pageContent: the tabless desktop nav row
           renders the Guide CTA from the shell, outside the routed page. */}
       <PageDocProvider>
-        <LayoutOS fitViewport={fitViewport} user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} hasActiveHiringAccess={hasActiveHiringAccess} isInstructor={isInstructor} isLabMentor={isLabMentorFlag} favorites={liveFavorites} focusMode={focus}>
+        <LayoutOS fitViewport={fitViewport} user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} hasActiveHiringAccess={hasActiveHiringAccess} isInstructor={isInstructor} isLabMentor={isLabMentorFlag} favorites={liveFavorites} impersonating={impersonating} focusMode={focus}>
           {tablessChild}
         </LayoutOS>
       </PageDocProvider>
@@ -560,7 +605,7 @@ export default function AppLayoutRoute() {
           idle. Mounted here, not in Layout, so it runs under both shells and
           exactly once per document — the embedded branch returns above, so a
           workspace iframe never starts a second round of prefetches. */}
-      {(flags['nav-preload'] ?? false) && <NavPreloader favorites={favorites} recents={recents} />}
+      <NavPreloader favorites={favorites} recents={recents} />
       <LaunchWelcome firstName={user.firstName || user.email.split('@')[0]} hasCalendarLink={hasCalendarLink} shouldShowTour={shouldShowTour} tabless={tabless} />
       <TimeZonePrompt userTimeZone={userTimeZone} userTimeZoneIsExplicit={userTimeZoneIsExplicit} dismissedZone={tzDismissedZone} />
       </ActivitiesProvider>

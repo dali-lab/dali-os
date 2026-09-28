@@ -100,7 +100,7 @@ export async function runScanAttendee(callerId: string, input: Input) {
     throw new McpInvalidError("Invalid or revoked pass");
   }
 
-  const result = await markMeetingAttendance(meeting.id, scanned.id, true, callerId);
+  const result = await markMeetingAttendance(meeting.id, scanned.id, true, callerId, new Date());
   if (!result.ok) {
     const status = result.status ?? 400;
     if (status === 404) throw new McpNotFoundError(result.error ?? "Not found");

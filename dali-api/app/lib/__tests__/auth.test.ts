@@ -4,15 +4,31 @@ vi.mock("~/lib/audit", () => ({
   logAuditEvent: vi.fn(),
 }));
 vi.mock("~/lib/db");
+// The BetterAuth coexistence fallback in computeAuth lazy-imports these two.
+// Mocking them keeps the BetterAuth instance out of this unit test and lets us
+// drive the flag + session state directly.
+vi.mock("~/lib/feature-flags.server", () => ({
+  isFeatureEnabledForEveryone: vi.fn(),
+}));
+vi.mock("~/lib/betterauth-compat.server", () => ({
+  resolveBetterAuthAuth: vi.fn(),
+}));
 
 import { prisma } from "~/lib/db";
 import { requireAuth, validateCasTicket } from "~/lib/auth";
+import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
+import { resolveBetterAuthAuth } from "~/lib/betterauth-compat.server";
 import {
   hashSessionId,
   ROLLING_TTL_MS,
   ABSOLUTE_TTL_MS,
   ROLL_MIN_INTERVAL_MS,
 } from "~/lib/session";
+
+const mockIsFeatureEnabledForEveryone =
+  isFeatureEnabledForEveryone as unknown as ReturnType<typeof vi.fn>;
+const mockResolveBetterAuthAuth =
+  resolveBetterAuthAuth as unknown as ReturnType<typeof vi.fn>;
 
 const mockPrisma = prisma as unknown as {
   session: {
@@ -73,6 +89,10 @@ beforeEach(() => {
     updateMany: vi.fn(),
   } as any;
   mockPrisma.session.update.mockResolvedValue({});
+  // Default: betterauth flag off, no BetterAuth session — so every existing
+  // test exercises pure legacy behavior.
+  mockIsFeatureEnabledForEveryone.mockResolvedValue(false);
+  mockResolveBetterAuthAuth.mockResolvedValue(null);
 });
 
 describe("requireAuth", () => {
@@ -241,6 +261,54 @@ describe("requireAuth", () => {
   });
 });
 
+describe("requireAuth — BetterAuth coexistence (Phase 1)", () => {
+  it("does not consult BetterAuth when the betterauth flag is off", async () => {
+    mockIsFeatureEnabledForEveryone.mockResolvedValue(false);
+    const req = new Request("http://localhost"); // no legacy session
+    const result = await requireAuth(req);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe("no_session");
+    expect(mockResolveBetterAuthAuth).not.toHaveBeenCalled();
+  });
+
+  it("authenticates via a BetterAuth session when the flag is on and legacy has none", async () => {
+    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
+    mockResolveBetterAuthAuth.mockResolvedValue({
+      user: { sub: "ba-user", email: "grad@dartmouth.edu", type: "dartmouth" },
+      sessionId: "auth-session-1",
+    });
+    const req = new Request("http://localhost"); // no legacy cookie/bearer
+    const result = await requireAuth(req);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.user.sub).toBe("ba-user");
+      expect(result.user.type).toBe("dartmouth");
+      expect(result.sessionId).toBe("auth-session-1");
+    }
+  });
+
+  it("falls back to the legacy failure when the flag is on but no BetterAuth session exists", async () => {
+    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
+    mockResolveBetterAuthAuth.mockResolvedValue(null);
+    const req = new Request("http://localhost");
+    const result = await requireAuth(req);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe("no_session");
+  });
+
+  it("never consults BetterAuth when a valid legacy session is present, even with the flag on", async () => {
+    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
+    mockPrisma.session.findUnique.mockResolvedValue(makeSessionRow());
+    const req = new Request("http://localhost", {
+      headers: { Cookie: "__dali_sid=raw-1" },
+    });
+    const result = await requireAuth(req);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.user.sub).toBe("user-1");
+    expect(mockResolveBetterAuthAuth).not.toHaveBeenCalled();
+  });
+});
+
 describe("validateCasTicket", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -262,6 +330,24 @@ describe("validateCasTicket", () => {
     expect(out.netId).toBe("abc123");
     expect(out.firstName).toBe("Test");
     expect(out.lastName).toBe("User");
+    vi.unstubAllGlobals();
+  });
+
+  it("decodes HTML entities in the CAS name (e.g. O'Neill)", async () => {
+    const xml = `<?xml version="1.0"?>
+<cas:serviceResponse xmlns:cas="http://www.yale.edu/tp/cas">
+  <cas:authenticationSuccess>
+    <cas:user>f007g87</cas:user>
+    <cas:netid>f007g87</cas:netid>
+    <cas:name>Liam O&#39;Neill</cas:name>
+  </cas:authenticationSuccess>
+</cas:serviceResponse>`;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(xml, { status: 200 }),
+    ));
+    const out = await validateCasTicket("ticket-x", "https://example.com/cb");
+    expect(out.firstName).toBe("Liam");
+    expect(out.lastName).toBe("O'Neill");
     vi.unstubAllGlobals();
   });
 

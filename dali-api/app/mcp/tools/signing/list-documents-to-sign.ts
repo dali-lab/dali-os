@@ -18,7 +18,10 @@ export const LIST_DOCUMENTS_TO_SIGN_TOOL = {
 };
 
 export async function runListDocumentsToSign(ctx: McpCtx) {
-  const documents = await listOutstandingBindings(ctx.user.id);
+  // Mentee countersignatures are excluded: the sign_document tool can't record
+  // one yet (web-only), so listing them here would show a task MCP can't
+  // complete. The web inbox includes them.
+  const documents = await listOutstandingBindings(ctx.user.id, { includeMentee: false });
   return { documents };
 }
 

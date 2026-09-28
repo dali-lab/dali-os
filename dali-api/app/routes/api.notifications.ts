@@ -4,9 +4,12 @@ import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import {
   listOpenTasks,
+  listMyProjectTasks,
   listNotificationHistory,
   SELF_CLEARING_FORM_TODO,
 } from "~/lib/tasks";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { getUserRoles } from "~/lib/roles";
 import {
   listMyNotifications,
   annotateDesktopFeed,
@@ -72,15 +75,21 @@ export async function loader({ request }: Route.LoaderArgs) {
   // still shows tasks (Tasks-nav feature). Items additionally carry the
   // desktop-app annotations (`desktop`, `urgent`); web clients ignore them,
   // as they do the `retiredIds` list alongside them.
-  const [{ items, unreadCount }, tasks, desktopPrefs, retiredIds] = await Promise.all([
-    listMyNotifications(userId),
-    listOpenTasks(userId),
-    prisma.notificationPreference.findMany({
-      where: { userId },
-      select: { eventType: true, desktop: true },
-    }),
-    listRetiredMeetingPingIds(userId),
-  ]);
+  const [{ items, unreadCount }, tasks, desktopPrefs, retiredIds, projectTasks] =
+    await Promise.all([
+      listMyNotifications(userId),
+      listOpenTasks(userId),
+      prisma.notificationPreference.findMany({
+        where: { userId },
+        select: { eventType: true, desktop: true },
+      }),
+      listRetiredMeetingPingIds(userId),
+      getUserRoles(userId).then(async (roles) =>
+        (await isFeatureEnabled("my-project-work", userId, roles, request))
+          ? listMyProjectTasks(userId)
+          : [],
+      ),
+    ]);
 
   return withCors(
     request,
@@ -93,6 +102,10 @@ export async function loader({ request }: Route.LoaderArgs) {
       // shell can retire banners it already delivered for them. Web clients
       // ignore this.
       retiredIds,
+      // Assigned project tasks for the drawer's Project work tab (empty while
+      // the my-project-work flag is off). Not in taskCount, which the desktop
+      // badge reads.
+      projectTasks,
     }),
   );
 }

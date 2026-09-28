@@ -11,9 +11,6 @@
 import type { ActivityScoring, ActivityStatus } from "~/generated/prisma/client";
 import type { UserRoles } from "~/lib/roles";
 
-/** The one feature flag that gates the whole subsystem during rollout. */
-export const ACTIVITIES_FLAG = "activities";
-
 // Registry of mechanics (metadata only — the actual behavior is in the
 // client/server mechanic registries). Adding an entry here + the two mechanic
 // modules is all it takes; the schema never changes.

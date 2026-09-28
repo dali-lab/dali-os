@@ -1,6 +1,7 @@
 // Shared RRULE occurrence expansion for ScheduledMeeting, exception-aware.
-// Used by the MCP list_my_upcoming_meetings tool and the meeting-reminders
-// job. Occurrences carry their ORIGINAL start (the MeetingException key and
+// Used by the MCP list_my_upcoming_meetings tool, the meeting-reminders job,
+// and resolveOccurrence (the per-occurrence key for attendance, hours and
+// notes). Occurrences carry their ORIGINAL start (the MeetingException key and
 // the reminder-log idempotency key) alongside the effective start/end after
 // any override.
 
@@ -91,6 +92,134 @@ export function expandOccurrences(
     return occ ? [occ] : [];
   }
   return [];
+}
+
+// How far either side of `at` resolveOccurrence looks for the occurrence it
+// means. Wider than any sane recurrence gap, so a monthly meeting still finds
+// its neighbour.
+const RESOLVE_BAND_MS = 40 * 24 * 60 * 60_000;
+// A meeting with no usable RRULE has one occurrence, and anything this close to
+// it is that occurrence.
+const SINGLE_MATCH_MS = 12 * 60 * 60_000;
+
+export type OccurrenceMeeting = {
+  selectedAt: Date | null;
+  createdAt: Date;
+  durationMinutes: number;
+  recurrenceRule: string | null;
+  /** A tracked Google series can arrive with no RRULE; its Google id is what
+   *  says it may still have more than one occurrence. */
+  externalEventId?: string | null;
+};
+
+/**
+ * The occurrence of a meeting that `at` refers to — the key attendance, meeting
+ * hours and meeting notes are stored under (its ORIGINAL start) plus its
+ * effective start/end after any exception.
+ *
+ * `at` is whatever the caller has in hand: a calendar instance's start or
+ * original start, or "now" for check-in. It snaps to the occurrence whose
+ * original or effective start is nearest, so an instance Google reports an
+ * hour off across a DST change still lands on the same key. No `at` means the
+ * first occurrence, which is also the only key a one-off meeting has.
+ *
+ * A Google-backed meeting whose RRULE DALI can't expand (a series tracked
+ * from one instance comes in without one) keys each distinct `at` on its own,
+ * so its occurrences still stay apart.
+ */
+export function resolveOccurrence(
+  meeting: OccurrenceMeeting,
+  exceptions: OccurrenceException[],
+  at?: Date | null,
+): Occurrence {
+  const base = meeting.selectedAt ?? meeting.createdAt;
+  const single = (start: Date): Occurrence => ({
+    originalStart: start,
+    start,
+    end: new Date(start.getTime() + meeting.durationMinutes * 60_000),
+  });
+  if (!at || !meeting.selectedAt) return single(base);
+
+  const rule = meeting.recurrenceRule ? buildRule(meeting.recurrenceRule, meeting.selectedAt) : null;
+  if (!rule) {
+    if (Math.abs(at.getTime() - base.getTime()) <= SINGLE_MATCH_MS) return single(base);
+    if (!meeting.recurrenceRule && !meeting.externalEventId) return single(base);
+    const minute = new Date(Math.floor(at.getTime() / 60_000) * 60_000);
+    return single(minute);
+  }
+
+  const occurrences = expandOccurrences(
+    meeting,
+    exceptions,
+    new Date(at.getTime() - RESOLVE_BAND_MS),
+    new Date(at.getTime() + RESOLVE_BAND_MS),
+  );
+  let best: Occurrence | null = null;
+  let bestGap = Infinity;
+  for (const occ of occurrences) {
+    const gap = Math.min(
+      Math.abs(occ.originalStart.getTime() - at.getTime()),
+      Math.abs(occ.start.getTime() - at.getTime()),
+    );
+    if (gap < bestGap) {
+      best = occ;
+      bestGap = gap;
+    }
+  }
+  return best ?? single(base);
+}
+
+/**
+ * The original start of one instance of a recurring Google event, read from its
+ * instance id (`<masterId>_<YYYYMMDDTHHMMSSZ>`, or `_<YYYYMMDD>` all-day). Null
+ * for anything else — a one-off event, or an id Google didn't mint that way.
+ */
+export function googleInstanceOriginalStart(eventId: string, recurringEventId?: string | null): Date | null {
+  if (!recurringEventId || !eventId.startsWith(`${recurringEventId}_`)) return null;
+  const m = eventId.slice(recurringEventId.length + 1).match(/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})Z)?$/);
+  if (!m) return null;
+  const d = new Date(Date.UTC(+m[1]!, +m[2]! - 1, +m[3]!, +(m[4] ?? 0), +(m[5] ?? 0), +(m[6] ?? 0)));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * Resolve which DALI meeting a fetched Google event belongs to.
+ *
+ * `iCalUID` (the RFC5545 UID) is the primary key: Google shares it across every
+ * attendee's copy of an event AND across every instance of a recurring series,
+ * so it holds even when Google hands one copy a *detached* instance — the
+ * instance id but no `recurringEventId` — which is exactly the case that makes a
+ * meeting silently fall back to a plain Google event on the calendar.
+ *
+ * `externalEventId` (the mutable Google event id / recurring-master id) stays as
+ * the fallback for meeting rows whose `iCalUID` hasn't been backfilled yet.
+ */
+export function matchMeetingForEvent<M>(
+  event: { eventId?: string | null; recurringEventId?: string | null; iCalUID?: string | null },
+  byICalUID: Map<string, M>,
+  byExternalId: Map<string, M>,
+): M | null {
+  if (event.iCalUID) {
+    const byUid = byICalUID.get(event.iCalUID);
+    if (byUid) return byUid;
+  }
+  if (event.eventId) {
+    const byId = byExternalId.get(event.eventId);
+    if (byId) return byId;
+  }
+  if (event.recurringEventId) {
+    const byMaster = byExternalId.get(event.recurringEventId);
+    if (byMaster) return byMaster;
+  }
+  return null;
+}
+
+/** The note among a meeting's notePages that belongs to one occurrence. */
+export function noteForOccurrence<T extends { meetingOccurrenceStart: Date | null }>(
+  notes: T[],
+  occurrenceStart: Date,
+): T | null {
+  return notes.find((n) => n.meetingOccurrenceStart?.getTime() === occurrenceStart.getTime()) ?? null;
 }
 
 /** RRULE UTC "UNTIL" in basic format (YYYYMMDDTHHMMSSZ). */

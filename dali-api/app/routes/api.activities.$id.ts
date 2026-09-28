@@ -4,15 +4,13 @@
 // the action forwards a submitted form to the mechanic's onAction. The surface
 // itself renders in a modal over whatever page the member is on (the activity's
 // whole point is to explore the site), so there is no navigable page here — just
-// this endpoint the modal loads and posts to. Gated on the flag + assignment.
+// this endpoint the modal loads and posts to. Gated on assignment.
 
 import type { Route } from "./+types/api.activities.$id";
 import { requireAuth } from "~/lib/auth";
 import { getUserRoles, isCore } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { fullName } from "~/lib/display";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { ACTIVITIES_FLAG } from "~/lib/activities";
 import { getActivityForMember, listActivityTeams } from "~/lib/activities.server";
 import { mechanicServer } from "~/activities/mechanics/registry.server";
 import { publishActivityChange } from "~/lib/activity-events.server";
@@ -22,10 +20,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!auth.ok) return Response.json({ ok: false }, { status: 401 });
   const userId = auth.user.sub;
   const roles = await getUserRoles(userId);
-  if (!(await isFeatureEnabled(ACTIVITIES_FLAG, userId, roles, request))) {
-    throw new Response("Not found", { status: 404 });
-  }
-
   const found = await getActivityForMember(params.id, userId, roles);
   if (!found || !found.assigned) throw new Response("Not found", { status: 404 });
   const { activity, active, team } = found;
@@ -81,10 +75,6 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!auth.ok) return auth.response;
   const userId = auth.user.sub;
   const roles = await getUserRoles(userId);
-  if (!(await isFeatureEnabled(ACTIVITIES_FLAG, userId, roles, request))) {
-    return Response.json({ ok: false, message: "Not available." }, { status: 404 });
-  }
-
   const found = await getActivityForMember(params.id, userId, roles);
   if (!found || !found.assigned) {
     return Response.json({ ok: false, message: "Not found." }, { status: 404 });

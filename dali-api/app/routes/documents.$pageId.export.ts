@@ -5,12 +5,13 @@ import { getPageAccess } from "~/lib/pageAccess.server";
 import { buildExportHtml } from "~/collab/export";
 import { readDocAsBlocks } from "~/collab/read";
 import { blocksToHtml, blocksToMarkdown } from "~/collab/blocknote-server";
-import { renderBlocksToPdf } from "~/collab/export-pdf";
+import { renderDocumentPdf } from "~/lib/pdf/document-pdf.server";
+import { normalizePageTypography } from "~/lib/page-typography";
 
 // GET /documents/:pageId/export?format=pdf|docx|md
 //
-// Server-renders the document to PDF (pdfkit — pure JS, runs under --omit=dev
-// on the Alpine runtime), Word .docx (html-to-docx), or Markdown. The body is
+// Server-renders the document to PDF (headless Chromium over the editor's own
+// markup + CSS, falling back to pdfkit), Word .docx (html-to-docx), or Markdown. The body is
 // decoded from the persisted Yjs snapshot as BlockNote blocks (see
 // app/collab/read.ts). Same read gate as the document page: any workspace
 // type the viewer can open, archived meeting notes included.
@@ -31,7 +32,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const page = await prisma.page.findUnique({
     where: { id: params.pageId },
-    select: { id: true, title: true, archivedAt: true, meetingNoteId: true },
+    select: { id: true, title: true, archivedAt: true, meetingNoteId: true, typography: true },
   });
   if (!page || (page.archivedAt !== null && !page.meetingNoteId)) {
     return new Response("Not found", { status: 404 });
@@ -70,7 +71,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     });
   }
 
-  const pdf = await renderBlocksToPdf(page.title, blocks);
+  const pdf = await renderDocumentPdf(page.title, blocks, normalizePageTypography(page.typography));
   return new Response(new Uint8Array(pdf), {
     headers: {
       "Content-Type": "application/pdf",

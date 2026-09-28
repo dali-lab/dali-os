@@ -97,6 +97,6 @@ describe("check_in_to_meeting", () => {
 
     const out = await runCheckInToMeeting("u1", { meetingId: "m1" });
     expect(out).toEqual({ ok: true });
-    expect(markMeetingAttendance).toHaveBeenCalledWith("m1", "u1", true, "u1");
+    expect(markMeetingAttendance).toHaveBeenCalledWith("m1", "u1", true, "u1", expect.any(Date));
   });
 });

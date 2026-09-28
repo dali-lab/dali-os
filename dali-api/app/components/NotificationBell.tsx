@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRevalidator } from "react-router";
 import type { AttentionNotification } from "~/components/AttentionPanel";
+import type { ProjectWorkItem } from "~/lib/project-work";
 
 const POLL_INTERVAL_MS = 60_000;
 
@@ -18,6 +19,8 @@ export type OpenTask = {
   title: string;
   link: string | null;
   source?: "meeting" | "reminder" | "announcement" | "general";
+  // Registry event; picks the drawer tab (see splitFeed).
+  eventType?: string | null;
   // Self-clearing task (form to submit, onboarding) — opening its link must
   // not mark it read. Optional so a stale payload falls back to the old
   // behavior; the server refuses the read either way.
@@ -37,6 +40,8 @@ type Polled = {
   // tasks (meeting invites awaiting an RSVP, anything unread that isn't a
   // task), so one poll backs the badge, the list and the panel.
   items: AttentionNotification[];
+  // Assigned project tasks (the Project work tab); empty while its flag is off.
+  projectTasks: ProjectWorkItem[];
 };
 
 // Polls /api/notifications once and returns the open-task count and the
@@ -47,6 +52,7 @@ function usePolledCounts(): Polled {
     taskCount: 0,
     tasks: [],
     items: [],
+    projectTasks: [],
   });
   const { revalidate } = useRevalidator();
   // Stable ref so the once-mounted SSE listener always calls the latest
@@ -64,6 +70,7 @@ function usePolledCounts(): Polled {
           taskCount?: number;
           tasks?: OpenTask[];
           items?: AttentionNotification[];
+          projectTasks?: ProjectWorkItem[];
         };
         if (cancelled) return;
         const tasks = Array.isArray(json.tasks) ? json.tasks : [];
@@ -72,6 +79,7 @@ function usePolledCounts(): Polled {
             typeof json.taskCount === "number" ? json.taskCount : tasks.length,
           tasks,
           items: Array.isArray(json.items) ? json.items : [],
+          projectTasks: Array.isArray(json.projectTasks) ? json.projectTasks : [],
         });
       } catch {
         // Polling errors are benign; we'll try again next tick.
@@ -116,12 +124,13 @@ export function useOpenTasks(): OpenTask[] {
   return usePolledCounts().tasks;
 }
 
-// Everything the bell's attention panel renders: the open tasks plus the
-// notification feed behind them, from a single poll.
+// Everything the bell's attention panel renders: the open tasks, the
+// notification feed behind them and assigned project work, from a single poll.
 export function useAttentionFeed(): {
   tasks: OpenTask[];
   items: AttentionNotification[];
+  projectTasks: ProjectWorkItem[];
 } {
-  const { tasks, items } = usePolledCounts();
-  return { tasks, items };
+  const { tasks, items, projectTasks } = usePolledCounts();
+  return { tasks, items, projectTasks };
 }

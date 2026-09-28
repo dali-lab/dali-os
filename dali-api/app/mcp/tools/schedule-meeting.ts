@@ -4,8 +4,7 @@
 // api.scheduled-meetings.ts POST. Requires the `mcp:write` scope.
 
 import { createScheduledMeeting, type ScheduledMeetingScope } from "~/lib/scheduled-meeting";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { getUserRoles, isCore, canViewForms } from "~/lib/roles";
+import { isCore, canViewForms } from "~/lib/roles";
 import { isCoreGroup } from "~/lib/groups";
 
 export const SCHEDULE_MEETING_TOOL = {
@@ -113,7 +112,7 @@ export const SCHEDULE_MEETING_TOOL = {
       addMeet: {
         type: "boolean",
         description:
-          "Attach a Google Meet link. Requires the google-meet feature and an organizerCalendarLinkId (the link is minted on that calendar); ignored otherwise.",
+          "Attach a Google Meet link. Requires an organizerCalendarLinkId (the link is minted on that calendar); ignored otherwise.",
       },
     },
     required: ["title", "durationMinutes"],
@@ -161,8 +160,6 @@ export async function runScheduleMeeting(
     throw new ScheduleMeetingError("Organizer has no daliEmail or dartmouthEmail on file");
   }
 
-  const roles = await getUserRoles(user.id);
-
   // Validate scope + required fields
   const scopeType = input.scopeType ?? "UserList";
   if (scopeType === "UserList" && (!input.participantUserIds || input.participantUserIds.length === 0)) {
@@ -205,10 +202,6 @@ export async function runScheduleMeeting(
     scope = { type: "None" };
   }
 
-  const addMeet =
-    !!input.addMeet &&
-    (await isFeatureEnabled("google-meet", user.id, roles));
-
   const result = await createScheduledMeeting({
     organizerId: user.id,
     organizerEmail,
@@ -225,7 +218,7 @@ export async function runScheduleMeeting(
     noteLocation: input.noteLocation,
     attendanceMode: input.attendanceMode,
     isCoreMeeting: resolvedIsCore,
-    addMeet,
+    addMeet: input.addMeet,
   });
 
   if (!result.ok) {

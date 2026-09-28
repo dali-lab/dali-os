@@ -2,7 +2,8 @@ import { useState } from "react";
 import { useRevalidator } from "react-router";
 import { Check, HelpCircle, X as XIcon } from "lucide-react";
 import { TASKS_CHANGED_EVENT } from "~/components/NotificationBell";
-import { buttonClasses } from "~/components/ui/Button";
+import { buttonClasses, type ButtonSize } from "~/components/ui/Button";
+import { cn } from "~/lib/cn";
 
 // Tell the shell's sidebar task poller that the task list changed. Inside a
 // TabWorkspace iframe the poller lives in the parent, so relay via postMessage;
@@ -26,9 +27,13 @@ export function notifyTasksChanged() {
 export function RsvpButtons({
   notificationId,
   onResponded,
+  size = "xs",
+  className = "mt-2 gap-1",
 }: {
   notificationId: string;
   onResponded?: (rsvp: "Accepted" | "Declined" | "Tentative") => void;
+  size?: ButtonSize;
+  className?: string;
 }) {
   const revalidator = useRevalidator();
   const [submitting, setSubmitting] = useState<
@@ -71,34 +76,36 @@ export function RsvpButtons({
     }
   }
 
+  const iconCls = size === "xs" ? "w-3 h-3" : "w-4 h-4";
+
   return (
     <>
-      <div className="flex items-center gap-1 mt-2">
+      <div className={cn("flex flex-wrap items-center", className)}>
         <button
           type="button"
           onClick={() => sendRsvp("accepted")}
           disabled={!!submitting}
-          className={buttonClasses("primary", "xs", "gap-1")}
+          className={buttonClasses("primary", size, "gap-1")}
         >
-          <Check className="w-3 h-3" />
+          <Check className={iconCls} />
           {submitting === "accepted" ? "Accepting…" : "Accept"}
         </button>
         <button
           type="button"
           onClick={() => sendRsvp("tentative")}
           disabled={!!submitting}
-          className={buttonClasses("secondary", "xs", "gap-1")}
+          className={buttonClasses("secondary", size, "gap-1")}
         >
-          <HelpCircle className="w-3 h-3" />
+          <HelpCircle className={iconCls} />
           {submitting === "tentative" ? "…" : "Maybe"}
         </button>
         <button
           type="button"
           onClick={() => sendRsvp("declined")}
           disabled={!!submitting}
-          className={buttonClasses("secondary", "xs", "gap-1")}
+          className={buttonClasses("secondary", size, "gap-1")}
         >
-          <XIcon className="w-3 h-3" />
+          <XIcon className={iconCls} />
           {submitting === "declined" ? "…" : "Decline"}
         </button>
       </div>

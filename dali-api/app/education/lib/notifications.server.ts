@@ -1,6 +1,6 @@
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
-import { renderEmail } from "~/lib/email";
+import { renderEmail, escapeHtml } from "~/lib/email";
 import { getEducationEmail } from "~/education/lib/education-emails.server";
 import { decisionSlot } from "~/education/lib/education-emails";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
@@ -202,7 +202,7 @@ export async function notifyNewAssignment(args: {
         subject: title,
         bodyHtml:
           redirectBannerHtml(redirectedFrom) +
-          `<p>Hi ${applicant.firstName},</p><p>${body}</p><p><a href="${getFrontendUrl()}${link}">Open the assignment</a></p>`,
+          `<p>Hi ${escapeHtml(applicant.firstName)},</p><p>${escapeHtml(body)}</p><p><a href="${escapeHtml(getFrontendUrl() + link)}">Open the assignment</a></p>`,
         eventType: "education.assignment",
       });
       await drainNow([id]);
@@ -258,7 +258,7 @@ export async function notifyGraded(args: {
         subject: title,
         bodyHtml:
           redirectBannerHtml(redirectedFrom) +
-          `<p>Hi ${student.firstName},</p><p>${body}</p><p><a href="${getFrontendUrl()}${link}">Open the assignment</a></p>`,
+          `<p>Hi ${escapeHtml(student.firstName)},</p><p>${escapeHtml(body)}</p><p><a href="${escapeHtml(getFrontendUrl() + link)}">Open the assignment</a></p>`,
         eventType: "education.grade",
       });
       await drainNow([id]);
@@ -351,7 +351,7 @@ export async function notifySessionReminder(args: {
         subject: title,
         bodyHtml:
           redirectBannerHtml(redirectedFrom) +
-          `<p>Hi ${applicant.firstName},</p><p>${body}</p><p><a href="${getFrontendUrl()}${link}">Open the course hub</a></p>`,
+          `<p>Hi ${escapeHtml(applicant.firstName)},</p><p>${escapeHtml(body)}</p><p><a href="${escapeHtml(getFrontendUrl() + link)}">Open the course hub</a></p>`,
         eventType: "education.session.reminder",
       });
       await drainNow([id]);
@@ -441,10 +441,10 @@ export async function notifyExternalInstructorInvite(args: {
       subject: `You're an instructor for ${args.offeringTitle}`,
       bodyHtml:
         redirectBannerHtml(redirectedFrom) +
-        `<p>Hi ${args.user.firstName},</p>` +
-        `<p>You've been added as an instructor for <strong>${args.offeringTitle}</strong> in DALI OS. ` +
+        `<p>Hi ${escapeHtml(args.user.firstName)},</p>` +
+        `<p>You've been added as an instructor for <strong>${escapeHtml(args.offeringTitle)}</strong> in DALI OS. ` +
         `You can manage sessions, review applications, take attendance, and grade work.</p>` +
-        `<p><a href="${link}">Open your teaching dashboard</a> — sign in with Dartmouth.</p>`,
+        `<p><a href="${escapeHtml(link)}">Open your teaching dashboard</a> — sign in with Dartmouth.</p>`,
       eventType: "education.instructor-invite",
     });
     await drainNow([id]);

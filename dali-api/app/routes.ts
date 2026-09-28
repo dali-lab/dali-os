@@ -7,6 +7,7 @@ export default [
     route("profile", "routes/profile.tsx"),
     route("onboarding", "routes/onboarding.tsx"),
     route("calendar", "calendar/routes/calendar.tsx"),
+    route("email", "email/routes/email.tsx"),
     // One meeting surface: details, note link, and attendance (roster + self
     // check-in QR + wallet scan) in one place.
     route("calendar/meeting/:id", "calendar/routes/calendar.meeting.$id.tsx"),
@@ -227,6 +228,7 @@ export default [
     // endpoint the Drive and editor POST to.
     route("api/forms", "routes/api.forms.ts"),
     route("api/folder-bindings", "routes/api.folder-bindings.ts"),
+    route("api/passkey-prompt", "routes/api.passkey-prompt.ts"),
     route("forms/edit/:formId", "forms/routes/forms.edit.$formId.tsx"),
     route("forms/preview-resolve", "forms/routes/forms.preview-resolve.ts"),
     route("forms/responses/:formId", "forms/routes/forms.responses.$formId.tsx"),
@@ -304,6 +306,7 @@ export default [
 
   // Partner auth (no layout).
   route("partner/login", "partners/routes/partner.login.tsx"),
+  route("partner/set-password", "partners/routes/partner.set-password.tsx"),
   route("partner/auth/verify", "partners/routes/partner.auth.verify.tsx"),
   route("partner/invite/:token", "partners/routes/partner.invite.$token.tsx"),
   route("partner/onboarding", "partners/routes/partner.onboarding.tsx"),
@@ -329,8 +332,12 @@ export default [
   // anywhere yet — reachable by direct URL.
   route("download", "routes/download.tsx"),
 
-  // Login (no layout)
+  // Login / signup / onboarding (no layout)
   route("login", "routes/login.tsx"),
+  route("signup", "routes/signup.tsx"),
+  route("welcome", "routes/welcome.tsx"),
+  route("login/dartmouth", "routes/login.dartmouth.tsx"),
+  route("login/dartmouth/set-password", "routes/login.dartmouth.set-password.tsx"),
   route("dev-login", "routes/dev-login.ts"),
   route("dev-login-as", "routes/dev-login-as.ts"),
   route("logout", "routes/logout.ts"),
@@ -357,6 +364,11 @@ export default [
   route("oauth/consent", "routes/oauth.consent.tsx"),
   route("oauth/calendar/google/start", "routes/oauth.calendar.google.start.ts"),
   route("integrations/calendar/google/callback", "routes/integrations.calendar.google.callback.ts"),
+  route("oauth/mail/google/start", "routes/oauth.mail.google.start.ts"),
+
+  // Apple Associated Domains — binds the desktop app to this origin for passkeys
+  // (webcredentials). See the route file + desktop/src-tauri/entitlements.plist.
+  route(".well-known/apple-app-site-association", "routes/well-known.apple-app-site-association.ts"),
 
   // MCP foundation (no layout)
   route(".well-known/oauth-authorization-server", "routes/well-known.oauth-authorization-server.ts"),
@@ -687,6 +699,10 @@ export default [
   route("admin/authorize-gmail", "routes/admin.authorize-gmail.ts"),
   route("admin/authorize-gmail/callback", "routes/admin.authorize-gmail.callback.ts"),
 
+  // BetterAuth admin impersonation (flag-gated on `betterauth`).
+  route("admin/impersonate", "routes/admin.impersonate.ts"),
+  route("admin/stop-impersonating", "routes/admin.stop-impersonating.ts"),
+
   // Email sending
   route("api/email/send", "routes/api.email.send.ts"),
 
@@ -718,6 +734,17 @@ export default [
   // AI project TL;DR — cached work-status summary for the Progress-tab status
   // bar. Same provider gating as api/ai/doc, plus the `project-tldr-ai` flag.
   route("api/ai/project-tldr", "routes/api.ai.project-tldr.ts"),
+  // Email tab AI tools (draft, rephrase, proofread, translate, search); `email` flag.
+  route("api/ai/email", "routes/api.ai.email.ts"),
+  route("api/email/contacts", "routes/api.email.contacts.ts"),
+  route("api/email/unread", "routes/api.email.unread.ts"),
+  route("api/email/attachment", "routes/api.email.attachment.ts"),
+
+  // BetterAuth catch-all: all /api/auth/* requests (sign-in, sign-up, session,
+  // callback, etc.) are forwarded to the BetterAuth handler. Phase 0 scaffolding
+  // — not wired into existing auth flows yet.
+  route("api/auth/*", "routes/api.auth.$.ts"),
+
   // Meeting-note recording: transcript in, notes Markdown out. Behind the
   // `ai-meeting-notes` flag; same provider gating as api/ai/doc.
   route("api/ai/meeting-notes", "routes/api.ai.meeting-notes.ts"),

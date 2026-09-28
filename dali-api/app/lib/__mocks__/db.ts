@@ -67,7 +67,10 @@ export const prisma = {
   },
   staffingCycleFormBinding: {
     findFirst: vi.fn(),
+    findUnique: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
+    update: vi.fn(),
+    upsert: vi.fn(),
   },
   partnerApplicationFormBinding: {
     findFirst: vi.fn(),
@@ -238,6 +241,15 @@ export const prisma = {
     upsert: vi.fn(),
     deleteMany: vi.fn(),
   },
+  // Default to no rows → every flag resolves to its registry default (off),
+  // including `betterauth`. requireAuth's BetterAuth-coexistence fallback and
+  // the login/partner door loaders call prisma.featureFlag via
+  // isFeatureEnabledForEveryone, so this must exist for those code paths.
+  featureFlag: {
+    findMany: vi.fn().mockResolvedValue([]),
+    findUnique: vi.fn(),
+    upsert: vi.fn(),
+  },
   projectAssignment: {
     findMany: vi.fn().mockResolvedValue([]),
     findFirst: vi.fn(),
@@ -367,12 +379,17 @@ export const prisma = {
   },
   meetingAttendance: {
     findUnique: vi.fn(),
+    findFirst: vi.fn().mockResolvedValue(null),
     findMany: vi.fn().mockResolvedValue([]),
     create: vi.fn(),
+    upsert: vi.fn(),
     createMany: vi.fn().mockResolvedValue({ count: 0 }),
     update: vi.fn(),
     updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+  },
+  meetingException: {
+    findMany: vi.fn().mockResolvedValue([]),
   },
   meetingReminderLog: {
     create: vi.fn(),
@@ -415,6 +432,7 @@ export const prisma = {
     findFirst: vi.fn(),
     findUnique: vi.fn(),
     create: vi.fn(),
+    update: vi.fn(),
     delete: vi.fn(),
     deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   },

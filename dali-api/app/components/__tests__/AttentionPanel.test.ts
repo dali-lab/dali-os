@@ -3,8 +3,10 @@ import {
   extraNotifications,
   attentionCount,
   hasAttentionContent,
+  splitFeed,
   type AttentionNotification,
 } from "~/components/AttentionPanel";
+import type { ProjectWorkItem } from "~/lib/project-work";
 import type { OpenTask } from "~/components/NotificationBell";
 
 function notif(
@@ -88,5 +90,69 @@ describe("attentionCount", () => {
     });
     expect(hasAttentionContent([], [invite])).toBe(true);
     expect(attentionCount([], [invite])).toBe(0);
+  });
+});
+
+const work = (id: string): ProjectWorkItem => ({
+  id,
+  title: `Work ${id}`,
+  projectId: "p1",
+  projectName: "DALI OS",
+  status: "Todo",
+  dueAt: null,
+  activityAt: "2026-09-12T12:00:00.000Z",
+  link: `/projects/p1?tab=board&task=${id}`,
+});
+
+describe("splitFeed", () => {
+  it("files Tasks-area events under work and everything else under admin", () => {
+    const feed = splitFeed(
+      [
+        task("t1"),
+        { ...task("t2"), eventType: "task.assigned", link: "/projects/p1?tab=board&task=w9" },
+      ],
+      [
+        notif({ id: "n1", eventType: "meeting.cancelled" }),
+        notif({ id: "n2", eventType: "project.sprint_closed", link: "/projects/p1" }),
+      ],
+      [],
+    );
+    expect(feed.work.map((c) => c.type)).toEqual(["task", "notification"]);
+    expect(feed.admin.map((c) => c.type)).toEqual(["task", "notification"]);
+  });
+
+  it("goes by event type, not link: a form linking to a task stays admin", () => {
+    const feed = splitFeed(
+      [],
+      [notif({ id: "n1", eventType: "form.submission", link: "/projects/p1?task=w1" })],
+      [],
+    );
+    expect(feed.work).toEqual([]);
+    expect(feed.admin).toHaveLength(1);
+  });
+
+  it("folds unread pings about a listed project task into its card", () => {
+    const feed = splitFeed(
+      [{ ...task("t1"), eventType: "task.due_reminder", link: "/projects/p1?tab=board&task=w1" }],
+      [
+        notif({ id: "n1", eventType: "task.comment", link: "/projects/p1?task=w1" }),
+        notif({ id: "n2", eventType: "task.comment", link: "/projects/p1?task=w2" }),
+      ],
+      [work("w1")],
+    );
+    expect(feed.work).toHaveLength(2);
+    expect(feed.work[0]).toMatchObject({ type: "project", pings: ["t1", "n1"] });
+    expect(feed.work[1]).toMatchObject({ type: "notification" });
+  });
+});
+
+describe("attentionCount with project work", () => {
+  it("adds assigned project tasks to the badge", () => {
+    expect(attentionCount([task("t1")], [], [work("w1"), work("w2")])).toBe(3);
+  });
+
+  it("doesn't count a ping folded into its project task", () => {
+    const ping = { ...task("t1"), eventType: "task.due_reminder", link: "/projects/p1?task=w1" };
+    expect(attentionCount([ping], [], [work("w1")])).toBe(1);
   });
 });

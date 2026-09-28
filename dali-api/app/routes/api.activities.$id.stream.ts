@@ -3,14 +3,12 @@
 // surface modal refetches and the leaderboard stays live for all viewers — not
 // just the person who acted. Mirrors api.notifications.stream.ts: an initial
 // comment to flush headers, a keepalive comment, and a periodic `sync` event as
-// the cross-machine backstop. Gated on the flag + assignment, like the data
-// endpoint it complements.
+// the cross-machine backstop. Gated on assignment, like the data endpoint it
+// complements.
 
 import type { Route } from "./+types/api.activities.$id.stream";
 import { requireAuth } from "~/lib/auth";
 import { getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { ACTIVITIES_FLAG } from "~/lib/activities";
 import { getActivityForMember } from "~/lib/activities.server";
 import { subscribeToActivity } from "~/lib/activity-events.server";
 
@@ -22,9 +20,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!auth.ok) return new Response("Unauthorized", { status: 401 });
   const userId = auth.user.sub;
   const roles = await getUserRoles(userId);
-  if (!(await isFeatureEnabled(ACTIVITIES_FLAG, userId, roles, request))) {
-    return new Response("Not found", { status: 404 });
-  }
   const found = await getActivityForMember(params.id, userId, roles);
   if (!found || !found.assigned) return new Response("Not found", { status: 404 });
 

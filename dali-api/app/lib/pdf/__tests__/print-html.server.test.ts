@@ -27,6 +27,44 @@ describe("documentToPrintHtml", () => {
     expect(html).toMatch(/@page/); // the print stylesheet is inlined
   });
 
+  // Regression: the sheet was looked up at a path the package's exports map
+  // doesn't expose, so every PDF rendered without BlockNote's styles (no list
+  // markers, no table borders).
+  it("inlines BlockNote's editor stylesheet", async () => {
+    const html = await documentToPrintHtml("Doc", [para("x")] as never);
+    expect(html).toContain(".bn-block-content");
+  });
+
+  // BlockNote scopes its table cell borders under .bn-editor.
+  it("wraps the body in .bn-editor so table styles apply", async () => {
+    const html = await documentToPrintHtml("Doc", [para("x")] as never);
+    expect(html).toContain('<div class="bn-editor">');
+  });
+
+  it("applies the page's typography prefs", async () => {
+    const html = await documentToPrintHtml("Doc", [para("x")] as never, {
+      font: "serif",
+      smallText: true,
+      fullWidth: false,
+      nestingGuides: false,
+    });
+    expect(html).toContain('<body class="doc-font-serif doc-small">');
+  });
+
+  it("renders toggle blocks without throwing", async () => {
+    const html = await documentToPrintHtml("Doc", [
+      {
+        id: "t1",
+        type: "toggleListItem",
+        props: {},
+        content: [{ type: "text", text: "Summary", styles: {} }],
+        children: [para("Body")],
+      },
+    ] as never);
+    expect(html).toContain("Summary");
+    expect(html).toContain("Body");
+  });
+
   it("escapes the title", async () => {
     const html = await documentToPrintHtml("<b>x</b>", []);
     expect(html).toContain("&lt;b&gt;x&lt;/b&gt;");

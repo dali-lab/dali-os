@@ -14,6 +14,8 @@ import { withCors, handlePreflight, preflightLoader } from "~/lib/cors";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { safeJson } from "~/lib/safe-json";
 import { prisma } from "~/lib/db";
+import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
+import { mintBetterAuthSession } from "~/lib/betterauth-session.server";
 
 const RATE_LIMIT_MAX = 200;
 const RATE_LIMIT_WINDOW_MS = 60_000;
@@ -99,6 +101,24 @@ export async function action({ request }: Route.ActionArgs) {
         },
       });
 
+      const userInfo = buildUserInfo(user, authType);
+
+      // Phase 4 (betterauth flag): mint a BetterAuth session so the token can
+      // be verified by auth.api.getSession() in authenticateMcpRequest. When
+      // the flag is off, fall through to the bespoke Session path unchanged.
+      if (await isFeatureEnabledForEveryone("betterauth", request)) {
+        const s = await mintBetterAuthSession({
+          userId,
+          grantId: grant.id,
+          userAgent: request.headers.get("user-agent") ?? undefined,
+          ipAddress: getClientIp(request),
+        });
+        return withCors(
+          request,
+          tokenResponse(s.token, s.expiresAt, userInfo, scopes),
+        );
+      }
+
       const session = await issueSession({
         userId,
         grantId: grant.id,
@@ -106,11 +126,9 @@ export async function action({ request }: Route.ActionArgs) {
         ip: getClientIp(request),
       });
 
-      const userInfo = buildUserInfo(user, authType);
-
       return withCors(
         request,
-        tokenResponse(session.rawId, userInfo, scopes),
+        tokenResponse(session.rawId, new Date(Date.now() + ROLLING_TTL_MS), userInfo, scopes),
       );
     }
 
@@ -130,8 +148,8 @@ export async function action({ request }: Route.ActionArgs) {
   }
 }
 
-function tokenResponse(rawSessionId: string, userInfo: UserInfo, scopes: string[]) {
-  const expiresIn = Math.floor(ROLLING_TTL_MS / 1000);
+function tokenResponse(rawSessionId: string, expiresAt: Date, userInfo: UserInfo, scopes: string[]) {
+  const expiresIn = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
   const res = Response.json(
     {
       access_token: rawSessionId,

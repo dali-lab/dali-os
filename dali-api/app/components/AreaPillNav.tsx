@@ -12,6 +12,7 @@ export type UnderlineTabButton = {
   active?: boolean;
   onClick: () => void;
   icon?: LucideIcon;
+  count?: number;
 };
 
 const osSegmentedTrackClass =
@@ -29,14 +30,28 @@ function osSegmentedItemClass(active: boolean) {
 function SubtabLabel({
   label,
   icon: Icon,
+  count,
+  active,
 }: {
   label: string;
   icon?: LucideIcon;
+  count?: number;
+  active?: boolean;
 }) {
   return (
     <>
       {Icon && <Icon className="h-4 w-4 shrink-0" aria-hidden />}
       {label}
+      {count !== undefined && (
+        <span
+          className={cn(
+            "grid h-5 min-w-5 place-items-center rounded-full px-1.5 text-[11px] font-bold",
+            active ? "bg-os-accent text-os-bg" : "bg-os-card text-os-grey",
+          )}
+        >
+          {count}
+        </span>
+      )}
     </>
   );
 }
@@ -48,14 +63,17 @@ export function SegmentedTabButtons({
   items,
   label = "Section",
   className,
+  stretch = false,
 }: {
   items: UnderlineTabButton[];
   label?: string;
   className?: string;
+  /** Fill the container, segments sharing the width equally. */
+  stretch?: boolean;
 }) {
   return (
     <div
-      className={cn(osSegmentedTrackClass, className)}
+      className={cn(osSegmentedTrackClass, stretch && "w-full", className)}
       role="tablist"
       aria-label={label}
     >
@@ -66,9 +84,17 @@ export function SegmentedTabButtons({
           role="tab"
           aria-selected={item.active ?? false}
           onClick={item.onClick}
-          className={osSegmentedItemClass(!!item.active)}
+          className={cn(
+            osSegmentedItemClass(!!item.active),
+            stretch && "flex-1 justify-center",
+          )}
         >
-          <SubtabLabel label={item.label} icon={item.icon} />
+          <SubtabLabel
+            label={item.label}
+            icon={item.icon}
+            count={item.count}
+            active={item.active}
+          />
         </button>
       ))}
     </div>

@@ -15,10 +15,10 @@ import { notifyTasksChanged } from "~/components/RsvpButtons";
 import { cn } from "~/lib/cn";
 import { getZonedHourFraction, getZonedYMD } from "~/lib/timezone";
 import { isPayPeriodEnd, isPayPeriodStart } from "~/lib/pay-period";
-import { AddMeetingNoteButton } from "~/calendar/components/AddMeetingNoteModal";
+import { AddMeetingNoteButton, OpenMeetingNoteButton } from "~/calendar/components/AddMeetingNoteModal";
+import { meetingOccurrenceHref } from "~/calendar/lib/meeting-href";
 import { AddMeetingWhiteboardButton } from "~/calendar/components/AddMeetingWhiteboardModal";
 import { TrackEventButton } from "~/calendar/components/TrackEventButton";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import type {
   EventBlock, EventAttendeeDTO, EventLinkDTO, EventRsvpTarget, RsvpStatus, WhDay,
 } from "~/calendar/lib/types";
@@ -600,6 +600,7 @@ export function MeetingDetailToggles({ meeting }: { meeting: NonNullable<EventBl
             {
               intent: "toggle-meeting-time-entry",
               meetingId: meeting.meetingId,
+              occurrence: meeting.occurrenceStart,
               onTimesheet: String(ev.target.checked),
             },
             { method: "post", action: meeting.actionPath },
@@ -704,7 +705,6 @@ export function WeekGridEvent({
   const [detailOpen, setDetailOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [anchorEl, setAnchorEl] = useState<HTMLDivElement | null>(null);
-  const whiteboardEnabled = useFeatureFlag("whiteboard");
   // Horizontal shift (in columns × colWidth px) while a move drag crosses days.
   const [liveDayShift, setLiveDayShift] = useState<{ offset: number; colWidth: number } | null>(null);
   const bufferBefore = e.bufferBefore ?? 0;
@@ -1106,7 +1106,7 @@ export function WeekGridEvent({
                 >
                   <div className="flex flex-wrap gap-2">
                     <Link
-                      to={`/calendar/meeting/${e.meeting.meetingId}`}
+                      to={meetingOccurrenceHref(e.meeting.meetingId, e.meeting.occurrenceStart)}
                       className={popoverActionBtn}
                     >
                       <Users className="h-3.5 w-3.5 text-os-grey" /> Attendance
@@ -1118,31 +1118,38 @@ export function WeekGridEvent({
                       >
                         <FileText className="h-3.5 w-3.5 text-os-grey" /> Meeting note
                       </Link>
+                    ) : e.meeting.canOpenNote ? (
+                      <OpenMeetingNoteButton
+                        meetingId={e.meeting.meetingId}
+                        occurrenceStart={e.meeting.occurrenceStart}
+                        actionPath={e.meeting.actionPath}
+                        className={popoverActionBtn}
+                      />
                     ) : e.meeting.canAddNote ? (
                       <AddMeetingNoteButton
                         meetingId={e.meeting.meetingId}
+                        occurrenceStart={e.meeting.occurrenceStart}
                         isCoreMeeting={e.meeting.isCoreMeeting}
                         actionPath={e.meeting.actionPath}
                         className={popoverActionBtn}
                       />
                     ) : null}
-                    {whiteboardEnabled &&
-                      (e.meeting.whiteboardPageId ? (
-                        <Link
-                          to={`/whiteboard/${e.meeting.whiteboardPageId}`}
-                          className={popoverActionBtn}
-                        >
-                          <Shapes className="h-3.5 w-3.5 text-os-grey" /> Whiteboard
-                        </Link>
-                      ) : e.meeting.canAddWhiteboard ? (
-                        <AddMeetingWhiteboardButton
-                          meetingId={e.meeting.meetingId}
-                          isCoreMeeting={e.meeting.isCoreMeeting}
-                          hasType={e.meeting.hasType}
-                          actionPath={e.meeting.actionPath}
-                          className={popoverActionBtn}
-                        />
-                      ) : null)}
+                    {e.meeting.whiteboardPageId ? (
+                      <Link
+                        to={`/whiteboard/${e.meeting.whiteboardPageId}`}
+                        className={popoverActionBtn}
+                      >
+                        <Shapes className="h-3.5 w-3.5 text-os-grey" /> Whiteboard
+                      </Link>
+                    ) : e.meeting.canAddWhiteboard ? (
+                      <AddMeetingWhiteboardButton
+                        meetingId={e.meeting.meetingId}
+                        isCoreMeeting={e.meeting.isCoreMeeting}
+                        hasType={e.meeting.hasType}
+                        actionPath={e.meeting.actionPath}
+                        className={popoverActionBtn}
+                      />
+                    ) : null}
                   </div>
                   <MeetingDetailToggles meeting={e.meeting} />
                 </div>

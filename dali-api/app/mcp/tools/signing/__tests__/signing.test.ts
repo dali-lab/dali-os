@@ -234,13 +234,14 @@ describe("list_documents_to_sign", () => {
         bindingId: "b1",
         documentId: "d1",
         documentName: "Member Agreement",
-        kind: "MemberAgreement",
         versionId: "v1",
+        role: "member" as const,
       },
     ];
     vi.mocked(listOutstandingBindings).mockResolvedValue(outstanding);
     const result = await runListDocumentsToSign(ctx());
-    expect(listOutstandingBindings).toHaveBeenCalledWith("u1");
+    // MCP excludes mentee countersignatures (can't sign one via MCP yet).
+    expect(listOutstandingBindings).toHaveBeenCalledWith("u1", { includeMentee: false });
     expect(result).toEqual({ documents: outstanding });
   });
 

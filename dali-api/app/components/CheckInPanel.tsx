@@ -56,10 +56,10 @@ export function CheckInPanel({
   return (
     <div className="flex flex-col gap-3">
       {viewerInvited && (
-        <section className="bg-card border border-border rounded-lg p-4 flex items-center justify-between gap-3">
+        <section className="rounded-os-card bg-os-card p-6 flex items-center justify-between gap-4">
           <div>
-            <h2 className="font-heading font-semibold text-foreground">{meetingLabel}</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
+            <h2 className="font-heading text-lg font-semibold text-foreground">{meetingLabel}</h2>
+            <p className="text-sm text-os-grey mt-1">
               {present ? "You're checked in." : "Check in to mark yourself present."}
             </p>
             {error && <p className="text-xs text-red-700 mt-1">{error}</p>}
@@ -68,37 +68,36 @@ export function CheckInPanel({
             type="button"
             onClick={checkIn}
             disabled={present || submitting}
-            className="px-4 py-2 rounded-md bg-accent-coral text-white text-sm font-medium hover:bg-accent-coral/90 transition-colors disabled:opacity-50 flex-shrink-0"
+            className="os-btn-primary flex-shrink-0 disabled:opacity-50"
           >
             {present ? "Checked in" : submitting ? "Checking in…" : "Check in"}
           </button>
         </section>
       )}
       {checkInUrl && checkInQrSvg && (
-        <section className="bg-card border border-border rounded-lg p-4 flex items-center gap-4">
+        <section className="rounded-os-card bg-os-card p-6 flex flex-col gap-5 sm:flex-row sm:items-center">
           <button
             type="button"
             onClick={() => setQrOpen(true)}
-            className="w-24 h-24 flex-shrink-0 [&_svg]:w-full [&_svg]:h-full rounded-md hover:ring-2 hover:ring-accent-coral/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-coral/40"
+            className="w-36 h-36 flex-shrink-0 overflow-hidden [&_svg]:w-full [&_svg]:h-full rounded-os-item bg-white p-2 hover:ring-2 hover:ring-os-accent/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/40"
             aria-label="Open QR code fullscreen"
             title="Open fullscreen"
             dangerouslySetInnerHTML={{ __html: checkInQrSvg }}
           />
           <div className="min-w-0 flex-1">
-            <h3 className="text-sm font-semibold text-foreground">Self check-in</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Display this QR code at the event, or share the link — attendees who scan/open it
-              (while signed in) mark themselves present within the check-in window.
+            <h3 className="font-heading text-lg font-semibold text-foreground">Self check-in</h3>
+            <p className="text-sm text-os-grey mt-1">
+              Show this code at the event. Attendees scan it to check themselves in.
             </p>
             <a
               href={checkInUrl}
               target="_blank"
               rel="noreferrer"
-              className="text-xs text-accent-teal hover:underline break-all"
+              className="mt-1 inline-block text-sm text-os-accent hover:underline break-all"
             >
               {checkInUrl}
             </a>
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="mt-4 flex flex-wrap gap-2">
               <button
                 type="button"
                 onClick={() => setQrOpen(true)}

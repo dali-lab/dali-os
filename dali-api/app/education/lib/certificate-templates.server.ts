@@ -2,8 +2,7 @@
 // background image + placed dynamic fields (see certificate-fields.ts). A
 // template is bound to an offering (EducationCertificateBinding) or serves as
 // the single lab-wide default (isDefault); issuance stamps the resolved id onto
-// the EducationCertificate. Gated by the `certificate-templates` flag at the
-// callers (issuance + admin UI).
+// the EducationCertificate.
 
 import { prisma } from "~/lib/db";
 import { getObjectBytes, getDownloadUrl } from "~/lib/s3";

@@ -15,9 +15,8 @@ import {
   scheduledLandingWeek,
 } from "~/components/home/landing/backgrounds/schedule";
 import { isNavbarRoute } from "~/lib/navbar-routes";
-import { currentTermStrict, getUserRoles } from "~/lib/roles";
+import { currentTermStrict } from "~/lib/roles";
 import { termWeekNumber } from "~/lib/terms.shared";
-import { resolveHomeSurface } from "~/lib/feature-flags.server";
 import { TYPE_META } from "~/components/CommandPalette";
 import { MIN_QUERY_LENGTH, type SearchResult } from "~/lib/search";
 import { Avatar } from "~/components/ui/Avatar";
@@ -35,14 +34,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (auth.user.type === "applicant") return redirect("/portal");
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return partnerRedirect;
-
-  // Which home this member gets — see the "home-surface" flag. The calendar
-  // surface is the real /calendar route rather than a copy of it here: it owns
-  // its own loader, action, and sub-tab chrome, so home hands the member over
-  // instead of trying to re-host all three.
-  const roles = await getUserRoles(auth.user.sub, request);
-  const surface = await resolveHomeSurface(auth.user.sub, roles, request);
-  if (surface === "calendar") return redirect("/calendar");
 
   const me = await loadShellUser(auth.user.sub, request);
   const tz = resolveUserTimeZone(me);

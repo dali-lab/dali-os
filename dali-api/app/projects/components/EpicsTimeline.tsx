@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { ArrowUpRight, ChevronRight } from "lucide-react";
+import { ArrowUpRight, ChevronRight, GripVertical } from "lucide-react";
 import {
   DAY,
   dayOffset,
@@ -610,22 +610,28 @@ function HoverBar({
         {/* Grips on the two ends: the middle of the bar moves the whole span,
             the ends adjust one date each. The hit area is a transparent 8px
             strip, but it draws a visible pill inside itself — an edge you can
-            only find by hovering is an edge nobody finds. Faint at rest so a
-            timeline in edit mode isn't a wall of handles, solid on hover. */}
+            only find by hovering is an edge nobody finds. Clearly visible at
+            rest in edit mode (the whole point of edit mode is that the bars
+            can be taken hold of), solid on hover. */}
         {draggable && onResizeStart && (
           <>
             {(["start", "end"] as const).map((edge) => (
               <span
                 key={edge}
                 className={cn(
-                  "group/grip absolute inset-y-0 z-20 flex w-2 cursor-ew-resize items-center justify-center",
+                  "group/grip absolute inset-y-0 z-20 flex w-2.5 cursor-ew-resize items-center justify-center",
                   edge === "start" ? "left-0" : "right-0",
                 )}
                 onPointerDown={onResizeStart(edge)}
+                title={
+                  edge === "start"
+                    ? "Drag to move the start date"
+                    : "Drag to move the end date"
+                }
                 aria-hidden
               >
                 <span
-                  className="h-1/2 max-h-3 min-h-2 w-[3px] rounded-full opacity-70 transition-opacity group-hover/grip:opacity-100"
+                  className="h-1/2 max-h-3.5 min-h-2.5 w-1 rounded-full opacity-90 transition-opacity group-hover/grip:opacity-100"
                   style={{ background: gripColor }}
                 />
               </span>
@@ -828,6 +834,13 @@ export function EpicsTimeline({
   const [dragActive, setDragActive] = useState(false);
   const [dragTick, setDragTick] = useState(0);
   const [pending, setPending] = useState<PendingDrag | null>(null);
+
+  // Whether a bar can actually be dragged right now: edit mode is on and the
+  // caller wired up persistence. Drives every visible drag affordance (the
+  // grab cursor, the end grips, the grab-handle glyph, the hint) so the surface
+  // never signals "drag me" when a drag couldn't be saved — the partner hub, or
+  // a viewer without manage rights, get the read-only timeline unchanged.
+  const canReschedule = editMode && Boolean(onReschedule);
 
   const beginDrag = useCallback(
     (kind: Level, id: string, edge: DragEdge = "move") =>
@@ -1509,6 +1522,16 @@ export function EpicsTimeline({
         {actions && <div className="ml-auto flex items-center gap-2">{actions}</div>}
       </div>
 
+      {/* Edit mode says, in words, what the bars now let you do — the grab
+          handles and cursor show it on each bar, this states it once so the
+          gesture isn't something you have to discover by trying. */}
+      {canReschedule && (
+        <div className="flex items-center gap-2 rounded-xl border border-os-accent/30 bg-os-accent/10 px-3 py-2 text-[13px] font-medium text-foreground">
+          <GripVertical className="h-4 w-4 shrink-0 text-os-accent" aria-hidden />
+          <span>Drag a bar to move it, or grab an end to change one date.</span>
+        </div>
+      )}
+
       <div
         className={cn(
           "overflow-hidden border border-border bg-card",
@@ -1743,6 +1766,7 @@ export function EpicsTimeline({
                             barX("epic", b.left, b.width).width,
                           ),
                         }}
+                        draggable={canReschedule}
                         onDragStart={beginDrag("epic", b.epic.id)}
                         onResizeStart={(edge) => beginDrag("epic", b.epic.id, edge)}
                         title={b.epic.title}
@@ -1779,8 +1803,14 @@ export function EpicsTimeline({
                           className="os-bar-label os-bar-label--epic absolute inset-x-0 top-0 flex items-center rounded-t-lg"
                           style={{ height: BAR_HEADER_H }}
                         >
-                          <span className="sticky left-1.5 inline-block max-w-full truncate px-3 py-1 text-[12px] leading-4 font-semibold tracking-[0.24px] whitespace-nowrap">
-                            {b.epic.title}
+                          <span className="sticky left-1.5 inline-flex max-w-full items-center gap-1 px-3 py-1 text-[12px] leading-4 font-semibold tracking-[0.24px] whitespace-nowrap">
+                            {canReschedule && (
+                              <GripVertical
+                                className="-ml-1 h-3.5 w-3.5 shrink-0 opacity-80"
+                                aria-hidden
+                              />
+                            )}
+                            <span className="truncate">{b.epic.title}</span>
                           </span>
                         </span>
                       </HoverBar>
@@ -1804,6 +1834,7 @@ export function EpicsTimeline({
                             barX("story", b.left, b.width).width,
                           ),
                         }}
+                      draggable={canReschedule}
                       onDragStart={beginDrag("story", b.story.id)}
                       onResizeStart={(edge) => beginDrag("story", b.story.id, edge)}
                       title={b.story.title}
@@ -1832,6 +1863,12 @@ export function EpicsTimeline({
                         style={{ height: BAR_HEADER_H }}
                       >
                         <span className="sticky left-1.5 inline-flex max-w-full items-center px-2.5 py-1 text-[11px] leading-4 font-semibold tracking-[0.2px] whitespace-nowrap">
+                          {canReschedule && (
+                            <GripVertical
+                              className="-ml-1 mr-0.5 h-3.5 w-3.5 shrink-0 opacity-80"
+                              aria-hidden
+                            />
+                          )}
                           {b.story.incomplete && (
                             <span className="os-incomplete-dot mr-1.5 shrink-0">!</span>
                           )}
@@ -1861,6 +1898,7 @@ export function EpicsTimeline({
                           barX("task", b.left, b.width).width,
                         ),
                       }}
+                      draggable={canReschedule}
                       onDragStart={beginDrag("task", b.task.id)}
                       onResizeStart={(edge) => beginDrag("task", b.task.id, edge)}
                       title={b.task.title}
@@ -1892,7 +1930,15 @@ export function EpicsTimeline({
                         onTaskClick ? () => onTaskClick(b.task.id) : undefined,
                       )}
                     >
-                      {/* The bar itself carries the ink. */}
+                      {/* The bar itself carries the ink. A grab handle sits
+                          ahead of the name in edit mode so the plate reads as
+                          something you take hold of, not just a label. */}
+                      {canReschedule && (
+                        <GripVertical
+                          className="-ml-0.5 mr-1 h-3.5 w-3.5 shrink-0 opacity-80"
+                          aria-hidden
+                        />
+                      )}
                       <span className="truncate text-[12px] font-semibold tracking-[0.24px]">
                         {b.task.title}
                       </span>

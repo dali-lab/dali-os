@@ -7,7 +7,7 @@ import type { ActiveActivity } from "~/lib/activities";
 // itself, so mounting this in both the shell and the embedded branch covers the
 // banner (shell) and the on-page overlay (inside the iframe's pageContent).
 //
-// Empty array = nothing live (or the `activities` flag is off) → the banner and
+// Empty array = nothing live → the banner and
 // overlay render nothing.
 
 const ActivitiesContext = createContext<ActiveActivity[]>([]);

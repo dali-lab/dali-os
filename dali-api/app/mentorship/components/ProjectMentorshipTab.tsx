@@ -1,17 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useFetcher } from "react-router";
-import { ChevronRight, Handshake, PencilLine, Trash2 } from "lucide-react";
+import { ChevronRight, Handshake, PencilLine } from "lucide-react";
 import { useOsChrome } from "~/components/os-chrome";
-import { useFeatureFlag } from "~/components/FeatureFlags";
-import { useDialog } from "~/components/ui/dialog";
-import { Select } from "~/components/ui/floating";
 import { cn } from "~/lib/cn";
-import {
-  AddPairForm,
-  memberName,
-  usePairMutations,
-  useRoster,
-} from "./pair-editing";
+import { PairingReviewPanel } from "./PairingReviewPanel";
 
 type Person = { id: string; firstName: string; lastName: string };
 
@@ -51,16 +43,16 @@ function notesHref(
 interface Props {
   projectId: string;
   currentTermId: string | null;
-  // Core gets the (flag-gated) manual pair editor for this project.
+  // Core gets the manual pair editor for this project.
   isCore: boolean;
 }
 
 // Mentorship view on a project page. Lists confirmed pairings for the current
-// term (auto-derived from ProjectAssignment by staffing finalize); each row
-// links to that pairing's notes in the mentorship hub. Visible to lab mentors +
-// Core only — gated server-side via the project loader's canViewMentorshipTab.
-// With the mentorship-manage flag, Core can hand-add / reassign / remove pairs
-// here; those edits are tagged manual and survive a staffing re-finalize.
+// term (auto-derived from ProjectAssignment by staffing finalize, one mentor per
+// mentee); each row links to that pairing's notes in the mentorship hub. Visible
+// to lab mentors + Core only — gated server-side via the project loader's
+// canViewMentorshipTab. Core can reassign here via the shared review panel;
+// those edits are tagged manual and survive a staffing re-finalize.
 export function ProjectMentorshipTab({ projectId, currentTermId, isCore }: Props) {
   const { panel, panelPad, heading, headingIcon } = useOsChrome();
   const pairsFetcher = useFetcher<PairsResponse>();
@@ -78,22 +70,17 @@ export function ProjectMentorshipTab({ projectId, currentTermId, isCore }: Props
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const manageFlag = useFeatureFlag("mentorship-manage");
-  const canManage = isCore && manageFlag && Boolean(currentTermId);
+  const canManage = isCore && Boolean(currentTermId);
   const [editing, setEditing] = useState(false);
-  const dialog = useDialog();
 
   const reloadPairs = useCallback(() => {
     pairsFetcher.load(pairsUrl);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pairsUrl]);
 
-  const { roster } = useRoster(projectId, currentTermId, editing && canManage);
-  const { addPair, reassign, removePair, busy } = usePairMutations(reloadPairs);
-
   const pairs = pairsFetcher.data?.pairs ?? [];
 
-  // Group pairs by domain → mentee → pairs[] (pair ids kept for editing).
+  // Group pairs by domain → mentee → pairs[] for the read-only list.
   const grouped = useMemo(() => {
     const m = new Map<
       string,
@@ -118,25 +105,6 @@ export function ProjectMentorshipTab({ projectId, currentTermId, isCore }: Props
     return m;
   }, [pairs]);
 
-  function mentorOptions(pair: Pair) {
-    const candidates = roster.members
-      .filter((mm) => mm.domainId === pair.domain.id && mm.id !== pair.mentor.id)
-      .map((mm) => ({ value: mm.id, label: `${memberName(mm)} · ${mm.level}` }));
-    return [{ value: pair.mentor.id, label: fullName(pair.mentor) }, ...candidates];
-  }
-
-  async function onRemove(pair: Pair) {
-    if (
-      await dialog.confirm({
-        title: "Remove pairing?",
-        description: `Remove ${fullName(pair.mentee)} from ${fullName(pair.mentor)}? This deletes the pairing but keeps any notes already written.`,
-        tone: "destructive",
-      })
-    ) {
-      removePair(pair.id);
-    }
-  }
-
   const editToggleClass = editing ? "os-btn-primary" : "os-edit-btn";
 
   return (
@@ -151,7 +119,10 @@ export function ProjectMentorshipTab({ projectId, currentTermId, isCore }: Props
           {canManage && (
             <button
               type="button"
-              onClick={() => setEditing((v) => !v)}
+              onClick={() => {
+                if (editing) reloadPairs();
+                setEditing((v) => !v);
+              }}
               aria-pressed={editing}
               className={editToggleClass}
             >
@@ -161,17 +132,13 @@ export function ProjectMentorshipTab({ projectId, currentTermId, isCore }: Props
           )}
         </div>
 
-        {editing && canManage && currentTermId && (
-          <AddPairForm
+        {editing && canManage && currentTermId ? (
+          <PairingReviewPanel
             projectId={projectId}
             termId={currentTermId}
-            roster={roster}
-            busy={busy}
-            onAdd={addPair}
+            onChanged={reloadPairs}
           />
-        )}
-
-        {pairsFetcher.state !== "idle" && pairs.length === 0 ? (
+        ) : pairsFetcher.state !== "idle" && pairs.length === 0 ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : pairs.length === 0 ? (
           <p className="text-sm text-muted-foreground">
@@ -186,70 +153,24 @@ export function ProjectMentorshipTab({ projectId, currentTermId, isCore }: Props
                   {domain.displayName} ({domain.code})
                 </h3>
                 <ul className="divide-y divide-border">
-                  {[...mentees.values()].map(({ mentee, pairs: menteePairs }) =>
-                    editing ? (
-                      <li key={mentee.id} className="py-2 text-sm">
+                  {[...mentees.values()].map(({ mentee, pairs: menteePairs }) => (
+                    <li key={mentee.id}>
+                      <Link
+                        to={notesHref(projectId, domain.id, currentTermId, mentee)}
+                        title={`Open ${fullName(mentee)}'s mentorship notes`}
+                        className="group -mx-2 flex items-center justify-between gap-3 rounded-os-item px-2 py-2 text-sm transition-colors hover:bg-os-container"
+                      >
                         <span className="font-medium text-foreground">
                           {fullName(mentee)}
                         </span>
-                        <div className="mt-1 flex flex-col gap-1">
-                          {menteePairs.map((p) => (
-                            <div key={p.id} className="flex items-center gap-2">
-                              <span className="text-xs text-muted-foreground w-12">
-                                Mentor
-                              </span>
-                              <Select
-                                ariaLabel={`Reassign ${fullName(mentee)}'s mentor`}
-                                value={p.mentor.id}
-                                onChange={(v) => {
-                                  if (v && v !== p.mentor.id) reassign(p.id, v);
-                                }}
-                                options={mentorOptions(p)}
-                                buttonClassName="min-w-[11rem] text-xs"
-                              />
-                              {p.manual && (
-                                <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                                  manual
-                                </span>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => onRemove(p)}
-                                disabled={busy}
-                                className="text-muted-foreground hover:text-red-500 disabled:opacity-50"
-                                title="Remove pairing"
-                              >
-                                <Trash2 className="w-4 h-4" aria-hidden />
-                                <span className="sr-only">Remove pairing</span>
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      </li>
-                    ) : (
-                      <li key={mentee.id}>
-                        <Link
-                          to={notesHref(
-                            projectId,
-                            domain.id,
-                            currentTermId,
-                            mentee,
-                          )}
-                          title={`Open ${fullName(mentee)}'s mentorship notes`}
-                          className="group -mx-2 flex items-center justify-between gap-3 rounded-os-item px-2 py-2 text-sm transition-colors hover:bg-os-container"
-                        >
-                          <span className="font-medium text-foreground">
-                            {fullName(mentee)}
-                          </span>
-                          <span className="inline-flex items-center gap-1 text-muted-foreground group-hover:text-foreground">
-                            Mentor:{" "}
-                            {menteePairs.map((p) => fullName(p.mentor)).join(", ")}
-                            <ChevronRight className="h-4 w-4" aria-hidden />
-                          </span>
-                        </Link>
-                      </li>
-                    ),
-                  )}
+                        <span className="inline-flex items-center gap-1 text-muted-foreground group-hover:text-foreground">
+                          Mentor:{" "}
+                          {menteePairs.map((p) => fullName(p.mentor)).join(", ")}
+                          <ChevronRight className="h-4 w-4" aria-hidden />
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
                 </ul>
               </div>
             ))}

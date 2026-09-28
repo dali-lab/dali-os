@@ -7,8 +7,8 @@
 // (app/hiring/lib/interview-emails.ts) are still the single invite, now carrying
 // the Meet link.
 //
-// Everything here is best-effort: a missing hiring calendar link, the flag being
-// off, or a Google error never blocks booking / reschedule / cancel. The zoom*
+// Everything here is best-effort: a missing hiring calendar link or a Google
+// error never blocks booking / reschedule / cancel. The zoom*
 // columns and app/lib/zoom.ts (the still-blocked S2S path) are untouched.
 
 import { prisma } from "~/lib/db";
@@ -19,7 +19,6 @@ import {
   patchGoogleCalendarEvent,
   type GoogleAttendee,
 } from "~/lib/google-calendar";
-import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 
 // The shared Google account interview events are hosted on. An admin links it
 // once through the normal calendar-connect flow; we resolve it by email so no
@@ -103,13 +102,11 @@ function meetAttendees(interview: InterviewWithMeet): GoogleAttendee[] {
 }
 
 // Create the hiring-calendar event + Meet link for a freshly online interview,
-// storing the join URL and event id on the row. No-op unless the feature is live
-// for everyone, the hiring calendar is connected, the interview is Online, and it
-// hasn't already been provisioned. Await before sending the invite emails so they
+// storing the join URL and event id on the row. No-op unless the hiring calendar
+// is connected, the interview is Online, and it hasn't already been provisioned. Await before sending the invite emails so they
 // re-read the row with the link present.
 export async function provisionInterviewMeet(interviewId: string): Promise<void> {
   try {
-    if (!(await isFeatureEnabledForEveryone("google-meet"))) return;
     const link = await getHiringCalendarLink();
     if (!link) return;
 

@@ -121,15 +121,13 @@ export function CalendarsPanel({
               />
             ))}
 
-            {data.crudEnabled && (
-              <button
-                type="button"
-                onClick={() => setCalMgrOpen(true)}
-                className={cn(action, "self-start")}
-              >
-                <Pencil className="h-3.5 w-3.5" /> Manage calendars
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => setCalMgrOpen(true)}
+              className={cn(action, "self-start")}
+            >
+              <Pencil className="h-3.5 w-3.5" /> Manage calendars
+            </button>
           </div>
         )}
       </section>

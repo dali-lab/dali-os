@@ -172,8 +172,7 @@ export default function CalendarPage() {
 }
 
 /* ------------------------------------------------------------------ */
-/* Calendar. The screen always renders; the `calendar-unified` flag gates the   */
-/* full feature set (Google event CRUD, meeting scheduling, classes, timesheet). */
+/* Calendar.                                                           */
 /* ------------------------------------------------------------------ */
 
 const CALENDAR_LAYERS_KEY = "dali:calendar:layers";
@@ -592,28 +591,26 @@ function CalendarScreen({ data }: { data: LoaderData }) {
         eventData,
         days,
         hiddenCals,
-        data.crudEnabled ? (e, anchor) => setComposer({ mode: "edit", event: e, anchor }) : undefined,
-        data.crudEnabled ? moveEvent : undefined,
-        data.crudEnabled ? duplicateEvent : undefined,
-        data.crudEnabled ? deleteEvent : undefined,
+        (e, anchor) => setComposer({ mode: "edit", event: e, anchor }),
+        moveEvent,
+        duplicateEvent,
+        deleteEvent,
         timesheet?.accents,
       ),
     );
-  // All-day events (crud read) render in the grid's all-day band.
+  // All-day events render in the grid's all-day band.
   const allDayByDay: Record<number, AllDayBlock[]> = {};
-  if (data.crudEnabled) {
-    const items = buildAllDayItems(eventData, days, hiddenCals);
-    for (const [idx, evs] of Object.entries(items)) {
-      allDayByDay[Number(idx)] = evs.map((e) => ({
-        label: e.title,
-        color: e.color,
-        unanswered: e.rsvp === "Pending",
-        onClick:
-          e.writable && e.eventId
-            ? (ev) => setComposer({ mode: "edit", event: e, anchor: ev.currentTarget.getBoundingClientRect() })
-            : undefined,
-      }));
-    }
+  const allDayItems = buildAllDayItems(eventData, days, hiddenCals);
+  for (const [idx, evs] of Object.entries(allDayItems)) {
+    allDayByDay[Number(idx)] = evs.map((e) => ({
+      label: e.title,
+      color: e.color,
+      unanswered: e.rsvp === "Pending",
+      onClick:
+        e.writable && e.eventId
+          ? (ev) => setComposer({ mode: "edit", event: e, anchor: ev.currentTarget.getBoundingClientRect() })
+          : undefined,
+    }));
   }
   if (layers.logged)
     layerMaps.push(
@@ -626,16 +623,13 @@ function CalendarScreen({ data }: { data: LoaderData }) {
         // carry a role accent instead. With the event layer off there is
         // nothing underneath, so the logged block is still needed.
         roleColors,
-        // Events only carry an eventId (and so can wear an accent) on the crud
-        // read; without the flag the busy read has nothing to annotate, so the
-        // entry has to keep drawing its own block or the hours vanish.
         suppressSourced: {
           // A meeting's own calendar event isn't marked as work, so in
           // timesheet view it's filtered off the grid — nothing is left to
           // carry the accent, and the entry has to draw its own block or the
           // hours vanish from the one view that exists to show them.
           meetings: !workOnly && layers.external,
-          events: layers.external && data.crudEnabled,
+          events: layers.external,
         },
         onEntryClick: (t, startIso, endIso) => {
           const { dayIdx, startHour, endHour } = toGridRange(days, data.timezone, startIso, endIso);
@@ -656,7 +650,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   // Month & agenda have no all-day band, so fold all-day events into the shared
   // EventBlock map there as full-width chips / "All day" rows. Week/day show them
   // in the dedicated band (allDayByDay) instead — don't double them up.
-  if (layers.external && data.crudEnabled && (view === "month" || view === "agenda"))
+  if (layers.external && (view === "month" || view === "agenda"))
     layerMaps.push(
       buildAllDayLayer(eventData, days, hiddenCals, (e, anchor) =>
         setComposer({ mode: "edit", event: e, anchor }),
@@ -969,13 +963,13 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       {hoursAnchor && (
         <WorkingHoursPopover data={data} anchor={hoursAnchor} onClose={() => setHoursAnchor(null)} />
       )}
-      {classesOpen && data.classesEnabled && (
+      {classesOpen && (
         <ClassesManagerModal data={data} onClose={() => setClassesOpen(false)} />
       )}
-      {composer && data.crudEnabled && (
+      {composer && (
         <EventComposer data={data} state={composer} onClose={closeComposer} onDraftChange={syncDraft} />
       )}
-      {calMgrOpen && data.crudEnabled && (
+      {calMgrOpen && (
         <CalendarManagerModal data={data} onClose={() => setCalMgrOpen(false)} />
       )}
       {searchAnchor && (

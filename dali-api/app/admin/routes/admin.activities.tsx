@@ -104,8 +104,7 @@ export default function AdminActivities() {
         <h1 className="text-xl font-semibold text-foreground">Activities</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Time-boxed onboarding activities and site modes (e.g. the onboarding
-          scavenger hunt). Gate the whole feature with the <code>activities</code>{" "}
-          flag, then publish an activity to run it.
+          scavenger hunt). Publish an activity to run it.
         </p>
       </div>
 

@@ -112,7 +112,6 @@ import { isMultiSession } from "~/education/lib/offering-type";
 import { renderEmail } from "~/lib/email";
 import { uploadFileToS3 } from "~/lib/upload-client";
 import { useConfirmSubmit } from "~/components/ui/dialog";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { TypeBadge, StatusBadge, MyStatusChip } from "~/education/components/OfferingCard";
 import { OfferingFields, toDatetimeLocal } from "~/education/components/OfferingFields";
 import { DocEditor } from "~/components/doc";
@@ -429,6 +428,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const intent = String(formData.get("intent") ?? "");
   const contentIntents = [
     "decide-application",
+    "approve-all-pending",
     "move-waitlist-entry",
     "create-page",
     "move-page",
@@ -447,6 +447,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     "save-attendance",
     "set-session-check-in",
     "save-student-note",
+    "preview-close-out",
     "close-out-offering",
     "reopen-offering",
     "set-form-binding",
@@ -883,7 +884,6 @@ export default function ManageOffering() {
   } = useLoaderData<typeof loader>();
   const tz = useUserTimeZone();
   const confirmSubmit = useConfirmSubmit();
-  const certTemplatesOn = useFeatureFlag("certificate-templates");
   const actionData = useActionData<{
     error?: string;
     closeOut?: { issued: number; alreadyIssued: number; ineligible: number };
@@ -1349,7 +1349,7 @@ export default function ManageOffering() {
             </div>
           </ManageSection>
 
-          {core && certTemplatesOn && (
+          {core && (
             <ManageSection
               title="Completion certificate"
               description="The design students get when this course is closed out. Leave it on the lab default, or bind a specific template to this offering."

@@ -7,13 +7,11 @@ import {
   evaluateFlag,
   evaluateVariant,
   isFeatureFlagKey,
-  isHomeSurface,
   type FeatureFlagDef,
   type FeatureFlagKey,
   type FeatureFlagMap,
   type FlagConfig,
   type FlagVariant,
-  type HomeSurface,
   type RoleTarget,
 } from "~/lib/feature-flags";
 
@@ -120,11 +118,9 @@ export async function isFeatureEnabled(
 
 // Whether a flag is live for the whole lab (master switch on AND targeting
 // everyone), independent of any single user. For server-side features whose
-// audience isn't the acting user — e.g. hiring automation that provisions a
-// Meet link on the shared hiring calendar, where "which applicant" is not a
-// meaningful target. Role/user-list targeting deliberately does NOT satisfy
-// this: a partially-rolled-out flag stays off for these global paths until it
-// reaches everyone.
+// audience isn't the acting user. Role/user-list targeting deliberately does
+// NOT satisfy this: a partially-rolled-out flag stays off for these global
+// paths until it reaches everyone.
 export async function isFeatureEnabledForEveryone(
   key: FeatureFlagKey,
   request?: Request,
@@ -167,19 +163,6 @@ export async function resolveFlagVariant(
       }
     : defaultConfig(def);
   return evaluateVariant(def, config, userId, roles);
-}
-
-// Which home page this member lands on. "home-surface" decides when it targets
-// them; untargeted members fall through to the search-first home (the default
-// everyone lands on).
-export async function resolveHomeSurface(
-  userId: string,
-  roles: UserRoles,
-  request?: Request,
-): Promise<HomeSurface> {
-  const chosen = await resolveFlagVariant("home-surface", userId, roles, request);
-  if (isHomeSurface(chosen)) return chosen;
-  return "search";
 }
 
 export type AdminFlagView = {

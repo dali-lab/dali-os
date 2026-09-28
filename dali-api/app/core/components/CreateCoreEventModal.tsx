@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { useRevalidator } from "react-router";
 import { CalendarDays, Clock, UsersRound, X } from "lucide-react";
 import { cn } from "~/lib/cn";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { Toggle } from "~/components/ui/Toggle";
 import { DateField } from "~/components/ui/DateField";
 import { Select } from "~/components/ui/floating";
@@ -135,14 +134,12 @@ export function CreateCoreEventModal({
   const invitedEmails = canInviteByEmail ? guestEmails : [];
   const note = useMeetingNote();
 
-  // When the unify flag is on, a Core meeting may also be about a project, so
-  // offer the organizer's writable projects in the note's About picker — the same
-  // authorized set the Events form feeds it. Picking a project files the note in
+  // A Core meeting may also be about a project, so offer the organizer's
+  // writable projects in the note's About picker — the same authorized set the
+  // Events form feeds it. Picking a project files the note in
   // that project; the meeting still lands on the Core calendar.
-  const unifiedCoreProject = useFeatureFlag("unified-core-project-meetings");
   const [myProjects, setMyProjects] = useState<{ id: string; name: string }[]>([]);
   useEffect(() => {
-    if (!unifiedCoreProject) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -161,7 +158,7 @@ export function CreateCoreEventModal({
     return () => {
       cancelled = true;
     };
-  }, [unifiedCoreProject]);
+  }, []);
 
   const [status, setStatus] = useState<
     null | { ok: true; count: number; notePageId: string | null } | { ok: false; error: string }
@@ -411,11 +408,9 @@ export function CreateCoreEventModal({
                   myProjects={myProjects}
                   fieldClass={fieldClass}
                   labelClass={labelClass}
-                  // Everything this modal makes is Core's; with the unify flag the
-                  // note may still be about a project (filed there), otherwise it
-                  // collapses to a project-less Core note.
+                  // Everything this modal makes is Core's; the note may still be
+                  // about a project (filed there).
                   core
-                  allowProjectWhenCore={unifiedCoreProject}
                 />
               </div>
             )}

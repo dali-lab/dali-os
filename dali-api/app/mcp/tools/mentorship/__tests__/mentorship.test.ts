@@ -375,7 +375,7 @@ describe("manage_mentorship_pair", () => {
 
   it("Core can create a pair and gets created=true on new", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
-    mockPrisma.mentorshipPair.findFirst.mockResolvedValue(null);
+    mockPrisma.mentorshipPair.findMany.mockResolvedValue([]);
     mockPrisma.mentorshipPair.create.mockResolvedValue({ id: PAIR_ID });
 
     const out = await runManageMentorshipPair(ME, {
@@ -389,9 +389,10 @@ describe("manage_mentorship_pair", () => {
     expect(out).toMatchObject({ id: PAIR_ID, created: true });
   });
 
-  it("Core create returns created=false for a duplicate pair", async () => {
+  it("Core create reassigns instead of adding a second mentor to a mentee", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
-    mockPrisma.mentorshipPair.findFirst.mockResolvedValue({ id: PAIR_ID });
+    mockPrisma.mentorshipPair.findMany.mockResolvedValue([{ id: PAIR_ID }]);
+    mockPrisma.mentorshipPair.update.mockResolvedValue({ id: PAIR_ID });
 
     const out = await runManageMentorshipPair(ME, {
       action: "create",
@@ -402,6 +403,11 @@ describe("manage_mentorship_pair", () => {
       domainId: "d",
     });
     expect(out).toMatchObject({ id: PAIR_ID, created: false });
+    expect(mockPrisma.mentorshipPair.update).toHaveBeenCalledWith({
+      where: { id: PAIR_ID },
+      data: { mentorUserId: ME, manual: true },
+      select: { id: true },
+    });
     expect(mockPrisma.mentorshipPair.create).not.toHaveBeenCalled();
   });
 

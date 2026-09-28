@@ -3,9 +3,9 @@ import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { getUserRoles, isProjectMember } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { walletTokensConfigured } from "~/lib/wallet-token";
 import { AttendeeScanner } from "~/components/AttendeeScanner";
+import { useOsChrome } from "~/components/os-chrome";
 import type { Route } from "./+types/calendar.scan.$meetingId";
 
 export const meta: Route.MetaFunction = () => [{ title: "Scan check-in · DALI OS" }];
@@ -29,9 +29,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (portalRedirect) throw portalRedirect;
 
   const roles = await getUserRoles(auth.user.sub);
-  if (!(await isFeatureEnabled("wallet-checkin", auth.user.sub, roles, request))) {
-    throw new Response("Not found", { status: 404 });
-  }
 
   const meeting = await prisma.scheduledMeeting.findUnique({
     where: { id: params.meetingId },
@@ -64,24 +61,21 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
 export default function CalendarScanPage() {
   const data = useLoaderData<typeof loader>();
+  const { pageTitle, bodyText } = useOsChrome();
   return (
-    <div className="max-w-lg mx-auto py-8 px-4">
-      <div className="text-center mb-5">
-        <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-          Scan check-in
-        </p>
-        <h1 className="font-heading text-xl font-bold text-foreground">{data.meetingLabel}</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Hold each member's DALI wallet pass up to the camera to mark them present.
-        </p>
-      </div>
+    <div className="flex w-full flex-col gap-6 pb-10">
+      <header className="flex flex-col gap-2">
+        <span className="os-field-label">Scan check-in</span>
+        <h1 className={pageTitle}>{data.meetingLabel}</h1>
+        <p className={bodyText}>Hold each member's wallet pass up to the camera.</p>
+      </header>
 
       {!data.walletConfigured ? (
-        <div className="rounded-lg border border-border bg-card p-4 text-center text-sm text-muted-foreground">
-          Wallet check-in isn't configured on this server yet, so passes can't be scanned.
-        </div>
+        <p className={bodyText}>Wallet check-in isn't set up on this server yet.</p>
       ) : (
-        <AttendeeScanner meetingId={data.meetingId} />
+        <div className="w-full max-w-4xl">
+          <AttendeeScanner meetingId={data.meetingId} />
+        </div>
       )}
     </div>
   );

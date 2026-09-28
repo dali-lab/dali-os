@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRevalidator } from "react-router";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { modalCardClass } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { Button } from "~/components/ui/Button";
 import { Checkbox } from "~/components/ui/Checkbox";
+import { PairingReviewPanel } from "~/mentorship/components/PairingReviewPanel";
 
 type Automation = "assignments" | "slack" | "gmail" | "github";
 
@@ -53,11 +55,13 @@ export function FinalizeAllModal({
   open,
   onClose,
   cycleId,
+  termId,
   projects,
 }: {
   open: boolean;
   onClose: () => void;
   cycleId: string;
+  termId: string;
   projects: { id: string; name: string }[];
 }) {
   const revalidator = useRevalidator();
@@ -66,8 +70,22 @@ export function FinalizeAllModal({
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [outcomes, setOutcomes] = useState<ProjectOutcome[] | null>(null);
+  const [reviewIndex, setReviewIndex] = useState(0);
 
   const projectName = (id: string) => projects.find((p) => p.id === id)?.name ?? "project";
+
+  // Projects whose assignments propagated cleanly — those are the ones with
+  // freshly derived pairings worth stepping through.
+  const reviewable = useMemo(
+    () =>
+      (outcomes ?? [])
+        .filter((o) => !o.error && o.results?.results?.assignments?.status === "ok")
+        .map((o) => o.projectId),
+    [outcomes],
+  );
+  useEffect(() => {
+    setReviewIndex(0);
+  }, [outcomes]);
 
   function toggle(id: Automation) {
     setSelected((prev) => {
@@ -209,6 +227,54 @@ export function FinalizeAllModal({
               );
             })}
           </ul>
+        </div>
+      )}
+
+      {reviewable.length > 0 && (
+        <div className="mt-4 border-t border-border pt-3">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm font-medium text-foreground">
+              Review pairings — {projectName(reviewable[reviewIndex])}
+            </p>
+            {reviewable.length > 1 && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">
+                  {reviewIndex + 1} of {reviewable.length}
+                </span>
+                <button
+                  type="button"
+                  disabled={reviewIndex === 0}
+                  onClick={() => setReviewIndex((i) => Math.max(0, i - 1))}
+                  className="text-muted-foreground hover:text-foreground disabled:opacity-40"
+                  aria-label="Previous project"
+                >
+                  <ChevronLeft className="h-4 w-4" aria-hidden />
+                </button>
+                <button
+                  type="button"
+                  disabled={reviewIndex === reviewable.length - 1}
+                  onClick={() =>
+                    setReviewIndex((i) => Math.min(reviewable.length - 1, i + 1))
+                  }
+                  className="text-muted-foreground hover:text-foreground disabled:opacity-40"
+                  aria-label="Next project"
+                >
+                  <ChevronRight className="h-4 w-4" aria-hidden />
+                </button>
+              </div>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground mb-2">
+            Each mentee has one mentor. Reassign to rebalance before you finish.
+          </p>
+          <div className="max-h-[40vh] overflow-y-auto pr-1">
+            <PairingReviewPanel
+              key={reviewable[reviewIndex]}
+              projectId={reviewable[reviewIndex]}
+              termId={termId}
+              cycleId={cycleId}
+            />
+          </div>
         </div>
       )}
 

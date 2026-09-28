@@ -126,6 +126,41 @@ describe("manage_project_file", () => {
     ).rejects.toMatchObject({ name: "McpInvalidError" });
   });
 
+  it.each([
+    ["another project's upload", "uploads/project-files/p2/abc123-report.pdf"],
+    ["an avatar", "uploads/avatars/abc123-me.png"],
+    ["a traversal", "uploads/project-files/p1/../p2/abc123-report.pdf"],
+  ])("rejects add_version with %s as the key", async (_label, s3Key) => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.projectFile.findUnique.mockResolvedValue(LIVE_PROJECT_FILE);
+    await expect(
+      runManageProjectFile("u1", {
+        action: "add_version",
+        fileId: "f1",
+        s3Key,
+        fileName: "report.pdf",
+        contentType: "application/pdf",
+        sizeBytes: 1024,
+      }),
+    ).rejects.toMatchObject({ name: "McpInvalidError" });
+    expect(mockPrisma.projectFileVersion.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects add_version for a blocked file type", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.projectFile.findUnique.mockResolvedValue(LIVE_PROJECT_FILE);
+    await expect(
+      runManageProjectFile("u1", {
+        action: "add_version",
+        fileId: "f1",
+        s3Key: "uploads/project-files/p1/abc123-setup.exe",
+        fileName: "setup.exe",
+        contentType: "application/octet-stream",
+        sizeBytes: 1024,
+      }),
+    ).rejects.toMatchObject({ name: "McpInvalidError", message: "File type not allowed" });
+  });
+
   it("adds a new version and advances currentVersionId", async () => {
     vi.mocked(isCore).mockResolvedValue(false);
     vi.mocked(isProjectMember).mockResolvedValue(true);
@@ -136,7 +171,7 @@ describe("manage_project_file", () => {
     const out = await runManageProjectFile("u1", {
       action: "add_version",
       fileId: "f1",
-      s3Key: "uploads/abc123.pdf",
+      s3Key: "uploads/project-files/p1/abc123-report.pdf",
       fileName: "report.pdf",
       contentType: "application/pdf",
       sizeBytes: 2048,
@@ -146,7 +181,7 @@ describe("manage_project_file", () => {
       expect.objectContaining({
         data: expect.objectContaining({
           fileId: "f1",
-          s3Key: "uploads/abc123.pdf",
+          s3Key: "uploads/project-files/p1/abc123-report.pdf",
           fileName: "report.pdf",
           contentType: "application/pdf",
           sizeBytes: 2048,

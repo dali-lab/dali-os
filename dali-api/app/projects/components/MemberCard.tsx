@@ -4,7 +4,7 @@ import { fullName as buildFullName } from "~/lib/display";
 import { Avatar } from "~/components/ui/Avatar";
 import { RolePills } from "~/components/ui/RolePills";
 import { ALL_LEVELS, type Level } from "~/lib/level";
-import type { DomainLevel, MemberCardModel } from "../lib/staffing-board";
+import { UNASSIGNED, type DomainLevel, type MemberCardModel } from "../lib/staffing-board";
 import { Select, Tooltip, InfoTip } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
@@ -293,8 +293,14 @@ function MemberCardBody({
             className="mt-0.5"
           />
         </div>
-        {onRemove && card.manuallyAdded && (
-          <Tooltip content="Remove from board">
+        {onRemove && (
+          <Tooltip
+            content={
+              card.columnKey === UNASSIGNED
+                ? "Remove from board"
+                : "Remove from project"
+            }
+          >
             <button
               type="button"
               // Stop the press from starting a drag or opening the bid modal.
@@ -303,7 +309,11 @@ function MemberCardBody({
                 e.stopPropagation();
                 onRemove();
               }}
-              aria-label={`Remove ${fullName} from board`}
+              aria-label={
+                card.columnKey === UNASSIGNED
+                  ? `Remove ${fullName} from board`
+                  : `Remove ${fullName} from project`
+              }
               className="flex-shrink-0 text-muted-foreground hover:text-destructive text-sm leading-none px-1 rounded hover:bg-muted"
             >
               ×

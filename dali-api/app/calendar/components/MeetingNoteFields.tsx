@@ -66,42 +66,26 @@ export function MeetingNoteFields({
   fieldClass,
   labelClass,
   core = false,
-  allowProjectWhenCore = false,
 }: {
   note: MeetingNoteController;
-  /** Ignored when the picker is collapsed to "Core" (see `allowProjectWhenCore`). */
   myProjects?: { id: string; name: string }[];
   fieldClass: string;
   labelClass: string;
-  /** The meeting is a Core meeting. On its own this only relabels the "no
-   *  project" option to "Core" and files a project-less note in Core's folder;
-   *  combined with `!allowProjectWhenCore` it collapses the About picker to a
-   *  fixed "Core" and forbids a project. */
+  /** The meeting is a Core meeting. Relabels the "no project" option to
+   *  "Core" and files a project-less note in Core's folder; the About picker
+   *  still offers the organizer's projects (a project note files in the
+   *  project, not Core). */
   core?: boolean;
-  /** Feature-flagged (`unified-core-project-meetings`): let a Core meeting also
-   *  be about a project. When true, the About picker still offers the
-   *  organizer's projects (a project note files in the project, not Core). When
-   *  false, Core collapses to a project-less "Core" note as before. */
-  allowProjectWhenCore?: boolean;
 }) {
   const { state } = note;
 
-  // Flag off: a Core meeting has no project, so the picker is a fixed fact.
-  const coreCollapsed = core && !allowProjectWhenCore;
-
-  // Keep the Core note's state consistent. Collapsed mode drops any project the
-  // organizer (or the group prefill) chose, since Core can't be about one. Either
-  // way a project-less Core note files in Core's folder and needs a name, so seed
+  // A project-less Core note files in Core's folder and needs a name, so seed
   // an empty one — a name they typed themselves survives.
   useEffect(() => {
     if (!core) return;
-    if (coreCollapsed) {
-      note.setAbout("");
-      note.setLocation(null);
-    }
     if (state.about === "" && state.label.trim() === "") note.setLabel(CORE_NOTE_LABEL);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [core, coreCollapsed]);
+  }, [core]);
 
   const [pickerOpen, setPickerOpen] = useState(false);
   const [drives, setDrives] = useState<PickerDrive[]>([]);
@@ -152,24 +136,16 @@ export function MeetingNoteFields({
     <div className="pl-6 space-y-3">
       <div>
         <span className={labelClass}>About</span>
-        {coreCollapsed ? (
-          // One answer, so it reads as a fact rather than a control the
-          // organizer has to make a choice in.
-          <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-foreground">
-            Core
-          </p>
-        ) : (
-          <Select
-            value={state.about}
-            onChange={(v) => note.setAbout(v)}
-            options={[
-              // For a Core meeting the "no project" answer is Core itself.
-              { value: "", label: core ? "Core" : "General (no project)" },
-              ...myProjects.map((p) => ({ value: p.id, label: p.name })),
-            ]}
-            buttonClassName={`${fieldClass} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
-          />
-        )}
+        <Select
+          value={state.about}
+          onChange={(v) => note.setAbout(v)}
+          options={[
+            // For a Core meeting the "no project" answer is Core itself.
+            { value: "", label: core ? "Core" : "General (no project)" },
+            ...myProjects.map((p) => ({ value: p.id, label: p.name })),
+          ]}
+          buttonClassName={`${fieldClass} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
+        />
       </div>
 
       {isProject ? (
