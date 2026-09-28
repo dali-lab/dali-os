@@ -304,7 +304,8 @@ export function SlotColumnMapper({
     cols.filter((c) => c.source === "builtin").map((c) => c.builtin),
   );
   const availableBuiltins = Object.entries(BUILTIN_SOURCES).filter(
-    ([name]) => !placedBuiltins.has(name),
+    ([name]) =>
+      !placedBuiltins.has(name) && slotRoles.some((d) => d.role === name),
   );
 
   // Per-term roles (intent-status) can be added once per term — surface a

@@ -455,4 +455,14 @@ describe("validateMapping (intent-to-work)", () => {
     });
     expect(r).toMatchObject({ ok: false });
   });
+
+  it("accepts the hiredRoles builtin", () => {
+    const r = validateMapping("intent-to-work", qs, {
+      version: 1,
+      entries: [
+        { source: "builtin", builtin: "hiredRoles", role: "hiredRoles", label: "Hired roles", order: 0 },
+      ],
+    });
+    expect(r).toEqual({ ok: true });
+  });
 });
