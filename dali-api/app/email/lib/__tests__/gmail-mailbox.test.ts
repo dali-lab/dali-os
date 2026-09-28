@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 
 vi.mock("~/lib/db", () => ({ prisma: {} }));
 
-import { getThread, sendMessage } from "~/email/lib/gmail-mailbox.server";
+import { decodeEntities, getThread, sendMessage } from "~/email/lib/gmail-mailbox.server";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -49,8 +49,50 @@ describe("getThread", () => {
       messageId: "<abc@x.com>",
       text: "plain body",
       html: "<p>html body</p>",
-      attachments: ["deck.pdf"],
+      attachments: [{ filename: "deck.pdf", mimeType: "application/pdf", size: 0, attachmentId: "x" }],
     });
+  });
+
+  it("skips inline embedded images but keeps real attachments", async () => {
+    mockFetch({
+      messages: [
+        {
+          id: "m1",
+          internalDate: "1758800000000",
+          payload: {
+            mimeType: "multipart/mixed",
+            headers: [{ name: "From", value: "Ada <ada@x.com>" }],
+            parts: [
+              { mimeType: "text/plain", body: { data: b64("hi") } },
+              {
+                mimeType: "image/png",
+                filename: "logo.png",
+                headers: [
+                  { name: "Content-Disposition", value: "inline" },
+                  { name: "Content-ID", value: "<logo>" },
+                ],
+                body: { attachmentId: "inline1", size: 10 },
+              },
+              { mimeType: "application/pdf", filename: "deck.pdf", body: { attachmentId: "a2", size: 2048 } },
+            ],
+          },
+        },
+      ],
+    });
+    const [m] = await getThread("token", "t1");
+    expect(m.attachments).toEqual([
+      { filename: "deck.pdf", mimeType: "application/pdf", size: 2048, attachmentId: "a2" },
+    ]);
+  });
+});
+
+describe("decodeEntities", () => {
+  it("decodes named and numeric HTML entities in Gmail snippets", () => {
+    expect(decodeEntities("don&#39;t &amp; won&#39;t")).toBe("don't & won't");
+    expect(decodeEntities("a &lt;b&gt; &quot;c&quot; &#x27;d&#x27;")).toBe('a <b> "c" \'d\'');
+    expect(decodeEntities("no&nbsp;break")).toBe("no break");
+    // Leaves unknown/malformed entities untouched.
+    expect(decodeEntities("100% &bogus; safe")).toBe("100% &bogus; safe");
   });
 });
 
@@ -85,5 +127,29 @@ describe("sendMessage", () => {
     await sendMessage("token", { from: "me@x.com", to: "ada@x.com", cc: "", bcc: "grace@x.com", subject: "Hi", body: "" });
     const sent = JSON.parse(fetchSpy.mock.calls[0][1]!.body as string) as { raw: string };
     expect(Buffer.from(sent.raw, "base64url").toString("utf8")).toMatch(/^Bcc: grace@x\.com\r$/m);
+  });
+
+  it("builds a multipart/mixed message when there are attachments", async () => {
+    const fetchSpy = mockFetch({ id: "sent" });
+    await sendMessage("token", {
+      from: "me@x.com",
+      to: "ada@x.com",
+      cc: "",
+      bcc: "",
+      subject: "Deck",
+      body: "See attached",
+      attachments: [{ filename: 'q3 "report".pdf', contentType: "application/pdf", bytes: Buffer.from("PDFDATA") }],
+    });
+    const sent = JSON.parse(fetchSpy.mock.calls[0][1]!.body as string) as { raw: string };
+    const raw = Buffer.from(sent.raw, "base64url").toString("utf8");
+    const boundary = raw.match(/boundary="([^"]+)"/)?.[1];
+    expect(boundary).toBeTruthy();
+    expect(raw).toContain("Content-Type: multipart/mixed;");
+    expect(raw).toContain("Content-Type: text/plain; charset=UTF-8");
+    expect(raw).toContain(Buffer.from("See attached").toString("base64"));
+    // Quotes stripped from the filename so they can't break the header.
+    expect(raw).toContain('Content-Disposition: attachment; filename="q3 report.pdf"');
+    expect(raw).toContain(Buffer.from("PDFDATA").toString("base64"));
+    expect(raw.trimEnd()).toMatch(new RegExp(`--${boundary}--$`));
   });
 });

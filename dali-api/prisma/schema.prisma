@@ -2079,10 +2079,27 @@ model MailDraft {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  account   MailAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  createdBy User        @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  account     MailAccount           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdBy   User                  @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  attachments MailDraftAttachment[]
 
   @@index([accountId, sentAt])
+}
+
+// A file staged on a draft. Bytes live in S3 (s3Key); the row is what the
+// outbound MIME part is built from on send.
+model MailDraftAttachment {
+  id          String   @id @default(cuid())
+  draftId     String
+  s3Key       String
+  filename    String
+  contentType String
+  sizeBytes   Int
+  createdAt   DateTime @default(now())
+
+  draft MailDraft @relation(fields: [draftId], references: [id], onDelete: Cascade)
+
+  @@index([draftId])
 }
 
 // An internal note on an email thread. Never sent; visible to everyone who can

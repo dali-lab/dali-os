@@ -3,6 +3,7 @@ import {
   GetObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
+  DeleteObjectCommand,
   NotFound,
 } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
@@ -136,6 +137,13 @@ export async function getDownloadUrl(
     ...(disposition ? { ResponseContentDisposition: disposition } : {}),
   })
   return getSignedUrl(s3, command, { expiresIn })
+}
+
+// Best-effort delete of a private object (e.g. removing a mail attachment).
+// A miss is not an error — the row is already gone, so the object can too.
+export async function deleteObject(key: string): Promise<void> {
+  if (!isS3Configured()) return
+  await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key }))
 }
 
 // Read a private object's bytes + stored Content-Type directly (server-side).

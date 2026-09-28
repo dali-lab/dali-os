@@ -84,7 +84,8 @@ const THREADS: DemoThread[] = [
       date: ago(40),
       to: "deserto@dali.dartmouth.edu",
       text: "Works for me. I'll have the pitch deck final by Thursday night. Alex, can you make sure staging has the new onboarding flow?\n\nJordan",
-      attachments: ["Deserto pitch v3.pdf"],
+      // No attachmentId in demo, so the chip renders as a non-clickable label.
+      attachments: [{ filename: "Deserto pitch v3.pdf", mimeType: "application/pdf", size: 284000, attachmentId: "" }],
     }),
   ]),
   thread("partners", "t-partner-kickoff", true, [
@@ -184,6 +185,7 @@ const DRAFTS: EmailPageData["drafts"] = [
     mine: false,
     author: "Priya Shah",
     updatedAt: ago(30),
+    attachments: [],
   },
   {
     id: "demo-draft-new",
@@ -198,6 +200,7 @@ const DRAFTS: EmailPageData["drafts"] = [
     mine: true,
     author: "Alex Chen",
     updatedAt: ago(2 * HOUR),
+    attachments: [],
   },
 ];
 

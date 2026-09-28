@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useFetcher } from "react-router";
-import { Check, Languages, PenLine, Send, Sparkles, SpellCheck, Trash2, Undo2, Wand2, X } from "lucide-react";
+import { Check, Languages, Paperclip, PenLine, Send, Sparkles, SpellCheck, Trash2, Undo2, Wand2, X } from "lucide-react";
 import { Button } from "~/components/ui/Button";
 import { IconButton } from "~/components/ui/IconButton";
 import { Toggle } from "~/components/ui/Toggle";
@@ -11,10 +11,13 @@ import { AddressInput, type KnownAddress } from "~/email/components/AddressInput
 import type { EmailPageData } from "~/email/lib/email.server";
 import { wordDiff } from "~/email/lib/word-diff";
 import { cn } from "~/lib/cn";
+import { formatBytes, uploadFileToS3 } from "~/lib/upload-client";
 
 type Draft = EmailPageData["drafts"][number];
+type Attachment = Draft["attachments"][number];
 type Account = EmailPageData["accounts"][number];
 type ActionResult = { ok?: boolean; sent?: boolean; draftId?: string; error?: string };
+type AttachResult = { ok?: boolean; draftId?: string; attachments?: Attachment[]; error?: string };
 type AiTask = "draft" | "rephrase" | "proofread" | "translate";
 export type RecipientDirectory = { people: KnownAddress[]; domains: string[] };
 
@@ -61,6 +64,9 @@ export function Composer({
   const [body, setBody] = useState(draft?.body ?? "");
   const [shared, setShared] = useState(draft?.shared ?? false);
   const [draftId, setDraftId] = useState(draft?.id ?? "");
+  const [attachments, setAttachments] = useState<Attachment[]>(draft?.attachments ?? []);
+  const [uploading, setUploading] = useState(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [undoBody, setUndoBody] = useState<string | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
   const [suggestion, setSuggestion] = useState<{ source: string; text: string } | null>(null);
@@ -103,6 +109,68 @@ export function Composer({
       },
       { method: "post" },
     );
+  };
+
+  // Attach/detach go straight to the route action (not the shared fetcher) so
+  // they don't fire the save/send toasts, and so uploads run one at a time —
+  // the first pins the draft, later files reuse the id it returns.
+  const postForm = async (fields: Record<string, string>): Promise<AttachResult> => {
+    const form = new FormData();
+    for (const [k, v] of Object.entries(fields)) form.append(k, v);
+    const res = await fetch("/email", { method: "POST", body: form, credentials: "include" });
+    return (await res.json()) as AttachResult;
+  };
+
+  const draftFields = () => ({
+    accountId,
+    threadId: threadId ?? "",
+    to,
+    cc,
+    bcc: showBcc ? bcc : "",
+    subject,
+    body,
+    shared: shared ? "on" : "",
+  });
+
+  const addFiles = async (files: File[]) => {
+    let id = draftId;
+    for (const file of files) {
+      setUploading((n) => n + 1);
+      try {
+        const meta = await uploadFileToS3(file, "email-attachments");
+        const res = await postForm({
+          intent: "attach",
+          draftId: id,
+          ...draftFields(),
+          s3Key: meta.s3Key,
+          filename: meta.fileName,
+          contentType: meta.contentType,
+          sizeBytes: String(meta.sizeBytes),
+        });
+        if (res.error) toast.error(res.error);
+        else {
+          if (res.draftId) {
+            id = res.draftId;
+            setDraftId(res.draftId);
+          }
+          if (res.attachments) setAttachments(res.attachments);
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Couldn't attach that file.");
+      } finally {
+        setUploading((n) => n - 1);
+      }
+    }
+  };
+
+  const removeAttachment = async (attachmentId: string) => {
+    const prev = attachments;
+    setAttachments((a) => a.filter((x) => x.id !== attachmentId));
+    const res = await postForm({ intent: "detach", draftId, accountId, attachmentId });
+    if (res.error) {
+      toast.error(res.error);
+      setAttachments(prev);
+    } else if (res.attachments) setAttachments(res.attachments);
   };
 
   const discard = async () => {
@@ -321,7 +389,51 @@ export function Composer({
           </div>
         </div>
       )}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          void addFiles(Array.from(e.target.files ?? []));
+          e.target.value = "";
+        }}
+      />
+      {(attachments.length > 0 || uploading > 0) && (
+        <div className="flex flex-wrap gap-1.5">
+          {attachments.map((att) => (
+            <span
+              key={att.id}
+              className="inline-flex max-w-full items-center gap-1 rounded-full bg-os-container px-2.5 py-1 text-xs text-foreground"
+            >
+              <Paperclip className="h-3 w-3 shrink-0" />
+              <span className="truncate">{att.filename}</span>
+              <span className="shrink-0 text-os-muted">{formatBytes(att.sizeBytes)}</span>
+              <button
+                type="button"
+                aria-label={`Remove ${att.filename}`}
+                onClick={() => removeAttachment(att.id)}
+                className="shrink-0 rounded-full p-0.5 text-os-muted hover:bg-os-hover hover:text-foreground"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+          {uploading > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-os-container px-2.5 py-1 text-xs text-os-muted">
+              <Paperclip className="h-3 w-3 animate-pulse" />
+              Uploading…
+            </span>
+          )}
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-2">
+        <IconButton
+          label="Attach files"
+          icon={Paperclip}
+          onClick={() => fileInputRef.current?.click()}
+          disabled={aiBusy}
+        />
         {aiEnabled && (
           <button
             type="button"
@@ -381,7 +493,7 @@ export function Composer({
           <Button variant="secondary" size="sm" onClick={() => submit("saveDraft")} disabled={busy}>
             Save draft
           </Button>
-          <Button size="sm" onClick={() => submit("send")} disabled={busy || aiBusy || !to.trim()}>
+          <Button size="sm" onClick={() => submit("send")} disabled={busy || aiBusy || uploading > 0 || !to.trim()}>
             <Send className="h-3.5 w-3.5" />
             Send
           </Button>

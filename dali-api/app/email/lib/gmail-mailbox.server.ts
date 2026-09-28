@@ -2,6 +2,7 @@
 // per-account OAuth token (MailAccount.oauthTokens). Mail stays in Gmail; the
 // unified feed fetches it live.
 
+import { randomUUID } from "node:crypto";
 import { prisma } from "~/lib/db";
 import { buildEncryptedTokens, parseStoredTokens } from "~/lib/google-calendar";
 import { GoogleOAuthError, refreshGoogleToken } from "~/lib/google-oauth";
@@ -101,6 +102,15 @@ export interface ThreadSummary {
   messageCount: number;
 }
 
+export interface MailAttachment {
+  filename: string;
+  mimeType: string;
+  size: number;
+  // The Gmail attachment id, or "" for a part whose bytes arrived inline (no
+  // separate fetch, so it isn't offered as a download).
+  attachmentId: string;
+}
+
 export interface MailMessage {
   id: string;
   from: string;
@@ -112,7 +122,7 @@ export interface MailMessage {
   references: string;
   html: string | null;
   text: string | null;
-  attachments: string[];
+  attachments: MailAttachment[];
 }
 
 function header(part: GmailPart | undefined, name: string): string {
@@ -124,12 +134,45 @@ function decodeBody(data: string): string {
   return Buffer.from(data, "base64url").toString("utf8");
 }
 
-function collectParts(part: GmailPart, out: { html?: string; text?: string; attachments: string[] }) {
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: " ",
+};
+
+// Gmail returns `snippet` HTML-escaped (e.g. `don&#39;t &amp; won&#39;t`), so
+// it has to be decoded before it's shown as plain preview text.
+export function decodeEntities(text: string): string {
+  return text.replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z]+);/g, (whole, body: string) => {
+    if (body[0] === "#") {
+      const code =
+        body[1] === "x" || body[1] === "X"
+          ? parseInt(body.slice(2), 16)
+          : parseInt(body.slice(1), 10);
+      return Number.isNaN(code) ? whole : String.fromCodePoint(code);
+    }
+    return NAMED_ENTITIES[body.toLowerCase()] ?? whole;
+  });
+}
+
+function collectParts(part: GmailPart, out: { html?: string; text?: string; attachments: MailAttachment[] }) {
   if (part.filename) {
-    out.attachments.push(part.filename);
-    return;
-  }
-  if (part.body?.data) {
+    // An inline part with a Content-ID (an embedded image the body references
+    // via cid:) isn't a real attachment, so it's left off the download list.
+    const disposition = header(part, "Content-Disposition").toLowerCase();
+    const inline = disposition.startsWith("inline") && header(part, "Content-ID") !== "";
+    if (!inline) {
+      out.attachments.push({
+        filename: part.filename,
+        mimeType: part.mimeType,
+        size: part.body?.size ?? 0,
+        attachmentId: part.body?.attachmentId ?? "",
+      });
+    }
+  } else if (part.body?.data) {
     if (part.mimeType === "text/html" && out.html === undefined) out.html = decodeBody(part.body.data);
     if (part.mimeType === "text/plain" && out.text === undefined) out.text = decodeBody(part.body.data);
   }
@@ -164,7 +207,7 @@ export async function listThreads(
         id: t.id,
         subject: header(first.payload, "Subject") || "(no subject)",
         from: header(last.payload, "From"),
-        snippet: last.snippet ?? "",
+        snippet: decodeEntities(last.snippet ?? ""),
         date: new Date(Number(last.internalDate ?? 0)).toISOString(),
         unread: messages.some((m) => m.labelIds?.includes("UNREAD")),
         messageCount: messages.length,
@@ -185,7 +228,7 @@ export async function getThread(token: string, threadId: string): Promise<MailMe
     `/threads/${encodeURIComponent(threadId)}?format=full`,
   );
   return (t.messages ?? []).map((m) => {
-    const body: { html?: string; text?: string; attachments: string[] } = { attachments: [] };
+    const body: { html?: string; text?: string; attachments: MailAttachment[] } = { attachments: [] };
     if (m.payload) collectParts(m.payload, body);
     return {
       id: m.id,
@@ -201,6 +244,18 @@ export async function getThread(token: string, threadId: string): Promise<MailMe
       attachments: body.attachments,
     };
   });
+}
+
+export async function getAttachment(
+  token: string,
+  messageId: string,
+  attachmentId: string,
+): Promise<Buffer> {
+  const att = await gmail<{ data?: string; size?: number }>(
+    token,
+    `/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`,
+  );
+  return Buffer.from(att.data ?? "", "base64url");
 }
 
 export async function modifyThread(
@@ -226,6 +281,24 @@ function encodeSubject(subject: string): string {
     : `=?UTF-8?B?${Buffer.from(clean, "utf8").toString("base64")}?=`;
 }
 
+// Base64 bodies wrap at 76 columns per RFC 2045.
+function wrapBase64(b64: string): string {
+  return b64.match(/.{1,76}/g)?.join("\r\n") ?? b64;
+}
+
+function rfc5987(value: string): string {
+  return encodeURIComponent(value).replace(/['()*!]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+}
+
+// An ASCII-safe `filename="..."` (quotes/newlines stripped, non-ASCII folded)
+// plus an RFC 5987 `filename*` that carries the real UTF-8 name when needed.
+function encodeFilename(name: string): { ascii: string; star: string } {
+  const clean = name.replace(/["\\\r\n]/g, "");
+  const ascii = clean.replace(/[^\x20-\x7e]/g, "_");
+  const star = /^[\x20-\x7e]*$/.test(clean) ? "" : `; filename*=UTF-8''${rfc5987(clean)}`;
+  return { ascii, star };
+}
+
 export async function sendMessage(
   token: string,
   msg: {
@@ -238,6 +311,7 @@ export async function sendMessage(
     threadId?: string | null;
     inReplyTo?: string;
     references?: string;
+    attachments?: { filename: string; contentType: string; bytes: Buffer }[];
   },
 ): Promise<void> {
   const headers = [
@@ -252,10 +326,38 @@ export async function sendMessage(
       ? [`References: ${sanitizeHeader(`${msg.references ?? ""} ${msg.inReplyTo}`.trim())}`]
       : []),
     "MIME-Version: 1.0",
-    "Content-Type: text/plain; charset=UTF-8",
-    "Content-Transfer-Encoding: base64",
   ];
-  const raw = `${headers.join("\r\n")}\r\n\r\n${Buffer.from(msg.body, "utf8").toString("base64")}`;
+  const bodyB64 = wrapBase64(Buffer.from(msg.body, "utf8").toString("base64"));
+  const attachments = msg.attachments ?? [];
+
+  let raw: string;
+  if (attachments.length === 0) {
+    raw = [...headers, "Content-Type: text/plain; charset=UTF-8", "Content-Transfer-Encoding: base64", "", bodyB64].join(
+      "\r\n",
+    );
+  } else {
+    const boundary = `=_dali_${randomUUID().replace(/-/g, "")}`;
+    const parts = ["Content-Type: text/plain; charset=UTF-8", "Content-Transfer-Encoding: base64", "", bodyB64];
+    for (const att of attachments) {
+      const { ascii, star } = encodeFilename(att.filename);
+      parts.push(
+        `--${boundary}`,
+        `Content-Type: ${sanitizeHeader(att.contentType) || "application/octet-stream"}; name="${ascii}"`,
+        "Content-Transfer-Encoding: base64",
+        `Content-Disposition: attachment; filename="${ascii}"${star}`,
+        "",
+        wrapBase64(att.bytes.toString("base64")),
+      );
+    }
+    raw = [
+      ...headers,
+      `Content-Type: multipart/mixed; boundary="${boundary}"`,
+      "",
+      `--${boundary}`,
+      ...parts,
+      `--${boundary}--`,
+    ].join("\r\n");
+  }
   await gmail(token, "/messages/send", {
     method: "POST",
     body: JSON.stringify({
