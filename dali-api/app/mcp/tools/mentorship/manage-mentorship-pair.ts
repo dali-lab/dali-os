@@ -2,8 +2,10 @@
 // Scope: mcp:write. Both create and delete are Core-only (mirrors api.mentorship.pairs.ts).
 //
 // Actions:
-//   create — manually create a pair. Core only. Dupe-checked (no unique constraint
-//             on model — checks before inserting). Returns {id, created}.
+//   create — assign a mentee's mentor. Core only. One mentor per mentee per
+//             (project, term, domain): if the mentee is already paired in that
+//             domain the existing row is reassigned instead of adding a second.
+//             Returns {id, created}.
 //   delete  — delete pairs by id. Core only. Supports a single id per call.
 
 import { prisma } from "~/lib/db";
@@ -80,17 +82,31 @@ export async function runManageMentorshipPair(
 
   // ── create ──────────────────────────────────────────────────────────────────
   if (input.action === "create") {
-    const dupe = await prisma.mentorshipPair.findFirst({
+    // One mentor per mentee per (project, term, domain): reassign an existing
+    // pairing (collapsing any stray extras) instead of adding a second mentor.
+    const existing = await prisma.mentorshipPair.findMany({
       where: {
         menteeUserId: input.menteeUserId!,
-        mentorUserId: input.mentorUserId!,
         projectId: input.projectId!,
         termId: input.termId!,
         domainId: input.domainId!,
       },
       select: { id: true },
     });
-    if (dupe) return { id: dupe.id, created: false };
+    if (existing.length > 0) {
+      const [keep, ...extra] = existing;
+      if (extra.length > 0) {
+        await prisma.mentorshipPair.deleteMany({
+          where: { id: { in: extra.map((e) => e.id) } },
+        });
+      }
+      const updated = await prisma.mentorshipPair.update({
+        where: { id: keep.id },
+        data: { mentorUserId: input.mentorUserId!, manual: true },
+        select: { id: true },
+      });
+      return { id: updated.id, created: false };
+    }
 
     const created = await prisma.mentorshipPair.create({
       data: {
