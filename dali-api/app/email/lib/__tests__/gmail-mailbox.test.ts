@@ -1,8 +1,14 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 
 vi.mock("~/lib/db", () => ({ prisma: {} }));
+vi.mock("~/lib/google-calendar", () => ({
+  parseStoredTokens: () => {
+    throw new Error("Unsupported state or unable to authenticate data");
+  },
+  buildEncryptedTokens: () => "sealed",
+}));
 
-import { decodeEntities, getThread, sendMessage } from "~/email/lib/gmail-mailbox.server";
+import { decodeEntities, getMailboxToken, getThread, MailboxError, sendMessage } from "~/email/lib/gmail-mailbox.server";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -83,6 +89,16 @@ describe("getThread", () => {
     expect(m.attachments).toEqual([
       { filename: "deck.pdf", mimeType: "application/pdf", size: 2048, attachmentId: "a2" },
     ]);
+  });
+});
+
+describe("getMailboxToken", () => {
+  it("turns an undecryptable token into a MailboxError, not a raw crypto throw", async () => {
+    await expect(getMailboxToken({ id: "a1", oauthTokens: "garbage" })).rejects.toBeInstanceOf(MailboxError);
+  });
+
+  it("still rejects a not-connected account", async () => {
+    await expect(getMailboxToken({ id: "a1", oauthTokens: null })).rejects.toBeInstanceOf(MailboxError);
   });
 });
 
