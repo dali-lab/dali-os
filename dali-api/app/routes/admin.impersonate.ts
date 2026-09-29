@@ -18,7 +18,6 @@ import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { getBetterAuthUser } from "~/lib/betterauth-compat.server";
 import { isAdmin } from "~/lib/roles";
 import { prisma } from "~/lib/db";
-import { LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
 import { auth } from "~/lib/betterauth.server";
 import { logAuditEvent } from "~/lib/audit";
 
@@ -65,19 +64,19 @@ export async function action({ request }: { request: Request }): Promise<Respons
     });
   }
 
-  // 5b. Only lab members can be impersonated. A non-member renders the
-  //     InstructorChrome shell, which mounts no "Stop impersonating" banner or
-  //     control — impersonating one would strand the admin in that identity with
-  //     no in-app way out. This matches the LAB_MEMBER_WHERE filter that gates
-  //     the "Log in as" button in Admin → Roles & permissions.
-  const targetIsMember = await prisma.user.findFirst({
-    where: { id: userId, ...LAB_MEMBER_WHERE },
+  // 5b. Any real user may be impersonated — member or not. Every shell an
+  //     impersonated user can land in (member, portal/applicant, partner,
+  //     instructor) mounts the "Stop impersonating" banner, so there is always
+  //     an in-app way back out. Confirm the target exists to fail cleanly on a
+  //     stale/garbage userId rather than handing it to BetterAuth.
+  const target = await prisma.user.findUnique({
+    where: { id: userId },
     select: { id: true },
   });
-  if (!targetIsMember) {
+  if (!target) {
     return new Response(
-      JSON.stringify({ error: "Can only impersonate lab members" }),
-      { status: 400, headers: { "Content-Type": "application/json" } },
+      JSON.stringify({ error: "No such user" }),
+      { status: 404, headers: { "Content-Type": "application/json" } },
     );
   }
 

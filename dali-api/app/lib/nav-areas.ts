@@ -7,6 +7,7 @@ import {
   ClipboardList,
   ClipboardPen,
   Clock,
+  DoorOpen,
   Files,
   FileSignature,
   FileText,
@@ -326,6 +327,16 @@ function withDriveInGeneral(areas: NavArea[]): NavArea[] {
   );
 }
 
+// Behind the `room-booking` flag: room/door-display management in Core. The
+// member-facing booking page sits in the top bar (see roomBookingNavItem).
+function withRooms(areas: NavArea[]): NavArea[] {
+  return areas.map((a) =>
+    a.key === "core"
+      ? { ...a, subtabs: [...a.subtabs, { label: "Rooms", href: "/core/rooms", icon: DoorOpen }] }
+      : a,
+  );
+}
+
 /**
  * The area set for one viewer. REGROUPED_AREAS is the base nav; NAV_AREAS
  * survives only to keep favourites saved under the old nav resolvable (see
@@ -334,8 +345,10 @@ function withDriveInGeneral(areas: NavArea[]): NavArea[] {
 export function areasFor(flags: Partial<FeatureFlagMap> = {}): NavArea[] {
   // Deep-link email templates directly into Drive (agreements has its own Core
   // console page at /core/agreements).
-  const areas = applyDriveSpacesSubstitutions(REGROUPED_AREAS);
-  return flags.resources ? withDriveInGeneral(areas) : areas;
+  let areas = applyDriveSpacesSubstitutions(REGROUPED_AREAS);
+  if (flags.resources) areas = withDriveInGeneral(areas);
+  if (flags["room-booking"]) areas = withRooms(areas);
+  return areas;
 }
 
 /**
@@ -351,6 +364,11 @@ export function pinnedNavItems(flags: Partial<FeatureFlagMap> = {}): SubTab[] {
     : [{ label: "Drive", href: "/drive", icon: HardDrive }];
 }
 
+/** Room booking, carried by the top bar beside Guide and the bell. */
+export function roomBookingNavItem(flags: Partial<FeatureFlagMap> = {}): SubTab | null {
+  return flags["room-booking"] ? { label: "Room booking", href: "/rooms", icon: DoorOpen } : null;
+}
+
 // Both area sets at once. isAreaSubtabPath and the icon map are read from places
 // with no flag context — the favorites star (FavoriteRouteButton), the
 // favorites/recents glyphs (FavoriteIcon), and parseRouteHref server-side. Both
@@ -358,7 +376,7 @@ export function pinnedNavItems(flags: Partial<FeatureFlagMap> = {}): SubTab[] {
 // favorite saved under the old nav still resolves its area and icon.
 const ALL_AREAS: NavArea[] = [
   ...NAV_AREAS,
-  ...areasFor(),
+  ...areasFor({ "room-booking": true }),
 ];
 
 // These matchers are handed a live URL, not a bare pathname: in tab mode the

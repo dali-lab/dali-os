@@ -46,6 +46,7 @@ import { osMenuClass, osMenuItemClass, railRowClass } from '~/components/os-shel
 import {
   areaForPath,
   pinnedNavItems,
+  roomBookingNavItem,
   activeSubtabHref,
   isPinnedActive,
   visibleAreas,
@@ -245,12 +246,13 @@ export function LayoutOS({
   // The `resources` flag decides the pinned tail (Resources vs Drive) and
   // whether Drive is a General sub-tab, so every nav matcher below has to be
   // handed the same map — a pin and an area disagreeing would light both.
-  const navFlags = { resources: useFeatureFlag('resources') }
+  const navFlags = { resources: useFeatureFlag('resources'), 'room-booking': useFeatureFlag('room-booking') }
   const emailEnabled = useFeatureFlag('email')
   const emailUnread = useEmailUnread(emailEnabled, path)
   const areas = visibleAreas(roleFlags, navFlags)
   const routeArea = areaForPath(path, navFlags)
   const pinned = pinnedNavItems(navFlags)
+  const roomBooking = roomBookingNavItem(navFlags)
   const activeArea = routeArea ?? areas.find((a) => a.key === lastAreaKey) ?? areas[0]
   const activeSubtabs = activeArea ? visibleSubtabs(activeArea, roleFlags) : []
   const activeHref = activeArea ? activeSubtabHref(activeArea, path) : undefined
@@ -269,7 +271,7 @@ export function LayoutOS({
     tabClickProps({ url: area.hubPath, label: area.label }).onClick(e)
   }
 
-  const pinnedLabel = pinned.find((i) => isPinnedActive(path, i.href, navFlags))?.label
+  const pinnedLabel = [...pinned, ...(roomBooking ? [roomBooking] : [])].find((i) => isPinnedActive(path, i.href, navFlags))?.label
   const initialTabLabel = path.startsWith('/notifications')
     ? 'My Tasks'
     : path.startsWith('/calendar')
@@ -684,6 +686,16 @@ export function LayoutOS({
       </div>
 
       <div className="flex flex-shrink-0 items-center gap-3">
+        {roomBooking && (
+          <button
+            type="button"
+            {...tabClickProps({ url: roomBooking.href, label: roomBooking.label })}
+            className="os-topbar-btn shrink-0 text-base font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-os-accent"
+          >
+            <roomBooking.icon className="h-5 w-5 shrink-0" aria-hidden />
+            {roomBooking.label}
+          </button>
+        )}
         {/* The page's guide, on the same plate as the bell beside it, in both
             shells. Tabless mode shares this document with the page and reads
             the route itself; tab mode takes the focused frame's report and
@@ -918,7 +930,7 @@ export function LayoutOS({
         tabless={tabless}
         focusMode={focusMode}
         roles={roleFlags}
-        flags={{ email: emailEnabled }}
+        flags={{ ...navFlags, email: emailEnabled }}
         onOpen={openFromPalette}
       />
     </div>

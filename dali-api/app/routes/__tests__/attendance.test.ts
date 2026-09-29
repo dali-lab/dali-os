@@ -10,8 +10,17 @@ vi.mock("~/lib/roles", async (importOriginal) => ({
   isProjectMember: vi.fn(),
 }));
 
+vi.mock("~/lib/display-scan.server", () => ({
+  getActiveDisplayScan: vi.fn(),
+  startDisplayScan: vi.fn(),
+  stopDisplayScan: vi.fn(),
+}));
+vi.mock("~/rooms/lib/access.server", () => ({ isRoomBookingEnabled: vi.fn() }));
+
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { startDisplayScan, stopDisplayScan } from "~/lib/display-scan.server";
+import { isRoomBookingEnabled } from "~/rooms/lib/access.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { action } from "~/routes/attendance";
 
@@ -138,5 +147,57 @@ describe("POST /attendance — set-absence-note", () => {
   it("rejects an unknown intent", async () => {
     const res = await post({ intent: "delete-everything", meetingId: "m", userId: "u" });
     expect(res.status).toBe(400);
+  });
+});
+
+describe("POST /attendance: iPad scanning", () => {
+  const occurrenceStart = "2026-09-30T22:00:00.000Z";
+  const toggle = (intent: string) => post({ intent, meetingId: "meeting-1", occurrenceStart });
+
+  beforeEach(() => {
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue({ organizerId: "viewer-1", status: "Scheduled" });
+    vi.mocked(isRoomBookingEnabled).mockResolvedValue(true);
+    vi.mocked(startDisplayScan).mockResolvedValue({ expiresAt: new Date("2026-10-01T00:00:00Z") });
+  });
+
+  it("points the iPads at the organizer's event occurrence", async () => {
+    expect((await toggle("start-ipad-scan")).status).toBe(200);
+    expect(startDisplayScan).toHaveBeenCalledWith("meeting-1", new Date(occurrenceStart), "viewer-1");
+  });
+
+  it("stops scanning", async () => {
+    expect((await toggle("stop-ipad-scan")).status).toBe(200);
+    expect(stopDisplayScan).toHaveBeenCalledWith("meeting-1");
+  });
+
+  it("lets Core switch on scanning for someone else's event", async () => {
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue({ organizerId: "someone-else", status: "Scheduled" });
+    mockIsCore.mockResolvedValue(true);
+    expect((await toggle("start-ipad-scan")).status).toBe(200);
+  });
+
+  // Project members can mark attendance, but taking over every iPad in the lab
+  // is the organizer's or Core's call.
+  it("rejects a project member who doesn't organize the event", async () => {
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue({ organizerId: "someone-else", status: "Scheduled" });
+    mockIsProjectMember.mockResolvedValue(true);
+    expect((await toggle("start-ipad-scan")).status).toBe(403);
+    expect(startDisplayScan).not.toHaveBeenCalled();
+  });
+
+  it("rejects when room booking is off", async () => {
+    vi.mocked(isRoomBookingEnabled).mockResolvedValue(false);
+    expect((await toggle("start-ipad-scan")).status).toBe(403);
+  });
+
+  it("409s once the event has ended", async () => {
+    vi.mocked(startDisplayScan).mockResolvedValue(null);
+    expect((await toggle("start-ipad-scan")).status).toBe(409);
+  });
+
+  it("409s a cancelled event", async () => {
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue({ organizerId: "viewer-1", status: "Cancelled" });
+    expect((await toggle("start-ipad-scan")).status).toBe(409);
+    expect(startDisplayScan).not.toHaveBeenCalled();
   });
 });
