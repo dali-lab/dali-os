@@ -17,6 +17,7 @@ import {
   GL_SUBACTIVITIES,
   PROJECT_FUNDING_TYPES,
   PROJECT_FUNDING_TYPE_LABELS,
+  chartStringForFundingType,
   type ProjectFundingType,
 } from "~/lib/chart-string";
 
@@ -100,6 +101,16 @@ export function ChartStringPanel({
   }>();
   const [adding, setAdding] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  // Controlled so choosing a GL project type can fill the string in.
+  const [fundingType, setFundingType] = useState("");
+  const [chartString, setChartString] = useState("");
+  const isGlType = fundingType === "DALI_GL" || fundingType === "TRANSFER_GL";
+
+  const openForm = () => {
+    setFundingType("");
+    setChartString("");
+    setAdding(true);
+  };
 
   const busy = fetcher.state !== "idle";
   const error = fetcher.data?.error;
@@ -189,7 +200,7 @@ export function ChartStringPanel({
       {!adding ? (
         <button
           type="button"
-          onClick={() => setAdding(true)}
+          onClick={openForm}
           className="flex items-center gap-1.5 self-start text-xs text-os-grey hover:text-foreground"
         >
           <Plus className="h-3.5 w-3.5" />
@@ -215,27 +226,23 @@ export function ChartStringPanel({
             </select>
           </label>
 
-          <label className="flex flex-col gap-1">
-            <span className="text-xs text-os-grey">Chart string</span>
-            <input
-              name="chartString"
-              className={cn(field, "font-mono")}
-              placeholder="523241.5000.B04662.XXXXX.330"
-              required
-            />
-            <span className="text-xs text-os-grey">
-              GL is entity.org.funding.activity.subactivity. PTAEO is
-              project.task.award.expenditure-type.org — XXXXX in the
-              expenditure type is expected.
-            </span>
-          </label>
-
+          {/* Type first: it decides what the string should look like, and for
+              the two GL types it fills the string in. */}
           <label className="flex flex-col gap-1">
             <span className="text-xs text-os-grey">Project type</span>
             {/* GL vs PTAEO is the string's format and the validator reads it
                 off the shape — asking for it again is how a PTAEO ended up
                 labelled GL. This asks only how the work is paid for. */}
-            <select name="fundingType" defaultValue="" className={field}>
+            <select
+              name="fundingType"
+              value={fundingType}
+              onChange={(e) => {
+                const next = (e.target.value || null) as ProjectFundingType | null;
+                setFundingType(e.target.value);
+                setChartString((cur) => chartStringForFundingType(cur, next));
+              }}
+              className={field}
+            >
               <option value="">Not set</option>
               {PROJECT_FUNDING_TYPES.map((t) => (
                 <option key={t} value={t}>
@@ -243,6 +250,23 @@ export function ChartStringPanel({
                 </option>
               ))}
             </select>
+          </label>
+
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-os-grey">Chart string</span>
+            <input
+              name="chartString"
+              value={chartString}
+              onChange={(e) => setChartString(e.target.value)}
+              className={cn(field, "font-mono")}
+              placeholder="523241.5000.B04662.XXXXX.330"
+              required
+            />
+            <span className="text-xs text-os-grey">
+              {isGlType
+                ? "The lab's projects GL. Programs charge .3000 instead — edit the last segment."
+                : "GL is entity.org.funding.activity.subactivity. PTAEO is project.task.award.expenditure-type.org — XXXXX in the expenditure type is expected."}
+            </span>
           </label>
 
           <div className="grid gap-2 sm:grid-cols-2">

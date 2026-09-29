@@ -38,7 +38,14 @@ async function main() {
       participantUserIds: { isEmpty: false },
       attendance: { none: {} },
     },
-    select: { id: true, title: true, organizerId: true, participantUserIds: true },
+    select: {
+      id: true,
+      title: true,
+      organizerId: true,
+      participantUserIds: true,
+      selectedAt: true,
+      createdAt: true,
+    },
   });
 
   console.log(`Found ${meetings.length} meeting(s) with guests but no roster.`);
@@ -51,7 +58,11 @@ async function main() {
     );
     if (commit) {
       await prisma.meetingAttendance.createMany({
-        data: attendeeIds.map((userId) => ({ scheduledMeetingId: m.id, userId })),
+        data: attendeeIds.map((userId) => ({
+          scheduledMeetingId: m.id,
+          occurrenceStart: m.selectedAt ?? m.createdAt,
+          userId,
+        })),
         skipDuplicates: true,
       });
     }

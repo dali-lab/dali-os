@@ -39,29 +39,29 @@ export function DetailRow({
   );
 }
 
-/* The same row, with a field where the value was. Stacks on a narrow screen so
-   an input never has to share a line with its own label. */
+/* The same row, with a field where the value was. When inside a
+   grid grid-cols-[max-content_1fr] container, col-span-2 + subgrid makes every
+   row share the same column tracks — the label column auto-sizes to the widest
+   label in the card, so all inputs start at the same X. */
 export function DetailEditRow({
   icon,
   label,
-  hint,
+  infoTip,
   children,
 }: {
   icon: ReactNode;
   label: string;
-  hint?: string;
+  infoTip?: ReactNode;
   children: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-2 border-b border-os-container py-3 last:border-0 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
-      <span className="flex min-w-0 flex-col gap-0.5">
-        <span className="flex items-center gap-2.5 text-sm text-os-grey">
-          {icon}
-          {label}
-        </span>
-        {hint && <span className="pl-[27px] text-xs text-os-muted">{hint}</span>}
+    <div className="col-span-2 grid grid-cols-subgrid items-center gap-x-6 border-b border-os-container py-3 last:border-0">
+      <span className="flex shrink-0 items-center gap-2.5 text-sm text-os-grey whitespace-nowrap">
+        {icon}
+        {label}
+        {infoTip}
       </span>
-      <div className="w-full sm:max-w-[24rem]">{children}</div>
+      <div className="min-w-0">{children}</div>
     </div>
   );
 }

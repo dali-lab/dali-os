@@ -24,6 +24,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Lab members have the full app; the portal is the non-member surface.
   if (auth.user.type === "member") return redirect("/");
 
+  // Legacy→BetterAuth session upgrade runs in applicant-layout.tsx (this route's
+  // parent layout), which covers every /portal/* route, not just this index.
+
   const [cycles, offerings, me, upcomingSessions, instructorAssignments] =
     await Promise.all([
       getActiveCycles({ applicants: "Students" }),

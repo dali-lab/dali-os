@@ -37,8 +37,10 @@ Two further correctness bugs, independent of recurrence:
 ## Decisions (locked)
 
 - Attendance **and** hours are **per-occurrence**.
-- **One running note doc per series** (minutes as a living doc); notes are not
-  per-occurrence.
+- ~~One running note doc per series~~ — superseded: notes are **per
+  occurrence** too (`Page.meetingOccurrenceStart`), because opening any week of
+  a recurring meeting landed on the first week's note. Later occurrences' notes
+  are created on demand and filed beside the first.
 - Role attribution: **auto-attribute the unambiguous case, otherwise surface
   "needs a role"** (never silently unassigned).
 - `MeetingException` cancel/retime *writes* are **out of scope** (follow-up);
@@ -152,7 +154,8 @@ See `check-in-unification.md` for pointing education at these.
 ## Out of scope / follow-ups
 
 - Writing `MeetingException` (cancel/retime a single occurrence).
-- Any change to the note-doc model (stays one-per-series).
+- Role auto-attribution and the single-owner TimeEntry model (bugs 4–5) are
+  not done yet; attendance, meeting hours and notes are keyed per occurrence.
 
 ## Test focus
 

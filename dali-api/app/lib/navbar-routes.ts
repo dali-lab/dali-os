@@ -14,6 +14,7 @@ const NAVBAR_PATHS = new Set([
   "/partners",
   "/partners/applications",
   "/calendar",
+  "/email",
   "/settings",
   "/help",
 ]);

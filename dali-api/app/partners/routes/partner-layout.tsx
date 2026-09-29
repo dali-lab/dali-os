@@ -2,6 +2,7 @@ import {
   Link,
   NavLink,
   Outlet,
+  redirect,
   useLoaderData,
   useLocation,
   useRouteError,
@@ -10,10 +11,14 @@ import { ChevronDown } from "lucide-react";
 import type { Route } from "./+types/partner-layout";
 import { prisma } from "~/lib/db";
 import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
+import { maybeUpgradeLegacyToBetterAuth } from "~/lib/betterauth-upgrade.server";
+import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
+import { getImpersonationState } from "~/lib/betterauth-compat.server";
 import { partnerProjectsWhereForOrgs } from "~/partners/lib/partner-access";
 import { userInitials } from "~/lib/display";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
+import { ImpersonationBanner } from "~/components/ImpersonationBanner";
 import { PortalProfileMenu } from "~/components/PortalProfileMenu";
 import { Menu } from "~/components/ui/floating";
 
@@ -23,6 +28,17 @@ import { Menu } from "~/components/ui/floating";
 // the guard itself.
 export async function loader({ request }: Route.LoaderArgs) {
   const ctx = await requirePartnerAccount(request);
+
+  // TEMPORARY (remove ~1 week post-cutover): migrate a validated legacy session
+  // to a BetterAuth session, then reload so the new cookie takes effect. Reuses
+  // ctx.auth; the helper's __dali_sid fast-path makes this zero-cost once the
+  // legacy cookie is gone. Same migration as the member/portal loaders.
+  const upgradeHeaders = await maybeUpgradeLegacyToBetterAuth(request, ctx.auth);
+  if (upgradeHeaders) {
+    const u = new URL(request.url);
+    return redirect(u.pathname + u.search, { headers: upgradeHeaders });
+  }
+
   const orgIds = ctx.memberships.map((m) => m.orgId);
 
   const me = await prisma.user.findUnique({
@@ -76,7 +92,18 @@ export async function loader({ request }: Route.LoaderArgs) {
   const orgName =
     ctx.memberships.length === 1 ? ctx.memberships[0].org.name : null;
 
-  return { user: ctx.auth.user, orgName, orgGroups, avatarUrl };
+  // Surface the "Stop impersonating" banner when an admin is logged in as this
+  // partner account, so they are never stranded in the partner shell.
+  let impersonating = false;
+  if (await isFeatureEnabledForEveryone("betterauth", request)) {
+    try {
+      impersonating = (await getImpersonationState(request)) !== null;
+    } catch {
+      // never let the impersonation probe fault the partner shell
+    }
+  }
+
+  return { user: ctx.auth.user, orgName, orgGroups, avatarUrl, impersonating };
 }
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
@@ -85,7 +112,7 @@ const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   }`;
 
 export default function PartnerLayout() {
-  const { user, orgName, orgGroups, avatarUrl } = useLoaderData<typeof loader>();
+  const { user, orgName, orgGroups, avatarUrl, impersonating } = useLoaderData<typeof loader>();
 
   const displayName = user.firstName
     ? `${user.firstName} ${user.lastName ?? ""}`.trim()
@@ -119,6 +146,7 @@ export default function PartnerLayout() {
       </nav>
 
       <div className="pt-16">
+        {impersonating && <ImpersonationBanner userName={displayName} />}
         <main className="w-full px-4 sm:px-6 lg:px-10 py-8">
           <Outlet />
         </main>

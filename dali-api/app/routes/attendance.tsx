@@ -17,6 +17,8 @@ import { requireAuth } from "~/lib/auth";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
+import { meetingOccurrenceHref } from "~/calendar/lib/meeting-href";
+import { parseOccurrenceParam } from "~/lib/scheduled-meeting";
 import { fullName, formatDateShort, formatDateTime } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { useOsChrome } from "~/components/os-chrome";
@@ -45,7 +47,8 @@ export const handle = {
 
 // Lab-wide Attendance: every meeting/event the
 // viewer is invited to, across projects / teams / Core / general lab meetings,
-// with each event's roster. Access is by invitation — we only surface a meeting
+// with each event's roster. A recurring meeting lists once per occurrence that
+// has a roster, since each occurrence keeps its own. Access is by invitation — we only surface a meeting
 // whose participant list (or organizer) includes the viewer, so "you can see the
 // attendance for an event you're invited to" is enforced by the query itself,
 // with no Core-wide blanket. Marking still happens on the per-meeting page,
@@ -80,9 +83,11 @@ export async function loader({ request }: Route.LoaderArgs) {
       organizerId: true,
       project: { select: { id: true, name: true } },
       organizer: { select: { firstName: true, lastName: true, daliEmail: true } },
+      exceptions: { select: { originalStart: true, overrideStart: true, cancelled: true } },
       attendance: {
         orderBy: { user: { lastName: "asc" } },
         select: {
+          occurrenceStart: true,
           present: true,
           markedAt: true,
           absenceNote: true,
@@ -108,7 +113,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const memberProjectIds = new Set(assignments.map((a) => a.projectId));
 
   const now = Date.now();
-  const events = meetings.map((m) => {
+  const events = meetings.flatMap((m) => {
     const canManage =
       m.organizerId === userId ||
       core ||
@@ -118,8 +123,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     // reschedule or delete a meeting they don't own). Mirrors the update/cancel
     // server gates.
     const canEdit = m.organizerId === userId || core;
-    const invited = m.attendance.length;
-    const checkedIn = m.attendance.filter((a) => a.present).length;
     const scope = m.project
       ? m.project.name
       : m.isCoreMeeting
@@ -129,34 +132,46 @@ export async function loader({ request }: Route.LoaderArgs) {
       m.meetingType === "Other"
         ? m.meetingTypeLabel || "Meeting"
         : (m.meetingType ?? "Meeting");
-    const end = m.selectedAt
-      ? m.selectedAt.getTime() + m.durationMinutes * 60_000
-      : null;
-    return {
-      id: m.id,
-      title: m.title,
-      typeLabel,
-      scope,
-      startsAt: m.selectedAt?.toISOString() ?? null,
-      // Unscheduled meetings (no time yet) sort with upcoming so they don't vanish.
-      isPast: end !== null && end < now,
-      organizerName: fullName(m.organizer) || m.organizer.daliEmail || "—",
-      invited,
-      checkedIn,
-      viewerPresent:
-        m.attendance.find((a) => a.userId === userId)?.present ?? false,
-      canManage,
-      canEdit,
-      attendees: m.attendance.map((a) => ({
-        id: a.user.id,
-        name: fullName(a.user) || a.user.daliEmail || a.user.id,
-        present: a.present,
-        markedAt: a.markedAt?.toISOString() ?? null,
-        // Withheld rather than merely hidden: a plain invitee's payload
-        // shouldn't carry a note they aren't allowed to read.
-        absenceNote: canManage ? a.absenceNote : null,
-      })),
-    };
+    const byOccurrence = new Map<number, typeof m.attendance>();
+    for (const a of m.attendance) {
+      const key = a.occurrenceStart.getTime();
+      byOccurrence.set(key, [...(byOccurrence.get(key) ?? []), a]);
+    }
+    const exceptions = new Map(m.exceptions.map((e) => [e.originalStart.getTime(), e]));
+    return [...byOccurrence].flatMap(([key, rows]) => {
+      const exception = exceptions.get(key);
+      if (exception?.cancelled) return [];
+      const start = m.selectedAt ? (exception?.overrideStart ?? new Date(key)) : null;
+      const end = start ? start.getTime() + m.durationMinutes * 60_000 : null;
+      return [
+        {
+          id: `${m.id}:${key}`,
+          meetingId: m.id,
+          occurrenceStart: new Date(key).toISOString(),
+          title: m.title,
+          typeLabel,
+          scope,
+          startsAt: start?.toISOString() ?? null,
+          // Unscheduled meetings (no time yet) sort with upcoming so they don't vanish.
+          isPast: end !== null && end < now,
+          organizerName: fullName(m.organizer) || m.organizer.daliEmail || "—",
+          invited: rows.length,
+          checkedIn: rows.filter((a) => a.present).length,
+          viewerPresent: rows.find((a) => a.userId === userId)?.present ?? false,
+          canManage,
+          canEdit,
+          attendees: rows.map((a) => ({
+            id: a.user.id,
+            name: fullName(a.user) || a.user.daliEmail || a.user.id,
+            present: a.present,
+            markedAt: a.markedAt?.toISOString() ?? null,
+            // Withheld rather than merely hidden: a plain invitee's payload
+            // shouldn't carry a note they aren't allowed to read.
+            absenceNote: canManage ? a.absenceNote : null,
+          })),
+        },
+      ];
+    });
   });
 
   return { events };
@@ -178,6 +193,7 @@ export async function action({ request }: Route.ActionArgs) {
     return Response.json({ error: "Unknown intent" }, { status: 400 });
   }
   const meetingId = String(form.get("meetingId") ?? "");
+  const occurrenceStart = parseOccurrenceParam(form.get("occurrenceStart"));
   const userId = String(form.get("userId") ?? "");
   if (!meetingId || !userId) {
     return Response.json({ error: "Missing meetingId or userId" }, { status: 400 });
@@ -208,7 +224,12 @@ export async function action({ request }: Route.ActionArgs) {
   // Note-only write: `present` and its TimeEntry mirror are untouched, and a
   // row that doesn't exist means the person isn't on this roster.
   const updated = await prisma.meetingAttendance.updateMany({
-    where: { scheduledMeetingId: meeting.id, userId },
+    where: {
+      scheduledMeetingId: meeting.id,
+      userId,
+      // Each occurrence keeps its own roster; a note is on one of them.
+      ...(occurrenceStart ? { occurrenceStart } : {}),
+    },
     data: { absenceNote },
   });
   if (updated.count === 0) {
@@ -227,6 +248,8 @@ type Attendee = {
 
 type AttendanceEvent = {
   id: string;
+  meetingId: string;
+  occurrenceStart: string;
   title: string;
   typeLabel: string;
   scope: string;
@@ -387,7 +410,7 @@ function EventCard({
     if (!ok) return;
     cancelFetcher.submit(null, {
       method: "post",
-      action: `/api/scheduled-meetings/${event.id}/cancel`,
+      action: `/api/scheduled-meetings/${event.meetingId}/cancel`,
     });
   }
 
@@ -441,7 +464,7 @@ function EventCard({
         </button>
         <div className="flex items-start gap-0.5 pr-3 pt-3.5 flex-shrink-0">
           <Link
-            to={`/calendar/meeting/${event.id}`}
+            to={meetingOccurrenceHref(event.meetingId, event.occurrenceStart)}
             className="p-1.5 rounded-md text-muted-foreground hover:text-accent-teal hover:bg-accent-teal/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-teal/40"
             aria-label="Open meeting — check in or mark attendance"
             title="Open meeting"
@@ -479,7 +502,7 @@ function EventCard({
       </div>
 
       {editing && (
-        <EditMeetingModal meetingId={event.id} onClose={() => setEditing(false)} />
+        <EditMeetingModal meetingId={event.meetingId} onClose={() => setEditing(false)} />
       )}
 
       {open && (
@@ -494,7 +517,8 @@ function EventCard({
                 icon={UserCheck}
                 title="Checked in"
                 tone="present"
-                meetingId={event.id}
+                meetingId={event.meetingId}
+                occurrenceStart={event.occurrenceStart}
                 canManage={event.canManage}
                 attendees={present}
                 empty="Nobody has checked in yet."
@@ -503,7 +527,8 @@ function EventCard({
                 icon={UserX}
                 title="Not submitted"
                 tone="missing"
-                meetingId={event.id}
+                meetingId={event.meetingId}
+                occurrenceStart={event.occurrenceStart}
                 canManage={event.canManage}
                 attendees={missing}
                 empty="Everyone checked in."
@@ -521,6 +546,7 @@ function RosterColumn({
   title,
   tone,
   meetingId,
+  occurrenceStart,
   canManage,
   attendees,
   empty,
@@ -529,6 +555,7 @@ function RosterColumn({
   title: string;
   tone: "present" | "missing";
   meetingId: string;
+  occurrenceStart: string;
   canManage: boolean;
   attendees: Attendee[];
   empty: string;
@@ -567,6 +594,7 @@ function RosterColumn({
                   {canManage && (tone === "missing" || a.absenceNote) && (
                     <AbsenceNoteButton
                       meetingId={meetingId}
+                      occurrenceStart={occurrenceStart}
                       userId={a.id}
                       name={a.name}
                       note={a.absenceNote}

@@ -50,6 +50,12 @@ export type FeatureFlagDef = {
 
 export const FEATURE_FLAGS = [
   {
+    key: "bound-form-lock",
+    label: "Lock the app to a staffing form",
+    description:
+      "Lets a staffing manager mark a bound form (Intent to Work / Project Bids / Level Up) as required: members in the chosen audience are redirected to fill it before they can use the rest of the app, the same way an unsigned app-enforced agreement gates them. Filling it once clears the lock; it can't be re-filled. Full-time staff and members outside the audience are never gated. Ships off.",
+  },
+  {
     key: "optimal-times",
     label: "Find best meeting times",
     description:
@@ -86,6 +92,12 @@ export const FEATURE_FLAGS = [
       "Project-hub-style education catalog — a grid of cover cards with a per-offering emoji, a search field, and a Miniseries/Workshop type filter — on both /education (members) and /portal/education (applicants). Also switches the applicant portal home to conditional action cards (Apply to DALI, Apply to an offering, My applications, My courses) that link to the combined /portal/applications history. The offering emoji picker and the applications page ship regardless; this flag only gates the redesigned surfaces. Ships off.",
   },
   {
+    key: "betterauth",
+    label: "BetterAuth login",
+    description:
+      "Route sign-in through the BetterAuth substrate across the member, Dartmouth, and partner doors. Sign-in is passwordless: a 6-digit email code plus passkeys (no password, no Google). requireAuth accepts a BetterAuth session alongside a legacy one, so turning this on does NOT force a re-login; active legacy sessions upgrade to BetterAuth silently as users browse. Read as a GLOBAL toggle (enabled + everyone), so role and user targeting do not apply. Ships off; flipping it on is the cutover.",
+  },
+  {
     key: "resources",
     label: "Resources page",
     description:
@@ -108,6 +120,12 @@ export const FEATURE_FLAGS = [
     label: "Project work in My Tasks",
     description:
       "Adds a Project work tab to the notification drawer and My Tasks page: the open project tasks you're assigned to (To do, In progress, In review), flagged when overdue or stale, with Open task and Mark done. They also count toward the bell badge. Meetings, invites and other notifications move to a Meetings & events tab. Ships off.",
+  },
+  {
+    key: "email",
+    label: "Email",
+    description:
+      "An Email tab under Calendar: one unified inbox across a member's connected Gmail accounts (their DALI address and any other Google account), their current project's team account, and shared inboxes from categories they subscribe to (admins manage categories on Email Senders; each subscriber signs in to shared inboxes themselves). Includes AI drafting, proofreading suggestions, rephrasing and translation, recipient autocomplete, shared drafts, private comments on threads, unread counts, and plain-English search. Ships off.",
   },
 ] as const satisfies readonly FeatureFlagDef[];
 

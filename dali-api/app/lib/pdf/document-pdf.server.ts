@@ -10,13 +10,15 @@ import type { PMNode } from "~/collab/export-html";
 import { renderProseMirrorToPdf } from "~/collab/export-pdf";
 import { documentToPrintHtml } from "./print-html.server";
 import { renderHtmlToPdf } from "./render.server";
+import type { PageTypography } from "~/lib/page-typography";
 
 export async function renderDocumentPdf(
   title: string,
   body: PMNode | DocBlock[],
+  typography?: PageTypography,
 ): Promise<Buffer> {
   try {
-    const html = await documentToPrintHtml(title, ensureBlocks(body));
+    const html = await documentToPrintHtml(title, ensureBlocks(body), typography);
     return await renderHtmlToPdf(html);
   } catch (err) {
     console.error("[pdf] headless render failed; falling back to pdfkit:", err);

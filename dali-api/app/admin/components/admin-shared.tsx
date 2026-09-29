@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useFetcher } from "react-router";
-import { Shield, ChevronDown, X, Check, Plus, Briefcase } from "lucide-react";
+import { Shield, ChevronDown, X, Check, Plus, Briefcase, LogIn } from "lucide-react";
 import { fullName } from "~/lib/display";
 import { Tooltip } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
@@ -310,6 +310,64 @@ export function StaffToggle({ member, disabled }: { member: Member; disabled?: b
           {isStaffMember ? <Check className="w-3 h-3" /> : <Briefcase className="w-3 h-3" />}
           {isStaffMember ? "Staff" : "Set Staff"}
         </button>
+      </span>
+    </Tooltip>
+  );
+}
+
+// "Log in as" — starts a BetterAuth impersonation session for this user. Lives
+// on Admin → Site users, where the loader confirms the viewer is an Admin and
+// the `betterauth` flag is on for everyone; disabled for the viewer's own row.
+// Takes any user (member or not) since site users spans every account type.
+//
+// A native form (not a fetcher): POST /admin/impersonate swaps the session
+// cookie and 302s to "/", so the whole shell — including open workspace iframes
+// — must reload as the target user. A client-side revalidation would leave them
+// on the stale session. We confirm first, then submit the form imperatively.
+export function ImpersonateButton({
+  user,
+  disabled,
+}: {
+  user: { id: string; firstName: string; lastName: string; email: string | null };
+  disabled?: boolean;
+}) {
+  const dialog = useDialog();
+  const formRef = useRef<HTMLFormElement | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const name = fullName(user) || user.email || "this user";
+
+  async function handleClick() {
+    if (disabled || submitting) return;
+    const ok = await dialog.confirm({
+      title: `Log in as ${name}?`,
+      description:
+        "You'll browse DALI OS as this user until you stop. Every action is recorded against your own admin account, and a banner stays up the whole time.",
+      tone: "default",
+      confirmLabel: "Log in as user",
+    });
+    if (!ok) return;
+    setSubmitting(true);
+    formRef.current?.submit();
+  }
+
+  return (
+    <Tooltip
+      content={disabled ? "You can't impersonate yourself." : `Log in as ${name}`}
+      variant="rich"
+    >
+      <span>
+        <form ref={formRef} method="post" action="/admin/impersonate" className="inline">
+          <input type="hidden" name="userId" value={user.id} />
+          <button
+            type="button"
+            disabled={disabled || submitting}
+            onClick={() => void handleClick()}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            <LogIn className="w-3 h-3" />
+            Log in as
+          </button>
+        </form>
       </span>
     </Tooltip>
   );

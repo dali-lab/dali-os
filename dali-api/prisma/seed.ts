@@ -8,6 +8,7 @@ import {
 import { interpretIntentForm } from "../app/projects/lib/intent-form-interpreter.js";
 import { replaceIntentSet } from "../app/projects/lib/intent-validation.js";
 import { syncDefaultGroups } from "../app/lib/groups.js";
+import { parseChartString } from "../app/lib/chart-string.js";
 import { seedEducationDemo } from "./seeds/education-demo.js";
 import {
   ensureEducationTemplates,
@@ -80,34 +81,19 @@ async function main() {
   // where displayName is the real catalog label (e.g. "UI/UX Design").
   const [designDomain, engDomain, pmDomain] = await Promise.all([
     prisma.domain.upsert({
-      where: { id: "domain-design" },
-      update: { code: "UIUX", displayName: "Design" },
-      create: {
-        id: "domain-design",
-        name: "Design",
-        code: "UIUX",
-        displayName: "Design",
-      },
+      where: { code: "UIUX" },
+      update: { displayName: "Design" },
+      create: { id: "domain-design", name: "Design", code: "UIUX", displayName: "Design" },
     }),
     prisma.domain.upsert({
-      where: { id: "domain-eng" },
-      update: { code: "Fullstack", displayName: "Engineering" },
-      create: {
-        id: "domain-eng",
-        name: "Engineering",
-        code: "Fullstack",
-        displayName: "Engineering",
-      },
+      where: { code: "Fullstack" },
+      update: { displayName: "Engineering" },
+      create: { id: "domain-eng", name: "Engineering", code: "Fullstack", displayName: "Engineering" },
     }),
     prisma.domain.upsert({
-      where: { id: "domain-pm" },
-      update: { code: "PM", displayName: "Product" },
-      create: {
-        id: "domain-pm",
-        name: "Product",
-        code: "PM",
-        displayName: "Product",
-      },
+      where: { code: "PM" },
+      update: { displayName: "Product" },
+      create: { id: "domain-pm", name: "Product", code: "PM", displayName: "Product" },
     }),
   ]);
 
@@ -2991,9 +2977,9 @@ async function main() {
       status: "UnderReview" as const,
       summary: "Touchscreen kiosks that let visitors explore the permanent collection by theme.",
       domains: [
-        { domainId: "domain-design", expectedMembers: 2, expectedChallenges: "Kiosk UX, wayfinding, and an accessible browsing flow for all ages." },
-        { domainId: "domain-eng", expectedMembers: 3, expectedChallenges: "Offline-capable kiosk app + a CMS the curators can update." },
-        { domainId: "domain-pm", expectedMembers: 1, expectedChallenges: "Scope with curatorial staff; coordinate the on-site install." },
+        { domainId: designDomain.id, expectedMembers: 2, expectedChallenges: "Kiosk UX, wayfinding, and an accessible browsing flow for all ages." },
+        { domainId: engDomain.id, expectedMembers: 3, expectedChallenges: "Offline-capable kiosk app + a CMS the curators can update." },
+        { domainId: pmDomain.id, expectedMembers: 1, expectedChallenges: "Scope with curatorial staff; coordinate the on-site install." },
       ],
     },
     {
@@ -3004,8 +2990,8 @@ async function main() {
       status: "Accepted" as const,
       summary: "Match current students with alumni mentors by industry and interest.",
       domains: [
-        { domainId: "domain-eng", expectedMembers: 2, expectedChallenges: "Matching algorithm + scheduling integration." },
-        { domainId: "domain-pm", expectedMembers: 1, expectedChallenges: "Define the matching rubric with the alumni office." },
+        { domainId: engDomain.id, expectedMembers: 2, expectedChallenges: "Matching algorithm + scheduling integration." },
+        { domainId: pmDomain.id, expectedMembers: 1, expectedChallenges: "Define the matching rubric with the alumni office." },
       ],
     },
     {
@@ -3016,7 +3002,7 @@ async function main() {
       status: "ApplicationSubmitted" as const,
       summary: "Real-time dashboard for shared lab equipment sensor data.",
       domains: [
-        { domainId: "domain-eng", expectedMembers: 3, expectedChallenges: "Time-series ingestion + live dashboard." },
+        { domainId: engDomain.id, expectedMembers: 3, expectedChallenges: "Time-series ingestion + live dashboard." },
       ],
     },
   ];
@@ -4620,10 +4606,32 @@ async function main() {
       // netId), so the reconcile join needs this deterministic netId'd student.
       const payrollChartString = "18.722.161028.128512.4000";
       if (dali) {
-        await prisma.project.update({
-          where: { id: dali.id },
-          data: { chartString: payrollChartString },
+        // The project's own row for the active term — what payroll resolves
+        // and what the reconcile matches the uploaded timesheet's string to.
+        // Only if there's no current row yet: one per (project, term) is a
+        // unique index, and a database migrated in place already has one from
+        // the legacy import.
+        const existing = await prisma.projectChartString.findFirst({
+          where: { projectId: dali.id, termId: term26S.id, isCurrent: true },
+          select: { id: true },
         });
+        if (!existing) {
+          const parsed = parseChartString(payrollChartString);
+          await prisma.projectChartString.create({
+            data: {
+              projectId: dali.id,
+              termId: term26S.id,
+              raw: payrollChartString,
+              normalized: parsed.normalized,
+              type: "GL",
+              projectCode: parsed.projectCode!,
+              subactivity: parsed.subactivity,
+              org: parsed.org,
+              isCurrent: true,
+              note: "Seed payroll fixture",
+            },
+          });
+        }
         const payrollStudent = await prisma.user.upsert({
           where: { netId: "f00pay01" },
           update: { firstName: "Ada", lastName: "Lovelace", handle: "adalovelace" },

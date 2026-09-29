@@ -893,6 +893,7 @@ export function StaffingBoard({
           open={true}
           onClose={() => setFinalizeProjectId(null)}
           cycleId={cycleId}
+          termId={termId}
           projectId={finalizeProjectId}
           projectName={projectNames[finalizeProjectId] ?? "project"}
           defaultSlackChannel={
@@ -910,6 +911,7 @@ export function StaffingBoard({
           open={true}
           onClose={() => setFinalizeAllOpen(false)}
           cycleId={cycleId}
+          termId={termId}
           projects={projects.map((p) => ({ id: p.id, name: p.name }))}
         />
       )}

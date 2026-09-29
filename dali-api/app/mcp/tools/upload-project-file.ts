@@ -23,7 +23,7 @@ const MAX_BASE64_LENGTH = 12_000_000;
 export const UPLOAD_PROJECT_FILE_TOOL = {
   name: "upload_project_file",
   description:
-    'Upload a file to a project from base64 content (max ~9 MB decoded). purpose "file" (default) adds it to the project\'s Files list; "pageImage" uploads an image for embedding in page bodies via set_page_content — use the returned src in ![alt](src). Requires Core or being staffed on the project.',
+    'Upload a file to a project from base64 content (max ~9 MB decoded). purpose "file" (default) adds it to the project\'s Files list; "pageImage" uploads an image for embedding in page bodies via set_page_content — use the returned src in ![alt](src). For a larger file, or one on disk you can reach with a shell, use create_project_file_upload instead (up to 100 MB, no base64). Requires Core or being staffed on the project.',
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -67,6 +67,42 @@ export class UploadProjectFileError extends Error {
 
 export function rawUploadSrc(key: string): string {
   return `/api/upload/raw?key=${encodeURIComponent(key)}`;
+}
+
+/** A project's Files-list entry: the ProjectFile, its first version, and
+ *  currentVersionId pointed at that version, in one transaction. Shared by this
+ *  tool and finalize_project_file_upload. */
+export async function createProjectFileWithVersion(input: {
+  projectId: string;
+  title: string;
+  s3Key: string;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  uploadedById: string;
+}): Promise<{ id: string }> {
+  return prisma.$transaction(async (tx) => {
+    const created = await tx.projectFile.create({
+      data: { projectId: input.projectId, title: input.title },
+      select: { id: true },
+    });
+    const version = await tx.projectFileVersion.create({
+      data: {
+        fileId: created.id,
+        s3Key: input.s3Key,
+        fileName: input.fileName,
+        contentType: input.contentType,
+        sizeBytes: input.sizeBytes,
+        uploadedById: input.uploadedById,
+      },
+      select: { id: true },
+    });
+    await tx.projectFile.update({
+      where: { id: created.id },
+      data: { currentVersionId: version.id },
+    });
+    return created;
+  });
 }
 
 export async function runUploadProjectFile(callerId: string, input: Input) {
@@ -126,27 +162,14 @@ export async function runUploadProjectFile(callerId: string, input: Input) {
   }
 
   const title = (input.title ?? fileName).trim();
-  const file = await prisma.$transaction(async (tx) => {
-    const created = await tx.projectFile.create({
-      data: { projectId: input.projectId, title },
-      select: { id: true },
-    });
-    const version = await tx.projectFileVersion.create({
-      data: {
-        fileId: created.id,
-        s3Key: key,
-        fileName,
-        contentType,
-        sizeBytes: bytes.length,
-        uploadedById: callerId,
-      },
-      select: { id: true },
-    });
-    await tx.projectFile.update({
-      where: { id: created.id },
-      data: { currentVersionId: version.id },
-    });
-    return created;
+  const file = await createProjectFileWithVersion({
+    projectId: input.projectId,
+    title,
+    s3Key: key,
+    fileName,
+    contentType,
+    sizeBytes: bytes.length,
+    uploadedById: callerId,
   });
 
   return { fileId: file.id, title, key, src: rawUploadSrc(key) };

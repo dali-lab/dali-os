@@ -232,6 +232,18 @@ export async function action({ request }: Route.ActionArgs) {
       ? "dartmouthEmail"
       : "personalEmail";
 
+  // Optional @dartmouth alias so this member's Dartmouth address also resolves
+  // to their one account at login (the alias-resolver). Members hired through a
+  // cycle already carry it from Dartmouth-door signup; this covers the manual
+  // add path, which otherwise captures only the primary email. If the primary
+  // IS the @dartmouth address there is nothing extra to store.
+  const dartmouthAlias = (form.get("dartmouthEmail") as string | null)?.trim().toLowerCase() ?? "";
+  if (dartmouthAlias && !dartmouthAlias.endsWith("@dartmouth.edu")) {
+    return { error: "The Dartmouth email must be an @dartmouth.edu address." };
+  }
+  const dartmouthEmailToSet =
+    emailField === "dartmouthEmail" ? lower : dartmouthAlias || null;
+
   // firstName/lastName/email pass explicitly into create() below so Prisma
   // sees the required scalars; the optional profile fields collect here.
   const profile: Record<string, string> = {};
@@ -257,12 +269,26 @@ export async function action({ request }: Route.ActionArgs) {
         { personalEmail: lower },
       ],
     },
-    select: { id: true, daliMember: { select: { id: true } } },
+    select: { id: true, dartmouthEmail: true, daliMember: { select: { id: true } } },
   });
   if (existing) {
     // The User already exists — promote them to a lab member rather than
     // erroring out, then send the editor to their profile.
     await promoteToMember({ userId: existing.id, actorId: auth.user.sub });
+    // Attach the @dartmouth alias if the row lacks one and it isn't taken.
+    if (dartmouthEmailToSet && !existing.dartmouthEmail) {
+      const taken = await prisma.user.findFirst({
+        where: { dartmouthEmail: dartmouthEmailToSet },
+        select: { id: true },
+      });
+      if (taken && taken.id !== existing.id) {
+        return { error: "That Dartmouth email is already on another account." };
+      }
+      await prisma.user.update({
+        where: { id: existing.id },
+        data: { dartmouthEmail: dartmouthEmailToSet },
+      });
+    }
     return redirect(`/members/${existing.id}`);
   }
 
@@ -274,6 +300,16 @@ export async function action({ request }: Route.ActionArgs) {
     dartmouthEmail?: string;
     personalEmail?: string;
   } = { [emailField]: lower };
+  if (dartmouthEmailToSet && emailField !== "dartmouthEmail") {
+    const taken = await prisma.user.findFirst({
+      where: { dartmouthEmail: dartmouthEmailToSet },
+      select: { id: true },
+    });
+    if (taken) {
+      return { error: "That Dartmouth email is already on another account." };
+    }
+    emailData.dartmouthEmail = dartmouthEmailToSet;
+  }
   const created = await prisma.user.create({
     data: {
       firstName,
@@ -353,6 +389,12 @@ export default function MembersList() {
               type="email"
               required
               placeholder="name@dali.dartmouth.edu"
+            />
+            <CreateField
+              name="dartmouthEmail"
+              label="Dartmouth email (optional)"
+              type="email"
+              placeholder="name@dartmouth.edu"
             />
             <CreateField
               name="classYear"

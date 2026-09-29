@@ -42,6 +42,7 @@ const TRACKED_PREFIXES = [
   "/resources",
   "/internal-processes",
   "/calendar",
+  "/email",
   "/profile",
   "/portal",
 ];

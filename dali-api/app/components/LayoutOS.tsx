@@ -10,6 +10,7 @@ import {
   HelpCircle,
   Home,
   LogOut,
+  Mail,
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
@@ -26,6 +27,7 @@ import { TabWorkspace } from '~/components/TabWorkspace'
 import { useAttentionFeed } from '~/components/NotificationBell'
 import { TasksDrawer, attentionCount } from '~/components/AttentionPanel'
 import { DesktopBanner } from '~/components/DesktopBanner'
+import { ImpersonationBanner } from '~/components/ImpersonationBanner'
 import { ActivityLauncher } from '~/components/activities/ActivityLauncher'
 import { CommandPalette } from '~/components/CommandPalette'
 import { PageDocButton, GuideTopbarButton, ShellGuideProvider } from '~/components/page-docs/PageDocButton'
@@ -52,6 +54,8 @@ import {
   type RoleFlags,
 } from '~/lib/nav-areas'
 import { useFeatureFlag } from '~/components/FeatureFlags'
+import { UnreadBadge } from '~/email/components/UnreadBadge'
+import { useEmailUnread } from '~/email/lib/use-email-unread'
 
 interface LayoutOSProps {
   user: { email: string; firstName?: string; lastName?: string }
@@ -68,6 +72,8 @@ interface LayoutOSProps {
   isInstructor?: boolean
   /** Starred pages/routes, most-recently pinned first — carried by the top bar. */
   favorites?: FavoritePage[]
+  /** True when this session is an admin "log in as" — shows the exit banner. */
+  impersonating?: boolean
   focusMode?: boolean
   /** The routed page fills the shell's main column instead of growing past it
    *  (see `handle.fitViewport`) — the shell is then bounded to the window and
@@ -103,6 +109,7 @@ export function LayoutOS({
   isLabMentor = false,
   isInstructor = false,
   favorites = [],
+  impersonating = false,
   focusMode = false,
   fitViewport = false,
   children,
@@ -239,6 +246,8 @@ export function LayoutOS({
   // whether Drive is a General sub-tab, so every nav matcher below has to be
   // handed the same map — a pin and an area disagreeing would light both.
   const navFlags = { resources: useFeatureFlag('resources'), 'room-booking': useFeatureFlag('room-booking') }
+  const emailEnabled = useFeatureFlag('email')
+  const emailUnread = useEmailUnread(emailEnabled, path)
   const areas = visibleAreas(roleFlags, navFlags)
   const routeArea = areaForPath(path, navFlags)
   const pinned = pinnedNavItems(navFlags)
@@ -265,11 +274,13 @@ export function LayoutOS({
     ? 'My Tasks'
     : path.startsWith('/calendar')
       ? 'Calendar'
-      : path.startsWith('/settings')
-        ? 'Settings'
-        : path.startsWith('/help')
-          ? 'Help'
-          : (pinnedLabel ?? routeArea?.label)
+      : path.startsWith('/email')
+        ? 'Email'
+        : path.startsWith('/settings')
+          ? 'Settings'
+          : path.startsWith('/help')
+            ? 'Help'
+            : (pinnedLabel ?? routeArea?.label)
 
   const initials = userInitials(user)
   const { tasks: openTasks, items: feedItems, projectTasks } = useAttentionFeed()
@@ -400,6 +411,28 @@ export function LayoutOS({
               {!collapsed && 'Calendar'}
             </button>
           </Tooltip>
+          {emailEnabled && (
+            <Tooltip
+              content={collapsed ? (emailUnread > 0 ? `Email · ${emailUnread} unread` : 'Email') : ''}
+              placement="right"
+            >
+              <button
+                type="button"
+                {...tabClickProps({ url: '/email', label: 'Email' })}
+                className={cn(railRowClass(path.startsWith('/email'), collapsed), 'relative')}
+              >
+                <Mail className="h-5 w-5 flex-shrink-0 opacity-85" />
+                {!collapsed && 'Email'}
+                {collapsed ? (
+                  emailUnread > 0 && (
+                    <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-accent-yellow" aria-hidden />
+                  )
+                ) : (
+                  <UnreadBadge count={emailUnread} className="ml-auto" />
+                )}
+              </button>
+            </Tooltip>
+          )}
           {pinned.map((item) => {
             const Icon = item.icon
             const active = isPinnedActive(path, item.href, navFlags)
@@ -815,6 +848,13 @@ export function LayoutOS({
           !focusMode && mainPad,
         )}
       >
+        {/* Impersonation is a session-mode indicator, so it sits above the top
+            bar and shows even in focus mode. */}
+        {impersonating && (
+          <ImpersonationBanner
+            userName={`${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || user.email}
+          />
+        )}
         {/* `shrink-0` so a bounded shell takes the height out of the page's
             own scrollport rather than squashing the favourites bar. */}
         {!focusMode && <div className="hidden shrink-0 md:block">{topBar}</div>}
@@ -878,7 +918,7 @@ export function LayoutOS({
         tabless={tabless}
         focusMode={focusMode}
         roles={roleFlags}
-        flags={navFlags}
+        flags={{ ...navFlags, email: emailEnabled }}
         onOpen={openFromPalette}
       />
     </div>

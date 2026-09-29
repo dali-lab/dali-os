@@ -29,6 +29,19 @@ export function interpolate(text: string, vars: InterpolationVars): string {
   });
 }
 
+// Escape a plain-text value before splicing it into a hand-built HTML email
+// string (body or double-quoted attribute). Use this for any user-controlled
+// value — names, offering/assignment titles, locations — that isn't already
+// run through bodyToHtml/renderEmail (which escape via DOMPurify). Skipping it
+// lets a "<" or "&" in a title break rendering or inject markup.
+export function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 // Sanitization is part of the contract: template bodies are user-authored
 // (hiring leads) and rendered with dangerouslySetInnerHTML in the admin
 // preview modal, so any HTML beyond the <p>/<br> shape this helper emits

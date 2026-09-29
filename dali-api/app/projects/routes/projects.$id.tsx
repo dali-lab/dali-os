@@ -11,8 +11,8 @@ import {
   useSubmit,
   type ShouldRevalidateFunctionArgs,
 } from "react-router";
-import { Select, Menu, Popover } from "~/components/ui/floating";
-import { CalendarDays, CalendarPlus, CalendarX, Check, Globe, Handshake, History, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink, MoreHorizontal, ExternalLink, Star, Mail, Github, Slack, Layers } from "lucide-react";
+import { Select, Menu, Popover, InfoTip } from "~/components/ui/floating";
+import { CalendarDays, CalendarPlus, CalendarX, Check, Globe, Handshake, History, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink, MoreHorizontal, ExternalLink, Star, Mail, Github, Slack, Layers, Figma } from "lucide-react";
 import { DriveFolderBindings } from "~/components/drive/DriveFolderBindings";
 import { useOsChrome } from "~/components/os-chrome";
 import { DomainChips } from "~/components/DomainChips";
@@ -318,12 +318,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       imageUrl: true,
       iconEmoji: true,
       repoUrls: true,
+      figmaUrls: true,
       deploymentUrl: true,
       githubTeamSlug: true,
       slackChannelName: true,
       slackChannelId: true,
-      chartStringType: true,
-      chartString: true,
       isPrivate: true,
       overviewPageId: true,
       prdPageId: true,
@@ -1213,9 +1212,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   return {
     infra,
-    // Redacted server-side, not just hidden in JSX: this payload goes to
-    // every viewer who can open the project, so gating only the edit form
-    // would still ship the chart string to any lab member.
+    // Core-only fields are redacted server-side, not just hidden in JSX: this
+    // payload goes to every viewer who can open the project, so gating only
+    // the edit form would still ship the value to any lab member.
     project: redactCoreOnlyProjectFields(
       {
         id: project.id,
@@ -1228,12 +1227,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         imageUrl: project.imageUrl,
         imageUrlResolved,
         repoUrls: project.repoUrls,
+        figmaUrls: project.figmaUrls,
         deploymentUrl: project.deploymentUrl,
         githubTeamSlug: project.githubTeamSlug,
         slackChannelName: project.slackChannelName,
         slackChannelId: project.slackChannelId,
-        chartStringType: project.chartStringType,
-        chartString: project.chartString,
         isPrivate: project.isPrivate,
         overviewPageId: project.overviewPageId,
         prdPageId: project.prdPageId,
@@ -1659,6 +1657,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   // and the image banner are saved by their own segments above.)
   const calendarEmailRaw = (form.get("calendarEmail") as string | null)?.trim() ?? "";
   const repoUrlsRaw = (form.get("repoUrls") as string | null) ?? "";
+  const figmaUrlsRaw = (form.get("figmaUrls") as string | null) ?? "";
   const deploymentUrlRaw = (form.get("deploymentUrl") as string | null)?.trim() ?? "";
   const termCountRaw = (form.get("termCount") as string | null) ?? "";
   const githubTeamRaw = (form.get("githubTeamSlug") as string | null)?.trim() ?? "";
@@ -1693,6 +1692,12 @@ export async function action({ request, params }: Route.ActionArgs) {
     .map((s) => s.trim())
     .filter(Boolean);
 
+  // figmaUrls textarea: one URL per line, blanks dropped. Same shape as repos.
+  const figmaUrls = figmaUrlsRaw
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
   // termCount is the *expected* span length (≥1), an independent target; the
   // actual terms live in the ProjectTerm set (intent=terms). Blank/invalid
   // falls back to 1 rather than erroring the whole form.
@@ -1704,6 +1709,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     data: {
       calendarEmail: calendarEmailRaw === "" ? null : calendarEmailRaw,
       repoUrls,
+      figmaUrls,
       deploymentUrl: deploymentUrlRaw === "" ? null : deploymentUrlRaw,
       termCount,
       githubTeamSlug,
@@ -2787,6 +2793,16 @@ function DetailsReadOs({
 }) {
   const [showMore, setShowMore] = useState(false);
   const repoName = (url: string) => url.replace(/\/+$/, "").split("/").pop() || url;
+  // figma.com/{file|design}/{key}/{name} — show the readable name segment, with
+  // dashes turned back into spaces; fall back to "Figma" for a bare file URL.
+  const figmaName = (url: string) => {
+    try {
+      const name = new URL(url).pathname.split("/").filter(Boolean)[2];
+      return name ? decodeURIComponent(name).replace(/-/g, " ") : "Figma";
+    } catch {
+      return "Figma";
+    }
+  };
   const dash = <span className="text-os-muted">—</span>;
   const ic = OS_DETAIL_ICON;
 
@@ -2839,6 +2855,26 @@ function DetailsReadOs({
                 className="rounded-full bg-os-container px-2.5 py-0.5 text-xs font-medium text-foreground transition-colors hover:text-accent-coral"
               >
                 {repoName(url)}
+              </a>
+            ))}
+          </div>
+        ) : (
+          dash
+        )}
+      </DetailRow>
+
+      <DetailRow icon={<Figma className={ic} />} label="Figma">
+        {project.figmaUrls.length > 0 ? (
+          <div className="flex flex-wrap justify-end gap-1.5">
+            {project.figmaUrls.map((url) => (
+              <a
+                key={url}
+                href={url}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-full bg-os-container px-2.5 py-0.5 text-xs font-medium text-foreground transition-colors hover:text-accent-coral"
+              >
+                {figmaName(url)}
               </a>
             ))}
           </div>
@@ -2949,13 +2985,27 @@ function DetailsEditOs({
       <DetailEditRow
         icon={<Layers className={ic} />}
         label="Repositories"
-        hint="One URL per line"
+        infoTip={<InfoTip content="One URL per line" />}
       >
         <textarea
           name="repoUrls"
           rows={3}
           defaultValue={project.repoUrls.join("\n")}
           placeholder="https://github.com/dali-lab/…"
+          className={cn(field, "resize-y font-mono")}
+        />
+      </DetailEditRow>
+
+      <DetailEditRow
+        icon={<Figma className={ic} />}
+        label="Figma"
+        hint="One URL per line"
+      >
+        <textarea
+          name="figmaUrls"
+          rows={3}
+          defaultValue={project.figmaUrls.join("\n")}
+          placeholder="https://figma.com/design/…"
           className={cn(field, "resize-y font-mono")}
         />
       </DetailEditRow>
@@ -2983,7 +3033,7 @@ function DetailsEditOs({
       <DetailEditRow
         icon={<CalendarDays className={ic} />}
         label="Terms required"
-        hint="The planned span, not the terms staffed so far"
+        infoTip={<InfoTip content="The planned span, not the terms staffed so far" />}
       >
         <input
           name="termCount"

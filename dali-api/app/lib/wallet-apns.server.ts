@@ -93,6 +93,29 @@ export async function pushWalletPassUpdate(userId: string): Promise<void> {
 }
 
 /**
+ * Re-push every installed Apple pass so each registered device re-fetches the
+ * current (redesigned) .pkpass from our web service — the Apple half of a wallet
+ * restyle release. `commit=false` counts the distinct registered members without
+ * pushing. Reuses pushWalletPassUpdate per member (which no-ops when Apple Wallet
+ * is unconfigured), so this is safe to call in any environment.
+ */
+export async function pushAllWalletPassUpdates(
+  commit: boolean,
+): Promise<{ users: number }> {
+  const regs = await prisma.walletPassRegistration.findMany({
+    select: { serialNumber: true },
+    distinct: ["serialNumber"],
+  });
+  const userIds = regs.map((r) => r.serialNumber);
+  if (commit) {
+    for (const userId of userIds) {
+      await pushWalletPassUpdate(userId);
+    }
+  }
+  return { users: userIds.length };
+}
+
+/**
  * Send a single APNs push for a Wallet pass update.
  *
  * The push body is intentionally empty `{}` — for Wallet passes APNs is

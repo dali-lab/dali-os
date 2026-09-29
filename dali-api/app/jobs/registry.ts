@@ -90,6 +90,7 @@ import { runOutboundDrain } from "~/lib/outbound.server";
 import { runDocSearchIndex } from "~/jobs/doc-search-index.server";
 import { runInfraSnapshot } from "~/jobs/infra-snapshot.server";
 import { runTimetableSync } from "~/jobs/timetable-sync.server";
+import { runWalletRestyleBroadcastJob } from "~/jobs/wallet-restyle-broadcast.server";
 
 export const JOBS: JobDefinition[] = [
   {
@@ -415,6 +416,14 @@ export const JOBS: JobDefinition[] = [
       },
     ],
     handler: runTimetableSync,
+  },
+  {
+    name: "wallet-restyle-broadcast",
+    description:
+      "On-demand: rolls out a wallet-pass design change to passes already on members' phones (Google REST patch in place + Apple APNs re-push). Disabled on a schedule — trigger it with “Run now” after a design change ships. New saves already show the current design; this restyles the installed ones. Idempotent — safe to re-run. Counts are in the run logs.",
+    intervalMinutes: 1440,
+    enabledByDefault: false,
+    handler: runWalletRestyleBroadcastJob,
   },
 ];
 

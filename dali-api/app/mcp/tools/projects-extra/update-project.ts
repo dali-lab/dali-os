@@ -1,9 +1,9 @@
 // MCP `update_project` — edit writable project settings.
 //
 // Mirrors the intent handlers in projects.$id.tsx (header, description,
-// details, visibility) but collapsed into a single flat tool. Core-only fields
-// (chartString*) are silently ignored for non-Core callers to match the web
-// form behaviour. Scope/domain/term assignment is intentionally excluded — those
+// details, visibility) but collapsed into a single flat tool. Chart strings
+// aren't here: they live in their own Core-only tools (list/set_project_chart_
+// string). Scope/domain/term assignment is intentionally excluded — those
 // are full-replacement writes with complex validation that belong on the UI.
 //
 // Gate: canEditProject (Core or current project member).

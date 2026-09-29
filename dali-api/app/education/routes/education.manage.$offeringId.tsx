@@ -428,6 +428,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const intent = String(formData.get("intent") ?? "");
   const contentIntents = [
     "decide-application",
+    "approve-all-pending",
     "move-waitlist-entry",
     "create-page",
     "move-page",
@@ -446,6 +447,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     "save-attendance",
     "set-session-check-in",
     "save-student-note",
+    "preview-close-out",
     "close-out-offering",
     "reopen-offering",
     "set-form-binding",

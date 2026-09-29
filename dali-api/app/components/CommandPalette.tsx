@@ -236,6 +236,7 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles = NO_R
       navItem("Home", "/", Home),
       navItem("My Tasks", "/notifications", ListTodo),
       navItem("Calendar", "/calendar", Calendar),
+      ...(flags.email ? [navItem("Email", "/email", Mail)] : []),
       // The pinned tail (Resources) sits outside every area, so it reaches the
       // palette from the same registry the sidebar rail reads.
       ...pinnedNavItems(flags).map((i) => navItem(i.label, i.href, i.icon)),

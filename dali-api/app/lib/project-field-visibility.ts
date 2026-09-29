@@ -11,33 +11,29 @@
 /**
  * Fields redacted from the project detail payload for non-Core viewers.
  *
- * Chart strings are the first entries because they're Dartmouth payroll GL
- * codes — the same reasoning that keeps them out of `get_project_settings`.
- * Add a field here rather than gating it in a component.
+ * Empty for now. Chart strings were the first entries; they moved to their own
+ * table, which the loader reads only for Core, so they never reach this
+ * payload at all. Add a field here rather than gating it in a component.
  */
-export const CORE_ONLY_PROJECT_FIELDS = [
-  "chartString",
-  "chartStringType",
-] as const;
-
-export type CoreOnlyProjectField = (typeof CORE_ONLY_PROJECT_FIELDS)[number];
+export const CORE_ONLY_PROJECT_FIELDS: readonly string[] = [];
 
 /**
  * Null out the Core-only fields unless the viewer may see them.
  *
  * Nulls rather than deletes: the loader's return type is what React Router
  * infers the client-side type from, so dropping keys conditionally would make
- * the payload shape depend on the viewer. Every field in the list is already
+ * the payload shape depend on the viewer. Every field in the list should be
  * nullable for the "not set yet" case, so null reads the same way downstream.
  */
 export function redactCoreOnlyProjectFields<T extends object>(
   project: T,
   canSeeFinance: boolean,
+  fields: readonly string[] = CORE_ONLY_PROJECT_FIELDS,
 ): T {
   if (canSeeFinance) return project;
 
   const redacted = { ...project } as Record<string, unknown>;
-  for (const field of CORE_ONLY_PROJECT_FIELDS) {
+  for (const field of fields) {
     if (field in redacted) redacted[field] = null;
   }
   return redacted as T;

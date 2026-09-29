@@ -25,7 +25,9 @@ vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, isCore: vi.fn(), isProjectMember: vi.fn() };
 });
-vi.mock("~/lib/scheduled-meeting", () => ({
+vi.mock("~/lib/scheduled-meeting", async (importOriginal) => ({
+  parseOccurrenceParam: (await importOriginal<typeof import("~/lib/scheduled-meeting")>())
+    .parseOccurrenceParam,
   markMeetingAttendance: vi.fn(),
 }));
 
@@ -96,7 +98,7 @@ describe("mark_meeting_attendance", () => {
 
     const out = await runMarkMeetingAttendance("u-org", { meetingId: "m1", userId: "u2", present: true });
     expect(out).toEqual({ ok: true });
-    expect(markMeetingAttendance).toHaveBeenCalledWith("m1", "u2", true, "u-org");
+    expect(markMeetingAttendance).toHaveBeenCalledWith("m1", "u2", true, "u-org", null);
   });
 
   it("succeeds for Core caller", async () => {

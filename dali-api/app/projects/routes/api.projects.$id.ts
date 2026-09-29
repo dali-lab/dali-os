@@ -28,6 +28,8 @@ const BLOCKERS: { label: string; count: (projectId: string) => Promise<number> }
   { label: "time entries", count: (projectId) => prisma.timeEntry.count({ where: { projectId } }) },
   { label: "budget entries", count: (projectId) => prisma.budgetEntry.count({ where: { projectId } }) },
   { label: "budget notes", count: (projectId) => prisma.budgetNote.count({ where: { projectId } }) },
+  // Payroll history — the FK restricts, so an uncounted row would surface as a 500.
+  { label: "chart strings", count: (projectId) => prisma.projectChartString.count({ where: { projectId } }) },
   { label: "staffing assignments", count: (projectId) => prisma.projectAssignment.count({ where: { projectId } }) },
   { label: "epics", count: (projectId) => prisma.epic.count({ where: { projectId } }) },
   { label: "tasks", count: (projectId) => prisma.task.count({ where: { projectId } }) },

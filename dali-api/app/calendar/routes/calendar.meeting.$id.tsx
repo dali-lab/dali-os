@@ -1,7 +1,20 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useFetcher, useLoaderData } from "react-router";
 import QRCode from "qrcode";
-import { FileText, Users, Shield, Video, Pencil, Clock, MapPin, Shapes, Plus, QrCode } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  Users,
+  Shield,
+  Video,
+  Pencil,
+  Clock,
+  MapPin,
+  Shapes,
+  Plus,
+  QrCode,
+} from "lucide-react";
 import { Select } from "~/components/ui/floating";
 import { Radio } from "~/components/ui/Radio";
 import { IconButton } from "~/components/ui/IconButton";
@@ -16,9 +29,16 @@ import { getUserRoles, isProjectMember } from "~/lib/roles";
 import { walletTokensConfigured } from "~/lib/wallet-token";
 import { fullName } from "~/lib/display";
 import { AttendanceChecklist, type AttendanceRow } from "~/components/AttendanceChecklist";
+import { expandOccurrences, noteForOccurrence, resolveOccurrence } from "~/lib/meeting-occurrences";
+import { meetingOccurrenceHref } from "~/calendar/lib/meeting-href";
+import {
+  ensureOccurrenceRoster,
+  parseOccurrenceParam,
+  seedMeetingRoster,
+} from "~/lib/scheduled-meeting";
 import { CheckInPanel } from "~/components/CheckInPanel";
 import { EditMeetingModal } from "~/calendar/components/EditMeetingModal";
-import { AddMeetingNoteButton } from "~/calendar/components/AddMeetingNoteModal";
+import { AddMeetingNoteButton, OpenMeetingNoteButton } from "~/calendar/components/AddMeetingNoteModal";
 import { AddMeetingWhiteboardButton } from "~/calendar/components/AddMeetingWhiteboardModal";
 import type { Route } from "./+types/calendar.meeting.$id";
 
@@ -44,6 +64,12 @@ export const handle = {
 // the live roster (organizer marks present/absent), the self check-in QR (shared
 // with attendees), and the wallet scan station — instead of those being spread
 // across the note page, a standalone check-in route, and a separate scan route.
+//
+// A recurring meeting's note and roster are per occurrence: `?occurrence=` picks
+// one (the calendar links each instance to its own), and without it the page
+// opens on the occurrence nearest now.
+const OCCURRENCE_NAV_BAND_MS = 40 * 24 * 60 * 60_000;
+
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
@@ -63,7 +89,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       projectId: true,
       project: { select: { name: true } },
       selectedAt: true,
+      createdAt: true,
       durationMinutes: true,
+      recurrenceRule: true,
+      externalEventId: true,
+      participantUserIds: true,
       location: true,
       description: true,
       status: true,
@@ -71,35 +101,62 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       isCoreMeeting: true,
       meetingUrl: true,
       organizer: { select: { firstName: true, lastName: true } },
-      notePage: { select: { id: true } },
-      whiteboardPage: { select: { id: true } },
-      attendance: {
-        select: {
-          userId: true,
-          present: true,
-          absenceNote: true,
-          user: { select: { firstName: true, lastName: true, daliEmail: true } },
-        },
+      exceptions: {
+        select: { originalStart: true, overrideStart: true, overrideDurationMin: true, cancelled: true },
       },
+      notePages: { select: { id: true, meetingOccurrenceStart: true } },
+      whiteboardPage: { select: { id: true } },
     },
   });
   if (!meeting || meeting.status === "Cancelled") {
     throw new Response("Not found", { status: 404 });
   }
 
+  const requested = parseOccurrenceParam(new URL(request.url).searchParams.get("occurrence"));
+  const occurrence = resolveOccurrence(
+    meeting,
+    meeting.exceptions,
+    requested ?? (meeting.recurrenceRule ? new Date() : null),
+  );
+  // Neighbours for the page's previous/next links — only a series with an
+  // RRULE DALI can expand has any.
+  const around = meeting.recurrenceRule
+    ? expandOccurrences(
+        meeting,
+        meeting.exceptions,
+        new Date(occurrence.originalStart.getTime() - OCCURRENCE_NAV_BAND_MS),
+        new Date(occurrence.originalStart.getTime() + OCCURRENCE_NAV_BAND_MS),
+      )
+    : [];
+  const at = around.findIndex((o) => o.originalStart.getTime() === occurrence.originalStart.getTime());
+  const prevOccurrence = at > 0 ? around[at - 1]! : null;
+  const nextOccurrence = at >= 0 && at < around.length - 1 ? around[at + 1]! : null;
+
+  await ensureOccurrenceRoster(meeting, occurrence.originalStart);
+  const attendance = await prisma.meetingAttendance.findMany({
+    where: { scheduledMeetingId: meeting.id, occurrenceStart: occurrence.originalStart },
+    select: {
+      userId: true,
+      present: true,
+      absenceNote: true,
+      user: { select: { firstName: true, lastName: true, daliEmail: true } },
+    },
+  });
+
   // Managing (marking others, sharing the QR, scanning) is the organizer, Core,
   // or a project member — the same authority as the attendance-toggle route. An
   // invited attendee can still open the page to self check-in.
   const projectMember = meeting.projectId ? await isProjectMember(auth.user.sub, meeting.projectId) : false;
   const canManage = auth.user.sub === meeting.organizerId || roles.isCore || projectMember;
-  const viewerRow = meeting.attendance.find((a) => a.userId === auth.user.sub);
+  const viewerRow = attendance.find((a) => a.userId === auth.user.sub);
   // A "None"-scoped meeting isn't addressed to a group or a hand-picked list —
   // it's the lab-wide kind, which is what an event on the general calendar
   // becomes when it's tracked. Any lab member can open it (read-only, since
   // canManage is unchanged); without this the popover would offer them an
   // Attendance link that 404s.
   const labWide = meeting.scopeType === "None" && roles.isLabMember;
-  if (!canManage && !viewerRow && !labWide) throw new Response("Not found", { status: 404 });
+  const invited = viewerRow !== undefined || meeting.participantUserIds.includes(auth.user.sub);
+  if (!canManage && !invited && !labWide) throw new Response("Not found", { status: 404 });
 
   const selfCheckIn = meeting.attendanceMode === "SelfCheckIn";
 
@@ -140,10 +197,19 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     typeLabel,
     isCoreMeeting: meeting.isCoreMeeting,
     organizerName: fullName(meeting.organizer),
-    selectedAtIso: meeting.selectedAt ? meeting.selectedAt.toISOString() : null,
+    selectedAtIso: meeting.selectedAt ? occurrence.start.toISOString() : null,
+    occurrenceStart: occurrence.originalStart.toISOString(),
+    prevOccurrence: prevOccurrence
+      ? { start: prevOccurrence.originalStart.toISOString(), when: prevOccurrence.start.toISOString() }
+      : null,
+    nextOccurrence: nextOccurrence
+      ? { start: nextOccurrence.originalStart.toISOString(), when: nextOccurrence.start.toISOString() }
+      : null,
     location: meeting.location,
     description: meeting.description,
-    notePageId: meeting.notePage?.id ?? null,
+    notePageId: noteForOccurrence(meeting.notePages, occurrence.originalStart)?.id ?? null,
+    // The meeting keeps notes, so this occurrence's doc is made on demand.
+    canOpenNote: meeting.meetingType != null && meeting.notePages.length > 0,
     whiteboardPageId: meeting.whiteboardPage?.id ?? null,
     // Adding a whiteboard is the same authority as adding a note. hasType lets
     // the add flow skip the About/type step when the meeting already knows it.
@@ -168,7 +234,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     // canViewForms gate). The action re-checks both.
     canEnableSelfCheckIn:
       !selfCheckIn && (auth.user.sub === meeting.organizerId || roles.isCore) && roles.canViewForms,
-    rows: meeting.attendance.map((a) => ({
+    rows: attendance.map((a) => ({
       userId: a.userId,
       name: fullName(a.user) || a.user.daliEmail || a.userId,
       present: a.present,
@@ -205,7 +271,14 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const meeting = await prisma.scheduledMeeting.findUnique({
     where: { id: params.id },
-    select: { id: true, organizerId: true, participantUserIds: true, status: true },
+    select: {
+      id: true,
+      organizerId: true,
+      participantUserIds: true,
+      status: true,
+      selectedAt: true,
+      createdAt: true,
+    },
   });
   if (!meeting || meeting.status === "Cancelled") {
     return Response.json({ error: "Not found" }, { status: 404 });
@@ -220,11 +293,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     where: { id: meeting.id },
     data: { attendanceMode: "SelfCheckIn" },
   });
-  const attendeeIds = Array.from(new Set([...meeting.participantUserIds, meeting.organizerId]));
-  await prisma.meetingAttendance.createMany({
-    data: attendeeIds.map((userId) => ({ scheduledMeetingId: meeting.id, userId })),
-    skipDuplicates: true,
-  });
+  await seedMeetingRoster(meeting);
   return Response.json({ ok: true });
 }
 
@@ -434,19 +503,21 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+// Format in the viewer's own timezone (browser locale). No server tz needed.
+function formatWhen(iso: string) {
+  return new Date(iso).toLocaleString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 export default function CalendarMeetingPage() {
   const d = useLoaderData<typeof loader>();
   const { card, pageTitle, sectionTitle } = useOsChrome();
-  // Format in the viewer's own timezone (browser locale). No server tz needed.
-  const when = d.selectedAtIso
-    ? new Date(d.selectedAtIso).toLocaleString(undefined, {
-        weekday: "short",
-        month: "short",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-      })
-    : "Time not set";
+  const when = d.selectedAtIso ? formatWhen(d.selectedAtIso) : "Time not set";
   const present = d.rows.filter((r) => r.present).length;
   const pct = d.rows.length > 0 ? Math.round((present / d.rows.length) * 100) : 0;
   // Same gate as the Add-to-Wallet buttons and the standalone scan station;
@@ -485,6 +556,13 @@ export default function CalendarMeetingPage() {
             <Link to={`/documents/${d.notePageId}`} className={actionBtnClass}>
               <FileText className="h-4 w-4" /> Open meeting note
             </Link>
+          ) : d.canOpenNote ? (
+            <OpenMeetingNoteButton
+              meetingId={d.meetingId}
+              occurrenceStart={d.occurrenceStart}
+              actionPath="/calendar"
+              className={actionBtnClass}
+            />
           ) : (
             d.canAddNote && (
               // A meeting created before notes existed (or with the note
@@ -494,6 +572,7 @@ export default function CalendarMeetingPage() {
               // /calendar, which is also where the grid's popover posts it.
               <AddMeetingNoteButton
                 meetingId={d.meetingId}
+                occurrenceStart={d.occurrenceStart}
                 isCoreMeeting={d.isCoreMeeting}
                 actionPath="/calendar"
                 className={actionBtnClass}
@@ -529,7 +608,29 @@ export default function CalendarMeetingPage() {
       </header>
 
       <div className={cn(card, "grid gap-6 p-6 sm:grid-cols-2 lg:grid-cols-4")}>
-        <Fact label="When">{when}</Fact>
+        <Fact label="When">
+          {d.prevOccurrence && (
+            <Link
+              to={meetingOccurrenceHref(d.meetingId, d.prevOccurrence.start)}
+              aria-label={`Previous: ${formatWhen(d.prevOccurrence.when)}`}
+              title={`Previous: ${formatWhen(d.prevOccurrence.when)}`}
+              className="text-os-grey hover:text-foreground"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Link>
+          )}
+          <span>{when}</span>
+          {d.nextOccurrence && (
+            <Link
+              to={meetingOccurrenceHref(d.meetingId, d.nextOccurrence.start)}
+              aria-label={`Next: ${formatWhen(d.nextOccurrence.when)}`}
+              title={`Next: ${formatWhen(d.nextOccurrence.when)}`}
+              className="text-os-grey hover:text-foreground"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Link>
+          )}
+        </Fact>
         {d.organizerName && <Fact label="Organizer">{d.organizerName}</Fact>}
         {d.location && (
           <Fact label="Location">
@@ -598,6 +699,7 @@ export default function CalendarMeetingPage() {
 
         {d.selfCheckIn && (d.canManage || d.viewerInvited) && (
           <CheckInPanel
+            key={d.occurrenceStart}
             meetingId={d.meetingId}
             meetingLabel={d.meetingLabel}
             viewerInvited={d.viewerInvited}
@@ -612,7 +714,11 @@ export default function CalendarMeetingPage() {
             kiosk for a door station. */}
         {d.canManage && d.rows.length > 0 && (
           <AttendanceChecklist
+            // Keyed by occurrence: the checklist keeps its own row state, which
+            // must not carry over when the page moves to another occurrence.
+            key={d.occurrenceStart}
             meetingId={d.meetingId}
+            occurrenceStart={d.occurrenceStart}
             meetingLabel={d.meetingLabel}
             canEdit
             canNote={d.canManage}

@@ -253,7 +253,8 @@ export async function action({ request }: Route.ActionArgs) {
 type RoleFilter = "all" | "admin" | "core";
 
 export default function AdminConsoleMembers() {
-  const { members, domains, viewerIsAdmin } = useLoaderData<typeof loader>();
+  const { members, domains, viewerIsAdmin } =
+    useLoaderData<typeof loader>();
   const { pageTitle, panel } = useOsChrome();
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");

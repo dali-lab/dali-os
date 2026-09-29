@@ -42,8 +42,9 @@ export async function action({ request }: Route.ActionArgs) {
   if (!member) return Response.json({ error: "Invalid or revoked pass" }, { status: 400 });
 
   // Marked by the member themselves, as with self check-in: the display is
-  // just the member's proof of presence, not an operator.
-  const result = await markMeetingAttendance(event.id, member.id, true, member.id, {
+  // just the member's proof of presence, not an operator. Counts toward the
+  // occurrence happening now.
+  const result = await markMeetingAttendance(event.id, member.id, true, member.id, new Date(), {
     addIfMissing: member.isDaliMember,
   });
   if (!result.ok) return Response.json({ error: result.error }, { status: result.status });

@@ -220,12 +220,10 @@ export function PageDocOutlet({ children }: { children: ReactNode }) {
   const matches = useMatches();
 
   if (open && docKey) {
-    // Under the os shell the layout never zeroes the outlet's top padding (its
-    // sub-nav is an inline pill, not a flush bar), so there is nothing to put
-    // back when the open guide replaces the outlet.
-    const zeroedTopPadding = false;
+    // Viewport-fitted pages (home, email, calendar) bound the shell and scroll
+    // their own panes, so the guide that replaces them needs its own scroller.
     return (
-      <div className={zeroedTopPadding ? "pt-4 sm:pt-8 md:pt-12" : undefined}>
+      <div className="min-h-0 flex-1 overflow-y-auto">
         <Suspense
           fallback={
             <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">

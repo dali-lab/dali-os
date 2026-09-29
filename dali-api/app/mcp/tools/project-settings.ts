@@ -8,10 +8,10 @@
 // its detail page, where the term/domain pickers carry validation an agent
 // shouldn't be reimplementing from a flat argument list.
 //
-// `chartString` / `chartStringType` are deliberately NOT returned. They're
-// Dartmouth payroll GL codes, admin-edited, and nothing an agent needs to do
-// its job — the same reasoning that keeps the payroll TimesheetEntry model out
-// of the timesheet tools.
+// Chart strings are deliberately NOT returned. They're Dartmouth payroll GL
+// codes, and this tool is member-accessible; Core reads them through
+// list_project_chart_strings — the same reasoning that keeps the payroll
+// TimesheetEntry model out of the timesheet tools.
 
 import { prisma } from "~/lib/db";
 import { resolvePhotoUrl } from "~/lib/photo";
@@ -26,7 +26,7 @@ export class ProjectSettingsNotFoundError extends Error {
 export const GET_PROJECT_SETTINGS_TOOL = {
   name: "get_project_settings",
   description:
-    "Read a project's configuration: its planned terms, declared domains, the per-domain-per-term scope grid, repos, deployment URL, and its Slack/GitHub/Google identities. Complements `get_project_overview`, which covers the live working state instead. Payroll chart strings are not included.",
+    "Read a project's configuration: its planned terms, declared domains, the per-domain-per-term scope grid, repos, Figma files, deployment URL, and its Slack/GitHub/Google identities. Complements `get_project_overview`, which covers the live working state instead. Payroll chart strings are not included.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -53,6 +53,7 @@ export type ProjectSettings = {
   terms: string[];
   domains: { id: string; code: string; displayName: string }[];
   repoUrls: string[];
+  figmaUrls: string[];
   deploymentUrl: string | null;
   slackChannelName: string | null;
   slackChannelId: string | null;
@@ -80,6 +81,7 @@ export async function runGetProjectSettings(
       imageUrl: true,
       termCount: true,
       repoUrls: true,
+      figmaUrls: true,
       deploymentUrl: true,
       slackChannelName: true,
       slackChannelId: true,
@@ -116,6 +118,7 @@ export async function runGetProjectSettings(
       .map((t) => t.term.code),
     domains: project.domains.map((d) => d.domain),
     repoUrls: project.repoUrls,
+    figmaUrls: project.figmaUrls,
     deploymentUrl: project.deploymentUrl,
     slackChannelName: project.slackChannelName,
     slackChannelId: project.slackChannelId,

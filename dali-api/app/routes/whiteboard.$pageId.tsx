@@ -122,7 +122,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       // When this board is a meeting's whiteboard, carry the meeting + its note
       // so the canvas can show a context bar linking across to them.
       meetingWhiteboard: {
-        select: { id: true, title: true, notePage: { select: { id: true } } },
+        // The board is one per series, so it links to the latest note.
+        select: {
+          id: true,
+          title: true,
+          notePages: { select: { id: true }, orderBy: { meetingOccurrenceStart: "desc" }, take: 1 },
+        },
       },
     },
   });
@@ -200,7 +205,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       ? {
           id: page.meetingWhiteboard.id,
           title: page.meetingWhiteboard.title,
-          notePageId: page.meetingWhiteboard.notePage?.id ?? null,
+          notePageId: page.meetingWhiteboard.notePages[0]?.id ?? null,
         }
       : null,
   };

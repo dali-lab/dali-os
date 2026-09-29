@@ -116,9 +116,10 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Invalid or revoked pass" }, { status: 400 }));
   }
 
-  // At an event (SelfCheckIn), any DALI member who shows up counts, invited or
-  // not; regular meetings stay roster-only.
-  const result = await markMeetingAttendance(meeting.id, scanned.id, true, auth.user.sub, {
+  // A pass is scanned at the door, so it counts toward the occurrence
+  // happening now. At an event (SelfCheckIn), any DALI member who shows up
+  // counts, invited or not; regular meetings stay roster-only.
+  const result = await markMeetingAttendance(meeting.id, scanned.id, true, auth.user.sub, new Date(), {
     addIfMissing: meeting.attendanceMode === "SelfCheckIn" && !!scanned.daliEmail,
   });
   if (!result.ok) {

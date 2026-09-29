@@ -64,13 +64,13 @@ describe("room-display scan", () => {
     const res = await scan(post("/api/room-display/scan"));
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ ok: true, event: { id: "m1" }, member: { id: "u2" } });
-    expect(markMeetingAttendance).toHaveBeenCalledWith("m1", "u2", true, "u2", { addIfMissing: true });
+    expect(markMeetingAttendance).toHaveBeenCalledWith("m1", "u2", true, "u2", expect.any(Date), { addIfMissing: true });
   });
 
   it("doesn't add a non-member who wasn't invited", async () => {
     vi.mocked(resolveScannedMember).mockResolvedValue({ ...member, isDaliMember: false });
     await scan(post("/api/room-display/scan"));
-    expect(markMeetingAttendance).toHaveBeenCalledWith("m1", "u2", true, "u2", { addIfMissing: false });
+    expect(markMeetingAttendance).toHaveBeenCalledWith("m1", "u2", true, "u2", expect.any(Date), { addIfMissing: false });
   });
 });
 

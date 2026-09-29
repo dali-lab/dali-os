@@ -61,7 +61,8 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Check-in window has closed" }, { status: 403 }));
   }
 
-  const result = await markMeetingAttendance(meeting.id, auth.user.sub, true, auth.user.sub);
+  // The window is open, so "now" is the occurrence being checked into.
+  const result = await markMeetingAttendance(meeting.id, auth.user.sub, true, auth.user.sub, new Date());
   if (!result.ok) {
     return withCors(request, Response.json({ error: result.error }, { status: result.status }));
   }

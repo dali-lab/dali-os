@@ -1,7 +1,8 @@
 // Admin → Email Senders: which Gmail send-as identity backs each outbound
 // email purpose (Hiring / Education / Partners / General). Purposes with no
 // integration of their own fall back to Hiring, so the page shows both the
-// connected state and what actually happens today.
+// connected state and what actually happens today. Below them, the shared-inbox
+// categories for the Email tab (see ~/email/lib/categories.server).
 //
 // Also exposes per-sender daily cap (GmailIntegration.dailyCap) and today's
 // SenderDailyUsage count so operators can see and adjust egress limits.
@@ -20,6 +21,12 @@ import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { UsageGauge } from "~/admin/components/console-ui";
 import { InfoTip, Tooltip } from "~/components/ui/floating";
+import { InboxCategoriesSection } from "~/email/components/InboxCategoriesSection";
+import {
+  CATEGORY_INTENTS,
+  handleInboxCategoryAction,
+  loadInboxCategories,
+} from "~/email/lib/categories.server";
 import {
   EMAIL_PURPOSES,
   EMAIL_PURPOSE_KEYS,
@@ -82,8 +89,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     };
   });
 
-  const admin = await isAdmin(auth.user.sub);
-  return { senders, isAdmin: admin };
+  const [admin, inboxCategories] = await Promise.all([isAdmin(auth.user.sub), loadInboxCategories()]);
+  return { senders, inboxCategories, isAdmin: admin };
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -95,6 +102,13 @@ export async function action({ request }: Route.ActionArgs) {
 
   const form = await request.formData();
   const intent = form.get("intent");
+
+  if ((CATEGORY_INTENTS as readonly unknown[]).includes(intent)) {
+    if (!(await isAdmin(auth.user.sub))) {
+      return Response.json({ error: "Only admins can change shared inbox categories." }, { status: 403 });
+    }
+    return handleInboxCategoryAction(request, form, auth.user.sub);
+  }
 
   if (intent === "disable") {
     const id = form.get("id");
@@ -206,15 +220,74 @@ function DailyCapRow({
   );
 }
 
-export default function EmailSendersAdmin() {
-  const { senders } = useLoaderData<typeof loader>();
+type SenderInfo = ReturnType<typeof useLoaderData<typeof loader>>["senders"][number];
+
+// One automated-email sender: the Gmail account DALI OS sends this area's mail
+// from (interview invites, partner invites, digests, sign-in links …).
+function SenderRow({ sender: s }: { sender: SenderInfo }) {
   const fetcher = useFetcher();
   const dialog = useDialog();
+
+  const disable = async () => {
+    const fallback = s.fallbackEmail ?? (s.purpose !== "Hiring" ? "the Hiring sender" : null);
+    const fallbackNote = fallback
+      ? ` Outbound email for ${s.label} will silently fall back to ${fallback}.`
+      : " No fallback is configured — outbound email for this purpose will stop until reconnected.";
+    const ok = await dialog.confirm({
+      title: `Disable ${s.label} sender (${s.sendAsEmail})?`,
+      description: `This soft-disables the send-as identity.${fallbackNote}`,
+      tone: "destructive",
+      confirmLabel: "Disable",
+    });
+    if (ok) fetcher.submit({ intent: "disable", id: s.integrationId! }, { method: "post" });
+  };
+
+  return (
+    <li className="py-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span className="min-w-40 text-sm font-medium text-foreground">{s.label}</span>
+        <span className="text-sm text-muted-foreground">
+          {s.sendAsEmail
+            ? `Sent as ${s.sendAsEmail}`
+            : s.fallbackEmail
+              ? `Not set up — sent as ${s.fallbackEmail} for now`
+              : "Not set up"}
+        </span>
+        <span className="ml-auto flex items-center gap-2">
+          <a href={`/admin/authorize-gmail?purpose=${s.purpose}`} className={buttonClasses("secondary", "sm")}>
+            {s.sendAsEmail ? "Reconnect" : "Connect"}
+          </a>
+          {s.integrationId && (
+            <button type="button" onClick={disable} className={buttonClasses("ghost", "sm")}>
+              Disable
+            </button>
+          )}
+        </span>
+      </div>
+      {s.sendAsEmail && (
+        <p className="mt-1 text-xs text-muted-foreground">
+          Connected {formatTime(s.linkedAt)} · last used {formatTime(s.lastUsedAt)}
+          {s.syncError ? ` · error: ${s.syncError}` : ""}
+        </p>
+      )}
+      {s.integrationId && (
+        <DailyCapRow
+          integrationId={s.integrationId}
+          dailyCap={s.dailyCap}
+          todayCount={s.todayCount}
+          capped={s.capped}
+        />
+      )}
+    </li>
+  );
+}
+
+export default function EmailSendersAdmin() {
+  const { senders, inboxCategories, isAdmin: canEdit } = useLoaderData<typeof loader>();
   const [params] = useSearchParams();
   const justAuthorized = params.get("gmail_authorized") === "1";
   const gmailError = params.get("gmail_error");
-  const { pageTitle, cardPad } = useOsChrome();
-
+  const { pageTitle, card, cardPad, sectionTitle, bodyText } = useOsChrome();
   return (
     <div className="flex flex-col gap-4">
       <header>
@@ -232,87 +305,20 @@ export default function EmailSendersAdmin() {
         </p>
       )}
 
-      <div className="space-y-4">
-        {senders.map((s) => (
-          <div
-            key={s.purpose}
-            className={cn(
-              cardPad,
-              "rounded-os-card bg-os-card",
-            )}
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold text-foreground">{s.label}</span>
-                  {s.sendAsEmail ? (
-                    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
-                      {s.sendAsEmail}
-                    </span>
-                  ) : s.fallbackEmail ? (
-                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
-                      falls back to {s.fallbackEmail}
-                    </span>
-                  ) : (
-                    <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                      not connected
-                    </span>
-                  )}
-                </div>
-                {s.sendAsEmail && (
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Connected {formatTime(s.linkedAt)} · last used{" "}
-                    {formatTime(s.lastUsedAt)}
-                    {s.syncError ? ` · error: ${s.syncError}` : ""}
-                  </p>
-                )}
-              </div>
-              <div className="flex flex-shrink-0 items-center gap-2">
-                <a
-                  href={`/admin/authorize-gmail?purpose=${s.purpose}`}
-                  className="os-btn-primary"
-                >
-                  {s.sendAsEmail ? "Reconnect" : "Connect"}
-                </a>
-                {s.integrationId && (
-                  <button
-                    onClick={async () => {
-                      const fallback = s.fallbackEmail ?? (s.purpose !== "Hiring" ? "the Hiring sender" : null);
-                      const fallbackNote = fallback
-                        ? ` Outbound email for ${s.label} will silently fall back to ${fallback}.`
-                        : " No fallback is configured — outbound email for this purpose will stop until reconnected.";
-                      const ok = await dialog.confirm({
-                        title: `Disable ${s.label} sender (${s.sendAsEmail})?`,
-                        description: `This soft-disables the send-as identity.${fallbackNote}`,
-                        tone: "destructive",
-                        confirmLabel: "Disable",
-                      });
-                      if (!ok) return;
-                      fetcher.submit(
-                        { intent: "disable", id: s.integrationId! },
-                        { method: "post" },
-                      );
-                    }}
-                    className="os-btn-ghost"
-                  >
-                    Disable
-                  </button>
-                )}
-              </div>
-            </div>
+      <InboxCategoriesSection data={inboxCategories} canEdit={canEdit} />
 
-            {/* Daily cap + today's usage — only shown for connected senders */}
-            {s.integrationId && (
-              <DailyCapRow
-                integrationId={s.integrationId}
-                dailyCap={s.dailyCap}
-                todayCount={s.todayCount}
-                capped={s.capped}
-              />
-            )}
-          </div>
-        ))}
-      </div>
+      <section className="mt-6 flex flex-col gap-3">
+        <h2 className={sectionTitle}>Automated email</h2>
+        <p className={bodyText}>
+          The Gmail account DALI OS sends each area&apos;s automatic mail from: interview invites and decisions,
+          partner invites, notification digests and sign-in links. Unrelated to the categories above.
+        </p>
+        <ul className={cn(card, cardPad, "divide-y divide-border py-1")}>
+          {senders.map((s) => (
+            <SenderRow key={s.purpose} sender={s} />
+          ))}
+        </ul>
+      </section>
     </div>
   );
 }

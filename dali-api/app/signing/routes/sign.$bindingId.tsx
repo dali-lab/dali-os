@@ -102,16 +102,50 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!signing) return redirect("/");
   const { role: signerRole, status } = signing;
 
-  // Drives the "signed" screen copy: on a co-signed agreement a mentor's receipt
-  // is deferred until the mentee countersigns, so we don't claim it was emailed.
-  const coSigned =
+  // Drives the mentor's "signed" screen copy. A mentor's receipt is deferred (see
+  // the sign action's deferReceipt) ONLY when they actually have mentees — so only
+  // then should the screen say "once your mentee countersigns, the copy is emailed
+  // to you both." A mentor with no mentees got their receipt immediately, and a
+  // mentor whose mentees have all countersigned already has the co-signed copy;
+  // both see the normal "a copy has been emailed" line. Mentees have their own copy.
+  let coSigned = false;
+  if (
+    signerRole === "member" &&
+    status === "signed" &&
     binding.document.requiresMenteeCountersign &&
-    (await isFeatureEnabledForEveryone("mentee-countersign", request));
+    binding.termId &&
+    (await isFeatureEnabledForEveryone("mentee-countersign", request))
+  ) {
+    const menteeIds = [
+      ...new Set(
+        (
+          await prisma.mentorshipPair.findMany({
+            where: { mentorUserId: userId, termId: binding.termId },
+            select: { menteeUserId: true },
+          })
+        ).map((p) => p.menteeUserId),
+      ),
+    ];
+    if (menteeIds.length > 0) {
+      const countersigned = await prisma.signingSignature.count({
+        where: {
+          bindingId,
+          roleKey: "mentee",
+          versionId: binding.versionId,
+          signerUserId: { in: menteeIds },
+        },
+      });
+      // Still waiting on at least one mentee → the receipt is genuinely pending.
+      coSigned = countersigned < menteeIds.length;
+    }
+  }
 
   const supervisorName = binding.signatures[0]?.typedName ?? "";
   const variables = await resolveSigningVariablesForSigner(userId, {
     supervisorName,
     termCode: binding.term?.code ?? undefined,
+    role: signerRole,
+    termId: binding.termId ?? undefined,
   });
 
   // Convert-on-read: the fill surface and field validation walk block JSON;
@@ -291,7 +325,7 @@ export default function SignBindingPage() {
             {data.signerRole === "mentee"
               ? "Thanks for countersigning. A co-signed copy has been emailed to you and is available to download below."
               : data.coSigned
-                ? "Thanks for signing. Once your mentee countersigns, the fully signed copy is emailed to you both — and it's always available to download below."
+                ? "Thanks for signing. As each mentee you mentor countersigns, you're emailed their co-signed copy. It's always available to download below."
                 : "Thanks for signing. A copy has been emailed to you and is available to download below."}
           </p>
         </div>

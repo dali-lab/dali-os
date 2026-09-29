@@ -293,6 +293,8 @@ export const EVENT_TYPES = {
     area: "Forms",
     label: "Form responses",
     description: "When someone submits a form you created (per-form toggle).",
+    coalesceWindowMs: 60 * 60_000, // one ping per form per hour
+    coalesceNoun: "response",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   "education.announcement": {

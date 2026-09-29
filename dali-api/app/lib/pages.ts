@@ -12,6 +12,7 @@ export async function createProjectPage(input: {
   title: string;
   createdById: string;
   meetingNoteId?: string;
+  meetingOccurrenceStart?: Date;
   meetingWhiteboardId?: string;
   parentPageId?: string | null;
   kind?: PageKind;
@@ -34,6 +35,7 @@ export async function createProjectPage(input: {
       parentPageId,
       createdById: input.createdById,
       meetingNoteId: input.meetingNoteId ?? null,
+      meetingOccurrenceStart: input.meetingOccurrenceStart ?? null,
       meetingWhiteboardId: input.meetingWhiteboardId ?? null,
     },
     select: { id: true },
@@ -49,6 +51,7 @@ export async function createLabMeetingPage(input: {
   title: string;
   createdById: string;
   meetingNoteId?: string;
+  meetingOccurrenceStart?: Date;
   meetingWhiteboardId?: string;
   // FreeForm (note doc) by default; a meeting whiteboard passes Whiteboard.
   kind?: PageKind;
@@ -78,6 +81,7 @@ export async function createLabMeetingPage(input: {
       parentPageId,
       createdById: input.createdById,
       meetingNoteId: input.meetingNoteId ?? null,
+      meetingOccurrenceStart: input.meetingOccurrenceStart ?? null,
       meetingWhiteboardId: input.meetingWhiteboardId ?? null,
       // Lab docs default to the communal shelf: everyone in the lab can edit.
       linkAccess: input.restricted ? "Restricted" : "LabMembers",

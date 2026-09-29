@@ -12,6 +12,9 @@ import { setSessionCookie } from "~/lib/cookies";
 import { getClientIp } from "~/lib/rate-limit";
 import { logAuditEvent } from "~/lib/audit";
 import { hashCode, desktopWebviewUserAgent } from "~/lib/pairing";
+import { mintBetterAuthSession } from "~/lib/betterauth-session.server";
+import { appendBetterAuthSessionCookie } from "~/lib/betterauth-cookie.server";
+import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
@@ -31,14 +34,32 @@ export async function loader({ request }: Route.LoaderArgs) {
   const row = await prisma.devicePairing.findFirst({ where: { handoffCodeHash } });
   if (!row?.userId) return redirect("/login?error=handoff_invalid");
 
-  const webview = await issueSession({
-    userId: row.userId,
-    userAgent: desktopWebviewUserAgent({ os: row.deviceLabel }),
-    ip: getClientIp(request),
-  });
-
   const headers = new Headers();
-  setSessionCookie(headers, webview.rawId);
+
+  // Flag-gated: when betterauth is on, mint a BetterAuth session and plant it as
+  // the signed `dali.session_token` cookie so the webview is authenticated via
+  // auth.api.getSession. The handoff contract (code validation, single-use claim,
+  // redirect to /) is unchanged — only the session store backing the cookie changes.
+  //
+  // NOTE: The cookie round-trip (does auth.api.getSession accept the cookie
+  // produced by appendBetterAuthSessionCookie?) MUST be verified in an integration
+  // test against a real BetterAuth instance before enabling the betterauth flag.
+  if (await isFeatureEnabledForEveryone("betterauth", request)) {
+    const s = await mintBetterAuthSession({
+      userId: row.userId,
+      userAgent: desktopWebviewUserAgent({ os: row.deviceLabel }),
+      ipAddress: getClientIp(request),
+    });
+    await appendBetterAuthSessionCookie(headers, s.token);
+  } else {
+    const webview = await issueSession({
+      userId: row.userId,
+      userAgent: desktopWebviewUserAgent({ os: row.deviceLabel }),
+      ip: getClientIp(request),
+    });
+    setSessionCookie(headers, webview.rawId);
+  }
+
   // The desktop shell rides the same tabless-by-default shell as the web app.
   // Its bare WKWebView has no browser chrome, but tabless mode supplies its own
   // back/forward arrows in the desktop top bar (TablessHistoryNav), so there's nothing to

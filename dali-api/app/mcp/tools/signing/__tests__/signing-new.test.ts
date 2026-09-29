@@ -116,6 +116,7 @@ vi.mock("~/signing/lib/variables.server", () => ({
     today: "September 12, 2026",
     memberName: "Test User",
     supervisorName: "",
+    menteeName: "",
   }),
 }));
 

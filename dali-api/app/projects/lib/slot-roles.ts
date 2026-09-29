@@ -132,6 +132,7 @@ export const SLOT_ROLES: Record<Slot, RoleDef[]> = {
     },
     DISPLAY_ROLE,
     SUBMITTER_ROLE,
+    HIRED_ROLES_ROLE,
   ],
   "level-up": [
     {

@@ -44,6 +44,7 @@ export async function recordSignature(
     select: {
       id: true,
       versionId: true,
+      termId: true,
       version: { select: { body: true } },
       document: { select: { name: true } },
       term: { select: { code: true } },
@@ -83,6 +84,8 @@ export async function recordSignature(
 
   const variables = await resolveSigningVariablesForSigner(args.signerUserId, {
     termCode: binding.term?.code ?? undefined,
+    role: roleKey === "mentee" ? "mentee" : "member",
+    termId: binding.termId ?? undefined,
   });
   const frozenBody = bakeSigningBody(body, {
     fieldValues: args.fieldValues,
