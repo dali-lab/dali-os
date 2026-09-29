@@ -49,6 +49,10 @@ export function slotIsFree(free: MsInterval[], startMs: number, endMs: number): 
  * within the band. The band keeps "optimal" to sensible daytime/evening hours —
  * without it a 3am slot where everyone's calendar is empty would rank as
  * "everyone free".
+ *
+ * Slots that start before `minStartMs` are skipped, so when the grid is showing
+ * the current week the ranking never suggests a time that's already past (pass
+ * `Date.now()`). Defaults to 0 (no cut-off) for future weeks and unit tests.
  */
 export function candidateSlots(
   dayStartMs: number[],
@@ -56,6 +60,7 @@ export function candidateSlots(
   bandEndHour: number,
   stepMinutes: number,
   durationMinutes: number,
+  minStartMs = 0,
 ): MsInterval[] {
   const out: MsInterval[] = [];
   const durMs = durationMinutes * 60_000;
@@ -64,6 +69,7 @@ export function candidateSlots(
   for (const dayMs of dayStartMs) {
     for (let min = firstStartMin; min <= lastStartMin; min += stepMinutes) {
       const startMs = dayMs + min * 60_000;
+      if (startMs < minStartMs) continue; // never suggest a time in the past
       out.push({ startMs, endMs: startMs + durMs });
     }
   }
@@ -110,6 +116,8 @@ export function findOptimalSlots(opts: {
   stepMinutes: number;
   durationMinutes: number;
   maxResults: number;
+  /** Drop slots starting before this (pass Date.now() to hide past times). */
+  minStartMs?: number;
 }): RankedSlot[] {
   const candidates = candidateSlots(
     opts.dayStartMs,
@@ -117,6 +125,7 @@ export function findOptimalSlots(opts: {
     opts.bandEndHour,
     opts.stepMinutes,
     opts.durationMinutes,
+    opts.minStartMs ?? 0,
   );
   return rankSlots(candidates, opts.perUserFree, opts.maxResults);
 }

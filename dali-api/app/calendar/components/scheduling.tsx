@@ -516,9 +516,21 @@ export type SlotSuggestions = { slots: RankedSlot[]; knownCount: number };
 // form's buttons so each time reads as the same suggestion in both places.
 // Picked to stay legible over the green availability gradient.
 const SUGGESTION_COLORS = [
-  { dot: "bg-violet-600 dark:bg-violet-400", border: "border-violet-600 dark:border-violet-400" },
-  { dot: "bg-sky-600 dark:bg-sky-400", border: "border-sky-600 dark:border-sky-400" },
-  { dot: "bg-amber-500 dark:bg-amber-400", border: "border-amber-500 dark:border-amber-400" },
+  {
+    dot: "bg-violet-600 dark:bg-violet-400",
+    border: "border-violet-500 dark:border-violet-400",
+    fill: "bg-violet-500/20 dark:bg-violet-400/20",
+  },
+  {
+    dot: "bg-sky-600 dark:bg-sky-400",
+    border: "border-sky-500 dark:border-sky-400",
+    fill: "bg-sky-500/20 dark:bg-sky-400/20",
+  },
+  {
+    dot: "bg-amber-500 dark:bg-amber-400",
+    border: "border-amber-500 dark:border-amber-400",
+    fill: "bg-amber-400/25 dark:bg-amber-400/20",
+  },
 ];
 
 function optimalSlotLabel(s: RankedSlot): string {
@@ -547,10 +559,11 @@ export function OptimalTimePills({
   if (!suggestions || suggestions.slots.length === 0) return null;
   return (
     <div>
-      <span className="mb-1 block text-xs font-medium text-muted-foreground">{label}</span>
+      <span className="mb-1.5 block text-xs font-semibold text-foreground">{label}</span>
       <div className="flex flex-wrap gap-1.5">
         {suggestions.slots.map((s, i) => {
           const active = selectedStartLocal === toDatetimeLocal(new Date(s.startMs));
+          const allFree = s.freeCount === suggestions.knownCount;
           return (
             <button
               key={s.startMs}
@@ -559,16 +572,30 @@ export function OptimalTimePills({
                 onPick(toDatetimeLocal(new Date(s.startMs)), toDatetimeLocal(new Date(s.endMs)))
               }
               className={cn(
-                "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium text-foreground transition-colors",
-                active ? "border-os-accent bg-os-accent/10" : "border-border bg-background hover:bg-muted/50",
+                "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium text-foreground transition-colors",
+                active
+                  ? "border-os-accent bg-os-accent/10 ring-1 ring-os-accent"
+                  : "border-border bg-background hover:bg-muted/50",
               )}
             >
-              <span className={cn("h-2 w-2 shrink-0 rounded-full", SUGGESTION_COLORS[i]?.dot)} />
+              <span
+                className={cn(
+                  "flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white",
+                  SUGGESTION_COLORS[i]?.dot,
+                )}
+              >
+                {i + 1}
+              </span>
               <span>{optimalSlotLabel(s)}</span>
-              <span className="text-muted-foreground">
-                {s.freeCount === suggestions.knownCount
-                  ? "All free"
-                  : `${s.freeCount}/${suggestions.knownCount} free`}
+              <span
+                className={cn(
+                  "rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
+                  allFree
+                    ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                    : "text-muted-foreground",
+                )}
+              >
+                {allFree ? "All free" : `${s.freeCount}/${suggestions.knownCount} free`}
               </span>
             </button>
           );
@@ -963,6 +990,8 @@ export function ScheduleWeekGrid({
           stepMinutes: OPTIMAL_STEP_MINUTES,
           durationMinutes: slotMinutes,
           maxResults: OPTIMAL_MAX_RESULTS,
+          // Never suggest a slot that's already passed on the current week.
+          minStartMs: Date.now(),
         })
       : [];
   const suggestionsKey = suggestions.map((x) => `${x.startMs}-${x.endMs}-${x.freeCount}`).join(",");
@@ -1045,8 +1074,9 @@ export function ScheduleWeekGrid({
                 <div
                   key={s.startMs}
                   className={cn(
-                    "pointer-events-none absolute left-0.5 right-0.5 z-20 rounded-sm border-2 border-dotted",
+                    "pointer-events-none absolute left-0.5 right-0.5 z-20 rounded-md border-2 shadow-sm",
                     SUGGESTION_COLORS[i]?.border,
+                    SUGGESTION_COLORS[i]?.fill,
                   )}
                   style={{
                     top: ((s.startMs - dayStartMs) / 3_600_000 - GRID_START_H) * HOUR_PX,
@@ -1055,7 +1085,7 @@ export function ScheduleWeekGrid({
                 >
                   <span
                     className={cn(
-                      "absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-semibold text-white",
+                      "absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-bold text-white ring-1 ring-white/70",
                       SUGGESTION_COLORS[i]?.dot,
                     )}
                   >
