@@ -1,0 +1,393 @@
+/*
+ * Week 3 river-delta scene: one static illustration of the delta with four pieces of motion over
+ * it -- the current in the channels, the surf on the beach, the wind over the land, and the
+ * clouds above all of it (see DeltaBackground.tsx).
+ *
+ * The art is a wide 3985×1594 frame scaled to cover the page. Everything here is scoped to
+ * `.landing-delta` so it can't reach another week's background; sizes are in the landing frame's
+ * container units, like the rest of landing.css, so the scene fits the shell's main column.
+ */
+
+.landing[data-background='delta'] {
+  /* Darkest tone in the delta art, so any uncovered edge blends in and the load-in has
+     somewhere to fade up from. */
+  --delta-dark: #10221c;
+  --content-start: 900ms;
+  background: var(--delta-dark);
+}
+
+html:has(.landing[data-background='delta']),
+body:has(.landing[data-background='delta']) {
+  background: #10221c;
+}
+
+.landing-delta {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+
+  /* Base colour of the .landing-scrim gradients, as "r g b". */
+  --scrim-rgb: 16 34 28;
+
+  /* Never seen -- the art covers this box edge to edge -- but it is the art's own ground tone,
+     so a dropped or still-loading image reads as the same landscape rather than as a hole. */
+  background-color: #3c604b;
+}
+
+/*
+ * The art and the water and wind drawn over it all fill this same box, so the scene's top and
+ * bottom are the frame's top and bottom, and every line stays pinned to the landscape it
+ * belongs to. The illustration is a wide 5:2 frame, so covering a normal window crops it to its
+ * middle; that is the trade for an edge-to-edge scene with no band and no seam.
+ */
+.landing-delta .landing-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: cover;
+  object-position: center;
+}
+
+/* Keeps white text readable over the landscape. Stacked layouts darken top and bottom, where the
+   content sits; desktop darkens the right-hand column instead (see the desktop rule). */
+.landing-delta .landing-scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    0deg,
+    rgb(var(--scrim-rgb) / 0.8) 0%,
+    rgb(var(--scrim-rgb) / 0.45) 50%,
+    rgb(var(--scrim-rgb) / 0.8) 100%
+  );
+}
+
+/* ---------- Load-in ---------- */
+
+/*
+ * 0–2.6s the camera pulls back off the delta as the scene fades up, 0.6–2s the scrim settles in
+ * behind the text, 0.9–2.5s the content rises in (--content-start, landing.css). The loops below
+ * are already running underneath it, so the wind and the water are moving when it arrives.
+ */
+.landing-delta {
+  transform-origin: center;
+  animation:
+    delta-pull-back 2600ms var(--ease-launch) both,
+    delta-fade-in 900ms var(--ease-gentle) both;
+}
+
+@keyframes delta-pull-back {
+  from {
+    translate: 6% 0;
+    scale: 1.14;
+  }
+}
+
+@keyframes delta-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.landing-delta .landing-scrim {
+  animation: delta-fade-in 1400ms var(--ease-gentle) 600ms both;
+}
+
+/* ---------- River ---------- */
+
+.delta-flow {
+  overflow: visible;
+  fill: none;
+}
+
+/*
+ * The current running down a channel. Same idea as the gusts, but the dash repeats rather than
+ * being one lit segment: sliding the pattern exactly one dash-and-gap downstream leaves it where
+ * it started, so a train of dashes runs forever with no seam and no lull. Negative offsets move
+ * the pattern along the path, and the traced channels point downstream (RiverFlow), so the
+ * current runs the way the water does.
+ *
+ * Unlike the wind, this is drawn in the water's own colour and sits under the wind layer.
+ */
+.delta-flow-line {
+  /* One of the art's own pale water tones, so the current reads as the river catching the light
+   * rather than as a line drawn over it. */
+  stroke: #b3e3d6;
+  stroke-linecap: round;
+  stroke-width: var(--width);
+  /* Keeps the current a hairline: the paths are in the art's 3985-unit frame. */
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: var(--dash) var(--gap);
+  opacity: var(--alpha);
+  animation: delta-flow-run var(--dur) linear var(--delay) infinite;
+}
+
+/* Both ends spelled out: with the start left implicit, the offset jumps between the two rather
+ * than sliding, because the end is a custom property rather than a plain number. */
+@keyframes delta-flow-run {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: var(--travel); }
+}
+
+/* ---------- Surf ---------- */
+
+.delta-surf {
+  overflow: visible;
+  fill: none;
+}
+
+/*
+ * A wave breaking. Two motions on two elements, one property each: the crest draws itself on along
+ * the beach, holds, and then fades where it lies, while the group it sits in slides shorewards and
+ * snaps back once it is out of sight.
+ *
+ * It fades rather than un-drawing. Sweeping the dash off the far end would retract the foam back
+ * the way it came, which reads as the wave being taken away rather than sinking into the sand.
+ *
+ * The slide direction comes from the crest itself -- the tracer records which way the land lies
+ * from each one -- so the foam washes at the coast rather than in one fixed direction.
+ */
+.delta-wave {
+  animation: delta-wave-wash var(--dur) ease-out var(--delay) infinite;
+}
+
+@keyframes delta-wave-wash {
+  0% { translate: 0 0; }
+  78% { translate: var(--wash); }
+  79%,
+  100% { translate: 0 0; }
+}
+
+.delta-wave-crest {
+  /* The hue and saturation of the water directly under the crests, lifted in lightness: foam that
+   * is the sea's own colour catching the light rather than white paint laid over it. */
+  stroke: #9fc9d0;
+  stroke-linecap: round;
+  stroke-width: var(--width);
+  /* Keeps the foam a hairline: the paths are in the art's 3985-unit frame. */
+  vector-effect: non-scaling-stroke;
+  /* One dash the whole length of the crest, with a longer gap behind it, so the only thing ever on
+   * the curve is the crest drawing itself on -- never a second dash following it in. */
+  stroke-dasharray: 1000 2000;
+  opacity: 0;
+  animation: delta-wave-break var(--dur) linear var(--delay) infinite;
+}
+
+@keyframes delta-wave-break {
+  /* Draws on from the first frame: the leading edge running along the sand *is* the entrance, so
+   * there is nothing to fade in. */
+  0% {
+    stroke-dashoffset: 1000;
+    opacity: var(--alpha);
+  }
+  34% {
+    stroke-dashoffset: 0;
+    opacity: var(--alpha);
+  }
+  58% {
+    stroke-dashoffset: 0;
+    opacity: var(--alpha);
+    animation-timing-function: ease-out;
+  }
+  78% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+
+/* ---------- Wind ---------- */
+
+.delta-wind {
+  overflow: visible;
+  fill: none;
+}
+
+/*
+ * A gust. The dash is the lit part of the streak; sweeping stroke-dashoffset from one dash-length
+ * before the path to one path-length past it runs that lit part from end to end, drawing the
+ * curve on at the head while it rubs out at the tail. pathLength="1000" on every path (WindLines)
+ * means these numbers read the same on the short streaks as on the long ones.
+ *
+ * The 4000 is simply longer than the path, so only ever one dash is on the curve at a time. The
+ * hold from 64% is the lull between gusts, and the fades cover the two cases where a streak
+ * starts or ends inside the viewport rather than off the edge of the art.
+ */
+.delta-wind-line {
+  stroke: #ffffff;
+  stroke-linecap: round;
+  /* Keeps hairlines hairlines: the group is scaled 2.6x to reach across the delta. */
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: var(--dash) 4000;
+  opacity: 0;
+  animation: delta-wind-gust var(--dur) linear var(--delay) infinite;
+}
+
+@keyframes delta-wind-gust {
+  0% {
+    stroke-dashoffset: var(--dash);
+    opacity: 0;
+  }
+  5% { opacity: var(--alpha); }
+  58% { opacity: var(--alpha); }
+  64% {
+    stroke-dashoffset: -1000;
+    opacity: 0;
+  }
+  100% {
+    stroke-dashoffset: -1000;
+    opacity: 0;
+  }
+}
+
+/* The two heavy foreground streaks, and the threads behind them. */
+.delta-wind-bold {
+  --alpha: 0.56;
+  stroke-width: 2.4;
+}
+
+.delta-wind-faint {
+  --alpha: 0.3;
+  stroke-width: 1.2;
+}
+
+/* ---------- Clouds ---------- */
+
+/*
+ * Cloud shapes from the Figma file, crossing above everything else. They sit in the window rather
+ * than on the art: a cloud is between the viewer and the landscape, so it doesn't belong to the
+ * ground and doesn't scale with it.
+ */
+.delta-sky {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* The crossing. Starts clear of one edge and ends clear of the other, at any frame width. */
+.delta-cloud {
+  position: absolute;
+  top: var(--top);
+  left: 0;
+  width: var(--width);
+  animation:
+    delta-cloud-cross var(--cross) linear var(--delay) infinite,
+    delta-cloud-pass var(--cross) ease-in-out var(--delay) infinite;
+}
+
+@keyframes delta-cloud-cross {
+  from { translate: -75cqw 0; }
+  to { translate: 135cqw 0; }
+}
+
+/*
+ * A pass: in, across, out, then an empty stretch before the cloud comes round again. Each cloud's
+ * crossing is a different length, so the gaps fall differently every time and the sky fills and
+ * empties instead of running a steady procession.
+ */
+@keyframes delta-cloud-pass {
+  0%,
+  4% { opacity: 0; }
+  16% { opacity: var(--alpha); }
+  52% { opacity: var(--alpha); }
+  66%,
+  100% { opacity: 0; }
+}
+
+/* The layer the cursor's pull is written to (useCloudDrift). */
+.delta-cloud-pull {
+  will-change: transform;
+}
+
+/*
+ * Soft, and barely there. The blur is on the shape rather than on anything that animates, so it
+ * is rasterised once and then only ever moved.
+ *
+ * This is also the one thing in the whole background that a pointer can touch. Everything above
+ * it -- the sky, the cloud boxes, the scrim over all of them -- stays pointer-events: none, so
+ * opting the silhouette back in both lets it be grabbed (useCloudDrag) and keeps the grab shaped
+ * like a cloud: `auto` on a painted SVG means the fill, not the box, so the empty sky around a
+ * cloud is still nothing to catch on.
+ */
+.delta-cloud-shape {
+  display: block;
+  width: 100%;
+  height: auto;
+  fill: #ffffff;
+  filter: blur(0.5cqw);
+  pointer-events: auto;
+  cursor: grab;
+  /* The drag is ours; the browser shouldn't also read it as a scroll. */
+  touch-action: none;
+}
+
+.delta-cloud-held .delta-cloud-shape {
+  cursor: grabbing;
+}
+
+/* ---------- Reduced motion ---------- */
+
+/*
+ * landing.css pauses every loop inside .landing-animated, which would leave the gusts frozen
+ * part-drawn. They are stopped altogether instead, and the streaks are left drawn in full and
+ * faint, so the wind reads as a still line over the landscape. The load-in is skipped, so the
+ * scene is simply there.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .landing-delta,
+  .landing-delta .landing-scrim {
+    animation: none !important;
+  }
+
+  .delta-wind-line,
+  .delta-flow-line,
+  .delta-wave-crest {
+    animation: none !important;
+    stroke-dasharray: none !important;
+    opacity: calc(var(--alpha) * 0.7) !important;
+  }
+
+  /* Held mid-wash a crest would sit off the shoreline it belongs to. */
+  .delta-wave {
+    animation: none !important;
+    translate: 0 0 !important;
+  }
+
+  /* Paused mid-pass a cloud would sit wherever it happened to be, most likely invisible. They
+   * are stopped where they were placed instead, so the sky still has weather in it. */
+  .delta-cloud {
+    animation: none !important;
+    translate: 30cqw 0 !important;
+    opacity: var(--alpha) !important;
+  }
+}
+
+@container landing (min-width: 900px) and (min-aspect-ratio: 11/10) {
+  /*
+   * Shift the delta left so the mouth of the river clears the content column. The box is widened
+   * to the left rather than using object-position, so the art and the water and wind drawn over
+   * it (which share its framing) stay aligned with each other.
+   */
+  .landing-delta {
+    left: -14cqw;
+  }
+
+  .landing-delta .landing-scrim {
+    background:
+      linear-gradient(
+        90deg,
+        rgb(var(--scrim-rgb) / 0) 30%,
+        rgb(var(--scrim-rgb) / 0.5) 55%,
+        rgb(var(--scrim-rgb) / 0.82) 78%,
+        rgb(var(--scrim-rgb) / 0.88) 100%
+      ),
+      linear-gradient(0deg, rgb(var(--scrim-rgb) / 0.45) 0%, rgb(var(--scrim-rgb) / 0.1) 60%);
+  }
+}
