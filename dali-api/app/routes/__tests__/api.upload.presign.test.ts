@@ -282,6 +282,17 @@ describe("POST /api/upload/presign response shape", () => {
     expect(isLabMember).not.toHaveBeenCalled();
   });
 
+  it.each(["payroll-imports/x.csv", "uploads/payroll-imports/uuid-timesheet.csv"])(
+    "refuses the payroll-import prefix (%s): only the admin tool mints those keys",
+    async (key) => {
+      const res = await action({
+        request: makeRequest({ key, contentType: "text/csv", contentLength: 100 }),
+      } as any);
+      expect(res.status).toBe(400);
+      expect(getUploadPost).not.toHaveBeenCalled();
+    },
+  );
+
   it("returns 413 past 100 MB even in the file store", async () => {
     const res = await action({
       request: makeRequest({

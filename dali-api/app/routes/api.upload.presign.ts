@@ -57,6 +57,12 @@ export async function action({ request }: { request: Request }) {
 
     // Scope all keys under uploads/ to avoid collisions with other bucket contents
     const scopedKey = key.startsWith('uploads/') ? key : `uploads/${key}`
+    // Reserved for the admin-only payroll import tools, which mint their own
+    // keys there. Anyone else placing a file at one could get it imported over
+    // real pay periods by an admin's agent.
+    if (scopedKey.startsWith('uploads/payroll-imports/')) {
+      return Response.json({ error: 'That key prefix is reserved' }, { status: 400 })
+    }
     let cap = uploadCapForKey(scopedKey)
     // Portal applicants, partners and other Dartmouth sign-ins reach this route
     // too. None of them upload to the project-file / Drive store, so they keep

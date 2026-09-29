@@ -27,6 +27,7 @@ import {
 import { McpForbiddenError, McpInvalidError, McpNotFoundError } from "./errors";
 import { canEditProject } from "../access";
 import { createProjectFileWithVersion, rawUploadSrc } from "../upload-project-file";
+import { curlCommand } from "../presigned-upload";
 
 export const CREATE_PROJECT_FILE_UPLOAD_TOOL = {
   name: "create_project_file_upload",
@@ -108,24 +109,6 @@ type FinalizeInput = {
 
 function projectKeyPrefix(projectId: string): string {
   return `uploads/project-files/${projectId}/`;
-}
-
-/** POSIX single-quote a value for the curl command. */
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
-}
-
-/** `--form-string` for the policy fields so curl never reads a value as `@file`
- *  or splits a `;` inside a Content-Type; `-F` only for the file part, last.
- *  Prints the status on its own line: 204 on success, S3's error XML otherwise. */
-function curlCommand(url: string, fields: Record<string, string>, fileName: string): string {
-  // A literal backslash-n: curl expands it, and the command stays on one line.
-  const parts = ["curl", "-sS", "-w", shellQuote("\\nHTTP %{http_code}\\n"), "-X", "POST", shellQuote(url)];
-  for (const [name, value] of Object.entries(fields)) {
-    parts.push("--form-string", shellQuote(`${name}=${value}`));
-  }
-  parts.push("-F", shellQuote(`file=@/path/to/${fileName}`));
-  return parts.join(" ");
 }
 
 async function requireEditableProject(callerId: string, projectId: string): Promise<void> {
