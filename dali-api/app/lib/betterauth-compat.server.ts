@@ -120,6 +120,36 @@ export async function resolveBetterAuthAuth(
   };
 }
 
+// The current BetterAuth session's raw bearer token, for a channel that can't
+// carry the session cookie: the collab WebSocket handshake, which hands the
+// server an opaque token string. This is the same token shape
+// mintBetterAuthSession returns and the bearer() plugin accepts, so
+// verifyCollabToken can validate it via getSession (see verifyBetterAuthBearerToken).
+// Reusing the live session's token (rather than minting a fresh session per
+// doc-open) means no session-table sprawl and the collab connection lives
+// exactly as long as the user's real session. Returns null when there is no
+// BetterAuth session — e.g. a still-legacy session during the cutover, where the
+// caller falls back to the __dali_sid credential.
+export async function getBetterAuthCollabToken(
+  request: Request,
+): Promise<string | null> {
+  const session = await auth.api.getSession({ headers: request.headers });
+  return session?.session.token ?? null;
+}
+
+// Validate a BetterAuth bearer token presented over the collab WS handshake and
+// return the userId, or null when it is missing/invalid. Mirrors the MCP
+// provider's auth path (app/lib/mcp-auth.ts): the bearer() plugin converts the
+// Authorization header into the session cookie getSession reads.
+export async function verifyBetterAuthBearerToken(
+  token: string,
+): Promise<string | null> {
+  if (!token) return null;
+  const headers = new Headers({ authorization: `Bearer ${token}` });
+  const session = await auth.api.getSession({ headers });
+  return session?.user.id ?? null;
+}
+
 // Require a valid BetterAuth session. Returns { ok: true; user } or
 // { ok: false; response } with a 401.
 export async function requireUser(

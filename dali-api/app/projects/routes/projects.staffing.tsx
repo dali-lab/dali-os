@@ -8,7 +8,7 @@ import { primaryEmail } from "~/lib/display";
 import { canManageStaffing, canViewStaffing } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { resolvePhotoUrl } from "~/lib/photo";
-import { parseSessionCookie } from "~/lib/cookies";
+import { getCollabToken } from "~/lib/collab-token.server";
 import { getPresenceUser } from "~/lib/presence-user";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { PresenceBar } from "~/components/collab/PresenceBar";
@@ -68,7 +68,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       sortKey: true,
     },
   });
-  const collabToken = parseSessionCookie(request);
+  const collabToken = await getCollabToken(request);
   const presenceUser = await getPresenceUser(auth.user.sub);
   const presence = {
     collabToken,

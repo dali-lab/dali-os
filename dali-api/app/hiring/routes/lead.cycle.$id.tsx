@@ -36,7 +36,7 @@ import { buildPhaseTabs, resolvePhaseTab } from "~/hiring/lib/cycle-phase-tabs";
 import { TargetDomainsCard } from "~/hiring/components/cycle-setup/TargetDomainsCard";
 import { ReviewerPoolCard } from "~/hiring/components/cycle-setup/ReviewerPoolCard";
 import { addDomainChallenge, createCycleApplicationForm, removeDomainChallenge } from "~/hiring/lib/application-form.server";
-import { parseSessionCookie } from "~/lib/cookies";
+import { getCollabToken } from "~/lib/collab-token.server";
 import { getPresenceUser } from "~/lib/presence-user";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { PresenceBar } from "~/components/collab/PresenceBar";
@@ -354,7 +354,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     confidentialityRequired ? null : loadPhaseStatusByDomain(params.id),
   ]);
 
-  const collabToken = parseSessionCookie(request);
+  const collabToken = await getCollabToken(request);
   const presenceUser = await getPresenceUser(auth.user.sub);
 
   return {

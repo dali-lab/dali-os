@@ -28,7 +28,7 @@ import { prisma } from "~/lib/db";
 import { githubTeamSlug } from "~/lib/github-slug";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { parseSessionCookie } from "~/lib/cookies";
+import { getCollabToken } from "~/lib/collab-token.server";
 import { canViewStaffing, isCore, getActiveCoreCycleTermIds } from "~/lib/roles";
 import {
   PARTNER_APPLICATION_STATUSES as STATUSES,
@@ -170,7 +170,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const usedDomainIds = new Set(application.domains.map((d) => d.domainId));
   const availableDomains = allDomains.filter((d) => !usedDomainIds.has(d.id));
 
-  const collabToken = parseSessionCookie(request);
+  const collabToken = await getCollabToken(request);
   const userName =
     [auth.user.firstName, auth.user.lastName].filter(Boolean).join(" ") ||
     auth.user.email;

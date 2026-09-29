@@ -23,7 +23,7 @@ import type {
   SigningCadence,
 } from "~/generated/prisma/enums";
 import { SigningDocumentDetail } from "~/signing/components/SigningDocumentDetail";
-import { parseSessionCookie } from "~/lib/cookies";
+import { getCollabToken } from "~/lib/collab-token.server";
 import { signingDraftName } from "~/collab/roomName";
 import { readDocAsBlocks } from "~/collab/read";
 
@@ -149,7 +149,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         .sort()
     : null;
 
-  const collabToken = parseSessionCookie(request);
+  const collabToken = await getCollabToken(request);
   const collabRoomName = signingDraftName(params.id!);
   const collabUserName =
     [me?.firstName, me?.lastName].filter(Boolean).join(" ") || "Core";
