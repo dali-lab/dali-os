@@ -34,10 +34,25 @@ struct ScheduleItem: Codable, Hashable {
     var duration: TimeInterval { end.timeIntervalSince(start) }
 }
 
+/// Scanning switched on from Attendance for every door display in the lab,
+/// whatever room it's in. Outranks the room's own event.
+struct AttendanceScan: Codable, Hashable {
+    let meetingId: String
+    let title: String
+    let start: Date?
+    let end: Date?
+
+    var timeRange: String? {
+        guard let start, let end else { return nil }
+        return "\(start.formatted(date: .omitted, time: .shortened)) – \(end.formatted(date: .omitted, time: .shortened))"
+    }
+}
+
 struct ScheduleResponse: Decodable {
     let room: DisplayRoom
     let items: [ScheduleItem]
     let currentEvent: ScheduleItem?
+    let attendanceScan: AttendanceScan?
 }
 
 struct ActivateResponse: Decodable {

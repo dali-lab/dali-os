@@ -8,6 +8,7 @@ struct PassScanPanel: View {
     let submit: (String) async throws -> ScannedMember
     let successTitle: (ScannedMember) -> String
     var onSuccess: (ScannedMember) -> Void = { _ in }
+    var cornerRadius: CGFloat = OS.cardRadius
 
     private enum Phase: Equatable {
         case ready
@@ -33,7 +34,7 @@ struct PassScanPanel: View {
             }
             overlay
         }
-        .clipShape(.rect(cornerRadius: OS.cardRadius))
+        .clipShape(.rect(cornerRadius: cornerRadius))
     }
 
     @ViewBuilder

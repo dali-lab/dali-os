@@ -2142,6 +2142,8 @@ model ScheduledMeeting {
   // everything else.
   rooms Room[]
 
+  displayScanSessions DisplayScanSession[]
+
   scopeType ScopeType
   // Untyped at DB layer — dispatched in app code by scopeType.
   scopeId   String?
@@ -6491,4 +6493,22 @@ model RoomDisplay {
   createdAt DateTime @default(now())
 
   @@index([roomId])
+}
+
+// Attendance ▸ "Enable attendance tracking from iPad": while a session is live,
+// every paired door display is a full-screen pass scanner for this one event
+// occurrence, whatever room it's in. One at a time (starting another replaces
+// it), and it lapses at expiresAt so a forgotten switch can't leave the lab's
+// iPads scanning.
+model DisplayScanSession {
+  id                 String           @id @default(cuid())
+  scheduledMeetingId String
+  scheduledMeeting   ScheduledMeeting @relation(fields: [scheduledMeetingId], references: [id], onDelete: Cascade)
+  occurrenceStart    DateTime
+  expiresAt          DateTime
+  startedByUserId    String?
+
+  createdAt DateTime @default(now())
+
+  @@index([scheduledMeetingId])
 }

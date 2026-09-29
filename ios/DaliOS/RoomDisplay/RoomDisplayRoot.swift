@@ -7,7 +7,7 @@ struct RoomDisplayRoot: View {
         let args = ProcessInfo.processInfo.arguments
         if let i = args.firstIndex(of: "-demoDisplay") {
             let mode = args.dropFirst(i + 1).first
-            store.startDemo(event: mode == "event", busy: mode == "busy")
+            store.startDemo(event: mode == "event", busy: mode == "busy", scan: mode == "scan")
         }
         #endif
         return store

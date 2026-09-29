@@ -17,3 +17,32 @@ struct APIClientTests {
         #expect(AppSettings(defaults: defaults).environment == .local)
     }
 }
+
+struct ScheduleResponseTests {
+    private func decode(_ json: String) throws -> ScheduleResponse {
+        try JSONDecoder.api.decode(ScheduleResponse.self, from: Data(json.utf8))
+    }
+
+    @Test func decodesIPadScanSwitchedOnFromAttendance() throws {
+        let response = try decode("""
+        {"room":{"id":"r1","name":"Lab"},"items":[],"currentEvent":null,
+         "attendanceScan":{"meetingId":"m1","title":"Project sync",
+           "start":"2026-09-30T22:00:00.000Z","end":"2026-09-30T23:00:00.000Z"}}
+        """)
+        #expect(response.attendanceScan?.meetingId == "m1")
+        #expect(response.attendanceScan?.timeRange != nil)
+    }
+
+    @Test func unscheduledScanHasNoTimeRange() throws {
+        let response = try decode("""
+        {"room":{"id":"r1","name":"Lab"},"items":[],"currentEvent":null,
+         "attendanceScan":{"meetingId":"m1","title":"Drop-in","start":null,"end":null}}
+        """)
+        #expect(response.attendanceScan?.timeRange == nil)
+    }
+
+    @Test func scanIsOffWhenAbsent() throws {
+        let response = try decode(#"{"room":{"id":"r1","name":"Lab"},"items":[],"currentEvent":null}"#)
+        #expect(response.attendanceScan == nil)
+    }
+}
