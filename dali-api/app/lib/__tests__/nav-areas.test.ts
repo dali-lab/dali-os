@@ -8,6 +8,7 @@ import {
   isAreaSubtabPath,
   isPinnedActive,
   pinnedNavItems,
+  roomBookingNavItem,
   visibleAreas,
   visibleSubtabs,
   type RoleFlags,
@@ -353,5 +354,17 @@ describe("pinnedNavItems", () => {
     // Flag off, Drive is the pin and General does NOT carry it.
     expect(areasFor(REGROUP).find((a) => a.key === "projects")!.subtabs.map((t) => t.href))
       .not.toContain("/drive");
+  });
+
+  it("puts Room booking in the top bar, not the pinned rail, behind the room-booking flag", () => {
+    expect(pinnedNavItems({ ...RESOURCES, "room-booking": true }).map((i) => i.href)).toEqual([
+      "/resources",
+    ]);
+    expect(roomBookingNavItem({ "room-booking": true })?.href).toBe("/rooms");
+    expect(roomBookingNavItem({})).toBeNull();
+    // Booking is not a General sub-tab; Core keeps room management.
+    const areas = areasFor({ "room-booking": true });
+    expect(areas.find((a) => a.key === "projects")!.subtabs.map((t) => t.href)).not.toContain("/rooms");
+    expect(areas.find((a) => a.key === "core")!.subtabs.map((t) => t.href)).toContain("/core/rooms");
   });
 });

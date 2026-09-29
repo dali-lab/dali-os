@@ -883,7 +883,7 @@ function FormShareButton({
       align="right"
       ariaLabel="Share"
       panelClassName={cn(
-        "z-[60] w-96 max-w-[calc(100vw-2rem)] p-3 os-form focus:outline-none",
+        "z-[60] w-80 max-w-[calc(100vw-2rem)] p-4 os-form focus:outline-none flex flex-col gap-4",
         popover,
       )}
       trigger={
@@ -893,37 +893,55 @@ function FormShareButton({
         </Button>
       }
     >
-      <div className="flex items-center gap-2">
-        <input
-          type="text"
-          readOnly
-          value={publicUrl}
-          onFocus={(e) => e.currentTarget.select()}
-          className="flex-1 min-w-0 font-mono text-xs"
-          aria-label="Form link"
-        />
-        <Button variant="primary" size="sm" onClick={copy}>
-          {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-          {copied ? "Copied" : "Copy"}
-        </Button>
-      </div>
-      {qrDataUrl && (
-        <div className="mt-3 flex flex-col items-center gap-2">
-          <img
-            src={qrDataUrl}
-            alt="QR code for the form link"
-            className="w-44 h-44 rounded-md border border-border bg-white"
+      <div className="flex flex-col gap-2">
+        <span className="os-field-label">Link</span>
+        <div className="relative">
+          <input
+            type="text"
+            readOnly
+            value={publicUrl}
+            onFocus={(e) => e.currentTarget.select()}
+            className="w-full pr-11 text-sm truncate"
+            aria-label="Form link"
           />
-          <a
-            href={qrDataUrl}
-            download={qrFileName}
-            className={buttonClasses("secondary", "sm")}
-          >
-            <Download className="w-3.5 h-3.5" />
-            Download QR code
-          </a>
+          <Tooltip content={copied ? "Copied" : "Copy link"}>
+            <button
+              type="button"
+              onClick={copy}
+              aria-label="Copy link"
+              className={cn(
+                "os-icon-btn absolute right-1.5 top-1/2 -translate-y-1/2",
+                copied && "text-os-accent hover:text-os-accent",
+              )}
+            >
+              {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+            </button>
+          </Tooltip>
         </div>
-      )}
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <span className="os-field-label">QR code</span>
+        <div className="flex justify-center rounded-os-item bg-os-well p-5">
+          <div className="rounded-xl bg-white p-2 shadow-sm">
+            {qrDataUrl ? (
+              <img src={qrDataUrl} alt="QR code for the form link" className="block w-40 h-40" />
+            ) : (
+              <div className="w-40 h-40" />
+            )}
+          </div>
+        </div>
+      </div>
+
+      <a
+        href={qrDataUrl ?? undefined}
+        download={qrFileName}
+        aria-disabled={!qrDataUrl}
+        className={buttonClasses("secondary", "md", "w-full")}
+      >
+        <Download className="w-4 h-4" />
+        Download QR code
+      </a>
     </Popover>
   );
 }

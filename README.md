@@ -39,6 +39,7 @@ dali-api/
   prisma/               schema.prisma, migrations/, seed.ts
   e2e/                  Playwright specs
 desktop/                Tauri v2 macOS desktop shell
+ios/                    SwiftUI iPhone + iPad app (see ios/README.md)
 .github/workflows/      CI/CD
 docker-compose.yml      local Postgres + API + Prisma Studio
 ```
