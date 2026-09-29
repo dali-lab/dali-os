@@ -80,8 +80,10 @@ beforeEach(() => {
   // Default: is admin.
   mockIsAdmin.mockResolvedValue(true);
 
-  // Default: actor already has role="admin" (no JIT update needed).
-  mockPrisma.user.findUnique = vi.fn().mockResolvedValue({ role: "admin" });
+  // findUnique serves both the target-exists check and the actor role read.
+  // Default: the target exists and the actor already has role="admin" (no JIT
+  // update needed).
+  mockPrisma.user.findUnique = vi.fn().mockResolvedValue({ id: TARGET_ID, role: "admin" });
   mockPrisma.user.update = vi.fn().mockResolvedValue({});
 
   // Default: impersonation succeeds.
@@ -136,6 +138,26 @@ describe("POST /admin/impersonate — input validation", () => {
     const body = await res.json();
     expect(body.error).toMatch(/Cannot impersonate self/i);
     expect(mockImpersonate).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /admin/impersonate — target existence", () => {
+  it("returns 404 when the target user does not exist", async () => {
+    mockPrisma.user.findUnique = vi.fn().mockResolvedValue(null);
+    const res = await action({ request: makeRequest() } as any);
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error).toMatch(/No such user/i);
+    expect(mockImpersonate).not.toHaveBeenCalled();
+  });
+
+  it("impersonates a non-member target — any real user is allowed", async () => {
+    // No membership gate anymore: every shell an impersonated user can land in
+    // mounts the stop-impersonating banner, so non-members are fine.
+    mockPrisma.user.findUnique = vi.fn().mockResolvedValue({ id: TARGET_ID, role: "admin" });
+    const res = await action({ request: makeRequest() } as any);
+    expect(res.status).toBe(302);
+    expect(mockImpersonate).toHaveBeenCalled();
   });
 });
 

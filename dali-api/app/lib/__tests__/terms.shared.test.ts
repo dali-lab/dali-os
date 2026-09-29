@@ -3,6 +3,7 @@ import {
   nextTermCode,
   dartmouthTermCode,
   daliTermCodeFromDartmouth,
+  dateToTermCode,
   interimLabel,
 } from "../terms.shared";
 
@@ -63,6 +64,24 @@ describe("daliTermCodeFromDartmouth", () => {
     expect(daliTermCodeFromDartmouth("202602")).toBe("");
     expect(daliTermCodeFromDartmouth("2026")).toBe("");
     expect(daliTermCodeFromDartmouth("")).toBe("");
+  });
+});
+
+describe("dateToTermCode", () => {
+  it("maps each season by month (UTC)", () => {
+    expect(dateToTermCode(new Date("2024-01-15T00:00:00Z"))).toBe("24W");
+    expect(dateToTermCode(new Date("2024-02-28T00:00:00Z"))).toBe("24W");
+    expect(dateToTermCode(new Date("2024-03-15T00:00:00Z"))).toBe("24S");
+    expect(dateToTermCode(new Date("2024-05-31T00:00:00Z"))).toBe("24S");
+    expect(dateToTermCode(new Date("2024-06-15T00:00:00Z"))).toBe("24X");
+    expect(dateToTermCode(new Date("2024-08-31T00:00:00Z"))).toBe("24X");
+    expect(dateToTermCode(new Date("2024-09-15T00:00:00Z"))).toBe("24F");
+    expect(dateToTermCode(new Date("2024-11-30T00:00:00Z"))).toBe("24F");
+  });
+
+  it("rolls December into the next year's Winter", () => {
+    expect(dateToTermCode(new Date("2023-12-10T00:00:00Z"))).toBe("24W");
+    expect(dateToTermCode(new Date("2099-12-31T00:00:00Z"))).toBe("00W");
   });
 });
 

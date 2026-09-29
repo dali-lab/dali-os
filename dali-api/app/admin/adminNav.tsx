@@ -9,6 +9,7 @@ import {
   SendHorizonal,
   Server,
   Sparkles,
+  UserCog,
 } from "lucide-react";
 import { ClusterHub } from "~/components/ClusterHub";
 import {
@@ -32,15 +33,15 @@ import {
 // transport plumbing (Senders, the outbound outbox) sits under System &
 // Insights here — process vs. system, one home per tool.
 //
-// Every cluster is Core-visible except Finance (Admin-only), so pill rows never
-// need per-item role filtering — only the hub hides the Finance group from
-// non-admins.
+// Every cluster is Core-visible except Finance and Access (both Admin-only), so
+// pill rows never need per-item role filtering — only the hub hides those groups
+// from non-admins.
 
 export type AdminSubtab = NavSubtab;
 export type AdminSection = NavSection;
 export type AdminCluster = NavCluster;
 
-export type AdminClusterKey = "finance" | "system";
+export type AdminClusterKey = "finance" | "access" | "system";
 
 export const ADMIN_CLUSTERS: AdminCluster[] = [
   {
@@ -62,6 +63,25 @@ export const ADMIN_CLUSTERS: AdminCluster[] = [
           { key: "payroll", label: "Hire Setup", to: "/admin/payroll-export" },
           { key: "payroll-reconcile", label: "Reconcile", to: "/admin/payroll" },
         ],
+      },
+    ],
+  },
+  {
+    key: "access",
+    label: "Access",
+    description: "Every account on the site, and support-mode impersonation.",
+    icon: UserCog,
+    // Single section — the hub card links straight to it (no cluster hub page).
+    hubPath: null,
+    adminOnly: true,
+    sections: [
+      {
+        key: "site-users",
+        label: "Site users",
+        to: "/admin/site-users",
+        icon: UserCog,
+        description:
+          "Every account on the site — members, applicants, partners, and Dartmouth users. Log in as anyone for support and testing.",
       },
     ],
   },

@@ -3,6 +3,7 @@
 // /.well-known/oauth-protected-resource/mcp — MCP clients probe both
 // before falling back to AS metadata.
 
+import { MCP_SCOPES } from "~/lib/mcp-scopes";
 import type { Route } from "./+types/well-known.oauth-protected-resource";
 
 export async function action() {
@@ -17,7 +18,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     {
       resource: `${issuer}/mcp`,
       authorization_servers: [issuer],
-      scopes_supported: ["mcp:read", "mcp:write"],
+      scopes_supported: [...MCP_SCOPES],
       bearer_methods_supported: ["header"],
       resource_documentation: `${issuer}/help/mcp`,
     },

@@ -89,6 +89,30 @@ export function dartmouthTermCode(code: string): string {
   return `20${yy}${DARTMOUTH_SEASON_MONTH[season as Season]}`;
 }
 
+// Map a calendar date to the DALI term code (YYS) whose season it falls in.
+// Season by month: Winter (Dec-Feb), Spring (Mar-May), Summer/X (Jun-Aug),
+// Fall (Sep-Nov). December rolls into the next year's Winter (Dec 2023 -> "24W").
+// UTC-based so a server in any zone derives the same term. Used for the wallet
+// pass "member since" term from a member's onboarding date.
+export function dateToTermCode(date: Date): string {
+  const month = date.getUTCMonth(); // 0-11
+  let year = date.getUTCFullYear();
+  let season: Season;
+  if (month === 11) {
+    season = "W";
+    year += 1;
+  } else if (month <= 1) {
+    season = "W";
+  } else if (month <= 4) {
+    season = "S";
+  } else if (month <= 7) {
+    season = "X";
+  } else {
+    season = "F";
+  }
+  return `${String(year % 100).padStart(2, "0")}${season}`;
+}
+
 // "202609" -> "26F". Returns "" if the code isn't a 20YY Dartmouth term month.
 export function daliTermCodeFromDartmouth(oracle: string): string {
   const match = /^20(\d{2})(\d{2})$/.exec(oracle.trim());

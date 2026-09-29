@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
 vi.mock("~/lib/auth", () => ({
@@ -11,11 +11,19 @@ vi.mock("~/lib/roles", async (importOriginal) => ({
   isProjectMember: vi.fn(),
 }));
 vi.mock("~/lib/wallet-token", () => ({ walletTokensConfigured: () => false }));
+vi.mock("~/lib/display-scan.server", () => ({
+  getActiveDisplayScan: vi.fn(),
+  startDisplayScan: vi.fn(),
+  stopDisplayScan: vi.fn(),
+}));
+vi.mock("~/rooms/lib/access.server", () => ({ isRoomBookingEnabled: vi.fn() }));
 vi.mock("qrcode", () => ({ default: { toString: vi.fn().mockResolvedValue("<svg/>") } }));
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { getUserRoles, isProjectMember } from "~/lib/roles";
+import { getActiveDisplayScan, startDisplayScan, stopDisplayScan } from "~/lib/display-scan.server";
+import { isRoomBookingEnabled } from "~/rooms/lib/access.server";
 import { action, loader } from "~/calendar/routes/calendar.meeting.$id";
 
 const mockPrisma = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
@@ -202,5 +210,83 @@ describe("meeting page — turning on self check-in later", () => {
     mockAuth.mockResolvedValue({ ok: true, user: { sub: "member-1", type: "member" } });
     mockRoles.mockResolvedValue({ isCore: false, isLabMember: true, canViewForms: true });
     expect((await enable()).status).toBe(403);
+  });
+});
+
+describe("meeting page — attendance tracking from iPad", () => {
+  const occurrenceStart = "2026-01-05T15:00:00.000Z";
+  function toggle(intent: string) {
+    const body = new FormData();
+    body.set("intent", intent);
+    body.set("occurrenceStart", occurrenceStart);
+    return action({
+      request: new Request(`http://localhost/calendar/meeting/m1`, { method: "POST", body }),
+      params: { id: "m1" },
+      context: {},
+    } as never) as Promise<Response>;
+  }
+  const ipadScan = async () => ((await load()) as unknown as { ipadScan: unknown }).ipadScan;
+
+  beforeEach(() => {
+    vi.useFakeTimers({ now: new Date("2026-01-05T14:00:00.000Z") });
+    mockAuth.mockResolvedValue({ ok: true, user: { sub: "organizer-1", type: "member" } });
+    vi.mocked(isRoomBookingEnabled).mockResolvedValue(true);
+    vi.mocked(getActiveDisplayScan).mockResolvedValue(null);
+    vi.mocked(startDisplayScan).mockResolvedValue({ ok: true, expiresAt: new Date() });
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("offers it to the organizer", async () => {
+    expect(await ipadScan()).toEqual({ on: false, busyWith: null, ended: false });
+  });
+
+  it("shows it on for the occurrence that has the iPads", async () => {
+    vi.mocked(getActiveDisplayScan).mockResolvedValue({
+      meetingId: "m1",
+      occurrenceStart: new Date(occurrenceStart),
+      title: "Weekly sync",
+      start: null,
+      end: null,
+      isEvent: false,
+    });
+    expect(await ipadScan()).toMatchObject({ on: true, busyWith: null });
+  });
+
+  it("names the other event holding the iPads", async () => {
+    vi.mocked(getActiveDisplayScan).mockResolvedValue({
+      meetingId: "m2",
+      occurrenceStart: new Date(occurrenceStart),
+      title: "Lab night",
+      start: null,
+      end: null,
+      isEvent: true,
+    });
+    expect(await ipadScan()).toMatchObject({ on: false, busyWith: "Lab night" });
+  });
+
+  it("withholds it from a project member", async () => {
+    mockAuth.mockResolvedValue({ ok: true, user: { sub: "member-1", type: "member" } });
+    mockIsProjectMember.mockResolvedValue(true);
+    expect(await ipadScan()).toBeNull();
+    expect((await toggle("start-ipad-scan")).status).toBe(403);
+    expect(startDisplayScan).not.toHaveBeenCalled();
+  });
+
+  it("withholds it when room booking is off", async () => {
+    vi.mocked(isRoomBookingEnabled).mockResolvedValue(false);
+    expect(await ipadScan()).toBeNull();
+    expect((await toggle("start-ipad-scan")).status).toBe(403);
+  });
+
+  it("starts and stops scanning for this occurrence", async () => {
+    expect((await toggle("start-ipad-scan")).status).toBe(200);
+    expect(startDisplayScan).toHaveBeenCalledWith("m1", new Date(occurrenceStart), "organizer-1");
+    expect((await toggle("stop-ipad-scan")).status).toBe(200);
+    expect(stopDisplayScan).toHaveBeenCalledWith("m1");
+  });
+
+  it("passes through a refusal while another event has the iPads", async () => {
+    vi.mocked(startDisplayScan).mockResolvedValue({ ok: false, error: "busy", status: 409 });
+    expect((await toggle("start-ipad-scan")).status).toBe(409);
   });
 });

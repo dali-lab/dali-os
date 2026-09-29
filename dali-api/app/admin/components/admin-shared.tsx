@@ -315,28 +315,35 @@ export function StaffToggle({ member, disabled }: { member: Member; disabled?: b
   );
 }
 
-// "Log in as" — starts a BetterAuth impersonation session for this member. Only
-// rendered when the `betterauth` flag is on for the viewer and they're an Admin
-// (the members loader computes that gate); disabled for the viewer's own row.
+// "Log in as" — starts a BetterAuth impersonation session for this user. Lives
+// on Admin → Site users, where the loader confirms the viewer is an Admin and
+// the `betterauth` flag is on for everyone; disabled for the viewer's own row.
+// Takes any user (member or not) since site users spans every account type.
 //
 // A native form (not a fetcher): POST /admin/impersonate swaps the session
 // cookie and 302s to "/", so the whole shell — including open workspace iframes
 // — must reload as the target user. A client-side revalidation would leave them
 // on the stale session. We confirm first, then submit the form imperatively.
-export function ImpersonateButton({ member, disabled }: { member: Member; disabled?: boolean }) {
+export function ImpersonateButton({
+  user,
+  disabled,
+}: {
+  user: { id: string; firstName: string; lastName: string; email: string | null };
+  disabled?: boolean;
+}) {
   const dialog = useDialog();
   const formRef = useRef<HTMLFormElement | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const name = fullName(member) || member.daliEmail || "this member";
+  const name = fullName(user) || user.email || "this user";
 
   async function handleClick() {
     if (disabled || submitting) return;
     const ok = await dialog.confirm({
       title: `Log in as ${name}?`,
       description:
-        "You'll browse DALI OS as this member until you stop. Every action is recorded against your own admin account, and a banner stays up the whole time.",
+        "You'll browse DALI OS as this user until you stop. Every action is recorded against your own admin account, and a banner stays up the whole time.",
       tone: "default",
-      confirmLabel: "Log in as member",
+      confirmLabel: "Log in as user",
     });
     if (!ok) return;
     setSubmitting(true);
@@ -350,7 +357,7 @@ export function ImpersonateButton({ member, disabled }: { member: Member; disabl
     >
       <span>
         <form ref={formRef} method="post" action="/admin/impersonate" className="inline">
-          <input type="hidden" name="userId" value={member.id} />
+          <input type="hidden" name="userId" value={user.id} />
           <button
             type="button"
             disabled={disabled || submitting}

@@ -8,6 +8,7 @@ import {
 import { interpretIntentForm } from "../app/projects/lib/intent-form-interpreter.js";
 import { replaceIntentSet } from "../app/projects/lib/intent-validation.js";
 import { syncDefaultGroups } from "../app/lib/groups.js";
+import { parseChartString } from "../app/lib/chart-string.js";
 import { seedEducationDemo } from "./seeds/education-demo.js";
 import {
   ensureEducationTemplates,
@@ -4605,10 +4606,32 @@ async function main() {
       // netId), so the reconcile join needs this deterministic netId'd student.
       const payrollChartString = "18.722.161028.128512.4000";
       if (dali) {
-        await prisma.project.update({
-          where: { id: dali.id },
-          data: { chartString: payrollChartString },
+        // The project's own row for the active term — what payroll resolves
+        // and what the reconcile matches the uploaded timesheet's string to.
+        // Only if there's no current row yet: one per (project, term) is a
+        // unique index, and a database migrated in place already has one from
+        // the legacy import.
+        const existing = await prisma.projectChartString.findFirst({
+          where: { projectId: dali.id, termId: term26S.id, isCurrent: true },
+          select: { id: true },
         });
+        if (!existing) {
+          const parsed = parseChartString(payrollChartString);
+          await prisma.projectChartString.create({
+            data: {
+              projectId: dali.id,
+              termId: term26S.id,
+              raw: payrollChartString,
+              normalized: parsed.normalized,
+              type: "GL",
+              projectCode: parsed.projectCode!,
+              subactivity: parsed.subactivity,
+              org: parsed.org,
+              isCurrent: true,
+              note: "Seed payroll fixture",
+            },
+          });
+        }
         const payrollStudent = await prisma.user.upsert({
           where: { netId: "f00pay01" },
           update: { firstName: "Ada", lastName: "Lovelace", handle: "adalovelace" },

@@ -40,7 +40,7 @@ import type { SearchResult, SearchResultType } from "~/lib/search";
 import { ADMIN_CLUSTERS } from "~/admin/adminNav";
 import { CORE_CLUSTERS } from "~/core/coreNav";
 import type { NavCluster } from "~/lib/cluster-nav";
-import { pinnedNavItems, visibleAreas, visibleSubtabs, type RoleFlags } from "~/lib/nav-areas";
+import { pinnedNavItems, roomBookingNavItem, visibleAreas, visibleSubtabs, type RoleFlags } from "~/lib/nav-areas";
 import type { PortalNavItem } from "~/lib/portal-nav";
 import type { FeatureFlagMap } from "~/lib/feature-flags";
 
@@ -239,7 +239,9 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles = NO_R
       ...(flags.email ? [navItem("Email", "/email", Mail)] : []),
       // The pinned tail (Resources) sits outside every area, so it reaches the
       // palette from the same registry the sidebar rail reads.
-      ...pinnedNavItems(flags).map((i) => navItem(i.label, i.href, i.icon)),
+      ...[...pinnedNavItems(flags), roomBookingNavItem(flags)]
+        .filter((i) => i !== null)
+        .map((i) => navItem(i.label, i.href, i.icon)),
       ...visibleAreas(roles, flags).flatMap((area) => {
         const hub = navItem(area.label, area.hubPath, area.icon);
         if (area.key === "admin") return [hub];

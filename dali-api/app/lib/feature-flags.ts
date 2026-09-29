@@ -95,13 +95,19 @@ export const FEATURE_FLAGS = [
     key: "betterauth",
     label: "BetterAuth login",
     description:
-      "Route sign-in through the new BetterAuth substrate (email/password, one-time verification links, optional Google) across the member / Dartmouth / partner doors, and let requireAuth accept a BetterAuth session alongside a legacy one. This is a login-mechanism switch, so it's read as a GLOBAL toggle (enabled + everyone) — role/user targeting does not apply. Ships off; flipping it on is the Phase-1 cutover and forces a global re-login.",
+      "Route sign-in through the BetterAuth substrate across the member, Dartmouth, and partner doors. Sign-in is passwordless: a 6-digit email code plus passkeys (no password, no Google). requireAuth accepts a BetterAuth session alongside a legacy one, so turning this on does NOT force a re-login; active legacy sessions upgrade to BetterAuth silently as users browse. Read as a GLOBAL toggle (enabled + everyone), so role and user targeting do not apply. Ships off; flipping it on is the cutover.",
   },
   {
     key: "resources",
     label: "Resources page",
     description:
       "A lab-wide Resources document at /resources: one shared collaborative page with no document chrome, read by every lab member and edited by Core/Admin behind an Edit button. Takes the pinned sidebar slot under Calendar, which moves Drive down into General. Ships off; without it the slot stays Drive and /resources is not reachable.",
+  },
+  {
+    key: "room-booking",
+    label: "Room booking",
+    description:
+      "Book DALI rooms from the web (Room booking, pinned under Resources), put a room on a meeting or event, and manage rooms and their door displays (Core ▸ Rooms). The iPad door displays authenticate with their own token and don't read this flag. Ships off.",
   },
   {
     key: "ai-meeting-notes",

@@ -15,6 +15,7 @@
 
 import { prisma } from "~/lib/db";
 import { bindNetIdByEmail } from "~/lib/dartmouth-lookup";
+import { syncAndRecomputeMembershipStatus } from "~/lib/membership-status";
 
 export type CaptureResult = {
   netIdCaptured: boolean;
@@ -56,6 +57,11 @@ export async function captureDartmouthIdentity(args: {
         where: { id: userId },
         data: { firstName, lastName, dartmouthEmail, netId },
       });
+      // Recompute membership status now that a netId is bound — mirrors the CAS
+      // callback, which fires this at the same point. Without it, status stays
+      // uncomputed until the next daily membership-status-sync run. Fire-and-
+      // forget: a sync failure must not block account setup.
+      void syncAndRecomputeMembershipStatus(userId);
       return { netIdCaptured: true };
     } catch (err) {
       const isUniqueViolation =

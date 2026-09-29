@@ -4,7 +4,7 @@
 //
 // BIG WARNING: This reproduces BetterAuth's signed-cookie write in a place that
 // has no public API for it. The mechanism is correct as of better-auth@1.7.x +
-// better-call@0.x, but is fragile:
+// better-call@1.x, but is fragile:
 //
 //   - Cookie name: derived from auth.$context → authCookies.sessionToken.name
 //     (shaped by cookiePrefix + "session_token", with optional Secure- prefix).
