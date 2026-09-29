@@ -195,6 +195,13 @@ describe("list_project_chart_strings", () => {
     ]);
   });
 
+  it("rejects a term that doesn't exist rather than answering with the built-in GL", async () => {
+    db.term.findUnique.mockResolvedValueOnce(null);
+    await expect(
+      runListProjectChartStrings("u1", { projectId: "p1", termCode: "26Z" }),
+    ).rejects.toThrow("Term 26Z not found.");
+  });
+
   it("excludes superseded rows unless asked", async () => {
     db.projectChartString.findMany.mockResolvedValue([]);
     await runListProjectChartStrings("u1", { projectId: "p1" });

@@ -4605,27 +4605,33 @@ async function main() {
       // row. The bid-derived assignments above are members-by-daliEmail (no
       // netId), so the reconcile join needs this deterministic netId'd student.
       const payrollChartString = "18.722.161028.128512.4000";
-      if (dali && term26S) {
+      if (dali) {
         // The project's own row for the active term — what payroll resolves
         // and what the reconcile matches the uploaded timesheet's string to.
-        const parsed = parseChartString(payrollChartString);
-        await prisma.projectChartString.upsert({
-          where: { id: "seed-payroll-dali-os" },
-          update: {},
-          create: {
-            id: "seed-payroll-dali-os",
-            projectId: dali.id,
-            termId: term26S.id,
-            raw: payrollChartString,
-            normalized: parsed.normalized,
-            type: "GL",
-            projectCode: parsed.projectCode!,
-            subactivity: parsed.subactivity,
-            org: parsed.org,
-            isCurrent: true,
-            note: "Seed payroll fixture",
-          },
+        // Only if there's no current row yet: one per (project, term) is a
+        // unique index, and a database migrated in place already has one from
+        // the legacy import.
+        const existing = await prisma.projectChartString.findFirst({
+          where: { projectId: dali.id, termId: term26S.id, isCurrent: true },
+          select: { id: true },
         });
+        if (!existing) {
+          const parsed = parseChartString(payrollChartString);
+          await prisma.projectChartString.create({
+            data: {
+              projectId: dali.id,
+              termId: term26S.id,
+              raw: payrollChartString,
+              normalized: parsed.normalized,
+              type: "GL",
+              projectCode: parsed.projectCode!,
+              subactivity: parsed.subactivity,
+              org: parsed.org,
+              isCurrent: true,
+              note: "Seed payroll fixture",
+            },
+          });
+        }
         const payrollStudent = await prisma.user.upsert({
           where: { netId: "f00pay01" },
           update: { firstName: "Ada", lastName: "Lovelace", handle: "adalovelace" },

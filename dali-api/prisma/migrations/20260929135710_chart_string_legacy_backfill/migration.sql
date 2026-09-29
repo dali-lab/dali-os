@@ -8,8 +8,11 @@ ALTER TABLE "ProjectChartString" ALTER COLUMN "createdById" DROP NOT NULL;
 -- table is empty in production. Repointing those readers without this step
 -- would move every program from .3000 to the lab's .4000 default and every
 -- sponsored project off its PTAEO. So each stored value lands here as payroll
--- charges it today: the project's current row for the current term — the one
--- containing now(), else the next one, matching currentTerm().
+-- charges it today. The legacy column had no term — one value applied to
+-- every term — so it becomes the project's current row for every term it has
+-- been staffed in, plus the current term (the one containing now(), else the
+-- next one, matching currentTerm()). Exports for those terms come out as they
+-- do now; a term nobody has entered yet inherits the lab default instead.
 --
 -- An import, not a repair. Stale 722-org strings, a truncated PTAEO and a
 -- tel:-autolinked value come across as they are and say so in `note`.
@@ -18,11 +21,10 @@ ALTER TABLE "ProjectChartString" ALTER COLUMN "createdById" DROP NOT NULL;
 -- URI scheme, upper-case. The declared type only decides when the shape can't
 -- (legacy spells PTAEO "PATEO").
 --
--- A project that already has a current row for that term is skipped: the
--- write path mirrored that row into Project.chartString, so it's already here.
--- On an empty database (CI, a fresh local reset) there is no term and nothing
--- is inserted.
-WITH term AS (
+-- A (project, term) that already has a current row is skipped — someone
+-- entered it through the panel or the MCP tool, and that entry wins.
+-- On an empty database (CI, a fresh local reset) there is nothing to import.
+WITH current_term AS (
   SELECT COALESCE(
     (SELECT "id" FROM "Term"
       WHERE "startDate" <= now() AND "endDate" >= now()
@@ -51,6 +53,15 @@ typed AS (
       ELSE 'PTAEO'
     END AS "type"
   FROM legacy l
+),
+targets AS (
+  SELECT DISTINCT a."projectId", a."termId"
+  FROM "ProjectAssignment" a
+  WHERE a."projectId" IN (SELECT "projectId" FROM typed)
+  UNION
+  SELECT t."projectId", ct."id"
+  FROM typed t CROSS JOIN current_term ct
+  WHERE ct."id" IS NOT NULL
 )
 INSERT INTO "ProjectChartString" (
   "id", "projectId", "termId", "raw", "normalized", "type",
@@ -58,9 +69,9 @@ INSERT INTO "ProjectChartString" (
   "isCurrent", "note", "createdAt", "createdById"
 )
 SELECT
-  'legacy-' || md5(t."projectId" || ':' || term."id"),
+  'legacy-' || md5(t."projectId" || ':' || g."termId"),
   t."projectId",
-  term."id",
+  g."termId",
   t."raw",
   t."normalized",
   t."type"::"ChartStringType",
@@ -75,11 +86,10 @@ SELECT
   now(),
   NULL
 FROM typed t
-CROSS JOIN term
-WHERE term."id" IS NOT NULL
-  AND NOT EXISTS (
-    SELECT 1 FROM "ProjectChartString" c
-    WHERE c."projectId" = t."projectId"
-      AND c."termId" = term."id"
-      AND c."isCurrent"
-  );
+JOIN targets g ON g."projectId" = t."projectId"
+WHERE NOT EXISTS (
+  SELECT 1 FROM "ProjectChartString" c
+  WHERE c."projectId" = t."projectId"
+    AND c."termId" = g."termId"
+    AND c."isCurrent"
+);

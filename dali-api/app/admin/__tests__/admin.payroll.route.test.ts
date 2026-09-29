@@ -12,11 +12,15 @@ vi.mock("~/lib/terms", () => ({ resolveTermFilter: vi.fn() }));
 vi.mock("~/admin/lib/payroll-reconcile.server", () => ({
   getReconciliation: vi.fn(),
 }));
+vi.mock("~/lib/chart-string.server", () => ({
+  resolveChartStringsForTerm: vi.fn(),
+}));
 
 import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import { resolveTermFilter } from "~/lib/terms";
 import { getReconciliation } from "~/admin/lib/payroll-reconcile.server";
+import { resolveChartStringsForTerm } from "~/lib/chart-string.server";
 import { prisma } from "~/lib/db";
 import { loader as pageLoader } from "~/admin/routes/admin.payroll";
 import { loader as csvLoader } from "~/admin/routes/admin.payroll.csv";
@@ -84,6 +88,8 @@ beforeEach(() => {
   } as any);
   vi.mocked(getReconciliation).mockResolvedValue(EMPTY_RECONCILIATION as any);
   (prisma as any).payPeriod = { findMany: vi.fn().mockResolvedValue([]) };
+  (prisma as any).project.findMany = vi.fn().mockResolvedValue([]);
+  vi.mocked(resolveChartStringsForTerm).mockResolvedValue(new Map());
 });
 
 describe("payroll page loader — auth gate", () => {
@@ -122,6 +128,30 @@ describe("payroll page loader — auth gate", () => {
     } as any);
     expect(getReconciliation).toHaveBeenCalledWith("term-25f");
     expect((data as any).reconciliation).toEqual(EMPTY_RECONCILIATION);
+  });
+
+  it("flags only staffed projects that had their own chart string before and not this term", async () => {
+    asAdmin();
+    vi.mocked(prisma.project.findMany).mockResolvedValueOnce([
+      { id: "p-lab", name: "Lab GL project" },
+      { id: "p-own", name: "Has its own" },
+      { id: "p-lapsed", name: "zebraMD" },
+    ] as never);
+    vi.mocked(resolveChartStringsForTerm).mockResolvedValueOnce(
+      new Map([
+        // Always on the lab GL — inheriting is correct, no banner.
+        ["p-lab", { normalized: "20.330.161028.128512.4000", type: "GL", source: "builtIn", lastOwnTermCode: null }],
+        ["p-own", { normalized: "18.722.161028.128512.3000", type: "GL", source: "project", lastOwnTermCode: null }],
+        // Sponsored last term, nobody re-entered it.
+        ["p-lapsed", { normalized: "20.330.161028.128512.4000", type: "GL", source: "builtIn", lastOwnTermCode: "26S" }],
+      ]),
+    );
+    const data = await pageLoader({
+      request: req("http://localhost/admin/payroll?term=term-25f"),
+      params: {},
+      context: {},
+    } as any);
+    expect((data as any).missingChartStrings).toEqual(["zebraMD"]);
   });
 });
 

@@ -170,6 +170,16 @@ export async function runListProjectChartStrings(
   });
   if (!project) throw new McpNotFoundError(`Project ${input.projectId} not found.`);
 
+  // A named term with no rows answers with the built-in lab GL, so a typo
+  // ("26Z") has to fail here rather than read as a real answer.
+  if (input.termCode) {
+    const term = await prisma.term.findUnique({
+      where: { code: input.termCode },
+      select: { id: true },
+    });
+    if (!term) throw new McpNotFoundError(`Term ${input.termCode} not found.`);
+  }
+
   const termFilter = input.termCode ? { term: { code: input.termCode } } : {};
   const select = {
     id: true,
