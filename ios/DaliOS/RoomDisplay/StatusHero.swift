@@ -19,51 +19,56 @@ struct StatusHero: View {
             HStack(spacing: 10) {
                 PulsingDot(color: tone)
                 Text(isFree ? "Available" : "In use")
-                    .font(OS.font(18, .bold))
+                    .font(OS.font(16, .bold))
                     .tracking(1.6)
                     .textCase(.uppercase)
                     .foregroundStyle(palette.ink)
             }
 
-            HStack(alignment: .firstTextBaseline, spacing: 14) {
-                Text(remainingText)
-                    .font(OS.font(96, .bold).monospacedDigit())
-                    .foregroundStyle(OS.fg)
-                    .minimumScaleFactor(0.5)
-                    .lineLimit(1)
-                if remaining != nil {
-                    Text(isFree ? "free" : "left")
-                        .font(OS.font(32, .medium))
-                        .foregroundStyle(palette.ink)
+            // Countdown and its context side by side keeps the card short, so
+            // the day's calendar gets the height.
+            HStack(alignment: .center, spacing: 28) {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text(remainingText)
+                        .font(OS.font(72, .bold).monospacedDigit())
+                        .foregroundStyle(OS.fg)
+                        .minimumScaleFactor(0.5)
+                        .lineLimit(1)
+                    if remaining != nil {
+                        Text(isFree ? "free" : "left")
+                            .font(OS.font(26, .medium))
+                            .foregroundStyle(palette.ink)
+                    }
                 }
+                .fixedSize()
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(headline)
+                        .font(OS.font(24, .semibold))
+                        .foregroundStyle(OS.fg)
+                        .lineLimit(1)
+                    if let detail {
+                        Text(detail)
+                            .font(OS.font(20))
+                            .foregroundStyle(OS.grey)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 0)
             }
-            .padding(.top, 8)
-
-            Text(headline)
-                .font(OS.font(26, .semibold))
-                .foregroundStyle(OS.fg)
-                .lineLimit(2)
-                .padding(.top, 4)
-            if let detail {
-                Text(detail)
-                    .font(OS.font(20))
-                    .foregroundStyle(OS.grey)
-                    .lineLimit(1)
-                    .padding(.top, 4)
-            }
+            .padding(.top, 4)
 
             if let current = snapshot.current {
                 MeetingProgressBar(item: current, now: snapshot.now, tone: tone)
-                    .padding(.top, 28)
+                    .padding(.top, 16)
             }
 
             if isFree, !bookable.isEmpty {
-                bookNow.padding(.top, 32)
+                bookNow.padding(.top, 20)
             } else if !isFree, let next = snapshot.next {
-                upNext(next).padding(.top, 28)
+                upNext(next).padding(.top, 20)
             }
         }
-        .padding(36)
+        .padding(28)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(palette.fill, in: .rect(cornerRadius: OS.cardRadius))
         .animation(.easeInOut(duration: 0.3), value: isFree)
@@ -72,28 +77,28 @@ struct StatusHero: View {
     // MARK: Actions
 
     private var bookNow: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        HStack(spacing: 12) {
             Text("Book now")
                 .font(OS.eyebrow)
                 .tracking(1.2)
                 .textCase(.uppercase)
                 .foregroundStyle(palette.ink)
-            HStack(spacing: 12) {
+                .fixedSize()
+                .padding(.trailing, 8)
                 ForEach(bookable, id: \.self) { minutes in
                     Button {
                         onBook(minutes)
                     } label: {
                         Text(Duration.seconds(minutes * 60).formatted(.units(allowed: [.hours, .minutes], width: .abbreviated)))
-                            .frame(maxWidth: .infinity, minHeight: 60)
+                            .frame(maxWidth: .infinity, minHeight: 52)
                     }
                     .buttonStyle(WashButtonStyle(ink: palette.ink))
                 }
-            }
         }
     }
 
     private func upNext(_ next: ScheduleItem) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
             Rectangle().fill(palette.ink.opacity(0.15)).frame(height: 1)
             HStack(alignment: .firstTextBaseline, spacing: 16) {
                 Text("Next")

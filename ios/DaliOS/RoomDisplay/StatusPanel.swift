@@ -12,7 +12,7 @@ struct StatusPanel: View {
 
     var body: some View {
         let snapshot = RoomSnapshot(items: items, now: now)
-        VStack(alignment: .leading, spacing: 24) {
+        VStack(alignment: .leading, spacing: 20) {
             header
             StatusHero(snapshot: snapshot, bookable: snapshot.bookableMinutes, onBook: onBook)
         }
@@ -24,19 +24,19 @@ struct StatusPanel: View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(room?.name ?? "Room")
-                    .font(OS.font(40, .bold))
+                    .font(OS.font(32, .bold))
                     .foregroundStyle(OS.fg)
                 let detail = [room?.description, room?.capacity.map { "Seats \($0)" }].compactMap { $0 }
                 if !detail.isEmpty {
                     Text(detail.joined(separator: " · "))
-                        .font(OS.font(18))
+                        .font(OS.font(16))
                         .foregroundStyle(OS.grey)
                 }
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 8) {
                 Text(now, format: .dateTime.hour().minute())
-                    .font(OS.font(40, .regular).monospacedDigit())
+                    .font(OS.font(32, .regular).monospacedDigit())
                     .foregroundStyle(OS.grey)
                 if isOffline {
                     OSStatusPill(text: "Offline", dot: OS.amber)
