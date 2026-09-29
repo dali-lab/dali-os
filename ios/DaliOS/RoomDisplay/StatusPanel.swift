@@ -1,20 +1,20 @@
 import SwiftUI
 
 /// The glanceable half of the door display: free/busy big enough to read from
-/// down the hall, the current and next booking, and walk-up booking. Sits on
+/// down the hall, and the current and next booking. Sits on
 /// the page ground; the status card carries everything about "right now".
+/// Booking is behind the display's + button.
 struct StatusPanel: View {
     let room: DisplayRoom?
     let items: [ScheduleItem]
     let now: Date
     let isOffline: Bool
-    let onBook: (Int) -> Void
 
     var body: some View {
         let snapshot = RoomSnapshot(items: items, now: now)
         VStack(alignment: .leading, spacing: 20) {
             header
-            StatusHero(snapshot: snapshot, bookable: snapshot.bookableMinutes, onBook: onBook)
+            StatusHero(snapshot: snapshot)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .animation(.easeInOut(duration: 0.15), value: snapshot.current?.occurrenceID)

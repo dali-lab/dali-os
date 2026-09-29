@@ -32,7 +32,8 @@ export type RoomScheduleItem = {
   title: string;
   start: Date;
   end: Date;
-  organizer: { id: string; firstName: string; lastName: string };
+  // photoUrl is the stored value (maybe an S3 key); resolve before sending.
+  organizer: { id: string; firstName: string; lastName: string; photoUrl: string | null };
   // A SelfCheckIn meeting: the door display offers pass scanning while it runs.
   isEvent: boolean;
 };
@@ -50,7 +51,7 @@ export async function getRoomSchedule(
   opts: { excludeBookingId?: string; excludeMeetingId?: string } = {},
   db: Tx | typeof prisma = prisma,
 ): Promise<RoomScheduleItem[]> {
-  const organizerSelect = { select: { id: true, firstName: true, lastName: true } } as const;
+  const organizerSelect = { select: { id: true, firstName: true, lastName: true, photoUrl: true } } as const;
   const [bookings, meetings] = await Promise.all([
     db.roomBooking.findMany({
       where: {
@@ -261,7 +262,7 @@ export function serializeScheduleItem(i: RoomScheduleItem) {
     title: i.title,
     start: i.start.toISOString(),
     end: i.end.toISOString(),
-    organizer: i.organizer,
+    organizer: { id: i.organizer.id, firstName: i.organizer.firstName, lastName: i.organizer.lastName },
     isEvent: i.isEvent,
   };
 }

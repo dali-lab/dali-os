@@ -2,17 +2,16 @@ import SwiftUI
 
 /// The at-a-glance status, read from down the hall: one flat wash of the
 /// status color, a big countdown of the free (or remaining) time, one line of
-/// context, and what you can do about it — book now while free, see what's
-/// next while in use.
+/// context, and — while in use — who has it and what's next. Booking lives
+/// behind the display's + button.
 struct StatusHero: View {
     let snapshot: RoomSnapshot
-    let bookable: [Int]
-    let onBook: (Int) -> Void
 
     private var isFree: Bool { snapshot.current == nil }
     private var tone: Color { isFree ? OS.green : OS.danger }
     /// Flat role fills, matched in weight so free and in-use read as a pair.
     private var palette: OS.Category { isFree ? OS.roleGreen : OS.roleRed }
+    private var wash: Color { isFree ? OS.roleGreen.fill : OS.busyWash }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -23,6 +22,15 @@ struct StatusHero: View {
                     .tracking(1.6)
                     .textCase(.uppercase)
                     .foregroundStyle(palette.ink)
+                if let current = snapshot.current {
+                    HStack(spacing: 10) {
+                        Avatar(organizer: current.organizer, size: 36, ink: palette.ink)
+                        Text(current.organizerName)
+                            .font(OS.font(18, .semibold))
+                            .foregroundStyle(OS.fg)
+                    }
+                    .padding(.leading, 12)
+                }
             }
 
             // Countdown and its context side by side keeps the card short, so
@@ -62,40 +70,17 @@ struct StatusHero: View {
                     .padding(.top, 16)
             }
 
-            if isFree, !bookable.isEmpty {
-                bookNow.padding(.top, 20)
-            } else if !isFree, let next = snapshot.next {
+            if !isFree, let next = snapshot.next {
                 upNext(next).padding(.top, 20)
             }
         }
         .padding(28)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(palette.fill, in: .rect(cornerRadius: OS.cardRadius))
+        .background(wash, in: .rect(cornerRadius: OS.cardRadius))
         .animation(.easeInOut(duration: 0.3), value: isFree)
     }
 
-    // MARK: Actions
-
-    private var bookNow: some View {
-        HStack(spacing: 12) {
-            Text("Book now")
-                .font(OS.eyebrow)
-                .tracking(1.2)
-                .textCase(.uppercase)
-                .foregroundStyle(palette.ink)
-                .fixedSize()
-                .padding(.trailing, 8)
-                ForEach(bookable, id: \.self) { minutes in
-                    Button {
-                        onBook(minutes)
-                    } label: {
-                        Text(Duration.seconds(minutes * 60).formatted(.units(allowed: [.hours, .minutes], width: .abbreviated)))
-                            .frame(maxWidth: .infinity, minHeight: 52)
-                    }
-                    .buttonStyle(WashButtonStyle(ink: palette.ink))
-                }
-        }
-    }
+    // MARK: Next
 
     private func upNext(_ next: ScheduleItem) -> some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -141,24 +126,9 @@ struct StatusHero: View {
     }
 
     private var detail: String? {
-        if let current = snapshot.current { return current.organizerName }
+        if snapshot.current != nil { return nil }
         if let next = snapshot.next { return "Then \(next.title)" }
         return nil
-    }
-}
-
-/// White pills on the status wash: quieter than the accent button, so the
-/// countdown stays the loudest thing on the card.
-private struct WashButtonStyle: ButtonStyle {
-    let ink: Color
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(OS.font(20, .semibold))
-            .foregroundStyle(ink)
-            .background(OS.card.opacity(configuration.isPressed ? 0.7 : 1), in: .capsule)
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 
@@ -178,7 +148,7 @@ private struct MeetingProgressBar: View {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(OS.card)
-                    Capsule().fill(tone).frame(width: geo.size.width * elapsed)
+                    Capsule().fill(tone.opacity(0.7)).frame(width: geo.size.width * elapsed)
                 }
             }
             .frame(height: 10)
@@ -210,5 +180,34 @@ private struct PulsingDot: View {
         .onAppear {
             withAnimation(.easeOut(duration: 1.8).repeatForever(autoreverses: false)) { pulsing = true }
         }
+    }
+}
+
+/// The booker's photo, or their initials when there isn't one (or it fails
+/// to load).
+private struct Avatar: View {
+    let organizer: ScheduleItem.Organizer
+    let size: CGFloat
+    let ink: Color
+
+    var body: some View {
+        AsyncImage(url: organizer.photoUrl.flatMap(URL.init(string:))) { phase in
+            if let image = phase.image {
+                image.resizable().scaledToFill()
+            } else {
+                Text(initials)
+                    .font(OS.font(size * 0.4, .bold))
+                    .foregroundStyle(ink)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(OS.card)
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(.circle)
+        .overlay(Circle().strokeBorder(OS.card, lineWidth: 2))
+    }
+
+    private var initials: String {
+        "\(organizer.firstName.prefix(1))\(organizer.lastName.prefix(1))".uppercased()
     }
 }

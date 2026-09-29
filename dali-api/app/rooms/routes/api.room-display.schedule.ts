@@ -1,5 +1,6 @@
 import type { Route } from "./+types/api.room-display.schedule";
 import { displayUnauthorized, requireRoomDisplay } from "~/lib/room-display.server";
+import { resolvePhotoUrl } from "~/lib/photo";
 import { currentEvent, getRoomSchedule, parseWindow, serializeScheduleItem } from "~/lib/rooms.server";
 
 // GET /api/room-display/schedule?start=<iso>&end=<iso> — the paired room's
@@ -16,7 +17,14 @@ export async function loader({ request }: Route.LoaderArgs) {
   const event = currentEvent(items);
   return Response.json({
     room: display.room,
-    items: items.map(serializeScheduleItem),
+    // The door shows the current booker's photo, so the display (unlike the
+    // member-facing schedule) gets a resolved, short-lived photo URL.
+    items: await Promise.all(
+      items.map(async (i) => {
+        const item = serializeScheduleItem(i);
+        return { ...item, organizer: { ...item.organizer, photoUrl: await resolvePhotoUrl(i.organizer.photoUrl) } };
+      }),
+    ),
     currentEvent: event ? serializeScheduleItem(event) : null,
     serverTime: new Date().toISOString(),
   });

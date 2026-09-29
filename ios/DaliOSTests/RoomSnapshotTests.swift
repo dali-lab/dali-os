@@ -17,29 +17,50 @@ struct RoomSnapshotTests {
         let snapshot = RoomSnapshot(items: [item(-10, 20), item(60, 90)], now: now)
         #expect(snapshot.current?.id == "-10.0")
         #expect(snapshot.next?.id == "60.0")
-        #expect(snapshot.bookableMinutes.isEmpty)
     }
 
-    @Test func bookNowOnlyOffersDurationsThatFitBeforeTheNextBooking() {
-        let snapshot = RoomSnapshot(items: [item(40, 90)], now: now)
-        #expect(snapshot.freeMinutes == 40)
-        #expect(snapshot.bookableMinutes == [15, 30])
+    @Test func freeWhenNothingIsUnderway() {
+        let snapshot = RoomSnapshot(items: [item(-60, -30), item(40, 90)], now: now)
+        #expect(snapshot.current == nil)
+        #expect(snapshot.next?.id == "40.0")
+    }
+}
+
+struct BookingRulesTests {
+    private let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+    private func at(_ minutes: Double) -> Date { now.addingTimeInterval(minutes * 60) }
+
+    private var rules: BookingRules {
+        BookingRules(
+            items: [ScheduleItem(
+                kind: .booking, id: "b", title: "Standup", start: at(60), end: at(90),
+                organizer: .init(id: "u", firstName: "A", lastName: "B"), isEvent: false
+            )],
+            now: now
+        )
     }
 
-    @Test func aShortGapOffersExactlyTheGap() {
-        #expect(RoomSnapshot(items: [item(10, 30)], now: now).bookableMinutes == [10])
-        #expect(RoomSnapshot(items: [item(3, 30)], now: now).bookableMinutes.isEmpty)
+    @Test func aFreeRangeIsFine() {
+        #expect(rules.problem(start: at(0), end: at(30)) == nil)
+        #expect(rules.problem(start: at(90), end: at(120)) == nil)
     }
 
-    @Test func presetsAreFifteenThirtyOneHourTwoHours() {
-        #expect(RoomSnapshot.bookNowOptions == [15, 30, 60, 120])
-        #expect(RoomSnapshot(items: [item(100, 160)], now: now).bookableMinutes == [15, 30, 60])
+    @Test func overlapNamesTheClash() {
+        #expect(rules.problem(start: at(30), end: at(75))?.hasPrefix("Overlaps Standup") == true)
     }
 
-    @Test func freeForTheRestOfTheDayOffersEveryPreset() {
-        let snapshot = RoomSnapshot(items: [item(-60, -30)], now: now)
-        #expect(snapshot.freeMinutes == nil)
-        #expect(snapshot.bookableMinutes == RoomSnapshot.bookNowOptions)
+    @Test func rejectsBackwardsTooShortTooLongAndPast() {
+        #expect(rules.problem(start: at(30), end: at(10)) != nil)
+        #expect(rules.problem(start: at(0), end: at(3)) != nil)
+        #expect(rules.problem(start: at(100), end: at(100 + 8 * 60 + 15)) != nil)
+        #expect(rules.problem(start: at(-30), end: at(20)) != nil)
+        #expect(rules.problem(start: at(-60), end: at(-10)) != nil)
+    }
+
+    @Test func startingNowLetsTheServerPickTheStart() {
+        #expect(rules.request(start: at(0), end: at(90)) == .now(minutes: 90))
+        #expect(rules.request(start: at(30), end: at(60)) == .slot(DateInterval(start: at(30), end: at(60))))
     }
 }
 

@@ -17,6 +17,8 @@ struct ScheduleItem: Codable, Hashable {
         let id: String
         let firstName: String
         let lastName: String
+        /// Resolved, short-lived URL; only the door display's schedule sends it.
+        var photoUrl: String? = nil
     }
 
     let kind: Kind
@@ -68,10 +70,6 @@ struct ScanResponse: Decodable {
 
 /// What the room is doing at `now`, derived from the day's schedule.
 struct RoomSnapshot {
-    static let bookNowOptions = [15, 30, 60, 120]
-    /// Shortest walk-up booking the server accepts.
-    static let minimumBookingMinutes = 5
-
     let current: ScheduleItem?
     let next: ScheduleItem?
     let now: Date
@@ -81,27 +79,54 @@ struct RoomSnapshot {
         current = items.first { $0.start <= now && $0.end > now }
         next = items.first { $0.start > now }
     }
+}
 
-    /// Minutes of free time from now until the next booking (nil = rest of day is free).
-    var freeMinutes: Int? {
-        guard current == nil else { return 0 }
-        guard let next else { return nil }
-        return Int(next.start.timeIntervalSince(now) / 60)
+/// A booking being set up in the booking sheet, prefilled from the + button
+/// or a tap/drag on the timeline.
+struct BookingDraft: Identifiable, Hashable {
+    let id = UUID()
+    var interval: DateInterval
+}
+
+/// What the booking sheet accepts, mirroring the server's own checks so the
+/// door can explain a problem before anyone scans a pass.
+struct BookingRules {
+    /// The server lets a booking start this far in the past, for "starting now".
+    static let pastGrace: TimeInterval = 5 * 60
+    static let minimumLength: TimeInterval = 5 * 60
+    /// The server's cap on "now for N minutes".
+    static let maxNowMinutes = 240
+
+    let items: [ScheduleItem]
+    let now: Date
+
+    /// Why this range can't be booked, or nil if it can.
+    func problem(start: Date, end: Date) -> String? {
+        let length = end.timeIntervalSince(start)
+        if length <= 0 { return "End time must be after the start time" }
+        if end <= now { return "That time has already passed" }
+        if start < now.addingTimeInterval(-Self.pastGrace) { return "Start time can't be in the past" }
+        if length < Self.minimumLength { return "Bookings need to be at least 5 minutes" }
+        if length > SlotPicker.maxLength { return "Bookings can be at most 8 hours" }
+        if let clash = items.first(where: { $0.start < end && $0.end > start }) {
+            return "Overlaps \(clash.title) (\(clash.timeRange))"
+        }
+        return nil
     }
 
-    /// Walk-up durations that fit before the next booking. When the gap is
-    /// shorter than every preset, offer the gap itself.
-    var bookableMinutes: [Int] {
-        guard current == nil else { return [] }
-        guard let free = freeMinutes else { return Self.bookNowOptions }
-        let fitting = Self.bookNowOptions.filter { $0 <= free }
-        if fitting.isEmpty, free >= Self.minimumBookingMinutes { return [free] }
-        return fitting
+    /// Starting now → let the server's clock pick the start, so a skewed iPad
+    /// can't shift it. Anything else is an explicit slot.
+    func request(start: Date, end: Date) -> BookingRequest {
+        let minutes = Int((end.timeIntervalSince(start) / 60).rounded())
+        if abs(start.timeIntervalSince(now)) < 60, minutes <= Self.maxNowMinutes {
+            return .now(minutes: minutes)
+        }
+        return .slot(DateInterval(start: start, end: end))
     }
 }
 
-/// What the person at the door asked to book: "now for N minutes" (the Book
-/// now buttons) or a slot picked on the timeline.
+/// What the person at the door asked to book: "now for N minutes" (starting
+/// now, so the server's clock picks the start) or an explicit slot.
 enum BookingRequest: Identifiable, Hashable {
     case now(minutes: Int)
     case slot(DateInterval)

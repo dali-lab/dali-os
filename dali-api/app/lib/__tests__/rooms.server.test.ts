@@ -34,7 +34,7 @@ const m = prisma as unknown as {
   scheduledMeeting: { findMany: ReturnType<typeof vi.fn> };
 };
 
-const ada = { id: "u1", firstName: "Ada", lastName: "Lovelace" };
+const ada = { id: "u1", firstName: "Ada", lastName: "Lovelace", photoUrl: null };
 const H = 60 * 60_000;
 const at = (iso: string) => new Date(iso);
 
