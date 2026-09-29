@@ -51,6 +51,12 @@ describe("candidateSlots", () => {
     expect(slots[0].startMs).toBe(9 * HOUR);
     expect(slots[1].startMs).toBe(day + 9 * HOUR);
   });
+
+  it("skips slots that start before minStartMs (no times in the past)", () => {
+    // Band 9–12, 60-min step/meeting → starts 9, 10, 11; cut off at 10:30.
+    const slots = candidateSlots([0], 9, 12, 60, 60, 10.5 * HOUR);
+    expect(slots.map((s) => s.startMs / HOUR)).toEqual([11]);
+  });
 });
 
 describe("rankSlots", () => {
@@ -110,5 +116,22 @@ describe("findOptimalSlots", () => {
       maxResults: 5,
     });
     expect(best[0]).toMatchObject({ startMs: 11 * HOUR, freeCount: 2 });
+  });
+
+  it("never returns a slot before minStartMs", () => {
+    // Everyone free all day, but 'now' is 10:30 → the 9:00/10:00 slots are past
+    // and must be dropped; the first suggestion is 11:00.
+    const best = findOptimalSlots({
+      dayStartMs: [0],
+      perUserFree: [[iv(0, 24 * HOUR)]],
+      bandStartHour: 9,
+      bandEndHour: 13,
+      stepMinutes: 60,
+      durationMinutes: 60,
+      maxResults: 5,
+      minStartMs: 10.5 * HOUR,
+    });
+    expect(best.every((s) => s.startMs >= 10.5 * HOUR)).toBe(true);
+    expect(best[0].startMs).toBe(11 * HOUR);
   });
 });
