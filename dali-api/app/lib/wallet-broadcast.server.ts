@@ -1,7 +1,7 @@
 // Restyle broadcast: push the current pass design to passes ALREADY saved on
-// members' phones, across both platforms. Shared by the manual script
-// (scripts/wallet-broadcast-restyle.ts) and the self-gating wallet-pass-release
-// job, so both roll out a design change the same way.
+// members' phones, across both platforms. Shared by the CLI script
+// (scripts/wallet-broadcast-restyle.ts) and the on-demand wallet-restyle-broadcast
+// job (Admin → Jobs → "Run now"), so both roll out a design change the same way.
 
 import { getApiBaseUrl } from "~/lib/app-env";
 import {

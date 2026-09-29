@@ -2288,20 +2288,6 @@ model WalletPassRegistration {
   @@index([serialNumber])
 }
 
-// One row per wallet-pass design version that has been rolled out to
-// already-installed passes. The wallet-pass-release job gates on this: when the
-// deployed WALLET_PASS_DESIGN_VERSION has no row here, it runs the restyle
-// broadcast (Google REST patch + Apple re-push) once, then records the version.
-// version is the primary key so the release is claimed exactly once per version,
-// across machines. Counts are informational (what the release touched).
-model WalletPassReleaseLog {
-  version       String   @id
-  releasedAt    DateTime @default(now())
-  googlePatched Int      @default(0)
-  googleFailed  Int      @default(0)
-  applePushed   Int      @default(0)
-}
-
 // A user's personal timesheet row, shown on the Calendar "Timesheet" tab.
 // Meeting-sourced rows are managed automatically by the attendance-toggle
 // route (one row per present participant, kept in sync as attendance is
