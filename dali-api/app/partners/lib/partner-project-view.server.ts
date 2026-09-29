@@ -84,18 +84,12 @@ export type PartnerProjectViewData = {
   // clicking a bar opens that modal here too, read-only. Deliberately thinner
   // than the hub's copy: see toEditableEpic.
   editableEpics: EditableEpic[];
-  recentlyDone: {
-    id: string;
-    title: string;
-    doneAt: string;
-    domain: string | null;
-  }[];
   drive: PartnerDrive;
 };
 
 // The whole partner read-surface for a project: the planning timeline, roster,
-// recently-closed tasks, and the shared Drive. Shared by the real partner
-// portal (partner.projects.$id.tsx, scoped to the signed-in partner's org)
+// and the shared Drive. Shared by the real partner portal
+// (partner.projects.$id.tsx, scoped to the signed-in partner's org)
 // and the in-app preview any signed-in member can open from the project page
 // (projects.$id.partner-view.tsx, which has no partnerOrgId of its own —
 // pass null and partnerSince comes back null).
@@ -133,7 +127,6 @@ export async function loadPartnerProjectView(
     assignments,
     epicsRaw,
     storyTaskRows,
-    recentlyDone,
     pageRows,
     sharedFileRows,
   ] = await Promise.all([
@@ -190,17 +183,6 @@ export async function loadPartnerProjectView(
       prisma.task.findMany({
         where: { projectId: project.id, archivedAt: null, storyId: { not: null } },
         select: { id: true, storyId: true, startsAt: true, dueAt: true },
-      }),
-      prisma.task.findMany({
-        where: { projectId: project.id, status: "Done" },
-        orderBy: { updatedAt: "desc" },
-        take: 8,
-        select: {
-          id: true,
-          title: true,
-          updatedAt: true,
-          domain: { select: { displayName: true } },
-        },
       }),
       // Shared docs, plus every folder — folders carry no partnerVisible flag
       // of their own, so which ones a partner sees falls out of what's in them
@@ -387,12 +369,6 @@ export async function loadPartnerProjectView(
     timelineEpics,
     timelineTerms,
     editableEpics,
-    recentlyDone: recentlyDone.map((t) => ({
-      id: t.id,
-      title: t.title,
-      doneAt: t.updatedAt.toISOString(),
-      domain: t.domain?.displayName ?? null,
-    })),
     drive,
   };
 }
