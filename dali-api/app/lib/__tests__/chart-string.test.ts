@@ -6,6 +6,7 @@ import {
   GL_SUBACTIVITIES,
   DALI_ORG,
   DALI_PROJECTS_GL,
+  DALI_PROGRAMS_GL,
   chartStringForFundingType,
 } from "~/lib/chart-string";
 
@@ -193,5 +194,18 @@ describe("chartStringForFundingType", () => {
 
   it("does nothing when the type is cleared", () => {
     expect(chartStringForFundingType(PTAEO, null)).toBe(PTAEO);
+  });
+});
+
+describe("the lab's own GL lines", () => {
+  it.each([
+    [DALI_PROJECTS_GL, "4000"],
+    [DALI_PROGRAMS_GL, "3000"],
+  ])("%s is a clean org-330 GL string (subactivity %s)", (value, subactivity) => {
+    const r = parseChartString(value, "GL");
+    expect(r.errors).toEqual([]);
+    expect(r.warnings).toEqual([]);
+    expect(r.org).toBe(DALI_ORG);
+    expect(r.subactivity).toBe(subactivity);
   });
 });
