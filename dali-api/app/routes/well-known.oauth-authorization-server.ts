@@ -3,6 +3,7 @@
 // in app/routes.ts (React Router 7 file-based naming doesn't reach the dot
 // prefix without a manual entry).
 
+import { MCP_SCOPES } from "~/lib/mcp-scopes";
 import type { Route } from "./+types/well-known.oauth-authorization-server";
 
 export async function action() {
@@ -24,7 +25,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       response_types_supported: ["code"],
       grant_types_supported: ["authorization_code"],
       code_challenge_methods_supported: ["S256"],
-      scopes_supported: ["mcp:read", "mcp:write"],
+      scopes_supported: [...MCP_SCOPES],
       token_endpoint_auth_methods_supported: ["none"],
     },
     {

@@ -4,11 +4,13 @@
 // so the spec requires a registration endpoint they can POST to. We accept
 // the minimal request shape, but the resulting OAuthClient row is locked to
 // the MCP-only policy: google-only IDP, member-only accountType, membership
-// required, mcp:read/mcp:write scopes. Redirect URIs are limited to http
+// required, mcp:read/write/admin scopes (admin granted only to Core/Admin at
+// consent). Redirect URIs are limited to http
 // loopback (Claude Code / Desktop-local) or an https callback on an allowed
 // Claude host (claude.ai web / mobile). None of the client-supplied policy
 // fields are honored — only redirect_uris + client_name.
 
+import { MCP_SCOPES } from "~/lib/mcp-scopes";
 import type { Route } from "./+types/oauth.register";
 import { prisma } from "~/lib/db";
 import { withCors, handlePreflight, preflightLoader } from "~/lib/cors";
@@ -21,7 +23,7 @@ const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
 // mcp:admin is offered to any client, but only *granted* at consent when the
 // consenting user is Core/Admin (role-gated in oauth.consent.tsx); every admin
 // tool also re-checks the role at call time. See specs/mcp-expansion.md §3.
-const ALLOWED_SCOPES = ["mcp:read", "mcp:write", "mcp:admin"];
+const ALLOWED_SCOPES: string[] = [...MCP_SCOPES];
 
 export const loader = preflightLoader;
 
