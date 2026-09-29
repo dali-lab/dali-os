@@ -1,37 +1,39 @@
 import SwiftUI
 
-/// The at-a-glance status: a soft wash of the status color, a ring counting
-/// down the free (or remaining) time, and the state in words.
+/// The at-a-glance status: a soft wash of the status color, a big countdown
+/// of the free (or remaining) time, and the state in words. While a meeting
+/// runs, a bar under it shows how much of the meeting is left.
 struct StatusHero: View {
     let snapshot: RoomSnapshot
-
-    /// The free-time ring is measured against this window, so "free for 20
-    /// minutes" reads as nearly empty and "free for hours" as full.
-    private static let freeWindow: TimeInterval = 2 * 60 * 60
 
     private var isFree: Bool { snapshot.current == nil }
     private var tone: Color { isFree ? OS.green : OS.danger }
 
     var body: some View {
-        HStack(spacing: 32) {
-            ring
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 12) {
-                    PulsingDot(color: tone)
-                    Text(isFree ? "Available" : "In use")
-                        .font(OS.font(40, .bold))
-                        .foregroundStyle(tone)
+        VStack(alignment: .leading, spacing: 24) {
+            HStack(spacing: 32) {
+                countdown
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 12) {
+                        PulsingDot(color: tone)
+                        Text(isFree ? "Available" : "In use")
+                            .font(OS.font(40, .bold))
+                            .foregroundStyle(tone)
+                    }
+                    Text(headline)
+                        .font(OS.font(24, .semibold))
+                        .foregroundStyle(OS.fg)
+                        .lineLimit(2)
+                    Text(detail)
+                        .font(OS.font(17))
+                        .foregroundStyle(OS.grey)
+                        .lineLimit(1)
                 }
-                Text(headline)
-                    .font(OS.font(24, .semibold))
-                    .foregroundStyle(OS.fg)
-                    .lineLimit(2)
-                Text(detail)
-                    .font(OS.font(17))
-                    .foregroundStyle(OS.grey)
-                    .lineLimit(1)
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
+            if let current = snapshot.current {
+                MeetingProgressBar(item: current, now: snapshot.now, tone: tone)
+            }
         }
         .padding(28)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -50,28 +52,24 @@ struct StatusHero: View {
         .animation(.easeInOut(duration: 0.3), value: isFree)
     }
 
-    // MARK: Ring
+    // MARK: Countdown
 
-    private var ring: some View {
-        ZStack {
-            Circle().stroke(tone.opacity(0.15), lineWidth: 14)
-            Circle()
-                .trim(from: 0, to: progress)
-                .stroke(tone, style: StrokeStyle(lineWidth: 14, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-            VStack(spacing: 2) {
-                Text(remainingText)
-                    .font(OS.font(28, .bold).monospacedDigit())
-                    .foregroundStyle(OS.fg)
-                    .minimumScaleFactor(0.6)
-                    .lineLimit(1)
-                Text(isFree ? "free" : "left")
-                    .font(OS.font(14, .semibold))
-                    .foregroundStyle(OS.grey)
-            }
-            .padding(20)
+    private var countdown: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(remainingText)
+                .font(OS.font(56, .bold).monospacedDigit())
+                .foregroundStyle(OS.fg)
+                .minimumScaleFactor(0.5)
+                .lineLimit(1)
+            Text(isFree ? "free" : "left")
+                .font(OS.font(18, .semibold))
+                .foregroundStyle(tone)
         }
-        .frame(width: 148, height: 148)
+        .frame(minWidth: 148, alignment: .leading)
+        .padding(.trailing, 32)
+        .overlay(alignment: .trailing) {
+            Rectangle().fill(OS.container).frame(width: 1)
+        }
     }
 
     private var remaining: TimeInterval? {
@@ -79,18 +77,10 @@ struct StatusHero: View {
         return snapshot.next.map { $0.start.timeIntervalSince(snapshot.now) }
     }
 
-    private var progress: CGFloat {
-        if let current = snapshot.current {
-            return CGFloat(max(0, min(1, current.end.timeIntervalSince(snapshot.now) / current.duration)))
-        }
-        guard let remaining else { return 1 }
-        return CGFloat(max(0.03, min(1, remaining / Self.freeWindow)))
-    }
-
     private var remainingText: String {
         guard let remaining else { return "All day" }
         let minutes = Int(remaining / 60)
-        if minutes < 60 { return "\(max(minutes, 1))m" }
+        if minutes < 60 { return "\(max(minutes, 1)) min" }
         return minutes % 60 == 0 ? "\(minutes / 60)h" : "\(minutes / 60)h \(minutes % 60)m"
     }
 
@@ -108,6 +98,37 @@ struct StatusHero: View {
         }
         if let next = snapshot.next { return "Then \(next.title)" }
         return "Nothing else booked today"
+    }
+}
+
+/// How far through the current meeting we are, labeled with its start and end.
+private struct MeetingProgressBar: View {
+    let item: ScheduleItem
+    let now: Date
+    let tone: Color
+
+    private var elapsed: CGFloat {
+        guard item.duration > 0 else { return 1 }
+        return CGFloat(max(0, min(1, now.timeIntervalSince(item.start) / item.duration)))
+    }
+
+    var body: some View {
+        VStack(spacing: 6) {
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(tone.opacity(0.15))
+                    Capsule().fill(tone).frame(width: geo.size.width * elapsed)
+                }
+            }
+            .frame(height: 10)
+            HStack {
+                Text(item.start.formatted(date: .omitted, time: .shortened))
+                Spacer()
+                Text("ends \(item.end.formatted(date: .omitted, time: .shortened))")
+            }
+            .font(OS.font(14, .semibold).monospacedDigit())
+            .foregroundStyle(OS.grey)
+        }
     }
 }
 
