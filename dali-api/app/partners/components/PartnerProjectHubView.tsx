@@ -250,7 +250,6 @@ export function PartnerProjectHubView({
     timelineEpics,
     timelineTerms,
     editableEpics,
-    recentlyDone,
     drive,
   } = data;
 
@@ -272,9 +271,6 @@ export function PartnerProjectHubView({
   // Section anchors for the side nav — only the ones actually rendered.
   const sections: NavSection[] = [
     { id: "roadmap", label: "Roadmap" },
-    ...(recentlyDone.length > 0
-      ? [{ id: "recently-completed", label: "Recently completed" }]
-      : []),
     { id: "drive", label: "Drive" },
     ...(team.length > 0 ? [{ id: "team", label: "Team" }] : []),
   ];
@@ -351,30 +347,6 @@ export function PartnerProjectHubView({
           />
         )}
       </section>
-
-      {recentlyDone.length > 0 && (
-        <section id="recently-completed" className="scroll-mt-24">
-          <h2 className="font-heading text-lg font-semibold text-dark-blue mb-3">
-            Recently completed
-          </h2>
-          <ul className="bg-card border border-border rounded-2xl divide-y divide-border">
-            {recentlyDone.map((t) => (
-              <li key={t.id} className="px-4 py-3 flex items-center gap-3 text-sm">
-                <span className="text-accent-teal">✓</span>
-                <span className="flex-1 min-w-0 truncate text-foreground">{t.title}</span>
-                {t.domain && (
-                  <span className="text-xs rounded-full bg-muted text-muted-foreground px-2 py-0.5 flex-shrink-0">
-                    {t.domain}
-                  </span>
-                )}
-                <span className="text-xs text-muted-foreground flex-shrink-0">
-                  {fmtDate(t.doneAt)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
 
       {/* Drive — one shelf for shared documents and shared files, the way the
           project hub's own Drive block reads. Folders hold whatever inside
