@@ -26,9 +26,10 @@ vi.mock("~/lib/db", () => ({
 }));
 
 import { _resetForTests } from "~/lib/rate-limit";
+import { createOAuthSession } from "~/lib/oauth";
 import { loader } from "~/routes/oauth.authorize";
 
-function makeRequest(ip = "1.2.3.4") {
+function makeRequest(ip = "1.2.3.4", scope?: string) {
   const params = new URLSearchParams({
     response_type: "code",
     client_id: "dali-api",
@@ -38,6 +39,7 @@ function makeRequest(ip = "1.2.3.4") {
     code_challenge_method: "S256",
     provider: "google",
     account_type: "member",
+    ...(scope ? { scope } : {}),
   });
   return new Request(`http://localhost/oauth/authorize?${params}`, {
     headers: { "X-Forwarded-For": ip },
@@ -88,5 +90,33 @@ describe("GET /oauth/authorize rate limiting", () => {
 
     const ok = await loader({ request: makeRequest("5.6.7.8") } as any);
     expect(ok.status).toBe(302);
+  });
+});
+
+describe("GET /oauth/authorize scopes", () => {
+  // The metadata advertises mcp:admin, so connectors ask for it — including
+  // ones registered before it existed, whose allowedScopes lack it.
+  it("drops mcp:admin for a client registered before it existed", async () => {
+    const res = await loader({ request: makeRequest("9.9.9.1", "mcp:read mcp:write mcp:admin") } as any);
+    expect(res.headers.get("location") ?? "").not.toContain("invalid_scope");
+    expect(vi.mocked(createOAuthSession)).toHaveBeenLastCalledWith(
+      expect.objectContaining({ scopes: ["mcp:read", "mcp:write"] }),
+    );
+  });
+
+  it("keeps mcp:admin for a client that allows it (consent still role-gates it)", async () => {
+    mockGetOAuthClient.mockResolvedValueOnce({
+      ...(await mockGetOAuthClient()),
+      allowedScopes: ["mcp:read", "mcp:write", "mcp:admin"],
+    });
+    await loader({ request: makeRequest("9.9.9.2", "mcp:read mcp:write mcp:admin") } as any);
+    expect(vi.mocked(createOAuthSession)).toHaveBeenLastCalledWith(
+      expect.objectContaining({ scopes: ["mcp:read", "mcp:write", "mcp:admin"] }),
+    );
+  });
+
+  it("still rejects any other scope the client isn't allowed", async () => {
+    const res = await loader({ request: makeRequest("9.9.9.3", "mcp:read mcp:bogus") } as any);
+    expect(res.headers.get("location") ?? "").toContain("invalid_scope");
   });
 });

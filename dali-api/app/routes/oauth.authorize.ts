@@ -121,10 +121,14 @@ export async function loader({ request }: Route.LoaderArgs) {
     accountType = accountTypeParam as OAuthAccountType;
   }
 
-  // Scopes: space-delimited per RFC 6749 §3.3. Must all be in allowedScopes.
-  const requestedScopes = scopeParam
-    ? scopeParam.split(/\s+/).filter(Boolean)
-    : [];
+  // Scopes: space-delimited per RFC 6749 §3.3. Must all be in allowedScopes —
+  // except mcp:admin, which is optional. Clients registered before it existed
+  // don't allow it, yet ask for it now that the metadata advertises it; drop
+  // it for them (as consent drops it for non-Core users) rather than failing
+  // the whole authorization.
+  const requestedScopes = (scopeParam ? scopeParam.split(/\s+/).filter(Boolean) : []).filter(
+    (s) => s !== "mcp:admin" || client.allowedScopes.includes(s),
+  );
   for (const s of requestedScopes) {
     if (!client.allowedScopes.includes(s)) {
       return clientError(redirectUri, state, "invalid_scope", `scope not allowed: ${s}`);
