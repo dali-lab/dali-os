@@ -6495,11 +6495,11 @@ model RoomDisplay {
   @@index([roomId])
 }
 
-// Attendance ▸ "Enable attendance tracking from iPad": while a session is live,
-// every paired door display is a full-screen pass scanner for this one event
-// occurrence, whatever room it's in. One at a time (starting another replaces
-// it), and it lapses at expiresAt so a forgotten switch can't leave the lab's
-// iPads scanning.
+// "Enable attendance tracking from iPad" on a meeting's page: while a session
+// is live, every paired door display is a full-screen pass scanner for this one
+// event occurrence, whatever room it's in. One at a time (another event can't
+// start until this one is turned off), and it lapses at expiresAt so a
+// forgotten switch can't leave the lab's iPads scanning.
 model DisplayScanSession {
   id                 String           @id @default(cuid())
   scheduledMeetingId String

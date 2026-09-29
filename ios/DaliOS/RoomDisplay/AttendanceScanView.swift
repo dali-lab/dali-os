@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// iPad scanning switched on from Attendance: the whole screen is the camera,
+/// iPad scanning switched on from a meeting's page: the whole screen is the camera,
 /// checking wallet passes in to one event from any room.
 struct AttendanceScanView: View {
     let scan: AttendanceScan
