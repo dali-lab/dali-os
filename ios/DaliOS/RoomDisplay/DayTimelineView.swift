@@ -86,11 +86,11 @@ struct DayTimelineView: View {
             HStack(alignment: .center, spacing: 8) {
                 Text(calendar.date(bySettingHour: hour % 24, minute: 0, second: 0, of: dayStart)!,
                      format: .dateTime.hour())
-                    .font(OS.font(12, .semibold).monospacedDigit())
+                    .font(OS.font(14, .semibold).monospacedDigit())
                     .foregroundStyle(OS.muted)
                     .frame(width: gutter - 8, alignment: .trailing)
                 Rectangle()
-                    .fill(OS.container)
+                    .fill(OS.container.opacity(0.6))
                     .frame(height: 1)
             }
             .frame(height: labelHeight)
@@ -123,10 +123,18 @@ struct DayTimelineView: View {
             }
         }
         .foregroundStyle(category.ink)
-        .padding(.horizontal, 12)
+        .padding(.leading, 18)
+        .padding(.trailing, 12)
         .padding(.vertical, height > 30 ? 6 : 1)
         .frame(maxWidth: .infinity, minHeight: height, maxHeight: height, alignment: .topLeading)
         .background(category.fill, in: .rect(cornerRadius: OS.itemRadius))
+        // Calendar-style edge in the category ink, so blocks read as events
+        // rather than plain bars.
+        .overlay(alignment: .leading) {
+            UnevenRoundedRectangle(topLeadingRadius: OS.itemRadius, bottomLeadingRadius: OS.itemRadius)
+                .fill(category.ink.opacity(0.7))
+                .frame(width: 5)
+        }
         // Fade past blocks toward the card without going see-through, so the
         // hour lines don't show through them.
         .overlay(OS.card.opacity(item.end <= now ? 0.5 : 0), in: .rect(cornerRadius: OS.itemRadius))

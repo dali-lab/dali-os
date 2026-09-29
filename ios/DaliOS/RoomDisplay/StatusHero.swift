@@ -1,67 +1,119 @@
 import SwiftUI
 
-/// The at-a-glance status: a flat wash of the status color, a big countdown
-/// of the free (or remaining) time, and the state in words. While a meeting
-/// runs, a bar under it shows how much of the meeting is left.
+/// The at-a-glance status, read from down the hall: one flat wash of the
+/// status color, a big countdown of the free (or remaining) time, one line of
+/// context, and what you can do about it — book now while free, see what's
+/// next while in use.
 struct StatusHero: View {
     let snapshot: RoomSnapshot
+    let bookable: [Int]
+    let onBook: (Int) -> Void
 
     private var isFree: Bool { snapshot.current == nil }
     private var tone: Color { isFree ? OS.green : OS.danger }
     /// Flat role fills, matched in weight so free and in-use read as a pair.
-    private var wash: Color { isFree ? OS.roleGreen.fill : OS.roleRed.fill }
+    private var palette: OS.Category { isFree ? OS.roleGreen : OS.roleRed }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            HStack(spacing: 32) {
-                countdown
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(spacing: 12) {
-                        PulsingDot(color: tone)
-                        Text(isFree ? "Available" : "In use")
-                            .font(OS.font(40, .bold))
-                            .foregroundStyle(tone)
-                    }
-                    Text(headline)
-                        .font(OS.font(24, .semibold))
-                        .foregroundStyle(OS.fg)
-                        .lineLimit(2)
-                    Text(detail)
-                        .font(OS.font(20))
-                        .foregroundStyle(OS.grey)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 0)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                PulsingDot(color: tone)
+                Text(isFree ? "Available" : "In use")
+                    .font(OS.font(18, .bold))
+                    .tracking(1.6)
+                    .textCase(.uppercase)
+                    .foregroundStyle(palette.ink)
             }
+
+            HStack(alignment: .firstTextBaseline, spacing: 14) {
+                Text(remainingText)
+                    .font(OS.font(96, .bold).monospacedDigit())
+                    .foregroundStyle(OS.fg)
+                    .minimumScaleFactor(0.5)
+                    .lineLimit(1)
+                if remaining != nil {
+                    Text(isFree ? "free" : "left")
+                        .font(OS.font(32, .medium))
+                        .foregroundStyle(palette.ink)
+                }
+            }
+            .padding(.top, 8)
+
+            Text(headline)
+                .font(OS.font(26, .semibold))
+                .foregroundStyle(OS.fg)
+                .lineLimit(2)
+                .padding(.top, 4)
+            if let detail {
+                Text(detail)
+                    .font(OS.font(20))
+                    .foregroundStyle(OS.grey)
+                    .lineLimit(1)
+                    .padding(.top, 4)
+            }
+
             if let current = snapshot.current {
                 MeetingProgressBar(item: current, now: snapshot.now, tone: tone)
+                    .padding(.top, 28)
+            }
+
+            if isFree, !bookable.isEmpty {
+                bookNow.padding(.top, 32)
+            } else if !isFree, let next = snapshot.next {
+                upNext(next).padding(.top, 28)
             }
         }
-        .padding(28)
+        .padding(36)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(wash, in: .rect(cornerRadius: OS.cardRadius))
+        .background(palette.fill, in: .rect(cornerRadius: OS.cardRadius))
         .animation(.easeInOut(duration: 0.3), value: isFree)
     }
 
-    // MARK: Countdown
+    // MARK: Actions
 
-    private var countdown: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(remainingText)
-                .font(OS.font(56, .bold).monospacedDigit())
-                .foregroundStyle(OS.fg)
-                .minimumScaleFactor(0.5)
-                .lineLimit(1)
-            Text(isFree ? "free" : "left")
-                .font(OS.font(18, .semibold))
-                .foregroundStyle(tone)
-        }
-        .frame(minWidth: 148, alignment: .leading)
-        .padding(.trailing, 32)
-        .overlay(alignment: .trailing) {
-            Rectangle().fill(OS.container).frame(width: 1)
+    private var bookNow: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Book now")
+                .font(OS.eyebrow)
+                .tracking(1.2)
+                .textCase(.uppercase)
+                .foregroundStyle(palette.ink)
+            HStack(spacing: 12) {
+                ForEach(bookable, id: \.self) { minutes in
+                    Button {
+                        onBook(minutes)
+                    } label: {
+                        Text(Duration.seconds(minutes * 60).formatted(.units(allowed: [.hours, .minutes], width: .abbreviated)))
+                            .frame(maxWidth: .infinity, minHeight: 60)
+                    }
+                    .buttonStyle(WashButtonStyle(ink: palette.ink))
+                }
+            }
         }
     }
+
+    private func upNext(_ next: ScheduleItem) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Rectangle().fill(palette.ink.opacity(0.15)).frame(height: 1)
+            HStack(alignment: .firstTextBaseline, spacing: 16) {
+                Text("Next")
+                    .font(OS.eyebrow)
+                    .tracking(1.2)
+                    .textCase(.uppercase)
+                    .foregroundStyle(palette.ink)
+                Text(next.title)
+                    .font(OS.font(20, .semibold))
+                    .foregroundStyle(OS.fg)
+                    .lineLimit(1)
+                Spacer(minLength: 12)
+                Text(next.timeRange)
+                    .font(OS.font(18).monospacedDigit())
+                    .foregroundStyle(OS.grey)
+            }
+        }
+    }
+
+    // MARK: Countdown
 
     private var remaining: TimeInterval? {
         if let current = snapshot.current { return current.end.timeIntervalSince(snapshot.now) }
@@ -79,16 +131,29 @@ struct StatusHero: View {
 
     private var headline: String {
         if let current = snapshot.current { return current.title }
-        if let next = snapshot.next { return "Free until \(next.start.formatted(date: .omitted, time: .shortened))" }
-        return "Free for the rest of the day"
+        if let next = snapshot.next { return "Until \(next.start.formatted(date: .omitted, time: .shortened))" }
+        return "Nothing else booked today"
     }
 
-    private var detail: String {
-        if let current = snapshot.current {
-            return "\(current.organizerName) · until \(current.end.formatted(date: .omitted, time: .shortened))"
-        }
+    private var detail: String? {
+        if let current = snapshot.current { return current.organizerName }
         if let next = snapshot.next { return "Then \(next.title)" }
-        return "Nothing else booked today"
+        return nil
+    }
+}
+
+/// White pills on the status wash: quieter than the accent button, so the
+/// countdown stays the loudest thing on the card.
+private struct WashButtonStyle: ButtonStyle {
+    let ink: Color
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(OS.font(20, .semibold))
+            .foregroundStyle(ink)
+            .background(OS.card.opacity(configuration.isPressed ? 0.7 : 1), in: .capsule)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 
@@ -104,7 +169,7 @@ private struct MeetingProgressBar: View {
     }
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 8) {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(OS.card)
@@ -136,7 +201,7 @@ private struct PulsingDot: View {
                 .opacity(pulsing ? 0 : 1)
             Circle().fill(color)
         }
-        .frame(width: 16, height: 16)
+        .frame(width: 14, height: 14)
         .onAppear {
             withAnimation(.easeOut(duration: 1.8).repeatForever(autoreverses: false)) { pulsing = true }
         }

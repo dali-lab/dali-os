@@ -60,19 +60,23 @@ struct RoomDisplayView: View {
 
     private func schedule(now: Date) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(now, format: .dateTime.weekday(.wide).month(.wide).day())
-                    .font(OS.font(19, .semibold))
+            HStack(alignment: .firstTextBaseline) {
+                Text("Today")
+                    .font(OS.font(24, .bold))
                     .foregroundStyle(OS.fg)
+                Text(now, format: .dateTime.weekday(.wide).month(.wide).day())
+                    .font(OS.font(18))
+                    .foregroundStyle(OS.grey)
                     // Hidden admin entry for whoever mounts the iPad.
                     .onLongPressGesture(minimumDuration: 3) { showingAdmin = true }
-                Text("Tap an open time to book, or drag across open time to choose how long")
-                    .font(OS.font(14))
-                    .foregroundStyle(OS.grey)
+                Spacer()
+                Text("Tap or drag open time to book")
+                    .font(OS.font(15))
+                    .foregroundStyle(OS.muted)
             }
-            .padding(.horizontal, 24)
-            .padding(.top, 24)
-            .padding(.bottom, 12)
+            .padding(.horizontal, 28)
+            .padding(.top, 28)
+            .padding(.bottom, 16)
             DayTimelineView(items: store.items, now: now) { booking = .slot($0) }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
