@@ -33,8 +33,24 @@ import {
   runGetAttendanceOverview,
 } from "./get-attendance-overview";
 import { LIST_INFRASTRUCTURE_TOOL, runListInfrastructure } from "./list-infrastructure";
+import {
+  CREATE_PAYROLL_CSV_UPLOAD_TOOL,
+  runCreatePayrollCsvUpload,
+  IMPORT_PAYROLL_CSVS_TOOL,
+  runImportPayrollCsvs,
+} from "./payroll-import";
 
 export const ADMIN_TOOLS: McpTool[] = [
+  {
+    def: CREATE_PAYROLL_CSV_UPLOAD_TOOL,
+    run: (ctx, args) =>
+      runCreatePayrollCsvUpload(ctx.user.id, args as Parameters<typeof runCreatePayrollCsvUpload>[1]),
+  },
+  {
+    def: IMPORT_PAYROLL_CSVS_TOOL,
+    run: (ctx, args) =>
+      runImportPayrollCsvs(ctx.user.id, args as Parameters<typeof runImportPayrollCsvs>[1]),
+  },
   {
     def: LIST_DOMAINS_TOOL,
     run: (ctx) => runListDomains(ctx.user.id),

@@ -3,15 +3,10 @@ import { requireAuth, forbidden } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import { MAX_UPLOAD_BYTES, fileMatchesAccept } from "~/lib/file-validation";
 import {
-  parseTimesheetCsv,
-  parseNotesCsv,
-  CsvHeaderError,
-  type RowError,
-} from "~/admin/lib/payroll-csv";
-import {
-  ingestTimesheet,
-  ingestNotes,
-} from "~/admin/lib/payroll-ingest.server";
+  importPayrollCsvs,
+  PayrollImportError,
+} from "~/admin/lib/payroll-import.server";
+import type { PayrollUploadError } from "~/admin/lib/payroll-import.server";
 
 // Resource route — action-only, registered OUTSIDE the app layout. Accepts a
 // multipart form with a required `timesheet` .csv and an optional `notes` .csv,
@@ -19,29 +14,12 @@ import {
 // returns a JSON import summary the upload modal renders. PII rule: never log
 // CSV contents.
 
-/** Shape returned to the upload modal (PR4/PR5 may reuse this contract). */
-export type PayrollUploadResult = {
-  ok: true;
-  timesheet: {
-    periods: Array<{
-      payPeriodName: string;
-      termId: string | null;
-      rowsCreated: number;
-      rowsSkippedDuplicates: number;
-      rowsDeletedPrior: number;
-    }>;
-    invalidPeriods: string[];
-    rowErrors: RowError[];
-  };
-  notes: {
-    periodsUpdated: number;
-    skippedUnknownPeriods: number;
-    invalidPeriods: string[];
-    rowErrors: RowError[];
-  } | null;
-};
-
-export type PayrollUploadError = { ok: false; error: string };
+// The result types live with the shared import (the MCP tool returns them too);
+// re-exported here because the upload modal imports them from this route.
+export type {
+  PayrollUploadResult,
+  PayrollUploadError,
+} from "~/admin/lib/payroll-import.server";
 
 function jsonError(message: string, status: number): Response {
   return Response.json({ ok: false, error: message } satisfies PayrollUploadError, {
@@ -91,55 +69,17 @@ export async function action({ request }: Route.ActionArgs): Promise<Response> {
     }
   }
 
-  // Parse timesheet BEFORE notes (notes attach to imported periods). A missing
-  // header is a whole-file failure → 400 with a clear message.
-  let timesheetParse;
   try {
-    timesheetParse = parseTimesheetCsv(await timesheet.text());
-  } catch (e) {
-    if (e instanceof CsvHeaderError) return jsonError(e.message, 400);
-    return jsonError("Could not parse the timesheet CSV.", 400);
-  }
-
-  const timesheetResult = await ingestTimesheet(timesheetParse.rows, {
-    fileName: timesheet.name,
-    uploadedById: auth.user.sub,
-  });
-
-  let notesResult: PayrollUploadResult["notes"] = null;
-  if (hasNotes) {
-    let notesParse;
-    try {
-      notesParse = parseNotesCsv(await (notes as File).text());
-    } catch (e) {
-      if (e instanceof CsvHeaderError) return jsonError(e.message, 400);
-      return jsonError("Could not parse the notes CSV.", 400);
-    }
-    const ingested = await ingestNotes(notesParse.rows, {
-      fileName: (notes as File).name,
+    const result = await importPayrollCsvs({
+      timesheet: { text: await timesheet.text(), fileName: timesheet.name },
+      notes: hasNotes
+        ? { text: await (notes as File).text(), fileName: (notes as File).name }
+        : null,
       uploadedById: auth.user.sub,
     });
-    notesResult = {
-      periodsUpdated: ingested.periods.length,
-      skippedUnknownPeriods: ingested.skippedUnknownPeriods,
-      invalidPeriods: ingested.invalidPeriods,
-      rowErrors: notesParse.errors,
-    };
+    return Response.json(result);
+  } catch (e) {
+    if (e instanceof PayrollImportError) return jsonError(e.message, 400);
+    throw e;
   }
-
-  return Response.json({
-    ok: true,
-    timesheet: {
-      periods: timesheetResult.periods.map((p) => ({
-        payPeriodName: p.payPeriodName,
-        termId: p.termId,
-        rowsCreated: p.rowsCreated,
-        rowsSkippedDuplicates: p.rowsSkippedDuplicates,
-        rowsDeletedPrior: p.rowsDeletedPrior,
-      })),
-      invalidPeriods: timesheetResult.invalidPeriods,
-      rowErrors: timesheetParse.errors,
-    },
-    notes: notesResult,
-  } satisfies PayrollUploadResult);
 }
