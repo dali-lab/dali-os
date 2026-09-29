@@ -15,7 +15,7 @@ const BodySchema = z.object({ memberToken: z.string().min(1) });
 // mark attendance for the SelfCheckIn event currently in its own room's
 // check-in window, which is exactly what the member could do themselves from
 // the self-check-in QR. Any DALI member counts at an event (walk-ins welcome).
-// A lab-wide scan switched on from Attendance outranks the room's own event.
+// A lab-wide scan switched on from a meeting's page outranks the room's own event.
 export async function action({ request }: Route.ActionArgs) {
   if (request.method !== "POST") {
     return Response.json({ error: "Method not allowed" }, { status: 405 });

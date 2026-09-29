@@ -7,7 +7,7 @@ import { getActiveDisplayScan } from "~/lib/display-scan.server";
 // GET /api/room-display/schedule?start=<iso>&end=<iso> — the paired room's
 // schedule for the display's local day, plus the event it should be scanning
 // for right now (if any). Polled by the door display. `attendanceScan` is the
-// lab-wide scan switched on from Attendance; it outranks the room's own event.
+// lab-wide scan switched on from a meeting's page; it outranks the room's own event.
 export async function loader({ request }: Route.LoaderArgs) {
   const display = await requireRoomDisplay(request);
   if (!display) return displayUnauthorized();

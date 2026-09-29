@@ -34,7 +34,7 @@ struct ScheduleItem: Codable, Hashable {
     var duration: TimeInterval { end.timeIntervalSince(start) }
 }
 
-/// Scanning switched on from Attendance for every door display in the lab,
+/// Scanning switched on from a meeting's page for every door display in the lab,
 /// whatever room it's in. Outranks the room's own event.
 struct AttendanceScan: Codable, Hashable {
     let meetingId: String

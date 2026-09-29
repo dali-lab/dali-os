@@ -75,7 +75,7 @@ describe("room-display scan", () => {
     await scan(post("/api/room-display/scan"));
     expect(markMeetingAttendance).toHaveBeenCalledWith("m1", "u2", true, "u2", expect.any(Date), { addIfMissing: false });
   });
-  describe("with iPad scanning switched on from Attendance", () => {
+  describe("with iPad scanning switched on from a meeting", () => {
     const occurrenceStart = new Date("2026-09-30T22:00:00Z");
     const labScan = {
       meetingId: "m9",

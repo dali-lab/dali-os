@@ -14,6 +14,7 @@ import {
   Shapes,
   Plus,
   QrCode,
+  Tablet,
 } from "lucide-react";
 import { Select } from "~/components/ui/floating";
 import { Radio } from "~/components/ui/Radio";
@@ -27,11 +28,15 @@ import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { getUserRoles, isProjectMember } from "~/lib/roles";
 import { walletTokensConfigured } from "~/lib/wallet-token";
+import { getActiveDisplayScan, startDisplayScan, stopDisplayScan } from "~/lib/display-scan.server";
+import { isRoomBookingEnabled } from "~/rooms/lib/access.server";
+import { useDialog } from "~/components/ui/dialog";
 import { fullName } from "~/lib/display";
 import { AttendanceChecklist, type AttendanceRow } from "~/components/AttendanceChecklist";
 import { expandOccurrences, noteForOccurrence, resolveOccurrence } from "~/lib/meeting-occurrences";
 import { meetingOccurrenceHref } from "~/calendar/lib/meeting-href";
 import {
+  CHECK_IN_GRACE_MIN,
   ensureOccurrenceRoster,
   parseOccurrenceParam,
   seedMeetingRoster,
@@ -164,6 +169,26 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // than canManage (a project member marks attendance but doesn't file the
   // meeting's doc), and the same authority attachMeetingNote re-checks.
   const canAddNote = auth.user.sub === meeting.organizerId || roles.isCore;
+  const canEdit = canAddNote;
+
+  // Switching every door display to this event is the organizer's or Core's
+  // call. Door displays only exist once rooms are on, so it follows that flag.
+  const [roomsEnabled, activeScan] = canEdit
+    ? await Promise.all([isRoomBookingEnabled(auth.user.sub, request), getActiveDisplayScan()])
+    : [false, null];
+  const ipadScanOn =
+    activeScan?.meetingId === meeting.id &&
+    activeScan.occurrenceStart.getTime() === occurrence.originalStart.getTime();
+  const ipadScan = roomsEnabled
+    ? {
+        on: ipadScanOn,
+        // Another event has the iPads; this one waits until that's turned off.
+        busyWith: activeScan && !ipadScanOn ? activeScan.title : null,
+        ended:
+          meeting.selectedAt !== null &&
+          occurrence.end.getTime() + CHECK_IN_GRACE_MIN * 60_000 <= Date.now(),
+      }
+    : null;
 
   const proposalRows = canManage
     ? await prisma.meetingTimeProposal.findMany({
@@ -227,7 +252,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     canManage,
     // Narrower than canManage: editing the event is the organizer's or Core's
     // call, as updateScheduledMeeting enforces.
-    canInvite: auth.user.sub === meeting.organizerId || roles.isCore,
+    canInvite: canEdit,
+    ipadScan,
     selfCheckIn,
     // Switching an existing meeting to self check-in is the same authority as
     // editing it, narrowed to the roles that may create one (the create API's
@@ -265,7 +291,11 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
   const form = await request.formData();
-  if (form.get("intent") !== "enable-self-check-in") {
+  const intent = form.get("intent");
+  if (intent === "start-ipad-scan" || intent === "stop-ipad-scan") {
+    return ipadScanAction(request, params.id, auth.user.sub, intent, form);
+  }
+  if (intent !== "enable-self-check-in") {
     return Response.json({ error: "Unknown intent" }, { status: 400 });
   }
 
@@ -294,6 +324,36 @@ export async function action({ request, params }: Route.ActionArgs) {
     data: { attendanceMode: "SelfCheckIn" },
   });
   await seedMeetingRoster(meeting);
+  return Response.json({ ok: true });
+}
+
+async function ipadScanAction(
+  request: Request,
+  meetingId: string,
+  userId: string,
+  intent: "start-ipad-scan" | "stop-ipad-scan",
+  form: FormData,
+) {
+  const meeting = await prisma.scheduledMeeting.findUnique({
+    where: { id: meetingId },
+    select: { organizerId: true, status: true },
+  });
+  if (!meeting || meeting.status === "Cancelled") {
+    return Response.json({ error: "Not found" }, { status: 404 });
+  }
+  const roles = await getUserRoles(userId);
+  if ((meeting.organizerId !== userId && !roles.isCore) || !(await isRoomBookingEnabled(userId, request))) {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  if (intent === "stop-ipad-scan") {
+    await stopDisplayScan(meetingId);
+    return Response.json({ ok: true });
+  }
+  const occurrenceStart = parseOccurrenceParam(form.get("occurrenceStart"));
+  if (!occurrenceStart) return Response.json({ error: "Missing occurrenceStart" }, { status: 400 });
+  const result = await startDisplayScan(meetingId, occurrenceStart, userId);
+  if (!result.ok) return Response.json({ error: result.error }, { status: result.status });
   return Response.json({ ok: true });
 }
 
@@ -527,6 +587,24 @@ export default function CalendarMeetingPage() {
   const [editing, setEditing] = useState(false);
   const [projectOpen, setProjectOpen] = useState(false);
   const selfCheckInFetcher = useFetcher<{ ok?: boolean; error?: string }>();
+  const ipadFetcher = useFetcher<{ ok?: boolean; error?: string }>();
+  const dialog = useDialog();
+
+  async function toggleIpadScan() {
+    const on = d.ipadScan?.on;
+    if (!on) {
+      const ok = await dialog.confirm({
+        title: "Track attendance from iPads?",
+        description: "Every door display becomes a pass scanner for this event until you turn it off or the event ends.",
+        confirmLabel: "Enable",
+      });
+      if (!ok) return;
+    }
+    ipadFetcher.submit(
+      { intent: on ? "stop-ipad-scan" : "start-ipad-scan", occurrenceStart: d.occurrenceStart },
+      { method: "post" },
+    );
+  }
   const showProject = d.projectId || d.canSetProject;
 
   return (
@@ -665,23 +743,43 @@ export default function CalendarMeetingPage() {
           <h2 className={cn(sectionTitle, "flex items-center gap-2.5 text-2xl")}>
             <Users className="h-6 w-6 text-os-accent" /> Attendance
           </h2>
-          {d.canEnableSelfCheckIn && (
-            <selfCheckInFetcher.Form method="post">
-              <input type="hidden" name="intent" value="enable-self-check-in" />
+          <div className="flex flex-wrap items-center gap-3">
+            {d.ipadScan?.on && <Pill dot="success">Scanning on iPads</Pill>}
+            {d.ipadScan && (d.ipadScan.on || !d.ipadScan.ended) && (
               <button
-                type="submit"
-                disabled={selfCheckInFetcher.state !== "idle"}
+                type="button"
+                onClick={toggleIpadScan}
+                disabled={ipadFetcher.state !== "idle" || d.ipadScan.busyWith !== null}
                 className={cn(actionBtnClass, "disabled:opacity-50")}
               >
-                <QrCode className="h-4 w-4" />
-                {selfCheckInFetcher.state !== "idle" ? "Turning on…" : "Turn on self check-in"}
+                <Tablet className="h-4 w-4" />
+                {d.ipadScan.on ? "Stop attendance tracking from iPad" : "Enable attendance tracking from iPad"}
               </button>
-            </selfCheckInFetcher.Form>
-          )}
+            )}
+            {d.canEnableSelfCheckIn && (
+              <selfCheckInFetcher.Form method="post">
+                <input type="hidden" name="intent" value="enable-self-check-in" />
+                <button
+                  type="submit"
+                  disabled={selfCheckInFetcher.state !== "idle"}
+                  className={cn(actionBtnClass, "disabled:opacity-50")}
+                >
+                  <QrCode className="h-4 w-4" />
+                  {selfCheckInFetcher.state !== "idle" ? "Turning on…" : "Turn on self check-in"}
+                </button>
+              </selfCheckInFetcher.Form>
+            )}
+          </div>
         </div>
+        {d.ipadScan?.busyWith && (
+          <p className="text-sm text-os-grey">
+            iPads are tracking "{d.ipadScan.busyWith}". Turn that off to use them here.
+          </p>
+        )}
         {selfCheckInFetcher.data?.error && (
           <p className="text-sm text-destructive">{selfCheckInFetcher.data.error}</p>
         )}
+        {ipadFetcher.data?.error && <p className="text-sm text-destructive">{ipadFetcher.data.error}</p>}
 
         {d.canManage && d.rows.length > 0 && (
           <div className="flex items-center gap-4">
