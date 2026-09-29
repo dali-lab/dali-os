@@ -4,6 +4,7 @@ import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { listCalendarsForLink } from "~/lib/google-calendar";
 import { isAdmin } from "~/lib/roles";
+import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { jobByName, resolveJobSettings } from "~/jobs/registry";
 import { walletAppleConfigured } from "~/lib/wallet-apple.server";
 import { walletGoogleConfigured } from "~/lib/wallet-google.server";
@@ -95,6 +96,8 @@ export async function loadSettingsPageData(request: Request) {
     notificationPrefs,
     digestRows,
     viewerIsAdmin,
+    passkeysEnabled,
+    authSessionRows,
   ] = await Promise.all([
     prisma.userCalendarLink.findMany({
       where: { userId },
@@ -142,6 +145,25 @@ export async function loadSettingsPageData(request: Request) {
       select: { name: true, settings: true },
     }),
     isAdmin(userId),
+    // Passkey management only makes sense once auth runs on BetterAuth — gate
+    // the Settings section on the same global switch that flips the login flow.
+    isFeatureEnabledForEveryone("betterauth", request),
+    // The active-session list is sourced from AuthSession when BetterAuth is on
+    // (that's where the live sessions are); the legacy Session query above only
+    // matters pre-cutover. Both are fetched; the flag picks which to render.
+    prisma.authSession.findMany({
+      where: { userId, expiresAt: { gt: new Date() } },
+      select: {
+        id: true,
+        createdAt: true,
+        updatedAt: true,
+        expiresAt: true,
+        userAgent: true,
+        ipAddress: true,
+        grantId: true,
+      },
+      orderBy: { updatedAt: "desc" },
+    }),
   ]);
 
   // Render the digest schedule as actually configured (Admin → Jobs), not a
@@ -188,19 +210,36 @@ export async function loadSettingsPageData(request: Request) {
     (e): e is string => !!e,
   );
 
-  const sessions: SessionRowDTO[] = sessionRows.map((s) => ({
-    id: s.id,
-    createdAt: s.createdAt.toISOString(),
-    lastUsedAt: s.lastUsedAt.toISOString(),
-    expiresAt: s.expiresAt.toISOString(),
-    device: describeUserAgent(s.userAgent),
-    userAgent: s.userAgent,
-    isDesktop: /DALI OS Desktop/i.test(s.userAgent ?? ""),
-    ip: s.ip,
-    kind: s.grantId
-      ? { type: "oauth" as const, clientName: s.grant?.client.name ?? "App" }
-      : { type: "browser" as const },
-  }));
+  // AuthSession rows carry grantId but no grant relation (looked up manually),
+  // so resolve the OAuth client name from the grants we already fetched.
+  const grantNameById = new Map(grants.map((g) => [g.id, g.client.name]));
+  const sessions: SessionRowDTO[] = passkeysEnabled
+    ? authSessionRows.map((s) => ({
+        id: s.id,
+        createdAt: s.createdAt.toISOString(),
+        lastUsedAt: s.updatedAt.toISOString(),
+        expiresAt: s.expiresAt.toISOString(),
+        device: describeUserAgent(s.userAgent),
+        userAgent: s.userAgent,
+        isDesktop: /DALI OS Desktop/i.test(s.userAgent ?? ""),
+        ip: s.ipAddress,
+        kind: s.grantId
+          ? { type: "oauth" as const, clientName: grantNameById.get(s.grantId) ?? "App" }
+          : { type: "browser" as const },
+      }))
+    : sessionRows.map((s) => ({
+        id: s.id,
+        createdAt: s.createdAt.toISOString(),
+        lastUsedAt: s.lastUsedAt.toISOString(),
+        expiresAt: s.expiresAt.toISOString(),
+        device: describeUserAgent(s.userAgent),
+        userAgent: s.userAgent,
+        isDesktop: /DALI OS Desktop/i.test(s.userAgent ?? ""),
+        ip: s.ip,
+        kind: s.grantId
+          ? { type: "oauth" as const, clientName: s.grant?.client.name ?? "App" }
+          : { type: "browser" as const },
+      }));
 
   const grantRows: GrantRowDTO[] = grants.map((g) => ({
     id: g.id,
@@ -237,5 +276,6 @@ export async function loadSettingsPageData(request: Request) {
       apple: walletAppleConfigured(),
       google: walletGoogleConfigured(),
     },
+    passkeysEnabled,
   };
 }

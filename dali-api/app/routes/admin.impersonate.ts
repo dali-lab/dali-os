@@ -64,6 +64,22 @@ export async function action({ request }: { request: Request }): Promise<Respons
     });
   }
 
+  // 5b. Any real user may be impersonated — member or not. Every shell an
+  //     impersonated user can land in (member, portal/applicant, partner,
+  //     instructor) mounts the "Stop impersonating" banner, so there is always
+  //     an in-app way back out. Confirm the target exists to fail cleanly on a
+  //     stale/garbage userId rather than handing it to BetterAuth.
+  const target = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true },
+  });
+  if (!target) {
+    return new Response(
+      JSON.stringify({ error: "No such user" }),
+      { status: 404, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
   // 6. JIT role sync: if the actor's user.role is not already "admin", set it
   //    so the BetterAuth admin plugin's gate passes. The plugin reads the row
   //    fresh on each call — no cookie cache is enabled, so this takes effect

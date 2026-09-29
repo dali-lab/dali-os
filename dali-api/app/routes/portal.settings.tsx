@@ -7,6 +7,8 @@ import { isValidTimezone } from "~/lib/timezone";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { PhotoUploadField } from "~/components/PhotoUploadField";
 import { AppearanceSettingsBlock } from "~/components/settings/AppearanceSettingsBlock";
+import { PasskeysSettingsBlock } from "~/components/settings/PasskeysSettingsBlock";
+import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 
 export const meta: Route.MetaFunction = () => [{ title: "Settings · DALI OS" }];
 
@@ -34,6 +36,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     me,
     userId: auth.user.sub,
     photoPreviewUrl: await resolvePhotoUrl(me.photoUrl),
+    passkeysEnabled: await isFeatureEnabledForEveryone("betterauth", request),
   };
 }
 
@@ -71,7 +74,7 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function PortalSettings({ actionData }: Route.ComponentProps) {
-  const { me, userId, photoPreviewUrl } = useLoaderData<typeof loader>();
+  const { me, userId, photoPreviewUrl, passkeysEnabled } = useLoaderData<typeof loader>();
   const navigation = useNavigation();
   const submitting = navigation.state === "submitting";
   const error = actionData && "error" in actionData ? actionData.error : null;
@@ -210,6 +213,13 @@ export default function PortalSettings({ actionData }: Route.ComponentProps) {
         <h2 className="font-heading font-semibold text-dark-blue mb-4">Appearance</h2>
         <AppearanceSettingsBlock />
       </section>
+
+      {passkeysEnabled && (
+        <section className="bg-card border border-border rounded-2xl p-5">
+          <h2 className="font-heading font-semibold text-dark-blue mb-4">Passkeys</h2>
+          <PasskeysSettingsBlock />
+        </section>
+      )}
     </main>
   );
 }

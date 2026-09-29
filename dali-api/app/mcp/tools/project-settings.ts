@@ -8,10 +8,10 @@
 // its detail page, where the term/domain pickers carry validation an agent
 // shouldn't be reimplementing from a flat argument list.
 //
-// `chartString` / `chartStringType` are deliberately NOT returned. They're
-// Dartmouth payroll GL codes, admin-edited, and nothing an agent needs to do
-// its job — the same reasoning that keeps the payroll TimesheetEntry model out
-// of the timesheet tools.
+// Chart strings are deliberately NOT returned. They're Dartmouth payroll GL
+// codes, and this tool is member-accessible; Core reads them through
+// list_project_chart_strings — the same reasoning that keeps the payroll
+// TimesheetEntry model out of the timesheet tools.
 
 import { prisma } from "~/lib/db";
 import { resolvePhotoUrl } from "~/lib/photo";

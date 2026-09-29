@@ -95,7 +95,7 @@ export const FEATURE_FLAGS = [
     key: "betterauth",
     label: "BetterAuth login",
     description:
-      "Route sign-in through the new BetterAuth substrate (email/password, one-time verification links, optional Google) across the member / Dartmouth / partner doors, and let requireAuth accept a BetterAuth session alongside a legacy one. This is a login-mechanism switch, so it's read as a GLOBAL toggle (enabled + everyone) — role/user targeting does not apply. Ships off; flipping it on is the Phase-1 cutover and forces a global re-login.",
+      "Route sign-in through the BetterAuth substrate across the member, Dartmouth, and partner doors. Sign-in is passwordless: a 6-digit email code plus passkeys (no password, no Google). requireAuth accepts a BetterAuth session alongside a legacy one, so turning this on does NOT force a re-login; active legacy sessions upgrade to BetterAuth silently as users browse. Read as a GLOBAL toggle (enabled + everyone), so role and user targeting do not apply. Ships off; flipping it on is the cutover.",
   },
   {
     key: "resources",

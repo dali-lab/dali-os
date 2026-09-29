@@ -324,7 +324,10 @@ export default function AppLayoutRoute() {
   if (instructorChrome) {
     return (
       <FeatureFlagsProvider flags={flags}>
-        <InstructorChrome />
+        <InstructorChrome
+          impersonating={impersonating}
+          userName={`${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || user.email}
+        />
       </FeatureFlagsProvider>
     )
   }
