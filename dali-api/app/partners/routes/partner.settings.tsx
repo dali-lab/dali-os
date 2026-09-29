@@ -7,6 +7,8 @@ import { resolvePhotoUrl } from "~/lib/photo";
 import { isValidTimezone } from "~/lib/timezone";
 import { PhotoUploadField } from "~/components/PhotoUploadField";
 import { AppearanceSettingsBlock } from "~/components/settings/AppearanceSettingsBlock";
+import { PasskeysSettingsBlock } from "~/components/settings/PasskeysSettingsBlock";
+import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { Tooltip } from "~/components/ui/floating";
 import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
@@ -65,6 +67,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     members,
     pendingInvites,
     hasOrg: !!org,
+    passkeysEnabled: await isFeatureEnabledForEveryone("betterauth", request),
   };
 }
 
@@ -223,7 +226,7 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function PartnerSettings({ actionData }: Route.ComponentProps) {
-  const { me, org, logoPreviewUrl, photoPreviewUrl, members, pendingInvites, hasOrg } =
+  const { me, org, logoPreviewUrl, photoPreviewUrl, members, pendingInvites, hasOrg, passkeysEnabled } =
     useLoaderData<typeof loader>();
   const navigation = useNavigation();
   const submitting = navigation.state === "submitting";
@@ -309,6 +312,13 @@ export default function PartnerSettings({ actionData }: Route.ComponentProps) {
         <h2 className="font-heading font-semibold text-dark-blue mb-4">Appearance</h2>
         <AppearanceSettingsBlock />
       </section>
+
+      {passkeysEnabled && (
+        <section className="bg-card border border-border rounded-2xl p-5">
+          <h2 className="font-heading font-semibold text-dark-blue mb-4">Passkeys</h2>
+          <PasskeysSettingsBlock />
+        </section>
+      )}
 
       {hasOrg && org && (
         <>

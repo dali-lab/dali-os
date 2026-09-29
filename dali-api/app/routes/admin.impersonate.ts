@@ -18,6 +18,7 @@ import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { getBetterAuthUser } from "~/lib/betterauth-compat.server";
 import { isAdmin } from "~/lib/roles";
 import { prisma } from "~/lib/db";
+import { LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
 import { auth } from "~/lib/betterauth.server";
 import { logAuditEvent } from "~/lib/audit";
 
@@ -62,6 +63,22 @@ export async function action({ request }: { request: Request }): Promise<Respons
       status: 400,
       headers: { "Content-Type": "application/json" },
     });
+  }
+
+  // 5b. Only lab members can be impersonated. A non-member renders the
+  //     InstructorChrome shell, which mounts no "Stop impersonating" banner or
+  //     control — impersonating one would strand the admin in that identity with
+  //     no in-app way out. This matches the LAB_MEMBER_WHERE filter that gates
+  //     the "Log in as" button in Admin → Roles & permissions.
+  const targetIsMember = await prisma.user.findFirst({
+    where: { id: userId, ...LAB_MEMBER_WHERE },
+    select: { id: true },
+  });
+  if (!targetIsMember) {
+    return new Response(
+      JSON.stringify({ error: "Can only impersonate lab members" }),
+      { status: 400, headers: { "Content-Type": "application/json" } },
+    );
   }
 
   // 6. JIT role sync: if the actor's user.role is not already "admin", set it
