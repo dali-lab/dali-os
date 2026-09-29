@@ -122,7 +122,8 @@ export async function runCreatePayrollCsvUpload(
   };
 }
 
-/** Only keys this tool minted: the prefix plus one segment. */
+/** Only keys this tool minted: the prefix plus one segment. The general
+ *  presign route refuses this prefix, so nothing else can put a file here. */
 function assertPayrollKey(key: string, label: string): void {
   const rest = key.startsWith(PREFIX) ? key.slice(PREFIX.length) : "";
   if (rest === "" || rest.includes("/")) {
@@ -170,15 +171,19 @@ export async function runImportPayrollCsvs(
 
   const timesheetKey = input.timesheetKey.trim();
   const notesKey = input.notesKey?.trim() || null;
+  // A key that isn't ours is never deleted; every one that is, is — even when
+  // the other key is what's wrong.
   assertPayrollKey(timesheetKey, "timesheetKey");
-  if (notesKey) {
-    assertPayrollKey(notesKey, "notesKey");
-    if (notesKey === timesheetKey) {
-      throw new McpInvalidError("timesheetKey and notesKey must be different uploads.");
-    }
-  }
+  const ours = [timesheetKey];
 
   try {
+    if (notesKey) {
+      assertPayrollKey(notesKey, "notesKey");
+      if (notesKey === timesheetKey) {
+        throw new McpInvalidError("timesheetKey and notesKey must be different uploads.");
+      }
+      ours.push(notesKey);
+    }
     const timesheet = await readUploadedCsv(timesheetKey);
     const notes = notesKey ? await readUploadedCsv(notesKey) : null;
     return await importPayrollCsvs({ timesheet, notes, uploadedById: callerId });
@@ -187,8 +192,10 @@ export async function runImportPayrollCsvs(
     throw err;
   } finally {
     // Student pay data: gone once read, however the import went.
-    await Promise.allSettled(
-      [timesheetKey, notesKey].filter((k): k is string => !!k).map((k) => deleteObject(k)),
-    );
+    const results = await Promise.allSettled(ours.map((k) => deleteObject(k)));
+    results.forEach((r, i) => {
+      // The key only — never the contents.
+      if (r.status === "rejected") console.warn(`import_payroll_csvs: could not delete ${ours[i]}`);
+    });
   }
 }

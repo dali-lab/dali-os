@@ -149,6 +149,22 @@ describe("import_payroll_csvs", () => {
     expect(getObjectBytes).not.toHaveBeenCalled();
   });
 
+  it("deletes the timesheet upload even when the notes key is what's wrong", async () => {
+    await expect(
+      runImportPayrollCsvs("u1", { timesheetKey: TS_KEY, notesKey: "uploads/avatars/x.csv" }),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(deleteObject).toHaveBeenCalledWith(TS_KEY);
+    expect(deleteObject).not.toHaveBeenCalledWith("uploads/avatars/x.csv");
+  });
+
+  it("warns with the key when a delete fails, and still returns the import", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(deleteObject).mockRejectedValue(new Error("throttled"));
+    await expect(runImportPayrollCsvs("u1", { timesheetKey: TS_KEY })).resolves.toBe(SUMMARY);
+    expect(warn).toHaveBeenCalledWith(`import_payroll_csvs: could not delete ${TS_KEY}`);
+    warn.mockRestore();
+  });
+
   it("refuses the same key as both files", async () => {
     await expect(
       runImportPayrollCsvs("u1", { timesheetKey: TS_KEY, notesKey: TS_KEY }),
