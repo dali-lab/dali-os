@@ -276,6 +276,10 @@ export const PROJECT_FUNDING_TYPE_LABELS: Record<ProjectFundingType, string> = {
  *  the field stays editable for exactly that. */
 export const DALI_PROJECTS_GL = "20.330.161028.128512.4000";
 
+/** The same lab GL line with subactivity 3000 (Programs): what Core,
+ *  Instructor and Technigala payroll rows charge. */
+export const DALI_PROGRAMS_GL = "20.330.161028.128512.3000";
+
 /** The two project types that charge the lab's own GL. Transfer GL is included
  *  on purpose: DALI fronts the cost on its GL and the invoice brings revenue
  *  back, so the expense side is the same string as DALI GL. */
