@@ -1,17 +1,19 @@
 import { prisma } from "~/lib/db";
 import { rowsToCsv as rowsToCsvShared } from "~/lib/csv";
 import type { Level } from "~/lib/level";
+import type { ChartStringType } from "~/lib/chart-string";
+import { resolveChartStringsForTerm } from "~/lib/chart-string.server";
 
 // ─── Constants per payroll spec ──────────────────────────────────────────────
 // Single hardcoded primary/secondary supervisor for the whole lab. Per spec,
 // every row gets these NetIDs. If supervisors ever differ per project, replace
-// with a per-project field on Project (mirroring chartString).
+// with a per-project field on Project.
 export const PRIMARY_SUPERVISOR_NETID = "f0077bn";
 export const SECONDARY_SUPERVISOR_NETID = "d1207c2";
 export const ANTICIPATED_HOURS_PER_WEEK = "15";
 
 // Lab-wide chart string for non-project payroll (Core + Instructor). Project
-// rows pull their chart string from Project.chartString; these rows share one
+// rows resolve theirs per term from ProjectChartString; these rows share one
 // internal funding line. Type left blank — payroll didn't specify one for
 // internal lines.
 export const CORE_INSTRUCTOR_CHART_STRING_TYPE = "";
@@ -26,6 +28,14 @@ export const TECHNIGALA_JOB_CODE = "8274";
 export const TECHNIGALA_WAGE = "19";
 export const TECHNIGALA_CHART_STRING_TYPE = CORE_INSTRUCTOR_CHART_STRING_TYPE;
 export const TECHNIGALA_CHART_STRING = CORE_INSTRUCTOR_CHART_STRING;
+
+// The "Chart String Type" column as Dartmouth payroll has been receiving it.
+// DALI OS stored PTAEO as "PATEO" and every accepted import carried that
+// spelling; nothing says payroll takes "PTAEO". Change it once payroll says so.
+const PAYROLL_CHART_STRING_TYPE: Record<ChartStringType, string> = {
+  GL: "GL",
+  PTAEO: "PATEO",
+};
 
 // 16-column header, order matters — Dartmouth payroll imports column-by-column.
 export const CSV_HEADERS = [
@@ -383,9 +393,7 @@ export async function buildPayrollRows(
       where: payrollAssignmentWhere(termId, filter),
       include: {
         user: { select: { netId: true, firstName: true, lastName: true } },
-        project: {
-          select: { name: true, chartStringType: true, chartString: true },
-        },
+        project: { select: { name: true } },
         domain: { select: { displayName: true } },
       },
       orderBy: [{ user: { lastName: "asc" } }, { user: { firstName: "asc" } }],
@@ -404,12 +412,24 @@ export async function buildPayrollRows(
 
   const hireStart = formatDate(term.startDate);
   const hireEnd = formatDate(term.endDate);
+  const chartStrings = await resolveChartStringsForTerm(
+    termId,
+    assignments.map((a) => a.projectId),
+  );
 
   return assignments.map((a) => {
     const warnings: string[] = [];
     const job = resolveJobCode(jobLookups, a.level, a.domainId);
     if (!job) warnings.push(`No JobCodeLookup for level=${a.level}`);
-    if (!a.project.chartString) warnings.push("Project missing chartString");
+    // Always resolves — a project with no string of its own charges the lab
+    // default. The case worth flagging is one that had its own last term and
+    // wasn't re-entered, e.g. a sponsored project whose award carried over.
+    const cs = chartStrings.get(a.projectId)!;
+    if (cs.lastOwnTermCode) {
+      warnings.push(
+        `No chart string for this term (had its own in ${cs.lastOwnTermCode}); charging the lab default`,
+      );
+    }
     if (!a.user.netId) warnings.push("User missing NetID");
 
     return {
@@ -420,8 +440,8 @@ export async function buildPayrollRows(
       hourlyWage: job?.hourlyWage ?? "",
       hireStart,
       hireEnd,
-      chartStringType: a.project.chartStringType ?? "",
-      chartString: a.project.chartString ?? "",
+      chartStringType: PAYROLL_CHART_STRING_TYPE[cs.type],
+      chartString: cs.normalized,
       domain: a.domain.displayName,
       level: a.level,
       warnings,

@@ -1,20 +1,17 @@
 // The one write path for project chart strings, shared by the project detail
-// form and the `set_project_chart_string` MCP tool. Both callers validate the
-// same way, supersede the same way, mirror the same way and audit the same way
-// — a second implementation is how the two would drift.
+// form and the `set_project_chart_string` MCP tool, and the one read path the
+// payroll export and the collation seam resolve through. Both writers validate,
+// supersede and audit the same way — a second implementation is how the two
+// would drift.
 //
-// Transitional mirror: `Project.chartString` / `chartStringType` still drive
-// the payroll export, the collation seam, the Admin → Payroll "missing chart
-// string" warning and the seed. Until those readers move to this table, a write
-// for the *current* term also mirrors into those columns, so entering a chart
-// string here reaches payroll instead of landing somewhere nothing reads. The
-// mirror comes out when the readers are repointed, and the columns are dropped
-// after that.
+// This table is the only source. The legacy `Project.chartString` columns were
+// imported into it (migration chart_string_legacy_backfill) and nothing reads
+// them any more.
 
 import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";
-import { currentTerm } from "~/lib/roles";
 import {
+  DALI_PROJECTS_GL,
   parseChartString,
   type ChartStringType,
   type ChartStringIssue,
@@ -61,8 +58,6 @@ export type RecordChartStringResult = {
   normalized: string;
   type: ChartStringType;
   projectCode: string;
-  /** True when this write also updated the legacy Project columns. */
-  mirrored: boolean;
   /** Format issues that didn't block the write. */
   warnings: ChartStringIssue[];
 };
@@ -82,9 +77,6 @@ export async function recordProjectChartString(
         : [{ code: "unparsed", message: "Chart string could not be parsed." }],
     );
   }
-
-  const active = await currentTerm();
-  const isCurrentTerm = active?.id === input.termId;
 
   // Deactivate-then-insert, in one transaction and in that order: the partial
   // unique index permits one current row per (project, term), so the old row
@@ -129,19 +121,6 @@ export async function recordProjectChartString(
       select: { id: true, supersedesId: true },
     });
 
-    // Only the current term mirrors: Project.chartString has no term, so
-    // writing a past or future term's string into it would overwrite what
-    // payroll is charging right now.
-    if (isCurrentTerm) {
-      await tx.project.update({
-        where: { id: input.projectId },
-        data: {
-          chartString: parsed.normalized,
-          chartStringType: parsed.type,
-        },
-      });
-    }
-
     return row;
   });
 
@@ -155,7 +134,6 @@ export async function recordProjectChartString(
       type: parsed.type,
       fundingType: input.fundingType ?? null,
       supersededId: created.supersedesId,
-      mirrored: isCurrentTerm,
       warnings: parsed.warnings.map((w) => w.code),
     },
   });
@@ -166,7 +144,6 @@ export async function recordProjectChartString(
     normalized: parsed.normalized,
     type: parsed.type as ChartStringType,
     projectCode: parsed.projectCode as string,
-    mirrored: isCurrentTerm,
     warnings: parsed.warnings,
   };
 }
@@ -248,4 +225,94 @@ export async function listProjectChartStrings(
       ? `${r.createdBy.firstName} ${r.createdBy.lastName}`.trim()
       : null,
   }));
+}
+
+export type ResolvedChartString = {
+  normalized: string;
+  type: ChartStringType;
+  /** Who supplied it: the project's own row for the term, the lab-wide default
+   *  row for the term, or — when the lab hasn't recorded one — the lab's
+   *  projects GL built into the code. */
+  source: "project" | "labDefault" | "builtIn";
+  /** Set only when the project didn't supply this term's string: the latest
+   *  other term in which it did. A sponsored project nobody re-entered for the
+   *  new term falls back to the lab GL without complaint, so callers warn on
+   *  this. */
+  lastOwnTermCode: string | null;
+};
+
+/**
+ * The chart string each project charges in a term. Every project gets an
+ * answer — inheriting is the normal case for the projects on the lab GL — so
+ * a missing entry means only that the id wasn't passed in.
+ */
+export async function resolveChartStringsForTerm(
+  termId: string,
+  projectIds: string[],
+): Promise<Map<string, ResolvedChartString>> {
+  const ids = [...new Set(projectIds)];
+  const [own, labDefault] = await Promise.all([
+    ids.length === 0
+      ? Promise.resolve([])
+      : prisma.projectChartString.findMany({
+          where: { projectId: { in: ids }, isCurrent: true },
+          select: {
+            projectId: true,
+            termId: true,
+            normalized: true,
+            type: true,
+            term: { select: { code: true, sortKey: true } },
+          },
+        }),
+    prisma.projectChartString.findFirst({
+      where: { projectId: null, termId, isCurrent: true },
+      select: { normalized: true, type: true },
+    }),
+  ]);
+
+  const inherited = labDefault
+    ? { normalized: labDefault.normalized, type: labDefault.type as ChartStringType, source: "labDefault" as const }
+    : { normalized: DALI_PROJECTS_GL, type: "GL" as const, source: "builtIn" as const };
+
+  const thisTerm = new Map<string, { normalized: string; type: ChartStringType }>();
+  const latestOther = new Map<string, { code: string; sortKey: number }>();
+  for (const r of own) {
+    if (!r.projectId) continue;
+    if (r.termId === termId) {
+      thisTerm.set(r.projectId, { normalized: r.normalized, type: r.type as ChartStringType });
+    } else if ((latestOther.get(r.projectId)?.sortKey ?? -Infinity) < r.term.sortKey) {
+      latestOther.set(r.projectId, r.term);
+    }
+  }
+
+  const out = new Map<string, ResolvedChartString>();
+  for (const id of ids) {
+    const mine = thisTerm.get(id);
+    out.set(
+      id,
+      mine
+        ? { ...mine, source: "project", lastOwnTermCode: null }
+        : { ...inherited, lastOwnTermCode: latestOther.get(id)?.code ?? null },
+    );
+  }
+  return out;
+}
+
+/**
+ * Every chart string each project has held, in any term, current or
+ * superseded — for matching the strings timesheets were actually charged
+ * against, which can be months older than whatever is current now.
+ */
+export async function listChartStringsByProject(): Promise<Map<string, string[]>> {
+  const rows = await prisma.projectChartString.findMany({
+    where: { projectId: { not: null } },
+    select: { projectId: true, normalized: true },
+  });
+  const out = new Map<string, Set<string>>();
+  for (const r of rows) {
+    const set = out.get(r.projectId as string) ?? new Set<string>();
+    set.add(r.normalized);
+    out.set(r.projectId as string, set);
+  }
+  return new Map([...out].map(([id, set]) => [id, [...set]]));
 }
