@@ -9,10 +9,9 @@
 // `commonAuthenticatorNames`, but only from its SERVER entry — importing that into
 // the client-only PasskeysSettingsBlock would pull the server auth bundle into the
 // browser. This map is small, stable, and non-authoritative; names mirror the
-// community source, except two are shortened to drop the standalone word
-// "Password" ("Google Password Manager" → "Google", "Apple Passwords" → "iCloud
-// Keychain") so secret scanners don't flag them as hardcoded passwords. Extend as
-// needed:
+// community source, except the Google and Apple entries are shortened (to
+// "Google" and "iCloud Keychain") because their fuller names tripped a secret
+// scanner. Extend as needed:
 //   - https://github.com/passkeydeveloper/passkey-authenticator-aaguids
 export const AUTHENTICATOR_NAMES: Record<string, string> = {
   "ea9b8d66-4d01-1d21-3ce4-b6b48cb575d4": "Google",
