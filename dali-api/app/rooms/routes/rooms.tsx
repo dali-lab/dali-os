@@ -325,18 +325,20 @@ function DayTimeline({
           const top = yFor(start);
           const height = Math.max(yFor(end) - top, 22);
           const mine = item.kind === "booking" && item.organizer.id === userId && end > now;
+          const short = height <= 36;
           return (
             <div
               key={`${item.kind}-${item.id}-${item.start}`}
               className={cn(
-                "absolute inset-x-2 overflow-hidden rounded-[10px] border px-3 py-1.5 text-sm",
+                "absolute inset-x-2 overflow-hidden rounded-[10px] border px-3 text-sm",
+                short ? "py-0.5" : "py-1.5",
                 item.kind === "meeting"
                   ? "border-os-accent/40 bg-os-accent/15 text-foreground"
                   : "border-os-container bg-os-well text-foreground",
               )}
               style={{ top, height }}
             >
-              <div className="flex items-start justify-between gap-2">
+              <div className={cn("flex justify-between gap-2", short ? "h-full items-center" : "items-start")}>
                 <div className="min-w-0">
                   <p className="truncate font-medium">{item.title}</p>
                   {height > 36 && (
@@ -347,7 +349,14 @@ function DayTimeline({
                   )}
                 </div>
                 {mine && (
-                  <IconButton label="Cancel booking" icon={X} onClick={() => onCancel(item)} />
+                  <button
+                    type="button"
+                    onClick={() => onCancel(item)}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-full bg-os-card px-2.5 py-0.5 text-xs font-medium text-os-grey transition-colors hover:bg-os-container hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-os-accent"
+                  >
+                    <X className="h-3.5 w-3.5" aria-hidden />
+                    {start <= now ? "End" : "Cancel"}
+                  </button>
                 )}
               </div>
             </div>
