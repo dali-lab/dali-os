@@ -1,11 +1,13 @@
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
+import { createAuthMiddleware } from "better-auth/api";
 import { bearer, magicLink, admin, emailOTP } from "better-auth/plugins";
 import { passkey } from "@better-auth/passkey";
 
 import { prisma } from "~/lib/db";
 import { getApiBaseUrl, getFrontendUrl, getAppEnv } from "~/lib/app-env";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
+import { auditPasskeyMutation } from "~/lib/betterauth-passkey-audit.server";
 
 // Deduplicate the trusted origins list — in single-server deployments
 // (Fly staging/prod) getApiBaseUrl() === getFrontendUrl(), so a Set avoids a
@@ -261,6 +263,15 @@ export const auth = betterAuth({
     //   organization()     — partner org membership; later phase
     //   jwt() + mcp()      — Phase 4: @better-auth/mcp MCP provider sessions
   ],
+
+  // Endpoint hooks. `after` runs post-handler; auditPasskeyMutation records
+  // passkey enrollments/removals (which flow through BetterAuth's own endpoints,
+  // not our routes) and no-ops for every other path.
+  hooks: {
+    after: createAuthMiddleware(async (ctx) => {
+      await auditPasskeyMutation(ctx);
+    }),
+  },
 
   databaseHooks: {
     user: {

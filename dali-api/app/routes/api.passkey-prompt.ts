@@ -6,7 +6,6 @@ import {
   shouldOfferPasskey,
   setPasskeyPromptDismissed,
 } from "~/lib/passkey-prompt.server";
-import { logAuditEvent } from "~/lib/audit";
 
 // Backs the in-app passkey enrollment prompt (PasskeyEnrollmentPrompt), which
 // reaches users the post-login /welcome offer misses — notably members migrated
@@ -16,8 +15,9 @@ import { logAuditEvent } from "~/lib/audit";
 //        has no passkey yet, and they haven't dismissed on this device.
 // POST → the user acted: "dismiss" (Not now) or "enrolled" (WebAuthn ceremony
 //        completed client-side). Both set the per-device dismissal cookie so we
-//        don't nag again; "enrolled" is verified against the Passkey table and
-//        recorded in the audit log.
+//        don't nag again. The enrollment itself is audit-logged server-side by
+//        the BetterAuth after-hook (auditPasskeyMutation) when the ceremony hits
+//        /passkey/verify-registration — this route only manages the nag cookie.
 
 export async function loader({ request }: Route.LoaderArgs) {
   // Require a real BetterAuth session — not just any session. Enrollment
@@ -45,18 +45,13 @@ export async function action({ request }: Route.ActionArgs) {
   const headers = new Headers();
 
   if (intent === "enrolled") {
-    // Trust but verify: only suppress + record if a passkey actually landed.
+    // Trust but verify: only suppress the nag if a passkey actually landed. The
+    // registration is audit-logged by the BetterAuth after-hook, not here.
     const count = await prisma.passkey.count({
       where: { userId: user.sub },
     });
     if (count > 0) {
       setPasskeyPromptDismissed(headers);
-      await logAuditEvent({
-        action: "auth.passkey.register",
-        userId: user.sub,
-        metadata: { passkeyCount: count, via: "prompt" },
-        request,
-      });
     }
     return Response.json({ ok: true }, { headers });
   }
