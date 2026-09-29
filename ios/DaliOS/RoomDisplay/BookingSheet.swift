@@ -31,7 +31,9 @@ struct BookingSheet: View {
         }
         .padding(24)
         .frame(maxWidth: .infinity)
-        .background(OS.bg.ignoresSafeArea())
+        // Paint the sheet itself: a view background stops at the content and
+        // leaves the sheet's white showing at the edges.
+        .presentationBackground(OS.bg)
         .presentationSizing(.form.fitted(horizontal: false, vertical: true))
     }
 

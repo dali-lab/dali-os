@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The at-a-glance status, read from down the hall: one flat wash of the
 /// status color, a big countdown of the free (or remaining) time, one line of
-/// context, and — while in use — who has it and what's next. Booking lives
+/// context, and — while in use — the booker's photo and what's next. Booking lives
 /// behind the display's + button.
 struct StatusHero: View {
     let snapshot: RoomSnapshot
@@ -22,46 +22,44 @@ struct StatusHero: View {
                     .tracking(1.6)
                     .textCase(.uppercase)
                     .foregroundStyle(palette.ink)
-                if let current = snapshot.current {
-                    HStack(spacing: 10) {
-                        Avatar(organizer: current.organizer, size: 36, ink: palette.ink)
-                        Text(current.organizerName)
-                            .font(OS.font(18, .semibold))
-                            .foregroundStyle(OS.fg)
-                    }
-                    .padding(.leading, 12)
-                }
             }
 
             // Countdown and its context side by side keeps the card short, so
             // the day's calendar gets the height.
             HStack(alignment: .center, spacing: 28) {
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text(remainingText)
-                        .font(OS.font(72, .bold).monospacedDigit())
-                        .foregroundStyle(OS.fg)
-                        .minimumScaleFactor(0.5)
-                        .lineLimit(1)
-                    if remaining != nil {
-                        Text(isFree ? "free" : "left")
-                            .font(OS.font(26, .medium))
-                            .foregroundStyle(palette.ink)
-                    }
-                }
-                .fixedSize()
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(headline)
-                        .font(OS.font(24, .semibold))
-                        .foregroundStyle(OS.fg)
-                        .lineLimit(1)
-                    if let detail {
-                        Text(detail)
-                            .font(OS.font(20))
-                            .foregroundStyle(OS.grey)
+                // The context's last line sits on the same baseline as
+                // "free"/"left".
+                HStack(alignment: .lastTextBaseline, spacing: 28) {
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Text(remainingText)
+                            .font(OS.font(72, .bold).monospacedDigit())
+                            .foregroundStyle(OS.fg)
+                            .minimumScaleFactor(0.5)
                             .lineLimit(1)
+                        if remaining != nil {
+                            Text(isFree ? "free" : "left")
+                                .font(OS.font(26, .medium))
+                                .foregroundStyle(palette.ink)
+                        }
+                    }
+                    .fixedSize()
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(headline)
+                            .font(OS.font(24, .semibold))
+                            .foregroundStyle(OS.fg)
+                            .lineLimit(1)
+                        if let detail {
+                            Text(detail)
+                                .font(OS.font(20))
+                                .foregroundStyle(OS.grey)
+                                .lineLimit(1)
+                        }
                     }
                 }
                 Spacer(minLength: 0)
+                if let current = snapshot.current {
+                    Avatar(organizer: current.organizer, size: 96, ink: palette.ink)
+                }
             }
             .padding(.top, 4)
 
@@ -204,7 +202,7 @@ private struct Avatar: View {
         }
         .frame(width: size, height: size)
         .clipShape(.circle)
-        .overlay(Circle().strokeBorder(OS.card, lineWidth: 2))
+        .overlay(Circle().strokeBorder(OS.card, lineWidth: 3))
     }
 
     private var initials: String {
