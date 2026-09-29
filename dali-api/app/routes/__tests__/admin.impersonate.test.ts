@@ -43,6 +43,7 @@ const mockLogAudit = logAuditEvent as unknown as ReturnType<typeof vi.fn>;
 const mockPrisma = prisma as unknown as {
   user: {
     findUnique: ReturnType<typeof vi.fn>;
+    findFirst: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
   };
 };
@@ -82,6 +83,8 @@ beforeEach(() => {
 
   // Default: actor already has role="admin" (no JIT update needed).
   mockPrisma.user.findUnique = vi.fn().mockResolvedValue({ role: "admin" });
+  // Default: the target is a lab member (findFirst with LAB_MEMBER_WHERE hits).
+  mockPrisma.user.findFirst = vi.fn().mockResolvedValue({ id: TARGET_ID });
   mockPrisma.user.update = vi.fn().mockResolvedValue({});
 
   // Default: impersonation succeeds.
@@ -135,6 +138,19 @@ describe("POST /admin/impersonate — input validation", () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toMatch(/Cannot impersonate self/i);
+    expect(mockImpersonate).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /admin/impersonate — member-only target", () => {
+  it("returns 400 when the target is not a lab member", async () => {
+    // Non-members render InstructorChrome, which has no stop-impersonating
+    // control — impersonating one would strand the admin. Reject at the gate.
+    mockPrisma.user.findFirst = vi.fn().mockResolvedValue(null);
+    const res = await action({ request: makeRequest() } as any);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/lab members/i);
     expect(mockImpersonate).not.toHaveBeenCalled();
   });
 });

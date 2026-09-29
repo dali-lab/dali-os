@@ -78,13 +78,14 @@ export async function action({ request }: Route.ActionArgs) {
         return { error: "Use your @dartmouth.edu email address.", door, sent: false as const };
       }
     } else if (door === "partner") {
-      // Member-conflict guard: a @dali/member email must NOT get a partner magic link.
+      // Member-conflict guard: a @dali/member email must NOT get a partner magic
+      // link — it would sign them into their MEMBER account but land them at the
+      // partner door. Send the conflict notice and return the neutral "sent"
+      // response WITHOUT issuing a sign-in link (partner.login.tsx does the same).
       const identity = await classifyPartnerEmail(normalizeEmail(email));
       if (identity.kind === "member-conflict") {
         await sendMemberEmailConflictEmail(normalizeEmail(email));
-        // Anti-enumeration: fall through to the neutral "sent" response below.
-      } else {
-        // proceed
+        return { sent: true as const, email: normalizeEmail(email), door };
       }
     }
 

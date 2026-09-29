@@ -1,6 +1,7 @@
-import { Outlet, useLoaderData, Link, useMatches } from "react-router";
+import { Outlet, useLoaderData, Link, useMatches, redirect } from "react-router";
 import type { Route } from "./+types/applicant-layout";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
+import { maybeUpgradeLegacyToBetterAuth } from "~/lib/betterauth-upgrade.server";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { resolvePhotoUrl } from "~/lib/photo";
@@ -16,6 +17,18 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return redirectToLogin(request);
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return partnerRedirect;
+
+  // TEMPORARY (remove ~1 week post-cutover): migrate a validated legacy session
+  // to a BetterAuth session, then reload so the new cookie takes effect. This
+  // layout wraps every /portal/* route, so it is the correct place for the
+  // upgrade — a deep-link straight to a portal sub-route (settings, education)
+  // must upgrade too, not just the /portal index.
+  const upgradeHeaders = await maybeUpgradeLegacyToBetterAuth(request, auth);
+  if (upgradeHeaders) {
+    const u = new URL(request.url);
+    return redirect(u.pathname + u.search, { headers: upgradeHeaders });
+  }
+
   const me = await prisma.user.findUnique({
     where: { id: auth.user.sub },
     select: { photoUrl: true },

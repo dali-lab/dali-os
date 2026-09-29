@@ -12,7 +12,7 @@
 // (auth.ok), never a bare token, and it mints for the SAME userId.
 //
 // To remove: delete this module and its three call sites — app/routes/layout.tsx,
-// app/routes/portal.tsx, and app/partners/routes/partner-layout.tsx.
+// app/routes/applicant-layout.tsx, and app/partners/routes/partner-layout.tsx.
 
 import type { AuthResult } from "~/lib/auth";
 import { COOKIE_SID, clearSessionCookie } from "~/lib/cookies";
