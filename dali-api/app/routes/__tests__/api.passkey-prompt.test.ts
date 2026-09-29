@@ -77,13 +77,11 @@ describe("POST /api/passkey-prompt (act)", () => {
     expect(mockAudit).not.toHaveBeenCalled();
   });
 
-  it("enrolled (passkey present) sets the cookie and audit-logs the registration", async () => {
+  it("enrolled (passkey present) sets the cookie; registration is logged by the auth hook, not this route", async () => {
     mockCount.mockResolvedValue(1 as any);
     const res = (await action({ request: post("enrolled") } as any)) as Response;
     expect(cookiesOf(res).some((c) => c.includes("dali_pk_prompt=1"))).toBe(true);
-    expect(mockAudit).toHaveBeenCalledWith(
-      expect.objectContaining({ action: "auth.passkey.register", userId: "u1" }),
-    );
+    expect(mockAudit).not.toHaveBeenCalled();
   });
 
   it("enrolled with no passkey present does nothing (no cookie, no audit)", async () => {
