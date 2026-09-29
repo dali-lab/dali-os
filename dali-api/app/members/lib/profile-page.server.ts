@@ -9,7 +9,7 @@ import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { graduateProgramLabel } from "~/lib/dartmouth-people";
-import { parseSessionCookie } from "~/lib/cookies";
+import { getCollabToken } from "~/lib/collab-token.server";
 import { getPresenceUser } from "~/lib/presence-user";
 import {
   listProfileNotes,
@@ -500,7 +500,7 @@ export async function loadProfilePage({
     ...(technigalaRows.length > 0 ? ["Technigala Support"] : []),
   ];
 
-  const collabToken = parseSessionCookie(request);
+  const collabToken = await getCollabToken(request);
 
   // Personal notes for the rail. "Shared with me" is an inbox of your own, so
   // it's only fetched when you're looking at your own profile.

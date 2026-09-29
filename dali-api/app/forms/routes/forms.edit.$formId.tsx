@@ -19,7 +19,7 @@ import { listAllGroups } from "~/lib/groups";
 import { FormDetail } from "~/forms/components/FormDetail";
 import { loadVersionResponses } from "~/forms/lib/version-responses.server";
 import { driveRootCrumbs } from "~/lib/drive-crumbs";
-import { parseSessionCookie } from "~/lib/cookies";
+import { getCollabToken } from "~/lib/collab-token.server";
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `${(data as any)?.form?.name ?? "Form"} · Forms · DALI OS` },
@@ -107,7 +107,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       .map((g) => ({ id: g.id, name: g.name, type: g.type })),
     // Session cookie forwarded to the client so FormBuilderTab can authenticate
     // its Hocuspocus connection for the form's structured collab room.
-    collabToken: parseSessionCookie(request),
+    collabToken: await getCollabToken(request),
   };
 }
 

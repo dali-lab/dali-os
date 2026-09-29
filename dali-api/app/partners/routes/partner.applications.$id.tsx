@@ -2,7 +2,7 @@ import { Form, Link, useLoaderData, useNavigation } from "react-router";
 import { PartnerBackLink } from "~/partners/components/PartnerBackLink";
 import type { Route } from "./+types/partner.applications.$id";
 import { prisma } from "~/lib/db";
-import { parseSessionCookie } from "~/lib/cookies";
+import { getCollabToken } from "~/lib/collab-token.server";
 import { getPresenceUser } from "~/lib/presence-user";
 import { termCodeLabel } from "~/lib/display";
 import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
@@ -77,7 +77,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     application: applicationOut,
     formAnswers,
     canEditDetails: PARTNER_EDITABLE_STATUSES.includes(application.status),
-    collabToken: parseSessionCookie(request),
+    collabToken: await getCollabToken(request),
     userName: presenceUser?.name ?? fallbackName,
     currentUserId: auth.user.sub,
   };

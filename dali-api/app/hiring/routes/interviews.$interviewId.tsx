@@ -15,7 +15,7 @@ import { prisma } from '~/lib/db'
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from '~/lib/login-next'
 import { resolvePhotoUrl } from '~/lib/photo'
-import { parseSessionCookie } from '~/lib/cookies'
+import { getCollabToken } from "~/lib/collab-token.server";
 import { getPresenceUser } from '~/lib/presence-user'
 import { requirePageSignedOrRedirect } from '~/hiring/lib/confidentiality'
 import { presignAnswers } from '~/hiring/lib/presign'
@@ -137,7 +137,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     ),
   })
 
-  const collabToken = parseSessionCookie(request)
+  const collabToken = await getCollabToken(request)
 
   // Presign file-type answers so interviewers can download uploads instead of
   // staring at raw S3 keys.

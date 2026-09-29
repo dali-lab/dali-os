@@ -7,7 +7,7 @@ import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { recordRouteVisit } from "~/lib/user-pages.server";
 import { isCore } from "~/lib/roles";
-import { parseSessionCookie } from "~/lib/cookies";
+import { getCollabToken } from "~/lib/collab-token.server";
 import { DocEditor } from "~/components/doc";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { Tooltip, InfoTip } from "~/components/ui/floating";
@@ -117,7 +117,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     termCode: term?.code ?? "?",
     domainDisplay: domain?.displayName ?? "Unknown",
     canEdit: note.mentorId === auth.user.sub || core,
-    collabToken: parseSessionCookie(request),
+    collabToken: await getCollabToken(request),
     userName: [me?.firstName, me?.lastName].filter(Boolean).join(" ") || "Mentor",
   };
   return data;

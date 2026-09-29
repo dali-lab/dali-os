@@ -11,7 +11,7 @@ import { AssignmentWorkArea } from "~/education/components/AssignmentWorkArea";
 import { formatDateTime } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { prisma } from "~/lib/db";
-import { parseSessionCookie } from "~/lib/cookies";
+import { getCollabToken } from "~/lib/collab-token.server";
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `${data?.assignment.title ?? "Assignment"} · DALI OS` },
@@ -106,7 +106,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       : null,
     canSubmit: applicationId !== null,
     isManager,
-    collabToken: parseSessionCookie(request),
+    collabToken: await getCollabToken(request),
     userName: `${auth.user.firstName ?? ""} ${auth.user.lastName ?? ""}`.trim(),
   };
 }

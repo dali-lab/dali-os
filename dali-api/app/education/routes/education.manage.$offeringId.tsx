@@ -102,7 +102,7 @@ import type {
   SubmissionType,
 } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db";
-import { parseSessionCookie } from "~/lib/cookies";
+import { getCollabToken } from "~/lib/collab-token.server";
 import { Button, buttonClasses } from "~/components/ui/Button";
 import { Avatar } from "~/components/ui/Avatar";
 import { Upload, X } from "lucide-react";
@@ -414,7 +414,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     })),
     memberInstructorIds,
     externalInstructors,
-    collabToken: parseSessionCookie(request),
+    collabToken: await getCollabToken(request),
     userName: `${gate.auth.user.firstName ?? ""} ${gate.auth.user.lastName ?? ""}`.trim(),
     currentUserId: gate.auth.user.sub,
   };

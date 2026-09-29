@@ -6,7 +6,7 @@ import { prisma } from "~/lib/db";
 import { recordRouteVisit } from "~/lib/user-pages.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { parseSessionCookie } from "~/lib/cookies";
+import { getCollabToken } from "~/lib/collab-token.server";
 import { isCycleAdmin } from "~/lib/roles";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { GripVertical } from "lucide-react";
@@ -153,7 +153,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }
   }
 
-  const collabToken = parseSessionCookie(request);
+  const collabToken = await getCollabToken(request);
 
   return { session, domainApplications, collabToken, userName, round, columns };
 }

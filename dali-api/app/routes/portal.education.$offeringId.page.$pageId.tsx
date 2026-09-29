@@ -3,7 +3,7 @@ import type { Route } from "./+types/portal.education.$offeringId.page.$pageId";
 import { requireEnrollment } from "~/education/lib/access.server";
 import { readMaterialPage } from "~/education/lib/lms.server";
 import { prisma } from "~/lib/db";
-import { parseSessionCookie } from "~/lib/cookies";
+import { getCollabToken } from "~/lib/collab-token.server";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { MaterialPageBody } from "~/education/components/MaterialPageBody";
 
@@ -31,7 +31,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       // read-only DocEditor wants block JSON. Shared docs render live (no content).
       content: page.studentEditable ? null : ensureBlocks(page.content),
     },
-    collabToken: page.studentEditable ? parseSessionCookie(request) : null,
+    collabToken: page.studentEditable ? await getCollabToken(request) : null,
     userName: me ? `${me.firstName} ${me.lastName}`.trim() : "Student",
   };
 }
