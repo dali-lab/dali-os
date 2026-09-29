@@ -15,7 +15,9 @@ import {
   History,
   ChevronDown,
   Share2,
+  Download,
 } from "lucide-react";
+import QRCode from "qrcode";
 import { useConfirmSubmit, useDialog } from "~/components/ui/dialog";
 import type { HiringFormLink } from "~/hiring/lib/form-links.server";
 import { BADGE, FormBuilderTab } from "~/components/form-builder/FormBuilder";
@@ -24,7 +26,7 @@ import { FormSettingsButton } from "~/forms/components/FormSettings";
 import { VersionResults } from "~/forms/components/VersionResults";
 import { DocEditor } from "~/components/doc";
 import { isEmptyBlocks } from "~/lib/blocks";
-import { Button } from "~/components/ui/Button";
+import { Button, buttonClasses } from "~/components/ui/Button";
 import { Popover, Tooltip } from "~/components/ui/floating";
 import type { Question } from "~/types";
 import type { loader } from "~/forms/routes/forms.edit.$formId";
@@ -414,7 +416,11 @@ export function FormDetail() {
           </>
         ) : (
           <>
-            <FormShareButton published={form.published} publicToken={form.publicToken} />
+            <FormShareButton
+              published={form.published}
+              publicToken={form.publicToken}
+              formName={form.name}
+            />
             <PublishButton
               formId={form.id}
               published={form.published}
@@ -816,16 +822,37 @@ function FormVersionMenu({
 function FormShareButton({
   published,
   publicToken,
+  formName,
 }: {
   published: boolean;
   publicToken: string | null;
+  formName: string;
 }) {
   const { popover } = useOsChrome();
   const [copied, setCopied] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const publicUrl =
     published && publicToken
       ? `${typeof window !== "undefined" ? window.location.origin : ""}/forms/fill/${publicToken}`
       : null;
+
+  // Rendered large so the download prints cleanly; the preview scales it down.
+  useEffect(() => {
+    if (!publicUrl) return;
+    let cancelled = false;
+    QRCode.toDataURL(publicUrl, { margin: 2, width: 1024 })
+      .then((url) => {
+        if (!cancelled) setQrDataUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) setQrDataUrl(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [publicUrl]);
+
+  const qrFileName = `${formName.trim().replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase() || "form"}-qr.png`;
 
   async function copy() {
     if (!publicUrl) return;
@@ -880,6 +907,23 @@ function FormShareButton({
           {copied ? "Copied" : "Copy"}
         </Button>
       </div>
+      {qrDataUrl && (
+        <div className="mt-3 flex flex-col items-center gap-2">
+          <img
+            src={qrDataUrl}
+            alt="QR code for the form link"
+            className="w-44 h-44 rounded-md border border-border bg-white"
+          />
+          <a
+            href={qrDataUrl}
+            download={qrFileName}
+            className={buttonClasses("secondary", "sm")}
+          >
+            <Download className="w-3.5 h-3.5" />
+            Download QR code
+          </a>
+        </div>
+      )}
     </Popover>
   );
 }
