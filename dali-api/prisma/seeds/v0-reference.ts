@@ -65,6 +65,7 @@ const DOMAINS: DomainSeed[] = [
   { code: "ERAS", displayName: "ERAS Intern", isInternProgram: true },
   { code: "EEJUST", displayName: "EE Just Intern", isInternProgram: true },
   { code: "WISP", displayName: "WISP Intern", isInternProgram: true },
+  { code: "EarlyBuilders", displayName: "Early builders", isInternProgram: true },
 ];
 
 type Season = "W" | "S" | "X" | "F";
