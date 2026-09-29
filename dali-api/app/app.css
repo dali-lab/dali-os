@@ -1388,6 +1388,30 @@ html.light.os-shell .os-form input[type="date"]::-webkit-calendar-picker-indicat
   background: var(--color-os-well);
 }
 
+/* TimeField is a bordered box around a bare input: the box takes the field
+   shape, and the input inside must not draw a second one. */
+.os-shell .os-form [data-time-field] {
+  background: var(--color-os-well);
+  border: 1px solid var(--color-os-container);
+  border-radius: 10px;
+  transition: border-color 0.15s ease;
+}
+.os-shell .os-form [data-time-field]:hover {
+  border-color: var(--color-os-container-hi);
+}
+.os-shell .os-form [data-time-field]:focus-within {
+  border-color: var(--color-os-accent);
+}
+.os-shell .os-form [data-time-field] input[type="text"] {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 10px 4px 10px 14px;
+}
+.os-shell .os-form [data-time-field] button {
+  padding-right: 14px;
+}
+
 /* Some of these forms state their fields as a <dl> two-column grid (label
    left, value right) rather than a <label> column. The design has one field
    shape — caption over value, full width — so the grid collapses to one column

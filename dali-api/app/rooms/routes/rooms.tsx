@@ -56,6 +56,10 @@ const DAY_START_HOUR = 7;
 const DAY_END_HOUR = 23;
 const HOUR_PX = 56;
 const SNAP_MIN = 30;
+// A drag snaps finer than a click, like the iPad timeline.
+const DRAG_SNAP_MIN = 15;
+// Less movement than this is a click, not a drag.
+const DRAG_THRESHOLD_MIN = 10;
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
@@ -131,8 +135,7 @@ export default function RoomsPage() {
     void load();
   }, [load]);
 
-  const openDraftAt = (start: Date) => {
-    const end = new Date(start.getTime() + 60 * 60_000);
+  const openDraftAt = (start: Date, end = new Date(start.getTime() + 60 * 60_000)) => {
     setDraft({ start: hhmm(start), end: hhmm(end) });
   };
 
@@ -183,7 +186,7 @@ export default function RoomsPage() {
 
       <div className="grid gap-6 lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-8">
         <nav aria-label="Rooms" className="self-start lg:sticky lg:top-6">
-          <ul className="flex flex-col gap-0.5 border-l border-os-container">
+          <ul className="flex flex-col gap-0.5">
             {rooms.map((r) => (
               <li key={r.id}>
                 <button
@@ -191,10 +194,10 @@ export default function RoomsPage() {
                   aria-current={r.id === roomId ? "page" : undefined}
                   onClick={() => setParam("room", r.id)}
                   className={cn(
-                    "-ml-px flex w-full flex-col border-l-2 px-3 py-2 text-left transition-colors",
+                    "flex w-full flex-col px-3 py-2 text-left transition-colors",
                     r.id === roomId
-                      ? "border-os-accent text-foreground"
-                      : "border-transparent text-os-grey hover:text-foreground",
+                      ? "os-subtab-active text-foreground"
+                      : "rounded-r-os-item border-l-2 border-transparent text-os-grey hover:bg-os-hover hover:text-foreground",
                   )}
                 >
                   <span className={cn("text-sm", r.id === roomId && "font-medium")}>{r.name}</span>
@@ -276,7 +279,7 @@ function DayTimeline({
   dateKey: string;
   items: ScheduleItem[] | null;
   userId: string;
-  onPickSlot: (start: Date) => void;
+  onPickSlot: (start: Date, end?: Date) => void;
   onCancel: (item: ScheduleItem) => void;
 }) {
   const chrome = useOsChrome();
@@ -297,12 +300,36 @@ function DayTimeline({
     [],
   );
 
-  const pick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.target !== e.currentTarget) return;
+  // Minutes past DAY_START_HOUR, measured from the top of the timeline column.
+  const [drag, setDrag] = useState<{ from: number; to: number } | null>(null);
+  const dayMinutes = (DAY_END_HOUR - DAY_START_HOUR) * 60;
+  const minutesAt = (e: React.PointerEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
-    const minutes = ((e.clientY - rect.top) / HOUR_PX) * 60;
-    const snapped = Math.floor(minutes / SNAP_MIN) * SNAP_MIN;
-    const start = new Date(dayStart + snapped * 60_000);
+    return Math.min(Math.max(((e.clientY - rect.top) / HOUR_PX) * 60, 0), dayMinutes);
+  };
+  const dragging = drag !== null && Math.abs(drag.to - drag.from) >= DRAG_THRESHOLD_MIN;
+  const dragRange = drag && {
+    from: Math.floor(Math.min(drag.from, drag.to) / DRAG_SNAP_MIN) * DRAG_SNAP_MIN,
+    to: Math.ceil(Math.max(drag.from, drag.to) / DRAG_SNAP_MIN) * DRAG_SNAP_MIN,
+  };
+  const at = (minutes: number) => new Date(dayStart + minutes * 60_000);
+
+  const startDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.target !== e.currentTarget || e.button !== 0) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const m = minutesAt(e);
+    setDrag({ from: m, to: m });
+  };
+
+  const endDrag = () => {
+    if (!drag || !dragRange) return;
+    setDrag(null);
+    if (dragging) {
+      if (at(dragRange.to).getTime() <= now) return;
+      onPickSlot(at(dragRange.from), at(dragRange.to));
+      return;
+    }
+    const start = at(Math.floor(drag.from / SNAP_MIN) * SNAP_MIN);
     if (start.getTime() + SNAP_MIN * 60_000 < now) return;
     onPickSlot(start);
   };
@@ -322,8 +349,11 @@ function DayTimeline({
       </div>
       <div
         role="presentation"
-        className="relative flex-1 cursor-pointer border-l border-os-container"
-        onClick={pick}
+        className="relative flex-1 cursor-pointer select-none border-l border-os-container"
+        onPointerDown={startDrag}
+        onPointerMove={(e) => drag && setDrag({ ...drag, to: minutesAt(e) })}
+        onPointerUp={endDrag}
+        onPointerCancel={() => setDrag(null)}
       >
         {hours.map((h) => (
           <div
@@ -379,6 +409,15 @@ function DayTimeline({
             </div>
           );
         })}
+
+        {dragging && dragRange && (
+          <div
+            className="pointer-events-none absolute inset-x-2 z-10 rounded-[10px] border border-os-accent bg-os-accent/15 px-3 py-1.5 text-sm font-medium text-foreground"
+            style={{ top: (dragRange.from / 60) * HOUR_PX, height: ((dragRange.to - dragRange.from) / 60) * HOUR_PX }}
+          >
+            {timeLabel(at(dragRange.from).toISOString())} to {timeLabel(at(dragRange.to).toISOString())}
+          </div>
+        )}
 
         {dateKey === todayKey() && now > dayStart && now < dayEnd && (
           <div
@@ -464,11 +503,11 @@ function BookingModal({
         <div className="os-field-row">
           <div className="os-field-group">
             <span className="os-field-label">Starts</span>
-            <TimeField value={start} onChange={setStart} ariaLabel="Starts" />
+            <TimeField value={start} onChange={setStart} ariaLabel="Starts" className="w-full" />
           </div>
           <div className="os-field-group">
             <span className="os-field-label">Ends</span>
-            <TimeField value={end} onChange={setEnd} ariaLabel="Ends" />
+            <TimeField value={end} onChange={setEnd} ariaLabel="Ends" className="w-full" />
           </div>
         </div>
         <label className="os-field-group">
