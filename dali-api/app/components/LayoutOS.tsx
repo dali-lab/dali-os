@@ -245,7 +245,7 @@ export function LayoutOS({
   // The `resources` flag decides the pinned tail (Resources vs Drive) and
   // whether Drive is a General sub-tab, so every nav matcher below has to be
   // handed the same map — a pin and an area disagreeing would light both.
-  const navFlags = { resources: useFeatureFlag('resources') }
+  const navFlags = { resources: useFeatureFlag('resources'), 'room-booking': useFeatureFlag('room-booking') }
   const emailEnabled = useFeatureFlag('email')
   const emailUnread = useEmailUnread(emailEnabled, path)
   const areas = visibleAreas(roleFlags, navFlags)
@@ -918,7 +918,7 @@ export function LayoutOS({
         tabless={tabless}
         focusMode={focusMode}
         roles={roleFlags}
-        flags={{ email: emailEnabled }}
+        flags={{ ...navFlags, email: emailEnabled }}
         onOpen={openFromPalette}
       />
     </div>

@@ -226,6 +226,8 @@ export type CreateScheduledMeetingInput = {
   /** Stored on the meeting and mirrored onto the Google event / ICS invite. */
   location?: string | null;
   description?: string | null;
+  /** The DALI rooms this meeting occupies. The caller checks they're free (assertMeetingRoomsFree). */
+  roomIds?: string[];
   // Meeting-asset fields. When meetingType is set, the meeting records its type
   // and a MeetingAttendance row is fanned out per participant (incl. the
   // organizer). meetingTypeLabel supplies the display label — required when
@@ -494,6 +496,7 @@ export async function createScheduledMeeting(
       durationMinutes: input.durationMinutes,
       location,
       description,
+      ...(input.roomIds?.length ? { rooms: { connect: input.roomIds.map((id) => ({ id })) } } : {}),
       scopeType: input.scope.type,
       scopeId,
       participantUserIds,
@@ -1245,6 +1248,10 @@ export async function markMeetingAttendance(
   present: boolean,
   markedByUserId: string,
   occurrence?: Date | null,
+  // Walk-ins: add a roster row for someone who wasn't invited instead of
+  // rejecting them. Scan stations pass this for SelfCheckIn events, where
+  // any DALI member who shows up counts.
+  opts: { addIfMissing?: boolean } = {},
 ): Promise<MarkMeetingAttendanceResult> {
   const meeting = await prisma.scheduledMeeting.findUnique({
     where: { id: meetingId },
@@ -1271,7 +1278,7 @@ export async function markMeetingAttendance(
       where: { scheduledMeetingId: meeting.id, userId },
       select: { id: true },
     })) !== null;
-  if (!invited) {
+  if (!invited && !opts.addIfMissing) {
     return { ok: false, error: "User was not invited to this meeting", status: 400 };
   }
 
@@ -1524,6 +1531,10 @@ export type UpdateScheduledMeetingInput = {
   // MeetingException carries no per-occurrence copy of either field.
   location?: string;
   description?: string;
+  // Omitted leaves the rooms alone; a list (possibly empty) replaces them.
+  // Rooms belong to the whole series, so a scope="this" edit ignores them.
+  // The caller checks they're free.
+  roomIds?: string[];
   // Omitted leaves the stored guest emails alone; a set list replaces them.
   guestEmails?: string[];
   // Scoped edit fields (optional, default "all"):
@@ -1596,6 +1607,7 @@ export async function updateScheduledMeeting(
       projectId: true,
       location: true,
       description: true,
+      rooms: { select: { id: true } },
     },
   });
   if (!meeting) return { ok: false, error: "Not found", status: 404 };
@@ -1729,6 +1741,7 @@ export async function updateScheduledMeeting(
       isCoreMeeting: meeting.isCoreMeeting,
       location: input.location ?? meeting.location,
       description: input.description ?? meeting.description,
+      roomIds: input.roomIds ?? meeting.rooms.map((r) => r.id),
       guestEmails: input.guestEmails ?? meeting.guestEmails,
     });
 
@@ -1759,6 +1772,7 @@ export async function updateScheduledMeeting(
       status: startDate ? "Confirmed" : "Searching",
       ...(input.location !== undefined ? { location: input.location.trim() || null } : {}),
       ...(input.description !== undefined ? { description: input.description.trim() || null } : {}),
+      ...(input.roomIds !== undefined ? { rooms: { set: input.roomIds.map((id) => ({ id })) } } : {}),
     },
   });
 
