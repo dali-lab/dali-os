@@ -14,7 +14,6 @@ import { redirectToLogin } from "~/lib/login-next";
 import { isRoomBookingEnabled } from "~/rooms/lib/access.server";
 import { useOsChrome } from "~/components/os-chrome";
 import { Modal, ModalFooter, ModalHeader } from "~/components/Modal";
-import { Select } from "~/components/ui/floating";
 import { DateField } from "~/components/ui/DateField";
 import { TimeField } from "~/components/ui/TimeField";
 import { IconButton } from "~/components/ui/IconButton";
@@ -171,7 +170,7 @@ export default function RoomsPage() {
 
   if (rooms.length === 0) {
     return (
-      <div className="mx-auto flex max-w-3xl flex-col gap-4 px-4 py-6">
+      <div className="flex flex-col gap-4 px-4 py-6 sm:px-6">
         <h1 className={chrome.pageTitle}>Rooms</h1>
         <p className={chrome.bodyText}>No rooms can be booked yet.</p>
       </div>
@@ -179,58 +178,76 @@ export default function RoomsPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-6">
-      <div className="flex flex-col gap-2">
-        <h1 className={chrome.pageTitle}>Rooms</h1>
-        {room && (
-          <p className={chrome.bodyText}>
-            {[room.description, room.capacity ? `Seats ${room.capacity}` : null].filter(Boolean).join(" · ")}
-          </p>
-        )}
-      </div>
+    <div className="flex flex-col gap-6 px-4 py-6 sm:px-6">
+      <h1 className={chrome.pageTitle}>Rooms</h1>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="w-56">
-          <Select
-            ariaLabel="Room"
-            value={roomId}
-            onChange={(id) => setParam("room", id)}
-            options={rooms.map((r) => ({ value: r.id, label: r.name }))}
-            buttonClassName={chrome.formTrigger}
-          />
-        </div>
-        <div className="flex items-center gap-1">
-          <IconButton label="Previous day" icon={ChevronLeft} onClick={() => setParam("date", shiftDay(dateKey, -1))} />
-          <div className="w-44">
-            <DateField
-              mode="date"
-              ariaLabel="Day"
-              value={dateKey}
-              onChange={(v) => v && setParam("date", v)}
-              buttonClassName={chrome.formTrigger}
-            />
+      <div className="grid gap-6 lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-8">
+        <nav aria-label="Rooms" className="self-start lg:sticky lg:top-6">
+          <ul className="flex flex-col gap-0.5 border-l border-os-container">
+            {rooms.map((r) => (
+              <li key={r.id}>
+                <button
+                  type="button"
+                  aria-current={r.id === roomId ? "page" : undefined}
+                  onClick={() => setParam("room", r.id)}
+                  className={cn(
+                    "-ml-px flex w-full flex-col border-l-2 px-3 py-2 text-left transition-colors",
+                    r.id === roomId
+                      ? "border-os-accent text-foreground"
+                      : "border-transparent text-os-grey hover:text-foreground",
+                  )}
+                >
+                  <span className={cn("text-sm", r.id === roomId && "font-medium")}>{r.name}</span>
+                  {r.capacity ? <span className="text-xs text-os-muted">Seats {r.capacity}</span> : null}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </nav>
+
+        <div className="flex min-w-0 flex-col gap-4">
+          {room && (
+            <div className="flex flex-col gap-1">
+              <h2 className={chrome.sectionTitle}>{room.name}</h2>
+              {room.description && <p className={chrome.bodyText}>{room.description}</p>}
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1">
+              <IconButton label="Previous day" icon={ChevronLeft} onClick={() => setParam("date", shiftDay(dateKey, -1))} />
+              <div className="w-44">
+                <DateField
+                  mode="date"
+                  ariaLabel="Day"
+                  value={dateKey}
+                  onChange={(v) => v && setParam("date", v)}
+                  buttonClassName={chrome.formTrigger}
+                />
+              </div>
+              <IconButton label="Next day" icon={ChevronRight} onClick={() => setParam("date", shiftDay(dateKey, 1))} />
+            </div>
+            {dateKey !== todayKey() && (
+              <button type="button" className="os-btn-ghost" onClick={() => setParam("date", todayKey())}>
+                Today
+              </button>
+            )}
+            <button type="button" className="os-btn-primary ml-auto" onClick={openDraftNext}>
+              Book
+            </button>
           </div>
-          <IconButton label="Next day" icon={ChevronRight} onClick={() => setParam("date", shiftDay(dateKey, 1))} />
-        </div>
-        {dateKey !== todayKey() && (
-          <button type="button" className="os-btn-ghost" onClick={() => setParam("date", todayKey())}>
-            Today
-          </button>
-        )}
-        <button type="button" className="os-btn-primary ml-auto" onClick={openDraftNext}>
-          Book
-        </button>
-      </div>
 
-      <section className={cn(chrome.panel, chrome.panelPad)}>
-        <DayTimeline
-          dateKey={dateKey}
-          items={items}
-          userId={userId}
-          onPickSlot={openDraftAt}
-          onCancel={cancelBooking}
-        />
-      </section>
+          <section className={cn(chrome.panel, chrome.panelPad)}>
+            <DayTimeline
+              dateKey={dateKey}
+              items={items}
+              userId={userId}
+              onPickSlot={openDraftAt}
+              onCancel={cancelBooking}
+            />
+          </section>
+        </div>
+      </div>
 
       {room && (
         <BookingModal
