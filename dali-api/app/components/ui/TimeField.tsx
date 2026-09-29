@@ -176,7 +176,10 @@ export function TimeField({
 
   return (
     <div ref={wrapRef} className={cn("relative inline-block", className)}>
-      <div className="flex w-full items-center rounded-md border border-border bg-background focus-within:border-accent-coral">
+      <div
+        data-time-field
+        className="flex w-full items-center rounded-md border border-border bg-background focus-within:border-accent-coral"
+      >
         <input
           ref={inputRef}
           type="text"
