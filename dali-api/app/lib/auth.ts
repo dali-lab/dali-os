@@ -115,7 +115,30 @@ async function computeAuth(request: Request): Promise<AuthResult> {
   } catch {
     // The BetterAuth fallback must never turn a clean legacy failure into a 500.
   }
+  // Both backends rejected the request. Only NOW — after the BetterAuth fallback
+  // has also failed — record a credential that never resolved. Logging this in
+  // computeLegacyAuth (the legacy leg) instead fired an auth.token.invalid on
+  // EVERY successful BetterAuth *bearer* request: a BetterAuth token is never a
+  // legacy session id, so it always misses lookupSession first. Post-cutover
+  // that flooded the audit log from desktop notification polling and MCP.
+  if (legacy.reason === "not_found") await logCredentialMiss(request);
   return legacy;
+}
+
+// Emit the credential-miss audit signal for a request whose credential resolved
+// to no session on any backend. A bearer miss is a real "client should refresh"
+// signal (MCP); a malformed cookie is worth flagging as possible probing. A
+// well-formed cookie that simply isn't in the DB is the benign post-rotation /
+// logout / expiry case and is deliberately NOT logged — it would fire on every
+// loader of every page until the stale cookie clears.
+async function logCredentialMiss(request: Request): Promise<void> {
+  const credential = parseSessionIdWithSource(request);
+  if (!credential) return;
+  if (credential.source === "bearer") {
+    await logAuditEvent({ action: "auth.token.invalid", request });
+  } else if (!looksLikeWellFormedSessionId(credential.raw)) {
+    await logAuditEvent({ action: "auth.token.malformed", request });
+  }
 }
 
 async function computeLegacyAuth(request: Request): Promise<AuthResult> {
@@ -126,22 +149,10 @@ async function computeLegacyAuth(request: Request): Promise<AuthResult> {
 
   const session = await lookupSession(credential.raw);
   if (!session) {
-    // A stale browser cookie — well-formed but no longer in the DB — is the
-    // expected outcome after session rotation, logout-in-another-tab, or the
-    // 30-day rolling expiry. It generates one of these on every loader of
-    // every page until the cookie is cleared, so logging it floods the audit
-    // table with no security value. Filter to two cases worth keeping:
-    //   - cookie present but malformed → potential probing, log it
-    //   - bearer token miss → MCP client signal, log it (clients should refresh
-    //     before presenting an expired token)
-    const malformedCookie =
-      credential.source === "cookie" &&
-      !looksLikeWellFormedSessionId(credential.raw);
-    if (credential.source === "bearer") {
-      await logAuditEvent({ action: "auth.token.invalid", request });
-    } else if (malformedCookie) {
-      await logAuditEvent({ action: "auth.token.malformed", request });
-    }
+    // Credential present but no legacy session. The audit signal for this is
+    // emitted by the caller (computeAuth), AFTER the BetterAuth fallback also
+    // fails — so a BetterAuth bearer that misses the legacy table here but then
+    // validates via getSession never logs a false auth.token.invalid.
     return { ok: false, response: unauthorizedClearingCookies(), reason: "not_found" };
   }
 

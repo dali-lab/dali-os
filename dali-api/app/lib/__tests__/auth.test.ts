@@ -16,6 +16,7 @@ vi.mock("~/lib/betterauth-compat.server", () => ({
 
 import { prisma } from "~/lib/db";
 import { requireAuth, validateCasTicket } from "~/lib/auth";
+import { logAuditEvent } from "~/lib/audit";
 import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { resolveBetterAuthAuth } from "~/lib/betterauth-compat.server";
 import {
@@ -29,6 +30,12 @@ const mockIsFeatureEnabledForEveryone =
   isFeatureEnabledForEveryone as unknown as ReturnType<typeof vi.fn>;
 const mockResolveBetterAuthAuth =
   resolveBetterAuthAuth as unknown as ReturnType<typeof vi.fn>;
+const mockLogAuditEvent =
+  logAuditEvent as unknown as ReturnType<typeof vi.fn>;
+
+// A 43-char base64url string — the shape looksLikeWellFormedSessionId accepts,
+// i.e. a plausible-but-stale session id (benign, not logged).
+const WELL_FORMED_SID = "A".repeat(43);
 
 const mockPrisma = prisma as unknown as {
   session: {
@@ -306,6 +313,77 @@ describe("requireAuth — BetterAuth coexistence (Phase 1)", () => {
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.user.sub).toBe("user-1");
     expect(mockResolveBetterAuthAuth).not.toHaveBeenCalled();
+  });
+});
+
+describe("requireAuth — credential-miss audit logging", () => {
+  it("does NOT log auth.token.invalid when a Bearer misses legacy but succeeds via BetterAuth", async () => {
+    // The regression that flooded the audit log after cutover: a BetterAuth
+    // bearer is never a legacy session id, so it always misses lookupSession
+    // first — but the request still authenticates, so nothing should be logged.
+    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
+    mockPrisma.session.findUnique.mockResolvedValue(null);
+    mockResolveBetterAuthAuth.mockResolvedValue({
+      user: { sub: "ba-user", email: "u@dartmouth.edu", type: "dartmouth" },
+      sessionId: "auth-session-1",
+    });
+    const req = new Request("http://localhost", {
+      headers: { Authorization: "Bearer ba-token" },
+    });
+    const result = await requireAuth(req);
+    expect(result.ok).toBe(true);
+    expect(mockLogAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it("logs auth.token.invalid when a Bearer is rejected by BOTH backends", async () => {
+    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
+    mockPrisma.session.findUnique.mockResolvedValue(null);
+    mockResolveBetterAuthAuth.mockResolvedValue(null);
+    const req = new Request("http://localhost", {
+      headers: { Authorization: "Bearer nope" },
+    });
+    const result = await requireAuth(req);
+    expect(result.ok).toBe(false);
+    expect(mockLogAuditEvent).toHaveBeenCalledWith({
+      action: "auth.token.invalid",
+      request: req,
+    });
+  });
+
+  it("logs auth.token.invalid for a Bearer miss when the flag is off (legacy behavior preserved)", async () => {
+    mockIsFeatureEnabledForEveryone.mockResolvedValue(false);
+    mockPrisma.session.findUnique.mockResolvedValue(null);
+    const req = new Request("http://localhost", {
+      headers: { Authorization: "Bearer nope" },
+    });
+    await requireAuth(req);
+    expect(mockResolveBetterAuthAuth).not.toHaveBeenCalled();
+    expect(mockLogAuditEvent).toHaveBeenCalledWith({
+      action: "auth.token.invalid",
+      request: req,
+    });
+  });
+
+  it("does NOT log for a well-formed but stale cookie (benign post-rotation miss)", async () => {
+    mockPrisma.session.findUnique.mockResolvedValue(null);
+    const req = new Request("http://localhost", {
+      headers: { Cookie: `__dali_sid=${WELL_FORMED_SID}` },
+    });
+    const result = await requireAuth(req);
+    expect(result.ok).toBe(false);
+    expect(mockLogAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it("logs auth.token.malformed for a malformed cookie value", async () => {
+    mockPrisma.session.findUnique.mockResolvedValue(null);
+    const req = new Request("http://localhost", {
+      headers: { Cookie: "__dali_sid=short" },
+    });
+    await requireAuth(req);
+    expect(mockLogAuditEvent).toHaveBeenCalledWith({
+      action: "auth.token.malformed",
+      request: req,
+    });
   });
 });
 
