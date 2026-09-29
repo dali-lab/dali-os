@@ -6359,14 +6359,16 @@ model ProjectChartString {
 
   note        String?
   createdAt   DateTime @default(now())
-  createdById String
+  // Null only for rows a migration imported (the legacy Project.chartString
+  // backfill) — no person wrote those, so none is named.
+  createdById String?
 
   /// Restrict, not Cascade: deleting a project must not take payroll history.
   project    Project?            @relation(fields: [projectId], references: [id], onDelete: Restrict)
   term       Term                @relation(fields: [termId], references: [id])
   supersedes ProjectChartString? @relation("ChartStringSupersession", fields: [supersedesId], references: [id], onDelete: Restrict)
   supersededBy ProjectChartString? @relation("ChartStringSupersession")
-  createdBy  User                @relation("ChartStringCreatedBy", fields: [createdById], references: [id])
+  createdBy  User?               @relation("ChartStringCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
 
   @@index([projectId, termId])
   @@index([projectCode])

@@ -32,37 +32,37 @@ const USERS: CollationUser[] = [
 const PROJ_A: CollationProject = {
   id: "proj-a",
   name: "Analytical Engine",
-  chartString: "18.722.161028.128512.4000",
+  chartStrings: ["18.722.161028.128512.4000"],
 };
 const PROJ_B: CollationProject = {
   id: "proj-b",
   name: "Compiler Corps",
-  chartString: "18.722.161028.128512.5000",
+  chartStrings: ["18.722.161028.128512.5000"],
 };
 
 const ASSIGN_ADA_A: CollationAssignment = {
   netId: "f00fake1",
   projectId: "proj-a",
   projectName: "Analytical Engine",
-  projectChartString: PROJ_A.chartString,
+  projectChartStrings: PROJ_A.chartStrings,
 };
 const ASSIGN_GRACE_A: CollationAssignment = {
   netId: "f00fake2",
   projectId: "proj-a",
   projectName: "Analytical Engine",
-  projectChartString: PROJ_A.chartString,
+  projectChartStrings: PROJ_A.chartStrings,
 };
 const ASSIGN_GRACE_B: CollationAssignment = {
   netId: "f00fake2",
   projectId: "proj-b",
   projectName: "Compiler Corps",
-  projectChartString: PROJ_B.chartString,
+  projectChartStrings: PROJ_B.chartStrings,
 };
 const ASSIGN_MARGARET_B: CollationAssignment = {
   netId: "f00fake4",
   projectId: "proj-b",
   projectName: "Compiler Corps",
-  projectChartString: PROJ_B.chartString,
+  projectChartStrings: PROJ_B.chartStrings,
 };
 
 function entry(o: Partial<CollationEntry> = {}): CollationEntry {
@@ -205,11 +205,35 @@ describe("shared-hours fan-out", () => {
     expect(result.projects[0].jobs[0].sharedWith).toEqual([]);
   });
 
+  it("matches any string a project has held, not only its latest", () => {
+    // proj-b moved from the 722 org to 330; a timesheet from before the move
+    // still carries the old string and must still narrow to proj-b.
+    const movedB: CollationAssignment = {
+      ...ASSIGN_GRACE_B,
+      projectChartStrings: ["20.330.161028.128512.5000", "18.722.161028.128512.5000"],
+    };
+    const result = run({
+      assignments: [ASSIGN_GRACE_A, movedB],
+      projects: [PROJ_A, { ...PROJ_B, chartStrings: movedB.projectChartStrings }],
+      entries: [
+        entry({
+          employeeNetId: "f00fake2",
+          jobId: "4889",
+          chartString: "18.722.161028.128512.5000",
+          totalShiftTime: 5,
+          totalEarnings: 90,
+        }),
+      ],
+    });
+    expect(result.projects.map((p) => p.projectId)).toEqual(["proj-b"]);
+    expect(result.chartStrings[0].projects).toEqual([{ id: "proj-b", name: "Compiler Corps" }]);
+  });
+
   it("never lets the chart string override the assignment join", () => {
     const result = run({
       // ada assigned ONLY to proj-a, but charged proj-b's chart string.
       assignments: [ASSIGN_ADA_A],
-      entries: [entry({ chartString: PROJ_B.chartString! })],
+      entries: [entry({ chartString: PROJ_B.chartStrings[0] })],
     });
     expect(result.projects.map((p) => p.projectId)).toEqual(["proj-a"]);
     expect(result.discrepancies.unassignedJobs).toHaveLength(0);
@@ -309,7 +333,7 @@ describe("discrepancies", () => {
           employeeNetId: "f00fake3",
           employeeName: "Turing, Alan",
           jobId: "4834",
-          chartString: PROJ_A.chartString!,
+          chartString: PROJ_A.chartStrings[0],
           totalShiftTime: 4,
           totalEarnings: 65,
         }),
@@ -495,11 +519,11 @@ describe("chart-string aggregation", () => {
       id: "proj-c",
       name: "Difference Engine",
       // Same suffix as PROJ_A, drifted prefix.
-      chartString: "20.722.161028.128512.4000",
+      chartStrings: ["20.722.161028.128512.4000"],
     };
     const result = run({
       projects: [PROJ_A, PROJ_B, projC],
-      entries: [entry({ chartString: PROJ_A.chartString! })],
+      entries: [entry({ chartString: PROJ_A.chartStrings[0] })],
     });
     const summary = result.chartStrings[0];
     expect(summary.projects.map((p) => p.id).sort()).toEqual(["proj-a", "proj-c"]);

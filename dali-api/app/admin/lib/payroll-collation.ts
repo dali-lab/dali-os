@@ -48,14 +48,16 @@ export type CollationAssignment = {
   netId: string; // lowercased
   projectId: string;
   projectName: string;
-  projectChartString: string | null;
+  /** Every chart string the project has held (any term, superseded too). */
+  projectChartStrings: string[];
 };
 
 /** An authoritative Project (for chart-string → project inference). */
 export type CollationProject = {
   id: string;
   name: string;
-  chartString: string | null;
+  /** Every chart string the project has held (any term, superseded too). */
+  chartStrings: string[];
 };
 
 export type CollationInput = {
@@ -290,11 +292,12 @@ export function collate(input: CollationInput): CollatedResult {
   // Chart-suffix → project ids (for chartString→Project inference/tie-break).
   const projectsByChartSuffix = new Map<string, Set<string>>();
   for (const p of projects) {
-    if (!p.chartString) continue;
-    const suffix = normalizeChartSuffix(p.chartString);
-    const set = projectsByChartSuffix.get(suffix) ?? new Set();
-    set.add(p.id);
-    projectsByChartSuffix.set(suffix, set);
+    for (const cs of p.chartStrings) {
+      const suffix = normalizeChartSuffix(cs);
+      const set = projectsByChartSuffix.get(suffix) ?? new Set();
+      set.add(p.id);
+      projectsByChartSuffix.set(suffix, set);
+    }
   }
 
   // jobId → project ids worked by *assigned* holders of that jobId. Used to
@@ -442,10 +445,10 @@ export function collate(input: CollationInput): CollatedResult {
       const chargedSuffixes = new Set(
         [...agg.chartStrings].map(normalizeChartSuffix),
       );
-      const narrowed = personAssignments.filter(
-        (a) =>
-          a.projectChartString &&
-          chargedSuffixes.has(normalizeChartSuffix(a.projectChartString)),
+      const narrowed = personAssignments.filter((a) =>
+        a.projectChartStrings.some((cs) =>
+          chargedSuffixes.has(normalizeChartSuffix(cs)),
+        ),
       );
       if (narrowed.length === 1) targetProjects = narrowed;
     }

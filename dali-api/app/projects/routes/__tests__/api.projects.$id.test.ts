@@ -93,6 +93,7 @@ beforeEach(() => {
     "timeEntry",
     "budgetEntry",
     "budgetNote",
+    "projectChartString",
     "projectAssignment",
     "epic",
     "sprint",
@@ -144,6 +145,19 @@ describe("DELETE /api/projects/:id", () => {
     expect(res.status).toBe(409);
     expect(body.blocking).toEqual(
       expect.arrayContaining([{ label: "documents", count: 1 }]),
+    );
+  });
+
+  it("blocks deletion on chart string history rather than failing on the FK", async () => {
+    // ProjectChartString restricts deletes; an uncounted row would be a 500.
+    (mockPrisma as any).projectChartString.count.mockResolvedValueOnce(2);
+
+    const res = await call();
+    const body = await res.json();
+
+    expect(res.status).toBe(409);
+    expect(body.blocking).toEqual(
+      expect.arrayContaining([{ label: "chart strings", count: 2 }]),
     );
   });
 

@@ -24,6 +24,7 @@ import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isAdmin } from "~/lib/roles";
 import { prisma } from "~/lib/db";
+import { resolveChartStringsForTerm } from "~/lib/chart-string.server";
 import { resolveTermFilter } from "~/lib/terms";
 import {
   getReconciliation,
@@ -77,7 +78,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     };
   }
 
-  const [reconciliation, periodRows, missingChartRows] = await Promise.all([
+  const [reconciliation, periodRows, staffedRows] = await Promise.all([
     getReconciliation(termId),
     prisma.payPeriod.findMany({
       where: { termId },
@@ -98,19 +99,23 @@ export async function loader({ request }: Route.LoaderArgs) {
         },
       },
     }),
-    // DALI projects staffed this term whose chart string is missing/blank: the
-    // chart-string tie-break can't attribute their hours to one project, so
-    // warn staff to fill it in.
     prisma.project.findMany({
-      where: {
-        assignments: { some: { termId } },
-        OR: [{ chartString: null }, { chartString: "" }],
-      },
+      where: { assignments: { some: { termId } } },
       orderBy: { name: "asc" },
-      select: { name: true },
+      select: { id: true, name: true },
     }),
   ]);
-  const missingChartStrings = missingChartRows.map((p) => p.name);
+  // Staffed projects with no chart string of their own this term that did
+  // have one in another term. Inheriting the lab default is right for the
+  // projects on the lab GL and wrong for a sponsored project whose string
+  // nobody re-entered for the new term — the case worth a banner.
+  const resolved = await resolveChartStringsForTerm(
+    termId,
+    staffedRows.map((p) => p.id),
+  );
+  const missingChartStrings = staffedRows
+    .filter((p) => resolved.get(p.id)?.lastOwnTermCode)
+    .map((p) => p.name);
 
   const periods: PeriodSummary[] = periodRows.map((p) => {
     const imp = p.imports[0];
@@ -330,12 +335,13 @@ function ChartStringWarning({
       <AlertTriangle className="mt-0.5 w-4 h-4 flex-shrink-0 text-amber-600" aria-hidden />
       <div className="flex-1">
         <p className="font-medium">
-          {projects.length} staffed project{projects.length === 1 ? "" : "s"} missing a
-          chart string
+          {projects.length} staffed project{projects.length === 1 ? "" : "s"} with no chart
+          string this term
         </p>
         <p className="mt-0.5 text-amber-800">
-          Hours can't be tie-broken to {projects.length === 1 ? "it" : "them"} by chart
-          string — set one on {projects.join(", ")} in the project settings.
+          {projects.join(", ")} had {projects.length === 1 ? "its own" : "their own"} in an
+          earlier term and {projects.length === 1 ? "is" : "are"} now charging the lab
+          default. If that's wrong, add this term's string on the project page.
         </p>
       </div>
       <button
