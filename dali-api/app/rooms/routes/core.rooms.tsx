@@ -189,7 +189,7 @@ export default function CoreRoomsPage() {
   const [setup, setSetup] = useState<SetupResult | null>(null);
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-6">
+    <div className="flex flex-col gap-6">
       <div className="flex items-end justify-between gap-4">
         <div>
           <h1 className={chrome.pageTitle}>Rooms</h1>
