@@ -27,7 +27,7 @@ struct StatusHero: View {
                         .foregroundStyle(OS.fg)
                         .lineLimit(2)
                     Text(detail)
-                        .font(OS.font(17))
+                        .font(OS.font(20))
                         .foregroundStyle(OS.grey)
                         .lineLimit(1)
                 }
@@ -117,7 +117,7 @@ private struct MeetingProgressBar: View {
                 Spacer()
                 Text("ends \(item.end.formatted(date: .omitted, time: .shortened))")
             }
-            .font(OS.font(14, .semibold).monospacedDigit())
+            .font(OS.font(18, .semibold).monospacedDigit())
             .foregroundStyle(OS.grey)
         }
     }
