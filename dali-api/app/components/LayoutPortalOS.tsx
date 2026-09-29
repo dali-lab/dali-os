@@ -10,6 +10,7 @@ import { useShellNav } from '~/components/shell-nav'
 import { useOsShellRoot } from '~/lib/os-shell'
 import { osMenuClass, osMenuItemClass, railRowClass } from '~/components/os-shell-chrome'
 import { PORTAL_NAV, isPortalNavActive } from '~/lib/portal-nav'
+import { ImpersonationBanner } from '~/components/ImpersonationBanner'
 import { cn } from '~/lib/cn'
 
 /* ------------------------------------------------------------------ */
@@ -30,10 +31,13 @@ interface LayoutPortalOSProps {
   /** The routed page fills the shell's main column rather than growing past
    *  it (see `handle.fitViewport` — the calendar's hour grid). */
   fitViewport?: boolean
+  /** An admin is impersonating this account — show the exit banner so they are
+   *  never stranded in a non-member shell. */
+  impersonating?: boolean
   children: React.ReactNode
 }
 
-export function LayoutPortalOS({ user, photoUrl, fitViewport = false, children }: LayoutPortalOSProps) {
+export function LayoutPortalOS({ user, photoUrl, fitViewport = false, impersonating = false, children }: LayoutPortalOSProps) {
   const location = useLocation()
   const path = location.pathname + location.search
   useOsShellRoot(true)
@@ -360,6 +364,11 @@ export function LayoutPortalOS({ user, photoUrl, fitViewport = false, children }
           mainPad,
         )}
       >
+        {impersonating && (
+          <ImpersonationBanner
+            userName={`${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || user.email}
+          />
+        )}
         {/* `shrink-0` so a bounded shell takes the height out of the page's own
             scrollport rather than squashing the bar. */}
         <div className="hidden shrink-0 md:block">{topBar}</div>

@@ -6,7 +6,6 @@ import { adminHandle } from "~/admin/adminNav";
 import { prisma } from "~/lib/db";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { isAdmin, isCore, isAdminViaEnv, currentTerm } from "~/lib/roles";
 import { LAB_MEMBER_WHERE, MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { coreCycleTermIds } from "~/lib/core-cycle";
@@ -20,7 +19,6 @@ import { cn } from "~/lib/cn";
 import {
   AdminToggle,
   StaffToggle,
-  ImpersonateButton,
   CorePicker,
   DomainLeadPicker,
   type Member,
@@ -51,11 +49,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (regrouped) return regrouped;
   if (!(await isCore(auth.user.sub))) return redirect("/");
   const viewerIsAdmin = await isAdmin(auth.user.sub);
-  // The "Log in as" action only works with BetterAuth sessions and is Admin-only
-  // (both enforced in /admin/impersonate) — match that gate here so the button
-  // never shows when it would 404.
-  const impersonationEnabled =
-    viewerIsAdmin && (await isFeatureEnabledForEveryone("betterauth", request));
 
   const [users, domains, term] = await Promise.all([
     prisma.user.findMany({
@@ -109,8 +102,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     members,
     domains: domains.map((d) => ({ id: d.id, name: d.displayName })),
     viewerIsAdmin,
-    viewerUserId: auth.user.sub,
-    impersonationEnabled,
   };
 }
 
@@ -262,7 +253,7 @@ export async function action({ request }: Route.ActionArgs) {
 type RoleFilter = "all" | "admin" | "core";
 
 export default function AdminConsoleMembers() {
-  const { members, domains, viewerIsAdmin, viewerUserId, impersonationEnabled } =
+  const { members, domains, viewerIsAdmin } =
     useLoaderData<typeof loader>();
   const { pageTitle, panel } = useOsChrome();
   const [search, setSearch] = useState("");
@@ -365,8 +356,6 @@ export default function AdminConsoleMembers() {
                 member={member}
                 domains={domains}
                 viewerIsAdmin={viewerIsAdmin}
-                viewerUserId={viewerUserId}
-                impersonationEnabled={impersonationEnabled}
               />
             ))}
           </ul>
@@ -380,14 +369,10 @@ function MemberRow({
   member,
   domains,
   viewerIsAdmin,
-  viewerUserId,
-  impersonationEnabled,
 }: {
   member: Member;
   domains: { id: string; name: string }[];
   viewerIsAdmin: boolean;
-  viewerUserId: string;
-  impersonationEnabled: boolean;
 }) {
   const name = `${member.firstName} ${member.lastName}`.trim();
   // A one-line summary of what this person holds, so the row is readable
@@ -425,9 +410,6 @@ function MemberRow({
           <div className="flex flex-wrap items-center gap-1.5">
             <AdminToggle member={member} disabled={!viewerIsAdmin} />
             <StaffToggle member={member} disabled={!viewerIsAdmin} />
-            {impersonationEnabled && (
-              <ImpersonateButton member={member} disabled={member.id === viewerUserId} />
-            )}
           </div>
         </ControlCell>
         <ControlCell label="Core" icon={Crown}>
