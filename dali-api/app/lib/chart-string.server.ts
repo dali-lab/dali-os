@@ -5,8 +5,7 @@
 // would drift.
 //
 // This table is the only source. The legacy `Project.chartString` columns were
-// imported into it (migration chart_string_legacy_backfill) and nothing reads
-// them any more.
+// imported into it (migration chart_string_legacy_backfill) and then dropped.
 
 import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";

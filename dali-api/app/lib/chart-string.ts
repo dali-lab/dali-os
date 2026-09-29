@@ -3,9 +3,9 @@
 // share one implementation — CI runs the unit suite without a generated Prisma
 // client, so anything that reaches ~/lib/db can't be imported from a test.
 //
-// Two formats coexist permanently; `Project.chartStringType` already records
-// which. They are not eras — a project has one or the other depending on how it
-// is funded.
+// Two formats coexist permanently, and `ProjectChartString.type` records which.
+// They are not eras — a project has one or the other depending on how it is
+// funded.
 //
 //   GL     entity . org . funding . activity . subactivity [. natclass]
 //          20.330.161028.128512.4000
@@ -93,8 +93,8 @@ function detectType(segments: string[]): ChartStringType | null {
 }
 
 /**
- * Parse and validate. `declaredType` is the caller's claim (the stored
- * `chartStringType`); a disagreement with the detected shape warns rather than
+ * Parse and validate. `declaredType` is the caller's claim (e.g. a
+ * type someone typed alongside the string); a disagreement with the detected shape warns rather than
  * failing, because the detected shape is the more trustworthy of the two.
  *
  * Errors mean "do not store this". Warnings mean "store it, but say something":
