@@ -6,7 +6,8 @@ import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { getUserRoles } from "~/lib/roles";
-import { resolveFeatureFlags } from "~/lib/feature-flags.server";
+import { resolveFeatureFlags, isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
+import { getImpersonationState } from "~/lib/betterauth-compat.server";
 import type { FeatureFlagMap } from "~/lib/feature-flags";
 import { FeatureFlagsProvider } from "~/components/FeatureFlags";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
@@ -41,14 +42,28 @@ export async function loader({ request }: Route.LoaderArgs) {
     resolvePhotoUrl(me?.photoUrl),
     resolveFeatureFlags(auth.user.sub, roles),
   ]);
-  return { user: auth.user, avatarUrl, flags };
+
+  // Surface the "Stop impersonating" banner when an admin is logged in as this
+  // portal account. Gated on the flag so the extra session read never runs in
+  // the default path, and wrapped so the probe can't fault the shell.
+  let impersonating = false;
+  if (await isFeatureEnabledForEveryone("betterauth", request)) {
+    try {
+      impersonating = (await getImpersonationState(request)) !== null;
+    } catch {
+      // never let the impersonation probe fault the portal shell
+    }
+  }
+
+  return { user: auth.user, avatarUrl, flags, impersonating };
 }
 
 export default function ApplicantLayout() {
-  const { user, avatarUrl, flags } = useLoaderData<typeof loader>() as {
+  const { user, avatarUrl, flags, impersonating } = useLoaderData<typeof loader>() as {
     user: { sub: string; email: string; type: string; firstName?: string; lastName?: string };
     avatarUrl: string | null;
     flags: FeatureFlagMap;
+    impersonating: boolean;
   };
 
   // A page that declares `fitViewport` (the calendar's hour grid) fills the
@@ -60,7 +75,7 @@ export default function ApplicantLayout() {
   );
 
   return (
-    <LayoutPortalOS user={user} photoUrl={avatarUrl} fitViewport={fitViewport}>
+    <LayoutPortalOS user={user} photoUrl={avatarUrl} fitViewport={fitViewport} impersonating={impersonating}>
       <FeatureFlagsProvider flags={flags}>
         <Outlet />
       </FeatureFlagsProvider>

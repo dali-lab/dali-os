@@ -74,6 +74,7 @@ export default [
     route("admin/communications", "admin/routes/admin.communications.tsx"),
     route("admin/system", "admin/routes/admin.system.tsx"),
     route("admin/members", "admin/routes/admin.members.tsx"),
+    route("admin/site-users", "admin/routes/admin.site-users.tsx"),
     route("admin/domains", "admin/routes/admin.domains.tsx"),
     route("admin/announcements", "admin/routes/admin.announcements.tsx"),
     route("admin/activity", "admin/routes/admin.activity.tsx"),
