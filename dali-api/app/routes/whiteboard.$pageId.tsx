@@ -3,7 +3,7 @@ import type { Route } from "./+types/whiteboard.$pageId";
 import { prisma } from "~/lib/db";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { parseSessionCookie } from "~/lib/cookies";
+import { getCollabToken } from "~/lib/collab-token.server";
 import { getPresenceUser } from "~/lib/presence-user";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { recordPageVisit } from "~/lib/user-pages.server";
@@ -182,7 +182,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   recordPageVisit(auth.user.sub, page.id, request);
 
-  const collabToken = parseSessionCookie(request);
+  const collabToken = await getCollabToken(request);
   const fallbackName =
     [auth.user.firstName, auth.user.lastName].filter(Boolean).join(" ") || auth.user.email;
   const presenceUser = await getPresenceUser(auth.user.sub, fallbackName);

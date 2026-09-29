@@ -2,7 +2,7 @@ import { useLoaderData } from "react-router";
 import { PartnerBackLink } from "~/partners/components/PartnerBackLink";
 import type { Route } from "./+types/partner.projects.$id.pages.$pageId";
 import { prisma } from "~/lib/db";
-import { parseSessionCookie } from "~/lib/cookies";
+import { getCollabToken } from "~/lib/collab-token.server";
 import { getPresenceUser } from "~/lib/presence-user";
 import { requirePartner } from "~/partners/lib/partner-auth.server";
 import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
@@ -42,7 +42,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   return {
     page,
     projectId: params.id!,
-    collabToken: parseSessionCookie(request),
+    collabToken: await getCollabToken(request),
     userName: presenceUser?.name ?? fallbackName,
     currentUserId: auth.user.sub,
   };

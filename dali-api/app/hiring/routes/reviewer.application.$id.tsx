@@ -9,7 +9,7 @@ import { recordRouteVisit } from '~/lib/user-pages.server'
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from '~/lib/login-next'
 import { hasCycleAccess } from '~/lib/roles'
-import { parseSessionCookie } from '~/lib/cookies'
+import { getCollabToken } from "~/lib/collab-token.server";
 import { getPresenceUser } from '~/lib/presence-user'
 import { requirePageSignedOrRedirect } from '~/hiring/lib/confidentiality'
 import { presignAnswers } from '~/hiring/lib/presign'
@@ -222,7 +222,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
   // Pass JWT for WebSocket auth
-  const collabToken = parseSessionCookie(request)
+  const collabToken = await getCollabToken(request)
   const fallbackName =
     [reviewer.firstName, reviewer.lastName].filter(Boolean).join(' ') || auth.user.email
   const presenceUser = await getPresenceUser(auth.user.sub, fallbackName)

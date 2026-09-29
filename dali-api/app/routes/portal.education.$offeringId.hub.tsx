@@ -4,7 +4,7 @@ import { requireEnrollment } from "~/education/lib/access.server";
 import { getHubData } from "~/education/lib/lms.server";
 import { runDiscussionAction } from "~/education/lib/discussions.server";
 import { CourseHub } from "~/education/components/CourseHub";
-import { parseSessionCookie } from "~/lib/cookies";
+import { getCollabToken } from "~/lib/collab-token.server";
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `${data?.hub.offering.title ?? "Course"} · DALI` },
@@ -23,7 +23,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     isManager: false,
   });
   if (!hub) throw new Response("Not found", { status: 404 });
-  return { hub, collabToken: parseSessionCookie(request) };
+  return { hub, collabToken: await getCollabToken(request) };
 }
 
 export async function action({ request, params }: Route.ActionArgs) {

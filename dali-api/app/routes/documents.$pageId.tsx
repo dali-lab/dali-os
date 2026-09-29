@@ -7,7 +7,7 @@ import type { Route } from "./+types/documents.$pageId";
 import { prisma } from "~/lib/db";
 import { ensureOccurrenceRoster } from "~/lib/scheduled-meeting";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
-import { parseSessionCookie } from "~/lib/cookies";
+import { getCollabToken } from "~/lib/collab-token.server";
 import { fullName } from "~/lib/display";
 import { getPresenceUser } from "~/lib/presence-user";
 import { getPageAccess } from "~/lib/pageAccess.server";
@@ -338,7 +338,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }
   }
 
-  const collabToken = parseSessionCookie(request);
+  const collabToken = await getCollabToken(request);
   const fallbackName =
     [auth.user.firstName, auth.user.lastName].filter(Boolean).join(" ") || auth.user.email;
   const presenceUser = await getPresenceUser(auth.user.sub, fallbackName);

@@ -1,7 +1,7 @@
 import { prisma } from "~/lib/db";
 import { rowsToCsv as rowsToCsvShared } from "~/lib/csv";
 import type { Level } from "~/lib/level";
-import type { ChartStringType } from "~/lib/chart-string";
+import { DALI_PROGRAMS_GL, type ChartStringType } from "~/lib/chart-string";
 import { resolveChartStringsForTerm } from "~/lib/chart-string.server";
 
 // ─── Constants per payroll spec ──────────────────────────────────────────────
@@ -12,12 +12,13 @@ export const PRIMARY_SUPERVISOR_NETID = "f0077bn";
 export const SECONDARY_SUPERVISOR_NETID = "d1207c2";
 export const ANTICIPATED_HOURS_PER_WEEK = "15";
 
-// Lab-wide chart string for non-project payroll (Core + Instructor). Project
-// rows resolve theirs per term from ProjectChartString; these rows share one
-// internal funding line. Type left blank — payroll didn't specify one for
-// internal lines.
+// Lab-wide chart string for non-project payroll (Core + Instructor): the lab
+// GL's Programs line, on org 330 since the ~2026-07-01 move off Magnuson (722).
+// Project rows resolve theirs per term from ProjectChartString; these rows
+// share one internal funding line. Type left blank — payroll didn't specify
+// one for internal lines.
 export const CORE_INSTRUCTOR_CHART_STRING_TYPE = "";
-export const CORE_INSTRUCTOR_CHART_STRING = "18.722.161028.128512.3000";
+export const CORE_INSTRUCTOR_CHART_STRING = DALI_PROGRAMS_GL;
 
 // Technigala support is a flat termly hire, so its Job ID / wage / chart string
 // are single fixed values rather than a (level, domain) JobCodeLookup — kept

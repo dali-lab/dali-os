@@ -3,7 +3,7 @@ import type { Route } from './+types/rubrics.$id'
 import { prisma } from '~/lib/db'
 import { requireCoreOrDomainLead } from "~/lib/auth";
 import { redirectToLogin } from '~/lib/login-next'
-import { parseSessionCookie } from '~/lib/cookies'
+import { getCollabToken } from "~/lib/collab-token.server";
 import { RubricDetail } from '~/hiring/components/RubricDetail'
 
 export const meta: Route.MetaFunction = ({ data }) => {
@@ -26,7 +26,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   })
 
   // Session token passed to useSharedArray for the rubric:{id}:draft collab room.
-  const collabToken = parseSessionCookie(request)
+  const collabToken = await getCollabToken(request)
 
   return { rubric, collabToken }
 }

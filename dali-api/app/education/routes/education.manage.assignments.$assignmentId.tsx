@@ -13,7 +13,7 @@ import { readDocAsBlocks } from "~/collab/read";
 import { Button } from "~/components/ui/Button";
 import { DocEditor, countWords } from "~/components/doc";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
-import { parseSessionCookie } from "~/lib/cookies";
+import { getCollabToken } from "~/lib/collab-token.server";
 import { formatDateTime } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 
@@ -86,7 +86,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     offeringTitle: offering?.title ?? "Offering",
     assignment,
     submissions: submissionsWithDocs,
-    collabToken: parseSessionCookie(request),
+    collabToken: await getCollabToken(request),
     userName: `${auth.user.firstName ?? ""} ${auth.user.lastName ?? ""}`.trim(),
   };
 }

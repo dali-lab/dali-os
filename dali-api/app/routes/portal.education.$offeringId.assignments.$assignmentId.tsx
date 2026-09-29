@@ -9,7 +9,7 @@ import {
 import { readDocAsBlocks } from "~/collab/read";
 import { AssignmentWorkArea } from "~/education/components/AssignmentWorkArea";
 import { formatDateTime } from "~/lib/display";
-import { parseSessionCookie } from "~/lib/cookies";
+import { getCollabToken } from "~/lib/collab-token.server";
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `${data?.assignment.title ?? "Assignment"} · DALI` },
@@ -69,7 +69,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         }
       : null,
     canSubmit: applicationId !== null,
-    collabToken: parseSessionCookie(request),
+    collabToken: await getCollabToken(request),
     userName: `${auth.user.firstName ?? ""} ${auth.user.lastName ?? ""}`.trim(),
   };
 }

@@ -5,7 +5,7 @@ import type { Route } from "./+types/resources";
 import { DocEditor } from "~/components/doc";
 import { RESOURCES_ROOM } from "~/collab/roomName";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
-import { parseSessionCookie } from "~/lib/cookies";
+import { getCollabToken } from "~/lib/collab-token.server";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles, isCore, isLabMember } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
@@ -43,7 +43,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   return {
     canEdit: core,
-    collabToken: parseSessionCookie(request),
+    collabToken: await getCollabToken(request),
     currentUserId: auth.user.sub,
     userName:
       [auth.user.firstName, auth.user.lastName].filter(Boolean).join(" ") ||

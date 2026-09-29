@@ -7,7 +7,7 @@ vi.mock("~/lib/db");
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ isCycleAdmin: vi.fn().mockResolvedValue(true) }));
 vi.mock("~/lib/user-pages.server", () => ({ recordRouteVisit: vi.fn() }));
-vi.mock("~/lib/cookies", () => ({ parseSessionCookie: () => "tok" }));
+vi.mock("~/lib/collab-token.server", () => ({ getCollabToken: () => "tok" }));
 vi.mock("~/hiring/lib/confidentiality", () => ({ requirePageSignedOrRedirect: vi.fn().mockResolvedValue(null) }));
 vi.mock("~/hiring/lib/cycle-stages.server", () => ({ delibsQualifier: vi.fn().mockResolvedValue({}) }));
 

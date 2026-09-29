@@ -67,7 +67,7 @@ import { ProjectViewSwitch } from "../components/ProjectViewSwitch";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { ProjectIconPicker } from "../components/ProjectIconPicker";
 import { Markdown } from "~/components/Markdown";
-import { parseSessionCookie } from "~/lib/cookies";
+import { getCollabToken } from "~/lib/collab-token.server";
 import { getUserRoles, isCore, isProjectMember, canManageStaffing, currentTerm, isLabMentor } from "~/lib/roles";
 import {
   linkProjectPartner,
@@ -658,7 +658,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   ]);
   // ── End Stage 2 ──────────────────────────────────────────────────────────────
 
-  const collabToken = parseSessionCookie(request);
+  const collabToken = await getCollabToken(request);
   const fallbackName =
     [auth.user.firstName, auth.user.lastName].filter(Boolean).join(" ") ||
     auth.user.email;

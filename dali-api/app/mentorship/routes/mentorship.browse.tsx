@@ -13,7 +13,7 @@ import type { Route } from "./+types/mentorship.browse";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
-import { parseSessionCookie } from "~/lib/cookies";
+import { getCollabToken } from "~/lib/collab-token.server";
 import {
   canViewMentorship,
   mentorNoteWhere,
@@ -231,7 +231,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     nudgeRecipients,
     isCore: await isCore(auth.user.sub),
     viewerId: auth.user.sub,
-    collabToken: parseSessionCookie(request),
+    collabToken: await getCollabToken(request),
     userName: [me?.firstName, me?.lastName].filter(Boolean).join(" ") || "Core",
   };
   return data;
