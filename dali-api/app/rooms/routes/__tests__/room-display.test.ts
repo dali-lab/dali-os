@@ -13,6 +13,7 @@ vi.mock("~/lib/rooms.server", () => ({
   createRoomBooking: vi.fn(),
 }));
 vi.mock("~/lib/validate", () => ({ parseJson: vi.fn() }));
+vi.mock("~/lib/display-scan.server", () => ({ getActiveDisplayScan: vi.fn() }));
 
 import { requireRoomDisplay } from "~/lib/room-display.server";
 import { walletTokensConfigured } from "~/lib/wallet-token";
@@ -20,6 +21,7 @@ import { resolveScannedMember } from "~/lib/wallet-scan.server";
 import { markMeetingAttendance } from "~/lib/scheduled-meeting";
 import { createRoomBooking, currentEvent, getRoomSchedule } from "~/lib/rooms.server";
 import { parseJson } from "~/lib/validate";
+import { getActiveDisplayScan } from "~/lib/display-scan.server";
 import { action as scan } from "~/rooms/routes/api.room-display.scan";
 import { action as book } from "~/rooms/routes/api.room-display.book";
 
@@ -35,6 +37,7 @@ beforeEach(() => {
   vi.mocked(resolveScannedMember).mockResolvedValue(member);
   vi.mocked(getRoomSchedule).mockResolvedValue([]);
   vi.mocked(markMeetingAttendance).mockResolvedValue({ ok: true });
+  vi.mocked(getActiveDisplayScan).mockResolvedValue(null);
 });
 
 describe("room-display scan", () => {
@@ -71,6 +74,42 @@ describe("room-display scan", () => {
     vi.mocked(resolveScannedMember).mockResolvedValue({ ...member, isDaliMember: false });
     await scan(post("/api/room-display/scan"));
     expect(markMeetingAttendance).toHaveBeenCalledWith("m1", "u2", true, "u2", expect.any(Date), { addIfMissing: false });
+  });
+  describe("with iPad scanning switched on from Attendance", () => {
+    const occurrenceStart = new Date("2026-09-30T22:00:00Z");
+    const labScan = {
+      meetingId: "m9",
+      occurrenceStart,
+      title: "Project sync",
+      start: occurrenceStart,
+      end: new Date("2026-09-30T23:00:00Z"),
+      isEvent: false,
+    };
+
+    it("checks in to that event's occurrence instead of the room's", async () => {
+      vi.mocked(getActiveDisplayScan).mockResolvedValue(labScan);
+      const res = await scan(post("/api/room-display/scan"));
+      expect(res.status).toBe(200);
+      expect(await res.json()).toMatchObject({ event: { id: "m9", title: "Project sync" } });
+      expect(markMeetingAttendance).toHaveBeenCalledWith("m9", "u2", true, "u2", occurrenceStart, {
+        addIfMissing: false,
+      });
+      expect(getRoomSchedule).not.toHaveBeenCalled();
+    });
+
+    it("works in a room with no event of its own", async () => {
+      vi.mocked(currentEvent).mockReturnValue(null);
+      vi.mocked(getActiveDisplayScan).mockResolvedValue(labScan);
+      expect((await scan(post("/api/room-display/scan"))).status).toBe(200);
+    });
+
+    it("takes DALI walk-ins at a self check-in event", async () => {
+      vi.mocked(getActiveDisplayScan).mockResolvedValue({ ...labScan, isEvent: true });
+      await scan(post("/api/room-display/scan"));
+      expect(markMeetingAttendance).toHaveBeenCalledWith("m9", "u2", true, "u2", occurrenceStart, {
+        addIfMissing: true,
+      });
+    });
   });
 });
 

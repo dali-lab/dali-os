@@ -11,6 +11,7 @@ import {
   MoreHorizontal,
   Pencil,
   Trash2,
+  Tablet,
 } from "lucide-react";
 import type { Route } from "./+types/attendance";
 import { requireAuth } from "~/lib/auth";
@@ -19,6 +20,10 @@ import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { meetingOccurrenceHref } from "~/calendar/lib/meeting-href";
 import { parseOccurrenceParam } from "~/lib/scheduled-meeting";
+import { getActiveDisplayScan, startDisplayScan, stopDisplayScan } from "~/lib/display-scan.server";
+import { isRoomBookingEnabled } from "~/rooms/lib/access.server";
+import { IconButton } from "~/components/ui/IconButton";
+import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
 import { fullName, formatDateShort, formatDateTime } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { useOsChrome } from "~/components/os-chrome";
@@ -103,12 +108,14 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Who may write an absence note is the same gate as marking attendance, so
   // resolve it here per event rather than letting the roster offer an editor
   // the action would only reject. One membership query covers every event.
-  const [core, assignments] = await Promise.all([
+  const [core, assignments, ipadScan, roomsEnabled] = await Promise.all([
     isCore(userId),
     prisma.projectAssignment.findMany({
       where: { userId },
       select: { projectId: true },
     }),
+    getActiveDisplayScan(),
+    isRoomBookingEnabled(userId, request),
   ]);
   const memberProjectIds = new Set(assignments.map((a) => a.projectId));
 
@@ -160,6 +167,10 @@ export async function loader({ request }: Route.LoaderArgs) {
           viewerPresent: rows.find((a) => a.userId === userId)?.present ?? false,
           canManage,
           canEdit,
+          // Door displays only exist once rooms are on, so the switch follows that flag.
+          canScanOnIpads: canEdit && roomsEnabled,
+          ipadScanning:
+            ipadScan?.meetingId === m.id && ipadScan.occurrenceStart.getTime() === key,
           attendees: rows.map((a) => ({
             id: a.user.id,
             name: fullName(a.user) || a.user.daliEmail || a.user.id,
@@ -174,7 +185,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     });
   });
 
-  return { events };
+  return { events, ipadScanTitle: ipadScan?.title ?? null };
 }
 
 // Save (or clear) the absence note on one roster row. Writing is gated by the
@@ -189,7 +200,11 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   const form = await request.formData();
-  if (form.get("intent") !== "set-absence-note") {
+  const intent = form.get("intent");
+  if (intent === "start-ipad-scan" || intent === "stop-ipad-scan") {
+    return ipadScanAction(request, auth.user.sub, intent, form);
+  }
+  if (intent !== "set-absence-note") {
     return Response.json({ error: "Unknown intent" }, { status: 400 });
   }
   const meetingId = String(form.get("meetingId") ?? "");
@@ -238,6 +253,43 @@ export async function action({ request }: Route.ActionArgs) {
   return Response.json({ ok: true });
 }
 
+// Switching every door display to one event is the organizer's or Core's call,
+// the same gate as editing the event.
+async function ipadScanAction(
+  request: Request,
+  userId: string,
+  intent: "start-ipad-scan" | "stop-ipad-scan",
+  form: FormData,
+) {
+  const meetingId = String(form.get("meetingId") ?? "");
+  const occurrenceStart = parseOccurrenceParam(form.get("occurrenceStart"));
+  if (!meetingId || (intent === "start-ipad-scan" && !occurrenceStart)) {
+    return Response.json({ error: "Missing meetingId or occurrenceStart" }, { status: 400 });
+  }
+  const meeting = await prisma.scheduledMeeting.findUnique({
+    where: { id: meetingId },
+    select: { organizerId: true, status: true },
+  });
+  if (!meeting) return Response.json({ error: "Not found" }, { status: 404 });
+  if (
+    !(await isRoomBookingEnabled(userId, request)) ||
+    (meeting.organizerId !== userId && !(await isCore(userId)))
+  ) {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  if (intent === "stop-ipad-scan") {
+    await stopDisplayScan(meetingId);
+    return Response.json({ ok: true });
+  }
+  if (meeting.status === "Cancelled") {
+    return Response.json({ error: "This event was cancelled" }, { status: 409 });
+  }
+  const started = await startDisplayScan(meetingId, occurrenceStart!, userId);
+  if (!started) return Response.json({ error: "This event has already ended" }, { status: 409 });
+  return Response.json({ ok: true, expiresAt: started.expiresAt.toISOString() });
+}
+
 type Attendee = {
   id: string;
   name: string;
@@ -261,6 +313,8 @@ type AttendanceEvent = {
   viewerPresent: boolean;
   canManage: boolean;
   canEdit: boolean;
+  canScanOnIpads: boolean;
+  ipadScanning: boolean;
   attendees: Attendee[];
 };
 
@@ -269,7 +323,7 @@ function startMs(e: AttendanceEvent, fallback: number): number {
 }
 
 export default function AttendancePage() {
-  const { events } = useLoaderData<typeof loader>();
+  const { events, ipadScanTitle } = useLoaderData<typeof loader>();
   const { pageTitle, panel } = useOsChrome();
   const [query, setQuery] = useState("");
   // One control for every roster on the page: the cards all show the same kind
@@ -344,8 +398,20 @@ export default function AttendancePage() {
             </div>
           ) : (
             <>
-              <EventSection title="Upcoming" events={upcoming} panel={panel} sort={sort} />
-              <EventSection title="Past" events={past} panel={panel} sort={sort} />
+              <EventSection
+                title="Upcoming"
+                events={upcoming}
+                panel={panel}
+                sort={sort}
+                ipadScanTitle={ipadScanTitle}
+              />
+              <EventSection
+                title="Past"
+                events={past}
+                panel={panel}
+                sort={sort}
+                ipadScanTitle={ipadScanTitle}
+              />
             </>
           )}
         </>
@@ -359,11 +425,13 @@ function EventSection({
   events,
   panel,
   sort,
+  ipadScanTitle,
 }: {
   title: string;
   events: AttendanceEvent[];
   panel: string;
   sort: AttendeeSort;
+  ipadScanTitle: string | null;
 }) {
   if (events.length === 0) return null;
   return (
@@ -374,7 +442,13 @@ function EventSection({
       </h2>
       <ul className="flex flex-col gap-3">
         {events.map((event) => (
-          <EventCard key={event.id} event={event} panel={panel} sort={sort} />
+          <EventCard
+            key={event.id}
+            event={event}
+            panel={panel}
+            sort={sort}
+            ipadScanTitle={ipadScanTitle}
+          />
         ))}
       </ul>
     </section>
@@ -385,14 +459,17 @@ function EventCard({
   event,
   panel,
   sort,
+  ipadScanTitle,
 }: {
   event: AttendanceEvent;
   panel: string;
   sort: AttendeeSort;
+  ipadScanTitle: string | null;
 }) {
   const tz = useUserTimeZone();
   const dialog = useDialog();
   const cancelFetcher = useFetcher();
+  const ipadFetcher = useFetcher<{ error?: string }>();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const pct = event.invited > 0 ? Math.round((event.checkedIn / event.invited) * 100) : 0;
@@ -412,6 +489,26 @@ function EventCard({
       method: "post",
       action: `/api/scheduled-meetings/${event.meetingId}/cancel`,
     });
+  }
+
+  async function toggleIpadScan() {
+    if (!event.ipadScanning) {
+      const replacing = ipadScanTitle ? ` iPads scanning for "${ipadScanTitle}" will switch over.` : "";
+      const ok = await dialog.confirm({
+        title: "Track attendance from iPads?",
+        description: `Every door display becomes a pass scanner for "${event.title}" until you turn it off or the event ends.${replacing}`,
+        confirmLabel: "Enable",
+      });
+      if (!ok) return;
+    }
+    ipadFetcher.submit(
+      {
+        intent: event.ipadScanning ? "stop-ipad-scan" : "start-ipad-scan",
+        meetingId: event.meetingId,
+        occurrenceStart: event.occurrenceStart,
+      },
+      { method: "post" },
+    );
   }
 
   return (
@@ -437,6 +534,7 @@ function EventCard({
               <span className="text-[11px] rounded-md px-2 py-0.5 bg-muted text-muted-foreground font-medium">
                 {event.scope}
               </span>
+              {event.ipadScanning && <Pill dot="success">Scanning on iPads</Pill>}
               {event.viewerPresent && (
                 <span className="text-[11px] rounded-md px-2 py-0.5 bg-accent-teal/15 text-accent-teal font-medium inline-flex items-center gap-1">
                   <UserCheck className="w-3 h-3" aria-hidden /> You're checked in
@@ -460,9 +558,25 @@ function EventCard({
                 {event.checkedIn}/{event.invited} checked in
               </span>
             </div>
+            {ipadFetcher.data?.error && (
+              <span className="block text-xs text-destructive mt-2">{ipadFetcher.data.error}</span>
+            )}
           </div>
         </button>
         <div className="flex items-start gap-0.5 pr-3 pt-3.5 flex-shrink-0">
+          {event.canScanOnIpads && (event.ipadScanning || !event.isPast) && (
+            <IconButton
+              label={
+                event.ipadScanning
+                  ? "Stop attendance tracking from iPad"
+                  : "Enable attendance tracking from iPad"
+              }
+              icon={Tablet}
+              onClick={toggleIpadScan}
+              disabled={ipadFetcher.state !== "idle"}
+              className={cn(event.ipadScanning && "text-accent-teal hover:text-accent-teal")}
+            />
+          )}
           <Link
             to={meetingOccurrenceHref(event.meetingId, event.occurrenceStart)}
             className="p-1.5 rounded-md text-muted-foreground hover:text-accent-teal hover:bg-accent-teal/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-teal/40"

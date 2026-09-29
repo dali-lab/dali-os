@@ -2,10 +2,12 @@ import type { Route } from "./+types/api.room-display.schedule";
 import { displayUnauthorized, requireRoomDisplay } from "~/lib/room-display.server";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { currentEvent, getRoomSchedule, parseWindow, serializeScheduleItem } from "~/lib/rooms.server";
+import { getActiveDisplayScan } from "~/lib/display-scan.server";
 
 // GET /api/room-display/schedule?start=<iso>&end=<iso> — the paired room's
 // schedule for the display's local day, plus the event it should be scanning
-// for right now (if any). Polled by the door display.
+// for right now (if any). Polled by the door display. `attendanceScan` is the
+// lab-wide scan switched on from Attendance; it outranks the room's own event.
 export async function loader({ request }: Route.LoaderArgs) {
   const display = await requireRoomDisplay(request);
   if (!display) return displayUnauthorized();
@@ -13,7 +15,10 @@ export async function loader({ request }: Route.LoaderArgs) {
   const window = parseWindow(new URL(request.url));
   if (!window) return Response.json({ error: "start and end are required" }, { status: 400 });
 
-  const items = await getRoomSchedule(display.room.id, window.start, window.end);
+  const [items, scan] = await Promise.all([
+    getRoomSchedule(display.room.id, window.start, window.end),
+    getActiveDisplayScan(),
+  ]);
   const event = currentEvent(items);
   return Response.json({
     room: display.room,
@@ -26,6 +31,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       }),
     ),
     currentEvent: event ? serializeScheduleItem(event) : null,
+    attendanceScan: scan && { meetingId: scan.meetingId, title: scan.title, start: scan.start, end: scan.end },
     serverTime: new Date().toISOString(),
   });
 }

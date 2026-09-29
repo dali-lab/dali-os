@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// The paired door display. Normally status + today's timeline; while a DALI
-/// event is in its check-in window it becomes a wallet-pass scanner.
+/// event is in its check-in window it becomes a wallet-pass scanner, and while
+/// iPad scanning is on from Attendance the whole screen is the scanner.
 struct RoomDisplayView: View {
     @Environment(DisplayStore.self) private var store
     @Environment(\.scenePhase) private var scenePhase
@@ -14,7 +15,9 @@ struct RoomDisplayView: View {
             GeometryReader { proxy in
                 let landscape = proxy.size.width > proxy.size.height
                 Group {
-                    if let event = store.currentEvent {
+                    if let scan = store.attendanceScan {
+                        AttendanceScanView(scan: scan)
+                    } else if let event = store.currentEvent {
                         EventCheckInView(event: event, room: store.room, now: now)
                     } else {
                         let layout = landscape
