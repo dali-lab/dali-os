@@ -22,6 +22,7 @@ const BACKGROUNDS: Record<LandingBackgroundId, LazyExoticComponent<ComponentType
     })),
   ),
   library: lazy(() => import('./library/LibraryBackground')),
+  delta: lazy(() => import('./delta/DeltaBackground')),
 }
 
 export default function LandingBackground({ id }: { id: LandingBackgroundId }) {
