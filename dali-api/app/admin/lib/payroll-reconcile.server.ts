@@ -4,6 +4,7 @@
 // here — React Router single-fetch can't serialize Prisma Decimal.
 
 import { prisma } from "~/lib/db";
+import { listChartStringsByProject } from "~/lib/chart-string.server";
 import { decimalToNumber } from "~/lib/money";
 import {
   collate,
@@ -90,8 +91,15 @@ export async function getReconciliation(
     };
   }
 
-  const [entryRows, lookupRows, assignmentRows, projectRows, noteRows, activeTerm] =
-    await Promise.all([
+  const [
+    entryRows,
+    lookupRows,
+    assignmentRows,
+    projectRows,
+    noteRows,
+    activeTerm,
+    chartStringsByProject,
+  ] = await Promise.all([
       prisma.timesheetEntry.findMany({
         where: { payPeriodId: { in: periodIds } },
         select: {
@@ -117,14 +125,10 @@ export async function getReconciliation(
         where: { termId },
         select: {
           user: { select: { netId: true } },
-          project: {
-            select: { id: true, name: true, chartString: true },
-          },
+          project: { select: { id: true, name: true } },
         },
       }),
-      prisma.project.findMany({
-        select: { id: true, name: true, chartString: true },
-      }),
+      prisma.project.findMany({ select: { id: true, name: true } }),
       prisma.timesheetNote.findMany({
         where: { payPeriodId: { in: periodIds } },
         select: {
@@ -137,6 +141,9 @@ export async function getReconciliation(
         },
       }),
       isActiveTerm(termId),
+      // Every string a project has held, not just this term's: timesheets
+      // carry whatever was charged, and matching them is the point.
+      listChartStringsByProject(),
     ]);
 
   const entries: CollationEntry[] = entryRows.map((e) => ({
@@ -193,13 +200,13 @@ export async function getReconciliation(
       netId: (a.user.netId as string).toLowerCase(),
       projectId: a.project.id,
       projectName: a.project.name,
-      projectChartString: a.project.chartString,
+      projectChartStrings: chartStringsByProject.get(a.project.id) ?? [],
     }));
 
   const projects: CollationProject[] = projectRows.map((p) => ({
     id: p.id,
     name: p.name,
-    chartString: p.chartString,
+    chartStrings: chartStringsByProject.get(p.id) ?? [],
   }));
 
   return {

@@ -323,8 +323,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       githubTeamSlug: true,
       slackChannelName: true,
       slackChannelId: true,
-      chartStringType: true,
-      chartString: true,
       isPrivate: true,
       overviewPageId: true,
       prdPageId: true,
@@ -1214,9 +1212,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   return {
     infra,
-    // Redacted server-side, not just hidden in JSX: this payload goes to
-    // every viewer who can open the project, so gating only the edit form
-    // would still ship the chart string to any lab member.
+    // Core-only fields are redacted server-side, not just hidden in JSX: this
+    // payload goes to every viewer who can open the project, so gating only
+    // the edit form would still ship the value to any lab member.
     project: redactCoreOnlyProjectFields(
       {
         id: project.id,
@@ -1234,8 +1232,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         githubTeamSlug: project.githubTeamSlug,
         slackChannelName: project.slackChannelName,
         slackChannelId: project.slackChannelId,
-        chartStringType: project.chartStringType,
-        chartString: project.chartString,
         isPrivate: project.isPrivate,
         overviewPageId: project.overviewPageId,
         prdPageId: project.prdPageId,

@@ -16,7 +16,7 @@
 
 import { prisma } from "~/lib/db";
 import { isCore, isAdmin } from "~/lib/roles";
-import { type ChartStringType } from "~/lib/chart-string";
+import { DALI_PROJECTS_GL, parseChartString, type ChartStringType } from "~/lib/chart-string";
 import {
   recordProjectChartString,
   ChartStringValidationError,
@@ -39,7 +39,7 @@ async function requireCore(callerId: string): Promise<void> {
 export const LIST_PROJECT_CHART_STRINGS_TOOL = {
   name: "list_project_chart_strings",
   description:
-    "Read a project's payroll chart strings for one term or all terms, including superseded history. Returns both the project's own entries and the effective string per term, which may be inherited from the lab-wide default. Core-only; chart strings are deliberately absent from `get_project_settings`.",
+    "Read a project's payroll chart strings for one term or all terms, including superseded history. Returns both the project's own entries and the effective string per term — what payroll charges — which may be inherited from the lab-wide default, or be the lab's built-in projects GL when no default is recorded. Core-only; chart strings are deliberately absent from `get_project_settings`.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -90,12 +90,16 @@ export type ChartStringEntry = {
 
 export type EffectiveChartString = {
   termCode: string;
-  /** Where the answer came from — an explicit row, the lab default, or nothing. */
-  source: "project" | "labDefault" | "none";
-  chartString: string | null;
-  type: ChartStringType | null;
-  projectCode: string | null;
+  /** Where the answer came from — the project's own row, the lab default row,
+   *  or the lab's projects GL built into the code, which is what payroll
+   *  charges when neither is recorded. */
+  source: "project" | "labDefault" | "builtIn";
+  chartString: string;
+  type: ChartStringType;
+  projectCode: string;
 };
+
+const BUILT_IN = parseChartString(DALI_PROJECTS_GL);
 
 type Row = {
   id: string;
@@ -229,7 +233,13 @@ export async function runListProjectChartStrings(
     .map((termCode) => {
       const hit = currentOwnByTerm.get(termCode) ?? defaultByTerm.get(termCode);
       if (!hit) {
-        return { termCode, source: "none" as const, chartString: null, type: null, projectCode: null };
+        return {
+          termCode,
+          source: "builtIn" as const,
+          chartString: BUILT_IN.normalized,
+          type: "GL" as const,
+          projectCode: BUILT_IN.projectCode as string,
+        };
       }
       return {
         termCode,
@@ -353,7 +363,7 @@ export async function runSetProjectChartString(
 
   try {
     // One shared write path with the project detail form: same validation,
-    // same supersession, same mirror into the legacy columns, same audit.
+    // same supersession, same audit.
     const result = await recordProjectChartString({
       projectId: project.id,
       termId: term.id,
