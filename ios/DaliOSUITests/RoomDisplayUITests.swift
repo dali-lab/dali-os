@@ -11,7 +11,7 @@ final class RoomDisplayUITests: XCTestCase {
         XCTAssertTrue(plus.waitForExistence(timeout: 5))
         plus.tap()
 
-        XCTAssertTrue(app.navigationBars["New booking"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["New booking"].waitForExistence(timeout: 5))
         app.buttons["1 hr"].tap()
         app.buttons["Continue"].tap()
         XCTAssertTrue(app.buttons["Simulate a scan"].waitForExistence(timeout: 5))
@@ -35,6 +35,6 @@ final class RoomDisplayUITests: XCTestCase {
         let plus = app.buttons["New booking"]
         XCTAssertTrue(plus.waitForExistence(timeout: 5))
         plus.tap()
-        XCTAssertTrue(app.navigationBars["New booking"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["New booking"].waitForExistence(timeout: 5))
     }
 }

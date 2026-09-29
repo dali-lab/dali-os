@@ -4,7 +4,7 @@ import SwiftUI
 /// and end), then confirm by scanning the booker's DALI pass. Opened from the
 /// + button or a tap/drag on the timeline, which prefill the time.
 struct BookingSheet: View {
-    static let presets = [30, 60, 90, 120]
+    static let presets = [30, 60, 90]
 
     @Environment(DisplayStore.self) private var store
     @Environment(\.dismiss) private var dismiss
@@ -19,34 +19,41 @@ struct BookingSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if let confirmed {
-                    scan(confirmed)
-                } else {
-                    details
-                }
-            }
-            .padding(24)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(OS.bg.ignoresSafeArea())
-            .navigationTitle(confirmed == nil ? "New booking" : "Scan to book \(rangeText)")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Group {
-                        if confirmed != nil {
-                            Button("Back") { withAnimation { confirmed = nil } }
-                        } else {
-                            Button("Cancel") { dismiss() }
-                        }
-                    }
-                    .font(OS.font(17, .semibold))
-                    .tint(OS.accent)
-                }
+        // No NavigationStack: it has no natural height, and the sheet sizes
+        // itself to this content so there's no empty band under Continue.
+        VStack(spacing: 20) {
+            header
+            if let confirmed {
+                scan(confirmed)
+            } else {
+                details
             }
         }
-        .presentationSizing(.form)
+        .padding(24)
+        .frame(maxWidth: .infinity)
+        .background(OS.bg.ignoresSafeArea())
+        .presentationSizing(.form.fitted(horizontal: false, vertical: true))
+    }
+
+    private var header: some View {
+        ZStack {
+            Text(confirmed == nil ? "New booking" : "Scan to book \(rangeText)")
+                .font(OS.font(19, .bold))
+                .foregroundStyle(OS.fg)
+                .accessibilityAddTraits(.isHeader)
+            HStack {
+                Group {
+                    if confirmed != nil {
+                        Button("Back") { withAnimation { confirmed = nil } }
+                    } else {
+                        Button("Cancel") { dismiss() }
+                    }
+                }
+                .font(OS.font(17, .semibold))
+                .tint(OS.accent)
+                Spacer()
+            }
+        }
     }
 
     // MARK: Step 1: time
@@ -64,7 +71,7 @@ struct BookingSheet: View {
 
             VStack(alignment: .leading, spacing: 12) {
                 Text("Or set the time").osEyebrow()
-                HStack(spacing: 16) {
+                HStack(alignment: .bottom, spacing: 16) {
                     // Moving the start keeps the length, like a calendar.
                     timeField("Start", selection: Binding(
                         get: { start },
@@ -76,6 +83,7 @@ struct BookingSheet: View {
                     Image(systemName: "arrow.right")
                         .font(.system(size: 20, weight: .semibold))
                         .foregroundStyle(OS.muted)
+                        .padding(.bottom, 22)
                     timeField("End", selection: $end)
                 }
             }
@@ -102,8 +110,7 @@ struct BookingSheet: View {
             .opacity(problem == nil ? 1 : 0.4)
         }
         .frame(maxWidth: 620)
-        .padding(.top, 12)
-        .frame(maxHeight: .infinity, alignment: .top)
+        .padding(.top, 4)
     }
 
     private func presetButton(_ minutes: Int) -> some View {
@@ -130,7 +137,7 @@ struct BookingSheet: View {
     }
 
     private func timeField(_ label: String, selection: Binding<Date>) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             Text(label)
                 .font(OS.font(15, .semibold))
                 .foregroundStyle(OS.grey)
@@ -139,10 +146,10 @@ struct BookingSheet: View {
                 .labelsHidden()
                 .datePickerStyle(.compact)
                 .tint(OS.accent)
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(OS.card, in: .rect(cornerRadius: OS.itemRadius))
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(OS.card, in: .rect(cornerRadius: OS.itemRadius))
     }
 
     // MARK: Step 2: scan
@@ -159,6 +166,8 @@ struct BookingSheet: View {
                 }
             }
         )
+        // The camera has no natural height; give it room in the fitted sheet.
+        .frame(height: 620)
     }
 
     // MARK: Rules
