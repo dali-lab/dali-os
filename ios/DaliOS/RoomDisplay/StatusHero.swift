@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The at-a-glance status: a soft wash of the status color, a big countdown
+/// The at-a-glance status: a flat wash of the status color, a big countdown
 /// of the free (or remaining) time, and the state in words. While a meeting
 /// runs, a bar under it shows how much of the meeting is left.
 struct StatusHero: View {
@@ -8,6 +8,8 @@ struct StatusHero: View {
 
     private var isFree: Bool { snapshot.current == nil }
     private var tone: Color { isFree ? OS.green : OS.danger }
+    /// Flat role fills, matched in weight so free and in-use read as a pair.
+    private var wash: Color { isFree ? OS.roleGreen.fill : OS.roleRed.fill }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
@@ -37,18 +39,7 @@ struct StatusHero: View {
         }
         .padding(28)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background {
-            RoundedRectangle(cornerRadius: OS.cardRadius)
-                .fill(OS.card)
-                .overlay(
-                    LinearGradient(
-                        colors: [tone.opacity(0.16), tone.opacity(0.04)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    in: .rect(cornerRadius: OS.cardRadius)
-                )
-        }
+        .background(wash, in: .rect(cornerRadius: OS.cardRadius))
         .animation(.easeInOut(duration: 0.3), value: isFree)
     }
 
@@ -116,7 +107,7 @@ private struct MeetingProgressBar: View {
         VStack(spacing: 6) {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(tone.opacity(0.15))
+                    Capsule().fill(OS.card)
                     Capsule().fill(tone).frame(width: geo.size.width * elapsed)
                 }
             }

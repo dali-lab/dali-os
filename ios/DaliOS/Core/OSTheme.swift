@@ -30,6 +30,8 @@ enum OS {
     static let slate = Category(fill: Color(light: 0xDDE5EF, dark: 0x2B3340), ink: Color(light: 0x3A4C60, dark: 0xAEC4DE))
     static let blue = Category(fill: Color(light: 0xD6E8FB, dark: 0x1E3348), ink: Color(light: 0x17456E, dark: 0xA2D2FD))
     static let violet = Category(fill: Color(light: 0xE6DDFA, dark: 0x31284A), ink: Color(light: 0x45307D, dark: 0xC3AEF2))
+    static let roleGreen = Category(fill: Color(light: 0xD8EED8, dark: 0x263A29), ink: Color(light: 0x1F5A2A, dark: 0xA6DDA6))
+    static let roleRed = Category(fill: Color(light: 0xFBDCDC, dark: 0x3F2424), ink: Color(light: 0x7D2222, dark: 0xF0A5A5))
 
     // MARK: Shape
     static let cardRadius: CGFloat = 24
