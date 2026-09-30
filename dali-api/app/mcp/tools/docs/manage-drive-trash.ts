@@ -102,7 +102,7 @@ export async function runManageDriveTrash(callerId: string, input: ManageDriveTr
   }
 
   // doc or folder
-  const access = await getPageAccess(callerId, id);
+  const access = await getPageAccess(callerId, id, undefined, { includeArchived: true });
   if (!access.canEdit) throw new ManageDriveTrashError("Forbidden", 403);
 
   if (action === "restore") {

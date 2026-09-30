@@ -1,8 +1,10 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Link, redirect, useLoaderData, useSearchParams } from "react-router";
 import QRCode from "qrcode";
-import { Shapes } from "lucide-react";
+import { Shapes, Trash2 } from "lucide-react";
 import { useFeatureFlag } from "~/components/FeatureFlags";
+import { Button } from "~/components/ui/Button";
+import { useToast } from "~/components/ui/toast";
 import type { Route } from "./+types/documents.$pageId";
 import { prisma } from "~/lib/db";
 import { ensureOccurrenceRoster } from "~/lib/scheduled-meeting";
@@ -160,20 +162,35 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // exactly — the Lab branch keys off createdById/Core plus the General-access
   // and share layers. The Member read gate is folded in here (getPageAccess
   // handles notes), so there's no separate noteAccess pre-check.
-  const access = await getPageAccess(auth.user.sub, {
-    id: page.id,
-    workspaceType: page.workspaceType,
-    workspaceId: page.workspaceId,
-    archivedAt: page.archivedAt,
-    createdById: page.createdById,
-    partnerVisible: page.partnerVisible,
-    profileVisible: page.profileVisible,
-    labListing: page.labListing,
-    linkAccess: page.linkAccess,
-    linkPermission: page.linkPermission,
-  });
-  const { canEdit, canComment } = access;
+  // Only a meeting note reaches this line archived (checked above). Its access
+  // has to be resolved from the page's ordinary rules — the default deny would
+  // 404 the meeting's "Open meeting note" link and the printed check-in QR the
+  // moment someone trashes the note — and is then narrowed to read-only: a
+  // trashed doc is readable, never writable, until it's restored.
+  const trashed = page.archivedAt !== null;
+  const access = await getPageAccess(
+    auth.user.sub,
+    {
+      id: page.id,
+      workspaceType: page.workspaceType,
+      workspaceId: page.workspaceId,
+      archivedAt: page.archivedAt,
+      createdById: page.createdById,
+      partnerVisible: page.partnerVisible,
+      profileVisible: page.profileVisible,
+      labListing: page.labListing,
+      linkAccess: page.linkAccess,
+      linkPermission: page.linkPermission,
+    },
+    undefined,
+    { includeArchived: trashed },
+  );
   if (!access.canView) throw new Response("Not found", { status: 404 });
+  const canEdit = access.canEdit && !trashed;
+  const canComment = access.canComment && !trashed;
+  // Restoring is the same gate the Trash panel applies (edit access), read
+  // before the read-only narrowing above.
+  const canRestore = trashed && access.canEdit;
 
   // Folder pages are Drive containers, not documents — the doc viewer would
   // render them with an editable body and a document breadcrumb. Send folders to
@@ -383,7 +400,57 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     subtitle: presenceUser?.subtitle ?? null,
     attendance,
     backlinks,
+    trashed,
+    canRestore,
   };
+}
+
+// A trashed meeting note still opens (read-only) so check-in and the meeting's
+// attendance roster keep working, which leaves the body looking like an ordinary
+// doc with no explanation. Say where it is, and offer the way back.
+function TrashedNoteBanner({ pageId, canRestore }: { pageId: string; canRestore: boolean }) {
+  const toast = useToast();
+  const [restoring, setRestoring] = useState(false);
+
+  async function restore() {
+    setRestoring(true);
+    try {
+      const fd = new FormData();
+      fd.set("intent", "restore");
+      fd.set("type", "doc");
+      fd.set("id", pageId);
+      const res = await fetch("/api/drive/trash", {
+        method: "POST",
+        body: fd,
+        credentials: "include",
+      });
+      if (!res.ok) {
+        toast.error("Couldn't restore this note");
+        setRestoring(false);
+        return;
+      }
+      // A reload, not a revalidation: the collab socket has already connected
+      // read-only, and only a fresh connection drops that.
+      window.location.reload();
+    } catch {
+      toast.error("Couldn't restore this note");
+      setRestoring(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-os-card border border-border bg-muted px-4 py-3">
+      <p className="flex items-center gap-2 text-sm text-foreground">
+        <Trash2 className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+        This note is in the trash, so it's read-only.
+      </p>
+      {canRestore && (
+        <Button size="sm" onClick={() => void restore()} disabled={restoring}>
+          {restoring ? "Restoring…" : "Restore"}
+        </Button>
+      )}
+    </div>
+  );
 }
 
 export default function DocumentPage() {
@@ -410,6 +477,8 @@ export default function DocumentPage() {
     updatedAt,
     attendance,
     backlinks,
+    trashed,
+    canRestore,
   } = useLoaderData() as Exclude<Awaited<ReturnType<typeof loader>>, Response>;
 
   // Arriving from a comment-mention notification (?comment=<id>): open the
@@ -436,6 +505,7 @@ export default function DocumentPage() {
 
   return (
     <div className="flex flex-col gap-4">
+      {trashed && <TrashedNoteBanner pageId={pageId} canRestore={canRestore} />}
       {attendance?.whiteboardPageId && (
         // This meeting also has a whiteboard — link across to it (the board
         // carries the matching link back).
