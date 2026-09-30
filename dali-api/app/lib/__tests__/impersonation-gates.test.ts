@@ -10,6 +10,10 @@ vi.mock("~/lib/betterauth.server", () => ({
   auth: { api: { getSession: mockGetSession } },
 }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
+// isImpersonating is imported from ~/lib/auth, whose module graph reaches
+// ~/lib/db. The generated Prisma client is not present in CI at unit-test time,
+// so the real db module must never be loaded here.
+vi.mock("~/lib/db", () => ({ prisma: {} }));
 
 import { resolveBetterAuthAuth } from "~/lib/betterauth-compat.server";
 import { isImpersonating, type AuthSuccess } from "~/lib/auth";
