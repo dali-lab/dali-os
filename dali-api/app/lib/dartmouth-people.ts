@@ -7,8 +7,8 @@
 // retired: it is SSO-gated from some hosts, searches uid and name but not
 // mail, and its failures were indistinguishable from an empty result.
 //
-// Three signals, all in the base no-scope payload (verified against live
-// records on 2026-07-06 — see alumni_plan.md "Observed API behavior"):
+// Signals we read, all in the base no-scope payload (verified against live
+// records on 2026-07-06, and re-verified 2026-09-30 for `email`):
 //
 //   affiliations[]        "Alum" appears within weeks of degree conferral —
 //                         the prompt graduation signal. "Student" LINGERS
@@ -21,6 +21,13 @@
 //                         department name for employees). Note this is the
 //                         CLASS a person identifies with, not their actual
 //                         graduation year — a '25 on a +1 stays "'25".
+//   email                 The person's real name-form address
+//                         (First.M.Last.YY@dartmouth.edu) — the one they type
+//                         and recognise, as opposed to the netid@dartmouth.edu
+//                         alias CAS provisioning used to synthesize. Present at
+//                         base scope for currently enrolled students, so
+//                         resolving a netID to a usable address needs no extra
+//                         authorization and no separate Email Addresses API.
 //
 // Affiliation codes for dartmouth_affiliation (see developer.dartmouth.edu):
 //   ALUMNI, DART (student/faculty/staff/ex-employee), E-FAC, DEPT, ORG,
@@ -46,6 +53,10 @@ export type DartmouthPeopleResult = {
    * department name (employees). Persisted so the resolver can tell an enrolled
    * grad student (program code) from a graduated undergrad (class year). */
   departmentClass: string | null;
+  /** Lowercased name-form address, or null when the record carries none. */
+  email: string | null;
+  /** Display name as Dartmouth holds it, for reporting during repairs. */
+  name: string | null;
 };
 
 // Parse the apostrophe-prefixed two-digit class year format ("'27" → 2027).
@@ -104,6 +115,8 @@ type RawPerson = {
   dartmouth_affiliation?: string | null;
   affiliations?: { name?: string | null }[] | null;
   department_class?: string | null;
+  email?: string | null;
+  name?: string | null;
 };
 
 export async function peopleByNetId(
@@ -137,5 +150,10 @@ export async function peopleByNetId(
     isStudent: names.includes("Student"),
     classYear: parseDepartmentClass(body.department_class),
     departmentClass: body.department_class ?? null,
+    email:
+      typeof body.email === "string" && body.email.trim() !== ""
+        ? body.email.trim().toLowerCase()
+        : null,
+    name: typeof body.name === "string" && body.name.trim() !== "" ? body.name.trim() : null,
   };
 }

@@ -17,9 +17,9 @@
 import { prisma } from "~/lib/db";
 import {
   findNetIdByAddress,
-  emailAddressesByNetId,
   DartmouthEmailApiError,
 } from "~/lib/dartmouth-email-addresses";
+import { peopleByNetId } from "~/lib/dartmouth-people";
 import { recordUserEmail } from "~/lib/user-email.server";
 import { syncAndRecomputeMembershipStatus } from "~/lib/membership-status";
 
@@ -67,22 +67,19 @@ export async function captureDartmouthIdentity(args: {
   try {
     netId = await findNetIdByAddress(dartmouthEmail);
 
-    // Knowing the owner, collect the rest of their addresses in the same pass.
-    // A Dartmouth person holds several working addresses and will not remember
-    // which one they gave us — attaching them all now means any of them
-    // resolves at the next sign-in, so new accounts never need the sweep that
-    // exists to repair the old ones. Attested, not proven: the API says where
-    // mail lands, and only the address just used by the magic link was read.
-    if (netId) {
-      for (const entry of await emailAddressesByNetId(netId)) {
-        if (entry.address === dartmouthEmail) continue;
-        const attached = await recordUserEmail({ userId, address: entry.address });
-        if (!attached.ok) {
-          console.warn(
-            `[dartmouth-capture] ${entry.address} already belongs to user ` +
-              `${attached.conflictUserId}; not reassigning to ${userId}`,
-          );
-        }
+    // Knowing the owner, pick up the address Dartmouth considers theirs. They
+    // may have signed up with a different one of their working addresses, and
+    // attaching both now means either resolves at the next sign-in — so a new
+    // account never needs the sweep that repairs the old ones. Attested, not
+    // proven: only the address the magic link went to was demonstrably read.
+    const person = netId ? await peopleByNetId(netId) : null;
+    if (person?.email && person.email !== dartmouthEmail) {
+      const attached = await recordUserEmail({ userId, address: person.email });
+      if (!attached.ok) {
+        console.warn(
+          `[dartmouth-capture] ${person.email} already belongs to user ` +
+            `${attached.conflictUserId}; not reassigning to ${userId}`,
+        );
       }
     }
   } catch (err) {

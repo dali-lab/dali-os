@@ -6,11 +6,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("~/lib/dartmouth-email-addresses", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("~/lib/dartmouth-email-addresses")>();
-  return {
-    ...actual,
-    findNetIdByAddress: vi.fn(),
-    emailAddressesByNetId: vi.fn(async () => []),
-  };
+  return { ...actual, findNetIdByAddress: vi.fn() };
+});
+
+vi.mock("~/lib/dartmouth-people", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/dartmouth-people")>();
+  return { ...actual, peopleByNetId: vi.fn(async () => null) };
 });
 
 // Mock the Prisma client.
@@ -29,9 +30,9 @@ vi.mock("~/lib/db", () => ({
 
 import {
   findNetIdByAddress,
-  emailAddressesByNetId,
   DartmouthEmailApiError,
 } from "~/lib/dartmouth-email-addresses";
+import { peopleByNetId } from "~/lib/dartmouth-people";
 import { prisma } from "~/lib/db";
 import { captureDartmouthIdentity } from "~/lib/dartmouth-capture.server";
 
@@ -284,10 +285,15 @@ describe("captureDartmouthIdentity — sibling addresses", () => {
     // They will not remember which address they signed up with. Collecting the
     // rest now is what stops a new account needing the repair sweep.
     mockFindNetId.mockResolvedValue("d99999z");
-    vi.mocked(emailAddressesByNetId).mockResolvedValue([
-      { address: "alex.t.rivera.27@dartmouth.edu", netId: "d99999z", preferred: true, dataSource: "adv" },
-      { address: "d99999z@dartmouth.edu", netId: "d99999z", preferred: false, dataSource: "adv" },
-    ]);
+    vi.mocked(peopleByNetId).mockResolvedValue({
+      dartmouthAffiliation: "DART",
+      isAlum: false,
+      isStudent: true,
+      classYear: 2027,
+      departmentClass: "'27",
+      email: "d99999z@dartmouth.edu",
+      name: "Alex T Rivera",
+    });
     mockUpdate.mockResolvedValue({} as never);
 
     await captureDartmouthIdentity({
@@ -315,7 +321,7 @@ describe("captureDartmouthIdentity — sibling addresses", () => {
     expect(written.filter((d) => d.address === "alex.t.rivera.27@dartmouth.edu")).toHaveLength(1);
   });
 
-  it("does not query for siblings when no netId could be resolved", async () => {
+  it("does not look up a person when no netId could be resolved", async () => {
     mockFindNetId.mockResolvedValue(null);
     mockUpdate.mockResolvedValue({} as never);
 
@@ -325,6 +331,6 @@ describe("captureDartmouthIdentity — sibling addresses", () => {
       verifiedEmail: "nobody@dartmouth.edu",
     });
 
-    expect(emailAddressesByNetId).not.toHaveBeenCalled();
+    expect(peopleByNetId).not.toHaveBeenCalled();
   });
 });

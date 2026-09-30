@@ -46,6 +46,8 @@ const PERSON = {
   isStudent: true,
   classYear: 2027,
   departmentClass: "'27",
+  email: null,
+  name: null,
 };
 
 beforeEach(() => {

@@ -6,12 +6,12 @@
 // when the email-code door replaced CAS the address people actually type
 // matched nothing and sign-in died silently. This attaches the real addresses.
 //
-// Source is the Dartmouth Email Addresses API, keyed by netid. Note the two
-// caveats in dartmouth-email-addresses.ts: it needs the
-// urn:dartmouth:email_addresses:read.adv scope, and only the Advancement data
-// source is live, which may not cover current students. The dry run reports
-// per-netid coverage precisely so that question gets an answer from data
-// rather than a guess — run it before trusting any of this.
+// Source is the People API (api.dartmouth.edu/api/people/{netid}), whose base
+// no-scope payload carries `email` — the person's real name-form address —
+// alongside the affiliation signals we already read from it. No extra scope,
+// no new integration: this is the endpoint the membership sync has used all
+// along. The dry run still reports coverage against the locked-out set, since
+// a record without an email is a row this cannot repair.
 //
 // Usage:
 //   npx tsx prisma/scripts/sweep-dartmouth-addresses.ts                  # dry run
@@ -28,10 +28,7 @@
 
 import { PrismaClient } from "../../app/generated/prisma/client.js";
 import { PrismaPg } from "@prisma/adapter-pg";
-import {
-  emailAddressesByNetId,
-  DartmouthEmailApiError,
-} from "../../app/lib/dartmouth-email-addresses.js";
+import { peopleByNetId } from "../../app/lib/dartmouth-people.js";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
 const prisma = new PrismaClient({ adapter });
@@ -77,7 +74,8 @@ type Outcome =
 
 async function classify(row: Row): Promise<Outcome> {
   try {
-    const found = await emailAddressesByNetId(row.netId!);
+    const person = await peopleByNetId(row.netId!);
+    const found = person?.email ? [person.email] : [];
     if (found.length === 0) return { kind: "no-addresses", row };
 
     const held = new Set(
@@ -91,41 +89,26 @@ async function classify(row: Row): Promise<Outcome> {
 
     const newAddresses: string[] = [];
     const conflicts: { address: string; ownerId: string }[] = [];
-    for (const entry of found) {
-      if (held.has(entry.address)) continue;
+    for (const address of found) {
+      if (held.has(address)) continue;
       const owner = await prisma.userEmail.findUnique({
-        where: { address: entry.address },
+        where: { address },
         select: { userId: true },
       });
       if (owner && owner.userId !== row.id) {
-        conflicts.push({ address: entry.address, ownerId: owner.userId });
+        conflicts.push({ address, ownerId: owner.userId });
       } else {
-        newAddresses.push(entry.address);
+        newAddresses.push(address);
       }
     }
 
-    // Prefer Dartmouth's own preferred marker; fall back to the first address
-    // that isn't the one we synthesized, since promoting that would be a no-op.
-    const preferred =
-      found.find((e) => e.preferred)?.address ??
-      found.find((e) => !isSynthesized(e.address, row.netId!))?.address ??
-      null;
+    // Promoting the address we synthesized ourselves would be a no-op, so it is
+    // never the candidate.
+    const preferred = found.find((a) => !isSynthesized(a, row.netId!)) ?? null;
 
-    return {
-      kind: "resolved",
-      row,
-      addresses: found.map((e) => e.address),
-      preferred,
-      newAddresses,
-      conflicts,
-    };
+    return { kind: "resolved", row, addresses: found, preferred, newAddresses, conflicts };
   } catch (err) {
-    const message =
-      err instanceof DartmouthEmailApiError
-        ? err.message
-        : err instanceof Error
-          ? err.message
-          : String(err);
+    const message = err instanceof Error ? err.message : String(err);
     return { kind: "error", row, message };
   }
 }
@@ -202,7 +185,7 @@ const synthesized = rows.filter(
 log(`Users with a netId:                 ${rows.length}`);
 log(`  ...whose address is synthesized:  ${synthesized.length}  <- the locked-out set`);
 log();
-log(`Querying the Email Addresses API (concurrency ${CONCURRENCY})…`);
+log(`Querying the People API (concurrency ${CONCURRENCY})…`);
 
 const outcomes: Outcome[] = [];
 const queue = [...rows];
@@ -234,9 +217,8 @@ log(`  Returned none:         ${empty.length}`);
 log(`  Errored:               ${errored.length}`);
 log();
 log(`  Of the ${synthesized.length} locked-out rows, ${resolvedLockedOut.length} got a real address.`);
-log(`  ^ This is the number that decides whether the adv data source covers`);
-log(`    current students. A low number here means the sweep cannot fix them`);
-log(`    and they need the sis/idm sources, or a proof-based path instead.`);
+log(`  ^ A low number here means those records carry no email, so the sweep`);
+log(`    cannot repair them and they need a proof-based path instead.`);
 log();
 
 if (errored.length > 0) {
