@@ -13,7 +13,8 @@ import { resolveReferenceOptions } from "~/forms/lib/reference-sources";
 import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
 
 export async function action({ request }: Route.ActionArgs) {
-  const auth = await requireAuth(request);
+  // Resolves reference options for the preview modal; writes nothing.
+  const auth = await requireAuth(request, { allowImpersonatedWrite: true });
   if (!auth.ok) return auth.response;
   if (!(await isCore(auth.user.sub))) return forbidden(request);
 

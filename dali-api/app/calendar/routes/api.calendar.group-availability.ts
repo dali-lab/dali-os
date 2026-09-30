@@ -86,7 +86,9 @@ export async function action({ request }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
   if (preflight) return preflight;
 
-  const auth = await requireAuth(request);
+  // POSTs only to carry the userIds/window body; it reads free/busy and writes
+  // nothing, so it stays available to an impersonated (read-only) session.
+  const auth = await requireAuth(request, { allowImpersonatedWrite: true });
   if (!auth.ok) return withCors(request, auth.response);
   if (auth.user.type === "applicant")
     return forbidden(request);

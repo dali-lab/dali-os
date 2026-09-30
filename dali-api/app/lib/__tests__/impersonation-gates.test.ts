@@ -64,3 +64,4 @@ describe("isImpersonating", () => {
     expect(isImpersonating(authOf())).toBe(false);
   });
 });
+

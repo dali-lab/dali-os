@@ -14,7 +14,8 @@ const RATE_LIMIT_MAX = 20;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 
 export async function action({ request }: Route.ActionArgs) {
-  const auth = await requireAuth(request);
+  // Pure check against GitHub/Figma/Drive; writes nothing.
+  const auth = await requireAuth(request, { allowImpersonatedWrite: true });
   if (!auth.ok) return auth.response;
 
   const userLimited = checkRateLimit(request, { max: RATE_LIMIT_MAX, windowMs: RATE_LIMIT_WINDOW_MS }, auth.user.sub);
