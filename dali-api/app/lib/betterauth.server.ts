@@ -8,6 +8,10 @@ import { prisma } from "~/lib/db";
 import { getApiBaseUrl, getFrontendUrl, getAppEnv } from "~/lib/app-env";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { auditPasskeyMutation } from "~/lib/betterauth-passkey-audit.server";
+import {
+  canonicalizeEmailBody,
+  recordProvenEmail,
+} from "~/lib/betterauth-email-alias.server";
 
 // Deduplicate the trusted origins list — in single-server deployments
 // (Fly staging/prod) getApiBaseUrl() === getFrontendUrl(), so a Set avoids a
@@ -264,11 +268,23 @@ export const auth = betterAuth({
     //   jwt() + mcp()      — Phase 4: @better-auth/mcp MCP provider sessions
   ],
 
-  // Endpoint hooks. `after` runs post-handler; auditPasskeyMutation records
-  // passkey enrollments/removals (which flow through BetterAuth's own endpoints,
-  // not our routes) and no-ops for every other path.
+  // Endpoint hooks.
+  //
+  // `before` canonicalizes the address on the passwordless send endpoints, so
+  // an alias (a student's name-form @dartmouth address against a row holding
+  // only the NetID-form one) resolves to the account BetterAuth can find. It
+  // sits here rather than in the /login action because `api/auth/*` is mounted
+  // as a catch-all — authClient, desktop and MCP bypass our routes entirely.
+  //
+  // `after` records a proven mailbox and audits passkey enrollments/removals,
+  // both of which happen inside BetterAuth's own endpoints with no route of
+  // ours to hang them off. Each no-ops for every other path.
   hooks: {
+    before: createAuthMiddleware(async (ctx) => {
+      await canonicalizeEmailBody(ctx);
+    }),
     after: createAuthMiddleware(async (ctx) => {
+      await recordProvenEmail(ctx);
       await auditPasskeyMutation(ctx);
     }),
   },

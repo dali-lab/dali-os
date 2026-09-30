@@ -45,7 +45,7 @@ describe("searchDirectoryByName", () => {
   it("parses a multi-record array and normalises netId/mail to lowercase", async () => {
     mockDirectory([
       {
-        uid: "F006V43",
+        uid: "d99999z",
         mail: "Jane.Doe@Dartmouth.EDU",
         eduPersonPrimaryAffiliation: "Student",
         dcDeptclass: "'27",
@@ -61,7 +61,7 @@ describe("searchDirectoryByName", () => {
     const results = await searchDirectoryByName("Jane Doe");
     expect(results).toHaveLength(2);
     expect(results[0]).toEqual({
-      netId: "f006v43",
+      netId: "d99999z",
       mail: "jane.doe@dartmouth.edu",
       affiliation: "Student",
       departmentClass: "'27",
@@ -336,10 +336,10 @@ describe("validateSelfEnteredNetId", () => {
     };
     vi.mocked(peopleByNetId).mockResolvedValue(fakeResult);
 
-    const result = await validateSelfEnteredNetId("F006V43");
+    const result = await validateSelfEnteredNetId("d99999z");
     expect(result).toEqual(fakeResult);
     // Normalises netId to lowercase before passing to peopleByNetId.
-    expect(vi.mocked(peopleByNetId)).toHaveBeenCalledWith("f006v43");
+    expect(vi.mocked(peopleByNetId)).toHaveBeenCalledWith("d99999z");
   });
 
   it("returns null when peopleByNetId returns null (unknown netID)", async () => {

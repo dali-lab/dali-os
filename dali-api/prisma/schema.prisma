@@ -181,6 +181,7 @@ model User {
   authSessions                  AuthSession[]
   accounts                      Account[]
   passkeys                      Passkey[]
+  emails                        UserEmail[]
   rubricVersions                RubricVersion[]
   authoredSigningVersions       SigningDocumentVersion[]       @relation("SigningVersionAuthor")
   signingSignatures             SigningSignature[]             @relation("SigningSigner")
@@ -1532,6 +1533,39 @@ model Verification {
 // privacy-preserving platforms like Apple report all-zeros), `transports` is a
 // comma-joined list. The Prisma accessor `passkey` is what the plugin's adapter
 // calls (model: "passkey").
+// Every email address known to resolve to a user. One row per address; a user
+// may hold several (a Dartmouth student owns both their NetID-form alias and
+// their name-form identity address, and both deliver to the same mailbox).
+//
+// This table is the ONLY answer to "who owns this address" at sign-in. The
+// typed-vs-stored mismatch it exists to fix is what locked every CAS-era
+// Dartmouth student out when the email-code door replaced CAS: their row held
+// only the synthesized f00xxxx@dartmouth.edu, so the address they actually type
+// resolved to nobody and emailOTP's disableSignUp discarded the code in silence.
+//
+// The address a user is shown and sent mail at is User.email; this table is the
+// superset that RESOLVES. The four address columns on User stay as the
+// one-per-category values we display and search.
+model UserEmail {
+  id     String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Normalized lowercase. Globally unique: one address resolves to one person,
+  // so a collision is a real conflict to surface, never a silent steal.
+  address String @unique
+
+  // Set when control of THIS mailbox was proven (a code or magic link sent to
+  // it was used). Null means on file but unproven — a CAS-synthesized alias or
+  // a directory attestation says where mail lands, never that anyone read it.
+  verifiedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
 model Passkey {
   id           String    @id @default(cuid())
   name         String?

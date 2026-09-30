@@ -88,10 +88,10 @@ describe("peopleByNetId", () => {
 
   it("sends the JWT as a Bearer token to the person URL", async () => {
     mockPerson({ dartmouth_affiliation: "DART", affiliations: [] });
-    await peopleByNetId("f006v43");
+    await peopleByNetId("d99999z");
 
     const call = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(call[0]).toBe("https://api.dartmouth.edu/api/people/f006v43");
+    expect(call[0]).toBe("https://api.dartmouth.edu/api/people/d99999z");
     expect((call[1] as RequestInit).headers).toMatchObject({
       Authorization: "Bearer test-jwt",
     });

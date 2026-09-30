@@ -12,6 +12,7 @@ import {
   setLoginNextCookie,
 } from "~/lib/login-next";
 import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
+import { resolveLoginIdentifier } from "~/lib/user-email.server";
 import { auth } from "~/lib/betterauth.server";
 import AuthShell from "~/components/auth/AuthShell";
 
@@ -21,28 +22,6 @@ const RATE_LIMIT_MAX = 5;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 
 export const meta: Route.MetaFunction = () => [{ title: "DALI OS · Sign in" }];
-
-// Alias resolution: BetterAuth resolves a sign-in by the single canonical
-// `email` column, but a person may enter any address on their account — most
-// often a member typing their @dartmouth instead of their @dali. Map whatever
-// they typed to their canonical login email so (a) the code is delivered there
-// and (b) the verify step's findUserByEmail can locate the row. An address that
-// matches no user falls through unchanged, so the downstream emailOTP no-op
-// (disableSignUp) stays neutral and never reveals whether an account exists.
-async function resolveLoginIdentifier(typed: string): Promise<string> {
-  const user = await prisma.user.findFirst({
-    where: {
-      OR: [
-        { email: typed },
-        { daliEmail: typed },
-        { dartmouthEmail: typed },
-        { personalEmail: typed },
-      ],
-    },
-    select: { email: true },
-  });
-  return user?.email ?? typed;
-}
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
