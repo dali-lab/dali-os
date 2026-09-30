@@ -83,6 +83,29 @@ describe("archived pages", () => {
     const result = await getPageAccess("core-user", page({ archivedAt: new Date() }));
     expect(result).toEqual(denied());
   });
+
+  // The Drive trash and the meeting-note carve-out act on trashed pages, so a
+  // blanket deny leaves the trash unable to list or restore a single document.
+  it("applies the page's normal rules when includeArchived is set", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    const result = await getPageAccess(
+      "core-user",
+      page({ archivedAt: new Date() }),
+      undefined,
+      { includeArchived: true },
+    );
+    expect(result).toEqual(full);
+  });
+
+  it("still denies someone with no claim on the page when includeArchived is set", async () => {
+    const result = await getPageAccess(
+      "stranger",
+      page({ archivedAt: new Date() }),
+      undefined,
+      { includeArchived: true },
+    );
+    expect(result).toEqual(denied());
+  });
 });
 
 // ── Member-workspace (personal notes) ───────────────────────────────────────

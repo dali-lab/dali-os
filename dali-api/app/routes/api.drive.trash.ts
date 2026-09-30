@@ -46,7 +46,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   const accessiblePages = (
     await Promise.all(
       archivedPages.map(async (p) => {
-        const access = await getPageAccess(userId, p.id, request);
+        // includeArchived: every page here is archived by definition, so the
+        // default deny would empty the whole listing.
+        const access = await getPageAccess(userId, p.id, request, { includeArchived: true });
         return access.canView ? p : null;
       }),
     )
@@ -157,7 +159,7 @@ export async function action({ request }: Route.ActionArgs) {
       if (!ok) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
       await prisma.projectFile.update({ where: { id }, data: { archivedAt: null } });
     } else if (type === "doc" || type === "folder") {
-      const access = await getPageAccess(userId, id, request);
+      const access = await getPageAccess(userId, id, request, { includeArchived: true });
       if (!access.canEdit) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
       await prisma.page.update({ where: { id }, data: { archivedAt: null } });
     } else {

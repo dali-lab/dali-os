@@ -238,6 +238,32 @@ describe("authorizeCollabDoc", () => {
       expect(await authorizeCollabDoc("user1", "doc:p1:body")).toMatchObject(denied());
     });
 
+    // A meeting's "Open meeting note" link and its printed check-in QR both land
+    // on the note, so trashing it must not turn the body blank for the people
+    // still checking in.
+    it("opens an archived meeting note read-only", async () => {
+      setPage({ archivedAt: new Date(), meetingNoteId: "m1" });
+      vi.mocked(getPageAccess).mockResolvedValue({
+        canView: true,
+        canEdit: true,
+        canComment: true,
+      });
+      expect(await authorizeCollabDoc("user1", "doc:p1:body")).toEqual({
+        allowed: true,
+        readOnly: true,
+      });
+    });
+
+    it("rejects an archived meeting note the viewer couldn't read live", async () => {
+      setPage({ archivedAt: new Date(), meetingNoteId: "m1" });
+      vi.mocked(getPageAccess).mockResolvedValue({
+        canView: false,
+        canEdit: false,
+        canComment: false,
+      });
+      expect(await authorizeCollabDoc("user1", "doc:p1:body")).toMatchObject(denied());
+    });
+
     it("returns allowed=true, readOnly=false when canView and canEdit", async () => {
       setPage();
       vi.mocked(getPageAccess).mockResolvedValue({

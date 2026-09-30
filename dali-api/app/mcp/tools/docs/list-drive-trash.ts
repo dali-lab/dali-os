@@ -45,7 +45,9 @@ export async function runListDriveTrash(callerId: string) {
   const accessiblePages = (
     await Promise.all(
       archivedPages.map(async (p) => {
-        const access = await getPageAccess(callerId, p.id);
+        // includeArchived: every page here is archived by definition, so the
+        // default deny would empty the whole listing.
+        const access = await getPageAccess(callerId, p.id, undefined, { includeArchived: true });
         return access.canView ? p : null;
       }),
     )
