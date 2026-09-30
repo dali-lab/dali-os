@@ -137,6 +137,18 @@ for (const a of assessed) {
 }
 const conflicts = [...owners.entries()].filter(([, ids]) => new Set(ids).size > 1);
 
+// Mixed case is silently fatal. BetterAuth's findUserByEmail runs
+//   where: [{ value: email.toLowerCase(), field: "email" }]
+// which is an exact match against a lowercased input, and Postgres compares
+// case-sensitively — so a row storing Name.Surname.29@dartmouth.edu can never
+// be found, however correct the address looks. The other columns are matched
+// case-sensitively by our own resolution fallback for the same reason.
+const mixedCase = assessed.filter((a) =>
+  [a.user.email, a.user.daliEmail, a.user.dartmouthEmail, a.user.personalEmail].some(
+    (v) => v !== null && v !== v.toLowerCase(),
+  ),
+);
+
 function name(u: (typeof users)[number]): string {
   return `${u.firstName} ${u.lastName}`.trim() || u.id;
 }
@@ -161,6 +173,7 @@ log(`  locked out ................ ${lockedOut.length}   only the synthesized ne
 log(`  no canonical email ........ ${noCanonical.length}   User.email is null; no code can be sent`);
 log(`  no address at all ......... ${noAddress.length}   nothing to sign in with`);
 log(`  address conflicts ......... ${conflicts.length}   one address, two accounts`);
+log(`  mixed-case addresses ...... ${mixedCase.length}   unreachable: BetterAuth matches lowercase exactly`);
 log();
 
 const missing = aliasTableExists
@@ -194,6 +207,19 @@ if (noCanonical.length > 0) {
     log(`   ${a.user.id}  ${name(a.user)}  holds: ${a.human.join(", ") || "(nothing)"}`);
   }
   if (noCanonical.length > SAMPLE) log(`   … and ${noCanonical.length - SAMPLE} more`);
+  log();
+}
+
+if (mixedCase.length > 0) {
+  log("── Mixed-case addresses " + "─".repeat(47));
+  log("   Stored with uppercase, so the lookup never matches. --fix lowercases.");
+  for (const a of mixedCase.slice(0, SAMPLE)) {
+    const shown = [a.user.email, a.user.daliEmail, a.user.dartmouthEmail, a.user.personalEmail]
+      .filter((v): v is string => v !== null && v !== v.toLowerCase())
+      .join(", ");
+    log(`   ${a.user.id}  ${name(a.user)}  ${shown}`);
+  }
+  if (mixedCase.length > SAMPLE) log(`   … and ${mixedCase.length - SAMPLE} more`);
   log();
 }
 
@@ -325,6 +351,28 @@ if (fix && aliasTableExists && missing.length > 0) {
   log();
 }
 
+if (fix && mixedCase.length > 0) {
+  log(`Lowercasing ${mixedCase.length} rows with mixed-case addresses…`);
+  let fixed = 0;
+  for (const a of mixedCase) {
+    const data: Record<string, string> = {};
+    for (const col of ["email", "daliEmail", "dartmouthEmail", "personalEmail"] as const) {
+      const v = a.user[col];
+      if (v !== null && v !== v.toLowerCase()) data[col] = v.toLowerCase();
+    }
+    try {
+      await prisma.user.update({ where: { id: a.user.id }, data });
+      fixed++;
+    } catch (err) {
+      // Unique violation: two rows differing only by case. A duplicate to
+      // settle by hand, never to resolve by overwriting one of them.
+      log(`   SKIP ${a.user.id}: ${err instanceof Error ? err.message.split("\n")[0] : String(err)}`);
+    }
+  }
+  log(`   lowercased: ${fixed}`);
+  log();
+}
+
 log("── Next " + "─".repeat(63));
 if (lockedOut.length > 0) {
   log(`   ${lockedOut.length} locked out. Sign-in self-heals on first attempt for anyone`);
@@ -339,6 +387,10 @@ if (noCanonical.length > 0) {
 }
 if (noAddress.length > 0) {
   log(`   ${noAddress.length} rows hold no address at all. Nothing automated applies.`);
+}
+if (mixedCase.length > 0) {
+  log(`   ${mixedCase.length} rows store an address with uppercase and cannot be found at`);
+  log(`   all until lowercased. Run --fix.`);
 }
 if (conflicts.length > 0) {
   log(`   ${conflicts.length} address conflicts are duplicate accounts; merging is`);
