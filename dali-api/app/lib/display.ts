@@ -67,6 +67,11 @@ export function displayEmail(user: {
 }): string {
   const primary = user.daliEmail || user.dartmouthEmail || user.personalEmail;
   if (primary) return primary;
+  // Last resort only. The netid form delivers but nobody recognises it, and
+  // treating it as someone's identity is what made CAS-era rows unreachable
+  // when sign-in became address-based. It is never used for resolution — that
+  // goes through UserEmail — so this is display for a row with no address at
+  // all, not a claim about which address the person uses.
   if (user.netId) return `${user.netId}@${DARTMOUTH_EMAIL_DOMAIN_FALLBACK}`;
   return "";
 }
