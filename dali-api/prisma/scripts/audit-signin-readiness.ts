@@ -49,20 +49,50 @@ function norm(a: string | null): string | null {
   return t ? t : null;
 }
 
-const users = await prisma.user.findMany({
-  select: {
-    id: true,
-    netId: true,
-    email: true,
-    daliEmail: true,
-    dartmouthEmail: true,
-    personalEmail: true,
-    firstName: true,
-    lastName: true,
-    emails: { select: { address: true, verifiedAt: true } },
-  },
-  orderBy: { createdAt: "asc" },
-});
+const COLUMNS = {
+  id: true,
+  netId: true,
+  email: true,
+  daliEmail: true,
+  dartmouthEmail: true,
+  personalEmail: true,
+  firstName: true,
+  lastName: true,
+} as const;
+
+type UserRow = {
+  id: string;
+  netId: string | null;
+  email: string | null;
+  daliEmail: string | null;
+  dartmouthEmail: string | null;
+  personalEmail: string | null;
+  firstName: string;
+  lastName: string;
+  emails: { address: string }[];
+};
+
+// The point of this audit is to show what you are about to deal with, which is
+// most useful BEFORE the migration ships. So the alias table is optional: on a
+// database that predates it we classify from the four User columns alone, which
+// is enough to identify every locked-out row — an alias can only ever move a row
+// from locked-out to ok, never the reverse.
+let aliasTableExists = true;
+let users: UserRow[];
+try {
+  users = await prisma.user.findMany({
+    select: { ...COLUMNS, emails: { select: { address: true } } },
+    orderBy: { createdAt: "asc" },
+  });
+} catch (err) {
+  if ((err as { code?: string })?.code !== "P2021") throw err;
+  aliasTableExists = false;
+  const rows = await prisma.user.findMany({
+    select: COLUMNS,
+    orderBy: { createdAt: "asc" },
+  });
+  users = rows.map((r) => ({ ...r, emails: [] }));
+}
 
 type Assessed = ReturnType<typeof classifySignInReadiness> & {
   user: (typeof users)[number];
@@ -108,7 +138,17 @@ function name(u: (typeof users)[number]): string {
 }
 
 log("=".repeat(72));
-log(fix ? "SIGN-IN READINESS  [--fix: will attach missing aliases]" : "SIGN-IN READINESS  [read-only]");
+log(
+  fix && aliasTableExists
+    ? "SIGN-IN READINESS  [--fix: will attach missing aliases]"
+    : "SIGN-IN READINESS  [read-only]",
+);
+if (!aliasTableExists) {
+  log("UserEmail does not exist yet — this is the PRE-MIGRATION picture.");
+  log("Verdicts below are computed from the User columns alone, which is the");
+  log("state every row is in today. Applying the migration changes none of");
+  log("them by itself: it copies these same addresses across.");
+}
 log("=".repeat(72));
 log();
 log(`Users: ${users.length}`);
@@ -119,15 +159,19 @@ log(`  no address at all ......... ${noAddress.length}   nothing to sign in with
 log(`  address conflicts ......... ${conflicts.length}   one address, two accounts`);
 log();
 
-const aliasRows = assessed.reduce((n, a) => n + a.user.emails.length, 0);
-const missing = assessed.filter((a) => a.missingAliases.length > 0);
-log(`UserEmail rows: ${aliasRows}`);
-log(`  rows missing an alias for a column they hold: ${missing.length}`);
-if (missing.length > 0 && !fix) {
-  log(`  (--fix attaches them; the migration should have, so a non-zero count`);
-  log(`   means a write path is still bypassing recordUserEmail)`);
+const missing = aliasTableExists
+  ? assessed.filter((a) => a.missingAliases.length > 0)
+  : [];
+if (aliasTableExists) {
+  const aliasRows = assessed.reduce((n, a) => n + a.user.emails.length, 0);
+  log(`UserEmail rows: ${aliasRows}`);
+  log(`  rows missing an alias for a column they hold: ${missing.length}`);
+  if (missing.length > 0 && !fix) {
+    log(`  (--fix attaches them; the migration should have, so a non-zero count`);
+    log(`   means a write path is still bypassing recordUserEmail)`);
+  }
+  log();
 }
-log();
 
 if (lockedOut.length > 0) {
   log("── Locked out " + "─".repeat(57));
@@ -210,7 +254,12 @@ if (probe && lockedOut.length > 0) {
 
 // ── Fix: attach aliases we already know about ───────────────────────────────
 
-if (fix && missing.length > 0) {
+if (fix && !aliasTableExists) {
+  log("--fix ignored: UserEmail does not exist yet. Apply the migration first.");
+  log();
+}
+
+if (fix && aliasTableExists && missing.length > 0) {
   log(`Attaching ${missing.reduce((n, a) => n + a.missingAliases.length, 0)} missing aliases…`);
   let attached = 0;
   let skipped = 0;
