@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Form, Link, redirect, useActionData, useLoaderData, useNavigation, useSearchParams } from "react-router";
 import type { Route } from "./+types/signup";
 import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
+import { pickSafeLoginNext } from "~/lib/login-next";
 import { requireAuth } from "~/lib/auth";
 import { auth } from "~/lib/betterauth.server";
 import { prisma } from "~/lib/db";
@@ -52,7 +53,11 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const url = new URL(request.url);
   const door = url.searchParams.get("door");
-  return { door: isValidDoor(door) ? door : null };
+  // Where they were headed before they were asked to sign in — a QR check-in,
+  // usually. Without this a scan that leads to account creation ends on the
+  // welcome screen and the destination is lost.
+  const next = pickSafeLoginNext(url.searchParams.get("next"));
+  return { door: isValidDoor(door) ? door : null, next };
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -63,6 +68,10 @@ export async function action({ request }: Route.ActionArgs) {
   const door = String(formData.get("door") ?? "");
   const provider = String(formData.get("provider") ?? "");
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const next = pickSafeLoginNext(
+    typeof formData.get("next") === "string" ? (formData.get("next") as string) : null,
+  );
+  const nextParam = next ? `&next=${encodeURIComponent(next)}` : "";
 
   if (!isValidDoor(door)) return redirect("/signup");
 
@@ -111,7 +120,10 @@ export async function action({ request }: Route.ActionArgs) {
       if (existing) {
         try {
           await auth.api.signInMagicLink({
-            body: { email: existing.email ?? normalized, callbackURL: "/" },
+            body: {
+              email: existing.email ?? normalized,
+              callbackURL: next ?? "/",
+            },
             headers: request.headers,
           });
         } catch {
@@ -125,7 +137,7 @@ export async function action({ request }: Route.ActionArgs) {
     // whether the address exists or the send succeeds.
     try {
       await auth.api.signInMagicLink({
-        body: { email: normalized, callbackURL: `/welcome?door=${door}` },
+        body: { email: normalized, callbackURL: `/welcome?door=${door}${nextParam}` },
         headers: request.headers,
       });
     } catch {
@@ -139,7 +151,7 @@ export async function action({ request }: Route.ActionArgs) {
 
 // ── Door picker ───────────────────────────────────────────────────────────────
 
-function DoorPicker() {
+function DoorPicker({ next }: { next: string | null }) {
   // Door icon badges — matched to the login door cards so "create account" and
   // "sign in" present the same three doors identically.
   const doors: { door: Door; label: string; description: string; icon: ReactNode }[] = [
@@ -188,7 +200,7 @@ function DoorPicker() {
         {doors.map(({ door, label, description, icon }) => (
           <Link
             key={door}
-            to={`/signup?door=${door}`}
+            to={`/signup?door=${door}${next ? `&next=${encodeURIComponent(next)}` : ""}`}
             className="w-full flex items-center gap-4 p-5 rounded-2xl border-2 border-transparent bg-brand-tint hover:border-accent-coral transition group text-left"
           >
             {icon}
@@ -229,8 +241,9 @@ function DoorPicker() {
 
 // ── Per-door signup form ──────────────────────────────────────────────────────
 
-function DoorSignup({ door, actionData }: {
+function DoorSignup({ door, next, actionData }: {
   door: Door;
+  next: string | null;
   actionData: Awaited<ReturnType<typeof action>> | undefined;
 }) {
   const navigation = useNavigation();
@@ -258,7 +271,7 @@ function DoorSignup({ door, actionData }: {
           </p>
           <div className="mt-4">
             <Link
-              to={`/signup?door=${door}`}
+              to={`/signup?door=${door}${next ? `&next=${encodeURIComponent(next)}` : ""}`}
               className="text-sm text-muted-foreground hover:text-foreground"
             >
               Use a different email
@@ -279,6 +292,7 @@ function DoorSignup({ door, actionData }: {
           <Form method="post" className="flex flex-col gap-3">
             <input type="hidden" name="door" value={door} />
             <input type="hidden" name="provider" value="email-link" />
+            {next && <input type="hidden" name="next" value={next} />}
             <input
               type="email"
               name="email"
@@ -315,7 +329,7 @@ function DoorSignup({ door, actionData }: {
 }
 
 export default function Signup() {
-  const { door } = useLoaderData<typeof loader>();
+  const { door, next } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const [searchParams] = useSearchParams();
   const activeDoor = door ?? (isValidDoor(searchParams.get("door")) ? (searchParams.get("door") as Door) : null);
@@ -325,9 +339,9 @@ export default function Signup() {
       heading={activeDoor ? DOOR_LABELS[activeDoor] : "Create your account"}
     >
       {activeDoor ? (
-        <DoorSignup door={activeDoor} actionData={actionData} />
+        <DoorSignup door={activeDoor} next={next} actionData={actionData} />
       ) : (
-        <DoorPicker />
+        <DoorPicker next={next} />
       )}
     </AuthShell>
   );

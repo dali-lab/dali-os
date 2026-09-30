@@ -17,6 +17,13 @@ export const prisma = {
     upsert: vi.fn(),
     delete: vi.fn(),
   },
+  userEmail: {
+    findUnique: vi.fn().mockResolvedValue(null),
+    findMany: vi.fn().mockResolvedValue([]),
+    create: vi.fn(),
+    update: vi.fn(),
+    updateMany: vi.fn(),
+  },
   session: {
     create: vi.fn(),
     findUnique: vi.fn(),

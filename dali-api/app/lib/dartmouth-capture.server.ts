@@ -1,8 +1,9 @@
 // dartmouth-capture.server.ts
 //
 // Runs after a Dartmouth-door magic-link verification is complete. Sets
-// firstName/lastName/dartmouthEmail on the User row and, if the Dartmouth
-// directory lookup can bind a netId from the verified email, writes that too.
+// firstName/lastName/dartmouthEmail on the User row, records the proven
+// address as a UserEmail alias, and binds a netId when the Dartmouth Email
+// Addresses API can name the owner of that address.
 //
 // Setting `dartmouthEmail` is the definitive "dartmouth" signal for
 // betterauth-compat.server.ts type derivation — a user whose netId lookup
@@ -14,7 +15,12 @@
 // retry without the conflicting netId so the door never dead-ends the user.
 
 import { prisma } from "~/lib/db";
-import { bindNetIdByEmail } from "~/lib/dartmouth-lookup";
+import {
+  findNetIdByAddress,
+  peopleByNetId,
+  DartmouthPeopleError,
+} from "~/lib/dartmouth-people";
+import { recordUserEmail } from "~/lib/user-email.server";
 import { syncAndRecomputeMembershipStatus } from "~/lib/membership-status";
 
 export type CaptureResult = {
@@ -37,14 +43,51 @@ export async function captureDartmouthIdentity(args: {
 
   const dartmouthEmail = verifiedEmail.toLowerCase();
 
-  // Attempt to bind the netId from the Dartmouth directory.  A lookup failure
-  // (network error, unexpected response) must NOT block account setup.
+  // The magic link proved this mailbox, so the address is attached as verified
+  // before anything else — a directory outage below must not cost us the one
+  // fact we established for certain.
+  const recorded = await recordUserEmail({
+    userId,
+    address: dartmouthEmail,
+    verified: true,
+  });
+  if (!recorded.ok) {
+    console.warn(
+      `[dartmouth-capture] ${dartmouthEmail} already belongs to user ` +
+        `${recorded.conflictUserId}; not reassigning to ${userId}`,
+    );
+  }
+
+  // Attempt to bind the netId from the Dartmouth directory. A lookup failure
+  // must NOT block account setup, but it is logged rather than swallowed: a
+  // silent catch here is indistinguishable from "this person has no netID",
+  // which is how an SSO gate on the directory would take out netID capture
+  // without anyone noticing.
   let netId: string | null = null;
   try {
-    const match = await bindNetIdByEmail(fullName, verifiedEmail);
-    if (match) netId = match.netId;
-  } catch {
-    // Lookup failure is non-fatal — dartmouthEmail alone classifies the user.
+    netId = await findNetIdByAddress(dartmouthEmail);
+
+    // Knowing the owner, pick up the address Dartmouth considers theirs. They
+    // may have signed up with a different one of their working addresses, and
+    // attaching both now means either resolves at the next sign-in — so a new
+    // account never needs the sweep that repairs the old ones. Attested, not
+    // proven: only the address the magic link went to was demonstrably read.
+    const person = netId ? await peopleByNetId(netId) : null;
+    if (person?.email && person.email !== dartmouthEmail) {
+      const attached = await recordUserEmail({ userId, address: person.email });
+      if (!attached.ok) {
+        console.warn(
+          `[dartmouth-capture] ${person.email} already belongs to user ` +
+            `${attached.conflictUserId}; not reassigning to ${userId}`,
+        );
+      }
+    }
+  } catch (err) {
+    if (err instanceof DartmouthPeopleError) {
+      console.error(`[dartmouth-capture] People API unavailable for ${userId}:`, err.message);
+    } else {
+      console.error(`[dartmouth-capture] netId binding failed for ${userId}:`, err);
+    }
   }
 
   // Write names + dartmouthEmail (always) and netId (when found).

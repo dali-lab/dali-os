@@ -1,9 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Mock the Dartmouth lookup module.
-vi.mock("~/lib/dartmouth-lookup", () => ({
-  bindNetIdByEmail: vi.fn(),
-}));
+// Mock only the network call; DartmouthEmailApiError must stay real so the
+// capture path's `instanceof` check distinguishes an unreachable API from a
+// person the API simply has no record of.
+vi.mock("~/lib/dartmouth-people", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/dartmouth-people")>();
+  return {
+    ...actual,
+    findNetIdByAddress: vi.fn(),
+    peopleByNetId: vi.fn(async () => null),
+  };
+});
 
 // Mock the Prisma client.
 vi.mock("~/lib/db", () => ({
@@ -11,30 +18,28 @@ vi.mock("~/lib/db", () => ({
     user: {
       update: vi.fn(),
     },
+    userEmail: {
+      findUnique: vi.fn(async () => null),
+      create: vi.fn(async () => ({})),
+      update: vi.fn(async () => ({})),
+    },
   },
 }));
 
-import { bindNetIdByEmail } from "~/lib/dartmouth-lookup";
+import {
+  findNetIdByAddress,
+  peopleByNetId,
+  DartmouthPeopleError,
+} from "~/lib/dartmouth-people";
 import { prisma } from "~/lib/db";
 import { captureDartmouthIdentity } from "~/lib/dartmouth-capture.server";
 
-const mockBindNetId = vi.mocked(bindNetIdByEmail);
+const mockFindNetId = vi.mocked(findNetIdByAddress);
 const mockUpdate = vi.mocked(prisma.user.update);
 
 beforeEach(() => {
   vi.clearAllMocks();
 });
-
-// Helper to create a fake DirectoryMatch
-function makeMatch(netId: string): import("~/lib/dartmouth-lookup").DirectoryMatch {
-  return {
-    netId,
-    mail: "jane.doe@dartmouth.edu",
-    affiliation: "Student",
-    departmentClass: "'27",
-    classYear: 2027,
-  };
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // (a) lookup match → update includes netId + names + dartmouthEmail
@@ -42,7 +47,7 @@ function makeMatch(netId: string): import("~/lib/dartmouth-lookup").DirectoryMat
 
 describe("captureDartmouthIdentity — lookup match", () => {
   it("writes netId, names, and dartmouthEmail when directory returns a match", async () => {
-    mockBindNetId.mockResolvedValue(makeMatch("jdoe26"));
+    mockFindNetId.mockResolvedValue("jdoe26");
     mockUpdate.mockResolvedValue({} as never);
 
     const result = await captureDartmouthIdentity({
@@ -70,7 +75,7 @@ describe("captureDartmouthIdentity — lookup match", () => {
 
 describe("captureDartmouthIdentity — lookup miss", () => {
   it("writes names and dartmouthEmail but not netId when directory returns null", async () => {
-    mockBindNetId.mockResolvedValue(null);
+    mockFindNetId.mockResolvedValue(null);
     mockUpdate.mockResolvedValue({} as never);
 
     const result = await captureDartmouthIdentity({
@@ -97,7 +102,7 @@ describe("captureDartmouthIdentity — lookup miss", () => {
 
 describe("captureDartmouthIdentity — P2002 collision", () => {
   it("retries without netId on a unique-constraint violation and returns netIdCaptured: false", async () => {
-    mockBindNetId.mockResolvedValue(makeMatch("taken-netid"));
+    mockFindNetId.mockResolvedValue("taken-netid");
 
     const p2002 = Object.assign(new Error("Unique constraint failed"), {
       code: "P2002",
@@ -129,7 +134,7 @@ describe("captureDartmouthIdentity — P2002 collision", () => {
   });
 
   it("re-throws errors that are NOT P2002", async () => {
-    mockBindNetId.mockResolvedValue(makeMatch("some-netid"));
+    mockFindNetId.mockResolvedValue("some-netid");
     const dbDown = Object.assign(new Error("Connection lost"), { code: "P2001" });
     mockUpdate.mockRejectedValue(dbDown);
 
@@ -149,7 +154,7 @@ describe("captureDartmouthIdentity — P2002 collision", () => {
 
 describe("captureDartmouthIdentity — name splitting", () => {
   it("splits 'Ada Lovelace' into first='Ada', last='Lovelace'", async () => {
-    mockBindNetId.mockResolvedValue(null);
+    mockFindNetId.mockResolvedValue(null);
     mockUpdate.mockResolvedValue({} as never);
 
     await captureDartmouthIdentity({
@@ -165,7 +170,7 @@ describe("captureDartmouthIdentity — name splitting", () => {
   });
 
   it("single-token name → lastName is empty string", async () => {
-    mockBindNetId.mockResolvedValue(null);
+    mockFindNetId.mockResolvedValue(null);
     mockUpdate.mockResolvedValue({} as never);
 
     await captureDartmouthIdentity({
@@ -181,7 +186,7 @@ describe("captureDartmouthIdentity — name splitting", () => {
   });
 
   it("multi-word last name: 'Ada van der Berg' → first='Ada', last='van der Berg'", async () => {
-    mockBindNetId.mockResolvedValue(null);
+    mockFindNetId.mockResolvedValue(null);
     mockUpdate.mockResolvedValue({} as never);
 
     await captureDartmouthIdentity({
@@ -198,12 +203,12 @@ describe("captureDartmouthIdentity — name splitting", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// (e) lookup throws → swallowed, update still runs without netId
+// (e) lookup throws → reported, update still runs without netId
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("captureDartmouthIdentity — lookup throws", () => {
-  it("swallows a lookup error and still writes names + dartmouthEmail without netId", async () => {
-    mockBindNetId.mockRejectedValue(new Error("network error"));
+  it("reports a lookup error and still writes names + dartmouthEmail without netId", async () => {
+    mockFindNetId.mockRejectedValue(new Error("network error"));
     mockUpdate.mockResolvedValue({} as never);
 
     const result = await captureDartmouthIdentity({
@@ -220,5 +225,108 @@ describe("captureDartmouthIdentity — lookup throws", () => {
       lastName: "Riley",
       dartmouthEmail: "pat.riley@dartmouth.edu",
     });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// (f) the proven address is recorded, and an unreachable directory is loud
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("captureDartmouthIdentity — address + directory reachability", () => {
+  it("records the magic-link address as a proven alias before consulting the directory", async () => {
+    mockFindNetId.mockResolvedValue(null);
+    mockUpdate.mockResolvedValue({} as never);
+
+    await captureDartmouthIdentity({
+      userId: "user-6",
+      fullName: "Jane Doe",
+      verifiedEmail: "Jane.Doe@Dartmouth.edu",
+    });
+
+    expect(prisma.userEmail.create).toHaveBeenCalledOnce();
+    const arg = vi.mocked(prisma.userEmail.create).mock.calls[0][0] as {
+      data: { userId: string; address: string; verifiedAt: Date | null };
+    };
+    expect(arg.data.userId).toBe("user-6");
+    expect(arg.data.address).toBe("jane.doe@dartmouth.edu");
+    // The link proved this mailbox, so it is verified — unlike a CAS-synthesized
+    // alias or a directory attestation, which only say where mail lands.
+    expect(arg.data.verifiedAt).toBeInstanceOf(Date);
+  });
+
+  it("distinguishes an unreachable People API from a person with no netID", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockFindNetId.mockRejectedValue(
+      new DartmouthPeopleError("dartmouth-people: HTTP 503 Service Unavailable"),
+    );
+    mockUpdate.mockResolvedValue({} as never);
+
+    const result = await captureDartmouthIdentity({
+      userId: "user-7",
+      fullName: "Pat Riley",
+      verifiedEmail: "pat.riley@dartmouth.edu",
+    });
+
+    expect(result).toEqual({ netIdCaptured: false });
+    expect(spy).toHaveBeenCalledWith(
+      expect.stringContaining("People API unavailable"),
+      expect.any(String),
+    );
+    spy.mockRestore();
+  });
+});
+
+describe("captureDartmouthIdentity — sibling addresses", () => {
+  it("attaches the person's other Dartmouth addresses so any of them resolves later", async () => {
+    // They will not remember which address they signed up with. Collecting the
+    // rest now is what stops a new account needing the repair sweep.
+    mockFindNetId.mockResolvedValue("d99999z");
+    vi.mocked(peopleByNetId).mockResolvedValue({
+      dartmouthAffiliation: "DART",
+      isAlum: false,
+      isStudent: true,
+      classYear: 2027,
+      departmentClass: "'27",
+      email: "d99999z@dartmouth.edu",
+      name: "Alex T Rivera",
+    });
+    mockUpdate.mockResolvedValue({} as never);
+
+    await captureDartmouthIdentity({
+      userId: "user-8",
+      fullName: "Alex Rivera",
+      verifiedEmail: "alex.t.rivera.27@dartmouth.edu",
+    });
+
+    const written = vi
+      .mocked(prisma.userEmail.create)
+      .mock.calls.map((c) => (c[0] as { data: { address: string; verifiedAt: Date | null } }).data);
+
+    // The signup address, proven by the magic link.
+    expect(written).toContainEqual(
+      expect.objectContaining({
+        address: "alex.t.rivera.27@dartmouth.edu",
+        verifiedAt: expect.any(Date),
+      }),
+    );
+    // The sibling alias, attested only — nobody demonstrated they read it.
+    expect(written).toContainEqual(
+      expect.objectContaining({ address: "d99999z@dartmouth.edu", verifiedAt: null }),
+    );
+    // No duplicate row for the address recorded up front.
+    expect(written.filter((d) => d.address === "alex.t.rivera.27@dartmouth.edu")).toHaveLength(1);
+  });
+
+  it("does not look up a person when no netId could be resolved", async () => {
+    mockFindNetId.mockResolvedValue(null);
+    mockUpdate.mockResolvedValue({} as never);
+
+    await captureDartmouthIdentity({
+      userId: "user-9",
+      fullName: "Nobody Known",
+      verifiedEmail: "nobody@dartmouth.edu",
+    });
+
+    expect(peopleByNetId).not.toHaveBeenCalled();
   });
 });

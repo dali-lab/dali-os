@@ -6,6 +6,8 @@ vi.mock("~/lib/dartmouth-jwt", () => ({
 
 import {
   peopleByNetId,
+  findNetIdByAddress,
+  DartmouthPeopleError,
   parseDepartmentClass,
   isGraduateProgramClass,
   graduateProgramLabel,
@@ -88,10 +90,10 @@ describe("peopleByNetId", () => {
 
   it("sends the JWT as a Bearer token to the person URL", async () => {
     mockPerson({ dartmouth_affiliation: "DART", affiliations: [] });
-    await peopleByNetId("f006v43");
+    await peopleByNetId("d99999z");
 
     const call = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(call[0]).toBe("https://api.dartmouth.edu/api/people/f006v43");
+    expect(call[0]).toBe("https://api.dartmouth.edu/api/people/d99999z");
     expect((call[1] as RequestInit).headers).toMatchObject({
       Authorization: "Bearer test-jwt",
     });
@@ -112,6 +114,8 @@ describe("peopleByNetId", () => {
       isStudent: true,
       classYear: 2027,
       departmentClass: "'27",
+      email: null,
+      name: null,
     });
   });
 
@@ -127,6 +131,8 @@ describe("peopleByNetId", () => {
       isStudent: true,
       classYear: 2026,
       departmentClass: "'26",
+      email: null,
+      name: null,
     });
   });
 
@@ -142,6 +148,8 @@ describe("peopleByNetId", () => {
       isStudent: true,
       classYear: 2026,
       departmentClass: "'26",
+      email: null,
+      name: null,
     });
   });
 
@@ -157,6 +165,8 @@ describe("peopleByNetId", () => {
       isStudent: true,
       classYear: null,
       departmentClass: "GR",
+      email: null,
+      name: null,
     });
   });
 
@@ -172,6 +182,8 @@ describe("peopleByNetId", () => {
       isStudent: false,
       classYear: 2020,
       departmentClass: "'20",
+      email: null,
+      name: null,
     });
   });
 
@@ -187,6 +199,8 @@ describe("peopleByNetId", () => {
       isStudent: false,
       classYear: null,
       departmentClass: "Computer Science",
+      email: null,
+      name: null,
     });
   });
 
@@ -198,6 +212,8 @@ describe("peopleByNetId", () => {
       isStudent: false,
       classYear: null,
       departmentClass: null,
+      email: null,
+      name: null,
     });
   });
 
@@ -220,5 +236,108 @@ describe("peopleByNetId", () => {
     await peopleByNetId("a/b");
     const call = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(call[0]).toBe("https://api.dartmouth.edu/api/people/a%2Fb");
+  });
+    it("returns the name-form address at base scope", async () => {
+      // This is the field that removes the need for the Email Addresses API and
+      // its Advancement scope: the address a student actually uses, keyed by the
+      // netID we already hold, from an endpoint we are already authorized for.
+      mockPerson({
+        dartmouth_affiliation: "DART",
+        affiliations: [{ name: "Student" }],
+        department_class: "'27",
+        email: "Alex.T.Rivera.27@Dartmouth.edu",
+        name: "Alex T Rivera",
+      });
+
+      const person = await peopleByNetId("d99999z");
+      expect(person?.email).toBe("alex.t.rivera.27@dartmouth.edu");
+      expect(person?.name).toBe("Alex T Rivera");
+    });
+
+    it("reports a missing address as null rather than inventing one", async () => {
+      // Synthesizing netid@dartmouth.edu to fill the gap is precisely the habit
+      // that made CAS-era rows unreachable.
+      mockPerson({
+        dartmouth_affiliation: "DART",
+        affiliations: [{ name: "Student" }],
+        department_class: "'27",
+      });
+
+      expect((await peopleByNetId("d99999z"))?.email).toBeNull();
+    });
+});
+
+describe("findNetIdByAddress", () => {
+  const realFetch = global.fetch;
+  beforeEach(() => {
+    global.fetch = vi.fn() as unknown as typeof global.fetch;
+  });
+  afterEach(() => {
+    global.fetch = realFetch;
+    vi.clearAllMocks();
+  });
+
+  function respond(body: unknown, status = 200) {
+    (global.fetch as ReturnType<typeof vi.fn>).mockImplementation(
+      async () => new Response(JSON.stringify(body), { status }),
+    );
+  }
+
+  it("resolves a proven address to its owner", async () => {
+    respond([
+      {
+        netid: "d99999z",
+        name: "Alex T Rivera",
+        email: "Alex.T.Rivera.27@dartmouth.edu",
+        affiliations: [{ name: "Student" }],
+      },
+    ]);
+
+    expect(await findNetIdByAddress("alex.t.rivera.27@dartmouth.edu")).toBe("d99999z");
+  });
+
+  it("returns null rather than a stranger when the filter is ignored", async () => {
+    // Observed against the live API on 2026-09-30: an unrecognised filter
+    // parameter is NOT rejected. The request answers 200 with an UNFILTERED
+    // list, so the first record is an unrelated person. Taking rows[0] would
+    // bind someone else's netID — which is their payroll identity — onto this
+    // account. The address on the record has to match what was asked for.
+    respond([
+      {
+        netid: "d1035k5",
+        name: "Someone Else",
+        email: "d1035k5@dartmouth.edu",
+        affiliations: [{ name: "Staff" }],
+      },
+    ]);
+
+    expect(await findNetIdByAddress("alex.t.rivera.27@dartmouth.edu")).toBeNull();
+  });
+
+  it("picks the matching record out of an unfiltered list", async () => {
+    respond([
+      { netid: "d1035k5", email: "d1035k5@dartmouth.edu" },
+      { netid: "d99999z", email: "alex.t.rivera.27@dartmouth.edu" },
+    ]);
+
+    expect(await findNetIdByAddress("alex.t.rivera.27@dartmouth.edu")).toBe("d99999z");
+  });
+
+  it("matches case-insensitively", async () => {
+    respond([{ netid: "d99999z", email: "Alex.T.Rivera.27@Dartmouth.EDU" }]);
+
+    expect(await findNetIdByAddress("  ALEX.T.RIVERA.27@dartmouth.edu ")).toBe("d99999z");
+  });
+
+  it("returns null for an empty result", async () => {
+    respond([]);
+    expect(await findNetIdByAddress("nobody@dartmouth.edu")).toBeNull();
+  });
+
+  it("surfaces a failed lookup instead of reporting no such person", async () => {
+    respond("", 503);
+    await expect(findNetIdByAddress("alex.t.rivera.27@dartmouth.edu")).rejects.toBeInstanceOf(
+      DartmouthPeopleError,
+    );
   });
 });
