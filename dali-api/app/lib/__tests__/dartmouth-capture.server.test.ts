@@ -3,15 +3,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // Mock only the network call; DartmouthEmailApiError must stay real so the
 // capture path's `instanceof` check distinguishes an unreachable API from a
 // person the API simply has no record of.
-vi.mock("~/lib/dartmouth-email-addresses", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("~/lib/dartmouth-email-addresses")>();
-  return { ...actual, findNetIdByAddress: vi.fn() };
-});
-
 vi.mock("~/lib/dartmouth-people", async (importOriginal) => {
   const actual = await importOriginal<typeof import("~/lib/dartmouth-people")>();
-  return { ...actual, peopleByNetId: vi.fn(async () => null) };
+  return {
+    ...actual,
+    findNetIdByAddress: vi.fn(),
+    peopleByNetId: vi.fn(async () => null),
+  };
 });
 
 // Mock the Prisma client.
@@ -30,9 +28,9 @@ vi.mock("~/lib/db", () => ({
 
 import {
   findNetIdByAddress,
-  DartmouthEmailApiError,
-} from "~/lib/dartmouth-email-addresses";
-import { peopleByNetId } from "~/lib/dartmouth-people";
+  peopleByNetId,
+  DartmouthPeopleError,
+} from "~/lib/dartmouth-people";
 import { prisma } from "~/lib/db";
 import { captureDartmouthIdentity } from "~/lib/dartmouth-capture.server";
 
@@ -256,12 +254,10 @@ describe("captureDartmouthIdentity — address + directory reachability", () => 
     expect(arg.data.verifiedAt).toBeInstanceOf(Date);
   });
 
-  it("distinguishes an unreachable API from a person with no netID", async () => {
+  it("distinguishes an unreachable People API from a person with no netID", async () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     mockFindNetId.mockRejectedValue(
-      new DartmouthEmailApiError(
-        "dartmouth-email-addresses: HTTP 403 — is email_addresses:read.adv granted?",
-      ),
+      new DartmouthPeopleError("dartmouth-people: HTTP 503 Service Unavailable"),
     );
     mockUpdate.mockResolvedValue({} as never);
 
@@ -273,7 +269,7 @@ describe("captureDartmouthIdentity — address + directory reachability", () => 
 
     expect(result).toEqual({ netIdCaptured: false });
     expect(spy).toHaveBeenCalledWith(
-      expect.stringContaining("email API unavailable"),
+      expect.stringContaining("People API unavailable"),
       expect.any(String),
     );
     spy.mockRestore();

@@ -35,6 +35,14 @@
 
 import { getDartmouthJwt } from "~/lib/dartmouth-jwt";
 
+/** A lookup that could not be completed, as distinct from "no such person". */
+export class DartmouthPeopleError extends Error {
+  constructor(message: string, readonly cause?: unknown) {
+    super(message);
+    this.name = "DartmouthPeopleError";
+  }
+}
+
 const PEOPLE_BASE_URL = "https://api.dartmouth.edu/api/people";
 
 export type DartmouthPeopleResult = {
@@ -156,4 +164,62 @@ export async function peopleByNetId(
         : null,
     name: typeof body.name === "string" && body.name.trim() !== "" ? body.name.trim() : null,
   };
+}
+
+/**
+ * The netid that owns a proven address. This is the direction sign-up needs
+ * now that CAS no longer hands us a netID.
+ *
+ * ⚠️  THE FILTER MUST BE `email`, AND THE RESULT MUST BE RE-CHECKED.
+ * Observed 2026-09-30: an unrecognised filter parameter is not rejected. The
+ * API ignores it, answers 200, and returns an UNFILTERED list — `?mail=` and
+ * `?filter=email eq '...'` both came back with an unrelated staff member as
+ * the first record. Taking rows[0] would bind a stranger's netID to someone's
+ * account, and netID is payroll identity.
+ *
+ * So a netid is returned only from a record whose own email IS the address we
+ * asked about. If the filter ever stops working, this returns null rather than
+ * somebody else.
+ */
+export async function findNetIdByAddress(address: string): Promise<string | null> {
+  const wanted = address.trim().toLowerCase();
+  if (wanted === "") return null;
+
+  const jwt = await getDartmouthJwt();
+  const url = `${PEOPLE_BASE_URL}?email=${encodeURIComponent(wanted)}`;
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "GET",
+      headers: { Accept: "application/json", Authorization: `Bearer ${jwt}` },
+    });
+  } catch (err) {
+    throw new DartmouthPeopleError(`dartmouth-people: request failed for ${wanted}`, err);
+  }
+
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    throw new DartmouthPeopleError(
+      `dartmouth-people: HTTP ${res.status} ${res.statusText} for ${wanted}`,
+    );
+  }
+
+  let rows: unknown;
+  try {
+    rows = await res.json();
+  } catch (err) {
+    throw new DartmouthPeopleError(`dartmouth-people: unparseable response for ${wanted}`, err);
+  }
+  if (!Array.isArray(rows)) return null;
+
+  for (const row of rows) {
+    if (row === null || typeof row !== "object") continue;
+    const r = row as { netid?: unknown; email?: unknown };
+    if (typeof r.email !== "string" || r.email.trim().toLowerCase() !== wanted) continue;
+    if (typeof r.netid === "string" && r.netid.trim() !== "") {
+      return r.netid.trim().toLowerCase();
+    }
+  }
+  return null;
 }

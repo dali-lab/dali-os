@@ -17,9 +17,9 @@
 import { prisma } from "~/lib/db";
 import {
   findNetIdByAddress,
-  DartmouthEmailApiError,
-} from "~/lib/dartmouth-email-addresses";
-import { peopleByNetId } from "~/lib/dartmouth-people";
+  peopleByNetId,
+  DartmouthPeopleError,
+} from "~/lib/dartmouth-people";
 import { recordUserEmail } from "~/lib/user-email.server";
 import { syncAndRecomputeMembershipStatus } from "~/lib/membership-status";
 
@@ -83,8 +83,8 @@ export async function captureDartmouthIdentity(args: {
       }
     }
   } catch (err) {
-    if (err instanceof DartmouthEmailApiError) {
-      console.error(`[dartmouth-capture] email API unavailable for ${userId}:`, err.message);
+    if (err instanceof DartmouthPeopleError) {
+      console.error(`[dartmouth-capture] People API unavailable for ${userId}:`, err.message);
     } else {
       console.error(`[dartmouth-capture] netId binding failed for ${userId}:`, err);
     }
