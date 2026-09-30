@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.notes";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, isImpersonating, forbiddenWhileImpersonating } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { isCore, isLabMember } from "~/lib/roles";
 import { prisma } from "~/lib/db";
@@ -41,6 +41,10 @@ export async function action({ request }: Route.ActionArgs) {
 
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
+  // Every intent here creates, edits, deletes, or reshares a member's personal
+  // notes as them. Impersonation is for reproducing what someone can do, not for
+  // acting on their private content.
+  if (isImpersonating(auth)) return forbiddenWhileImpersonating(request);
   const me = auth.user.sub;
 
   const form = await request.formData();

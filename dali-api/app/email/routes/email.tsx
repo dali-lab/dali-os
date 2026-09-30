@@ -190,6 +190,13 @@ export default function EmailPage() {
         </div>
       </div>
 
+      {data.mailHidden && (
+        <div className="shrink-0 rounded-md border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
+          Mail is hidden while you are impersonating this member. Their inboxes are listed but no
+          messages are loaded.
+        </div>
+      )}
+
       {inboxes.length === 0 ? (
         <div className="mx-auto mt-10 flex max-w-md flex-col items-center gap-3 rounded-os-card bg-os-card p-8 text-center">
           <Inbox className="h-8 w-8 text-os-muted" />

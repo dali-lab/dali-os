@@ -29,6 +29,12 @@ export type AuthSuccess = {
   ok: true;
   user: AuthUser;
   sessionId: string; // hashed PK; not the raw credential
+  // The acting admin's user id when this session was started by an admin's
+  // "log in as" (BetterAuth admin plugin stamps AuthSession.impersonatedBy).
+  // Undefined for a normal session. Everything downstream reads `user` as the
+  // impersonated member, so this is the ONLY signal a route has that it is
+  // serving an admin wearing someone else's identity — see isImpersonating.
+  impersonatedBy?: string;
 };
 
 type AuthFailureReason =
@@ -110,7 +116,13 @@ async function computeAuth(request: Request): Promise<AuthResult> {
     if (await isFeatureEnabledForEveryone("betterauth", request)) {
       const { resolveBetterAuthAuth } = await import("~/lib/betterauth-compat.server");
       const ba = await resolveBetterAuthAuth(request);
-      if (ba) return { ok: true, user: ba.user, sessionId: ba.sessionId };
+      if (ba)
+        return {
+          ok: true,
+          user: ba.user,
+          sessionId: ba.sessionId,
+          ...(ba.impersonatedBy ? { impersonatedBy: ba.impersonatedBy } : {}),
+        };
     }
   } catch {
     // The BetterAuth fallback must never turn a clean legacy failure into a 500.
@@ -231,6 +243,31 @@ export function unauthorized(request: Request): Response {
 
 export function forbidden(request: Request): Response {
   return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+}
+
+// An admin impersonating a member gets that member's identity everywhere, which
+// is what makes impersonation useful for support (roles, nav, tasks, what a
+// page looks like to them) and what makes it wrong for the member's private
+// content: their Google Calendar event bodies, their mail, their personal
+// notes and Drive space. Those surfaces check this and hide the content instead
+// of serving it — impersonation is for reproducing what someone can DO, not for
+// reading what they wrote.
+export function isImpersonating(auth: AuthSuccess): boolean {
+  return auth.impersonatedBy != null;
+}
+
+// 403 for a personal-data endpoint that has no meaningful degraded shape (an
+// API that exists only to return private content). Page loaders that can still
+// render something useful branch on isImpersonating instead and pass a flag to
+// the UI.
+export function forbiddenWhileImpersonating(request: Request): Response {
+  return withCors(
+    request,
+    Response.json(
+      { error: "Hidden while impersonating", reason: "impersonating" },
+      { status: 403 },
+    ),
+  );
 }
 
 export async function requireCore(

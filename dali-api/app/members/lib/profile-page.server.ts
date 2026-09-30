@@ -5,7 +5,7 @@
 
 import { redirect } from "react-router";
 import { prisma } from "~/lib/db";
-import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
+import { requireAuth, redirectApplicantToPortal, isImpersonating } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { graduateProgramLabel } from "~/lib/dartmouth-people";
@@ -504,9 +504,12 @@ export async function loadProfilePage({
 
   // Personal notes for the rail. "Shared with me" is an inbox of your own, so
   // it's only fetched when you're looking at your own profile.
+  // An impersonating admin gets neither: private notes on the profile they are
+  // wearing, nor that member's "shared with me" inbox.
+  const hideNotes = isImpersonating(auth);
   const [notes, sharedWithMe, achievements, favoriteIds] = await Promise.all([
-    listProfileNotes(targetId, auth.user.sub),
-    isSelf ? listSharedWithMe(auth.user.sub) : Promise.resolve([]),
+    hideNotes ? Promise.resolve([]) : listProfileNotes(targetId, auth.user.sub),
+    isSelf && !hideNotes ? listSharedWithMe(auth.user.sub) : Promise.resolve([]),
     achievementsForMember(targetId),
     favoritePageIds(auth.user.sub),
   ]);

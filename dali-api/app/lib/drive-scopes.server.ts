@@ -5,6 +5,7 @@
 import { loadDriveScope, loadForms, loadOrphanForms, buildLinkedProcessMap } from "~/lib/drive.server";
 import type { DriveItem } from "~/lib/drive.server";
 import { prisma } from "~/lib/db";
+import { requireAuth, isImpersonating } from "~/lib/auth";
 import { favoritePageIds } from "~/lib/user-pages.server";
 import { visibleDriveSpaces } from "~/lib/drive-spaces";
 import { HIRING_PROCESS_ID } from "~/lib/bindings.server";
@@ -152,9 +153,17 @@ export async function loadDriveScopes({
   const educationIds = educationWorkspaces.map((w) => w.key);
   const educationNames = new Map(educationWorkspaces.map((w) => [w.key, w.label]));
 
+  // My Drive is the member's private space (Member-workspace pages and files,
+  // i.e. their personal notes). An admin impersonating them gets the scope but
+  // none of its contents — nothing personal is even queried.
+  const auth = await requireAuth(request);
+  const hidePersonal = auth.ok && isImpersonating(auth);
+
   // Phase 1: load pages + files for every scope WITHOUT forms.
   const [memberItems, labItems, ...projectItemArrays] = await Promise.all([
-    loadDriveScope({ userSub, scope: { kind: "Member" }, request }),
+    hidePersonal
+      ? Promise.resolve<DriveItem[]>([])
+      : loadDriveScope({ userSub, scope: { kind: "Member" }, request }),
     loadDriveScope({
       userSub,
       scope: { kind: "Lab" },

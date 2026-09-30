@@ -318,6 +318,11 @@ export type LoaderData = {
   // drop titles). Manual blocks render separately from data.manualBlocks.
   externalEvents: ExternalEventDTO[];
   ingestionError: string | null;
+  /** True when the viewer is an admin impersonating this member: their Google
+   *  layers are withheld (externalEvents is empty and no token was minted
+   *  against their account), so the grid says so rather than implying an empty
+   *  calendar. Lab-native layers are unaffected. */
+  googleHidden: boolean;
   groups: GroupOption[];
   users: UserOption[];
   currentUserId: string;

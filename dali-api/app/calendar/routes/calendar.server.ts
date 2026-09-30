@@ -1,6 +1,6 @@
 import { redirect } from "react-router";
 import { prisma } from "~/lib/db";
-import { requireAuth, forbidden, redirectApplicantToPortal } from "~/lib/auth";
+import { requireAuth, forbidden, redirectApplicantToPortal, isImpersonating } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { listAllGroups } from "~/lib/groups";
 import {
@@ -1451,7 +1451,11 @@ export async function loadCalendarData(
   // optional refresh), then use each token to fetch the calendar list. Both
   // results are shared with fetchCalendarEvents so the full request makes exactly
   // one token read and one calendarList HTTP call per linked Google account.
-  const googleLinks = links.filter((l) => l.provider === "Google");
+  // An admin impersonating this member sees the lab-native layers (meetings,
+  // attendance, logged time) but none of their Google calendar: no event bodies,
+  // and no access token minted against their Google account at all.
+  const hideGoogle = isImpersonating(auth);
+  const googleLinks = hideGoogle ? [] : links.filter((l) => l.provider === "Google");
   const prefetchedTokens = new Map<string, string>();
   const calendarListResults = await Promise.all(
     googleLinks.map(async (l) => {
@@ -1479,12 +1483,14 @@ export async function loadCalendarData(
     // Read every calendar on each account ("all"), not just the ones counting
     // toward availability: the grid's per-calendar Show toggle filters this
     // client-side, so a calendar missing here can never be shown.
-    cachedExternalRead<CalendarEvent[]>(externalCacheKey, () =>
-      fetchCalendarEvents(userId, fetchStart, fetchEnd, prefetchedCalendarLists, prefetchedTokens, "all"),
-    ).catch((err): CalendarEvent[] => {
-      ingestionError = err instanceof Error ? err.message : "Failed to fetch external events";
-      return [];
-    }),
+    hideGoogle
+      ? Promise.resolve<CalendarEvent[]>([])
+      : cachedExternalRead<CalendarEvent[]>(externalCacheKey, () =>
+          fetchCalendarEvents(userId, fetchStart, fetchEnd, prefetchedCalendarLists, prefetchedTokens, "all"),
+        ).catch((err): CalendarEvent[] => {
+          ingestionError = err instanceof Error ? err.message : "Failed to fetch external events";
+          return [];
+        }),
     Promise.all(
       links.map(async (l): Promise<CalendarLinkDTO> => {
         const base = {
@@ -1607,6 +1613,7 @@ export async function loadCalendarData(
     rangeEndIso: rangeEnd.toISOString(),
     externalEvents,
     ingestionError,
+    googleHidden: hideGoogle,
     groups,
     users: allUsers,
     currentUserId: userId,
