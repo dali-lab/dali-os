@@ -213,11 +213,16 @@ if (noCanonical.length > 0) {
 if (mixedCase.length > 0) {
   log("── Mixed-case addresses " + "─".repeat(47));
   log("   Stored with uppercase, so the lookup never matches. --fix lowercases.");
+  // Which column it is decides the severity. `email` is the login identifier
+  // BetterAuth looks up, so uppercase there means the account cannot be found
+  // at all. The alias columns only feed our own fallback, and a miss there
+  // falls through to the directory heal, which recovers it — annoying, not fatal.
   for (const a of mixedCase.slice(0, SAMPLE)) {
-    const shown = [a.user.email, a.user.daliEmail, a.user.dartmouthEmail, a.user.personalEmail]
-      .filter((v): v is string => v !== null && v !== v.toLowerCase())
-      .join(", ");
-    log(`   ${a.user.id}  ${name(a.user)}  ${shown}`);
+    const cols = (["email", "daliEmail", "dartmouthEmail", "personalEmail"] as const)
+      .filter((c) => a.user[c] !== null && a.user[c] !== a.user[c]!.toLowerCase())
+      .map((c) => `${c}=${a.user[c]}`);
+    const fatal = a.user.email !== null && a.user.email !== a.user.email.toLowerCase();
+    log(`   ${fatal ? "UNREACHABLE" : "alias only "}  ${name(a.user)}  ${cols.join("  ")}`);
   }
   if (mixedCase.length > SAMPLE) log(`   … and ${mixedCase.length - SAMPLE} more`);
   log();
