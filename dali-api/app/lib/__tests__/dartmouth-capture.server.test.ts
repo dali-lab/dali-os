@@ -1,9 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Mock the Dartmouth lookup module.
-vi.mock("~/lib/dartmouth-lookup", () => ({
-  bindNetIdByEmail: vi.fn(),
-}));
+// Mock only the network call; DirectoryLookupError must stay real so the
+// capture path's `instanceof` check distinguishes an unreachable directory
+// from a person who simply isn't in it.
+vi.mock("~/lib/dartmouth-lookup", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/dartmouth-lookup")>();
+  return { ...actual, bindNetIdByEmail: vi.fn() };
+});
 
 // Mock the Prisma client.
 vi.mock("~/lib/db", () => ({
@@ -11,10 +14,15 @@ vi.mock("~/lib/db", () => ({
     user: {
       update: vi.fn(),
     },
+    userEmail: {
+      findUnique: vi.fn(async () => null),
+      create: vi.fn(async () => ({})),
+      update: vi.fn(async () => ({})),
+    },
   },
 }));
 
-import { bindNetIdByEmail } from "~/lib/dartmouth-lookup";
+import { bindNetIdByEmail, DirectoryLookupError } from "~/lib/dartmouth-lookup";
 import { prisma } from "~/lib/db";
 import { captureDartmouthIdentity } from "~/lib/dartmouth-capture.server";
 
@@ -198,11 +206,11 @@ describe("captureDartmouthIdentity — name splitting", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// (e) lookup throws → swallowed, update still runs without netId
+// (e) lookup throws → reported, update still runs without netId
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("captureDartmouthIdentity — lookup throws", () => {
-  it("swallows a lookup error and still writes names + dartmouthEmail without netId", async () => {
+  it("reports a lookup error and still writes names + dartmouthEmail without netId", async () => {
     mockBindNetId.mockRejectedValue(new Error("network error"));
     mockUpdate.mockResolvedValue({} as never);
 
@@ -220,5 +228,53 @@ describe("captureDartmouthIdentity — lookup throws", () => {
       lastName: "Riley",
       dartmouthEmail: "pat.riley@dartmouth.edu",
     });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// (f) the proven address is recorded, and an unreachable directory is loud
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("captureDartmouthIdentity — address + directory reachability", () => {
+  it("records the magic-link address as a proven alias before consulting the directory", async () => {
+    mockBindNetId.mockResolvedValue(null);
+    mockUpdate.mockResolvedValue({} as never);
+
+    await captureDartmouthIdentity({
+      userId: "user-6",
+      fullName: "Jane Doe",
+      verifiedEmail: "Jane.Doe@Dartmouth.edu",
+    });
+
+    expect(prisma.userEmail.create).toHaveBeenCalledOnce();
+    const arg = vi.mocked(prisma.userEmail.create).mock.calls[0][0] as {
+      data: { userId: string; address: string; verifiedAt: Date | null };
+    };
+    expect(arg.data.userId).toBe("user-6");
+    expect(arg.data.address).toBe("jane.doe@dartmouth.edu");
+    // The link proved this mailbox, so it is verified — unlike a CAS-synthesized
+    // alias or a directory attestation, which only say where mail lands.
+    expect(arg.data.verifiedAt).toBeInstanceOf(Date);
+  });
+
+  it("distinguishes an unreachable directory from a person with no netID", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockBindNetId.mockRejectedValue(
+      new DirectoryLookupError("dartmouth-lookup: unparseable response (SSO gate?)"),
+    );
+    mockUpdate.mockResolvedValue({} as never);
+
+    const result = await captureDartmouthIdentity({
+      userId: "user-7",
+      fullName: "Pat Riley",
+      verifiedEmail: "pat.riley@dartmouth.edu",
+    });
+
+    expect(result).toEqual({ netIdCaptured: false });
+    expect(spy).toHaveBeenCalledWith(
+      expect.stringContaining("directory unreachable"),
+      expect.any(String),
+    );
+    spy.mockRestore();
   });
 });

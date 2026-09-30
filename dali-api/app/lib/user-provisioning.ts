@@ -1,6 +1,7 @@
 import { prisma } from "~/lib/db";
 import { linkCasToGoogleUser } from "~/lib/linking";
 import { DARTMOUTH_EMAIL_DOMAIN } from "~/lib/app-env";
+import { recordUserEmail } from "~/lib/user-email.server";
 import { assignHandleIfMissing } from "~/lib/handle";
 
 // Shared user-provisioning helpers used by /auth/callback/{google,cas} and
@@ -80,6 +81,8 @@ export async function upsertUserFromGoogle(
     create: { userId: user.id },
   });
 
+  await recordAlias(user.id, google.email);
+
   await assignHandleIfMissing(user.id);
 
   return { user, authType: "member" };
@@ -122,6 +125,32 @@ export async function upsertUserFromCas(
       dartmouthEmail,
     },
   });
+  // Register the synthesized address as a resolvable alias. It is NOT proven:
+  // CAS authenticated the NetID, and Dartmouth routes netid@dartmouth.edu to
+  // that person, but nobody demonstrated they read it — and nobody types it
+  // either. The name-form address they actually use is attached by the
+  // directory sweep; this row only keeps the account reachable until then.
+  await recordAlias(user.id, dartmouthEmail);
+
   await assignHandleIfMissing(user.id);
   return { user };
+}
+
+/**
+ * Attach an address to a user without letting an identity conflict break the
+ * sign-in that triggered it. A conflict means two rows claim one mailbox —
+ * real, and worth fixing, but not at the cost of failing the login in progress.
+ */
+async function recordAlias(userId: string, address: string): Promise<void> {
+  try {
+    const result = await recordUserEmail({ userId, address });
+    if (!result.ok) {
+      console.warn(
+        `[provisioning] ${address} already belongs to user ${result.conflictUserId}; ` +
+          `not reassigning to ${userId}`,
+      );
+    }
+  } catch (err) {
+    console.error(`[provisioning] failed to record ${address} for ${userId}:`, err);
+  }
 }

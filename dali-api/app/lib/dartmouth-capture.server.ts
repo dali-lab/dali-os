@@ -14,7 +14,8 @@
 // retry without the conflicting netId so the door never dead-ends the user.
 
 import { prisma } from "~/lib/db";
-import { bindNetIdByEmail } from "~/lib/dartmouth-lookup";
+import { bindNetIdByEmail, DirectoryLookupError } from "~/lib/dartmouth-lookup";
+import { recordUserEmail } from "~/lib/user-email.server";
 import { syncAndRecomputeMembershipStatus } from "~/lib/membership-status";
 
 export type CaptureResult = {
@@ -37,14 +38,36 @@ export async function captureDartmouthIdentity(args: {
 
   const dartmouthEmail = verifiedEmail.toLowerCase();
 
-  // Attempt to bind the netId from the Dartmouth directory.  A lookup failure
-  // (network error, unexpected response) must NOT block account setup.
+  // The magic link proved this mailbox, so the address is attached as verified
+  // before anything else — a directory outage below must not cost us the one
+  // fact we established for certain.
+  const recorded = await recordUserEmail({
+    userId,
+    address: dartmouthEmail,
+    verified: true,
+  });
+  if (!recorded.ok) {
+    console.warn(
+      `[dartmouth-capture] ${dartmouthEmail} already belongs to user ` +
+        `${recorded.conflictUserId}; not reassigning to ${userId}`,
+    );
+  }
+
+  // Attempt to bind the netId from the Dartmouth directory. A lookup failure
+  // must NOT block account setup, but it is logged rather than swallowed: a
+  // silent catch here is indistinguishable from "this person has no netID",
+  // which is how an SSO gate on the directory would take out netID capture
+  // without anyone noticing.
   let netId: string | null = null;
   try {
     const match = await bindNetIdByEmail(fullName, verifiedEmail);
     if (match) netId = match.netId;
-  } catch {
-    // Lookup failure is non-fatal — dartmouthEmail alone classifies the user.
+  } catch (err) {
+    if (err instanceof DirectoryLookupError) {
+      console.error(`[dartmouth-capture] directory unreachable for ${userId}:`, err.message);
+    } else {
+      console.error(`[dartmouth-capture] netId binding failed for ${userId}:`, err);
+    }
   }
 
   // Write names + dartmouthEmail (always) and netId (when found).
