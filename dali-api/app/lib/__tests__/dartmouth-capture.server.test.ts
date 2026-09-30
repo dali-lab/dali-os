@@ -6,7 +6,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("~/lib/dartmouth-email-addresses", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("~/lib/dartmouth-email-addresses")>();
-  return { ...actual, findNetIdByAddress: vi.fn() };
+  return {
+    ...actual,
+    findNetIdByAddress: vi.fn(),
+    emailAddressesByNetId: vi.fn(async () => []),
+  };
 });
 
 // Mock the Prisma client.
@@ -25,6 +29,7 @@ vi.mock("~/lib/db", () => ({
 
 import {
   findNetIdByAddress,
+  emailAddressesByNetId,
   DartmouthEmailApiError,
 } from "~/lib/dartmouth-email-addresses";
 import { prisma } from "~/lib/db";
@@ -271,5 +276,55 @@ describe("captureDartmouthIdentity — address + directory reachability", () => 
       expect.any(String),
     );
     spy.mockRestore();
+  });
+});
+
+describe("captureDartmouthIdentity — sibling addresses", () => {
+  it("attaches the person's other Dartmouth addresses so any of them resolves later", async () => {
+    // They will not remember which address they signed up with. Collecting the
+    // rest now is what stops a new account needing the repair sweep.
+    mockFindNetId.mockResolvedValue("d99999z");
+    vi.mocked(emailAddressesByNetId).mockResolvedValue([
+      { address: "alex.t.rivera.27@dartmouth.edu", netId: "d99999z", preferred: true, dataSource: "adv" },
+      { address: "d99999z@dartmouth.edu", netId: "d99999z", preferred: false, dataSource: "adv" },
+    ]);
+    mockUpdate.mockResolvedValue({} as never);
+
+    await captureDartmouthIdentity({
+      userId: "user-8",
+      fullName: "Alex Rivera",
+      verifiedEmail: "alex.t.rivera.27@dartmouth.edu",
+    });
+
+    const written = vi
+      .mocked(prisma.userEmail.create)
+      .mock.calls.map((c) => (c[0] as { data: { address: string; verifiedAt: Date | null } }).data);
+
+    // The signup address, proven by the magic link.
+    expect(written).toContainEqual(
+      expect.objectContaining({
+        address: "alex.t.rivera.27@dartmouth.edu",
+        verifiedAt: expect.any(Date),
+      }),
+    );
+    // The sibling alias, attested only — nobody demonstrated they read it.
+    expect(written).toContainEqual(
+      expect.objectContaining({ address: "d99999z@dartmouth.edu", verifiedAt: null }),
+    );
+    // No duplicate row for the address recorded up front.
+    expect(written.filter((d) => d.address === "alex.t.rivera.27@dartmouth.edu")).toHaveLength(1);
+  });
+
+  it("does not query for siblings when no netId could be resolved", async () => {
+    mockFindNetId.mockResolvedValue(null);
+    mockUpdate.mockResolvedValue({} as never);
+
+    await captureDartmouthIdentity({
+      userId: "user-9",
+      fullName: "Nobody Known",
+      verifiedEmail: "nobody@dartmouth.edu",
+    });
+
+    expect(emailAddressesByNetId).not.toHaveBeenCalled();
   });
 });

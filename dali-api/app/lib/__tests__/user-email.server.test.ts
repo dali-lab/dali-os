@@ -31,7 +31,7 @@ beforeEach(() => {
 
 describe("normalizeEmailAddress", () => {
   it("trims and lowercases", () => {
-    expect(normalizeEmailAddress("  alex.t.rivera.27@dartmouth.edu ")).toBe(
+    expect(normalizeEmailAddress("  Alex.T.Rivera.27@Dartmouth.EDU ")).toBe(
       "alex.t.rivera.27@dartmouth.edu",
     );
   });
@@ -93,7 +93,7 @@ describe("resolveLoginIdentifier", () => {
 
 describe("recordUserEmail", () => {
   it("creates an unproven row by default", async () => {
-    await recordUserEmail({ userId: "u1", address: "d99999z@dartmouth.edu" });
+    await recordUserEmail({ userId: "u1", address: "D99999Z@dartmouth.edu" });
 
     expect(prisma.userEmail.create).toHaveBeenCalledWith({
       data: { userId: "u1", address: "d99999z@dartmouth.edu", verifiedAt: null },

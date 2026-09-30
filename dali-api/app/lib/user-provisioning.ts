@@ -2,6 +2,7 @@ import { prisma } from "~/lib/db";
 import { linkCasToGoogleUser } from "~/lib/linking";
 import { DARTMOUTH_EMAIL_DOMAIN } from "~/lib/app-env";
 import { recordUserEmail } from "~/lib/user-email.server";
+import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { assignHandleIfMissing } from "~/lib/handle";
 
 // Shared user-provisioning helpers used by /auth/callback/{google,cas} and
@@ -111,6 +112,29 @@ export async function upsertUserFromCas(
   }
 
   const dartmouthEmail = `${cas.netId}@${DARTMOUTH_EMAIL_DOMAIN}`;
+
+  // CAS is retired as a way to CREATE accounts. It only ever knew the NetID, so
+  // every row it made carries a synthesized address no human types — the exact
+  // shape that locked students out when the email-code door replaced it. The
+  // Dartmouth door is now /signup, where the person proves a real address.
+  //
+  // Gated here rather than at each entry point because this is the single place
+  // a row gets minted, and there are three initiators (the /login action, the
+  // OAuth authorize flow, and the desktop pairing page) plus two callbacks.
+  // Signing an EXISTING CAS user in still works, and so does linking a NetID
+  // onto an account that already exists — neither invents an unreachable row.
+  const existing = await prisma.user.findUnique({
+    where: { netId: cas.netId },
+    select: { id: true },
+  });
+  if (!existing && (await isFeatureEnabledForEveryone("betterauth"))) {
+    throw new Error(
+      "upsertUserFromCas: refusing to create an account from CAS while " +
+        "betterauth is on — new Dartmouth accounts go through /signup, which " +
+        "captures the address the person actually uses",
+    );
+  }
+
   const user = await prisma.user.upsert({
     where: { netId: cas.netId },
     update: {

@@ -17,6 +17,7 @@
 import { prisma } from "~/lib/db";
 import {
   findNetIdByAddress,
+  emailAddressesByNetId,
   DartmouthEmailApiError,
 } from "~/lib/dartmouth-email-addresses";
 import { recordUserEmail } from "~/lib/user-email.server";
@@ -65,6 +66,25 @@ export async function captureDartmouthIdentity(args: {
   let netId: string | null = null;
   try {
     netId = await findNetIdByAddress(dartmouthEmail);
+
+    // Knowing the owner, collect the rest of their addresses in the same pass.
+    // A Dartmouth person holds several working addresses and will not remember
+    // which one they gave us — attaching them all now means any of them
+    // resolves at the next sign-in, so new accounts never need the sweep that
+    // exists to repair the old ones. Attested, not proven: the API says where
+    // mail lands, and only the address just used by the magic link was read.
+    if (netId) {
+      for (const entry of await emailAddressesByNetId(netId)) {
+        if (entry.address === dartmouthEmail) continue;
+        const attached = await recordUserEmail({ userId, address: entry.address });
+        if (!attached.ok) {
+          console.warn(
+            `[dartmouth-capture] ${entry.address} already belongs to user ` +
+              `${attached.conflictUserId}; not reassigning to ${userId}`,
+          );
+        }
+      }
+    }
   } catch (err) {
     if (err instanceof DartmouthEmailApiError) {
       console.error(`[dartmouth-capture] email API unavailable for ${userId}:`, err.message);

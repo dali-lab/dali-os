@@ -97,7 +97,7 @@ describe("emailAddressesByNetId", () => {
       { netid: "d99999z", email_address: "alex.t.rivera.27@dartmouth.edu", is_primary: true },
     ]);
 
-    const out = await emailAddressesByNetId("d99999z");
+    const out = await emailAddressesByNetId("D99999Z");
     expect(out.map((e) => e.address)).toEqual([
       "alex.t.rivera.27@dartmouth.edu",
       "old.alias@dartmouth.edu",
