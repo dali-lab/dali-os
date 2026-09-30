@@ -7,9 +7,11 @@
 // Approved decisions:
 //   canComment = canView   (anyone who can read the doc can comment)
 //
-// Meeting-note pages: the loader admits archived meeting-note pages so
-// attendees can still reach the check-in/attendance surface. We do NOT
-// open collab or comment for archived pages — those gates stay strict.
+// Archived pages are denied by default, which is what keeps collab and the
+// comments rail shut on a trashed page. A caller that exists to act on trashed
+// pages — the Drive trash, and the meeting-note carve-out that keeps check-in
+// working after someone trashes the note — passes `includeArchived` and takes
+// responsibility for narrowing the result (the note page forces it read-only).
 //
 // Wave 2 (drive scope): scopeKind on Folder pages cascades access downward.
 // With no explicitly-scoped folders in the DB, getPageAccess returns exactly
@@ -27,6 +29,18 @@ export interface PageAccessResult {
   canView: boolean;
   canEdit: boolean;
   canComment: boolean;
+}
+
+export interface PageAccessOptions {
+  /**
+   * Resolve a trashed page's access from its normal rules instead of denying
+   * outright. Off by default, which is what keeps collab and comments shut on
+   * an archived page. Only surfaces that exist to act on trashed items pass it:
+   * the Drive trash (listing, restore, purge — a doc nobody may access can
+   * neither be listed nor restored) and the meeting-note carve-out in
+   * documents.$pageId, which downgrades the result to read-only itself.
+   */
+  includeArchived?: boolean;
 }
 
 export interface PageShape {
@@ -261,6 +275,7 @@ export async function getPageAccess(
   userSub: string,
   page: PageShape,
   request?: Request,
+  options?: PageAccessOptions,
 ): Promise<PageAccessResult>;
 
 /**
@@ -271,6 +286,7 @@ export async function getPageAccess(
   userSub: string,
   pageId: string,
   request?: Request,
+  options?: PageAccessOptions,
 ): Promise<PageAccessResult>;
 
 // `request` (optional) scopes the per-user role checks (isCore/isLabMember/
@@ -281,6 +297,7 @@ export async function getPageAccess(
   userSub: string,
   pageOrId: PageShape | string,
   request?: Request,
+  options?: PageAccessOptions,
 ): Promise<PageAccessResult> {
   let page: PageShape;
 
@@ -310,7 +327,7 @@ export async function getPageAccess(
     page = pageOrId;
   }
 
-  return computePageAccessCore(userSub, page, request);
+  return computePageAccessCore(userSub, page, request, undefined, undefined, options);
 }
 
 /**
@@ -329,11 +346,15 @@ async function computePageAccessCore(
   request?: Request,
   preloadedShares?: Array<{ principalType: string; principalId: string; permission: SharePermission }>,
   preloadedGroupIds?: string[],
+  options?: PageAccessOptions,
 ): Promise<PageAccessResult> {
-  // Archived pages: no access at all (collab/comments gate).
-  // The route loader has a carve-out for meeting-note pages at the UI level,
-  // but the collab socket and comments rail must not open on archived pages.
-  if (page.archivedAt != null) return DENIED;
+  // Archived pages: no access at all (collab/comments gate), so that neither
+  // the collab socket nor the comments rail opens on a trashed page. Callers
+  // whose whole job is a trashed page — the Drive trash, and the meeting-note
+  // carve-out in documents.$pageId — opt out with `includeArchived` and get the
+  // page's ordinary rules instead. Without that opt-out the trash could list
+  // no document and restore none of them.
+  if (page.archivedAt != null && !options?.includeArchived) return DENIED;
 
   // Additive layers (named shares + General access), computed once and ORed onto
   // each workspace's role-based base below. They only ever grant more access —

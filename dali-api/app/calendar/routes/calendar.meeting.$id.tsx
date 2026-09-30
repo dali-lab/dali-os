@@ -797,7 +797,11 @@ export default function CalendarMeetingPage() {
 
         {d.selfCheckIn && (d.canManage || d.viewerInvited) && (
           <CheckInPanel
-            key={d.occurrenceStart}
+            // Prefixed, not the bare occurrence: this and the checklist below are
+            // siblings, and two siblings sharing a key make React re-create this
+            // one on every render and leak the node it replaces — the check-in
+            // card and its QR pile up down the page as attendance comes in.
+            key={`check-in-${d.occurrenceStart}`}
             meetingId={d.meetingId}
             meetingLabel={d.meetingLabel}
             viewerInvited={d.viewerInvited}
@@ -814,7 +818,7 @@ export default function CalendarMeetingPage() {
           <AttendanceChecklist
             // Keyed by occurrence: the checklist keeps its own row state, which
             // must not carry over when the page moves to another occurrence.
-            key={d.occurrenceStart}
+            key={`roster-${d.occurrenceStart}`}
             meetingId={d.meetingId}
             occurrenceStart={d.occurrenceStart}
             meetingLabel={d.meetingLabel}

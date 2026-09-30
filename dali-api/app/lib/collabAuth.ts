@@ -151,6 +151,7 @@ export async function authorizeCollabDoc(
       select: {
         id: true,
         archivedAt: true,
+        meetingNoteId: true,
         workspaceType: true,
         workspaceId: true,
         partnerVisible: true,
@@ -165,7 +166,16 @@ export async function authorizeCollabDoc(
         linkPermission: true,
       },
     });
-    if (!page || page.archivedAt !== null) return deny;
+    if (!page) return deny;
+    // A trashed page is closed, with one exception: a meeting note stays
+    // readable, because the meeting's "Open meeting note" link and its printed
+    // check-in QR both land on it and must keep working. documents.$pageId
+    // opens it read-only; without this the body would come up blank there.
+    if (page.archivedAt !== null) {
+      if (!page.meetingNoteId) return deny;
+      const noteAccess = await getPageAccess(userSub, page, undefined, { includeArchived: true });
+      return noteAccess.canView ? { allowed: true, readOnly: true } : deny;
+    }
 
     const access = await getPageAccess(userSub, page);
     if (access.canView) return { allowed: true, readOnly: !access.canEdit };
