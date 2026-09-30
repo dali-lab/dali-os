@@ -31,7 +31,10 @@ import { PrismaClient } from "../../app/generated/prisma/client.js";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { peopleByNetId } from "../../app/lib/dartmouth-people.js";
 import { getDartmouthJwt } from "../../app/lib/dartmouth-jwt.js";
-import { classifySignInReadiness } from "../../app/lib/signin-readiness.js";
+import {
+  classifySignInReadiness,
+  synthesizedAddress,
+} from "../../app/lib/signin-readiness.js";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
 const prisma = new PrismaClient({ adapter });
@@ -224,6 +227,7 @@ if (probe && lockedOut.length > 0) {
 
   log(`Asking the People API about ${lockedOut.length} locked-out rows…`);
   let repairable = 0;
+  let sameAsSynthesized = 0;
   let noRecord = 0;
   const errors = new Map<string, number>();
   const unfixable: Assessed[] = [];
@@ -241,8 +245,17 @@ if (probe && lockedOut.length > 0) {
         }
         try {
           const person = await peopleByNetId(a.user.netId);
-          if (person?.email) repairable++;
-          else {
+          // Holding an address is not the same as holding a USABLE one. If
+          // Dartmouth's record is the netid form as well, there is nothing to
+          // attach that the row does not already have, and calling that
+          // repairable promises a repair the sweep cannot perform.
+          const synth = synthesizedAddress(a.user.netId);
+          if (person?.email && person.email !== synth) {
+            repairable++;
+          } else if (person?.email) {
+            sameAsSynthesized++;
+            unfixable.push(a);
+          } else {
             noRecord++;
             unfixable.push(a);
           }
@@ -257,7 +270,8 @@ if (probe && lockedOut.length > 0) {
   log();
   const errored = [...errors.values()].reduce((n, c) => n + c, 0);
   log("── Repairability " + "─".repeat(54));
-  log(`   repairable by the sweep ... ${repairable}`);
+  log(`   repairable by the sweep ... ${repairable}   a DIFFERENT address exists`);
+  log(`   only the netid form ....... ${sameAsSynthesized}   <- Dartmouth knows no other address`);
   log(`   no address on file ........ ${noRecord}   <- need a different path`);
   log(`   lookup failed ............. ${errored}`);
   // A bare count is useless: one systemic failure and a few flaky ones look
