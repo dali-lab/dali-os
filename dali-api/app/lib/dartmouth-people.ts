@@ -1,11 +1,11 @@
 // People API client — api.dartmouth.edu/api/people/{netid}.
 //
 // JWT-authenticated. Covers all accounts including alumni. This is the
-// netid-keyed source. The separate name-search directory
-// (lookup.dartmouth.edu/api/search, used by dartmouth-lookup.ts) is reachable
-// from our servers WITHOUT SSO and binds a netId from a verified email at
-// Dartmouth-door signup. (An earlier note here claimed that host went behind
-// SSO / was unreachable; that is no longer true.)
+// netid-keyed source for affiliation signals; addresses come from its sibling
+// api.dartmouth.edu/api/email_addresses (see dartmouth-email-addresses.ts).
+// The unauthenticated name-search directory at lookup.dartmouth.edu was
+// retired: it is SSO-gated from some hosts, searches uid and name but not
+// mail, and its failures were indistinguishable from an empty result.
 //
 // Three signals, all in the base no-scope payload (verified against live
 // records on 2026-07-06 — see alumni_plan.md "Observed API behavior"):

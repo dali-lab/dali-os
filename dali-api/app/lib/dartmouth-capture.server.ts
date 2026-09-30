@@ -1,8 +1,9 @@
 // dartmouth-capture.server.ts
 //
 // Runs after a Dartmouth-door magic-link verification is complete. Sets
-// firstName/lastName/dartmouthEmail on the User row and, if the Dartmouth
-// directory lookup can bind a netId from the verified email, writes that too.
+// firstName/lastName/dartmouthEmail on the User row, records the proven
+// address as a UserEmail alias, and binds a netId when the Dartmouth Email
+// Addresses API can name the owner of that address.
 //
 // Setting `dartmouthEmail` is the definitive "dartmouth" signal for
 // betterauth-compat.server.ts type derivation — a user whose netId lookup
@@ -14,7 +15,10 @@
 // retry without the conflicting netId so the door never dead-ends the user.
 
 import { prisma } from "~/lib/db";
-import { bindNetIdByEmail, DirectoryLookupError } from "~/lib/dartmouth-lookup";
+import {
+  findNetIdByAddress,
+  DartmouthEmailApiError,
+} from "~/lib/dartmouth-email-addresses";
 import { recordUserEmail } from "~/lib/user-email.server";
 import { syncAndRecomputeMembershipStatus } from "~/lib/membership-status";
 
@@ -60,11 +64,10 @@ export async function captureDartmouthIdentity(args: {
   // without anyone noticing.
   let netId: string | null = null;
   try {
-    const match = await bindNetIdByEmail(fullName, verifiedEmail);
-    if (match) netId = match.netId;
+    netId = await findNetIdByAddress(dartmouthEmail);
   } catch (err) {
-    if (err instanceof DirectoryLookupError) {
-      console.error(`[dartmouth-capture] directory unreachable for ${userId}:`, err.message);
+    if (err instanceof DartmouthEmailApiError) {
+      console.error(`[dartmouth-capture] email API unavailable for ${userId}:`, err.message);
     } else {
       console.error(`[dartmouth-capture] netId binding failed for ${userId}:`, err);
     }

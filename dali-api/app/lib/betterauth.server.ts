@@ -298,8 +298,8 @@ export const auth = betterAuth({
         // from WHICH login door the user chose (the 3-way split is preserved),
         // never from the email domain — auto-classification can't tell a DALI
         // student who is also a partner from a plain student. netID capture
-        // likewise happens inside the Dartmouth door's flow (bindNetIdByEmail /
-        // validateSelfEnteredNetId in ~/lib/dartmouth-lookup), not here.
+        // likewise happens inside the Dartmouth door's flow
+        // (findNetIdByAddress in ~/lib/dartmouth-email-addresses), not here.
         before: async (user) => {
           const name = (typeof user.name === "string" ? user.name : "").trim();
           const sp = name.indexOf(" ");

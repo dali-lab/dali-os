@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Mock only the network call; DirectoryLookupError must stay real so the
-// capture path's `instanceof` check distinguishes an unreachable directory
-// from a person who simply isn't in it.
-vi.mock("~/lib/dartmouth-lookup", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("~/lib/dartmouth-lookup")>();
-  return { ...actual, bindNetIdByEmail: vi.fn() };
+// Mock only the network call; DartmouthEmailApiError must stay real so the
+// capture path's `instanceof` check distinguishes an unreachable API from a
+// person the API simply has no record of.
+vi.mock("~/lib/dartmouth-email-addresses", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("~/lib/dartmouth-email-addresses")>();
+  return { ...actual, findNetIdByAddress: vi.fn() };
 });
 
 // Mock the Prisma client.
@@ -22,27 +23,19 @@ vi.mock("~/lib/db", () => ({
   },
 }));
 
-import { bindNetIdByEmail, DirectoryLookupError } from "~/lib/dartmouth-lookup";
+import {
+  findNetIdByAddress,
+  DartmouthEmailApiError,
+} from "~/lib/dartmouth-email-addresses";
 import { prisma } from "~/lib/db";
 import { captureDartmouthIdentity } from "~/lib/dartmouth-capture.server";
 
-const mockBindNetId = vi.mocked(bindNetIdByEmail);
+const mockFindNetId = vi.mocked(findNetIdByAddress);
 const mockUpdate = vi.mocked(prisma.user.update);
 
 beforeEach(() => {
   vi.clearAllMocks();
 });
-
-// Helper to create a fake DirectoryMatch
-function makeMatch(netId: string): import("~/lib/dartmouth-lookup").DirectoryMatch {
-  return {
-    netId,
-    mail: "jane.doe@dartmouth.edu",
-    affiliation: "Student",
-    departmentClass: "'27",
-    classYear: 2027,
-  };
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // (a) lookup match → update includes netId + names + dartmouthEmail
@@ -50,7 +43,7 @@ function makeMatch(netId: string): import("~/lib/dartmouth-lookup").DirectoryMat
 
 describe("captureDartmouthIdentity — lookup match", () => {
   it("writes netId, names, and dartmouthEmail when directory returns a match", async () => {
-    mockBindNetId.mockResolvedValue(makeMatch("jdoe26"));
+    mockFindNetId.mockResolvedValue("jdoe26");
     mockUpdate.mockResolvedValue({} as never);
 
     const result = await captureDartmouthIdentity({
@@ -78,7 +71,7 @@ describe("captureDartmouthIdentity — lookup match", () => {
 
 describe("captureDartmouthIdentity — lookup miss", () => {
   it("writes names and dartmouthEmail but not netId when directory returns null", async () => {
-    mockBindNetId.mockResolvedValue(null);
+    mockFindNetId.mockResolvedValue(null);
     mockUpdate.mockResolvedValue({} as never);
 
     const result = await captureDartmouthIdentity({
@@ -105,7 +98,7 @@ describe("captureDartmouthIdentity — lookup miss", () => {
 
 describe("captureDartmouthIdentity — P2002 collision", () => {
   it("retries without netId on a unique-constraint violation and returns netIdCaptured: false", async () => {
-    mockBindNetId.mockResolvedValue(makeMatch("taken-netid"));
+    mockFindNetId.mockResolvedValue("taken-netid");
 
     const p2002 = Object.assign(new Error("Unique constraint failed"), {
       code: "P2002",
@@ -137,7 +130,7 @@ describe("captureDartmouthIdentity — P2002 collision", () => {
   });
 
   it("re-throws errors that are NOT P2002", async () => {
-    mockBindNetId.mockResolvedValue(makeMatch("some-netid"));
+    mockFindNetId.mockResolvedValue("some-netid");
     const dbDown = Object.assign(new Error("Connection lost"), { code: "P2001" });
     mockUpdate.mockRejectedValue(dbDown);
 
@@ -157,7 +150,7 @@ describe("captureDartmouthIdentity — P2002 collision", () => {
 
 describe("captureDartmouthIdentity — name splitting", () => {
   it("splits 'Ada Lovelace' into first='Ada', last='Lovelace'", async () => {
-    mockBindNetId.mockResolvedValue(null);
+    mockFindNetId.mockResolvedValue(null);
     mockUpdate.mockResolvedValue({} as never);
 
     await captureDartmouthIdentity({
@@ -173,7 +166,7 @@ describe("captureDartmouthIdentity — name splitting", () => {
   });
 
   it("single-token name → lastName is empty string", async () => {
-    mockBindNetId.mockResolvedValue(null);
+    mockFindNetId.mockResolvedValue(null);
     mockUpdate.mockResolvedValue({} as never);
 
     await captureDartmouthIdentity({
@@ -189,7 +182,7 @@ describe("captureDartmouthIdentity — name splitting", () => {
   });
 
   it("multi-word last name: 'Ada van der Berg' → first='Ada', last='van der Berg'", async () => {
-    mockBindNetId.mockResolvedValue(null);
+    mockFindNetId.mockResolvedValue(null);
     mockUpdate.mockResolvedValue({} as never);
 
     await captureDartmouthIdentity({
@@ -211,7 +204,7 @@ describe("captureDartmouthIdentity — name splitting", () => {
 
 describe("captureDartmouthIdentity — lookup throws", () => {
   it("reports a lookup error and still writes names + dartmouthEmail without netId", async () => {
-    mockBindNetId.mockRejectedValue(new Error("network error"));
+    mockFindNetId.mockRejectedValue(new Error("network error"));
     mockUpdate.mockResolvedValue({} as never);
 
     const result = await captureDartmouthIdentity({
@@ -237,7 +230,7 @@ describe("captureDartmouthIdentity — lookup throws", () => {
 
 describe("captureDartmouthIdentity — address + directory reachability", () => {
   it("records the magic-link address as a proven alias before consulting the directory", async () => {
-    mockBindNetId.mockResolvedValue(null);
+    mockFindNetId.mockResolvedValue(null);
     mockUpdate.mockResolvedValue({} as never);
 
     await captureDartmouthIdentity({
@@ -257,10 +250,12 @@ describe("captureDartmouthIdentity — address + directory reachability", () => 
     expect(arg.data.verifiedAt).toBeInstanceOf(Date);
   });
 
-  it("distinguishes an unreachable directory from a person with no netID", async () => {
+  it("distinguishes an unreachable API from a person with no netID", async () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    mockBindNetId.mockRejectedValue(
-      new DirectoryLookupError("dartmouth-lookup: unparseable response (SSO gate?)"),
+    mockFindNetId.mockRejectedValue(
+      new DartmouthEmailApiError(
+        "dartmouth-email-addresses: HTTP 403 — is email_addresses:read.adv granted?",
+      ),
     );
     mockUpdate.mockResolvedValue({} as never);
 
@@ -272,7 +267,7 @@ describe("captureDartmouthIdentity — address + directory reachability", () => 
 
     expect(result).toEqual({ netIdCaptured: false });
     expect(spy).toHaveBeenCalledWith(
-      expect.stringContaining("directory unreachable"),
+      expect.stringContaining("email API unavailable"),
       expect.any(String),
     );
     spy.mockRestore();

@@ -121,9 +121,38 @@ export async function emailAddressesByNetId(
 ): Promise<DartmouthEmailAddress[]> {
   const wanted = netId.trim().toLowerCase();
   if (wanted === "") return [];
+  const rows = await query({ netid: wanted });
+  const owned = rows.filter((e) => e.netId === "" || e.netId === wanted);
+  return [...owned].sort((a, b) => Number(b.preferred) - Number(a.preferred));
+}
 
+/**
+ * The netid that owns a proven address — the direction sign-up needs now that
+ * CAS no longer hands us a netID.
+ *
+ * ⚠️  The `?email_address=` filter follows the documented pattern of the
+ * `?netid=` sample but has NOT been confirmed against a live response (the
+ * portal defers filter syntax to a section we don't have, and the scope grant
+ * is outstanding). If the parameter is wrong the API answers with unfiltered
+ * or empty results, so this NEVER returns a netid from a record whose address
+ * doesn't match what was asked for. A wrong netid is a wrong payroll identity;
+ * an unconfirmed filter must fail closed, not guess.
+ */
+export async function findNetIdByAddress(address: string): Promise<string | null> {
+  const wanted = address.trim().toLowerCase();
+  if (wanted === "") return null;
+  const rows = await query({ email_address: wanted });
+  const hit = rows.find((e) => e.address === wanted && e.netId !== "");
+  return hit?.netId ?? null;
+}
+
+async function query(
+  params: Record<string, string>,
+): Promise<DartmouthEmailAddress[]> {
   const jwt = await getDartmouthJwt();
-  const url = `${EMAIL_ADDRESSES_URL}?netid=${encodeURIComponent(wanted)}`;
+  const search = new URLSearchParams(params);
+  const url = `${EMAIL_ADDRESSES_URL}?${search.toString()}`;
+  const wanted = Object.values(params)[0] ?? "";
 
   let res: Response;
   try {
@@ -133,7 +162,7 @@ export async function emailAddressesByNetId(
     });
   } catch (err) {
     throw new DartmouthEmailApiError(
-      `dartmouth-email-addresses: request failed for netid=${wanted}`,
+      `dartmouth-email-addresses: request failed for ${wanted}`,
       err,
     );
   }
@@ -141,27 +170,22 @@ export async function emailAddressesByNetId(
   if (res.status === 404) return [];
   if (res.status === 401 || res.status === 403) {
     throw new DartmouthEmailApiError(
-      `dartmouth-email-addresses: HTTP ${res.status} for netid=${wanted} — ` +
+      `dartmouth-email-addresses: HTTP ${res.status} for ${wanted} — ` +
         `is urn:dartmouth:email_addresses:read.adv granted to this API key?`,
     );
   }
   if (!res.ok) {
     throw new DartmouthEmailApiError(
-      `dartmouth-email-addresses: HTTP ${res.status} ${res.statusText} for netid=${wanted}`,
+      `dartmouth-email-addresses: HTTP ${res.status} ${res.statusText} for ${wanted}`,
     );
   }
 
-  let parsed: DartmouthEmailAddress[];
   try {
-    parsed = parseEmailAddresses(await res.json());
+    return parseEmailAddresses(await res.json());
   } catch (err) {
     throw new DartmouthEmailApiError(
-      `dartmouth-email-addresses: unparseable response for netid=${wanted}`,
+      `dartmouth-email-addresses: unparseable response for ${wanted}`,
       err,
     );
   }
-
-  // Ignore rows attributed to a different netid; we asked about one person.
-  const owned = parsed.filter((e) => e.netId === "" || e.netId === wanted);
-  return [...owned].sort((a, b) => Number(b.preferred) - Number(a.preferred));
 }
