@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+vi.mock("~/lib/dartmouth-people", () => ({
+  findNetIdByAddress: vi.fn(async () => null),
+}));
+
 vi.mock("~/lib/db", () => ({
   prisma: {
     userEmail: {
@@ -8,11 +12,12 @@ vi.mock("~/lib/db", () => ({
       update: vi.fn(),
       updateMany: vi.fn(),
     },
-    user: { findFirst: vi.fn() },
+    user: { findFirst: vi.fn(), findUnique: vi.fn() },
   },
 }));
 
 import { prisma } from "~/lib/db";
+import { findNetIdByAddress } from "~/lib/dartmouth-people";
 import {
   normalizeEmailAddress,
   resolveLoginIdentifier,
@@ -22,11 +27,15 @@ import {
 
 const findAlias = vi.mocked(prisma.userEmail.findUnique);
 const findUser = vi.mocked(prisma.user.findFirst);
+const findByNetId = vi.mocked(prisma.user.findUnique);
+const lookupNetId = vi.mocked(findNetIdByAddress);
 
 beforeEach(() => {
   vi.clearAllMocks();
   findAlias.mockResolvedValue(null as never);
   findUser.mockResolvedValue(null as never);
+  findByNetId.mockResolvedValue(null as never);
+  lookupNetId.mockResolvedValue(null);
 });
 
 describe("normalizeEmailAddress", () => {
@@ -144,5 +153,73 @@ describe("markEmailProven", () => {
       where: { address: "jane@dartmouth.edu", verifiedAt: null },
       data: { verifiedAt: expect.any(Date) },
     });
+  });
+});
+
+describe("resolveLoginIdentifier — self-heal", () => {
+  it("attaches an unknown @dartmouth address to the account that owns it", async () => {
+    // The case the migration cannot cover: a CAS-era row holds only the
+    // synthesized netid form, so the address the student types is unknown until
+    // something teaches us about it. Waiting for the batch sweep would leave
+    // whoever signs in first still locked out.
+    lookupNetId.mockResolvedValue("d99999z");
+    findByNetId.mockResolvedValue({
+      id: "u1",
+      email: "d99999z@dartmouth.edu",
+    } as never);
+
+    expect(await resolveLoginIdentifier("alex.t.rivera.27@dartmouth.edu")).toBe(
+      "d99999z@dartmouth.edu",
+    );
+    expect(prisma.userEmail.create).toHaveBeenCalledWith({
+      data: {
+        userId: "u1",
+        address: "alex.t.rivera.27@dartmouth.edu",
+        verifiedAt: null,
+      },
+    });
+  });
+
+  it("does not consult the directory for a non-Dartmouth address", async () => {
+    expect(await resolveLoginIdentifier("someone@gmail.com")).toBe("someone@gmail.com");
+    expect(lookupNetId).not.toHaveBeenCalled();
+  });
+
+  it("stays neutral when the netid belongs to no account here", async () => {
+    // Resolution must not invent accounts; that is sign-up's job.
+    lookupNetId.mockResolvedValue("d99999z");
+    findByNetId.mockResolvedValue(null as never);
+
+    expect(await resolveLoginIdentifier("alex.t.rivera.27@dartmouth.edu")).toBe(
+      "alex.t.rivera.27@dartmouth.edu",
+    );
+    expect(prisma.userEmail.create).not.toHaveBeenCalled();
+  });
+
+  it("falls through without throwing when the directory is down", async () => {
+    // A sign-in attempt must not 500 because Dartmouth is unreachable.
+    lookupNetId.mockRejectedValue(new Error("ECONNRESET"));
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    expect(await resolveLoginIdentifier("alex.t.rivera.27@dartmouth.edu")).toBe(
+      "alex.t.rivera.27@dartmouth.edu",
+    );
+    spy.mockRestore();
+  });
+
+  it("refuses to attach an address already held by another account", async () => {
+    lookupNetId.mockResolvedValue("d99999z");
+    findByNetId.mockResolvedValue({ id: "u1", email: "d99999z@dartmouth.edu" } as never);
+    // Unknown when resolution looks it up, then found under another owner when
+    // the heal tries to attach it — the ordering a real race would produce.
+    findAlias
+      .mockResolvedValueOnce(null as never)
+      .mockResolvedValueOnce({ userId: "someone-else", verifiedAt: null } as never);
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    expect(await resolveLoginIdentifier("alex.t.rivera.27@dartmouth.edu")).toBe(
+      "alex.t.rivera.27@dartmouth.edu",
+    );
+    spy.mockRestore();
   });
 });

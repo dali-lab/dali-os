@@ -13,6 +13,7 @@
 // alias TO that canonical value and hands BetterAuth an address it can find.
 
 import { prisma } from "~/lib/db";
+import { findNetIdByAddress } from "~/lib/dartmouth-people";
 
 /** Trimmed + lowercased. The only form ever written to UserEmail.address. */
 export function normalizeEmailAddress(raw: string): string {
@@ -36,7 +37,7 @@ export async function resolveLoginIdentifier(typed: string): Promise<string> {
     where: { address },
     select: { user: { select: { email: true } } },
   });
-  if (owned?.user.email) return normalizeEmailAddress(owned.user.email);
+  if (owned?.user?.email) return normalizeEmailAddress(owned.user.email);
 
   // Not in the alias table yet. Fall back to the legacy columns so resolution
   // still works for any row written between the migration's backfill and this
@@ -52,7 +53,57 @@ export async function resolveLoginIdentifier(typed: string): Promise<string> {
     },
     select: { email: true },
   });
-  return user?.email ? normalizeEmailAddress(user.email) : address;
+  if (user?.email) return normalizeEmailAddress(user.email);
+
+  const healed = await healDartmouthAddress(address);
+  return healed ?? address;
+}
+
+/**
+ * Last resort for an unrecognised @dartmouth.edu address: ask Dartmouth who
+ * owns it and attach it to that account.
+ *
+ * The migration can only backfill addresses we already held, and for a CAS-era
+ * row that is the synthesized netid form — so the address a student actually
+ * types resolves to nothing until something teaches us about it. The sweep does
+ * that in bulk; this does it for whoever signs in first, and for anyone the
+ * sweep never reached.
+ *
+ * The network call sits on a path that has already failed to resolve, so it
+ * costs nothing when resolution succeeds and turns a dead end into a sign-in
+ * when it doesn't. Every failure returns null and lets the caller fall through
+ * to the neutral anti-enumeration response.
+ */
+async function healDartmouthAddress(address: string): Promise<string | null> {
+  if (!address.endsWith("@dartmouth.edu")) return null;
+
+  let netId: string | null = null;
+  try {
+    netId = await findNetIdByAddress(address);
+  } catch (err) {
+    console.error("[user-email] directory lookup failed while resolving:", err);
+    return null;
+  }
+  if (!netId) return null;
+
+  const owner = await prisma.user.findUnique({
+    where: { netId },
+    select: { id: true, email: true },
+  });
+  // A netid with no account here is a person we simply don't know; creating one
+  // is sign-up's job, not resolution's.
+  if (!owner) return null;
+
+  const attached = await recordUserEmail({ userId: owner.id, address });
+  if (!attached.ok) {
+    console.warn(
+      `[user-email] ${address} resolves to netid ${netId} but is held by user ` +
+        `${attached.conflictUserId}; not reassigning`,
+    );
+    return null;
+  }
+
+  return owner.email ? normalizeEmailAddress(owner.email) : null;
 }
 
 export type RecordEmailResult =

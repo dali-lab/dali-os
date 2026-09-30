@@ -73,17 +73,17 @@ describe("GET /signup loader", () => {
 
   it("flag-ON with no door returns null door", async () => {
     const result = await loader({ request: makeUrl("/signup") } as any);
-    expect(result).toEqual({ door: null });
+    expect(result).toEqual({ door: null, next: null });
   });
 
   it("flag-ON with valid door=dartmouth returns it", async () => {
     const result = await loader({ request: makeUrl("/signup?door=dartmouth") } as any);
-    expect(result).toEqual({ door: "dartmouth" });
+    expect(result).toEqual({ door: "dartmouth", next: null });
   });
 
   it("flag-ON with invalid door returns null", async () => {
     const result = await loader({ request: makeUrl("/signup?door=hacker") } as any);
-    expect(result).toEqual({ door: null });
+    expect(result).toEqual({ door: null, next: null });
   });
 });
 
@@ -226,5 +226,63 @@ describe("POST /signup action email-link — partner door", () => {
       }),
     } as any);
     expect(result).toMatchObject({ sent: true });
+  });
+});
+
+describe("GET /signup loader — next", () => {
+  it("carries a safe next through so a QR scan returns to where it started", async () => {
+    // Without this the scan -> no account -> create account path finishes
+    // onboarding and lands on a home page, losing the check-in they came for.
+    const result = await loader({
+      request: makeUrl("/signup?door=dartmouth&next=%2Feducation%2Fcheck-in%2Fabc"),
+    } as any);
+    expect(result).toEqual({ door: "dartmouth", next: "/education/check-in/abc" });
+  });
+
+  it("drops an unsafe next rather than forwarding it", async () => {
+    const result = await loader({
+      request: makeUrl("/signup?door=dartmouth&next=https%3A%2F%2Fevil.example.com"),
+    } as any);
+    expect(result).toEqual({ door: "dartmouth", next: null });
+  });
+});
+
+describe("POST /signup action — next threading", () => {
+  it("sends the magic link back to where the person was headed", async () => {
+    await action({
+      request: makePostRequest({
+        door: "dartmouth",
+        provider: "email-link",
+        email: "ada@dartmouth.edu",
+        next: "/education/check-in/abc",
+      }),
+    } as any);
+
+    expect(mockSignInMagicLink).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          callbackURL: "/welcome?door=dartmouth&next=%2Feducation%2Fcheck-in%2Fabc",
+        }),
+      }),
+    );
+  });
+
+  it("returns an existing account to their destination, not the home page", async () => {
+    mockUserFindFirst.mockResolvedValue({ email: "ada@dali.dartmouth.edu" } as any);
+
+    await action({
+      request: makePostRequest({
+        door: "dartmouth",
+        provider: "email-link",
+        email: "ada@dartmouth.edu",
+        next: "/education/check-in/abc",
+      }),
+    } as any);
+
+    expect(mockSignInMagicLink).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({ callbackURL: "/education/check-in/abc" }),
+      }),
+    );
   });
 });

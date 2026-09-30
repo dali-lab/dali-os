@@ -362,7 +362,10 @@ function LoginBetterAuth({ next, actionData }: {
             gives the no-account case a way forward without confirming existence. */}
         <p className="text-center text-xs text-muted-foreground">
           New to DALI OS?{" "}
-          <Link to="/signup" className="underline hover:text-foreground">
+          <Link
+            to={next ? `/signup?next=${encodeURIComponent(next)}` : "/signup"}
+            className="underline hover:text-foreground"
+          >
             Create an account
           </Link>
         </p>
@@ -423,7 +426,10 @@ function LoginBetterAuth({ next, actionData }: {
       {/* Crossover to signup */}
       <p className="text-center text-sm text-muted-foreground mt-2">
         New to DALI OS?{" "}
-        <Link to="/signup" className="underline hover:text-foreground">
+        <Link
+          to={next ? `/signup?next=${encodeURIComponent(next)}` : "/signup"}
+          className="underline hover:text-foreground"
+        >
           Create an account
         </Link>
       </p>

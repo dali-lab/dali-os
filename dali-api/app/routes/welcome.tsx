@@ -39,9 +39,15 @@ export async function loader({ request }: Route.LoaderArgs) {
   // since the login path has no door. Right after the first sign-in is the
   // highest-converting moment to enroll one (eBay: ~75% of enrollments here).
   if (url.searchParams.get("step") === "passkey") {
-    const destination = isValidDoor(doorParam)
-      ? DOOR_DESTINATIONS[doorParam]
-      : pickSafeLoginNext(url.searchParams.get("next")) ?? "/";
+    // An explicit `next` wins over the door's default landing page. The door
+    // says which kind of account this is; `next` says where the person was
+    // actually going when they were interrupted — a QR check-in, typically.
+    // Preferring the door here is what dropped that destination on the signup
+    // path, so someone who scanned a session code finished onboarding and
+    // landed on a home page instead of the check-in they came for.
+    const destination =
+      pickSafeLoginNext(url.searchParams.get("next")) ??
+      (isValidDoor(doorParam) ? DOOR_DESTINATIONS[doorParam] : "/");
     // Don't nag: skip if they already have a passkey or dismissed the offer on
     // this device — straight to where they were headed.
     if (!(await shouldOfferPasskey(request, user.sub))) {
