@@ -29,13 +29,22 @@ export type AuthSuccess = {
   ok: true;
   user: AuthUser;
   sessionId: string; // hashed PK; not the raw credential
+  // The acting admin's user id when this session was started by an admin's
+  // "log in as" (BetterAuth admin plugin stamps AuthSession.impersonatedBy).
+  // Undefined for a normal session. Everything downstream reads `user` as the
+  // impersonated member, so this is the ONLY signal a route has that it is
+  // serving an admin wearing someone else's identity — see isImpersonating.
+  impersonatedBy?: string;
 };
 
 type AuthFailureReason =
   | "no_session"
   | "not_found"
   | "revoked"
-  | "expired";
+  | "expired"
+  // A mutating request on an impersonated session. The credential is valid; the
+  // session just isn't allowed to write. See requireAuth.
+  | "impersonated_write";
 
 type AuthFailure = {
   ok: false;
@@ -88,11 +97,53 @@ function buildAuthUser(user: {
   };
 }
 
+// Methods that cannot mutate. Everything else counts as a write.
+function isReadOnlyMethod(method: string): boolean {
+  return method === "GET" || method === "HEAD" || method === "OPTIONS";
+}
+
 // Memoized per request: the shell (layout.tsx) and the matched route loader
 // both call requireAuth for the same navigation, so without this the session
 // lookup (and its throttled roll/heartbeat writes) ran twice per page load.
-export async function requireAuth(request: Request): Promise<AuthResult> {
-  return cachedForRequest(request, "requireAuth", () => computeAuth(request));
+//
+// Impersonation is read-only. Rather than gating 250-odd action modules one by
+// one (and missing every route added later), every mutating request on an
+// impersonated session is refused here, at the one entry point they all share,
+// so the default for new code is deny. An admin can see what a member sees;
+// they cannot act as them — no signing an agreement, sending their mail,
+// writing to their Google Calendar, submitting a form or logging hours as them.
+//
+// `allowImpersonatedWrite` is for the handful of endpoints that POST in order to
+// READ (a request body too big or too structured for a query string, e.g.
+// /api/calendar/group-availability). Pass it only when the handler cannot
+// mutate; over-blocking a genuine read shows up as a 403 in an admin's
+// impersonated session, which is recoverable, while under-blocking a write is
+// the bug this exists to prevent.
+//
+// Exiting impersonation is deliberately NOT routed through here:
+// /admin/stop-impersonating resolves its own session via getBetterAuthUser, so
+// this block can never trap an admin inside a session they can't leave.
+export async function requireAuth(
+  request: Request,
+  opts?: { allowImpersonatedWrite?: boolean },
+): Promise<AuthResult> {
+  // Resolve (and cache) identity first, independent of the write gate, so a
+  // caller passing allowImpersonatedWrite can't poison the memoized result for
+  // another caller on the same request.
+  const result = await cachedForRequest(request, "requireAuth", () => computeAuth(request));
+  if (!result.ok || isReadOnlyMethod(request.method)) return result;
+  if (opts?.allowImpersonatedWrite || !isImpersonating(result)) return result;
+  return {
+    ok: false,
+    response: withCors(
+      request,
+      Response.json(
+        { error: "Impersonation is read-only", reason: "impersonating" },
+        { status: 403 },
+      ),
+    ),
+    reason: "impersonated_write",
+  };
 }
 
 // Resolve auth for a request. Tries the legacy DB-backed session first; if that
@@ -110,7 +161,13 @@ async function computeAuth(request: Request): Promise<AuthResult> {
     if (await isFeatureEnabledForEveryone("betterauth", request)) {
       const { resolveBetterAuthAuth } = await import("~/lib/betterauth-compat.server");
       const ba = await resolveBetterAuthAuth(request);
-      if (ba) return { ok: true, user: ba.user, sessionId: ba.sessionId };
+      if (ba)
+        return {
+          ok: true,
+          user: ba.user,
+          sessionId: ba.sessionId,
+          ...(ba.impersonatedBy ? { impersonatedBy: ba.impersonatedBy } : {}),
+        };
     }
   } catch {
     // The BetterAuth fallback must never turn a clean legacy failure into a 500.
@@ -231,6 +288,31 @@ export function unauthorized(request: Request): Response {
 
 export function forbidden(request: Request): Response {
   return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+}
+
+// An admin impersonating a member gets that member's identity everywhere, which
+// is what makes impersonation useful for support (roles, nav, tasks, what a
+// page looks like to them) and what makes it wrong for the member's private
+// content: their Google Calendar event bodies, their mail, their personal
+// notes and Drive space. Those surfaces check this and hide the content instead
+// of serving it — impersonation is for reproducing what someone can DO, not for
+// reading what they wrote.
+export function isImpersonating(auth: AuthSuccess): boolean {
+  return auth.impersonatedBy != null;
+}
+
+// 403 for a personal-data endpoint that has no meaningful degraded shape (an
+// API that exists only to return private content). Page loaders that can still
+// render something useful branch on isImpersonating instead and pass a flag to
+// the UI.
+export function forbiddenWhileImpersonating(request: Request): Response {
+  return withCors(
+    request,
+    Response.json(
+      { error: "Hidden while impersonating", reason: "impersonating" },
+      { status: 403 },
+    ),
+  );
 }
 
 export async function requireCore(

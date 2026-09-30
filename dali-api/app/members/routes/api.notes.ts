@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.notes";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, isImpersonating, forbiddenWhileImpersonating } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { isCore, isLabMember } from "~/lib/roles";
 import { prisma } from "~/lib/db";
@@ -41,6 +41,11 @@ export async function action({ request }: Route.ActionArgs) {
 
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
+  // Belt and braces with the central write gate in requireAuth: this route is
+  // POST-only so that gate already refuses it, but personal notes are the one
+  // surface where the payload IS the member's private writing, so the deny is
+  // stated here too rather than depending on the method check alone.
+  if (isImpersonating(auth)) return forbiddenWhileImpersonating(request);
   const me = auth.user.sub;
 
   const form = await request.formData();

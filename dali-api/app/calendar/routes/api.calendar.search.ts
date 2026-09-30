@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.calendar.search";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, isImpersonating } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { searchCalendarEvents } from "~/lib/google-calendar";
 import { searchWindow, sortHits, type CalendarSearchHit } from "../lib/search";
@@ -77,6 +77,12 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   let google: CalendarSearchHit[] = [];
   let googleError: string | null = null;
+  // Local hits are lab data (meetings the viewer was invited to) and stay
+  // searchable; the Google half is the member's own event content, so an admin
+  // impersonating them gets none of it.
+  if (isImpersonating(auth)) {
+    return Response.json({ local, google, googleError, scope, googleHidden: "impersonating" });
+  }
   try {
     const { start, end } = searchWindow(scope, rangeStartIso, rangeEndIso, nowIso);
     const events = await searchCalendarEvents(userId, q, start, end);

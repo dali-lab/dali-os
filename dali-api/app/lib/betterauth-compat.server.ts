@@ -111,12 +111,21 @@ export async function getImpersonationState(
 // key, layout telemetry). Returns null when there is no valid BetterAuth session.
 export async function resolveBetterAuthAuth(
   request: Request,
-): Promise<{ user: AuthUser; sessionId: string } | null> {
+): Promise<{ user: AuthUser; sessionId: string; impersonatedBy?: string } | null> {
   const session = await auth.api.getSession({ headers: request.headers });
   if (!session) return null;
+  // Read impersonation off the session we already hold rather than calling
+  // getImpersonationState (a second getSession) — requireAuth runs on every
+  // loader, so the extra round trip would be per-request overhead. Same local
+  // narrowing reason as getImpersonationState: the generated session type
+  // doesn't surface the admin-plugin column.
+  const impersonatedBy = (
+    session.session as { impersonatedBy?: string | null }
+  ).impersonatedBy;
   return {
     user: toAuthUser(session.user as BetterAuthSessionUser),
     sessionId: session.session.id,
+    ...(impersonatedBy ? { impersonatedBy } : {}),
   };
 }
 

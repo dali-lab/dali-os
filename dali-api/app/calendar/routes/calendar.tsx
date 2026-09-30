@@ -770,6 +770,12 @@ function CalendarScreen({ data }: { data: LoaderData }) {
 
   return (
     <div className="flex w-full min-h-0 flex-1 flex-col gap-3">
+      {data.googleHidden && (
+        <div className="shrink-0 rounded-md border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
+          Google calendar events are hidden while you are impersonating this member. Meetings,
+          attendance and logged time are shown as normal.
+        </div>
+      )}
       {/* The date navigator belongs to the grid. Availability has no date at
           all, and Timesheet brings its own pay-period navigator, so neither
           wants this row above it. */}

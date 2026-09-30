@@ -2,7 +2,7 @@
 
 import { redirect } from "react-router";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, isImpersonating } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isAiEnabled } from "~/lib/ai.server";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
@@ -95,6 +95,8 @@ async function loadFeed(accounts: ReadableMailAccount[], query: string) {
 
 // Unread total across every inbox the user can read, for the sidebar badge.
 export async function loadUnreadTotal(request: Request, userId: string): Promise<number> {
+  const auth = await requireAuth(request);
+  if (auth.ok && isImpersonating(auth)) return 0;
   const accounts = (await readableMailAccounts(userId, request)).filter((a) => a.oauthTokens && !a.archived);
   const counts = await loadUnreadCounts(accounts);
   return Object.values(counts).reduce((sum, n) => sum + n, 0);
@@ -115,7 +117,13 @@ async function loadLiveEmailPage(request: Request, userId: string, roles: UserRo
   const selectedRef = parseThreadRef(url.searchParams.get("t"));
 
   const accounts = await readableMailAccounts(userId, request);
-  const connected = accounts.filter((a) => a.oauthTokens && !a.archived);
+  // Mail is read with the member's OWN per-inbox tokens, so an impersonating
+  // admin would be reading their mail as them. Drop every connection instead:
+  // feedAccounts, selectedAccount, drafts and unread all key off `connected`,
+  // so this makes the page render its inbox list with no Gmail call issued.
+  const auth = await requireAuth(request);
+  const mailHidden = auth.ok && isImpersonating(auth);
+  const connected = mailHidden ? [] : accounts.filter((a) => a.oauthTokens && !a.archived);
   const feedAccounts = connected.filter((a) =>
     inbox ? a.id === inbox : searchAccounts.length === 0 || searchAccounts.includes(a.id),
   );
@@ -151,6 +159,7 @@ async function loadLiveEmailPage(request: Request, userId: string, roles: UserRo
 
   return {
     userId,
+    mailHidden,
     view,
     inbox,
     query: query === DEFAULT_QUERY ? "" : query,
