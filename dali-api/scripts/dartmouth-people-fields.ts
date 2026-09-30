@@ -14,12 +14,29 @@
 // the record's contents.
 //
 //   npx tsx scripts/dartmouth-people-fields.ts <netid> [<netid> ...]
+//
+// The second mode answers the one question the People API may not support:
+// whether a proven ADDRESS can be turned back into a netid. /api/people is
+// documented as /{netid}-keyed, so a filter may simply not exist — but the
+// Dartmouth APIs share a filtering convention, so it is worth one request. If
+// any of these work, dartmouth-email-addresses.ts can be deleted outright and
+// the Advancement scope is never needed.
+//
+//   npx tsx scripts/dartmouth-people-fields.ts --by-email <address>
 
 import { getDartmouthJwt } from "../app/lib/dartmouth-jwt.js";
 
-const netIds = process.argv.slice(2).filter((a) => !a.startsWith("-"));
-if (netIds.length === 0) {
-  console.error("usage: npx tsx scripts/dartmouth-people-fields.ts <netid> [...]");
+const args = process.argv.slice(2);
+const byEmailIdx = args.indexOf("--by-email");
+const byEmail = byEmailIdx === -1 ? null : args[byEmailIdx + 1];
+const netIds = args.filter((a) => !a.startsWith("-") && a !== byEmail);
+
+if (!byEmail && netIds.length === 0) {
+  console.error(
+    "usage:\n" +
+      "  npx tsx scripts/dartmouth-people-fields.ts <netid> [...]\n" +
+      "  npx tsx scripts/dartmouth-people-fields.ts --by-email <address>",
+  );
   process.exit(1);
 }
 
@@ -71,4 +88,67 @@ for (const netId of netIds) {
   } else {
     console.log(`    no address field at this scope`);
   }
+}
+
+// ── Can a proven address be resolved back to a netid? ────────────────────────
+
+if (byEmail) {
+  const jwt = await getDartmouthJwt();
+  const address = byEmail.trim().toLowerCase();
+
+  // Candidate filter spellings. The Dartmouth portal defers filter syntax to a
+  // shared conventions section, so this tries the plausible forms rather than
+  // guessing one and concluding from a single 404.
+  const candidates: [string, string][] = [
+    ["?email=", `https://api.dartmouth.edu/api/people?email=${encodeURIComponent(address)}`],
+    ["?mail=", `https://api.dartmouth.edu/api/people?mail=${encodeURIComponent(address)}`],
+    [
+      "?filter=email eq",
+      `https://api.dartmouth.edu/api/people?filter=${encodeURIComponent(`email eq '${address}'`)}`,
+    ],
+    [
+      "email_addresses?email_address=",
+      `https://api.dartmouth.edu/api/email_addresses?email_address=${encodeURIComponent(address)}`,
+    ],
+  ];
+
+  console.log(`\nResolving an address back to a netid: ${address}\n`);
+  for (const [label, url] of candidates) {
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        headers: { Accept: "application/json", Authorization: `Bearer ${jwt}` },
+      });
+    } catch (err) {
+      console.log(`  ${label.padEnd(30)} request failed: ${String(err)}`);
+      continue;
+    }
+
+    const text = await res.text();
+    let netids: string[] = [];
+    try {
+      const body = JSON.parse(text) as unknown;
+      const rows = Array.isArray(body)
+        ? body
+        : ((body as Record<string, unknown>)?.users as unknown[]) ?? [];
+      netids = rows
+        .map((r) => (r as { netid?: unknown })?.netid)
+        .filter((n): n is string => typeof n === "string");
+    } catch {
+      // Non-JSON body (an error page); the status alone is the signal.
+    }
+
+    const verdict =
+      netids.length > 0
+        ? `WORKS -> netid(s): ${[...new Set(netids)].join(", ")}`
+        : res.ok
+          ? "200 but no netid in the body"
+          : `HTTP ${res.status}`;
+    console.log(`  ${label.padEnd(30)} ${verdict}`);
+  }
+
+  console.log(
+    `\nIf any line says WORKS, delete app/lib/dartmouth-email-addresses.ts —\n` +
+      `signup can bind a netID with no Advancement scope at all.\n`,
+  );
 }
