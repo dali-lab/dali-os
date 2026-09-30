@@ -30,6 +30,7 @@
 import { PrismaClient } from "../../app/generated/prisma/client.js";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { peopleByNetId } from "../../app/lib/dartmouth-people.js";
+import { getDartmouthJwt } from "../../app/lib/dartmouth-jwt.js";
 import { classifySignInReadiness } from "../../app/lib/signin-readiness.js";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
@@ -205,10 +206,26 @@ if (conflicts.length > 0) {
 // ── Probe: can Dartmouth actually repair the locked-out set? ─────────────────
 
 if (probe && lockedOut.length > 0) {
+  // Check credentials once rather than discovering the same failure 298 times.
+  // DARTMOUTH_API_KEY is a Fly secret, so a local run has nothing to exchange.
+  try {
+    await getDartmouthJwt();
+  } catch (err) {
+    log("── Probe skipped " + "─".repeat(54));
+    log(`   Cannot reach the People API: ${err instanceof Error ? err.message : String(err)}`);
+    log();
+    log("   DARTMOUTH_API_KEY lives in Fly secrets, not .env, so this needs to");
+    log("   run where it exists:");
+    log("     fly ssh console -a dali-api-prod");
+    log();
+    await prisma.$disconnect();
+    process.exit(1);
+  }
+
   log(`Asking the People API about ${lockedOut.length} locked-out rows…`);
   let repairable = 0;
   let noRecord = 0;
-  let errored = 0;
+  const errors = new Map<string, number>();
   const unfixable: Assessed[] = [];
 
   const queue = [...lockedOut];
@@ -229,18 +246,25 @@ if (probe && lockedOut.length > 0) {
             noRecord++;
             unfixable.push(a);
           }
-        } catch {
-          errored++;
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          errors.set(message, (errors.get(message) ?? 0) + 1);
         }
       }
     }),
   );
 
   log();
+  const errored = [...errors.values()].reduce((n, c) => n + c, 0);
   log("── Repairability " + "─".repeat(54));
   log(`   repairable by the sweep ... ${repairable}`);
   log(`   no address on file ........ ${noRecord}   <- need a different path`);
   log(`   lookup failed ............. ${errored}`);
+  // A bare count is useless: one systemic failure and a few flaky ones look
+  // identical. Name them.
+  for (const [message, count] of [...errors].sort((a, b) => b[1] - a[1])) {
+    log(`      ${String(count).padStart(5)}  ${message}`);
+  }
   if (unfixable.length > 0) {
     log();
     log("   Not repairable automatically:");
@@ -293,9 +317,14 @@ if (lockedOut.length > 0) {
   log(`   the People API knows, so they recover without this; run`);
   log(`   sweep-dartmouth-addresses.ts to repair them in bulk instead.`);
 }
-if (noCanonical.length > 0 || noAddress.length > 0) {
-  log(`   ${noCanonical.length + noAddress.length} rows cannot sign in by code at all and no`);
-  log(`   automated repair applies — these need a decision, not a script.`);
+if (noCanonical.length > 0) {
+  log(`   ${noCanonical.length} rows have no canonical email. Sign-in adopts the address`);
+  log(`   Dartmouth attests, so these self-repair on first attempt PROVIDED the`);
+  log(`   row carries a netId — that is how the owner is found. Rows without one`);
+  log(`   need a human.`);
+}
+if (noAddress.length > 0) {
+  log(`   ${noAddress.length} rows hold no address at all. Nothing automated applies.`);
 }
 if (conflicts.length > 0) {
   log(`   ${conflicts.length} address conflicts are duplicate accounts; merging is`);
