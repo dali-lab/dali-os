@@ -16,6 +16,9 @@ import { peopleByNetId } from "~/lib/dartmouth-people";
 import {
   searchDirectoryByName,
   bindNetIdByEmail,
+  findDirectoryByNetId,
+  queriesFromDartmouthEmail,
+  DirectoryLookupError,
   hasStudentSignal,
   classifyDirectoryMatch,
   validateSelfEnteredNetId,
@@ -36,9 +39,11 @@ describe("searchDirectoryByName", () => {
     global.fetch = realFetch;
   });
 
+  // A fresh Response per call: a Response body can only be read once, and
+  // bindNetIdByEmail may issue several queries before it finds a mail match.
   function mockDirectory(body: unknown, status = 200) {
-    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
-      new Response(JSON.stringify(body), { status }),
+    (global.fetch as ReturnType<typeof vi.fn>).mockImplementation(
+      async () => new Response(JSON.stringify(body), { status }),
     );
   }
 
@@ -184,9 +189,11 @@ describe("bindNetIdByEmail", () => {
     global.fetch = realFetch;
   });
 
+  // A fresh Response per call: a Response body can only be read once, and
+  // bindNetIdByEmail may issue several queries before it finds a mail match.
   function mockDirectory(body: unknown, status = 200) {
-    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
-      new Response(JSON.stringify(body), { status }),
+    (global.fetch as ReturnType<typeof vi.fn>).mockImplementation(
+      async () => new Response(JSON.stringify(body), { status }),
     );
   }
 
@@ -352,5 +359,147 @@ describe("validateSelfEnteredNetId", () => {
     vi.mocked(peopleByNetId).mockResolvedValue(null);
     await validateSelfEnteredNetId("  TRIMME  ");
     expect(vi.mocked(peopleByNetId)).toHaveBeenCalledWith("trimme");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Live payload + both lookup directions
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Verbatim response from lookup.dartmouth.edu/api/search?query=alex%20rivera
+// (2026-09-30). Kept exact: this file is the contract for the wire format, and
+// the parser's field names were assumptions until this landed.
+const LIVE_PAYLOAD = {
+  status: "200",
+  users: [
+    {
+      uid: "d99999z",
+      dcAffiliation: "DART",
+      eduPersonPrimaryAffiliation: "Student",
+      dcHinmanaddr: "HB 0000",
+      mail: "alex.t.rivera.27@dartmouth.edu",
+      displayName: "Alex T Rivera",
+      dcDeptclass: "'27",
+    },
+  ],
+  truncated: false,
+};
+
+describe("live /api/search payload", () => {
+  const realFetch = global.fetch;
+  beforeEach(() => {
+    global.fetch = vi.fn() as unknown as typeof global.fetch;
+    (global.fetch as ReturnType<typeof vi.fn>).mockImplementation(
+      async () => new Response(JSON.stringify(LIVE_PAYLOAD), { status: 200 }),
+    );
+  });
+  afterEach(() => {
+    global.fetch = realFetch;
+    vi.clearAllMocks();
+  });
+
+  it("parses the real envelope and lowercases the mixed-case mail", async () => {
+    expect(await searchDirectoryByName("alex rivera")).toEqual([
+      {
+        netId: "d99999z",
+        mail: "alex.t.rivera.27@dartmouth.edu",
+        affiliation: "Student",
+        departmentClass: "'27",
+        classYear: 2027,
+      },
+    ]);
+  });
+
+  it("binds a netId from the name-form address without being told the name", async () => {
+    // The query is derived from the address itself, so a user who never types
+    // their name (or types a nickname) still gets a netID captured.
+    const match = await bindNetIdByEmail("", "alex.t.rivera.27@dartmouth.edu");
+    expect(match?.netId).toBe("d99999z");
+  });
+
+  it("does not bind from the synthesized netid-form address", async () => {
+    // The directory publishes only the name-form as `mail`. This is exactly the
+    // mismatch that locked CAS-era students out: the address we stored is not
+    // the address anyone uses.
+    expect(await bindNetIdByEmail("alex rivera", "d99999z@dartmouth.edu")).toBeNull();
+  });
+
+  it("resolves netId -> mail, the direction that repairs an existing row", async () => {
+    expect((await findDirectoryByNetId("d99999z"))?.mail).toBe(
+      "alex.t.rivera.27@dartmouth.edu",
+    );
+  });
+
+  it("refuses a record whose uid is not the netId asked about", async () => {
+    expect(await findDirectoryByNetId("someoneelse")).toBeNull();
+  });
+});
+
+describe("queriesFromDartmouthEmail", () => {
+  it("derives narrowest-first name queries from the local part", () => {
+    expect(queriesFromDartmouthEmail("alex.t.rivera.27@dartmouth.edu")).toEqual([
+      "kiran p jones",
+      "alex rivera",
+      "jones",
+    ]);
+  });
+
+  it("handles an address with no class year", () => {
+    expect(queriesFromDartmouthEmail("jane.doe@dartmouth.edu")).toEqual([
+      "jane doe",
+      "doe",
+    ]);
+  });
+
+  it("keeps a multi-word surname reachable", () => {
+    expect(queriesFromDartmouthEmail("maria.de.la.cruz.28@dartmouth.edu")).toEqual([
+      "maria de la cruz",
+      "maria cruz",
+      "cruz",
+    ]);
+  });
+
+  it("treats a netid-form address as a single uid query", () => {
+    expect(queriesFromDartmouthEmail("d99999z@dartmouth.edu")).toEqual(["d99999z"]);
+  });
+
+  it("returns nothing for an address with an empty local part", () => {
+    expect(queriesFromDartmouthEmail("@dartmouth.edu")).toEqual([]);
+  });
+});
+
+describe("lookup failures are distinguishable from misses", () => {
+  const realFetch = global.fetch;
+  beforeEach(() => {
+    global.fetch = vi.fn() as unknown as typeof global.fetch;
+  });
+  afterEach(() => {
+    global.fetch = realFetch;
+    vi.clearAllMocks();
+  });
+
+  it("treats an SSO gate answering 200 with HTML as an error, not an empty result", async () => {
+    // A 302 to a login page is followed by fetch and arrives as HTML. Returning
+    // [] here would read as "no such person" and silently skip netID capture.
+    (global.fetch as ReturnType<typeof vi.fn>).mockImplementation(
+      async () => new Response("<html>login</html>", { status: 200 }),
+    );
+    await expect(searchDirectoryByName("alex rivera")).rejects.toBeInstanceOf(
+      DirectoryLookupError,
+    );
+  });
+
+  it("surfaces a transport failure rather than swallowing it", async () => {
+    (global.fetch as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("ECONNREFUSED"));
+    await expect(searchDirectoryByName("alex rivera")).rejects.toBeInstanceOf(
+      DirectoryLookupError,
+    );
+  });
+
+  it("still reports a genuine 404 as no match", async () => {
+    (global.fetch as ReturnType<typeof vi.fn>).mockImplementation(
+      async () => new Response("", { status: 404 }),
+    );
+    expect(await searchDirectoryByName("nobody at all")).toEqual([]);
   });
 });

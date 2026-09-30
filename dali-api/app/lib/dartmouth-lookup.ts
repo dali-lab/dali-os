@@ -1,21 +1,25 @@
 // Dartmouth directory-lookup client — lookup.dartmouth.edu/api/search.
 //
-// ⚠️  REACHABILITY NOTE (2026-07-06): The web root of lookup.dartmouth.edu
-// redirects to saml2/authenticate (SSO-gated). However, the open JSON
-// path /api/search has NOT been verified server-side. This module is
-// written for the BetterAuth migration exploration (see specs/betterauth-
-// migration.md). Confirm reachability of /api/search from Fly.io before
-// shipping. If it too is SSO-gated, the fallback is validateSelfEnteredNetId
-// (which uses the authenticated People API).
+// ⚠️  REACHABILITY (STILL UNCONFIRMED FROM OUR SERVERS): the web root of
+// lookup.dartmouth.edu is SSO-gated, and /api/search answers from a Dartmouth
+// network but 302s from at least one off-campus host. Confirm from a Fly
+// machine before trusting any of this in prod — a 302 followed to an HTML
+// login page makes res.json() throw, which every caller must now surface
+// rather than swallow (see DirectoryLookupError).
 //
-// Role: turn a person's NAME into their Dartmouth netID at sign-up, so we
-// can (a) capture netID and (b) classify Dartmouth affiliation for routing.
-// This replaces the netID signal that CAS used to hand us.
+// Role: resolve between the two things Dartmouth knows about a person —
+// their netID and their real mail address. Both directions are needed:
 //
-// Binding is conservative: bindNetIdByEmail() will only return a match when
-// the candidate record's mail matches the caller's VERIFIED email (Google
-// OAuth / institutional SSO). A wrong netID is a wrong payroll identity, so
-// name-only matches are never surfaced.
+//   netID → mail   repairing rows whose only address is the NetID-form one
+//                  CAS synthesized (?query=<netid> matches on uid)
+//   mail  → netID  capturing a netID at sign-up now that CAS is gone
+//
+// The second direction has no direct support: the endpoint indexes uid and
+// name, NOT mail, so querying an address returns 404. It is done by searching
+// candidate NAMES and keeping only a record whose mail equals the address the
+// person already proved. That equality is the security boundary — a wrong
+// netID is a wrong payroll identity — so widening the name search is safe
+// while relaxing the mail check never is.
 
 import {
   parseDepartmentClass,
@@ -46,18 +50,23 @@ export type DirectoryMatch = {
 // ─────────────────────────────────────────────────────────────────────────────
 // Wire-format parser
 //
-// ⚠️  UNVERIFIED WIRE FORMAT — all field names and envelope shapes below are
-// ASSUMED based on common LDAP-over-HTTP conventions at Dartmouth. They have
-// NOT been confirmed against a live /api/search response. This function is the
-// SINGLE place to fix when the real format is known. Every assumption is
-// called out inline.
+// Wire format CONFIRMED 2026-09-30 against a live /api/search response:
 //
-// Assumed response shapes (defensive — we accept all three):
+//   {"status":"200","users":[{"uid":"d99999z","dcAffiliation":"DART",
+//    "eduPersonPrimaryAffiliation":"Student","dcHinmanaddr":"HB 0000",
+//    "mail":"alex.t.rivera.27@dartmouth.edu","displayName":"Alex T Rivera",
+//    "dcDeptclass":"'27"}],"truncated":false}
+//
+// The fixture in __tests__ is that exact payload. Note `mail` arrives in mixed
+// case and is lowercased here; `truncated` reports that the result set was cut,
+// which matters when a broad surname query is used as a fallback.
+//
+// Response shapes (defensive — we accept all three):
 //   1. Top-level array:       [ { uid, mail, eduPersonPrimaryAffiliation, dcDeptclass }, … ]
 //   2. { users: [ … ] }       envelope
 //   3. { results: [ … ] }     envelope
 //
-// Assumed per-record fields:
+// Per-record fields:
 //   uid                          — netID string (REQUIRED; record skipped if absent)
 //   mail                         — email address string (optional)
 //   eduPersonPrimaryAffiliation  — "Student" | "Staff" | "Faculty" (optional)
@@ -110,13 +119,11 @@ function parseDirectoryResponse(raw: unknown): DirectoryMatch[] {
       typeof r.mail === "string" && r.mail.trim() !== ""
         ? r.mail.trim().toLowerCase()
         : null;
-    // Assumed field name: eduPersonPrimaryAffiliation (standard eduPerson LDAP attr).
     const affiliation =
       typeof r.eduPersonPrimaryAffiliation === "string" &&
       r.eduPersonPrimaryAffiliation.trim() !== ""
         ? r.eduPersonPrimaryAffiliation.trim()
         : null;
-    // Assumed field name: dcDeptclass (Dartmouth-custom LDAP attr).
     const departmentClass =
       typeof r.dcDeptclass === "string" && r.dcDeptclass.trim() !== ""
         ? r.dcDeptclass.trim()
@@ -139,36 +146,113 @@ function parseDirectoryResponse(raw: unknown): DirectoryMatch[] {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Search the Dartmouth directory by display name. Returns all matching records.
- * Blank/whitespace-only names return [] without hitting the network.
- * 404 → [] (no match). Other non-OK → throws.
+ * A lookup that could not be completed — transport failure, an SSO redirect
+ * landing on HTML, or an unparseable body. Distinct from "no such person" (an
+ * empty array) so callers can tell "this person has no netID" from "we never
+ * got to ask". Conflating the two is how netID capture can fail in total
+ * silence.
  */
-export async function searchDirectoryByName(
-  name: string,
-): Promise<DirectoryMatch[]> {
-  if (!name || name.trim() === "") return [];
-
-  const url = `${LOOKUP_BASE_URL}?query=${encodeURIComponent(name.trim())}`;
-  const res = await fetch(url, {
-    method: "GET",
-    headers: { Accept: "application/json" },
-  });
-
-  if (res.status === 404) return [];
-  if (!res.ok) {
-    throw new Error(
-      `dartmouth-lookup: HTTP ${res.status} ${res.statusText} for query="${name}"`,
-    );
+export class DirectoryLookupError extends Error {
+  constructor(message: string, readonly cause?: unknown) {
+    super(message);
+    this.name = "DirectoryLookupError";
   }
-
-  return parseDirectoryResponse(await res.json());
 }
 
 /**
- * Look up a person by name and bind their netID only when the directory record
- * mail EXACTLY matches (case-insensitively) the caller's verified email.
+ * Raw ?query= against the directory. The endpoint matches on uid and on name;
+ * it does NOT index mail, so an address returns 404 (confirmed 2026-09-30).
  *
- * Returns the first such match, or null if no record's mail matches.
+ * Blank queries return [] without hitting the network. 404 → [] (no match).
+ * Anything else that stops us reading records throws DirectoryLookupError.
+ */
+export async function searchDirectory(query: string): Promise<DirectoryMatch[]> {
+  if (!query || query.trim() === "") return [];
+
+  const url = `${LOOKUP_BASE_URL}?query=${encodeURIComponent(query.trim())}`;
+  let res: Response;
+  try {
+    res = await fetch(url, { method: "GET", headers: { Accept: "application/json" } });
+  } catch (err) {
+    throw new DirectoryLookupError(`dartmouth-lookup: request failed for query="${query}"`, err);
+  }
+
+  if (res.status === 404) return [];
+  if (!res.ok) {
+    throw new DirectoryLookupError(
+      `dartmouth-lookup: HTTP ${res.status} ${res.statusText} for query="${query}"`,
+    );
+  }
+
+  // An SSO gate answers 200 with an HTML login page, which lands here rather
+  // than in the !res.ok branch above. Parsing is what catches it.
+  try {
+    return parseDirectoryResponse(await res.json());
+  } catch (err) {
+    throw new DirectoryLookupError(
+      `dartmouth-lookup: unparseable response for query="${query}" (SSO gate?)`,
+      err,
+    );
+  }
+}
+
+/**
+ * Search the Dartmouth directory by display name. Returns all matching records.
+ */
+export async function searchDirectoryByName(name: string): Promise<DirectoryMatch[]> {
+  return searchDirectory(name);
+}
+
+/**
+ * The record for a known netID. Exact: the endpoint matches uid, and we keep
+ * only the record whose uid IS the netID, so a partial hit can never stand in
+ * for the person we asked about.
+ *
+ * This is the direction that repairs an existing row — we already hold the
+ * netID, and `mail` is the address the person actually uses.
+ */
+export async function findDirectoryByNetId(netId: string): Promise<DirectoryMatch | null> {
+  const wanted = netId.trim().toLowerCase();
+  if (wanted === "") return null;
+  const matches = await searchDirectory(wanted);
+  return matches.find((m) => m.netId === wanted) ?? null;
+}
+
+/**
+ * Candidate name queries derived from a Dartmouth address, narrowest first.
+ *
+ * Dartmouth name-form addresses encode the name (First.M.Last.YY), which is
+ * what lets sign-up capture a netID without asking the person to type their
+ * name — a nickname or a dropped middle initial silently killed the lookup
+ * when the query came from user input.
+ *
+ * Widening is safe because nothing binds without exact mail equality: a
+ * broader query can only surface the right record among more rows, never
+ * authorize a wrong one. Narrowest first so a common surname is the last
+ * resort, since a broad query is the one at risk of `truncated`.
+ */
+export function queriesFromDartmouthEmail(email: string): string[] {
+  const local = email.trim().toLowerCase().split("@")[0] ?? "";
+  let parts = local.split(".").filter((p) => p !== "");
+  // Trailing class year ("27" in alex.t.rivera.27@dartmouth.edu) is not part of the name.
+  if (/^\d{2}$/.test(parts[parts.length - 1] ?? "")) parts = parts.slice(0, -1);
+  if (parts.length === 0) return [];
+  // A single token is either a netID-form address or an unsplittable local
+  // part; either way it is its own best query (a netID matches on uid).
+  if (parts.length === 1) return [parts[0]];
+
+  const first = parts[0];
+  const last = parts[parts.length - 1];
+  return [...new Set([parts.join(" "), `${first} ${last}`, last])];
+}
+
+/**
+ * Bind a netID from an address whose mailbox the caller has already proven.
+ *
+ * Tries the queries encoded in the address itself, then the supplied display
+ * name, and returns the first record whose mail EXACTLY matches (case
+ * insensitively) that address.
+ *
  * NEVER returns a name-only match — an unmatched name is a security risk
  * (wrong netID = wrong payroll identity).
  */
@@ -177,14 +261,21 @@ export async function bindNetIdByEmail(
   verifiedEmail: string,
 ): Promise<DirectoryMatch | null> {
   const normalizedEmail = verifiedEmail.trim().toLowerCase();
-  const matches = await searchDirectoryByName(name);
+  const queries = queriesFromDartmouthEmail(normalizedEmail);
+  const trimmedName = name.trim();
+  if (trimmedName !== "") queries.push(trimmedName);
 
-  for (const match of matches) {
-    if (match.mail !== null && match.mail === normalizedEmail) {
-      return match;
-    }
+  // Dedupe case-insensitively: a derived "jane doe" and a supplied "Jane Doe"
+  // are the same query and shouldn't cost a second round trip.
+  const seen = new Set<string>();
+  for (const query of queries) {
+    const key = query.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const matches = await searchDirectory(query);
+    const hit = matches.find((m) => m.mail !== null && m.mail === normalizedEmail);
+    if (hit) return hit;
   }
-
   return null;
 }
 
