@@ -1,5 +1,10 @@
 import { Link, redirect, useLoaderData } from "react-router";
-import { AlertCircle, CalendarClock, ChevronRight } from "lucide-react";
+import {
+  AlertCircle,
+  CalendarClock,
+  ChevronRight,
+  FileText,
+} from "lucide-react";
 import type { Route } from "./+types/mentorship";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -163,6 +168,10 @@ export default function MentorshipHub() {
   const data = useLoaderData() as LoaderData;
   const { pageTitle, panel, panelPad } = useOsChrome();
   const group = data.grid.mentors[0] ?? null;
+  // Core-only oversight framing. Every mentor sees the notes link; only Core
+  // sees it dressed as a warning (and only while a term is running).
+  const behind =
+    data.isCore && data.phase === "in-term" && data.behindCount > 0;
 
   const subtitle =
     data.phase === "in-term"
@@ -180,50 +189,63 @@ export default function MentorshipHub() {
         <p className="text-sm text-muted-foreground">{subtitle}</p>
       </header>
 
-      {/* On break: no note is due, so replace the oversight nudge with a calm
-          banner naming the interim and when notes resume. Shown to everyone. */}
-      {data.phase === "break" && (
+      {/* One row into the lab-wide notes view. Every mentor gets the link;
+          the line beside it carries whatever context applies — Core's
+          missing-note warning while a term runs, or the interim notice between
+          terms, when no note is due. */}
+      {(data.phase === "break" || data.termId) && (
         <section
-          className={cn(panel, panelPad, "flex items-center gap-2 text-sm")}
-        >
-          <CalendarClock className="w-4 h-4 text-muted-foreground shrink-0" />
-          <span>
-            {data.breakLabel ? (
-              <>
-                It's currently <strong>{data.breakLabel}</strong>.{" "}
-              </>
-            ) : (
-              <>You're between terms. </>
-            )}
-            {data.nextTermCode && data.nextTermStartIso ? (
-              <>
-                Mentor notes resume when {data.nextTermCode} begins{" "}
-                {formatDate(data.nextTermStartIso)}.
-              </>
-            ) : (
-              <>Mentor notes are paused.</>
-            )}
-          </span>
-        </section>
-      )}
-
-      {/* Lab-wide oversight — Core/Admin only, and only while a term is live. */}
-      {data.isCore && data.phase === "in-term" && data.behindCount > 0 && (
-        <section
-          className={cn(panel, panelPad, "flex items-center justify-between gap-3")}
+          className={cn(
+            panel,
+            panelPad,
+            "flex items-center justify-between gap-3",
+          )}
         >
           <div className="flex items-center gap-2 text-sm">
-            <AlertCircle className="w-4 h-4 text-accent-coral" />
-            <span>
-              <strong>{data.behindCount}</strong> mentor
-              {data.behindCount === 1 ? " is" : "s are"} missing a note this
-              week.
-            </span>
+            {data.phase === "break" ? (
+              <>
+                <CalendarClock className="w-4 h-4 text-muted-foreground shrink-0" />
+                <span>
+                  {data.breakLabel ? (
+                    <>
+                      It's currently <strong>{data.breakLabel}</strong>.{" "}
+                    </>
+                  ) : (
+                    <>You're between terms. </>
+                  )}
+                  {data.nextTermCode && data.nextTermStartIso ? (
+                    <>
+                      Mentor notes resume when {data.nextTermCode} begins{" "}
+                      {formatDate(data.nextTermStartIso)}.
+                    </>
+                  ) : (
+                    <>Mentor notes are paused.</>
+                  )}
+                </span>
+              </>
+            ) : behind ? (
+              <>
+                <AlertCircle className="w-4 h-4 text-accent-coral shrink-0" />
+                <span>
+                  <strong>{data.behindCount}</strong> mentor
+                  {data.behindCount === 1 ? " is" : "s are"} missing a note this
+                  week.
+                </span>
+              </>
+            ) : (
+              <>
+                <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
+                <span>Weekly notes from every mentor in the lab.</span>
+              </>
+            )}
           </div>
           {data.termId && (
             <Link
               to={`/mentorship/browse?termId=${data.termId}`}
-              className="text-sm text-accent-coral hover:underline inline-flex items-center gap-1"
+              className={cn(
+                "text-sm hover:underline inline-flex items-center gap-1 shrink-0",
+                behind ? "text-accent-coral" : "text-muted-foreground",
+              )}
             >
               View <ChevronRight className="w-4 h-4" />
             </Link>
