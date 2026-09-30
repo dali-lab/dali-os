@@ -12,7 +12,7 @@ vi.mock("~/lib/db", () => ({
       update: vi.fn(),
       updateMany: vi.fn(),
     },
-    user: { findFirst: vi.fn(), findUnique: vi.fn() },
+    user: { findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
   },
 }));
 
@@ -215,6 +215,46 @@ describe("resolveLoginIdentifier — self-heal", () => {
     findAlias
       .mockResolvedValueOnce(null as never)
       .mockResolvedValueOnce({ userId: "someone-else", verifiedAt: null } as never);
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    expect(await resolveLoginIdentifier("alex.t.rivera.27@dartmouth.edu")).toBe(
+      "alex.t.rivera.27@dartmouth.edu",
+    );
+    spy.mockRestore();
+  });
+});
+
+describe("resolveLoginIdentifier — adopting a canonical address", () => {
+  it("adopts the attested address when the account has no canonical email", async () => {
+    // Observed in prod: a row holding a real address but a null User.email.
+    // Resolution returns that column, so an alias cannot rescue it and neither
+    // the sweep nor a plain heal helps — the row can never be sent a code.
+    lookupNetId.mockResolvedValue("d99999z");
+    findByNetId.mockResolvedValue({ id: "u1", email: null } as never);
+
+    expect(await resolveLoginIdentifier("alex.t.rivera.27@dartmouth.edu")).toBe(
+      "alex.t.rivera.27@dartmouth.edu",
+    );
+    expect(prisma.user.update).toHaveBeenCalledWith({
+      where: { id: "u1" },
+      data: { email: "alex.t.rivera.27@dartmouth.edu" },
+    });
+  });
+
+  it("never overwrites a canonical email that is already set", async () => {
+    lookupNetId.mockResolvedValue("d99999z");
+    findByNetId.mockResolvedValue({ id: "u1", email: "d99999z@dartmouth.edu" } as never);
+
+    await resolveLoginIdentifier("alex.t.rivera.27@dartmouth.edu");
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it("stays neutral when another account already claims it as canonical", async () => {
+    lookupNetId.mockResolvedValue("d99999z");
+    findByNetId.mockResolvedValue({ id: "u1", email: null } as never);
+    vi.mocked(prisma.user.update).mockRejectedValue(
+      Object.assign(new Error("Unique constraint failed"), { code: "P2002" }),
+    );
     const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     expect(await resolveLoginIdentifier("alex.t.rivera.27@dartmouth.edu")).toBe(

@@ -103,7 +103,26 @@ async function healDartmouthAddress(address: string): Promise<string | null> {
     return null;
   }
 
-  return owner.email ? normalizeEmailAddress(owner.email) : null;
+  if (owner.email) return normalizeEmailAddress(owner.email);
+
+  // No canonical email, so there is nothing to hand BetterAuth and an alias
+  // alone cannot help — resolution returns this column. Dartmouth has just
+  // attested that this address is theirs, so adopt it. Safe precisely because
+  // the column is empty: nothing is overwritten, and a row that could never
+  // sign in becomes one that can. Attestation still only decides where the
+  // code goes; entering it is what proves the mailbox.
+  try {
+    await prisma.user.update({
+      where: { id: owner.id },
+      data: { email: address },
+    });
+    return address;
+  } catch (err) {
+    // Unique violation: another row already claims it as canonical. That is a
+    // duplicate-account conflict to settle by hand, not to resolve by force.
+    console.warn(`[user-email] could not adopt ${address} as canonical:`, err);
+    return null;
+  }
 }
 
 export type RecordEmailResult =
