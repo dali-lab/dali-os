@@ -146,14 +146,23 @@ only surface that escapes consistently.
 
 ## 2. Package research — verdict
 
-**Recommended new runtime dependencies: 0 to 2.** The repo already owns the hard parts (outbox, variable registry,
-sanitizers). What is missing is a layout and an editor surface, and neither needs a framework.
+**Recommended new runtime dependencies: 1** (`html-to-text`). The repo already owns the hard parts (outbox, variable
+registry, sanitizers). What is missing is a layout and an editor surface, and neither needs a framework.
+
+Two build facts make this cheaper than expected:
+
+- **Headless Chromium and `playwright-core` are already production dependencies.** The Dockerfile does
+  `apk add chromium`, sets `CHROMIUM_EXECUTABLE_PATH`, and `playwright-core@^1.62.1` is in `dependencies` for
+  `app/lib/pdf/render.server.ts`. So server-side rendering of email HTML to an image — admin preview thumbnails,
+  real colour-contrast checking — costs **zero new dependencies**. Strongest reuse lever available.
+- **The runtime Docker stage runs `npm ci --omit=dev`**, so devDependency tooling is excluded from the production
+  image by construction. MJML-as-a-devDependency is clean, provided nothing in `app/` ever imports it.
 
 | Option | Verdict | Why |
 |---|---|---|
 | **MJML 5.x as a design-time tool** | ✅ **adopt, devDependency only** | Author the layout once in `.mjml`, commit the compiled HTML. Gets ghost tables, MSO conditionals, inline-by-construction layout CSS. Zero runtime dep, zero per-send cost. (Runtime use costs only ~1.2ms if we ever want it, but then operators must learn MJML, which fights the goal.) **5.x only** — 4.x is unpatched for CVE-2025-67898. |
 | **`mustache@4.2.0`** | ⏸️ **only if conditionals are needed** | 113 KB, **0 dependencies**, same `{{token}}` grammar we already use, logic-less so no SSTI surface, escapes by default. Literally what Postmark uses. Add it the first time an operator needs "show this paragraph only if there's a meeting link." Not before. |
-| **`html-to-text@10.0.1`** | ⏸️ **only if we don't derive text from blocks** | For the missing `text/plain` part. We may be able to derive it from BlockNote blocks instead and add nothing. |
+| **`html-to-text@10.0.1`** | ✅ **adopt** | MIT, 21.3M/wk, Node ≥20.19. Supplies the missing `text/plain` part **and** lets us delete *both* hand-rolled strippers (`app/lib/email.ts:100` truncates at 2000 chars and bullets `<li>`; `app/lib/gmail.ts:34` uses different rules and an iterative tag-strip). One change that is simultaneously the accessibility fix, the `MIME_HTML_ONLY` spam fix and a DRY fix. Configure `selectors` to skip the preheader. |
 | **`juice@12.2.0`** or `@css-inline/css-inline` | ⏸️ **probably not needed** | Only if the body stylesheet grows. For 19 allowed tags, a tag→inline-style map is ~30 lines and zero deps. Start there. Note `juice` requires Node ≥22.12.0; `@css-inline/css-inline` is the better artifact (2.5 MB vs 12 MB, musl prebuilts for our Alpine image) but needs `{ keepAtRules: true, loadRemoteStylesheets: false }`. |
 | **`react-email` as a runtime dep** | ❌ | 22 runtime deps including esbuild, socket.io, tailwindcss, prismjs, chokidar. `@react-email/components`, `@react-email/tailwind` and `@react-email/preview-server` are all **deprecated on npm** as of 6.0.0. `@react-email/render@2.1.0` alone is viable (190 KB) but pulls `prettier` into production, and React authoring improves the layout we write *once* while doing nothing for operator editability. |
 | **Novu / Knock / Courier** | ❌ | We already own the event registry, 3-channel preference matching, digest grouping and an idempotent outbox. Novu self-host is **Redis + MongoDB 8 + 4 services** in a deliberately Redis-free, Postgres-only app, and is open-*core*. Knock/Courier are SaaS: moving member PII and the in-app feed off our Postgres and paying per message to fix "we have no shared layout." Steal the patterns, not the stack. |
@@ -220,10 +229,15 @@ does not (a decision letter must not look unsubscribable), `none` for the creden
 - One greeting, escaped once, in the shell. Today there are five variants and two escape policies.
 - One button style. Today: navy pill radius 8, black pill radius 6, bare link, and a raw pasted URL.
 
-### 3.2 Layer 2 — a template registry
+### 3.2 Layer 2 — a template registry, generalizing the hiring refactor
 
-New `app/email/lib/registry.ts`, deliberately shaped like `app/jobs/registry.ts` and
-`app/lib/notification-events.ts` so it reads as house style:
+**Decided:** apply the pattern the hiring refactor already landed, lab-wide. That refactor got the shape right —
+slot as the primary key, one shared row per slot edited in place, the slot vocabulary and its per-slot variable
+contract declared in code, a soft lint that warns but never blocks. What it lacked was versioning, preview and
+test-send. This generalizes the former and restores the latter.
+
+New `app/email/lib/registry.ts`, shaped like `app/jobs/registry.ts` and `app/lib/notification-events.ts` so it
+reads as house style, and carrying forward `app/hiring/lib/email-variables.ts`'s per-slot variable table:
 
 ```ts
 EMAIL_TEMPLATES = {
@@ -232,25 +246,50 @@ EMAIL_TEMPLATES = {
     label: "Decision: accepted",
     description: "Sent when a lead releases an Accepted decision.",
     purpose: "Hiring",
-    variables: ["firstName", "domain"],
+    variables: ["firstName", "domain"],   // the intersection every call path fills
     sample: { firstName: "Alex", domain: "Engineering" },
     footer: "transactional",
-    defaults: { subject: "...", body: "..." },   // seeds the row; never read after
+    whenMissing: "skip",                  // no row = send nothing (hiring's rule)
+  },
+  "meeting.invite": {
+    area: "Meetings",
+    purpose: "General",
+    variables: ["firstName", "title", "time"],
+    footer: "notifications",
+    whenMissing: "default",               // no row = use `defaults` below
+    defaults: { subject: "Meeting invite: {{title}}", body: "..." },
   },
   ...
 }
 ```
 
 One entry per email. The registry owns **structure** (which variables exist, which sender purpose, which footer,
-what the seed copy is); the DB row owns **words**. Adding an email becomes one registry entry, matching how jobs and
-notification events already work.
+whether absence is fatal); the DB row owns **words**.
 
-This also fixes the `notify()` gap: today **38 event types share one hardcoded shell** and none of it is editable.
-Each gets a registry key, so the greeting, footer and button label become editable without touching 38 call sites.
+**One deliberate divergence from hiring.** In hiring, a missing row means that slot sends nothing, which is correct
+there — a lead who hasn't written a rejection letter should not have one invented. That rule is unsafe for
+`notify()`, where an operator clearing a row would silently switch off a channel members rely on. Hence
+`whenMissing`: `"skip"` keeps hiring's exact semantics, `"default"` falls back to registry copy. Every
+`notify()`-backed template uses `"default"`, so the registry entry is a live fallback, not just a seed.
+
+Carry over verbatim from hiring: `variables` is the **intersection** of what all call paths populate (the
+`email-variables.ts:52-56` rule), the soft lint distinguishing `unknown` tokens from `unfilled` ones, and the test
+that pins each registry entry against the keys its call sites actually pass so drift fails CI loudly.
+
+### 3.5 notify() under the same pattern
+
+Today **38 event types share one hardcoded shell** (`notify.server.ts:68`) and none of it is editable. Each gets a
+registry key with `whenMissing: "default"`, so operators can edit any event's subject and body, and the greeting,
+footer and button label become editable once rather than 38 times. No call site changes: `notify()` already
+resolves `EVENT_TYPES[eventType]`, so it resolves the template key from the same place.
+
+Per-event titles stay as the `defaults` in the registry, which means the 38 rows are **opt-in** — an operator
+edits only what they want to change, and an untouched event keeps today's copy byte-for-byte. That keeps the
+"38 rows to maintain" cost at zero until someone chooses to pay it.
 
 ### 3.3 Layer 3 — one store, one editor
 
-**Collapse three stores into one**, keyed by registry key, with versions restored:
+**Decided: collapse three stores into one**, keyed by registry key, with versions restored:
 
 ```prisma
 model EmailTemplate {
@@ -272,14 +311,29 @@ model EmailTemplate {
 
 **One admin surface** at `/admin/email`, replacing three: `/admin/email-templates`, the hiring Setup-tab modal buried
 in a 3,900-line route, and the education manage-page modal. Grouped by registry `area`. Per template: edit, live
-preview in a sandboxed iframe with a light/dark toggle, unknown-token lint (already built), "send test to me"
-(already built, currently only on the dead store), version history with diff and rollback-as-new-version.
+preview, unknown/unfilled lint (already built in hiring), "send test to me" (already built, currently only on the
+dead store), version history with diff and rollback-as-new-version.
+
+Preview specifics worth pinning now:
+
+- **The preview iframe is an XSS boundary**, because operator copy is untrusted HTML. Use `srcdoc` with `sandbox`
+  and **without** `allow-scripts` or `allow-same-origin`. The current dead-library preview uses
+  `dangerouslySetInnerHTML` directly into the admin page (`EmailTemplateDetail.tsx:92`), which is only safe because
+  `bodyToHtml` strips everything to `<p>`/`<br>`. Moving to `sanitizeRichEmailHtml` widens the allowlist, so the
+  iframe stops being optional.
+- **Light/dark toggle plus a server-side Chromium thumbnail**, reusing the Chromium and `playwright-core` already
+  shipped for PDF rendering. Zero new dependencies.
+- Borrow Maizzle's three preview tabs as the feature list: **Checks** (caniemail warnings), **Stats** (compiled
+  size, image count, link count, warn at 51 KB / error at 100 KB), **Test** (send to me).
+- Build it in-app rather than adopting react-email's preview server: that server bundles template *files* and has
+  no DB connection, so for copy stored in Postgres it would be showing fiction. It can show a layout; it cannot
+  show an email.
 
 Also: **one role rule.** Today it is `isCore` / `isCore` / `isCycleAdmin(user, cycleId)` — a per-cycle role editing
 copy every cycle shares. Lab-wide copy is Core.
 
-And: **one missing-row rule.** Today it is a hard 409 for hiring decisions and a silent skip for hiring interviews
-and education. Pick explicit per-template `required: true | false` in the registry.
+And **one missing-row rule**, now expressed as registry `whenMissing` (§3.2). Today it is a hard 409 for hiring
+decisions and a silent skip for hiring interviews and education.
 
 **Authoring:** reuse `DocEditor` (BlockNote) rather than the current `<textarea rows={18}>`, per CLAUDE.md's
 reuse-before-building rule. Server path: blocks → `blocksToHTMLLossy` → **`sanitizeRichEmailHtml`** → tag→style pass.
@@ -324,14 +378,65 @@ the new shell earliest.
 | **5** | Partners + signing + education-hardcoded | 15 emails | Brings the 19 non-editable emails under the registry. |
 | **6** | Gaps (§0.7) | partner confirmation, promotion copy, expiry-from-constant | Needs the registry in place. |
 
-**Test strategy**, matching house style (exact-string assertions on pure functions; the repo has zero snapshot
-tests and ~4,400 exact-assertion tests):
+### Test strategy
 
-- Per-step parity test: old body and new body carry the same links and the same `{{tokens}}`.
-- One golden-file test for the layout shell only, so a shell change is a deliberate one-file diff.
-- A test asserting every `EMAIL_TEMPLATES` key has a seeded row and a reachable producer, so a registry entry cannot
-  rot the way the dead library did.
-- A test asserting `interpolateVars` escapes, with an explicit raw-path case.
+House style is exact-string assertions on pure functions; the repo has **zero** snapshot tests across ~4,400 tests.
+Keep it that way. There is now empirical support for that instinct: a *patch* bump of a transitive dep
+(tailwindcss 4.3.2 → 4.3.3) silently changed react-email's output, and Vitest fails CI on obsolete snapshots, so
+renaming a test turns CI red.
+
+**Tier 1 — plain Vitest, no containers, no browser. All of this is gateable.**
+
+1. **Add the `text/plain` part and delete both hand-rolled strippers** (§3.4). Assert each template yields a
+   non-empty text part containing the bare CTA URL with no angle-bracket residue. Highest value per unit of effort
+   in the whole plan.
+2. **~15 `cheerio` assertions per template** in one shared helper (works in the default `node` environment, no
+   config change): CTA `href` is absolute `https`, no `http:` anywhere, `alt` on every `<img>`, preheader present,
+   `role="presentation"` on every layout table, `dir` and `lang` on `<body>`, `lang` on `<html>`, a `<title>`, no
+   `<script>`/`<form>`. **The three most common email a11y failures in the industry — missing `dir` (97%), missing
+   body `lang` (96%), layout tables missing `role` (84%) — have no axe-core rule and no off-the-shelf checker.**
+   Each is a one-line selector here.
+3. **Gmail clipping budget**: `Buffer.byteLength(html, "utf8") < 102_400`, warn at ~80 KB. Exercise it with both the
+   **shortest and the longest realistic operator copy**, seeded in Postgres — otherwise the gate tests fiction, and
+   an operator pasting a long block is exactly how it breaks in production.
+4. **`html-validate@11.16.1`** with the `html-validate:a11y` preset (not `recommended`/`standard`, which flag the
+   obsolete presentational attributes every HTML email needs). It ships Vitest matchers requiring Vitest ≥4.1.3,
+   which is exactly our version.
+5. **Per-step parity**: old body and new body carry the same links and the same `{{tokens}}`.
+6. **`interpolateVars` escapes**, with an explicit raw-path case.
+7. **No registry rot**: every `EMAIL_TEMPLATES` key has a reachable producer, and every `whenMissing: "skip"` entry
+   has a seeded row. This is the test that would have caught the dead library.
+
+**Tier 2 — infrastructure, still deterministic.**
+
+8. **`@axe-core/playwright`** against `page.setContent(renderedHtml)`. Covers 7 of the top-10 field failures and is
+   the only way to get real colour contrast. Note `page-has-heading-one` and `heading-order` are best-practice
+   tagged, so do **not** filter to `wcag2a`/`wcag2aa` only.
+9. **One end-to-end send through the real pipeline** — the only thing that catches MIME-shape, encoding and
+   missing-plaintext bugs. ⚠️ **Blocker to resolve first: there is no SMTP path in the app.** `sendEmail` builds
+   RFC822 by hand and POSTs base64url to the Gmail REST API. Capturing mail locally means either branching on a
+   `MAILPIT_URL` env var and POSTing structured JSON (zero deps, but Mailpit re-composes the MIME so we stop
+   exercising `makeRawEmail`'s exact multipart structure), or speaking SMTP to Mailpit, which needs `nodemailer`.
+   Either way the `env === "dev"` early return becomes "if `MAILPIT_URL` is set, send there, else skip" so the
+   dev-safety guarantee survives when Mailpit isn't running. Worth deferring until Tier 1 is in.
+
+**One golden file, for the layout shell only**, so a shell change is a deliberate single-file diff.
+
+**Explicitly do not gate on:** any absolute SpamAssassin or Rspamd score (our CI `.eml` has no `Received:` chain, no
+DKIM, no real envelope sender — SPF/DKIM are Google's and don't exist where CI holds the bytes, so the score is
+systematically worse than what actually ships, and daily rule updates change it with no code change; assert on
+specific rule names like `MIME_HTML_ONLY` instead); Playwright pixel diffs as a proxy for client rendering;
+link-checking over tokenized one-time URLs.
+
+**Keep manual, once per layout change:** classic Outlook for Windows, Gmail web CSS stripping, dark-mode inversion
+in Outlook.com and Gmail iOS, font fallback, and real inbox placement. Note the wallet-pass navy `#0C2C47` is
+exactly the kind of saturated mid-dark value these transforms mangle.
+
+**Cross-client verification is a project cost, not a subscription.** We are standardizing to one layout, so buy one
+month of Mailgun Inspect (Email on Acid, $99, API included on the entry tier), burn it on the layout across
+light/dark and short/long copy, cancel. Litmus is ruled out: now Validity, pricing sales-gated, API access granted
+case-by-case. Parcel's free tier is a useful authoring scratchpad but has no CLI or public API, so it cannot lint in
+CI. Our real audience is about five clients, not a hundred.
 
 **Out of scope:** the Mail client (`app/email/`) as a templating surface — it is human-composed mail. It gets only
 the env fence from §0.4. Retiring `CycleNotificationSend` / `SignRequestNotification` stays deferred per
@@ -339,16 +444,22 @@ the env fence from §0.4. Retiring `CycleNotificationSend` / `SignRequestNotific
 
 ---
 
-## 5. Open questions for Kiran
+## 5. Decisions taken (2026-10-01, with Kiran)
 
-1. **Store collapse vs. additive.** §3.3 drops `HiringEmail`/`EducationEmail` and the Drive `emailTemplate` type in
-   one data-losing migration. The alternative is leaving them and adding the registry alongside, which avoids the
-   migration but keeps three stores. I recommend the collapse — three stores is the actual problem.
-2. **How far does operator editability go?** Registry-owned structure + DB-owned words (recommended), or do
-   operators also need per-template conditionals? The latter adds `mustache` and real complexity. I'd wait for a
-   concrete need.
-3. **Does `notify()` copy become editable per event type?** It is the biggest unlock (38 types) but also 38 rows for
-   operators to maintain. Alternative: make only the shell editable (greeting, footer, button label) and leave
-   per-event titles in code.
-4. **`List-Unsubscribe` on digests** means a real unsubscribe endpoint. Map one-click to setting that event's
-   `digestFrequency: "Off"`, or to a global off switch?
+1. **Collapse to one store.** One data-losing migration, flagged in the PR. Three stores was the actual problem, and
+   leaving the dead library in place would preserve the confusion that caused this.
+2. **Generalize the hiring refactor** rather than inventing a shape: slot as PK, one shared row per slot edited in
+   place, slot vocabulary and per-slot variable contract in code, soft lint that never blocks. Add back the
+   versioning, preview and test-send that refactor dropped. One divergence, `whenMissing` (§3.2), so clearing a
+   `notify()` row can't silently switch off a channel.
+3. **Nothing is implemented until this plan is approved.** Phase 0 included — sequencing gets decided in one pass.
+
+## 6. Still open
+
+1. **`List-Unsubscribe` on digests** means a real unsubscribe endpoint. Map one-click to setting that event's
+   `digestFrequency: "Off"`, or to a global off switch? (Transactional mail gets no such header either way.)
+2. **Does Phase 0.3 move the onboarding dates to cycle fields or to template variables?** Cycle fields are more
+   structured and validate; template variables are faster and keep it in one editable place. Leaning cycle fields,
+   since "deadline to accept" is cycle data that other surfaces will want.
+3. **Whether `mustache` ever lands.** Not needed for interpolation. The trigger is the first real request for
+   "show this paragraph only if there's a meeting link" or "list each interviewer." Worth waiting for.
