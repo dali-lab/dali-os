@@ -31,7 +31,10 @@ import { PrismaClient } from "../../app/generated/prisma/client.js";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { peopleByNetId } from "../../app/lib/dartmouth-people.js";
 import { getDartmouthJwt } from "../../app/lib/dartmouth-jwt.js";
-import { classifySignInReadiness } from "../../app/lib/signin-readiness.js";
+import {
+  classifySignInReadiness,
+  synthesizedAddress,
+} from "../../app/lib/signin-readiness.js";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
 const prisma = new PrismaClient({ adapter });
@@ -59,6 +62,10 @@ const COLUMNS = {
   personalEmail: true,
   firstName: true,
   lastName: true,
+  // A partner invited but not yet joined legitimately has no canonical email:
+  // nobody has claimed the account, and they arrive by invite link rather than
+  // the code door. Without this the audit reports a working flow as a defect.
+  partnerContact: { select: { id: true } },
 } as const;
 
 type UserRow = {
@@ -70,6 +77,7 @@ type UserRow = {
   personalEmail: string | null;
   firstName: string;
   lastName: string;
+  partnerContact: { id: string } | null;
   emails: { address: string }[];
 };
 
@@ -114,7 +122,10 @@ const assessed: Assessed[] = users.map((u) => ({
 const by = (v: Assessed["verdict"]) => assessed.filter((a) => a.verdict === v);
 const ok = by("ok");
 const lockedOut = by("locked-out");
-const noCanonical = by("no-canonical");
+// An un-joined partner has no canonical email by design. Counting them as
+// broken buries the rows that genuinely are.
+const pendingInvite = by("no-canonical").filter((a) => a.user.partnerContact !== null);
+const noCanonical = by("no-canonical").filter((a) => a.user.partnerContact === null);
 const noAddress = by("no-address");
 
 // One address must belong to one person; UserEmail enforces it going forward,
@@ -133,6 +144,18 @@ for (const a of assessed) {
   }
 }
 const conflicts = [...owners.entries()].filter(([, ids]) => new Set(ids).size > 1);
+
+// Mixed case is silently fatal. BetterAuth's findUserByEmail runs
+//   where: [{ value: email.toLowerCase(), field: "email" }]
+// which is an exact match against a lowercased input, and Postgres compares
+// case-sensitively — so a row storing Name.Surname.29@dartmouth.edu can never
+// be found, however correct the address looks. The other columns are matched
+// case-sensitively by our own resolution fallback for the same reason.
+const mixedCase = assessed.filter((a) =>
+  [a.user.email, a.user.daliEmail, a.user.dartmouthEmail, a.user.personalEmail].some(
+    (v) => v !== null && v !== v.toLowerCase(),
+  ),
+);
 
 function name(u: (typeof users)[number]): string {
   return `${u.firstName} ${u.lastName}`.trim() || u.id;
@@ -156,8 +179,10 @@ log(`Users: ${users.length}`);
 log(`  gets a code today ......... ${ok.length}`);
 log(`  locked out ................ ${lockedOut.length}   only the synthesized netid address`);
 log(`  no canonical email ........ ${noCanonical.length}   User.email is null; no code can be sent`);
+log(`  partner invited, not joined  ${pendingInvite.length}   expected: no account claimed yet`);
 log(`  no address at all ......... ${noAddress.length}   nothing to sign in with`);
 log(`  address conflicts ......... ${conflicts.length}   one address, two accounts`);
+log(`  mixed-case addresses ...... ${mixedCase.length}   unreachable: BetterAuth matches lowercase exactly`);
 log();
 
 const missing = aliasTableExists
@@ -194,6 +219,24 @@ if (noCanonical.length > 0) {
   log();
 }
 
+if (mixedCase.length > 0) {
+  log("── Mixed-case addresses " + "─".repeat(47));
+  log("   Stored with uppercase, so the lookup never matches. --fix lowercases.");
+  // Which column it is decides the severity. `email` is the login identifier
+  // BetterAuth looks up, so uppercase there means the account cannot be found
+  // at all. The alias columns only feed our own fallback, and a miss there
+  // falls through to the directory heal, which recovers it — annoying, not fatal.
+  for (const a of mixedCase.slice(0, SAMPLE)) {
+    const cols = (["email", "daliEmail", "dartmouthEmail", "personalEmail"] as const)
+      .filter((c) => a.user[c] !== null && a.user[c] !== a.user[c]!.toLowerCase())
+      .map((c) => `${c}=${a.user[c]}`);
+    const fatal = a.user.email !== null && a.user.email !== a.user.email.toLowerCase();
+    log(`   ${fatal ? "UNREACHABLE" : "alias only "}  ${name(a.user)}  ${cols.join("  ")}`);
+  }
+  if (mixedCase.length > SAMPLE) log(`   … and ${mixedCase.length - SAMPLE} more`);
+  log();
+}
+
 if (conflicts.length > 0) {
   log("── Address conflicts " + "─".repeat(50));
   for (const [addr, ids] of conflicts.slice(0, SAMPLE)) {
@@ -224,6 +267,7 @@ if (probe && lockedOut.length > 0) {
 
   log(`Asking the People API about ${lockedOut.length} locked-out rows…`);
   let repairable = 0;
+  let sameAsSynthesized = 0;
   let noRecord = 0;
   const errors = new Map<string, number>();
   const unfixable: Assessed[] = [];
@@ -241,8 +285,17 @@ if (probe && lockedOut.length > 0) {
         }
         try {
           const person = await peopleByNetId(a.user.netId);
-          if (person?.email) repairable++;
-          else {
+          // Holding an address is not the same as holding a USABLE one. If
+          // Dartmouth's record is the netid form as well, there is nothing to
+          // attach that the row does not already have, and calling that
+          // repairable promises a repair the sweep cannot perform.
+          const synth = synthesizedAddress(a.user.netId);
+          if (person?.email && person.email !== synth) {
+            repairable++;
+          } else if (person?.email) {
+            sameAsSynthesized++;
+            unfixable.push(a);
+          } else {
             noRecord++;
             unfixable.push(a);
           }
@@ -257,7 +310,8 @@ if (probe && lockedOut.length > 0) {
   log();
   const errored = [...errors.values()].reduce((n, c) => n + c, 0);
   log("── Repairability " + "─".repeat(54));
-  log(`   repairable by the sweep ... ${repairable}`);
+  log(`   repairable by the sweep ... ${repairable}   a DIFFERENT address exists`);
+  log(`   only the netid form ....... ${sameAsSynthesized}   <- Dartmouth knows no other address`);
   log(`   no address on file ........ ${noRecord}   <- need a different path`);
   log(`   lookup failed ............. ${errored}`);
   // A bare count is useless: one systemic failure and a few flaky ones look
@@ -311,6 +365,28 @@ if (fix && aliasTableExists && missing.length > 0) {
   log();
 }
 
+if (fix && mixedCase.length > 0) {
+  log(`Lowercasing ${mixedCase.length} rows with mixed-case addresses…`);
+  let fixed = 0;
+  for (const a of mixedCase) {
+    const data: Record<string, string> = {};
+    for (const col of ["email", "daliEmail", "dartmouthEmail", "personalEmail"] as const) {
+      const v = a.user[col];
+      if (v !== null && v !== v.toLowerCase()) data[col] = v.toLowerCase();
+    }
+    try {
+      await prisma.user.update({ where: { id: a.user.id }, data });
+      fixed++;
+    } catch (err) {
+      // Unique violation: two rows differing only by case. A duplicate to
+      // settle by hand, never to resolve by overwriting one of them.
+      log(`   SKIP ${a.user.id}: ${err instanceof Error ? err.message.split("\n")[0] : String(err)}`);
+    }
+  }
+  log(`   lowercased: ${fixed}`);
+  log();
+}
+
 log("── Next " + "─".repeat(63));
 if (lockedOut.length > 0) {
   log(`   ${lockedOut.length} locked out. Sign-in self-heals on first attempt for anyone`);
@@ -325,6 +401,10 @@ if (noCanonical.length > 0) {
 }
 if (noAddress.length > 0) {
   log(`   ${noAddress.length} rows hold no address at all. Nothing automated applies.`);
+}
+if (mixedCase.length > 0) {
+  log(`   ${mixedCase.length} rows store an address with uppercase and cannot be found at`);
+  log(`   all until lowercased. Run --fix.`);
 }
 if (conflicts.length > 0) {
   log(`   ${conflicts.length} address conflicts are duplicate accounts; merging is`);

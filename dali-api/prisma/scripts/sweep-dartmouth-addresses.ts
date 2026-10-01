@@ -29,6 +29,7 @@
 import { PrismaClient } from "../../app/generated/prisma/client.js";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { peopleByNetId } from "../../app/lib/dartmouth-people.js";
+import { preferredCanonicalEmail } from "../../app/lib/signin-readiness.js";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
 const prisma = new PrismaClient({ adapter });
@@ -113,6 +114,32 @@ async function classify(row: Row): Promise<Outcome> {
   }
 }
 
+function canonicalFor(row: Row, preferred: string | null): string | null {
+  return preferredCanonicalEmail({
+    netId: row.netId,
+    email: row.email,
+    daliEmail: row.daliEmail,
+    candidate: preferred,
+  });
+}
+
+function norm(a: string | null): string | null {
+  const t = a?.trim().toLowerCase();
+  return t ? t : null;
+}
+
+/** Whether --promote has anything to change on this row. */
+function promotionNeeded(outcome: Extract<Outcome, { kind: "resolved" }>): boolean {
+  if (!promote) return false;
+  const { row, preferred } = outcome;
+  if (canonicalFor(row, preferred) !== null) return true;
+  return (
+    preferred !== null &&
+    preferred.endsWith("@dartmouth.edu") &&
+    norm(row.dartmouthEmail) !== preferred
+  );
+}
+
 async function writeOutcome(outcome: Extract<Outcome, { kind: "resolved" }>) {
   const { row, newAddresses, preferred } = outcome;
 
@@ -124,31 +151,36 @@ async function writeOutcome(outcome: Extract<Outcome, { kind: "resolved" }>) {
     });
   }
 
-  if (!promote || preferred === null) return;
-  if (row.email?.toLowerCase() === preferred) return;
+  if (!promote) return;
 
-  // Only promote onto columns that are free. Both are @unique, and a collision
-  // means another row already claims the address — a duplicate account, which
-  // this script reports rather than resolves.
-  const clash = await prisma.user.findFirst({
-    where: { AND: [{ id: { not: row.id } }, { OR: [{ email: preferred }, { dartmouthEmail: preferred }] }] },
-    select: { id: true },
-  });
-  if (clash) {
-    log(`  SKIP promote ${row.id}: ${preferred} already on user ${clash.id}`);
-    return;
+  const data: Record<string, string> = {};
+
+  // dartmouthEmail is an alias column, not the login identifier, so it takes
+  // the Dartmouth identity address whichever way the canonical goes.
+  if (
+    preferred !== null &&
+    preferred.endsWith("@dartmouth.edu") &&
+    norm(row.dartmouthEmail) !== preferred
+  ) {
+    data.dartmouthEmail = preferred;
   }
 
-  await prisma.user.update({
-    where: { id: row.id },
-    data: {
-      email: preferred,
-      // dartmouthEmail returns to meaning the person's Dartmouth IDENTITY
-      // address. The synthesized NetID form stays in UserEmail, where it still
-      // resolves at sign-in but is never displayed or mailed.
-      ...(preferred.endsWith("@dartmouth.edu") ? { dartmouthEmail: preferred } : {}),
-    },
-  });
+  const canonical = canonicalFor(row, preferred);
+  if (canonical !== null) data.email = canonical;
+
+  if (Object.keys(data).length === 0) return;
+
+  // Every target column is @unique. Rather than pre-checking each one, let the
+  // write fail: a collision means another account already claims the address,
+  // which is a duplicate to settle by hand and never to force.
+  try {
+    await prisma.user.update({ where: { id: row.id }, data });
+  } catch (err) {
+    const fields = Object.entries(data)
+      .map(([k, v]) => `${k}=${v}`)
+      .join(" ");
+    log(`  SKIP promote ${row.id}: ${fields} (${err instanceof Error ? err.message.split("\n")[0] : String(err)})`);
+  }
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────────
@@ -239,10 +271,12 @@ log(`  Rows gaining an alias:   ${withNew.length}`);
 log(`  Aliases to attach:       ${withNew.reduce((n, o) => n + o.newAddresses.length, 0)}`);
 log(`  Address conflicts:       ${withConflicts.length}  (held by another account — reported, never moved)`);
 if (promote) {
-  const promotable = resolved.filter(
-    (o) => o.preferred !== null && o.row.email?.toLowerCase() !== o.preferred,
+  const promotable = resolved.filter(promotionNeeded);
+  const restoring = resolved.filter(
+    (o) => canonicalFor(o.row, o.preferred) === norm(o.row.daliEmail) && norm(o.row.daliEmail) !== null,
   );
-  log(`  Canonical promotions:    ${promotable.length}`);
+  log(`  Canonical/alias updates: ${promotable.length}`);
+  log(`    ...restoring a @dali canonical: ${restoring.length}`);
 }
 log();
 
@@ -278,7 +312,13 @@ if (!apply) {
 
 log("Applying…");
 let attached = 0;
-for (const outcome of withNew) {
+// Not just withNew: a row can already hold every alias and still need its
+// canonical put back, which is exactly the state an earlier --promote run left
+// members in. Visiting only rows gaining an alias would skip every one of them.
+const toWrite = resolved.filter(
+  (o) => o.newAddresses.length > 0 || promotionNeeded(o),
+);
+for (const outcome of toWrite) {
   try {
     await writeOutcome(outcome);
     attached += outcome.newAddresses.length;
