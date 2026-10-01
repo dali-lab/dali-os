@@ -127,6 +127,12 @@ export const FEATURE_FLAGS = [
     description:
       "An Email tab under Calendar: one unified inbox across a member's connected Gmail accounts (their DALI address and any other Google account), their current project's team account, and shared inboxes from categories they subscribe to (admins manage categories on Email Senders; each subscriber signs in to shared inboxes themselves). Includes AI drafting, proofreading suggestions, rephrasing and translation, recipient autocomplete, shared drafts, private comments on threads, unread counts, and plain-English search. Ships off.",
   },
+  {
+    key: "email-personal",
+    label: "Email: personal DALI inbox",
+    description:
+      "Lets a member connect their own @dali.dartmouth.edu mailbox to the Email tab, next to project and shared inboxes. Only they can read it. Connecting requires agreeing to a risk notice first, and each agreement is recorded in the audit log. Needs the Email flag on as well. Turning this off hides connected personal inboxes without deleting the sign-in. Ships off.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

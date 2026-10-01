@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Link, useLoaderData, useNavigate, useNavigation, useSearchParams } from "react-router";
 import {
   ArrowLeft,
@@ -9,7 +9,11 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   PenSquare,
+  Send,
   Settings2,
+  ShieldAlert,
+  Trash2,
+  Mail,
   Sparkles,
   X,
 } from "lucide-react";
@@ -23,10 +27,12 @@ import { SearchInput } from "~/components/ui/SearchInput";
 import { useToast } from "~/components/ui/toast";
 import { cn } from "~/lib/cn";
 import { AccountsModal, connectHref } from "~/email/components/AccountsModal";
+import { PersonalInboxConsent } from "~/email/components/PersonalInboxConsent";
 import { UnreadBadge } from "~/email/components/UnreadBadge";
 import { Composer } from "~/email/components/Composer";
 import { ThreadView } from "~/email/components/ThreadView";
 import { inboxDot, recipientDirectory, senderName, shortDate } from "~/email/lib/format";
+import { MAIL_FOLDERS, type MailFolderKey } from "~/email/lib/folders";
 
 export const meta: Route.MetaFunction = () => [{ title: "Email · DALI OS" }];
 
@@ -42,6 +48,21 @@ export async function action({ request }: Route.ActionArgs) {
 
 const RAIL_COLLAPSED_KEY = "email.railCollapsed";
 
+const FOLDER_ICONS: Record<MailFolderKey, typeof Inbox> = {
+  inbox: Inbox,
+  sent: Send,
+  all: Mail,
+  spam: ShieldAlert,
+  trash: Trash2,
+};
+
+// "Ada <ada@x.com>, Bo <bo@x.com>" → "To Ada +1"
+function recipientLabel(to: string): string {
+  const people = to.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).filter((p) => p.trim());
+  if (people.length === 0) return "(no recipient)";
+  return `To ${senderName(people[0])}${people.length > 1 ? ` +${people.length - 1}` : ""}`;
+}
+
 const CONNECT_ERRORS: Record<string, string> = {
   wrong_account: "That's a different Google account than the inbox you picked.",
   scope_denied: "Gmail access wasn't granted. Try again and allow it.",
@@ -56,6 +77,7 @@ export default function EmailPage() {
   const navigation = useNavigation();
   const toast = useToast();
   const [accountsOpen, setAccountsOpen] = useState(false);
+  const [consentOpen, setConsentOpen] = useState(false);
   const [composing, setComposing] = useState<string | null>(null);
   const [search, setSearch] = useState(data.ask || data.query);
   const [searching, setSearching] = useState(false);
@@ -72,6 +94,7 @@ export default function EmailPage() {
   const expanded = readerOpen && readerExpanded;
   const totalUnread = Object.values(data.unread).reduce((sum, n) => sum + n, 0);
   const openInbox = data.accounts.find((a) => a.id === data.inbox);
+  const personalInbox = data.accounts.find((a) => a.kind === "Personal");
 
   const directory = useMemo(() => {
     const selectedMessages = data.selected && !data.selected.error ? data.selected.messages : [];
@@ -249,11 +272,30 @@ export default function EmailPage() {
                     <UnreadBadge count={data.unread[a.id] ?? 0} className="ml-auto" />
                   </Link>
                 ))}
-                <Link to={withParams({ view: "drafts", t: null })} className={railItem(data.view === "drafts")}>
-                  <FileText className="h-4 w-4" />
-                  Drafts
-                  {data.drafts.length > 0 && <span className="ml-auto text-xs">{data.drafts.length}</span>}
-                </Link>
+                <span className="mt-3 px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-os-muted">
+                  Folders
+                </span>
+                {MAIL_FOLDERS.map((f) => {
+                  const Icon = FOLDER_ICONS[f.key];
+                  return (
+                    <Fragment key={f.key}>
+                      <Link
+                        to={withParams({ folder: f.key === "inbox" ? null : f.key, view: null, t: null })}
+                        className={railItem(data.view === "inbox" && data.folder === f.key)}
+                      >
+                        <Icon className="h-4 w-4" />
+                        {f.label}
+                      </Link>
+                      {f.key === "sent" && (
+                        <Link to={withParams({ view: "drafts", t: null })} className={railItem(data.view === "drafts")}>
+                          <FileText className="h-4 w-4" />
+                          Drafts
+                          {data.drafts.length > 0 && <span className="ml-auto text-xs">{data.drafts.length}</span>}
+                        </Link>
+                      )}
+                    </Fragment>
+                  );
+                })}
               </>
             )}
           </nav>
@@ -344,14 +386,20 @@ export default function EmailPage() {
               ) : openInbox && !openInbox.connected ? (
                 <div className="flex flex-col items-center gap-3 p-6 text-center">
                   <p className="text-sm text-os-muted">Sign in to {openInbox.address} to see its mail here.</p>
-                  <a
-                    className={buttonClasses("secondary", "sm")}
-                    href={connectHref(
-                      openInbox.kind === "Shared" ? `shared:${openInbox.id}` : `project:${openInbox.projectId}`,
-                    )}
-                  >
-                    Sign in
-                  </a>
+                  {openInbox.kind === "Personal" ? (
+                    <Button variant="secondary" size="sm" onClick={() => setConsentOpen(true)}>
+                      Connect
+                    </Button>
+                  ) : (
+                    <a
+                      className={buttonClasses("secondary", "sm")}
+                      href={connectHref(
+                        openInbox.kind === "Shared" ? `shared:${openInbox.id}` : `project:${openInbox.projectId}`,
+                      )}
+                    >
+                      Sign in
+                    </a>
+                  )}
                 </div>
               ) : data.feed.threads.length === 0 ? (
                 <p className="p-6 text-center text-sm text-os-muted">
@@ -375,7 +423,7 @@ export default function EmailPage() {
                           <span className={cn("h-2 w-2 shrink-0 rounded-full", dotFor(t.accountId))} />
                         </Tooltip>
                         <span className={cn("truncate text-sm text-foreground", t.unread && "font-semibold")}>
-                          {senderName(t.from)}
+                          {data.folder === "sent" ? recipientLabel(t.to) : senderName(t.from)}
                           {t.messageCount > 1 && <span className="ml-1 text-xs font-normal text-os-muted">{t.messageCount}</span>}
                         </span>
                         <span className="ml-auto shrink-0 text-xs text-os-muted">{shortDate(t.date)}</span>
@@ -443,7 +491,19 @@ export default function EmailPage() {
         </div>
       )}
 
-      {accountsOpen && <AccountsModal data={data} onClose={() => setAccountsOpen(false)} />}
+      {accountsOpen && (
+        <AccountsModal
+          data={data}
+          onClose={() => setAccountsOpen(false)}
+          onConnectPersonal={() => {
+            setAccountsOpen(false);
+            setConsentOpen(true);
+          }}
+        />
+      )}
+      {consentOpen && personalInbox && (
+        <PersonalInboxConsent address={personalInbox.address} onClose={() => setConsentOpen(false)} />
+      )}
     </div>
   );
 }

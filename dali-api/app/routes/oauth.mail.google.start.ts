@@ -1,4 +1,4 @@
-// GET /oauth/mail/google/start?target=project:<id>|shared:<accountId>
+// GET /oauth/mail/google/start?target=project:<id>|shared:<accountId>|personal
 // Starts the Google sign-in that connects a mailbox to the Email tab. Google
 // returns through the calendar-link callback (already registered on the OAuth
 // client), which hands the request to ~/email/lib/mail-connect.server.
