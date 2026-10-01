@@ -76,7 +76,6 @@ import {
 } from "~/lib/meeting-occurrences";
 import { getZonedYMD, resolveUserTimeZone, zonedDayStartUtc } from "~/lib/timezone";
 import { bookRoomsForEvent, releaseRoomBookings } from "~/lib/rooms.server";
-import { isRoomBookingEnabled } from "~/rooms/lib/access.server";
 import { fetchWindow, parseAnchor, parseView, viewWindow, weekWindow } from "~/calendar/lib/view-window";
 import type {
   WhSegment,
@@ -949,9 +948,7 @@ async function handleEventAction(
       // Rooms picked in the Location field. A plain event has no
       // ScheduledMeeting to claim them, so it takes a RoomBooking per room —
       // before the Google write, so a room that's taken rejects the save.
-      const roomIds = (await isRoomBookingEnabled(userId, request))
-        ? [...new Set(get("roomIds").split(",").filter(Boolean))]
-        : [];
+      const roomIds = [...new Set(get("roomIds").split(",").filter(Boolean))];
       let bookingIds: string[] = [];
       if (roomIds.length) {
         if (allDay || recurrenceRule) {

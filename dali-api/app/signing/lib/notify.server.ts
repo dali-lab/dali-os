@@ -8,7 +8,6 @@ import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
 import { type EmailAttachment } from "~/lib/gmail";
 import { getFrontendUrl } from "~/lib/app-env";
-import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { renderDocumentPdf } from "~/lib/pdf/document-pdf.server";
 import type { PMNode } from "~/collab/export-html";
 import type { DocBlock } from "~/collab/blocknote-server";
@@ -184,13 +183,11 @@ export async function notifySignRequest(
 // MCP + the mentee's own sign). Idempotent: a per-(binding, version, mentee)
 // forever dedupKey means a SECOND mentor signing later doesn't re-nudge a mentee
 // already asked, and mentees who've already countersigned the in-force version
-// are filtered out. No-op unless the feature is live and the document opts in.
+// are filtered out. No-op unless the document opts in.
 export async function notifyCountersignRequest(
   bindingId: string,
   mentorUserId: string,
 ): Promise<void> {
-  if (!(await isFeatureEnabledForEveryone("mentee-countersign"))) return;
-
   const binding = await prisma.signingBinding.findUnique({
     where: { id: bindingId },
     select: {

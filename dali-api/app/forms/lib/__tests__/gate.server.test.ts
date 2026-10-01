@@ -1,9 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
-vi.mock("~/lib/feature-flags.server", () => ({
-  isFeatureEnabled: vi.fn(),
-}));
 vi.mock("~/lib/roles", () => ({
   currentTerm: vi.fn(),
 }));
@@ -20,28 +17,23 @@ vi.mock("~/forms/lib/public-form", () => ({
 
 import { prisma } from "~/lib/db";
 import { getBoundFormGateOutstanding } from "~/forms/lib/gate.server";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { currentTerm } from "~/lib/roles";
 import { getSignerCohorts } from "~/signing/lib/state.server";
 import {
   existingBoundSubmission,
   formFillAccess,
 } from "~/forms/lib/public-form";
-import type { UserRoles } from "~/lib/roles";
 
 const mockPrisma = prisma as unknown as Record<
   string,
   Record<string, ReturnType<typeof vi.fn>>
 >;
-const mockFlag = isFeatureEnabled as unknown as ReturnType<typeof vi.fn>;
 const mockTerm = currentTerm as unknown as ReturnType<typeof vi.fn>;
 const mockCohorts = getSignerCohorts as unknown as ReturnType<typeof vi.fn>;
 const mockExisting = existingBoundSubmission as unknown as ReturnType<
   typeof vi.fn
 >;
 const mockAccess = formFillAccess as unknown as ReturnType<typeof vi.fn>;
-
-const ROLES = {} as UserRoles;
 
 // Cohorts that land in the "Members" audience (staffed this term, not new).
 const RETURNING_MEMBER = {
@@ -70,7 +62,6 @@ function membersBinding(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.resetAllMocks();
-  mockFlag.mockResolvedValue(true);
   mockTerm.mockResolvedValue({ id: "term-1", sortKey: 1 });
   mockPrisma.staffingCycle.findUnique.mockResolvedValue({ id: "cyc-1" });
   mockPrisma.staffingCycleFormBinding.findMany.mockResolvedValue([
@@ -83,7 +74,7 @@ beforeEach(() => {
 
 describe("getBoundFormGateOutstanding", () => {
   it("returns the owed form for an in-audience member who hasn't filled it", async () => {
-    const owed = await getBoundFormGateOutstanding("user-1", ROLES);
+    const owed = await getBoundFormGateOutstanding("user-1");
     expect(owed).toEqual({
       token: "tok-1",
       slot: "intent-to-work",
@@ -92,17 +83,9 @@ describe("getBoundFormGateOutstanding", () => {
     expect(mockExisting).toHaveBeenCalledWith("user-1", "cyc-1", "intent-to-work");
   });
 
-  it("short-circuits to null when the flag is off (no queries)", async () => {
-    mockFlag.mockResolvedValue(false);
-    const owed = await getBoundFormGateOutstanding("user-1", ROLES);
-    expect(owed).toBeNull();
-    expect(mockTerm).not.toHaveBeenCalled();
-    expect(mockPrisma.staffingCycleFormBinding.findMany).not.toHaveBeenCalled();
-  });
-
   it("returns null when the member already filled it", async () => {
     mockExisting.mockResolvedValue({ id: "sub-0", createdAt: new Date() });
-    expect(await getBoundFormGateOutstanding("user-1", ROLES)).toBeNull();
+    expect(await getBoundFormGateOutstanding("user-1")).toBeNull();
   });
 
   it("returns null when the member is outside the gate audience", async () => {
@@ -112,7 +95,7 @@ describe("getBoundFormGateOutstanding", () => {
       isStaffedThisTerm: false,
       isActiveThisTerm: false,
     });
-    expect(await getBoundFormGateOutstanding("user-1", ROLES)).toBeNull();
+    expect(await getBoundFormGateOutstanding("user-1")).toBeNull();
     // In-audience check fails before we ever look for a submission.
     expect(mockExisting).not.toHaveBeenCalled();
   });
@@ -121,19 +104,19 @@ describe("getBoundFormGateOutstanding", () => {
     // In the gate audience, but the form's own fill audience excludes them —
     // redirecting would dead-end on the access screen.
     mockAccess.mockResolvedValue("denied");
-    expect(await getBoundFormGateOutstanding("user-1", ROLES)).toBeNull();
+    expect(await getBoundFormGateOutstanding("user-1")).toBeNull();
     expect(mockExisting).not.toHaveBeenCalled();
   });
 
   it("returns null when no cycle exists for the current term", async () => {
     mockPrisma.staffingCycle.findUnique.mockResolvedValue(null);
-    expect(await getBoundFormGateOutstanding("user-1", ROLES)).toBeNull();
+    expect(await getBoundFormGateOutstanding("user-1")).toBeNull();
     expect(mockPrisma.staffingCycleFormBinding.findMany).not.toHaveBeenCalled();
   });
 
   it("returns null when nothing is gated", async () => {
     mockPrisma.staffingCycleFormBinding.findMany.mockResolvedValue([]);
-    expect(await getBoundFormGateOutstanding("user-1", ROLES)).toBeNull();
+    expect(await getBoundFormGateOutstanding("user-1")).toBeNull();
     // No cohort resolution when there are no gated bindings.
     expect(mockCohorts).not.toHaveBeenCalled();
   });

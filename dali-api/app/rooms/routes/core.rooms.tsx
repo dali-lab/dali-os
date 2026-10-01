@@ -1,7 +1,7 @@
 // Core ▸ Rooms. The bookable DALI rooms and the iPad door display paired to
 // each. A display is paired by minting a single-use setup code here and typing
 // it into the iPad, which redeems it for its own token (see
-// app/lib/room-display.server.ts). Behind the `room-booking` flag.
+// app/lib/room-display.server.ts).
 
 import { useEffect, useState } from "react";
 import { redirect, useFetcher, useLoaderData } from "react-router";
@@ -11,8 +11,7 @@ import type { Route } from "./+types/core.rooms";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { getUserRoles, isAdmin, isCore } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { isAdmin, isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { parseForm } from "~/lib/validate";
 import { formatUserCode } from "~/lib/pairing";
@@ -34,8 +33,7 @@ async function requireCoreRooms(request: Request) {
   const auth = await requireAuth(request);
   if (!auth.ok) return { response: redirectToLogin(request) } as const;
   const userId = auth.user.sub;
-  const roles = await getUserRoles(userId, request);
-  if (!(await isCore(userId)) || !(await isFeatureEnabled("room-booking", userId, roles, request))) {
+  if (!(await isCore(userId))) {
     return { response: redirect("/") } as const;
   }
   return { userId } as const;

@@ -747,7 +747,7 @@ export default [
   // AI project TL;DR — cached work-status summary for the Progress-tab status
   // bar. Same provider gating as api/ai/doc, plus the `project-tldr-ai` flag.
   route("api/ai/project-tldr", "routes/api.ai.project-tldr.ts"),
-  // Email tab AI tools (draft, rephrase, proofread, translate, search); `email` flag.
+  // Email tab AI tools (draft, rephrase, proofread, translate, search).
   route("api/ai/email", "routes/api.ai.email.ts"),
   route("api/email/contacts", "routes/api.email.contacts.ts"),
   route("api/email/unread", "routes/api.email.unread.ts"),

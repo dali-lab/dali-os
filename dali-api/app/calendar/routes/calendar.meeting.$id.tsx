@@ -29,7 +29,6 @@ import { prisma } from "~/lib/db";
 import { getUserRoles, isProjectMember } from "~/lib/roles";
 import { walletTokensConfigured } from "~/lib/wallet-token";
 import { getActiveDisplayScan, startDisplayScan, stopDisplayScan } from "~/lib/display-scan.server";
-import { isRoomBookingEnabled } from "~/rooms/lib/access.server";
 import { useDialog } from "~/components/ui/dialog";
 import { fullName } from "~/lib/display";
 import { AttendanceChecklist, type AttendanceRow } from "~/components/AttendanceChecklist";
@@ -172,14 +171,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const canEdit = canAddNote;
 
   // Switching every door display to this event is the organizer's or Core's
-  // call. Door displays only exist once rooms are on, so it follows that flag.
-  const [roomsEnabled, activeScan] = canEdit
-    ? await Promise.all([isRoomBookingEnabled(auth.user.sub, request), getActiveDisplayScan()])
-    : [false, null];
+  // call.
+  const activeScan = canEdit ? await getActiveDisplayScan() : null;
   const ipadScanOn =
     activeScan?.meetingId === meeting.id &&
     activeScan.occurrenceStart.getTime() === occurrence.originalStart.getTime();
-  const ipadScan = roomsEnabled
+  const ipadScan = canEdit
     ? {
         on: ipadScanOn,
         // Another event has the iPads; this one waits until that's turned off.
@@ -342,7 +339,7 @@ async function ipadScanAction(
     return Response.json({ error: "Not found" }, { status: 404 });
   }
   const roles = await getUserRoles(userId);
-  if ((meeting.organizerId !== userId && !roles.isCore) || !(await isRoomBookingEnabled(userId, request))) {
+  if (meeting.organizerId !== userId && !roles.isCore) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 

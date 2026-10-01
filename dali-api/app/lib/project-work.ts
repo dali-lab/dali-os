@@ -1,5 +1,5 @@
 // Assigned project tasks as the My Tasks surfaces show them (the "Project
-// work" tab behind the `my-project-work` flag). Client-safe: the query lives
+// work" tab). Client-safe: the query lives
 // in ~/lib/tasks, this file is the shape plus the card's status line.
 
 import { STALE_DAYS } from "~/projects/lib/project-status";

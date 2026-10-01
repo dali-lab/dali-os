@@ -7,7 +7,6 @@ import { modalCardClass } from "~/components/os-chrome";
 import { DateField } from "~/components/ui/DateField";
 import { TimeField } from "~/components/ui/TimeField";
 import { ParticipantPicker } from "~/calendar/components/scheduling";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { RoomLocationField } from "~/rooms/components/RoomLocationField";
 
 // Shape of GET /api/scheduled-meetings/:id/edit-context.
@@ -109,7 +108,6 @@ export function EditMeetingModal({
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
   const [location, setLocation] = useState("");
-  const roomBooking = useFeatureFlag("room-booking");
   const [roomIds, setRoomIds] = useState<string[]>([]);
   const [description, setDescription] = useState("");
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
@@ -235,7 +233,7 @@ export function EditMeetingModal({
         description: description.trim(),
         guestEmails,
       };
-      if (roomBooking) payload.roomIds = roomIds;
+      payload.roomIds = roomIds;
       const local = new Date(`${date}T${startTime}`);
       if (!isNaN(local.getTime())) payload.startTime = local.toISOString();
       if (recurrenceRule) payload.recurrenceRule = recurrenceRule;
@@ -369,7 +367,7 @@ export function EditMeetingModal({
               </span>
             </label>
             <RoomLocationField
-              enabled={roomBooking}
+              enabled
               id="edit-mtg-location"
               placeholder="Video call, room, or address"
               value={location}

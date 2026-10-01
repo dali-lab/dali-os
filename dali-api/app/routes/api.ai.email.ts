@@ -11,8 +11,6 @@ import Anthropic from "@anthropic-ai/sdk";
 import { requireAuth } from "~/lib/auth";
 import { generateShortText } from "~/lib/ai.server";
 import { recordTokenUsage } from "~/lib/ai-usage.server";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { getUserRoles } from "~/lib/roles";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { prisma } from "~/lib/db";
 import {
@@ -79,11 +77,6 @@ export async function action({ request }: Route.ActionArgs) {
   }
   if (task !== "draft" && !text.trim()) {
     return Response.json({ error: "Nothing to work on" }, { status: 400 });
-  }
-
-  const roles = await getUserRoles(userId, request);
-  if (!(await isFeatureEnabled("email", userId, roles, request))) {
-    return Response.json({ error: "Not available" }, { status: 403 });
   }
 
   let system: string;

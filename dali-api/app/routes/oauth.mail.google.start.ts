@@ -7,8 +7,6 @@ import type { Route } from "./+types/oauth.mail.google.start";
 import { randomBytes } from "node:crypto";
 import { requireAuth } from "~/lib/auth";
 import { buildGoogleAuthUrl } from "~/lib/google-oauth";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { getUserRoles } from "~/lib/roles";
 import { GMAIL_MODIFY_SCOPE } from "~/email/lib/gmail-mailbox.server";
 import { MAIL_STATE_COOKIE, mailConnectRedirectUri } from "~/email/lib/mail-connect.server";
 import {
@@ -22,11 +20,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return new Response(null, { status: 302, headers: { Location: "/login" } });
   const userId = auth.user.sub;
-
-  const roles = await getUserRoles(userId, request);
-  if (!(await isFeatureEnabled("email", userId, roles, request))) {
-    return new Response(null, { status: 302, headers: { Location: "/" } });
-  }
 
   const target = parseConnectTarget(new URL(request.url).searchParams.get("target"));
   if (!target) return new Response("Unknown account", { status: 400 });

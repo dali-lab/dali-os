@@ -5,9 +5,9 @@ import { prisma } from "~/lib/db";
 import { requireAuth, isImpersonating } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isAiEnabled } from "~/lib/ai.server";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { deleteObject, getObjectBytes } from "~/lib/s3";
 import { isBlockedUpload } from "~/lib/file-validation";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { getUserRoles, type UserRoles } from "~/lib/roles";
 import { demoEmailAction, demoEmailPage, isEmailDemo } from "~/email/lib/demo-data.server";
 import {
@@ -48,7 +48,6 @@ async function requireEmailUser(request: Request) {
   if (auth.user.type === "applicant" || auth.user.type === "dartmouth") throw redirect("/portal");
   if (isEmailDemo(request)) return { userId: auth.user.sub, roles: null, demo: true as const };
   const roles = await getUserRoles(auth.user.sub, request);
-  if (!(await isFeatureEnabled("email", auth.user.sub, roles, request))) throw redirect("/");
   return { userId: auth.user.sub, roles, demo: false as const };
 }
 

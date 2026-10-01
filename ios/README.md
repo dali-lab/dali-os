@@ -40,7 +40,7 @@ Debug builds default to **staging**. You can switch between Production, Staging,
 
 ## Room display
 
-**Pairing.** In DALI OS, go to Core ▸ Rooms (behind the `room-booking` feature flag), pick the room, and choose **Add display**. Enter the 8-character code on the iPad; it expires after 10 minutes.
+**Pairing.** In DALI OS, go to Core ▸ Rooms, pick the room, and choose **Add display**. Enter the 8-character code on the iPad; it expires after 10 minutes.
 
 The iPad then gets its own token, which is stored in the Keychain. The token only works on `/api/room-display/*`, for that one room. Revoke it from the same page. To unpair from the iPad, press and hold the date above the timeline for 3 seconds.
 

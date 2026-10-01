@@ -144,7 +144,6 @@ export function CreateEventModal({
   const [startTime, setStartTime] = useState<string>(() => extractTime(initStart ?? ""));
   const [endTime, setEndTime] = useState<string>(() => extractTime(initEnd ?? ""));
   const [location, setLocation] = useState("");
-  const roomBooking = useFeatureFlag("room-booking");
   const [roomIds, setRoomIds] = useState<string[]>([]);
   const [description, setDescription] = useState("");
   const [destination, setDestination] = useState(defaultDest);
@@ -331,7 +330,7 @@ export function CreateEventModal({
   const eventLoggingWork = isWork && eventCanLogWork;
   // A plain event holds a room with a one-off booking, which has the same
   // shape limits: one timed slot. A series or an all-day hold is a meeting's.
-  const eventCanBookRoom = roomBooking && eventCanLogWork;
+  const eventCanBookRoom = eventCanLogWork;
   // A meeting keeps the toggle when it repeats. The log links to the
   // ScheduledMeeting (one row per meeting per user) and is dated to the series
   // anchor — the first occurrence, the one time being scheduled here.
@@ -366,7 +365,7 @@ export function CreateEventModal({
         durationMinutes,
       };
       if (location.trim()) payload.location = location.trim();
-      if (roomBooking && roomIds.length) payload.roomIds = roomIds;
+      if (roomIds.length) payload.roomIds = roomIds;
       if (description.trim()) payload.description = description.trim();
       if (selectedStartLocal) {
         const d = new Date(selectedStartLocal);
@@ -897,7 +896,7 @@ export function CreateEventModal({
                   </span>
                 </label>
                 <RoomLocationField
-                  enabled={roomBooking}
+                  enabled
                   id="cem-mtg-location"
                   placeholder="Video call, room, or address"
                   value={location}

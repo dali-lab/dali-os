@@ -520,7 +520,7 @@ export function SigningDocumentDetail() {
       />
       {/* Mentee countersignature — only meaningful on a mentor-audience
           agreement, so it's surfaced there. Requires a "mentee" signature field
-          in the body and the mentee-countersign feature flag to take effect. */}
+          in the body to take effect. */}
       {document.audience === "Mentors" && (
         <span className="inline-flex items-center gap-1">
           <ConfigPill
