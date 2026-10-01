@@ -1,7 +1,45 @@
 # Outbound Email Standardization — Audit & Plan
 
-**Status:** PLAN (no code written) · **Date:** 2026-10-01 · **Branch:** `worktree-feat+email-templates-standardize` off `staging`
+**Status:** BUILT 2026-10-01, rollout steps 0-6 · **Date:** 2026-10-01 · **Branch:** `worktree-feat+email-templates-standardize` off `staging` · **Flag:** `email-layout` (off)
 **Scope:** every outbound email in the app — one layout, one template registry, one editor, operator-editable without a deploy.
+
+## Build status
+
+| Step | State | Commit |
+|---|---|---|
+| 0 — defect fixes | ✅ built, no flag | `Email Phase 0` |
+| 1 — layout + MIME envelope | ✅ built behind `email-layout` | `Email Phases 1-3` |
+| 2 — notify() + digest on the layout | ✅ built | `Email Phases 1-3` |
+| 3 — auth | ✅ built | `Email Phases 1-3` |
+| 4 — registry + store collapse + `/admin/email` | ✅ built, data-losing migration | `Email Phase 4` |
+| 5 — partners, signing, education | ✅ built | `Email Phase 5` |
+| 6 — copy gaps | ✅ built | `Email Phase 6` |
+| §3.5 — notify()'s 38 event types made editable | ❌ **not built** — see below | — |
+
+**What §3.5 still needs, and why it wasn't folded in.** Phase 2 put all 38 event
+types on the shared layout, so they look right and carry a text part, but their
+titles and bodies are still literals at ~28 call sites. Making them editable the
+way hiring's are needs something the other 19 templates did not: **per-event
+variables**. The shared vocabulary is seven hiring-shaped tokens (`firstName`,
+`domain`, `time`, `location`, `meetingUrl`, `originalCloseDate`, `newCloseDate`),
+and a notify() title like `Meeting invite: ${meeting.title}` or
+`New response: ${form.name}` has no token for the thing it names. So this is a
+vocabulary design task, not a wiring task, and it wants a decision about whether
+the registry grows a per-event variable set or notify() keeps passing title/body
+and only the frame is editable. The `whenMissing: "default"` machinery it needs
+already exists and is in use by the promotion key.
+
+**Verification across all six steps:** 5,724 tests passing in 572 files,
+`tsc` clean, `npm run build` passes. The migration was applied to a throwaway
+Postgres from scratch, drift-checked with CI's own
+`prisma migrate diff --from-migrations --to-schema`, and exercised with a carry
+test that seeded both old slot tables (including the colliding `decision:Rejected`)
+and confirmed all rows landed on the right keys.
+
+> **13 pre-existing `tsc` errors are unrelated to this branch** and were present
+> on `staging` before it: a stale `scripts/applicant-timeline.ts`, a seed
+> referencing a dropped `emailSent` field, and two component prop mismatches.
+> None are in files this branch touches. Worth a separate cleanup.
 
 > Companion to [transactional-email-consolidation.md](transactional-email-consolidation.md) (BUILT, PR #1368), which
 > moved every send onto the `OutboundMessage` outbox and **deliberately left rendering alone**: *"features keep
@@ -456,8 +494,29 @@ the env fence from §0.4. Retiring `CycleNotificationSend` / `SignRequestNotific
 
 ## 6. Still open
 
-1. **`List-Unsubscribe` on digests** means a real unsubscribe endpoint. Map one-click to setting that event's
-   `digestFrequency: "Off"`, or to a global off switch? (Transactional mail gets no such header either way.)
+1. **§3.5 — notify()'s 38 event types.** The remaining scope item, blocked on the per-event variable question
+   described under Build status above.
+2. **`List-Unsubscribe` was not added.** It needs a real unsubscribe endpoint, and the mapping is a product
+   decision: does one-click set that event's `digestFrequency: "Off"`, or flip a global switch? Everything else in
+   §3.4 landed. Worth doing before the flag flips, since it is the one deliverability item still outstanding.
+3. **The new partner-application confirmation needs a copy review.** It is new outbound mail to partners, written in
+   the existing partner voice but unreviewed. Read it before the flag flips.
+4. **The onboarding block's hardcoded dates are hoisted, not fixed.** `ONBOARDING_DEADLINE` and
+   `REQUIRED_EVENT_DAY` in `app/members/lib/welcome.server.ts` are now named constants at the top of the file
+   rather than buried in markup, so the staleness is visible — but `"June 8th, 2026"` is still what ships, and it
+   is past. Needs either real values or the cycle-fields change from open question (b) below.
+5. **Cycle fields vs template variables for those dates.** Leaning cycle fields, since "deadline to accept" is
+   cycle data other surfaces will want.
+6. **Whether `mustache` ever lands.** Not needed for interpolation. The trigger is the first real request for
+   "show this paragraph only if there's a meeting link". Worth waiting for.
+
+## 7. Before the flag flips
+
+- Read the new partner confirmation copy.
+- Turn `email-layout` on in staging and look at two transforms, not ten clients: **Gmail iOS** (full inversion) and
+  **Outlook.com** (partial). Then classic Outlook for Windows, which is the Word engine.
+- Check one email of each footer variant (`notifications`, `transactional`, `none`).
+- Confirm the plain-text part on a sign-in code and on a digest. (Transactional mail gets no such header either way.)
 2. **Does Phase 0.3 move the onboarding dates to cycle fields or to template variables?** Cycle fields are more
    structured and validate; template variables are faster and keep it in one editable place. Leaning cycle fields,
    since "deadline to accept" is cycle data that other surfaces will want.
