@@ -46,6 +46,11 @@ pub fn on_navigation(app: &AppHandle, url: &Url) -> bool {
         {
             return true;
         }
+        // Subframe loads report here too: an `about:srcdoc` or `about:blank`
+        // iframe is page content, and cancelling it leaves the frame blank.
+        if url.scheme() == "about" {
+            return true;
+        }
         if url.scheme() == config::DEEP_LINK_SCHEME {
             deeplink::handle_urls(app, std::slice::from_ref(url));
             return false;
