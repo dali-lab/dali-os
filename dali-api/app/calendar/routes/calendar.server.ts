@@ -75,6 +75,8 @@ import {
   resolveOccurrence,
 } from "~/lib/meeting-occurrences";
 import { getZonedYMD, resolveUserTimeZone, zonedDayStartUtc } from "~/lib/timezone";
+import { bookRoomsForEvent, releaseRoomBookings } from "~/lib/rooms.server";
+import { isRoomBookingEnabled } from "~/rooms/lib/access.server";
 import { fetchWindow, parseAnchor, parseView, viewWindow, weekWindow } from "~/calendar/lib/view-window";
 import type {
   WhSegment,
@@ -944,19 +946,50 @@ async function handleEventAction(
       // The event lands on the chosen destination either way; the linked entry
       // rides along, and the grid draws that one block with a role accent
       // rather than a second, overlapping logged-time block.
-      const created = await createGoogleCalendarEvent({
-        linkId,
-        calendarId,
-        summary: title,
-        description: description || undefined,
-        location: location || undefined,
-        startIso,
-        endIso,
-        allDay,
-        recurrenceRule,
-        timeZone,
-        attendees: [],
-      });
+      // Rooms picked in the Location field. A plain event has no
+      // ScheduledMeeting to claim them, so it takes a RoomBooking per room —
+      // before the Google write, so a room that's taken rejects the save.
+      const roomIds = (await isRoomBookingEnabled(userId, request))
+        ? [...new Set(get("roomIds").split(",").filter(Boolean))]
+        : [];
+      let bookingIds: string[] = [];
+      if (roomIds.length) {
+        if (allDay || recurrenceRule) {
+          return Response.json(
+            { error: "A room can only be booked for a one-time event with a start and end time." },
+            { status: 400 },
+          );
+        }
+        const booked = await bookRoomsForEvent({
+          roomIds,
+          userId,
+          start: new Date(startIso),
+          end: new Date(endIso),
+          title,
+        });
+        if (!booked.ok) return Response.json({ error: booked.error }, { status: booked.status });
+        bookingIds = booked.value;
+      }
+
+      let created: Awaited<ReturnType<typeof createGoogleCalendarEvent>>;
+      try {
+        created = await createGoogleCalendarEvent({
+          linkId,
+          calendarId,
+          summary: title,
+          description: description || undefined,
+          location: location || undefined,
+          startIso,
+          endIso,
+          allDay,
+          recurrenceRule,
+          timeZone,
+          attendees: [],
+        });
+      } catch (err) {
+        await releaseRoomBookings(bookingIds);
+        throw err;
+      }
       await writeEventWorkLog({
         userId,
         eventId: created.eventId,
