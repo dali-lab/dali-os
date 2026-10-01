@@ -4,10 +4,14 @@
 // sending against account B's mailbox is rejected by Gmail. Callers that don't
 // pass `from` default to the applications@ identity (the historical sender).
 
-import { getAppEnv, APPLICATIONS_FROM_EMAIL as GMAIL_USER, APPLICATIONS_FROM_NAME } from './app-env'
+import {
+  getAppEnv,
+  APPLICATIONS_FROM_EMAIL as GMAIL_USER,
+  APPLICATIONS_FROM_NAME,
+  STAGING_REDIRECT_EMAIL as STAGING_REDIRECT,
+} from './app-env'
 import { refreshGoogleToken } from '~/lib/google-oauth'
 
-const STAGING_REDIRECT = 'systems@dali.dartmouth.edu'
 const CLIENT_ID = process.env.GMAIL_CLIENT_ID ?? process.env.GOOGLE_CLIENT_ID!
 const CLIENT_SECRET = process.env.GMAIL_CLIENT_SECRET ?? process.env.GOOGLE_CLIENT_SECRET!
 

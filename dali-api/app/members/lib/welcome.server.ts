@@ -260,11 +260,25 @@ export async function sendOnboardingReminders(args: {
 // account already existed (re-release) — then we just tell them to use their
 // existing password. SECURITY: this is a live credential; it must only ever be
 // rendered into this email, never logged.
+// STALE-BY-DESIGN CONSTANTS — these are cycle facts living in library code, so
+// they go out of date silently and can only be corrected by a deploy. They are
+// hoisted here (rather than buried in the markup below) so the staleness is
+// visible and the edit is one line. specs/email-standardization.md §3.3 moves
+// them into operator-editable template copy; until then, check these before
+// every hiring cycle.
+const ONBOARDING_DEADLINE = "June 8th, 2026";
+const REQUIRED_EVENT_DAY = "Sunday, September 13th";
+const WELCOME_TERM = "26F";
+const HIRING_SIGNOFF = "Sean Noh and DALI Hiring";
+
 export function onboardingEmailHtml(
   daliEmail: string | null,
   tempPassword: string | null = null,
 ): string {
-  const base = (process.env.FRONTEND_URL ?? "").replace(/\/$/, "");
+  // getFrontendUrl(), not process.env.FRONTEND_URL: a PR preview app sets only
+  // API_BASE_URL, so reading the raw var there left base="" and shipped a
+  // relative "/login" and "/logo-blue.png" into an email, where neither resolves.
+  const base = getFrontendUrl().replace(/\/$/, "");
   const loginUrl = `${base}/login`;
   const logoUrl = `${base}/logo-blue.png`;
 
@@ -296,11 +310,11 @@ export function onboardingEmailHtml(
   return `
     ${accountBlock}
     <p>Once you're in, finish setting up by completing your member profile and onboarding steps.</p>
-    <p><strong>The deadline to accept your offer and complete onboarding is June 8th, 2026.</strong></p>
+    <p><strong>The deadline to accept your offer and complete onboarding is ${ONBOARDING_DEADLINE}.</strong></p>
     ${slackLine}
-    <p>We also have a special event planned for all day Sunday, September 13th. This is a required event. If there is any concern with this requirement, please reach out.</p>
-    <p>We are very excited to welcome you to DALI soon and look forward to an incredible 26F together. Please reach out with any questions.</p>
-    <p>Best,<br/>Sean Noh and DALI Hiring</p>
+    <p>We also have a special event planned for all day ${REQUIRED_EVENT_DAY}. This is a required event. If there is any concern with this requirement, please reach out.</p>
+    <p>We are very excited to welcome you to DALI soon and look forward to an incredible ${WELCOME_TERM} together. Please reach out with any questions.</p>
+    <p>Best,<br/>${HIRING_SIGNOFF}</p>
     <p><img src="${logoUrl}" alt="DALI Lab" width="96" style="display:block;border:0;"/></p>
   `;
 }

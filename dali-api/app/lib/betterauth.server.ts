@@ -7,6 +7,7 @@ import { passkey } from "@better-auth/passkey";
 import { prisma } from "~/lib/db";
 import { getApiBaseUrl, getFrontendUrl, getAppEnv } from "~/lib/app-env";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
+import { freshKey } from "~/lib/outbound-keys";
 import { auditPasskeyMutation } from "~/lib/betterauth-passkey-audit.server";
 import {
   canonicalizeEmailBody,
@@ -178,8 +179,11 @@ export const auth = betterAuth({
         const { id: outboundId } = await enqueueOutbound({
           channel: "email",
           purpose: "General",
-          // Fresh key each send so a re-request always delivers a new link.
-          dedupKey: `auth.magic_link:${email}:${url}`,
+          // Fresh key each send so a re-request always delivers a new link. A
+          // nonce, never the link itself: the retention janitor strips bodyHtml
+          // at 24h but not dedupKey, so a credential here would outlive the
+          // email by ~retentionMonths (6) in the DB and every backup.
+          dedupKey: freshKey("auth.magic_link", email),
           target: email,
           subject: "Your DALI OS sign-in link",
           bodyHtml: `
@@ -217,8 +221,9 @@ export const auth = betterAuth({
         const { id: outboundId } = await enqueueOutbound({
           channel: "email",
           purpose: "General",
-          // Fresh key per code so a resend always delivers.
-          dedupKey: `auth.email_otp:${email}:${otp}`,
+          // Fresh key per code so a resend always delivers. A nonce, never the
+          // code itself — see the magic-link key above for why.
+          dedupKey: freshKey("auth.email_otp", email),
           target: email,
           subject: "Your DALI OS sign-in code",
           bodyHtml: `
