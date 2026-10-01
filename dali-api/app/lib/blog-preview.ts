@@ -6,6 +6,9 @@ import type { DocBlock, DocInline } from "~/collab/blocknote-server";
 
 const EXCERPT_MAX = 240;
 
+/** Shown wherever a post has no cover of its own (public/). */
+export const DEFAULT_BLOG_COVER = "/blog-default-cover.svg";
+
 function inlineText(content: DocBlock["content"]): string {
   if (!Array.isArray(content)) return "";
   return (content as DocInline[])

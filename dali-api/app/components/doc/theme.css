@@ -962,14 +962,14 @@ a.dali-cmp-chip:hover, a.dali-cmp-row:hover { background: color-mix(in srgb, cur
 }
 
 .dali-cmp-steps { display: flex; list-style: none; margin: 8px 0 0; padding: 0; overflow-x: auto; }
-.dali-cmp-step { position: relative; flex: 1; min-width: 84px; display: flex; flex-direction: column; gap: 8px; font-size: 0.85em; opacity: 0.6; }
-.dali-cmp-step::before { content: ""; position: absolute; top: 11px; left: 22px; right: 0; height: 1px; background: var(--cmp-border); }
+.dali-cmp-step { position: relative; flex: 1; min-width: 84px; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 4px 6px 0; font-size: 0.85em; text-align: center; opacity: 0.6; }
+/* Connector: from this circle's centre to the next one's. */
+.dali-cmp-step::before { content: ""; position: absolute; top: 15px; left: 50%; width: 100%; height: 1px; background: var(--cmp-border); }
 .dali-cmp-step:last-child::before { display: none; }
 .dali-cmp-step__num {
-  position: relative; width: 22px; height: 22px; border-radius: 999px; display: grid; place-items: center;
+  position: relative; z-index: 1; width: 22px; height: 22px; border-radius: 999px; display: grid; place-items: center;
   font-size: 11px; font-weight: 700; border: 1px solid var(--cmp-border); background: var(--color-card, #fff);
 }
-.dali-cmp-step__label::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 6px; border-radius: 999px; background: var(--cmp-tone); vertical-align: middle; }
 .dali-cmp-step--done, .dali-cmp-step--current { opacity: 1; }
 .dali-cmp-step--done::before { background: #1f9d8a; }
 .dali-cmp-step--done .dali-cmp-step__num { background: #1f9d8a; border-color: #1f9d8a; color: #fff; }
@@ -998,5 +998,12 @@ a.dali-cmp-piece:hover .dali-cmp-row__title { text-decoration: underline; }
 .dali-cmp-feature__body { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 20px; }
 .dali-cmp-feature__title { font-size: 1.7em; font-weight: 800; line-height: 1.15; }
 .dali-cmp-cta { margin-top: 4px; padding: 8px 16px; border-radius: 8px; font-weight: 700; background: var(--cmp-tone); color: #fff !important; }
+
+/* Breathing room, so stacked components never touch. */
+.dali-cmp { margin-block: 8px; }
+
+.dali-cmp-spacer { width: 100%; }
+/* Only while editing: an outline, so the empty block can be found and grabbed. */
+.bn-editor[contenteditable="true"] .dali-cmp-spacer { border: 1px dashed var(--cmp-border); border-radius: 8px; }
 
 .dali-cmp-code { display: block; width: 100%; border: 0; border-radius: 14px; background: transparent; }

@@ -5,6 +5,7 @@ import {
   codeSrcDoc,
   parseComponentData,
   safeHref,
+  spacerHeight,
 } from "../components/kinds";
 import { resolveFeatures } from "../features";
 
@@ -44,6 +45,12 @@ describe("component library", () => {
     expect(doc).toContain("default-src 'none'");
     expect(doc).not.toContain("connect-src");
     expect(doc.endsWith("<p>hi</p>")).toBe(true);
+  });
+
+  it("clamps spacer height", () => {
+    expect(spacerHeight("48")).toBe("48px");
+    expect(spacerHeight("")).toBe("32px");
+    expect(spacerHeight("9999")).toBe("400px");
   });
 
   it("clamps custom code height", () => {

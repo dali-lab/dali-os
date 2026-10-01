@@ -27,7 +27,7 @@ export default function BlogPostPage() {
   const { post, canEdit } = useLoaderData<typeof loader>();
 
   return (
-    <article className="mx-auto max-w-3xl pt-4">
+    <article className="pt-4">
       <div className="flex items-center gap-3 py-4">
         <Link
           to="/resources"
@@ -44,9 +44,7 @@ export default function BlogPostPage() {
           </Link>
         )}
       </div>
-      {/* Same inline gutter as the editor below, so the headline sits flush
-          with the body text. */}
-      <div className="px-3 sm:px-[54px]">
+      <div>
         <h1 className="font-serif text-5xl font-bold leading-tight text-foreground">{post.title}</h1>
         {post.summary && <p className="mt-3 font-serif text-xl text-os-grey">{post.summary}</p>}
         <p className="mt-3 border-b border-border pb-4 text-xs font-semibold uppercase tracking-wider text-os-grey">
@@ -58,6 +56,8 @@ export default function BlogPostPage() {
         key={post.id}
         features="resource"
         editable={false}
+        // No block handles when reading, so no gutter for them either.
+        className="[&_.bn-editor]:!px-0"
         initialContent={post.contentJson ?? []}
       />
     </article>

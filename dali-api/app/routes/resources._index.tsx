@@ -5,9 +5,14 @@ import type { Route } from "./+types/resources._index";
 import { prisma } from "~/lib/db";
 import { cn } from "~/lib/cn";
 import { fullName, formatDateShort } from "~/lib/display";
-import { blogListing } from "~/lib/blog-preview";
+import { DEFAULT_BLOG_COVER, blogListing } from "~/lib/blog-preview";
 import { requireResourcesViewer } from "~/lib/resources.server";
-import { UNTOUCHED_DRAFT } from "~/lib/blog-post.server";
+import {
+  UNTOUCHED_DRAFT,
+  moveBlogPostPin,
+  pinBlogPostToTop,
+  unpinBlogPost,
+} from "~/lib/blog-post.server";
 import { IconButton } from "~/components/ui/IconButton";
 import { Tooltip } from "~/components/ui/floating/Tooltip";
 import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
@@ -56,31 +61,39 @@ export async function loader({ request }: Route.LoaderArgs) {
   };
 }
 
-// Core's arrangement arrives whole: the pinned post ids in display order.
-// Everything not listed is unpinned.
+// Core's curation. Each change names one post; the order is worked out
+// server-side (see blog-post.server.ts).
 export async function action({ request }: Route.ActionArgs) {
   const { core } = await requireResourcesViewer(request);
   if (!core) throw new Response("Forbidden", { status: 403 });
   const form = await request.formData();
-  if (form.get("intent") !== "arrange") throw new Response("Bad request", { status: 400 });
-  const ids = String(form.get("pinned") ?? "").split(",").filter(Boolean);
-  await prisma.$transaction([
-    prisma.blogPost.updateMany({
-      where: { id: { notIn: ids }, frontPageRank: { not: null } },
-      data: { frontPageRank: null },
-    }),
-    ...ids.map((id, rank) =>
-      prisma.blogPost.updateMany({ where: { id }, data: { frontPageRank: rank } }),
-    ),
-  ]);
+  const postId = String(form.get("postId") ?? "");
+  switch (form.get("intent")) {
+    case "pin":
+      await pinBlogPostToTop(postId);
+      break;
+    case "unpin":
+      await unpinBlogPost(postId);
+      break;
+    case "move":
+      await moveBlogPostPin(postId, form.get("by") === "-1" ? -1 : 1);
+      break;
+    default:
+      throw new Response("Bad request", { status: 400 });
+  }
   return { ok: true };
 }
 
 type Post = Awaited<ReturnType<typeof loader>>["published"][number];
 
-function Byline({ post }: { post: Post }) {
+function Byline({ post, showPin }: { post: Post; showPin: boolean }) {
   return (
     <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-os-grey">
+      {showPin && post.pinned && (
+        <Tooltip content="Pinned">
+          <Pin className="h-3.5 w-3.5 fill-current" aria-label="Pinned" />
+        </Tooltip>
+      )}
       {post.author}
       {post.date && <span className="font-normal normal-case tracking-normal">· {post.date}</span>}
       {post.isPublic && (
@@ -93,8 +106,9 @@ function Byline({ post }: { post: Post }) {
 }
 
 type Curate = {
-  pin: (id: string) => void;
-  move: (id: string, by: -1 | 1) => void;
+  submit: (data: Record<string, string>) => void;
+  busy: boolean;
+  /** Pinned post ids in display order. */
   pinnedIds: string[];
 };
 
@@ -102,10 +116,13 @@ function Story({
   post,
   size,
   curate,
+  showPin,
 }: {
   post: Post;
   size: "lead" | "side" | "more";
   curate?: Curate;
+  /** Core sees which stories are pinned, in and out of Edit mode. */
+  showPin: boolean;
 }) {
   const at = curate ? curate.pinnedIds.indexOf(post.id) : -1;
   return (
@@ -115,53 +132,76 @@ function Story({
           <IconButton
             label={at >= 0 ? "Unpin" : "Pin to top"}
             icon={at >= 0 ? PinOff : Pin}
-            onClick={() => curate.pin(post.id)}
+            disabled={curate.busy}
+            onClick={() => curate.submit({ intent: at >= 0 ? "unpin" : "pin", postId: post.id })}
           />
           {at >= 0 && (
             <>
               <IconButton
                 label="Move earlier"
                 icon={ArrowUp}
-                disabled={at === 0}
-                onClick={() => curate.move(post.id, -1)}
+                disabled={curate.busy || at === 0}
+                onClick={() => curate.submit({ intent: "move", postId: post.id, by: "-1" })}
               />
               <IconButton
                 label="Move later"
                 icon={ArrowDown}
-                disabled={at === curate.pinnedIds.length - 1}
-                onClick={() => curate.move(post.id, 1)}
+                disabled={curate.busy || at === curate.pinnedIds.length - 1}
+                onClick={() => curate.submit({ intent: "move", postId: post.id, by: "1" })}
               />
             </>
           )}
         </div>
       )}
-      <Link to={`/resources/blog/${post.id}`} className="group flex flex-col gap-2">
-        {post.coverImageUrl && size !== "side" && (
-          <img
-            src={post.coverImageUrl}
-            alt=""
-            className={cn("w-full object-cover", size === "lead" ? "aspect-[16/9]" : "aspect-[3/2]")}
-          />
+      {/* Lead: words beside the picture. Side: a headline with a thumbnail.
+          More: a small card. The picture never spans the page on its own. */}
+      <Link
+        to={`/resources/blog/${post.id}`}
+        className={cn(
+          "group",
+          size === "lead" && "grid items-start gap-6 md:grid-cols-5",
+          size === "side" && "flex items-start gap-4",
+          size === "more" && "flex flex-col gap-3",
         )}
-        <h2
+      >
+        <div
           className={cn(
-            "font-serif font-bold leading-tight text-foreground group-hover:underline",
-            size === "lead" ? "text-4xl" : size === "side" ? "text-xl" : "text-2xl",
+            "flex min-w-0 flex-col gap-2 px-2 py-1",
+            size === "lead" && "md:col-span-2",
+            size === "side" && "flex-1",
+            size === "more" && "order-2",
           )}
         >
-          {post.title}
-        </h2>
-        {post.excerpt && (
-          <p
+          <h2
             className={cn(
-              "font-serif text-os-grey",
-              size === "lead" ? "text-lg" : "line-clamp-3 text-sm",
+              "font-serif font-bold leading-tight text-foreground group-hover:underline",
+              size === "lead" ? "text-3xl xl:text-4xl" : "text-lg",
             )}
           >
-            {post.excerpt}
-          </p>
-        )}
-        <Byline post={post} />
+            {post.title}
+          </h2>
+          {post.excerpt && size !== "side" && (
+            <p
+              className={cn(
+                "font-serif text-os-grey",
+                size === "lead" ? "line-clamp-5 text-base" : "line-clamp-2 text-sm",
+              )}
+            >
+              {post.excerpt}
+            </p>
+          )}
+          <Byline post={post} showPin={showPin} />
+        </div>
+        <img
+          src={post.coverImageUrl ?? DEFAULT_BLOG_COVER}
+          alt=""
+          className={cn(
+            "rounded-lg object-cover",
+            size === "lead" && "aspect-[3/2] w-full md:col-span-3",
+            size === "side" && "h-20 w-28 shrink-0",
+            size === "more" && "order-1 aspect-[3/2] w-full",
+          )}
+        />
       </Link>
     </div>
   );
@@ -175,21 +215,13 @@ export default function ResourcesFrontPage() {
   const side = rest.slice(0, 3);
   const more = rest.slice(3);
 
-  const pinnedIds = published.filter((p) => p.pinned).map((p) => p.id);
-  const arrange = (ids: string[]) =>
-    fetcher.submit({ intent: "arrange", pinned: ids.join(",") }, { method: "post" });
+  // One change at a time: the controls wait for the last one to land, so a
+  // quick second click can't act on an order that is about to change.
   const curate: Curate | undefined = editing
     ? {
-        pinnedIds,
-        pin: (id) =>
-          arrange(pinnedIds.includes(id) ? pinnedIds.filter((p) => p !== id) : [...pinnedIds, id]),
-        move: (id, by) => {
-          const from = pinnedIds.indexOf(id);
-          const next = [...pinnedIds];
-          next.splice(from, 1);
-          next.splice(from + by, 0, id);
-          arrange(next);
-        },
+        pinnedIds: published.filter((p) => p.pinned).map((p) => p.id),
+        busy: fetcher.state !== "idle",
+        submit: (data) => fetcher.submit(data, { method: "post" }),
       }
     : undefined;
 
@@ -214,15 +246,15 @@ export default function ResourcesFrontPage() {
         </p>
       )}
       {lead && (
-        <section className="grid gap-8 lg:grid-cols-3">
-          <div className={cn(side.length > 0 ? "lg:col-span-2" : "lg:col-span-3")}>
-            <Story post={lead} size="lead" curate={curate} />
+        <section className="grid gap-8 xl:grid-cols-3">
+          <div className={cn(side.length > 0 ? "xl:col-span-2" : "xl:col-span-3")}>
+            <Story post={lead} size="lead" curate={curate} showPin={canCurate} />
           </div>
           {side.length > 0 && (
-            <div className="flex flex-col divide-y divide-border lg:border-l lg:border-border lg:pl-8">
+            <div className="flex flex-col divide-y divide-border xl:border-l xl:border-border xl:pl-8">
               {side.map((p) => (
                 <div key={p.id} className="py-5 first:pt-0 last:pb-0">
-                  <Story post={p} size="side" curate={curate} />
+                  <Story post={p} size="side" curate={curate} showPin={canCurate} />
                 </div>
               ))}
             </div>
@@ -230,9 +262,9 @@ export default function ResourcesFrontPage() {
         </section>
       )}
       {more.length > 0 && (
-        <section className="grid gap-x-8 gap-y-10 border-t border-foreground pt-8 sm:grid-cols-2 lg:grid-cols-3">
+        <section className="grid gap-x-8 gap-y-10 border-t border-foreground pt-8 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
           {more.map((p) => (
-            <Story key={p.id} post={p} size="more" curate={curate} />
+            <Story key={p.id} post={p} size="more" curate={curate} showPin={canCurate} />
           ))}
         </section>
       )}

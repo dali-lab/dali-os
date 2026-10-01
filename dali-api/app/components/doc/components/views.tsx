@@ -10,6 +10,7 @@ import {
   codeHeight,
   codeSrcDoc,
   safeHref,
+  spacerHeight,
   toneOf,
   type ComponentData,
 } from "./kinds";
@@ -83,7 +84,7 @@ function Timeline({ fields, items }: ComponentData) {
           const n = i + 1;
           const state = n < current ? "done" : n === current ? "current" : "next";
           return (
-            <li key={i} className={`dali-cmp-step dali-cmp-step--${state} ${tone(it)}`}>
+            <li key={i} className={`dali-cmp-step dali-cmp-step--${state}`}>
               <span className="dali-cmp-step__num">{n}</span>
               <span className="dali-cmp-step__label">{it.label}</span>
             </li>
@@ -189,6 +190,10 @@ function Feature({ fields }: ComponentData) {
   );
 }
 
+function Spacer({ fields }: ComponentData) {
+  return <div className="dali-cmp-spacer" style={{ height: spacerHeight(fields.height) }} />;
+}
+
 function Code({ fields }: ComponentData) {
   return (
     <iframe
@@ -211,6 +216,7 @@ const VIEWS: Record<string, (data: ComponentData) => ReactNode> = {
   bars: Bars,
   gallery: Gallery,
   feature: Feature,
+  spacer: Spacer,
   code: Code,
 };
 

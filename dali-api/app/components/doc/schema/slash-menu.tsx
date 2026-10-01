@@ -23,6 +23,7 @@ import {
   LayoutGrid,
   List,
   Milestone,
+  SeparatorHorizontal,
   Sparkles,
   Tags,
   type LucideIcon,
@@ -120,6 +121,7 @@ const COMPONENT_ICONS: Record<string, LucideIcon> = {
   bars: BarChart3,
   gallery: Images,
   feature: Sparkles,
+  spacer: SeparatorHorizontal,
   code: Code2,
 };
 

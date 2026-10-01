@@ -92,15 +92,10 @@ export const COMPONENT_KINDS: KindDef[] = [
       { key: "current", label: "Current step number", type: "text", placeholder: "1" },
     ],
     itemLabel: "Step",
-    itemFields: [{ key: "label", label: "Name", type: "text" }, tone],
+    itemFields: [{ key: "label", label: "Name", type: "text" }],
     defaults: {
       fields: { title: "Term timeline", note: "", current: "2" },
-      items: [
-        { label: "Kickoff", tone: "neutral" },
-        { label: "Research", tone: "neutral" },
-        { label: "Crit 1", tone: "danger" },
-        { label: "Demo Day", tone: "accent" },
-      ],
+      items: [{ label: "Kickoff" }, { label: "Research" }, { label: "Crit 1" }, { label: "Demo Day" }],
     },
   },
   {
@@ -206,6 +201,14 @@ export const COMPONENT_KINDS: KindDef[] = [
     },
   },
   {
+    kind: "spacer",
+    title: "Spacer",
+    subtext: "Empty space between blocks",
+    aliases: ["spacer", "space", "gap", "margin"],
+    fields: [{ key: "height", label: "Height in px", type: "text", placeholder: "32" }],
+    defaults: { fields: { height: "32" }, items: [] },
+  },
+  {
     kind: "code",
     title: "Custom code",
     subtext: "Your own HTML, CSS and JS in a sandbox",
@@ -286,4 +289,9 @@ export function codeHeight(value: string | undefined): string {
   if (value?.trim().toLowerCase() === "full") return "calc(100dvh - 160px)";
   const px = Number.parseInt(value ?? "", 10);
   return `${Number.isFinite(px) && px >= 80 ? Math.min(px, 4000) : 320}px`;
+}
+
+export function spacerHeight(value: string | undefined): string {
+  const px = Number.parseInt(value ?? "", 10);
+  return `${Number.isFinite(px) && px > 0 ? Math.min(px, 400) : 32}px`;
 }

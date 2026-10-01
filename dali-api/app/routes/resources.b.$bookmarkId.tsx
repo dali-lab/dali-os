@@ -5,6 +5,7 @@ import type { Route } from "./+types/resources.b.$bookmarkId";
 import { DocEditor } from "~/components/doc";
 import { resourcesRoomName } from "~/collab/roomName";
 import { prisma } from "~/lib/db";
+import { cn } from "~/lib/cn";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { requireResourcesViewer } from "~/lib/resources.server";
 import { IconButton } from "~/components/ui/IconButton";
@@ -121,7 +122,13 @@ export default function ResourceBookmarkPage() {
           userId: currentUserId,
         }}
         placeholder="Write something, or press '/' for commands"
-        className="min-h-[70vh]"
+        // The editor keeps a 54px gutter each side for its block handles. Reading,
+        // that is dead space, so drop it; editing, let the handles sit in the
+        // page's own padding instead of pushing the text in.
+        className={cn(
+          "min-h-[70vh]",
+          canEdit && editing ? "sm:-mx-10" : "[&_.bn-editor]:!px-0",
+        )}
       />
     </div>
   );

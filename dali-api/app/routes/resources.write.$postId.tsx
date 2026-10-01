@@ -5,8 +5,8 @@ import type { Route } from "./+types/resources.write.$postId";
 import { DocEditor, IMAGE_UPLOAD_ACCEPT, uploadEditorImage, type DocSyncState } from "~/components/doc";
 import { blogPostRoomName } from "~/collab/roomName";
 import { prisma } from "~/lib/db";
-import { blogListing } from "~/lib/blog-preview";
-import { loadBlogPost } from "~/lib/blog-post.server";
+import { DEFAULT_BLOG_COVER, blogListing } from "~/lib/blog-preview";
+import { loadBlogPost, pinBlogPostToTop, unpinBlogPost } from "~/lib/blog-post.server";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { useOsChrome } from "~/components/os-chrome";
 import { IconButton } from "~/components/ui/IconButton";
@@ -73,24 +73,22 @@ export async function action({ request, params }: Route.ActionArgs) {
         data: { visibility: form.get("public") === "1" ? "Public" : "Internal" },
       });
       return { ok: true };
-    case "publish":
+    case "publish": {
+      const publish = form.get("published") === "1";
       await prisma.blogPost.update({
         where,
-        data: {
-          publishedAt: form.get("published") === "1" ? (post.publishedAt ?? new Date()) : null,
-        },
+        data: publish
+          ? { publishedAt: post.publishedAt ?? new Date() }
+          : // Only a published post holds a pin.
+            { publishedAt: null, frontPageRank: null },
       });
       return { ok: true };
-    case "pin": {
-      if (!viewer.core) throw new Response("Forbidden", { status: 403 });
-      let frontPageRank: number | null = null;
-      if (form.get("pinned") === "1") {
-        const last = await prisma.blogPost.aggregate({ _max: { frontPageRank: true } });
-        frontPageRank = (last._max.frontPageRank ?? -1) + 1;
-      }
-      await prisma.blogPost.update({ where, data: { frontPageRank } });
-      return { ok: true };
     }
+    case "pin":
+      if (!viewer.core) throw new Response("Forbidden", { status: 403 });
+      if (form.get("pinned") === "1") await pinBlogPostToTop(post.id);
+      else await unpinBlogPost(post.id);
+      return { ok: true };
     case "delete":
       await prisma.$transaction([
         prisma.collabDocument.deleteMany({ where: { name: blogPostRoomName(post.id) } }),
@@ -208,13 +206,11 @@ export default function BlogWritePage() {
 
           <div className="flex flex-col gap-1.5">
             <span className="os-field-label">Cover</span>
-            {post.coverImageUrl ? (
-              <img src={post.coverImageUrl} alt="" className="aspect-[16/9] w-full rounded-os-item object-cover" />
-            ) : (
-              <div className="flex aspect-[16/9] w-full items-center justify-center rounded-os-item bg-os-well text-sm text-os-grey">
-                No image
-              </div>
-            )}
+            <img
+              src={post.coverImageUrl ?? DEFAULT_BLOG_COVER}
+              alt=""
+              className="aspect-[16/9] w-full rounded-os-item object-cover"
+            />
             <div className="flex items-center gap-1">
               <IconButton
                 label={uploading ? "Uploading" : "Upload cover"}
@@ -267,6 +263,8 @@ export default function BlogWritePage() {
             <Toggle
               tone="os"
               label="Pin to top"
+              description={post.published ? undefined : "Publish first"}
+              disabled={!post.published}
               checked={post.pinned}
               onChange={(e) => submit({ intent: "pin", pinned: e.target.checked ? "1" : "0" })}
             />
