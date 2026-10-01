@@ -2850,57 +2850,36 @@ async function main() {
       body: `Hi {{firstName}},\n\nWe are thrilled to offer you a spot in DALI!\n\nAfter a highly competitive review process, we believe you'll be a fantastic addition to our team. Please log in to your application portal to confirm your acceptance.\n\nOnboarding details and next steps will follow shortly. In the meantime, if you have any questions, feel free to reach out to us at applications@dali.dartmouth.edu.\n\nWelcome to the family — we can't wait to work with you!\n\nWarmly,\nThe DALI Team`,
     },
   ]
-  // Every template lives as a named EmailTemplate parent + EmailTemplateVersion
-  // (below); ApplicationReceived / InterviewInviteMentor bind to a cycle via
-  // CycleNotificationEmail, the rest via CycleDecisionEmail. The old type-keyed
-  // LegacyEmailTemplate table has been dropped.
-
-  // New rubric-pattern templates: one named parent + one EmailTemplateVersion
-  // per legacy type. Deterministic ids match the migration backfill so re-seeding
-  // a freshly-migrated DB doesn't double-write.
-  for (const t of seedTemplates) {
-    const templateId = `tmpl_${t.type.toLowerCase()}`
-    await prisma.emailTemplate.upsert({
-      where: { id: templateId },
-      update: {},
-      create: { id: templateId, name: t.type },
-    })
-    const existingVersion = await prisma.emailTemplateVersion.findFirst({
-      where: { templateId },
-    })
-    if (!existingVersion) {
-      await prisma.emailTemplateVersion.create({
-        data: {
-          templateId,
-          versionNumber: 1,
-          subject: t.subject,
-          body: t.body,
-          createdById: engLead.id,
-        },
-      })
-    }
-  }
-
-  // Hiring's shared emails (one per slot, used by every cycle), seeded from
-  // the templates above.
+  // Hiring's emails: one EmailTemplate row per registry key, shared by every
+  // cycle. The seed copy above is keyed by decision/notification type; the
+  // registry key is that slot prefixed with its area.
   const hiringSlots = [
-    ...(['Rejected', 'InvitedToInterview', 'Accepted', 'Waitlisted'] as const).map((t) => ({ slot: `decision:${t}`, tmpl: t })),
-    ...(['ApplicationReceived', 'ApplicationExtensionNotice', 'InterviewInviteMentor', 'InterviewConfirmedApplicant', 'InterviewCancelledApplicant', 'InterviewCancelledInterviewer', 'InterviewLocationChanged'] as const).map((t) => ({ slot: `notification:${t}`, tmpl: t })),
+    ...(['Rejected', 'InvitedToInterview', 'Accepted', 'Waitlisted'] as const).map(
+      (t) => ({ slot: `decision:${t}`, tmpl: t as string }),
+    ),
+    ...([
+      'ApplicationReceived',
+      'ApplicationExtensionNotice',
+      'InterviewInviteMentor',
+      'InterviewConfirmedApplicant',
+      'InterviewCancelledApplicant',
+      'InterviewCancelledInterviewer',
+      'InterviewLocationChanged',
+    ] as const).map((t) => ({ slot: `notification:${t}`, tmpl: t as string })),
   ]
+  let seededEmails = 0
   for (const { slot, tmpl } of hiringSlots) {
-    const version = await prisma.emailTemplateVersion.findFirst({
-      where: { templateId: `tmpl_${tmpl.toLowerCase()}` },
-      orderBy: { versionNumber: 'desc' },
+    const copy = seedTemplates.find((t) => t.type === tmpl)
+    if (!copy) continue
+    const key = `hiring:${slot}`
+    await prisma.emailTemplate.upsert({
+      where: { key },
+      update: {},
+      create: { key, subject: copy.subject, body: copy.body, updatedById: engLead.id },
     })
-    if (version) {
-      await prisma.hiringEmail.upsert({
-        where: { slot },
-        update: { subject: version.subject, body: version.body },
-        create: { slot, subject: version.subject, body: version.body },
-      })
-    }
+    seededEmails += 1
   }
-  console.log(`  ${seedTemplates.length} email templates seeded (2 legacy + 7 new), plus hiring's shared emails`)
+  console.log(`  ${seededEmails} hiring emails seeded into the unified template store`)
   console.log(`  ${reviewSpecs.length} ApplicationReviews + ${decisionSpecs.filter(s => s.type === "InvitedToInterview").length * 3 + decisionSpecs.filter(s => s.type !== "InvitedToInterview").length * 2} Decisions + ${interviewBookings.length} booked interviews for Fall 2026`);
 
   // ── Partners + projects ────────────────────────────────────────────────────

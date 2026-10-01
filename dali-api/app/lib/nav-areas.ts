@@ -307,9 +307,9 @@ function applyDriveSpacesSubstitutions(areas: NavArea[]): NavArea[] {
     return {
       ...a,
       subtabs: a.subtabs.map((t) => {
-        // Core ▸ Communications email templates → Drive filtered to email templates.
+        // Core ▸ Communications ▸ Email → the unified email editor.
         if (t.href === "/core/communications/email")
-          return { ...t, href: "/drive?type=emailTemplate", matchPrefix: t.href };
+          return { ...t, href: "/admin/email", matchPrefix: t.href };
         return t;
       }),
     };

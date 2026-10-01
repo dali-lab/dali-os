@@ -52,7 +52,7 @@ const mockPrisma = prisma as unknown as {
     findMany: ReturnType<typeof vi.fn>;
   };
   user: { findUnique: ReturnType<typeof vi.fn> };
-  hiringEmail: { findUnique: ReturnType<typeof vi.fn> };
+  emailTemplate: { findUnique: ReturnType<typeof vi.fn> };
   gmailIntegration: { findFirst: ReturnType<typeof vi.fn> };
 };
 
@@ -121,7 +121,7 @@ beforeEach(() => {
     findMany: vi.fn().mockResolvedValue([]),
   };
   (mockPrisma as any).user = { findUnique: vi.fn().mockResolvedValue(null) };
-  (mockPrisma as any).hiringEmail = {
+  (mockPrisma as any).emailTemplate = {
     findUnique: vi.fn().mockResolvedValue(null),
   };
   (mockPrisma as any).gmailIntegration = {
@@ -386,7 +386,7 @@ describe("POST /portal/apply (submit) confirmation email", () => {
     mockPrisma.domainApplication.findMany.mockResolvedValue([]);
     mockPrisma.applicationStatusUpdate.findFirst.mockResolvedValue(null);
     mockApplicantsAndGmail();
-    (mockPrisma as any).hiringEmail.findUnique.mockResolvedValue({ subject: "s", body: "b" });
+    (mockPrisma as any).emailTemplate.findUnique.mockResolvedValue({ subject: "s", body: "b" });
 
     const res = await action({
       request: makeSubmitRequest({ answers: {} }),
@@ -395,9 +395,8 @@ describe("POST /portal/apply (submit) confirmation email", () => {
     } as any);
 
     expect((res as Response).status).toBe(302);
-    expect(mockPrisma.hiringEmail.findUnique).toHaveBeenCalledWith({
-      where: { slot: "notification:ApplicationReceived" },
-      select: { subject: true, body: true },
+    expect(mockPrisma.emailTemplate.findUnique).toHaveBeenCalledWith({
+      where: { key: "hiring:notification:ApplicationReceived" },
     });
     expect(enqueueOutbound).toHaveBeenCalledTimes(1);
     expect(enqueueOutbound).toHaveBeenCalledWith(
@@ -434,7 +433,7 @@ describe("POST /portal/apply (submit) confirmation email", () => {
     mockPrisma.domainApplication.findMany.mockResolvedValue([]);
     mockPrisma.applicationStatusUpdate.findFirst.mockResolvedValue(null);
     mockApplicantsAndGmail();
-    (mockPrisma as any).hiringEmail.findUnique.mockResolvedValue(null);
+    (mockPrisma as any).emailTemplate.findUnique.mockResolvedValue(null);
 
     const res = await action({
       request: makeSubmitRequest({ answers: {} }),
@@ -454,7 +453,7 @@ describe("POST /portal/apply (submit) confirmation email", () => {
     mockPrisma.domainApplication.findMany.mockResolvedValue([]);
     mockPrisma.applicationStatusUpdate.findFirst.mockResolvedValue(null);
     mockApplicantsAndGmail();
-    (mockPrisma as any).hiringEmail.findUnique.mockResolvedValue({ subject: "s", body: "b" });
+    (mockPrisma as any).emailTemplate.findUnique.mockResolvedValue({ subject: "s", body: "b" });
     vi.mocked(enqueueOutbound).mockRejectedValueOnce(new Error("Gmail send failed: 401"));
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 

@@ -6,7 +6,6 @@
 // ACCESS MODEL:
 //   file         — Core OR project member
 //   form         — canViewForms (Core/Admin/Instructor)
-//   emailTemplate — Core only
 //   Destination folder — getPageAccess(...).canEdit (or null to unplace)
 
 import { prisma } from "~/lib/db";
@@ -23,7 +22,7 @@ export const MOVE_DRIVE_ITEM_TOOL = {
     properties: {
       itemType: {
         type: "string",
-        enum: ["file", "form", "emailTemplate"],
+        enum: ["file", "form"],
         description: "Type of drive item to move.",
       },
       itemId: { type: "string", minLength: 1, description: "ID of the item to move." },
@@ -46,7 +45,7 @@ export class MoveDriveItemError extends Error {
 }
 
 type Input = {
-  itemType: "file" | "form" | "emailTemplate";
+  itemType: "file" | "form";
   itemId: string;
   destFolderPageId?: string;
 };
@@ -67,15 +66,10 @@ export async function runMoveDriveItem(callerId: string, input: Input) {
       (await isCore(callerId)) ||
       (file.projectId != null && (await isProjectMember(callerId, file.projectId)));
     if (!canManage) throw new MoveDriveItemError("You can't move this file", 403);
-  } else if (itemType === "form") {
+  } else {
     const form = await prisma.form.findUnique({ where: { id: itemId }, select: { id: true } });
     if (!form) throw new MoveDriveItemError("Form not found", 404);
     if (!(await canViewForms(callerId))) throw new MoveDriveItemError("You can't move this form", 403);
-  } else {
-    // emailTemplate
-    const exists = await prisma.emailTemplate.findUnique({ where: { id: itemId }, select: { id: true } });
-    if (!exists) throw new MoveDriveItemError("Email template not found", 404);
-    if (!(await isCore(callerId))) throw new MoveDriveItemError("You can't move this email template", 403);
   }
 
   // Authorise the destination folder.
@@ -94,10 +88,8 @@ export async function runMoveDriveItem(callerId: string, input: Input) {
   // Apply the placement.
   if (itemType === "file") {
     await prisma.projectFile.update({ where: { id: itemId }, data: { folderPageId: destFolderPageId } });
-  } else if (itemType === "form") {
-    await prisma.form.update({ where: { id: itemId }, data: { folderPageId: destFolderPageId } });
   } else {
-    await prisma.emailTemplate.update({ where: { id: itemId }, data: { folderPageId: destFolderPageId } });
+    await prisma.form.update({ where: { id: itemId }, data: { folderPageId: destFolderPageId } });
   }
 
   await logAuditEvent({

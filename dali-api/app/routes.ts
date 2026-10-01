@@ -58,8 +58,8 @@ export default [
     // Hiring singleton's slots) — Core-only, the Hiring peer of /core/drive-folders.
     route("hiring/drive-folders", "hiring/routes/hiring.drive-folders.tsx"),
     route("hiring/rubrics/:id", "hiring/routes/rubrics.$id.tsx"),
-    route("hiring/emails", "hiring/routes/email-templates.tsx"),
-    route("hiring/emails/:id", "hiring/routes/email-templates.$id.tsx"),
+    route("hiring/emails", "admin/routes/admin.email.legacy-redirect.ts", { id: "legacy-email-hiring" }),
+    route("hiring/emails/:id", "admin/routes/admin.email.legacy-redirect.ts", { id: "legacy-email-hiring-id" }),
     route("hiring/confidentiality-agreements/:id", "hiring/routes/confidentiality-agreements.$id.tsx"),
     route("hiring/cycles/:cycleId/confidentiality", "hiring/routes/cycles.$cycleId.confidentiality.tsx"),
     route("hiring/interviews", "hiring/routes/interviews.tsx"),
@@ -86,8 +86,9 @@ export default [
     route("admin/activities/:id", "admin/routes/admin.activities.$id.tsx"),
     route("admin/email-senders", "admin/routes/admin.email-senders.tsx"),
     route("admin/outbound-messages", "admin/routes/admin.outbound-messages.tsx"),
-    route("admin/email-templates", "admin/routes/admin.email-templates.tsx"),
-    route("admin/email-templates/:id", "admin/routes/admin.email-templates.$id.tsx"),
+    route("admin/email", "admin/routes/admin.email.tsx"),
+    route("admin/email-templates", "admin/routes/admin.email.legacy-redirect.ts", { id: "legacy-email-admin" }),
+    route("admin/email-templates/:id", "admin/routes/admin.email.legacy-redirect.ts", { id: "legacy-email-admin-id" }),
     route("admin/infrastructure", "admin/routes/admin.infrastructure.tsx"),
     // Document signing: author agreements, place fields, put versions in force,
     // track signatories.
@@ -119,8 +120,8 @@ export default [
     route("rooms", "rooms/routes/rooms.tsx"),
     route("core/communications", "core/routes/core.communications.tsx"),
     route("core/communications/announcements", "core/routes/core.communications.announcements.tsx"),
-    route("core/communications/email", "core/routes/core.communications.email.tsx"),
-    route("core/communications/email/:id", "core/routes/core.communications.email.$id.tsx"),
+    route("core/communications/email", "admin/routes/admin.email.legacy-redirect.ts", { id: "legacy-email-core" }),
+    route("core/communications/email/:id", "admin/routes/admin.email.legacy-redirect.ts", { id: "legacy-email-core-id" }),
     route("core/communications/email-senders", "core/routes/core.communications.email-senders.tsx"),
 
     // Projects. The bare /projects route is the area hub (the project list).

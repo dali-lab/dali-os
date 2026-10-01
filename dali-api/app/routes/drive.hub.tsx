@@ -253,7 +253,7 @@ type DriveScope = LoaderData["driveScopes"][number];
 
 // ── Type filter ────────────────────────────────────────────────────────────────
 
-export type DriveTypeFilter = "all" | "doc" | "file" | "form" | "agreement" | "emailTemplate" | "rubric";
+export type DriveTypeFilter = "all" | "doc" | "file" | "form" | "agreement" | "rubric";
 
 const TYPE_FILTERS: {
   value: DriveTypeFilter;
@@ -267,7 +267,6 @@ const TYPE_FILTERS: {
   { value: "file", label: "Files", icon: <Paperclip className="w-3.5 h-3.5" /> },
   { value: "form", label: "Forms", icon: <ClipboardList className="w-3.5 h-3.5" />, requiresCap: "canViewForms" },
   { value: "agreement", label: "Agreements", icon: <FileSignature className="w-3.5 h-3.5" />, requiresCap: "canManageAgreements" },
-  { value: "emailTemplate", label: "Email Templates", icon: <Mail className="w-3.5 h-3.5" />, requiresCap: "canManageAgreements" },
   { value: "rubric", label: "Rubrics", icon: <ClipboardList className="w-3.5 h-3.5" />, requiresCap: "canManageAgreements" },
 ];
 
@@ -1156,7 +1155,6 @@ export default function DriveHub() {
     rawType === "file" ||
     rawType === "form" ||
     rawType === "agreement" ||
-    rawType === "emailTemplate" ||
     rawType === "rubric"
       ? rawType
       : "all";

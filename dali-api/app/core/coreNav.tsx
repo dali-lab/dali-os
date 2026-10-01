@@ -41,7 +41,7 @@ export const CORE_CLUSTERS: NavCluster[] = [
         to: "/core/communications/email",
         icon: Mail,
         description:
-          "Shared email templates for announcements and lab outreach. (The Gmail accounts each area sends from live in Admin ▸ System & Insights.)",
+          "The words in every email the app sends — hiring decisions, interview notices, course decisions — edited in place and shared by every cycle and course. (The Gmail accounts each area sends from live in Admin ▸ System & Insights.)",
       },
     ],
   },
