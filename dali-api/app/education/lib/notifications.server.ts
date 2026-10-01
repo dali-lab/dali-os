@@ -120,6 +120,7 @@ export async function notifyApplicationStatus(
     offeringTitle: offering.title,
     status,
     applicant,
+    promoted: opts.promoted,
   });
 }
 
@@ -363,9 +364,15 @@ async function sendDecisionEmail(args: {
   offeringTitle: string;
   status: Exclude<EduApplicationStatus, "Submitted">;
   applicant: Recipient;
+  promoted?: boolean;
 }): Promise<void> {
   try {
-    const email = await getEducationEmail(decisionSlot(args.status));
+    // A promotion is an Approved decision reached a different way, so it gets its
+    // own copy when an operator has written some and the Approved letter when they
+    // haven't — which is what shipped before this key existed.
+    const email =
+      (args.promoted ? await getEducationEmail("decision:Promoted") : null) ??
+      (await getEducationEmail(decisionSlot(args.status)));
     if (!email) return;
 
     const to = recipientEmail(args.applicant);
@@ -392,7 +399,13 @@ async function sendDecisionEmail(args: {
     const { id } = await enqueueOutbound({
       channel: "email",
       purpose: "Education",
-      dedupKey: `education.decision:${args.applicationId}:${userRef}`,
+      // The outcome is part of the key. Without it the key was
+      // `education.decision:{applicationId}:{userRef}`, so a student who was
+      // Waitlisted and later Approved hit the claim their waitlist email had
+      // already made and got NO second email at all — the promotion was silently
+      // dropped rather than merely worded wrong. Re-deciding to the same outcome
+      // still dedupes, which is the case the key is actually there to guard.
+      dedupKey: `education.decision:${args.applicationId}:${args.promoted ? "promoted" : args.status}:${userRef}`,
       target: to,
       recipientUserId: args.applicant.id,
       subject: mail.subject,

@@ -6,9 +6,10 @@ import { getFrontendUrl, getAppEnv } from "~/lib/app-env";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { renderFramedEmail } from "~/email/lib/layout.server";
 import { humanDuration } from "~/email/lib/auth-email";
+import { MAGIC_LINK_TTL_MS } from "./magic-link";
 import { sendMemberEmailConflictEmail } from "./partner-emails.server";
 
-export const MAGIC_LINK_TTL_MS = 15 * 60 * 1000;
+export { MAGIC_LINK_TTL_MS } from "./magic-link";
 
 // Same digest convention as Session ids and OneTimeToken's schema comment:
 // sha256(raw), base64url. The raw value only ever travels in the email link.

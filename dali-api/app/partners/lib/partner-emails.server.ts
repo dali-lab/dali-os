@@ -170,6 +170,36 @@ export async function sendLearnMoreRequestEmail(
   );
 }
 
+// Sent when a partner submits the project-inquiry form.
+//
+// NEW outbound mail, not a restyling of something existing: submitting the form
+// used to notify the form's creator and tell the applicant nothing, so a partner
+// got silence until someone triaged them. Keyed on the application so a double
+// submit can't double-confirm.
+export async function sendApplicationReceivedEmail(
+  to: string,
+  contactName: string | null,
+  applicationId: string,
+): Promise<void> {
+  await send(
+    to,
+    {
+      subject: "We got your DALI project inquiry",
+      preheader: "Your project inquiry reached the DALI Lab.",
+      bodyHtml: [
+        greeting(contactName),
+        `<p style="margin:0 0 16px;">Thanks for telling us about your project. Your inquiry is in front of the DALI Lab team now.</p>`,
+        `<p style="margin:0 0 16px;">We review inquiries as they come in and will be in touch with next steps. If we need anything else to understand the project, we'll ask.</p>`,
+        aside("You can reply to this email with anything you'd like to add."),
+      ].join("\n"),
+    },
+    {
+      dedupKey: `partner.application.received:${applicationId}`,
+      eventType: "partner.application_received",
+    },
+  );
+}
+
 export async function sendMemberEmailConflictEmail(to: string): Promise<void> {
   const loginUrl = `${getFrontendUrl()}/login`;
   await send(

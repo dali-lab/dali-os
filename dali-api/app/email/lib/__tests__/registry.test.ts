@@ -127,11 +127,13 @@ describe("isEmailTemplateKey", () => {
 });
 
 describe("the collapse covered what the old stores held", () => {
-  it("has 18 editable emails: 14 hiring slots plus 4 education decisions", () => {
+  it("has 19 editable emails: 14 hiring slots, 4 education decisions, plus promotion", () => {
     const hiring = EMAIL_TEMPLATE_KEYS.filter((k) => k.startsWith("hiring:"));
     const education = EMAIL_TEMPLATE_KEYS.filter((k) => k.startsWith("education:"));
     expect(hiring).toHaveLength(14);
-    expect(education).toHaveLength(4);
+    // The 4 statuses plus decision:Promoted, which has no EduApplicationStatus of
+    // its own — a promotion is an Approved decision reached another way.
+    expect(education).toHaveLength(5);
     expect(EMAIL_TEMPLATES).toBeDefined();
   });
 });

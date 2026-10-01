@@ -225,6 +225,21 @@ export const EMAIL_TEMPLATES = {
     footer: "transactional",
     whenMissing: "skip",
   },
+  // Waitlist promotion. The in-app row has said "a seat opened up" for a while,
+  // but the email was keyed on status alone, so a promoted student got the plain
+  // Approved letter — reading like a first-round acceptance. Absent, this falls
+  // back to the Approved copy, which is exactly today's behaviour.
+  "education:decision:Promoted": {
+    area: "Education",
+    label: "Promoted off the waitlist",
+    description:
+      "Sent when a seat frees up and a waitlisted applicant gets it. Falls back to the Approved email when left empty.",
+    purpose: "Education",
+    variables: ["firstName", "domain"],
+    sample: { firstName: "Alex", domain: "Intro to UX" },
+    footer: "transactional",
+    whenMissing: "skip",
+  },
   "education:decision:Waitlisted": {
     area: "Education",
     label: "Waitlisted",

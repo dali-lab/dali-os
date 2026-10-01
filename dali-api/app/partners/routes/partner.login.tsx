@@ -12,6 +12,7 @@ import {
 import { sendMemberEmailConflictEmail } from "~/partners/lib/partner-emails.server";
 import { auth } from "~/lib/betterauth.server";
 import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
+import { PARTNER_LINK_EXPIRY } from "~/partners/lib/magic-link";
 
 // UI resend cooldown. The server independently rate-limits (3 sends per
 // email per 15 minutes) — this just keeps the button from being mashed.
@@ -126,8 +127,8 @@ export default function PartnerLogin() {
             <p className="text-sm text-muted-foreground">
               We sent an email to{" "}
               <span className="font-medium text-dark-blue">{sent.email}</span>.
-              Open it and follow the link to continue — sign-in links expire
-              in 15 minutes.
+              Open it and follow the link to continue. Sign-in links expire in{" "}
+              {PARTNER_LINK_EXPIRY}.
             </p>
             <div className="mt-4 flex items-center gap-4 flex-wrap">
               <Form method="post">
