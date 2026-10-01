@@ -161,13 +161,21 @@ async function computeAuth(request: Request): Promise<AuthResult> {
     if (await isFeatureEnabledForEveryone("betterauth", request)) {
       const { resolveBetterAuthAuth } = await import("~/lib/betterauth-compat.server");
       const ba = await resolveBetterAuthAuth(request);
-      if (ba)
+      if (ba) {
+        // Presence heartbeat, same as the legacy leg. Without it the whole
+        // feature goes dark at cutover: a BetterAuth session never touched
+        // lastActiveAt, so every status dot read "away" and Admin's "Live now"
+        // tile read 0 on site. Skipped while impersonating — the acting admin
+        // is on the site, the impersonated member is not, and lastActiveAt is
+        // peer-visible (status dots, profile "last active").
+        if (!ba.impersonatedBy) bumpLastActive(ba.user.sub).catch(() => {});
         return {
           ok: true,
           user: ba.user,
           sessionId: ba.sessionId,
           ...(ba.impersonatedBy ? { impersonatedBy: ba.impersonatedBy } : {}),
         };
+      }
     }
   } catch {
     // The BetterAuth fallback must never turn a clean legacy failure into a 500.
