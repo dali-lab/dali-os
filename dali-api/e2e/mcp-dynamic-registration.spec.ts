@@ -98,6 +98,16 @@ test('DCR: register → authorize → consent → token → /mcp whoami', async 
   const code = callbackUrl.searchParams.get('code');
   expect(code).toBeTruthy();
 
+  // RFC 9207 issuer identification, byte-matched against our published
+  // metadata. ChatGPT reserves its single stable connector callback for issuers
+  // that do this; without it we'd be back to allowlisting a per-connection
+  // callback id by hand for every new connection.
+  const meta = await (
+    await request.get('/.well-known/oauth-authorization-server')
+  ).json();
+  expect(meta.authorization_response_iss_parameter_supported).toBe(true);
+  expect(callbackUrl.searchParams.get('iss')).toBe(meta.issuer);
+
   // 5) Token exchange.
   const tokenRes = await request.post('/oauth/token', {
     form: {

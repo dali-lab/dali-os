@@ -1,5 +1,6 @@
 import type { Route } from "./+types/oauth.authorize";
 import {
+  authorizationResponseUrl,
   createOAuthSession,
   generateAuthorizationCode,
   getOAuthClient,
@@ -10,7 +11,7 @@ import { parseSessionId } from "~/lib/cookies";
 import { lookupSession } from "~/lib/session";
 import { prisma } from "~/lib/db";
 import type { OAuthAccountType, OAuthProvider } from "~/generated/prisma/enums";
-import { getApiBaseUrl, getCasBaseUrl } from "~/lib/app-env";
+import { getApiBaseUrl, getCasBaseUrl, getOAuthIssuer } from "~/lib/app-env";
 import { buildGoogleAuthUrl } from "~/lib/google-oauth";
 
 const RATE_LIMIT_MAX = 10;
@@ -28,6 +29,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (limited) return limited;
 
   const url = new URL(request.url);
+  const issuer = getOAuthIssuer(request);
 
   function fallbackError(error: string, description: string) {
     const params = new URLSearchParams({ error, error_description: description });
@@ -42,11 +44,15 @@ export async function loader({ request }: Route.LoaderArgs) {
     error: string,
     description: string,
   ) {
-    const params = new URLSearchParams({ error, error_description: description });
-    if (state) params.set("state", state);
     return new Response(null, {
       status: 302,
-      headers: { Location: `${redirectUri}?${params}` },
+      headers: {
+        Location: authorizationResponseUrl({
+          issuer,
+          redirectUri,
+          query: { error, error_description: description, state },
+        }),
+      },
     });
   }
 
@@ -196,10 +202,15 @@ export async function loader({ request }: Route.LoaderArgs) {
           oauthSession.id,
           existing.userId,
         );
-        const params = new URLSearchParams({ code, state });
         return new Response(null, {
           status: 302,
-          headers: { Location: `${redirectUri}?${params}` },
+          headers: {
+            Location: authorizationResponseUrl({
+              issuer,
+              redirectUri,
+              query: { code, state },
+            }),
+          },
         });
       }
 

@@ -37,6 +37,20 @@ export function getApiBaseUrl(): string {
   return process.env.API_BASE_URL ?? 'http://localhost:3001'
 }
 
+// Our OAuth issuer identifier, shared by the RFC 8414 metadata `issuer`, the
+// RFC 9728 `authorization_servers` entry, and the RFC 9207 `iss` parameter we
+// put on every authorization response. MCP clients compare `iss` to the
+// metadata `issuer` by exact string and normalize neither trailing slashes nor
+// case, so all three must come from here or a mismatch silently fails the
+// whole flow. Falls back to the request origin (not getApiBaseUrl's localhost
+// default) so PR preview apps, which set only API_BASE_URL, still self-describe
+// correctly.
+export function getOAuthIssuer(request: Request): string {
+  const base =
+    process.env.API_BASE_URL ?? new URL(request.url).origin
+  return base.replace(/\/+$/, '')
+}
+
 export function getFrontendUrl(): string {
   // Single full-stack server: in deployed environments the frontend origin IS
   // the API origin, so fall back to it — PR preview apps set only

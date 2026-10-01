@@ -1,6 +1,7 @@
 import type { Route } from "./+types/oauth.callback.google";
 import { prisma } from "~/lib/db";
 import {
+  authorizationResponseUrl,
   getOAuthSession,
   getOAuthClient,
   generateAuthorizationCode,
@@ -11,7 +12,12 @@ import { issueSession } from "~/lib/session";
 import { setSessionCookie } from "~/lib/cookies";
 import { getClientIp } from "~/lib/request-meta";
 import { syncAndRecomputeMembershipStatus } from "~/lib/membership-status";
-import { getApiBaseUrl, getCasBaseUrl, getFrontendUrl } from "~/lib/app-env";
+import {
+  getApiBaseUrl,
+  getCasBaseUrl,
+  getFrontendUrl,
+  getOAuthIssuer,
+} from "~/lib/app-env";
 
 export async function action() {
   return new Response("Method not allowed", { status: 405 });
@@ -21,6 +27,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
   const frontendUrl = getFrontendUrl();
   const apiBase = getApiBaseUrl();
+  const issuer = getOAuthIssuer(request);
 
   const googleCode = url.searchParams.get("code");
   const sessionId = url.searchParams.get("state"); // passed session.id as Google's state
@@ -49,13 +56,15 @@ export async function loader({ request }: Route.LoaderArgs) {
       `${apiBase}/oauth/callback/google`,
     );
   } catch {
-    const params = new URLSearchParams({
-      error: "server_error",
-      state: session.state,
-    });
     return new Response(null, {
       status: 302,
-      headers: { Location: `${session.redirectUri}?${params}` },
+      headers: {
+        Location: authorizationResponseUrl({
+          issuer,
+          redirectUri: session.redirectUri,
+          query: { error: "server_error", state: session.state },
+        }),
+      },
     });
   }
 
@@ -64,14 +73,19 @@ export async function loader({ request }: Route.LoaderArgs) {
     session.accountType === "member" &&
     !googleUser.email.endsWith("@dali.dartmouth.edu")
   ) {
-    const params = new URLSearchParams({
-      error: "access_denied",
-      error_description: "Must use a @dali.dartmouth.edu email",
-      state: session.state,
-    });
     return new Response(null, {
       status: 302,
-      headers: { Location: `${session.redirectUri}?${params}` },
+      headers: {
+        Location: authorizationResponseUrl({
+          issuer,
+          redirectUri: session.redirectUri,
+          query: {
+            error: "access_denied",
+            error_description: "Must use a @dali.dartmouth.edu email",
+            state: session.state,
+          },
+        }),
+      },
     });
   }
 
@@ -89,14 +103,19 @@ export async function loader({ request }: Route.LoaderArgs) {
       select: { id: true },
     });
     if (!member) {
-      const params = new URLSearchParams({
-        error: "access_denied",
-        error_description: "not_a_member",
-        state: session.state,
-      });
       return new Response(null, {
         status: 302,
-        headers: { Location: `${session.redirectUri}?${params}` },
+        headers: {
+          Location: authorizationResponseUrl({
+            issuer,
+            redirectUri: session.redirectUri,
+            query: {
+              error: "access_denied",
+              error_description: "not_a_member",
+              state: session.state,
+            },
+          }),
+        },
       });
     }
   }
@@ -148,10 +167,16 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   if (isFirstParty || matchingGrant || !client) {
     const code = await generateAuthorizationCode(session.id, user.id);
-    const params = new URLSearchParams({ code, state: session.state });
     const headers = new Headers();
     setSessionCookie(headers, cookieSession.rawId);
-    headers.set("Location", `${session.redirectUri}?${params}`);
+    headers.set(
+      "Location",
+      authorizationResponseUrl({
+        issuer,
+        redirectUri: session.redirectUri,
+        query: { code, state: session.state },
+      }),
+    );
     return new Response(null, { status: 302, headers });
   }
 

@@ -73,6 +73,17 @@ export async function resetCycleStatus(cycleId: string) {
          AND "newStatus" NOT IN ('Draft', 'Open')`,
       [cycleId],
     );
+    // A latest status of Open isn't sufficient: getOpenCycles derives
+    // UnderReview once closeDate passes, so a database seeded before that
+    // instant reads as closed and /portal/apply redirects to /portal. Push an
+    // already-expired deadline back out rather than trusting the seed value to
+    // still be in the future.
+    await client.query(
+      `UPDATE "ApplicationCycle"
+       SET "closeDate" = now() + interval '30 days'
+       WHERE id = $1 AND "closeDate" IS NOT NULL AND "closeDate" <= now()`,
+      [cycleId],
+    );
   } finally {
     await client.end();
   }

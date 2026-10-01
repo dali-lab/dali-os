@@ -12,6 +12,7 @@ vi.mock("google-auth-library", () => ({
 
 import { prisma } from "~/lib/db";
 import {
+  authorizationResponseUrl,
   verifyPKCE,
   OAuthError,
   isAllowedRedirectUri,
@@ -383,5 +384,65 @@ describe("exchangeGoogleCode", () => {
     });
     const result = await exchangeGoogleCode("code", "http://localhost/callback");
     expect(result.photoUrl).toBeNull();
+  });
+});
+
+describe("authorizationResponseUrl", () => {
+  const issuer = "https://os.dali.dartmouth.edu";
+
+  it("appends iss to a success response", () => {
+    const url = new URL(
+      authorizationResponseUrl({
+        issuer,
+        redirectUri: "https://chatgpt.com/connector_platform_oauth_redirect",
+        query: { code: "abc", state: "xyz" },
+      }),
+    );
+    expect(url.origin + url.pathname).toBe(
+      "https://chatgpt.com/connector_platform_oauth_redirect",
+    );
+    expect(url.searchParams.get("code")).toBe("abc");
+    expect(url.searchParams.get("state")).toBe("xyz");
+    expect(url.searchParams.get("iss")).toBe(issuer);
+  });
+
+  it("appends iss to an error response too", () => {
+    const url = new URL(
+      authorizationResponseUrl({
+        issuer,
+        redirectUri: "https://chatgpt.com/cb",
+        query: { error: "access_denied", error_description: "not_a_member", state: "s" },
+      }),
+    );
+    expect(url.searchParams.get("error")).toBe("access_denied");
+    expect(url.searchParams.get("iss")).toBe(issuer);
+  });
+
+  it("drops absent and empty params rather than sending them blank", () => {
+    const url = new URL(
+      authorizationResponseUrl({
+        issuer,
+        redirectUri: "https://chatgpt.com/cb",
+        query: { error: "invalid_request", state: null, error_description: "" },
+      }),
+    );
+    expect(url.searchParams.has("state")).toBe(false);
+    expect(url.searchParams.has("error_description")).toBe(false);
+    expect(url.searchParams.get("iss")).toBe(issuer);
+  });
+
+  it("preserves a redirect_uri that already carries a query string", () => {
+    // Registered callbacks may include their own params; iss must be added, not
+    // clobber them. (Our exact-match allowlist compares the query too.)
+    const url = new URL(
+      authorizationResponseUrl({
+        issuer,
+        redirectUri: "https://connect.example.com/cb?tenant=dali",
+        query: { code: "abc" },
+      }),
+    );
+    expect(url.searchParams.get("tenant")).toBe("dali");
+    expect(url.searchParams.get("code")).toBe("abc");
+    expect(url.searchParams.get("iss")).toBe(issuer);
   });
 });
