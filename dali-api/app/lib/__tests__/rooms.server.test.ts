@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db", () => {
   const prisma = {
     room: { findUnique: vi.fn(), findMany: vi.fn() },
-    roomBooking: { findMany: vi.fn(), create: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
+    roomBooking: { findMany: vi.fn(), create: vi.fn(), findUnique: vi.fn(), update: vi.fn(), deleteMany: vi.fn() },
     scheduledMeeting: { findMany: vi.fn() },
     $executeRaw: vi.fn(),
     $transaction: vi.fn(),
@@ -16,6 +16,7 @@ vi.mock("~/lib/scheduled-meeting", () => ({ CHECK_IN_GRACE_MIN: 15 }));
 import { prisma } from "~/lib/db";
 import {
   assertMeetingRoomsFree,
+  bookRoomsForEvent,
   cancelRoomBooking,
   createRoomBooking,
   currentEvent,
@@ -30,6 +31,7 @@ const m = prisma as unknown as {
     create: ReturnType<typeof vi.fn>;
     findUnique: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
+    deleteMany: ReturnType<typeof vi.fn>;
   };
   scheduledMeeting: { findMany: ReturnType<typeof vi.fn> };
 };
@@ -232,5 +234,30 @@ describe("assertMeetingRoomsFree", () => {
     const base = { selectedAt: new Date(Date.now() + 24 * H), durationMinutes: 60, recurrenceRule: null };
     expect(await assertMeetingRoomsFree({ ...base, roomIds: ["r1"] })).toMatchObject({ ok: false, status: 404 });
     expect((await assertMeetingRoomsFree({ ...base, roomIds: ["r1"], newRoomIds: [] })).ok).toBe(true);
+  });
+});
+
+describe("bookRoomsForEvent", () => {
+  const base = () => {
+    const start = new Date(Date.now() + H);
+    return { userId: "u1", start, end: new Date(start.getTime() + H), title: "Demo night" };
+  };
+
+  it("books every room", async () => {
+    const res = await bookRoomsForEvent({ ...base(), roomIds: ["r1", "r2"] });
+    expect(res).toMatchObject({ ok: true, value: ["b-new", "b-new"] });
+    expect(m.roomBooking.create).toHaveBeenCalledTimes(2);
+    expect(m.roomBooking.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("releases the rooms already held when a later one is taken", async () => {
+    const b = base();
+    m.roomBooking.findMany.mockImplementation(({ where }: { where: { roomId: string } }) =>
+      where.roomId === "r2" ? [{ id: "b1", title: "Design crit", start: b.start, end: b.end, user: ada }] : [],
+    );
+    const res = await bookRoomsForEvent({ ...b, roomIds: ["r1", "r2"] });
+    expect(res).toMatchObject({ ok: false, status: 409 });
+    expect(m.roomBooking.create).toHaveBeenCalledTimes(1);
+    expect(m.roomBooking.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ["b-new"] } } });
   });
 });

@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRevalidator } from "react-router";
-import { AlignLeft, Clock, DoorOpen, MapPin, UsersRound } from "lucide-react";
+import { AlignLeft, Clock, MapPin, UsersRound } from "lucide-react";
 import { Modal, ModalHeader, ModalFooter } from "~/components/Modal";
 import { modalCardClass } from "~/components/os-chrome";
 import { DateField } from "~/components/ui/DateField";
 import { TimeField } from "~/components/ui/TimeField";
 import { ParticipantPicker } from "~/calendar/components/scheduling";
 import { useFeatureFlag } from "~/components/FeatureFlags";
-import { RoomPicker } from "~/rooms/components/RoomPicker";
+import { RoomLocationField } from "~/rooms/components/RoomLocationField";
 
 // Shape of GET /api/scheduled-meetings/:id/edit-context.
 export type EditContext = {
@@ -202,6 +202,15 @@ export function EditMeetingModal({
   if (startTime && endTime && endMin <= startMin) endMin += 24 * 60; // next-day rollover
   const durationMinutes = startTime && endTime ? endMin - startMin : 0;
   const timeValid = !startTime || !endTime || durationMinutes > 0;
+  // The window room availability is checked against in the Location field.
+  const startMs = date && startTime ? new Date(`${date}T${startTime}`).getTime() : NaN;
+  const roomWindow =
+    !isNaN(startMs) && durationMinutes > 0
+      ? {
+          startIso: new Date(startMs).toISOString(),
+          endIso: new Date(startMs + durationMinutes * 60_000).toISOString(),
+        }
+      : null;
 
   const canSave =
     !!ctx &&
@@ -359,34 +368,20 @@ export function EditMeetingModal({
                 <MapPin className="h-3 w-3" /> Location
               </span>
             </label>
-            <input
+            <RoomLocationField
+              enabled={roomBooking}
               id="edit-mtg-location"
-              type="text"
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              className={fieldClass}
               placeholder="Video call, room, or address"
+              value={location}
+              onChange={setLocation}
+              roomIds={roomIds}
+              onRoomsChange={setRoomIds}
+              startIso={roomWindow?.startIso}
+              endIso={roomWindow?.endIso}
+              excludeMeetingId={meetingId}
+              className={fieldClass}
             />
           </div>
-
-          {roomBooking && (
-            <div>
-              <span className={labelClass}>
-                <span className="inline-flex items-center gap-1">
-                  <DoorOpen className="h-3 w-3" /> Rooms
-                </span>
-              </span>
-              <RoomPicker
-                enabled={roomBooking}
-                value={roomIds}
-                onChange={(ids, rooms) => {
-                  setRoomIds(ids);
-                  if (rooms.length && !location.trim()) setLocation(rooms.map((r) => r.name).join(", "));
-                }}
-                className={fieldClass}
-              />
-            </div>
-          )}
 
           {/* Description */}
           <div>

@@ -187,6 +187,35 @@ export async function createRoomBooking(input: {
 }
 
 /**
+ * Hold every room for a plain calendar event (one with no ScheduledMeeting to
+ * claim them): all of the rooms or none. The caller releases the holds with
+ * releaseRoomBookings if the event itself then fails to save.
+ */
+export async function bookRoomsForEvent(input: {
+  roomIds: string[];
+  userId: string;
+  start: Date;
+  end: Date;
+  title: string;
+}): Promise<RoomWriteResult<string[]>> {
+  const bookingIds: string[] = [];
+  for (const roomId of input.roomIds) {
+    const booked = await createRoomBooking({ ...input, roomId, source: "Web" });
+    if (!booked.ok) {
+      await releaseRoomBookings(bookingIds);
+      return booked;
+    }
+    bookingIds.push(booked.value.id);
+  }
+  return { ok: true, value: bookingIds };
+}
+
+export async function releaseRoomBookings(bookingIds: string[]) {
+  if (bookingIds.length === 0) return;
+  await prisma.roomBooking.deleteMany({ where: { id: { in: bookingIds } } });
+}
+
+/**
  * Cancel a booking, or — if it's already underway — end it now so the rest of
  * the slot frees up. The caller checks who may do this.
  */

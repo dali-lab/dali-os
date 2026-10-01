@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useFetcher, useRevalidator } from "react-router";
-import { AlignLeft, CalendarDays, Clock, DoorOpen, MapPin, Repeat, UsersRound, Video, X } from "lucide-react";
+import { AlignLeft, CalendarDays, Clock, MapPin, Repeat, UsersRound, Video, X } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { Checkbox } from "~/components/ui/Checkbox";
@@ -8,7 +8,7 @@ import { DateField } from "~/components/ui/DateField";
 import { TimeField as TimeComboField } from "~/components/ui/TimeField";
 import { Select } from "~/components/ui/floating";
 import { Toggle } from "~/components/ui/Toggle";
-import { RoomPicker } from "~/rooms/components/RoomPicker";
+import { RoomLocationField } from "~/rooms/components/RoomLocationField";
 import {
   ScheduleWeekGrid,
   ParticipantPicker,
@@ -329,6 +329,9 @@ export function CreateEventModal({
   // invisible.
   const eventCanLogWork = !allDay && repeatSpecToRRule(repeat, repeatAnchorLocal) === null;
   const eventLoggingWork = isWork && eventCanLogWork;
+  // A plain event holds a room with a one-off booking, which has the same
+  // shape limits: one timed slot. A series or an all-day hold is a meeting's.
+  const eventCanBookRoom = roomBooking && eventCanLogWork;
   // A meeting keeps the toggle when it repeats. The log links to the
   // ScheduledMeeting (one row per meeting per user) and is dated to the series
   // anchor — the first occurrence, the one time being scheduled here.
@@ -587,6 +590,7 @@ export function CreateEventModal({
               <input type="hidden" name="destination" value={destination} />
               <input type="hidden" name="startIso" value={startIso} />
               <input type="hidden" name="endIso" value={endIso} />
+              <input type="hidden" name="roomIds" value={eventCanBookRoom ? roomIds.join(",") : ""} />
               <input type="hidden" name="allDay" value={allDay ? "1" : ""} />
               <input type="hidden" name="timeZone" value={data.timezone} />
               <input type="hidden" name="recurrenceRule" value={repeatSpecToRRule(repeat, repeatAnchorLocal) ?? ""} />
@@ -705,13 +709,17 @@ export function CreateEventModal({
               </FieldRow>
 
               <FieldRow icon={MapPin}>
-                <input
+                <RoomLocationField
+                  enabled={eventCanBookRoom}
                   id="cem-location"
                   name="location"
-                  type="text"
                   placeholder="Add location"
                   value={location}
-                  onChange={(e) => setLocation(e.target.value)}
+                  onChange={setLocation}
+                  roomIds={eventCanBookRoom ? roomIds : []}
+                  onRoomsChange={setRoomIds}
+                  startIso={startIso}
+                  endIso={endIso}
                   className={quietFieldClass}
                 />
               </FieldRow>
@@ -888,34 +896,19 @@ export function CreateEventModal({
                     <MapPin className="h-3 w-3" /> Location
                   </span>
                 </label>
-                <input
+                <RoomLocationField
+                  enabled={roomBooking}
                   id="cem-mtg-location"
-                  type="text"
                   placeholder="Video call, room, or address"
                   value={location}
-                  onChange={(e) => setLocation(e.target.value)}
+                  onChange={setLocation}
+                  roomIds={roomIds}
+                  onRoomsChange={setRoomIds}
+                  startIso={startIso}
+                  endIso={endIso}
                   className={fieldClass}
                 />
               </div>
-
-              {roomBooking && (
-                <div>
-                  <span className={labelClass}>
-                    <span className="inline-flex items-center gap-1">
-                      <DoorOpen className="h-3 w-3" /> Rooms
-                    </span>
-                  </span>
-                  <RoomPicker
-                    enabled={roomBooking}
-                    value={roomIds}
-                    onChange={(ids, rooms) => {
-                      setRoomIds(ids);
-                      if (rooms.length && !location.trim()) setLocation(rooms.map((r) => r.name).join(", "));
-                    }}
-                    className={fieldClass}
-                  />
-                </div>
-              )}
 
               {/* Description */}
               <div>
