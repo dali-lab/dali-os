@@ -76,6 +76,20 @@ export const embedConfig = {
   content: "none",
 } as const;
 
+// Component: the ONE node type behind the whole component library
+// (../components/kinds.ts). `kind` names a library entry and `data` is that
+// entry's content as JSON, so the library grows without the schema changing.
+// The whole of `data` is one value: two people editing the same component at
+// once is last-writer-wins, unlike prose.
+export const componentConfig = {
+  type: "component",
+  propSchema: {
+    kind: { default: "cards" },
+    data: { default: "" },
+  },
+  content: "none",
+} as const;
+
 // Signing field family — one inline-content type per legacy TipTap node type
 // (signatureField/dateField/initialField/checkboxField/textField), preserving
 // the node-type↔field-type mapping the conversion mapper and the server-side

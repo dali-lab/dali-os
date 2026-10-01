@@ -34,5 +34,7 @@ export function isNavbarHubPage(href: string): boolean {
   const path = new URL(href, "http://local").pathname;
   if (NAVBAR_PATHS.has(path)) return true;
   if (path.startsWith("/settings/") || path.startsWith("/help/")) return true;
+  // Resources pages carry their own masthead, tabs and back links.
+  if (path.startsWith("/resources/")) return true;
   return false;
 }

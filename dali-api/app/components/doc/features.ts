@@ -24,6 +24,12 @@ export interface Features {
    * authored with columns loses them if reopened on a surface without this.
    */
   columns?: boolean;
+  /**
+   * The component library (components/kinds.ts): cards, timeline, charts,
+   * gallery, custom code. Same one-way door as columns: a document authored
+   * with components loses them if reopened on a surface without this.
+   */
+  components?: boolean;
   /** Page-break block + slash item (full document surfaces only). */
   pageBreak?: boolean;
   /**
@@ -43,7 +49,7 @@ export interface Features {
   ai?: boolean;
 }
 
-export type EditorPresetName = "field" | "notes" | "agreement" | "guide" | "document";
+export type EditorPresetName = "field" | "notes" | "agreement" | "guide" | "document" | "resource";
 
 export const EDITOR_PRESETS: Record<EditorPresetName, Features> = {
   field: {}, // short structured input
@@ -51,6 +57,7 @@ export const EDITOR_PRESETS: Record<EditorPresetName, Features> = {
   agreement: { images: true, signing: true }, // signing document body
   guide: { mentions: true, images: true, files: true, pageBreak: true, columns: true }, // page-doc guides
   document: { mentions: true, images: true, files: true, richBlocks: true, pageBreak: true, columns: true }, // full document
+  resource: { mentions: true, images: true, files: true, richBlocks: true, pageBreak: true, columns: true, components: true }, // Resources pages + blog posts
 };
 
 export function resolveFeatures(input: EditorPresetName | Features | undefined): Features {
