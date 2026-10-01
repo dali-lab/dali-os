@@ -38,7 +38,7 @@ import {
   variableDisplayText,
   type SigningFieldType,
 } from "~/lib/signing-fields";
-import { sanitizeRichEmailHtml, htmlToPlainText } from "~/lib/email";
+import { sanitizeRichEmailHtml, htmlToPlainText, NOTIFICATION_BODY_MAX } from "~/lib/email";
 
 export { BLOCKNOTE_FRAGMENT, LEGACY_PM_FRAGMENT } from "~/components/doc/schema/configs";
 
@@ -252,7 +252,9 @@ export async function renderAnnouncementBody(
   blocks: DocBlock[],
 ): Promise<{ html: string; text: string }> {
   const html = sanitizeRichEmailHtml(await blocksToHtml(blocks));
-  return { html, text: htmlToPlainText(html) };
+  // Capped: this text lands in Notification.body and a Slack DM, not in an
+  // email text part.
+  return { html, text: htmlToPlainText(html, { maxLength: NOTIFICATION_BODY_MAX }) };
 }
 
 /** Blocks → Markdown. Custom inline nodes serialize as their plain-text form

@@ -94,10 +94,21 @@ function decodeEntities(s: string): string {
     .replace(/&amp;/g, "&");
 }
 
-// Plain-text mirror of a rich HTML body for the in-app feed and Slack DM, which
-// don't render HTML. Links flatten to "label (url)" so the destination survives;
-// lists become bullet lines. Capped to 2000 to fit the Notification.body column.
-export function htmlToPlainText(html: string): string {
+// Plain-text mirror of an HTML body. Two consumers with different needs, one
+// implementation:
+//   - the in-app feed and Slack DM, which don't render HTML and must fit the
+//     Notification.body column — those pass maxLength
+//   - the text/plain MIME alternative on an outbound email, which must NOT be
+//     truncated or the message ends mid-sentence
+// Links flatten to "label (url)" so the destination survives in both; that is
+// load-bearing for the email part, where the CTA is otherwise unreachable.
+//
+// This replaced a second, regex-based copy in lib/gmail.ts. That one iterated
+// its tag-strip to defeat `<scr<script>ipt>` and deliberately left &lt;/&gt;
+// encoded; DOMPurify handles the former properly, and the latter was unnecessary
+// caution — the output is a text/plain part or a React text node, so angle
+// brackets are inert in both and the reader should see what the author typed.
+export function htmlToPlainText(html: string, opts?: { maxLength?: number }): string {
   let s = html;
   s = s.replace(/<a\b[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, (_m, href, inner) => {
     const label = decodeEntities(stripTags(inner)).trim();
@@ -114,8 +125,12 @@ export function htmlToPlainText(html: string): string {
     .replace(/[ \t]*\n[ \t]*/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-  return s.slice(0, 2000);
+  return opts?.maxLength === undefined ? s : s.slice(0, opts.maxLength);
 }
+
+// The Notification.body column's limit. Named so the two call sites that write
+// that column can't drift from each other.
+export const NOTIFICATION_BODY_MAX = 2000;
 
 // Single render path shared by the actual send (api.decisions.$id.release,
 // portal.apply) and the cycle-admin Preview modal. Any future addition

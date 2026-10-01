@@ -12,8 +12,12 @@
 
 import { prisma } from "~/lib/db";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
-import { bodyToHtml, sanitizeRichEmailHtml } from "~/lib/email";
 import { getAppEnv, getFrontendUrl } from "~/lib/app-env";
+import { renderMemberEmail } from "~/email/lib/layout.server";
+import {
+  renderMemberEmailFragment,
+  type MemberEmailArgs,
+} from "~/email/lib/member-email";
 import { slackConfigured } from "~/slack/lib/slack-client";
 import { publishNotificationChange } from "~/lib/notify-stream.server";
 import { EVENT_TYPES, type EventDef, type EventType } from "~/lib/notification-events";
@@ -65,36 +69,16 @@ export function absoluteLink(link: string | null | undefined): string | null {
 
 // One generic template for every notify() email. Feature-owned templates
 // (hiring decisions, education decision emails) stay on their own pipelines.
-export function renderNotificationEmail(args: {
-  firstName: string;
-  title: string;
-  body?: string | null;
-  bodyHtml?: string | null;
-  link?: string | null;
-  linkLabel?: string | null;
-  // Whether to repeat the title as a heading in the body. Default true. The
-  // title is always the email subject, so callers whose body already stands on
-  // its own (announcements with a body) pass false to avoid duplicating it.
-  titleInBody?: boolean;
-}): string {
-  const label = args.linkLabel || "Open in DALI OS";
-  const button = args.link
-    ? `<p><a href="${args.link}" style="display:inline-block;padding:10px 16px;background:#18181b;color:#ffffff;text-decoration:none;border-radius:6px;">${label}</a></p>`
-    : "";
-  const body = args.bodyHtml
-    ? sanitizeRichEmailHtml(args.bodyHtml)
-    : args.body
-      ? bodyToHtml(args.body)
-      : "";
-  return [
-    `<p>Hi ${args.firstName},</p>`,
-    args.titleInBody === false ? "" : `<p><strong>${args.title}</strong></p>`,
-    body,
-    button,
-    `<p style="color:#71717a;font-size:12px;">— DALI OS · <a href="${getFrontendUrl()}/settings/notifications" style="color:#71717a;">notification settings</a></p>`,
-  ]
-    .filter(Boolean)
-    .join("\n");
+//
+// The composition moved to app/email/lib/member-email.ts so the shared layout
+// could reuse it without importing this module. This stays as the pre-layout
+// shape for the few callers that still build a body fragment by hand; prefer
+// renderMemberEmail() from ~/email/lib/layout.server, which honours the
+// `email-layout` flag and returns a plain-text part too.
+export function renderNotificationEmail(
+  args: Omit<MemberEmailArgs, "baseUrl">,
+): string {
+  return renderMemberEmailFragment({ ...args, baseUrl: getFrontendUrl() });
 }
 
 function slackDmText(args: { title: string; body?: string | null; link?: string | null }): string {
@@ -332,6 +316,15 @@ export async function notify(args: {
     const m = merged(r.recipient);
     const bodyHtml = bodyHtmlFor(r.recipient);
     const key = dedupKeyFor(r.recipient);
+    const rendered = await renderMemberEmail({
+      firstName: r.user.firstName,
+      title: m.title,
+      body: m.body,
+      bodyHtml,
+      link: absoluteLink(m.link),
+      linkLabel: linkLabelFor(r.recipient),
+      titleInBody: !(isAnnouncement && (bodyHtml || m.body)),
+    });
     const enq = await enqueueOutbound({
       channel: "email",
       purpose: "General",
@@ -340,15 +333,8 @@ export async function notify(args: {
       recipientUserId: r.user.id,
       notificationId: rowIdByUser.get(r.user.id) ?? null,
       subject: m.title,
-      bodyHtml: renderNotificationEmail({
-        firstName: r.user.firstName,
-        title: m.title,
-        body: m.body,
-        bodyHtml,
-        link: absoluteLink(m.link),
-        linkLabel: linkLabelFor(r.recipient),
-        titleInBody: !(isAnnouncement && (bodyHtml || m.body)),
-      }),
+      bodyHtml: rendered.html,
+      bodyText: rendered.text,
       ics: icsFor(r.recipient),
       eventType: args.eventType,
       createdByUserId: args.createdByUserId ?? null,

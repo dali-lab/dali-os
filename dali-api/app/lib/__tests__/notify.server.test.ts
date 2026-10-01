@@ -52,6 +52,11 @@ beforeEach(() => {
   mockGetAppEnv.mockReturnValue("prod");
   mockPrisma.notificationPreference.findMany.mockResolvedValue([]);
   mockPrisma.user.findMany.mockResolvedValue([]);
+  // notify() renders the email through the shared layout, which asks whether the
+  // `email-layout` flag is on. resetAllMocks() above clears the shared db mock's
+  // default, so re-establish it: no rows → every flag resolves to its registry
+  // default, i.e. off, which is the pre-layout body these assertions describe.
+  mockPrisma.featureFlag.findMany.mockResolvedValue([]);
   mockPrisma.notification.findFirst.mockResolvedValue(null); // no coalesce suppression by default
   mockPrisma.notification.update.mockResolvedValue({}); // merge path awaits + .catch()es this
   mockPrisma.notification.createManyAndReturn.mockImplementation(

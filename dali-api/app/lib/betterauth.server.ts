@@ -8,6 +8,16 @@ import { prisma } from "~/lib/db";
 import { getApiBaseUrl, getFrontendUrl, getAppEnv } from "~/lib/app-env";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { freshKey } from "~/lib/outbound-keys";
+import { renderAuthEmail } from "~/email/lib/layout.server";
+import {
+  signInLinkEmail,
+  otpEmail,
+  verifyEmailEmail,
+  MAGIC_LINK_TTL_SECONDS,
+  EMAIL_OTP_TTL_SECONDS,
+  VERIFY_EMAIL_TTL_SECONDS,
+  type OtpPurpose,
+} from "~/email/lib/auth-email";
 import { auditPasskeyMutation } from "~/lib/betterauth-passkey-audit.server";
 import {
   canonicalizeEmailBody,
@@ -70,6 +80,9 @@ export const auth = betterAuth({
 
   emailVerification: {
     sendOnSignUp: true,
+    // Declared rather than left to BetterAuth's default, so the email's
+    // "expires in 1 hour" sentence is derived from the real value.
+    expiresIn: VERIFY_EMAIL_TTL_SECONDS,
 
     // Callback signature (from @better-auth/core 1.7.5 types):
     //   (data: { user: User; url: string; token: string }, request?: Request) => Promise<void>
@@ -78,24 +91,16 @@ export const auth = betterAuth({
       if (getAppEnv() === "dev") {
         console.info(`[betterauth:verify-email:dev] ${url}`);
       }
+      const mail = await renderAuthEmail(verifyEmailEmail({ url }));
       const { id: outboundId } = await enqueueOutbound({
         channel: "email",
         purpose: "General",
         dedupKey: `auth.verify_email:${user.id}`,
         target: user.email,
         recipientUserId: user.id,
-        subject: "Verify your email for DALI OS",
-        bodyHtml: `
-  <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; color: #1f2937;">
-    <p>Welcome to DALI OS! Confirm your email address by clicking the button below.</p>
-    <p style="margin: 24px 0;">
-      <a href="${url}" style="background: #1e3a8a; color: #fff; padding: 10px 20px; border-radius: 8px; text-decoration: none;">Verify email address</a>
-    </p>
-    <p style="color: #6b7280; font-size: 13px;">If you didn't create a DALI OS account, you can ignore this email.</p>
-    <p style="color: #6b7280; font-size: 12px; margin-top: 32px;">
-      DALI Lab · Dartmouth College
-    </p>
-  </div>`,
+        subject: mail.subject,
+        bodyHtml: mail.html,
+        bodyText: mail.text,
         eventType: "auth.verify_email",
       });
       await drainNow([outboundId]);
@@ -172,10 +177,12 @@ export const auth = betterAuth({
     // door route gates who may request one (e.g. @dartmouth.edu only); this
     // callback just delivers the link through the transactional outbox.
     magicLink({
+      expiresIn: MAGIC_LINK_TTL_SECONDS,
       sendMagicLink: async ({ email, url }, _request) => {
         if (getAppEnv() === "dev") {
           console.info(`[betterauth:magic-link:dev] ${url}`);
         }
+        const mail = await renderAuthEmail(signInLinkEmail({ url }));
         const { id: outboundId } = await enqueueOutbound({
           channel: "email",
           purpose: "General",
@@ -185,18 +192,9 @@ export const auth = betterAuth({
           // email by ~retentionMonths (6) in the DB and every backup.
           dedupKey: freshKey("auth.magic_link", email),
           target: email,
-          subject: "Your DALI OS sign-in link",
-          bodyHtml: `
-  <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; color: #1f2937;">
-    <p>Use the button below to sign in to DALI OS. This link works once and expires shortly.</p>
-    <p style="margin: 24px 0;">
-      <a href="${url}" style="background: #1e3a8a; color: #fff; padding: 10px 20px; border-radius: 8px; text-decoration: none;">Sign in to DALI OS</a>
-    </p>
-    <p style="color: #6b7280; font-size: 13px;">If you didn't request this, you can ignore this email.</p>
-    <p style="color: #6b7280; font-size: 12px; margin-top: 32px;">
-      DALI Lab · Dartmouth College
-    </p>
-  </div>`,
+          subject: mail.subject,
+          bodyHtml: mail.html,
+          bodyText: mail.text,
           eventType: "auth.magic_link",
         });
         await drainNow([outboundId]);
@@ -211,13 +209,16 @@ export const auth = betterAuth({
     // the `verification` table (same as magicLink), so no schema change.
     emailOTP({
       otpLength: 6,
-      expiresIn: 60 * 10, // 10 min
+      expiresIn: EMAIL_OTP_TTL_SECONDS,
       disableSignUp: true,
       async sendVerificationOTP({ email, otp, type }) {
         // Only the sign-in code reaches a surface today; other types are unused.
         if (getAppEnv() === "dev") {
           console.info(`[betterauth:email-otp:dev] ${type} ${otp}`);
         }
+        const mail = await renderAuthEmail(
+          otpEmail({ otp, purpose: type as OtpPurpose }),
+        );
         const { id: outboundId } = await enqueueOutbound({
           channel: "email",
           purpose: "General",
@@ -225,16 +226,9 @@ export const auth = betterAuth({
           // code itself — see the magic-link key above for why.
           dedupKey: freshKey("auth.email_otp", email),
           target: email,
-          subject: "Your DALI OS sign-in code",
-          bodyHtml: `
-  <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; color: #1f2937;">
-    <p>Your DALI OS sign-in code is:</p>
-    <p style="font-size: 30px; font-weight: 700; letter-spacing: 6px; margin: 20px 0; color: #1e3a8a;">${otp}</p>
-    <p style="color: #6b7280; font-size: 13px;">Enter it on the sign-in page. It expires in 10 minutes. If you didn't request this, you can ignore this email.</p>
-    <p style="color: #6b7280; font-size: 12px; margin-top: 32px;">
-      DALI Lab · Dartmouth College
-    </p>
-  </div>`,
+          subject: mail.subject,
+          bodyHtml: mail.html,
+          bodyText: mail.text,
           eventType: "auth.email_otp",
         });
         await drainNow([outboundId]);
