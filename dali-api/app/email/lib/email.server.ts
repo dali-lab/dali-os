@@ -20,6 +20,7 @@ import {
 } from "~/email/lib/access.server";
 import { logAuditEvent } from "~/lib/audit";
 import { PERSONAL_MAIL_NOTICE_VERSION } from "~/email/lib/personal-notice";
+import { folderQuery, mailFolder } from "~/email/lib/folders";
 import { notifyMailCommentMentions } from "~/email/lib/comment-mentions.server";
 import {
   getMailboxToken,
@@ -34,7 +35,6 @@ import {
 } from "~/email/lib/gmail-mailbox.server";
 
 const THREADS_PER_INBOX = 20;
-const DEFAULT_QUERY = "in:inbox";
 // Keep the whole message comfortably under Gmail's simple-send ceiling once
 // base64 inflates the bytes by ~33%.
 const MAX_ATTACHMENTS_BYTES = 25 * 1024 * 1024;
@@ -78,13 +78,13 @@ async function loadUnreadCounts(accounts: ReadableMailAccount[]): Promise<Record
   return Object.fromEntries(counts.filter((c) => c !== null));
 }
 
-async function loadFeed(accounts: ReadableMailAccount[], query: string) {
+async function loadFeed(accounts: ReadableMailAccount[], query: string, includeSpamTrash: boolean) {
   const errors: string[] = [];
   const lists = await Promise.all(
     accounts.map(async (a) => {
       try {
         const token = await getMailboxToken(a);
-        const threads = await listThreads(token, { query, max: THREADS_PER_INBOX });
+        const threads = await listThreads(token, { query, max: THREADS_PER_INBOX, includeSpamTrash });
         return threads.map((t) => ({ ...t, accountId: a.id }));
       } catch (err) {
         if (!(err instanceof MailboxError)) throw err;
@@ -116,7 +116,8 @@ async function loadLiveEmailPage(request: Request, userId: string, roles: UserRo
   const url = new URL(request.url);
   const inbox = url.searchParams.get("inbox");
   const view = url.searchParams.get("view") === "drafts" ? "drafts" : "inbox";
-  const query = url.searchParams.get("q")?.trim() || DEFAULT_QUERY;
+  const folder = mailFolder(url.searchParams.get("folder"));
+  const search = url.searchParams.get("q")?.trim() ?? "";
   const searchAccounts = url.searchParams.get("in")?.split(",").filter(Boolean) ?? [];
   const selectedRef = parseThreadRef(url.searchParams.get("t"));
 
@@ -137,7 +138,9 @@ async function loadLiveEmailPage(request: Request, userId: string, roles: UserRo
     : null;
 
   const [feed, selected, drafts, categories, myConnections, unread] = await Promise.all([
-    view === "inbox" ? loadFeed(feedAccounts, query) : { threads: [], errors: [] },
+    view === "inbox"
+      ? loadFeed(feedAccounts, folderQuery(folder, search), folder.spamTrash)
+      : { threads: [], errors: [] },
     selectedAccount && selectedRef
       ? loadThread(userId, selectedAccount, selectedRef.threadId)
       : null,
@@ -166,7 +169,8 @@ async function loadLiveEmailPage(request: Request, userId: string, roles: UserRo
     mailHidden,
     view,
     inbox,
-    query: query === DEFAULT_QUERY ? "" : query,
+    folder: folder.key,
+    query: search,
     ask: url.searchParams.get("ask") ?? "",
     aiEnabled: isAiEnabled(),
     isAdmin: roles.isAdmin,
