@@ -3,13 +3,17 @@
 //   with a project email gets its inbox automatically.
 // - Shared: people subscribed to a category (MailCategory) that holds it,
 //   while they're in that category's audience.
+// - Personal: the member's own DALI address, behind the email-personal flag
+//   and a recorded agreement to the risk notice. Only they can read it.
 // Either way each person reads with their own sign-in (MailAccountConnection),
 // never a teammate's, and may archive an inbox to hide it from their own list.
 
 import type { MailAccountKind } from "~/generated/prisma/enums";
 import { prisma } from "~/lib/db";
 import { resolveGroupMembers } from "~/lib/groups";
-import { currentTerm } from "~/lib/roles";
+import { currentTerm, getUserRoles } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { PERSONAL_MAIL_NOTICE_VERSION } from "~/email/lib/personal-notice";
 
 export async function currentProjectIds(userId: string, request: Request): Promise<string[]> {
   const term = await currentTerm(request);
@@ -88,17 +92,43 @@ async function ensureProjectInboxes(projectIds: string[]) {
   });
 }
 
+// The member's own DALI address, or null when the flag is off for them or
+// they have no DALI address on file.
+async function personalInboxAddress(userId: string, request: Request): Promise<string | null> {
+  const roles = await getUserRoles(userId, request);
+  if (!(await isFeatureEnabled("email-personal", userId, roles, request))) return null;
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { daliEmail: true } });
+  return user?.daliEmail?.toLowerCase() ?? null;
+}
+
+/** Whether this member has agreed to the current risk notice for their personal inbox. */
+export async function hasPersonalMailConsent(userId: string): Promise<boolean> {
+  const row = await prisma.auditLog.findFirst({
+    where: { userId, action: "email.personal_consent", targetId: PERSONAL_MAIL_NOTICE_VERSION },
+    select: { id: true },
+  });
+  return row !== null;
+}
+
 export async function readableMailAccounts(userId: string, request: Request) {
-  const [projectIds, sharedIds] = await Promise.all([
+  const [projectIds, sharedIds, personalAddress] = await Promise.all([
     currentProjectIds(userId, request),
     subscribedSharedAccountIds(userId),
+    personalInboxAddress(userId, request),
   ]);
   await ensureProjectInboxes(projectIds);
+  if (personalAddress) {
+    await prisma.mailAccount.createMany({
+      data: [{ kind: "Personal", address: personalAddress, scopeKey: `user:${userId}`, userId }],
+      skipDuplicates: true,
+    });
+  }
   const rows = await prisma.mailAccount.findMany({
     where: {
       OR: [
         { kind: "Project", projectId: { in: projectIds } },
         { kind: "Shared", id: { in: sharedIds } },
+        ...(personalAddress ? [{ kind: "Personal" as const, userId, address: personalAddress }] : []),
       ],
     },
     include: {
@@ -140,16 +170,19 @@ export function mailAccountLabel(a: {
 // Connect targets, as carried through the OAuth round trip.
 export type ConnectTarget =
   | { kind: "Project"; projectId: string }
-  | { kind: "Shared"; accountId: string };
+  | { kind: "Shared"; accountId: string }
+  | { kind: "Personal" };
 
 export function parseConnectTarget(raw: string | null): ConnectTarget | null {
   const [kind, id] = (raw ?? "").split(":");
   if (kind === "project" && id) return { kind: "Project", projectId: id };
   if (kind === "shared" && id) return { kind: "Shared", accountId: id };
+  if (raw === "personal") return { kind: "Personal" };
   return null;
 }
 
 export function serializeConnectTarget(t: ConnectTarget): string {
+  if (t.kind === "Personal") return "personal";
   return t.kind === "Project" ? `project:${t.projectId}` : `shared:${t.accountId}`;
 }
 
@@ -170,6 +203,14 @@ export async function expectedConnectAddress(
     ]);
     if (!projectIds.includes(target.projectId) || !project?.calendarEmail) return undefined;
     return project.calendarEmail;
+  }
+  if (target.kind === "Personal") {
+    // Never without the opt-in on record, however the request got here.
+    const [address, consented] = await Promise.all([
+      personalInboxAddress(userId, request),
+      hasPersonalMailConsent(userId),
+    ]);
+    return address && consented ? address : undefined;
   }
   // A Shared inbox: anyone subscribed to it signs in.
   const account = await findReadableAccount(userId, target.accountId, request);

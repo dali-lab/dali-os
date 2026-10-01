@@ -85,6 +85,9 @@ export const AUDIT_ACTIONS = [
   "doctag.create",
   "email.send",
   "email.extension_notice",
+  // A member agreeing to the risk notice before connecting their personal
+  // DALI mailbox. targetId is the notice version they agreed to.
+  "email.personal_consent",
   "confidentiality.sign",
   "signing.sign",
   "signing.publish",

@@ -2,7 +2,7 @@ import { Link, useFetcher } from "react-router";
 import { Archive, ArchiveRestore, Settings2, Unplug } from "lucide-react";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { modalCardClass } from "~/components/os-chrome";
-import { buttonClasses } from "~/components/ui/Button";
+import { Button, buttonClasses } from "~/components/ui/Button";
 import { IconButton } from "~/components/ui/IconButton";
 import { Toggle } from "~/components/ui/Toggle";
 import { useDialog } from "~/components/ui/dialog";
@@ -36,10 +36,19 @@ function Row({ title, subtitle, children }: { title: string; subtitle?: string; 
   );
 }
 
-export function AccountsModal({ data, onClose }: { data: EmailPageData; onClose: () => void }) {
+export function AccountsModal({
+  data,
+  onClose,
+  onConnectPersonal,
+}: {
+  data: EmailPageData;
+  onClose: () => void;
+  onConnectPersonal: () => void;
+}) {
   const fetcher = useFetcher<{ error?: string }>();
   const dialog = useDialog();
   const projectInboxes = data.accounts.filter((a) => a.kind === "Project");
+  const personalInbox = data.accounts.find((a) => a.kind === "Personal");
 
   const disconnect = async (accountId: string, label: string) => {
     const ok = await dialog.confirm({
@@ -63,6 +72,29 @@ export function AccountsModal({ data, onClose }: { data: EmailPageData; onClose:
     <Modal open onClose={onClose} labelledBy="mail-accounts-title" containerClassName={modalCardClass("max-w-lg")}>
       <ModalHeader titleId="mail-accounts-title" title="Inboxes" onClose={onClose} />
       <div className="flex flex-col gap-6">
+        {personalInbox && (
+          <div>
+            <p className={heading}>Personal</p>
+            <div className={section}>
+              <Row title="Your DALI email" subtitle={personalInbox.address}>
+                <StatusDot error={personalInbox.syncError} />
+                {personalInbox.connected && !personalInbox.syncError ? (
+                  <IconButton
+                    label="Disconnect"
+                    icon={Unplug}
+                    onClick={() => disconnect(personalInbox.id, personalInbox.address)}
+                  />
+                ) : (
+                  <Button variant="secondary" size="sm" onClick={onConnectPersonal}>
+                    {personalInbox.syncError ? "Reconnect" : "Connect"}
+                  </Button>
+                )}
+              </Row>
+            </div>
+            <p className={note}>Only you can read this inbox.</p>
+          </div>
+        )}
+
         {projectInboxes.length > 0 && (
           <div>
             <p className={heading}>Project team</p>

@@ -23,6 +23,7 @@ import { SearchInput } from "~/components/ui/SearchInput";
 import { useToast } from "~/components/ui/toast";
 import { cn } from "~/lib/cn";
 import { AccountsModal, connectHref } from "~/email/components/AccountsModal";
+import { PersonalInboxConsent } from "~/email/components/PersonalInboxConsent";
 import { UnreadBadge } from "~/email/components/UnreadBadge";
 import { Composer } from "~/email/components/Composer";
 import { ThreadView } from "~/email/components/ThreadView";
@@ -56,6 +57,7 @@ export default function EmailPage() {
   const navigation = useNavigation();
   const toast = useToast();
   const [accountsOpen, setAccountsOpen] = useState(false);
+  const [consentOpen, setConsentOpen] = useState(false);
   const [composing, setComposing] = useState<string | null>(null);
   const [search, setSearch] = useState(data.ask || data.query);
   const [searching, setSearching] = useState(false);
@@ -72,6 +74,7 @@ export default function EmailPage() {
   const expanded = readerOpen && readerExpanded;
   const totalUnread = Object.values(data.unread).reduce((sum, n) => sum + n, 0);
   const openInbox = data.accounts.find((a) => a.id === data.inbox);
+  const personalInbox = data.accounts.find((a) => a.kind === "Personal");
 
   const directory = useMemo(() => {
     const selectedMessages = data.selected && !data.selected.error ? data.selected.messages : [];
@@ -344,14 +347,20 @@ export default function EmailPage() {
               ) : openInbox && !openInbox.connected ? (
                 <div className="flex flex-col items-center gap-3 p-6 text-center">
                   <p className="text-sm text-os-muted">Sign in to {openInbox.address} to see its mail here.</p>
-                  <a
-                    className={buttonClasses("secondary", "sm")}
-                    href={connectHref(
-                      openInbox.kind === "Shared" ? `shared:${openInbox.id}` : `project:${openInbox.projectId}`,
-                    )}
-                  >
-                    Sign in
-                  </a>
+                  {openInbox.kind === "Personal" ? (
+                    <Button variant="secondary" size="sm" onClick={() => setConsentOpen(true)}>
+                      Connect
+                    </Button>
+                  ) : (
+                    <a
+                      className={buttonClasses("secondary", "sm")}
+                      href={connectHref(
+                        openInbox.kind === "Shared" ? `shared:${openInbox.id}` : `project:${openInbox.projectId}`,
+                      )}
+                    >
+                      Sign in
+                    </a>
+                  )}
                 </div>
               ) : data.feed.threads.length === 0 ? (
                 <p className="p-6 text-center text-sm text-os-muted">
@@ -443,7 +452,19 @@ export default function EmailPage() {
         </div>
       )}
 
-      {accountsOpen && <AccountsModal data={data} onClose={() => setAccountsOpen(false)} />}
+      {accountsOpen && (
+        <AccountsModal
+          data={data}
+          onClose={() => setAccountsOpen(false)}
+          onConnectPersonal={() => {
+            setAccountsOpen(false);
+            setConsentOpen(true);
+          }}
+        />
+      )}
+      {consentOpen && personalInbox && (
+        <PersonalInboxConsent address={personalInbox.address} onClose={() => setConsentOpen(false)} />
+      )}
     </div>
   );
 }

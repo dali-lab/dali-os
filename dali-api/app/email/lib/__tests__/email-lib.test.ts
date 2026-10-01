@@ -85,6 +85,7 @@ describe("connect targets", () => {
     for (const t of [
       { kind: "Project" as const, projectId: "p1" },
       { kind: "Shared" as const, accountId: "m1" },
+      { kind: "Personal" as const },
     ]) {
       expect(parseConnectTarget(serializeConnectTarget(t))).toEqual(t);
     }
@@ -93,7 +94,7 @@ describe("connect targets", () => {
   it("rejects unknown targets", () => {
     expect(parseConnectTarget("project:")).toBeNull();
     expect(parseConnectTarget("admin:x")).toBeNull();
-    expect(parseConnectTarget("personal")).toBeNull();
+    expect(parseConnectTarget("personal:someone-else")).toBeNull();
     expect(parseConnectTarget(null)).toBeNull();
   });
 });

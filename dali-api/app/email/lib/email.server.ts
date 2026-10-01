@@ -13,10 +13,13 @@ import { demoEmailAction, demoEmailPage, isEmailDemo } from "~/email/lib/demo-da
 import {
   categoriesForUser,
   findReadableAccount,
+  hasPersonalMailConsent,
   mailAccountLabel,
   readableMailAccounts,
   type ReadableMailAccount,
 } from "~/email/lib/access.server";
+import { logAuditEvent } from "~/lib/audit";
+import { PERSONAL_MAIL_NOTICE_VERSION } from "~/email/lib/personal-notice";
 import { notifyMailCommentMentions } from "~/email/lib/comment-mentions.server";
 import {
   getMailboxToken,
@@ -298,6 +301,27 @@ export async function submitEmailAction(request: Request) {
   const intent = field(form, "intent");
   if (user.demo) return demoEmailAction(intent, field(form, "draftId"));
   const { userId, roles } = user;
+
+  if (intent === "consentPersonal") {
+    if (!(await isFeatureEnabled("email-personal", userId, roles, request))) {
+      return Response.json({ error: "Personal inboxes aren't available to you." }, { status: 403 });
+    }
+    if (field(form, "agreed") !== PERSONAL_MAIL_NOTICE_VERSION) {
+      return Response.json({ error: "Agree to the notice to continue." }, { status: 400 });
+    }
+    await logAuditEvent({
+      action: "email.personal_consent",
+      userId,
+      targetId: PERSONAL_MAIL_NOTICE_VERSION,
+      request,
+    });
+    // The audit write swallows its own failures, and the connect refuses
+    // without this row, so say so here instead of failing at Google's door.
+    if (!(await hasPersonalMailConsent(userId))) {
+      return Response.json({ error: "Couldn't record your agreement. Try again." }, { status: 500 });
+    }
+    return { ok: true, consented: true };
+  }
 
   if (intent === "subscribe" || intent === "unsubscribe") {
     const categoryId = field(form, "categoryId");
