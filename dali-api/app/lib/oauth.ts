@@ -44,10 +44,6 @@ export async function getOAuthClient(clientId: string): Promise<OAuthClient | nu
   return prisma.oAuthClient.findUnique({ where: { clientId } });
 }
 
-// Per-client redirect-URI matching per RFC 8252 §7.3 (loopback) and exact
-// match for everything else. For loopback clients we accept any port on
-// 127.0.0.1 or localhost over http (never https, never 0.0.0.0, never a
-// public IP). The path must match a registered redirect's path.
 // Build the Location for an authorization response back to the client.
 //
 // RFC 9207: `iss` rides on every authorization response, success and error
@@ -74,6 +70,10 @@ export function authorizationResponseUrl(params: {
   return url.toString();
 }
 
+// Per-client redirect-URI matching per RFC 8252 §7.3 (loopback) and exact
+// match for everything else. For loopback clients we accept any port on
+// 127.0.0.1 or localhost over http (never https, never 0.0.0.0, never a
+// public IP). The path must match a registered redirect's path.
 export function isAllowedRedirectUri(
   client: Pick<OAuthClient, "redirectUris" | "isLoopback">,
   redirectUri: string,
