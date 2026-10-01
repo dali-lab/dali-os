@@ -618,7 +618,9 @@ async function main() {
     create: {
       id: "cycle-fall-2026",
       name: "Fall 2026",
-      closeDate: new Date("2026-09-30T23:59:59Z"),
+      // Relative to seed time: a fixed date eventually passes and closes the
+      // cycle under every spec that applies through the portal.
+      closeDate: ts(90 * 24 * 60 * 60 * 1000),
       generalRubricVersionId: "rv-general-v1",
       applicationFormId: generalApplicationForm.id,
       domains: {
