@@ -44,7 +44,14 @@ const mockPrisma = prisma as unknown as {
     update: ReturnType<typeof vi.fn>;
     updateMany: ReturnType<typeof vi.fn>;
   };
+  $executeRaw: ReturnType<typeof vi.fn>;
 };
+
+// bumpLastActive is the only $executeRaw in this module, so its calls are the
+// presence heartbeat. The user id is the single interpolated value.
+function presenceBumpsFor(): string[] {
+  return mockPrisma.$executeRaw.mock.calls.map((args: unknown[]) => String(args[1]));
+}
 
 function makeSessionRow(overrides: Partial<{
   id: string;
@@ -313,6 +320,46 @@ describe("requireAuth — BetterAuth coexistence (Phase 1)", () => {
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.user.sub).toBe("user-1");
     expect(mockResolveBetterAuthAuth).not.toHaveBeenCalled();
+  });
+});
+
+describe("requireAuth — presence heartbeat", () => {
+  it("bumps lastActiveAt for a legacy session", async () => {
+    mockPrisma.session.findUnique.mockResolvedValue(makeSessionRow());
+    const req = new Request("http://localhost", {
+      headers: { Cookie: "__dali_sid=raw-1" },
+    });
+    await requireAuth(req);
+    expect(presenceBumpsFor()).toEqual(["user-1"]);
+  });
+
+  it("bumps lastActiveAt for a BetterAuth session", async () => {
+    // The cutover regression: the BetterAuth leg returned a valid auth without
+    // ever writing presence, so status dots and Admin's "Live now" tile went
+    // dark for everyone the moment the flag was flipped on.
+    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
+    mockResolveBetterAuthAuth.mockResolvedValue({
+      user: { sub: "ba-user", email: "u@dali.dartmouth.edu", type: "member" },
+      sessionId: "auth-session-1",
+    });
+    const req = new Request("http://localhost");
+    const result = await requireAuth(req);
+    expect(result.ok).toBe(true);
+    expect(presenceBumpsFor()).toEqual(["ba-user"]);
+  });
+
+  it("does NOT bump lastActiveAt while an admin is impersonating", async () => {
+    mockIsFeatureEnabledForEveryone.mockResolvedValue(true);
+    mockResolveBetterAuthAuth.mockResolvedValue({
+      user: { sub: "target-user", email: "u@dali.dartmouth.edu", type: "member" },
+      sessionId: "auth-session-1",
+      impersonatedBy: "admin-user",
+    });
+    const req = new Request("http://localhost");
+    const result = await requireAuth(req);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.impersonatedBy).toBe("admin-user");
+    expect(presenceBumpsFor()).toEqual([]);
   });
 });
 
