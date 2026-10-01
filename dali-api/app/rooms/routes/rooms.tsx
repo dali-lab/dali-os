@@ -283,8 +283,13 @@ function DayTimeline({
   onCancel: (item: ScheduleItem) => void;
 }) {
   const chrome = useOsChrome();
-  const [now, setNow] = useState(() => Date.now());
+  // Unset until mounted: the server renders in its own timezone, and React
+  // keeps a server-rendered style through hydration, so a "now" line placed
+  // there would sit hours off until the next tick.
+  const [mountedNow, setNow] = useState<number | null>(null);
+  const now = mountedNow ?? Date.now();
   useEffect(() => {
+    setNow(Date.now());
     const t = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(t);
   }, []);
@@ -419,7 +424,7 @@ function DayTimeline({
           </div>
         )}
 
-        {dateKey === todayKey() && now > dayStart && now < dayEnd && (
+        {mountedNow !== null && dateKey === todayKey() && now > dayStart && now < dayEnd && (
           <div
             className="pointer-events-none absolute inset-x-0 h-0.5 bg-[var(--os-danger-ink)]"
             style={{ top: yFor(now) }}
