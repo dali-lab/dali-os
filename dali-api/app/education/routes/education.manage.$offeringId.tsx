@@ -62,7 +62,6 @@ import {
 } from "~/education/lib/announcements.server";
 import {
   listEducationEmails,
-  saveEducationEmail,
 } from "~/education/lib/education-emails.server";
 import {
   DECISION_EMAIL_SLOTS,
@@ -742,27 +741,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
   }
 
-  // One email per slot, shared by every course — so it isn't an offering
-  // action. Core owns lab-wide copy, the same rule the certificate-template
-  // binding on this page follows; an invited instructor manages their course,
-  // not the words every course sends.
-  if (intent === "save-education-email") {
-    if (!(await isCore(auth.user.sub)))
-      return Response.json({ error: "Forbidden" }, { status: 403 });
-    const slot = String(formData.get("slot") ?? "");
-    if (!DECISION_EMAIL_SLOTS.some((d) => decisionSlot(d.status) === slot))
-      return Response.json({ error: "Unknown email" }, { status: 400 });
-    await saveEducationEmail(
-      slot as EducationEmailSlot,
-      {
-        subject: String(formData.get("subject") ?? ""),
-        body: String(formData.get("body") ?? ""),
-      },
-      auth.user.sub,
-    );
-    return { ok: true };
-  }
-
   // Pin the offering id from the URL so a form can't retarget another offering.
   formData.set("offeringId", params.offeringId!);
   const result = await runOfferingAction(formData, auth.user.sub);
@@ -1293,9 +1271,15 @@ export default function ManageOffering() {
                     key={slot.status}
                     slot={slot}
                     email={educationEmails[decisionSlot(slot.status)] ?? null}
-                    offeringTitle={offering.title}
                   />
                 ))}
+                <p className="text-xs text-os-grey">
+                  Shared by every course.{" "}
+                  <Link to="/admin/email" className="underline">
+                    Edit in Admin &rarr; Email
+                  </Link>
+                  .
+                </p>
               </div>
             </ManageSection>
           )}
@@ -2196,124 +2180,30 @@ function SessionMaterials({
 function DecisionEmailRow({
   slot,
   email,
-  offeringTitle,
 }: {
   slot: { status: DecisionSlotStatus; label: string; description: string };
   email: { subject: string; body: string } | null;
-  offeringTitle: string;
 }) {
-  const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
-  const [editing, setEditing] = useState(false);
-  const [subject, setSubject] = useState(email?.subject ?? "");
-  const [body, setBody] = useState(email?.body ?? "");
-  const busy = fetcher.state !== "idle";
-
-  // Close once a save lands; the loader brings the new email back.
-  useEffect(() => {
-    if (fetcher.state === "idle" && fetcher.data?.ok) setEditing(false);
-  }, [fetcher.state, fetcher.data]);
-
-  const open = () => {
-    setSubject(email?.subject ?? "");
-    setBody(email?.body ?? "");
-    setEditing(true);
-  };
-  const save = () =>
-    fetcher.submit(
-      {
-        intent: "save-education-email",
-        slot: decisionSlot(slot.status),
-        subject,
-        body,
-      },
-      { method: "post" },
-    );
-
-  // Soft warning only: an unknown variable still saves.
-  const unknown = [
-    ...new Set([...unknownVariables(subject), ...unknownVariables(body)]),
-  ];
-  const preview = renderEmail({ subject, body }, { firstName: "Alex", domain: offeringTitle });
-  const titleId = `education-email-${slot.status.toLowerCase()}`;
-
+  // Read-only. One row per slot shared by every course, so the words live in
+  // Admin -> Email with every other email rather than in each course's page.
+  // What this page still owes an instructor is whether one exists, because a slot
+  // with no email sends nothing (the in-app notification still fires).
   return (
-    <div className={cn(WELL_ROW_CLASS, "items-start")}>
-      <div className="flex min-w-0 flex-col gap-0.5">
-        <span className="text-sm font-semibold text-foreground">{slot.label}</span>
-        <span className="text-sm text-os-grey">
-          {email ? slot.description : "No email yet. Nothing sends for this status."}
-        </span>
-      </div>
-      <Button type="button" variant="secondary" size="sm" onClick={open}>
-        {email ? "Edit" : "Write"}
-      </Button>
-      <Modal
-        open={editing}
-        onClose={busy ? () => {} : () => setEditing(false)}
-        disableEscape={busy}
-        labelledBy={titleId}
-        containerClassName={modalCardClass("max-w-3xl")}
-      >
-        <ModalHeader
-          titleId={titleId}
-          title={`${slot.label} email`}
-          subtitle="Shared by every course."
-          onClose={() => setEditing(false)}
-        />
-        <div className="os-form flex flex-col gap-4">
-          <label className={FIELD_COL}>
-            <span className="os-field-label">Subject</span>
-            <input
-              type="text"
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              aria-label={`${slot.label} subject`}
-            />
-          </label>
-          <label className={FIELD_COL}>
-            <span className="os-field-label">Body</span>
-            <textarea
-              rows={14}
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              aria-label={`${slot.label} body`}
-            />
-          </label>
-          <p className="text-sm text-os-grey">
-            Supports{" "}
-            {EDUCATION_EMAIL_VARIABLES.map((v, i) => (
-              <span key={v}>
-                {i > 0 && ", "}
-                <code className="rounded bg-os-well px-1.5 py-0.5 font-mono">{`{{${v}}}`}</code>
-              </span>
-            ))}
-            . Leave both fields empty to send nothing for this status.
-          </p>
-          {unknown.length > 0 && (
-            <p className="text-sm text-amber-700">
-              {unknown.map((v) => `{{${v}}}`).join(", ")} won&apos;t be filled in.
-            </p>
-          )}
-          {(subject.trim() || body.trim()) && (
-            <div className="rounded-os-item bg-os-well px-4 py-3 text-sm">
-              <p className="text-os-grey">Sample for “Alex”:</p>
-              <p className="mt-1.5 font-medium text-foreground">{preview.subject}</p>
-              <div
-                className="mt-1 text-foreground [&_p]:my-1"
-                dangerouslySetInnerHTML={{ __html: preview.html }}
-              />
-            </div>
-          )}
-          {fetcher.data?.error && (
-            <p className="text-sm text-destructive">{fetcher.data.error}</p>
+    <div className="flex items-start gap-3 rounded-os-item border border-border px-4 py-3">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium">{slot.label}</span>
+          {email ? null : (
+            <span className="text-xs text-amber-600 dark:text-amber-500">
+              Nothing sends for this
+            </span>
           )}
         </div>
-        <ModalFooter onCancel={() => setEditing(false)}>
-          <Button type="button" disabled={busy} onClick={save}>
-            {busy ? "Saving…" : "Save"}
-          </Button>
-        </ModalFooter>
-      </Modal>
+        <p className="mt-0.5 text-xs text-os-grey">{slot.description}</p>
+        {email ? (
+          <p className="mt-1 truncate text-xs text-os-grey">Subject: {email.subject}</p>
+        ) : null}
+      </div>
     </div>
   );
 }
