@@ -16,12 +16,19 @@ function isDesigned(html: string): boolean {
   return /bgcolor|background|<style|color\s*[:=]/i.test(html);
 }
 
-function frameDoc(html: string, themed: boolean): string {
+// A designed mail sits on a fixed white card, so its frame is pinned to the
+// light scheme. The mail's own dark-mode styles would otherwise switch on with
+// the system appearance and paint light text onto that card.
+function forceLight(html: string): string {
+  return html.replace(/prefers-color-scheme\s*:\s*dark/gi, "prefers-color-scheme:none");
+}
+
+export function frameDoc(html: string, themed: boolean): string {
   const body = themed
     ? `body{margin:0;font:14px/1.55 "Mulish",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:transparent;overflow-wrap:anywhere}a{color:inherit}`
-    : `body{margin:0;font:14px/1.55 system-ui,-apple-system,sans-serif;color:#1f1f1f;overflow-wrap:anywhere}`;
+    : `html{color-scheme:only light!important;background:#fff}body{margin:0;font:14px/1.55 system-ui,-apple-system,sans-serif;color:#1f1f1f;overflow-wrap:anywhere}`;
   const font = themed ? `<link rel="stylesheet" href="${FONT_CSS}">` : "";
-  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${CSP}"><base target="_blank">${font}<style>${body}img{max-width:100%;height:auto}</style></head><body>${html}</body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${CSP}"><base target="_blank">${font}<style>${body}img{max-width:100%;height:auto}</style></head><body>${themed ? html : forceLight(html)}</body></html>`;
 }
 
 export function MailBody({ html, text }: { html: string | null; text: string | null }) {
@@ -53,7 +60,7 @@ export function MailBody({ html, text }: { html: string | null; text: string | n
   };
 
   return (
-    <div className={cn("overflow-hidden", themed ? "rounded-os-item bg-os-well p-4" : "rounded-[10px] bg-white p-3")}>
+    <div className={cn("overflow-hidden", themed ? "rounded-os-item bg-os-well p-4" : "rounded-[10px] bg-[#fff] p-3")}>
       <iframe
         ref={ref}
         title="Email message"
