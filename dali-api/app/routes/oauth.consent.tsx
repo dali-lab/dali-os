@@ -1,7 +1,12 @@
 import type { Route } from "./+types/oauth.consent";
 import { Form, redirect } from "react-router";
 import { prisma } from "~/lib/db";
-import { getOAuthClient, generateAuthorizationCode } from "~/lib/oauth";
+import {
+  authorizationResponseUrl,
+  getOAuthClient,
+  generateAuthorizationCode,
+} from "~/lib/oauth";
+import { getOAuthIssuer } from "~/lib/app-env";
 import { parseSessionId } from "~/lib/cookies";
 import { lookupSession } from "~/lib/session";
 import { displayEmail } from "~/lib/display";
@@ -121,12 +126,17 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   if (decision !== "approve") {
-    const params = new URLSearchParams({
-      error: "access_denied",
-      error_description: "user_denied",
-      state: oauthSession.state,
-    });
-    return redirect(`${oauthSession.redirectUri}?${params}`);
+    return redirect(
+      authorizationResponseUrl({
+        issuer: getOAuthIssuer(request),
+        redirectUri: oauthSession.redirectUri,
+        query: {
+          error: "access_denied",
+          error_description: "user_denied",
+          state: oauthSession.state,
+        },
+      }),
+    );
   }
 
   const client = await getOAuthClient(oauthSession.clientId);
@@ -181,8 +191,13 @@ export async function action({ request }: Route.ActionArgs) {
     oauthSession.id,
     oauthSession.userId,
   );
-  const params = new URLSearchParams({ code, state: oauthSession.state });
-  return redirect(`${oauthSession.redirectUri}?${params}`);
+  return redirect(
+    authorizationResponseUrl({
+      issuer: getOAuthIssuer(request),
+      redirectUri: oauthSession.redirectUri,
+      query: { code, state: oauthSession.state },
+    }),
+  );
 }
 
 export default function ConsentScreen({ loaderData }: Route.ComponentProps) {

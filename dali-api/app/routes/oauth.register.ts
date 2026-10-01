@@ -7,9 +7,9 @@
 // required, mcp:read/write/admin scopes (admin granted only to Core/Admin at
 // consent). Redirect URIs are limited to http
 // loopback (Claude Code / Desktop-local), an https callback on an allowed
-// Claude host (claude.ai web / mobile), or an exact https callback an operator
-// has allowlisted (other MCP hosts — see MCP_ALLOWED_REDIRECT_URIS). None of
-// the client-supplied policy fields are honored — only redirect_uris +
+// Claude host (claude.ai web / mobile), or one of the exact connector callbacks
+// we allow in full (ChatGPT's, plus anything in MCP_ALLOWED_REDIRECT_URIS).
+// None of the client-supplied policy fields are honored — only redirect_uris +
 // client_name.
 
 import { MCP_SCOPES } from "~/lib/mcp-scopes";
@@ -91,21 +91,36 @@ function isTrustedHttpsRedirect(uri: string): boolean {
   );
 }
 
-// Other MCP hosts (ChatGPT connectors, etc.) hand out a callback URL that can
-// be specific to the connection rather than one stable per-vendor path, so
-// trusting their whole registrable domain would allow far more than the single
-// callback actually in use. MCP_ALLOWED_REDIRECT_URIS (comma-separated) instead
-// allows whole https URIs, matched in full — scheme, host, port, path and
-// query — so nothing else on that host is reachable. Take the value to allow
-// from the `oauth.register.rejected` audit row the failed attempt leaves
-// behind; the callback is not guessable from the vendor's domain.
+// Whole-URI allowlist, as distinct from the host allowlist above. A connector
+// platform's callback is one fixed URL rather than a domain worth trusting
+// wholesale, so these match in full — scheme, host, port, path and query —
+// leaving everything else on that host unreachable.
+//
+// ChatGPT's stable connector callback, published at
+// developers.openai.com/plugins/build/auth. ChatGPT sends this URL only to
+// issuers that advertise `authorization_response_iss_parameter_supported` and
+// return RFC 9207 `iss` on every authorization response, which we do — see
+// well-known.oauth-authorization-server.ts and authorizationResponseUrl. An
+// issuer that doesn't gets a per-connection
+// https://chatgpt.com/connector/oauth/{callback_id} instead, which would need a
+// hand-added entry for every new connection. Keep the two in step: drop the
+// `iss` parameter and ChatGPT stops sending the URL this entry matches.
+const DEFAULT_TRUSTED_REDIRECT_URIS = [
+  "https://chatgpt.com/connector_platform_oauth_redirect",
+];
+
+// MCP_ALLOWED_REDIRECT_URIS *adds* exact URIs for a host we don't ship a
+// constant for — unlike MCP_ALLOWED_REDIRECT_HOSTS, which replaces its
+// defaults. Read the value to add off the `oauth.register.rejected` audit row
+// the failed attempt leaves behind rather than guessing a vendor's path.
 function allowedExactRedirectUris(): string[] {
   const raw = process.env.MCP_ALLOWED_REDIRECT_URIS;
-  if (!raw) return [];
-  return raw
+  if (!raw) return DEFAULT_TRUSTED_REDIRECT_URIS;
+  const extra = raw
     .split(",")
     .map((u) => u.trim())
     .filter(Boolean);
+  return [...DEFAULT_TRUSTED_REDIRECT_URIS, ...extra];
 }
 
 // URL parsing folds scheme/host case and the implicit :443 away, so comparing

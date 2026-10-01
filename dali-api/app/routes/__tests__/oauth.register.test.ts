@@ -166,6 +166,61 @@ describe("POST /oauth/register", () => {
     }
   });
 
+  describe("ChatGPT's stable connector callback", () => {
+    // Published at developers.openai.com/plugins/build/auth. ChatGPT sends this
+    // exact URL to issuers that do RFC 9207 issuer identification, so it needs
+    // no per-connection operator step. Registering it must still be exact: the
+    // rest of chatgpt.com stays unregistrable.
+    const CHATGPT = "https://chatgpt.com/connector_platform_oauth_redirect";
+
+    it("registers with no env configuration at all", async () => {
+      expect(process.env.MCP_ALLOWED_REDIRECT_URIS).toBeUndefined();
+      const res = await action({
+        request: makeRequest({
+          redirect_uris: [CHATGPT],
+          client_name: "ChatGPT",
+        }),
+      } as any);
+      expect(res.status).toBe(200);
+      const createArgs = mockCreate.mock.calls[0]![0].data;
+      expect(createArgs.redirectUris).toEqual([CHATGPT]);
+      // Exact-match only at /oauth/authorize and /oauth/token.
+      expect(createArgs.isLoopback).toBe(false);
+      // The MCP policy still applies — allowlisting a callback grants nothing.
+      expect(createArgs.requireMembership).toBe(true);
+      expect(createArgs.requiredAccountType).toBe("member");
+      expect(createArgs.allowedProviders).toEqual(["google"]);
+    });
+
+    it("does not make the rest of chatgpt.com registrable", async () => {
+      for (const uri of [
+        "https://chatgpt.com/",
+        "https://chatgpt.com/connector_platform_oauth_redirect/evil",
+        "https://chatgpt.com/connector/oauth/some-callback-id",
+        "https://evil.chatgpt.com/connector_platform_oauth_redirect",
+      ]) {
+        vi.clearAllMocks();
+        const res = await action({
+          request: makeRequest({ redirect_uris: [uri] }),
+        } as any);
+        expect(res.status, uri).toBe(400);
+        expect(mockCreate).not.toHaveBeenCalled();
+      }
+    });
+
+    it("survives an MCP_ALLOWED_REDIRECT_URIS override, unlike the host list", async () => {
+      process.env.MCP_ALLOWED_REDIRECT_URIS = "https://other.example.org/cb";
+      try {
+        const res = await action({
+          request: makeRequest({ redirect_uris: [CHATGPT] }),
+        } as any);
+        expect(res.status).toBe(200);
+      } finally {
+        delete process.env.MCP_ALLOWED_REDIRECT_URIS;
+      }
+    });
+  });
+
   describe("MCP_ALLOWED_REDIRECT_URIS (exact-URI allowlist)", () => {
     // The exact callback a non-Claude MCP host asks for. Allowlisting it must
     // not make anything else on that host registrable, so the whole URI is

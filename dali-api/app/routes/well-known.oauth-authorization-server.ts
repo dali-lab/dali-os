@@ -4,6 +4,7 @@
 // prefix without a manual entry).
 
 import { MCP_SCOPES } from "~/lib/mcp-scopes";
+import { getOAuthIssuer } from "~/lib/app-env";
 import type { Route } from "./+types/well-known.oauth-authorization-server";
 
 export async function action() {
@@ -11,9 +12,7 @@ export async function action() {
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const url = new URL(request.url);
-  const issuer =
-    process.env.API_BASE_URL ?? `${url.protocol}//${url.host}`;
+  const issuer = getOAuthIssuer(request);
 
   return Response.json(
     {
@@ -27,6 +26,11 @@ export async function loader({ request }: Route.LoaderArgs) {
       code_challenge_methods_supported: ["S256"],
       scopes_supported: [...MCP_SCOPES],
       token_endpoint_auth_methods_supported: ["none"],
+      // RFC 9207. We return `iss` on every authorization response, which is
+      // what lets ChatGPT use its one stable connector callback instead of
+      // minting a per-connection callback id we would have to allowlist by
+      // hand for every new connection.
+      authorization_response_iss_parameter_supported: true,
     },
     {
       headers: {

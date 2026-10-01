@@ -48,6 +48,32 @@ export async function getOAuthClient(clientId: string): Promise<OAuthClient | nu
 // match for everything else. For loopback clients we accept any port on
 // 127.0.0.1 or localhost over http (never https, never 0.0.0.0, never a
 // public IP). The path must match a registered redirect's path.
+// Build the Location for an authorization response back to the client.
+//
+// RFC 9207: `iss` rides on every authorization response, success and error
+// alike. It is not decoration — a client that validates it (ChatGPT only hands
+// out its stable callback URL to issuers that do this) treats a response
+// without `iss` as unverifiable. Pass the issuer from getOAuthIssuer so the
+// value byte-matches our published metadata.
+//
+// Empty/absent params are dropped, which is how `state` stays off the one
+// response that has none (a request that omitted it).
+export function authorizationResponseUrl(params: {
+  issuer: string;
+  redirectUri: string;
+  query: Record<string, string | null | undefined>;
+}): string {
+  // Merge into the registered URI's own query rather than concatenating a `?`:
+  // a callback registered with a query string (which the exact-match allowlist
+  // permits) would otherwise come back as `...?tenant=dali?code=...`.
+  const url = new URL(params.redirectUri);
+  for (const [key, value] of Object.entries(params.query)) {
+    if (value) url.searchParams.set(key, value);
+  }
+  url.searchParams.set("iss", params.issuer);
+  return url.toString();
+}
+
 export function isAllowedRedirectUri(
   client: Pick<OAuthClient, "redirectUris" | "isLoopback">,
   redirectUri: string,

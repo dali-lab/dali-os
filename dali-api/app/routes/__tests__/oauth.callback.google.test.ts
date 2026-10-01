@@ -7,7 +7,12 @@ const mockExchangeGoogleCode = vi.hoisted(() => vi.fn());
 const mockUpsertUserFromGoogle = vi.hoisted(() => vi.fn());
 const mockIssueSession = vi.hoisted(() => vi.fn());
 
-vi.mock("~/lib/oauth", () => ({
+vi.mock("~/lib/oauth", async () => ({
+  // Pure URL builder — use the real one so the assertions below see the same
+  // RFC 9207 `iss` the route actually emits.
+  authorizationResponseUrl: (
+    await vi.importActual<typeof import("~/lib/oauth")>("~/lib/oauth")
+  ).authorizationResponseUrl,
   getOAuthSession: mockGetOAuthSession,
   getOAuthClient: mockGetOAuthClient,
   generateAuthorizationCode: mockGenerateAuthorizationCode,
@@ -114,6 +119,11 @@ describe("GET /oauth/callback/google sets __dali_sid cookie", () => {
       "http://127.0.0.1:51999/callback",
     );
     expect(res.headers.get("Location")).toContain("code=auth-code-xyz");
+    // RFC 9207: the code-bearing response carries iss, matching our metadata
+    // issuer. Without it ChatGPT falls back to per-connection callback ids.
+    expect(
+      new URL(res.headers.get("Location")!).searchParams.get("iss"),
+    ).toBe("http://localhost:3001");
 
     const setCookie = res.headers.get("Set-Cookie") ?? "";
     expect(setCookie).toContain("__dali_sid=raw-session-id");
