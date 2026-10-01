@@ -116,4 +116,22 @@ describe("ApplicationViewer file/url rendering", () => {
     expect(html).toContain("some freeform answer");
     expect(html).toContain("Stray");
   });
+
+  it("lists unanswered questions with a dash so a draft shows the whole form", () => {
+    const infoQ: Question = { key: "note", type: "info", required: false, data: { label: "Read me" } };
+    const application = {
+      answers: {},
+      generalChallengeVersion: { questions: [infoQ, essayQ, fileQ] },
+      domainApplications: [],
+    };
+
+    const html = renderToStaticMarkup(
+      createElement(ApplicationViewer, { application, questionLabels: {} }),
+    );
+
+    expect(html.indexOf("Why DALI?")).toBeGreaterThan(-1);
+    expect(html.indexOf("Resume")).toBeGreaterThan(html.indexOf("Why DALI?"));
+    expect(html.match(/—/g)).toHaveLength(2);
+    expect(html).not.toContain("Read me");
+  });
 });

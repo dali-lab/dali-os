@@ -387,6 +387,22 @@ function buildQuestionMap(questions: Question[]): Record<string, Question> {
   return map
 }
 
+const LAYOUT_TYPES: ReadonlyArray<Question['type']> = ['info', 'pageBreak']
+
+// Every question in form order (so a draft shows the blanks too), then any
+// saved answers whose question is no longer on the form.
+export function answerEntries(
+  questions: Question[],
+  answers: Record<string, unknown>,
+): Array<[string, unknown]> {
+  const asked = questions.filter((q) => !LAYOUT_TYPES.includes(q.type))
+  const askedKeys = new Set(asked.map((q) => q.key))
+  return [
+    ...asked.map((q): [string, unknown] => [q.key, answers[q.key]]),
+    ...Object.entries(answers).filter(([key]) => !askedKeys.has(key)),
+  ]
+}
+
 export function ApplicationViewer({ application, questionLabels, initialAnnotations, onAnnotationsChange, readOnly = false }: ApplicationViewerProps) {
   const [annotations, setAnnotations] = useState<Annotation[]>((initialAnnotations as Annotation[]) ?? [])
 
@@ -445,13 +461,15 @@ export function ApplicationViewer({ application, questionLabels, initialAnnotati
               />
             </div>
           )}
-          {Object.entries(application.answers as Record<string, unknown>).map(([key, value]) => {
+          {answerEntries(generalQuestions, (application.answers ?? {}) as Record<string, unknown>).map(([key, value]) => {
             const question = generalQuestionsByKey[key]
             const label = question?.data.label ?? questionLabels[key] ?? key
             return (
               <div key={key}>
                 <h3 className="text-sm font-medium text-os-grey mb-1.5">{label}</h3>
-                {question && NON_ANNOTATABLE_TYPES.includes(question.type) ? (
+                {value == null || value === '' ? (
+                  <span className="text-muted-foreground italic">—</span>
+                ) : question && NON_ANNOTATABLE_TYPES.includes(question.type) ? (
                   <AnswerDisplay question={question} answer={String(value ?? '')} />
                 ) : (
                   <AnnotatableField fieldKey={key} value={String(value ?? '')} {...fieldProps} />
@@ -478,7 +496,7 @@ export function ApplicationViewer({ application, questionLabels, initialAnnotati
             </div>
           )
         }
-        const challengeQuestions = cv.questions as unknown as Question[]
+        const challengeQuestions = (cv.questions as unknown as Question[] | undefined) ?? []
         const challengeQuestionsByKey = buildQuestionMap(challengeQuestions)
         return (
           <div key={dapp.id} className={CARD}>
@@ -497,13 +515,15 @@ export function ApplicationViewer({ application, questionLabels, initialAnnotati
                   />
                 </div>
               )}
-              {Object.entries(dapp.answers as Record<string, unknown>).map(([key, value]) => {
+              {answerEntries(challengeQuestions, (dapp.answers ?? {}) as Record<string, unknown>).map(([key, value]) => {
                 const question = challengeQuestionsByKey[key]
                 const label = question?.data.label ?? questionLabels[key] ?? key
                 return (
                   <div key={key}>
                     <h3 className="text-sm font-medium text-os-grey mb-1.5">{label}</h3>
-                    {question && NON_ANNOTATABLE_TYPES.includes(question.type) ? (
+                    {value == null || value === '' ? (
+                      <span className="text-muted-foreground italic">—</span>
+                    ) : question && NON_ANNOTATABLE_TYPES.includes(question.type) ? (
                       <AnswerDisplay question={question} answer={String(value ?? '')} />
                     ) : (
                       <AnnotatableField fieldKey={`${dapp.id}:${key}`} value={String(value ?? '')} {...fieldProps} />
