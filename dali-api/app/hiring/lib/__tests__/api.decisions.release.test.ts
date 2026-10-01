@@ -281,15 +281,15 @@ describe("POST /api/hiring/decisions/:id/release", () => {
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
     expect(res.status).toBe(201);
-    // In non-prod the route calls resolveCandidateEmail which redirects to TEST_INBOX,
-    // so the enqueued target is the test inbox (not ada@dartmouth.edu). The banner
-    // naming the real recipient is included in bodyHtml.
     const emailCall = mockEnqueue.mock.calls.map((c: any[]) => c[0]).find((a: any) => a.channel === "email");
     expect(emailCall).toBeDefined();
-    // The redirect happens in the route via resolveCandidateEmail — in dev/staging
-    // the test inbox receives it and the real address appears in the banner.
-    expect(emailCall.bodyHtml).toContain("ada@dartmouth.edu");
-    expect(emailCall.bodyHtml).toContain("Test environment");
+    // The enqueued row now names the real applicant, and env safety is entirely
+    // the transport's: it redirects To: and injects the banner. Previously the
+    // producer ALSO redirected and prepended its own banner, so staging mail had
+    // two of them and the transport's banner reported the test inbox as the
+    // "original" recipient rather than the applicant.
+    expect(emailCall.target).toBe("ada@dartmouth.edu");
+    expect(emailCall.bodyHtml).not.toContain("Test environment");
   });
 
   it("on Accepted, promotes to member, provisions, and sends welcome — all for the applicant", async () => {

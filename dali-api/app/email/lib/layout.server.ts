@@ -36,11 +36,17 @@ export async function renderMemberEmail(
   return { html, text: htmlToPlainText(html) };
 }
 
-// Auth mail (sign-in link, sign-in code, email verification). The flag picks the
-// frame only — the copy, the expiry sentences and the per-OTP-type labelling are
-// the same on both paths, because those were wrong rather than merely unstyled.
-export async function renderAuthEmail(
+// Feature-owned mail that composes its own body: auth, partners, signing,
+// education's portal-student emails. The caller hands over the body and the
+// pieces around it; the flag picks the frame.
+//
+// Only the frame is gated. Where these rewrites also fixed content — escaping an
+// interpolated name, deriving an expiry sentence from its TTL constant, labelling
+// an OTP by type — that applies on both paths, because it was wrong rather than
+// merely unstyled.
+export async function renderFramedEmail(
   parts: AuthEmailParts,
+  opts?: { footer?: "notifications" | "transactional" | "none" },
 ): Promise<RenderedEmail & { subject: string }> {
   const baseUrl = getFrontendUrl();
   const html = (await emailLayoutEnabled())
@@ -48,10 +54,18 @@ export async function renderAuthEmail(
         bodyHtml: parts.bodyHtml,
         preheader: parts.preheader,
         cta: parts.cta ?? null,
-        // No notification-settings link: a sign-in code is not suppressible.
-        footer: "transactional",
+        footer: opts?.footer ?? "transactional",
         baseUrl,
       })
     : renderLegacyCard({ bodyHtml: parts.bodyHtml, cta: parts.cta ?? null, baseUrl });
   return { subject: parts.subject, html, text: parts.text };
+}
+
+// Auth mail (sign-in link, sign-in code, email verification). Always
+// transactional: a sign-in code is not something anyone can switch off, so
+// offering a notification-settings link would misrepresent it.
+export function renderAuthEmail(
+  parts: AuthEmailParts,
+): Promise<RenderedEmail & { subject: string }> {
+  return renderFramedEmail(parts, { footer: "transactional" });
 }

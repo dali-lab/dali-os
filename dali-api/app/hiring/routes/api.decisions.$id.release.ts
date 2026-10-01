@@ -9,7 +9,6 @@ import { onboardingEmailHtml } from "~/members/lib/welcome.server";
 import type { ProvisionResult } from "~/members/lib/provisioning.server";
 import { applicantGroup, type AcceptContext } from "~/hiring/lib/applicant-groups.server";
 import { notify } from "~/lib/notify.server";
-import { resolveCandidateEmail, redirectBannerHtml } from "~/lib/candidate-email";
 import { getHiringEmail } from "~/hiring/lib/hiring-emails.server";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 
@@ -171,7 +170,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
     // dev/staging: redirect to the test inbox with a banner naming the real
     // candidate; prod: send to the candidate.
-    const { to, redirectedFrom } = resolveCandidateEmail(intendedEmail);
+    const to = intendedEmail;
 
     if (binding && to && user) {
       const { subject, html } = renderForSlot(
@@ -203,7 +202,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         target: to,
         recipientUserId: domainApp.application.userId,
         subject,
-        bodyHtml: redirectBannerHtml(redirectedFrom) + html + onboarding,
+        bodyHtml: html + onboarding,
         eventType: "hiring.decision.release",
       });
       _releaseEmailId = id;

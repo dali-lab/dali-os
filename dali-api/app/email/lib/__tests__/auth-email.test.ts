@@ -14,14 +14,20 @@ import {
 const URL = "https://os.dali.dartmouth.edu/api/auth/magic-link/verify?token=abc";
 
 describe("humanDuration", () => {
-  it("prefers whole hours", () => {
+  it("prefers whole days, so a 7-day invite is not 168 hours", () => {
+    expect(humanDuration(7 * 86_400)).toBe("7 days");
+    expect(humanDuration(86_400)).toBe("1 day");
+  });
+
+  it("then whole hours", () => {
     expect(humanDuration(3600)).toBe("1 hour");
     expect(humanDuration(7200)).toBe("2 hours");
   });
 
-  it("falls back to minutes", () => {
+  it("then minutes", () => {
     expect(humanDuration(600)).toBe("10 minutes");
     expect(humanDuration(60)).toBe("1 minute");
+    expect(humanDuration(900)).toBe("15 minutes");
   });
 });
 

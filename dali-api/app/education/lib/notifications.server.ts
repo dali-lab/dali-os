@@ -1,13 +1,11 @@
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
-import { renderEmail, escapeHtml } from "~/lib/email";
+import { renderEmail, escapeHtml, htmlToPlainText } from "~/lib/email";
+import { sendEducationEmail } from "./portal-email.server";
+import { renderFramedEmail } from "~/email/lib/layout.server";
 import { getEducationEmail } from "~/education/lib/education-emails.server";
 import { decisionSlot } from "~/education/lib/education-emails";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
-import {
-  resolveCandidateEmail,
-  redirectBannerHtml,
-} from "~/lib/candidate-email";
 import { getFrontendUrl } from "~/lib/app-env";
 import { APPLICATION_TZ } from "~/lib/timezone";
 import type { EduApplicationStatus } from "~/generated/prisma/client";
@@ -190,22 +188,18 @@ export async function notifyNewAssignment(args: {
   for (const { applicant } of portalStudents) {
     const link = `${educationLink(applicant, offering.id)}/assignments/${args.assignmentId}`;
     try {
-      const { to, redirectedFrom } = resolveCandidateEmail(recipientEmail(applicant));
+      const to = recipientEmail(applicant);
       if (!to) continue;
-      const userRef = applicant.id.toLowerCase();
-      const { id } = await enqueueOutbound({
-        channel: "email",
-        purpose: "Education",
-        dedupKey: `education.assignment:${args.assignmentId}:${userRef}`,
-        target: to,
+      await sendEducationEmail({
+        to,
         recipientUserId: applicant.id,
-        subject: title,
-        bodyHtml:
-          redirectBannerHtml(redirectedFrom) +
-          `<p>Hi ${escapeHtml(applicant.firstName)},</p><p>${escapeHtml(body)}</p><p><a href="${escapeHtml(getFrontendUrl() + link)}">Open the assignment</a></p>`,
+        dedupKey: `education.assignment:${args.assignmentId}:${applicant.id.toLowerCase()}`,
         eventType: "education.assignment",
+        subject: title,
+        firstName: applicant.firstName,
+        paragraphs: [body],
+        cta: { path: link, label: "Open the assignment" },
       });
-      await drainNow([id]);
     } catch (err) {
       console.error("assignment notification failed", {
         assignmentId: args.assignmentId,
@@ -246,22 +240,18 @@ export async function notifyGraded(args: {
         recipients: [{ userId: student.id, link }],
       });
     } else {
-      const { to, redirectedFrom } = resolveCandidateEmail(recipientEmail(student));
+      const to = recipientEmail(student);
       if (!to) return;
-      const userRef = student.id.toLowerCase();
-      const { id } = await enqueueOutbound({
-        channel: "email",
-        purpose: "Education",
-        dedupKey: `education.grade:${args.assignmentId}:${userRef}`,
-        target: to,
+      await sendEducationEmail({
+        to,
         recipientUserId: student.id,
-        subject: title,
-        bodyHtml:
-          redirectBannerHtml(redirectedFrom) +
-          `<p>Hi ${escapeHtml(student.firstName)},</p><p>${escapeHtml(body)}</p><p><a href="${escapeHtml(getFrontendUrl() + link)}">Open the assignment</a></p>`,
+        dedupKey: `education.grade:${args.assignmentId}:${student.id.toLowerCase()}`,
         eventType: "education.grade",
+        subject: title,
+        firstName: student.firstName,
+        paragraphs: [body],
+        cta: { path: link, label: "Open the assignment" },
       });
-      await drainNow([id]);
     }
   } catch (err) {
     console.error("grade notification failed", {
@@ -339,22 +329,18 @@ export async function notifySessionReminder(args: {
   for (const { applicant } of portalStudents) {
     const link = `${educationLink(applicant, args.offeringId)}/hub`;
     try {
-      const { to, redirectedFrom } = resolveCandidateEmail(recipientEmail(applicant));
+      const to = recipientEmail(applicant);
       if (!to) continue;
-      const userRef = applicant.id.toLowerCase();
-      const { id } = await enqueueOutbound({
-        channel: "email",
-        purpose: "Education",
-        dedupKey: `education.session.reminder:${args.sessionId}:${userRef}`,
-        target: to,
+      await sendEducationEmail({
+        to,
         recipientUserId: applicant.id,
-        subject: title,
-        bodyHtml:
-          redirectBannerHtml(redirectedFrom) +
-          `<p>Hi ${escapeHtml(applicant.firstName)},</p><p>${escapeHtml(body)}</p><p><a href="${escapeHtml(getFrontendUrl() + link)}">Open the course hub</a></p>`,
+        dedupKey: `education.session.reminder:${args.sessionId}:${applicant.id.toLowerCase()}`,
         eventType: "education.session.reminder",
+        subject: title,
+        firstName: applicant.firstName,
+        paragraphs: [body],
+        cta: { path: link, label: "Open the course hub" },
       });
-      await drainNow([id]);
     } catch (err) {
       console.error("session reminder email failed", {
         offeringId: args.offeringId,
@@ -382,14 +368,24 @@ async function sendDecisionEmail(args: {
     const email = await getEducationEmail(decisionSlot(args.status));
     if (!email) return;
 
-    const intended = recipientEmail(args.applicant);
-    const { to, redirectedFrom } = resolveCandidateEmail(intended);
+    const to = recipientEmail(args.applicant);
     if (!to) return;
 
     const { subject, html } = renderEmail(
       email,
       // {{domain}} carries the course title in education emails.
       { firstName: args.applicant.firstName, domain: args.offeringTitle },
+    );
+    // Operator-authored copy, so the frame adds no greeting or CTA of its own —
+    // whatever the template says is the whole message.
+    const mail = await renderFramedEmail(
+      {
+        subject,
+        bodyHtml: html,
+        text: htmlToPlainText(html),
+        preheader: subject,
+      },
+      { footer: "transactional" },
     );
 
     const userRef = args.applicant.id.toLowerCase();
@@ -399,8 +395,9 @@ async function sendDecisionEmail(args: {
       dedupKey: `education.decision:${args.applicationId}:${userRef}`,
       target: to,
       recipientUserId: args.applicant.id,
-      subject,
-      bodyHtml: redirectBannerHtml(redirectedFrom) + html,
+      subject: mail.subject,
+      bodyHtml: mail.html,
+      bodyText: mail.text,
       eventType: "education.decision",
     });
     await drainNow([id]);
@@ -428,26 +425,23 @@ export async function notifyExternalInstructorInvite(args: {
     args.user.dartmouthEmail ??
     (args.user.netId ? `${args.user.netId}@dartmouth.edu` : null);
   if (!target) return;
-  const { to, redirectedFrom } = resolveCandidateEmail(target);
-  if (!to) return;
-  const link = `${getFrontendUrl()}/education/manage/${args.offeringId}`;
   try {
-    const { id } = await enqueueOutbound({
-      channel: "email",
-      purpose: "Education",
-      dedupKey: `education.instructor-invite:${args.offeringId}:${args.user.id.toLowerCase()}`,
-      target: to,
+    await sendEducationEmail({
+      to: target,
       recipientUserId: args.user.id,
-      subject: `You're an instructor for ${args.offeringTitle}`,
-      bodyHtml:
-        redirectBannerHtml(redirectedFrom) +
-        `<p>Hi ${escapeHtml(args.user.firstName)},</p>` +
-        `<p>You've been added as an instructor for <strong>${escapeHtml(args.offeringTitle)}</strong> in DALI OS. ` +
-        `You can manage sessions, review applications, take attendance, and grade work.</p>` +
-        `<p><a href="${escapeHtml(link)}">Open your teaching dashboard</a> — sign in with Dartmouth.</p>`,
+      dedupKey: `education.instructor-invite:${args.offeringId}:${args.user.id.toLowerCase()}`,
       eventType: "education.instructor-invite",
+      subject: `You're an instructor for ${args.offeringTitle}`,
+      firstName: args.user.firstName,
+      paragraphs: [
+        `You've been added as an instructor for ${args.offeringTitle} in DALI OS. You can manage sessions, review applications, take attendance, and grade work.`,
+        "Sign in with Dartmouth to get started.",
+      ],
+      cta: {
+        path: `/education/manage/${args.offeringId}`,
+        label: "Open your teaching dashboard",
+      },
     });
-    await drainNow([id]);
   } catch (err) {
     console.error("external instructor invite email failed", {
       offeringId: args.offeringId,

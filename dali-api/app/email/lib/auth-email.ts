@@ -24,9 +24,17 @@ export const MAGIC_LINK_TTL_SECONDS = 60 * 10;
 export const EMAIL_OTP_TTL_SECONDS = 60 * 10;
 export const VERIFY_EMAIL_TTL_SECONDS = 60 * 60;
 
+// Largest whole unit wins, so a 7-day invite reads "7 days" rather than
+// "168 hours" and a 10-minute code reads "10 minutes".
 export function humanDuration(seconds: number): string {
-  if (seconds % 3600 === 0) {
-    const h = seconds / 3600;
+  const DAY = 86_400;
+  const HOUR = 3_600;
+  if (seconds % DAY === 0) {
+    const d = seconds / DAY;
+    return `${d} day${d === 1 ? "" : "s"}`;
+  }
+  if (seconds % HOUR === 0) {
+    const h = seconds / HOUR;
     return `${h} hour${h === 1 ? "" : "s"}`;
   }
   const m = Math.round(seconds / 60);

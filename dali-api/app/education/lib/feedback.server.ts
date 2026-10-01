@@ -3,13 +3,8 @@ import type { Prisma } from "~/generated/prisma/client";
 import { notify } from "~/lib/notify.server";
 import { logAuditEvent } from "~/lib/audit";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
-import {
-  resolveCandidateEmail,
-  redirectBannerHtml,
-} from "~/lib/candidate-email";
-import { bodyToHtml } from "~/lib/email";
-import { getFrontendUrl } from "~/lib/app-env";
 import { recipientEmail } from "./notifications.server";
+import { sendEducationEmail } from "./portal-email.server";
 
 // Session feedback + instructor exit surveys, built on the shared Forms
 // system via EducationFormBinding (mirrors StaffingCycleFormBinding). Slots:
@@ -223,23 +218,22 @@ export async function requestSessionFeedback(args: {
         // Portal students don't see the member notification bell — email the
         // fill link directly (via the outbox; keyed so a re-sweep can't
         // double-ask the same student for the same session).
-        const { to, redirectedFrom } = resolveCandidateEmail(recipientEmail(user));
+        const to = recipientEmail(user);
         if (to) {
-          const { id } = await enqueueOutbound({
-            channel: "email",
-            purpose: "Education",
-            dedupKey: `education.session.feedback:${args.sessionId}:${user.id}`,
-            target: to,
-            subject: title,
-            bodyHtml:
-              redirectBannerHtml(redirectedFrom) +
-              bodyToHtml(
-                `Hi ${user.firstName},\n\nThanks for coming to ${offering.title}! Could you take two minutes to share feedback on session ${session.sequence}?\n\n${getFrontendUrl()}${link}\n\n— DALI Education`,
-              ),
+          // Was the one email whose CTA was a bare URL pasted into a text blob,
+          // relying on the client to autolink it.
+          await sendEducationEmail({
+            to,
             recipientUserId: user.id,
+            dedupKey: `education.session.feedback:${args.sessionId}:${user.id}`,
             eventType: "education.feedback_request",
+            subject: title,
+            firstName: user.firstName,
+            paragraphs: [
+              `Thanks for coming to ${offering.title}. Could you take two minutes to share feedback on session ${session.sequence}?`,
+            ],
+            cta: { path: link, label: "Share your feedback" },
           });
-          await drainNow([id]);
         }
       }
     } catch (err) {
