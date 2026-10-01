@@ -1209,6 +1209,12 @@ html.light.os-shell .os-form input[type="date"]::-webkit-calendar-picker-indicat
 .os-shell ::-webkit-scrollbar-track {
   background: transparent;
 }
+/* `body` is a descendant of `html.os-shell`, so the rules above also restyle
+   the viewport's own scrollbar. Nothing of the page sits behind that track, and
+   WebKit (the desktop app's WKWebView) fills a transparent one with white. */
+html.os-shell > body::-webkit-scrollbar-track {
+  background: var(--color-os-bg);
+}
 
 /* The top bar's action cluster — the page Guide and the task bell. They sit
    side by side and the design gives them one plate, so they share one class:

@@ -4,6 +4,7 @@ import { Archive, ChevronDown, Lock, MailOpen, Paperclip, Reply, Trash2 } from "
 import { Avatar } from "~/components/ui/Avatar";
 import { Button } from "~/components/ui/Button";
 import { IconButton } from "~/components/ui/IconButton";
+import { MentionTextInput } from "~/components/MentionTextInput";
 import { MailBody } from "~/email/components/MailBody";
 import { Composer, type RecipientDirectory } from "~/email/components/Composer";
 import { cn } from "~/lib/cn";
@@ -175,15 +176,15 @@ export function ThreadView({
           </div>
         ))}
         <div className="flex gap-2">
-          <input
-            aria-label="Add a comment"
-            placeholder="Add a comment"
+          <MentionTextInput
+            placeholder="Add a comment, @ to mention someone"
             value={comment}
-            onChange={(e) => setComment(e.target.value)}
+            onChange={setComment}
             onKeyDown={(e) => {
               if (e.key === "Enter") postComment();
             }}
-            className="min-w-0 flex-1 rounded-[10px] bg-os-well px-3 py-2 text-sm text-foreground outline-none"
+            wrapperClassName="relative min-w-0 flex-1"
+            className="w-full rounded-[10px] bg-os-well px-3 py-2 text-sm text-foreground outline-none"
           />
           <Button variant="secondary" size="sm" onClick={postComment} disabled={!comment.trim()}>
             Comment
