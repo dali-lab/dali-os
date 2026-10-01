@@ -62,6 +62,10 @@ const COLUMNS = {
   personalEmail: true,
   firstName: true,
   lastName: true,
+  // A partner invited but not yet joined legitimately has no canonical email:
+  // nobody has claimed the account, and they arrive by invite link rather than
+  // the code door. Without this the audit reports a working flow as a defect.
+  partnerContact: { select: { id: true } },
 } as const;
 
 type UserRow = {
@@ -73,6 +77,7 @@ type UserRow = {
   personalEmail: string | null;
   firstName: string;
   lastName: string;
+  partnerContact: { id: string } | null;
   emails: { address: string }[];
 };
 
@@ -117,7 +122,10 @@ const assessed: Assessed[] = users.map((u) => ({
 const by = (v: Assessed["verdict"]) => assessed.filter((a) => a.verdict === v);
 const ok = by("ok");
 const lockedOut = by("locked-out");
-const noCanonical = by("no-canonical");
+// An un-joined partner has no canonical email by design. Counting them as
+// broken buries the rows that genuinely are.
+const pendingInvite = by("no-canonical").filter((a) => a.user.partnerContact !== null);
+const noCanonical = by("no-canonical").filter((a) => a.user.partnerContact === null);
 const noAddress = by("no-address");
 
 // One address must belong to one person; UserEmail enforces it going forward,
@@ -171,6 +179,7 @@ log(`Users: ${users.length}`);
 log(`  gets a code today ......... ${ok.length}`);
 log(`  locked out ................ ${lockedOut.length}   only the synthesized netid address`);
 log(`  no canonical email ........ ${noCanonical.length}   User.email is null; no code can be sent`);
+log(`  partner invited, not joined  ${pendingInvite.length}   expected: no account claimed yet`);
 log(`  no address at all ......... ${noAddress.length}   nothing to sign in with`);
 log(`  address conflicts ......... ${conflicts.length}   one address, two accounts`);
 log(`  mixed-case addresses ...... ${mixedCase.length}   unreachable: BetterAuth matches lowercase exactly`);
