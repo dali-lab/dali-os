@@ -55,9 +55,9 @@ model User {
   // lastName (the create hook in betterauth.server.ts splits it back into the
   // two source-of-truth columns). BetterAuth's `image` is NOT a new column —
   // it maps onto the existing `photoUrl` column via `fields` in the config.
-  email         String?  @unique
-  emailVerified Boolean  @default(false)
-  name          String   @default("")
+  email         String? @unique
+  emailVerified Boolean @default(false)
+  name          String  @default("")
 
   // ─── BetterAuth admin plugin (Phase 3 — impersonation) ────────────────────
   // `role` exists only to satisfy the admin plugin's impersonate gate — the
@@ -65,10 +65,10 @@ model User {
   // authorization otherwise stays in the role tables (AdminMembership et al.).
   // The ban* columns are unused (we don't use the ban feature) but the plugin's
   // session hook references user.banned, so they must exist.
-  role        String?
-  banned      Boolean?  @default(false)
-  banReason   String?
-  banExpires  DateTime?
+  role       String?
+  banned     Boolean?  @default(false)
+  banReason  String?
+  banExpires DateTime?
 
   // IANA zone, e.g. "America/New_York". Used by calendar/scheduling.
   timeZone String?
@@ -310,6 +310,9 @@ model User {
   // ─── Public showcase ──────────────────────────────────────────────────────
   projectShowcasesUpdated ProjectShowcase[] @relation("ProjectShowcaseUpdatedBy")
   hiringEmailsEdited      HiringEmail[]     @relation("HiringEmailEditor")
+
+  // ─── Partner Relations hub (personal loose-end list) ──────────────────────
+  partnerRelationsTodos PartnerRelationsTodo[]
 }
 
 // A DALI lab member. userId is optional because a member may be known (e.g. via daliEmail)
@@ -1467,13 +1470,13 @@ model Session {
 // `Session` above so both run side by side until the legacy one is dropped at
 // cleanup. The auth instance sets session.modelName = "AuthSession".
 model AuthSession {
-  id        String   @id @default(cuid())
-  expiresAt DateTime
-  token     String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  ipAddress String?
-  userAgent String?
+  id             String   @id @default(cuid())
+  expiresAt      DateTime
+  token          String   @unique
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  ipAddress      String?
+  userAgent      String?
   // BetterAuth admin plugin: set to the impersonating admin's userId while an
   // impersonation session is active (null for normal sessions).
   impersonatedBy String?
@@ -1482,9 +1485,9 @@ model AuthSession {
   // authorized the session. No FK relation — looked up via prisma.oAuthGrant in
   // authenticateMcpRequest to keep the same downstream logic as the bespoke
   // Session path.
-  grantId   String?
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  grantId        String?
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([grantId])
@@ -1547,7 +1550,7 @@ model Verification {
 // superset that RESOLVES. The four address columns on User stay as the
 // one-per-category values we display and search.
 model UserEmail {
-  id     String @id @default(cuid())
+  id String @id @default(cuid())
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1999,8 +2002,8 @@ model MailAccount {
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 
-  user     User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  project  Project?      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user        User?                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project     Project?                @relation(fields: [projectId], references: [id], onDelete: Cascade)
   drafts      MailDraft[]
   comments    MailComment[]
   categories  MailCategoryAccount[]
@@ -2196,7 +2199,7 @@ model ScheduledMeeting {
   // Google event back to this meeting even when Google drops recurringEventId on
   // a detached instance. Primary join key on the calendar read path; backfilled
   // for pre-existing rows. Null = never pushed to Google / not yet backfilled.
-  iCalUID            String?
+  iCalUID String?
 
   // Optional video conference for the meeting. meetingUrl is the join link
   // (surfaced as a "Join" button and carried in notifications); it's minted on
@@ -2305,7 +2308,7 @@ model MeetingAttendance {
   // start (pre-exception), resolved by resolveOccurrence in
   // app/lib/meeting-occurrences.ts. A one-off meeting has a single key, its
   // selectedAt (createdAt while unscheduled).
-  occurrenceStart    DateTime
+  occurrenceStart DateTime
 
   meeting ScheduledMeeting @relation(fields: [scheduledMeetingId], references: [id])
   user    User             @relation(fields: [userId], references: [id])
@@ -2364,12 +2367,12 @@ model TimeEntry {
   // picked) — those still show in the ledger list, just not on the grid.
   // Set automatically for Meeting-sourced rows from the meeting's start time
   // + duration, and for grid drag-created Manual rows from the dragged range.
-  startTime          DateTime?
-  endTime            DateTime?
+  startTime              DateTime?
+  endTime                DateTime?
   // Meeting-sourced rows: which occurrence of scheduledMeetingId these hours
   // are for (same key as MeetingAttendance.occurrenceStart), so each week of a
   // recurring meeting logs its own hours. Null when scheduledMeetingId is.
-  occurrenceStart    DateTime?
+  occurrenceStart        DateTime?
   // Google Timesheet mirror (Phase 3). Soft pointers — no FK — same pattern as
   // MemberClass.linkId/calendarId. Null until the user enables the sync and the
   // entry is first pushed to Google. Set to null when the mirror event is deleted.
@@ -3270,6 +3273,8 @@ model Project {
   // The curated public face of this project, if it has one. Absent until
   // someone opens the project's Public view.
   showcase          ProjectShowcase?
+  // Loose-end todos tagged to this project from the Partner Relations hub.
+  prTodos           PartnerRelationsTodo[]
 
   createdAt DateTime @default(now())
 }
@@ -5486,6 +5491,10 @@ model PartnerOrg {
   // a one-off project, no real organization). Single-user org to avoid a
   // second code path.
   isIndividual     Boolean @default(false)
+  // Short display glyph (1–8 chars, usually a single emoji) shown on the
+  // Partner Relations hub contact rail and pipeline cards when no logo is set.
+  // Null falls back to the first letter of `name`.
+  faviconChar      String? @db.VarChar(8)
 
   // `users` is the deprecated org membership (see PartnerUser). New code uses
   // `memberships` (PartnerMembership). Kept only until the PartnerUser drop.
@@ -5494,6 +5503,7 @@ model PartnerOrg {
   projects     ProjectPartner[]
   applications PartnerApplication[]
   invites      PartnerInvite[]
+  prTodos      PartnerRelationsTodo[]
 
   createdAt DateTime @default(now())
 }
@@ -5612,6 +5622,28 @@ model ProjectPartner {
   partnerOrg PartnerOrg @relation(fields: [partnerOrgId], references: [id])
 
   @@unique([projectId, partnerOrgId])
+}
+
+// Lightweight per-user "loose ends" list that lives on the Partner Relations
+// hub. Not a project task and not a notification — just the Core member's own
+// backlog of partner-adjacent things to follow up on (an email to send, a
+// prospect to re-ping). Optional project/org chips let a reminder tie back to
+// context without being promoted to a formal record.
+model PartnerRelationsTodo {
+  id           String   @id @default(cuid())
+  userId       String
+  text         String
+  done         Boolean  @default(false)
+  projectId    String?
+  partnerOrgId String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project    Project?    @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  partnerOrg PartnerOrg? @relation(fields: [partnerOrgId], references: [id], onDelete: SetNull)
+
+  @@index([userId, done, createdAt])
 }
 
 // ─── OAuth provider (MCP) ────────────────────────────────────────────────────
@@ -5944,7 +5976,7 @@ enum SlackBugReportStatus {
 // promotion. Owned by a PartnerContact (`applicantContactId`); the org is
 // deferred and set only at promotion, so `partnerOrgId` is nullable.
 model PartnerApplication {
-  id                 String                   @id @default(cuid())
+  id                 String                            @id @default(cuid())
   // The account this opportunity belongs to. Always present — an opportunity
   // has an originating person even before any org exists.
   applicantContactId String
@@ -5953,7 +5985,7 @@ model PartnerApplication {
   partnerOrgId       String?
   // Where this opportunity came from (Core-logged email/referral vs. a
   // /partner/apply form submission).
-  source             PartnerApplicationSource @default(Form)
+  source             PartnerApplicationSource          @default(Form)
   // Free-text reason captured at a triage or decision transition
   // (e.g. "not enough dev scope", "revisit next term"). Reused across triage
   // + decision to avoid two near-identical columns.
@@ -5978,8 +6010,14 @@ model PartnerApplication {
   // Free-form collab doc name for the SOW. Null until the SOW is first
   // opened/created. Not a Prisma relation: CollabDocument is keyed by its
   // unique `name`, addressed at the app layer.
-  sowDocId           String?                  @unique
-  status             PartnerApplicationStatus @default(Inquiry)
+  sowDocId           String?                           @unique
+  status             PartnerApplicationStatus          @default(Inquiry)
+  // When status is Rejected, which funnel stage we were at when we passed and
+  // the short rationale. Both nullable because the two existing rejection
+  // intents (triage reject + decision reject) populate `decisionReason` and
+  // don't know a stage; the hub's drag-to-Rejected prompt is what sets these.
+  rejectionStageAt   PartnerApplicationRejectionStage?
+  rejectionRationale String?
   // Set when status moves to Accepted and a Project is spun up. Loose ref to
   // Project.id; no relation to avoid a Project→PartnerApplication cycle.
   resultingProjectId String?
@@ -5987,7 +6025,7 @@ model PartnerApplication {
   // PartnerApplicationFormBinding), captured at submit time. Null when no
   // form was bound when they applied. SetNull because deleting the Form
   // cascades its submissions away — the application must survive that.
-  formSubmissionId   String?                  @unique
+  formSubmissionId   String?                           @unique
 
   applicantContact PartnerContact                 @relation(fields: [applicantContactId], references: [id])
   partnerOrg       PartnerOrg?                    @relation(fields: [partnerOrgId], references: [id])
@@ -6133,6 +6171,18 @@ model PartnerApplicationDomain {
 
   @@unique([applicationId, domainId])
   @@index([domainId])
+}
+
+// The funnel-stage attribution captured when the Partner Relations hub drags
+// an application into the Rejected column. Deliberately coarse — this is the
+// human bookkeeping ("where did we lose it"), not a derivation of the
+// `status` the application sat in at the moment of rejection.
+enum PartnerApplicationRejectionStage {
+  Intake
+  Interview
+  Scoping
+  Funding
+  Other
 }
 
 // CRM funnel:
@@ -6408,7 +6458,7 @@ model ProjectChartString {
   term         Term                @relation(fields: [termId], references: [id])
   supersedes   ProjectChartString? @relation("ChartStringSupersession", fields: [supersedesId], references: [id], onDelete: Restrict)
   supersededBy ProjectChartString? @relation("ChartStringSupersession")
-  createdBy  User?               @relation("ChartStringCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  createdBy    User?               @relation("ChartStringCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
 
   @@index([projectId, termId])
   @@index([projectCode])
