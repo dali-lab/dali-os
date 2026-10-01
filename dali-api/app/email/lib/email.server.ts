@@ -17,6 +17,7 @@ import {
   readableMailAccounts,
   type ReadableMailAccount,
 } from "~/email/lib/access.server";
+import { notifyMailCommentMentions } from "~/email/lib/comment-mentions.server";
 import {
   getMailboxToken,
   getThread,
@@ -394,6 +395,9 @@ export async function submitEmailAction(request: Request) {
     await prisma.mailComment.create({
       data: { accountId: account.id, threadId, authorId: userId, body: body.slice(0, 5000) },
     });
+    void notifyMailCommentMentions({ account, threadId, authorId: userId, body, request }).catch((err) =>
+      console.error("mail comment mention notify failed", err),
+    );
     return { ok: true };
   }
 
