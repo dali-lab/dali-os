@@ -372,7 +372,14 @@ export function LayoutPortalOS({ user, photoUrl, fitViewport = false, impersonat
         {/* `shrink-0` so a bounded shell takes the height out of the page's own
             scrollport rather than squashing the bar. */}
         <div className="hidden shrink-0 md:block">{topBar}</div>
-        <div className={cn('flex flex-1 flex-col overflow-x-hidden', fitViewport && 'min-h-0')}>
+        {/* Portal pages pad themselves; a `fitViewport` page (the calendar) is
+            written for the member shell, which supplies this gutter for it. */}
+        <div
+          className={cn(
+            'flex flex-1 flex-col overflow-x-hidden',
+            fitViewport && 'min-h-0 px-4 pb-3 pt-3 sm:px-5 lg:pt-4',
+          )}
+        >
           {children}
         </div>
       </main>
