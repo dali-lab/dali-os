@@ -8,8 +8,6 @@ import {
   listNotificationHistory,
   SELF_CLEARING_FORM_TODO,
 } from "~/lib/tasks";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { getUserRoles } from "~/lib/roles";
 import {
   listMyNotifications,
   annotateDesktopFeed,
@@ -84,11 +82,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         select: { eventType: true, desktop: true },
       }),
       listRetiredMeetingPingIds(userId),
-      getUserRoles(userId).then(async (roles) =>
-        (await isFeatureEnabled("my-project-work", userId, roles, request))
-          ? listMyProjectTasks(userId)
-          : [],
-      ),
+      listMyProjectTasks(userId),
     ]);
 
   return withCors(
@@ -102,8 +96,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       // shell can retire banners it already delivered for them. Web clients
       // ignore this.
       retiredIds,
-      // Assigned project tasks for the drawer's Project work tab (empty while
-      // the my-project-work flag is off). Not in taskCount, which the desktop
+      // Assigned project tasks for the drawer's Project work tab. Not in taskCount, which the desktop
       // badge reads.
       projectTasks,
     }),

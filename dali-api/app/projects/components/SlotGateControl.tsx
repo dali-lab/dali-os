@@ -1,14 +1,12 @@
 // Optional app-lock control for a staffing slot, shown in the slot's Advanced
 // settings below the form picker. Lets a staffing manager require the bound
 // form: members in the chosen audience are hard-gated into filling it before
-// they can use the app (see app/forms/lib/gate.server.ts). Hidden entirely
-// unless the `bound-form-lock` flag is on. Viewers (canManage false) see the
+// they can use the app (see app/forms/lib/gate.server.ts). Viewers (canManage false) see the
 // current setting read-only.
 import { useState } from "react";
 import { useFetcher } from "react-router";
 import { Button } from "~/components/ui/Button";
 import { Select } from "~/components/ui/floating";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 
 // Value "" = not locked. The rest are the GATE_AUDIENCES (form-slots.ts), a
 // subset of the signing SigningAudience enum the gate resolvers understand.
@@ -33,11 +31,8 @@ export function SlotGateControl({
   gateAudience: string | null;
   canManage: boolean;
 }) {
-  const enabled = useFeatureFlag("bound-form-lock");
   const fetcher = useFetcher();
   const [selected, setSelected] = useState(gateAudience ?? "");
-  if (!enabled) return null;
-
   const saving = fetcher.state !== "idle";
   const error =
     fetcher.data && typeof fetcher.data === "object" && "error" in fetcher.data

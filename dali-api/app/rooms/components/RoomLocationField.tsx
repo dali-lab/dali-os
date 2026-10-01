@@ -31,8 +31,8 @@ export function roomsLocation(rooms: { name: string }[]) {
 }
 
 /**
- * The composer's Location field. It stays a free-text input, and with the
- * `room-booking` flag on (`enabled`) it also suggests the DALI rooms, marked
+ * The composer's Location field. It stays a free-text input that also suggests
+ * the DALI rooms (when `enabled`: the event's shape can hold one), marked
  * unavailable when something already holds them in the event's window.
  *
  * Picking a room writes its name as the location and reports it through

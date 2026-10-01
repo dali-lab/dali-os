@@ -16,13 +16,9 @@ import {
   type NotificationState,
 } from "~/lib/tasks";
 import { listMyNotifications } from "~/lib/notifications";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { getUserRoles } from "~/lib/roles";
-import type { ProjectWorkItem } from "~/lib/project-work";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { formatInTimeZone, getZonedYMD, zonedDayLabel } from "~/lib/timezone";
 import { RsvpButtons } from "~/components/RsvpButtons";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { useOsChrome } from "~/components/os-chrome";
 import {
   CardShell,
@@ -48,8 +44,7 @@ export const handle = {
 };
 
 // Tab is driven by ?tab=work|open|history. `open` is the notification feed
-// (Meetings & events once project work is on); `work` needs the
-// my-project-work flag and falls back to `open` without it. The History tab
+// (Meetings & events); `work` is the default. The History tab
 // fetches incrementally from /api/notifications with the additive history
 // params. The open tabs render the same cards as the bell's drawer.
 type PageTab = "work" | "open" | "history";
@@ -63,13 +58,11 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const userId = auth.user.sub;
   const url = new URL(request.url);
-  const roles = await getUserRoles(userId);
-  const showWork = await isFeatureEnabled("my-project-work", userId, roles, request);
 
   const [tasks, { items }, projectTasks] = await Promise.all([
     listOpenTasks(userId),
     listMyNotifications(userId),
-    showWork ? listMyProjectTasks(userId) : ([] as ProjectWorkItem[]),
+    listMyProjectTasks(userId),
   ]);
   const notifications: AttentionNotification[] = items.map((n) => ({
     id: n.id,
@@ -347,14 +340,13 @@ function HistoryTab({
 export default function NotificationsRoute() {
   const data = useLoaderData<typeof loader>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const showWork = useFeatureFlag("my-project-work");
   const { pageTitle } = useOsChrome();
 
   const raw = searchParams.get("tab");
   const tab: PageTab =
     raw === "history"
       ? "history"
-      : raw === "open" || !showWork
+      : raw === "open"
         ? "open"
         : "work";
 
@@ -373,16 +365,11 @@ export default function NotificationsRoute() {
   const initialStatus =
     (searchParams.get("status") as "open" | "cleared" | "all") || "all";
 
-  const tabs: { key: PageTab; label: string; count?: number }[] = showWork
-    ? [
-        { key: "work", label: FEED_TAB_LABELS.work, count: feed.work.length },
-        { key: "open", label: FEED_TAB_LABELS.admin, count: feed.admin.length },
-        { key: "history", label: "History" },
-      ]
-    : [
-        { key: "open", label: "Open", count: feed.admin.length + feed.work.length },
-        { key: "history", label: "History" },
-      ];
+  const tabs: { key: PageTab; label: string; count?: number }[] = [
+    { key: "work", label: FEED_TAB_LABELS.work, count: feed.work.length },
+    { key: "open", label: FEED_TAB_LABELS.admin, count: feed.admin.length },
+    { key: "history", label: "History" },
+  ];
 
   return (
     <div className="w-full flex flex-col gap-6">
@@ -404,8 +391,8 @@ export default function NotificationsRoute() {
       ) : (
         <TaskFeed
           grid
-          cards={showWork ? feed[feedTab] : [...feed.admin, ...feed.work]}
-          tab={showWork ? feedTab : undefined}
+          cards={feed[feedTab]}
+          tab={feedTab}
         />
       )}
     </div>

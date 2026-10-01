@@ -11,7 +11,6 @@ import {
   type ScheduledMeetingScope,
 } from "~/lib/scheduled-meeting";
 import { assertMeetingRoomsFree } from "~/lib/rooms.server";
-import { isRoomBookingEnabled } from "~/rooms/lib/access.server";
 
 const Base = {
   title: z.string().trim().min(1).max(200),
@@ -21,7 +20,7 @@ const Base = {
   // Stored on the meeting and mirrored onto the Google event / ICS invite.
   location: z.string().trim().max(500).optional(),
   description: z.string().trim().max(5000).optional(),
-  // The DALI rooms the meeting occupies (room-booking flag). Each must be free
+  // The DALI rooms the meeting occupies. Each must be free
   // for every occurrence; see assertMeetingRoomsFree.
   roomIds: z.array(z.string().min(1)).max(10).optional(),
   organizerCalendarLinkId: z.string().min(1).optional(),
@@ -135,10 +134,7 @@ export async function action({ request }: Route.ActionArgs) {
     scope = { type: "None" };
   }
 
-  const roomIds =
-    body.roomIds?.length && (await isRoomBookingEnabled(auth.user.sub, request))
-      ? [...new Set(body.roomIds)]
-      : [];
+  const roomIds = [...new Set(body.roomIds ?? [])];
   if (roomIds.length && body.startTime) {
     const free = await assertMeetingRoomsFree({
       roomIds,

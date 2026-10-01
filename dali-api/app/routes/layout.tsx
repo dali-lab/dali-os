@@ -141,8 +141,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     }
   }
 
-  // Bound-form app-lock: the staffing analog of the signing gate above, behind
-  // the `bound-form-lock` flag. A member in a locked staffing form's audience
+  // Bound-form app-lock: the staffing analog of the signing gate above.
+  // A member in a locked staffing form's audience
   // who hasn't filled it is redirected to the fill page until they do. Exempt
   // the fill surface itself, /logout, and /sign (don't fight the signing gate).
   {
@@ -151,7 +151,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     const gateExempt =
       path.startsWith('/forms/fill/') || path.startsWith('/logout') || path.startsWith('/sign')
     if (isLabMember && !gateExempt) {
-      const owed = await timed(request, 'formGate', () => getBoundFormGateOutstanding(auth.user.sub, roles, request))
+      const owed = await timed(request, 'formGate', () => getBoundFormGateOutstanding(auth.user.sub, request))
       if (owed) {
         return redirect(
           `/forms/fill/${owed.token}?next=${encodeURIComponent(path + url.search)}`,
