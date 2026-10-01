@@ -4,6 +4,7 @@
 // before falling back to AS metadata.
 
 import { MCP_SCOPES } from "~/lib/mcp-scopes";
+import { getOAuthIssuer } from "~/lib/app-env";
 import type { Route } from "./+types/well-known.oauth-protected-resource";
 
 export async function action() {
@@ -11,8 +12,9 @@ export async function action() {
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const url = new URL(request.url);
-  const issuer = process.env.API_BASE_URL ?? `${url.protocol}//${url.host}`;
+  // Same issuer string as the AS metadata: a client that resolves us through
+  // `authorization_servers` compares it to that document's `issuer` exactly.
+  const issuer = getOAuthIssuer(request);
 
   return Response.json(
     {

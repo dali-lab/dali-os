@@ -6,9 +6,11 @@
 // the MCP-only policy: google-only IDP, member-only accountType, membership
 // required, mcp:read/write/admin scopes (admin granted only to Core/Admin at
 // consent). Redirect URIs are limited to http
-// loopback (Claude Code / Desktop-local) or an https callback on an allowed
-// Claude host (claude.ai web / mobile). None of the client-supplied policy
-// fields are honored — only redirect_uris + client_name.
+// loopback (Claude Code / Desktop-local), an https callback on an allowed
+// Claude host (claude.ai web / mobile), or one of the exact connector callbacks
+// we allow in full (ChatGPT's, plus anything in MCP_ALLOWED_REDIRECT_URIS).
+// None of the client-supplied policy fields are honored — only redirect_uris +
+// client_name.
 
 import { MCP_SCOPES } from "~/lib/mcp-scopes";
 import type { Route } from "./+types/oauth.register";
@@ -16,6 +18,7 @@ import { prisma } from "~/lib/db";
 import { withCors, handlePreflight, preflightLoader } from "~/lib/cors";
 import { checkRateLimit, getClientIp } from "~/lib/rate-limit";
 import { safeJson } from "~/lib/safe-json";
+import { logAuditEvent } from "~/lib/audit";
 
 const RATE_LIMIT_MAX = 5;
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
@@ -88,6 +91,95 @@ function isTrustedHttpsRedirect(uri: string): boolean {
   );
 }
 
+// Whole-URI allowlist, as distinct from the host allowlist above. A connector
+// platform's callback is one fixed URL rather than a domain worth trusting
+// wholesale, so these match in full — scheme, host, port, path and query —
+// leaving everything else on that host unreachable.
+//
+// ChatGPT's stable connector callback, published at
+// developers.openai.com/plugins/build/auth. ChatGPT sends this URL only to
+// issuers that advertise `authorization_response_iss_parameter_supported` and
+// return RFC 9207 `iss` on every authorization response, which we do — see
+// well-known.oauth-authorization-server.ts and authorizationResponseUrl. An
+// issuer that doesn't gets a per-connection
+// https://chatgpt.com/connector/oauth/{callback_id} instead, which would need a
+// hand-added entry for every new connection. Keep the two in step: drop the
+// `iss` parameter and ChatGPT stops sending the URL this entry matches.
+const DEFAULT_TRUSTED_REDIRECT_URIS = [
+  "https://chatgpt.com/connector_platform_oauth_redirect",
+];
+
+// MCP_ALLOWED_REDIRECT_URIS *adds* exact URIs for a host we don't ship a
+// constant for — unlike MCP_ALLOWED_REDIRECT_HOSTS, which replaces its
+// defaults. Read the value to add off the `oauth.register.rejected` audit row
+// the failed attempt leaves behind rather than guessing a vendor's path.
+function allowedExactRedirectUris(): string[] {
+  const raw = process.env.MCP_ALLOWED_REDIRECT_URIS;
+  if (!raw) return DEFAULT_TRUSTED_REDIRECT_URIS;
+  const extra = raw
+    .split(",")
+    .map((u) => u.trim())
+    .filter(Boolean);
+  return [...DEFAULT_TRUSTED_REDIRECT_URIS, ...extra];
+}
+
+// URL parsing folds scheme/host case and the implicit :443 away, so comparing
+// canonical forms keeps "exact" from degenerating into "byte-identical".
+function canonicalHttpsRedirect(uri: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(uri);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "https:") return null;
+  return parsed.href;
+}
+
+function isAllowlistedExactRedirect(uri: string): boolean {
+  const candidate = canonicalHttpsRedirect(uri);
+  if (!candidate) return false;
+  return allowedExactRedirectUris().some(
+    (allowed) => canonicalHttpsRedirect(allowed) === candidate,
+  );
+}
+
+const MAX_LOGGED_REDIRECT_URIS = 5;
+const MAX_LOGGED_URI_LENGTH = 300;
+
+// /oauth/register is unauthenticated, so a rejected body is attacker-supplied
+// — cap how much of it reaches the audit row.
+function loggableRedirectUris(value: unknown): string[] {
+  const entries = Array.isArray(value) ? value : [value];
+  return entries.slice(0, MAX_LOGGED_REDIRECT_URIS).map((entry) => {
+    const text =
+      typeof entry === "string" ? entry : `${JSON.stringify(entry)}`;
+    return text.slice(0, MAX_LOGGED_URI_LENGTH);
+  });
+}
+
+// A rejected registration persists nothing, which left operators with no way
+// to see which callback a new MCP host actually asked for. Record it.
+async function rejectRedirectUri(
+  request: Request,
+  description: string,
+  body: RegistrationRequest,
+): Promise<Response> {
+  await logAuditEvent({
+    action: "oauth.register.rejected",
+    request,
+    metadata: {
+      reason: "invalid_redirect_uri",
+      redirectUris: loggableRedirectUris(body.redirect_uris),
+      clientName:
+        typeof body.client_name === "string"
+          ? body.client_name.slice(0, 200)
+          : null,
+    },
+  });
+  return withCors(request, badRequest("invalid_redirect_uri", description));
+}
+
 export async function action({ request }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
   if (preflight) return preflight;
@@ -103,28 +195,28 @@ export async function action({ request }: Route.ActionArgs) {
   const body = await safeJson<RegistrationRequest>(request);
   if (body instanceof Response) return withCors(request, body);
 
-  // redirect_uris: required, non-empty array of loopback URIs.
+  // redirect_uris: required, non-empty array of allowed URIs.
   if (!Array.isArray(body.redirect_uris) || body.redirect_uris.length === 0) {
-    return withCors(
+    return rejectRedirectUri(
       request,
-      badRequest(
-        "invalid_redirect_uri",
-        "redirect_uris must be a non-empty array",
-      ),
+      "redirect_uris must be a non-empty array",
+      body,
     );
   }
   const redirectUris: string[] = [];
   for (const uri of body.redirect_uris) {
     if (
       typeof uri !== "string" ||
-      !(isLoopbackRedirect(uri) || isTrustedHttpsRedirect(uri))
+      !(
+        isLoopbackRedirect(uri) ||
+        isTrustedHttpsRedirect(uri) ||
+        isAllowlistedExactRedirect(uri)
+      )
     ) {
-      return withCors(
+      return rejectRedirectUri(
         request,
-        badRequest(
-          "invalid_redirect_uri",
-          "redirect_uris must be http loopback (127.0.0.1 or localhost) or an https callback on an allowed Claude host",
-        ),
+        "redirect_uris must be http loopback (127.0.0.1 or localhost), an https callback on an allowed Claude host, or an allowlisted https callback",
+        body,
       );
     }
     redirectUris.push(uri);

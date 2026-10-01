@@ -332,12 +332,20 @@ test.describe('Drive hub', () => {
     await expect(docRow).toBeVisible();
     await expect(folderRow).toBeVisible();
 
-    const movePromise = page.waitForRequest(
-      (req) => req.url().includes(`/api/pages/${docId}/move`) && req.method() === 'POST',
+    // Wait for the response, not the request: waitForRequest resolves the
+    // moment the POST is issued, and the page.goto below then navigates away
+    // and can abort it in flight, losing the move. Assert it succeeded too, so
+    // a rejected move reports as a rejected move instead of a missing row three
+    // lines later.
+    const movePromise = page.waitForResponse(
+      (res) =>
+        res.url().includes(`/api/pages/${docId}/move`) &&
+        res.request().method() === 'POST',
     );
 
     await dragHandleTo(page, docRow, folderRow);
-    await movePromise;
+    const moveRes = await movePromise;
+    expect(moveRes.ok(), `Move failed: ${await moveRes.text()}`).toBe(true);
 
     // The doc leaves the Lab top level (now inside the folder). Navigate in.
     await page.goto('/drive?embed=1');

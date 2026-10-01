@@ -76,3 +76,41 @@ export function classifySignInReadiness(input: ReadinessInput): Readiness {
 
   return { verdict, all, human, missingAliases };
 }
+
+/**
+ * The canonical address a row should carry, or null to leave it as it is.
+ *
+ * @dali wins over everything. A member's lab address is what the app displays,
+ * what they identify with, and what resolveCanonicalEmail already picks first,
+ * so a Dartmouth address must never displace it — and a row that an earlier
+ * repair demoted gets put back rather than left. Otherwise promote only over an
+ * address nobody can type: the synthesized netid form, or nothing at all.
+ *
+ * `candidate` is the real Dartmouth address just learned for this person.
+ */
+export function preferredCanonicalEmail(input: {
+  netId: string | null;
+  email: string | null;
+  daliEmail: string | null;
+  candidate: string | null;
+}): string | null {
+  const dali = normalize(input.daliEmail);
+  const current = normalize(input.email);
+
+  if (dali) return current === dali ? null : dali;
+
+  const candidate = normalize(input.candidate);
+  if (candidate === null || current === candidate) return null;
+
+  // An address a person can actually type is already good enough; only the
+  // synthesized form (or nothing) is worth replacing.
+  const synth = synthesizedAddress(input.netId);
+  if (current !== null && current !== synth) return null;
+
+  return candidate;
+}
+
+function normalize(address: string | null): string | null {
+  const trimmed = address?.trim().toLowerCase();
+  return trimmed ? trimmed : null;
+}

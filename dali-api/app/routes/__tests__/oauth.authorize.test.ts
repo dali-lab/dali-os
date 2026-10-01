@@ -2,7 +2,12 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 const mockGetOAuthClient = vi.hoisted(() => vi.fn());
 
-vi.mock("~/lib/oauth", () => ({
+vi.mock("~/lib/oauth", async () => ({
+  // authorizationResponseUrl is a pure URL builder — use the real one so these
+  // tests see the same `iss` the route actually emits.
+  authorizationResponseUrl: (
+    await vi.importActual<typeof import("~/lib/oauth")>("~/lib/oauth")
+  ).authorizationResponseUrl,
   createOAuthSession: vi.fn().mockResolvedValue({ id: "session-1" }),
   getOAuthClient: mockGetOAuthClient,
   isAllowedRedirectUri: (_client: any, uri: string) =>
@@ -118,5 +123,68 @@ describe("GET /oauth/authorize scopes", () => {
   it("still rejects any other scope the client isn't allowed", async () => {
     const res = await loader({ request: makeRequest("9.9.9.3", "mcp:read mcp:bogus") } as any);
     expect(res.headers.get("location") ?? "").toContain("invalid_scope");
+  });
+});
+
+// RFC 9207. ChatGPT reserves its stable connector callback for issuers that
+// return `iss` on every authorization response, so a path that forgets it
+// silently regresses us to per-connection callback ids.
+describe("GET /oauth/authorize issuer identification", () => {
+  function issOf(res: Response): string | null {
+    return new URL(res.headers.get("location")!).searchParams.get("iss");
+  }
+
+  it("puts iss on an error response sent back to the client", async () => {
+    const res = await loader({
+      request: makeRequest("9.9.8.1", "mcp:read mcp:bogus"),
+    } as any);
+    expect(res.headers.get("location") ?? "").toContain("invalid_scope");
+    expect(issOf(res)).toBe("http://localhost:3001");
+  });
+
+  it("keeps state alongside iss on an error response", async () => {
+    const res = await loader({
+      request: makeRequest("9.9.8.2", "mcp:read mcp:bogus"),
+    } as any);
+    const params = new URL(res.headers.get("location")!).searchParams;
+    expect(params.get("state")).toBe("xyz");
+    expect(params.get("iss")).toBe("http://localhost:3001");
+  });
+
+  it("omits state entirely when the request had none, but still sends iss", async () => {
+    const params = new URLSearchParams({
+      response_type: "code",
+      client_id: "dali-api",
+      redirect_uri: "http://localhost:5173/login",
+      code_challenge: "challenge",
+      code_challenge_method: "S256",
+      provider: "google",
+      account_type: "member",
+    });
+    const res = await loader({
+      request: new Request(`http://localhost/oauth/authorize?${params}`, {
+        headers: { "X-Forwarded-For": "9.9.8.3" },
+      }),
+    } as any);
+    const out = new URL(res.headers.get("location")!).searchParams;
+    expect(out.get("error")).toBe("invalid_request");
+    expect(out.has("state")).toBe(false);
+    expect(out.get("iss")).toBe("http://localhost:3001");
+  });
+
+  it("matches the issuer the metadata publishes", async () => {
+    process.env.API_BASE_URL = "https://os.dali.dartmouth.edu/";
+    const res = await loader({
+      request: makeRequest("9.9.8.4", "mcp:read mcp:bogus"),
+    } as any);
+    const { loader: asLoader } = await import(
+      "~/routes/well-known.oauth-authorization-server"
+    );
+    const metadata = await (
+      await asLoader({
+        request: new Request("https://os.dali.dartmouth.edu/.well-known/x"),
+      } as any)
+    ).json();
+    expect(issOf(res)).toBe(metadata.issuer);
   });
 });

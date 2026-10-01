@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   classifySignInReadiness,
   synthesizedAddress,
+  preferredCanonicalEmail,
 } from "~/lib/signin-readiness";
 
 const base = {
@@ -118,5 +119,69 @@ describe("classifySignInReadiness", () => {
     });
 
     expect(r.verdict).toBe("locked-out");
+  });
+});
+
+describe("preferredCanonicalEmail", () => {
+  const base = {
+    netId: "d99999z",
+    email: null as string | null,
+    daliEmail: null as string | null,
+    candidate: "alex.t.rivera.27@dartmouth.edu" as string | null,
+  };
+
+  it("replaces the synthesized address with the real one", () => {
+    expect(
+      preferredCanonicalEmail({ ...base, email: "d99999z@dartmouth.edu" }),
+    ).toBe("alex.t.rivera.27@dartmouth.edu");
+  });
+
+  it("never lets a Dartmouth address displace a @dali one", () => {
+    // A member's lab address is what the app displays and what they identify
+    // with. Promoting over it demotes them for no gain.
+    expect(
+      preferredCanonicalEmail({
+        ...base,
+        email: "alex.rivera@dali.dartmouth.edu",
+        daliEmail: "alex.rivera@dali.dartmouth.edu",
+      }),
+    ).toBeNull();
+  });
+
+  it("restores a @dali canonical that an earlier run demoted", () => {
+    // The state a --promote run left members in: daliEmail intact, canonical
+    // moved to their Dartmouth address. Re-running has to put it back, not
+    // shrug because the row already holds every alias.
+    expect(
+      preferredCanonicalEmail({
+        ...base,
+        email: "alex.t.rivera.27@dartmouth.edu",
+        daliEmail: "alex.rivera@dali.dartmouth.edu",
+      }),
+    ).toBe("alex.rivera@dali.dartmouth.edu");
+  });
+
+  it("leaves a usable non-dali canonical alone", () => {
+    expect(
+      preferredCanonicalEmail({ ...base, email: "alex@example.com" }),
+    ).toBeNull();
+  });
+
+  it("adopts the candidate when there is no canonical at all", () => {
+    expect(preferredCanonicalEmail({ ...base, email: null })).toBe(
+      "alex.t.rivera.27@dartmouth.edu",
+    );
+  });
+
+  it("is a no-op when the canonical is already the candidate", () => {
+    expect(
+      preferredCanonicalEmail({ ...base, email: "Alex.T.Rivera.27@Dartmouth.edu" }),
+    ).toBeNull();
+  });
+
+  it("does nothing without a candidate and without a dali address", () => {
+    expect(
+      preferredCanonicalEmail({ ...base, email: "d99999z@dartmouth.edu", candidate: null }),
+    ).toBeNull();
   });
 });

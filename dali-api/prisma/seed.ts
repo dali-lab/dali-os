@@ -618,9 +618,11 @@ async function main() {
     create: {
       id: "cycle-fall-2026",
       name: "Fall 2026",
-      // Relative to seed time: a fixed date eventually passes and closes the
-      // cycle under every spec that applies through the portal.
-      closeDate: ts(90 * 24 * 60 * 60 * 1000),
+      // Relative to the seed run, never a wall-clock literal. getOpenCycles
+      // derives status from closeDate, so an absolute date here flips Fall 2026
+      // to UnderReview the instant it passes — which empties /portal/apply and
+      // fails the portal specs on a date boundary rather than on a code change.
+      closeDate: ts(30 * 24 * 60 * 60 * 1000),
       generalRubricVersionId: "rv-general-v1",
       applicationFormId: generalApplicationForm.id,
       domains: {
