@@ -97,17 +97,22 @@ export async function completeMailConnect(request: Request): Promise<Response> {
     expiresInSec: tokens.expires_in ?? null,
   });
   // Every inbox is signed in to per person, never once for everyone.
-  const accountId =
-    target.kind === "Shared"
-      ? target.accountId
-      : (
-          await prisma.mailAccount.upsert({
-            where: { scopeKey_address: { scopeKey: `project:${target.projectId}`, address } },
-            create: { kind: "Project", address, scopeKey: `project:${target.projectId}`, projectId: target.projectId },
-            update: {},
-            select: { id: true },
-          })
-        ).id;
+  let accountId: string;
+  if (target.kind === "Shared") {
+    accountId = target.accountId;
+  } else {
+    const owner =
+      target.kind === "Personal"
+        ? { kind: "Personal" as const, scopeKey: `user:${userId}`, userId }
+        : { kind: "Project" as const, scopeKey: `project:${target.projectId}`, projectId: target.projectId };
+    const account = await prisma.mailAccount.upsert({
+      where: { scopeKey_address: { scopeKey: owner.scopeKey, address } },
+      create: { ...owner, address },
+      update: {},
+      select: { id: true },
+    });
+    accountId = account.id;
+  }
   await prisma.mailAccountConnection.upsert({
     where: { accountId_userId: { accountId, userId } },
     create: { accountId, userId, oauthTokens },
