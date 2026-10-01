@@ -332,10 +332,16 @@ export default function PartnersApplications() {
 
   const areaTabs = [
     {
-      label: "Organizations",
+      label: "Hub",
       icon: LayoutGrid,
       active: false,
       onClick: () => navigate("/partners"),
+    },
+    {
+      label: "Organizations",
+      icon: LayoutGrid,
+      active: false,
+      onClick: () => navigate("/partners/organizations"),
     },
     {
       label: "Applications",
