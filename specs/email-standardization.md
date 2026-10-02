@@ -14,22 +14,46 @@
 | 4 — registry + store collapse + `/admin/email` | ✅ built, data-losing migration | `Email Phase 4` |
 | 5 — partners, signing, education | ✅ built | `Email Phase 5` |
 | 6 — copy gaps | ✅ built | `Email Phase 6` |
-| §3.5 — notify()'s 38 event types made editable | ❌ **not built** — see below | — |
+| §3.5 — every notification's wording made editable | ✅ built | `Email §3.5` |
 
-**What §3.5 still needs, and why it wasn't folded in.** Phase 2 put all 38 event
-types on the shared layout, so they look right and carry a text part, but their
-titles and bodies are still literals at ~28 call sites. Making them editable the
-way hiring's are needs something the other 19 templates did not: **per-event
-variables**. The shared vocabulary is seven hiring-shaped tokens (`firstName`,
-`domain`, `time`, `location`, `meetingUrl`, `originalCloseDate`, `newCloseDate`),
-and a notify() title like `Meeting invite: ${meeting.title}` or
-`New response: ${form.name}` has no token for the thing it names. So this is a
-vocabulary design task, not a wiring task, and it wants a decision about whether
-the registry grows a per-event variable set or notify() keeps passing title/body
-and only the frame is editable. The `whenMissing: "default"` machinery it needs
-already exists and is in use by the promotion key.
+**Everything the app sends is now operator-editable: 77 templates in one editor**
+— 19 feature templates plus 58 notification messages.
 
-**Verification across all six steps:** 5,724 tests passing in 572 files,
+### How §3.5 resolved the vocabulary question
+
+The survey of all 44 `notify()` call sites answered it: **24 of them interpolate
+some variant of "the title of the thing"** — a meeting, a task, a document, a
+course, a form, a project. So seven generic tokens cover everything rather than
+twenty near-duplicates nobody could keep straight: `itemTitle`, `itemDetail`,
+`contextName`, `personName`, `when`, `statusLabel`, `count`, under a new
+`notification` template context.
+
+**Call sites pass those already formatted**, which is the load-bearing decision.
+Several notifications render a time in the *recipient's* own zone — meeting
+reminders, task deadlines and interview assignments all look up `tzByUser` — and a
+template can never know that. So the boundary is: the call site owns the data and
+how it reads; the template owns the words and their order.
+
+**Keyed per message, not per event type.** `meeting.cancelled` says three
+different things (this occurrence, the whole series, you were removed),
+`education.decision` says five, `pagedoc.mention` four. One template per event
+type would have forced those to share a sentence or left the extras hardcoded.
+58 messages across 39 event types.
+
+**One edit changes the in-app row and the email together**, because `notify()`
+renders both from the same template; the digest, built from `Notification` rows,
+follows for free. An explicit `title`/`body` from the caller still wins, which is
+what keeps announcements authored per send and the per-recipient messages
+(staffing, interview assignments, mentorship nudges) working. All 58 are
+`whenMissing: "default"`, so they are opt-in: an untouched notification keeps
+today's wording byte-for-byte.
+
+Four lookup tables of copy are gone, their words now editable: `STATUS_COPY`
+(education decisions), `REMINDER_COPY` (onboarding), and the two `openInvite`
+config entries (hiring). The onboarding reminder's three channels — in-app, email
+and Slack — now read one template, so they cannot say different things.
+
+**Verification:** 5,753 tests passing in 574 files,
 `tsc` clean, `npm run build` passes. The migration was applied to a throwaway
 Postgres from scratch, drift-checked with CI's own
 `prisma migrate diff --from-migrations --to-schema`, and exercised with a carry
@@ -494,9 +518,7 @@ the env fence from §0.4. Retiring `CycleNotificationSend` / `SignRequestNotific
 
 ## 6. Still open
 
-1. **§3.5 — notify()'s 38 event types.** The remaining scope item, blocked on the per-event variable question
-   described under Build status above.
-2. **`List-Unsubscribe` was not added.** It needs a real unsubscribe endpoint, and the mapping is a product
+1. **`List-Unsubscribe` was not added.** It needs a real unsubscribe endpoint, and the mapping is a product
    decision: does one-click set that event's `digestFrequency: "Off"`, or flip a global switch? Everything else in
    §3.4 landed. Worth doing before the flag flips, since it is the one deliverability item still outstanding.
 3. **The new partner-application confirmation needs a copy review.** It is new outbound mail to partners, written in
@@ -516,6 +538,8 @@ the env fence from §0.4. Retiring `CycleNotificationSend` / `SignRequestNotific
 - Turn `email-layout` on in staging and look at two transforms, not ten clients: **Gmail iOS** (full inversion) and
   **Outlook.com** (partial). Then classic Outlook for Windows, which is the Word engine.
 - Check one email of each footer variant (`notifications`, `transactional`, `none`).
+- Open `/admin/email` and confirm all 77 templates list, grouped by area, and that an edit to a notification
+  template changes both the in-app row and the email.
 - Confirm the plain-text part on a sign-in code and on a digest. (Transactional mail gets no such header either way.)
 2. **Does Phase 0.3 move the onboarding dates to cycle fields or to template variables?** Cycle fields are more
    structured and validate; template variables are faster and keep it in one editable place. Leaning cycle fields,
