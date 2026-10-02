@@ -124,7 +124,7 @@ export type DriveBrowserProps = {
   scopes: DriveTreeScope[];
   currentScopeId: string | null;
   currentFolderId: string | null;
-  typeFilter: "all" | "doc" | "file" | "form" | "agreement" | "emailTemplate" | "rubric";
+  typeFilter: "all" | "doc" | "file" | "form" | "agreement" | "rubric";
   search: string;
   onSearchChange: (q: string) => void;
   onNavigate: (scopeId: string | null, folderId: string | null) => void;
@@ -196,8 +196,6 @@ function kindLabel(item: DriveItem): string {
       return "Form";
     case "rubric":
       return "Rubric";
-    case "emailTemplate":
-      return "Email Template";
     default:
       return "Agreement";
   }
@@ -336,8 +334,6 @@ function itemIcon(item: DriveItem, size: IconSize = "sm") {
       return <FileSignature className={`${cls} text-muted-foreground shrink-0`} />;
     case "rubric":
       return <ClipboardCheck className={`${cls} text-muted-foreground shrink-0`} />;
-    case "emailTemplate":
-      return <Mail className={`${cls} text-muted-foreground shrink-0`} />;
     default:
       // Docs: respect size so grid/preview icons dwarf the label the way a
       // Finder icon does (PageIcon is a fixed list-row glyph and ignores size).
@@ -2387,7 +2383,7 @@ function ColumnItemRow({
 }) {
   const t = useDriveText();
   const isFolder = item.type === "folder";
-  const isManaged = item.type === "agreement" || item.type === "rubric" || item.type === "emailTemplate";
+  const isManaged = item.type === "agreement" || item.type === "rubric";
   const drag = useDraggable({
     id: `col::${scopeId}::${item.id}`,
     data: { item, scopeId },
@@ -3091,7 +3087,7 @@ function ListRow({
 }) {
   const t = useDriveText();
   const isFolder = item.type === "folder";
-  const isManaged = item.type === "agreement" || item.type === "rubric" || item.type === "emailTemplate";
+  const isManaged = item.type === "agreement" || item.type === "rubric";
   const drag = useDraggable({
     id: `${scopeId}::${item.id}`,
     data: { item, scopeId },
@@ -3198,7 +3194,7 @@ function GridTile({
 }) {
   const t = useDriveText();
   const isFolder = item.type === "folder";
-  const isManaged = item.type === "agreement" || item.type === "rubric" || item.type === "emailTemplate";
+  const isManaged = item.type === "agreement" || item.type === "rubric";
   const drag = useDraggable({
     id: `${scopeId}::${item.id}`,
     data: { item, scopeId },

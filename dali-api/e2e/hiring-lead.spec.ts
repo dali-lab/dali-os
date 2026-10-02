@@ -92,25 +92,24 @@ test.describe('hiring lead workflow', () => {
     }
   });
 
-  test('a decision email opens in a modal, shared across cycles', async ({ page }) => {
+  test('decision emails show as status here, editable only in Admin', async ({ page }) => {
     await page.goto('/hiring/lead');
     const frame = cyclesFrame(page);
     await frame.getByRole('link', { name: /Fall 2026/ }).click();
     await openTab(frame, 'Setup', frame.getByRole('heading', { name: 'Term and dates', exact: true }));
 
-    // Emails are one shared row per slot; the seed writes a Rejected email, so
-    // its row offers Edit rather than Write.
+    // One shared row per slot. The seed writes a Rejected email, so the row
+    // shows its subject rather than the "No email yet" warning — which is the
+    // one thing a lead still needs from this tab, because releasing a decision
+    // with no email written fails.
     const row = frame.getByText('Sent when a rejection is released.').locator('xpath=../..');
-    await row.getByRole('button', { name: /^(Edit|Write)$/ }).click();
+    await expect(row).toContainText('Subject:');
 
-    const dialog = frame.getByRole('dialog');
-    await expect(dialog.getByRole('heading', { name: 'Rejected email' })).toBeVisible();
-    await expect(dialog.getByLabel('Rejected subject')).toBeVisible();
-    await expect(dialog.getByLabel('Rejected body')).toBeVisible();
-    // Read-only check: saving would rewrite the email every cycle shares.
-    await expect(dialog.getByRole('button', { name: 'Save' })).toBeVisible();
-    await dialog.getByRole('button', { name: 'Cancel' }).click();
-    await expect(dialog).toHaveCount(0);
+    // No editor on this tab. The Setup action was gated on isCycleAdmin, so a
+    // per-cycle role could rewrite copy every cycle shares; lab-wide copy is
+    // Core's, and there is now one place it is edited.
+    await expect(row.getByRole('button', { name: /^(Edit|Write)$/ })).toHaveCount(0);
+    await expect(frame.getByRole('link', { name: /Edit in Admin/ }).first()).toBeVisible();
   });
 
   test('review tab holds the reviewer and interviewer rosters', async ({ page }) => {

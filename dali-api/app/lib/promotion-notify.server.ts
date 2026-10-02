@@ -51,7 +51,7 @@ export async function notifyAdminsOfPromotion(args: {
     eventType: "member.promotion",
     createdByUserId: args.actorId,
     message: {
-      title: `${name} ${args.summary}`,
+      vars: { personName: name, itemDetail: args.summary },
       link: `/members/${args.userId}`,
     },
     recipients: recipients.map((userId) => ({ userId })),

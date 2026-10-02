@@ -10,6 +10,7 @@ import {
   peekPartnerMagicLink,
 } from "~/partners/lib/magic-link.server";
 import { findOrLinkPartnerContact } from "~/partners/lib/partner-auth.server";
+import { PARTNER_LINK_EXPIRY } from "~/partners/lib/magic-link";
 
 export const meta: Route.MetaFunction = () => [
   { title: "DALI OS · Sign in" },
@@ -112,7 +113,7 @@ export default function PartnerAuthVerify({
             </h1>
             <p className="text-muted-foreground mb-8">
               {error ??
-                "This sign-in link is invalid or has expired. Sign-in links work once and expire after 15 minutes."}
+                `This sign-in link is invalid or has expired. Sign-in links work once and expire after ${PARTNER_LINK_EXPIRY}.`}
             </p>
             <a
               href="/partner/login"

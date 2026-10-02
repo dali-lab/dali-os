@@ -30,7 +30,7 @@ import {
   type Timeline,
 } from "~/hiring/lib/cycle-timeline";
 import { addDomainMentors, domainMentorIds } from "~/hiring/lib/cycle-rosters.server";
-import { listHiringEmails, saveHiringEmail } from "~/hiring/lib/hiring-emails.server";
+import { listHiringEmails } from "~/hiring/lib/hiring-emails.server";
 import { roundsWithBoards, saveCycleTimeline } from "~/hiring/lib/cycle-timeline.server";
 import { buildPhaseTabs, resolvePhaseTab } from "~/hiring/lib/cycle-phase-tabs";
 import { TargetDomainsCard } from "~/hiring/components/cycle-setup/TargetDomainsCard";
@@ -835,20 +835,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     const notice =
       added > 0 ? "mentors-added" : (await domainMentorIds(domainId, request)).length ? "mentors-already" : "mentors-none";
     return cycleRedirect(request, params.id!, { notice, added });
-  }
-
-  if (intent === "save-hiring-email") {
-    // One email per slot, shared by every cycle. Saving it empty turns it off.
-    const slot = formData.get("slot") as string;
-    if (!(slot in TEMPLATE_VARIABLES)) {
-      return Response.json({ error: "Unknown email" }, { status: 400 });
-    }
-    await saveHiringEmail(
-      slot as TemplateSlot,
-      { subject: (formData.get("subject") as string) ?? "", body: (formData.get("body") as string) ?? "" },
-      auth.user.sub,
-    );
-    return { ok: true };
   }
 
 
@@ -2093,9 +2079,13 @@ export default function HiringLeadCycleDetails() {
 
           {/* Decision-release email bindings */}
           <NavSection id="decision-emails" title="Decision emails">
-          <DecisionEmailsSection
+          <EmailStatusSection
+            title="Decision emails"
+            description="The email each released decision sends."
             hiringEmails={loaderData?.hiringEmails ?? {}}
-            hasInterviews={hasInterviews}
+            slots={DECISION_EMAIL_SLOTS.filter(
+              (slot) => hasInterviews || slot.type !== "InvitedToInterview",
+            ).map((slot) => ({ ...slot, templateSlot: decisionSlot(slot.type) }))}
           />
           </NavSection>
 
@@ -2103,11 +2093,13 @@ export default function HiringLeadCycleDetails() {
               from the student portal; interview slots only with interviews. */}
           {(!isMemberCycle || hasInterviews) && (
             <NavSection id="notification-emails" title="Notification emails">
-            <NotificationEmailsSection
+            <EmailStatusSection
+              title="Notification emails"
+              description="The email each notification sends."
               hiringEmails={loaderData?.hiringEmails ?? {}}
               slots={NOTIFICATION_EMAIL_SLOTS.filter((slot) =>
                 slot.type.startsWith('Interview') ? hasInterviews : !isMemberCycle,
-              )}
+              ).map((slot) => ({ ...slot, templateSlot: notificationSlot(slot.type) }))}
             />
             </NavSection>
           )}
@@ -3740,21 +3732,57 @@ const DECISION_EMAIL_SLOTS: ReadonlyArray<{ type: DecisionSlotType; label: strin
   { type: "Accepted", label: "Accepted", description: "Sent when an offer is released." },
 ];
 
-function DecisionEmailsSection({ hiringEmails, hasInterviews }: {
+function EmailStatusSection({
+  title,
+  description,
+  slots,
+  hiringEmails,
+}: {
+  title: string;
+  description: string;
+  slots: ReadonlyArray<{ label: string; description: string; templateSlot: TemplateSlot }>;
   hiringEmails: Record<string, { subject: string; body: string }>;
-  hasInterviews: boolean;
 }) {
+  // Read-only on purpose. These emails are shared by every cycle, so editing them
+  // belongs to Core in Admin -> Email, not to whoever happens to administer this
+  // cycle. What the Setup tab still owes a lead is the answer to "is it written?",
+  // because releasing a decision with no email written fails.
   return (
-    <SetupCard title="Decision emails" description="The email each released decision sends. Shared by every cycle.">
+    <SetupCard title={title} description={description}>
       <div className="flex flex-col gap-2">
-        {DECISION_EMAIL_SLOTS.filter((slot) => hasInterviews || slot.type !== "InvitedToInterview").map((slot) => (
-          <HiringEmailEditor
-            key={slot.type}
-            slot={slot}
-            templateSlot={decisionSlot(slot.type)}
-            email={hiringEmails[decisionSlot(slot.type)] ?? null}
-          />
-        ))}
+        {slots.map((slot) => {
+          const email = hiringEmails[slot.templateSlot] ?? null;
+          return (
+            <div
+              key={slot.templateSlot}
+              className="flex items-start gap-3 rounded-lg border border-border p-3"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">{slot.label}</span>
+                  {email ? null : (
+                    <span className="text-xs text-amber-600 dark:text-amber-500">
+                      No email yet
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">{slot.description}</p>
+                {email ? (
+                  <p className="text-xs text-muted-foreground mt-1 truncate">
+                    Subject: {email.subject}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          );
+        })}
+        <p className="text-xs text-muted-foreground">
+          Shared by every cycle.{" "}
+          <Link to="/admin/email" className="underline">
+            Edit in Admin &rarr; Email
+          </Link>
+          .
+        </p>
       </div>
     </SetupCard>
   );
@@ -3772,118 +3800,3 @@ const NOTIFICATION_EMAIL_SLOTS: ReadonlyArray<{ type: NotificationSlotType; labe
   { type: "InterviewReminderApplicant", label: "Interview reminder (applicant)", description: "Sent 24 hours and 1 hour before the interview." },
   { type: "InterviewReminderInterviewer", label: "Interview reminder (interviewer)", description: "Sent 24 hours and 1 hour before the interview." },
 ];
-
-function NotificationEmailsSection({ hiringEmails, slots }: {
-  hiringEmails: Record<string, { subject: string; body: string }>;
-  slots: typeof NOTIFICATION_EMAIL_SLOTS;
-}) {
-  return (
-    <SetupCard title="Notification emails" description="The email each notification sends. Shared by every cycle.">
-      <div className="flex flex-col gap-2">
-        {slots.map((slot) => (
-          <HiringEmailEditor
-            key={slot.type}
-            slot={slot}
-            templateSlot={notificationSlot(slot.type)}
-            email={hiringEmails[notificationSlot(slot.type)] ?? null}
-          />
-        ))}
-      </div>
-    </SetupCard>
-  );
-}
-
-// One email slot as a well row: what it's for (flagged when no email is
-// written yet), with Edit/Write opening the shared subject and body in a modal.
-function HiringEmailEditor({ slot, templateSlot, email }: {
-  slot: { label: string; description: string };
-  templateSlot: TemplateSlot;
-  email: { subject: string; body: string } | null;
-}) {
-  const os = useOsChrome();
-  const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
-  const [editing, setEditing] = useState(false);
-  const [subject, setSubject] = useState(email?.subject ?? "");
-  const [body, setBody] = useState(email?.body ?? "");
-  const busy = fetcher.state !== "idle";
-  // Close once a save lands; the loader brings the new email back.
-  useEffect(() => {
-    if (fetcher.state === "idle" && fetcher.data?.ok) setEditing(false);
-  }, [fetcher.state, fetcher.data]);
-  const open = () => {
-    setSubject(email?.subject ?? "");
-    setBody(email?.body ?? "");
-    setEditing(true);
-  };
-  const save = () =>
-    fetcher.submit({ intent: "save-hiring-email", slot: templateSlot, subject, body }, { method: "post" });
-  // Soft warnings only: an unknown or never-filled variable still saves.
-  const subjLint = lintTemplate(subject, templateSlot);
-  const bodyLint = lintTemplate(body, templateSlot);
-  const unknown = Array.from(new Set([...subjLint.unknown, ...bodyLint.unknown]));
-  const unfilled = Array.from(new Set([...subjLint.unfilled, ...bodyLint.unfilled]));
-  const titleId = `hiring-email-${templateSlot.replace(/[^a-z0-9]/gi, "-")}`;
-
-  return (
-    <div className="flex items-start justify-between gap-3 rounded-os-item bg-os-well px-4 py-3">
-      <div className="flex min-w-0 flex-col gap-0.5">
-        <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
-          {!email && <AlertIcon label="No email yet" />}
-          {slot.label}
-        </span>
-        <span className="text-sm text-os-grey">{slot.description}</span>
-      </div>
-      <button type="button" onClick={open} className={cn(buttonClasses("secondary", "sm"), "shrink-0")}>
-        {email ? "Edit" : "Write"}
-      </button>
-      <Modal
-        open={editing}
-        onClose={busy ? () => {} : () => setEditing(false)}
-        disableEscape={busy}
-        labelledBy={titleId}
-        containerClassName="w-full max-w-4xl my-auto os-modal-card os-form"
-      >
-        <ModalHeader titleId={titleId} title={`${slot.label} email`} subtitle={slot.description} onClose={() => setEditing(false)} />
-        <div className={cn(os.formClass, "flex flex-col gap-4")}>
-          <label className={os.fieldLabel}>
-            Subject
-            <input value={subject} onChange={(e) => setSubject(e.target.value)} aria-label={`${slot.label} subject`} />
-          </label>
-          <label className={os.fieldLabel}>
-            Body
-            <textarea
-              rows={18}
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              aria-label={`${slot.label} body`}
-            />
-          </label>
-          <SlotVariableHint slot={templateSlot} />
-          {(unknown.length > 0 || unfilled.length > 0) && <PreviewLintWarning unknown={unknown} unfilled={unfilled} />}
-          {fetcher.data?.error && <p className="text-sm text-red-700">{fetcher.data.error}</p>}
-        </div>
-        <ModalFooter onCancel={() => setEditing(false)}>
-          <button type="button" disabled={busy} onClick={save} className={buttonClasses("primary", "md")}>
-            {busy ? "Saving…" : "Save"}
-          </button>
-        </ModalFooter>
-      </Modal>
-    </div>
-  );
-}
-
-function SlotVariableHint({ slot }: { slot: TemplateSlot }) {
-  const vars = TEMPLATE_VARIABLES[slot];
-  return (
-    <p className="text-xs text-os-grey">
-      Supports{' '}
-      {vars.map((v, i) => (
-        <span key={v}>
-          {i > 0 && ', '}
-          <code className="font-mono rounded bg-os-container px-1">{`{{${v}}}`}</code>
-        </span>
-      ))}
-      .
-    </p>
-  );
-}

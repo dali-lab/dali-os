@@ -7,7 +7,7 @@ vi.mock("~/lib/auth", () => ({
 vi.mock("~/lib/roles");
 vi.mock("~/hiring/lib/cycle-applicants.server", () => ({ changeApplicants: vi.fn() }));
 vi.mock("~/hiring/lib/cycle-rosters.server", () => ({ addDomainMentors: vi.fn(), domainMentorIds: vi.fn() }));
-vi.mock("~/hiring/lib/hiring-emails.server", () => ({ saveHiringEmail: vi.fn(), listHiringEmails: vi.fn() }));
+vi.mock("~/hiring/lib/hiring-emails.server", () => ({ listHiringEmails: vi.fn() }));
 vi.mock("~/hiring/lib/application-form.server", () => ({
   addDomainChallenge: vi.fn(),
   removeDomainChallenge: vi.fn(),
@@ -23,7 +23,6 @@ import { requireAuth } from "~/lib/auth";
 import { isAdmin, isCycleAdmin } from "~/lib/roles";
 import { changeApplicants } from "~/hiring/lib/cycle-applicants.server";
 import { addDomainMentors, domainMentorIds } from "~/hiring/lib/cycle-rosters.server";
-import { saveHiringEmail } from "~/hiring/lib/hiring-emails.server";
 import { addDomainChallenge, removeDomainChallenge } from "~/hiring/lib/application-form.server";
 import { saveCycleTimeline } from "~/hiring/lib/cycle-timeline.server";
 import { STANDARD_TIMELINE, defaultTimeline } from "~/hiring/lib/cycle-timeline";
@@ -684,33 +683,11 @@ describe("lead.cycle.$id action — add-domain-mentors", () => {
   });
 });
 
-describe("lead.cycle.$id action — save-hiring-email", () => {
-  it("saves a slot's shared email", async () => {
-    const res = await callAction({
-      intent: "save-hiring-email",
-      slot: "notification:ApplicationExtensionNotice",
-      subject: "More time",
-      body: "Hi {{firstName}}",
-    });
-    expect(saveHiringEmail).toHaveBeenCalledWith(
-      "notification:ApplicationExtensionNotice",
-      { subject: "More time", body: "Hi {{firstName}}" },
-      HIRING_LEAD_ID,
-    );
-    expect(res).toEqual({ ok: true });
-  });
-
-  it("passes an empty email through, which turns the slot off", async () => {
-    await callAction({ intent: "save-hiring-email", slot: "decision:Rejected", subject: "", body: "" });
-    expect(saveHiringEmail).toHaveBeenCalledWith("decision:Rejected", { subject: "", body: "" }, HIRING_LEAD_ID);
-  });
-
-  it("rejects an unknown slot", async () => {
-    const res = (await callAction({ intent: "save-hiring-email", slot: "decision:Promoted", subject: "x", body: "y" })) as Response;
-    expect(res.status).toBe(400);
-    expect(saveHiringEmail).not.toHaveBeenCalled();
-  });
-});
+// The save-hiring-email action is gone: email copy is edited only in
+// Admin -> Email now. It mattered that it left, not just that it moved — the
+// action here was gated on isCycleAdmin, so a per-cycle role could rewrite copy
+// every cycle shares. The Setup tab shows whether each email is written and links
+// out to edit it.
 
 describe("lead.cycle.$id action — set-term", () => {
   beforeEach(() => {

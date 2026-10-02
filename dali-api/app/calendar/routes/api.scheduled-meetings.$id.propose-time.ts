@@ -72,7 +72,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     eventType: "meeting.time_proposed",
     createdByUserId: actorId,
     message: {
-      title: `${proposerName} proposed a new time for ${meeting.title}`,
+      vars: { personName: proposerName, itemTitle: meeting.title },
       link: `/calendar/meeting/${meetingId}`,
       scheduledMeetingId: meetingId,
     },

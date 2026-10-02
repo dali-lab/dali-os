@@ -4,6 +4,7 @@
 
 import { randomUUID } from "node:crypto";
 import { prisma } from "~/lib/db";
+import { getAppEnv, STAGING_REDIRECT_EMAIL } from "~/lib/app-env";
 import { buildEncryptedTokens, parseStoredTokens } from "~/lib/google-calendar";
 import { GoogleOAuthError, refreshGoogleToken } from "~/lib/google-oauth";
 
@@ -328,13 +329,30 @@ export async function sendMessage(
     attachments?: { filename: string; contentType: string; bytes: Buffer }[];
   },
 ): Promise<void> {
+  // Same env fence as the transactional sender (lib/gmail.ts). Without it a
+  // staging deploy — which runs against a restore of the prod DB, so every
+  // address in it belongs to a real person — would deliver composer mail for
+  // real. Dev skips outright; staging rewrites the envelope to the test inbox
+  // and drops Cc/Bcc so no third party is reached.
+  const env = getAppEnv();
+  if (env === "dev") {
+    console.info(`[mailbox:dev] skipped send to=${msg.to} subject=${JSON.stringify(msg.subject)}`);
+    return;
+  }
+  const to = env === "staging" ? STAGING_REDIRECT_EMAIL : msg.to;
+  const cc = env === "staging" ? "" : msg.cc;
+  const bcc = env === "staging" ? "" : msg.bcc;
+  // ASCII only: a non-ASCII character here forces encodeSubject to RFC 2047
+  // base64 the whole subject, which makes staging mail unreadable in a list view.
+  const subject = env === "staging" ? `[STAGING to ${msg.to}] ${msg.subject}` : msg.subject;
+
   const headers = [
     `From: ${sanitizeHeader(msg.from)}`,
-    `To: ${sanitizeHeader(msg.to)}`,
-    ...(msg.cc.trim() ? [`Cc: ${sanitizeHeader(msg.cc)}`] : []),
+    `To: ${sanitizeHeader(to)}`,
+    ...(cc.trim() ? [`Cc: ${sanitizeHeader(cc)}`] : []),
     // Gmail delivers to Bcc and strips the header from what recipients get.
-    ...(msg.bcc.trim() ? [`Bcc: ${sanitizeHeader(msg.bcc)}`] : []),
-    `Subject: ${encodeSubject(msg.subject)}`,
+    ...(bcc.trim() ? [`Bcc: ${sanitizeHeader(bcc)}`] : []),
+    `Subject: ${encodeSubject(subject)}`,
     ...(msg.inReplyTo ? [`In-Reply-To: ${sanitizeHeader(msg.inReplyTo)}`] : []),
     ...(msg.inReplyTo
       ? [`References: ${sanitizeHeader(`${msg.references ?? ""} ${msg.inReplyTo}`.trim())}`]

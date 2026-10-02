@@ -1,30 +1,43 @@
-import { prisma } from "~/lib/db";
-import type { EducationEmailSlot } from "./education-emails";
+// Education's view of the unified email-template store. Mirrors
+// hiring-emails.server.ts: the slot vocabulary stays education's own, the rows
+// live in EmailTemplate under the "education:" key prefix.
 
-// Education's emails: one per slot, shared by every course and edited in
-// place (no versions). A slot with no email sends nothing.
+import {
+  getEmailTemplate,
+  listEmailTemplates,
+  saveEmailTemplate,
+} from "~/email/lib/templates.server";
+import { educationKey } from "~/email/lib/registry";
+import { prisma } from "~/lib/db";
+
+import type { EducationEmailSlot } from "./education-emails";
 
 export type EducationEmailContent = { subject: string; body: string };
 
 export async function getEducationEmail(
   slot: EducationEmailSlot,
 ): Promise<EducationEmailContent | null> {
-  return prisma.educationEmail.findUnique({
-    where: { slot },
-    select: { subject: true, body: true },
-  });
+  return getEmailTemplate(educationKey(slot));
 }
 
 export async function listEducationEmails() {
-  return prisma.educationEmail.findMany({
-    select: {
-      slot: true,
-      subject: true,
-      body: true,
-      updatedAt: true,
-      updatedBy: { select: { firstName: true, lastName: true } },
-    },
-  });
+  const all = await listEmailTemplates();
+  const rows = [...all.values()].filter((t) => t.key.startsWith("education:"));
+  const editorIds = [...new Set(rows.map((r) => r.updatedById).filter((x): x is string => !!x))];
+  const editors = editorIds.length
+    ? await prisma.user.findMany({
+        where: { id: { in: editorIds } },
+        select: { id: true, firstName: true, lastName: true },
+      })
+    : [];
+  const byId = new Map(editors.map((u) => [u.id, u]));
+  return rows.map((r) => ({
+    slot: r.key.slice("education:".length) as EducationEmailSlot,
+    subject: r.subject,
+    body: r.body,
+    updatedAt: r.updatedAt,
+    updatedBy: r.updatedById ? (byId.get(r.updatedById) ?? null) : null,
+  }));
 }
 
 /** Save a slot's email for every course. An empty subject and body turns the
@@ -34,13 +47,5 @@ export async function saveEducationEmail(
   content: EducationEmailContent,
   actorId: string,
 ): Promise<void> {
-  if (!content.subject.trim() && !content.body.trim()) {
-    await prisma.educationEmail.deleteMany({ where: { slot } });
-    return;
-  }
-  await prisma.educationEmail.upsert({
-    where: { slot },
-    create: { slot, ...content, updatedById: actorId },
-    update: { ...content, updatedById: actorId },
-  });
+  await saveEmailTemplate(educationKey(slot), content, actorId);
 }

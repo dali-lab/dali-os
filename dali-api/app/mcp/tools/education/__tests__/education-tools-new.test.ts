@@ -874,44 +874,8 @@ describe("manage_education_offering / new actions", () => {
     );
   });
 
-  it("rejects non-Core for set_decision_email", async () => {
-    vi.mocked(isCore).mockResolvedValue(false);
-    await expect(
-      runManageEducationOffering(ctx(), {
-        action: "set_decision_email",
-        decisionStatus: "Approved",
-        subject: "You're in",
-        body: "See you there.",
-      }),
-    ).rejects.toMatchObject({ name: "McpForbiddenError" });
-  });
-
-  it("writes the shared decision email for a status", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
-    const result = await runManageEducationOffering(ctx(), {
-      action: "set_decision_email",
-      decisionStatus: "Approved",
-      subject: "You're in: {{domain}}",
-      body: "Hi {{firstName}}.",
-    });
-    expect(saveEducationEmail).toHaveBeenCalledWith(
-      "decision:Approved",
-      { subject: "You're in: {{domain}}", body: "Hi {{firstName}}." },
-      "u1",
-    );
-    expect(runOfferingAction).not.toHaveBeenCalled();
-    expect(result.ok).toBe(true);
-  });
-
-  it("rejects an unknown decision status", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
-    await expect(
-      runManageEducationOffering(ctx(), {
-        action: "set_decision_email",
-        decisionStatus: "Submitted",
-        subject: "x",
-        body: "y",
-      }),
-    ).rejects.toMatchObject({ name: "McpInvalidError" });
-  });
+  // set_decision_email was retired: it was the only MCP write path to an
+  // education email, and it lived on a tool about offerings while hiring's
+  // equivalent rows had no MCP surface at all. manage_email_template now covers
+  // every email key uniformly. See its tests.
 });

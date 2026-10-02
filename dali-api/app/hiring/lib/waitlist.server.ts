@@ -35,10 +35,6 @@ import {
   provisionNewMember,
   type ProvisionResult,
 } from "~/members/lib/provisioning.server";
-import {
-  resolveCandidateEmail,
-  redirectBannerHtml,
-} from "~/lib/candidate-email";
 import type { Prisma } from "~/generated/prisma/client";
 import { getHiringEmail } from "~/hiring/lib/hiring-emails.server";
 import { compactRanks } from "~/hiring/lib/waitlist";
@@ -406,7 +402,7 @@ export async function acceptFromWaitlist(args: {
       user?.dartmouthEmail ??
       (user?.netId ? `${user.netId}@dartmouth.edu` : null);
     const domainName = da.domain.displayName ?? da.domain.name ?? "";
-    const { to, redirectedFrom } = resolveCandidateEmail(intendedEmail);
+    const to = intendedEmail;
     if (to && user) {
       const { subject, html } = renderForSlot(
         decisionSlot("Accepted"),
@@ -424,7 +420,7 @@ export async function acceptFromWaitlist(args: {
         target: to,
         recipientUserId: da.application.userId,
         subject,
-        bodyHtml: redirectBannerHtml(redirectedFrom) + html + onboarding,
+        bodyHtml: html + onboarding,
         eventType: "hiring.waitlist.accept",
       });
       _waitlistEmailId = id;

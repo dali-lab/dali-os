@@ -1,5 +1,6 @@
 import type { ApplicationType, CycleApplicants } from "~/generated/prisma/client";
 import type { EventType } from "~/lib/notification-events";
+import type { NotificationCopyKey } from "~/email/lib/notification-copy";
 import { eligibleInternUserIds, isFellowshipEligible } from "./intern-eligibility";
 import { resolveAllLabMembers } from "~/lib/groups";
 import { promoteToMember } from "~/members/lib/membership.server";
@@ -51,11 +52,11 @@ export interface ApplicantGroupConfig {
   decisionNotificationEvent: EventType | null;
   // Stamped on each Application so it records what the person applied through.
   applicationType: ApplicationType;
-  // "Cycle is open" invitation copy + delivery. Null when there's no fan-out.
+  // "Cycle is open" invitation delivery. Null when there's no fan-out. The copy
+  // itself is the operator-editable template named by copyKey.
   openInvite: {
     eventType: EventType;
-    title(cycleName: string): string;
-    body(cycleName: string, closeText: string): string;
+    copyKey: NotificationCopyKey;
   } | null;
   // Acceptance side-effect run when a Released "Accepted" decision fires.
   onAccept(ctx: AcceptContext): Promise<AcceptResult>;
@@ -120,8 +121,7 @@ export const APPLICANT_GROUP_CONFIG: Record<CycleApplicants, ApplicantGroupConfi
     applicationType: "Fellowship",
     openInvite: {
       eventType: "hiring.fellowship_invite",
-      title: () => "Fellowship application is open",
-      body: (name, closeText) => `${name} is accepting fellowship applications.${closeText}`,
+      copyKey: "hiring.fellowship_invite",
     },
     onAccept: memberOnAccept,
   },
@@ -135,8 +135,7 @@ export const APPLICANT_GROUP_CONFIG: Record<CycleApplicants, ApplicantGroupConfi
     applicationType: "Core",
     openInvite: {
       eventType: "hiring.core_invite",
-      title: () => "Core application is open",
-      body: (name, closeText) => `${name} is accepting Core applications.${closeText}`,
+      copyKey: "hiring.core_invite",
     },
     onAccept: coreOnAccept,
   },

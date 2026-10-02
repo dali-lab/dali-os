@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
+import type { NotificationCopyKey } from "~/email/lib/notification-copy";
 import type { EventType } from "~/lib/notification-events";
 import { parseJson } from "~/lib/validate";
 import { requireAuth } from "~/lib/auth";
@@ -140,8 +141,8 @@ export async function action({ request, params }: Route.ActionArgs) {
   let fanOutPlan: {
     userIds: string[];
     eventType: EventType;
-    title: string;
-    body: string;
+    copyKey: NotificationCopyKey;
+    vars: Record<string, string>;
     link: string;
   } | null = null;
   if (newStatus === "Open") {
@@ -158,8 +159,10 @@ export async function action({ request, params }: Route.ActionArgs) {
       fanOutPlan = {
         userIds,
         eventType: config.openInvite.eventType,
-        title: config.openInvite.title(cycle.name),
-        body: config.openInvite.body(cycle.name, closeText),
+        copyKey: config.openInvite.copyKey,
+        // The deadline sentence is a conditional fragment, so it arrives as a
+        // variable rather than forcing the template to express "only if".
+        vars: { itemTitle: cycle.name, itemDetail: closeText },
         link: config.portalPath,
       };
     }
@@ -191,8 +194,8 @@ export async function action({ request, params }: Route.ActionArgs) {
       eventType: fanOutPlan.eventType,
       createdByUserId: auth.user.sub,
       message: {
-        title: fanOutPlan.title,
-        body: fanOutPlan.body,
+        copyKey: fanOutPlan.copyKey,
+        vars: fanOutPlan.vars,
         link: fanOutPlan.link,
       },
       recipients: fanOutPlan.userIds.map((userId) => ({ userId })),

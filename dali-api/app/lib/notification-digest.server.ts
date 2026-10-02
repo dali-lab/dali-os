@@ -16,6 +16,9 @@
 import { prisma } from "~/lib/db";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { getFrontendUrl } from "~/lib/app-env";
+import { escapeHtml } from "~/lib/email";
+import { renderEmailDocument } from "~/email/lib/layout";
+import { emailLayoutEnabled } from "~/email/lib/layout.server";
 import { getZonedParts, zonedWallTimeUtc, APPLICATION_TZ } from "~/lib/timezone";
 import { NOT_CANCELLED_MEETING } from "~/lib/notifications";
 import { EVENT_TYPES, type EventDef } from "~/lib/notification-events";
@@ -86,58 +89,113 @@ function relativeTime(from: Date, to: Date): string {
   return `${days}d ago`;
 }
 
-export function renderDigestEmail(args: {
-  firstName: string;
-  now: Date;
-  rows: {
-    eventType: string;
-    title: string;
-    body: string | null;
-    link: string | null;
-    createdAt: Date;
-  }[];
-}): { subject: string; html: string } {
-  const base = getFrontendUrl();
-  const byLabel = new Map<string, typeof args.rows>();
-  for (const row of args.rows) {
+export type DigestRow = {
+  eventType: string;
+  title: string;
+  body: string | null;
+  link: string | null;
+  createdAt: Date;
+};
+
+export type DigestArgs = { firstName: string; now: Date; rows: DigestRow[] };
+
+function groupByLabel(rows: DigestRow[]): Map<string, DigestRow[]> {
+  const byLabel = new Map<string, DigestRow[]>();
+  for (const row of rows) {
     const def: EventDef | undefined = EVENT_TYPES[row.eventType as keyof typeof EVENT_TYPES];
     const label = def?.label ?? "Other";
     const list = byLabel.get(label) ?? [];
     list.push(row);
     byLabel.set(label, list);
   }
+  return byLabel;
+}
 
-  const sections = [...byLabel.entries()]
+function absolute(link: string | null, base: string): string | null {
+  if (!link) return null;
+  if (/^https?:\/\//.test(link)) return link;
+  return `${base}${link.startsWith("/") ? "" : "/"}${link}`;
+}
+
+// Titles and bodies come from notification rows, which carry user-authored text
+// (task titles, comment snippets, partner names). They were interpolated raw.
+function sectionsHtml(args: DigestArgs, base: string): string {
+  return [...groupByLabel(args.rows).entries()]
     .map(([label, rows]) => {
       const items = rows
         .map((r) => {
-          const href = r.link
-            ? /^https?:\/\//.test(r.link)
-              ? r.link
-              : `${base}${r.link.startsWith("/") ? "" : "/"}${r.link}`
-            : null;
+          const href = absolute(r.link, base);
+          const safeTitle = escapeHtml(r.title);
           const title = href
-            ? `<a href="${href}" style="color:#18181b;">${r.title}</a>`
-            : r.title;
+            ? `<a href="${escapeHtml(href)}" style="color:#1d4ed8;">${safeTitle}</a>`
+            : safeTitle;
           const snippet = r.body
-            ? ` <span style="color:#71717a;">— ${r.body.slice(0, 120)}</span>`
+            ? ` <span style="color:#52525b;">${escapeHtml(r.body.slice(0, 120))}</span>`
             : "";
-          return `<li style="margin:4px 0;"><strong>${title}</strong>${snippet} <span style="color:#a1a1aa;font-size:12px;">${relativeTime(r.createdAt, args.now)}</span></li>`;
+          return `<li style="margin:6px 0;"><strong>${title}</strong>${snippet} <span style="color:#71717a;font-size:12px;">${relativeTime(r.createdAt, args.now)}</span></li>`;
         })
         .join("\n");
-      return `<h3 style="margin:16px 0 4px;">${label}</h3>\n<ul style="margin:0;padding-left:20px;">${items}</ul>`;
+      return `<h2 style="margin:20px 0 4px;font-size:15px;line-height:22px;">${escapeHtml(label)}</h2>\n<ul style="margin:0;padding-left:20px;">${items}</ul>`;
     })
     .join("\n");
+}
 
+// No em dash, per the house copy style; the colon reads the same and survives
+// every client's encoding.
+export function digestSubject(n: number): string {
+  return `Your DALI digest: ${n} update${n === 1 ? "" : "s"}`;
+}
+
+function digestText(args: DigestArgs, base: string): string {
+  const parts = [`Hi ${args.firstName},`, "Here's what you haven't read on DALI OS:"];
+  for (const [label, rows] of groupByLabel(args.rows)) {
+    const lines = rows.map((r) => {
+      const href = absolute(r.link, base);
+      return `- ${r.title}${r.body ? ` — ${r.body.slice(0, 120)}` : ""}${href ? `\n  ${href}` : ""}`;
+    });
+    parts.push(`${label}\n${lines.join("\n")}`);
+  }
+  parts.push(`DALI OS · ${base}/settings/notifications`);
+  return parts.join("\n\n");
+}
+
+// The pre-layout shape. Kept so turning the `email-layout` flag off is a true
+// revert; the escaping fixes above apply to both paths on purpose, since they
+// are a correctness fix rather than part of the redesign.
+export function renderDigestEmail(args: DigestArgs): { subject: string; html: string } {
+  const base = getFrontendUrl();
+  return {
+    subject: digestSubject(args.rows.length),
+    html: [
+      `<p>Hi ${escapeHtml(args.firstName)},</p>`,
+      `<p>Here's what you haven't read on DALI OS:</p>`,
+      sectionsHtml(args, base),
+      `<p style="margin-top:16px;"><a href="${base}" style="color:#1d4ed8;">Open DALI OS</a> · <a href="${base}/settings/notifications" style="color:#52525b;">notification settings</a></p>`,
+    ].join("\n"),
+  };
+}
+
+export function renderDigestEmailDocument(args: DigestArgs): {
+  subject: string;
+  html: string;
+  text: string;
+} {
+  const base = getFrontendUrl();
   const n = args.rows.length;
   return {
-    subject: `Your DALI digest — ${n} update${n === 1 ? "" : "s"}`,
-    html: [
-      `<p>Hi ${args.firstName},</p>`,
-      `<p>Here's what you haven't read on DALI OS:</p>`,
-      sections,
-      `<p style="margin-top:16px;"><a href="${base}" style="color:#18181b;">Open DALI OS</a> · <a href="${base}/settings/notifications" style="color:#71717a;">notification settings</a></p>`,
-    ].join("\n"),
+    subject: digestSubject(n),
+    html: renderEmailDocument({
+      bodyHtml: [
+        `<p style="margin:0 0 16px;">Hi ${escapeHtml(args.firstName)},</p>`,
+        `<p style="margin:0;">Here's what you haven't read on DALI OS:</p>`,
+        sectionsHtml(args, base),
+      ].join("\n"),
+      preheader: `${n} update${n === 1 ? "" : "s"} waiting on DALI OS`,
+      cta: { href: base, label: "Open DALI OS" },
+      footer: "notifications",
+      baseUrl: base,
+    }),
+    text: digestText(args, base),
   };
 }
 
@@ -193,6 +251,10 @@ export async function runDigest(freq: DigestFrequency, now: Date): Promise<JobRe
   const day = now.toISOString().slice(0, 10);
   const enqueuedIds: Array<string | null> = [];
   let sent = 0;
+  // Resolved once per run, not per recipient: a digest batch can be hundreds of
+  // users, and the flag is evaluated for everyone so the answer can't differ
+  // between them.
+  const layoutOn = await emailLayoutEnabled();
   for (const [userId, wanted] of wantedByUser) {
     const user = userById.get(userId);
     if (!user) continue;
@@ -203,11 +265,10 @@ export async function runDigest(freq: DigestFrequency, now: Date): Promise<JobRe
     );
     if (userRows.length === 0) continue; // no empty digests
 
-    const { subject, html } = renderDigestEmail({
-      firstName: user.firstName,
-      now,
-      rows: userRows,
-    });
+    const digestArgs = { firstName: user.firstName, now, rows: userRows };
+    const { subject, html, text } = layoutOn
+      ? renderDigestEmailDocument(digestArgs)
+      : { ...renderDigestEmail(digestArgs), text: digestText(digestArgs, getFrontendUrl()) };
     try {
       // Mark-and-enqueue atomically: rows can't be marked without the digest
       // being queued, nor queued without the rows being marked.
@@ -225,6 +286,7 @@ export async function runDigest(freq: DigestFrequency, now: Date): Promise<JobRe
             recipientUserId: userId,
             subject,
             bodyHtml: html,
+            bodyText: text,
             eventType: `digest.${freq.toLowerCase()}`,
           },
           tx,

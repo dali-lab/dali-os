@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { useEffect, useState } from "react";
 import { Form, Link, redirect, useActionData, useLoaderData, useNavigation, useSearchParams } from "react-router";
 import type { Route } from "./+types/login";
+import { humanDuration, EMAIL_OTP_TTL_SECONDS } from "~/email/lib/auth-email";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { checkRateLimit, getClientIp } from "~/lib/rate-limit";
@@ -316,8 +317,8 @@ function LoginBetterAuth({ next, actionData }: {
           <p className="text-sm text-muted-foreground">
             If there's a DALI OS account for{" "}
             <span className="font-medium text-dark-blue">{codeSent.email}</span>,
-            we've emailed a 6-digit code. Enter it below. Codes expire in 10
-            minutes.
+            we've emailed a 6-digit code. Enter it below. Codes expire in{" "}
+            {humanDuration(EMAIL_OTP_TTL_SECONDS)}.
           </p>
         </div>
         <Form method="post" className="flex flex-col gap-3">

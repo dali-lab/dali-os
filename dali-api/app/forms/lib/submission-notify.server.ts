@@ -41,8 +41,7 @@ export async function notifyFormSubmission(args: {
       eventType: "form.submission",
       createdByUserId: args.submitterUserId ?? null,
       message: {
-        title: `New response: ${form.name}`,
-        body: `From ${name || "Anonymous"}`,
+        vars: { itemTitle: form.name, personName: name || "Anonymous" },
         link: `/forms/edit/${form.id}?view=results`,
       },
       recipients: [{ userId: form.createdById }],

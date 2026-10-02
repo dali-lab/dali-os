@@ -9,7 +9,6 @@ import { onboardingEmailHtml } from "~/members/lib/welcome.server";
 import type { ProvisionResult } from "~/members/lib/provisioning.server";
 import { applicantGroup, type AcceptContext } from "~/hiring/lib/applicant-groups.server";
 import { notify } from "~/lib/notify.server";
-import { resolveCandidateEmail, redirectBannerHtml } from "~/lib/candidate-email";
 import { getHiringEmail } from "~/hiring/lib/hiring-emails.server";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 
@@ -171,7 +170,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
     // dev/staging: redirect to the test inbox with a banner naming the real
     // candidate; prod: send to the candidate.
-    const { to, redirectedFrom } = resolveCandidateEmail(intendedEmail);
+    const to = intendedEmail;
 
     if (binding && to && user) {
       const { subject, html } = renderForSlot(
@@ -203,7 +202,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         target: to,
         recipientUserId: domainApp.application.userId,
         subject,
-        bodyHtml: redirectBannerHtml(redirectedFrom) + html + onboarding,
+        bodyHtml: html + onboarding,
         eventType: "hiring.decision.release",
       });
       _releaseEmailId = id;
@@ -220,16 +219,16 @@ export async function action({ request, params }: Route.ActionArgs) {
   let inAppNotified = false;
   if (config.decisionChannel === "inApp" && config.decisionNotificationEvent) {
     const accepted = decision.type === "Accepted";
-    const message = accepted
-      ? { title: "You've been added to Core", body: "Welcome to Core. Your assignment is active for this cycle." }
+    const copyKey = accepted
+      ? ("hiring.core_decision.accepted" as const)
       : decision.type === "Waitlisted"
-        ? { title: "Core application update", body: "You've been placed on the Core waitlist." }
-        : { title: "Core application update", body: "A decision on your Core application has been released." };
+        ? ("hiring.core_decision.waitlisted" as const)
+        : ("hiring.core_decision.other" as const);
     try {
       await notify({
         eventType: config.decisionNotificationEvent,
         createdByUserId: auth.user.sub,
-        message: { ...message, link: config.portalPath },
+        message: { copyKey, link: config.portalPath },
         recipients: [{ userId: domainApp.application.userId }],
       });
       inAppNotified = true;

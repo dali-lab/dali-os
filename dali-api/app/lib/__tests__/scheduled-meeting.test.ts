@@ -83,7 +83,8 @@ describe("cancelScheduledMeeting", () => {
     expect(mockNotify).toHaveBeenCalledTimes(1);
     const call = mockNotify.mock.calls[0][0];
     expect(call.eventType).toBe("meeting.cancelled");
-    expect(call.message.title).toBe("Meeting cancelled: Sprint sync");
+    expect(call.message.copyKey).toBe("meeting.cancelled.series");
+    expect(call.message.vars).toEqual({ itemTitle: "Sprint sync" });
     // Not stamped: surfaces hide rows whose meeting is Cancelled.
     expect(call.message.scheduledMeetingId).toBeUndefined();
     expect(call.recipients).toEqual([
@@ -682,8 +683,10 @@ describe("createScheduledMeeting — location and description", () => {
 
     expect(res.ok).toBe(true);
     const call = mockNotify.mock.calls[0]![0];
-    expect(call.message.body).toContain("Location: Baker 101");
-    expect(call.message.body).toContain("Bring the latest mocks.");
+    // The invite's where-and-what lines reach the template as one detail
+    // value, because the in-app feed and the Slack DM have no attachment.
+    expect(call.message.vars.itemDetail).toContain("Location: Baker 101");
+    expect(call.message.vars.itemDetail).toContain("Bring the latest mocks.");
     expect(call.recipients[0].ics).toContain("LOCATION:Baker 101");
     expect(call.recipients[0].ics).toContain("DESCRIPTION:Bring the latest mocks.");
   });

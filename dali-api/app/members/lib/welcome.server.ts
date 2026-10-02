@@ -1,5 +1,11 @@
 import { prisma } from "~/lib/db";
 import { notify, renderNotificationEmail } from "~/lib/notify.server";
+import { renderEmailTemplate } from "~/email/lib/templates.server";
+import type { NotificationCopyKey } from "~/email/lib/notification-copy";
+import {
+  renderNotificationCopy,
+  resolveNotificationCopy,
+} from "~/email/lib/notification-render.server";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { getAppEnv, getFrontendUrl } from "~/lib/app-env";
 import { slackConfigured, sendDm } from "~/slack/lib/slack-client";
@@ -70,8 +76,7 @@ export async function sendWelcome(args: {
       eventType: ONBOARDING_EVENT_TYPE,
       createdByUserId: args.actorId,
       message: {
-        title: "Welcome to DALI — finish onboarding",
-        body: "Complete a few quick steps to finish setting up your account.",
+        // Copy lives in the template now; this call only says which one.
         isTodo: true,
         link: ONBOARDING_LINK,
       },
@@ -103,30 +108,15 @@ export function isOnboardingRemindVia(v: string): v is OnboardingRemindVia {
   return (REMIND_VIA_VALUES as readonly string[]).includes(v);
 }
 
-const REMINDER_COPY: Record<
-  OnboardingReminderStep,
-  { title: string; body: string; link: string | null }
-> = {
-  email: {
-    title: "Onboarding reminder: DALI email",
-    body: "Your DALI email isn't set up yet. Check for an invite, or reach out to Core if you still can't sign in.",
-    link: ONBOARDING_LINK,
-  },
-  slack: {
-    title: "Onboarding reminder: Slack",
-    body: "You're not in the DALI Slack workspace yet. A teammate will add you — reply to Core if you're still waiting.",
-    link: ONBOARDING_LINK,
-  },
-  figma: {
-    title: "Onboarding reminder: Figma",
-    body: "You haven't been added to Figma yet. Core will invite you — ping them if it's been a while.",
-    link: ONBOARDING_LINK,
-  },
-  profile: {
-    title: "Onboarding reminder: profile form",
-    body: "Finish your member profile so we can complete your onboarding.",
-    link: ONBOARDING_LINK,
-  },
+// Which template writes each board column's nudge. The words live in
+// app/email/lib/notification-copy.ts so Core can edit them; all four link to the
+// same checklist. Resolved once below and shared by all three channels, so the
+// in-app ping, the email and the Slack DM can't say different things.
+const REMINDER_COPY_KEY: Record<OnboardingReminderStep, NotificationCopyKey> = {
+  email: "member.onboarding.reminder.email",
+  slack: "member.onboarding.reminder.slack",
+  figma: "member.onboarding.reminder.figma",
+  profile: "member.onboarding.reminder.profile",
 };
 
 /**
@@ -143,20 +133,19 @@ export async function sendOnboardingReminders(args: {
   const unique = [...new Set(args.userIds.filter(Boolean))];
   if (unique.length === 0) return { count: 0, skipped: 0 };
 
-  const copy = REMINDER_COPY[args.step];
+  const copyKey = REMINDER_COPY_KEY[args.step];
+  const resolved = await resolveNotificationCopy([copyKey]);
+  const copy = renderNotificationCopy(resolved.get(copyKey), {});
   const base = getFrontendUrl().replace(/\/$/, "");
-  const absLink = copy.link
-    ? `${base}${copy.link.startsWith("/") ? "" : "/"}${copy.link}`
-    : null;
+  const absLink = `${base}${ONBOARDING_LINK}`;
 
   if (args.via === "inApp") {
     await notify({
       eventType: ONBOARDING_REMINDER_EVENT_TYPE,
       createdByUserId: args.actorId,
       message: {
-        title: copy.title,
-        body: copy.body,
-        link: copy.link,
+        copyKey,
+        link: ONBOARDING_LINK,
         isTodo: true,
       },
       recipients: unique.map((userId) => ({ userId })),
@@ -180,11 +169,7 @@ export async function sendOnboardingReminders(args: {
       select: { id: true, slackUserId: true },
     });
 
-    const text = [
-      `*${copy.title}*`,
-      copy.body,
-      absLink,
-    ]
+    const text = [`*${copy.subject}*`, copy.body, absLink]
       .filter(Boolean)
       .join("\n\n");
 
@@ -224,10 +209,10 @@ export async function sendOnboardingReminders(args: {
       channel: "email",
       purpose: "General",
       target: to,
-      subject: copy.title,
+      subject: copy.subject ?? "",
       bodyHtml: renderNotificationEmail({
         firstName: u.firstName,
-        title: copy.title,
+        title: copy.subject ?? "",
         body: copy.body,
         link: absLink,
       }),
@@ -260,24 +245,29 @@ export async function sendOnboardingReminders(args: {
 // account already existed (re-release) — then we just tell them to use their
 // existing password. SECURITY: this is a live credential; it must only ever be
 // rendered into this email, never logged.
-export function onboardingEmailHtml(
+// Async because the prose is operator-editable now: the deadline, the
+// required-event day, the term and the sign-off live in the
+// hiring:onboarding:NextSteps template rather than in constants here, where they
+// went stale silently and needed a deploy to correct.
+export async function onboardingEmailHtml(
   daliEmail: string | null,
   tempPassword: string | null = null,
-): string {
-  const base = (process.env.FRONTEND_URL ?? "").replace(/\/$/, "");
+): Promise<string> {
+  // getFrontendUrl(), not process.env.FRONTEND_URL: a PR preview app sets only
+  // API_BASE_URL, so reading the raw var there left base="" and shipped a
+  // relative "/login" and "/logo-blue.png" into an email, where neither resolves.
+  const base = getFrontendUrl().replace(/\/$/, "");
   const loginUrl = `${base}/login`;
   const logoUrl = `${base}/logo-blue.png`;
 
   const loginLink = `<a href="${loginUrl}">DALI OS</a>`;
 
-  // Slack onboarding line. Our Slack is on Enterprise, which disallows the public
-  // shared invite-link feature, and the programmatic admin.users.invite isn't
-  // available to us either — so workspace invites are always done by hand. We
-  // point new members at the workspace and tell them a teammate/admin will add
-  // them; any member can invite, so this is reliable.
-  const slackWorkspaceUrl =
+  // Our Slack is on Enterprise, which disallows the public shared invite-link
+  // feature, and the programmatic admin.users.invite isn't available to us
+  // either — so workspace invites are always done by hand. The template tells
+  // the member a teammate will add them; this just supplies the workspace URL.
+  const slackUrl =
     (process.env.SLACK_WORKSPACE_URL ?? "https://dali-lab.slack.com").replace(/\/$/, "");
-  const slackLine = `<p>We use Slack day-to-day at <a href="${slackWorkspaceUrl}">DALI Studios</a> — a teammate will add you to the workspace shortly.</p>`;
 
   let accountBlock: string;
   if (daliEmail && tempPassword) {
@@ -293,14 +283,12 @@ export function onboardingEmailHtml(
     accountBlock = `<p>Your DALI account is being set up — you'll receive your DALI login email shortly. In the meantime you can finish the rest of your onboarding below.</p>`;
   }
 
+  // whenMissing is "default", so this never comes back empty.
+  const nextSteps = await renderEmailTemplate("hiring:onboarding:NextSteps", { slackUrl });
+
   return `
     ${accountBlock}
-    <p>Once you're in, finish setting up by completing your member profile and onboarding steps.</p>
-    <p><strong>The deadline to accept your offer and complete onboarding is June 8th, 2026.</strong></p>
-    ${slackLine}
-    <p>We also have a special event planned for all day Sunday, September 13th. This is a required event. If there is any concern with this requirement, please reach out.</p>
-    <p>We are very excited to welcome you to DALI soon and look forward to an incredible 26F together. Please reach out with any questions.</p>
-    <p>Best,<br/>Sean Noh and DALI Hiring</p>
+    ${nextSteps?.html ?? ""}
     <p><img src="${logoUrl}" alt="DALI Lab" width="96" style="display:block;border:0;"/></p>
   `;
 }

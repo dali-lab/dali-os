@@ -98,7 +98,6 @@ export const TYPE_META: Record<SearchResultType, { icon: LucideIcon; section: st
   form: { icon: ClipboardList, section: "Forms" },
   challenge: { icon: FileQuestion, section: "Hiring library" },
   rubric: { icon: ClipboardCheck, section: "Hiring library" },
-  emailTemplate: { icon: Mail, section: "Hiring library" },
   confidentialityAgreement: { icon: ShieldCheck, section: "Hiring library" },
   cycle: { icon: CalendarRange, section: "Hiring cycles" },
   partnerApplication: { icon: Handshake, section: "Partner applications" },

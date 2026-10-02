@@ -129,7 +129,8 @@ describe("runTaskDueReminders", () => {
       expect.objectContaining({
         eventType: "task.due_reminder",
         message: expect.objectContaining({
-          title: "Task due now: Ship it",
+          copyKey: "task.due_now",
+          vars: expect.objectContaining({ itemTitle: "Ship it" }),
           link: "/projects/p1?tab=board&task=t1",
         }),
         recipients: [{ userId: "u1" }],

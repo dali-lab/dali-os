@@ -167,25 +167,6 @@ export type DriveItem =
        * Wave 2 — e.g. "Hiring 26F", "Confidentiality"). Unpopulated in Wave 0.
        */
       linkedProcess?: { label: string; href: string } | null;
-    }
-  | {
-      type: "emailTemplate";
-      id: string;
-      title: string;
-      /** `folderPageId` — null when unplaced. */
-      parentFolderId: string | null;
-      iconEmoji: null; // email templates have no emoji; callers use a fixed icon
-      updatedAt: Date;
-      href: string;
-      /** File size in bytes (files only; null elsewhere). Drives the Size column. */
-      sizeBytes?: number | null;
-      /** Whether the viewer has favorited this item (pages only). */
-      favorited?: boolean;
-      /**
-       * Signal ②: process that owns or binds this item (derived at load time in
-       * Wave 2 — e.g. "Hiring 26F", "Confidentiality"). Unpopulated in Wave 0.
-       */
-      linkedProcess?: { label: string; href: string } | null;
     };
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
@@ -613,34 +594,6 @@ async function loadRubrics(
   }));
 }
 
-/** Load email templates. Only called when the caller passes
- *  `canManageEmailTemplates: true` (= real isCore, NOT the hiring-widened gate)
- *  — email templates are global, Core-only artifacts that live in the Core
- *  "email-templates" bound folder. Templates file into that folder via the
- *  binding; the Core-subtree split routes them into the Core scope.
- *
- *  NO-WIDENING GUARANTEE: email templates → Core only. The caller must pass
- *  `canManageEmailTemplates` only when the viewer isCore (never hasHiringAccess). */
-async function loadEmailTemplates(
-  linkedProcessMap?: Map<string, { label: string; href: string }>,
-): Promise<DriveItem[]> {
-  const rows = await prisma.emailTemplate.findMany({
-    where: { folderPageId: { not: null } },
-    orderBy: { updatedAt: "desc" },
-    select: { id: true, name: true, folderPageId: true, updatedAt: true },
-  });
-  return rows.map((t) => ({
-    type: "emailTemplate" as const,
-    id: t.id,
-    title: t.name,
-    parentFolderId: t.folderPageId,
-    iconEmoji: null,
-    updatedAt: t.updatedAt,
-    href: `/admin/email-templates/${t.id}`,
-    linkedProcess: linkedProcessMap?.get(t.id) ?? null,
-  }));
-}
-
 /** Load forms. Only called when the viewer passes the `canViewForms` gate.
  *  `folderPageId` sets the tree position; it does not change form visibility.
  *
@@ -844,15 +797,6 @@ export interface LoadDriveScopeOptions {
    */
   canManageAgreements?: boolean;
   /**
-   * Whether this viewer may manage email templates (= real isCore, un-widened).
-   * Must be computed by the caller. Email templates are global Core-only
-   * artifacts that live under the Core drive; unlike agreements this gate is
-   * NEVER widened for hiring-team members.
-   *
-   * NO-WIDENING: email templates → Core only.
-   */
-  canManageEmailTemplates?: boolean;
-  /**
    * Optional request for per-request role-check caching (isCore/isLabMember).
    * Callers from route loaders should pass their `request` object.
    */
@@ -891,7 +835,6 @@ export async function loadDriveScope({
   scope,
   canViewForms = false,
   canManageAgreements = false,
-  canManageEmailTemplates = false,
   request,
   preloadedForms,
   linkedProcessMap,
@@ -911,20 +854,19 @@ export async function loadDriveScope({
     // to all lab members (except scoped-folder files, filtered in loadLabFiles).
     // Project-owned files are NOT included here — they appear only in their
     // respective project scope.
-    const [pages, files, agreements, rubrics, emailTemplates] = await Promise.all([
+    const [pages, files, agreements, rubrics] = await Promise.all([
       loadLabPages(userSub, request),
       loadLabFiles(userSub, request),
-      // Agreements, rubrics, and email templates are all Core-only artifacts
-      // living under the Core drive (Agreements / Rubrics / Templates). All
-      // gated on real Core, derived upstream — never widened for the hiring team.
+      // Agreements and rubrics are Core-only artifacts living under the Core
+      // drive. Both gated on real Core, derived upstream — never widened for the
+      // hiring team.
       canManageAgreements ? loadAgreements(linkedProcessMap) : Promise.resolve([] as DriveItem[]),
       canManageAgreements ? loadRubrics(linkedProcessMap) : Promise.resolve([] as DriveItem[]),
-      canManageEmailTemplates ? loadEmailTemplates(linkedProcessMap) : Promise.resolve([] as DriveItem[]),
     ]);
     // Use preloaded forms when the caller has already fetched them (avoids a
     // repeated full-table scan when loadDriveScopes pre-fetches all at once).
     const forms = preloadedForms ?? (canViewForms ? await loadForms(undefined, linkedProcessMap) : []);
-    return [...pages, ...files, ...forms, ...agreements, ...rubrics, ...emailTemplates];
+    return [...pages, ...files, ...forms, ...agreements, ...rubrics];
   }
 
   // EducationOffering scope — pages + uploaded files.

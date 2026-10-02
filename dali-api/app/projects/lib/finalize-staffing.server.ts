@@ -316,12 +316,14 @@ export async function finalizeStaffing(
           eventType: "staffing.assigned",
           createdByUserId: actorId,
           message: {
-            title: `You're on ${project.name}`,
+            vars: { itemTitle: project.name },
             link: `/projects/${project.id}`,
           },
           recipients: newlyConfirmed.map((a) => ({
             userId: a.userId,
-            body: `${domainNameById.get(a.domainId) ?? "Unknown domain"} — ${a.level}, ${cycle.name}.`,
+            vars: {
+              itemDetail: `${domainNameById.get(a.domainId) ?? "Unknown domain"} — ${a.level}, ${cycle.name}.`,
+            },
           })),
         }).catch((err) =>
           console.error(`staffing finalize ${project.id}: notify failed`, err),
