@@ -445,6 +445,26 @@ export function isTaskStatus(x: unknown): x is TaskStatus {
 }
 
 /**
+ * Reconcile a create-mode seed for the TaskModal's Epic + User story pair.
+ *
+ * A story pins its epic (UserStory.epicId is required) and the create endpoint
+ * derives epicId from storyId rather than trusting the client. The seed follows
+ * the same precedence, so the form can never open showing a story under an epic
+ * it doesn't belong to. "" is the unset value both Selects already use for their
+ * "No epic" / "None" option.
+ */
+export function seedTaskLinks(
+  stories: { id: string; epicId: string }[],
+  seed: { epicId?: string | null; storyId?: string | null },
+): { epicId: string; storyId: string } {
+  // A story the options list doesn't know about has no option to select, so it
+  // falls back to the epic seed rather than setting a value nothing matches.
+  const story = seed.storyId ? stories.find((s) => s.id === seed.storyId) : undefined;
+  if (story) return { epicId: story.epicId, storyId: story.id };
+  return { epicId: seed.epicId ?? "", storyId: "" };
+}
+
+/**
  * Move `taskId` into `toStatus` at `targetIndex` (clamped; -1 or >= length
  * appends). Returns the updated flat task list — the target column renumbered
  * 0..n so ordering is dense — plus the column's ordered ids, which is exactly

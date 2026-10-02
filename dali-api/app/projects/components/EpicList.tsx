@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Plus } from "lucide-react";
 import { cn } from "~/lib/cn";
-import { Select } from "~/components/ui/floating";
+import { Select, Tooltip } from "~/components/ui/floating";
 import { ALL_TERMS, termFilterOrder } from "~/lib/terms.shared";
 import {
   EPIC_STATUS_LABEL,
@@ -53,6 +53,7 @@ export function EpicList({
   onEpicClick,
   onStoryClick,
   onTaskClick,
+  onAddTask,
 }: {
   epics: TimelineEpic[];
   /** Term-filter options, newest first. */
@@ -71,6 +72,9 @@ export function EpicList({
   onEpicClick?: (epicId: string) => void;
   onStoryClick?: (epicId: string) => void;
   onTaskClick?: (taskId: string) => void;
+  /** Files a new task under a story. Omitted (no board to receive it, or no
+   *  edit rights) hides the per-story add affordance. */
+  onAddTask?: (epicId: string, storyId: string) => void;
 }) {
   const termOptions = useMemo(
     () => termFilterOrder(terms.map((t) => ({ ...t, isCurrent: t.id === currentTermId }))),
@@ -203,6 +207,24 @@ export function EpicList({
                             counts={
                               story.tasks.length > 0 ? storyCounts(story) : null
                             }
+                            trailing={
+                              onAddTask && (
+                                <Tooltip content="Add task">
+                                  <button
+                                    type="button"
+                                    aria-label={`Add task to ${story.title}`}
+                                    onClick={() => onAddTask(epic.id, story.id)}
+                                    className="os-icon-btn h-5 w-5 flex-shrink-0 opacity-0 transition-opacity group-hover/row:opacity-100 focus-visible:opacity-100"
+                                  >
+                                    <Plus
+                                      className="h-3.5 w-3.5 text-os-grey"
+                                      strokeWidth={3}
+                                      aria-hidden
+                                    />
+                                  </button>
+                                </Tooltip>
+                              )
+                            }
                           />
                           {storyOpen &&
                             story.tasks.map((task) => (
@@ -253,6 +275,7 @@ function Row({
   dates,
   counts,
   meta,
+  trailing,
 }: {
   level: "epic" | "story" | "task";
   depth: 0 | 1 | 2;
@@ -266,11 +289,13 @@ function Row({
   dates: string;
   counts?: { done: number; total: number } | null;
   meta?: string | null;
+  /** Row-end action, revealed on hover of this row (see group/row). */
+  trailing?: ReactNode;
 }) {
   return (
     <div
       className={cn(
-        "flex items-center gap-2 px-4 py-2 transition-colors hover:bg-os-hover",
+        "group/row flex items-center gap-2 px-4 py-2 transition-colors hover:bg-os-hover",
         depth > 0 && "border-t border-border/60",
         depth === 1 && "pl-10",
         depth === 2 && "pl-16",
@@ -339,6 +364,7 @@ function Row({
       <span className="flex-shrink-0 rounded-full border border-os-container px-2 py-0.5 text-[11px] font-semibold text-os-grey">
         {status}
       </span>
+      {trailing}
     </div>
   );
 }

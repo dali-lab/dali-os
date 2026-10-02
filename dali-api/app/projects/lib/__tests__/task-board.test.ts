@@ -14,6 +14,7 @@ import {
   taskTermIds,
   openDependencies,
   isTaskFinished,
+  seedTaskLinks,
   type TaskCardModel,
   type TermWindow,
 } from "../task-board";
@@ -404,5 +405,49 @@ describe("openDependencies", () => {
     // "gone" isn't loaded (archived work is always finished), so it doesn't block.
     const open = openDependencies(["a", "b", "c", "gone"], byId, isTaskFinished);
     expect(open.map((t) => t.id)).toEqual(["a"]);
+  });
+});
+
+describe("seedTaskLinks", () => {
+  const stories = [
+    { id: "s1", epicId: "e1" },
+    { id: "s2", epicId: "e2" },
+  ];
+
+  it("derives the epic from a seeded story", () => {
+    expect(seedTaskLinks(stories, { storyId: "s2" })).toEqual({
+      epicId: "e2",
+      storyId: "s2",
+    });
+  });
+
+  it("lets the story's own epic win over a conflicting epic seed", () => {
+    // A story pins its epic — the create endpoint overrides epicId the same
+    // way, so the form must never open showing s1 under e2.
+    expect(seedTaskLinks(stories, { epicId: "e2", storyId: "s1" })).toEqual({
+      epicId: "e1",
+      storyId: "s1",
+    });
+  });
+
+  it("seeds the epic alone when no story is given", () => {
+    expect(seedTaskLinks(stories, { epicId: "e1" })).toEqual({
+      epicId: "e1",
+      storyId: "",
+    });
+  });
+
+  it("drops a story the options list doesn't know, keeping the epic seed", () => {
+    expect(seedTaskLinks(stories, { epicId: "e1", storyId: "gone" })).toEqual({
+      epicId: "e1",
+      storyId: "",
+    });
+  });
+
+  it("blanks both when nothing is seeded", () => {
+    expect(seedTaskLinks(stories, { epicId: null, storyId: null })).toEqual({
+      epicId: "",
+      storyId: "",
+    });
   });
 });
