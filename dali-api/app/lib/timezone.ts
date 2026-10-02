@@ -277,7 +277,7 @@ function zoneNamePart(
  * `Etc/GMT+5` has no name in either style and keeps its offset, which is the
  * honest answer for it.
  */
-function zoneLabel(date: Date, timezone: string): string {
+export function zoneLabel(date: Date, timezone: string): string {
   const generic = zoneNamePart(date, timezone, "shortGeneric");
   if (generic && !/^GMT[+-]/.test(generic)) return generic;
   return zoneNamePart(date, timezone, "short");
@@ -346,22 +346,20 @@ export function formatZoneLabel(timezone: string | null | undefined): string {
   return offset ? `${left} (${offset})` : left;
 }
 
-function timeWithAbbrev(d: Date, timezone: string): { time: string; abbrev: string } {
-  const time = formatInTimeZone(d, timezone, { hour: "numeric", minute: "2-digit" });
-  const abbrev =
-    new Intl.DateTimeFormat("en-US", { timeZone: timezone, timeZoneName: "short" })
-      .formatToParts(d)
-      .find((p) => p.type === "timeZoneName")?.value ?? "";
-  return { time, abbrev };
+function timeWithZoneLabel(d: Date, timezone: string): { time: string; label: string } {
+  return {
+    time: formatInTimeZone(d, timezone, { hour: "numeric", minute: "2-digit" }),
+    label: zoneLabel(d, timezone),
+  };
 }
 
 /**
  * Dual-time string anchored to `anchorTz` with the viewer's local time appended,
- * e.g. "2:00 PM EDT · 11:00 AM your time (PDT)". Used for applicant-facing
+ * e.g. "2:00 PM ET · 11:00 AM your time (PT)". Used for applicant-facing
  * interview times: the ET anchor is always shown (so an in-person Dartmouth
  * interview can't be misread) while a remote applicant still sees their own
  * clock. Collapses to the anchor alone when the viewer zone is unknown or
- * renders the same wall-clock time as the anchor.
+ * renders the same wall-clock time and zone name as the anchor.
  */
 export function formatDualTime(
   date: string | Date,
@@ -369,10 +367,10 @@ export function formatDualTime(
   anchorTz: string,
 ): string {
   const d = new Date(date);
-  const anchor = timeWithAbbrev(d, anchorTz);
-  const anchorStr = `${anchor.time} ${anchor.abbrev}`.trim();
+  const anchor = timeWithZoneLabel(d, anchorTz);
+  const anchorStr = `${anchor.time} ${anchor.label}`.trim();
   if (!isValidTimezone(viewerTz) || viewerTz === anchorTz) return anchorStr;
-  const viewer = timeWithAbbrev(d, viewerTz);
-  if (viewer.time === anchor.time && viewer.abbrev === anchor.abbrev) return anchorStr;
-  return `${anchorStr} · ${viewer.time} your time (${viewer.abbrev})`;
+  const viewer = timeWithZoneLabel(d, viewerTz);
+  if (viewer.time === anchor.time && viewer.label === anchor.label) return anchorStr;
+  return `${anchorStr} · ${viewer.time} your time (${viewer.label})`;
 }

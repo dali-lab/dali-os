@@ -192,13 +192,31 @@ describe("zonedDateTimeLocalToUtc", () => {
 describe("formatDualTime", () => {
   it("shows the anchor plus the viewer's local time when they differ", () => {
     expect(formatDualTime(SUMMER, "America/Los_Angeles", "America/New_York")).toBe(
-      "2:00 PM EDT · 11:00 AM your time (PDT)",
+      "2:00 PM ET · 11:00 AM your time (PT)",
+    );
+  });
+
+  // A remote applicant outside the US used to read their own time as a raw
+  // offset ("(GMT+5:30)"), which is the least reassuring way to state when an
+  // interview is.
+  it("names the viewer's zone rather than printing an offset", () => {
+    expect(formatDualTime(SUMMER, "Asia/Kolkata", "America/New_York")).toBe(
+      "2:00 PM ET · 11:30 PM your time (India Time)",
+    );
+    expect(formatDualTime(SUMMER, "Asia/Tokyo", "America/New_York")).toBe(
+      "2:00 PM ET · 3:00 AM your time (Japan Time)",
     );
   });
 
   it("collapses to the anchor alone when the viewer zone matches or is unknown", () => {
-    expect(formatDualTime(SUMMER, "America/New_York", "America/New_York")).toBe("2:00 PM EDT");
-    expect(formatDualTime(SUMMER, null, "America/New_York")).toBe("2:00 PM EDT");
-    expect(formatDualTime(SUMMER, "garbage", "America/New_York")).toBe("2:00 PM EDT");
+    expect(formatDualTime(SUMMER, "America/New_York", "America/New_York")).toBe("2:00 PM ET");
+    expect(formatDualTime(SUMMER, null, "America/New_York")).toBe("2:00 PM ET");
+    expect(formatDualTime(SUMMER, "garbage", "America/New_York")).toBe("2:00 PM ET");
+  });
+
+  // Toronto shares New York's wall clock and its zone name, so there is nothing
+  // to add — the collapse the generic label has to keep doing.
+  it("still collapses a different zone that reads identically", () => {
+    expect(formatDualTime(SUMMER, "America/Toronto", "America/New_York")).toBe("2:00 PM ET");
   });
 });
