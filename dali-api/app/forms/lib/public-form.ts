@@ -216,6 +216,29 @@ export async function existingOrdinarySubmission(
   });
 }
 
+// The one-and-done refusal, shared by the read gate and the write race below
+// so the member sees the same sentence either way.
+const ALREADY_FILLED = {
+  error: "You've already filled out this form.",
+  status: 409,
+} as const;
+
+// Race backstop for a bound slot: two in-flight submits can both pass the read
+// gate, and @@unique([userId, staffingCycleId, slot]) then rejects the loser
+// with P2002. The row is refused either way — map it to the same 409 so the
+// second tab reads "already filled" instead of a 500.
+async function recordBoundSubmission(
+  write: () => Promise<void>,
+): Promise<{ ok: true } | { error: string; status: number }> {
+  try {
+    await write();
+  } catch (e) {
+    if ((e as { code?: string })?.code === "P2002") return { ...ALREADY_FILLED };
+    throw e;
+  }
+  return { ok: true };
+}
+
 // The cycles a form is bound to for one slot, read off bindings already in
 // hand (both callers select them to pick the binding), so the gate costs no
 // extra query. boundSlotCycleIds is the same set from a formId.
@@ -701,7 +724,7 @@ export async function submitMemberForm(args: {
       slot,
     )
   ) {
-    return { error: "You've already filled out this form.", status: 409 };
+    return { ...ALREADY_FILLED };
   }
 
   const mapping = parseColumnMapping(staffingBinding.columnMapping);
@@ -728,40 +751,46 @@ export async function submitMemberForm(args: {
         : { ok: true as const, bids: [] };
     const bidsToWrite = validated.ok ? validated.bids : [];
 
-    await prisma.$transaction(async (tx) => {
-      await tx.formSubmission.create({
-        data: {
-          formId: form.id,
-          formVersionId: version.id,
-          userId: args.userId,
-          staffingCycleId: cycle.id,
-          slot: "project-bids",
-          answers: args.answers as object,
-        },
-      });
-      // Replace (not merge) so a resubmission with fewer bids removes the
-      // old ones; an empty set clears them, matching prior behaviour.
-      await replaceBidSet(tx, args.userId, cycle.id, bidsToWrite);
-      await closeFormTodos(tx, args.userId, form.id);
-    });
+    const recorded = await recordBoundSubmission(() =>
+      prisma.$transaction(async (tx) => {
+        await tx.formSubmission.create({
+          data: {
+            formId: form.id,
+            formVersionId: version.id,
+            userId: args.userId,
+            staffingCycleId: cycle.id,
+            slot: "project-bids",
+            answers: args.answers as object,
+          },
+        });
+        // Replace (not merge) so a resubmission with fewer bids removes the
+        // old ones; an empty set clears them, matching prior behaviour.
+        await replaceBidSet(tx, args.userId, cycle.id, bidsToWrite);
+        await closeFormTodos(tx, args.userId, form.id);
+      }),
+    );
+    if ("error" in recorded) return recorded;
     await notifySubmitted();
     return { ok: true };
   }
 
   if (slot === "level-up") {
-    await prisma.$transaction(async (tx) => {
-      await tx.formSubmission.create({
-        data: {
-          formId: form.id,
-          formVersionId: version.id,
-          userId: args.userId,
-          staffingCycleId: cycle.id,
-          slot: "level-up",
-          answers: args.answers as object,
-        },
-      });
-      await closeFormTodos(tx, args.userId, form.id);
-    });
+    const recorded = await recordBoundSubmission(() =>
+      prisma.$transaction(async (tx) => {
+        await tx.formSubmission.create({
+          data: {
+            formId: form.id,
+            formVersionId: version.id,
+            userId: args.userId,
+            staffingCycleId: cycle.id,
+            slot: "level-up",
+            answers: args.answers as object,
+          },
+        });
+        await closeFormTodos(tx, args.userId, form.id);
+      }),
+    );
+    if ("error" in recorded) return recorded;
     await notifySubmitted();
     return { ok: true };
   }
@@ -779,20 +808,23 @@ export async function submitMemberForm(args: {
     : { ok: true as const, rows: [] };
   const intentRows = interpreted.ok ? interpreted.rows : [];
 
-  await prisma.$transaction(async (tx) => {
-    await tx.formSubmission.create({
-      data: {
-        formId: form.id,
-        formVersionId: version.id,
-        userId: args.userId,
-        staffingCycleId: cycle.id,
-        slot: "intent-to-work",
-        answers: args.answers as object,
-      },
-    });
-    await replaceIntentSet(tx, args.userId, cycle.id, intentRows);
-    await closeFormTodos(tx, args.userId, form.id);
-  });
+  const recorded = await recordBoundSubmission(() =>
+    prisma.$transaction(async (tx) => {
+      await tx.formSubmission.create({
+        data: {
+          formId: form.id,
+          formVersionId: version.id,
+          userId: args.userId,
+          staffingCycleId: cycle.id,
+          slot: "intent-to-work",
+          answers: args.answers as object,
+        },
+      });
+      await replaceIntentSet(tx, args.userId, cycle.id, intentRows);
+      await closeFormTodos(tx, args.userId, form.id);
+    }),
+  );
+  if ("error" in recorded) return recorded;
   await notifySubmitted();
   return { ok: true };
 }

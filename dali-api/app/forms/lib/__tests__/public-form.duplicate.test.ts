@@ -204,6 +204,36 @@ describe("submitMemberForm one-response gate", () => {
     expect(mockPrisma.formSubmission.create).not.toHaveBeenCalled();
   });
 
+  it("409s the loser of a submit race instead of surfacing the index error", async () => {
+    // Both requests pass the read gate, then @@unique rejects the second with
+    // P2002. The row is refused either way — the member should read the
+    // one-and-done message, not a 500.
+    mockPrisma.form.findUnique.mockResolvedValue(
+      formRow({ cycleBindings: [LEVEL_UP_BINDING] }),
+    );
+    mockPrisma.formSubmission.findFirst.mockResolvedValue(null);
+    mockPrisma.$transaction.mockRejectedValue({ code: "P2002" });
+
+    const result = await submit();
+
+    expect(result).toEqual({
+      error: "You've already filled out this form.",
+      status: 409,
+    });
+    expect(mockNotify).not.toHaveBeenCalled();
+  });
+
+  it("still surfaces a write failure that isn't a duplicate", async () => {
+    mockPrisma.form.findUnique.mockResolvedValue(
+      formRow({ cycleBindings: [LEVEL_UP_BINDING] }),
+    );
+    mockPrisma.formSubmission.findFirst.mockResolvedValue(null);
+    mockPrisma.$transaction.mockRejectedValue({ code: "P1001" });
+
+    await expect(submit()).rejects.toMatchObject({ code: "P1001" });
+    expect(mockNotify).not.toHaveBeenCalled();
+  });
+
   it("accepts a first slot-bound submission and records it once", async () => {
     mockPrisma.form.findUnique.mockResolvedValue(
       formRow({ cycleBindings: [LEVEL_UP_BINDING] }),
