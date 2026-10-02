@@ -7,6 +7,7 @@ vi.mock("~/lib/db");
 import {
   pickStaffingBinding,
   isGateAudience,
+  setSlotBinding,
   setSlotGate,
 } from "~/projects/lib/form-slots";
 import { prisma } from "~/lib/db";
@@ -141,6 +142,45 @@ describe("setSlotGate", () => {
           gateAudience: null,
           gateAudienceGroupId: null,
         }),
+      }),
+    );
+  });
+});
+
+describe("setSlotBinding", () => {
+  it("unbinds the slot when the form id is empty", async () => {
+    vi.resetAllMocks();
+    mockPrisma.staffingCycleFormBinding.deleteMany.mockResolvedValue({ count: 1 });
+    const result = await setSlotBinding("cyc-1", "intent-to-work", "", "u-1");
+    expect(result.ok).toBe(true);
+    expect(mockPrisma.staffingCycleFormBinding.deleteMany).toHaveBeenCalledWith({
+      where: { staffingCycleId: "cyc-1", slot: "intent-to-work" },
+    });
+    // No form lookup, and nothing written back to the slot.
+    expect(mockPrisma.form.findUnique).not.toHaveBeenCalled();
+    expect(mockPrisma.staffingCycleFormBinding.upsert).not.toHaveBeenCalled();
+  });
+
+  it("still rejects a form id that doesn't resolve", async () => {
+    vi.resetAllMocks();
+    mockPrisma.form.findUnique.mockResolvedValue(null);
+    const result = await setSlotBinding("cyc-1", "intent-to-work", "form-gone", "u-1");
+    expect(result.ok).toBe(false);
+    expect(mockPrisma.staffingCycleFormBinding.deleteMany).not.toHaveBeenCalled();
+    expect(mockPrisma.staffingCycleFormBinding.upsert).not.toHaveBeenCalled();
+  });
+
+  it("binds the slot to a real form", async () => {
+    vi.resetAllMocks();
+    mockPrisma.form.findUnique.mockResolvedValue({ id: "form-1" });
+    mockPrisma.staffingCycleFormBinding.upsert.mockResolvedValue({});
+    const result = await setSlotBinding("cyc-1", "project-bids", "form-1", "u-1");
+    expect(result.ok).toBe(true);
+    expect(mockPrisma.staffingCycleFormBinding.deleteMany).not.toHaveBeenCalled();
+    expect(mockPrisma.staffingCycleFormBinding.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ formId: "form-1", slot: "project-bids" }),
+        update: expect.objectContaining({ formId: "form-1" }),
       }),
     );
   });

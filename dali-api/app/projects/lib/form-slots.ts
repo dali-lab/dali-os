@@ -144,6 +144,18 @@ export async function setSlotBinding(
   formId: string,
   userId: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  // SlotFormPicker's "— No form selected —" posts an empty formId: that's an
+  // unbind, not a form lookup. deleteMany so clearing an already-clear slot is
+  // a no-op instead of a throw. Submissions keep the staffingCycleId and slot
+  // they were filled under — unbinding stops new fills reaching this cycle, it
+  // doesn't rewrite what's already recorded.
+  if (!formId.trim()) {
+    await prisma.staffingCycleFormBinding.deleteMany({
+      where: { staffingCycleId, slot },
+    });
+    return { ok: true };
+  }
+
   const form = await prisma.form.findUnique({
     where: { id: formId },
     select: { id: true },
