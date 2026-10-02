@@ -71,7 +71,7 @@ export function OfferingTypeTile({
     <div
       className={cn(
         "flex shrink-0 items-center justify-center leading-none",
-        size === "lg" ? "h-14 w-14 rounded-2xl text-3xl" : "h-11 w-11 rounded-xl text-2xl",
+        size === "lg" ? "h-14 w-14 rounded-os-card text-3xl" : "h-11 w-11 rounded-os-item text-2xl",
         OFFERING_TYPE_TINT[type],
       )}
       aria-hidden
@@ -133,13 +133,13 @@ export function OfferingCatalogCard({
     <Link
       to={to}
       className={cn(
-        "group flex flex-col gap-3.5 rounded-2xl border border-border bg-card p-4 shadow-brand-1 transition-[transform,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.2,0.8,0.3,1)] hover:border-accent-coral/40 hover:shadow-brand-2 hover:duration-200 motion-safe:hover:-translate-y-0.5",
+        "group flex flex-col gap-3.5 rounded-os-card bg-os-card p-4 transition-[transform,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.2,0.8,0.3,1)] hover:border-os-accent/40 hover: hover:duration-200 motion-safe:hover:-translate-y-0.5",
       )}
     >
       <div className="flex items-start gap-3">
         <OfferingTypeTile type={offering.type} iconEmoji={offering.iconEmoji} />
         <div className="min-w-0 flex-1">
-          <h3 className="truncate font-heading text-base font-bold text-foreground transition-colors group-hover:text-accent-coral">
+          <h3 className="truncate font-heading text-base font-bold text-foreground transition-colors group-hover:text-os-accent">
             {offering.title}
           </h3>
           <span className="mt-0.5 flex flex-wrap items-center gap-2">
@@ -260,7 +260,7 @@ export function OfferingCatalog({
         </div>
 
         {shown.length === 0 ? (
-          <div className="rounded-2xl border border-border bg-card p-8 text-center">
+          <div className="rounded-os-card bg-os-card p-8 text-center">
             <p className="font-heading font-semibold text-foreground">
               {upcoming.length === 0 ? "Nothing open right now" : "No offerings match"}
             </p>

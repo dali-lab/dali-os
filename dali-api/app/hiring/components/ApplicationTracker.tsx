@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
+import { Pill, type PillTone } from "~/hiring/components/cycle-setup/SetupCard";
 import { Link } from "react-router";
 import type { DomainApplicationStatus } from "~/types";
 import { InterviewSlotPicker } from "~/hiring/components/InterviewSlotPicker";
 import { formatInterviewDate, formatInterviewTimeRangeDual } from "~/hiring/lib/interview-time";
 import { formatInstantWithZoneLabel } from "~/lib/timezone";
 import { APPLICATIONS_FROM_EMAIL } from "~/lib/app-env";
-import { Button } from "~/components/ui/Button";
+import { Button, buttonClasses } from "~/components/ui/Button";
 import { Checkbox } from "~/components/ui/Checkbox";
 
 // The applicant's per-domain tracker: a card per domain application with its
@@ -123,8 +124,8 @@ export function DeadlineLine({
   }, [closeDate, originalCloseDate, timeZone]);
   if (!label) return null;
   const toneStyles: Record<"urgent" | "warn" | "ok", string> = {
-    urgent: "text-red-700",
-    warn: "text-yellow-800",
+    urgent: "text-destructive",
+    warn: "text-os-amber",
     ok: "text-muted-foreground",
   };
   return (
@@ -140,19 +141,15 @@ export function DeadlineLine({
           label
         )}
       </span>
-      {showExtension && (
-        <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-amber-100 text-amber-800">
-          Deadline extended
-        </span>
-      )}
+      {showExtension && <Pill outline dot="warning">Deadline extended</Pill>}
       {remaining && (
-        <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold ${
-          remaining.tone === "urgent" ? "bg-red-100 text-red-700" :
-          remaining.tone === "warn" ? "bg-yellow-100 text-yellow-800" :
-          "bg-blue-100 text-blue-700"
-        }`}>
+        <Pill outline
+          dot={
+            remaining.tone === "urgent" ? "danger" : remaining.tone === "warn" ? "warning" : "accent"
+          }
+        >
           {remaining.label}
-        </span>
+        </Pill>
       )}
     </div>
   );
@@ -160,21 +157,17 @@ export function DeadlineLine({
 
 // ─── Shared UI ───────────────────────────────────────────────────────────────
 
-const cardBg = "bg-brand-tint";
+const cardBg = "bg-os-card";
 
 function StatusBadge({ label, variant }: { label: string; variant: "blue" | "green" | "yellow" | "red" | "gray" }) {
-  const styles: Record<string, string> = {
-    blue: "bg-blue-100 text-blue-700",
-    green: "bg-green-100 text-green-700",
-    yellow: "bg-yellow-100 text-yellow-800",
-    red: "bg-red-100 text-red-700",
-    gray: "bg-muted text-muted-foreground",
+  const dots: Record<typeof variant, PillTone> = {
+    blue: "accent",
+    green: "success",
+    yellow: "warning",
+    red: "danger",
+    gray: "neutral",
   };
-  return (
-    <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold ${styles[variant]}`}>
-      {label}
-    </span>
-  );
+  return <Pill outline dot={dots[variant]}>{label}</Pill>;
 }
 
 function PulsingDot({ color }: { color: string }) {
@@ -201,7 +194,7 @@ export function StageIndicator({
   if (!currentStep) return null;
 
   return (
-    <div className="px-2.5 py-1 rounded-full text-xs font-medium bg-accent-teal text-white">
+    <div className="px-2.5 py-1 rounded-full text-xs font-medium bg-os-accent text-white">
       {currentStep.label}
     </div>
   );
@@ -212,16 +205,16 @@ export function StageIndicator({
 export function ApplicationOpenView({ cycleName, applyHref }: { cycleName: string; applyHref: string }) {
   return (
     <div className="max-w-2xl mx-auto text-center py-16">
-      <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-accent-green/30 flex items-center justify-center">
-        <svg className="w-8 h-8 text-accent-teal" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-os-green/15 flex items-center justify-center">
+        <svg className="w-8 h-8 text-os-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
         </svg>
       </div>
-      <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Applications Are Open</h2>
+      <h2 className="font-heading text-2xl font-bold text-foreground mb-3">Applications Are Open</h2>
       <p className="text-muted-foreground mb-8 leading-relaxed">
         The {cycleName} application cycle is now accepting applications. Start yours to join the DALI Lab!
       </p>
-      <Link to={applyHref} className="px-8 py-3 rounded-full bg-accent-coral text-white font-semibold font-heading tracking-wider hover:bg-accent-coral/90 transition shadow-lg hover:shadow-xl">
+      <Link to={applyHref} className="px-8 py-3 rounded-full bg-os-accent text-os-bg font-semibold font-heading tracking-wider hover:bg-os-accent-hover transition shadow-lg hover:shadow-xl">
         Start Application
       </Link>
     </div>
@@ -231,16 +224,16 @@ export function ApplicationOpenView({ cycleName, applyHref }: { cycleName: strin
 export function ApplicationDraftView({ cycleName, applyHref }: { cycleName: string; applyHref: string }) {
   return (
     <div className="max-w-2xl mx-auto text-center py-16">
-      <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-accent-green/30 flex items-center justify-center">
-        <svg className="w-8 h-8 text-accent-teal" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-os-green/15 flex items-center justify-center">
+        <svg className="w-8 h-8 text-os-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
         </svg>
       </div>
-      <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Application In Progress</h2>
+      <h2 className="font-heading text-2xl font-bold text-foreground mb-3">Application In Progress</h2>
       <p className="text-muted-foreground mb-8 leading-relaxed">
         You have a draft application for {cycleName}. Complete and submit it to be considered!
       </p>
-      <Link to={applyHref} className="px-8 py-3 rounded-full bg-accent-coral text-white font-semibold font-heading tracking-wider hover:bg-accent-coral/90 transition shadow-lg hover:shadow-xl">
+      <Link to={applyHref} className="px-8 py-3 rounded-full bg-os-accent text-os-bg font-semibold font-heading tracking-wider hover:bg-os-accent-hover transition shadow-lg hover:shadow-xl">
         Continue Application
       </Link>
     </div>
@@ -256,13 +249,13 @@ export function WithdrawnView({ cycleName, submissionHref }: { cycleName: string
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
         </div>
-        <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Application Withdrawn</h2>
+        <h2 className="font-heading text-2xl font-bold text-foreground mb-3">Application Withdrawn</h2>
         <p className="text-muted-foreground leading-relaxed">
           You withdrew your application for {cycleName}. If you change your mind, contact the DALI team.
         </p>
         {submissionHref && (
           <div className="mt-4">
-            <Link to={submissionHref} className="text-sm text-accent-coral hover:underline">
+            <Link to={submissionHref} className="text-sm text-os-accent hover:underline">
               View your submission →
             </Link>
           </div>
@@ -276,17 +269,17 @@ export function PendingView({ cycleName }: { cycleName: string }) {
   return (
     <div className="max-w-2xl mx-auto py-12">
       <div className="text-center mb-10">
-        <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-yellow-100 flex items-center justify-center">
-          <svg className="w-8 h-8 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-os-amber/15 flex items-center justify-center">
+          <svg className="w-8 h-8 text-os-amber" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
         </div>
-        <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Application Pending Review</h2>
+        <h2 className="font-heading text-2xl font-bold text-foreground mb-3">Application Pending Review</h2>
         <p className="text-muted-foreground leading-relaxed">
           Your application is being reviewed by the DALI team. We'll update you here once a decision has been made.
         </p>
-        <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-yellow-50 text-sm text-yellow-700">
-          <PulsingDot color="bg-yellow-500" />
+        <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-full border border-os-container text-sm text-os-grey">
+          <PulsingDot color="bg-os-amber" />
           Pending
         </div>
       </div>
@@ -305,21 +298,21 @@ export function RejectedView({ cycleName }: { cycleName: string }) {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
           </svg>
         </div>
-        <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Thank You for Applying</h2>
+        <h2 className="font-heading text-2xl font-bold text-foreground mb-3">Thank You for Applying</h2>
         <p className="text-muted-foreground leading-relaxed max-w-lg mx-auto">
           Unfortunately, we are unable to move your application forward for {cycleName}. The applicant pool was extremely competitive this cycle.
         </p>
       </div>
 
-      <div className={`px-6 py-5 rounded-2xl ${cardBg}`}>
-        <h3 className="font-heading text-sm font-bold text-dark-blue uppercase tracking-wider mb-2">
+      <div className={`px-6 py-5 rounded-os-card ${cardBg}`}>
+        <h3 className="font-heading text-sm font-bold text-foreground uppercase tracking-wider mb-2">
           Want to know more?
         </h3>
         <p className="text-sm text-muted-foreground mb-4">
           You can request feedback on your application. A member of the DALI team will follow up with you via email.
         </p>
         {feedbackRequested ? (
-          <div className="flex items-center gap-2 text-sm text-green-600 font-medium">
+          <div className="flex items-center gap-2 text-sm text-os-green font-medium">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
@@ -328,7 +321,7 @@ export function RejectedView({ cycleName }: { cycleName: string }) {
         ) : (
           <button
             onClick={() => setFeedbackRequested(true)}
-            className="px-5 py-2 rounded-full border-2 border-accent-coral text-accent-coral text-sm font-semibold hover:bg-accent-coral hover:text-white transition"
+            className="px-5 py-2 rounded-full border-2 border-os-accent text-os-accent text-sm font-semibold hover:bg-os-accent hover:text-white transition"
           >
             Request Feedback
           </button>
@@ -406,29 +399,29 @@ export function InvitedToInterviewView({
   return (
     <div className="max-w-2xl mx-auto py-12">
       <div className="text-center mb-10">
-        <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-accent-green/30 flex items-center justify-center">
-          <svg className="w-8 h-8 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-os-green/15 flex items-center justify-center">
+          <svg className="w-8 h-8 text-os-green" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
           </svg>
         </div>
-        <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">You're Invited to Interview!</h2>
+        <h2 className="font-heading text-2xl font-bold text-foreground mb-3">You're Invited to Interview!</h2>
         <p className="text-muted-foreground leading-relaxed">
-          Congratulations! The DALI team would like to interview you for <span className="font-medium text-dark-blue">{domainApp.domainName}</span>. Please select a time slot below.
+          Congratulations! The DALI team would like to interview you for <span className="font-medium text-foreground">{domainApp.domainName}</span>. Please select a time slot below.
         </p>
       </div>
 
       {error && (
-        <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-800">
+        <div className="mb-6 bg-destructive/10 border border-destructive/35 rounded-lg p-4 text-sm text-destructive">
           {error}
         </div>
       )}
 
       {loadingSlots ? (
-        <div className={`px-6 py-8 rounded-2xl ${cardBg} text-center`}>
+        <div className={`px-6 py-8 rounded-os-card ${cardBg} text-center`}>
           <p className="text-muted-foreground">Loading available times...</p>
         </div>
       ) : slots.length === 0 ? (
-        <div className={`px-6 py-8 rounded-2xl ${cardBg} text-center`}>
+        <div className={`px-6 py-8 rounded-os-card ${cardBg} text-center`}>
           <p className="text-muted-foreground">No interview slots are available yet. The DALI team is still setting up interview times — check back soon.</p>
         </div>
       ) : (
@@ -455,7 +448,7 @@ export function InvitedToInterviewView({
 
       <p className="text-sm text-muted-foreground mt-6">
         Can't attend in-person?{" "}
-        <a href={`mailto:${APPLICATIONS_FROM_EMAIL}`} className="underline text-dark-blue hover:text-accent-coral">
+        <a href={`mailto:${APPLICATIONS_FROM_EMAIL}`} className="underline text-foreground hover:text-os-accent">
           Email {APPLICATIONS_FROM_EMAIL}
         </a>{" "}
         to request an online interview.
@@ -571,23 +564,23 @@ export function InterviewScheduledView({
     const grouped = groupSlotsByDate(rescheduleSlots);
     return (
       <div className="max-w-2xl mx-auto py-12">
-        <h2 className="font-heading text-xl font-bold text-dark-blue mb-2">Reschedule Interview</h2>
+        <h2 className="font-heading text-xl font-bold text-foreground mb-2">Reschedule Interview</h2>
         <p className="text-sm text-muted-foreground mb-6">
           Currently scheduled: <strong>{slot.date}, {slot.time}</strong> ({formatInterviewLocation(interview.location)}). Choose a format and new time.
         </p>
 
         {rescheduleError && (
-          <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-800">
+          <div className="mb-6 bg-destructive/10 border border-destructive/35 rounded-lg p-4 text-sm text-destructive">
             {rescheduleError}
           </div>
         )}
 
         {loadingRescheduleSlots ? (
-          <div className="px-6 py-8 rounded-2xl bg-muted/30 text-center mb-8">
+          <div className="px-6 py-8 rounded-os-card bg-muted/30 text-center mb-8">
             <p className="text-muted-foreground">Loading available times...</p>
           </div>
         ) : rescheduleSlots.length === 0 ? (
-          <div className="px-6 py-8 rounded-2xl bg-muted/30 text-center mb-8">
+          <div className="px-6 py-8 rounded-os-card bg-muted/30 text-center mb-8">
             <p className="text-muted-foreground">No slots available. Check back later.</p>
           </div>
         ) : (
@@ -622,35 +615,35 @@ export function InterviewScheduledView({
   return (
     <div className="max-w-2xl mx-auto py-12">
       <div className="text-center mb-10">
-        <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-accent-green/30 flex items-center justify-center">
-          <svg className="w-8 h-8 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-os-green/15 flex items-center justify-center">
+          <svg className="w-8 h-8 text-os-green" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
           </svg>
         </div>
-        <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Interview Confirmed</h2>
+        <h2 className="font-heading text-2xl font-bold text-foreground mb-3">Interview Confirmed</h2>
         <p className="text-muted-foreground leading-relaxed">
-          You're all set for your <span className="font-medium text-dark-blue">{domainApp.domainName}</span> interview!
+          You're all set for your <span className="font-medium text-foreground">{domainApp.domainName}</span> interview!
         </p>
       </div>
 
-      <div className={`px-6 py-6 rounded-2xl ${cardBg} mb-6`}>
+      <div className={`px-6 py-6 rounded-os-card ${cardBg} mb-6`}>
         <div className="flex items-start justify-between mb-4">
           <div>
             <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Date & Time</span>
-            <p className="text-lg font-bold text-dark-blue mt-1">{slot.date}</p>
-            <p className="text-sm text-dark-blue">{slot.time}</p>
+            <p className="text-lg font-bold text-foreground mt-1">{slot.date}</p>
+            <p className="text-sm text-foreground">{slot.time}</p>
           </div>
           <StatusBadge label="Scheduled" variant="green" />
         </div>
         <div className="pt-4 border-t border-border/60">
           <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Location</span>
-          <p className="text-sm text-dark-blue mt-1">{formatInterviewLocation(interview.location)}</p>
+          <p className="text-sm text-foreground mt-1">{formatInterviewLocation(interview.location)}</p>
         </div>
         {interview.location === "Online" && interview.zoomJoinUrl && (
           <div className="pt-4 border-t border-border/60">
             <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Meeting Link</span>
             <a href={interview.zoomJoinUrl} target="_blank" rel="noopener noreferrer"
-               className="flex items-center gap-1.5 text-sm text-accent-coral hover:underline mt-1">
+               className="flex items-center gap-1.5 text-sm text-os-accent hover:underline mt-1">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
               </svg>
@@ -663,27 +656,27 @@ export function InterviewScheduledView({
       <p className="text-sm text-muted-foreground mb-4">A calendar invite has been sent to your Dartmouth email.</p>
 
       <div className="flex flex-wrap items-center gap-3">
-        <button onClick={() => setRescheduling(true)} className="px-5 py-2.5 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition">
+        <button onClick={() => setRescheduling(true)} className="px-5 py-2.5 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-os-accent hover:text-os-accent transition">
           Reschedule
         </button>
         {declining ? (
-          <div className="rounded-xl border-2 border-red-200 bg-red-50 px-4 py-3 text-left space-y-2">
-            <p className="text-sm font-semibold text-red-700">This action is final</p>
-            <p className="text-xs text-red-600/80">Cancelling your interview will withdraw you from the interview process for this domain. You will not be able to rebook.</p>
+          <div className="rounded-os-item border-2 border-destructive/35 bg-destructive/10 px-4 py-3 text-left space-y-2">
+            <p className="text-sm font-semibold text-destructive">This action is final</p>
+            <p className="text-xs text-destructive">Cancelling your interview will withdraw you from the interview process for this domain. You will not be able to rebook.</p>
             <div className="flex items-center gap-3 pt-1">
-              <button onClick={handleCancel} disabled={cancelling} className="px-4 py-1.5 rounded-full bg-red-600 text-white text-sm font-semibold hover:bg-red-700 transition disabled:opacity-50">
+              <button onClick={handleCancel} disabled={cancelling} className={buttonClasses("destructive", "sm")}>
                 {cancelling ? "Cancelling..." : "Yes, withdraw"}
               </button>
               <button onClick={() => setDeclining(false)} className="text-sm font-semibold text-muted-foreground hover:underline">Go back</button>
             </div>
           </div>
         ) : (
-          <button onClick={() => setDeclining(true)} className="text-sm font-semibold text-muted-foreground hover:text-red-500 transition">
+          <button onClick={() => setDeclining(true)} className="text-sm font-semibold text-muted-foreground hover:text-destructive transition">
             Cancel Interview
           </button>
         )}
         {cancelError && (
-          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="rounded-os-item border border-destructive/35 bg-destructive/10 px-4 py-3 text-sm text-destructive">
             {cancelError}
           </div>
         )}
@@ -695,18 +688,18 @@ export function InterviewScheduledView({
 export function PostInterviewPendingView() {
   return (
     <div className="max-w-2xl mx-auto py-12 text-center">
-      <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-blue-100 flex items-center justify-center">
-        <svg className="w-8 h-8 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-os-accent/15 flex items-center justify-center">
+        <svg className="w-8 h-8 text-os-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
         </svg>
       </div>
-      <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Interview Complete</h2>
+      <h2 className="font-heading text-2xl font-bold text-foreground mb-3">Interview Complete</h2>
       <p className="text-muted-foreground leading-relaxed mb-4">
         Thanks for interviewing with us! The team is reviewing all candidates and will share a final decision soon.
       </p>
-      <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-50 text-sm text-blue-600">
-        <PulsingDot color="bg-blue-500" />
+      <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-os-container text-sm text-os-grey">
+        <PulsingDot color="bg-os-accent" />
         Decision pending
       </div>
     </div>
@@ -731,7 +724,7 @@ export function AcceptedView({ cycleName, forMembers = false }: { cycleName: str
   if (forMembers) {
     return (
       <div className="max-w-2xl mx-auto py-12 text-center">
-        <h2 className="font-heading text-3xl font-bold text-dark-blue mb-3">Congratulations!</h2>
+        <h2 className="font-heading text-3xl font-bold text-foreground mb-3">Congratulations!</h2>
         <p className="text-muted-foreground leading-relaxed text-lg">
           You've been accepted for {cycleName}.
         </p>
@@ -742,12 +735,12 @@ export function AcceptedView({ cycleName, forMembers = false }: { cycleName: str
   return (
     <div className="max-w-2xl mx-auto py-12">
       <div className="text-center mb-10">
-        <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-accent-green/30 flex items-center justify-center">
-          <svg className="w-10 h-10 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-os-green/15 flex items-center justify-center">
+          <svg className="w-10 h-10 text-os-green" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
         </div>
-        <h2 className="font-heading text-3xl font-bold text-dark-blue mb-3">Congratulations!</h2>
+        <h2 className="font-heading text-3xl font-bold text-foreground mb-3">Congratulations!</h2>
         <p className="text-muted-foreground leading-relaxed text-lg">
           You've been accepted to DALI Lab for {cycleName}!
         </p>
@@ -755,20 +748,20 @@ export function AcceptedView({ cycleName, forMembers = false }: { cycleName: str
 
       <div className="mb-6">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-semibold text-dark-blue">Onboarding Progress</span>
+          <span className="text-sm font-semibold text-foreground">Onboarding Progress</span>
           <span className="text-sm text-muted-foreground">{completedCount}/{CHECKLIST.length}</span>
         </div>
         <div className="h-2 rounded-full bg-muted overflow-hidden">
           <div
-            className="h-full rounded-full bg-accent-coral transition-all duration-400"
+            className="h-full rounded-full bg-os-accent transition-all duration-400"
             style={{ width: `${(completedCount / CHECKLIST.length) * 100}%` }}
           />
         </div>
       </div>
 
-      <div className="rounded-2xl border border-green-200 bg-gradient-to-br from-accent-green/5 to-accent-teal/5 overflow-hidden">
-        <div className="px-6 py-4 border-b border-green-200/60">
-          <h3 className="font-heading text-base font-bold text-dark-blue">Onboarding Checklist</h3>
+      <div className="rounded-os-card border border-os-green/35 bg-os-card overflow-hidden">
+        <div className="px-6 py-4 border-b border-os-green/35">
+          <h3 className="font-heading text-base font-bold text-foreground">Onboarding Checklist</h3>
         </div>
         <div className="divide-y divide-green-100">
           {CHECKLIST.map(item => (
@@ -777,7 +770,7 @@ export function AcceptedView({ cycleName, forMembers = false }: { cycleName: str
               checked={!!checked[item.id]}
               onChange={e => setChecked(prev => ({ ...prev, [item.id]: e.target.checked }))}
               label={
-                <span className={`text-sm font-semibold transition-colors ${checked[item.id] ? "text-muted-foreground/70 line-through" : "text-dark-blue"}`}>
+                <span className={`text-sm font-semibold transition-colors ${checked[item.id] ? "text-muted-foreground/70 line-through" : "text-foreground"}`}>
                   {item.label}
                 </span>
               }
@@ -786,7 +779,7 @@ export function AcceptedView({ cycleName, forMembers = false }: { cycleName: str
                   {item.description}
                 </span>
               }
-              className="flex items-start gap-4 px-6 py-4 hover:bg-green-50/50 transition"
+              className="flex items-start gap-4 px-6 py-4 hover:bg-os-hover transition"
             />
           ))}
         </div>
@@ -799,26 +792,26 @@ export function WaitlistedView({ cycleName }: { cycleName: string }) {
   return (
     <div className="max-w-2xl mx-auto py-12">
       <div className="text-center mb-10">
-        <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-yellow-100 flex items-center justify-center">
-          <svg className="w-8 h-8 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-os-amber/15 flex items-center justify-center">
+          <svg className="w-8 h-8 text-os-amber" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
         </div>
-        <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">You're on the Waitlist</h2>
+        <h2 className="font-heading text-2xl font-bold text-foreground mb-3">You're on the Waitlist</h2>
         <p className="text-muted-foreground leading-relaxed max-w-lg mx-auto">
           You performed well in the interview process and we'd love to have you at DALI. We've placed you on the waitlist for {cycleName} and will reach out if a spot becomes available.
         </p>
       </div>
 
-      <div className={`px-6 py-5 rounded-2xl ${cardBg}`}>
-        <h3 className="font-heading text-sm font-bold text-dark-blue uppercase tracking-wider mb-3">What this means</h3>
+      <div className={`px-6 py-5 rounded-os-card ${cardBg}`}>
+        <h3 className="font-heading text-sm font-bold text-foreground uppercase tracking-wider mb-3">What this means</h3>
         <ul className="space-y-2 text-sm text-muted-foreground">
           <li className="flex items-start gap-2">
-            <span className="text-accent-teal mt-0.5">-</span>
+            <span className="text-os-accent mt-0.5">-</span>
             <span>If a spot opens, we'll contact you by email. No action needed on your part.</span>
           </li>
           <li className="flex items-start gap-2">
-            <span className="text-accent-teal mt-0.5">-</span>
+            <span className="text-os-accent mt-0.5">-</span>
             <span>Waitlisted candidates are often extended offers for the following cycle.</span>
           </li>
         </ul>
@@ -855,13 +848,13 @@ export function DomainApplicationCard({
   const [isExpanded, setIsExpanded] = useState(false);
 
   return (
-    <div className="rounded-2xl border border-border overflow-hidden">
+    <div className="rounded-os-card border border-border overflow-hidden">
       <button
         type="button"
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full bg-brand-tint px-6 py-4 flex items-center justify-between cursor-pointer"
+        className="w-full bg-os-card px-6 py-4 flex items-center justify-between cursor-pointer"
       >
-        <h3 className="font-heading text-base font-bold text-dark-blue">{da.domainName}</h3>
+        <h3 className="font-heading text-base font-bold text-foreground">{da.domainName}</h3>
         <div className="flex items-center gap-3">
           <StageIndicator stage={stage} hasInterviews={hasInterviews} />
           <svg

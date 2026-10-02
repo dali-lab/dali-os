@@ -5,6 +5,7 @@ import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isValidTimezone } from "~/lib/timezone";
 import { resolvePhotoUrl } from "~/lib/photo";
+import { buttonClasses } from "~/components/ui/Button";
 import { PhotoUploadField } from "~/components/PhotoUploadField";
 import { AppearanceSettingsBlock } from "~/components/settings/AppearanceSettingsBlock";
 import { PasskeysSettingsBlock } from "~/components/settings/PasskeysSettingsBlock";
@@ -80,22 +81,21 @@ export default function PortalSettings({ actionData }: Route.ComponentProps) {
   const error = actionData && "error" in actionData ? actionData.error : null;
 
   const inputClass =
-    "w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral";
-  const labelClass = "block text-xs font-medium text-muted-foreground mb-1";
-  const saveClass =
-    "self-start rounded-xl bg-dark-blue text-white text-sm font-heading font-semibold px-5 py-2.5 hover:opacity-90 transition disabled:opacity-50";
+    "w-full";
+  const labelClass = "os-field-label mb-1.5 block";
+  const saveClass = buttonClasses("primary", "md", "self-start");
 
   return (
-    <main className="max-w-2xl mx-auto px-4 sm:px-6 py-8 flex flex-col gap-8">
-      <h1 className="font-heading text-3xl font-bold text-dark-blue">Settings</h1>
+    <main className="max-w-3xl px-6 py-10 flex flex-col gap-8">
+      <h1 className="font-heading text-4xl font-medium text-foreground">Settings</h1>
 
       {error && (
-        <p className="text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3">{error}</p>
+        <p className="text-sm text-destructive bg-destructive/10 rounded-lg px-4 py-3">{error}</p>
       )}
 
-      <section className="bg-card border border-border rounded-2xl p-5">
-        <h2 className="font-heading font-semibold text-dark-blue mb-4">Profile</h2>
-        <Form method="post" className="flex flex-col gap-4">
+      <section className="rounded-os-card bg-os-card p-6">
+        <h2 className="font-heading text-[19px] font-semibold text-foreground mb-4">Profile</h2>
+        <Form method="post" className="os-form flex flex-col gap-4">
           <PhotoUploadField
             userId={userId}
             name={`${me.firstName ?? ""} ${me.lastName ?? ""}`.trim()}
@@ -109,6 +109,7 @@ export default function PortalSettings({ actionData }: Route.ComponentProps) {
                 First name
               </label>
               <input
+                type="text"
                 id="firstName"
                 name="firstName"
                 required
@@ -121,6 +122,7 @@ export default function PortalSettings({ actionData }: Route.ComponentProps) {
                 Last name
               </label>
               <input
+                type="text"
                 id="lastName"
                 name="lastName"
                 required
@@ -134,6 +136,7 @@ export default function PortalSettings({ actionData }: Route.ComponentProps) {
               Pronouns
             </label>
             <input
+                type="text"
               id="pronouns"
               name="pronouns"
               placeholder="e.g. they/them"
@@ -175,6 +178,7 @@ export default function PortalSettings({ actionData }: Route.ComponentProps) {
                 Major
               </label>
               <input
+                type="text"
                 id="major"
                 name="major"
                 placeholder="e.g. Computer Science"
@@ -209,14 +213,14 @@ export default function PortalSettings({ actionData }: Route.ComponentProps) {
         </Form>
       </section>
 
-      <section className="bg-card border border-border rounded-2xl p-5">
-        <h2 className="font-heading font-semibold text-dark-blue mb-4">Appearance</h2>
+      <section className="rounded-os-card bg-os-card p-6">
+        <h2 className="font-heading text-[19px] font-semibold text-foreground mb-4">Appearance</h2>
         <AppearanceSettingsBlock />
       </section>
 
       {passkeysEnabled && (
-        <section className="bg-card border border-border rounded-2xl p-5">
-          <h2 className="font-heading font-semibold text-dark-blue mb-4">Passkeys</h2>
+        <section className="rounded-os-card bg-os-card p-6">
+          <h2 className="font-heading text-[19px] font-semibold text-foreground mb-4">Passkeys</h2>
           <PasskeysSettingsBlock />
         </section>
       )}

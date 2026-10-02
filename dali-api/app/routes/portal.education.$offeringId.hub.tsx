@@ -46,7 +46,7 @@ export default function PortalCourseHub() {
             ← Offering details
           </Link>
         </p>
-        <h1 className="mt-1 font-heading text-2xl font-bold text-dark-blue">
+        <h1 className="mt-1 font-heading text-4xl font-medium text-foreground">
           {hub.offering.title}
         </h1>
       </header>

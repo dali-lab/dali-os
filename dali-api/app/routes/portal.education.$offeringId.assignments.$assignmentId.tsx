@@ -124,7 +124,7 @@ export default function PortalAssignment() {
             ← Assignments
           </Link>
         </p>
-        <h1 className="mt-1 font-heading text-2xl font-bold text-dark-blue">
+        <h1 className="mt-1 font-heading text-4xl font-medium text-foreground">
           {assignment.title}
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
