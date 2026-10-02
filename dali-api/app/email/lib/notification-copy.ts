@@ -563,6 +563,7 @@ export const NOTIFICATION_SAMPLES: Record<TemplateVariableName, string> = {
   meetingUrl: "https://dartmouth.zoom.us/j/000000",
   originalCloseDate: "Friday, April 4",
   newCloseDate: "Monday, April 7",
+  slackUrl: "https://dali-lab.slack.com",
   term: "26F",
   upcomingTerm: "27W",
   today: "April 8, 2026",

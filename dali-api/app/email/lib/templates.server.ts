@@ -6,7 +6,7 @@
 // library had (history you can roll back to).
 
 import { prisma } from "~/lib/db";
-import { renderEmail, type InterpolationVars } from "~/lib/email";
+import { renderEmail, type EmailTemplateVars } from "~/lib/email";
 
 import {
   EMAIL_TEMPLATES,
@@ -142,7 +142,7 @@ export class MissingEmailTemplateError extends Error {
 // Returns null when the rule is "skip", throws when it is "error".
 export async function renderEmailTemplate(
   key: EmailTemplateKey,
-  vars: InterpolationVars,
+  vars: EmailTemplateVars,
 ): Promise<{ subject: string; html: string } | null> {
   const copy = await getEmailTemplate(key);
   if (!copy) {

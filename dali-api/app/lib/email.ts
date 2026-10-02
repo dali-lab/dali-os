@@ -3,17 +3,22 @@
 // separated paragraphs in <p> tags and converting single newlines to <br/>.
 
 import DOMPurify from "isomorphic-dompurify";
-import { interpolateVars } from "~/lib/template-variables";
+import { interpolateVars, type VariableInContext } from "~/lib/template-variables";
 
-export type InterpolationVars = {
-  firstName: string;
-  domain?: string;
-  time?: string;
-  location?: string;
-  meetingUrl?: string;
-  originalCloseDate?: string;
-  newCloseDate?: string;
-};
+/** Every token the email surface offers, read off the registry. */
+export type EmailVariableName = VariableInContext<"email">;
+
+// Was a hand-written restatement of the six email tokens, which is how adding one
+// to the registry could compile everywhere except the call that passed it.
+// firstName stays required: these are letters that open "Hi {{firstName}}".
+export type InterpolationVars = { firstName: string } & Partial<
+  Record<Exclude<EmailVariableName, "firstName">, string>
+>;
+
+/** Vars for a template addressed by registry key, where the key's own
+ *  `variables` list is the contract — including the blocks that have no
+ *  greeting, so firstName isn't owed. */
+export type EmailTemplateVars = Partial<Record<EmailVariableName, string>>;
 
 // Escape every value before it is spliced into a template body that becomes HTML.
 // Operator-authored markup in the template survives; a value does not. That

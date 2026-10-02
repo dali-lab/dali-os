@@ -108,10 +108,22 @@ export const TEMPLATE_VARIABLES_REGISTRY = {
 
 export type TemplateVariableName = keyof typeof TEMPLATE_VARIABLES_REGISTRY;
 
-export function variablesForContext(ctx: TemplateContext): TemplateVariableName[] {
+// The tokens one surface offers, as a type — the compile-time twin of
+// variablesForContext. Derived rather than restated: the hand-written list this
+// replaces had already drifted from the registry, which is how a token could be
+// offered to operators in the editor and still be a type error to pass.
+export type VariableInContext<C extends TemplateContext> = {
+  [K in TemplateVariableName]: C extends (typeof TEMPLATE_VARIABLES_REGISTRY)[K]["contexts"][number]
+    ? K
+    : never;
+}[TemplateVariableName];
+
+// The one cast lives here, where the filter predicate and the type it proves sit
+// side by side, so no caller has to assert the narrowing itself.
+export function variablesForContext<C extends TemplateContext>(ctx: C): VariableInContext<C>[] {
   return (Object.keys(TEMPLATE_VARIABLES_REGISTRY) as TemplateVariableName[]).filter((k) =>
     (TEMPLATE_VARIABLES_REGISTRY[k].contexts as readonly TemplateContext[]).includes(ctx),
-  );
+  ) as VariableInContext<C>[];
 }
 
 // The placeholder grammar every surface shares: `{{name}}` with no whitespace,
