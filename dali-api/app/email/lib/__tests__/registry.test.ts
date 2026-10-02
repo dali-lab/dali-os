@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  EMAIL_TEMPLATES,
   EMAIL_TEMPLATE_KEYS,
   educationKey,
   emailTemplateDef,
@@ -127,13 +126,18 @@ describe("isEmailTemplateKey", () => {
 });
 
 describe("the collapse covered what the old stores held", () => {
-  it("has 19 editable emails: 14 hiring slots, 4 education decisions, plus promotion", () => {
-    const hiring = EMAIL_TEMPLATE_KEYS.filter((k) => k.startsWith("hiring:"));
+  it("counts the feature templates: 14 hiring slots, 1 onboarding block, 5 education", () => {
+    const hiringSlots = EMAIL_TEMPLATE_KEYS.filter(
+      (k) => k.startsWith("hiring:decision:") || k.startsWith("hiring:notification:"),
+    );
+    const onboarding = EMAIL_TEMPLATE_KEYS.filter((k) => k.startsWith("hiring:onboarding:"));
     const education = EMAIL_TEMPLATE_KEYS.filter((k) => k.startsWith("education:"));
-    expect(hiring).toHaveLength(14);
-    // The 4 statuses plus decision:Promoted, which has no EduApplicationStatus of
-    // its own — a promotion is an Approved decision reached another way.
+    expect(hiringSlots).toHaveLength(14);
+    // Not a slot: appended to the Accepted letter, so it has no NotificationType
+    // of its own. It exists so the acceptance deadline and sign-off stop living
+    // in library code where they went stale silently.
+    expect(onboarding).toEqual(["hiring:onboarding:NextSteps"]);
+    // The 4 statuses plus decision:Promoted.
     expect(education).toHaveLength(5);
-    expect(EMAIL_TEMPLATES).toBeDefined();
   });
 });
