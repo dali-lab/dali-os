@@ -22,6 +22,7 @@ import {
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { Tooltip } from "~/components/ui/floating";
+import { useDialog } from "~/components/ui/dialog";
 import type { loader } from '~/hiring/routes/rubrics.$id'
 import type { RubricCriterion } from '~/types'
 import { formatDateTime } from '~/lib/display'
@@ -77,6 +78,7 @@ export function RubricDetail() {
 
   // ── Inline edit state ────────────────────────────────────────────────────
   const [editingKey, setEditingKey] = useState<string | null>(null)
+  const dialog = useDialog()
   const [editLabel, setEditLabel] = useState('')
   const [editDescription, setEditDescription] = useState('')
   const [editMaxScore, setEditMaxScore] = useState(5)
@@ -142,9 +144,20 @@ export function RubricDetail() {
     setNewMaxScore(5)
   }
 
-  const handleRemoveCriterion = (key: string) => {
+  // The criteria list is a shared Y.Array, so a removal lands on every other
+  // editor the moment it happens — hence the confirm, even mid-draft.
+  const handleRemoveCriterion = async (key: string) => {
     const idx = criteria.findIndex((c) => c.key === key)
-    if (idx !== -1) collabRemove(idx)
+    if (idx === -1) return
+    const ok = await dialog.confirm({
+      title: 'Remove this criterion?',
+      description:
+        'It disappears for everyone editing this rubric. Scores already given against it in past reviews are kept.',
+      confirmLabel: 'Remove',
+      tone: 'destructive',
+    })
+    if (!ok) return
+    collabRemove(idx)
     if (editingKey === key) setEditingKey(null)
   }
 
@@ -380,7 +393,7 @@ export function RubricDetail() {
                               <Tooltip content="Remove criterion">
                                 <button
                                   type="button"
-                                  onClick={() => handleRemoveCriterion(c.key)}
+                                  onClick={() => void handleRemoveCriterion(c.key)}
                                   className="p-1.5 text-red-600 hover:bg-red-50 rounded-md"
                                 >
                                   <Trash2 className="w-4 h-4" />
@@ -428,7 +441,7 @@ export function RubricDetail() {
                               </button>
                               <button
                                 type="button"
-                                onClick={() => handleRemoveCriterion(c.key)}
+                                onClick={() => void handleRemoveCriterion(c.key)}
                                 className="p-1.5 text-muted-foreground/70 hover:text-red-600 rounded-md hover:bg-red-50"
                               >
                                 <Trash2 className="w-4 h-4" />

@@ -497,50 +497,6 @@ export async function action({ request }: Route.ActionArgs) {
   return redirect("/hiring/domain-lead");
 }
 
-function ConfirmDialog({
-  open,
-  title,
-  body,
-  confirmLabel,
-  destructive = false,
-  onConfirm,
-  onCancel,
-}: {
-  open: boolean;
-  title: string;
-  body: React.ReactNode;
-  confirmLabel: string;
-  destructive?: boolean;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  const titleId = "confirm-dialog-title";
-  return (
-    <Modal open={open} onClose={onCancel} labelledBy={titleId}>
-      <div className="space-y-4">
-        <h2 id={titleId} className="text-base font-semibold text-foreground">{title}</h2>
-        <div className="text-sm text-muted-foreground">{body}</div>
-        <div className="flex justify-end gap-2 pt-1">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="px-3 py-1.5 text-sm font-medium rounded-md border border-border bg-card hover:bg-muted/50 transition"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            className={`px-3 py-1.5 text-sm font-medium rounded-md text-white transition ${destructive ? "bg-red-600 hover:bg-red-700" : "bg-accent-coral hover:bg-accent-coral/90"}`}
-          >
-            {confirmLabel}
-          </button>
-        </div>
-      </div>
-    </Modal>
-  );
-}
-
 export default function DomainLeadDashboard() {
   const data = useLoaderData<typeof loader>() as any;
   const actionData = useActionData<typeof action>() as { notice?: string } | undefined;
@@ -1947,12 +1903,12 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
   rubricCriteria?: any[];
 }) {
   const toast = useToast();
+  const dialog = useDialog();
   const [localReviews, setLocalReviews] = useState(reviews);
   const [adding, setAdding] = useState(false);
   const [selectedReviewerId, setSelectedReviewerId] = useState("");
   const [openReview, setOpenReview] = useState<any | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
-  const [pendingRemoveReview, setPendingRemoveReview] = useState<any | null>(null);
 
   // Resync from props after the loader revalidates (e.g. when bulk auto-assign
   // adds reviewers to this row). Without this, the pills shown here would lag
@@ -2009,8 +1965,25 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
     }
   }
 
-  function requestRemoveReview(review: any) {
-    setPendingRemoveReview(review);
+  async function requestRemoveReview(review: any) {
+    const submitted = getReviewStatus(review) === "submitted";
+    const m = review?.cycleReviewer?.user;
+    const who =
+      m?.firstName && m?.lastName
+        ? `${m.firstName} ${m.lastName}`
+        : (m?.daliEmail ?? "This reviewer");
+    const ok = await dialog.confirm({
+      title: submitted
+        ? "Remove this reviewer's submitted review?"
+        : "Remove this reviewer's in-progress review?",
+      description: submitted
+        ? `${who} has already submitted. Removing them permanently deletes their scores and feedback.`
+        : `${who} has a review in progress. Removing them discards it.`,
+      confirmLabel: submitted ? "Remove and delete review" : "Discard review",
+      tone: "destructive",
+    });
+    if (!ok) return;
+    await performRemoveReview(review.id);
   }
 
   const cellClass = editable && adding
@@ -2057,7 +2030,7 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  requestRemoveReview(r);
+                  void requestRemoveReview(r);
                 }}
                 disabled={removing === r.id}
                 className="ml-0.5 text-muted-foreground/70 hover:text-red-500 transition"
@@ -2122,40 +2095,6 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
           onClose={() => setOpenReview(null)}
         />
       )}
-      <ConfirmDialog
-        open={!!pendingRemoveReview}
-        title={
-          pendingRemoveReview && getReviewStatus(pendingRemoveReview) === "submitted"
-            ? "Remove this reviewer's submitted review?"
-            : "Remove this reviewer's in-progress review?"
-        }
-        body={
-          <p>
-            <strong>
-              {(() => {
-                const m = pendingRemoveReview?.cycleReviewer?.user;
-                if (!m) return "This reviewer";
-                return m.firstName && m.lastName ? `${m.firstName} ${m.lastName}` : (m.daliEmail ?? "This reviewer");
-              })()}
-            </strong>{" "}
-            {pendingRemoveReview && getReviewStatus(pendingRemoveReview) === "submitted"
-              ? "has already submitted their review. Removing them will permanently delete their scores and feedback."
-              : "has a review in progress. Discards their in-progress review."}
-          </p>
-        }
-        confirmLabel={
-          pendingRemoveReview && getReviewStatus(pendingRemoveReview) === "submitted"
-            ? "Remove and delete review"
-            : "Discard review"
-        }
-        destructive
-        onCancel={() => setPendingRemoveReview(null)}
-        onConfirm={() => {
-          const r = pendingRemoveReview;
-          setPendingRemoveReview(null);
-          if (r) performRemoveReview(r.id);
-        }}
-      />
     </div>
   );
 }

@@ -386,6 +386,7 @@ export function EventComposer({
 }) {
   const fetcher = useFetcher<{ error?: string } | null>();
   const deleteFetcher = useFetcher<{ error?: string } | null>();
+  const dialog = useDialog();
   const editing = state.mode === "edit";
   const ev = editing ? state.event : null;
   // Prefill source: the event being edited, or a Duplicate seed in create mode.
@@ -414,7 +415,6 @@ export function EventComposer({
   // A recurring instance carries recurringEventId; editing it prompts for scope.
   const isRecurring = Boolean(ev?.recurringEventId);
   const [scope, setScope] = useState<"this" | "following" | "all">("this");
-  const [confirmDelete, setConfirmDelete] = useState(false);
 
   // Guest list, loaded on demand for a meeting edit (mirrors EditMeetingModal).
   const [guestCtx, setGuestCtx] = useState<EditContext | null>(null);
@@ -587,6 +587,39 @@ export function EventComposer({
   // theirs to write — the save routes through the DALI update path.
   const canEdit = Boolean(ev?.writable) || canManageMeeting;
   const submitting = fetcher.state !== "idle" || deleteFetcher.state !== "idle";
+
+  // A recurring event's scope selector decides how much goes, so the confirm
+  // restates it rather than leaving the reader to remember which radio is set.
+  async function confirmDeleteEvent() {
+    if (!ev?.eventId) return;
+    const effectiveScope = isRecurring ? scope : "this";
+    const ok = await dialog.confirm({
+      title: title.trim() ? `Delete "${title.trim()}"?` : "Delete this event?",
+      description: !isRecurring
+        ? canManageMeeting
+          ? "The meeting is cancelled and guests are told. This can't be undone."
+          : "The event is removed from the calendar. This can't be undone."
+        : effectiveScope === "all"
+          ? "Every occurrence of this repeating event is deleted, past and future."
+          : effectiveScope === "following"
+            ? "This occurrence and every one after it are deleted. Earlier ones stay."
+            : "Only this occurrence is deleted. The rest of the series stays.",
+      confirmLabel: "Delete",
+      tone: "destructive",
+    });
+    if (!ok) return;
+    deleteFetcher.submit(
+      {
+        intent: "event-delete",
+        destination,
+        eventId: ev.eventId ?? "",
+        scope: effectiveScope,
+        recurringEventId: ev.recurringEventId ?? "",
+        originalStartIso: ev.startIso ?? "",
+      },
+      { method: "post" },
+    );
+  }
 
   // Report the draft times to the grid so the live preview (a tentative block
   // when creating, or the edited event's own block when editing) tracks edits.
@@ -858,36 +891,14 @@ export function EventComposer({
               </button>
               {editing && (ev?.writable || canManageMeeting) && ev?.eventId && (
                 <div className="ml-auto">
-                  {confirmDelete ? (
-                    <button
-                      type="button"
-                      disabled={submitting}
-                      onClick={() =>
-                        deleteFetcher.submit(
-                          {
-                            intent: "event-delete",
-                            destination,
-                            eventId: ev.eventId ?? "",
-                            scope: isRecurring ? scope : "this",
-                            recurringEventId: ev.recurringEventId ?? "",
-                            originalStartIso: ev.startIso ?? "",
-                          },
-                          { method: "post" },
-                        )
-                      }
-                      className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-700"
-                    >
-                      Confirm delete
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => setConfirmDelete(true)}
-                      className="rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50"
-                    >
-                      Delete
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    disabled={submitting}
+                    onClick={() => void confirmDeleteEvent()}
+                    className="rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
+                  >
+                    Delete
+                  </button>
                 </div>
               )}
             </div>

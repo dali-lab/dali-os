@@ -157,7 +157,7 @@ export function ManageMaterials({
   ) {
     const ok = await dialog.confirm({
       title: isFolder ? "Delete this folder?" : "Delete this item?",
-      description: isFolder
+        description: isFolder
         ? `"${label}" will be removed. Empty the folder first if it still holds items.`
         : `"${label}" will be removed from the course materials.`,
       confirmLabel: "Delete",
@@ -869,6 +869,7 @@ export function ManageAssignments({
                 method="post"
                 onSubmit={confirmSubmit({
                   title: "Delete this assignment?",
+                  description: "Submissions and grades against it go too. This can't be undone.",
                   confirmLabel: "Delete",
                   tone: "destructive",
                 })}

@@ -4,7 +4,7 @@ import { useFetcher } from "react-router";
 import { Shield, ChevronDown, X, Check, Plus, Briefcase, LogIn } from "lucide-react";
 import { fullName } from "~/lib/display";
 import { Tooltip } from "~/components/ui/floating";
-import { useDialog } from "~/components/ui/dialog";
+import { useConfirmSubmit, useDialog } from "~/components/ui/dialog";
 
 // Phase 2 reshape: Member is rooted at User. Role flags derive from typed
 // assignment tables (AdminMembership, CoreAssignment, DomainLeadAssignment)
@@ -95,15 +95,34 @@ export function memberLabel(member: { firstName: string; lastName: string; daliE
   return name || member.daliEmail || "Unnamed member";
 }
 
-export function RemoveDomainLeadButton({ assignmentId }: { assignmentId: string }) {
+export function RemoveDomainLeadButton({
+  assignmentId,
+  name,
+  domainName,
+}: {
+  assignmentId: string;
+  name: string;
+  domainName: string;
+}) {
   const fetcher = useFetcher();
+  const confirmSubmit = useConfirmSubmit();
   return (
-    <fetcher.Form method="post" className="inline">
+    <fetcher.Form
+      method="post"
+      className="inline"
+      onSubmit={confirmSubmit({
+        title: `Remove ${name} as a ${domainName} lead?`,
+        description:
+          "They lose the domain lead dashboard and any reviews assigned to them there. Their membership and other roles stay as they are.",
+        confirmLabel: "Remove",
+        tone: "destructive",
+      })}
+    >
       <input type="hidden" name="intent" value="remove-domain-lead" />
       <input type="hidden" name="assignmentId" value={assignmentId} />
       <button
         type="submit"
-        aria-label="Remove domain lead assignment"
+        aria-label={`Remove ${name} as a ${domainName} lead`}
         className="hover:text-purple-600 ml-0.5 p-2 -m-1.5 inline-flex items-center justify-center"
       >
         <X className="w-3 h-3" />
@@ -168,7 +187,11 @@ export function DomainLeadPicker({
           className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800"
         >
           {assignment.domain.name}
-          <RemoveDomainLeadButton assignmentId={assignment.id} />
+          <RemoveDomainLeadButton
+            assignmentId={assignment.id}
+            name={memberLabel(member)}
+            domainName={assignment.domain.name}
+          />
         </span>
       ))}
 
@@ -373,44 +396,40 @@ export function ImpersonateButton({
   );
 }
 
-// Two-click confirm: the first click "arms" the button (shows "Remove?"),
-// the second click actually submits. Removing a Core title is destructive
-// and Core is self-perpetuating, so we want a guard against stray clicks
-// without the disruption of a window.confirm() modal. Auto-disarms after
-// 3s so a stray hover doesn't leave the button armed indefinitely.
-function RemoveCoreTitleButton({ assignmentId }: { assignmentId: string }) {
+// Removing a Core title affects pay and Core is self-perpetuating, so it
+// confirms — mirroring the add side, which already names the pay consequence.
+function RemoveCoreTitleButton({
+  assignmentId,
+  title,
+  name,
+}: {
+  assignmentId: string;
+  title: string;
+  name: string;
+}) {
   const fetcher = useFetcher();
-  const [armed, setArmed] = useState(false);
-
-  useEffect(() => {
-    if (!armed) return;
-    const t = setTimeout(() => setArmed(false), 3000);
-    return () => clearTimeout(t);
-  }, [armed]);
-
-  if (!armed) {
-    return (
-      <button
-        type="button"
-        onClick={() => setArmed(true)}
-        aria-label="Remove Core title"
-        className="hover:text-green-900 ml-0.5 p-2 -m-1.5 inline-flex items-center justify-center"
-      >
-        <X className="w-3 h-3" />
-      </button>
-    );
-  }
+  const confirmSubmit = useConfirmSubmit();
 
   return (
-    <fetcher.Form method="post" className="inline">
+    <fetcher.Form
+      method="post"
+      className="inline"
+      onSubmit={confirmSubmit({
+        title: `Remove the "${title}" Core title from ${name}?`,
+        description:
+          "This ends their Core assignment for the current term, which affects pay. Admins will be notified.",
+        confirmLabel: "Remove",
+        tone: "destructive",
+      })}
+    >
       <input type="hidden" name="intent" value="remove-core-title" />
       <input type="hidden" name="assignmentId" value={assignmentId} />
       <button
         type="submit"
-        aria-label="Confirm remove Core title"
-        className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-red-600 text-white hover:bg-red-700"
+        aria-label={`Remove the "${title}" Core title from ${name}`}
+        className="hover:text-green-900 ml-0.5 p-2 -m-1.5 inline-flex items-center justify-center"
       >
-        Remove?
+        <X className="w-3 h-3" />
       </button>
     </fetcher.Form>
   );
@@ -464,7 +483,11 @@ export function CorePicker({ member }: { member: Member }) {
           className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium border border-accent-green/40 bg-accent-green/15 text-foreground"
         >
           {a.leadTitle ?? "Core"}
-          <RemoveCoreTitleButton assignmentId={a.id} />
+          <RemoveCoreTitleButton
+            assignmentId={a.id}
+            title={a.leadTitle ?? "Core"}
+            name={memberLabel(member)}
+          />
         </span>
       ))}
 

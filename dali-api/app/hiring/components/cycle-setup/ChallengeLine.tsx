@@ -2,6 +2,7 @@ import { Link, useFetcher } from "react-router";
 import { Plus, X } from "lucide-react";
 import { buttonClasses } from "~/components/ui/Button";
 import { Tooltip } from "~/components/ui/floating";
+import { useDialog } from "~/components/ui/dialog";
 import { DomainSubRow, SubRowEmpty } from "./DomainSubRow";
 import { AlertIcon } from "./SetupCard";
 
@@ -25,7 +26,21 @@ export function ChallengeLine({
   editable: boolean;
 }) {
   const fetcher = useFetcher();
+  const dialog = useDialog();
   const busy = fetcher.state !== "idle";
+
+  async function removeForm(cdfId: string, name: string) {
+    const ok = await dialog.confirm({
+      title: `Remove ${name} from this domain's challenge?`,
+      description:
+        "Applicants who haven't started it lose access. Anyone who already picked it keeps theirs.",
+      confirmLabel: "Remove",
+      tone: "destructive",
+    });
+    if (!ok) return;
+    fetcher.submit({ intent: "remove-challenge-form", cdfId }, { method: "post" });
+  }
+
   return (
     <DomainSubRow
       label="Challenge"
@@ -44,7 +59,7 @@ export function ChallengeLine({
                     type="button"
                     disabled={busy}
                     aria-label={`Remove ${f.name}`}
-                    onClick={() => fetcher.submit({ intent: "remove-challenge-form", cdfId: f.id }, { method: "post" })}
+                    onClick={() => void removeForm(f.id, f.name)}
                     className="rounded-os-item p-0.5 text-os-grey hover:bg-os-container hover:text-foreground"
                   >
                     <X className="h-3.5 w-3.5" />

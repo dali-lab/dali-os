@@ -8,6 +8,7 @@ import { formatInstantWithZoneLabel } from "~/lib/timezone";
 import { APPLICATIONS_FROM_EMAIL } from "~/lib/app-env";
 import { Button, buttonClasses } from "~/components/ui/Button";
 import { Checkbox } from "~/components/ui/Checkbox";
+import { useDialog } from "~/components/ui/dialog";
 
 // The applicant's per-domain tracker: a card per domain application with its
 // stage pill and the view for that stage (review, interview booking and
@@ -482,9 +483,8 @@ export function InterviewScheduledView({
   const [selectedRescheduleSlotId, setSelectedRescheduleSlotId] = useState<string | null>(null);
   const [confirmingReschedule, setConfirmingReschedule] = useState(false);
   const [rescheduleError, setRescheduleError] = useState<string | null>(null);
-  const [declining, setDeclining] = useState(false);
   const [cancelling, setCancelling] = useState(false);
-  const [cancelError, setCancelError] = useState<string | null>(null);
+  const dialog = useDialog();
 
   useEffect(() => {
     if (!rescheduling) return;
@@ -503,20 +503,31 @@ export function InterviewScheduledView({
 
   async function handleCancel() {
     setCancelling(true);
-    const res = await fetch("/api/hiring/my-interview/cancel", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ domainApplicationId: domainApp.id }),
-    });
-    if (res.ok) {
-      onCancelled();
-    } else {
-      const body = await res.json().catch(() => ({}));
-      setCancelError(body.error ?? "Failed to cancel interview.");
-      setDeclining(false);
+    try {
+      await dialog.confirm({
+        title: "Cancel your interview?",
+        description:
+          "This withdraws you from the interview process for this domain. You won't be able to rebook.",
+        confirmLabel: "Yes, withdraw",
+        cancelLabel: "Go back",
+        tone: "destructive",
+        onConfirm: async () => {
+          const res = await fetch("/api/hiring/my-interview/cancel", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ domainApplicationId: domainApp.id }),
+          });
+          if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            return body.error ?? "Failed to cancel interview.";
+          }
+          onCancelled();
+        },
+      });
+    } finally {
+      setCancelling(false);
     }
-    setCancelling(false);
   }
 
   function exitRescheduling() {
@@ -659,27 +670,14 @@ export function InterviewScheduledView({
         <button onClick={() => setRescheduling(true)} className="px-5 py-2.5 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-os-accent hover:text-os-accent transition">
           Reschedule
         </button>
-        {declining ? (
-          <div className="rounded-os-item border-2 border-destructive/35 bg-destructive/10 px-4 py-3 text-left space-y-2">
-            <p className="text-sm font-semibold text-destructive">This action is final</p>
-            <p className="text-xs text-destructive">Cancelling your interview will withdraw you from the interview process for this domain. You will not be able to rebook.</p>
-            <div className="flex items-center gap-3 pt-1">
-              <button onClick={handleCancel} disabled={cancelling} className={buttonClasses("destructive", "sm")}>
-                {cancelling ? "Cancelling..." : "Yes, withdraw"}
-              </button>
-              <button onClick={() => setDeclining(false)} className="text-sm font-semibold text-muted-foreground hover:underline">Go back</button>
-            </div>
-          </div>
-        ) : (
-          <button onClick={() => setDeclining(true)} className="text-sm font-semibold text-muted-foreground hover:text-destructive transition">
-            Cancel Interview
-          </button>
-        )}
-        {cancelError && (
-          <div className="rounded-os-item border border-destructive/35 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-            {cancelError}
-          </div>
-        )}
+        <button
+          type="button"
+          onClick={() => void handleCancel()}
+          disabled={cancelling}
+          className="text-sm font-semibold text-muted-foreground hover:text-destructive transition disabled:opacity-50"
+        >
+          {cancelling ? "Cancelling…" : "Cancel Interview"}
+        </button>
       </div>
     </div>
   );

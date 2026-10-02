@@ -209,7 +209,36 @@ icon-only `IconButton`s in the card's top right. Choices the user must make
   `.os-modal-footer` (right-aligned, 12px gap), `.os-icon-btn` for close and
   edit.
 - Confirm, alert and prompt go through `useDialog()` / `useConfirmSubmit()`;
-  feedback through `useToast()`.
+  feedback through `useToast()`. Never a hand-rolled `<Modal>` confirm, an
+  inline "Delete → Confirm delete" button swap, or a two-click armed button.
+
+### 6.3.1 Destructive actions
+
+**Every action that deletes data, revokes access, or can't be undone from the
+UI confirms first, with `tone: "destructive"`.** That covers deletes, removals
+from a roster or group, revoking a pass/session/invite, discarding unsaved or
+in-progress work, and clearing a configured binding.
+
+  Destructive tone is also right where an action can't be walked back and the
+  consequence lands outside the lab — exposing a document or project to the
+  public internet, putting an agreement in force, releasing a hiring decision.
+  Nothing is deleted, but the red button and the focus-on-Cancel are the point.
+- Reversible state moves use the **default** tone: a status change, moving an
+  item, unlink-and-relink, and archive **where an unarchive exists** (a room
+  archives reversibly, so it's default; an agreement doesn't, so it's
+  destructive — check before you pick).
+- Removing a row from an unsaved draft (a form-builder question, a rubric
+  criterion being composed) needs no confirm at all. Removing one that carries
+  written content does.
+- Copy: the title is a question ending in `?`, naming the thing
+  (`Delete "Weekly sync"?`). `confirmLabel` is the verb alone (`Delete`,
+  `Remove`, `Revoke`) — never leave it as the `Confirm` default. `description`
+  says what is lost and whether it comes back.
+- Catastrophic and unrecoverable (a project, a database) escalates to
+  `dialog.prompt` with `tone: "destructive"` and a `validate` that requires
+  typing the name.
+- When the action's failure has nowhere else to land, pass `onConfirm` so the
+  dialog holds open and shows the error inline.
 
 ### 6.4 Popovers and menus
 

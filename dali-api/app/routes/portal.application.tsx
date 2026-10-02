@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { redirect, useLoaderData, useFetcher, Link } from "react-router";
 import type { Route } from "./+types/portal.application";
 import { prisma } from "~/lib/db";
@@ -8,8 +7,8 @@ import { getActiveCycleById } from "~/hiring/lib/cycles";
 import { presignAnswers } from "~/hiring/lib/presign";
 import type { Question } from "~/types";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
-import { Modal } from "~/components/Modal";
 import { buttonClasses } from "~/components/ui/Button";
+import { useDialog } from "~/components/ui/dialog";
 import { QuestionList } from "~/hiring/components/ApplicationAnswers";
 import { sendInterviewCancelEmails } from "~/hiring/lib/interview-emails";
 
@@ -203,7 +202,7 @@ export default function PortalApplication() {
     };
 
   const isWithdrawn = withdrawnAt !== null;
-  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+  const dialog = useDialog();
   const withdrawFetcher = useFetcher();
   const submittingWithdraw = withdrawFetcher.state !== "idle";
 
@@ -220,12 +219,20 @@ export default function PortalApplication() {
       })
     : null;
 
-  function confirmWithdraw() {
+  async function withdraw() {
+    const ok = await dialog.confirm({
+      title: "Withdraw your application?",
+      description:
+        "Your application comes out of review. You can't undo this from the portal — you'd need to contact the DALI team to reverse it.",
+      confirmLabel: "Withdraw",
+      cancelLabel: "Keep it in review",
+      tone: "destructive",
+    });
+    if (!ok) return;
     const form = new FormData();
     form.set("intent", "withdraw");
     form.set("cycleId", cycleId);
     withdrawFetcher.submit(form, { method: "post" });
-    setShowWithdrawModal(false);
   }
 
   return (
@@ -280,11 +287,11 @@ export default function PortalApplication() {
               </div>
               <button
                 type="button"
-                onClick={() => setShowWithdrawModal(true)}
+                onClick={() => void withdraw()}
                 disabled={submittingWithdraw}
                 className={buttonClasses("secondary", "md", "shrink-0")}
               >
-                Withdraw Application
+                {submittingWithdraw ? "Withdrawing…" : "Withdraw Application"}
               </button>
             </div>
           ) : null}
@@ -316,38 +323,6 @@ export default function PortalApplication() {
         </div>
       </div>
 
-      {/* Withdraw confirmation modal */}
-      <Modal
-        open={showWithdrawModal}
-        onClose={() => setShowWithdrawModal(false)}
-        labelledBy="withdraw-modal-title"
-        disableEscape={submittingWithdraw}
-      >
-        <h3 id="withdraw-modal-title" className="font-heading text-base font-bold text-foreground mb-2">
-          Withdraw your application?
-        </h3>
-        <p className="text-sm text-muted-foreground mb-5">
-          Your application will be removed from review. You can't undo this from the portal — you'd need to contact the DALI team to reverse it.
-        </p>
-        <div className="flex gap-3 justify-end">
-          <button
-            type="button"
-            onClick={() => setShowWithdrawModal(false)}
-            disabled={submittingWithdraw}
-            className="px-5 py-2 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-os-accent hover:text-os-accent transition disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={confirmWithdraw}
-            disabled={submittingWithdraw}
-            className={buttonClasses("destructive")}
-          >
-            {submittingWithdraw ? "Withdrawing..." : "Withdraw"}
-          </button>
-        </div>
-      </Modal>
     </div>
   );
 }

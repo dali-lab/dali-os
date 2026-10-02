@@ -3799,6 +3799,7 @@ function DeleteProjectSection({
       label: `Type the project name to confirm`,
       placeholder: projectName,
       confirmLabel: "Delete project",
+      tone: "destructive",
       validate: (value) =>
         value.trim() === projectName ? null : "That doesn't match the project name.",
     });
@@ -5030,6 +5031,8 @@ function DocumentsBlock({
     if (
       !(await dialog.confirm({
         title: `Delete document "${title}"?`,
+        description:
+          "It moves to Trash. Restore it from there, or purge it permanently.",
         confirmLabel: "Delete",
         tone: "destructive",
       }))

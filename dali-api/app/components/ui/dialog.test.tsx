@@ -265,3 +265,218 @@ describe("useConfirmSubmit", () => {
     cleanup();
   });
 });
+
+describe("useDialog().confirm with onConfirm", () => {
+  it("holds the dialog open and shows the returned message as an error", async () => {
+    let api!: ReturnType<typeof useDialog>;
+    function Capture() {
+      api = useDialog();
+      return null;
+    }
+    const { container, cleanup } = mount(
+      createElement(DialogProvider, null, createElement(Capture)),
+    );
+
+    let settled = false;
+    await act(async () => {
+      api
+        .confirm({
+          title: "Delete file?",
+          confirmLabel: "Delete",
+          tone: "destructive",
+          onConfirm: async () => "That file is locked.",
+        })
+        .then(() => {
+          settled = true;
+        });
+    });
+
+    clickButton(container, "Delete");
+    await flush();
+
+    expect(container.textContent).toContain("That file is locked.");
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(settled).toBe(false);
+    cleanup();
+  });
+
+  it("closes and resolves true once onConfirm resolves without a message", async () => {
+    let api!: ReturnType<typeof useDialog>;
+    function Capture() {
+      api = useDialog();
+      return null;
+    }
+    const { container, cleanup } = mount(
+      createElement(DialogProvider, null, createElement(Capture)),
+    );
+
+    const work = vi.fn(async () => {});
+    let result: boolean | undefined;
+    await act(async () => {
+      api
+        .confirm({ title: "Delete file?", confirmLabel: "Delete", onConfirm: work })
+        .then((r) => {
+          result = r;
+        });
+    });
+
+    clickButton(container, "Delete");
+    await flush();
+
+    expect(work).toHaveBeenCalledTimes(1);
+    expect(result).toBe(true);
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    cleanup();
+  });
+
+  it("surfaces a thrown error instead of closing", async () => {
+    let api!: ReturnType<typeof useDialog>;
+    function Capture() {
+      api = useDialog();
+      return null;
+    }
+    const { container, cleanup } = mount(
+      createElement(DialogProvider, null, createElement(Capture)),
+    );
+
+    await act(async () => {
+      void api.confirm({
+        title: "Delete file?",
+        confirmLabel: "Delete",
+        onConfirm: async () => {
+          throw new Error("Network down");
+        },
+      });
+    });
+
+    clickButton(container, "Delete");
+    await flush();
+
+    expect(container.textContent).toContain("Network down");
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+    cleanup();
+  });
+});
+
+describe("useConfirmSubmit on a multi-submit form", () => {
+  it("picks the dialog off the clicked button and keeps it as the submitter", async () => {
+    const requestSubmit = vi
+      .spyOn(HTMLFormElement.prototype, "requestSubmit")
+      .mockImplementation(() => {});
+
+    function TestForm() {
+      const confirmSubmit = useConfirmSubmit();
+      return createElement(
+        "form",
+        {
+          onSubmit: confirmSubmit((submitter) =>
+            submitter?.value === "delete"
+              ? { title: "Delete it?", confirmLabel: "Yes, delete", tone: "destructive" }
+              : null,
+          ),
+        },
+        createElement("button", { type: "submit", name: "intent", value: "save" }, "Save"),
+        createElement("button", { type: "submit", name: "intent", value: "delete" }, "Delete"),
+      );
+    }
+
+    const { container, cleanup } = mount(
+      createElement(DialogProvider, null, createElement(TestForm)),
+    );
+
+    const form = container.querySelector("form")!;
+    const deleteBtn = Array.from(container.querySelectorAll("button")).find(
+      (b) => b.value === "delete",
+    )!;
+
+    // A SubmitEvent carrying the Delete button as its submitter.
+    await act(async () => {
+      form.dispatchEvent(
+        new SubmitEvent("submit", {
+          bubbles: true,
+          cancelable: true,
+          submitter: deleteBtn,
+        }),
+      );
+    });
+
+    expect(container.textContent).toContain("Delete it?");
+    clickButton(container, "Yes, delete");
+    await flush();
+
+    // Re-submitted WITH the submitter, so the action still receives intent=delete.
+    expect(requestSubmit).toHaveBeenCalledTimes(1);
+    expect(requestSubmit).toHaveBeenCalledWith(deleteBtn);
+    cleanup();
+  });
+
+  it("lets a button with no dialog submit straight through", async () => {
+    const requestSubmit = vi
+      .spyOn(HTMLFormElement.prototype, "requestSubmit")
+      .mockImplementation(() => {});
+
+    function TestForm() {
+      const confirmSubmit = useConfirmSubmit();
+      return createElement(
+        "form",
+        {
+          onSubmit: confirmSubmit((submitter) =>
+            submitter?.value === "delete" ? { title: "Delete it?" } : null,
+          ),
+        },
+        createElement("button", { type: "submit", name: "intent", value: "save" }, "Save"),
+      );
+    }
+
+    const { container, cleanup } = mount(
+      createElement(DialogProvider, null, createElement(TestForm)),
+    );
+
+    const form = container.querySelector("form")!;
+    const saveBtn = container.querySelector("button")! as HTMLButtonElement;
+    let defaultPrevented = false;
+    await act(async () => {
+      const ev = new SubmitEvent("submit", {
+        bubbles: true,
+        cancelable: true,
+        submitter: saveBtn,
+      });
+      form.dispatchEvent(ev);
+      defaultPrevented = ev.defaultPrevented;
+    });
+
+    // No dialog, nothing blocked — the browser's own submission proceeds.
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(defaultPrevented).toBe(false);
+    expect(requestSubmit).not.toHaveBeenCalled();
+    cleanup();
+  });
+});
+
+describe("useDialog().prompt", () => {
+  it("wears the destructive confirm button when toned destructive", async () => {
+    let api!: ReturnType<typeof useDialog>;
+    function Capture() {
+      api = useDialog();
+      return null;
+    }
+    const { container, cleanup } = mount(
+      createElement(DialogProvider, null, createElement(Capture)),
+    );
+
+    await act(async () => {
+      void api.prompt({
+        title: 'Delete project "dali-os"?',
+        label: "Type the name to confirm",
+        confirmLabel: "Delete project",
+        tone: "destructive",
+      });
+    });
+
+    const confirm = Array.from(container.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Delete project",
+    )!;
+    expect(confirm.className).toContain("dali-btn--destructive");
+    cleanup();
+  });
+});
