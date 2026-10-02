@@ -25,12 +25,12 @@ import {
   ClassesManagerModal,
   type ComposerState,
 } from "~/calendar/components/composer";
-import { formatPayPeriod, payPeriodFor } from "~/lib/pay-period";
+import { formatDayRange, formatPayPeriod, payPeriodFor } from "~/lib/pay-period";
 import { useActionErrorToast } from "~/lib/useActionErrorToast";
 import { useToast } from "~/components/ui/toast";
 import { useDialog } from "~/components/ui/dialog";
 import { loadCalendarData, submitCalendarAction } from "./calendar.server";
-import { timeEntryDayUtc } from "~/calendar/lib/timesheet-day";
+import { entriesInHoursScope, timesheetWeekBounds } from "~/calendar/lib/timesheet-day";
 import type { Route } from "./+types/calendar";
 import { Tooltip, InfoTip } from "~/components/ui/floating";
 import { buttonClasses } from "~/components/ui/Button";
@@ -55,6 +55,7 @@ import type {
   GroupAvailDay,
   PerUserFree,
   GroupAvailResponse,
+  TimesheetHoursScope,
 } from "~/calendar/lib/types";
 import {
   ADD_EVENT_BTN, EVENT_TEXT, AVAIL_DEEP_GREEN, availabilityTint,
@@ -178,6 +179,7 @@ export default function CalendarPage() {
 const CALENDAR_LAYERS_KEY = "dali:calendar:layers";
 const CALENDAR_HIDDEN_CALS_KEY = "dali:calendar:hiddenCals";
 const CALENDAR_ROLE_COLORS_KEY = "dali:calendar:roleColors";
+const CALENDAR_HOURS_SCOPE_KEY = "dali:calendar:hoursScope";
 
 // One screen, three views, toggleable colored layers. Scheduling and timesheet
 // are reachable from the Create menu (they reuse the existing Schedule/Timesheet
@@ -260,6 +262,26 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       }
       return next;
     });
+
+  // Week or pay period for the rail's role totals. Payroll is approved per
+  // period, so that stays the default; the week is what tells a member how
+  // they're pacing inside it. Persisted like the colours — a member who thinks
+  // in weeks shouldn't have to re-pick on every visit.
+  const [hoursScope, setHoursScope] = useState<TimesheetHoursScope>(() => {
+    try {
+      return window.localStorage.getItem(CALENDAR_HOURS_SCOPE_KEY) === "week" ? "week" : "period";
+    } catch {
+      return "period";
+    }
+  });
+  const changeHoursScope = (scope: TimesheetHoursScope) => {
+    setHoursScope(scope);
+    try {
+      window.localStorage.setItem(CALENDAR_HOURS_SCOPE_KEY, scope);
+    } catch {
+      /* ignore */
+    }
+  };
 
   const [layers, setLayers] = useState<LayerVisibility>(() => {
     const base: LayerVisibility = { ...DEFAULT_LAYER_VISIBILITY };
@@ -692,20 +714,28 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     );
   };
 
-  // Logged-time summary: hours per role across the pay period the visible week
-  // belongs to (matches the Timesheet grid's period totals).
-  const weekPeriod = payPeriodFor(new Date(data.weekStartIso));
-  const periodEntries = data.timeEntries.filter(
-    (t) => payPeriodFor(timeEntryDayUtc(t, data.timezone)).index === weekPeriod.index,
+  // Logged-time summary: hours per role over the rail's chosen scope — the
+  // visible Sun–Sat week, or the pay period that week belongs to (which matches
+  // the Timesheet grid's period bounds).
+  const { startDayUtc, endDayUtc } = timesheetWeekBounds(data.weekStartIso, data.timezone);
+  const scopedEntries = entriesInHoursScope(
+    data.timeEntries,
+    hoursScope,
+    data.weekStartIso,
+    data.timezone,
   );
   const rangeEndMs = rangeEnd.getTime();
   const drawnEntries = data.timeEntries.filter((t) => {
     const start = new Date(timeEntryRange(t, data.timezone).startIso).getTime();
     return start >= rangeStart.getTime() && start < rangeEndMs;
   });
-  const roleBuckets = computeRoleBuckets(data, periodEntries, drawnEntries);
-  // Pay-period hours per role, for the sidebar's role list.
+  const roleBuckets = computeRoleBuckets(data, scopedEntries, drawnEntries);
+  // Scoped hours per role, for the sidebar's role list.
   const roleHours = Object.fromEntries(roleBuckets.map((b) => [b.key, b.hours]));
+  const hoursRangeLabel =
+    hoursScope === "week"
+      ? formatDayRange(startDayUtc, endDayUtc)
+      : formatPayPeriod(payPeriodFor(startDayUtc), data.timezone);
 
   // In timesheet mode the grid logs hours, so the create paths land on the
   // timesheet popover instead of the event modal — an entry with no event
@@ -855,6 +885,9 @@ function CalendarScreen({ data }: { data: LoaderData }) {
             myRoles={data.myRoles}
             roleColors={roleColors}
             roleHours={roleHours}
+            hoursScope={hoursScope}
+            onChangeHoursScope={changeHoursScope}
+            hoursRangeLabel={hoursRangeLabel}
             setRoleColor={setRoleColor}
             onMeetWith={(userId) => openCreateModal(undefined, undefined, [userId])}
           />

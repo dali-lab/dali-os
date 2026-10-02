@@ -12,6 +12,10 @@ import type { GeneralCalendarState } from "~/lib/general-calendar";
 /** The unified calendar's three views. */
 export type CalendarView = "day" | "week" | "month" | "agenda";
 
+/** What the Timesheet rail's per-role hours are totalled over: the visible
+ *  Sun–Sat week, or the whole pay period that week sits in. */
+export type TimesheetHoursScope = "week" | "period";
+
 export type WhSegment = {
   id: string;
   startMinute: number;

@@ -18,6 +18,10 @@
 // getters — the same date-only reading nominalDayRange uses for untimed rows.
 
 import { getZonedYMD } from "~/lib/timezone";
+import { payPeriodFor } from "~/lib/pay-period";
+import type { TimesheetHoursScope } from "~/calendar/lib/types";
+
+const DAY_MS = 86_400_000;
 
 export type TimesheetDayEntry = {
   /** ISO instant (meeting/block rows) or UTC midnight of a picked day (form rows). */
@@ -37,4 +41,42 @@ export function timeEntryDayUtc(entry: TimesheetDayEntry, timezone: string): Dat
   }
   const d = new Date(entry.date);
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+}
+
+/**
+ * Inclusive UTC-midnight bounds of the Sun–Sat week that `weekStartIso` opens.
+ *
+ * `weekStartIso` is an instant — local midnight on the Sunday — so it is read
+ * back through the viewer's zone rather than with the UTC getters. East of UTC
+ * that instant falls on the Saturday in UTC terms, which would slide the whole
+ * week a day early and, at a pay-period boundary, drop the opening Sunday's
+ * hours into the period before it.
+ */
+export function timesheetWeekBounds(
+  weekStartIso: string,
+  timezone: string,
+): { startDayUtc: Date; endDayUtc: Date } {
+  const { year, month, day } = getZonedYMD(new Date(weekStartIso), timezone);
+  const startDayUtc = new Date(Date.UTC(year, month - 1, day));
+  return { startDayUtc, endDayUtc: new Date(startDayUtc.getTime() + 6 * DAY_MS) };
+}
+
+/**
+ * The entries the Timesheet rail totals: those falling in the visible week, or
+ * in the whole pay period that week belongs to.
+ */
+export function entriesInHoursScope<T extends TimesheetDayEntry>(
+  entries: T[],
+  scope: TimesheetHoursScope,
+  weekStartIso: string,
+  timezone: string,
+): T[] {
+  const { startDayUtc, endDayUtc } = timesheetWeekBounds(weekStartIso, timezone);
+  const periodIndex = payPeriodFor(startDayUtc).index;
+  return entries.filter((entry) => {
+    const dayUtc = timeEntryDayUtc(entry, timezone);
+    return scope === "week"
+      ? dayUtc >= startDayUtc && dayUtc <= endDayUtc
+      : payPeriodFor(dayUtc).index === periodIndex;
+  });
 }
