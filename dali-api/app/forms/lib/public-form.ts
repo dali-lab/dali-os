@@ -60,12 +60,15 @@ function applyFormVariables(
 ): Question[] {
   const vars = resolveFormVariables({ term: termCode });
   if (Object.keys(vars).length === 0) return questions;
+  // Guarded per field: a stored question can carry an empty or missing label
+  // (the builder renders those as "Untitled question"), and a blanket
+  // interpolate would throw on the fill page for the whole form.
   const sub = (text: string) => interpolateVars(text, vars);
   return questions.map((q) => ({
     ...q,
     data: {
       ...q.data,
-      label: sub(q.data.label),
+      ...(q.data.label ? { label: sub(q.data.label) } : {}),
       ...(q.data.description ? { description: sub(q.data.description) } : {}),
       ...(q.data.options ? { options: q.data.options.map(sub) } : {}),
     },
@@ -129,7 +132,8 @@ export async function loadPublicForm(
   );
 
   const boundTermCode =
-    pickStaffingBinding(form.cycleBindings)?.staffingCycle.term.code ?? null;
+    pickStaffingBinding(form.cycleBindings ?? [])?.staffingCycle.term.code ??
+    null;
 
   return {
     formId: form.id,
@@ -684,9 +688,7 @@ export async function submitMemberForm(args: {
     // row through — acceptable for this surface.
     if (form.oneResponsePerMember) {
       const existing = await existingOrdinarySubmission(form.id, args.userId);
-      if (existing) {
-        return { error: "You've already filled out this form.", status: 409 };
-      }
+      if (existing) return { ...ALREADY_FILLED };
     }
 
     // The onboarding "New Member Profile" form IS the onboarding step: it writes

@@ -101,3 +101,35 @@ describe("loadPublicForm term token", () => {
     expect(form?.questions[0].data.label).toContain("{{term}}");
   });
 });
+
+describe("ordinary forms are untouched by the term token", () => {
+  it("returns an unbound form's questions unchanged, including an unlabelled one", async () => {
+    // A standalone form has no cycle bindings, so there are no vars to
+    // substitute and the questions come back as stored. The empty label is the
+    // shape the builder allows ("Untitled question"), which a blanket
+    // interpolate would have thrown on.
+    const questions = [
+      { key: "q1", type: "textarea", required: true, data: { label: "" } },
+      {
+        key: "q2",
+        type: "text",
+        required: false,
+        data: { label: "Your major" },
+      },
+    ];
+    mockPrisma.form.findUnique.mockResolvedValue({
+      id: "form-2",
+      name: "Feedback",
+      published: true,
+      versions: [
+        { id: "ver-1", questions, intro: null, updatedAt: new Date() },
+      ],
+      cycleBindings: [],
+    });
+
+    const form = await loadPublicForm("tok");
+
+    expect(form?.questions[0].data.label).toBe("");
+    expect(form?.questions[1].data.label).toBe("Your major");
+  });
+});

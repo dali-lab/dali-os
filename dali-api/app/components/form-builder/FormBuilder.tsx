@@ -517,9 +517,10 @@ export function FormBuilderTab({
               placeholder="e.g. What is your major?"
             />
             <p className="mt-1 text-xs text-muted-foreground">
-              Write{" "}
-              <span className="font-mono">{placeholder("term")}</span> for the
-              term this form is bound to, and one form can serve every round.
+              On a form bound to a staffing slot,{" "}
+              <span className="font-mono">{placeholder("term")}</span> fills in
+              that cycle's term, so one form can serve every round. Anywhere
+              else it stays as written.
             </p>
             {labelUnknownVars.length > 0 && (
               <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
