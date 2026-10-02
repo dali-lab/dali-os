@@ -14,7 +14,11 @@ import {
   type GoogleAttendee,
 } from "~/lib/google-calendar";
 import { primaryEmail, formatDateShort } from "~/lib/display";
-import { resolveUserTimeZone } from "~/lib/timezone";
+import {
+  APPLICATION_TZ,
+  formatInstantWithZoneLabel,
+  resolveUserTimeZone,
+} from "~/lib/timezone";
 import { buildIcs } from "~/lib/ics";
 import {
   createProjectPage,
@@ -126,13 +130,16 @@ async function googleAttendeesFor(
 // meeting, Google's own invite) carries these fields too, but the in-app feed and
 // the Slack DM have no attachment to open — so where and what the meeting is has
 // to be in the message itself.
+//
+// `when` arrives already formatted in the recipient's own display zone, which is
+// why the body is composed per recipient rather than once for the fan-out.
 function inviteBody(
-  startDate: Date | null,
+  when: string | null,
   location: string | null,
   description: string | null,
 ): string | null {
   const lines = [
-    startDate ? `Starts ${startDate.toISOString()}` : null,
+    when ? `Starts ${when}` : null,
     location ? `Location: ${location}` : null,
     description || null,
   ].filter(Boolean);
@@ -171,20 +178,39 @@ async function sendMeetingInvites(args: {
           userIds: args.recipientIds,
         })
       : null;
+  // Each recipient's display zone, so the start reads in their own local time
+  // with a zone label — the same resolution meeting reminders do.
+  const tzRows = args.startDate
+    ? await prisma.user.findMany({
+        where: { id: { in: args.recipientIds } },
+        select: { id: true, timeZone: true },
+      })
+    : [];
+  const tzByUser = new Map(tzRows.map((r) => [r.id, resolveUserTimeZone(r)]));
   return notify({
     eventType: "meeting.invite",
     createdByUserId: args.actorUserId,
     message: {
-      vars: {
-        itemTitle: args.title,
-        itemDetail: inviteBody(args.startDate, args.location, args.description) ?? "",
-      },
+      vars: { itemTitle: args.title },
       link: `/calendar?meeting=${args.meetingId}`,
       sourceGroupId: args.sourceGroupId,
       scheduledMeetingId: args.meetingId,
     },
     recipients: args.recipientIds.map((userId) => ({
       userId,
+      vars: {
+        itemDetail:
+          inviteBody(
+            args.startDate
+              ? formatInstantWithZoneLabel(
+                  args.startDate,
+                  tzByUser.get(userId) ?? APPLICATION_TZ,
+                )
+              : null,
+            args.location,
+            args.description,
+          ) ?? "",
+      },
       ics: icsByUser?.get(userId) ?? null,
     })),
   });
