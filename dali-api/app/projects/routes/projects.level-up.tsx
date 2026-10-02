@@ -18,6 +18,7 @@ import {
   setSlotGate,
 } from "../lib/form-slots";
 import { SubmissionFilters } from "../components/SubmissionFilters";
+import { ColumnFilters, useColumnFilters } from "../components/ColumnFilters";
 import { SlotAdvancedSettingsModal } from "../components/SlotAdvancedSettingsModal";
 import { DomainFilter } from "../components/DomainFilter";
 import { TermFilter } from "~/components/TermFilter";
@@ -445,10 +446,15 @@ function Loaded({ data }: { data: LoadedData }) {
     targetLevel: Level;
   } | null>(null);
 
+  const columnFilters = useColumnFilters(data.tableColumns);
+
   const { search, setSearch, filtered } = useFilteredList(data.submissions, {
     searchFields: (s) => [s.name, s.email],
-    predicates: [(s) => !domainId || s.domainIds.includes(domainId)],
-    deps: [domainId],
+    predicates: [
+      (s) => !domainId || s.domainIds.includes(domainId),
+      columnFilters.predicate,
+    ],
+    deps: [domainId, columnFilters.active],
   });
 
   const domains = useMemo(
@@ -497,6 +503,15 @@ function Loaded({ data }: { data: LoadedData }) {
         <DomainFilter domains={domains} value={domainId} onChange={setDomainId} />
         <TermFilter terms={data.termOptions} selected={data.selectedTerm} />
       </div>
+
+      {!data.noFormConnected && (
+        <ColumnFilters
+          columns={data.tableColumns}
+          rows={data.submissions}
+          filters={columnFilters.filters}
+          onChange={columnFilters.setFilters}
+        />
+      )}
 
       <div
         className={cn(
