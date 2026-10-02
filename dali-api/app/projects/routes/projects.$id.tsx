@@ -1774,6 +1774,9 @@ export default function ProjectDetail() {
   // board's create form; the two are siblings under Progress, so the signal goes
   // up here and back down — carrying the epic/story it came from, if any.
   const [taskCreateSeed, setTaskCreateSeed] = useState<TaskCreateSeed | null>(null);
+  // And the return leg: an epic the planning tab closed for a task form gets
+  // put back once that form closes, saved or dismissed.
+  const [epicReopen, setEpicReopen] = useState<{ epicId: string } | null>(null);
 
   // Per-epic term footprint, indexed for the planning list's term filter.
   const epicTermIds = useMemo(
@@ -1886,8 +1889,10 @@ export default function ProjectDetail() {
         setTaskCreateSeed({
           epicId: link?.epicId ?? null,
           storyId: link?.storyId ?? null,
+          reopenEpicId: link?.reopenEpicId ?? null,
         })
       }
+      reopenEpic={epicReopen}
     />
   );
   const board = (
@@ -1899,6 +1904,9 @@ export default function ProjectDetail() {
       currentUserId={currentUserId}
       currentUserName={userName}
       createSeed={taskCreateSeed}
+      onCreateClosed={(seed) =>
+        setEpicReopen(seed.reopenEpicId ? { epicId: seed.reopenEpicId } : null)
+      }
       // The people filter lives on the board's own toolbar (os), beside search;
       // it only narrows the board's tasks.
       peopleOptions={peopleOptions}
@@ -5614,6 +5622,7 @@ function PlanningTab({
   userName,
   onTaskClick,
   onAddTask,
+  reopenEpic,
 }: {
   projectId: string;
   epics: TimelineEpic[];
@@ -5629,7 +5638,12 @@ function PlanningTab({
   collabToken: string | null;
   userName: string;
   onTaskClick: (taskId: string) => void;
-  onAddTask?: (link?: { epicId: string; storyId: string }) => void;
+  onAddTask?: (link?: {
+    epicId: string;
+    storyId: string;
+    reopenEpicId?: string;
+  }) => void;
+  reopenEpic?: { epicId: string } | null;
 }) {
   return (
     <div className="flex flex-col gap-3">
@@ -5649,6 +5663,7 @@ function PlanningTab({
         currentTermId={currentTermId}
         onTaskClick={onTaskClick}
         onAddTask={onAddTask}
+        reopenEpic={reopenEpic}
       />
     </div>
   );
