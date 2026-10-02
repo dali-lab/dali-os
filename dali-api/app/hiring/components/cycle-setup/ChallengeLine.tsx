@@ -1,16 +1,52 @@
+import { useState } from "react";
 import { Link, useFetcher } from "react-router";
 import { Plus, X } from "lucide-react";
+import { useOsChrome } from "~/components/os-chrome";
 import { buttonClasses } from "~/components/ui/Button";
-import { Tooltip } from "~/components/ui/floating";
+import { Select, Tooltip } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
-import { DomainSubRow, SubRowEmpty } from "./DomainSubRow";
-import { AlertIcon } from "./SetupCard";
+import { formatVersionName, type VersionLabelInput } from "~/lib/formatVersion";
+import { DomainSubRow, SubRowEmpty, SubRowVersion } from "./DomainSubRow";
+import { AlertIcon, rowTrigger } from "./SetupCard";
 
 export type DomainChallenge = {
-  forms: { id: string; formId: string; name: string }[];
-  /** Who owes a challenge when there's none yet. */
-  lead: string | null;
+  forms: ({ id: string; formId: string } & VersionLabelInput)[];
+  /** Existing forms the lead can still link as a challenge. */
+  pickable: { id: string; name: string }[];
 };
+
+/** Pick an existing form as a challenge, or start a new one. */
+export function ChallengeFormPicker({ pickable, onAdd, onCancel }: {
+  pickable: { id: string; name: string }[];
+  /** Called with the picked form's id, or nothing for a new form. */
+  onAdd: (formId?: string) => void;
+  onCancel: () => void;
+}) {
+  const { formTrigger } = useOsChrome();
+  const small = buttonClasses("secondary", "sm");
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {pickable.length > 0 && (
+        <div className="min-w-[14rem] flex-1">
+          <Select
+            ariaLabel="Challenge form"
+            defaultValue=""
+            placeholder="Pick a form"
+            onChange={(id) => id && onAdd(id)}
+            options={pickable.map((f) => ({ value: f.id, label: f.name }))}
+            buttonClassName={rowTrigger(formTrigger)}
+          />
+        </div>
+      )}
+      <button type="button" onClick={() => onAdd()} className={small}>
+        <Plus className="h-3.5 w-3.5" aria-hidden /> New form
+      </button>
+      <button type="button" onClick={onCancel} className={small}>
+        Cancel
+      </button>
+    </div>
+  );
+}
 
 // A domain's challenge forms on its setup row, each linking to its editor.
 // Adding and removing follow the domain-lead page's rules (Draft only, and a
@@ -28,17 +64,23 @@ export function ChallengeLine({
   const fetcher = useFetcher();
   const dialog = useDialog();
   const busy = fetcher.state !== "idle";
+  const [picking, setPicking] = useState(false);
+  const small = buttonClasses("secondary", "sm");
+  const add = (formId?: string) => {
+    setPicking(false);
+    fetcher.submit({ intent: "create-challenge-form", domainId, ...(formId && { formId }) }, { method: "post", preventScrollReset: true });
+  };
 
-  async function removeForm(cdfId: string, name: string) {
+  async function removeForm(cdfId: string, label: string) {
     const ok = await dialog.confirm({
-      title: `Remove ${name} from this domain's challenge?`,
+      title: `Remove ${label} from this domain's challenge?`,
       description:
         "Applicants who haven't started it lose access. Anyone who already picked it keeps theirs.",
       confirmLabel: "Remove",
       tone: "destructive",
     });
     if (!ok) return;
-    fetcher.submit({ intent: "remove-challenge-form", cdfId }, { method: "post" });
+    fetcher.submit({ intent: "remove-challenge-form", cdfId }, { method: "post", preventScrollReset: true });
   }
 
   return (
@@ -46,12 +88,12 @@ export function ChallengeLine({
       label="Challenge"
       value={
         challenge.forms.length === 0 ? (
-          <SubRowEmpty>None yet{challenge.lead ? ` · ${challenge.lead}` : ""}</SubRowEmpty>
+          <SubRowEmpty>None yet</SubRowEmpty>
         ) : (
           challenge.forms.map((f) => (
-            <span key={f.id} className="inline-flex items-center gap-1">
-              <Link to={`/forms/edit/${f.formId}`} className="hover:underline">
-                {f.name}
+            <SubRowVersion key={f.id} version={f}>
+              <Link to={`/forms/edit/${f.formId}`} className="min-w-0 truncate hover:underline">
+                {formatVersionName(f)}
               </Link>
               {editable && (
                 <Tooltip content="Remove">
@@ -59,27 +101,29 @@ export function ChallengeLine({
                     type="button"
                     disabled={busy}
                     aria-label={`Remove ${f.name}`}
-                    onClick={() => void removeForm(f.id, f.name)}
+                    onClick={() => void removeForm(f.id, formatVersionName(f))}
                     className="rounded-os-item p-0.5 text-os-grey hover:bg-os-container hover:text-foreground"
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>
                 </Tooltip>
               )}
-            </span>
+            </SubRowVersion>
           ))
         )
       }
       action={
-        editable && (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => fetcher.submit({ intent: "create-challenge-form", domainId }, { method: "post" })}
-            className={buttonClasses("secondary", "sm")}
-          >
+        editable &&
+        !picking && (
+          <button type="button" disabled={busy} onClick={() => setPicking(true)} className={small}>
             <Plus className="h-3.5 w-3.5" aria-hidden /> {busy ? "Adding…" : "Add challenge"}
           </button>
+        )
+      }
+      editor={
+        editable &&
+        picking && (
+          <ChallengeFormPicker pickable={challenge.pickable} onAdd={add} onCancel={() => setPicking(false)} />
         )
       }
     />

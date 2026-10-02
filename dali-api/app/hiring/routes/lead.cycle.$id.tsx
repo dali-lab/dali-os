@@ -65,7 +65,7 @@ import { OpenApplicationsConfirmModal } from "~/hiring/components/cycle-setup/Op
 import { TermDatesCard } from "~/hiring/components/cycle-setup/TermDatesCard";
 import { AudienceCard } from "~/hiring/components/cycle-setup/AudienceCard";
 import { NavSection, SectionNavLayout } from "~/hiring/components/cycle-setup/SectionNav";
-import { DomainSubRow, SubRowEmpty } from "~/hiring/components/cycle-setup/DomainSubRow";
+import { DomainSubRow, SubRowEmpty, SubRowVersion } from "~/hiring/components/cycle-setup/DomainSubRow";
 import { ChallengeLine, NotReadyIcon, type DomainChallenge } from "~/hiring/components/cycle-setup/ChallengeLine";
 import { DomainRosterCard } from "~/hiring/components/cycle-setup/DomainRosterCard";
 import { TimelineCard } from "~/hiring/components/cycle-setup/TimelineCard";
@@ -179,7 +179,23 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       },
       statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
       applicationForm: { include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } } },
-      domainChallengeForms: { select: { id: true, domainId: true, formId: true, form: { select: { name: true } } } },
+      domainChallengeForms: {
+        select: {
+          id: true,
+          domainId: true,
+          formId: true,
+          form: {
+            select: {
+              name: true,
+              versions: {
+                orderBy: { versionNumber: "desc" },
+                take: 1,
+                select: { versionNumber: true, createdAt: true, createdBy: { select: { firstName: true, lastName: true } } },
+              },
+            },
+          },
+        },
+      },
     },
   });
 
@@ -203,7 +219,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const allDomains = await prisma.domain.findMany({ orderBy: { name: "asc" } });
 
-  // All Drive Forms — for the "bind a different form" picker in Setup.
+  // All Drive Forms — for the application form and challenge pickers in Setup.
   const allForms = await prisma.form.findMany({
     orderBy: { name: "asc" },
     select: { id: true, name: true },
@@ -267,7 +283,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // Which domains already have reviews assigned (used to gate rubric edits —
   // once any domain application has a review, changing the rubric out from
   // under it would invalidate scoring).
-  const domainIds: string[] = cycle.domains.map((d: any) => d.domainId);
   const domainRubricVersions = await prisma.rubricVersion.findMany({
     include: { rubric: { select: { name: true } }, createdBy: { select: { firstName: true, lastName: true } } },
     orderBy: { createdAt: "desc" },
@@ -330,23 +345,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     (await listHiringEmails()).map((e) => [e.slot, { subject: e.subject, body: e.body }]),
   );
 
-  // Domain leads per cycle domain, used to name who owes a missing
-  // challenge. DomainLeadAssignment has no "current" flag;
-  // ordering by createdAt desc picks the most-recently-assigned lead first,
-  // and we dedupe by user across terms.
-  const domainLeadAssignments = domainIds.length > 0
-    ? await prisma.domainLeadAssignment.findMany({
-        where: { domainId: { in: domainIds } },
-        include: { user: { select: { id: true, firstName: true, lastName: true } } },
-        orderBy: { createdAt: "desc" },
-      })
-    : [];
-  const domainLeadsByDomain: Record<string, Array<{ id: string; firstName: string | null; lastName: string | null }>> = {};
-  for (const a of domainLeadAssignments) {
-    const list = (domainLeadsByDomain[a.domainId] ??= []);
-    if (!list.some((u) => u.id === a.user.id)) list.push(a.user);
-  }
-
   const memberSetup = isMemberCycle ? await loadMemberCycleSetup(params.id) : null;
   const [progress, termOptions, phaseStatusByDomain] = await Promise.all([
     getCycleProgress(params.id),
@@ -373,7 +371,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       hiringEmails,
       domainRubricVersions,
       reviewedDomainIds,
-      domainLeadsByDomain,
       confidentialityAgreementOptions,
       currentConfidentialityBinding,
       confidentialitySignatures,
@@ -645,7 +642,12 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (intent === "create-challenge-form" || intent === "remove-challenge-form") {
     const refused =
       intent === "create-challenge-form"
-        ? await addDomainChallenge(params.id, formData.get("domainId") as string, auth.user.sub)
+        ? await addDomainChallenge(
+            params.id,
+            formData.get("domainId") as string,
+            auth.user.sub,
+            (formData.get("formId") as string) || null,
+          )
         : await removeDomainChallenge(formData.get("cdfId") as string, params.id);
     if (refused === "not-draft") {
       return Response.json({ error: "Challenges lock once the cycle opens." }, { status: 409 });
@@ -1201,12 +1203,13 @@ export default function HiringLeadCycleDetails() {
   // A domain's challenges, shown on its row only when the cycle has them.
   const challengeFor = (domainId: string): DomainChallenge | null => {
     if (!cycle?.hasChallenges) return null
-    const lead = (loaderData?.domainLeadsByDomain?.[domainId] ?? [])[0]
+    const forms = (cycle?.domainChallengeForms ?? [])
+      .filter((f: any) => f.domainId === domainId)
+      .map((f: any) => ({ id: f.id, formId: f.formId, name: f.form.name, ...f.form.versions?.[0] }))
+    const linked = new Set(forms.map((f: any) => f.formId))
     return {
-      forms: (cycle?.domainChallengeForms ?? [])
-        .filter((f: any) => f.domainId === domainId)
-        .map((f: any) => ({ id: f.id, formId: f.formId, name: f.form.name })),
-      lead: lead ? `${lead.firstName ?? ''} ${lead.lastName ?? ''}`.trim() || null : null,
+      forms,
+      pickable: (loaderData?.allForms ?? []).filter((f: any) => !linked.has(f.id)),
     }
   }
 
@@ -3292,15 +3295,13 @@ function GeneralApplicationSection({
   // "Rubric" / "No rubric" twice.
   const [editingRubric, setEditingRubric] = useState(false);
 
-  const versionLabel = (rv: any, fallback: string) =>
-    formatVersionLabel({
-      name: rv.rubric?.name ?? fallback,
-      versionNumber: rv.versionNumber,
-      createdAt: rv.createdAt,
-      createdBy: rv.createdBy,
-    });
+  const rubricVersion = (rv: any) => ({
+    name: rv.rubric?.name ?? "Rubric",
+    versionNumber: rv.versionNumber,
+    createdAt: rv.createdAt,
+    createdBy: rv.createdBy,
+  });
   const currentRubric = rubricVersionOptions.find((rv: any) => rv.id === currentRubricVersionId);
-  const currentRubricLabel = currentRubric ? versionLabel(currentRubric, "Rubric") : null;
   const small = buttonClasses("secondary", "sm");
 
   return (
@@ -3367,10 +3368,8 @@ function GeneralApplicationSection({
         <DomainSubRow
           label="Rubric"
           value={
-            currentRubricLabel ? (
-              <span className="min-w-0 max-w-full truncate" title={currentRubricLabel}>
-                {currentRubricLabel}
-              </span>
+            currentRubric ? (
+              <SubRowVersion version={rubricVersion(currentRubric)} />
             ) : (
               <SubRowEmpty>None yet</SubRowEmpty>
             )
@@ -3404,7 +3403,7 @@ function GeneralApplicationSection({
                     placeholder="Pick a rubric"
                     options={[
                       { value: "", label: "No rubric" },
-                      ...rubricVersionOptions.map((rv: any): SelectOption => ({ value: rv.id, label: versionLabel(rv, "Rubric") })),
+                      ...rubricVersionOptions.map((rv: any): SelectOption => ({ value: rv.id, label: formatVersionLabel(rubricVersion(rv)) })),
                     ]}
                     buttonClassName={rowTrigger(os.formTrigger)}
                   />
@@ -3452,14 +3451,12 @@ function DomainOverridePanel({
   useEffect(() => { setSelectedRubricId(domain.rubricVersionId ?? ''); }, [domain.rubricVersionId]);
 
   const currentRubric = rubricOptions.find((rv: any) => rv.id === selectedRubricId);
-  const currentRubricLabel = currentRubric
-    ? formatVersionLabel({
-        name: currentRubric.rubric?.name ?? 'Rubric',
-        versionNumber: currentRubric.versionNumber,
-        createdAt: currentRubric.createdAt,
-        createdBy: currentRubric.createdBy,
-      })
-    : null;
+  const rubricVersion = (rv: any) => ({
+    name: rv.rubric?.name ?? 'Rubric',
+    versionNumber: rv.versionNumber,
+    createdAt: rv.createdAt,
+    createdBy: rv.createdBy,
+  });
 
   const os = useOsChrome();
   const confirmSubmit = useConfirmSubmit();
@@ -3555,7 +3552,7 @@ function DomainOverridePanel({
         <DomainSubRow
           label="Rubric"
           value={
-            currentRubricLabel ? currentRubricLabel : <SubRowEmpty>None yet</SubRowEmpty>
+            currentRubric ? <SubRowVersion version={rubricVersion(currentRubric)} /> : <SubRowEmpty>None yet</SubRowEmpty>
           }
           action={
             <>
@@ -3563,7 +3560,7 @@ function DomainOverridePanel({
               {currentRubric && !editingRubric && previewButton}
               {!rubricLocked && !editingRubric && rubricOptions.length > 0 && (
                 <button type="button" onClick={() => setEditingRubric(true)} className={buttonClasses('secondary', 'sm')}>
-                  {currentRubricLabel ? 'Change' : 'Set rubric'}
+                  {currentRubric ? 'Change' : 'Set rubric'}
                 </button>
               )}
             </>
@@ -3591,12 +3588,7 @@ function DomainOverridePanel({
                       { value: "", label: "No rubric" },
                       ...rubricOptions.map((rv: any): SelectOption => ({
                         value: rv.id,
-                        label: formatVersionLabel({
-                          name: rv.rubric?.name ?? 'Rubric',
-                          versionNumber: rv.versionNumber,
-                          createdAt: rv.createdAt,
-                          createdBy: rv.createdBy,
-                        }),
+                        label: formatVersionLabel(rubricVersion(rv)),
                       })),
                     ]}
                     buttonClassName={rowTrigger(os.formTrigger)}
