@@ -28,6 +28,7 @@ import {
 } from "./blocknote-server";
 import { ensureBlocks } from "./legacy/pm-to-blocknote";
 import { ydocToBlocks } from "./read";
+import { deriveBlogPreview } from "~/lib/blog-preview";
 
 export interface CollabSource {
   // Initial content for a brand-new room (no CollabDocument row yet). Returns
@@ -93,6 +94,34 @@ export const COLLAB_SOURCES: Record<string, CollabSource> = {
     },
     async authorize(userSub) {
       return isCore(userSub);
+    },
+  },
+
+  // Blog post body. The author + Core edit; everyone else (and the public API)
+  // reads the synced contentJson. The front page's excerpt and cover image are
+  // derived from the body here, so listing posts never decodes a document.
+  blogPost: {
+    async seed(id) {
+      const post = await prisma.blogPost.findUnique({
+        where: { id },
+        select: { contentJson: true },
+      });
+      return post?.contentJson ?? null;
+    },
+    async syncBack(id, blocks) {
+      // updateMany: a store can land after the post was deleted.
+      await prisma.blogPost.updateMany({
+        where: { id },
+        data: { contentJson: blocks as unknown as object, ...deriveBlogPreview(blocks) },
+      });
+    },
+    async authorize(userSub, id) {
+      const post = await prisma.blogPost.findUnique({
+        where: { id },
+        select: { authorId: true },
+      });
+      if (!post) return false;
+      return post.authorId === userSub || (await isCore(userSub));
     },
   },
 

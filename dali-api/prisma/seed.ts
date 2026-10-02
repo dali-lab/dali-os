@@ -10,6 +10,7 @@ import { replaceIntentSet } from "../app/projects/lib/intent-validation.js";
 import { syncDefaultGroups } from "../app/lib/groups.js";
 import { parseChartString } from "../app/lib/chart-string.js";
 import { seedEducationDemo } from "./seeds/education-demo.js";
+import { seedResourcesDemo } from "./seeds/resources-demo.js";
 import {
   ensureEducationTemplates,
   createOfferingApplicationForm,
@@ -4527,6 +4528,10 @@ async function main() {
         adminId: admin.id,
         termId: term26S.id,
       });
+
+      // Blog posts on The Scoop and two bookmark pages. See
+      // prisma/seeds/resources-demo.ts.
+      await seedResourcesDemo(prisma, { adminId: admin.id });
 
       // Lab-workspace Page + a NotificationPreference row for the admin.
       await prisma.page.deleteMany({

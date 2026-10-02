@@ -10,6 +10,9 @@ import { selfCheckInToSession } from "~/education/lib/session-checkin.server";
 // from their own session (auth.user.sub), so it can never mark someone else. The
 // session must have check-in open and be inside its window, and the caller must
 // be an Approved enrollee — all enforced in selfCheckInToSession.
+//
+// Enrollment is the only gate: most students in a course are Dartmouth accounts
+// with no DALIMember row, so nothing here may key off auth type or membership.
 
 export async function action({ request, params }: Route.ActionArgs) {
   if (request.method !== "POST") {
@@ -17,9 +20,6 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
-  if (auth.user.type === "applicant") {
-    return Response.json({ error: "Forbidden" }, { status: 403 });
-  }
 
   const result = await selfCheckInToSession({
     sessionId: params.sessionId!,

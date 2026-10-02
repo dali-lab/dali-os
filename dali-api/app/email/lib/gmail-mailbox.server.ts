@@ -107,6 +107,7 @@ export interface ThreadSummary {
   id: string;
   subject: string;
   from: string;
+  to: string;
   snippet: string;
   date: string;
   unread: boolean;
@@ -190,15 +191,17 @@ function collectParts(part: GmailPart, out: { html?: string; text?: string; atta
   for (const child of part.parts ?? []) collectParts(child, out);
 }
 
-const SUMMARY_HEADERS = ["From", "Subject"]
+const SUMMARY_HEADERS = ["From", "To", "Subject"]
   .map((h) => `metadataHeaders=${h}`)
   .join("&");
 
 export async function listThreads(
   token: string,
-  opts: { query: string; max: number },
+  opts: { query: string; max: number; includeSpamTrash?: boolean },
 ): Promise<ThreadSummary[]> {
-  const params = new URLSearchParams({ q: opts.query, maxResults: String(opts.max) });
+  const params = new URLSearchParams({ maxResults: String(opts.max) });
+  if (opts.query) params.set("q", opts.query);
+  if (opts.includeSpamTrash) params.set("includeSpamTrash", "true");
   const list = await gmail<{ threads?: { id: string }[] }>(token, `/threads?${params}`);
   const threads = await Promise.all(
     (list.threads ?? []).map((t) =>
@@ -218,6 +221,7 @@ export async function listThreads(
         id: t.id,
         subject: header(first.payload, "Subject") || "(no subject)",
         from: header(last.payload, "From"),
+        to: header(last.payload, "To"),
         snippet: decodeEntities(last.snippet ?? ""),
         date: new Date(Number(last.internalDate ?? 0)).toISOString(),
         unread: messages.some((m) => m.labelIds?.includes("UNREAD")),

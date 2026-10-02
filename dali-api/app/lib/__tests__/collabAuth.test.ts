@@ -16,6 +16,7 @@ vi.mock("~/lib/db", () => ({
     educationOffering: { findUnique: vi.fn() },
     educationApplication: { findFirst: vi.fn() },
     educationSubmission: { findUnique: vi.fn() },
+    resourceBookmark: { findUnique: vi.fn() },
   },
 }));
 
@@ -88,7 +89,11 @@ describe("authorizeCollabDoc", () => {
     expect(await authorizeCollabDoc("user1", "unknown:id:field")).toMatchObject(denied());
   });
 
-  describe("resources doc", () => {
+  describe("resources bookmark docs", () => {
+    beforeEach(() => {
+      mockPrisma.resourceBookmark.findUnique.mockResolvedValue({ id: "lab" });
+    });
+
     it("lets Core write", async () => {
       (isCore as any).mockResolvedValue(true);
       expect(await authorizeCollabDoc("user1", "resources:lab:body")).toEqual(allowed());
@@ -106,9 +111,10 @@ describe("authorizeCollabDoc", () => {
       expect(await authorizeCollabDoc("user1", "resources:lab:body")).toMatchObject(denied());
     });
 
-    it("rejects an invented resources room — there is exactly one", async () => {
+    it("rejects a room with no bookmark behind it", async () => {
       (isCore as any).mockResolvedValue(true);
-      expect(await authorizeCollabDoc("user1", "resources:other:body")).toMatchObject(denied());
+      mockPrisma.resourceBookmark.findUnique.mockResolvedValue(null);
+      expect(await authorizeCollabDoc("user1", "resources:gone:body")).toMatchObject(denied());
     });
   });
 

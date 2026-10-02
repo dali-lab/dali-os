@@ -21,7 +21,6 @@ import {
 } from "~/signing/lib/state.server";
 import type { SigningAudience } from "~/generated/prisma/enums";
 import { AUDIENCE_RESOLVERS } from "~/signing/lib/audiences";
-import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { recordSignature } from "~/signing/lib/sign.server";
 import { notifyCountersignRequest, sendCoSignedReceipts } from "~/signing/lib/notify.server";
 import { resolveSigningVariablesForSigner } from "~/signing/lib/variables.server";
@@ -113,8 +112,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     signerRole === "member" &&
     status === "signed" &&
     binding.document.requiresMenteeCountersign &&
-    binding.termId &&
-    (await isFeatureEnabledForEveryone("mentee-countersign", request))
+    binding.termId
   ) {
     const menteeIds = [
       ...new Set(
@@ -261,12 +259,10 @@ export async function action({ request, params }: Route.ActionArgs) {
   // Co-signed receipt handling: when the countersign flow is live, hold the
   // thank-you email so it carries BOTH signatures. A mentor with mentees waits
   // for the countersignature; the mentee's sign then emails the fully co-signed
-  // copy to the mentee AND their signed mentor(s). A mentorless mentor (or the
-  // flag off / a non-countersign doc) still gets an immediate receipt — nothing
+  // copy to the mentee AND their signed mentor(s). A mentorless mentor (or a
+  // non-countersign doc) still gets an immediate receipt — nothing
   // is coming to wait for.
-  const countersignActive =
-    binding.document.requiresMenteeCountersign &&
-    (await isFeatureEnabledForEveryone("mentee-countersign", request));
+  const countersignActive = binding.document.requiresMenteeCountersign;
   let deferReceipt = false;
   if (roleKey === "mentee") {
     deferReceipt = true; // the co-signed receipts are sent below instead

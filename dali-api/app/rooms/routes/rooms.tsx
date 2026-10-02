@@ -1,8 +1,7 @@
 // General ▸ Rooms. Pick a DALI room and a day, see its bookings and meetings on
 // a day timeline, and book a free slot. The schedule is fetched client-side
 // for the browser's local day (the same /api/rooms/:id/schedule window the
-// iPad door display uses), so the server's timezone never matters. Behind the
-// `room-booking` flag.
+// iPad door display uses), so the server's timezone never matters.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { redirect, useLoaderData, useSearchParams } from "react-router";
@@ -11,7 +10,6 @@ import type { Route } from "./+types/rooms";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { isRoomBookingEnabled } from "~/rooms/lib/access.server";
 import { useOsChrome } from "~/components/os-chrome";
 import { Modal, ModalFooter, ModalHeader } from "~/components/Modal";
 import { DateField } from "~/components/ui/DateField";
@@ -31,7 +29,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) throw redirectToLogin(request);
   if (auth.user.type === "applicant") throw redirect("/portal");
-  if (!(await isRoomBookingEnabled(auth.user.sub, request))) throw redirect("/");
 
   const rooms = await prisma.room.findMany({
     where: { archivedAt: null },

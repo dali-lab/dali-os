@@ -23,7 +23,6 @@ vi.mock("~/lib/display-scan.server", () => ({
   startDisplayScan: vi.fn(),
   stopDisplayScan: vi.fn(),
 }));
-vi.mock("~/rooms/lib/access.server", () => ({ isRoomBookingEnabled: vi.fn() }));
 vi.mock("qrcode", () => ({ default: { toString: vi.fn() } }));
 
 import { createElement, act } from "react";

@@ -19,7 +19,6 @@ import { IconButton } from "~/components/ui/IconButton";
 import { Tooltip } from "~/components/ui/floating";
 import { Modal } from "~/components/Modal";
 import { SegmentedTabButtons } from "~/components/AreaPillNav";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { RsvpButtons, notifyTasksChanged } from "~/components/RsvpButtons";
 import { buttonClasses } from "~/components/ui/Button";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
@@ -32,8 +31,8 @@ import type { OpenTask } from "~/components/NotificationBell";
 
 /* ------------------------------------------------------------------ */
 /* The attention stack: open tasks, notifications (incl. meeting-invite */
-/* RSVP) still waiting on the user and, behind the my-project-work      */
-/* flag, their assigned project tasks. Rendered by the shell's bell     */
+/* RSVP) still waiting on the user and their assigned project tasks.     */
+/* Rendered by the shell's bell                                         */
 /* drawer and the My Tasks page, split into Project work and Meetings & */
 /* events tabs.                                                         */
 /*                                                                      */
@@ -256,7 +255,6 @@ export function TasksDrawer({
   onOpen?: OpenLink;
   seeAll?: ReactNode;
 }) {
-  const showWork = useFeatureFlag("my-project-work");
   const [tab, setTab] = useState<FeedTab>("work");
   const feed = splitFeed(tasks, notifications, projectTasks);
   const count = attentionCount(tasks, notifications, projectTasks);
@@ -276,15 +274,13 @@ export function TasksDrawer({
         {seeAll}
         <IconButton label="Close" icon={X} onClick={onClose} className="h-9 w-9" iconClassName="h-5 w-5" />
       </div>
-      {showWork && (
-        <div className="px-5 pb-3.5">
-          <FeedTabs tab={tab} onChange={setTab} feed={feed} stretch />
-        </div>
-      )}
+      <div className="px-5 pb-3.5">
+        <FeedTabs tab={tab} onChange={setTab} feed={feed} stretch />
+      </div>
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 pb-6">
         <TaskFeed
-          cards={showWork ? feed[tab] : [...feed.admin, ...feed.work]}
-          tab={showWork ? tab : undefined}
+          cards={feed[tab]}
+          tab={tab}
           onOpen={onOpen}
         />
       </div>

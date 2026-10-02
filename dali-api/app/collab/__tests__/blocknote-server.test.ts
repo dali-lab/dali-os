@@ -212,3 +212,43 @@ describe("plainTextToBlocks", () => {
     expect(blocksToPlainText(blocks)).toBe("one\nthree");
   });
 });
+
+describe("component blocks", () => {
+  const component = (kind: string, data: unknown) =>
+    ({
+      id: kind,
+      type: "component",
+      props: { kind, data: JSON.stringify(data) },
+      children: [],
+    }) as unknown as DocBlock;
+
+  it("renders a library component to HTML for export and the public site", async () => {
+    const html = await blocksToHtml([
+      component("cards", {
+        fields: { title: "This term" },
+        items: [{ tag: "Deadline", tone: "danger", title: "Prototype due", href: "javascript:alert(1)" }],
+      }),
+    ]);
+    expect(html).toContain('data-component="cards"');
+    expect(html).toContain("Prototype due");
+    expect(html).not.toContain("javascript:");
+  });
+
+  it("never exports custom code", async () => {
+    const html = await blocksToHtml([
+      component("code", { fields: { html: "<script>secret()</script>" }, items: [] }),
+    ]);
+    expect(html).not.toContain("secret()");
+    expect(html).not.toContain("iframe");
+  });
+
+  it("survives a Y.Doc round trip", () => {
+    const doc = new Y.Doc();
+    const fragment = doc.getXmlFragment("blocknote");
+    const data = { fields: { title: "T" }, items: [] };
+    blocksToFragment([component("links", data)], fragment);
+    const [block] = fragmentToBlocks(fragment);
+    expect(block?.type).toBe("component");
+    expect(JSON.parse(String(block?.props.data))).toEqual(data);
+  });
+});

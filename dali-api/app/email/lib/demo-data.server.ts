@@ -61,6 +61,7 @@ function thread(
     id,
     subject: messages[0].subject,
     from: last.from,
+    to: last.to,
     snippet: preview.replace(/\s+/g, " ").trim().slice(0, 140),
     date: last.date,
     unread,
@@ -257,6 +258,7 @@ export function demoEmailPage(request: Request): EmailPageData {
 
   return {
     userId: "demo",
+    folder: "inbox" as const,
     view,
     inbox,
     query,

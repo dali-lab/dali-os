@@ -56,12 +56,6 @@ export const FEATURE_FLAGS = [
       "Wraps outbound email in one branded layout instead of the four hand-rolled styles it uses today: a real HTML document with a light/dark-aware single-column 600px body, one greeting, one button style, and one footer. Also gives every email a plain-text alternative, which most currently ship without. Content is unchanged — only the frame around it. Ships off.",
   },
   {
-    key: "bound-form-lock",
-    label: "Lock the app to a staffing form",
-    description:
-      "Lets a staffing manager mark a bound form (Intent to Work / Project Bids / Level Up) as required: members in the chosen audience are redirected to fill it before they can use the rest of the app, the same way an unsigned app-enforced agreement gates them. Filling it once clears the lock; it can't be re-filled. Full-time staff and members outside the audience are never gated. Ships off.",
-  },
-  {
     key: "optimal-times",
     label: "Find best meeting times",
     description:
@@ -86,12 +80,6 @@ export const FEATURE_FLAGS = [
       "Adds Core-only buttons on the Mentorship notes grid to Slack-DM mentors who haven't filled in their notes — a bulk 'Message mentors who haven't filled in' button (with an editable message + recipient preview) and a per-mentor nudge. Each mentor also gets an in-app notification. The Slack DM is force-sent regardless of the mentor's notification preferences, but stays prod-gated (staging/dev report 'not sent' unless NOTIFY_SLACK_DM_OVERRIDE=1). Ships off.",
   },
   {
-    key: "mentee-countersign",
-    label: "Mentee countersignatures",
-    description:
-      "Turns mentorship agreements into co-signed documents: once a mentor signs the term's agreement, each of their mentees is required to countersign the same document (they see the mentor's completed copy and add their own signature). Mentees are hard-gated until they countersign, exactly like mentors, and get a 'please countersign' notification when a mentor signs. Only documents with 'Require mentee countersignature' turned on are affected. All-or-nothing (targeting a subset of users would gate some mentees while their mentors are gated for everyone). Ships off.",
-  },
-  {
     key: "education-redesign-v2",
     label: "Education redesign",
     description:
@@ -107,13 +95,7 @@ export const FEATURE_FLAGS = [
     key: "resources",
     label: "Resources page",
     description:
-      "A lab-wide Resources document at /resources: one shared collaborative page with no document chrome, read by every lab member and edited by Core/Admin behind an Edit button. Takes the pinned sidebar slot under Calendar, which moves Drive down into General. Ships off; without it the slot stays Drive and /resources is not reachable.",
-  },
-  {
-    key: "room-booking",
-    label: "Room booking",
-    description:
-      "Book DALI rooms from the web (Room booking, pinned under Resources), put a room on a meeting or event, and manage rooms and their door displays (Core ▸ Rooms). The iPad door displays authenticate with their own token and don't read this flag. Ships off.",
+      "Resources at /resources: a front page of member blog posts (Internal, or Public to also appear on dali.website) plus bookmark tabs, reference pages that Core/Admin create, edit and delete and every lab member reads. Takes the pinned sidebar slot under Calendar, which moves Drive down into General. Ships off; without it the slot stays Drive and /resources is not reachable.",
   },
   {
     key: "ai-meeting-notes",
@@ -122,16 +104,10 @@ export const FEATURE_FLAGS = [
       "A Record button on meeting-note documents, in the browser or the desktop app. Recording always runs in the DALI OS macOS app: it captures system audio (everyone on a call, macOS 14.2+) and the mic, transcribes on-device with Apple's speech recognition, and streams the transcript to the page. On stop, Claude turns it into a summary, decisions, and action items appended to the note with the full transcript. No audio is uploaded or stored. Needs a desktop release newer than 0.1.6. Without an AI provider it adds the transcript only. Ships off.",
   },
   {
-    key: "my-project-work",
-    label: "Project work in My Tasks",
+    key: "email-personal",
+    label: "Email: personal DALI inbox",
     description:
-      "Adds a Project work tab to the notification drawer and My Tasks page: the open project tasks you're assigned to (To do, In progress, In review), flagged when overdue or stale, with Open task and Mark done. They also count toward the bell badge. Meetings, invites and other notifications move to a Meetings & events tab. Ships off.",
-  },
-  {
-    key: "email",
-    label: "Email",
-    description:
-      "An Email tab under Calendar: one unified inbox across a member's connected Gmail accounts (their DALI address and any other Google account), their current project's team account, and shared inboxes from categories they subscribe to (admins manage categories on Email Senders; each subscriber signs in to shared inboxes themselves). Includes AI drafting, proofreading suggestions, rephrasing and translation, recipient autocomplete, shared drafts, private comments on threads, unread counts, and plain-English search. Ships off.",
+      "Lets a member connect their own @dali.dartmouth.edu mailbox to the Email tab, next to project and shared inboxes. Only they can read it. Connecting requires agreeing to a risk notice first, and each agreement is recorded in the audit log. Turning this off hides connected personal inboxes without deleting the sign-in. Ships off.",
   },
 ] as const satisfies readonly FeatureFlagDef[];
 

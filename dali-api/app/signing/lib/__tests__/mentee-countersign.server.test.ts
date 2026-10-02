@@ -10,7 +10,6 @@ const h = vi.hoisted(() => ({
   binding: null as unknown,
   pairs: [] as { mentorUserId: string }[],
   mentorSig: null as null | { id: string },
-  flagOn: true,
   term: { sortKey: 10 } as null | { sortKey: number },
   // notifyCountersignRequest inputs
   notifyBinding: null as unknown,
@@ -39,11 +38,6 @@ vi.mock("~/lib/db", () => ({
   },
 }));
 
-vi.mock("~/lib/feature-flags.server", async (orig) => ({
-  ...(await orig<Record<string, unknown>>()),
-  isFeatureEnabledForEveryone: vi.fn(async () => h.flagOn),
-}));
-
 vi.mock("~/lib/roles", async (orig) => ({
   ...(await orig<Record<string, unknown>>()),
   currentTerm: vi.fn(async () => h.term),
@@ -67,7 +61,6 @@ beforeEach(() => {
   };
   h.pairs = [{ mentorUserId: "m1" }];
   h.mentorSig = { id: "sig1" };
-  h.flagOn = true;
   h.term = { sortKey: 10 };
 
   h.notifyBinding = {
@@ -88,9 +81,9 @@ describe("menteeCountersignState", () => {
 
   it("returns 'signed' when the mentee already countersigned the in-force version — checked FIRST", async () => {
     (h.binding as { signatures: unknown[] }).signatures = [{ versionId: "v1" }];
-    // Even with the flag off / doc opted-out, an existing countersignature wins
-    // so a later re-finalize or mentor un-sign can't re-gate them.
-    h.flagOn = false;
+    // Even with the doc opted-out, an existing countersignature wins so a
+    // later re-finalize or mentor un-sign can't re-gate them.
+    (h.binding as { document: { requiresMenteeCountersign: boolean } }).document.requiresMenteeCountersign = false;
     expect(await menteeCountersignState("mentee1", "b1")).toBe("signed");
   });
 
@@ -101,11 +94,6 @@ describe("menteeCountersignState", () => {
 
   it("returns 'not_owed' when the document does not require countersignatures", async () => {
     (h.binding as { document: { requiresMenteeCountersign: boolean } }).document.requiresMenteeCountersign = false;
-    expect(await menteeCountersignState("mentee1", "b1")).toBe("not_owed");
-  });
-
-  it("returns 'not_owed' when the feature flag is off", async () => {
-    h.flagOn = false;
     expect(await menteeCountersignState("mentee1", "b1")).toBe("not_owed");
   });
 
@@ -148,12 +136,6 @@ describe("notifyCountersignRequest", () => {
     expect(lastRecipients()).toEqual([
       { userId: "mentee2", dedupKey: "countersign.request:b1:v1:mentee2" },
     ]);
-  });
-
-  it("no-ops when the feature flag is off", async () => {
-    h.flagOn = false;
-    await notifyCountersignRequest("b1", "m1");
-    expect(h.notify).not.toHaveBeenCalled();
   });
 
   it("no-ops when the document does not opt in", async () => {

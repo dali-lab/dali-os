@@ -15,7 +15,6 @@ vi.mock("~/lib/tasks", async (importOriginal) => ({
   listNotificationHistory: vi.fn(),
 }));
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn(async () => ({})) }));
-vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/lib/notifications", async (importOriginal) => ({
   // annotateDesktopFeed stays real — the legacy-payload test covers the
   // desktop/urgent derivation it adds.
@@ -32,7 +31,6 @@ import {
   listNotificationHistory,
   SELF_CLEARING_FORM_TODO,
 } from "~/lib/tasks";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import {
   listMyNotifications,
   listRetiredMeetingPingIds,
@@ -58,7 +56,6 @@ beforeEach(() => {
     { id: "t1", title: "Do it", link: "/x" },
   ] as any);
   vi.mocked(listRetiredMeetingPingIds).mockResolvedValue(["stale-1"]);
-  vi.mocked(isFeatureEnabled).mockResolvedValue(false);
   vi.mocked(listMyProjectTasks).mockResolvedValue([{ id: "w1" }] as any);
   vi.mocked(listNotificationHistory).mockResolvedValue({
     items: [{ id: "h1" }],
@@ -88,14 +85,13 @@ describe("GET /api/notifications", () => {
       // Stale-unread rows the feed hid: the desktop shell retires the banners
       // it already delivered for them.
       retiredIds: ["stale-1"],
-      projectTasks: [],
+      // Assigned project tasks ride along, outside taskCount.
+      projectTasks: [{ id: "w1" }],
     });
     expect(listNotificationHistory).not.toHaveBeenCalled();
-    expect(listMyProjectTasks).not.toHaveBeenCalled();
   });
 
-  it("adds assigned project tasks when my-project-work is on, outside taskCount", async () => {
-    vi.mocked(isFeatureEnabled).mockResolvedValue(true);
+  it("keeps assigned project tasks out of taskCount", async () => {
     const json = await (await loader({ request: req() } as any)).json();
     expect(json.projectTasks).toEqual([{ id: "w1" }]);
     expect(json.taskCount).toBe(1);
