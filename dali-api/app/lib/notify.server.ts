@@ -21,11 +21,30 @@ import {
 import { slackConfigured } from "~/slack/lib/slack-client";
 import { publishNotificationChange } from "~/lib/notify-stream.server";
 import { EVENT_TYPES, type EventDef, type EventType } from "~/lib/notification-events";
+import {
+  isNotificationCopyKey,
+  type NotificationCopyKey,
+} from "~/email/lib/notification-copy";
+import {
+  renderNotificationCopy,
+  resolveNotificationCopy,
+} from "~/email/lib/notification-render.server";
 import type { NotificationKind } from "~/generated/prisma/client";
 
 export type NotifyMessage = {
-  title: string;
+  // Optional now: a call site that passes `vars` lets the template supply the
+  // title, which is what makes the wording operator-editable. Passing `title`
+  // explicitly still wins, for copy authored per send (announcements).
+  title?: string;
   body?: string | null;
+  // Which entry in app/email/lib/notification-copy.ts writes this message.
+  // Defaults to the eventType, which is the key for every event carrying exactly
+  // one message; events that say several different things (a cancelled occurrence
+  // vs a cancelled series) name the one they mean.
+  copyKey?: NotificationCopyKey;
+  // Values for the template's {{tokens}}, already formatted — the call site owns
+  // how a time reads, because only it knows the recipient's timezone.
+  vars?: Record<string, string>;
   bodyHtml?: string | null; // sanitized rich HTML for the email channel only
   link?: string | null; // app-relative; email/Slack renderers absolutize
   linkLabel?: string | null; // overrides the email CTA button label
@@ -154,11 +173,36 @@ export async function notify(args: {
     });
   }
 
+  // Which template each recipient's copy comes from. Usually one for the whole
+  // call; resolved as a set so a per-recipient override costs no extra query.
+  const copyKeyFor = (r: NotifyRecipient): NotificationCopyKey | null => {
+    const explicit = r.copyKey ?? args.message.copyKey;
+    if (explicit) return explicit;
+    // Every single-message event names its template after itself.
+    return isNotificationCopyKey(args.eventType) ? args.eventType : null;
+  };
+  const copyByKey = await resolveNotificationCopy(
+    [...byUser.values()].map(copyKeyFor).filter((k): k is NotificationCopyKey => k !== null),
+  );
+  const renderedFor = (r: NotifyRecipient) => {
+    const key = copyKeyFor(r);
+    if (!key) return { subject: null, body: null };
+    return renderNotificationCopy(copyByKey.get(key), {
+      ...(args.message.vars ?? {}),
+      ...(r.vars ?? {}),
+    });
+  };
+
   // Everything merged() returns is written to the Notification row — channel
   // extras (ics) resolve separately.
-  const merged = (r: NotifyRecipient) => ({
-    title: r.title ?? args.message.title,
-    body: r.body ?? args.message.body ?? null,
+  const merged = (r: NotifyRecipient) => {
+    const rendered = renderedFor(r);
+    return {
+    // Explicit beats template beats empty. The template is what an operator
+    // edits; an explicit value is copy the caller authored or composed per
+    // recipient, and must not be overwritten.
+    title: r.title ?? args.message.title ?? rendered.subject ?? "",
+    body: r.body ?? args.message.body ?? rendered.body ?? null,
     link: r.link ?? args.message.link ?? null,
     isTodo: r.isTodo ?? args.message.isTodo ?? false,
     dueAt: r.dueAt ?? args.message.dueAt ?? null,
@@ -167,7 +211,8 @@ export async function notify(args: {
     interviewAssignmentId: r.interviewAssignmentId ?? args.message.interviewAssignmentId ?? null,
     sourceGroupId: r.sourceGroupId ?? args.message.sourceGroupId ?? null,
     kind: r.kind ?? args.message.kind ?? def.kind,
-  });
+    };
+  };
   const icsFor = (r: NotifyRecipient) => r.ics ?? args.message.ics ?? null;
   // Email-only channel extras (like ics): resolved per-recipient, never written
   // to the Notification row.

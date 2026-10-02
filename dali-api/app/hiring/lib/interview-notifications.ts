@@ -61,7 +61,7 @@ export async function notifyInterviewAssigned(args: {
   await notify({
     eventType: "hiring.interview_assigned",
     createdByUserId: args.createdByUserId ?? null,
-    message: { title: "Interview assigned" },
+    message: {},
     recipients: assignments.map((a) => {
       const applicant = a.interview.domainApplication.application.user;
       const applicantName = [applicant.firstName, applicant.lastName]
@@ -77,8 +77,12 @@ export async function notifyInterviewAssigned(args: {
       );
       return {
         userId: a.cycleInterviewer.userId,
-        title: applicantName ? `Interview assigned: ${applicantName}` : "Interview assigned",
-        body: domain ? `${domain} • ${when} • ${where}` : `${when} • ${where}`,
+        vars: {
+          // An applicant with no name on file leaves the template's "{{personName}}"
+          // empty rather than rewriting the whole sentence, as the old copy did.
+          personName: applicantName,
+          itemDetail: domain ? `${domain} • ${when} • ${where}` : `${when} • ${where}`,
+        },
         link: `/hiring/interviews/${a.interview.id}`,
         dueAt: a.interview.startTime,
         interviewAssignmentId: a.id,

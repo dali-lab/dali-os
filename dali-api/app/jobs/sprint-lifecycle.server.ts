@@ -99,8 +99,7 @@ export async function runSprintLifecycle({ now }: JobContext): Promise<JobResult
         const res = await notify({
           eventType: "project.sprint_closed",
           message: {
-            title: `${band.label} wrapped up`,
-            body: `${project.name} — ${summary}`,
+            vars: { itemTitle: band.label, contextName: project.name, itemDetail: summary },
             link: `/projects/${project.id}?tab=board`,
             dedupKey: `sprint-closed:${project.id}:${band.key}`,
           },

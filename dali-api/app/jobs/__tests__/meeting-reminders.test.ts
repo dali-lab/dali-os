@@ -55,7 +55,7 @@ describe("runMeetingReminders", () => {
         eventType: "meeting.reminder",
         message: expect.objectContaining({
           kind: "MeetingReminder",
-          title: "Starting soon: Design sync",
+          vars: expect.objectContaining({ itemTitle: "Design sync" }),
           scheduledMeetingId: "m1",
           dueAt: IN_10_MIN,
         }),

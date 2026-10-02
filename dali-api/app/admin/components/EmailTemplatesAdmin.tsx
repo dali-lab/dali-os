@@ -14,7 +14,8 @@ import { Modal, ModalHeader } from "~/components/Modal";
 import { modalCardClass } from "~/components/os-chrome";
 import { SearchInput } from "~/components/ui/SearchInput";
 import {
-  EMAIL_TEMPLATES,
+  EMAIL_TEMPLATE_KEYS,
+  emailTemplateDef,
   type EmailTemplateKey,
   type WhenMissing,
 } from "~/email/lib/registry";
@@ -79,8 +80,8 @@ export function EmailTemplatesAdmin({
   const areas = useMemo(() => {
     const q = query.trim().toLowerCase();
     const out: { area: string; keys: EmailTemplateKey[] }[] = [];
-    for (const key of Object.keys(EMAIL_TEMPLATES) as EmailTemplateKey[]) {
-      const def = EMAIL_TEMPLATES[key];
+    for (const key of EMAIL_TEMPLATE_KEYS) {
+      const def = emailTemplateDef(key);
       if (
         q &&
         !def.label.toLowerCase().includes(q) &&
@@ -139,7 +140,7 @@ function EmailRow({
   templateKey: EmailTemplateKey;
   row: AdminEmailRow | null;
 }) {
-  const def = EMAIL_TEMPLATES[templateKey];
+  const def = emailTemplateDef(templateKey);
   const written = !!row?.subject || !!row?.body;
   return (
     <div className="flex items-start gap-3 p-3">
@@ -191,7 +192,7 @@ function EmailEditor({
   versions: AdminEmailVersion[];
 }) {
   const [, setSearchParams] = useSearchParams();
-  const def = EMAIL_TEMPLATES[templateKey];
+  const def = emailTemplateDef(templateKey);
   const nav = useNavigation();
   // Closing just drops ?key= — the list is the same route.
   const close = () => setSearchParams((p) => {

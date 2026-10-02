@@ -11,7 +11,16 @@
 //
 // Adding an email is one entry here plus a call to getEmailTemplate(key).
 
+import { EVENT_TYPES } from "~/lib/notification-events";
 import type { TemplateVariableName } from "~/lib/template-variables";
+
+import {
+  NOTIFICATION_COPY_KEYS,
+  isNotificationCopyKey,
+  notificationCopyDef,
+  notificationSample,
+  type NotificationCopyKey,
+} from "~/email/lib/notification-copy";
 
 // What to do when no row exists for a key. Hiring's rule was "no row means that
 // slot sends nothing", which is right for a lead who hasn't written a rejection
@@ -272,26 +281,75 @@ export const EMAIL_TEMPLATES = {
   },
 } as const satisfies Record<string, EmailTemplateDef>;
 
-export type EmailTemplateKey = keyof typeof EMAIL_TEMPLATES;
+// ── Notification templates ──────────────────────────────────────────────────
+// The ~55 messages notify() sends live in app/email/lib/notification-copy.ts,
+// keyed per message. They are projected in here under a `notify:` prefix so the
+// store, the editor, the MCP tools and the version history treat them exactly
+// like the feature templates — one editor, not two.
+//
+// They differ in two ways, both deliberate:
+//   * `whenMissing: "default"`, so an untouched notification keeps today's
+//     wording byte-for-byte and the 55 rows are opt-in. Clearing a row falls
+//     back to the registry rather than silently switching off a channel people
+//     rely on, which is what hiring's "no row means send nothing" would have done.
+//   * `purpose: "General"` and the notifications footer, since these are the
+//     member-facing mail the settings page governs.
 
-export const EMAIL_TEMPLATE_KEYS = Object.keys(EMAIL_TEMPLATES) as EmailTemplateKey[];
+export const NOTIFY_KEY_PREFIX = "notify:" as const;
+
+export type NotifyTemplateKey = `${typeof NOTIFY_KEY_PREFIX}${NotificationCopyKey}`;
+
+export type EmailTemplateKey = keyof typeof EMAIL_TEMPLATES | NotifyTemplateKey;
+
+export function notifyTemplateKey(copyKey: NotificationCopyKey): NotifyTemplateKey {
+  return `${NOTIFY_KEY_PREFIX}${copyKey}`;
+}
+
+function notifyDefToEmailDef(copyKey: NotificationCopyKey): EmailTemplateDef {
+  const copy = notificationCopyDef(copyKey);
+  const event = EVENT_TYPES[copy.eventType];
+  return {
+    area: event.area,
+    label: copy.label,
+    description: copy.description,
+    purpose: "General",
+    variables: copy.variables,
+    sample: notificationSample(copy.variables),
+    footer: "notifications",
+    whenMissing: "default",
+    defaults: { subject: copy.subject, body: copy.body ?? "" },
+  };
+}
+
+export const EMAIL_TEMPLATE_KEYS: EmailTemplateKey[] = [
+  ...(Object.keys(EMAIL_TEMPLATES) as (keyof typeof EMAIL_TEMPLATES)[]),
+  ...NOTIFICATION_COPY_KEYS.map(notifyTemplateKey),
+];
 
 export function isEmailTemplateKey(value: unknown): value is EmailTemplateKey {
   // hasOwnProperty, not `in`: `in` walks the prototype chain, so "toString" and
   // "constructor" would pass the guard and then resolve to an undefined def.
   // Both the admin route and the MCP tool run request input through here.
-  return typeof value === "string" && Object.prototype.hasOwnProperty.call(EMAIL_TEMPLATES, value);
+  if (typeof value !== "string") return false;
+  if (Object.prototype.hasOwnProperty.call(EMAIL_TEMPLATES, value)) return true;
+  return (
+    value.startsWith(NOTIFY_KEY_PREFIX) &&
+    isNotificationCopyKey(value.slice(NOTIFY_KEY_PREFIX.length))
+  );
 }
 
 export function emailTemplateDef(key: EmailTemplateKey): EmailTemplateDef {
-  return EMAIL_TEMPLATES[key];
+  if (key.startsWith(NOTIFY_KEY_PREFIX)) {
+    return notifyDefToEmailDef(key.slice(NOTIFY_KEY_PREFIX.length) as NotificationCopyKey);
+  }
+  return EMAIL_TEMPLATES[key as keyof typeof EMAIL_TEMPLATES];
 }
 
 // Grouped for the admin page, areas in registry order.
 export function emailTemplatesByArea(): { area: string; keys: EmailTemplateKey[] }[] {
   const out: { area: string; keys: EmailTemplateKey[] }[] = [];
   for (const key of EMAIL_TEMPLATE_KEYS) {
-    const area = EMAIL_TEMPLATES[key].area;
+    const area = emailTemplateDef(key).area;
     const bucket = out.find((b) => b.area === area);
     if (bucket) bucket.keys.push(key);
     else out.push({ area, keys: [key] });

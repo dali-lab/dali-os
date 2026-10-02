@@ -219,16 +219,16 @@ export async function action({ request, params }: Route.ActionArgs) {
   let inAppNotified = false;
   if (config.decisionChannel === "inApp" && config.decisionNotificationEvent) {
     const accepted = decision.type === "Accepted";
-    const message = accepted
-      ? { title: "You've been added to Core", body: "Welcome to Core. Your assignment is active for this cycle." }
+    const copyKey = accepted
+      ? ("hiring.core_decision.accepted" as const)
       : decision.type === "Waitlisted"
-        ? { title: "Core application update", body: "You've been placed on the Core waitlist." }
-        : { title: "Core application update", body: "A decision on your Core application has been released." };
+        ? ("hiring.core_decision.waitlisted" as const)
+        : ("hiring.core_decision.other" as const);
     try {
       await notify({
         eventType: config.decisionNotificationEvent,
         createdByUserId: auth.user.sub,
-        message: { ...message, link: config.portalPath },
+        message: { copyKey, link: config.portalPath },
         recipients: [{ userId: domainApp.application.userId }],
       });
       inAppNotified = true;

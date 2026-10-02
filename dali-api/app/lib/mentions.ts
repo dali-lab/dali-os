@@ -1,5 +1,6 @@
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
+import type { NotificationCopyKey } from "~/email/lib/notification-copy";
 
 // @-mention parsing + notification, shared by page-doc bodies (rich text with
 // mention nodes) and FAQ comments (plain text with "@handle" tokens). There is
@@ -69,7 +70,11 @@ export async function notifyMentions(args: {
   recipientUserIds: string[];
   actorId: string;
   link: string;
-  title: string;
+  // Which mention wording applies: on a task, in a comment, in a shared inbox,
+  // or in a document. Each is separately editable.
+  copyKey: Extract<NotificationCopyKey, `mention.${string}`>;
+  // The thing mentioned in, when the wording names it.
+  itemTitle?: string;
   preview: string;
 }): Promise<void> {
   const recipients = [...new Set(args.recipientUserIds)].filter(
@@ -80,8 +85,12 @@ export async function notifyMentions(args: {
     eventType: "pagedoc.mention",
     createdByUserId: args.actorId,
     message: {
-      title: args.title,
-      body: args.preview.length > 200 ? `${args.preview.slice(0, 200)}…` : args.preview,
+      copyKey: args.copyKey,
+      vars: {
+        itemTitle: args.itemTitle ?? "",
+        itemDetail:
+          args.preview.length > 200 ? `${args.preview.slice(0, 200)}…` : args.preview,
+      },
       link: args.link,
     },
     recipients: recipients.map((userId) => ({ userId })),

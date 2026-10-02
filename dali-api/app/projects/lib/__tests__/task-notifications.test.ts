@@ -54,7 +54,10 @@ describe("notifyTaskAssigned", () => {
     const call = mockNotify.mock.calls[0][0];
     expect(call.eventType).toBe("task.assigned");
     expect(call.createdByUserId).toBe("u1");
-    expect(call.message.title).toBe("Task assigned: Ship it");
+    expect(call.message.vars).toEqual({
+      itemTitle: "Ship it",
+      contextName: "DALI OS",
+    });
     expect(call.message.link).toBe("/projects/p1?tab=board&task=t1");
     expect(call.recipients).toEqual([{ userId: "u2" }]);
   });
@@ -94,8 +97,8 @@ describe("notifyTaskComment", () => {
     const call = mockNotify.mock.calls[0][0];
     expect(call.eventType).toBe("task.comment");
     expect(call.recipients).toEqual([{ userId: "u2" }]);
-    expect(call.message.body).toHaveLength(201); // 200 chars + ellipsis
-    expect(call.message.body.endsWith("…")).toBe(true);
+    expect(call.message.vars.itemDetail).toHaveLength(201); // 200 + ellipsis
+    expect(call.message.vars.itemDetail.endsWith("…")).toBe(true);
   });
 
   it("no-ops when the author is the only assignee", async () => {
@@ -165,9 +168,8 @@ describe("notifyTaskComment", () => {
     );
     expect(byEvent["task.comment"].recipients).toEqual([{ userId: "u2" }]);
     expect(byEvent["pagedoc.mention"].recipients).toEqual([{ userId: "u3" }]);
-    expect(byEvent["pagedoc.mention"].message.title).toBe(
-      "You were mentioned on: Ship it",
-    );
+    expect(byEvent["pagedoc.mention"].message.copyKey).toBe("mention.task");
+    expect(byEvent["pagedoc.mention"].message.vars.itemTitle).toBe("Ship it");
     expect(byEvent["pagedoc.mention"].message.link).toBe(
       "/projects/p1?tab=board&task=t1",
     );
@@ -218,8 +220,8 @@ describe("notifyTaskGithubUpdate", () => {
     expect(mockNotify).toHaveBeenCalledTimes(1);
     const call = mockNotify.mock.calls[0][0];
     expect(call.eventType).toBe("task.github_update");
-    expect(call.message.title).toBe("Task closed from GitHub: Ship it");
-    expect(call.message.body).toContain("Done");
+    expect(call.message.copyKey).toBe("task.github_closed");
+    expect(call.message.vars).toEqual({ itemTitle: "Ship it", statusLabel: "Done" });
     expect(call.recipients).toHaveLength(2);
   });
 

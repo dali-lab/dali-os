@@ -105,8 +105,11 @@ export async function notifyCollabDocMentions(
     await notify({
       eventType: "pagedoc.mention",
       message: {
-        title: `You were mentioned in: ${page?.title ?? "a document"}`,
-        body: "You were tagged in a document.",
+        copyKey: "mention.document",
+        vars: {
+          itemTitle: page?.title ?? "a document",
+          itemDetail: "You were tagged in a document.",
+        },
         link: `/documents/${pageId}?mention=`, // fallback; per-recipient link wins
       },
       recipients: fresh.map((userId) => ({

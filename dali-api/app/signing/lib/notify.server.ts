@@ -171,8 +171,7 @@ export async function notifySignRequest(
   await notify({
     eventType: "document.sign_request",
     message: {
-      title: "You have a new document to sign",
-      body: binding.document.name,
+      vars: { itemTitle: binding.document.name },
       link: `/sign/${bindingId}`,
       isTodo: true,
     },
@@ -227,8 +226,7 @@ export async function notifyCountersignRequest(
   await notify({
     eventType: "document.countersign_request",
     message: {
-      title: "Countersign your mentorship agreement",
-      body: binding.document.name,
+      vars: { itemTitle: binding.document.name },
       link: `/sign/${bindingId}`,
       isTodo: true,
     },

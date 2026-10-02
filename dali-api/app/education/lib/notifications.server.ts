@@ -1,5 +1,6 @@
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
+import type { NotificationCopyKey } from "~/email/lib/notification-copy";
 import { renderEmail, escapeHtml, htmlToPlainText } from "~/lib/email";
 import { sendEducationEmail } from "./portal-email.server";
 import { renderFramedEmail } from "~/email/lib/layout.server";
@@ -35,26 +36,16 @@ export function educationLink(user: { daliEmail: string | null }, offeringId: st
     : `/portal/education/${offeringId}`;
 }
 
-const STATUS_COPY: Record<
+// Which template writes each outcome. The words live in
+// app/email/lib/notification-copy.ts so Core can edit them.
+const STATUS_COPY_KEY: Record<
   Exclude<EduApplicationStatus, "Submitted">,
-  { title: (offering: string) => string; body: (offering: string) => string }
+  NotificationCopyKey
 > = {
-  Approved: {
-    title: (o) => `You're in: ${o}`,
-    body: (o) => `Your spot in ${o} is confirmed. Open the course hub for sessions and materials.`,
-  },
-  Waitlisted: {
-    title: (o) => `Waitlisted for ${o}`,
-    body: (o) => `${o} is currently full. You're on the waitlist — if a seat opens you'll be enrolled automatically.`,
-  },
-  Rejected: {
-    title: (o) => `Update on ${o}`,
-    body: (o) => `Your application to ${o} wasn't accepted this time. We'd love to see you at a future offering.`,
-  },
-  Withdrawn: {
-    title: (o) => `Withdrawn from ${o}`,
-    body: (o) => `You've been withdrawn from ${o}.`,
-  },
+  Approved: "education.decision.approved",
+  Waitlisted: "education.decision.waitlisted",
+  Rejected: "education.decision.rejected",
+  Withdrawn: "education.decision.withdrawn",
 };
 
 /**
@@ -87,13 +78,9 @@ export async function notifyApplicationStatus(
   if (!application || application.status === "Submitted") return;
   const { applicant, offering, status } = application;
 
-  const copy = STATUS_COPY[status];
-  const title = opts.promoted
-    ? `A seat opened up: you're in ${offering.title}`
-    : copy.title(offering.title);
-  const body = opts.promoted
-    ? `You've been moved off the waitlist and enrolled in ${offering.title}.`
-    : copy.body(offering.title);
+  const copyKey = opts.promoted
+    ? ("education.decision.promoted" as const)
+    : STATUS_COPY_KEY[status];
 
   try {
     // education.decision is externalEmail in the registry: notify() never
@@ -101,8 +88,8 @@ export async function notifyApplicationStatus(
     await notify({
       eventType: "education.decision",
       message: {
-        title,
-        body,
+        copyKey,
+        vars: { itemTitle: offering.title },
         link: educationLink(applicant, offering.id),
       },
       recipients: [{ userId: applicant.id }],
@@ -172,7 +159,10 @@ export async function notifyNewAssignment(args: {
     try {
       await notify({
         eventType: "education.assignment",
-        message: { title, body },
+        message: {
+          copyKey: "education.assignment",
+          vars: { itemTitle: args.assignmentTitle, contextName: offering.title, itemDetail: body },
+        },
         recipients: members.map(({ applicant }) => ({
           userId: applicant.id,
           link: `${educationLink(applicant, offering.id)}/assignments/${args.assignmentId}`,
@@ -237,7 +227,7 @@ export async function notifyGraded(args: {
     if (student.daliEmail) {
       await notify({
         eventType: "education.grade",
-        message: { title, body },
+        message: { vars: { itemTitle: args.assignmentTitle } },
         recipients: [{ userId: student.id, link }],
       });
     } else {
@@ -313,7 +303,16 @@ export async function notifySessionReminder(args: {
     try {
       await notify({
         eventType: "education.session_reminder",
-        message: { title, body },
+        message: {
+          vars: {
+            itemTitle: label,
+            contextName: args.offeringTitle,
+            // Already carries its "(ET)" label; the lab zone is the right one here
+            // because a course session happens in a room in Hanover.
+            when: `${when} (ET)`,
+            itemDetail: args.location ? ` · ${args.location}` : "",
+          },
+        },
         recipients: members.map(({ applicant }) => ({
           userId: applicant.id,
           link: `${educationLink(applicant, args.offeringId)}/hub`,

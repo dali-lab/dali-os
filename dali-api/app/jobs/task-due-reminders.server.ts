@@ -157,14 +157,14 @@ export async function runTaskDueReminders({ now }: JobContext): Promise<JobResul
         message:
           reminder.kind === "DayBefore"
             ? {
-                title: `Task due tomorrow: ${task.title}`,
-                body: `Due ${when}.`,
+                copyKey: "task.due_tomorrow" as const,
+                vars: { itemTitle: task.title, when },
                 link: `/projects/${task.projectId}?tab=board&task=${reminder.taskId}`,
                 dueAt: task.dueAt,
               }
             : {
-                title: `Task due now: ${task.title}`,
-                body: `Due ${when}.`,
+                copyKey: "task.due_now" as const,
+                vars: { itemTitle: task.title, when },
                 link: `/projects/${task.projectId}?tab=board&task=${reminder.taskId}`,
                 dueAt: task.dueAt,
               },

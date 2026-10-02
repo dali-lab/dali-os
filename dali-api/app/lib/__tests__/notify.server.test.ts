@@ -57,6 +57,10 @@ beforeEach(() => {
   // default, so re-establish it: no rows → every flag resolves to its registry
   // default, i.e. off, which is the pre-layout body these assertions describe.
   mockPrisma.featureFlag.findMany.mockResolvedValue([]);
+  // notify() resolves its copy from the template store; no rows means every
+  // notification keeps the registry's own wording, which is what these assertions
+  // describe.
+  mockPrisma.emailTemplate.findMany.mockResolvedValue([]);
   mockPrisma.notification.findFirst.mockResolvedValue(null); // no coalesce suppression by default
   mockPrisma.notification.update.mockResolvedValue({}); // merge path awaits + .catch()es this
   mockPrisma.notification.createManyAndReturn.mockImplementation(
@@ -487,5 +491,104 @@ describe("notify — coalescing / merge", () => {
 
     const { data } = mockPrisma.notification.update.mock.calls[0][0];
     expect(data.body).toBe("5 new comments · latest: fifth comment");
+  });
+});
+
+describe("notify — operator-editable copy", () => {
+  it("composes the title and body from the template when the caller passes vars", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([user("u1")]);
+    await notify({
+      eventType: "task.assigned",
+      message: {
+        vars: { itemTitle: "Ship it", contextName: "DALI OS" },
+        link: "/t/1",
+      },
+      recipients: [{ userId: "u1" }],
+    });
+    const { data } = mockPrisma.notification.createManyAndReturn.mock.calls[0][0];
+    expect(data[0].title).toBe("Task assigned: Ship it");
+    expect(data[0].body).toBe("In DALI OS.");
+  });
+
+  it("uses the operator's wording once they have written some", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([user("u1")]);
+    mockPrisma.emailTemplate.findMany.mockResolvedValue([
+      {
+        key: "notify:task.assigned",
+        subject: "You picked up {{itemTitle}}",
+        body: "Over in {{contextName}}.",
+      },
+    ]);
+    await notify({
+      eventType: "task.assigned",
+      message: { vars: { itemTitle: "Ship it", contextName: "DALI OS" } },
+      recipients: [{ userId: "u1" }],
+    });
+    const { data } = mockPrisma.notification.createManyAndReturn.mock.calls[0][0];
+    expect(data[0].title).toBe("You picked up Ship it");
+    expect(data[0].body).toBe("Over in DALI OS.");
+  });
+
+  it("applies one edit to the in-app row AND the email, so the two can't drift", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([user("u1")]);
+    mockPrisma.emailTemplate.findMany.mockResolvedValue([
+      {
+        key: "notify:education.announcement",
+        subject: "News from {{itemTitle}}",
+        body: "",
+      },
+    ]);
+    await notify({
+      eventType: "education.announcement",
+      message: { vars: { itemTitle: "Intro to UX" }, body: "Class is cancelled." },
+      recipients: [{ userId: "u1" }],
+    });
+    const { data } = mockPrisma.notification.createManyAndReturn.mock.calls[0][0];
+    expect(data[0].title).toBe("News from Intro to UX");
+    // Instant-default event, so the same wording is the email subject.
+    expect(emailCalls()[0].subject).toBe("News from Intro to UX");
+  });
+
+  it("lets a caller-supplied title win, which is what keeps announcements authored per send", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([user("u1")]);
+    await notify({
+      eventType: "announcement",
+      message: { title: "Pizza in the lab", body: "Now." },
+      recipients: [{ userId: "u1" }],
+    });
+    expect(emailCalls()[0].subject).toBe("Pizza in the lab");
+  });
+
+  it("picks the right message when one event type says several things", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([user("u1")]);
+    await notify({
+      eventType: "meeting.cancelled",
+      message: { copyKey: "meeting.removed", vars: { itemTitle: "Weekly Core" } },
+      recipients: [{ userId: "u1" }],
+    });
+    const { data } = mockPrisma.notification.createManyAndReturn.mock.calls[0][0];
+    expect(data[0].title).toBe("Removed from meeting: Weekly Core");
+  });
+
+  it("renders per-recipient vars, so one send can say different things to each person", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([user("u1"), user("u2")]);
+    await notify({
+      eventType: "staffing.assigned",
+      message: { vars: { itemTitle: "Course Scheduler" } },
+      recipients: [
+        { userId: "u1", vars: { itemDetail: "Design — P2, 26F." } },
+        { userId: "u2", vars: { itemDetail: "Engineering — P1, 26F." } },
+      ],
+    });
+    const { data } = mockPrisma.notification.createManyAndReturn.mock.calls[0][0];
+    const byUser = Object.fromEntries(
+      data.map((d: { recipientUserId: string; title: string; body: string }) => [
+        d.recipientUserId,
+        d,
+      ]),
+    );
+    expect(byUser.u1.title).toBe("You're on Course Scheduler");
+    expect(byUser.u1.body).toBe("Design — P2, 26F.");
+    expect(byUser.u2.body).toBe("Engineering — P1, 26F.");
   });
 });

@@ -208,8 +208,8 @@ export async function requestSessionFeedback(args: {
           message: {
             isTodo: true,
             formId: form.id,
-            title,
-            body: "Two minutes of feedback helps the instructors improve the next session.",
+            copyKey: "education.feedback_request.session",
+            vars: { contextName: offering.title, count: String(session.sequence) },
             link,
           },
           recipients: [{ userId: user.id }],
@@ -280,8 +280,8 @@ export async function requestInstructorExitSurveys(offeringId: string): Promise<
         message: {
           isTodo: true,
           formId: form.id,
-          title: `Instructor exit survey — ${offering.title}`,
-          body: "The course is closed out — tell the education team how it went.",
+          copyKey: "education.feedback_request.instructor_exit",
+          vars: { itemTitle: offering.title },
           link: `/forms/fill/${form.publicToken}${linkQuery}`,
         },
         recipients: [{ userId: instructor.userId }],

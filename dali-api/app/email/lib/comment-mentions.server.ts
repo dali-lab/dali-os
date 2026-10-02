@@ -20,7 +20,8 @@ export async function notifyMailCommentMentions(args: {
     recipientUserIds: readers,
     actorId: args.authorId,
     link: `/email?t=${args.account.id}~${args.threadId}`,
-    title: `You were mentioned in ${mailAccountLabel(args.account)}`,
+    copyKey: "mention.mailbox",
+    itemTitle: mailAccountLabel(args.account),
     preview: args.body,
   });
 }

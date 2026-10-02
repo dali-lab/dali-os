@@ -57,7 +57,10 @@ describe("notifyAdminsOfPromotion", () => {
     const arg = notifyMock.mock.calls[0][0];
     expect(arg.eventType).toBe("member.promotion");
     expect(arg.createdByUserId).toBe("a1");
-    expect(arg.message.title).toBe("Jane Doe was promoted to P3 in Design");
+    expect(arg.message.vars).toEqual({
+      personName: "Jane Doe",
+      itemDetail: "was promoted to P3 in Design",
+    });
     expect(arg.message.link).toBe("/members/u1");
     expect(arg.recipients.map((r: { userId: string }) => r.userId)).toEqual(["a2"]);
   });

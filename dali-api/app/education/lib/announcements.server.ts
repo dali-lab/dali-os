@@ -143,7 +143,7 @@ export async function postAnnouncement(args: {
       await notify({
         eventType: "education.announcement",
         createdByUserId: args.authorId,
-        message: { title, body },
+        message: { vars: { itemTitle: offering.title }, body },
         recipients: recipients.map((u) => ({
           userId: u.id,
           link: `${educationLink(u, offering.id)}/hub`,

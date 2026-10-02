@@ -1,5 +1,10 @@
 import { prisma } from "~/lib/db";
 import { notify, renderNotificationEmail } from "~/lib/notify.server";
+import type { NotificationCopyKey } from "~/email/lib/notification-copy";
+import {
+  renderNotificationCopy,
+  resolveNotificationCopy,
+} from "~/email/lib/notification-render.server";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { getAppEnv, getFrontendUrl } from "~/lib/app-env";
 import { slackConfigured, sendDm } from "~/slack/lib/slack-client";
@@ -70,8 +75,7 @@ export async function sendWelcome(args: {
       eventType: ONBOARDING_EVENT_TYPE,
       createdByUserId: args.actorId,
       message: {
-        title: "Welcome to DALI — finish onboarding",
-        body: "Complete a few quick steps to finish setting up your account.",
+        // Copy lives in the template now; this call only says which one.
         isTodo: true,
         link: ONBOARDING_LINK,
       },
@@ -103,30 +107,15 @@ export function isOnboardingRemindVia(v: string): v is OnboardingRemindVia {
   return (REMIND_VIA_VALUES as readonly string[]).includes(v);
 }
 
-const REMINDER_COPY: Record<
-  OnboardingReminderStep,
-  { title: string; body: string; link: string | null }
-> = {
-  email: {
-    title: "Onboarding reminder: DALI email",
-    body: "Your DALI email isn't set up yet. Check for an invite, or reach out to Core if you still can't sign in.",
-    link: ONBOARDING_LINK,
-  },
-  slack: {
-    title: "Onboarding reminder: Slack",
-    body: "You're not in the DALI Slack workspace yet. A teammate will add you — reply to Core if you're still waiting.",
-    link: ONBOARDING_LINK,
-  },
-  figma: {
-    title: "Onboarding reminder: Figma",
-    body: "You haven't been added to Figma yet. Core will invite you — ping them if it's been a while.",
-    link: ONBOARDING_LINK,
-  },
-  profile: {
-    title: "Onboarding reminder: profile form",
-    body: "Finish your member profile so we can complete your onboarding.",
-    link: ONBOARDING_LINK,
-  },
+// Which template writes each board column's nudge. The words live in
+// app/email/lib/notification-copy.ts so Core can edit them; all four link to the
+// same checklist. Resolved once below and shared by all three channels, so the
+// in-app ping, the email and the Slack DM can't say different things.
+const REMINDER_COPY_KEY: Record<OnboardingReminderStep, NotificationCopyKey> = {
+  email: "member.onboarding.reminder.email",
+  slack: "member.onboarding.reminder.slack",
+  figma: "member.onboarding.reminder.figma",
+  profile: "member.onboarding.reminder.profile",
 };
 
 /**
@@ -143,20 +132,19 @@ export async function sendOnboardingReminders(args: {
   const unique = [...new Set(args.userIds.filter(Boolean))];
   if (unique.length === 0) return { count: 0, skipped: 0 };
 
-  const copy = REMINDER_COPY[args.step];
+  const copyKey = REMINDER_COPY_KEY[args.step];
+  const resolved = await resolveNotificationCopy([copyKey]);
+  const copy = renderNotificationCopy(resolved.get(copyKey), {});
   const base = getFrontendUrl().replace(/\/$/, "");
-  const absLink = copy.link
-    ? `${base}${copy.link.startsWith("/") ? "" : "/"}${copy.link}`
-    : null;
+  const absLink = `${base}${ONBOARDING_LINK}`;
 
   if (args.via === "inApp") {
     await notify({
       eventType: ONBOARDING_REMINDER_EVENT_TYPE,
       createdByUserId: args.actorId,
       message: {
-        title: copy.title,
-        body: copy.body,
-        link: copy.link,
+        copyKey,
+        link: ONBOARDING_LINK,
         isTodo: true,
       },
       recipients: unique.map((userId) => ({ userId })),
@@ -180,11 +168,7 @@ export async function sendOnboardingReminders(args: {
       select: { id: true, slackUserId: true },
     });
 
-    const text = [
-      `*${copy.title}*`,
-      copy.body,
-      absLink,
-    ]
+    const text = [`*${copy.subject}*`, copy.body, absLink]
       .filter(Boolean)
       .join("\n\n");
 
@@ -224,10 +208,10 @@ export async function sendOnboardingReminders(args: {
       channel: "email",
       purpose: "General",
       target: to,
-      subject: copy.title,
+      subject: copy.subject ?? "",
       bodyHtml: renderNotificationEmail({
         firstName: u.firstName,
-        title: copy.title,
+        title: copy.subject ?? "",
         body: copy.body,
         link: absLink,
       }),
