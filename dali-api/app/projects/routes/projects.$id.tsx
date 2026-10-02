@@ -75,7 +75,7 @@ import {
   updateProjectPartnerDates,
 } from "~/partners/lib/partner-access";
 import { getPresenceUser } from "~/lib/presence-user";
-import { TaskBoard } from "../components/TaskBoard";
+import { TaskBoard, type TaskCreateSeed } from "../components/TaskBoard";
 import { ProjectMentorshipTab } from "~/mentorship/components/ProjectMentorshipTab";
 import {
   type TimelineEpic,
@@ -1770,9 +1770,10 @@ export default function ProjectDetail() {
   const [scopeSettingsOpen, setScopeSettingsOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const partnerNames = project.partners.map((p) => p.org.name);
-  // Add ▸ Task on the timeline toolbar opens the board's create form; the two
-  // are siblings under Progress, so the signal goes up here and back down.
-  const [taskCreateNonce, setTaskCreateNonce] = useState(0);
+  // Add ▸ Task on the timeline toolbar, and a story row's own Add task, open the
+  // board's create form; the two are siblings under Progress, so the signal goes
+  // up here and back down — carrying the epic/story it came from, if any.
+  const [taskCreateSeed, setTaskCreateSeed] = useState<TaskCreateSeed | null>(null);
 
   // Per-epic term footprint, indexed for the planning list's term filter.
   const epicTermIds = useMemo(
@@ -1879,8 +1880,14 @@ export default function ProjectDetail() {
       userName={userName}
       onTaskClick={openTaskFromTimeline}
       // Only on the os Progress tab, where the board is on this same surface
-      // for the created task to appear in.
-      onAddTask={() => setTaskCreateNonce((n) => n + 1)}
+      // for the created task to appear in. A fresh object per add, so repeat
+      // adds on the same story each reach the board.
+      onAddTask={(link) =>
+        setTaskCreateSeed({
+          epicId: link?.epicId ?? null,
+          storyId: link?.storyId ?? null,
+        })
+      }
     />
   );
   const board = (
@@ -1891,7 +1898,7 @@ export default function ProjectDetail() {
       canManage={canEdit}
       currentUserId={currentUserId}
       currentUserName={userName}
-      createNonce={taskCreateNonce}
+      createSeed={taskCreateSeed}
       // The people filter lives on the board's own toolbar (os), beside search;
       // it only narrows the board's tasks.
       peopleOptions={peopleOptions}
@@ -5622,7 +5629,7 @@ function PlanningTab({
   collabToken: string | null;
   userName: string;
   onTaskClick: (taskId: string) => void;
-  onAddTask?: () => void;
+  onAddTask?: (link?: { epicId: string; storyId: string }) => void;
 }) {
   return (
     <div className="flex flex-col gap-3">

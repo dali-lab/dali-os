@@ -65,6 +65,10 @@ import { SearchInput } from "~/components/ui/SearchInput";
 import { PeopleFilter, type PersonOption } from "./PeopleFilter";
 import { TaskModal, type NewTaskValues } from "./TaskModal";
 
+/** Epic/story context an outside Add task carries into the create form. Either
+ *  side may be null — Add ▸ Task from the timeline toolbar has neither. */
+export type TaskCreateSeed = { epicId: string | null; storyId: string | null };
+
 type Props = {
   projectId: string;
   initialTasks: TaskCardModel[];
@@ -77,9 +81,12 @@ type Props = {
   // session, so it's display-only here).
   currentUserId: string;
   currentUserName: string;
-  // Bumped by an outside control (the timeline's Add ▸ Task) to open the
-  // create form. A counter rather than a boolean so repeated adds each fire.
-  createNonce?: number;
+  // Set by an outside control (the planning timeline's Add ▸ Task, or a story
+  // row's own Add task) to open the create form, carrying the epic/story the
+  // request came from. The parent holds it in state and sets a fresh object per
+  // request, so two adds on the same story still differ by reference and the
+  // effect below fires for each — no counter needed.
+  createSeed?: TaskCreateSeed | null;
   // The board's people filter (os). Rendered beside the search input and
   // applied only to the board's tasks. Empty = no people filter; the board's
   // own filters (epic/sprint/term/mine/search) still apply on top.
@@ -187,7 +194,7 @@ export function TaskBoard({
   canManage,
   currentUserId,
   currentUserName,
-  createNonce = 0,
+  createSeed = null,
   filterPeopleIds = [],
   peopleOptions = [],
   onPeopleChange,
@@ -203,13 +210,10 @@ export function TaskBoard({
   // Which column the open create form was launched from — its "Add task"
   // seeds the modal's status so the card lands where you asked for it.
   const [createStatus, setCreateStatus] = useState<TaskStatus>("Todo");
-
-  useEffect(() => {
-    if (createNonce > 0) {
-      setCreateStatus("Todo");
-      setIsCreating(true);
-    }
-  }, [createNonce]);
+  // The epic/story the open create form was launched for (null when it came
+  // from the board itself). Adopted from the createSeed prop below; cleared by
+  // a column's own Add task so it can't inherit a story from an earlier add.
+  const [createLinks, setCreateLinks] = useState<TaskCreateSeed | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const [celebrate, setCelebrate] = useState(false);
@@ -433,6 +437,24 @@ export function TaskBoard({
     (id: string | null) => setParam("task", id),
     [setParam],
   );
+
+  // An outside Add task opens the create form here. Placed below the filter
+  // state because it has to read the epic filter: a seeded epic the filter
+  // excludes would create the card and hide it in the same breath, so the
+  // filter steps aside. (Term and sprint are date-derived — nothing to clear
+  // until the deadline is picked.)
+  useEffect(() => {
+    if (!createSeed) return;
+    setCreateStatus("Todo");
+    setCreateLinks(createSeed);
+    setIsCreating(true);
+    if (createSeed.epicId && epicFilter && epicFilter !== createSeed.epicId) {
+      setParam("epic", null);
+    }
+    // epicFilter/setParam are read, not tracked: a filter change mid-form must
+    // not reopen the modal. Only a fresh seed object should.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [createSeed]);
 
   // Epic pills for the selected term: an epic shows only if it has work in the
   // term (its termIds cover it). The currently-selected epic is always kept so
@@ -728,6 +750,7 @@ export function TaskBoard({
 
   const startCreate = useCallback((status: TaskStatus) => {
     setCreateStatus(status);
+    setCreateLinks(null);
     setIsCreating(true);
   }, []);
 
@@ -1167,9 +1190,13 @@ export function TaskBoard({
           options={options}
           allTasks={tasks}
           canManage={canManage}
+          // An outside add's own epic/story wins; otherwise the board's epic
+          // filter stands in, as it always has.
           defaultEpicId={
-            epicFilter && epicFilter !== NO_EPIC ? epicFilter : null
+            createLinks?.epicId ??
+            (epicFilter && epicFilter !== NO_EPIC ? epicFilter : null)
           }
+          defaultStoryId={createLinks?.storyId ?? null}
           defaultStatus={createStatus}
           onClose={() => setIsCreating(false)}
           onCreate={handleCreate}

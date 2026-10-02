@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { timeEntryDayUtc } from "~/calendar/lib/timesheet-day";
+import {
+  entriesInHoursScope,
+  timeEntryDayUtc,
+  timesheetWeekBounds,
+} from "~/calendar/lib/timesheet-day";
 import { payPeriodFor } from "~/lib/pay-period";
 
 const ET = "America/New_York";
@@ -56,5 +60,56 @@ describe("timeEntryDayUtc", () => {
     );
     expect(day.toISOString()).toBe("2026-07-19T00:00:00.000Z");
     expect(payPeriodFor(day).index).toBe(PERIOD_INDEX + 1);
+  });
+});
+
+// The loader's weekStartIso: local midnight on the week's Sunday, as an instant.
+const WEEK_START_ET = "2026-07-05T04:00:00.000Z"; // Jul 5, 00:00 ET
+const WEEK_START_TOKYO = "2026-07-04T15:00:00.000Z"; // Jul 5, 00:00 JST
+
+describe("timesheetWeekBounds", () => {
+  it("spans Sunday through the following Saturday", () => {
+    const { startDayUtc, endDayUtc } = timesheetWeekBounds(WEEK_START_ET, ET);
+    expect(startDayUtc.toISOString()).toBe("2026-07-05T00:00:00.000Z");
+    expect(endDayUtc.toISOString()).toBe("2026-07-11T00:00:00.000Z");
+  });
+
+  it("lands on the Sunday east of UTC, where the instant reads as Saturday", () => {
+    const { startDayUtc, endDayUtc } = timesheetWeekBounds(WEEK_START_TOKYO, "Asia/Tokyo");
+    expect(startDayUtc.toISOString()).toBe("2026-07-05T00:00:00.000Z");
+    expect(endDayUtc.toISOString()).toBe("2026-07-11T00:00:00.000Z");
+  });
+});
+
+describe("entriesInHoursScope", () => {
+  const dayOnly = (ymd: string) => ({ date: `${ymd}T00:00:00.000Z`, startTime: null });
+  const entries = [
+    dayOnly("2026-07-04"), // Saturday before — previous week and previous period
+    dayOnly("2026-07-05"), // opening Sunday
+    dayOnly("2026-07-11"), // closing Saturday of week 1
+    dayOnly("2026-07-12"), // week 2 of the same period
+    dayOnly("2026-07-18"), // last day of the period
+    dayOnly("2026-07-19"), // next period
+  ];
+  const days = (scope: "week" | "period", weekStartIso: string) =>
+    entriesInHoursScope(entries, scope, weekStartIso, ET).map((e) => e.date.slice(0, 10));
+
+  it("takes only the visible week", () => {
+    expect(days("week", WEEK_START_ET)).toEqual(["2026-07-05", "2026-07-11"]);
+  });
+
+  it("takes both weeks of the period the visible week sits in", () => {
+    expect(days("period", WEEK_START_ET)).toEqual([
+      "2026-07-05",
+      "2026-07-11",
+      "2026-07-12",
+      "2026-07-18",
+    ]);
+  });
+
+  it("narrows to the second week without moving the period", () => {
+    const secondWeek = "2026-07-12T04:00:00.000Z";
+    expect(days("week", secondWeek)).toEqual(["2026-07-12", "2026-07-18"]);
+    expect(days("period", secondWeek)).toEqual(days("period", WEEK_START_ET));
   });
 });

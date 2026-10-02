@@ -25,7 +25,12 @@ import {
   type ChecklistItem,
 } from "../lib/task-checklist";
 import type { TaskBoardOptions, TaskCardModel, TaskStatus } from "../lib/task-board";
-import { TASK_STATUSES, TASK_STATUS_LABELS, isTaskFinished } from "../lib/task-board";
+import {
+  TASK_STATUSES,
+  TASK_STATUS_LABELS,
+  isTaskFinished,
+  seedTaskLinks,
+} from "../lib/task-board";
 import { DependencyLinks } from "./DependencyLinks";
 import { PeopleFilter } from "./PeopleFilter";
 import { cn } from "~/lib/cn";
@@ -86,6 +91,7 @@ export function TaskModal({
   onCreate,
   onDelete,
   defaultEpicId,
+  defaultStoryId,
   defaultStatus,
   onArtifactsChanged,
   onCommentCountChange,
@@ -109,6 +115,11 @@ export function TaskModal({
   onDelete?: () => void;
   // Create mode: seeds the epic picker (e.g. from the board's epic filter).
   defaultEpicId?: string | null;
+  // Create mode: seeds the user story picker, so adding a task from a story row
+  // arrives already filed under it. The story pins the epic, so this wins over
+  // defaultEpicId (see seedTaskLinks) — the same precedence the create endpoint
+  // applies server-side. Both pickers stay editable.
+  defaultStoryId?: string | null;
   // Create mode: seeds the status picker, so a column's own Add task lands the
   // new card in that column rather than always in To do.
   defaultStatus?: TaskStatus;
@@ -146,11 +157,20 @@ export function TaskModal({
   const [startDate, setStartDate] = useState<string>(
     task?.startsAt ? dateInputValue(task.startsAt) : "",
   );
-  const [storyId, setStoryId] = useState<string>(task?.storyId ?? "");
+  // Create mode only: the Epic/User story pair the form opens on, reconciled so
+  // a seeded story always brings its own epic. Read once, by the two useStates
+  // below — editing either picker afterwards is unaffected.
+  const seededLinks = seedTaskLinks(options.stories, {
+    epicId: defaultEpicId,
+    storyId: defaultStoryId,
+  });
+  const [storyId, setStoryId] = useState<string>(
+    task ? task.storyId ?? "" : seededLinks.storyId,
+  );
   const [dependsOn, setDependsOn] = useState<string[]>(task?.dependsOn ?? []);
   const [domainId, setDomainId] = useState<string>(task?.domain?.id ?? "");
   const [epicId, setEpicId] = useState<string>(
-    task ? task.epicId ?? "" : defaultEpicId ?? "",
+    task ? task.epicId ?? "" : seededLinks.epicId,
   );
 
   // Dependency choices are every other task on the board. "Blocks" is the
