@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { formatVersionMeta, formatVersionName, type VersionLabelInput } from "~/lib/formatVersion";
 
 // One line under a domain row (its Challenge, its Rubric): a small label, what's
 // set, then small actions, with an optional editor opening underneath. Every
@@ -31,4 +32,19 @@ export function DomainSubRow({
 /** The value slot when nothing is set yet. */
 export function SubRowEmpty({ children }: { children: ReactNode }) {
   return <span className="text-os-grey">{children}</span>;
+}
+
+/** A set form or rubric: "Name (v2)", then its date and author in grey on the right. */
+export function SubRowVersion({ version, children }: {
+  version: VersionLabelInput;
+  /** Replaces the plain name, e.g. a link to the editor plus a remove button. */
+  children?: ReactNode;
+}) {
+  const meta = formatVersionMeta(version);
+  return (
+    <span className="flex w-full min-w-0 items-center gap-2">
+      {children ?? <span className="min-w-0 truncate">{formatVersionName(version)}</span>}
+      {meta && <span className="ml-auto shrink-0 text-xs text-os-grey">{meta}</span>}
+    </span>
+  );
 }

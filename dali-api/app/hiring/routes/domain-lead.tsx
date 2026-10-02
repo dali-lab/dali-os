@@ -49,7 +49,7 @@ import { useOsChrome } from "~/components/os-chrome";
 import { SegmentedTabButtons } from "~/components/AreaPillNav";
 import { NavSection, SectionNavLayout } from "~/hiring/components/cycle-setup/SectionNav";
 import { AlertIcon, Pill, type PillTone, SetupCard, pillTrigger, rowTrigger } from "~/hiring/components/cycle-setup/SetupCard";
-import { DomainSubRow, SubRowEmpty } from "~/hiring/components/cycle-setup/DomainSubRow";
+import { DomainSubRow, SubRowEmpty, SubRowVersion } from "~/hiring/components/cycle-setup/DomainSubRow";
 import { DomainRosterCard, type RosterPerson } from "~/hiring/components/cycle-setup/DomainRosterCard";
 import { addDomainMentors, domainMentorIds } from "~/hiring/lib/cycle-rosters.server";
 
@@ -1293,19 +1293,18 @@ function RubricPicker({ cycleId, domainId, options, selectedId, locked }: {
   locked: boolean;
 }) {
   const { formTrigger } = useOsChrome();
-  const label = (rv: any) =>
-    formatVersionLabel({
-      name: rv.rubric?.name ?? "Rubric",
-      versionNumber: rv.versionNumber,
-      createdAt: rv.createdAt,
-      createdBy: rv.createdBy,
-    });
+  const version = (rv: any) => ({
+    name: rv.rubric?.name ?? "Rubric",
+    versionNumber: rv.versionNumber,
+    createdAt: rv.createdAt,
+    createdBy: rv.createdBy,
+  });
   const selectedRv = options.find((rv: any) => rv.id === selectedId);
   if (locked) {
     return (
       <DomainSubRow
         label="Rubric"
-        value={selectedRv ? label(selectedRv) : <SubRowEmpty>None</SubRowEmpty>}
+        value={selectedRv ? <SubRowVersion version={version(selectedRv)} /> : <SubRowEmpty>None</SubRowEmpty>}
         action={<Pill>Locked</Pill>}
       />
     );
@@ -1321,7 +1320,7 @@ function RubricPicker({ cycleId, domainId, options, selectedId, locked }: {
           ariaLabel="Rubric version"
           defaultValue={selectedId ?? ""}
           placeholder="No rubric"
-          options={[{ value: "", label: "No rubric" }, ...options.map((rv: any) => ({ value: rv.id as string, label: label(rv) }))]}
+          options={[{ value: "", label: "No rubric" }, ...options.map((rv: any) => ({ value: rv.id as string, label: formatVersionLabel(version(rv)) }))]}
           buttonClassName={rowTrigger(formTrigger)}
         />
       </div>
