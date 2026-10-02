@@ -694,7 +694,7 @@ describe("createScheduledMeeting — location and description", () => {
     // per-recipient so the start reads in that person's own zone — u2 is on
     // Pacific, and 17:00 UTC is 10:00 AM there — rather than as a raw instant.
     expect(call.recipients[0].vars.itemDetail).toContain(
-      "Starts Tue, Sep 22, 10:00 AM PDT",
+      "Starts Tue, Sep 22, 10:00 AM PT",
     );
     expect(call.recipients[0].vars.itemDetail).toContain("Location: Baker 101");
     expect(call.recipients[0].vars.itemDetail).toContain("Bring the latest mocks.");

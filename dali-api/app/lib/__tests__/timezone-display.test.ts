@@ -79,29 +79,47 @@ describe("formatInstantWithZoneLabel", () => {
   // The notification formatter: meeting invites, meeting reminders, task due
   // reminders and interview assignments all read a start through this, so what
   // lands in the desktop banner is a sentence, never a machine timestamp.
-  it("reads as a human date with a short zone abbreviation", () => {
+  it("reads as a human date with a generic zone name", () => {
     expect(formatInstantWithZoneLabel(SUMMER, "America/New_York")).toBe(
-      "Wed, Jul 1, 2:00 PM EDT",
+      "Wed, Jul 1, 2:00 PM ET",
     );
     expect(formatInstantWithZoneLabel(WINTER, "America/Los_Angeles")).toBe(
-      "Thu, Mar 5, 11:30 AM PST",
+      "Thu, Mar 5, 11:30 AM PT",
     );
   });
 
-  it("never emits an ISO timestamp or a parenthesised long zone name", () => {
-    for (const zone of ["America/New_York", "Asia/Tokyo", "UTC"]) {
-      const text = formatInstantWithZoneLabel(SUMMER, zone);
-      expect(text).not.toMatch(/\d{4}-\d{2}-\d{2}T/);
-      expect(text).not.toMatch(/\(.*Time\)/);
+  // Generic names carry no daylight/standard distinction, which is the point:
+  // the label is the same either side of a DST boundary.
+  it("reads the same label in winter and summer", () => {
+    expect(formatInstantWithZoneLabel(WINTER, "America/New_York")).toContain("ET");
+    expect(formatInstantWithZoneLabel(SUMMER, "America/New_York")).toContain("ET");
+  });
+
+  // The regression this covers: the abbreviation style only names US zones, so
+  // every international member used to read a raw offset ("GMT+9", "GMT+5:30").
+  it("names non-US zones instead of printing an offset", () => {
+    expect(formatInstantWithZoneLabel(SUMMER, "Asia/Tokyo")).toBe(
+      "Thu, Jul 2, 3:00 AM Japan Time",
+    );
+    expect(formatInstantWithZoneLabel(SUMMER, "Asia/Kolkata")).toBe(
+      "Wed, Jul 1, 11:30 PM India Time",
+    );
+  });
+
+  // The UTC family is a valid stored User.timeZone but Intl leaves it unnamed,
+  // so it falls through to the abbreviation rather than reading "GMT+0".
+  it("spells the UTC family as UTC", () => {
+    for (const zone of ["UTC", "Etc/UTC", "GMT"]) {
+      expect(formatInstantWithZoneLabel(SUMMER, zone)).toBe("Wed, Jul 1, 6:00 PM UTC");
     }
   });
 
-  // Zones with no en-US abbreviation fall back to a short UTC offset rather
-  // than dropping the label — still readable, still unambiguous.
-  it("falls back to a short offset where no abbreviation exists", () => {
-    expect(formatInstantWithZoneLabel(SUMMER, "Asia/Tokyo")).toBe(
-      "Thu, Jul 2, 3:00 AM GMT+9",
-    );
+  it("never emits an ISO timestamp or a bare offset for a real zone", () => {
+    for (const zone of Intl.supportedValuesOf("timeZone")) {
+      const text = formatInstantWithZoneLabel(SUMMER, zone);
+      expect(text).not.toMatch(/\d{4}-\d{2}-\d{2}T/);
+      expect(text).not.toMatch(/GMT[+-]/);
+    }
   });
 });
 
