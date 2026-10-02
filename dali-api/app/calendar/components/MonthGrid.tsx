@@ -4,7 +4,7 @@
 // clicking a chip drills into that day too (the detail popover is a time-grid
 // affordance).
 
-import { AlertCircle } from "lucide-react";
+import { IssueIcon } from "./IssueIcon";
 
 import { cn } from "~/lib/cn";
 import { isPayPeriodEnd, isPayPeriodStart } from "~/lib/pay-period";
@@ -34,7 +34,7 @@ function MonthChip({ block, onOpen }: { block: EventBlock; onOpen: () => void })
         skin.className,
       )}
     >
-      {block.issue && <AlertCircle className="h-3 w-3 shrink-0 fill-white text-red-700" aria-hidden />}
+      {block.issue && <IssueIcon className="h-3 w-3" />}
       <span className="truncate">{block.label}</span>
       {block.issue && <span className="sr-only">{block.issue}</span>}
     </button>
