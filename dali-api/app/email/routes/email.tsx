@@ -419,9 +419,11 @@ export default function EmailPage() {
                       )}
                     >
                       <span className="flex items-center gap-2">
-                        <Tooltip content={labelFor(t.accountId)}>
-                          <span className={cn("h-2 w-2 shrink-0 rounded-full", dotFor(t.accountId))} />
-                        </Tooltip>
+                        {t.unread && (
+                          <Tooltip content={labelFor(t.accountId)}>
+                            <span className={cn("h-2 w-2 shrink-0 rounded-full", dotFor(t.accountId))} />
+                          </Tooltip>
+                        )}
                         <span className={cn("truncate text-sm text-foreground", t.unread && "font-semibold")}>
                           {data.folder === "sent" ? recipientLabel(t.to) : senderName(t.from)}
                           {t.messageCount > 1 && <span className="ml-1 text-xs font-normal text-os-muted">{t.messageCount}</span>}
