@@ -161,14 +161,11 @@ export async function setSlotBinding(
   opts?: { allowMove?: boolean },
 ): Promise<{ ok: true; movedFrom?: string } | { ok: false; error: string }> {
   // SlotFormPicker's "— No form selected —" posts an empty formId: that's an
-  // unbind, not a form lookup. deleteMany so clearing an already-clear slot is
-  // a no-op instead of a throw. Submissions keep the staffingCycleId and slot
+  // unbind, not a form lookup. Submissions keep the staffingCycleId and slot
   // they were filled under — unbinding stops new fills reaching this cycle, it
   // doesn't rewrite what's already recorded.
   if (!formId.trim()) {
-    await prisma.staffingCycleFormBinding.deleteMany({
-      where: { staffingCycleId, slot },
-    });
+    await clearSlotBinding(staffingCycleId, slot);
     return { ok: true };
   }
 
@@ -178,35 +175,52 @@ export async function setSlotBinding(
   });
   if (!form) return { ok: false, error: "That form no longer exists." };
 
-  // One cycle per form per slot. A fill is addressed by the form's token and
-  // carries no cycle, so two bindings make "which cycle do these answers feed"
-  // unanswerable — pickStaffingBinding has to guess, and the one-and-done gate
-  // spans both. Binding here MOVES the form, carrying its column mapping and
-  // app-lock config so the round that's starting doesn't have to be re-set up.
+  // ONE staffing binding per form, across every slot — not one per slot.
+  // pickStaffingBinding chooses among all of a form's slot bindings, so a form
+  // on 26F Project Bids and 27W Intent to Work is just as ambiguous as one on
+  // two cycles of the same slot: a fill is addressed by the form's token and
+  // carries neither cycle nor slot. Binding here MOVES the form.
   const held = await prisma.staffingCycleFormBinding.findFirst({
-    where: { formId, slot, staffingCycleId: { not: staffingCycleId } },
+    where: {
+      formId,
+      slot: { in: Object.keys(SLOTS) },
+      NOT: { staffingCycleId, slot },
+    },
     select: {
       id: true,
+      slot: true,
       columnMapping: true,
       gateAudience: true,
       gateAudienceGroupId: true,
       staffingCycle: { select: { name: true } },
     },
   });
+  const heldLabel = held
+    ? `${held.staffingCycle.name}${
+        held.slot === slot
+          ? ""
+          : ` (${isSlot(held.slot) ? SLOTS[held.slot] : held.slot})`
+      }`
+    : null;
   if (held && !opts?.allowMove) {
     return {
       ok: false,
-      error: `This form is already collecting for ${held.staffingCycle.name}. Confirm the move, or pick a different form.`,
+      error: `This form is already collecting for ${heldLabel}. Confirm the move, or pick a different form.`,
     };
   }
 
-  const carried = held
-    ? {
-        columnMapping: held.columnMapping ?? undefined,
-        gateAudience: held.gateAudience,
-        gateAudienceGroupId: held.gateAudienceGroupId,
-      }
-    : {};
+  // The mapping and app lock only travel within the same slot: a mapping's
+  // roles are slot-shaped (a project-bids mapping can't validate as
+  // intent-to-work), so a cross-slot move starts clean rather than carrying
+  // something the new slot would reject.
+  const carried =
+    held && held.slot === slot
+      ? {
+          columnMapping: held.columnMapping ?? undefined,
+          gateAudience: held.gateAudience,
+          gateAudienceGroupId: held.gateAudienceGroupId,
+        }
+      : {};
 
   await prisma.$transaction(async (tx) => {
     if (held)
@@ -217,9 +231,7 @@ export async function setSlotBinding(
       update: { formId, updatedById: userId, ...carried },
     });
   });
-  return held
-    ? { ok: true, movedFrom: held.staffingCycle.name }
-    : { ok: true };
+  return heldLabel ? { ok: true, movedFrom: heldLabel } : { ok: true };
 }
 
 // Set (or clear) the app-lock audience for a bound slot. `audience === null`
@@ -284,10 +296,26 @@ export async function listSelectableForms(opts?: {
   if (!opts) return forms;
 
   const held = await prisma.staffingCycleFormBinding.findMany({
-    where: { slot: opts.slot, staffingCycleId: { not: opts.exceptCycleId } },
-    select: { formId: true, staffingCycle: { select: { name: true } } },
+    where: {
+      slot: { in: Object.keys(SLOTS) },
+      NOT: { staffingCycleId: opts.exceptCycleId, slot: opts.slot },
+    },
+    select: {
+      formId: true,
+      slot: true,
+      staffingCycle: { select: { name: true } },
+    },
   });
-  const heldBy = new Map(held.map((b) => [b.formId, b.staffingCycle.name]));
+  const heldBy = new Map(
+    held.map((b) => [
+      b.formId,
+      `${b.staffingCycle.name}${
+        b.slot === opts.slot
+          ? ""
+          : ` (${isSlot(b.slot) ? SLOTS[b.slot] : b.slot})`
+      }`,
+    ]),
+  );
   return forms.map((f) => {
     const cycleName = heldBy.get(f.id);
     return cycleName ? { ...f, boundToCycleName: cycleName } : f;
