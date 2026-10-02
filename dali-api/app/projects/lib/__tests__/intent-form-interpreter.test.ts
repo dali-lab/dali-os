@@ -66,3 +66,72 @@ describe("interpretIntentForm", () => {
     expect(r).toEqual({ ok: true, rows: [] });
   });
 });
+
+describe("cycle-term status columns", () => {
+  // The mapping entry names no term, so it follows whichever cycle the form is
+  // bound to. That's what lets one intent form be re-bound each round.
+  const cycleTermMapping = {
+    version: 1 as const,
+    entries: [
+      {
+        source: "question" as const,
+        questionKey: "q-status",
+        role: "intent-status",
+        label: "Status — {{term}}",
+      },
+    ],
+  };
+
+  it("fills the bound cycle's own term", () => {
+    const result = interpretIntentForm(
+      { "q-status": "Returning" },
+      cycleTermMapping,
+      ["t-26f", "t-27w"],
+      "t-27w",
+    );
+    expect(result).toEqual({ ok: true, rows: [{ termId: "t-27w", status: "Returning" }] });
+  });
+
+  it("follows the cycle when the same mapping is re-bound to the next round", () => {
+    const result = interpretIntentForm(
+      { "q-status": "Returning" },
+      cycleTermMapping,
+      ["t-26f", "t-27w", "t-27s"],
+      "t-27s",
+    );
+    expect(result).toEqual({ ok: true, rows: [{ termId: "t-27s", status: "Returning" }] });
+  });
+
+  it("still errors when neither the entry nor the cycle names a term", () => {
+    const result = interpretIntentForm(
+      { "q-status": "Returning" },
+      cycleTermMapping,
+      ["t-26f"],
+      null,
+    );
+    expect(result.ok).toBe(false);
+  });
+
+  it("leaves an explicitly named term alone, stale check included", () => {
+    const fixed = {
+      version: 1 as const,
+      entries: [
+        {
+          source: "question" as const,
+          questionKey: "q-status",
+          role: "intent-status",
+          label: "Status — 26F",
+          termId: "t-26f",
+        },
+      ],
+    };
+    // Named term wins over the cycle's own term …
+    expect(
+      interpretIntentForm({ "q-status": "Off" }, fixed, ["t-26f"], "t-27w"),
+    ).toEqual({ ok: true, rows: [{ termId: "t-26f", status: "Off" }] });
+    // … and a term the cycle doesn't cover is still reported as stale.
+    expect(
+      interpretIntentForm({ "q-status": "Off" }, fixed, ["t-27w"], "t-27w").ok,
+    ).toBe(false);
+  });
+});

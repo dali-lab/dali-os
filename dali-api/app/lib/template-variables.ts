@@ -8,7 +8,7 @@
 // vars, the DB-backed resolvers) — this module owns the vocabulary, the
 // placeholder grammar, extraction, and interpolation so those don't drift.
 
-export type TemplateContext = "email" | "signing" | "notification";
+export type TemplateContext = "email" | "signing" | "notification" | "form";
 
 export interface TemplateVariableDef {
   description: string;
@@ -86,11 +86,14 @@ export const TEMPLATE_VARIABLES_REGISTRY = {
     contexts: ["notification"],
   },
 
-  // ── Signing documents ───────────────────────────────────────────────────
+  // ── Signing documents (term is shared with forms) ───────────────────────
+  // One token, because it's one idea to an author: the term this thing is
+  // for. A form question written "…in {{term}}?" is what lets a single
+  // staffing form serve every round instead of a copy per term.
   term: {
     description:
-      "The term the agreement is issued for, e.g. 26F. For per-term agreements this is the term you issue it from (often an upcoming one, sent before it starts); otherwise the current term.",
-    contexts: ["signing"],
+      "The term this is for, e.g. 26F. On an agreement, the term it's issued for (for per-term agreements the term you issue it from, often an upcoming one sent before it starts, else the current term). On a form, the term of the staffing cycle the form is bound to.",
+    contexts: ["signing", "form"],
   },
   upcomingTerm: {
     description: "The term after the one the agreement is issued for, e.g. 27W.",
@@ -131,6 +134,14 @@ export function variablesForContext<C extends TemplateContext>(ctx: C): Variable
 // intentionally NOT matched — the interpolator can't substitute them either, so
 // treating them as known would hide a real bug from the lint surface.
 export const PLACEHOLDER_RE = /\{\{([A-Za-z][A-Za-z0-9_]*)\}\}/g;
+
+// The literal token for a variable, for UIs that insert or display one (the
+// signing editor's "+ Variable" menu, a staffing column label that defers to
+// whichever cycle it's bound to). Built here so the braces live in exactly one
+// place alongside the grammar that parses them.
+export function placeholder(name: TemplateVariableName): string {
+  return `{{${name}}}`;
+}
 
 export function extractPlaceholders(text: string): string[] {
   const out: string[] = [];

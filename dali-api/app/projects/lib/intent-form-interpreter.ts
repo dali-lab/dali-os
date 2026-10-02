@@ -55,10 +55,16 @@ export type IntentInterpretResult =
 // a term outside that set is a stale/misconfigured mapping. Mapping validity
 // (required role, question type) is the caller's job via validateMapping();
 // this assembles rows + enforces the status enum + term membership.
+//
+// `cycleTermId` is the bound cycle's OWN term, which fills a status entry that
+// names no term ("this cycle's term" in the mapper). That's what lets one form
+// be re-bound round after round: the mapping follows the form and the rows
+// land on whichever term the new cycle is for, with no re-mapping.
 export function interpretIntentForm(
   answers: Record<string, unknown>,
   mapping: ColumnMapping,
   cycleTermIds: string[],
+  cycleTermId?: string | null,
 ): IntentInterpretResult {
   const termSet = new Set(cycleTermIds);
   const rows: RawIntent[] = [];
@@ -68,13 +74,16 @@ export function interpretIntentForm(
     // keyed from the session in public-form.ts, not from the mapping.
     if (e.source === "builtin") continue;
     if (e.role !== "intent-status") continue;
-    if (!e.termId) {
+    const termId = e.termId ?? cycleTermId;
+    if (!termId) {
       return {
         ok: false,
         error: "Intent mapping is missing a term for one of its status columns.",
       };
     }
-    if (!termSet.has(e.termId)) {
+    // A cycle-term entry is correct by construction (it IS this cycle's
+    // term), so only an explicitly named term is checked for staleness.
+    if (e.termId && !termSet.has(e.termId)) {
       return {
         ok: false,
         error:
@@ -91,7 +100,7 @@ export function interpretIntentForm(
         error: `"${String(raw)}" isn't a valid availability status.`,
       };
     }
-    rows.push({ termId: e.termId, status });
+    rows.push({ termId, status });
   }
 
   // No rows is NOT an error any more: the raw submission is still recorded by
