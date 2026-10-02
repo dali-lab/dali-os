@@ -1457,6 +1457,7 @@ export default function ManageOffering() {
                       method="post"
                       onSubmit={confirmSubmit({
                         title: "Delete this session?",
+                        description: "Attendance recorded for it is deleted with it.",
                         confirmLabel: "Delete",
                         tone: "destructive",
                       })}

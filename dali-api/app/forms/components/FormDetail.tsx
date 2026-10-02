@@ -995,6 +995,7 @@ function PublishButton({
       inUse &&
       !(await dialog.confirm({
         title: "Unpublish this form?",
+        tone: "destructive",
         description:
           "It's in use elsewhere. Unpublishing hides it there until you publish again.",
         confirmLabel: "Unpublish",

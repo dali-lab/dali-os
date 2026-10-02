@@ -3,9 +3,10 @@ import { createPortal } from "react-dom";
 import { Link, useFetcher, useRevalidator } from "react-router";
 import {
   Building2, Wifi, Users, FileText, Pencil, Copy, Trash2,
-  Check, HelpCircle, X, Video, ExternalLink, Clock, AlertCircle, Shapes,
+  Check, HelpCircle, X, Video, ExternalLink, Clock, Shapes,
 } from "lucide-react";
 import { Tooltip } from "~/components/ui/floating";
+import { useDialog } from "~/components/ui/dialog";
 import { Toggle } from "~/components/ui/Toggle";
 import { Modal, ModalHeader, ModalFooter } from "~/components/Modal";
 import { DateField } from "~/components/ui/DateField";
@@ -19,6 +20,7 @@ import { AddMeetingNoteButton, OpenMeetingNoteButton } from "~/calendar/componen
 import { meetingOccurrenceHref } from "~/calendar/lib/meeting-href";
 import { AddMeetingWhiteboardButton } from "~/calendar/components/AddMeetingWhiteboardModal";
 import { TrackEventButton } from "~/calendar/components/TrackEventButton";
+import { IssueIcon } from "~/calendar/components/IssueIcon";
 import type {
   EventBlock, EventAttendeeDTO, EventLinkDTO, EventRsvpTarget, RsvpStatus, WhDay,
 } from "~/calendar/lib/types";
@@ -703,8 +705,24 @@ export function WeekGridEvent({
   hitTestDay?: (clientX: number) => number | null;
 }) {
   const [detailOpen, setDetailOpen] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const [anchorEl, setAnchorEl] = useState<HTMLDivElement | null>(null);
+  const dialog = useDialog();
+
+  // A recurring instance hands off to the composer, which asks for the scope
+  // and confirms there — asking twice would be the worse experience.
+  async function requestDelete() {
+    if (!e.recurring) {
+      const ok = await dialog.confirm({
+        title: e.label ? `Delete "${e.label}"?` : "Delete this event?",
+        description: "The event is removed from the calendar. This can't be undone.",
+        confirmLabel: "Delete",
+        tone: "destructive",
+      });
+      if (!ok) return;
+    }
+    setDetailOpen(false);
+    e.onDelete?.();
+  }
   // Horizontal shift (in columns × colWidth px) while a move drag crosses days.
   const [liveDayShift, setLiveDayShift] = useState<{ offset: number; colWidth: number } | null>(null);
   const bufferBefore = e.bufferBefore ?? 0;
@@ -1049,10 +1067,7 @@ export function WeekGridEvent({
         {(e.label || e.issue) && (
           <span className="flex items-start gap-1" title={e.issue || undefined}>
             {e.issue && (
-              <AlertCircle
-                className="mt-px h-3 w-3 shrink-0 fill-white text-red-700"
-                aria-hidden
-              />
+              <IssueIcon className="mt-px h-3 w-3" />
             )}
             <span className="truncate block">{e.label}</span>
           </span>
@@ -1093,10 +1108,7 @@ export function WeekGridEvent({
           rsvp={e.rsvp}
           meetingId={e.meeting?.meetingId}
           eventStartIso={eventStartIso}
-          onClose={() => {
-            setConfirmDelete(false);
-            setDetailOpen(false);
-          }}
+          onClose={() => setDetailOpen(false)}
           footer={
             <>
               {e.meeting && (
@@ -1197,40 +1209,16 @@ export function WeekGridEvent({
                 )}
                 {e.onDelete && (
                   <div className="ml-auto">
-                    {/* Recurring events route straight to the composer (scope
-                        prompt). One-off deletes confirm inline. */}
-                    {e.recurring ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDetailOpen(false);
-                          e.onDelete?.();
-                        }}
-                        className={cn(popoverActionBtn, "text-red-600 hover:border-red-300")}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" /> Delete…
-                      </button>
-                    ) : confirmDelete ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setConfirmDelete(false);
-                          setDetailOpen(false);
-                          e.onDelete?.();
-                        }}
-                        className="inline-flex items-center gap-1.5 rounded-full bg-red-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-red-700"
-                      >
-                        Confirm delete
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => setConfirmDelete(true)}
-                        className={cn(popoverActionBtn, "text-red-600 hover:border-red-300")}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" /> Delete
-                      </button>
-                    )}
+                    {/* Recurring events route to the composer, which asks for the
+                        scope and confirms there. One-off deletes confirm here. */}
+                    <button
+                      type="button"
+                      onClick={() => void requestDelete()}
+                      className={cn(popoverActionBtn, "text-destructive hover:border-destructive/40")}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />{" "}
+                      {e.recurring ? "Delete…" : "Delete"}
+                    </button>
                   </div>
                 )}
               </div>
@@ -1710,7 +1698,7 @@ export function WeekGrid({
                       "w-full text-left truncate rounded px-1.5 py-0.5 text-[11px] font-medium leading-tight",
                       block.onClick ? "cursor-pointer" : "cursor-default",
                       outlined
-                        ? cn("border bg-card text-foreground", !hasColor && "border-border")
+                        ? cn("border bg-transparent text-foreground", !hasColor && "border-border")
                         : !hasColor && "bg-muted text-foreground",
                     )}
                     style={

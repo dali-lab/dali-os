@@ -561,6 +561,8 @@ export function SigningDocumentDetail() {
         method="post"
         onSubmit={confirmSubmit({
           title: "Archive this agreement?",
+          description:
+            "It moves out of the active list and stops accepting signatures. There's no unarchive — signatures already collected are kept.",
           tone: "destructive",
           confirmLabel: "Archive",
         })}

@@ -68,6 +68,11 @@ type Props = {
   canManage: boolean;
 };
 
+/** Name a card's member for confirm copy. */
+function cardName(card: MemberCardModel): string {
+  return [card.firstName, card.lastName].join(" ").trim() || card.email || "this member";
+}
+
 export function StaffingBoard({
   cycleId,
   termId,
@@ -83,6 +88,7 @@ export function StaffingBoard({
   canManage,
 }: Props) {
   const { os } = useOsChrome();
+  const dialog = useDialog();
   const [searchParams, setSearchParams] = useSearchParams();
   const revalidator = useRevalidator();
   const [assignments, setAssignments] = useState<Assignment[]>(initialAssignments);
@@ -264,7 +270,15 @@ export function StaffingBoard({
   const loadExternalMentorsRef = useRef(loadExternalMentors);
   loadExternalMentorsRef.current = loadExternalMentors;
 
-  const removeExternalMentor = useCallback(async (id: string) => {
+  const removeExternalMentor = useCallback(async (id: string, name: string) => {
+    const ok = await dialog.confirm({
+      title: `Remove ${name} from the board?`,
+      description:
+        "This drops the external mentor's placement. You can add them back from the project column.",
+      confirmLabel: "Remove",
+      tone: "destructive",
+    });
+    if (!ok) return;
     setExternalMentors((prev) => prev.filter((e) => e.id !== id));
     try {
       await fetch(`/api/staffing/external-mentor?id=${encodeURIComponent(id)}`, {
@@ -274,7 +288,7 @@ export function StaffingBoard({
     } finally {
       loadExternalMentorsRef.current();
     }
-  }, []);
+  }, [dialog]);
 
   // Number of drag saves currently in flight. While > 0 we hold off adopting
   // server data so a live push from someone else can't revert our own unsaved
@@ -507,7 +521,15 @@ export function StaffingBoard({
 
   // Remove a member from ONE project (× on a project-column card). Their rows on
   // other projects are untouched.
-  async function removeFromProject(userId: string, projectId: string) {
+  async function removeFromProject(userId: string, projectId: string, name: string) {
+    const ok = await dialog.confirm({
+      title: `Take ${name} off ${projectNames[projectId] ?? "this project"}?`,
+      description:
+        "Their staffing assignment on this project is removed. Other projects they're staffed on are untouched.",
+      confirmLabel: "Remove",
+      tone: "destructive",
+    });
+    if (!ok) return;
     const prevAssignments = assignments;
     setAssignments((list) =>
       list.filter((a) => !(a.userId === userId && a.projectId === projectId)),
@@ -549,7 +571,15 @@ export function StaffingBoard({
     }
   }
 
-  async function handleRemoveMember(userId: string) {
+  async function handleRemoveMember(userId: string, name: string) {
+    const ok = await dialog.confirm({
+      title: `Remove ${name} from this board?`,
+      description:
+        "They were added to the board by hand, so removing them takes them off it entirely. Search for them again to add them back.",
+      confirmLabel: "Remove",
+      tone: "destructive",
+    });
+    if (!ok) return;
     setError(null);
     try {
       const res = await fetch("/api/staffing/board-member", {
@@ -804,15 +834,15 @@ export function StaffingBoard({
             onRemove={
               card.isExternalMentor
                 ? canManage && card.externalMentorId
-                  ? () => void removeExternalMentor(card.externalMentorId!)
+                  ? () => void removeExternalMentor(card.externalMentorId!, cardName(card))
                   : undefined
                 : !canManage
                   ? undefined
                   : card.columnKey === UNASSIGNED
                     ? card.manuallyAdded
-                      ? () => handleRemoveMember(card.userId)
+                      ? () => void handleRemoveMember(card.userId, cardName(card))
                       : undefined
-                    : () => void removeFromProject(card.userId, card.columnKey)
+                    : () => void removeFromProject(card.userId, card.columnKey, cardName(card))
             }
             draggable={canManage}
             dragHandleProps={dragHandleProps}

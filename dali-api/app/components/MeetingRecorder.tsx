@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Mic, Square, Trash2 } from "lucide-react";
 import { buttonClasses } from "~/components/ui/Button";
 import { IconButton } from "~/components/ui/IconButton";
+import { useDialog } from "~/components/ui/dialog";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import {
@@ -50,6 +51,7 @@ export function MeetingRecorder({
 }) {
   const { panel } = useOsChrome();
   const [phase, setPhase] = useState<Phase>("idle");
+  const dialog = useDialog();
   const [recordingId, setRecordingId] = useState<string | null>(null);
   const [link, setLink] = useState<string | null>(null);
   // From the server: without an AI provider the recording lands as a
@@ -227,6 +229,20 @@ export function MeetingRecorder({
     setPhase("idle");
   }
 
+  // Discarding from the review step throws away a transcript that already
+  // exists, unlike the resets that run before a recording has anything in it.
+  async function discard() {
+    const ok = await dialog.confirm({
+      title: "Discard this recording?",
+      description:
+        "The transcript is deleted and can't be recovered. Insert it into the note first if you want to keep it.",
+      confirmLabel: "Discard",
+      tone: "destructive",
+    });
+    if (!ok) return;
+    reset();
+  }
+
   function insert(notes: string | null) {
     if (!onInsert(meetingNotesMarkdown(notes, lines))) {
       setError("The note is still loading. Try again in a moment.");
@@ -345,7 +361,7 @@ export function MeetingRecorder({
                 label="Discard recording"
                 icon={Trash2}
                 tone="destructive"
-                onClick={reset}
+                onClick={() => void discard()}
                 disabled={phase === "writing"}
               />
               <button

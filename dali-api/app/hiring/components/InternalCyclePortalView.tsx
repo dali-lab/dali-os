@@ -6,6 +6,7 @@ import { useFormPager, FormPageHeading } from "~/forms/components/FormPager";
 import { paginateQuestions } from "~/lib/form-pages";
 import { formatInstantWithZoneLabel } from "~/lib/timezone";
 import { Checkbox } from "~/components/ui/Checkbox";
+import { useDialog } from "~/components/ui/dialog";
 import type { PortalLoaderData, PortalDomain } from "~/hiring/lib/internal-cycle-portal.server";
 import { DomainApplicationCard } from "~/hiring/components/ApplicationTracker";
 
@@ -326,8 +327,22 @@ function FormView({
 
 function SubmittedView({ submittedBody, portalPath }: { submittedBody: string; portalPath: string }) {
   const fetcher = useFetcher();
-  const [confirming, setConfirming] = useState(false);
+  const dialog = useDialog();
   const busy = fetcher.state !== "idle";
+
+  async function withdraw() {
+    const ok = await dialog.confirm({
+      title: "Withdraw this application?",
+      description:
+        "It comes out of review. You can't reopen it without contacting the hiring lead.",
+      confirmLabel: "Withdraw",
+      cancelLabel: "Keep it in review",
+      tone: "destructive",
+    });
+    if (!ok) return;
+    fetcher.submit({ intent: "withdraw" }, { method: "post", action: portalPath });
+  }
+
   return (
     <div className="space-y-6">
       <div className="rounded-2xl border border-green-200 bg-green-50/50 px-6 py-8 text-center">
@@ -335,31 +350,14 @@ function SubmittedView({ submittedBody, portalPath }: { submittedBody: string; p
         <p className="text-sm text-muted-foreground">{submittedBody}</p>
       </div>
       <div className="flex justify-end">
-        {confirming ? (
-          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 space-y-2">
-            <p className="text-sm font-semibold text-red-700">Withdraw this application?</p>
-            <p className="text-xs text-red-600/80">You can't reopen it without contacting the hiring lead.</p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => fetcher.submit({ intent: "withdraw" }, { method: "post", action: portalPath })}
-                disabled={busy}
-                className="px-4 py-1.5 rounded-full bg-red-600 text-white text-sm font-semibold disabled:opacity-50"
-              >
-                {busy ? "Withdrawing…" : "Yes, withdraw"}
-              </button>
-              <button onClick={() => setConfirming(false)} className="text-sm text-muted-foreground hover:underline">
-                Cancel
-              </button>
-            </div>
-          </div>
-        ) : (
-          <button
-            onClick={() => setConfirming(true)}
-            className="text-sm text-muted-foreground hover:text-red-600 hover:underline"
-          >
-            Withdraw application
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={() => void withdraw()}
+          disabled={busy}
+          className="text-sm text-muted-foreground hover:text-destructive hover:underline disabled:opacity-50"
+        >
+          {busy ? "Withdrawing…" : "Withdraw application"}
+        </button>
       </div>
     </div>
   );

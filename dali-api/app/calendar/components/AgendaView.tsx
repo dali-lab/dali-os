@@ -5,7 +5,7 @@
 // day. A row opens its event through the block's own handler (composer /
 // timesheet editor), falling back to drilling into the day.
 
-import { AlertCircle } from "lucide-react";
+import { IssueIcon } from "./IssueIcon";
 
 import { cn } from "~/lib/cn";
 import { eventSkin } from "~/calendar/lib/event-block";
@@ -52,9 +52,7 @@ function AgendaRow({ block, onDrill }: { block: EventBlock; onDrill: () => void 
       />
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1 text-sm text-foreground">
-          {block.issue && (
-            <AlertCircle className="h-3.5 w-3.5 shrink-0 text-red-700" aria-hidden />
-          )}
+          {block.issue && <IssueIcon className="h-3.5 w-3.5" />}
           <span className="truncate">{block.label}</span>
           {block.issue && <span className="sr-only">{block.issue}</span>}
         </span>

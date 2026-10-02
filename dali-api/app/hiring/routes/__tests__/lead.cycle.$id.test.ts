@@ -644,8 +644,14 @@ describe("lead.cycle.$id action — domain challenges", () => {
   it("adds a challenge to the domain in Draft", async () => {
     vi.mocked(addDomainChallenge).mockResolvedValue(null);
     const res = (await callAction({ intent: "create-challenge-form", domainId: DOMAIN_ID })) as Response;
-    expect(addDomainChallenge).toHaveBeenCalledWith(CYCLE_ID, DOMAIN_ID, HIRING_LEAD_ID);
+    expect(addDomainChallenge).toHaveBeenCalledWith(CYCLE_ID, DOMAIN_ID, HIRING_LEAD_ID, null);
     expect(res.status).toBe(302);
+  });
+
+  it("links the form the lead picked", async () => {
+    vi.mocked(addDomainChallenge).mockResolvedValue(null);
+    await callAction({ intent: "create-challenge-form", domainId: DOMAIN_ID, formId: "form-1" });
+    expect(addDomainChallenge).toHaveBeenCalledWith(CYCLE_ID, DOMAIN_ID, HIRING_LEAD_ID, "form-1");
   });
 
   it("refuses once the cycle has opened", async () => {

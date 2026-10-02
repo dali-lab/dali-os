@@ -1231,6 +1231,8 @@ export function EpicDetail({
                         if (
                           !(await dialog.confirm({
                             title: `Delete story "${story.title}"?`,
+                            description:
+                              "Tasks on this story stay, but lose their story link.",
                             confirmLabel: "Delete",
                             tone: "destructive",
                           }))

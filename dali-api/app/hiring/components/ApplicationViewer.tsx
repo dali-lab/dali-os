@@ -3,6 +3,7 @@ import { cn } from '~/lib/cn'
 import { X } from 'lucide-react'
 import type { Question } from '~/types'
 import { DocEditor } from '~/components/doc'
+import { useDialog } from '~/components/ui/dialog'
 import { isEmptyBlocks } from '~/lib/blocks'
 import { AnswerDisplay } from '~/hiring/components/ApplicationAnswers'
 
@@ -222,6 +223,7 @@ function AnnotatableField({
 }: AnnotatableFieldProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [popover, setPopover] = useState<Popover | null>(null)
+  const dialog = useDialog()
   const [pendingComment, setPendingComment] = useState('')
   const [pendingColor, setPendingColor] = useState<HighlightColor>('yellow')
 
@@ -285,8 +287,17 @@ function AnnotatableField({
     setPopover(null)
   }
 
-  const handleDelete = () => {
-    if (popover?.annotationId) onDeleteAnnotation(popover.annotationId)
+  const handleDelete = async () => {
+    const annotationId = popover?.annotationId
+    if (!annotationId) return
+    const ok = await dialog.confirm({
+      title: 'Remove this highlight?',
+      description: 'The note written on it goes too.',
+      confirmLabel: 'Remove',
+      tone: 'destructive',
+    })
+    if (!ok) return
+    onDeleteAnnotation(annotationId)
     setPopover(null)
   }
 
@@ -339,7 +350,7 @@ function AnnotatableField({
                     {popover.annotationId ? 'Update' : 'Highlight'}
                   </button>
                   {popover.annotationId && (
-                    <button onClick={handleDelete} className="text-xs font-medium text-red-600 hover:text-red-800 px-2">Remove</button>
+                    <button onClick={() => void handleDelete()} className="text-xs font-medium text-destructive hover:text-destructive/80 px-2">Remove</button>
                   )}
                 </div>
                 <p className="text-[10px] text-muted-foreground/70 mt-1.5 text-center">⌘↵ to save · Esc to cancel</p>

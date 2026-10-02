@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { useRevalidator } from "react-router";
 import { Plus, X } from "lucide-react";
 import { AnchoredPopover } from "~/calendar/components/AnchoredPopover";
+import { useDialog } from "~/components/ui/dialog";
 import { cn } from "~/lib/cn";
 
 // Manage the non-DALI jobs a member logs hours against. Lives next to the
@@ -46,10 +47,26 @@ export function CustomHiresManager({ hires }: { hires: Hire[] }) {
   const [label, setLabel] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const dialog = useDialog();
 
   function close() {
     setOpen(false);
     setAnchor(null);
+  }
+
+  // Confirms before archiving: the job's logged hours stay on the timesheet,
+  // but it drops off the role picker and the sidebar's hour breakdown. The
+  // dialog lives at the app root, so it survives this popover closing behind it.
+  async function confirmArchive(hire: Hire) {
+    const ok = await dialog.confirm({
+      title: `Remove ${hire.label}?`,
+      description:
+        "It stops showing up as a job you can log hours against. Hours you already logged against it stay on your timesheet.",
+      confirmLabel: "Remove",
+      tone: "destructive",
+    });
+    if (!ok) return;
+    await run({ intent: "archive", id: hire.id });
   }
 
   async function run(body: Record<string, string>) {
@@ -126,7 +143,7 @@ export function CustomHiresManager({ hires }: { hires: Hire[] }) {
                       e.preventDefault();
                       e.stopPropagation();
                       if (busy) return;
-                      void run({ intent: "archive", id: h.id });
+                      void confirmArchive(h);
                     }}
                     className="text-muted-foreground hover:text-destructive disabled:opacity-60"
                   >

@@ -29,7 +29,6 @@ export function SubmissionFilters({
         onChange={(e) => onQueryChange(e.target.value)}
         placeholder="Search by name or email"
         aria-label="Search submissions"
-        size="sm"
         containerClassName="flex-1"
       />
       {showDomain && (

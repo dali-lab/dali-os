@@ -63,7 +63,7 @@ import { Checkbox } from "~/components/ui/Checkbox";
 import { Toggle } from "~/components/ui/Toggle";
 import { DateField } from "~/components/ui/DateField";
 import { useToast } from "~/components/ui/toast";
-import { useDialog } from "~/components/ui/dialog";
+import { useConfirmSubmit, useDialog } from "~/components/ui/dialog";
 import { AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, X, Eye, Mail, CheckCircle2, CircleDot, AlertCircle } from 'lucide-react'
 import { useOsChrome } from "~/components/os-chrome";
 import { SegmentedTabButtons } from "~/components/AreaPillNav";
@@ -72,7 +72,7 @@ import { OpenApplicationsConfirmModal } from "~/hiring/components/cycle-setup/Op
 import { TermDatesCard } from "~/hiring/components/cycle-setup/TermDatesCard";
 import { AudienceCard } from "~/hiring/components/cycle-setup/AudienceCard";
 import { NavSection, SectionNavLayout } from "~/hiring/components/cycle-setup/SectionNav";
-import { DomainSubRow, SubRowEmpty } from "~/hiring/components/cycle-setup/DomainSubRow";
+import { DomainSubRow, SubRowEmpty, SubRowVersion } from "~/hiring/components/cycle-setup/DomainSubRow";
 import { ChallengeLine, NotReadyIcon, type DomainChallenge } from "~/hiring/components/cycle-setup/ChallengeLine";
 import { DomainRosterCard } from "~/hiring/components/cycle-setup/DomainRosterCard";
 import { TimelineCard } from "~/hiring/components/cycle-setup/TimelineCard";
@@ -186,7 +186,23 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       },
       statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
       applicationForm: { include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } } },
-      domainChallengeForms: { select: { id: true, domainId: true, formId: true, form: { select: { name: true } } } },
+      domainChallengeForms: {
+        select: {
+          id: true,
+          domainId: true,
+          formId: true,
+          form: {
+            select: {
+              name: true,
+              versions: {
+                orderBy: { versionNumber: "desc" },
+                take: 1,
+                select: { versionNumber: true, createdAt: true, createdBy: { select: { firstName: true, lastName: true } } },
+              },
+            },
+          },
+        },
+      },
     },
   });
 
@@ -210,7 +226,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const allDomains = await prisma.domain.findMany({ orderBy: { name: "asc" } });
 
-  // All Drive Forms — for the "bind a different form" picker in Setup.
+  // All Drive Forms — for the application form and challenge pickers in Setup.
   const allForms = await prisma.form.findMany({
     orderBy: { name: "asc" },
     select: { id: true, name: true },
@@ -274,7 +290,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // Which domains already have reviews assigned (used to gate rubric edits —
   // once any domain application has a review, changing the rubric out from
   // under it would invalidate scoring).
-  const domainIds: string[] = cycle.domains.map((d: any) => d.domainId);
   const domainRubricVersions = await prisma.rubricVersion.findMany({
     include: { rubric: { select: { name: true } }, createdBy: { select: { firstName: true, lastName: true } } },
     orderBy: { createdAt: "desc" },
@@ -337,23 +352,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     (await listHiringEmails()).map((e) => [e.slot, { subject: e.subject, body: e.body }]),
   );
 
-  // Domain leads per cycle domain, used to name who owes a missing
-  // challenge. DomainLeadAssignment has no "current" flag;
-  // ordering by createdAt desc picks the most-recently-assigned lead first,
-  // and we dedupe by user across terms.
-  const domainLeadAssignments = domainIds.length > 0
-    ? await prisma.domainLeadAssignment.findMany({
-        where: { domainId: { in: domainIds } },
-        include: { user: { select: { id: true, firstName: true, lastName: true } } },
-        orderBy: { createdAt: "desc" },
-      })
-    : [];
-  const domainLeadsByDomain: Record<string, Array<{ id: string; firstName: string | null; lastName: string | null }>> = {};
-  for (const a of domainLeadAssignments) {
-    const list = (domainLeadsByDomain[a.domainId] ??= []);
-    if (!list.some((u) => u.id === a.user.id)) list.push(a.user);
-  }
-
   const memberSetup = isMemberCycle ? await loadMemberCycleSetup(params.id) : null;
   const [progress, termOptions, phaseStatusByDomain, startTermCandidates] = await Promise.all([
     getCycleProgress(params.id),
@@ -382,7 +380,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       hiringEmails,
       domainRubricVersions,
       reviewedDomainIds,
-      domainLeadsByDomain,
       confidentialityAgreementOptions,
       currentConfidentialityBinding,
       confidentialitySignatures,
@@ -666,7 +663,12 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (intent === "create-challenge-form" || intent === "remove-challenge-form") {
     const refused =
       intent === "create-challenge-form"
-        ? await addDomainChallenge(params.id, formData.get("domainId") as string, auth.user.sub)
+        ? await addDomainChallenge(
+            params.id,
+            formData.get("domainId") as string,
+            auth.user.sub,
+            (formData.get("formId") as string) || null,
+          )
         : await removeDomainChallenge(formData.get("cdfId") as string, params.id);
     if (refused === "not-draft") {
       return Response.json({ error: "Challenges lock once the cycle opens." }, { status: 409 });
@@ -1223,12 +1225,13 @@ export default function HiringLeadCycleDetails() {
   // A domain's challenges, shown on its row only when the cycle has them.
   const challengeFor = (domainId: string): DomainChallenge | null => {
     if (!cycle?.hasChallenges) return null
-    const lead = (loaderData?.domainLeadsByDomain?.[domainId] ?? [])[0]
+    const forms = (cycle?.domainChallengeForms ?? [])
+      .filter((f: any) => f.domainId === domainId)
+      .map((f: any) => ({ id: f.id, formId: f.formId, name: f.form.name, ...f.form.versions?.[0] }))
+    const linked = new Set(forms.map((f: any) => f.formId))
     return {
-      forms: (cycle?.domainChallengeForms ?? [])
-        .filter((f: any) => f.domainId === domainId)
-        .map((f: any) => ({ id: f.id, formId: f.formId, name: f.form.name })),
-      lead: lead ? `${lead.firstName ?? ''} ${lead.lastName ?? ''}`.trim() || null : null,
+      forms,
+      pickable: (loaderData?.allForms ?? []).filter((f: any) => !linked.has(f.id)),
     }
   }
 
@@ -3114,8 +3117,8 @@ function ExtensionSection({
   const [unit, setUnit] = useState<"hours" | "days">(initial.unit);
   const [showConfirm, setShowConfirm] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
-  const removeFormRef = useRef<HTMLFormElement>(null);
   const headingId = `extend-confirm-heading-${cycleId}`;
+  const confirmSubmit = useConfirmSubmit();
 
   const ms = unit === "hours" ? amount * 3_600_000 : amount * 86_400_000;
   const nextClose = new Date(anchor.getTime() + ms);
@@ -3191,8 +3194,14 @@ function ExtensionSection({
           <Form
             method="post"
             preventScrollReset
-            ref={removeFormRef}
             aria-label="Remove deadline extension"
+            onSubmit={confirmSubmit({
+              title: "Remove the deadline extension?",
+              description:
+                "The cycle goes back to its original close time. If that time has passed, applications close immediately.",
+              confirmLabel: "Remove extension",
+              tone: "destructive",
+            })}
           >
             <input type="hidden" name="intent" value="remove-extension" />
             <button type="submit" className={buttonClasses("ghost", "sm", "text-red-700")}>
@@ -3311,15 +3320,13 @@ function GeneralApplicationSection({
   // "Rubric" / "No rubric" twice.
   const [editingRubric, setEditingRubric] = useState(false);
 
-  const versionLabel = (rv: any, fallback: string) =>
-    formatVersionLabel({
-      name: rv.rubric?.name ?? fallback,
-      versionNumber: rv.versionNumber,
-      createdAt: rv.createdAt,
-      createdBy: rv.createdBy,
-    });
+  const rubricVersion = (rv: any) => ({
+    name: rv.rubric?.name ?? "Rubric",
+    versionNumber: rv.versionNumber,
+    createdAt: rv.createdAt,
+    createdBy: rv.createdBy,
+  });
   const currentRubric = rubricVersionOptions.find((rv: any) => rv.id === currentRubricVersionId);
-  const currentRubricLabel = currentRubric ? versionLabel(currentRubric, "Rubric") : null;
   const small = buttonClasses("secondary", "sm");
 
   return (
@@ -3386,10 +3393,8 @@ function GeneralApplicationSection({
         <DomainSubRow
           label="Rubric"
           value={
-            currentRubricLabel ? (
-              <span className="min-w-0 max-w-full truncate" title={currentRubricLabel}>
-                {currentRubricLabel}
-              </span>
+            currentRubric ? (
+              <SubRowVersion version={rubricVersion(currentRubric)} />
             ) : (
               <SubRowEmpty>None yet</SubRowEmpty>
             )
@@ -3423,7 +3428,7 @@ function GeneralApplicationSection({
                     placeholder="Pick a rubric"
                     options={[
                       { value: "", label: "No rubric" },
-                      ...rubricVersionOptions.map((rv: any): SelectOption => ({ value: rv.id, label: versionLabel(rv, "Rubric") })),
+                      ...rubricVersionOptions.map((rv: any): SelectOption => ({ value: rv.id, label: formatVersionLabel(rubricVersion(rv)) })),
                     ]}
                     buttonClassName={rowTrigger(os.formTrigger)}
                   />
@@ -3460,16 +3465,10 @@ function DomainOverridePanel({
   rubricOptions: any[];
   rubricLocked: boolean;
 }) {
-  const [showReadyModal, setShowReadyModal] = useState(false);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showRubricPreview, setShowRubricPreview] = useState(false);
 
   const readyLocked = cycleStatus !== 'Draft';
   const isReady: boolean = !!domain.isReady;
-
-  // Close the ready modal when isReady flips — same-URL redirects don't remount
-  // the component so the modal state survives the round-trip without this.
-  useEffect(() => { setShowReadyModal(false); }, [isReady]);
 
   const [selectedRubricId, setSelectedRubricId] = useState(domain.rubricVersionId ?? '');
   // Like the Challenge line, the rubric shows what's set and opens a picker on demand.
@@ -3477,16 +3476,15 @@ function DomainOverridePanel({
   useEffect(() => { setSelectedRubricId(domain.rubricVersionId ?? ''); }, [domain.rubricVersionId]);
 
   const currentRubric = rubricOptions.find((rv: any) => rv.id === selectedRubricId);
-  const currentRubricLabel = currentRubric
-    ? formatVersionLabel({
-        name: currentRubric.rubric?.name ?? 'Rubric',
-        versionNumber: currentRubric.versionNumber,
-        createdAt: currentRubric.createdAt,
-        createdBy: currentRubric.createdBy,
-      })
-    : null;
+  const rubricVersion = (rv: any) => ({
+    name: rv.rubric?.name ?? 'Rubric',
+    versionNumber: rv.versionNumber,
+    createdAt: rv.createdAt,
+    createdBy: rv.createdBy,
+  });
 
   const os = useOsChrome();
+  const confirmSubmit = useConfirmSubmit();
   const domainName = domain.domain?.name ?? domain.domainId;
   const previewButton = (
     <Tooltip content="Preview">
@@ -3510,25 +3508,63 @@ function DomainOverridePanel({
         </div>
         <div className="flex items-center gap-1">
           {!readyLocked && (
-            <button
-              type="button"
-              onClick={() => setShowReadyModal(true)}
-              className={buttonClasses(isReady ? 'ghost' : 'secondary', 'sm')}
+            <Form
+              method="post"
+              preventScrollReset
+              className="inline"
+              onSubmit={confirmSubmit(
+                isReady
+                  ? {
+                      title: `Unmark ${domainName} as ready?`,
+                      description:
+                        'It goes back to "not ready" until the domain lead (or a hiring lead) marks it ready again.',
+                      confirmLabel: 'Unmark ready',
+                    }
+                  : {
+                      title: `Mark ${domainName} ready on the domain lead's behalf?`,
+                      description:
+                        'Use this when the domain lead is unavailable and the cycle needs to advance.',
+                      confirmLabel: 'Force ready',
+                    },
+              )}
             >
-              {isReady ? 'Unmark ready' : 'Force ready'}
-            </button>
+              <input
+                type="hidden"
+                name="intent"
+                value={isReady ? 'hl-force-unmark-ready' : 'hl-force-mark-ready'}
+              />
+              <input type="hidden" name="domainId" value={domain.domainId} />
+              <input type="hidden" name="confirm" value="true" />
+              <button type="submit" className={buttonClasses(isReady ? 'ghost' : 'secondary', 'sm')}>
+                {isReady ? 'Unmark ready' : 'Force ready'}
+              </button>
+            </Form>
           )}
           {cycleStatus === 'Draft' && (
-            <Tooltip content="Remove domain">
-              <button
-                type="button"
-                onClick={() => setShowDeleteModal(true)}
-                className={os.iconBtn}
-                aria-label={`Remove ${domainName}`}
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </Tooltip>
+            <Form
+              method="post"
+              preventScrollReset
+              className="inline"
+              onSubmit={confirmSubmit({
+                title: `Remove ${domainName} from this cycle?`,
+                description:
+                  "Any challenge version linked for this domain is unlinked. Applicants can no longer target it.",
+                confirmLabel: 'Remove',
+                tone: 'destructive',
+              })}
+            >
+              <input type="hidden" name="intent" value="remove-domain" />
+              <input type="hidden" name="domainId" value={domain.domainId} />
+              <Tooltip content="Remove domain">
+                <button
+                  type="submit"
+                  className={os.iconBtn}
+                  aria-label={`Remove ${domainName}`}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </Tooltip>
+            </Form>
           )}
         </div>
       </div>
@@ -3541,7 +3577,7 @@ function DomainOverridePanel({
         <DomainSubRow
           label="Rubric"
           value={
-            currentRubricLabel ? currentRubricLabel : <SubRowEmpty>None yet</SubRowEmpty>
+            currentRubric ? <SubRowVersion version={rubricVersion(currentRubric)} /> : <SubRowEmpty>None yet</SubRowEmpty>
           }
           action={
             <>
@@ -3549,7 +3585,7 @@ function DomainOverridePanel({
               {currentRubric && !editingRubric && previewButton}
               {!rubricLocked && !editingRubric && rubricOptions.length > 0 && (
                 <button type="button" onClick={() => setEditingRubric(true)} className={buttonClasses('secondary', 'sm')}>
-                  {currentRubricLabel ? 'Change' : 'Set rubric'}
+                  {currentRubric ? 'Change' : 'Set rubric'}
                 </button>
               )}
             </>
@@ -3577,12 +3613,7 @@ function DomainOverridePanel({
                       { value: "", label: "No rubric" },
                       ...rubricOptions.map((rv: any): SelectOption => ({
                         value: rv.id,
-                        label: formatVersionLabel({
-                          name: rv.rubric?.name ?? 'Rubric',
-                          versionNumber: rv.versionNumber,
-                          createdAt: rv.createdAt,
-                          createdBy: rv.createdBy,
-                        }),
+                        label: formatVersionLabel(rubricVersion(rv)),
                       })),
                     ]}
                     buttonClassName={rowTrigger(os.formTrigger)}
@@ -3608,21 +3639,6 @@ function DomainOverridePanel({
         />
       )}
 
-      {showDeleteModal && (
-        <DeleteDomainModal
-          domain={domain}
-          onClose={() => setShowDeleteModal(false)}
-        />
-      )}
-
-      {showReadyModal && (
-        <ForceReadyModal
-          domain={domain}
-          isReady={isReady}
-          onClose={() => setShowReadyModal(false)}
-        />
-      )}
-
       {showRubricPreview && currentRubric && (
         <RubricPreviewModal
           rv={currentRubric}
@@ -3630,87 +3646,6 @@ function DomainOverridePanel({
         />
       )}
     </div>
-  );
-}
-
-function ForceReadyModal({
-  domain,
-  isReady,
-  onClose,
-}: {
-  domain: any;
-  isReady: boolean;
-  onClose: () => void;
-}) {
-  const intent = isReady ? 'hl-force-unmark-ready' : 'hl-force-mark-ready';
-  const headingId = `force-ready-heading-${domain.domainId}`;
-  return (
-    <Modal open onClose={onClose} labelledBy={headingId} containerClassName="bg-card rounded-2xl shadow-xl max-w-md w-full mx-4 p-6">
-      <div className="space-y-4">
-        <h2 id={headingId} className="text-lg font-bold text-foreground">
-          {isReady ? 'Unmark domain as ready?' : 'Override domain lead?'}
-        </h2>
-        <div className="text-sm text-muted-foreground space-y-2">
-          <p>
-            Domain: <span className="font-semibold text-foreground">{domain.domain?.name ?? domain.domainId}</span>
-          </p>
-          {isReady ? (
-            <p>This will revert the domain back to "not ready" until the domain lead (or a hiring lead) marks it ready again.</p>
-          ) : (
-            <p>This will mark the domain as ready on behalf of the domain lead. Use this when the domain lead is unavailable and the cycle needs to advance.</p>
-          )}
-        </div>
-        <Form method="post" preventScrollReset className="flex justify-end gap-2 pt-2">
-          <input type="hidden" name="intent" value={intent} />
-          <input type="hidden" name="domainId" value={domain.domainId} />
-          <input type="hidden" name="confirm" value="true" />
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-border rounded-md hover:bg-muted/50"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            className={`px-3 py-2 text-sm font-medium rounded-md text-white ${isReady ? 'bg-red-600 hover:bg-red-700' : 'bg-amber-600 hover:bg-amber-700'}`}
-          >
-            {isReady ? 'Yes, unmark ready' : 'Yes, override domain lead'}
-          </button>
-        </Form>
-      </div>
-    </Modal>
-  );
-}
-
-function DeleteDomainModal({ domain, onClose }: { domain: any; onClose: () => void }) {
-  const headingId = `delete-domain-heading-${domain.domainId}`;
-  return (
-    <Modal open onClose={onClose} labelledBy={headingId} containerClassName="bg-card rounded-2xl shadow-xl max-w-sm w-full mx-4 p-6">
-      <div className="space-y-4">
-        <h2 id={headingId} className="text-lg font-bold text-foreground">Remove domain from cycle?</h2>
-        <p className="text-sm text-muted-foreground">
-          Remove <span className="font-semibold text-foreground">{domain.domain?.name ?? domain.domainId}</span> from this cycle? Any linked challenge version for this domain will be unlinked.
-        </p>
-        <Form method="post" preventScrollReset className="flex justify-end gap-2 pt-2">
-          <input type="hidden" name="intent" value="remove-domain" />
-          <input type="hidden" name="domainId" value={domain.domainId} />
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-border rounded-md hover:bg-muted/50"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            className="px-3 py-2 text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700"
-          >
-            Remove
-          </button>
-        </Form>
-      </div>
-    </Modal>
   );
 }
 

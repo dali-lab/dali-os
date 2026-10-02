@@ -531,6 +531,7 @@ export const AiBar = forwardRef<AiBarHandle, AiBarProps>(function AiBar(
       if (dialog) {
         const confirmed = await dialog.confirm({
           title: "Discard AI response?",
+          tone: "destructive",
           confirmLabel: "Discard",
           cancelLabel: "Keep open",
         });

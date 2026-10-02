@@ -1,7 +1,7 @@
 import { regroupRedirect } from "~/core/lib/regroup-redirect.server";
 import { useEffect, useRef, useState } from "react";
 import { redirect, useLoaderData, useFetcher } from "react-router";
-import { useDialog } from "~/components/ui/dialog";
+import { useConfirmSubmit, useDialog } from "~/components/ui/dialog";
 import type { Route } from "./+types/admin.domains";
 import { adminHandle } from "~/admin/adminNav";
 import { prisma } from "~/lib/db";
@@ -279,7 +279,11 @@ function DomainLeadsForDomain({ domain, members }: { domain: DomainWithCounts; m
           className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800"
         >
           {memberLabel(assignment.user)}
-          <RemoveDomainLeadButton assignmentId={assignment.id} />
+          <RemoveDomainLeadButton
+            assignmentId={assignment.id}
+            name={memberLabel(assignment.user)}
+            domainName={domain.name}
+          />
         </span>
       ))}
 
@@ -383,10 +387,29 @@ function EligibilityLevelSelect({
   );
 }
 
-function RemoveEligibilityButton({ eligibilityId }: { eligibilityId: string }) {
+function RemoveEligibilityButton({
+  eligibilityId,
+  name,
+  domainName,
+}: {
+  eligibilityId: string;
+  name: string;
+  domainName: string;
+}) {
   const fetcher = useFetcher();
+  const confirmSubmit = useConfirmSubmit();
   return (
-    <fetcher.Form method="post" className="inline">
+    <fetcher.Form
+      method="post"
+      className="inline"
+      onSubmit={confirmSubmit({
+        title: `Remove ${name}'s ${domainName} eligibility?`,
+        description:
+          "They will no longer be eligible to be staffed in this domain. You can add it back later.",
+        confirmLabel: "Remove",
+        tone: "destructive",
+      })}
+    >
       <input type="hidden" name="intent" value="remove-eligibility" />
       <input type="hidden" name="eligibilityId" value={eligibilityId} />
       <button
@@ -477,7 +500,11 @@ function DomainMembersForDomain({ domain, members }: { domain: DomainWithCounts;
         >
           {memberLabel(e.user)}
           <EligibilityLevelSelect domainId={domain.id} userId={e.user.id} level={e.level} />
-          <RemoveEligibilityButton eligibilityId={e.id} />
+          <RemoveEligibilityButton
+            eligibilityId={e.id}
+            name={memberLabel(e.user)}
+            domainName={domain.name}
+          />
         </span>
       ))}
 

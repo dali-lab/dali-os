@@ -328,6 +328,7 @@ export default function MentorshipBrowse() {
               await dialog.confirm({
                 title: "Remove pairing?",
                 description: `Remove ${name} from this mentor? This deletes the pairing but keeps any notes already written.`,
+                confirmLabel: "Remove",
                 tone: "destructive",
               })
             ) {

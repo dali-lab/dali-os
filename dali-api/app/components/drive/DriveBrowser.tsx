@@ -1301,10 +1301,10 @@ export function DriveBrowser({
     return level.scopeId;
   }
 
-  // ── Selection detail (the action strip + details rail subject) ─────────────
+  // ── Selection detail (the details rail subject) ────────────────────────────
   // Column view drives selection through `selectedLeaf`; list / grid / search
   // drive it through the `selected` set. Resolve them to one `detailItem` so the
-  // strip and the side-peek rail behave identically in every view.
+  // side-peek rail behaves identically in every view.
   const { selectedLeaf } = colSel;
   let leafScopeId: string | null = null;
   if (colSel.leafLevelIdx !== null) {
@@ -1314,10 +1314,9 @@ export function DriveBrowser({
 
   const columnsActive = viewMode === "columns" && !searching;
   // In column view the in-column LeafPreviewColumn owns the selected leaf's
-  // details and actions, so the action strip's single-item state and the
-  // side-peek rail stay out of its way — they drive only list / grid / search
-  // selection (the `selected` set). The strip still shows the resting count and
-  // bulk actions in columns.
+  // details and actions, so the side-peek rail stays out of its way — it
+  // drives only list / grid / search selection (the `selected` set). The bulk
+  // bar still shows in columns.
   let detailItem: DriveItem | null = null;
   let detailScopeId: string | null = null;
   if (!columnsActive && selected.size === 1) {
@@ -1837,30 +1836,20 @@ export function DriveBrowser({
             </div>
           )}
 
-          {/* ── Selection actions ─────────────────────────────────────────
+          {/* ── Bulk selection actions ────────────────────────────────────────
               Floated over the listing rather than stacked above it. A bar in
               the flow appears the instant the first click of a double-click
               lands, shoving the row out from under the second click — which is
               what an always-mounted fixed-height row used to prevent, at the
               cost of an empty band over every resting listing. Out of the flow
               it can be absent at rest AND move nothing when it arrives. ── */}
-          <DriveActionStrip
-            os={true}
+          <DriveBulkBar
             showBulk={showBulk}
             selectedCount={selected.size}
             selectedItems={selectedItems}
             onBulkMove={onBulkMove}
             onBulkDelete={onBulkDelete}
             onClearSelection={() => setSelected(new Set())}
-            item={detailItem}
-            actions={detailActions}
-            canDownload={!!canItemDownload}
-            canRename={!!canItemRename}
-            canMove={!!canItemMove}
-            canShare={!!canItemShare}
-            canDelete={!!canItemDelete}
-            detailsOpen={detailsOpen}
-            onOpenDetails={() => setDetailsOpen(true)}
           />
           </div>
 
@@ -1916,146 +1905,61 @@ export function DriveBrowser({
   );
 }
 
-// ── Action strip ─────────────────────────────────────────────────────────────
-// Always mounted, one fixed-height row. Swaps contents by selection state so the
-// list below never moves. `data-testid` is "drive-bulk-bar" in the multi-select
-// state (the e2e and prior behaviour depend on that id + "N selected" text) and
-// "drive-action-strip" otherwise.
+// ── Bulk bar ─────────────────────────────────────────────────────────────────
+// Multi-select actions only. A single selected item has no bar: its actions
+// live in the row's context menu and the details rail.
 
-function DriveActionStrip({
-  os,
+function DriveBulkBar({
   showBulk,
   selectedCount,
   selectedItems,
   onBulkMove,
   onBulkDelete,
   onClearSelection,
-  item,
-  actions,
-  canDownload,
-  canRename,
-  canMove,
-  canShare,
-  canDelete,
-  detailsOpen,
-  onOpenDetails,
 }: {
-  os: boolean;
   showBulk: boolean;
   selectedCount: number;
   selectedItems: DriveItem[];
   onBulkMove?: (items: DriveItem[]) => void;
   onBulkDelete?: (items: DriveItem[]) => void;
   onClearSelection: () => void;
-  item: DriveItem | null;
-  actions: RowActions | null;
-  canDownload: boolean;
-  canRename: boolean;
-  canMove: boolean;
-  canShare: boolean;
-  canDelete: boolean;
-  detailsOpen: boolean;
-  onOpenDetails: () => void;
 }) {
-  const btn = cn(
-    "inline-flex items-center gap-1 rounded px-2 py-1 text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-    os ? "text-sm" : "text-xs",
-  );
-  // With nothing selected the strip has nothing to say — Finder keeps no
-  // item-count banner over its listing — so it leaves the flow entirely rather
-  // than holding an empty band (and the gap above the listing) open. It returns
-  // the moment a selection gives it something to carry.
-  if (!showBulk && !(item && actions && !detailsOpen)) return null;
+  if (!showBulk) return null;
   return (
     <div
-      className={cn(
-        // Pinned to the bottom of the listing it belongs to, clear of the rows
-        // it acts on. Its own surface and shadow, since it sits over content.
-        "absolute inset-x-3 bottom-3 z-20 flex items-center gap-2 rounded-md border px-3 min-h-9 shadow-brand-2",
-        showBulk ? "border-os-accent/40 bg-os-accent/10" : "border-border bg-card",
-        os ? "text-base" : "text-sm",
-      )}
-      data-testid={showBulk ? "drive-bulk-bar" : "drive-action-strip"}
+      // Pinned to the bottom of the listing it belongs to, clear of the rows
+      // it acts on. Its own surface and shadow, since it sits over content.
+      className="absolute inset-x-3 bottom-3 z-20 flex min-h-9 items-center gap-2 rounded-md border border-os-accent/40 bg-os-accent/10 px-3 text-base shadow-brand-2"
+      data-testid="drive-bulk-bar"
       onClick={(e) => e.stopPropagation()}
     >
-      {showBulk ? (
-        <>
-          <span className="font-medium text-foreground">{selectedCount} selected</span>
-          {onBulkMove && (
-            <button
-              type="button"
-              data-testid="drive-bulk-move"
-              onClick={() => onBulkMove(selectedItems)}
-              className="inline-flex items-center gap-1 text-foreground hover:text-accent-coral"
-            >
-              <FolderInput className="w-3.5 h-3.5" /> Move
-            </button>
-          )}
-          {onBulkDelete && (
-            <button
-              type="button"
-              onClick={() => onBulkDelete(selectedItems)}
-              className="inline-flex items-center gap-1 text-destructive hover:text-destructive/80"
-            >
-              <Trash2 className="w-3.5 h-3.5" /> Delete
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={onClearSelection}
-            className="ml-auto text-muted-foreground hover:text-foreground"
-          >
-            Clear
-          </button>
-        </>
-      ) : item && actions && !detailsOpen ? (
-        <>
-          <span className="flex items-center gap-1.5 min-w-0 flex-1">
-            {itemIcon(item)}
-            <span className="font-medium text-foreground truncate">{item.title || "Untitled"}</span>
-            <span className={cn("text-muted-foreground shrink-0", os ? "text-sm" : "text-xs")}>
-              {kindLabel(item)}
-            </span>
-          </span>
-          <div className="flex items-center gap-1 shrink-0">
-            {canDownload && item.href && (
-              <a href={item.href} download data-testid="drive-leaf-download" onClick={(e) => e.stopPropagation()} className={btn}>
-                <Download className="w-3.5 h-3.5" /> Download
-              </a>
-            )}
-            {canRename && (
-              <button type="button" data-testid="drive-leaf-rename" onClick={() => actions.onRename(item)} className={btn}>
-                <Pencil className="w-3.5 h-3.5" /> Rename
-              </button>
-            )}
-            {canMove && (
-              <button type="button" data-testid="drive-leaf-move" onClick={() => actions.onRequestMove(item)} className={btn}>
-                <FolderInput className="w-3.5 h-3.5" /> Move
-              </button>
-            )}
-            {canShare && actions.onShare && (
-              <button type="button" data-testid="drive-leaf-share" onClick={() => actions.onShare!(item)} className={btn}>
-                <Share2 className="w-3.5 h-3.5" /> Share
-              </button>
-            )}
-            {canDelete && (
-              <button
-                type="button"
-                data-testid="drive-leaf-delete"
-                onClick={() => actions.onDelete(item)}
-                className={cn("inline-flex items-center gap-1 rounded px-2 py-1 text-destructive hover:bg-destructive/10", os ? "text-sm" : "text-xs")}
-              >
-                <Trash2 className="w-3.5 h-3.5" /> Delete
-              </button>
-            )}
-            {!detailsOpen && (
-              <button type="button" data-testid="drive-open-details" aria-label="Show details" onClick={onOpenDetails} className={btn}>
-                <Info className="w-3.5 h-3.5" /> Details
-              </button>
-            )}
-          </div>
-        </>
-      ) : null}
+      <span className="font-medium text-foreground">{selectedCount} selected</span>
+      {onBulkMove && (
+        <button
+          type="button"
+          data-testid="drive-bulk-move"
+          onClick={() => onBulkMove(selectedItems)}
+          className="inline-flex items-center gap-1 text-foreground hover:text-accent-coral"
+        >
+          <FolderInput className="w-3.5 h-3.5" /> Move
+        </button>
+      )}
+      {onBulkDelete && (
+        <button
+          type="button"
+          onClick={() => onBulkDelete(selectedItems)}
+          className="inline-flex items-center gap-1 text-destructive hover:text-destructive/80"
+        >
+          <Trash2 className="w-3.5 h-3.5" /> Delete
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={onClearSelection}
+        className="ml-auto text-muted-foreground hover:text-foreground"
+      >
+        Clear
+      </button>
     </div>
   );
 }

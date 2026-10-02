@@ -217,14 +217,29 @@ async function cycleIsDraft(cycleId: string): Promise<boolean> {
   return (latest?.newStatus ?? "Draft") === "Draft";
 }
 
-/** Add a challenge to a domain while the cycle is still being set up. */
+/**
+ * Add a challenge to a domain while the cycle is still being set up: link
+ * `formId` when the lead picked an existing form, else create a fresh one.
+ */
 export async function addDomainChallenge(
   cycleId: string,
   domainId: string,
   actorId: string,
-): Promise<"not-draft" | null> {
+  formId?: string | null,
+): Promise<"not-draft" | "not-found" | null> {
   if (!(await cycleIsDraft(cycleId))) return "not-draft";
-  await createDomainChallengeForm(cycleId, domainId, actorId);
+  if (!formId) {
+    await createDomainChallengeForm(cycleId, domainId, actorId);
+    return null;
+  }
+  const form = await prisma.form.findUnique({ where: { id: formId }, select: { id: true } });
+  if (!form) return "not-found";
+  const link = { applicationCycleId: cycleId, domainId, formId };
+  await prisma.cycleDomainForm.upsert({
+    where: { applicationCycleId_domainId_formId: link },
+    create: link,
+    update: {},
+  });
   return null;
 }
 
