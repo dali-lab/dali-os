@@ -56,10 +56,20 @@ export function isPayPeriodEnd(dayUtcMidnight: Date): boolean {
   return payPeriodFor(dayUtcMidnight).end.getTime() === dayUtcMidnight.getTime();
 }
 
-/** "Jul 5 – Jul 18" — the period's own label, in the viewer's zone. */
-export function formatPayPeriod(period: PayPeriod, timeZone: string): string {
+/**
+ * "Jul 5 – Jul 18" for a pair of inclusive UTC-midnight calendar days. Read
+ * with the UTC getters on purpose: these are calendar dates, not instants, so
+ * resolving them in a viewer's zone would only shift them off their own
+ * boundary.
+ */
+export function formatDayRange(startUtcMidnight: Date, endUtcMidnight: Date): string {
   const fmt = (d: Date) =>
     new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(d);
+  return `${fmt(startUtcMidnight)} – ${fmt(endUtcMidnight)}`;
+}
+
+/** "Jul 5 – Jul 18" — the period's own label, in the viewer's zone. */
+export function formatPayPeriod(period: PayPeriod, timeZone: string): string {
   void timeZone; // Boundaries are calendar dates, not instants — always UTC.
-  return `${fmt(period.start)} – ${fmt(period.end)}`;
+  return formatDayRange(period.start, period.end);
 }
