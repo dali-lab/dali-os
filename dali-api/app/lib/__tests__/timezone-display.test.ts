@@ -8,6 +8,7 @@ import {
   zonedDayLabel,
   formatZoneLabel,
   formatDualTime,
+  formatInstantWithZoneLabel,
   zonedDateTimeLocalToUtc,
 } from "~/lib/timezone";
 
@@ -71,6 +72,54 @@ describe("formatDateTimeInZone / formatDateShortInZone", () => {
     expect(formatDateShortInZone(WINTER, "America/New_York")).toBe("Mar 5, 2026");
     // Tokyo is +9, so this UTC instant lands on Mar 6 there.
     expect(formatDateShortInZone(WINTER, "Asia/Tokyo")).toBe("Mar 6, 2026");
+  });
+});
+
+describe("formatInstantWithZoneLabel", () => {
+  // The notification formatter: meeting invites, meeting reminders, task due
+  // reminders and interview assignments all read a start through this, so what
+  // lands in the desktop banner is a sentence, never a machine timestamp.
+  it("reads as a human date with a generic zone name", () => {
+    expect(formatInstantWithZoneLabel(SUMMER, "America/New_York")).toBe(
+      "Wed, Jul 1, 2:00 PM ET",
+    );
+    expect(formatInstantWithZoneLabel(WINTER, "America/Los_Angeles")).toBe(
+      "Thu, Mar 5, 11:30 AM PT",
+    );
+  });
+
+  // Generic names carry no daylight/standard distinction, which is the point:
+  // the label is the same either side of a DST boundary.
+  it("reads the same label in winter and summer", () => {
+    expect(formatInstantWithZoneLabel(WINTER, "America/New_York")).toContain("ET");
+    expect(formatInstantWithZoneLabel(SUMMER, "America/New_York")).toContain("ET");
+  });
+
+  // The regression this covers: the abbreviation style only names US zones, so
+  // every international member used to read a raw offset ("GMT+9", "GMT+5:30").
+  it("names non-US zones instead of printing an offset", () => {
+    expect(formatInstantWithZoneLabel(SUMMER, "Asia/Tokyo")).toBe(
+      "Thu, Jul 2, 3:00 AM Japan Time",
+    );
+    expect(formatInstantWithZoneLabel(SUMMER, "Asia/Kolkata")).toBe(
+      "Wed, Jul 1, 11:30 PM India Time",
+    );
+  });
+
+  // The UTC family is a valid stored User.timeZone but Intl leaves it unnamed,
+  // so it falls through to the abbreviation rather than reading "GMT+0".
+  it("spells the UTC family as UTC", () => {
+    for (const zone of ["UTC", "Etc/UTC", "GMT"]) {
+      expect(formatInstantWithZoneLabel(SUMMER, zone)).toBe("Wed, Jul 1, 6:00 PM UTC");
+    }
+  });
+
+  it("never emits an ISO timestamp or a bare offset for a real zone", () => {
+    for (const zone of Intl.supportedValuesOf("timeZone")) {
+      const text = formatInstantWithZoneLabel(SUMMER, zone);
+      expect(text).not.toMatch(/\d{4}-\d{2}-\d{2}T/);
+      expect(text).not.toMatch(/GMT[+-]/);
+    }
   });
 });
 
@@ -143,13 +192,31 @@ describe("zonedDateTimeLocalToUtc", () => {
 describe("formatDualTime", () => {
   it("shows the anchor plus the viewer's local time when they differ", () => {
     expect(formatDualTime(SUMMER, "America/Los_Angeles", "America/New_York")).toBe(
-      "2:00 PM EDT · 11:00 AM your time (PDT)",
+      "2:00 PM ET · 11:00 AM your time (PT)",
+    );
+  });
+
+  // A remote applicant outside the US used to read their own time as a raw
+  // offset ("(GMT+5:30)"), which is the least reassuring way to state when an
+  // interview is.
+  it("names the viewer's zone rather than printing an offset", () => {
+    expect(formatDualTime(SUMMER, "Asia/Kolkata", "America/New_York")).toBe(
+      "2:00 PM ET · 11:30 PM your time (India Time)",
+    );
+    expect(formatDualTime(SUMMER, "Asia/Tokyo", "America/New_York")).toBe(
+      "2:00 PM ET · 3:00 AM your time (Japan Time)",
     );
   });
 
   it("collapses to the anchor alone when the viewer zone matches or is unknown", () => {
-    expect(formatDualTime(SUMMER, "America/New_York", "America/New_York")).toBe("2:00 PM EDT");
-    expect(formatDualTime(SUMMER, null, "America/New_York")).toBe("2:00 PM EDT");
-    expect(formatDualTime(SUMMER, "garbage", "America/New_York")).toBe("2:00 PM EDT");
+    expect(formatDualTime(SUMMER, "America/New_York", "America/New_York")).toBe("2:00 PM ET");
+    expect(formatDualTime(SUMMER, null, "America/New_York")).toBe("2:00 PM ET");
+    expect(formatDualTime(SUMMER, "garbage", "America/New_York")).toBe("2:00 PM ET");
+  });
+
+  // Toronto shares New York's wall clock and its zone name, so there is nothing
+  // to add — the collapse the generic label has to keep doing.
+  it("still collapses a different zone that reads identically", () => {
+    expect(formatDualTime(SUMMER, "America/Toronto", "America/New_York")).toBe("2:00 PM ET");
   });
 });

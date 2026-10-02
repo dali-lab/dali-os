@@ -11,6 +11,7 @@ import {
   formatInTimeZone,
   formatDualTime,
   isValidTimezone,
+  zoneLabel,
 } from "~/lib/timezone";
 
 export const INTERVIEW_TIMEZONE_LABEL = "ET";
@@ -21,14 +22,6 @@ function formatTime(iso: string | Date): string {
     minute: "2-digit",
     timeZone: EASTERN_TZ,
   });
-}
-
-function zoneAbbrev(iso: string | Date, tz: string): string {
-  return (
-    new Intl.DateTimeFormat("en-US", { timeZone: tz, timeZoneName: "short" })
-      .formatToParts(new Date(iso))
-      .find((p) => p.type === "timeZoneName")?.value ?? ""
-  );
 }
 
 export function formatInterviewDate(iso: string | Date): string {
@@ -63,7 +56,7 @@ export function formatInterviewDateInZone(iso: string | Date, tz: string): strin
   });
 }
 
-/** "10:00 AM - 10:30 AM EDT" rendered in `tz` (interviewer's own zone). */
+/** "10:00 AM - 10:30 AM ET" rendered in `tz` (interviewer's own zone). */
 export function formatInterviewTimeRangeInZone(
   startIso: string | Date,
   endIso: string | Date,
@@ -72,14 +65,14 @@ export function formatInterviewTimeRangeInZone(
 ): string {
   const start = formatInTimeZone(startIso, tz, { hour: "numeric", minute: "2-digit" });
   const end = formatInTimeZone(endIso, tz, { hour: "numeric", minute: "2-digit" });
-  const abbrev = zoneAbbrev(startIso, tz);
-  return `${start}${separator}${end}${abbrev ? ` ${abbrev}` : ""}`;
+  const label = zoneLabel(new Date(startIso), tz);
+  return `${start}${separator}${end}${label ? ` ${label}` : ""}`;
 }
 
 // ── Applicant-facing: ET anchor plus the applicant's own local time ───────────
 
 /**
- * "10:00 AM - 10:30 AM ET · 7:00 AM - 7:30 AM your time (PDT)". Collapses to the
+ * "10:00 AM - 10:30 AM ET · 7:00 AM - 7:30 AM your time (PT)". Collapses to the
  * ET-only range when the applicant's zone is unknown or resolves to ET.
  */
 export function formatInterviewTimeRangeDual(
@@ -96,6 +89,6 @@ export function formatInterviewTimeRangeDual(
   }
   const vStart = formatInTimeZone(startIso, viewerTz, { hour: "numeric", minute: "2-digit" });
   const vEnd = formatInTimeZone(endIso, viewerTz, { hour: "numeric", minute: "2-digit" });
-  const abbrev = zoneAbbrev(startIso, viewerTz);
-  return `${et} · ${vStart}${separator}${vEnd} your time${abbrev ? ` (${abbrev})` : ""}`;
+  const label = zoneLabel(new Date(startIso), viewerTz);
+  return `${et} · ${vStart}${separator}${vEnd} your time${label ? ` (${label})` : ""}`;
 }
