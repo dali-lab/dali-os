@@ -272,14 +272,19 @@ function zoneNamePart(
  * reading a notification needs to know it is EDT rather than EST.
  *
  * The one gap is the UTC family (`UTC`, `Etc/UTC`, `GMT`), valid stored zones
- * that Intl leaves unnamed. Those come back offset-shaped and fall through to
- * the abbreviation, which spells them "UTC". A fixed-offset zone like
- * `Etc/GMT+5` has no name in either style and keeps its offset, which is the
- * honest answer for it.
+ * that Intl leaves unnamed. Those come back GMT-shaped and fall through to the
+ * abbreviation, which spells them "UTC". A fixed-offset zone like `Etc/GMT+5`
+ * has no name in either style and keeps its offset, which is the honest answer
+ * for it.
+ *
+ * "GMT-shaped" has to include a bare "GMT", not just "GMT+0": which of the two
+ * ICU returns for the UTC family is version-dependent (ICU 76 on Node 22 says
+ * "GMT", ICU 78 says "GMT+0"). Matching only the offset form left the family
+ * reading "GMT" on Node 22 — what CI and the Fly image both run.
  */
 export function zoneLabel(date: Date, timezone: string): string {
   const generic = zoneNamePart(date, timezone, "shortGeneric");
-  if (generic && !/^GMT[+-]/.test(generic)) return generic;
+  if (generic && !/^GMT([+-]|$)/.test(generic)) return generic;
   return zoneNamePart(date, timezone, "short");
 }
 
