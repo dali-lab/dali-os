@@ -39,14 +39,16 @@ export function ColumnFilters({
   rows,
   filters,
   onChange,
+  shownCount,
 }: {
   columns: { key: string; label: string }[];
   // Unfiltered rows: the value dropdown offers every response in the column.
   rows: readonly { cells: Record<string, string> }[];
   filters: ColumnFilter[];
   onChange: (next: ColumnFilter[]) => void;
+  // Rows left after search and every filter on the board.
+  shownCount: number;
 }) {
-  if (columns.length === 0) return null;
 
   const update = (id: string, patch: Partial<ColumnFilter>) =>
     onChange(filters.map((f) => (f.id === id ? { ...f, ...patch } : f)));
@@ -122,15 +124,21 @@ export function ColumnFilters({
         </div>
       ))}
       <div className="flex items-center gap-2">
-        <Button variant="secondary" size="sm" onClick={add}>
-          <Plus className="h-3.5 w-3.5" />
-          Add filter
-        </Button>
+        {columns.length > 0 && (
+          <Button variant="secondary" size="sm" onClick={add}>
+            <Plus className="h-3.5 w-3.5" />
+            Add filter
+          </Button>
+        )}
         {filters.length > 0 && (
           <Button variant="ghost" size="sm" onClick={() => onChange([])}>
             Clear all
           </Button>
         )}
+        <span className="ml-auto text-xs text-muted-foreground">
+          {shownCount === rows.length ? rows.length : `${shownCount} of ${rows.length}`}{" "}
+          {rows.length === 1 ? "row" : "rows"}
+        </span>
       </div>
     </div>
   );

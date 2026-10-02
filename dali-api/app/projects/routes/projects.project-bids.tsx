@@ -369,6 +369,7 @@ function Loaded({
           rows={data.submissions}
           filters={columnFilters.filters}
           onChange={columnFilters.setFilters}
+          shownCount={filtered.length}
         />
       )}
 
