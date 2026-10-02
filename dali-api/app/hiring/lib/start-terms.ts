@@ -132,3 +132,19 @@ export function isOfferedStartTerm(
 ): boolean {
   return !!termId && startTermIds.includes(termId);
 }
+
+/**
+ * Rule 2, as one function: the term a hire actually starts in. The applicant's
+ * own pick when there is one, otherwise the term the cycle ran in — which is
+ * what the lab assumed before start terms existed, so every application and
+ * cycle predating the feature keeps reading the way it always did.
+ *
+ * Null only when neither is set: a cycle whose term was never picked on Setup.
+ * Callers that group by start term need a bucket for that.
+ */
+export function effectiveStartTermId(
+  application: { startTermId: string | null },
+  cycle: { termId: string | null },
+): string | null {
+  return application.startTermId ?? cycle.termId;
+}
