@@ -8,7 +8,7 @@
 // vars, the DB-backed resolvers) — this module owns the vocabulary, the
 // placeholder grammar, extraction, and interpolation so those don't drift.
 
-export type TemplateContext = "email" | "signing";
+export type TemplateContext = "email" | "signing" | "notification";
 
 export interface TemplateVariableDef {
   description: string;
@@ -19,7 +19,10 @@ export interface TemplateVariableDef {
 // can belong to more than one surface if it ever needs to.
 export const TEMPLATE_VARIABLES_REGISTRY = {
   // ── Email (hiring + education) ──────────────────────────────────────────
-  firstName: { description: "The recipient's first name.", contexts: ["email"] },
+  firstName: {
+    description: "The recipient's first name.",
+    contexts: ["email", "notification"],
+  },
   domain: {
     description: "The DALI domain the application is for (e.g. Engineering).",
     contexts: ["email"],
@@ -35,6 +38,54 @@ export const TEMPLATE_VARIABLES_REGISTRY = {
     description: "The cycle's new close date (post-extension), formatted in Eastern Time.",
     contexts: ["email"],
   },
+  slackUrl: {
+    description: "Link to the DALI Slack workspace.",
+    contexts: ["email"],
+  },
+
+  // ── Notifications ───────────────────────────────────────────────────────
+  // Deliberately generic and few. 24 of the 44 notify() call sites interpolate
+  // some variant of "the title of the thing" — a meeting, a task, a document, a
+  // course, a form, a project — so one token serves them all rather than twenty
+  // near-duplicates nobody could keep straight.
+  //
+  // Call sites pass these ALREADY FORMATTED. Timezone is the reason: several
+  // notifications render a time in the *recipient's* own zone, which the sender
+  // knows and a template cannot. So the boundary is that the call site owns the
+  // data and how it reads, and the template owns the words and their order.
+  itemTitle: {
+    description:
+      "What the notification is about — the meeting, task, document, course, form or project, by name.",
+    contexts: ["notification"],
+  },
+  itemDetail: {
+    description:
+      "The supporting line: a comment preview, a due date, a time and place. Empty when there isn't one.",
+    contexts: ["notification"],
+  },
+  contextName: {
+    description:
+      "What the item belongs to — its project, course, cycle or domain. Empty when it stands alone.",
+    contexts: ["notification"],
+  },
+  personName: {
+    description: "The person who caused the notification, when there is one.",
+    contexts: ["notification"],
+  },
+  when: {
+    description: "A date or time, already written out in the recipient's own timezone.",
+    contexts: ["notification"],
+  },
+  statusLabel: {
+    description:
+      "A status, level or state, already in its display form (for example In Review, or P2).",
+    contexts: ["notification"],
+  },
+  count: {
+    description: "A number the copy refers to, such as how many comments or tasks.",
+    contexts: ["notification"],
+  },
+
   // ── Signing documents ───────────────────────────────────────────────────
   term: {
     description:
@@ -57,10 +108,22 @@ export const TEMPLATE_VARIABLES_REGISTRY = {
 
 export type TemplateVariableName = keyof typeof TEMPLATE_VARIABLES_REGISTRY;
 
-export function variablesForContext(ctx: TemplateContext): TemplateVariableName[] {
+// The tokens one surface offers, as a type — the compile-time twin of
+// variablesForContext. Derived rather than restated: the hand-written list this
+// replaces had already drifted from the registry, which is how a token could be
+// offered to operators in the editor and still be a type error to pass.
+export type VariableInContext<C extends TemplateContext> = {
+  [K in TemplateVariableName]: C extends (typeof TEMPLATE_VARIABLES_REGISTRY)[K]["contexts"][number]
+    ? K
+    : never;
+}[TemplateVariableName];
+
+// The one cast lives here, where the filter predicate and the type it proves sit
+// side by side, so no caller has to assert the narrowing itself.
+export function variablesForContext<C extends TemplateContext>(ctx: C): VariableInContext<C>[] {
   return (Object.keys(TEMPLATE_VARIABLES_REGISTRY) as TemplateVariableName[]).filter((k) =>
     (TEMPLATE_VARIABLES_REGISTRY[k].contexts as readonly TemplateContext[]).includes(ctx),
-  );
+  ) as VariableInContext<C>[];
 }
 
 // The placeholder grammar every surface shares: `{{name}}` with no whitespace,

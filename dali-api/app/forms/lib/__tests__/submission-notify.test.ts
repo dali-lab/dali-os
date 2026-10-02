@@ -41,8 +41,7 @@ describe("notifyFormSubmission", () => {
       eventType: "form.submission",
       createdByUserId: "user-2",
       message: {
-        title: "New response: Lab Survey",
-        body: "From Ada Lovelace",
+        vars: { itemTitle: "Lab Survey", personName: "Ada Lovelace" },
         link: "/forms/edit/form-1?view=results",
       },
       recipients: [{ userId: "creator-1" }],
@@ -70,7 +69,9 @@ describe("notifyFormSubmission", () => {
     expect(mockNotify).toHaveBeenCalledWith(
       expect.objectContaining({
         createdByUserId: null,
-        message: expect.objectContaining({ body: "From Anonymous" }),
+        message: expect.objectContaining({
+          vars: { itemTitle: "Lab Survey", personName: "Anonymous" },
+        }),
       }),
     );
   });
@@ -79,7 +80,9 @@ describe("notifyFormSubmission", () => {
     await notifyFormSubmission({ formId: "form-1", submitterName: "Guest" });
     expect(mockNotify).toHaveBeenCalledWith(
       expect.objectContaining({
-        message: expect.objectContaining({ body: "From Guest" }),
+        message: expect.objectContaining({
+          vars: { itemTitle: "Lab Survey", personName: "Guest" },
+        }),
       }),
     );
   });

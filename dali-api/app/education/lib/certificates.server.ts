@@ -194,8 +194,7 @@ export async function closeOutOffering(args: {
         eventType: "education.certificate",
         createdByUserId: args.actorId,
         message: {
-          title: `Certificate: ${offering.title}`,
-          body: "Congratulations on completing the course — your certificate is ready.",
+          vars: { itemTitle: offering.title },
         },
         recipients: toNotify.map((n) => ({
           userId: n.applicantId,

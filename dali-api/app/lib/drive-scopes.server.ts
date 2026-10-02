@@ -169,7 +169,6 @@ export async function loadDriveScopes({
       scope: { kind: "Lab" },
       canViewForms: false,
       canManageAgreements: isCore,
-      canManageEmailTemplates: isCore,
       request,
       linkedProcessMap,
     }),
@@ -292,10 +291,7 @@ export async function loadDriveScopes({
 
   // Strip managed artifacts from the Lab scope (same as legacy).
   labVisibleItems = labVisibleItems.filter(
-    (it) =>
-      it.type !== "agreement" &&
-      it.type !== "rubric" &&
-      it.type !== "emailTemplate",
+    (it) => it.type !== "agreement" && it.type !== "rubric",
   );
 
   // Build folder-id sets for the form de-dup pass.

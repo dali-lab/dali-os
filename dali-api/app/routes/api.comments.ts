@@ -326,7 +326,7 @@ export async function action({ request }: Route.ActionArgs) {
       recipientUserIds: [...allIds],
       actorId: auth.user.sub,
       link,
-      title: "You were mentioned in a comment",
+      copyKey: "mention.comment",
       preview: body.body,
     });
   })().catch((err) =>
@@ -388,8 +388,7 @@ async function notifyThreadReply(args: {
     eventType: "collab.comment_reply",
     createdByUserId: args.authorId,
     message: {
-      title: `New reply on: ${title ?? "a document"}`,
-      body: preview,
+      vars: { itemTitle: title ?? "a document", itemDetail: preview },
       link,
     },
     recipients: recipients.map((userId) => ({ userId })),

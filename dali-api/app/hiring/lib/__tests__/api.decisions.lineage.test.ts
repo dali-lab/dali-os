@@ -40,7 +40,7 @@ const mockPrisma = prisma as unknown as {
     findMany: ReturnType<typeof vi.fn>;
   };
   domainApplication: { findUnique: ReturnType<typeof vi.fn> };
-  hiringEmail: { findUnique: ReturnType<typeof vi.fn> };
+  emailTemplate: { findUnique: ReturnType<typeof vi.fn> };
   user: { findUnique: ReturnType<typeof vi.fn> };
   delibsSession: {
     findUnique: ReturnType<typeof vi.fn>;
@@ -60,7 +60,7 @@ beforeEach(() => {
   (mockPrisma as any).gmailIntegration = { findFirst: vi.fn() };
   (mockPrisma as any).decision = { findUnique: vi.fn(), findFirst: vi.fn(), create: vi.fn(), findMany: vi.fn() };
   (mockPrisma as any).domainApplication = { findUnique: vi.fn() };
-  (mockPrisma as any).hiringEmail = { findUnique: vi.fn() };
+  (mockPrisma as any).emailTemplate = { findUnique: vi.fn() };
   (mockPrisma as any).user = { findUnique: vi.fn() };
   (mockPrisma as any).delibsSession = { findUnique: vi.fn(), update: vi.fn() };
   (mockPrisma as any).$transaction = vi.fn(async (fn: any) => fn(mockPrisma));
@@ -150,7 +150,7 @@ describe("Decision lineage (parentDecisionId)", () => {
         user: { firstName: "Test", dartmouthEmail: null, netId: null },
       },
     });
-    mockPrisma.hiringEmail.findUnique.mockResolvedValue({ subject: "s", body: "b" });
+    mockPrisma.emailTemplate.findUnique.mockResolvedValue({ subject: "s", body: "b" });
     mockPrisma.gmailIntegration.findFirst.mockResolvedValue(null);
 
     const req = new Request("http://localhost/api/decisions/dec-final/release", { method: "POST" });

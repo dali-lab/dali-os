@@ -6,38 +6,28 @@
 // template stop shipping silently.
 
 import type { NotificationType } from "~/generated/prisma/enums";
-import { renderEmail, type InterpolationVars } from "~/lib/email";
+import { renderEmail, type EmailVariableName, type InterpolationVars } from "~/lib/email";
 import {
   TEMPLATE_VARIABLES_REGISTRY,
   extractPlaceholders,
+  variablesForContext,
 } from "~/lib/template-variables";
 
 // Re-export so existing importers/tests keep their entry point.
 export { extractPlaceholders };
 
-// Descriptions for the email vocabulary, sourced from the shared registry so
-// there's one place the copy lives.
-export const TEMPLATE_VARIABLE_DESCRIPTIONS: Record<keyof InterpolationVars, string> = {
-  firstName: TEMPLATE_VARIABLES_REGISTRY.firstName.description,
-  domain: TEMPLATE_VARIABLES_REGISTRY.domain.description,
-  time: TEMPLATE_VARIABLES_REGISTRY.time.description,
-  location: TEMPLATE_VARIABLES_REGISTRY.location.description,
-  meetingUrl: TEMPLATE_VARIABLES_REGISTRY.meetingUrl.description,
-  originalCloseDate: TEMPLATE_VARIABLES_REGISTRY.originalCloseDate.description,
-  newCloseDate: TEMPLATE_VARIABLES_REGISTRY.newCloseDate.description,
-};
+export type TemplateVariableName = EmailVariableName;
 
-export type TemplateVariableName = keyof InterpolationVars;
+// Both lists are read off the shared registry rather than restated: they were
+// hand-copies of it, so a token added to the registry showed up in one editor
+// and not the other. Registry order is the order the editor lists them in.
+export const ALL_TEMPLATE_VARIABLES: readonly TemplateVariableName[] =
+  variablesForContext("email");
 
-export const ALL_TEMPLATE_VARIABLES: readonly TemplateVariableName[] = [
-  "firstName",
-  "domain",
-  "time",
-  "location",
-  "meetingUrl",
-  "originalCloseDate",
-  "newCloseDate",
-];
+export const TEMPLATE_VARIABLE_DESCRIPTIONS: Record<TemplateVariableName, string> =
+  Object.fromEntries(
+    ALL_TEMPLATE_VARIABLES.map((n) => [n, TEMPLATE_VARIABLES_REGISTRY[n].description]),
+  ) as Record<TemplateVariableName, string>;
 
 export type DecisionSlotType = "Rejected" | "InvitedToInterview" | "Accepted" | "Waitlisted";
 export type NotificationSlotType = NotificationType;

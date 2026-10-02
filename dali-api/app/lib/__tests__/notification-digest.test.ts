@@ -82,6 +82,9 @@ describe("runDigest", () => {
 
   beforeEach(() => {
     vi.resetAllMocks();
+    // runDigest asks once per run whether `email-layout` is on. No rows → the
+    // registry default (off), i.e. the pre-layout body these assertions describe.
+    mockPrisma.featureFlag.findMany.mockResolvedValue([]);
     mockPrisma.notificationPreference.findMany.mockResolvedValue([
       { userId: "u1", eventType: "education.discussion" },
     ]);
@@ -112,7 +115,7 @@ describe("runDigest", () => {
       expect.objectContaining({
         channel: "email",
         target: "ada@dali.dartmouth.edu",
-        subject: "Your DALI digest — 1 update",
+        subject: "Your DALI digest: 1 update",
         dedupKey: "digest:Daily:u1:2026-07-15",
       }),
       mockPrisma, // enqueued on the transaction client
@@ -197,7 +200,9 @@ describe("renderDigestEmail", () => {
         },
       ],
     });
-    expect(subject).toBe("Your DALI digest — 2 updates");
+    // Colon, not an em dash: house copy style, and it survives every client's
+    // subject encoding without being base64'd.
+    expect(subject).toBe("Your DALI digest: 2 updates");
     expect(html).toContain("Discussion replies");
     expect(html).toContain("Meeting reminders");
     expect(html).toContain("https://os.dali.dartmouth.edu/education/o1/hub");

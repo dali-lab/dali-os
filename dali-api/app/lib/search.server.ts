@@ -67,7 +67,6 @@ export async function runSearch(opts: {
     roles.isCore || roles.isDomainLead ? searchRubrics(q, like) : NONE,
     roles.isCore || roles.isDomainLead ? searchAgreements(q, like) : NONE,
     // Core-only artifacts.
-    roles.isCore ? searchEmailTemplates(q, like) : NONE,
     roles.isCore ? searchCycles(q, like) : NONE,
     // Partner applications — Core/Admin (canViewStaffing), like the internal view.
     roles.canViewStaffing ? searchPartnerApplications(q, like) : NONE,
@@ -386,15 +385,6 @@ async function searchAgreements(q: string, like: Like): Promise<SearchResult[]> 
     rows.map((r) => ({ id: r.id, label: r.name })),
     q,
   );
-}
-
-async function searchEmailTemplates(q: string, like: Like): Promise<SearchResult[]> {
-  const rows = await prisma.emailTemplate.findMany({
-    where: { name: like },
-    select: { id: true, name: true },
-    take: RAW_TAKE,
-  });
-  return simpleResults("emailTemplate", "Email template", rows.map((r) => ({ id: r.id, label: r.name })), q);
 }
 
 async function searchCycles(q: string, like: Like): Promise<SearchResult[]> {

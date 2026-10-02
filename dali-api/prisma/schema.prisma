@@ -290,7 +290,7 @@ model User {
   applicationReviewsSubmitted  ApplicationReview[]    @relation("ApplicationReviewSubmittedBy")
   delibsSessionsOpened         DelibsSession[]
   emailTemplateVersionsCreated EmailTemplateVersion[]
-  educationEmailsEdited        EducationEmail[]       @relation("EducationEmailEditor")
+  emailTemplatesEdited         EmailTemplate[]        @relation("EmailTemplateEditor")
 
   // ─── Documents & files ───────────────────────────────────────────────────
   projectFileVersionsUploaded ProjectFileVersion[] @relation("ProjectFileVersionUploader")
@@ -310,7 +310,6 @@ model User {
 
   // ─── Public showcase ──────────────────────────────────────────────────────
   projectShowcasesUpdated ProjectShowcase[] @relation("ProjectShowcaseUpdatedBy")
-  hiringEmailsEdited      HiringEmail[]     @relation("HiringEmailEditor")
 }
 
 // A DALI lab member. userId is optional because a member may be known (e.g. via daliEmail)
@@ -1587,30 +1586,32 @@ model Passkey {
 
 // ─── Email Templates ────────────────────────────────────────────────────────
 
-// Named, versioned email template — independent of any cycle. Mirrors
-// Rubric/RubricVersion. The "slot" a template fills (e.g. which DecisionType
-// it sends for) is determined by the cycle binding row that points at it.
+// One operator-editable email per registry key (app/email/lib/registry.ts
+// EMAIL_TEMPLATES). Shared by every cycle and course and edited in place; the
+// registry decides what a missing row means (skip / error / fall back to its own
+// copy), so absence stays meaningful rather than ambiguous.
+//
+// This replaced three stores: a versioned-but-unread template library, plus
+// HiringEmail and EducationEmail, which were byte-identical in shape and keyed
+// on a bare slot that collided across areas ("decision:Rejected" existed in
+// both). Keys are the slot prefixed with its area. The library's version history
+// is kept — it was the one capability the live stores lacked.
 model EmailTemplate {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
+  // An EMAIL_TEMPLATES key, e.g. "hiring:decision:Accepted".
+  key       String   @id
+  subject   String
+  body      String
   updatedAt DateTime @updatedAt
 
-  name String
-
-  // Unified-Drive tree placement (Page of kind=Folder). Null = unplaced.
-  // Organisation only — never affects who can send or edit the template.
-  // Email templates live under the Core drive's "Templates" area (auto-filed
-  // into Hiring/Education subfolders by their bindings); templates are global
-  // and shared across features, so they aren't hiring-owned.
-  folderPageId String?
+  updatedById String?
+  updatedBy   User?   @relation("EmailTemplateEditor", fields: [updatedById], references: [id])
 
   versions EmailTemplateVersion[]
-
-  @@index([folderPageId])
 }
 
-// Immutable snapshot of an EmailTemplate. Never update — append a new version.
-// Subject and body use {{firstName}} interpolation.
+// Immutable snapshot of an EmailTemplate, written on every save. Never updated —
+// append a new version. Subject and body use {{token}} interpolation
+// (app/lib/template-variables.ts).
 model EmailTemplateVersion {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
@@ -1619,13 +1620,13 @@ model EmailTemplateVersion {
   subject       String
   body          String
 
-  templateId String
-  template   EmailTemplate @relation(fields: [templateId], references: [id])
+  templateKey String
+  template    EmailTemplate @relation(fields: [templateKey], references: [key], onDelete: Cascade)
 
   createdById String
   createdBy   User   @relation(fields: [createdById], references: [id])
 
-  @@index([templateId, versionNumber])
+  @@index([templateKey, versionNumber])
 }
 
 // Non-decision email slots managed per-cycle. Mirrors CycleDecisionEmail but
@@ -4118,20 +4119,6 @@ enum EduPostKind {
   Message
 }
 
-// Education's emails: one per slot ("decision:Approved", …; see
-// app/education/lib/education-emails.ts EducationEmailSlot), shared by every
-// course and edited in place, with no versions. No row means that slot sends
-// no email — the in-app notification still fires. Mirrors HiringEmail.
-model EducationEmail {
-  slot      String   @id
-  subject   String
-  body      String
-  updatedAt DateTime @updatedAt
-
-  updatedById String?
-  updatedBy   User?   @relation("EducationEmailEditor", fields: [updatedById], references: [id])
-}
-
 // Course discussion board: top-level posts + one reply level (replies to
 // replies are rejected at the lib layer). Plain text bodies in v1.
 model EducationDiscussionPost {
@@ -6325,20 +6312,6 @@ model LabProcessWeekContent {
   updatedByUserId String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
-}
-
-// Hiring's emails: one per slot ("decision:Rejected", "notification:
-// ApplicationReceived", …; app/hiring/lib/email-variables.ts TemplateSlot),
-// shared by every cycle and edited in place, with no versions. No row means
-// that slot sends no email.
-model HiringEmail {
-  slot      String   @id
-  subject   String
-  body      String
-  updatedAt DateTime @updatedAt
-
-  updatedById String?
-  updatedBy   User?   @relation("HiringEmailEditor", fields: [updatedById], references: [id])
 }
 
 // A chart string a project charges against, for one term, with full history.

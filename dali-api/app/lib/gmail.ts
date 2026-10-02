@@ -4,10 +4,15 @@
 // sending against account B's mailbox is rejected by Gmail. Callers that don't
 // pass `from` default to the applications@ identity (the historical sender).
 
-import { getAppEnv, APPLICATIONS_FROM_EMAIL as GMAIL_USER, APPLICATIONS_FROM_NAME } from './app-env'
+import {
+  getAppEnv,
+  APPLICATIONS_FROM_EMAIL as GMAIL_USER,
+  APPLICATIONS_FROM_NAME,
+  STAGING_REDIRECT_EMAIL as STAGING_REDIRECT,
+} from './app-env'
 import { refreshGoogleToken } from '~/lib/google-oauth'
+import { htmlToPlainText } from '~/lib/email'
 
-const STAGING_REDIRECT = 'systems@dali.dartmouth.edu'
 const CLIENT_ID = process.env.GMAIL_CLIENT_ID ?? process.env.GOOGLE_CLIENT_ID!
 const CLIENT_SECRET = process.env.GMAIL_CLIENT_SECRET ?? process.env.GOOGLE_CLIENT_SECRET!
 
@@ -28,40 +33,6 @@ function wrapBase64(s: string, width = 76): string {
   return s.match(new RegExp(`.{1,${width}}`, 'g'))?.join('\r\n') ?? s
 }
 
-// Minimal HTML → plain text. Good enough for a text/plain alternative;
-// Gmail rarely shows it but standards-compliant clients fall back to it
-// and some heuristics in mail providers prefer messages that include it.
-function htmlToPlainText(html: string): string {
-  // Replace block-level closers/breaks with newlines BEFORE stripping tags
-  // so paragraph structure survives.
-  let text = html
-    .replace(/<\s*br\s*\/?\s*>/gi, '\n')
-    .replace(/<\/p\s*>/gi, '\n\n')
-    .replace(/<\/h[1-6]\s*>/gi, '\n\n')
-
-  // Strip tags in a loop until stable. A single `<[^>]+>` pass on
-  // `<scr<script>ipt>` would leave `<script>` behind; iterating prevents
-  // that smuggling pattern.
-  let prev: string
-  do {
-    prev = text
-    text = prev.replace(/<[^>]+>/g, '')
-  } while (text !== prev)
-
-  // Decode only entities that can't reintroduce angle brackets into the
-  // output (`&lt;` / `&gt;` deliberately left encoded so a tag-strip-then-
-  // decode sequence can't smuggle script-like content back into the body).
-  // `&amp;` is decoded LAST so `&amp;nbsp;` lands as `&nbsp;` rather than
-  // double-unescaping into a space.
-  text = text
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&amp;/g, '&')
-
-  return text.replace(/\n{3,}/g, '\n\n').trim()
-}
-
 // A generic file attachment (e.g. a signed-agreement PDF). Distinct from the
 // `ics` calendar payload, which has its own inline-alternative + attachment
 // dance below.
@@ -74,6 +45,7 @@ function makeRawEmail(
   from: string,
   ics?: string,
   attachments?: EmailAttachment[],
+  textBody?: string,
 ): string {
   const headers = [
     `From: ${APPLICATIONS_FROM_NAME} <${sanitizeHeader(from)}>`,
@@ -82,18 +54,13 @@ function makeRawEmail(
     'MIME-Version: 1.0',
   ]
 
-  const hasAttachments = !!attachments && attachments.length > 0
-  if (!ics && !hasAttachments) {
-    const msg = [
-      ...headers,
-      'Content-Type: text/html; charset=utf-8',
-      '',
-      htmlBody,
-    ].join('\r\n')
-    return Buffer.from(msg).toString('base64url')
-  }
-
-  // Anything richer than a bare HTML body is a multipart/mixed envelope:
+  // Every message carries a text/plain alternative. Before this, a send with
+  // no ics and no attachment emitted a bare text/html part — which was most of
+  // them. HTML-only mail is a documented spam signal (SpamAssassin's
+  // MIME_HTML_ONLY), unreadable in text-only clients, and leaves screen readers
+  // with whatever the HTML happens to linearize to.
+  //
+  // The envelope is always:
   //
   //   multipart/mixed
   //     ├─ multipart/alternative
@@ -112,7 +79,10 @@ function makeRawEmail(
   const ts = Date.now()
   const outer = `----=_Outer_${ts}`
   const inner = `----=_Inner_${ts}`
-  const plainText = htmlToPlainText(htmlBody)
+  // Caller-supplied text wins: a template can write a better plain-text
+  // version than any HTML conversion (sign-in codes, agreement receipts).
+  // Uncapped — truncating a text part ends the message mid-sentence.
+  const plainText = textBody?.trim() ? textBody : htmlToPlainText(htmlBody)
 
   const lines: string[] = [
     ...headers,
@@ -177,8 +147,17 @@ function makeRawEmail(
   return Buffer.from(lines.join('\r\n')).toString('base64url')
 }
 
-function stagingBanner(originalTo: string): string {
-  return `<div style="background:#fff3cd;border:1px solid #ffeeba;padding:12px;margin-bottom:12px;font-family:sans-serif;color:#856404;">[STAGING] This email would have been sent to <code>${originalTo}</code></div><hr/>`
+// The non-prod warning, injected AFTER the opening <body> tag rather than
+// prepended to the string. Prepending was safe while every caller passed a bare
+// fragment, but the shared layout emits a full document, and a <div> before
+// <!DOCTYPE html> puts the client into quirks mode or gets stripped outright.
+// Falls back to prepending only when there is no <body> to inject into.
+function injectStagingBanner(html: string, originalTo: string): string {
+  const banner = `<div style="background:#fff3cd;border:1px solid #ffeeba;padding:12px;font-family:sans-serif;color:#856404;">[STAGING] This email would have been sent to <code>${originalTo}</code></div>`
+  const bodyOpen = html.match(/<body\b[^>]*>/i)
+  if (!bodyOpen) return banner + '<hr/>' + html
+  const at = (bodyOpen.index ?? 0) + bodyOpen[0].length
+  return html.slice(0, at) + banner + html.slice(at)
 }
 
 // Gmail only renders the inline RSVP card when the recipient's email matches
@@ -206,6 +185,7 @@ export async function sendEmail({
   to,
   subject,
   html,
+  text,
   ics,
   attachments,
   from = GMAIL_USER,
@@ -214,6 +194,9 @@ export async function sendEmail({
   to: string
   subject: string
   html: string
+  // Plain-text alternative. Omitted → derived from `html`. Supplying it lets a
+  // template write real prose instead of a flattened conversion.
+  text?: string
   ics?: string
   // Generic file attachments (e.g. a signed-agreement PDF receipt). Independent
   // of `ics`; both may be present.
@@ -237,7 +220,7 @@ export async function sendEmail({
   if (env === 'staging') {
     actualTo = STAGING_REDIRECT
     actualSubject = `[STAGING] ${subject}`
-    actualHtml = stagingBanner(to) + html
+    actualHtml = injectStagingBanner(html, to)
     if (actualIcs) {
       actualIcs = injectStagingAttendee(actualIcs, STAGING_REDIRECT)
       actualIcs = prefixIcsSummary(actualIcs, '[STAGING] ')
@@ -245,7 +228,17 @@ export async function sendEmail({
   }
 
   const accessToken = await getAccessToken(refreshToken)
-  const raw = makeRawEmail(actualTo, actualSubject, actualHtml, from, actualIcs, attachments)
+  const actualText =
+    text && env === 'staging' ? `[STAGING] would have gone to ${to}\n\n${text}` : text
+  const raw = makeRawEmail(
+    actualTo,
+    actualSubject,
+    actualHtml,
+    from,
+    actualIcs,
+    attachments,
+    actualText,
+  )
 
   // `me` = the account the token authenticates as. Using the sender's own
   // mailbox (not a hardcoded address) is what lets non-applications@ senders

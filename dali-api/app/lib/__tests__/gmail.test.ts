@@ -313,7 +313,10 @@ describe("sendEmail — ICS calendar attachment", () => {
     expect(reconstructed).not.toContain("systems@dali.dartmouth.edu");
   });
 
-  it("falls back to the simple text/html structure when no ICS is provided", async () => {
+  it("still carries a text/plain alternative when there is no ICS or attachment", async () => {
+    // This used to emit a bare text/html part, which was the shape of most
+    // sends. HTML-only mail trips SpamAssassin's MIME_HTML_ONLY and gives
+    // text-only clients and screen readers nothing to fall back to.
     process.env.DALI_APP_ENV = "prod";
     mockTokenAndSendOk();
 
@@ -326,9 +329,30 @@ describe("sendEmail — ICS calendar attachment", () => {
 
     const body = JSON.parse(fetchMock.mock.calls[1][1].body as string);
     const decoded = decodeRaw(body.raw);
-    expect(decoded).not.toContain("multipart/mixed");
+    expect(decoded).toContain("multipart/alternative");
+    expect(decoded).toContain("Content-Type: text/plain; charset=utf-8");
+    expect(decoded).toContain("Content-Type: text/html; charset=utf-8");
+    // Derived from the HTML when the caller doesn't supply one.
+    expect(decoded).toContain("Plain.");
     expect(decoded).not.toContain("text/calendar");
-    expect(decoded).toMatch(/^Content-Type: text\/html; charset=utf-8$/m);
+  });
+
+  it("prefers a caller-supplied text part over deriving one from the HTML", async () => {
+    process.env.DALI_APP_ENV = "prod";
+    mockTokenAndSendOk();
+
+    await sendEmail({
+      refreshToken: "rt",
+      to: "kiran@example.com",
+      subject: "Code",
+      html: "<p>Your code is <strong>123456</strong>.</p>",
+      text: "Your code is 123456.",
+    });
+
+    const decoded = decodeRaw(
+      JSON.parse(fetchMock.mock.calls[1][1].body as string).raw,
+    );
+    expect(decoded).toContain("Your code is 123456.");
   });
 });
 

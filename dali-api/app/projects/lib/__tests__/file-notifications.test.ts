@@ -54,8 +54,10 @@ describe("notifyFileComment", () => {
     expect(mockNotify).toHaveBeenCalledTimes(1);
     const call = mockNotify.mock.calls[0][0];
     expect(call.eventType).toBe("file.comment");
-    expect(call.message.title).toBe("New feedback on: Hero animation");
-    expect(call.message.body).toBe("Tighten the easing");
+    expect(call.message.vars).toEqual({
+      itemTitle: "Hero animation",
+      itemDetail: "Tighten the easing",
+    });
     expect(call.message.link).toBe("/documents/file/f1");
     expect(recipientIds()).toEqual(["assignee", "uploader"]);
   });
@@ -65,7 +67,9 @@ describe("notifyFileComment", () => {
 
     await notifyFileComment({ fileId: "f1", authorId: "mentor", body: "x".repeat(300) });
 
-    expect(mockNotify.mock.calls[0][0].message.body).toBe(`${"x".repeat(200)}…`);
+    expect(mockNotify.mock.calls[0][0].message.vars.itemDetail).toBe(
+      `${"x".repeat(200)}…`,
+    );
   });
 
   it("excludes a stakeholder who has rolled off the project", async () => {
@@ -110,7 +114,7 @@ describe("notifyFileNewVersion", () => {
     expect(mockNotify).toHaveBeenCalledTimes(1);
     const call = mockNotify.mock.calls[0][0];
     expect(call.eventType).toBe("file.new_version");
-    expect(call.message.title).toBe("V2 uploaded: Hero animation");
+    expect(call.message.vars).toEqual({ itemTitle: "Hero animation", count: "2" });
     expect(recipientIds()).toEqual(["assignee", "mentor"]);
   });
 

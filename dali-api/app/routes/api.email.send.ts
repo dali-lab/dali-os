@@ -4,9 +4,16 @@
 //
 // Body (JSON): { to: string, subject: string, html: string }
 //
-// Requires authenticated user.
+// Core-gated. This route sends as the Hiring identity (applications@), so an
+// ordinary authenticated member must not reach it — arbitrary mail from the
+// lab's admissions address is a Core capability, not a member one. The body is
+// sanitized here too: callers hand over raw HTML, and the only other thing that
+// ever escapes sanitization on the way to a recipient is a hand-built template
+// literal in our own source.
 
 import { requireAuth } from "~/lib/auth";
+import { isCore } from "~/lib/roles";
+import { sanitizeRichEmailHtml } from "~/lib/email";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { logAuditEvent } from '~/lib/audit'
 import { checkRateLimit } from '~/lib/rate-limit'
@@ -17,6 +24,10 @@ const RATE_LIMIT_WINDOW_MS = 60_000
 export async function action({ request }: { request: Request }) {
   const auth = await requireAuth(request)
   if (!auth.ok) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+
+  if (!(await isCore(auth.user.sub, request))) {
+    return Response.json({ error: 'Forbidden' }, { status: 403 })
+  }
 
   const limited = checkRateLimit(request, { max: RATE_LIMIT_MAX, windowMs: RATE_LIMIT_WINDOW_MS }, auth.user.sub)
   if (limited) return limited
@@ -53,7 +64,7 @@ export async function action({ request }: { request: Request }) {
       purpose: "Hiring",
       target: to,
       subject,
-      bodyHtml: html,
+      bodyHtml: sanitizeRichEmailHtml(html),
       eventType: "email.send",
       createdByUserId: auth.user.sub,
     })

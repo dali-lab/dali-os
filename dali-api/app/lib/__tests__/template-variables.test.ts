@@ -41,7 +41,11 @@ describe("variablesForContext", () => {
   });
 
   it("covers every registry entry across the two contexts", () => {
-    const all = new Set([...variablesForContext("email"), ...variablesForContext("signing")]);
+    const all = new Set([
+      ...variablesForContext("email"),
+      ...variablesForContext("signing"),
+      ...variablesForContext("notification"),
+    ]);
     expect(all.size).toBe(Object.keys(TEMPLATE_VARIABLES_REGISTRY).length);
   });
 });

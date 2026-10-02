@@ -20,6 +20,7 @@ import { DocEditor } from "~/components/doc";
 import { isEmptyBlocks } from "~/lib/blocks";
 import { findMissingRequired } from "~/lib/form-answers";
 import type { Question } from "~/types";
+import { sendApplicationReceivedEmail } from "~/partners/lib/partner-emails.server";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Apply · DALI OS" },
@@ -141,6 +142,23 @@ export async function action({ request }: Route.ActionArgs) {
     formId: applicationForm.formId,
     submitterUserId: auth.user.sub,
   });
+  // notifyFormSubmission tells the form's creator. Confirm to the partner too —
+  // submitting used to be met with silence until someone triaged them.
+  // Best-effort: a failed confirmation must not lose the application.
+  try {
+    if (ctx.contact.email) {
+      await sendApplicationReceivedEmail(
+        ctx.contact.email,
+        ctx.contact.name,
+        application.id,
+      );
+    }
+  } catch (err) {
+    console.error("partner application confirmation failed", {
+      applicationId: application.id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 
   return redirect(`/partner/applications/${application.id}`);
 }

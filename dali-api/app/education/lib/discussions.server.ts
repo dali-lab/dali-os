@@ -240,10 +240,10 @@ async function notifyDiscussionPost(args: {
     eventType: "education.discussion",
     createdByUserId: args.authorId,
     message: {
-      title: args.parentId
-        ? `New reply in ${offering.title}`
-        : `New post in ${offering.title}`,
-      body: preview,
+      copyKey: args.parentId
+        ? "education.discussion.reply"
+        : "education.discussion.post",
+      vars: { contextName: offering.title, itemDetail: preview },
     },
     recipients: users.map((u) => ({
       userId: u.id,

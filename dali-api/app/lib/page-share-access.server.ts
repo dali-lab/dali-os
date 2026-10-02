@@ -346,7 +346,7 @@ export async function notifyDocumentShared(args: {
     eventType: "document.shared_with_you",
     createdByUserId: args.actorId,
     message: {
-      title: `Shared with you: ${args.pageTitle}`,
+      vars: { itemTitle: args.pageTitle },
       link: `/documents/${args.pageId}`,
     },
     recipients: [{ userId: args.recipientUserId }],

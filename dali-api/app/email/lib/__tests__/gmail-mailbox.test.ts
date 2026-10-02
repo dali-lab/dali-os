@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("~/lib/db", () => ({ prisma: {} }));
 vi.mock("~/lib/google-calendar", () => ({
@@ -113,6 +113,15 @@ describe("decodeEntities", () => {
 });
 
 describe("sendMessage", () => {
+  // These assert the composed MIME, which only happens once the env fence lets
+  // the send through. The fence itself is covered by its own describe below.
+  beforeEach(() => {
+    process.env.DALI_APP_ENV = "prod";
+  });
+  afterEach(() => {
+    delete process.env.DALI_APP_ENV;
+  });
+
   it("threads replies and strips header injection", async () => {
     const fetchSpy = mockFetch({ id: "sent" });
     await sendMessage("token", {
@@ -167,5 +176,59 @@ describe("sendMessage", () => {
     expect(raw).toContain('Content-Disposition: attachment; filename="q3 report.pdf"');
     expect(raw).toContain(Buffer.from("PDFDATA").toString("base64"));
     expect(raw.trimEnd()).toMatch(new RegExp(`--${boundary}--$`));
+  });
+});
+
+describe("sendMessage env fence", () => {
+  // A staging deploy runs against a restore of the prod DB, so every address the
+  // composer can reach belongs to a real person. Before this fence existed the
+  // Email tab was a second Gmail transport with no dev skip and no staging
+  // redirect, unlike the transactional sender in lib/gmail.ts.
+  const msg = {
+    from: "me@dali.dartmouth.edu",
+    to: "ada@x.com",
+    cc: "cc@x.com",
+    bcc: "bcc@x.com",
+    subject: "Hello",
+    body: "Hi",
+  };
+
+  afterEach(() => {
+    delete process.env.DALI_APP_ENV;
+  });
+
+  it("sends nothing at all in dev", async () => {
+    process.env.DALI_APP_ENV = "dev";
+    const fetchSpy = mockFetch({ id: "sent" });
+    await sendMessage("token", msg);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("redirects to the test inbox and drops Cc/Bcc in staging", async () => {
+    process.env.DALI_APP_ENV = "staging";
+    const fetchSpy = mockFetch({ id: "sent" });
+    await sendMessage("token", msg);
+    const sent = JSON.parse(fetchSpy.mock.calls[0][1]!.body as string);
+    const raw = Buffer.from(sent.raw, "base64url").toString("utf8");
+    expect(raw).toContain("To: systems@dali.dartmouth.edu");
+    expect(raw).not.toContain("ada@x.com\r\n");
+    expect(raw).not.toContain("Cc:");
+    expect(raw).not.toContain("Bcc:");
+    // The real recipient survives in the subject so staging mail is triageable.
+    expect(raw).toContain("[STAGING");
+    expect(raw).toContain("ada@x.com");
+  });
+
+  it("leaves the envelope untouched in prod", async () => {
+    process.env.DALI_APP_ENV = "prod";
+    const fetchSpy = mockFetch({ id: "sent" });
+    await sendMessage("token", msg);
+    const sent = JSON.parse(fetchSpy.mock.calls[0][1]!.body as string);
+    const raw = Buffer.from(sent.raw, "base64url").toString("utf8");
+    expect(raw).toContain("To: ada@x.com");
+    expect(raw).toContain("Cc: cc@x.com");
+    expect(raw).toContain("Bcc: bcc@x.com");
+    expect(raw).toContain("Subject: Hello");
+    expect(raw).not.toContain("[STAGING");
   });
 });

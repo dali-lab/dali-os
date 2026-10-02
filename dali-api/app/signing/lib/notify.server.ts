@@ -14,14 +14,9 @@ import type { DocBlock } from "~/collab/blocknote-server";
 import { AUDIENCE_RESOLVERS } from "./audiences";
 import { getSignedCopyBody } from "./state.server";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
+import { renderFramedEmail } from "~/email/lib/layout.server";
+// Was a byte-identical private copy here; app/lib/email.ts owns the one escaper.
+import { escapeHtml } from "~/lib/email";
 
 function safeFilename(s: string): string {
   return s.replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "agreement";
@@ -85,16 +80,27 @@ export async function sendSignatureReceipt(args: {
 
   const name = escapeHtml(args.documentName);
   const link = `${getFrontendUrl()}/sign/${args.bindingId}`;
-  const html = [
-    `<p>Hi ${escapeHtml(user.firstName)},</p>`,
-    `<p>Thanks for signing <strong>${name}</strong>. ${
-      attachments
-        ? "A copy of your signed agreement is attached to this email"
-        : "Your signed agreement is available online"
-    }, and it's always available in DALI OS.</p>`,
-    `<p><a href="${link}" style="display:inline-block;padding:10px 16px;background:#18181b;color:#ffffff;text-decoration:none;border-radius:6px;">View signed copy</a></p>`,
-    `<p style="color:#71717a;font-size:12px;">— DALI OS</p>`,
-  ].join("\n");
+  const whereIsIt = attachments
+    ? "A copy of your signed agreement is attached to this email"
+    : "Your signed agreement is available online";
+  const mail = await renderFramedEmail(
+    {
+      subject: `Signed: ${args.documentName}`,
+      preheader: `Your signed copy of ${args.documentName}.`,
+      cta: { href: link, label: "View signed copy" },
+      bodyHtml: [
+        `<p style="margin:0 0 16px;">Hi ${escapeHtml(user.firstName)},</p>`,
+        `<p style="margin:0;">Thanks for signing <strong>${name}</strong>. ${whereIsIt}, and it's always available in DALI OS.</p>`,
+      ].join("\n"),
+      text: [
+        `Hi ${user.firstName},`,
+        `Thanks for signing ${args.documentName}. ${whereIsIt}, and it's always available in DALI OS.`,
+        `View signed copy: ${link}`,
+      ].join("\n\n"),
+    },
+    // Transactional: a receipt for something you signed is not suppressible.
+    { footer: "transactional" },
+  );
 
   const { id } = await enqueueOutbound({
     channel: "email",
@@ -104,8 +110,9 @@ export async function sendSignatureReceipt(args: {
     }`,
     target: to,
     recipientUserId: args.signerUserId,
-    subject: `Signed: ${args.documentName}`,
-    bodyHtml: html,
+    subject: mail.subject,
+    bodyHtml: mail.html,
+    bodyText: mail.text,
     attachments,
     eventType: "signing.receipt",
   });
@@ -163,8 +170,7 @@ export async function notifySignRequest(
   await notify({
     eventType: "document.sign_request",
     message: {
-      title: "You have a new document to sign",
-      body: binding.document.name,
+      vars: { itemTitle: binding.document.name },
       link: `/sign/${bindingId}`,
       isTodo: true,
     },
@@ -217,8 +223,7 @@ export async function notifyCountersignRequest(
   await notify({
     eventType: "document.countersign_request",
     message: {
-      title: "Countersign your mentorship agreement",
-      body: binding.document.name,
+      vars: { itemTitle: binding.document.name },
       link: `/sign/${bindingId}`,
       isTodo: true,
     },

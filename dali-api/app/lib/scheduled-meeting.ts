@@ -175,8 +175,10 @@ async function sendMeetingInvites(args: {
     eventType: "meeting.invite",
     createdByUserId: args.actorUserId,
     message: {
-      title: `Meeting invite: ${args.title}`,
-      body: inviteBody(args.startDate, args.location, args.description),
+      vars: {
+        itemTitle: args.title,
+        itemDetail: inviteBody(args.startDate, args.location, args.description) ?? "",
+      },
       link: `/calendar?meeting=${args.meetingId}`,
       sourceGroupId: args.sourceGroupId,
       scheduledMeetingId: args.meetingId,
@@ -1401,7 +1403,8 @@ export async function cancelScheduledMeeting(
           eventType: "meeting.cancelled",
           createdByUserId: actorUserId,
           message: {
-            title: `Meeting occurrence cancelled: ${meeting.title}`,
+            copyKey: "meeting.cancelled.occurrence",
+      vars: { itemTitle: meeting.title },
             link: "/calendar",
           },
           recipients: recipients.map((userId) => ({ userId, ics: null })),
@@ -1504,7 +1507,8 @@ export async function cancelScheduledMeeting(
         eventType: "meeting.cancelled",
         createdByUserId: actorUserId,
         message: {
-          title: `Meeting cancelled: ${meeting.title}`,
+          copyKey: "meeting.cancelled.series",
+      vars: { itemTitle: meeting.title },
           link: "/calendar",
         },
         recipients: recipients.map((userId) => ({
@@ -1900,7 +1904,8 @@ export async function updateScheduledMeeting(
         eventType: "meeting.cancelled",
         createdByUserId: actorUserId,
         message: {
-          title: `Removed from meeting: ${input.title}`,
+          copyKey: "meeting.removed",
+      vars: { itemTitle: input.title },
           link: "/calendar",
         },
         recipients: removedRecipients.map((userId) => ({

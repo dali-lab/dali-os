@@ -6,7 +6,7 @@
 //
 // Access tiers match the HTTP routes:
 //   create / set_instructors / delete / duplicate / invite_external_instructor /
-//   remove_external_instructor / set_decision_email
+//   remove_external_instructor
 //                                        → Core only
 //   update / set_status / set_form_binding
 //                                        → instructor or Core (isOfferingManager)
@@ -14,7 +14,6 @@
 import { runOfferingAction } from "~/education/lib/offerings.server";
 import { isOfferingManager } from "~/education/lib/access.server";
 import { setFormBinding } from "~/education/lib/feedback.server";
-import { saveEducationEmail } from "~/education/lib/education-emails.server";
 import {
   DECISION_EMAIL_SLOTS,
   decisionSlot,
@@ -33,7 +32,7 @@ import {
 export const MANAGE_EDUCATION_OFFERING_TOOL = {
   name: "manage_education_offering",
   description:
-    "Create, update, set status, set instructors, duplicate, invite/remove external instructors, bind feedback forms, or configure decision emails for an education offering. Actions: create (Core only) · update (instructor/Core) · set_status (instructor/Core) · set_instructors (Core only) · delete (Core, Draft only) · duplicate (Core only) · invite_external_instructor (Core only) · remove_external_instructor (Core only) · set_form_binding (instructor/Core) · set_decision_email (Core only).",
+    "Create, update, set status, set instructors, duplicate, invite/remove external instructors, or bind feedback forms for an education offering. Actions: create (Core only) · update (instructor/Core) · set_status (instructor/Core) · set_instructors (Core only) · delete (Core, Draft only) · duplicate (Core only) · invite_external_instructor (Core only) · remove_external_instructor (Core only) · set_form_binding (instructor/Core). Decision-email copy is edited with manage_email_template.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -49,7 +48,6 @@ export const MANAGE_EDUCATION_OFFERING_TOOL = {
           "invite_external_instructor",
           "remove_external_instructor",
           "set_form_binding",
-          "set_decision_email",
         ],
       },
       offeringId: {
@@ -118,21 +116,6 @@ export const MANAGE_EDUCATION_OFFERING_TOOL = {
         description:
           "set_form_binding: ID of the published form to bind. Omit or null to unbind.",
       },
-      decisionStatus: {
-        type: "string",
-        enum: ["Approved", "Waitlisted", "Rejected", "Withdrawn"],
-        description: "set_decision_email: which application status to configure.",
-      },
-      subject: {
-        type: "string",
-        description:
-          "set_decision_email: subject line. Supports {{firstName}} and {{domain}} (the course title). Shared by every course.",
-      },
-      body: {
-        type: "string",
-        description:
-          "set_decision_email: email body. Pass an empty subject and body to turn the status off (nothing sends).",
-      },
     },
     required: ["action"],
     additionalProperties: false,
@@ -193,7 +176,6 @@ export async function runManageEducationOffering(ctx: McpCtx, args: Args) {
     invite_external_instructor: ["offeringId", "netId", "firstName", "lastName"],
     remove_external_instructor: ["offeringId", "userId"],
     set_form_binding: ["offeringId", "slot"],
-    set_decision_email: ["decisionStatus"],
   });
 
   // Per-action access gate before touching the DB.
@@ -206,7 +188,6 @@ export async function runManageEducationOffering(ctx: McpCtx, args: Args) {
       throw new McpForbiddenError();
     }
   } else if (
-    args.action === "set_decision_email" ||
     args.action === "set_instructors" ||
     args.action === "delete" ||
     args.action === "duplicate" ||
@@ -218,21 +199,6 @@ export async function runManageEducationOffering(ctx: McpCtx, args: Args) {
     }
   }
   // create: runOfferingAction re-checks isCore internally.
-
-  // One decision email per status, shared by every course — so it isn't an
-  // offering action and doesn't go through runOfferingAction.
-  if (args.action === "set_decision_email") {
-    const status = args.decisionStatus as DecisionSlotStatus;
-    if (!DECISION_EMAIL_SLOTS.some((d) => d.status === status)) {
-      throw new McpInvalidError("Unknown decision status");
-    }
-    await saveEducationEmail(
-      decisionSlot(status),
-      { subject: args.subject ?? "", body: args.body ?? "" },
-      ctx.user.id,
-    );
-    return { ok: true, id: args.offeringId ?? null };
-  }
 
   // set_form_binding uses the feedback server fn directly (not runOfferingAction).
   if (args.action === "set_form_binding") {

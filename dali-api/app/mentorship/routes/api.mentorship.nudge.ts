@@ -203,13 +203,12 @@ export async function action({ request }: Route.ActionArgs) {
     .filter((t) => userById.has(t.mentorId))
     .map((t) => ({
       userId: t.mentorId,
-      body: `Still needed for ${term.code}:\n${summaryLines(t.outstanding)}`,
+      vars: { itemDetail: `Still needed for ${term.code}:\n${summaryLines(t.outstanding)}` },
     }));
   await notify({
     eventType: "mentorship.note_reminder",
     createdByUserId: auth.user.sub,
     message: {
-      title: "Fill in your mentorship notes",
       link,
     },
     recipients,

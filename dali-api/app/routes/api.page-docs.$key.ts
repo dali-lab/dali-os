@@ -234,7 +234,8 @@ export async function action({ request, params }: Route.ActionArgs) {
         recipientUserIds: uniqueAdded,
         actorId: userId,
         link: pageDocLink(payload.path),
-        title: `You were mentioned in: ${updated.title}`,
+        copyKey: "mention.document",
+        itemTitle: updated.title,
         preview: "You were tagged in a page guide.",
       }).catch((err) => console.error(`pagedoc ${updated.id}: mention notify failed`, err));
     }
@@ -246,8 +247,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       eventType: "pagedoc.maintainer_assigned",
       createdByUserId: userId,
       message: {
-        title: `You're now the maintainer of: ${updated.title}`,
-        body: "You can edit this page's guide — sections, video, walkthrough, and FAQ.",
+        vars: { itemTitle: updated.title },
         link: pageDocLink(payload.path),
       },
       recipients: [{ userId: payload.maintainerId }],

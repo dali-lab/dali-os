@@ -39,7 +39,8 @@ describe("notifyMailCommentMentions", () => {
       recipientUserIds: ["reader"],
       actorId: "author",
       link: "/email?t=acct1~thr1",
-      title: "You were mentioned in team@dali.dartmouth.edu",
+      copyKey: "mention.mailbox",
+      itemTitle: "team@dali.dartmouth.edu",
       preview: "@me @reader @outsider take a look",
     });
   });
