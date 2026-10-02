@@ -412,8 +412,8 @@ reuse-before-building rule. Server path: blocks → `blocksToHTMLLossy` → **`s
   `multipart/alternative`.
 - **Move the staging banner.** `gmail.ts:239` does `stagingBanner(to) + html`. Harmless for fragments; the moment
   `html` starts with `<!DOCTYPE html>` it prepends a `<div>` *before* the doctype. Must inject after `<body>`.
-- **Add `List-Unsubscribe` + `List-Unsubscribe-Post`** (RFC 8058) for the `notify()` and digest classes only, never
-  for transactional mail.
+- **No `List-Unsubscribe` header.** Decided against (see Decisions below): the notifications footer links to the
+  per-event matrix, which is finer-grained than any unsubscribe header could express.
 - **Make `interpolateVars` escape by default**, with an explicit raw form for the few HTML values (Mustache's
   `{{{ }}}` convention, or a separate `interpolateHtmlVars`). Behavior change, so gate it behind tests over every
   existing body.
@@ -515,21 +515,24 @@ the env fence from §0.4. Retiring `CycleNotificationSend` / `SignRequestNotific
    versioning, preview and test-send that refactor dropped. One divergence, `whenMissing` (§3.2), so clearing a
    `notify()` row can't silently switch off a channel.
 3. **Nothing is implemented until this plan is approved.** Phase 0 included — sequencing gets decided in one pass.
+4. **No unsubscribe; manage is the control.** Kiran: *"no unsub is needed tbh manage is fine."* The per-event matrix
+   at `/settings#notifications` already lets a member turn off `task.comment` while still getting sign-request mail,
+   which a blunt unsubscribe cannot express. The Gmail/Yahoo rules that ask for RFC 8058 one-click target bulk
+   marketing at 5,000+/day, not transactional mail to known members, and we send as a Gmail send-as identity so
+   deliverability rests on that account's reputation. No unsubscribe endpoint, no token, no header. §3.4 is complete
+   as shipped.
 
 ## 6. Still open
 
-1. **`List-Unsubscribe` was not added.** It needs a real unsubscribe endpoint, and the mapping is a product
-   decision: does one-click set that event's `digestFrequency: "Off"`, or flip a global switch? Everything else in
-   §3.4 landed. Worth doing before the flag flips, since it is the one deliverability item still outstanding.
-3. **The new partner-application confirmation needs a copy review.** It is new outbound mail to partners, written in
+1. **The new partner-application confirmation needs a copy review.** It is new outbound mail to partners, written in
    the existing partner voice but unreviewed. Read it before the flag flips.
-4. **The onboarding block's hardcoded dates are hoisted, not fixed.** `ONBOARDING_DEADLINE` and
+2. **The onboarding block's hardcoded dates are hoisted, not fixed.** `ONBOARDING_DEADLINE` and
    `REQUIRED_EVENT_DAY` in `app/members/lib/welcome.server.ts` are now named constants at the top of the file
    rather than buried in markup, so the staleness is visible — but `"June 8th, 2026"` is still what ships, and it
-   is past. Needs either real values or the cycle-fields change from open question (b) below.
-5. **Cycle fields vs template variables for those dates.** Leaning cycle fields, since "deadline to accept" is
+   is past. Needs either real values or the cycle-fields change in the next item.
+3. **Cycle fields vs template variables for those dates.** Leaning cycle fields, since "deadline to accept" is
    cycle data other surfaces will want.
-6. **Whether `mustache` ever lands.** Not needed for interpolation. The trigger is the first real request for
+4. **Whether `mustache` ever lands.** Not needed for interpolation. The trigger is the first real request for
    "show this paragraph only if there's a meeting link". Worth waiting for.
 
 ## 7. Before the flag flips
