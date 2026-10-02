@@ -119,8 +119,24 @@ export async function loader({ request }: Route.LoaderArgs) {
     status === "alumni"
       ? { membershipStatus: "Alumni" as const }
       : { membershipStatus: "Active" as const };
+
+  // Class year options come from the whole view (Active or Alumni), not the
+  // filtered list, so picking a term or domain never empties the dropdown. An
+  // unknown ?class= is ignored, same as ?domain=.
+  const classYears = (
+    await prisma.user.findMany({
+      where: { ...LAB_MEMBER_WHERE, ...statusCondition, classYear: { not: null } },
+      distinct: ["classYear"],
+      orderBy: { classYear: "desc" },
+      select: { classYear: true },
+    })
+  ).flatMap((u) => (u.classYear === null ? [] : [u.classYear]));
+  const classParam = Number(url.searchParams.get("class"));
+  const classYear = classYears.includes(classParam) ? classParam : null;
+  const inClass = classYear ? { classYear } : {};
+
   const users = await prisma.user.findMany({
-    where: { ...LAB_MEMBER_WHERE, ...activeInTerm, ...inDomain, ...statusCondition },
+    where: { ...LAB_MEMBER_WHERE, ...activeInTerm, ...inDomain, ...inClass, ...statusCondition },
     orderBy:
       status === "alumni"
         ? [{ classYear: "desc" as const }, ...MEMBER_LIST_ORDER_BY]
@@ -184,6 +200,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     selectedTerm: selected,
     domains,
     selectedDomain: domainId,
+    classYears,
+    selectedClassYear: classYear,
     canEdit,
     canSeeGroups,
     status,
@@ -326,8 +344,18 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function MembersList() {
-  const { rows, terms, selectedTerm, domains, selectedDomain, canEdit, canSeeGroups, status } =
-    useLoaderData<typeof loader>();
+  const {
+    rows,
+    terms,
+    selectedTerm,
+    domains,
+    selectedDomain,
+    classYears,
+    selectedClassYear,
+    canEdit,
+    canSeeGroups,
+    status,
+  } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState("");
@@ -441,6 +469,7 @@ export default function MembersList() {
         />
         {status === "active" && <TermFilter terms={terms} selected={selectedTerm} />}
         <DomainFilter domains={domains} selected={selectedDomain} />
+        <ClassYearFilter classYears={classYears} selected={selectedClassYear} />
         <span className="text-xs text-muted-foreground ml-auto">
           {filtered.length}{" "}
           {status === "alumni"
@@ -576,6 +605,35 @@ function DomainFilter({
         const next = new URLSearchParams(searchParams);
         if (value) next.set("domain", value);
         else next.delete("domain");
+        setSearchParams(next);
+      }}
+    />
+  );
+}
+
+// Class year dropdown, driven by `?class=` like DomainFilter. "" is "All classes".
+function ClassYearFilter({
+  classYears,
+  selected,
+}: {
+  classYears: number[];
+  selected: number | null;
+}) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const options: SelectOption<string>[] = [
+    { value: "", label: "All classes" },
+    ...classYears.map((y) => ({ value: String(y), label: `Class of ${y}` })),
+  ];
+  return (
+    <Select
+      value={selected ? String(selected) : ""}
+      options={options}
+      ariaLabel="Filter by class year"
+      buttonClassName={cn(filterPillClass(), "w-full sm:w-44")}
+      onChange={(value) => {
+        const next = new URLSearchParams(searchParams);
+        if (value) next.set("class", value);
+        else next.delete("class");
         setSearchParams(next);
       }}
     />
