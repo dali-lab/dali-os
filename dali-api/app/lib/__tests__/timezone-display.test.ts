@@ -8,6 +8,7 @@ import {
   zonedDayLabel,
   formatZoneLabel,
   formatDualTime,
+  formatInstantWithZoneLabel,
   zonedDateTimeLocalToUtc,
 } from "~/lib/timezone";
 
@@ -71,6 +72,36 @@ describe("formatDateTimeInZone / formatDateShortInZone", () => {
     expect(formatDateShortInZone(WINTER, "America/New_York")).toBe("Mar 5, 2026");
     // Tokyo is +9, so this UTC instant lands on Mar 6 there.
     expect(formatDateShortInZone(WINTER, "Asia/Tokyo")).toBe("Mar 6, 2026");
+  });
+});
+
+describe("formatInstantWithZoneLabel", () => {
+  // The notification formatter: meeting invites, meeting reminders, task due
+  // reminders and interview assignments all read a start through this, so what
+  // lands in the desktop banner is a sentence, never a machine timestamp.
+  it("reads as a human date with a short zone abbreviation", () => {
+    expect(formatInstantWithZoneLabel(SUMMER, "America/New_York")).toBe(
+      "Wed, Jul 1, 2:00 PM EDT",
+    );
+    expect(formatInstantWithZoneLabel(WINTER, "America/Los_Angeles")).toBe(
+      "Thu, Mar 5, 11:30 AM PST",
+    );
+  });
+
+  it("never emits an ISO timestamp or a parenthesised long zone name", () => {
+    for (const zone of ["America/New_York", "Asia/Tokyo", "UTC"]) {
+      const text = formatInstantWithZoneLabel(SUMMER, zone);
+      expect(text).not.toMatch(/\d{4}-\d{2}-\d{2}T/);
+      expect(text).not.toMatch(/\(.*Time\)/);
+    }
+  });
+
+  // Zones with no en-US abbreviation fall back to a short UTC offset rather
+  // than dropping the label — still readable, still unambiguous.
+  it("falls back to a short offset where no abbreviation exists", () => {
+    expect(formatInstantWithZoneLabel(SUMMER, "Asia/Tokyo")).toBe(
+      "Thu, Jul 2, 3:00 AM GMT+9",
+    );
   });
 });
 
