@@ -8,9 +8,10 @@
 //   /education/:id[/apply|/hub|/page/:p|/assignments/:a]
 //                                             → /portal/education/…
 // Returns null for /education/manage and /education/offerings (external
-// instructors stay in the shell) and for /education/compliance (Core-only)
-// and /education/check-in/:id (no portal route) — the caller decides
-// stay-vs-/portal for those.
+// instructors stay in the shell) and for /education/compliance (Core-only) —
+// the caller decides stay-vs-/portal for those. /education/check-in/:id is
+// excluded too, but defensively: that route lives outside the member layout
+// precisely so the gate never sees it, and both shells link students to it.
 //
 // Kept in a client-safe file (no Prisma), like feature-flags.ts, so its test
 // needs no database. The gate lives in routes/layout.tsx, which runs in parallel
