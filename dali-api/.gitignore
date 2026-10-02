@@ -20,3 +20,6 @@ prisma/data/
 /e2e/test-results/
 /e2e/.mobile-audit/
 /playwright-report/
+
+# Vitest coverage
+/coverage/
