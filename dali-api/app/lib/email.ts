@@ -15,6 +15,16 @@ export type InterpolationVars = {
   newCloseDate?: string;
 };
 
+// Escape every value before it is spliced into a template body that becomes HTML.
+// Operator-authored markup in the template survives; a value does not. That
+// distinction is the whole point: the template may legitimately contain
+// `<a href="…">`, while a value like a course title or a domain name is data and
+// must never introduce markup. Subjects are NOT escaped — they end up in a mail
+// header as plain text, where `&amp;` would be literal.
+function escapeValues(vars: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(vars).map(([k, v]) => [k, escapeHtml(v)]));
+}
+
 export function interpolate(text: string, vars: InterpolationVars): string {
   // Delegate to the shared interpolator with the email vocabulary mapped to
   // strings (missing optional vars → "", unknown tokens left as literal text).
@@ -138,10 +148,31 @@ export const NOTIFICATION_BODY_MAX = 2000;
 // live here so the preview never drifts from what actually goes out.
 export function renderEmail(
   template: { subject: string; body: string },
-  vars: InterpolationVars,
+  vars: Record<string, string>,
 ): { subject: string; html: string } {
+  const text = interpolateVars(template.subject, vars);
   return {
-    subject: interpolate(template.subject, vars),
-    html: bodyToHtml(interpolate(template.body, vars)),
+    // Plain: this becomes a Subject header.
+    subject: text,
+    // Rich: the operator may write a link, bold, or a list, and every value
+    // spliced in is escaped first so data can't become markup.
+    html: bodyToRichHtml(interpolateVars(template.body, escapeValues(vars))),
   };
+}
+
+// Paragraph-wrap an operator-authored body, then sanitize it with the wider
+// allowlist so links, bold and lists survive.
+//
+// This replaced bodyToHtml on the template path. bodyToHtml's `["p","br"]`
+// allowlist meant an operator literally could not put a clickable link in an
+// email — a booking link had to be a bare URL relying on the client to autolink
+// it. The narrow path stays for notification bodies, which are one plain sentence
+// mixing operator copy with user-authored data (a task title, a comment preview)
+// and so must not be allowed to carry markup at all.
+export function bodyToRichHtml(body: string): string {
+  const wrapped = body
+    .split("\n\n")
+    .map((p) => `<p>${p.replace(/\n/g, "<br/>")}</p>`)
+    .join("\n");
+  return sanitizeRichEmailHtml(wrapped);
 }

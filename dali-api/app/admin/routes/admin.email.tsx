@@ -80,10 +80,18 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const rows: AdminEmailRow[] = EMAIL_TEMPLATE_KEYS.map((key) => {
     const row = stored.get(key);
+    const def = emailTemplateDef(key);
+    // Send the EFFECTIVE copy, not just the row: for a template nobody has
+    // edited, that is the registry's own wording. Otherwise the editor opens
+    // empty and changing one word means retyping the whole body — and since
+    // blanking both fields is how a row is deleted, a half-finished edit would
+    // do something surprising. `edited` is what the list badges on.
+    const effective = row ?? def.defaults ?? null;
     return {
       key,
-      subject: row?.subject ?? null,
-      body: row?.body ?? null,
+      subject: effective?.subject ?? null,
+      body: effective?.body ?? null,
+      edited: !!row,
       updatedAt: row?.updatedAt.toISOString() ?? null,
       updatedBy: row?.updatedById ? fullName(editorById.get(row.updatedById) ?? null) : null,
       versionCount: countByKey.get(key) ?? 0,

@@ -26,8 +26,13 @@ const TITLE_ID = "admin-email-editor-title";
 
 export type AdminEmailRow = {
   key: EmailTemplateKey;
+  // The EFFECTIVE copy: the operator's row when there is one, otherwise the
+  // registry's own wording. The editor opens pre-filled with this so a change is
+  // a change, not a retype.
   subject: string | null;
   body: string | null;
+  // Whether a row exists. Drives the badge, not the textarea.
+  edited: boolean;
   updatedAt: string | null;
   updatedBy: string | null;
   versionCount: number;
@@ -42,14 +47,16 @@ export type AdminEmailVersion = {
   author: string;
 };
 
-function missingLabel(when: WhenMissing): string {
+// What an unedited template's status means, which differs per key: absence is
+// the operator's answer for some and merely "untouched" for others.
+function uneditedLabel(when: WhenMissing): string {
   switch (when) {
     case "skip":
-      return "No email yet — nothing sends for this";
+      return "Nothing sends for this yet";
     case "error":
-      return "No email yet — releasing is blocked until one exists";
+      return "Not written — releasing is blocked until it is";
     case "default":
-      return "Using the built-in copy";
+      return "Using the built-in wording";
   }
 }
 
@@ -141,27 +148,36 @@ function EmailRow({
   row: AdminEmailRow | null;
 }) {
   const def = emailTemplateDef(templateKey);
-  const written = !!row?.subject || !!row?.body;
+  const edited = !!row?.edited;
+  // An unedited key that falls back to registry wording still sends, so it is not
+  // a warning — only a key whose absence means nothing sends (or blocks a
+  // release) deserves one.
+  const warn = !edited && def.whenMissing !== "default";
   return (
     <div className="flex items-start gap-3 p-3">
       <Mail className="w-4 h-4 mt-0.5 text-muted-foreground shrink-0" />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium">{def.label}</span>
-          {written ? (
+          {edited ? (
             <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-              <Check className="w-3 h-3" /> Written
+              <Check className="w-3 h-3" /> Edited
             </span>
           ) : (
-            <span className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-500">
-              <AlertTriangle className="w-3 h-3" /> {missingLabel(def.whenMissing)}
+            <span
+              className={`inline-flex items-center gap-1 text-xs ${
+                warn ? "text-amber-600 dark:text-amber-500" : "text-muted-foreground"
+              }`}
+            >
+              {warn ? <AlertTriangle className="w-3 h-3" /> : null}
+              {uneditedLabel(def.whenMissing)}
             </span>
           )}
         </div>
         <p className="text-xs text-muted-foreground mt-0.5">{def.description}</p>
-        {written ? (
+        {row?.subject ? (
           <p className="text-xs text-muted-foreground mt-1 truncate">
-            Subject: {row?.subject}
+            Subject: {row.subject}
           </p>
         ) : null}
         <p className="text-[11px] text-muted-foreground mt-1">
@@ -175,7 +191,7 @@ function EmailRow({
       <Form method="get" className="shrink-0">
         <input type="hidden" name="key" value={templateKey} />
         <button type="submit" className="text-sm underline">
-          {written ? "Edit" : "Write"}
+          {row?.subject || row?.body ? "Edit" : "Write"}
         </button>
       </Form>
     </div>

@@ -1,5 +1,6 @@
 import { prisma } from "~/lib/db";
 import { notify, renderNotificationEmail } from "~/lib/notify.server";
+import { renderEmailTemplate } from "~/email/lib/templates.server";
 import type { NotificationCopyKey } from "~/email/lib/notification-copy";
 import {
   renderNotificationCopy,
@@ -244,21 +245,14 @@ export async function sendOnboardingReminders(args: {
 // account already existed (re-release) — then we just tell them to use their
 // existing password. SECURITY: this is a live credential; it must only ever be
 // rendered into this email, never logged.
-// STALE-BY-DESIGN CONSTANTS — these are cycle facts living in library code, so
-// they go out of date silently and can only be corrected by a deploy. They are
-// hoisted here (rather than buried in the markup below) so the staleness is
-// visible and the edit is one line. specs/email-standardization.md §3.3 moves
-// them into operator-editable template copy; until then, check these before
-// every hiring cycle.
-const ONBOARDING_DEADLINE = "June 8th, 2026";
-const REQUIRED_EVENT_DAY = "Sunday, September 13th";
-const WELCOME_TERM = "26F";
-const HIRING_SIGNOFF = "Sean Noh and DALI Hiring";
-
-export function onboardingEmailHtml(
+// Async because the prose is operator-editable now: the deadline, the
+// required-event day, the term and the sign-off live in the
+// hiring:onboarding:NextSteps template rather than in constants here, where they
+// went stale silently and needed a deploy to correct.
+export async function onboardingEmailHtml(
   daliEmail: string | null,
   tempPassword: string | null = null,
-): string {
+): Promise<string> {
   // getFrontendUrl(), not process.env.FRONTEND_URL: a PR preview app sets only
   // API_BASE_URL, so reading the raw var there left base="" and shipped a
   // relative "/login" and "/logo-blue.png" into an email, where neither resolves.
@@ -268,14 +262,12 @@ export function onboardingEmailHtml(
 
   const loginLink = `<a href="${loginUrl}">DALI OS</a>`;
 
-  // Slack onboarding line. Our Slack is on Enterprise, which disallows the public
-  // shared invite-link feature, and the programmatic admin.users.invite isn't
-  // available to us either — so workspace invites are always done by hand. We
-  // point new members at the workspace and tell them a teammate/admin will add
-  // them; any member can invite, so this is reliable.
-  const slackWorkspaceUrl =
+  // Our Slack is on Enterprise, which disallows the public shared invite-link
+  // feature, and the programmatic admin.users.invite isn't available to us
+  // either — so workspace invites are always done by hand. The template tells
+  // the member a teammate will add them; this just supplies the workspace URL.
+  const slackUrl =
     (process.env.SLACK_WORKSPACE_URL ?? "https://dali-lab.slack.com").replace(/\/$/, "");
-  const slackLine = `<p>We use Slack day-to-day at <a href="${slackWorkspaceUrl}">DALI Studios</a> — a teammate will add you to the workspace shortly.</p>`;
 
   let accountBlock: string;
   if (daliEmail && tempPassword) {
@@ -291,14 +283,12 @@ export function onboardingEmailHtml(
     accountBlock = `<p>Your DALI account is being set up — you'll receive your DALI login email shortly. In the meantime you can finish the rest of your onboarding below.</p>`;
   }
 
+  // whenMissing is "default", so this never comes back empty.
+  const nextSteps = await renderEmailTemplate("hiring:onboarding:NextSteps", { slackUrl });
+
   return `
     ${accountBlock}
-    <p>Once you're in, finish setting up by completing your member profile and onboarding steps.</p>
-    <p><strong>The deadline to accept your offer and complete onboarding is ${ONBOARDING_DEADLINE}.</strong></p>
-    ${slackLine}
-    <p>We also have a special event planned for all day ${REQUIRED_EVENT_DAY}. This is a required event. If there is any concern with this requirement, please reach out.</p>
-    <p>We are very excited to welcome you to DALI soon and look forward to an incredible ${WELCOME_TERM} together. Please reach out with any questions.</p>
-    <p>Best,<br/>${HIRING_SIGNOFF}</p>
+    ${nextSteps?.html ?? ""}
     <p><img src="${logoUrl}" alt="DALI Lab" width="96" style="display:block;border:0;"/></p>
   `;
 }

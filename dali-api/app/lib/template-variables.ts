@@ -38,6 +38,11 @@ export const TEMPLATE_VARIABLES_REGISTRY = {
     description: "The cycle's new close date (post-extension), formatted in Eastern Time.",
     contexts: ["email"],
   },
+  slackUrl: {
+    description: "Link to the DALI Slack workspace.",
+    contexts: ["email"],
+  },
+
   // ── Notifications ───────────────────────────────────────────────────────
   // Deliberately generic and few. 24 of the 44 notify() call sites interpolate
   // some variant of "the title of the thing" — a meeting, a task, a document, a

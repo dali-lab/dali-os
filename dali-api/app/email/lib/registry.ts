@@ -111,6 +111,45 @@ export const EMAIL_TEMPLATES = {
     whenMissing: "error",
   },
 
+  // Appended to the Accepted letter above, so an accepted applicant gets one
+  // email rather than two. It exists as its own template because its content and
+  // the decision letter's have different owners and different lifetimes: the
+  // letter is cycle-specific prose a lead rewrites, this is the standing "here's
+  // what happens next" that changes when the dates change.
+  //
+  // Code keeps two pieces deliberately. The credentials paragraph is conditional
+  // (new account / existing password / still provisioning) and carries a live
+  // password, so an operator deleting the wrong line would ship a member a login
+  // they can't use. The logo is an <img>, which no email sanitizer allows through.
+  // Everything that goes stale — the deadline, the required-event day, the term,
+  // the sign-off — is here.
+  "hiring:onboarding:NextSteps": {
+    area: "Hiring",
+    label: "Accepted: onboarding and next steps",
+    description:
+      "Appended to the Accepted decision email. Holds the acceptance deadline, the required-event date and the sign-off, so they change here rather than in a deploy.",
+    purpose: "Hiring",
+    variables: ["slackUrl"],
+    sample: { slackUrl: "https://dali-lab.slack.com" },
+    footer: "transactional",
+    // Clearing it would strip the next-steps half of every acceptance email, so
+    // it falls back rather than vanishing.
+    whenMissing: "default",
+    defaults: {
+      // Unused: this template is appended to the Accepted letter, which carries
+      // the subject. Kept non-empty because a blank subject reads as a bug.
+      subject: "Next steps",
+      body: [
+        "Once you're in, finish setting up by completing your member profile and onboarding steps.",
+        "<strong>The deadline to accept your offer and complete onboarding is June 8th, 2026.</strong>",
+        'We use Slack day-to-day at <a href="{{slackUrl}}">DALI Studios</a>. A teammate will add you to the workspace shortly.',
+        "We also have a special event planned for all day Sunday, September 13th. This is a required event. If there is any concern with this requirement, please reach out.",
+        "We are very excited to welcome you to DALI soon and look forward to an incredible 26F together. Please reach out with any questions.",
+        "Best,\nSean Noh and DALI Hiring",
+      ].join("\n\n"),
+    },
+  },
+
   // ── Hiring: application lifecycle ────────────────────────────────────────
   "hiring:notification:ApplicationReceived": {
     area: "Hiring",
