@@ -62,9 +62,9 @@ describe("list_collab_versions", () => {
       { id: "v1", createdAt: new Date("2026-01-01"), plainText: "Hello world", authorIds: [] },
     ]);
 
-    const out = await runListCollabVersions("u1", { docName: "doc:p1:body" });
-    expect(out).toHaveLength(1);
-    expect(out[0]).toMatchObject({ id: "v1", plainTextPreview: "Hello world" });
+    const { versions } = await runListCollabVersions("u1", { docName: "doc:p1:body" });
+    expect(versions).toHaveLength(1);
+    expect(versions[0]).toMatchObject({ id: "v1", plainTextPreview: "Hello world" });
   });
 });
 
