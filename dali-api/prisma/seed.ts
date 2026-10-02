@@ -57,7 +57,7 @@ async function main() {
   const now = new Date();
   const seedTermStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   const seedTermEnd = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
-  await prisma.term.upsert({
+  const seedTerm = await prisma.term.upsert({
     where: { code: "26S" },
     // Update dates too, so an existing seed DB created before this fix (with the
     // old fixed 2026-03-28 → 2026-06-05 window) is corrected on re-seed.
@@ -71,6 +71,36 @@ async function main() {
       endDate: seedTermEnd,
     },
   });
+
+  // Two terms AFTER the active one, so surfaces that offer a forward range of
+  // terms (a cycle's start terms) have something to offer locally. Both windows
+  // sit entirely in the future relative to the seed run, so `currentTerm()`
+  // still resolves to 26S by its date window and nothing else shifts.
+  const day = 24 * 60 * 60 * 1000;
+  const futureTerms = [
+    { code: "26X", year: 2026, season: "X" as const, sortKey: 20263, afterDays: 75 },
+    { code: "26F", year: 2026, season: "F" as const, sortKey: 20264, afterDays: 160 },
+  ];
+  const upcomingTerms: { id: string; code: string }[] = [];
+  for (const t of futureTerms) {
+    const startDate = new Date(now.getTime() + t.afterDays * day);
+    const endDate = new Date(startDate.getTime() + 70 * day);
+    upcomingTerms.push(
+      await prisma.term.upsert({
+        where: { code: t.code },
+        update: { startDate, endDate },
+        create: {
+          code: t.code,
+          year: t.year,
+          season: t.season,
+          sortKey: t.sortKey,
+          startDate,
+          endDate,
+        },
+        select: { id: true, code: true },
+      }),
+    );
+  }
 
   // ── Domains ────────────────────────────────────────────────────────────────
   // Phase 1 adds `code` + `displayName` to Domain. Local seeds populate them
@@ -624,6 +654,11 @@ async function main() {
       // to UnderReview the instant it passes — which empties /portal/apply and
       // fails the portal specs on a date boundary rather than on a code change.
       closeDate: ts(30 * 24 * 60 * 60 * 1000),
+      // Hiring runs in the active term, and offers a start in it or the two
+      // after it — a real choice, so /portal/apply shows the start-term picker
+      // (behind the `start-terms` flag) with something to pick.
+      termId: seedTerm.id,
+      startTermIds: [seedTerm.id, ...upcomingTerms.map((t) => t.id)],
       generalRubricVersionId: "rv-general-v1",
       applicationFormId: generalApplicationForm.id,
       domains: {

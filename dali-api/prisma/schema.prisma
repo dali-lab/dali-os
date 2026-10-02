@@ -350,10 +350,25 @@ model ApplicationCycle {
   // ApplicationCycleStatusUpdate rather than stored directly here.
   name String
 
-  // The term the hiring runs in. Its start date anchors the phase weeks
-  // (Week N starts termStartDate + N-1 weeks; app/hiring/lib/cycle-phases.ts).
+  // The term the hiring RUNS in — not the term its hires start in. Its start
+  // date anchors the phase weeks (Week N starts termStartDate + N-1 weeks;
+  // app/hiring/lib/cycle-phases.ts). Start terms are `startTermIds` below.
   termId String?
   term   Term?   @relation(fields: [termId], references: [id])
+
+  // The start terms a Students cycle offers its applicants (Term ids). The
+  // applicant's pick lands on Application.startTermId. Empty = no picker:
+  // every cycle before this existed, and non-Students cycles never show one
+  // (Fellowship/Core hires are already members, so they have no start term to
+  // choose). Never holds a term earlier than `termId` above — you cannot be
+  // hired into a term before the one your cycle ran in.
+  //
+  // Term ids without an FK, matching the other id arrays in this schema
+  // (Group.staticMemberIds, ScheduledMeeting.participantUserIds); terms are
+  // registrar-seeded and never deleted. Kept canonical (chronological,
+  // de-duplicated, floored) by pruneStartTermIds, its only writer, so readers
+  // render it in array order — see app/hiring/lib/start-terms.ts.
+  startTermIds String[] @default([])
 
   // Planned date applications open (Week 4 by default). Opening itself is
   // still a status change; this is the target shown on the phase timeline.
@@ -469,6 +484,18 @@ model Application {
   applicationFormVersionId String?
   applicationFormVersion   FormVersion?     @relation("ApplicationApplicationForm", fields: [applicationFormVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
+  // The term this applicant chose to start in, from the offered set on
+  // ApplicationCycle.startTermIds. Picked on the application (a first-class
+  // field, not a form answer, because the offered set is per-cycle and the
+  // answers blob is the frozen record of submission), then editable by Core
+  // from the hiring onboarding board — a deferral is an operator decision made
+  // after the fact as often as an applicant's up-front pick.
+  //
+  // Null means "no pick recorded": a cycle with no picker, or an application
+  // predating it. Readers fall back to the cycle's own term.
+  startTermId String?
+  startTerm   Term?   @relation(fields: [startTermId], references: [id])
+
   // Phase 1: distinguishes the application's purpose. Standard = regular DALI
   // hire cycle (only value used today). Intern = shorter form for intern
   // programs (ERAS, EEJUST, WISP). Fellowship = current intern applying for
@@ -482,6 +509,8 @@ model Application {
   @@unique([userId, applicationCycleId])
   // By-cycle listings can't use the unique above (wrong leading column).
   @@index([applicationCycleId])
+  // The onboarding board filters the accepted set by start term.
+  @@index([startTermId])
 }
 
 enum ApplicationType {
@@ -2792,6 +2821,7 @@ model Term {
   staffingAssignments   StaffingAssignment[]
   partnerApplications   PartnerApplicationTargetTerm[]
   applicationCycles     ApplicationCycle[]
+  applicationStartTerms Application[]
   intentToWork          IntentToWork[]
   projectDomainScopes   ProjectDomainScope[]
   ceCredits             CECredit[]

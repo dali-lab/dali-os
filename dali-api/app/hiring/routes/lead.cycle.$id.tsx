@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { cn } from "~/lib/cn";
 import { Form, Link, useParams, useLoaderData, useLocation, useSearchParams, useFetcher, redirect } from 'react-router'
 import { Select, type SelectOption, Tooltip } from "~/components/ui/floating";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import type { Route } from "./+types/lead.cycle.$id";
 import { prisma } from "~/lib/db";
 import { recordRouteVisit } from "~/lib/user-pages.server";
@@ -9,6 +10,12 @@ import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isAdmin, isCycleAdmin } from "~/lib/roles";
 import { changeApplicants } from "~/hiring/lib/cycle-applicants.server";
+import {
+  loadStartTermCandidates,
+  parseStartTermIds,
+  reflowStartTermsForTermChange,
+  setCycleStartTerms,
+} from "~/hiring/lib/start-terms.server";
 import { APPLICANT_GROUPS, defaultTimelineFor, isMemberApplicants } from "~/hiring/lib/applicant-groups";
 import type { CycleApplicants } from "~/generated/prisma/enums";
 import {
@@ -346,10 +353,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   );
 
   const memberSetup = isMemberCycle ? await loadMemberCycleSetup(params.id) : null;
-  const [progress, termOptions, phaseStatusByDomain] = await Promise.all([
+  const [progress, termOptions, phaseStatusByDomain, startTermCandidates] = await Promise.all([
     getCycleProgress(params.id),
     loadTermOptions(request),
     confidentialityRequired ? null : loadPhaseStatusByDomain(params.id),
+    loadStartTermCandidates(),
   ]);
 
   const collabToken = await getCollabToken(request);
@@ -361,6 +369,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       progress,
       roundsWithBoards: [...(await roundsWithBoards(params.id))],
       termOptions,
+      startTermCandidates,
       viewerIsAdmin: await isAdmin(auth.user.sub),
       phaseStatusByDomain,
       allDomains,
@@ -497,6 +506,10 @@ export async function action({ request, params }: Route.ActionArgs) {
         }),
       },
     });
+    // Moving the cycle's term can push offered start terms below the new floor
+    // (and invalidate picks made against them). Re-floored here, in the single
+    // writer of termId, so no caller can move the term and skip it.
+    await reflowStartTermsForTermChange(params.id!);
     return null;
   }
 
@@ -577,6 +590,14 @@ export async function action({ request, params }: Route.ActionArgs) {
     // entered in the same save win over it.
     const bad = await applyTerm(termId, !openRaw && !closeRaw);
     if (bad) return bad;
+    // After applyTerm, so the start terms in this same save are floored at the
+    // term this save just set rather than the one it replaced. Absent field =
+    // a card rendered without the picker (non-Students, or the flag off), which
+    // must leave the stored set alone rather than clear it.
+    const startTermsRaw = formData.get("startTermIds");
+    if (typeof startTermsRaw === "string") {
+      await setCycleStartTerms(params.id!, parseStartTermIds(startTermsRaw));
+    }
     // Only touch a date that actually changed, so saving the term alone never
     // disturbs an active extension. The open date is fixed once applications open.
     if (openRaw !== ymd(before.openDate) && (before.statusUpdates[0]?.newStatus ?? "Draft") === "Draft") {
@@ -1198,6 +1219,7 @@ export default function HiringLeadCycleDetails() {
   const cycle = loaderData?.cycle
   const memberSetup = loaderData?.memberSetup ?? null
   const isMemberCycle = memberSetup !== null
+  const startTermsEnabled = useFeatureFlag('start-terms')
   const domainsTitle =
     cycle?.applicants === 'LabMembers' ? 'Applicant pool' : isMemberCycle ? 'Target domains' : 'Domains'
   // A domain's challenges, shown on its row only when the cycle has them.
@@ -1958,6 +1980,9 @@ export default function HiringLeadCycleDetails() {
             openDate={cycle?.openDate ?? null}
             closeDate={cycle?.originalCloseDate ?? cycle?.closeDate ?? null}
             cycleStatus={cycleStatus}
+            startTermIds={cycle?.startTermIds ?? []}
+            startTermCandidates={loaderData?.startTermCandidates ?? []}
+            showStartTerms={startTermsEnabled && cycle?.applicants === "Students"}
           />
           </NavSection>
 
