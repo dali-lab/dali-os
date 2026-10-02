@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { delibsQualifier } from "~/hiring/lib/cycle-stages.server";
 import { cn } from "~/lib/cn";
-import { Form, Link, useActionData, useLoaderData, useNavigate, useNavigation, useSearchParams, useRevalidator } from "react-router";
+import { Form, Link, useActionData, useLoaderData, useNavigate, useNavigation, useSearchParams, useRevalidator, useSubmit } from "react-router";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { redirect } from "react-router";
 import type { Route } from "./+types/domain-lead";
@@ -50,6 +50,7 @@ import { SegmentedTabButtons } from "~/components/AreaPillNav";
 import { NavSection, SectionNavLayout } from "~/hiring/components/cycle-setup/SectionNav";
 import { AlertIcon, Pill, type PillTone, SetupCard, pillTrigger, rowTrigger } from "~/hiring/components/cycle-setup/SetupCard";
 import { DomainSubRow, SubRowEmpty, SubRowVersion } from "~/hiring/components/cycle-setup/DomainSubRow";
+import { ChallengeFormPicker } from "~/hiring/components/cycle-setup/ChallengeLine";
 import { DomainRosterCard, type RosterPerson } from "~/hiring/components/cycle-setup/DomainRosterCard";
 import { addDomainMentors, domainMentorIds } from "~/hiring/lib/cycle-rosters.server";
 
@@ -397,7 +398,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     })
   );
 
-  return { domainData: domainData.flat(), pillRoles };
+  // All Drive Forms, for the challenge picker.
+  const allForms = await prisma.form.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } });
+
+  return { domainData: domainData.flat(), pillRoles, allForms };
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -465,8 +469,13 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   if (intent === "create-challenge-form") {
-    // Auto-create a Drive challenge Form for this domain and link it (Draft only).
-    await addDomainChallenge(formData.get("cycleId") as string, domainId, auth.user.sub);
+    // Link the picked form, or auto-create a Drive challenge Form (Draft only).
+    await addDomainChallenge(
+      formData.get("cycleId") as string,
+      domainId,
+      auth.user.sub,
+      (formData.get("formId") as string) || null,
+    );
     return redirect("/hiring/domain-lead");
   }
 
@@ -588,12 +597,12 @@ export default function DomainLeadDashboard() {
           }))}
         />
       )}
-      <DomainPanel key={`${current.assignment.id}-${current.cycle?.id ?? "none"}`} entry={current} />
+      <DomainPanel key={`${current.assignment.id}-${current.cycle?.id ?? "none"}`} entry={current} allForms={data?.allForms ?? []} />
     </div>
   );
 }
 
-function DomainPanel({ entry }: { entry: any }) {
+function DomainPanel({ entry, allForms }: { entry: any; allForms: { id: string; name: string }[] }) {
   const { assignment, cycle, availableCycles, apps, linkedChallengeForms, isChallengeReady, interviews, reviewers: cycleReviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, delibRounds: roundSummaries, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews, confidentialityRequired } = entry;
   const os = useOsChrome();
   const navigate = useNavigate();
@@ -757,6 +766,7 @@ function DomainPanel({ entry }: { entry: any }) {
                 cycle={cycle}
                 domainId={assignment.domainId}
                 linkedChallengeForms={linkedChallengeForms ?? []}
+                allForms={allForms}
                 isChallengeReady={isChallengeReady}
               />
             </SetupCard>
@@ -1202,15 +1212,26 @@ function FreeTime({ hours, hasCalendar }: { hours: number; hasCalendar?: boolean
   );
 }
 
-function DraftSection({ cycle, domainId, linkedChallengeForms, isChallengeReady }: {
+function DraftSection({ cycle, domainId, linkedChallengeForms, allForms, isChallengeReady }: {
   cycle: any;
   domainId: string;
   linkedChallengeForms: any[];
+  allForms: { id: string; name: string }[];
   isChallengeReady: boolean;
 }) {
   const { bodyText } = useOsChrome();
   const hasLinked = linkedChallengeForms.length > 0;
   const navigation = useNavigation();
+  const submit = useSubmit();
+  const [picking, setPicking] = useState(false);
+  const linkedFormIds = new Set(linkedChallengeForms.map((cf: any) => cf.formId));
+  const addChallenge = (formId?: string) => {
+    setPicking(false);
+    submit(
+      { intent: "create-challenge-form", cycleId: cycle.id, domainId, ...(formId && { formId }) },
+      { method: "post", preventScrollReset: true },
+    );
+  };
   // Creating a challenge form isn't idempotent (each submit makes a new
   // form), so the button is disabled while one is in flight.
   const creatingChallenge =
@@ -1262,14 +1283,25 @@ function DraftSection({ cycle, domainId, linkedChallengeForms, isChallengeReady 
       ) : (
         <p className={cn(bodyText, "py-3 text-center")}>No challenge form yet. Add one to author it in Forms.</p>
       )}
+      {picking && (
+        <ChallengeFormPicker
+          pickable={allForms.filter((f) => !linkedFormIds.has(f.id))}
+          onAdd={addChallenge}
+          onCancel={() => setPicking(false)}
+        />
+      )}
       <div className="flex flex-wrap items-center gap-2">
-        <Form method="post" preventScrollReset>
-          {hidden("create-challenge-form")}
-          <button type="submit" disabled={creatingChallenge} className={buttonClasses("secondary", "md")}>
+        {!picking && (
+          <button
+            type="button"
+            disabled={creatingChallenge}
+            onClick={() => setPicking(true)}
+            className={buttonClasses("secondary", "md")}
+          >
             <Plus className="h-4 w-4" aria-hidden />
             {creatingChallenge ? "Adding…" : "Add challenge form"}
           </button>
-        </Form>
+        )}
         {hasLinked && (
           <Form method="post" preventScrollReset>
             {hidden("mark-ready")}
