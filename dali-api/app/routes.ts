@@ -207,9 +207,6 @@ export default [
     // Before education/:offeringId so the literal path isn't read as an offering id.
     route("education/certificate-templates", "education/routes/education.certificate-templates.tsx"),
     route("education/certificate-templates/:templateId", "education/routes/education.certificate-templates.$templateId.tsx"),
-    // Standalone session self-check-in surface (the projected QR / link target).
-    // Literal "check-in" precedes :offeringId so it isn't read as an offering id.
-    route("education/check-in/:sessionId", "education/routes/education.check-in.$sessionId.tsx"),
     route("education/:offeringId", "education/routes/education.$offeringId.tsx"),
     route("education/:offeringId/apply", "education/routes/education.$offeringId.apply.tsx"),
     route("education/:offeringId/hub", "education/routes/education.$offeringId.hub.tsx"),
@@ -325,6 +322,14 @@ export default [
   // is a resource route that streams a bare body).
   route("education/certificates/:certificateId", "education/routes/certificates.$certificateId.tsx"),
   route("education/certificates/:certificateId/pdf", "education/routes/certificates.$certificateId.pdf.ts"),
+
+  // Session self-check-in (the projected QR / link target). Outside the member
+  // layout on purpose: most students in a course are Dartmouth accounts with no
+  // DALIMember row, and the layout's non-member gate bounces every path it
+  // doesn't recognise to /portal — which is where a scan used to land. The route
+  // gates itself on enrollment and renders its own full-screen card, so it needs
+  // no shell.
+  route("education/check-in/:sessionId", "education/routes/education.check-in.$sessionId.tsx"),
 
   // Public policy pages (no auth, no layout) — linked from the Google OAuth
   // consent screen, so they must load for an unauthenticated reviewer.
