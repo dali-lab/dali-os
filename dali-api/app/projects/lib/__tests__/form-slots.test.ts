@@ -6,6 +6,7 @@ import { describe, it, expect, vi } from "vitest";
 vi.mock("~/lib/db");
 import {
   pickStaffingBinding,
+  boundSlotCycleIds,
   isGateAudience,
   setSlotBinding,
   setSlotGate,
@@ -30,7 +31,7 @@ function binding(opts: {
     slot: opts.slot,
     termId: opts.termId,
     updatedAt: new Date(opts.updatedAt),
-    staffingCycle: { termId: opts.termId },
+    staffingCycle: { id: `cyc-${opts.termId}`, termId: opts.termId },
   };
 }
 
@@ -39,38 +40,31 @@ describe("pickStaffingBinding", () => {
     const bindings = [
       binding({ slot: "some-other-slot", termId: "t-26S", updatedAt: "2026-01-01" }),
     ];
-    expect(pickStaffingBinding(bindings, "t-26S")).toBeUndefined();
+    expect(pickStaffingBinding(bindings)).toBeUndefined();
   });
 
   it("picks the form's bound cycle even when it isn't the current term", () => {
-    // The regression: a 26S bid form submitted while the calendar's current
-    // term is 26W must still feed 26S, not get dropped for a missing live
-    // binding.
+    // The original regression: a 26S bid form submitted while the calendar's
+    // current term is 26W must still feed 26S, not get dropped for a missing
+    // live binding.
     const bindings = [
       binding({ slot: "project-bids", termId: "t-26S", updatedAt: "2026-01-01" }),
     ];
-    const picked = pickStaffingBinding(bindings, "t-26W");
-    expect(picked?.termId).toBe("t-26S");
+    expect(pickStaffingBinding(bindings)?.termId).toBe("t-26S");
   });
 
-  it("prefers the live term's binding when a form is reused across cycles", () => {
+  it("breaks a multi-cycle tie on the most recent binding, not the live term", () => {
+    // Intent for the next term is collected during this one, so a form bound
+    // to both must follow the manager's last binding. Preferring the live term
+    // is what sent 27W intent to the 26F cycle.
     const bindings = [
-      binding({ slot: "project-bids", termId: "t-26S", updatedAt: "2026-03-01" }),
-      binding({ slot: "project-bids", termId: "t-26W", updatedAt: "2026-01-01" }),
+      binding({ slot: "intent-to-work", termId: "t-27W", updatedAt: "2026-09-29" }),
+      binding({ slot: "intent-to-work", termId: "t-26F", updatedAt: "2026-09-20" }),
     ];
-    // 26S is newer, but 26W is live — live wins.
-    const picked = pickStaffingBinding(bindings, "t-26W");
-    expect(picked?.termId).toBe("t-26W");
-  });
+    expect(pickStaffingBinding(bindings)?.termId).toBe("t-27W");
 
-  it("falls back to the most recently updated binding when none is live", () => {
-    const bindings = [
-      binding({ slot: "project-bids", termId: "t-26S", updatedAt: "2026-03-01" }),
-      binding({ slot: "project-bids", termId: "t-26W", updatedAt: "2026-01-01" }),
-    ];
-    // currentTerm() is null (between terms) → newest binding wins.
-    const picked = pickStaffingBinding(bindings, null);
-    expect(picked?.termId).toBe("t-26S");
+    // Order of the input doesn't decide it.
+    expect(pickStaffingBinding([...bindings].reverse())?.termId).toBe("t-27W");
   });
 
   it("considers intent-to-work bindings too, ignoring unrelated slots", () => {
@@ -78,8 +72,29 @@ describe("pickStaffingBinding", () => {
       binding({ slot: "some-other-slot", termId: "t-26S", updatedAt: "2026-05-01" }),
       binding({ slot: "intent-to-work", termId: "t-26W", updatedAt: "2026-01-01" }),
     ];
-    const picked = pickStaffingBinding(bindings, null);
-    expect(picked?.slot).toBe("intent-to-work");
+    expect(pickStaffingBinding(bindings)?.slot).toBe("intent-to-work");
+  });
+});
+
+describe("boundSlotCycleIds", () => {
+  it("returns every cycle the form is bound to for that slot", async () => {
+    vi.resetAllMocks();
+    mockPrisma.staffingCycleFormBinding.findMany.mockResolvedValue([
+      { staffingCycleId: "cyc-26F" },
+      { staffingCycleId: "cyc-27W" },
+    ]);
+    const ids = await boundSlotCycleIds("form-1", "intent-to-work");
+    expect(ids).toEqual(["cyc-26F", "cyc-27W"]);
+    expect(mockPrisma.staffingCycleFormBinding.findMany).toHaveBeenCalledWith({
+      where: { formId: "form-1", slot: "intent-to-work" },
+      select: { staffingCycleId: true },
+    });
+  });
+
+  it("is empty when the form is bound to nothing", async () => {
+    vi.resetAllMocks();
+    mockPrisma.staffingCycleFormBinding.findMany.mockResolvedValue([]);
+    expect(await boundSlotCycleIds("form-1", "project-bids")).toEqual([]);
   });
 });
 

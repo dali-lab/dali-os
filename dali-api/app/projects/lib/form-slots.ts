@@ -41,15 +41,18 @@ export function isSlot(value: string): value is Slot {
 // pick from the form's own bindings rather than re-deriving the cycle from the
 // calendar's current term, which would silently drop submissions for any term
 // that isn't "live" today. Normally a form drives one staffing slot for one
-// cycle; if it's reused across cycles we prefer the live term's binding, else
-// the most recently updated one, so the choice is always deterministic.
+// cycle; if it's bound to several, the most recently bound one wins, so the
+// choice follows the manager's last action and is always deterministic.
+//
+// Deliberately NOT "the live term's binding wins": intent-to-work for the
+// next term is collected during this one, so preferring the current term sent
+// 27W intent to the 26F cycle for every form bound to both.
 export function pickStaffingBinding<
   B extends {
     slot: string;
     updatedAt: Date;
-    staffingCycle: { termId: string };
   },
->(bindings: B[], currentTermId: string | null): B | undefined {
+>(bindings: B[]): B | undefined {
   return bindings
     .filter(
       (b) =>
@@ -57,14 +60,22 @@ export function pickStaffingBinding<
         b.slot === "intent-to-work" ||
         b.slot === "level-up",
     )
-    .sort((a, b) => {
-      if (currentTermId) {
-        const aLive = a.staffingCycle.termId === currentTermId;
-        const bLive = b.staffingCycle.termId === currentTermId;
-        if (aLive !== bLive) return aLive ? -1 : 1;
-      }
-      return b.updatedAt.getTime() - a.updatedAt.getTime();
-    })[0];
+    .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0];
+}
+
+// Every cycle this form is bound to for one slot. The one-and-done gate spans
+// all of them: which cycle a fill records against is decided per-fill by
+// pickStaffingBinding, so keying the gate on a single cycle lets a re-bind
+// reopen a form the member already filled under another cycle.
+export async function boundSlotCycleIds(
+  formId: string,
+  slot: string,
+): Promise<string[]> {
+  const rows = await prisma.staffingCycleFormBinding.findMany({
+    where: { formId, slot },
+    select: { staffingCycleId: true },
+  });
+  return rows.map((r) => r.staffingCycleId);
 }
 
 // The form bound to a slot for a cycle, with just enough of its latest

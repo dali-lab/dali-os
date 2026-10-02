@@ -14,6 +14,12 @@ vi.mock("~/forms/lib/public-form", () => ({
   existingBoundSubmission: vi.fn(),
   formFillAccess: vi.fn(),
 }));
+// The gate asks which cycles the form is bound to; stubbed so this file keeps
+// testing the audience logic and not the binding read (it shares the
+// staffingCycleFormBinding.findMany mock with the gate's own query).
+vi.mock("~/projects/lib/form-slots", () => ({
+  boundSlotCycleIds: vi.fn(),
+}));
 
 import { prisma } from "~/lib/db";
 import { getBoundFormGateOutstanding } from "~/forms/lib/gate.server";
@@ -23,6 +29,7 @@ import {
   existingBoundSubmission,
   formFillAccess,
 } from "~/forms/lib/public-form";
+import { boundSlotCycleIds } from "~/projects/lib/form-slots";
 
 const mockPrisma = prisma as unknown as Record<
   string,
@@ -34,6 +41,9 @@ const mockExisting = existingBoundSubmission as unknown as ReturnType<
   typeof vi.fn
 >;
 const mockAccess = formFillAccess as unknown as ReturnType<typeof vi.fn>;
+const mockBoundCycles = boundSlotCycleIds as unknown as ReturnType<
+  typeof vi.fn
+>;
 
 // Cohorts that land in the "Members" audience (staffed this term, not new).
 const RETURNING_MEMBER = {
@@ -48,6 +58,7 @@ const RETURNING_MEMBER = {
 function membersBinding(overrides: Record<string, unknown> = {}) {
   return {
     slot: "intent-to-work",
+    formId: "form-1",
     gateAudience: "Members",
     gateAudienceGroupId: null,
     form: {
@@ -70,6 +81,7 @@ beforeEach(() => {
   mockCohorts.mockResolvedValue(RETURNING_MEMBER);
   mockAccess.mockResolvedValue("ok");
   mockExisting.mockResolvedValue(null);
+  mockBoundCycles.mockResolvedValue(["cyc-1"]);
 });
 
 describe("getBoundFormGateOutstanding", () => {
@@ -80,7 +92,24 @@ describe("getBoundFormGateOutstanding", () => {
       slot: "intent-to-work",
       formName: "Intent to Work",
     });
-    expect(mockExisting).toHaveBeenCalledWith("user-1", "cyc-1", "intent-to-work");
+    expect(mockExisting).toHaveBeenCalledWith(
+      "user-1",
+      ["cyc-1"],
+      "intent-to-work",
+    );
+  });
+
+  it("checks for a prior fill across every cycle the form is bound to", async () => {
+    // A form bound to this term's cycle and a future one: a submission under
+    // either settles the debt, so the gate must not re-gate on the other.
+    mockBoundCycles.mockResolvedValue(["cyc-1", "cyc-2"]);
+    await getBoundFormGateOutstanding("user-1");
+    expect(mockBoundCycles).toHaveBeenCalledWith("form-1", "intent-to-work");
+    expect(mockExisting).toHaveBeenCalledWith(
+      "user-1",
+      ["cyc-1", "cyc-2"],
+      "intent-to-work",
+    );
   });
 
   it("returns null when the member already filled it", async () => {

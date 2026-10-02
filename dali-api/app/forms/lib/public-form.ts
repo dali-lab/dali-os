@@ -11,7 +11,7 @@ import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
 import { resolveReferenceOptions } from "./reference-sources";
 import { safeParseJsonString } from "./forms-data";
-import { currentTerm, requireMember } from "~/lib/roles";
+import { requireMember } from "~/lib/roles";
 import { isUserInAnyGroup } from "~/lib/groups";
 import { interpretBidForm } from "~/projects/lib/bid-form-interpreter";
 import { validateBids, replaceBidSet } from "~/projects/lib/bid-validation";
@@ -216,17 +216,33 @@ export async function existingOrdinarySubmission(
   });
 }
 
-// The member's submission for a bound staffing slot (intent-to-work /
-// project-bids / level-up). Keyed on (userId, cycle, slot) — the tuple the
-// @@unique on FormSubmission enforces — so it's one row at most. Backs both the
-// submit-time 409 gate and the fill-page "already filled" panel.
+// The cycles a form is bound to for one slot, read off bindings already in
+// hand (both callers select them to pick the binding), so the gate costs no
+// extra query. boundSlotCycleIds is the same set from a formId.
+function cycleIdsForSlot(
+  bindings: { slot: string; staffingCycle: { id: string } }[],
+  slot: string,
+): string[] {
+  return bindings.filter((b) => b.slot === slot).map((b) => b.staffingCycle.id);
+}
+
+// The member's earliest submission for a bound staffing slot (intent-to-work /
+// project-bids / level-up). Backs both the submit-time 409 gate and the
+// fill-page "already filled" panel.
+//
+// Takes EVERY cycle the form is bound to for the slot, not just the one this
+// fill would record against. The @@unique on FormSubmission is per cycle, so a
+// form bound to two cycles (or re-bound to a new one) leaves the member's old
+// row under the old cycle — keying on the single picked cycle let them fill it
+// a second time, and the index couldn't catch the duplicate.
 export async function existingBoundSubmission(
   userId: string,
-  staffingCycleId: string,
+  staffingCycleIds: string[],
   slot: string,
 ): Promise<{ id: string; createdAt: Date } | null> {
+  if (staffingCycleIds.length === 0) return null;
   return prisma.formSubmission.findFirst({
-    where: { userId, staffingCycleId, slot },
+    where: { userId, staffingCycleId: { in: staffingCycleIds }, slot },
     orderBy: { createdAt: "asc" },
     select: { id: true, createdAt: true },
   });
@@ -255,12 +271,11 @@ export async function ordinaryFillBlock(
     },
   });
   if (!form) return null;
-  const term = await currentTerm();
-  const bound = pickStaffingBinding(form.cycleBindings, term?.id ?? null);
+  const bound = pickStaffingBinding(form.cycleBindings);
   if (bound) {
     const existing = await existingBoundSubmission(
       userId,
-      bound.staffingCycle.id,
+      cycleIdsForSlot(form.cycleBindings, bound.slot),
       bound.slot,
     );
     return existing ? { at: existing.createdAt } : null;
@@ -596,13 +611,9 @@ export async function submitMemberForm(args: {
 
   // Which staffing cycle (if any) this submission feeds is decided by the
   // form's own bindings, not the calendar's current term — see
-  // pickStaffingBinding. currentTerm only breaks ties when a form is reused
-  // across cycles.
-  const term = await currentTerm();
-  const staffingBinding = pickStaffingBinding(
-    form.cycleBindings,
-    term?.id ?? null,
-  );
+  // pickStaffingBinding, which breaks a multi-cycle tie on the most recent
+  // binding.
+  const staffingBinding = pickStaffingBinding(form.cycleBindings);
 
   if (!staffingBinding) {
     // One-response gate (ordinary fills only — the branches above/below keep
@@ -683,7 +694,13 @@ export async function submitMemberForm(args: {
   // so re-opening it after submitting shows the "already filled" panel. The
   // @@unique([userId, staffingCycleId, slot]) on FormSubmission is the race-safe
   // backstop; this check is the friendly 409.
-  if (await existingBoundSubmission(args.userId, cycle.id, slot)) {
+  if (
+    await existingBoundSubmission(
+      args.userId,
+      cycleIdsForSlot(form.cycleBindings, slot),
+      slot,
+    )
+  ) {
     return { error: "You've already filled out this form.", status: 409 };
   }
 
