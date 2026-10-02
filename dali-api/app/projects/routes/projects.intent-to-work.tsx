@@ -31,8 +31,6 @@ import {
   type ColumnMapping,
 } from "../lib/slot-roles";
 import { buildSubmissionView } from "../lib/submission-view.server";
-import { deriveSlotStatus, type SlotStatus } from "../lib/slot-status.server";
-import { SlotStatusStrip } from "../components/SlotStatusStrip";
 import type { Question } from "~/types";
 import { regroupRedirect } from "~/core/lib/regroup-redirect.server";
 
@@ -166,13 +164,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     select: { id: true, displayName: true },
   });
 
-  // Per-slot guardrail status (bound / mapped / sent-to). Single-cycle view
-  // only — the all-terms aggregate has no one slot to bind, mirroring binding.
-  const slotStatus: SlotStatus | null = singleCycleId
-    ? (await deriveSlotStatus(singleCycleId)).find((s) => s.slot === SLOT) ??
-      null
-    : null;
-
   return {
     gate: "ok" as const,
     cycle: { name: cycleName },
@@ -189,7 +180,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     mappingWarning,
     allTerms,
     domainOptions,
-    slotStatus,
   };
 }
 
@@ -350,8 +340,6 @@ function Loaded({
           staffing until you fix the mapping.
         </div>
       )}
-
-      {data.slotStatus && <SlotStatusStrip status={data.slotStatus} />}
 
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="flex-1">
