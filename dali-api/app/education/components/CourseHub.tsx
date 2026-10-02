@@ -462,6 +462,7 @@ function PostBody({
             method="post"
             onSubmit={confirmSubmit({
               title: "Delete this post?",
+              description: "Its replies go with it. This can't be undone.",
               confirmLabel: "Delete",
               tone: "destructive",
             })}

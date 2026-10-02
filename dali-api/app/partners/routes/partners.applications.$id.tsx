@@ -2250,6 +2250,7 @@ function DomainScopeBlock({
                           if (
                             !(await dialog.confirm({
                               title: `Remove ${d.domainName} from this application?`,
+                              description: "Answers given for this domain are deleted.",
                               confirmLabel: "Remove",
                               tone: "destructive",
                             }))

@@ -4,6 +4,7 @@ import { useRevalidator } from "react-router";
 import { CalendarDays, Check, ChevronDown, ChevronRight, X } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { SearchInput } from "~/components/ui/SearchInput";
+import { useDialog } from "~/components/ui/dialog";
 import { MiniMonth } from "~/calendar/components/MiniMonth";
 import { roleColor } from "~/calendar/lib/event-block";
 import { CustomHiresManager, archiveCustomHire } from "~/calendar/components/CustomHiresManager";
@@ -322,6 +323,7 @@ function CalendarSidebarContent({
   onMeetWith,
 }: CalendarSidebarProps) {
   const revalidator = useRevalidator();
+  const dialog = useDialog();
   const links = data.calendarLinks.filter((l) => l.enabled);
 
   return (
@@ -419,6 +421,14 @@ function CalendarSidebarContent({
                     onDelete={
                       r.assignmentType === "Custom"
                         ? async () => {
+                            const ok = await dialog.confirm({
+                              title: `Remove ${r.label}?`,
+                              description:
+                                "It stops showing up as a job you can log hours against. Hours you already logged against it stay on your timesheet.",
+                              confirmLabel: "Remove",
+                              tone: "destructive",
+                            });
+                            if (!ok) return;
                             await archiveCustomHire(r.roleRefId);
                             revalidator.revalidate();
                           }

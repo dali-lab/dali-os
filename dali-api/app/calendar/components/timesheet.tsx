@@ -5,6 +5,7 @@ import type { RoleInstance } from "~/lib/roles";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { DateField } from "~/components/ui/DateField";
 import { Select } from "~/components/ui/floating";
+import { useDialog } from "~/components/ui/dialog";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import type { TimeEntryDTO } from "~/calendar/lib/types";
@@ -310,6 +311,7 @@ export function TimesheetEditPopover({
   const [note, setNote] = useState(entry.note ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const dialog = useDialog();
   const [error, setError] = useState<string | null>(null);
 
   const startEndValid = !!start && !!end && new Date(end).getTime() > new Date(start).getTime();
@@ -360,6 +362,14 @@ export function TimesheetEditPopover({
   }
 
   async function del() {
+    const ok = await dialog.confirm({
+      title: "Delete this timesheet entry?",
+      description:
+        "The hours come off your timesheet for this pay period. Re-log them if you delete by mistake.",
+      confirmLabel: "Delete",
+      tone: "destructive",
+    });
+    if (!ok) return;
     setDeleting(true);
     setError(null);
     try {

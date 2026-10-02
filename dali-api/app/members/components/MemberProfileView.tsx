@@ -1096,7 +1096,7 @@ function WalletCard({
   const revokeFetcher = useFetcher<{ error?: string } | null>();
   const [googleBusy, setGoogleBusy] = useState(false);
   const [googleError, setGoogleError] = useState<string | null>(null);
-  const [confirmRevoke, setConfirmRevoke] = useState(false);
+  const confirmSubmit = useConfirmSubmit();
   const revoking = revokeFetcher.state !== "idle";
 
   async function addToGoogle() {
@@ -1171,46 +1171,41 @@ function WalletCard({
 
         {canRevoke && (
           <div className="pt-3 border-t border-os-container">
-            {confirmRevoke ? (
-              <revokeFetcher.Form
-                method="post"
-                onSubmit={() => setConfirmRevoke(false)}
-                className="flex items-center gap-2 flex-wrap"
-              >
-                <input type="hidden" name="intent" value="revoke-wallet-pass" />
-                <span className="text-sm text-foreground">
-                  {isSelf
-                    ? "Reset your pass? Your current one stops working until you re-add it."
-                    : "Revoke this member's pass? Their current one stops working."}
-                </span>
-                <button
-                  type="submit"
-                  disabled={revoking}
-                  className="px-3 py-1.5 rounded-full bg-destructive text-white text-[13px] font-semibold hover:brightness-95 disabled:opacity-50"
-                >
-                  {revoking
-                    ? "Resetting…"
-                    : isSelf
-                      ? "Reset pass"
-                      : "Revoke pass"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmRevoke(false)}
-                  className="px-3.5 py-1.5 rounded-full text-[13px] font-semibold text-os-grey hover:bg-os-container hover:text-foreground"
-                >
-                  Cancel
-                </button>
-              </revokeFetcher.Form>
-            ) : (
+            <revokeFetcher.Form
+              method="post"
+              onSubmit={confirmSubmit(
+                isSelf
+                  ? {
+                      title: "Reset your wallet pass?",
+                      description:
+                        "Your current pass stops working until you re-add it. Anyone holding a copy of the old one can't check in with it.",
+                      confirmLabel: "Reset pass",
+                      tone: "destructive",
+                    }
+                  : {
+                      title: "Revoke this member's wallet pass?",
+                      description:
+                        "Their current pass stops working immediately. They can add a new one from their own settings.",
+                      confirmLabel: "Revoke pass",
+                      tone: "destructive",
+                    },
+              )}
+            >
+              <input type="hidden" name="intent" value="revoke-wallet-pass" />
               <button
-                type="button"
-                onClick={() => setConfirmRevoke(true)}
-                className="text-sm text-destructive hover:underline"
+                type="submit"
+                disabled={revoking}
+                className="text-sm text-destructive hover:underline disabled:opacity-50"
               >
-                {isSelf ? "Reset my wallet pass" : "Revoke wallet pass"}
+                {revoking
+                  ? isSelf
+                    ? "Resetting…"
+                    : "Revoking…"
+                  : isSelf
+                    ? "Reset my wallet pass"
+                    : "Revoke wallet pass"}
               </button>
-            )}
+            </revokeFetcher.Form>
             {revokeFetcher.data?.error && (
               <p className="text-xs text-destructive mt-2">
                 {revokeFetcher.data.error}

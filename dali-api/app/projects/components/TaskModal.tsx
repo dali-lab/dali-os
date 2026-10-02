@@ -241,7 +241,6 @@ export function TaskModal({
   const [saveError, setSaveError] = useState<string | null>(null);
   // Inline delete confirm (edit mode) — no browser dialog; the parent
   // removes the card optimistically and closes the modal.
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   // Auto-grow the title textarea so long titles wrap into view instead of
   // scrolling horizontally inside a single-line input.
@@ -409,6 +408,21 @@ export function TaskModal({
       epicId !== (defaultEpicId ?? "") ||
       githubEnabled
     );
+  }
+
+  async function confirmDelete() {
+    if (!onDelete) return;
+    const ok = await dialog.confirm({
+      title: task?.title ? `Delete "${task.title}"?` : "Delete this task?",
+      description:
+        task?.githubIssueNumber != null
+          ? "The task and its checklist go for good. Its GitHub issue stays open."
+          : "The task and its checklist go for good.",
+      confirmLabel: "Delete",
+      tone: "destructive",
+    });
+    if (!ok) return;
+    onDelete();
   }
 
   // Close guard for X / backdrop / Escape: unsaved edits need an explicit
@@ -1391,36 +1405,13 @@ export function TaskModal({
 
         <div className="flex items-center gap-2">
           {!isCreate && canManage && onDelete ? (
-            confirmingDelete ? (
-              <div className="flex items-center gap-2 text-sm">
-                <span className="text-muted-foreground">
-                  Delete this task?
-                  {task?.githubIssueNumber != null && " Its GitHub issue stays open."}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => onDelete()}
-                  className="font-medium text-destructive hover:underline"
-                >
-                  Delete
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmingDelete(false)}
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  Keep
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setConfirmingDelete(true)}
-                className="text-sm font-medium text-destructive hover:underline"
-              >
-                Delete
-              </button>
-            )
+            <button
+              type="button"
+              onClick={() => void confirmDelete()}
+              className="text-sm font-medium text-destructive hover:underline"
+            >
+              Delete
+            </button>
           ) : (
             <span />
           )}

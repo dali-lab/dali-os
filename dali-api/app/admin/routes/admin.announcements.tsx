@@ -6,7 +6,7 @@ import {
   useRevalidator,
   useSearchParams,
 } from "react-router";
-import { useDialog } from "~/components/ui/dialog";
+import { useConfirmSubmit, useDialog } from "~/components/ui/dialog";
 import type { Route } from "./+types/admin.announcements";
 import { adminHandle } from "~/admin/adminNav";
 import { prisma } from "~/lib/db";
@@ -641,6 +641,7 @@ function ScheduledList({
   }[];
 }) {
   const fetcher = useFetcher();
+  const confirmSubmit = useConfirmSubmit();
 
   const audienceSummary = (s: (typeof scheduled)[number]) => {
     if (s.allMembers) return "whole lab";
@@ -674,7 +675,17 @@ function ScheduledList({
               )}
             </div>
             {!s.sentAt && (
-              <fetcher.Form method="post">
+              <fetcher.Form
+                method="post"
+                onSubmit={confirmSubmit({
+                  title: "Cancel this scheduled announcement?",
+                  description:
+                    "It won't send, and the draft is dropped. You'd need to write and schedule it again.",
+                  confirmLabel: "Cancel announcement",
+                  cancelLabel: "Keep it scheduled",
+                  tone: "destructive",
+                })}
+              >
                 <input type="hidden" name="intent" value="cancel-scheduled" />
                 <input type="hidden" name="id" value={s.id} />
                 <button

@@ -170,8 +170,10 @@ export function VersionHistoryPanel({ documentName, onClose }: VersionHistoryPan
     if (
       !(await dialog.confirm({
         title: "Restore this version?",
-        description: "This will replace the current content for all viewers.",
+        description:
+          "This replaces the current content for everyone. What's there now is not snapshotted first.",
         confirmLabel: "Restore",
+        tone: "destructive",
       }))
     ) {
       return;

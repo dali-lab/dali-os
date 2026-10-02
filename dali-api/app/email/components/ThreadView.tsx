@@ -4,6 +4,7 @@ import { Archive, ChevronDown, Lock, MailOpen, Paperclip, Reply, Trash2 } from "
 import { Avatar } from "~/components/ui/Avatar";
 import { Button } from "~/components/ui/Button";
 import { IconButton } from "~/components/ui/IconButton";
+import { useDialog } from "~/components/ui/dialog";
 import { MentionTextInput } from "~/components/MentionTextInput";
 import { MailBody } from "~/email/components/MailBody";
 import { Composer, type RecipientDirectory } from "~/email/components/Composer";
@@ -33,6 +34,7 @@ export function ThreadView({
 }) {
   const actions = useFetcher();
   const commentFetcher = useFetcher();
+  const dialog = useDialog();
   const [replying, setReplying] = useState(false);
   const [comment, setComment] = useState("");
   // Messages whose open state the reader flipped from the default (only the
@@ -57,6 +59,17 @@ export function ThreadView({
     if (!comment.trim()) return;
     commentFetcher.submit({ intent: "comment", accountId, threadId, body: comment }, { method: "post" });
     setComment("");
+  };
+
+  const deleteComment = async (commentId: string) => {
+    const ok = await dialog.confirm({
+      title: "Delete this comment?",
+      description: "It disappears from the thread for everyone who can see it.",
+      confirmLabel: "Delete",
+      tone: "destructive",
+    });
+    if (!ok) return;
+    commentFetcher.submit({ intent: "deleteComment", commentId }, { method: "post" });
   };
 
   return (
@@ -170,7 +183,7 @@ export function ThreadView({
                 icon={Trash2}
                 tone="destructive"
                 className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-                onClick={() => commentFetcher.submit({ intent: "deleteComment", commentId: c.id }, { method: "post" })}
+                onClick={() => void deleteComment(c.id)}
               />
             )}
           </div>

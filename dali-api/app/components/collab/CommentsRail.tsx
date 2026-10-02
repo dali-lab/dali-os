@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
 import { Avatar } from "~/components/ui/Avatar";
+import { useDialog } from "~/components/ui/dialog";
 import { CommentComposer } from "~/components/collab/CommentComposer";
 import { type BodySegment, segmentsToPlainText } from "~/lib/comment-body";
 import { RichCommentBody } from "~/components/doc/comments/RichCommentBody";
@@ -156,6 +157,7 @@ export function CommentsRail({
   const [replyDraft, setReplyDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const dialog = useDialog();
   const containerRef = useRef<HTMLDivElement | null>(null);
   // Guards the auto-scroll so it fires once per target comment, not on every
   // refetch/re-render.
@@ -251,6 +253,13 @@ export function CommentsRail({
   }
 
   async function remove(id: string) {
+    const ok = await dialog.confirm({
+      title: "Delete this comment?",
+      description: "Its replies go with it, for everyone. This can't be undone.",
+      confirmLabel: "Delete",
+      tone: "destructive",
+    });
+    if (!ok) return;
     setBusy(true);
     setError(null);
     try {

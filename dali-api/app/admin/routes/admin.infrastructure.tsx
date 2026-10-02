@@ -272,7 +272,16 @@ function FlySection({ project: p, data, infra }: { project: ProjectFleet; data: 
   const canWrite = p.hasFlyWriteToken;
 
   async function machine(app: FlyApp, m: FlyMachine, kind: "start" | "stop" | "restart" | "suspend") {
-    if (!(await dialog.confirm({ title: `${kind} ${m.name || m.id}?`, confirmLabel: kind }))) return;
+    const halts = kind === "stop" || kind === "suspend";
+    if (
+      !(await dialog.confirm({
+        title: `${kind[0]!.toUpperCase()}${kind.slice(1)} ${m.name || m.id}?`,
+        description: halts ? "Anything served by this machine goes down until it starts again." : undefined,
+        confirmLabel: kind,
+        tone: halts ? "destructive" : "default",
+      }))
+    )
+      return;
     infra.post({ intent: "fly.machine", projectId: p.projectId, app: app.name, machineId: m.id, kind });
   }
 
@@ -291,6 +300,7 @@ function FlySection({ project: p, data, infra }: { project: ProjectFleet; data: 
     const name = target === "app" ? app.name : m?.name || m?.id || "";
     const typed = await dialog.prompt({
       title: `Destroy ${target} "${name}"?`,
+      tone: "destructive",
       description: "This is irreversible.",
       label: `Type "${name}" to confirm`,
       confirmLabel: "Destroy",
@@ -410,7 +420,16 @@ function NeonProjectCard({ project: p, np, data, infra }: { project: ProjectFlee
   const isProtected = data.protectedNeon.includes(np.id);
 
   async function endpoint(e: NeonEndpoint, kind: "suspend" | "restart" | "start") {
-    if (!(await dialog.confirm({ title: `${kind} compute ${e.id}?`, confirmLabel: kind }))) return;
+    const halts = kind === "suspend";
+    if (
+      !(await dialog.confirm({
+        title: `${kind[0]!.toUpperCase()}${kind.slice(1)} compute ${e.id}?`,
+        description: halts ? "Queries against this endpoint fail until it starts again." : undefined,
+        confirmLabel: kind,
+        tone: halts ? "destructive" : "default",
+      }))
+    )
+      return;
     infra.post({ intent: "neon.endpoint", projectId: p.projectId, neonProjectId: np.id, endpointId: e.id, kind });
   }
 
@@ -418,6 +437,7 @@ function NeonProjectCard({ project: p, np, data, infra }: { project: ProjectFlee
     const typed = await dialog.prompt({
       title: `Delete branch "${name}"?`,
       description: "This is irreversible.",
+      tone: "destructive",
       label: `Type "${name}" to confirm`,
       confirmLabel: "Delete",
       validate: (v) => (v.trim() === name ? null : "Names don't match"),
@@ -430,6 +450,7 @@ function NeonProjectCard({ project: p, np, data, infra }: { project: ProjectFlee
     const typed = await dialog.prompt({
       title: `Delete project "${np.name}"?`,
       description: "This destroys the database and all branches. Irreversible.",
+      tone: "destructive",
       label: `Type "${np.name}" to confirm`,
       confirmLabel: "Delete project",
       validate: (v) => (v.trim() === np.name ? null : "Names don't match"),

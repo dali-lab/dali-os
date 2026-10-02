@@ -4,6 +4,7 @@ import { Plus, X } from "lucide-react";
 import { useOsChrome } from "~/components/os-chrome";
 import { buttonClasses } from "~/components/ui/Button";
 import { Select, Tooltip } from "~/components/ui/floating";
+import { useDialog } from "~/components/ui/dialog";
 import { formatVersionName, type VersionLabelInput } from "~/lib/formatVersion";
 import { DomainSubRow, SubRowEmpty, SubRowVersion } from "./DomainSubRow";
 import { AlertIcon, rowTrigger } from "./SetupCard";
@@ -61,6 +62,7 @@ export function ChallengeLine({
   editable: boolean;
 }) {
   const fetcher = useFetcher();
+  const dialog = useDialog();
   const busy = fetcher.state !== "idle";
   const [picking, setPicking] = useState(false);
   const small = buttonClasses("secondary", "sm");
@@ -68,6 +70,19 @@ export function ChallengeLine({
     setPicking(false);
     fetcher.submit({ intent: "create-challenge-form", domainId, ...(formId && { formId }) }, { method: "post", preventScrollReset: true });
   };
+
+  async function removeForm(cdfId: string, label: string) {
+    const ok = await dialog.confirm({
+      title: `Remove ${label} from this domain's challenge?`,
+      description:
+        "Applicants who haven't started it lose access. Anyone who already picked it keeps theirs.",
+      confirmLabel: "Remove",
+      tone: "destructive",
+    });
+    if (!ok) return;
+    fetcher.submit({ intent: "remove-challenge-form", cdfId }, { method: "post", preventScrollReset: true });
+  }
+
   return (
     <DomainSubRow
       label="Challenge"
@@ -86,7 +101,7 @@ export function ChallengeLine({
                     type="button"
                     disabled={busy}
                     aria-label={`Remove ${f.name}`}
-                    onClick={() => fetcher.submit({ intent: "remove-challenge-form", cdfId: f.id }, { method: "post", preventScrollReset: true })}
+                    onClick={() => void removeForm(f.id, formatVersionName(f))}
                     className="rounded-os-item p-0.5 text-os-grey hover:bg-os-container hover:text-foreground"
                   >
                     <X className="h-3.5 w-3.5" />
