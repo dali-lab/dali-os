@@ -9,6 +9,13 @@ import { renderForSlot, notificationSlot } from "~/hiring/lib/email-variables";
 import { getActiveCycleById, getOpenCycles, type ActiveCycle } from "~/hiring/lib/cycles";
 import { applicantPortalPath } from "~/hiring/lib/applicant-groups";
 import { loadHiringForm } from "~/hiring/lib/application-form.server";
+import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
+import {
+  impliedStartTermId,
+  isOfferedStartTerm,
+  loadOfferedStartTerms,
+  offersStartTermChoice,
+} from "~/hiring/lib/start-terms.server";
 import { safeParseJsonString } from "~/forms/lib/forms-data";
 import { reconcileDomainApplications } from "~/hiring/lib/domain-application";
 import { checkGitHubUrl, checkFigmaUrl, checkDriveUrl } from "~/lib/submission-check";
@@ -16,6 +23,7 @@ import type { SubmissionCheckResult } from "~/lib/submission-check";
 import { validateWordLimits } from "~/lib/word-count";
 import type { WordCountViolation } from "~/lib/word-count";
 import { isAnswered } from "~/lib/form-answers";
+import { termCodeLabel } from "~/lib/display";
 import type { Question } from "~/types";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 import { Modal } from "~/components/Modal";
@@ -144,6 +152,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const draftStatus = draft?.statusUpdates[0]?.newStatus ?? null;
 
+  // The start terms this cycle offers. Gated for everyone rather than per-user:
+  // the audience is applicants, who hold no roles, so a partially-targeted flag
+  // must not show some of them a picker.
+  const startTermsEnabled = await isFeatureEnabledForEveryone("start-terms", request);
+  const startTermOptions =
+    startTermsEnabled && offersStartTermChoice(cycle.startTermIds)
+      ? await loadOfferedStartTerms(cycle.startTermIds)
+      : [];
+
   return {
       cycleId: active.id,
       cycleName: active.name,
@@ -153,11 +170,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       formQuestions,
       generalDescription,
       domains,
+      startTermOptions,
       isAlreadySubmitted: draftStatus === "Submitted",
       draft: draft
         ? {
             id: draft.id,
             answers: draft.answers as Record<string, string>,
+            startTermId: draft.startTermId,
             selectedDomainIds: draft.domainApplications
               .filter(da => da.selected)
               .map(da => da.domainId),
@@ -241,6 +260,23 @@ export async function action({ request }: Route.ActionArgs) {
     return Response.json({ error: "This cycle isn't open for applications." }, { status: 409 });
   }
 
+  // Start terms, resolved once for every intent below. With the flag off the
+  // offered set reads as empty, so nothing on this route writes startTermId and
+  // the application behaves exactly as it did before the column existed.
+  const startTermsEnabled = await isFeatureEnabledForEveryone("start-terms", request);
+  const offeredStartTermIds = startTermsEnabled ? (cycle.startTermIds ?? []) : [];
+  const startTermIsAsked = offersStartTermChoice(offeredStartTermIds);
+
+  // A posted start term, trusted only if the cycle actually offers it:
+  //   string    the pick to store
+  //   null      explicitly cleared
+  //   undefined not posted, or not on offer — leave the stored value alone
+  const readStartTerm = (raw: FormDataEntryValue | null): string | null | undefined => {
+    if (!startTermIsAsked || typeof raw !== "string") return undefined;
+    if (raw === "") return null;
+    return isOfferedStartTerm(offeredStartTermIds, raw) ? raw : undefined;
+  };
+
   if (intent === "create-draft") {
     const cycleId = cycle.id;
     const applicationFormVersionId = (formData.get("applicationFormVersionId") as string) || null;
@@ -271,6 +307,10 @@ export async function action({ request }: Route.ActionArgs) {
         applicationCycleId: cycleId,
         applicationFormVersionId,
         answers: {},
+        // A cycle offering exactly one start term records it rather than asking
+        // (see offersStartTermChoice), so the board has the structured value
+        // even when the applicant was never shown a choice.
+        startTermId: impliedStartTermId(offeredStartTermIds),
         statusUpdates: {
           create: { newStatus: "Draft", userId: auth.user.sub },
         },
@@ -364,10 +404,11 @@ export async function action({ request }: Route.ActionArgs) {
       domainApplicationId: string;
       answers: Record<string, string>;
     }[];
+    const startTermId = readStartTerm(formData.get("startTermId"));
 
     await prisma.application.update({
       where: { id: applicationId },
-      data: { answers },
+      data: { answers, ...(startTermId !== undefined && { startTermId }) },
     });
 
     // Update domain application answers
@@ -461,10 +502,33 @@ export async function action({ request }: Route.ActionArgs) {
       };
     }
 
+    // The start term is required whenever the cycle offers a choice. Re-checked
+    // here rather than trusting the client gate, for the same reason the
+    // required questions above are: a stale state or a replayed request must not
+    // land a submitted application with no start term. Falls back to what is
+    // already stored so a resubmit without the field keeps the earlier pick.
+    let startTermId: string | null | undefined;
+    if (startTermIsAsked) {
+      startTermId = readStartTerm(formData.get("startTermId"));
+      const effective =
+        startTermId !== undefined
+          ? startTermId
+          : (
+              await prisma.application.findUnique({
+                where: { id: applicationId },
+                select: { startTermId: true },
+              })
+            )?.startTermId ?? null;
+      if (!isOfferedStartTerm(offeredStartTermIds, effective)) {
+        return { error: "Choose the term you'd start in before submitting." };
+      }
+      startTermId = effective;
+    }
+
     // Save final answers
     await prisma.application.update({
       where: { id: applicationId },
-      data: { answers },
+      data: { answers, ...(startTermId !== undefined && { startTermId }) },
     });
 
     for (const da of domainAnswers) {
@@ -871,6 +935,8 @@ function ApplyForm() {
   const toast = useToast();
   const loaderData = useLoaderData<typeof loader>() as any;
   const { cycleId, cycleName, applicationFormVersionId, formQuestions, generalDescription, domains, isAlreadySubmitted, hasChallenges } = loaderData;
+  // Empty unless the cycle offers a real choice (two or more) and the flag is on.
+  const startTermOptions: { id: string; code: string }[] = loaderData.startTermOptions ?? [];
   const [draft, setDraft] = useState(loaderData.draft);
   const [selectedDomainIds, setSelectedDomainIds] = useState<string[]>(
     loaderData.draft?.selectedDomainIds ?? [],
@@ -905,6 +971,9 @@ function ApplyForm() {
     fromCvId: string;
     toCvId: string;
   } | null>(null);
+  const [startTermId, setStartTermId] = useState<string | null>(
+    loaderData.draft?.startTermId ?? null,
+  );
   const [saving, setSaving] = useState(false);
   const [hasSavedOnce, setHasSavedOnce] = useState(() => {
     const initialAnswers = (loaderData.draft?.answers as Record<string, string> | undefined) ?? {};
@@ -948,7 +1017,11 @@ function ApplyForm() {
     scheduleSave();
   }
 
-  async function doSave() {
+  // `overrides` carries a value that must reach the server as posted rather
+  // than as this closure saw it. The debounced path re-reads state on the next
+  // keystroke, but a discrete one-click control (the start term) has no next
+  // keystroke to correct a stale capture, so it saves immediately and explicitly.
+  async function doSave(overrides?: { startTermId?: string }) {
     if (!draft) return;
     setSaving(true);
     try {
@@ -967,6 +1040,9 @@ function ApplyForm() {
           applicationId: draft.id,
           answers: JSON.stringify(answers),
           domainAnswers: JSON.stringify(daPayload),
+          ...(startTermOptions.length > 0 && {
+            startTermId: overrides?.startTermId ?? startTermId ?? "",
+          }),
         }),
       });
       setHasSavedOnce(true);
@@ -1146,6 +1222,9 @@ function ApplyForm() {
     if (missingPick) {
       return "Please pick a challenge for every selected domain.";
     }
+    if (startTermOptions.length > 0 && !startTermId) {
+      return "Please choose the term you'd start in.";
+    }
     const { totalRequired, totalAnswered } = computeRequiredProgress(
       formQuestions as Question[],
       domains as DomainShape[],
@@ -1293,6 +1372,7 @@ function ApplyForm() {
     form.set("domainAnswers", JSON.stringify(daPayload));
     form.set("selectedDomainIds", JSON.stringify(selectedDomainIds));
     form.set("urlQuestions", JSON.stringify(force ? [] : urlQuestions));
+    if (startTermOptions.length > 0) form.set("startTermId", startTermId ?? "");
 
     submitFetcher.submit(form, { method: "post" });
   }
@@ -1408,6 +1488,46 @@ function ApplyForm() {
     );
   }
 
+  // The term the applicant would begin in, when the cycle offers more than one.
+  // A first-class field rather than a form question: the choices are per-cycle
+  // config, and the answers blob is the frozen record of what was submitted.
+  function renderStartTermPicker() {
+    if (startTermOptions.length === 0) return null;
+    return (
+      <div className="px-6 py-5 rounded-os-card bg-os-card">
+        <h3 className="font-heading text-base font-bold text-foreground mb-1">
+          Start term <span className="text-os-accent">*</span>
+        </h3>
+        <p className="text-xs text-muted-foreground mb-3">
+          Which term would you begin in if you're hired? You can change this anytime before submitting.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {startTermOptions.map(t => {
+            const isSelected = startTermId === t.id;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => {
+                  setStartTermId(t.id);
+                  void doSave({ startTermId: t.id });
+                }}
+                aria-pressed={isSelected}
+                className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+                  isSelected
+                    ? "bg-os-accent text-os-bg border-transparent"
+                    : "bg-card text-foreground border-border hover:border-os-accent"
+                }`}
+              >
+                {termCodeLabel(t.code)}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
   // No draft yet — show domain selector + start button
   if (!draft) {
     return (
@@ -1469,6 +1589,9 @@ function ApplyForm() {
           <div className="space-y-8">
             {/* Domain selector (interactive) */}
             {renderDomainSelector()}
+
+            {/* Start term, when the cycle offers a choice of them */}
+            {renderStartTermPicker()}
 
         {/* General questions (before domains) */}
         {(() => {
