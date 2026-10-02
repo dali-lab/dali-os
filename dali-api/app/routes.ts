@@ -120,7 +120,7 @@ export default [
     route("rooms", "rooms/routes/rooms.tsx"),
     route("core/communications", "core/routes/core.communications.tsx"),
     route("core/communications/announcements", "core/routes/core.communications.announcements.tsx"),
-    route("core/communications/email", "admin/routes/admin.email.legacy-redirect.ts", { id: "legacy-email-core" }),
+    route("core/communications/email", "core/routes/core.communications.email.tsx"),
     route("core/communications/email/:id", "admin/routes/admin.email.legacy-redirect.ts", { id: "legacy-email-core-id" }),
     route("core/communications/email-senders", "core/routes/core.communications.email-senders.tsx"),
 

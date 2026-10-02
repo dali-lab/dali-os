@@ -69,10 +69,6 @@ export type SubTab = {
   icon: LucideIcon;
   // Omitted => always visible to anyone who can see the area.
   gate?: (r: RoleFlags) => boolean;
-  // Path subtree this tab owns for active-area / highlight matching, when its
-  // `href` links elsewhere (e.g. the Communications email-templates tab that
-  // deep-links into the Drive at /drive?type=emailTemplate). Defaults to `href`.
-  matchPrefix?: string;
 };
 
 export type NavArea = {
@@ -300,25 +296,6 @@ const REGROUPED_AREAS: NavArea[] = [
   },
 ];
 
-// The card-grid list for email templates is retired; its sidebar entry
-// deep-links directly into the Drive folder. (Agreements keeps a dedicated Core
-// console at /core/agreements, so it is NOT substituted here.) The rest of the
-// area (editors, create action) stays intact.
-function applyDriveSpacesSubstitutions(areas: NavArea[]): NavArea[] {
-  return areas.map((a) => {
-    if (a.key !== "core") return a;
-    return {
-      ...a,
-      subtabs: a.subtabs.map((t) => {
-        // Core ▸ Communications ▸ Email → the unified email editor.
-        if (t.href === "/core/communications/email")
-          return { ...t, href: "/admin/email", matchPrefix: t.href };
-        return t;
-      }),
-    };
-  });
-}
-
 // With the `resources` flag on, Resources takes the pinned slot under Calendar
 // and Drive lands in General — the area every member already lives in — rather
 // than losing its place in the nav entirely.
@@ -336,9 +313,7 @@ function withDriveInGeneral(areas: NavArea[]): NavArea[] {
  * ALL_AREAS).
  */
 export function areasFor(flags: Partial<FeatureFlagMap> = {}): NavArea[] {
-  // Deep-link email templates directly into Drive (agreements has its own Core
-  // console page at /core/agreements).
-  let areas = applyDriveSpacesSubstitutions(REGROUPED_AREAS);
+  let areas = REGROUPED_AREAS;
   if (flags.resources) areas = withDriveInGeneral(areas);
   return areas;
 }
@@ -421,11 +396,10 @@ export function areaForPath(
   let bestLen = -1;
   for (const a of areas) {
     for (const t of a.subtabs) {
-      const match = t.matchPrefix ?? t.href;
-      const matches = p === match || p.startsWith(match + "/");
-      if (matches && match.length > bestLen) {
+      const matches = p === t.href || p.startsWith(t.href + "/");
+      if (matches && t.href.length > bestLen) {
         best = a;
-        bestLen = match.length;
+        bestLen = t.href.length;
       }
       // A query-scoped deep-link (e.g. /drive?type=agreement) is owned by this
       // sub-tab's area, not the hub its path belongs to.
@@ -454,11 +428,10 @@ export function activeSubtabHref(area: NavArea, path: string): string | undefine
   let bestLen = -1;
   for (const t of area.subtabs) {
     const isHub = t.href === area.hubPath;
-    const match = t.matchPrefix ?? t.href;
-    const matches = isHub ? p === t.href : p === match || p.startsWith(match + "/");
-    if (matches && match.length > bestLen) {
+    const matches = isHub ? p === t.href : p === t.href || p.startsWith(t.href + "/");
+    if (matches && t.href.length > bestLen) {
       best = t.href;
-      bestLen = match.length;
+      bestLen = t.href.length;
     }
     // Highlight a query-scoped deep-link (e.g. Core ▸ Agreements at
     // /drive?type=agreement) when the current url carries its filter, matching

@@ -1,10 +1,15 @@
-// Admin → Email: every operator-editable email in one place.
+// The email editor: every operator-editable email in one place.
 //
 // Replaces three editors — the versioned-library detail page at
 // /admin/email-templates/:id, the hiring cycle Setup-tab modal, and the
 // education manage-page modal — and one role rule replaces three. Lab-wide copy
 // is Core's: a per-cycle admin used to be able to rewrite the email every cycle
 // shares.
+//
+// Editing copy is lab process, so the canonical URL is the Core one and this
+// /admin path redirects there (the alias at core/routes/core.communications.email
+// re-exports this module). The email *transport* — sender identities, the
+// outbox — stays in Admin ▸ System & Insights.
 //
 // One route, not a list + detail pair: ?key= opens the editor over the list, so
 // there is no id to resolve and no second loader.
@@ -36,12 +41,15 @@ import {
   type AdminEmailRow,
   type AdminEmailVersion,
 } from "~/admin/components/EmailTemplatesAdmin";
+import { regroupRedirect } from "~/core/lib/regroup-redirect.server";
 
-export const meta: Route.MetaFunction = () => [{ title: "Email · Admin · DALI OS" }];
+export const meta: Route.MetaFunction = () => [{ title: "Email · Core · DALI OS" }];
 
-export const handle = {
-  breadcrumbTrail: () => [{ label: "Email" }],
-};
+// No `handle` here: the Core alias owns the trail (coreHandle("email")), and
+// this path always redirects there before anything renders.
+
+/** The one address this editor answers on. */
+const CANONICAL = "/core/communications/email";
 
 function fullName(u: { firstName: string | null; lastName: string | null } | null): string {
   if (!u) return "unknown";
@@ -51,6 +59,10 @@ function fullName(u: { firstName: string | null; lastName: string | null } | nul
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
+  // Inert on the canonical path; `?key=` carries over, so a bookmarked
+  // deep-link into one template survives the hop.
+  const regrouped = regroupRedirect(request, auth.user.sub, "/admin/email", CANONICAL);
+  if (regrouped) return regrouped;
   if (!(await isCore(auth.user.sub, request))) return redirect("/");
 
   const url = new URL(request.url);
@@ -132,14 +144,14 @@ export async function action({ request }: Route.ActionArgs) {
       },
       auth.user.sub,
     );
-    return redirect("/admin/email");
+    return redirect(CANONICAL);
   }
 
   if (intent === "rollback") {
     const versionId = formData.get("versionId");
     if (typeof versionId !== "string") return { error: "No version selected." };
     await rollbackEmailTemplate(key, versionId, auth.user.sub);
-    return redirect(`/admin/email?key=${encodeURIComponent(key)}`);
+    return redirect(`${CANONICAL}?key=${encodeURIComponent(key)}`);
   }
 
   if (intent === "send-test") {

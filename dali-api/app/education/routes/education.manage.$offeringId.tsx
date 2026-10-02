@@ -1275,8 +1275,8 @@ export default function ManageOffering() {
                 ))}
                 <p className="text-xs text-os-grey">
                   Shared by every course.{" "}
-                  <Link to="/admin/email" className="underline">
-                    Edit in Admin &rarr; Email
+                  <Link to="/core/communications/email" className="underline">
+                    Edit in Core &rarr; Communications &rarr; Email
                   </Link>
                   .
                 </p>
