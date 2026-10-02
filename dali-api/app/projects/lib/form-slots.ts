@@ -137,18 +137,47 @@ export async function setSlotColumnMapping(
 }
 
 // Upsert the binding for (cycle, slot). `formId` is validated against an
-// existing form so a stale/forged id can't create a dangling binding.
+// existing form so a stale/forged id can't create a dangling binding. An
+// empty `formId` (the picker's "No form selected") clears the slot.
 export async function setSlotBinding(
   staffingCycleId: string,
   slot: Slot,
   formId: string,
   userId: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (formId === "") {
+    await clearSlotBinding(staffingCycleId, slot);
+    return { ok: true };
+  }
+
   const form = await prisma.form.findUnique({
     where: { id: formId },
     select: { id: true },
   });
   if (!form) return { ok: false, error: "That form no longer exists." };
+
+  // A form may feed only one staffing binding. Submissions pick their cycle
+  // from the form's bindings (pickStaffingBinding), so binding one form to a
+  // second cycle silently reroutes every later submission — e.g. a 27W Intent
+  // to Work form also bound to 26F sent new 27W intents to 26F.
+  const other = await prisma.staffingCycleFormBinding.findFirst({
+    where: {
+      formId,
+      slot: { in: Object.keys(SLOTS) },
+      NOT: { staffingCycleId, slot },
+    },
+    select: {
+      slot: true,
+      staffingCycle: { select: { term: { select: { code: true } } } },
+    },
+  });
+  if (other) {
+    const label = isSlot(other.slot) ? SLOTS[other.slot] : other.slot;
+    return {
+      ok: false,
+      error: `This form is already bound to ${other.staffingCycle.term.code} ${label}. Set that term's form to “No form selected” first, or duplicate the form for this term.`,
+    };
+  }
 
   await prisma.staffingCycleFormBinding.upsert({
     where: { staffingCycleId_slot: { staffingCycleId, slot } },
