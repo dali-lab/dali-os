@@ -49,7 +49,7 @@ export function ApplicantErrorBoundary({
       {secondaryAction.kind === "back-to-portal" && (
         <Link
           to="/portal"
-          className="px-6 py-2.5 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition"
+          className="px-6 py-2.5 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-os-accent hover:text-os-accent transition"
         >
           Back to portal
         </Link>
@@ -60,7 +60,7 @@ export function ApplicantErrorBoundary({
           onClick={() => {
             if (typeof window !== "undefined") window.location.reload();
           }}
-          className="px-6 py-2.5 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition"
+          className="px-6 py-2.5 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-os-accent hover:text-os-accent transition"
         >
           Reload page
         </button>

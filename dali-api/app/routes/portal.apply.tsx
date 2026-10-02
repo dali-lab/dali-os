@@ -19,6 +19,7 @@ import { isAnswered } from "~/lib/form-answers";
 import type { Question } from "~/types";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 import { Modal } from "~/components/Modal";
+import { modalCardClass } from "~/components/os-chrome";
 import { QuestionList } from "~/hiring/components/ApplicationAnswers";
 import { DocEditor } from "~/components/doc";
 import { isEmptyBlocks } from "~/lib/blocks";
@@ -29,6 +30,8 @@ import { FormField } from "~/forms/components/FormField";
 import { useToast } from "~/components/ui/toast";
 import { getHiringEmail } from "~/hiring/lib/hiring-emails.server";
 import { Radio } from "~/components/ui/Radio";
+import { buttonClasses } from "~/components/ui/Button";
+import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
 
 export const meta: Route.MetaFunction = () => [{ title: "Apply · DALI OS" }];
 
@@ -715,7 +718,7 @@ function SectionNavMobile({
       {sections.map(s => {
         const isActive = s.id === activeSection;
         const isComplete = s.requiredCount > 0 && s.answeredRequiredCount === s.requiredCount;
-        const dotColor = s.color?.bg ?? "bg-dark-blue";
+        const dotColor = s.color?.bg ?? "bg-os-accent";
         return (
           <button
             key={s.id}
@@ -723,15 +726,15 @@ function SectionNavMobile({
             onClick={() => scrollToSection(s.id)}
             className={`shrink-0 flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
               isActive
-                ? "bg-dark-blue text-white border-dark-blue"
-                : "bg-card text-dark-blue border-border hover:border-accent-coral"
+                ? "bg-os-accent text-os-bg border-os-accent"
+                : "bg-card text-foreground border-border hover:border-os-accent"
             }`}
           >
             <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`} />
             <span>{s.label}</span>
             {s.requiredCount > 0 && (
               isComplete ? (
-                <svg className="w-3.5 h-3.5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                <svg className="w-3.5 h-3.5 text-os-green" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                 </svg>
               ) : (
@@ -764,7 +767,7 @@ function SectionNavDesktop({
         {sections.map(s => {
           const isActive = s.id === activeSection;
           const isComplete = s.requiredCount > 0 && s.answeredRequiredCount === s.requiredCount;
-          const dotColor = s.color?.bg ?? "bg-dark-blue";
+          const dotColor = s.color?.bg ?? "bg-os-accent";
           return (
             <button
               key={s.id}
@@ -772,15 +775,15 @@ function SectionNavDesktop({
               onClick={() => scrollToSection(s.id)}
               className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition text-left ${
                 isActive
-                  ? "bg-dark-blue/5 text-dark-blue font-semibold"
-                  : "text-muted-foreground hover:bg-muted hover:text-dark-blue"
+                  ? "bg-os-container text-foreground font-semibold"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
               }`}
             >
               <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
               <span className="flex-1 truncate">{s.label}</span>
               {s.requiredCount > 0 && (
                 isComplete ? (
-                  <svg className="w-4 h-4 text-green-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <svg className="w-4 h-4 text-os-green shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                   </svg>
                 ) : (
@@ -818,7 +821,7 @@ function BackToTopButton() {
       type="button"
       onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
       aria-label="Back to top"
-      className="fixed bottom-6 right-6 z-30 w-11 h-11 rounded-full bg-dark-blue text-white shadow-lg hover:bg-dark-blue/90 transition flex items-center justify-center"
+      className="fixed bottom-6 right-6 z-30 w-11 h-11 rounded-full bg-os-accent text-os-bg shadow-lg hover:bg-os-accent-hover transition flex items-center justify-center"
     >
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
@@ -840,16 +843,16 @@ export default function PortalApply() {
 // Several Students cycles open at once: pick which one to apply to.
 function CycleChooser({ cycles }: { cycles: CycleChoice[] }) {
   return (
-    <div className="max-w-2xl mx-auto py-10 px-6">
-      <h1 className="font-heading text-2xl font-bold text-dark-blue mb-6">Pick a cycle</h1>
+    <div className="py-10 px-6">
+      <h1 className="font-heading text-4xl font-medium text-foreground mb-6">Pick a cycle</h1>
       <ul className="flex flex-col gap-3">
         {cycles.map((c) => (
           <li key={c.id}>
             <Link
               to={c.href}
-              className="flex items-center justify-between gap-4 rounded-2xl border border-border bg-card px-5 py-4 hover:border-accent-coral/50 transition"
+              className="flex items-center justify-between gap-4 rounded-os-card bg-os-card px-5 py-4 hover:border-os-accent/50 transition"
             >
-              <span className="font-medium text-dark-blue">{c.name}</span>
+              <span className="font-medium text-foreground">{c.name}</span>
               {c.closeDate && (
                 <span className="text-sm text-muted-foreground">
                   Closes{" "}
@@ -1375,9 +1378,9 @@ function ApplyForm() {
   // Render domain pill selector (shared between both states)
   function renderDomainSelector() {
     return (
-      <div className="px-6 py-5 rounded-2xl bg-brand-tint">
-        <h3 className="font-heading text-base font-bold text-dark-blue mb-1">
-          Domains <span className="text-accent-coral">*</span>
+      <div className="px-6 py-5 rounded-os-card bg-os-card">
+        <h3 className="font-heading text-base font-bold text-foreground mb-1">
+          Domains <span className="text-os-accent">*</span>
         </h3>
         <p className="text-xs text-muted-foreground mb-3">
           Select the domains you'd like to apply for. You can change this anytime before submitting.
@@ -1393,7 +1396,7 @@ function ApplyForm() {
                 className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
                   isSelected
                     ? `${color.bg} ${color.pillText} border-transparent`
-                    : "bg-card text-dark-blue border-border hover:border-accent-coral"
+                    : "bg-card text-foreground border-border hover:border-os-accent"
                 }`}
               >
                 {d.name}
@@ -1408,9 +1411,9 @@ function ApplyForm() {
   // No draft yet — show domain selector + start button
   if (!draft) {
     return (
-      <div className="max-w-3xl mx-auto px-6 py-10">
+      <div className="px-6 py-10">
         <div className="flex items-center justify-between mb-2">
-          <h2 className="font-heading text-xl font-bold text-dark-blue">{cycleName} Application</h2>
+          <h2 className="font-heading text-4xl font-medium text-foreground">{cycleName} Application</h2>
         </div>
         <p className="text-sm text-muted-foreground mb-8">
           Select the domains you'd like to apply for, then start your application.
@@ -1419,13 +1422,13 @@ function ApplyForm() {
         <div className="space-y-8">
           {renderDomainSelector()}
 
-          {error && <p className="text-sm text-red-500">{error}</p>}
+          {error && <p className="text-sm text-destructive">{error}</p>}
 
           <div>
             <button
               onClick={handleCreateDraft}
               disabled={selectedDomainIds.length === 0}
-              className="px-6 py-2.5 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
+              className={buttonClasses("primary")}
             >
               Start Application
             </button>
@@ -1437,29 +1440,26 @@ function ApplyForm() {
 
   // Application form (single screen with inline domain management)
   return (
-    <div className="lg:max-w-6xl max-w-3xl mx-auto px-6 py-10">
+    <div className="px-6 py-10">
       {/* Sticky header: (mobile) section chip strip */}
       <div className="lg:hidden sticky top-0 z-30 -mx-6 px-6 pt-1 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 mb-2">
         <SectionNavMobile sections={sections} activeSection={activeSection} />
       </div>
 
       <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_220px] lg:gap-10">
-        <div className="max-w-3xl">
+        <div className="min-w-0">
           <div className="flex items-center justify-between mb-2">
-            <h2 className="font-heading text-xl font-bold text-dark-blue">{cycleName} Application</h2>
+            <h2 className="font-heading text-4xl font-medium text-foreground">{cycleName} Application</h2>
             {submitting ? (
-              <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-muted text-muted-foreground flex items-center gap-1">
-                <span className="inline-block w-3 h-3 border-2 border-border border-t-muted-foreground rounded-full animate-spin" />
-                Submitting...
-              </span>
+              <Pill outline>Submitting...</Pill>
             ) : Object.keys(wordCountErrors).length > 0 ? (
-              <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-red-100 text-red-700">Action required</span>
+              <Pill outline dot="danger">Action required</Pill>
             ) : Object.keys(urlWarnings).length > 0 ? (
-              <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-amber-100 text-amber-700">Action required</span>
+              <Pill outline dot="warning">Action required</Pill>
             ) : isAlreadySubmitted ? (
-              <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-green-100 text-green-700">Submitted</span>
+              <Pill outline dot="success">Submitted</Pill>
             ) : (
-              <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-blue-100 text-blue-700">Draft</span>
+              <Pill outline dot="neutral">Draft</Pill>
             )}
           </div>
           <p className="text-sm text-muted-foreground mb-8">
@@ -1474,10 +1474,10 @@ function ApplyForm() {
         {(() => {
           const beforeQuestions = (formQuestions as Question[]).filter(q => !q.data.afterDomains);
           return beforeQuestions.length > 0 ? (
-            <div id="section-general-before" className="rounded-2xl bg-brand-tint px-6 py-5 space-y-6 scroll-mt-24">
-              <h3 className="font-heading text-sm font-bold text-dark-blue uppercase tracking-wider">General Questions</h3>
+            <div id="section-general-before" className="rounded-os-card bg-os-card px-6 py-5 space-y-6 scroll-mt-24">
+              <h3 className="font-heading text-sm font-bold text-foreground uppercase tracking-wider">General Questions</h3>
               {!isEmptyBlocks(generalDescription) && (
-                <div className="text-dark-blue">
+                <div className="text-foreground">
                   <DocEditor
                     features="notes"
                     density="compact"
@@ -1499,10 +1499,10 @@ function ApplyForm() {
                   belowField={
                     <>
                       {urlWarnings[q.key] && (
-                        <p className="text-xs text-amber-600 mt-1">{urlWarnings[q.key]}</p>
+                        <p className="text-xs text-os-amber mt-1">{urlWarnings[q.key]}</p>
                       )}
                       {wordCountErrors[q.key] && (
-                        <p className="text-xs text-red-500 mt-1">
+                        <p className="text-xs text-destructive mt-1">
                           Over the {wordCountErrors[q.key].maxWords}-word limit ({wordCountErrors[q.key].wordCount} words).
                         </p>
                       )}
@@ -1526,7 +1526,7 @@ function ApplyForm() {
           const showPicker = domain.challenges.length > 1;
 
           return (
-            <div key={domainId} id={`section-domain-${domainId}`} className={`rounded-2xl ${color.cardBg} px-6 py-5 space-y-6 scroll-mt-24`}>
+            <div key={domainId} id={`section-domain-${domainId}`} className={`rounded-os-card ${color.cardBg} px-6 py-5 space-y-6 scroll-mt-24`}>
               <div className="flex items-center justify-between">
                 <h3 className={`font-heading text-sm font-bold uppercase tracking-wider ${color.text}`}>
                   {domain.name} Questions
@@ -1534,7 +1534,7 @@ function ApplyForm() {
                 <button
                   onClick={() => toggleDomain(domainId)}
                   aria-label={`Remove ${domain.name}`}
-                  className="w-6 h-6 rounded-full flex items-center justify-center text-muted-foreground hover:text-red-500 hover:bg-red-50 transition"
+                  className="w-6 h-6 rounded-full flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition"
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1544,8 +1544,8 @@ function ApplyForm() {
 
               {showPicker && (
                 <div>
-                  <p className="text-xs font-semibold text-dark-blue mb-2">
-                    Choose your {domain.name} challenge <span className="text-accent-coral">*</span>
+                  <p className="text-xs font-semibold text-foreground mb-2">
+                    Choose your {domain.name} challenge <span className="text-os-accent">*</span>
                   </p>
                   <div className="space-y-2">
                     {domain.challenges.map(c => (
@@ -1555,7 +1555,7 @@ function ApplyForm() {
                         value={c.challengeVersionId}
                         checked={pickedCvId === c.challengeVersionId}
                         onChange={() => handleChallengePick(domainId, c.challengeVersionId)}
-                        label={<span className="text-dark-blue">{c.challengeName}</span>}
+                        label={<span className="text-foreground">{c.challengeName}</span>}
                         className="text-sm"
                       />
                     ))}
@@ -1573,7 +1573,7 @@ function ApplyForm() {
                   {(() => {
                     const pickedChallenge = domain.challenges.find(c => c.challengeVersionId === pickedCvId);
                     return !isEmptyBlocks(pickedChallenge?.description) ? (
-                      <div className="text-dark-blue">
+                      <div className="text-foreground">
                         {/* Keyed per picked challenge: DocEditor reads
                             initialContent once, so switching must remount. */}
                         <DocEditor
@@ -1599,10 +1599,10 @@ function ApplyForm() {
                       belowField={
                         <>
                           {urlWarnings[q.key] && (
-                            <p className="text-xs text-amber-600 mt-1">{urlWarnings[q.key]}</p>
+                            <p className="text-xs text-os-amber mt-1">{urlWarnings[q.key]}</p>
                           )}
                           {wordCountErrors[q.key] && (
-                            <p className="text-xs text-red-500 mt-1">
+                            <p className="text-xs text-destructive mt-1">
                               Over the {wordCountErrors[q.key].maxWords}-word limit ({wordCountErrors[q.key].wordCount} words).
                             </p>
                           )}
@@ -1624,8 +1624,8 @@ function ApplyForm() {
         {(() => {
           const afterQuestions = (formQuestions as Question[]).filter(q => q.data.afterDomains);
           return afterQuestions.length > 0 ? (
-            <div id="section-general-after" className="rounded-2xl bg-brand-tint px-6 py-5 space-y-6 scroll-mt-24">
-              <h3 className="font-heading text-sm font-bold text-dark-blue uppercase tracking-wider">Anything Else</h3>
+            <div id="section-general-after" className="rounded-os-card bg-os-card px-6 py-5 space-y-6 scroll-mt-24">
+              <h3 className="font-heading text-sm font-bold text-foreground uppercase tracking-wider">Anything Else</h3>
               {afterQuestions.map(q => (
                 <FormField
                   key={q.key}
@@ -1636,7 +1636,7 @@ function ApplyForm() {
                   onChange={v => setAnswer(q.key, v)}
                   belowField={
                     wordCountErrors[q.key] ? (
-                      <p className="text-xs text-red-500 mt-1">
+                      <p className="text-xs text-destructive mt-1">
                         Over the {wordCountErrors[q.key].maxWords}-word limit ({wordCountErrors[q.key].wordCount} words).
                       </p>
                     ) : null
@@ -1647,16 +1647,16 @@ function ApplyForm() {
           ) : null;
         })()}
 
-        {error && <p className="text-sm text-red-500">{error}</p>}
+        {error && <p className="text-sm text-destructive">{error}</p>}
 
         {/* Word-count errors banner — hard error, blocks submission */}
         {Object.keys(wordCountErrors).length > 0 && (
-          <div ref={warningBannerRef} className="rounded-xl border border-red-200 bg-red-50 px-5 py-4">
-            <p className="text-sm font-semibold text-red-800 mb-1">Some answers exceed the word limit</p>
-            <p className="text-xs text-red-700">
+          <div ref={warningBannerRef} className="rounded-os-item border border-destructive/35 bg-destructive/10 px-5 py-4">
+            <p className="text-sm font-semibold text-destructive mb-1">Some answers exceed the word limit</p>
+            <p className="text-xs text-destructive">
               The following answers are over the allowed word count. Trim them down before submitting.
             </p>
-            <ul className="text-xs text-red-700 mt-2 list-disc list-inside space-y-0.5">
+            <ul className="text-xs text-destructive mt-2 list-disc list-inside space-y-0.5">
               {Object.entries(wordCountErrors).map(([key, v]) => (
                 <li key={key}>
                   <span className="font-semibold">{v.label}:</span> {v.wordCount} / {v.maxWords} words
@@ -1668,9 +1668,9 @@ function ApplyForm() {
 
         {/* URL warnings banner */}
         {Object.keys(urlWarnings).length > 0 && (
-          <div ref={Object.keys(wordCountErrors).length > 0 ? undefined : warningBannerRef} className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4">
-            <p className="text-sm font-semibold text-amber-800 mb-1">Some URLs may have issues</p>
-            <p className="text-xs text-amber-700">
+          <div ref={Object.keys(wordCountErrors).length > 0 ? undefined : warningBannerRef} className="rounded-os-item border border-os-amber/35 bg-os-amber/15 px-5 py-4">
+            <p className="text-sm font-semibold text-os-amber mb-1">Some URLs may have issues</p>
+            <p className="text-xs text-os-amber">
               One or more of your submitted links appear to be private or inaccessible. You can still submit, but reviewers may not be able to view them.
             </p>
           </div>
@@ -1681,7 +1681,7 @@ function ApplyForm() {
           <button
             onClick={() => openReviewIfValid()}
             disabled={submitting || checkingUrls}
-            className="px-6 py-2.5 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50 flex items-center gap-2"
+            className={buttonClasses("primary")}
           >
             {checkingUrls && (
               <span className="inline-block w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
@@ -1697,12 +1697,12 @@ function ApplyForm() {
           <span className="text-xs text-muted-foreground/70 flex items-center gap-1.5">
             {saving ? (
               <>
-                <span className="inline-block w-3 h-3 border-2 border-border border-t-accent-coral rounded-full animate-spin" />
+                <span className="inline-block w-3 h-3 border-2 border-border border-t-os-accent rounded-full animate-spin" />
                 Saving...
               </>
             ) : hasSavedOnce ? (
               <>
-                <svg className="w-3.5 h-3.5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <svg className="w-3.5 h-3.5 text-os-green" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                 </svg>
                 Draft auto-saved
@@ -1726,9 +1726,9 @@ function ApplyForm() {
         onClose={() => setShowReviewModal(false)}
         labelledBy="review-modal-title"
         disableEscape={submitting}
-        containerClassName="bg-card rounded-2xl shadow-xl max-w-2xl w-full mx-4 max-h-[85vh] overflow-y-auto p-6"
+        containerClassName={modalCardClass("max-w-2xl")}
       >
-        <h3 id="review-modal-title" className="font-heading text-base font-bold text-dark-blue mb-1">
+        <h3 id="review-modal-title" className="font-heading text-base font-bold text-foreground mb-1">
           {isAlreadySubmitted ? "Review your changes" : "Review your application"}
         </h3>
         <p className="text-sm text-muted-foreground mb-5">
@@ -1739,8 +1739,8 @@ function ApplyForm() {
           {(() => {
             const beforeQuestions = (formQuestions as Question[]).filter(q => !q.data.afterDomains);
             return beforeQuestions.length > 0 ? (
-              <div className="rounded-2xl bg-brand-tint px-5 py-4">
-                <h4 className="font-heading text-xs font-bold text-dark-blue uppercase tracking-wider mb-4">
+              <div className="rounded-os-card bg-os-card px-5 py-4">
+                <h4 className="font-heading text-xs font-bold text-foreground uppercase tracking-wider mb-4">
                   General Questions
                 </h4>
                 {/* Apply page only has S3 keys, not presigned URLs — show filenames only */}
@@ -1759,7 +1759,7 @@ function ApplyForm() {
             const pickedName = domain.challenges.find(c => c.challengeVersionId === pickedCvId)?.challengeName;
             const color = getDomainColor(domainIndex);
             return (
-              <div key={domainId} className={`rounded-2xl ${color.cardBg} px-5 py-4`}>
+              <div key={domainId} className={`rounded-os-card ${color.cardBg} px-5 py-4`}>
                 <h4 className={`font-heading text-xs font-bold uppercase tracking-wider mb-1 ${color.text}`}>
                   {domain.name}
                 </h4>
@@ -1778,8 +1778,8 @@ function ApplyForm() {
           {(() => {
             const afterQuestions = (formQuestions as Question[]).filter(q => q.data.afterDomains);
             return afterQuestions.length > 0 ? (
-              <div className="rounded-2xl bg-brand-tint px-5 py-4">
-                <h4 className="font-heading text-xs font-bold text-dark-blue uppercase tracking-wider mb-4">
+              <div className="rounded-os-card bg-os-card px-5 py-4">
+                <h4 className="font-heading text-xs font-bold text-foreground uppercase tracking-wider mb-4">
                   Anything Else
                 </h4>
                 <QuestionList questions={afterQuestions} answers={answers} presigned={false} />
@@ -1793,7 +1793,7 @@ function ApplyForm() {
             type="button"
             onClick={() => setShowReviewModal(false)}
             disabled={submitting}
-            className="px-5 py-2 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition disabled:opacity-50"
+            className={buttonClasses("secondary")}
           >
             Go Back and Edit
           </button>
@@ -1801,7 +1801,7 @@ function ApplyForm() {
             type="button"
             onClick={() => { setShowReviewModal(false); doSubmit(acceptedUrlWarnings); }}
             disabled={submitting}
-            className="px-5 py-2 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
+            className={buttonClasses("primary")}
           >
             {submitting ? "Submitting..." : "Confirm Submission"}
           </button>
@@ -1817,7 +1817,7 @@ function ApplyForm() {
         }}
         labelledBy="url-warning-modal-title"
       >
-        <h3 id="url-warning-modal-title" className="font-heading text-base font-bold text-dark-blue mb-2">Some links may be inaccessible</h3>
+        <h3 id="url-warning-modal-title" className="font-heading text-base font-bold text-foreground mb-2">Some links may be inaccessible</h3>
         <p className="text-sm text-muted-foreground mb-4">
           One or more URLs appear to be private or inaccessible. Reviewers may not be able to view them.
         </p>
@@ -1831,7 +1831,7 @@ function ApplyForm() {
             ];
             const q = allQuestions.find(q => q.key === key);
             return (
-              <li key={key} className="text-sm text-yellow-700 bg-yellow-50 rounded-lg px-3 py-2">
+              <li key={key} className="text-sm text-os-amber bg-os-amber/15 rounded-lg px-3 py-2">
                 <span className="font-semibold">{q?.data.label ?? key}:</span> {message}
               </li>
             );
@@ -1843,7 +1843,7 @@ function ApplyForm() {
               setShowWarningModal(false);
               scrollToFirstWarning();
             }}
-            className="px-5 py-2 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition"
+            className={buttonClasses("secondary")}
           >
             Go Back and Fix
           </button>
@@ -1854,7 +1854,7 @@ function ApplyForm() {
               setShowReviewModal(true);
             }}
             disabled={submitting}
-            className="px-5 py-2 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
+            className={buttonClasses("primary")}
           >
             Submit Anyway
           </button>
@@ -1867,7 +1867,7 @@ function ApplyForm() {
         onClose={() => setPendingChallengeChange(null)}
         labelledBy="challenge-switch-title"
       >
-        <h3 id="challenge-switch-title" className="font-heading text-base font-bold text-dark-blue mb-2">
+        <h3 id="challenge-switch-title" className="font-heading text-base font-bold text-foreground mb-2">
           Switch challenge?
         </h3>
         <p className="text-sm text-muted-foreground mb-4">
@@ -1877,7 +1877,7 @@ function ApplyForm() {
         <div className="flex gap-3 justify-end">
           <button
             onClick={() => setPendingChallengeChange(null)}
-            className="px-5 py-2 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition"
+            className={buttonClasses("secondary")}
           >
             Cancel
           </button>
@@ -1888,7 +1888,7 @@ function ApplyForm() {
               }
               setPendingChallengeChange(null);
             }}
-            className="px-5 py-2 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition"
+            className={buttonClasses("primary")}
           >
             Switch and Clear Answers
           </button>

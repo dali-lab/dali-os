@@ -1,7 +1,7 @@
 import { Link } from "react-router";
-import { Card } from "~/components/ui/Card";
 import { Avatar } from "~/components/ui/Avatar";
 import { cn } from "~/lib/cn";
+import { Pill, type PillTone } from "~/hiring/components/cycle-setup/SetupCard";
 import { formatDateShort } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { APPLICATION_TZ } from "~/lib/timezone";
@@ -17,7 +17,6 @@ import {
 } from "lucide-react";
 import {
   OFFERING_TYPE_DESCRIPTIONS,
-  OFFERING_TYPE_TINT,
   type OfferingType,
 } from "~/education/lib/offering-type";
 
@@ -43,13 +42,8 @@ export function TypeBadge({ type }: { type: OfferingCardData["type"] }) {
   const tip = OFFERING_TYPE_DESCRIPTIONS[type];
   return (
     <Tooltip content={tip} variant="rich" placement="top">
-      <span
-        className={cn(
-          "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold",
-          OFFERING_TYPE_TINT[type],
-        )}
-      >
-        {type}
+      <span className="inline-flex">
+        <Pill outline>{type}</Pill>
       </span>
     </Tooltip>
   );
@@ -64,7 +58,7 @@ const STATUS_TIPS: Record<OfferingCardData["status"], string> = {
 export function StatusBadge({ status }: { status: OfferingCardData["status"] }) {
   const styles: Record<OfferingCardData["status"], string> = {
     Draft: "bg-muted text-muted-foreground",
-    Published: "bg-green-100 text-green-800",
+    Published: "bg-os-green/15 text-os-green",
     Archived: "bg-accent-yellow/25 text-foreground",
   };
   return (
@@ -81,12 +75,12 @@ export function StatusBadge({ status }: { status: OfferingCardData["status"] }) 
   );
 }
 
-const MY_STATUS_STYLES: Record<string, { label: string; className: string }> = {
-  Submitted: { label: "Applied", className: "bg-accent-teal/10 text-accent-teal" },
-  Approved: { label: "Enrolled", className: "bg-green-100 text-green-800" },
-  Waitlisted: { label: "Waitlisted", className: "bg-accent-yellow/25 text-foreground" },
-  Rejected: { label: "Not accepted", className: "bg-muted text-muted-foreground" },
-  Withdrawn: { label: "Withdrawn", className: "bg-muted text-muted-foreground" },
+const MY_STATUS_STYLES: Record<string, { label: string; dot: PillTone }> = {
+  Submitted: { label: "Applied", dot: "accent" },
+  Approved: { label: "Enrolled", dot: "success" },
+  Waitlisted: { label: "Waitlisted", dot: "warning" },
+  Rejected: { label: "Not accepted", dot: "danger" },
+  Withdrawn: { label: "Withdrawn", dot: "neutral" },
 };
 
 const MY_STATUS_TIPS: Record<string, string | null> = {
@@ -105,13 +99,10 @@ export function MyStatusChip({ status }: { status: string | null }) {
   const tip = MY_STATUS_TIPS[status] ?? null;
   return (
     <Tooltip content={tip} variant="rich" placement="top">
-      <span
-        className={cn(
-          "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold",
-          style.className,
-        )}
-      >
-        {style.label}
+      <span className="inline-flex">
+        <Pill outline dot={style.dot}>
+          {style.label}
+        </Pill>
       </span>
     </Tooltip>
   );
@@ -207,21 +198,21 @@ export function OfferingCard({
   return (
     <div className="relative group">
       <Link to={to} className="block">
-        <Card className="p-4 h-full group-hover:shadow-brand-2">
+        <div className="h-full rounded-os-card bg-os-card p-5 transition-colors group-hover:bg-os-card-hover">
           <div className="flex items-start justify-between gap-2">
             <div className="flex flex-wrap items-center gap-1.5">
               <TypeBadge type={offering.type} />
               {showStatus && <StatusBadge status={offering.status} />}
               {myStatus !== undefined && <MyStatusChip status={myStatus} />}
               {openAssignments != null && openAssignments > 0 && (
-                <span className="inline-flex items-center rounded-full bg-accent-coral text-white px-2 py-0.5 text-[11px] font-semibold">
+                <span className="inline-flex items-center rounded-full border border-os-container px-3 py-1 text-sm font-medium text-os-grey">
                   {openAssignments} assignment{openAssignments === 1 ? "" : "s"} due
                 </span>
               )}
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
               {pendingCount != null && pendingCount > 0 && (
-                <span className="inline-flex items-center rounded-full bg-accent-teal/10 text-accent-teal px-2 py-0.5 text-[11px] font-semibold">
+                <span className="inline-flex items-center rounded-full bg-os-accent/10 text-os-accent px-2 py-0.5 text-[11px] font-semibold">
                   {pendingCount} to review
                 </span>
               )}
@@ -290,23 +281,23 @@ export function OfferingCard({
               )}
             </div>
           </div>
-          <h3 className="mt-2 font-heading font-bold text-foreground group-hover:text-accent-coral transition-colors">
+          <h3 className="mt-3 font-heading text-lg font-semibold text-foreground">
             {offering.title}
           </h3>
-          <p className="mt-1 text-xs text-muted-foreground">
+          <p className="mt-1 text-sm text-os-grey">
             {offering.startsAt && offering.endsAt
               ? `${formatDateShort(offering.startsAt, tz)} – ${formatDateShort(offering.endsAt, tz)}`
               : "Sessions TBD"}
             {" · "}
             {offering.sessionCount} session{offering.sessionCount === 1 ? "" : "s"}
           </p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
+          <p className="mt-0.5 text-sm text-os-grey">
             {registrationWindowLabel(offering, tz)}
             {" · "}
             {seatsLeft > 0 ? `${seatsLeft} of ${offering.capacity} seats left` : "Full — waitlist open"}
           </p>
           {offering.instructors.length > 0 && (
-            <div className="mt-2 flex items-center gap-2">
+            <div className="mt-3 flex items-center gap-2">
               <div className="flex -space-x-1.5">
                 {offering.instructors.map((i) => (
                   <Avatar
@@ -323,7 +314,7 @@ export function OfferingCard({
               </p>
             </div>
           )}
-        </Card>
+        </div>
       </Link>
     </div>
   );

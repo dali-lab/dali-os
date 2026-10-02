@@ -36,7 +36,7 @@ export function MaterialPageBody({
       );
     }
     return (
-      <div className="rounded-lg border border-border bg-card p-2">
+      <div className="rounded-os-card bg-os-card p-2">
         <p className="px-2 pb-1 pt-1 text-xs text-muted-foreground">
           Shared doc — everyone enrolled can edit. Changes save automatically.
         </p>
@@ -62,7 +62,7 @@ export function MaterialPageBody({
   }
 
   return (
-    <div className="rounded-lg border border-border bg-card p-5">
+    <div className="rounded-os-card bg-os-card p-5">
       {countWords(content) === 0 ? (
         <p className="text-sm text-muted-foreground italic">Nothing written here yet.</p>
       ) : (

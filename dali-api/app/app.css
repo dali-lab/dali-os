@@ -1355,6 +1355,7 @@ html.os-shell > body::-webkit-scrollbar-track {
 .os-shell .os-form input[type="email"],
 .os-shell .os-form input[type="url"],
 .os-shell .os-form input[type="number"],
+.os-shell .os-form input[type="tel"],
 .os-shell .os-form select,
 .os-shell .os-form textarea {
   background: var(--color-os-well);

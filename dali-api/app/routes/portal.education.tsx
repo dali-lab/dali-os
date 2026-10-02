@@ -1,4 +1,4 @@
-import { redirect, useLoaderData } from "react-router";
+import { redirect, useLoaderData, useSearchParams } from "react-router";
 import type { Route } from "./+types/portal.education";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -7,6 +7,7 @@ import { getStudentDashboard } from "~/education/lib/lms.server";
 import { OfferingCard } from "~/education/components/OfferingCard";
 import { OfferingCatalog } from "~/education/components/OfferingCatalog";
 import { StudentDashboard } from "~/education/components/StudentDashboard";
+import { OsTabBar } from "~/components/os-page";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 
@@ -27,6 +28,12 @@ export async function loader({ request }: Route.LoaderArgs) {
   return { offerings, dashboard };
 }
 
+type EducationTab = "courses" | "browse";
+const TABS: { key: EducationTab; label: string }[] = [
+  { key: "courses", label: "My courses" },
+  { key: "browse", label: "Browse offerings" },
+];
+
 export default function PortalEducation() {
   const { offerings, dashboard } = useLoaderData<typeof loader>();
   const redesign = useFeatureFlag("education-redesign-v2");
@@ -35,53 +42,73 @@ export default function PortalEducation() {
   // offerings still open to apply to or RSVP for.
   const openOfferings = offerings.filter((o) => o.myStatus !== "Approved");
   const hasCourses = dashboard.myCourses.some((c) => !c.isPast);
+  // My courses and the catalog are separate tabs. With nothing enrolled there
+  // is nothing to show on the first, so the page opens on Browse.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requested = searchParams.get("tab");
+  const tab: EducationTab =
+    requested === "courses" || requested === "browse"
+      ? requested
+      : hasCourses
+        ? "courses"
+        : "browse";
 
   return (
-    <div className="px-4 sm:px-6 py-8 flex flex-col gap-6">
+    <div className="px-6 py-10 flex flex-col gap-8">
       <header>
-        <h1 className="font-heading text-2xl font-bold text-dark-blue">
+        <h1 className="font-heading text-4xl font-medium text-foreground">
           Education at DALI
         </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Workshops, miniseries, and fellowships open to Dartmouth students. Apply or RSVP below!
-        </p>
       </header>
 
-      <StudentDashboard
-        dashboard={dashboard}
-        tz={tz}
-        paths={{
-          course: (id) => `/portal/education/${id}/hub`,
-          checkIn: (sessionId) => `/education/check-in/${sessionId}`,
-          assignment: (offeringId, assignmentId) =>
-            `/portal/education/${offeringId}/assignments/${assignmentId}`,
-        }}
+      <OsTabBar
+        ariaLabel="Education sections"
+        tabs={TABS}
+        active={tab}
+        onSelect={(key) => setSearchParams({ tab: key }, { replace: true })}
       />
 
-      {redesign ? (
+      {tab === "courses" &&
+        (hasCourses || dashboard.openCheckIns.length > 0 || dashboard.dueSoon.length > 0 ? (
+          <StudentDashboard
+            dashboard={dashboard}
+            tz={tz}
+            paths={{
+              course: (id) => `/portal/education/${id}/hub`,
+              checkIn: (sessionId) => `/education/check-in/${sessionId}`,
+              assignment: (offeringId, assignmentId) =>
+                `/portal/education/${offeringId}/assignments/${assignmentId}`,
+            }}
+          />
+        ) : (
+          <div className="bg-os-card rounded-os-card p-8 text-center">
+            <p className="font-heading font-semibold text-foreground">
+              You are not in a course yet
+            </p>
+            <p className="text-sm text-muted-foreground mt-1">
+              Browse offerings to apply or RSVP.
+            </p>
+          </div>
+        ))}
+
+      {tab !== "browse" ? null : redesign ? (
         <OfferingCatalog
           offerings={offerings}
           to={(id) => `/portal/education/${id}`}
         />
       ) : (
-        <section>
-          {hasCourses && (
-            <h2 className="font-heading text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-              All offerings
-            </h2>
-          )}
+        <section className="flex flex-col gap-3">
           {openOfferings.length === 0 ? (
-            <div className="bg-card border border-border rounded-lg p-8 text-center">
-              <p className="font-heading font-semibold text-dark-blue">
+            <div className="bg-os-card rounded-os-card p-8 text-center">
+              <p className="font-heading font-semibold text-foreground">
                 Nothing scheduled right now
               </p>
               <p className="text-sm text-muted-foreground mt-1">
-                Check back soon — new miniseries and workshops are posted here
-                each term.
+                New miniseries and workshops are posted here each term.
               </p>
             </div>
           ) : (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
               {openOfferings.map((o) => (
                 <OfferingCard
                   key={o.id}

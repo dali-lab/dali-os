@@ -1,4 +1,6 @@
 import { redirect, useLoaderData, Link } from "react-router";
+import { applicantPortalPath } from "~/hiring/lib/applicant-groups";
+import { Pill, type PillTone } from "~/hiring/components/cycle-setup/SetupCard";
 import type { Route } from "./+types/portal.applications";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
@@ -9,7 +11,6 @@ import {
 } from "~/hiring/lib/domain-application-status";
 import { listMyApplications } from "~/education/lib/offerings.server";
 import { MyStatusChip } from "~/education/components/OfferingCard";
-import { buttonClasses } from "~/components/ui/Button";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
 
@@ -69,7 +70,11 @@ async function loadHiringSummaries(userId: string) {
 
     return {
       id: application.id,
-      cycleId: cycle.id,
+      // An unsubmitted draft in an open cycle opens the form itself.
+      href:
+        applicationStatus === "Draft" && cycleStatus === "Open"
+          ? applicantPortalPath("Students", cycle.id)
+          : `/portal/hiring?cycle=${cycle.id}`,
       cycleName: cycle.name,
       applicationStatus,
       domains,
@@ -90,46 +95,40 @@ export async function loader({ request }: Route.LoaderArgs) {
   return { educationApps, hiring };
 }
 
-// Per-domain hiring status → a labelled pill. Kept local (not the full
+// Per-domain hiring status → a labelled dot pill. Kept local (not the full
 // StageIndicator) because this is a summary line, not the interactive tracker.
-const HIRING_STATUS: Record<string, { label: string; className: string }> = {
-  ApplicationOpen: { label: "Not submitted", className: "bg-muted text-muted-foreground" },
-  Pending: { label: "Under review", className: "bg-amber-100 text-amber-800" },
-  InvitedToInterview: { label: "Interview invite", className: "bg-blue-100 text-blue-800" },
-  InterviewScheduled: { label: "Interview scheduled", className: "bg-blue-100 text-blue-800" },
-  PostInterviewPending: { label: "Decision pending", className: "bg-blue-100 text-blue-800" },
-  Accepted: { label: "Accepted", className: "bg-green-100 text-green-800" },
-  AcceptedElsewhere: { label: "Placed elsewhere", className: "bg-muted text-muted-foreground" },
-  Waitlisted: { label: "Waitlisted", className: "bg-amber-100 text-amber-800" },
-  Rejected: { label: "Not accepted", className: "bg-muted text-muted-foreground" },
-  Withdrawn: { label: "Withdrawn", className: "bg-muted text-muted-foreground" },
+const HIRING_STATUS: Record<string, { label: string; dot: PillTone }> = {
+  ApplicationOpen: { label: "Not submitted", dot: "neutral" },
+  Pending: { label: "Under review", dot: "warning" },
+  InvitedToInterview: { label: "Interview invite", dot: "accent" },
+  InterviewScheduled: { label: "Interview scheduled", dot: "accent" },
+  PostInterviewPending: { label: "Decision pending", dot: "accent" },
+  Accepted: { label: "Accepted", dot: "success" },
+  AcceptedElsewhere: { label: "Placed elsewhere", dot: "neutral" },
+  Waitlisted: { label: "Waitlisted", dot: "warning" },
+  Rejected: { label: "Not accepted", dot: "danger" },
+  Withdrawn: { label: "Withdrawn", dot: "neutral" },
 };
-
-function HiringStatusPill({ status }: { status: string }) {
-  const s = HIRING_STATUS[status] ?? {
-    label: status,
-    className: "bg-muted text-muted-foreground",
-  };
-  return (
-    <span
-      className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${s.className}`}
-    >
-      {s.label}
-    </span>
-  );
-}
 
 const SECTION_HEADING =
   "font-heading text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2";
+
+// Both sections share one row: the title link stretches over the whole row, so
+// the row is the button. Anything else clickable in it sits above with z-10.
+const LIST = "overflow-hidden rounded-os-card bg-os-card divide-y divide-border";
+const ROW =
+  "relative flex items-center justify-between gap-3 px-5 py-4 transition-colors hover:bg-os-card-hover";
+const ROW_LINK =
+  "block truncate text-sm font-medium text-foreground after:absolute after:inset-0";
 
 export default function PortalApplications() {
   const { educationApps, hiring } = useLoaderData<typeof loader>();
   const isEmpty = hiring.length === 0 && educationApps.length === 0;
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-10 flex flex-col gap-8">
+    <div className="px-4 sm:px-6 py-10 flex flex-col gap-8">
       <header>
-        <h1 className="font-heading text-3xl font-bold text-dark-blue">
+        <h1 className="font-heading text-4xl font-medium text-foreground">
           My applications
         </h1>
         <p className="text-sm text-muted-foreground mt-2 max-w-xl">
@@ -138,8 +137,8 @@ export default function PortalApplications() {
       </header>
 
       {isEmpty ? (
-        <div className="rounded-2xl border border-border bg-card p-8 text-center">
-          <p className="font-heading font-semibold text-dark-blue">
+        <div className="rounded-os-card bg-os-card p-8 text-center">
+          <p className="font-heading font-semibold text-foreground">
             You haven&apos;t applied to anything yet
           </p>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -152,58 +151,41 @@ export default function PortalApplications() {
           {hiring.length > 0 && (
             <section>
               <h2 className={SECTION_HEADING}>DALI Lab</h2>
-              <div className="flex flex-col gap-3">
+              <ul className={LIST}>
                 {hiring.map((app) => (
-                  <div key={app.id} className="rounded-xl border border-border bg-card p-5 shadow-brand-1">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="font-heading font-semibold text-dark-blue truncate">
-                          {app.cycleName}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Application {app.applicationStatus.toLowerCase()}
-                        </p>
-                      </div>
-                      <Link
-                        to={`/portal/hiring?cycle=${app.cycleId}`}
-                        className={buttonClasses("secondary", "sm")}
-                      >
-                        Track →
+                  <li key={app.id} className={ROW}>
+                    <div className="min-w-0">
+                      <Link to={app.href} className={ROW_LINK}>
+                        {app.cycleName}
                       </Link>
+                      <p className="text-xs text-muted-foreground">
+                        Application {app.applicationStatus.toLowerCase()}
+                      </p>
                     </div>
-                    {app.domains.length > 0 && (
-                      <ul className="mt-4 flex flex-col divide-y divide-border border-t border-border">
-                        {app.domains.map((d) => (
-                          <li
-                            key={d.id}
-                            className="flex items-center justify-between gap-3 py-2.5"
-                          >
-                            <span className="text-sm text-foreground">{d.domainName}</span>
-                            <HiringStatusPill status={d.status} />
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      {app.domains.map((d) => {
+                        const st = HIRING_STATUS[d.status];
+                        return (
+                          <Pill outline key={d.id} dot={st?.dot ?? "neutral"}>
+                            {d.domainName} · {st?.label ?? d.status}
+                          </Pill>
+                        );
+                      })}
+                    </div>
+                  </li>
                 ))}
-              </div>
+              </ul>
             </section>
           )}
 
           {educationApps.length > 0 && (
             <section>
               <h2 className={SECTION_HEADING}>Courses</h2>
-              <ul className="bg-card border border-border rounded-xl divide-y divide-border">
+              <ul className={LIST}>
                 {educationApps.map((a) => (
-                  <li
-                    key={a.id}
-                    className="flex items-center justify-between gap-3 px-4 py-3"
-                  >
+                  <li key={a.id} className={ROW}>
                     <div className="min-w-0">
-                      <Link
-                        to={`/portal/education/${a.offeringId}`}
-                        className="text-sm font-medium text-foreground hover:text-accent-coral truncate"
-                      >
+                      <Link to={`/portal/education/${a.offeringId}`} className={ROW_LINK}>
                         {a.offeringTitle}
                       </Link>
                       <p className="text-xs text-muted-foreground">{a.offeringType}</p>
@@ -212,7 +194,7 @@ export default function PortalApplications() {
                       {a.certificateId && (
                         <Link
                           to={`/education/certificates/${a.certificateId}`}
-                          className="text-xs font-semibold text-accent-coral hover:underline"
+                          className="relative z-10 text-xs font-semibold text-os-accent hover:underline"
                         >
                           🎓 Certificate
                         </Link>
