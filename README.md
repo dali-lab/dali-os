@@ -72,6 +72,7 @@ Run from `dali-api/`.
 | Task | Command |
 |---|---|
 | Unit tests | `npm test` |
+| Coverage | `npm run test:coverage` |
 | E2E tests | `npm run test:e2e` (needs a seeded Postgres) |
 | Typecheck | `npm run typecheck` |
 | Build | `npm run build` |
@@ -104,7 +105,7 @@ Runtime uses the pooled `DATABASE_URL`. `prisma migrate` needs a non-pooled URL 
 
 Failures on these block merge:
 
-- `test.yml` — Vitest + Playwright against a real Postgres service container.
+- `test.yml` — Vitest + Playwright against a real Postgres service container. Unit coverage lands in the run summary and the `coverage-report` artifact.
 - `build-check.yml` — Docker build via flyctl.
 - `migration-check.yml` — schema/migration drift, deleted-migration guard, pgfence safety analysis.
 - `codeql.yml` — static security scan.

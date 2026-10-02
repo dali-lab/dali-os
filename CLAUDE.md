@@ -21,6 +21,7 @@ Project conventions for Claude when running inside `anthropics/claude-code-actio
 |---|---|
 | Install deps | `npm install` |
 | Unit tests | `npm test` (Vitest) |
+| Coverage | `npm run test:coverage` (V8 provider; writes `coverage/`) |
 | E2E tests | `npm run test:e2e` (Playwright — needs seeded Postgres) |
 | Typecheck | `npm run typecheck` (runs `react-router typegen && tsc`) |
 | Build | `npm run build` |
@@ -38,7 +39,7 @@ No ESLint/Prettier script is wired up today — don't invent lint commands.
 ## CI workflows that will gate your PRs
 
 These live in `.github/workflows/` — treat their failures as blocking:
-- `test.yml` — Vitest unit tests + Playwright E2E against a real Postgres service container.
+- `test.yml` — Vitest unit tests + Playwright E2E against a real Postgres service container. The unit job also reports V8 coverage to the run summary and uploads the HTML report as the `coverage-report` artifact; coverage is reported, not gated.
 - `build-check.yml` — Docker build validation via flyctl.
 - `migration-check.yml` — Prisma migration safety: no schema drift, no deleted applied migrations, pgfence safety analysis.
 - `codeql.yml` — static security scanning.

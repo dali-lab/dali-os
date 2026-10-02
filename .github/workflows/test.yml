@@ -19,7 +19,19 @@ jobs:
         with:
           node-version: 22
       - run: npm install
-      - run: npm test
+      - name: Run unit tests with coverage
+        run: npm run test:coverage
+      - name: Write coverage summary
+        if: always()
+        continue-on-error: true
+        run: node scripts/coverage-summary.mjs >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: dali-api/coverage/
+          retention-days: 7
 
   e2e-api:
     runs-on: blacksmith-2vcpu-ubuntu-2404
