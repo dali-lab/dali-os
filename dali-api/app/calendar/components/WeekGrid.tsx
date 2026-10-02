@@ -5,7 +5,7 @@ import {
   Building2, Wifi, Users, FileText, Pencil, Copy, Trash2,
   Check, HelpCircle, X, Video, ExternalLink, Clock, Shapes,
 } from "lucide-react";
-import { Tooltip } from "~/components/ui/floating";
+import { Tooltip, isInFloatingLayer } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
 import { Toggle } from "~/components/ui/Toggle";
 import { Modal, ModalHeader, ModalFooter } from "~/components/Modal";
@@ -1975,17 +1975,13 @@ export function SelectionPopoverPortal({
       if (!target) return;
       if (cardRef.current?.contains(target)) return;
       if (anchorEl?.contains(target)) return;
-      // The card's own dropdowns (Role, and any future Select/Menu/Popover)
+      // The card's own dropdowns (Role, the Starts/Ends DateFields, a TimeField)
       // render into their own portal at <body>, so they are not inside
-      // cardRef — picking a role counted as an outside click and closed the
-      // whole form. Anything in a floating layer belongs to the card.
-      if (
-        target instanceof Element
-          ? target.closest("[data-floating-ui-portal]")
-          : (target.parentElement as Element | null)?.closest("[data-floating-ui-portal]")
-      ) {
-        return;
-      }
+      // cardRef — picking a role, a date or a time counted as an outside click
+      // and closed the whole form. Anything in a floating layer belongs to the
+      // card; one shared predicate so this list can't drift from the one
+      // AnchoredPopover uses.
+      if (isInFloatingLayer(target)) return;
       onDismiss();
     };
     // Capture phase so we see the event even if something stops propagation.
