@@ -59,15 +59,19 @@ export async function runListCollabVersions(callerId: string, input: ListVersion
   const authorList = await hydrateAuthors(Array.from(allAuthorIds));
   const authorsById = new Map(authorList.map((a) => [a.id, a]));
 
-  return versions.map((v) => ({
-    id: v.id,
-    createdAt: v.createdAt.toISOString(),
-    plainTextPreview:
-      v.plainText.length > PREVIEW_CHARS
-        ? `${v.plainText.slice(0, PREVIEW_CHARS).trimEnd()}…`
-        : v.plainText,
-    authors: v.authorIds.map((id) => authorsById.get(id)).filter(Boolean),
-  }));
+  // Wrapped in an object: MCP `structuredContent` must be a JSON object, so a
+  // bare array fails result validation on the client before the caller sees it.
+  return {
+    versions: versions.map((v) => ({
+      id: v.id,
+      createdAt: v.createdAt.toISOString(),
+      plainTextPreview:
+        v.plainText.length > PREVIEW_CHARS
+          ? `${v.plainText.slice(0, PREVIEW_CHARS).trimEnd()}…`
+          : v.plainText,
+      authors: v.authorIds.map((id) => authorsById.get(id)).filter(Boolean),
+    })),
+  };
 }
 
 // ─── get_collab_version ───────────────────────────────────────────────────────

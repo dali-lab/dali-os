@@ -70,7 +70,7 @@ export async function runListApplications(userId: string, input: Input): Promise
     visibleDomainIds = reviewerRows.map((r) => r.domainId);
     // If they have no reviewer rows but still passed hasCycleAccess (they're
     // an interviewer only), return empty — they can't see the list view.
-    if (visibleDomainIds.length === 0) return [];
+    if (visibleDomainIds.length === 0) return { applications: [] };
   }
 
   // Build domain filter combining caller visibility + optional input filter.
@@ -84,7 +84,7 @@ export async function runListApplications(userId: string, input: Input): Promise
       : visibleDomainIds ?? undefined;
 
   // If scope collapses to zero domains, return early.
-  if (effectiveDomainIds !== undefined && effectiveDomainIds.length === 0) return [];
+  if (effectiveDomainIds !== undefined && effectiveDomainIds.length === 0) return { applications: [] };
 
   const whereOr = effectiveDomainIds
     ? [{ domainId: { in: effectiveDomainIds } }]
@@ -126,27 +126,31 @@ export async function runListApplications(userId: string, input: Input): Promise
     ? domainApps.filter((da) => (da.application.statusUpdates[0]?.newStatus ?? "Draft") === input.status)
     : domainApps;
 
-  return filtered.map((da) => {
-    const u = da.application.user;
-    const updates = da.application.statusUpdates;
-    const currentStatus = updates[0]?.newStatus ?? "Draft";
-    const submittedAt =
-      updates.find((s) => s.newStatus === "Submitted")?.createdAt ?? null;
-    const domainDisplay =
-      da.domain?.displayName ??
-      da.domain?.name ??
-      null;
-    return {
-      domainApplicationId: da.id,
-      applicationId: da.application.id,
-      applicantName: `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || null,
-      domain: domainDisplay,
-      domainId:
-        da.domainId ??
-        null,
-      status: currentStatus,
-      submittedAt: submittedAt ? submittedAt.toISOString() : null,
-      reviewCount: da._count.reviews,
-    };
-  });
+  // Wrapped in an object: MCP `structuredContent` must be a JSON object, so a
+  // bare array fails result validation on the client before the caller sees it.
+  return {
+    applications: filtered.map((da) => {
+      const u = da.application.user;
+      const updates = da.application.statusUpdates;
+      const currentStatus = updates[0]?.newStatus ?? "Draft";
+      const submittedAt =
+        updates.find((s) => s.newStatus === "Submitted")?.createdAt ?? null;
+      const domainDisplay =
+        da.domain?.displayName ??
+        da.domain?.name ??
+        null;
+      return {
+        domainApplicationId: da.id,
+        applicationId: da.application.id,
+        applicantName: `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || null,
+        domain: domainDisplay,
+        domainId:
+          da.domainId ??
+          null,
+        status: currentStatus,
+        submittedAt: submittedAt ? submittedAt.toISOString() : null,
+        reviewCount: da._count.reviews,
+      };
+    }),
+  };
 }

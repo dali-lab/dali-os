@@ -10,6 +10,7 @@ import {
   submitAnonymousForm,
   submitMemberForm,
 } from "~/forms/lib/public-form";
+import { applicantFillRedirect } from "~/forms/lib/form-usages.server";
 
 // Submit endpoint for /forms/fill/:token. Who may submit is the form's
 // audience setting, enforced through the same formFillAccess gate the fill
@@ -59,6 +60,21 @@ export async function action({ request, params }: Route.ActionArgs) {
   // (inside submitMemberForm) is their authorization. A session is still
   // required so the submission is attributable to the enrollee/instructor.
   if (!hasEducationContext) {
+    // Mirrors the fill page's redirect: a hiring/partner application form is
+    // submitted through its feature's route, which creates the Application row
+    // alongside the submission. Accepting one here would leave an orphan
+    // FormSubmission no applicant surface ever shows.
+    const elsewhere = await applicantFillRedirect(meta.id);
+    if (elsewhere) {
+      return withCors(
+        request,
+        Response.json(
+          { error: `This form is filled out at ${elsewhere}.` },
+          { status: 409 },
+        ),
+      );
+    }
+
     const access = await formFillAccess(meta, userId);
     if (access === "login") {
       return withCors(request, auth.ok ? unauthorized(request) : auth.response);

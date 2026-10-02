@@ -1,6 +1,7 @@
 import { prisma } from "~/lib/db";
 import { SLOTS, isSlot } from "~/projects/lib/form-slots";
 import { NEW_MEMBER_PROFILE_FORM_NAME } from "~/members/lib/profile-form-interpreter";
+import { applicantPortalPath } from "~/hiring/lib/applicant-groups";
 
 // Central answer to "where is this form used?". Each surface keeps its own
 // binding (StaffingCycleFormBinding, PartnerApplicationFormBinding,
@@ -202,4 +203,34 @@ export async function formDeletionBlockers(formId: string): Promise<string[]> {
     );
   }
   return blockers;
+}
+
+// Hiring application forms and the partner application are filled on their
+// feature's own applicant route, never through the form's `/forms/fill/:token`
+// link. A form published BEFORE it was bound keeps that link alive, and because
+// managed forms can't have their distribution settings edited, its `audience`
+// is stuck at the `Members` default — so an applicant following the stray link
+// hits the generic gate and is told they don't have access to a form that is
+// meant for them. Resolve where they should have landed instead.
+//
+// Staffing, education and onboarding-profile forms are deliberately absent:
+// those ARE filled at `/forms/fill/:token` (bound staffing forms, session
+// feedback, new-member onboarding), so they own that link legitimately.
+export async function applicantFillRedirect(
+  formId: string,
+): Promise<string | null> {
+  // Newest cycle wins when a form is reused across cycles — a stale link
+  // should land on the cycle that's actually taking applications.
+  const cycle = await prisma.applicationCycle.findFirst({
+    where: { applicationFormId: formId },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, applicants: true },
+  });
+  if (cycle) return applicantPortalPath(cycle.applicants, cycle.id);
+
+  const partner = await prisma.partnerApplicationFormBinding.findFirst({
+    where: { formId },
+    select: { id: true },
+  });
+  return partner ? "/partner/apply" : null;
 }

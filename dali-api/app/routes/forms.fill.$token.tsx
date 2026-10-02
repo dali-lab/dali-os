@@ -9,6 +9,7 @@ import {
   loadPublicForm,
   ordinaryFillBlock,
 } from "~/forms/lib/public-form";
+import { applicantFillRedirect } from "~/forms/lib/form-usages.server";
 import { canFillEducationForm } from "~/education/lib/feedback.server";
 import {
   MemberFormFillView,
@@ -56,6 +57,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       if (!admitted) return redirect("/");
     }
   } else {
+    // A hiring/partner application form is filled on its feature's applicant
+    // route, which runs its own gate. Send a stray token link there rather
+    // than through the audience gate the applicant is bound to fail.
+    const elsewhere = await applicantFillRedirect(meta.id);
+    if (elsewhere) return redirect(elsewhere);
+
     const access = await formFillAccess(meta, userId);
     if (access === "login") return redirectToLogin(request);
     if (access === "denied") {
