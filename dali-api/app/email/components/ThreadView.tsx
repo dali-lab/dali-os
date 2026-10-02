@@ -61,7 +61,7 @@ export function ThreadView({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-start gap-3">
+      <div className="sticky top-0 z-10 -mb-4 flex items-start gap-3 bg-os-bg pb-4">
         <div className="min-w-0 flex-1">
           <h2 className="font-heading text-2xl font-medium text-foreground">
             {messages[0]?.subject || "(no subject)"}
