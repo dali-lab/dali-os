@@ -3778,8 +3778,8 @@ function EmailStatusSection({
         })}
         <p className="text-xs text-muted-foreground">
           Shared by every cycle.{" "}
-          <Link to="/admin/email" className="underline">
-            Edit in Admin &rarr; Email
+          <Link to="/core/communications/email" className="underline">
+            Edit in Core &rarr; Communications &rarr; Email
           </Link>
           .
         </p>

@@ -12,6 +12,15 @@ function findByFile(entries: Entry[], file: string): Entry | null {
   return null;
 }
 
+function findByPath(entries: Entry[], path: string): Entry | null {
+  for (const entry of entries) {
+    if (entry.path === path) return entry;
+    const hit = entry.children ? findByPath(entry.children, path) : null;
+    if (hit) return hit;
+  }
+  return null;
+}
+
 describe("routes config", () => {
   it("does not register auth/link-member", () => {
     const serialized = JSON.stringify(routes);
@@ -28,5 +37,25 @@ describe("routes config", () => {
 
     expect(findByFile(routes as Entry[], file)).not.toBeNull();
     expect(findByFile(memberLayout?.children ?? [], file)).toBeNull();
+  });
+
+  // Core ▸ Communications ▸ Email is the only nav entry the email editor has,
+  // so that URL has to render the editor. It was served by the redirect stub,
+  // which bounced the click into /admin/email — swapping the sidebar to Admin
+  // and leaving no tab highlighted.
+  it("serves the email editor on its Core url, not a redirect stub", () => {
+    expect(findByPath(routes as Entry[], "core/communications/email")?.file).toBe(
+      "core/routes/core.communications.email.tsx",
+    );
+    // /admin/email keeps a route of its own so the source loader can redirect
+    // with `?key=` intact; the older addresses go through the stub.
+    expect(findByPath(routes as Entry[], "admin/email")?.file).toBe(
+      "admin/routes/admin.email.tsx",
+    );
+    for (const old of ["admin/email-templates", "hiring/emails"]) {
+      expect(findByPath(routes as Entry[], old)?.file).toBe(
+        "admin/routes/admin.email.legacy-redirect.ts",
+      );
+    }
   });
 });

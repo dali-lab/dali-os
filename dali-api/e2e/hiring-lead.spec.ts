@@ -109,7 +109,11 @@ test.describe('hiring lead workflow', () => {
     // per-cycle role could rewrite copy every cycle shares; lab-wide copy is
     // Core's, and there is now one place it is edited.
     await expect(row.getByRole('button', { name: /^(Edit|Write)$/ })).toHaveCount(0);
-    await expect(frame.getByRole('link', { name: /Edit in Admin/ }).first()).toBeVisible();
+    const editLink = frame.getByRole('link', { name: /Edit in Core/ }).first();
+    await expect(editLink).toBeVisible();
+    // The link must reach the editor itself, not a redirect chain: Core is the
+    // canonical home, so this is the address every link out should carry.
+    await expect(editLink).toHaveAttribute('href', '/core/communications/email');
   });
 
   test('review tab holds the reviewer and interviewer rosters', async ({ page }) => {

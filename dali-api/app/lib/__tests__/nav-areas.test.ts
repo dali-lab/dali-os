@@ -252,6 +252,36 @@ describe("areaForPath", () => {
     expect(areaForPath("/projects/42", REGROUP)?.key).toBe("projects");
   });
 
+  // The email editor's URL and its only nav entry have to agree, or clicking
+  // Core ▸ Communications ▸ Email swaps the sidebar to Admin and highlights
+  // nothing. Editing copy is process, so Core owns the address; the transport
+  // (senders, outbox) stays in Admin.
+  it("keeps the email editor in Core and the email transport in Admin", () => {
+    const core = areasFor(REGROUP).find((a) => a.key === "core")!;
+    expect(areaForPath("/core/communications/email", REGROUP)?.key).toBe("core");
+    expect(activeSubtabHref(core, "/core/communications/email")).toBe(
+      "/core/communications",
+    );
+    expect(areaForPath("/core/communications/email?key=hiring:decision:Rejected", REGROUP)?.key)
+      .toBe("core");
+    expect(areaForPath("/admin/email-senders", REGROUP)?.key).toBe("admin");
+    expect(areaForPath("/admin/outbound-messages", REGROUP)?.key).toBe("admin");
+  });
+
+  // Every sidebar entry must point at a path its own area owns — the invariant
+  // that a subtab linking out of its area (the retired `matchPrefix` escape
+  // hatch) quietly broke.
+  it("points every sub-tab at a path its own area claims", () => {
+    for (const area of areasFor(REGROUP)) {
+      for (const tab of area.subtabs) {
+        if (tab.href.includes("?")) continue; // query-scoped deep links have their own rule
+        expect(areaForPath(tab.href, REGROUP)?.key, `${area.key} ▸ ${tab.label}`).toBe(
+          area.key,
+        );
+      }
+    }
+  });
+
   it("keeps Groups reachable, gated as before", () => {
     const projectsArea = areasFor(REGROUP).find((a) => a.key === "projects")!;
     expect(visibleSubtabs(projectsArea, CORE).map((t) => t.href)).toContain(

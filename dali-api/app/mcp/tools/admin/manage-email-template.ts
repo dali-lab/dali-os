@@ -1,8 +1,8 @@
 // MCP `manage_email_template` — write, clear, roll back, or test one email.
 //
-// Mirrors the /admin/email action. There is no create or rename any more: the
-// set of emails is fixed by the registry in code, so an agent edits copy rather
-// than inventing templates. "create" was the main way the old tool could appear
+// Mirrors the /core/communications/email action. There is no create or rename
+// any more: the set of emails is fixed by the registry in code, so an agent
+// edits copy rather than inventing templates. "create" was the main way the old tool could appear
 // to work while affecting nothing, because the store it wrote to had no readers.
 //
 // Requires the `mcp:admin` scope; caller must be a Core lead.

@@ -11,7 +11,7 @@
 | 1 — layout + MIME envelope | ✅ built behind `email-layout` | `Email Phases 1-3` |
 | 2 — notify() + digest on the layout | ✅ built | `Email Phases 1-3` |
 | 3 — auth | ✅ built | `Email Phases 1-3` |
-| 4 — registry + store collapse + `/admin/email` | ✅ built, data-losing migration | `Email Phase 4` |
+| 4 — registry + store collapse + `/core/communications/email` | ✅ built, data-losing migration | `Email Phase 4` |
 | 5 — partners, signing, education | ✅ built | `Email Phase 5` |
 | 6 — copy gaps | ✅ built | `Email Phase 6` |
 | §3.5 — every notification's wording made editable | ✅ built | `Email §3.5` |
@@ -371,8 +371,13 @@ model EmailTemplate {
 - **Data-losing migration** (drops `HiringEmail`, `EducationEmail`, old `EmailTemplate.name`/`folderPageId`) —
   flag in the PR description per CLAUDE.md.
 
-**One admin surface** at `/admin/email`, replacing three: `/admin/email-templates`, the hiring Setup-tab modal buried
-in a 3,900-line route, and the education manage-page modal. Grouped by registry `area`. Per template: edit, live
+**One operator surface** at `/core/communications/email`, replacing three: `/admin/email-templates`, the hiring Setup-tab modal buried
+in a 3,900-line route, and the education manage-page modal.
+
+It lands in Core, not Admin, under the rule `core-admin-hub-review.md` §4.2 already set: process goes to Core,
+system goes to Admin, one home per tool. Editing the lab's wording is process; the *transport* — sender identities,
+the outbound outbox — stays in Admin ▸ System & Insights. This shipped at `/admin/email` first, which left the page's
+URL in Admin and its only nav entry (Core ▸ Communications ▸ Email) pointing at a redirect out of the area. Grouped by registry `area`. Per template: edit, live
 preview, unknown/unfilled lint (already built in hiring), "send test to me" (already built, currently only on the
 dead store), version history with diff and rollback-as-new-version.
 
@@ -436,7 +441,7 @@ the new shell earliest.
 | **1** | Layout + `renderEmail()` + MIME envelope (§3.1, §3.4) | none yet | Pure addition behind the flag. Golden-file tests. |
 | **2** | `notify()` + digest | **38 event types + 2 digests** | One call site each (`notify.server.ts:335`, `notification-digest.server.ts:219`). Largest share of volume for the least code. |
 | **3** | Auth | 3 emails | Pure find-replace of 3 `bodyHtml:` literals. Already on the outbox. |
-| **4** | Registry + store collapse + `/admin/email` (§3.2, §3.3) | 18 existing slots | The data-losing migration. Hiring and education keep working throughout. |
+| **4** | Registry + store collapse + `/core/communications/email` (§3.2, §3.3) | 18 existing slots | The data-losing migration. Hiring and education keep working throughout. |
 | **5** | Partners + signing + education-hardcoded | 15 emails | Brings the 19 non-editable emails under the registry. |
 | **6** | Gaps (§0.7) | partner confirmation, promotion copy, expiry-from-constant | Needs the registry in place. |
 
@@ -541,7 +546,7 @@ the env fence from §0.4. Retiring `CycleNotificationSend` / `SignRequestNotific
 - Turn `email-layout` on in staging and look at two transforms, not ten clients: **Gmail iOS** (full inversion) and
   **Outlook.com** (partial). Then classic Outlook for Windows, which is the Word engine.
 - Check one email of each footer variant (`notifications`, `transactional`, `none`).
-- Open `/admin/email` and confirm all 77 templates list, grouped by area, and that an edit to a notification
+- Open `/core/communications/email` and confirm all 77 templates list, grouped by area, and that an edit to a notification
   template changes both the in-app row and the email.
 - Confirm the plain-text part on a sign-in code and on a digest. (Transactional mail gets no such header either way.)
 2. **Does Phase 0.3 move the onboarding dates to cycle fields or to template variables?** Cycle fields are more
