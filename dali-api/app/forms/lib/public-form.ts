@@ -23,6 +23,8 @@ import {
   type ColumnMapping,
 } from "~/projects/lib/slot-roles";
 import { pickStaffingBinding, type Slot } from "~/projects/lib/form-slots";
+import { interpolateVars } from "~/lib/template-variables";
+import { resolveFormVariables } from "./form-variables";
 import {
   interpretProfileForm,
   NEW_MEMBER_PROFILE_FORM_NAME,
@@ -47,6 +49,32 @@ export type PublicForm = {
   questions: Question[];
 };
 
+// Substitute the shared {{token}} merge variables into the text a member
+// reads: label, description and static options. `info` block bodies are left
+// alone (they're block JSON, not a string). Interpolation is read-time only —
+// the stored version keeps the template, so re-binding the form to the next
+// cycle re-resolves it without an edit.
+function applyFormVariables(
+  questions: Question[],
+  termCode: string | null,
+): Question[] {
+  const vars = resolveFormVariables({ term: termCode });
+  if (Object.keys(vars).length === 0) return questions;
+  // Guarded per field: a stored question can carry an empty or missing label
+  // (the builder renders those as "Untitled question"), and a blanket
+  // interpolate would throw on the fill page for the whole form.
+  const sub = (text: string) => interpolateVars(text, vars);
+  return questions.map((q) => ({
+    ...q,
+    data: {
+      ...q.data,
+      ...(q.data.label ? { label: sub(q.data.label) } : {}),
+      ...(q.data.description ? { description: sub(q.data.description) } : {}),
+      ...(q.data.options ? { options: q.data.options.map(sub) } : {}),
+    },
+  }));
+}
+
 // Resolve a public token to its form's latest version. Returns null when the
 // token is unknown, the form is unpublished, or it has no versions yet —
 // callers must treat all three as an indistinguishable 404 (don't leak which).
@@ -70,6 +98,17 @@ export async function loadPublicForm(
         take: 1,
         select: { id: true, questions: true, intro: true, updatedAt: true },
       },
+      // Only to resolve {{term}} in the question text: the cycle this form
+      // collects for names the term, which is what lets one staffing form be
+      // reused every round. Same picker the gate uses, so the term a member
+      // reads and the cycle their answers land in can't disagree.
+      cycleBindings: {
+        select: {
+          slot: true,
+          updatedAt: true,
+          staffingCycle: { select: { term: { select: { code: true } } } },
+        },
+      },
     },
   });
   if (!form || !form.published) return null;
@@ -92,6 +131,10 @@ export async function loadPublicForm(
     }),
   );
 
+  const boundTermCode =
+    pickStaffingBinding(form.cycleBindings ?? [])?.staffingCycle.term.code ??
+    null;
+
   return {
     formId: form.id,
     name: form.name,
@@ -100,7 +143,7 @@ export async function loadPublicForm(
     // Versions may hold legacy ProseMirror JSON — convert on read so fill
     // surfaces only ever see block JSON.
     description: ensureBlocks(safeParseJsonString(version.intro)),
-    questions: normalizeQuestionBodies(resolved),
+    questions: applyFormVariables(normalizeQuestionBodies(resolved), boundTermCode),
   };
 }
 
@@ -645,9 +688,7 @@ export async function submitMemberForm(args: {
     // row through — acceptable for this surface.
     if (form.oneResponsePerMember) {
       const existing = await existingOrdinarySubmission(form.id, args.userId);
-      if (existing) {
-        return { error: "You've already filled out this form.", status: 409 };
-      }
+      if (existing) return { ...ALREADY_FILLED };
     }
 
     // The onboarding "New Member Profile" form IS the onboarding step: it writes
@@ -804,6 +845,7 @@ export async function submitMemberForm(args: {
         args.answers,
         mapping as ColumnMapping,
         termRows.map((t) => t.id),
+        cycle.termId,
       )
     : { ok: true as const, rows: [] };
   const intentRows = interpreted.ok ? interpreted.rows : [];

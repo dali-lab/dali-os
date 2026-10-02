@@ -1,5 +1,7 @@
 import { useState, useEffect, type CSSProperties, type MutableRefObject, type ReactNode } from 'react'
 import { Select, Tooltip, InfoTip } from "~/components/ui/floating";
+import { placeholder } from "~/lib/template-variables";
+import { lintFormText } from "~/forms/lib/form-variables";
 import {
   GripVertical,
   Pencil,
@@ -487,6 +489,11 @@ export function FormBuilderTab({
     setAcceptCustom('')
   }
   const renderEditForm = () => {
+    // Soft lint, shared with the email and signing editors: a token this
+    // surface doesn't offer stays literal text, so say so rather than letting
+    // an author believe it resolves.
+    const labelUnknownVars = lintFormText(editForm.data?.label || "").unknown;
+
     return (
       <div className="bg-os-accent/5 border border-os-accent/40 rounded-os-item p-5 space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -509,6 +516,19 @@ export function FormBuilderTab({
               className="block w-full"
               placeholder="e.g. What is your major?"
             />
+            <p className="mt-1 text-xs text-muted-foreground">
+              On a form bound to a staffing slot,{" "}
+              <span className="font-mono">{placeholder("term")}</span> fills in
+              that cycle's term, so one form can serve every round. Anywhere
+              else it stays as written.
+            </p>
+            {labelUnknownVars.length > 0 && (
+              <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                Not a variable:{" "}
+                {labelUnknownVars.map((v) => `{{${v}}}`).join(", ")}. It will
+                show to members as written.
+              </p>
+            )}
           </div>
 
           <div>

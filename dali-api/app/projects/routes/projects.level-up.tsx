@@ -103,7 +103,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   const canManage = await canManageStaffing(auth.user.sub);
   const [binding, selectableForms] = await Promise.all([
     singleCycleId ? getSlotBinding(singleCycleId, SLOT) : Promise.resolve(null),
-    canManage && singleCycleId ? listSelectableForms() : Promise.resolve([]),
+    canManage && singleCycleId
+      ? listSelectableForms({ slot: SLOT, exceptCycleId: singleCycleId })
+      : Promise.resolve([]),
   ]);
 
   const view = await buildSubmissionView({
@@ -343,10 +345,14 @@ export async function action({ request }: Route.ActionArgs) {
 
     if (intent === "set-slot-form") {
       const formId = String(form.get("formId") ?? "");
-      const result = await setSlotBinding(cycle.id, SLOT, formId, auth.user.sub);
+      // The picker sets allowMove only after the manager confirms taking the
+      // form off the cycle that currently holds it.
+      const result = await setSlotBinding(cycle.id, SLOT, formId, auth.user.sub, {
+        allowMove: form.get("allowMove") === "1",
+      });
       if (!result.ok)
         return Response.json({ error: result.error }, { status: 400 });
-      return Response.json({ ok: true });
+      return Response.json({ ok: true, movedFrom: result.movedFrom ?? null });
     }
 
     if (intent === "set-slot-mapping") {
