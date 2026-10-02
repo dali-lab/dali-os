@@ -605,7 +605,13 @@ describe("createScheduledMeeting — location and description", () => {
     p.scheduledMeeting.update.mockResolvedValue({});
     p.meetingAttendance.createMany.mockResolvedValue({});
     p.user.findMany.mockResolvedValue([
-      { id: "u2", firstName: "Ally", lastName: "Kim", daliEmail: "ally@dali.dartmouth.edu" },
+      {
+        id: "u2",
+        firstName: "Ally",
+        lastName: "Kim",
+        daliEmail: "ally@dali.dartmouth.edu",
+        timeZone: "America/Los_Angeles",
+      },
     ]);
     p.user.findUnique.mockResolvedValue({ timeZone: "America/New_York" });
     mockNotify.mockResolvedValue({ inApp: 1 });
@@ -683,10 +689,15 @@ describe("createScheduledMeeting — location and description", () => {
 
     expect(res.ok).toBe(true);
     const call = mockNotify.mock.calls[0]![0];
-    // The invite's where-and-what lines reach the template as one detail
-    // value, because the in-app feed and the Slack DM have no attachment.
-    expect(call.message.vars.itemDetail).toContain("Location: Baker 101");
-    expect(call.message.vars.itemDetail).toContain("Bring the latest mocks.");
+    // The invite's when-where-and-what lines reach the template as one detail
+    // value, because the in-app feed and the Slack DM have no attachment. It is
+    // per-recipient so the start reads in that person's own zone — u2 is on
+    // Pacific, and 17:00 UTC is 10:00 AM there — rather than as a raw instant.
+    expect(call.recipients[0].vars.itemDetail).toContain(
+      "Starts Tue, Sep 22, 10:00 AM PT",
+    );
+    expect(call.recipients[0].vars.itemDetail).toContain("Location: Baker 101");
+    expect(call.recipients[0].vars.itemDetail).toContain("Bring the latest mocks.");
     expect(call.recipients[0].ics).toContain("LOCATION:Baker 101");
     expect(call.recipients[0].ics).toContain("DESCRIPTION:Bring the latest mocks.");
   });

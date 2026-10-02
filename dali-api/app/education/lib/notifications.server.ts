@@ -145,8 +145,10 @@ export async function notifyNewAssignment(args: {
   if (enrollees.length === 0) return;
 
   const title = `New assignment in ${offering.title}: ${args.assignmentTitle}`;
+  // Pinned to the lab zone: the server runs UTC on Fly, so an 11:59 PM ET
+  // deadline would otherwise print the following day.
   const body = args.dueAt
-    ? `Due ${args.dueAt.toLocaleDateString("en-US", { month: "short", day: "numeric" })}. Open the course hub to submit.`
+    ? `Due ${args.dueAt.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: APPLICATION_TZ })}. Open the course hub to submit.`
     : "Open the course hub to submit.";
 
   // Members get a pref-aware in-app notification (education.assignment
