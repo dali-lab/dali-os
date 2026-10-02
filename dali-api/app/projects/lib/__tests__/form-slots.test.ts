@@ -8,6 +8,7 @@ import {
   pickStaffingBinding,
   isGateAudience,
   setSlotGate,
+  setSlotBinding,
 } from "~/projects/lib/form-slots";
 import { prisma } from "~/lib/db";
 
@@ -91,6 +92,52 @@ describe("isGateAudience", () => {
     expect(isGateAudience("Manual")).toBe(false);
     expect(isGateAudience("HiringParticipants")).toBe(false);
     expect(isGateAudience("nonsense")).toBe(false);
+  });
+});
+
+describe("setSlotBinding", () => {
+  it("clears the slot when no form is selected", async () => {
+    vi.resetAllMocks();
+    mockPrisma.staffingCycleFormBinding.deleteMany.mockResolvedValue({ count: 1 });
+    const result = await setSlotBinding("cyc-26F", "intent-to-work", "", "u-1");
+    expect(result.ok).toBe(true);
+    expect(mockPrisma.staffingCycleFormBinding.deleteMany).toHaveBeenCalledWith({
+      where: { staffingCycleId: "cyc-26F", slot: "intent-to-work" },
+    });
+    expect(mockPrisma.staffingCycleFormBinding.upsert).not.toHaveBeenCalled();
+  });
+
+  it("refuses to bind a form that already feeds another cycle", async () => {
+    vi.resetAllMocks();
+    mockPrisma.form.findUnique.mockResolvedValue({ id: "f-1" });
+    mockPrisma.staffingCycleFormBinding.findFirst.mockResolvedValue({
+      slot: "intent-to-work",
+      staffingCycle: { term: { code: "27W" } },
+    });
+    const result = await setSlotBinding("cyc-26F", "intent-to-work", "f-1", "u-1");
+    expect(result).toEqual({
+      ok: false,
+      error: expect.stringContaining("27W Intent to Work"),
+    });
+    expect(mockPrisma.staffingCycleFormBinding.upsert).not.toHaveBeenCalled();
+  });
+
+  it("binds when the form feeds no other cycle", async () => {
+    vi.resetAllMocks();
+    mockPrisma.form.findUnique.mockResolvedValue({ id: "f-1" });
+    mockPrisma.staffingCycleFormBinding.findFirst.mockResolvedValue(null);
+    mockPrisma.staffingCycleFormBinding.upsert.mockResolvedValue({});
+    const result = await setSlotBinding("cyc-27W", "intent-to-work", "f-1", "u-1");
+    expect(result.ok).toBe(true);
+    expect(mockPrisma.staffingCycleFormBinding.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          formId: "f-1",
+          NOT: { staffingCycleId: "cyc-27W", slot: "intent-to-work" },
+        }),
+      }),
+    );
+    expect(mockPrisma.staffingCycleFormBinding.upsert).toHaveBeenCalled();
   });
 });
 
