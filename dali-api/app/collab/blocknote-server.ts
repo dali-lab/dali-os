@@ -23,9 +23,12 @@ import {
 import { ServerBlockNoteEditor } from "@blocknote/server-util";
 import { withMultiColumn } from "@blocknote/xl-multi-column";
 import { randomUUID } from "node:crypto";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import type * as Y from "yjs";
 import {
   calloutConfig,
+  componentConfig,
   embedConfig,
   mentionConfig,
   pageMentionConfig,
@@ -39,6 +42,8 @@ import {
   type SigningFieldType,
 } from "~/lib/signing-fields";
 import { sanitizeRichEmailHtml, htmlToPlainText } from "~/lib/email";
+import { parseComponentData } from "~/components/doc/components/kinds";
+import { ComponentView } from "~/components/doc/components/views";
 
 export { BLOCKNOTE_FRAGMENT, LEGACY_PM_FRAGMENT } from "~/components/doc/schema/configs";
 
@@ -174,6 +179,27 @@ const embedSpec = createBlockSpec(embedConfig, {
   },
 })();
 
+// Component library block: the same React view the editor shows, rendered to
+// a string. Custom code is left out of exports (forExport) — see views.tsx.
+function renderComponent(block: { props: { kind?: unknown; data?: unknown } }) {
+  const kind = String(block.props.kind ?? "");
+  const dom = document.createElement("div");
+  dom.setAttribute("data-component", kind);
+  dom.innerHTML = renderToStaticMarkup(
+    createElement(ComponentView, {
+      kind,
+      data: parseComponentData(kind, String(block.props.data ?? "")),
+      forExport: true,
+    }),
+  );
+  return { dom };
+}
+
+const componentSpec = createBlockSpec(componentConfig, {
+  render: renderComponent,
+  toExternalHTML: renderComponent,
+})();
+
 // defaultBlockSpecs includes file and video (and audio, which the app never
 // uses but keeping it in the server schema is harmless — it ensures blocks
 // authored by external tools are preserved, not stripped on server read).
@@ -184,7 +210,7 @@ const embedSpec = createBlockSpec(embedConfig, {
 // specs are built with the core createBlockSpecFromTiptapNode — no React — so
 // they are safe under the jsdom conversions below.
 export const serverSchema = withMultiColumn(BlockNoteSchema.create({
-  blockSpecs: { ...defaultBlockSpecs, callout: calloutSpec, embed: embedSpec, pageBreak: createPageBreakBlockSpec() },
+  blockSpecs: { ...defaultBlockSpecs, callout: calloutSpec, embed: embedSpec, component: componentSpec, pageBreak: createPageBreakBlockSpec() },
   inlineContentSpecs: {
     ...defaultInlineContentSpecs,
     mention: mentionSpec,
@@ -229,11 +255,19 @@ function serialized<T>(fn: () => Promise<T>): Promise<T> {
 // ---------------------------------------------------------------------------
 // Conversions
 
+// BlockNote mirrors every block prop onto the rendered element as a data-*
+// attribute, which for a component is its whole raw `data` JSON — unsafe links
+// and custom code included. The rendered view is the only form that leaves the
+// server. Attribute values are escaped, so a quote can't end the match early.
+function stripComponentData(html: string): string {
+  return html.replace(/ data-data="[^"]*"/g, "");
+}
+
 /** Blocks → simplified semantic HTML (blocksToHTMLLossy — the right dialect
  * for docx export, education description panes, and the public site). */
 export function blocksToHtml(blocks: DocBlock[]): Promise<string> {
   if (blocks.length === 0) return Promise.resolve("");
-  return serialized(() => getServerEditor().blocksToHTMLLossy(blocks as any));
+  return serialized(() => getServerEditor().blocksToHTMLLossy(blocks as any)).then(stripComponentData);
 }
 
 /** Blocks → the FULL BlockNote editor DOM (blocksToFullHTML), carrying the
@@ -242,7 +276,7 @@ export function blocksToHtml(blocks: DocBlock[]): Promise<string> {
  * exporter feeds to headless Chromium. */
 export function blocksToFullHtml(blocks: DocBlock[]): Promise<string> {
   if (blocks.length === 0) return Promise.resolve("");
-  return serialized(() => getServerEditor().blocksToFullHTML(blocks as any));
+  return serialized(() => getServerEditor().blocksToFullHTML(blocks as any)).then(stripComponentData);
 }
 
 /** Announcement body → { html, text }: email-safe sanitized HTML for the email

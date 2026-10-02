@@ -299,6 +299,7 @@ model User {
 
   // ─── Page documentation (per-page guides) ─────────────────────────────────
   pageDocsMaintained PageDoc[] @relation("PageDocMaintainer")
+  blogPosts          BlogPost[]
   pageDocsCreated    PageDoc[] @relation("PageDocCreatedBy")
   pageDocsLastEdited PageDoc[] @relation("PageDocLastEditedBy")
 
@@ -6545,4 +6546,56 @@ model DisplayScanSession {
   createdAt DateTime @default(now())
 
   @@index([scheduledMeetingId])
+}
+
+// ─── Resources ───────────────────────────────────────────────────────────────
+
+// One tab on /resources. Each bookmark is a reference page whose body is the
+// collab room `resources:{id}:body` (Core/Admin write, lab members read). The
+// row with id "lab" carries the pre-bookmarks singleton document.
+model ResourceBookmark {
+  id       String @id @default(cuid())
+  title    String
+  position Int    @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([position])
+}
+
+enum BlogVisibility {
+  Internal
+  Public
+}
+
+// A member-written post on the /resources front page. Internal posts stay in
+// the app; Public ones are also served to dali.website (api/public/blogs).
+// The body is the collab room `blogPost:{id}:body`, synced back to contentJson
+// (see COLLAB_SOURCES) along with the excerpt and cover derived from it.
+model BlogPost {
+  id            String         @id @default(cuid())
+  title         String
+  contentJson   Json?
+  excerpt       String         @default("")
+  coverImageUrl String?
+  // The author's own picks on the write page. Each wins over the value derived
+  // from the body (excerpt / coverImageUrl) wherever the post is listed.
+  summary        String?
+  customCoverUrl String?
+  visibility    BlogVisibility @default(Internal)
+  // Null = draft, seen only by its author and Core.
+  publishedAt   DateTime?
+  // Core's front page arrangement: pinned posts lead in rank order (lowest
+  // first); null = unpinned, falling in behind them newest first.
+  frontPageRank Int?
+
+  authorId String
+  author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([publishedAt])
+  @@index([authorId])
 }

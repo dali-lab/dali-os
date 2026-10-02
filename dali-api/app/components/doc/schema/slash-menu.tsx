@@ -13,9 +13,24 @@
 import { filterSuggestionItems, getPageBreakSlashMenuItems, insertOrUpdateBlockForSlashMenu } from "@blocknote/core";
 import { getDefaultReactSlashMenuItems } from "@blocknote/react";
 import { getMultiColumnSlashMenuItems } from "@blocknote/xl-multi-column";
-import { Columns2, Globe } from "lucide-react";
+import {
+  BarChart3,
+  Code2,
+  Columns2,
+  Globe,
+  Hash,
+  Images,
+  LayoutGrid,
+  List,
+  Milestone,
+  SeparatorHorizontal,
+  Sparkles,
+  Tags,
+  type LucideIcon,
+} from "lucide-react";
 import type { DefaultReactSuggestionItem } from "@blocknote/react";
 import { insertItemIntoGroup } from "../blocks-util";
+import { COMPONENT_KINDS } from "../components/kinds";
 import type { Features } from "../features";
 import type { DocEditorInstance } from "./build";
 
@@ -97,6 +112,40 @@ function embedItem(editor: DocEditorInstance): KeyedItem {
   };
 }
 
+const COMPONENT_ICONS: Record<string, LucideIcon> = {
+  chips: Tags,
+  cards: LayoutGrid,
+  timeline: Milestone,
+  links: List,
+  stats: Hash,
+  bars: BarChart3,
+  gallery: Images,
+  feature: Sparkles,
+  spacer: SeparatorHorizontal,
+  code: Code2,
+};
+
+// One item per library entry, in a group of their own at the end of the menu.
+function componentItems(editor: DocEditorInstance): KeyedItem[] {
+  return COMPONENT_KINDS.map((def) => {
+    const Icon = COMPONENT_ICONS[def.kind] ?? LayoutGrid;
+    return {
+      key: `component_${def.kind}`,
+      title: def.title,
+      subtext: def.subtext,
+      aliases: ["component", ...def.aliases],
+      group: "Components",
+      icon: <Icon size={18} aria-hidden />,
+      onItemClick: () => {
+        insertOrUpdateBlockForSlashMenu(editor, {
+          type: "component",
+          props: { kind: def.kind, data: JSON.stringify(def.defaults) },
+        });
+      },
+    };
+  });
+}
+
 /** Full item list for a feature set (unfiltered by query). */
 export function getDocSlashMenuItems(
   editor: DocEditorInstance,
@@ -123,6 +172,7 @@ export function getDocSlashMenuItems(
       items = [...items, pb as unknown as DefaultReactSuggestionItem];
     }
   }
+  if (features.components) items = [...items, ...componentItems(editor)];
   // AI items go first so they appear above "Basic blocks" — same order as Notion.
   return aiItems.length > 0 ? [...aiItems, ...items] : items;
 }

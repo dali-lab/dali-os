@@ -153,9 +153,16 @@ export default [
       "projects/routes/projects.$id.public-view.tsx",
     ),
 
-    // Resources — the lab's shared reference document. One fixed collab room
-    // (no Drive page behind it), read by every lab member, written by Core.
-    route("resources", "routes/resources.tsx"),
+    // Resources — a curated front page of member blog posts, plus bookmark
+    // tabs (Core-managed reference pages, each its own collab room).
+    route("resources", "routes/resources.tsx", [
+      index("routes/resources._index.tsx"),
+      route("b/:bookmarkId", "routes/resources.b.$bookmarkId.tsx"),
+      route("blog/:postId", "routes/resources.blog.$postId.tsx"),
+    ]),
+    // The writing page sits outside the Resources layout: no masthead or
+    // bookmark tabs, just the post and its settings.
+    route("resources/write/:postId", "routes/resources.write.$postId.tsx"),
 
     // Drive — the unified documents + files + forms + agreements hub. This is the
     // only browsing surface; the old /documents and /forms hubs have been removed
@@ -449,6 +456,8 @@ export default [
     "public-api/routes/api.public.application-cycle.ts",
   ),
   route("api/public/media", "public-api/routes/api.public.media.ts"),
+  route("api/public/blogs", "public-api/routes/api.public.blogs.ts"),
+  route("api/public/blogs/:id", "public-api/routes/api.public.blogs.$id.ts"),
 
   // Scheduled meetings
   route("api/scheduled-meetings", "calendar/routes/api.scheduled-meetings.ts"),
