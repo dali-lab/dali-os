@@ -109,6 +109,12 @@ export const FEATURE_FLAGS = [
     description:
       "Lets a member connect their own @dali.dartmouth.edu mailbox to the Email tab, next to project and shared inboxes. Only they can read it. Connecting requires agreeing to a risk notice first, and each agreement is recorded in the audit log. Turning this off hides connected personal inboxes without deleting the sign-in. Ships off.",
   },
+  {
+    key: "start-terms",
+    label: "Application start terms",
+    description:
+      "Separates the term a hiring cycle runs in from the term its hires start in. A Students cycle's setup gains a list of start terms it offers; applicants pick one on the application, and Core can change it afterward from the hiring onboarding board, which gains a Starts column and filters by cycle, start term, or both at once. A cycle with no start terms set shows no picker and reads as it does today. Ships off.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];
