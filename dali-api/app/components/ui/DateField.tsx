@@ -154,7 +154,7 @@ function TimePart({
           onCommit(value <= min ? max : value - 1);
         }
       }}
-      className="w-12 rounded-md border border-border bg-background px-1.5 py-1 text-center text-sm tabular-nums text-foreground focus:outline-none focus:ring-1 focus:ring-accent-coral/40"
+      className="w-12 min-w-0 rounded-md border border-border bg-background px-1.5 py-1 text-center text-sm tabular-nums text-foreground focus:outline-none focus:ring-1 focus:ring-accent-coral/40"
     />
   );
 }
@@ -600,7 +600,7 @@ export function DateField({
             )}
 
             {showTime && (
-              <div className={cn("flex items-center gap-2", showCalendar && "mt-3 border-t border-border pt-3")}>
+              <div className={cn("flex items-center gap-1.5", showCalendar && "mt-3 border-t border-border pt-3")}>
                 <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />
                 <TimePart
                   value={to12(cur?.hh ?? 0)}
@@ -618,7 +618,7 @@ export function DateField({
                   ariaLabel="Minute"
                   onCommit={(m) => setTime(cur?.hh ?? 0, m)}
                 />
-                <div className="inline-flex overflow-hidden rounded-md border border-border" role="group" aria-label="AM/PM">
+                <div className="inline-flex shrink-0 overflow-hidden rounded-md border border-border" role="group" aria-label="AM/PM">
                   {([["AM", false], ["PM", true]] as const).map(([label, pm]) => {
                     const active = ((cur?.hh ?? 0) >= 12) === pm;
                     return (
@@ -641,7 +641,7 @@ export function DateField({
                   <button
                     type="button"
                     onClick={close}
-                    className="ml-auto rounded-md bg-accent-coral px-2.5 py-1 text-xs font-medium text-white hover:bg-accent-coral-light"
+                    className="ml-auto shrink-0 rounded-md bg-accent-coral px-2.5 py-1 text-xs font-medium text-white hover:bg-accent-coral-light"
                   >
                     Done
                   </button>
