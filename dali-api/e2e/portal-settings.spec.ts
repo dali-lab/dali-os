@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures';
 
 // Applicant settings live behind the account menu at the foot of the portal
-// rail: editable preferred name, pronouns, phone.
+// rail: editable preferred name, pronouns, class year, major.
 test('applicant edits settings via the account menu', async ({ page, loginAs }) => {
   await loginAs({ netId: 'f007ke1' });
   await page.goto('/portal');
