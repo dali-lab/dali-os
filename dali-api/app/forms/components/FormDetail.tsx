@@ -70,6 +70,9 @@ type FormVersion = ReturnType<
 //                         are read-only and are what publishing serves.
 export function FormDetail() {
   const { form, terms, usages, groups, managing, hiringLinks: rawHiringLinks, collabToken, results } = useLoaderData<typeof loader>();
+  // The staffing slot binding, if any: {{term}} in this form's questions
+  // resolves from it (see FormBuilderTab's termBinding).
+  const staffingBinding = usages.find((u) => u.kind === "staffing") ?? null;
   const hiringLinks: HiringFormLink[] = rawHiringLinks ?? [];
   const tz = useUserTimeZone();
   // A dedicated fetcher for Save and Publish-from-the-builder, so both
@@ -445,6 +448,9 @@ export function FormDetail() {
 
       {isEditing ? (
         <FormBuilderTab
+          // Tells the question editor what {{term}} resolves to here, and
+          // warns when the form drives no slot so the token can't resolve.
+          termBinding={staffingBinding}
           // Remount only on a deliberate re-seed (startEditing bumps
           // editKey), so a draft save's revalidation doesn't blow away
           // in-progress edits. FormBuilderTab reads its initial* props

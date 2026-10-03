@@ -23,6 +23,10 @@ export type FormUsage = {
   /** Where this usage is managed — the feature surface that owns the form.
    *  Absent when there's no single meaningful target. */
   href?: string;
+  /** Staffing usages only: the term code of the cycle this form collects for,
+   *  which is what {{term}} in the form's question text resolves to. Lets the
+   *  builder show an author the real value instead of the token. */
+  termCode?: string;
 };
 
 // A form is "managed" by a feature when that feature owns who fills it and
@@ -41,6 +45,13 @@ const MANAGED_KINDS: ReadonlySet<FormUsageKind> = new Set([
 /** The feature managing this form, if any (first managed usage wins). */
 export function managingUsage(usages: FormUsage[]): FormUsage | null {
   return usages.find((u) => MANAGED_KINDS.has(u.kind)) ?? null;
+}
+
+/** The staffing slot binding, if this form drives one. Carries the term code,
+ *  so an author can be told what {{term}} reads as and a reader can be told
+ *  the slot's one-and-done rule. */
+export function staffingUsage(usages: FormUsage[]): FormUsage | null {
+  return usages.find((u) => u.kind === "staffing") ?? null;
 }
 
 export async function formUsages(formId: string): Promise<FormUsage[]> {
@@ -104,6 +115,7 @@ export async function formUsages(formId: string): Promise<FormUsage[]> {
       kind: "staffing",
       label: `${b.staffingCycle.term.code} ${slotName}`,
       href: "/core/staffing",
+      termCode: b.staffingCycle.term.code,
     });
   }
   if (partnerBinding) {
