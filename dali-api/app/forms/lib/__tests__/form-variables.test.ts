@@ -4,7 +4,7 @@ import {
   lintFormText,
   resolveFormVariables,
 } from "~/forms/lib/form-variables";
-import { interpolateVars } from "~/lib/template-variables";
+import { extractPlaceholders, interpolateVars } from "~/lib/template-variables";
 
 describe("form merge variables", () => {
   it("offers the shared term token, derived from the registry", () => {
@@ -33,5 +33,19 @@ describe("form merge variables", () => {
       "memberName",
     ]);
     expect(lintFormText("All good for {{term}}").unknown).toEqual([]);
+  });
+});
+
+describe("term token binding awareness", () => {
+  // What the builder's warning keys off: whether {{term}} is present at all.
+  // Shared extractor, so the grammar can't drift from the interpolator's.
+  it("detects the token the way the builder does", () => {
+    expect(
+      extractPlaceholders("Are you on a project in {{term}}?").includes("term"),
+    ).toBe(true);
+    expect(extractPlaceholders("No tokens here").includes("term")).toBe(false);
+    // The no-whitespace grammar is deliberate: {{ term }} can't be
+    // interpolated, so it must not read as a resolvable token either.
+    expect(extractPlaceholders("in {{ term }}?").includes("term")).toBe(false);
   });
 });
