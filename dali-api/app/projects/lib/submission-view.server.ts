@@ -238,10 +238,24 @@ export async function buildSubmissionView(args: {
 
   rows.sort((a, b) => a.name.localeCompare(b.name));
 
+  // A single cycle in view names one term, which resolves {{term}} in the
+  // saved column labels (a "this cycle's term" status column reads as
+  // "Status — 27S"). The all-terms aggregate spans several, so there's no one
+  // code to substitute and the token stays literal.
+  const termCode =
+    cycleIds.length === 1
+      ? ((
+          await prisma.staffingCycle.findUnique({
+            where: { id: cycleIds[0] },
+            select: { term: { select: { code: true } } },
+          })
+        )?.term.code ?? null)
+      : null;
+
   return {
     mapping,
-    allColumns: orderedColumns(mapping),
-    tableColumns: visibleColumns(mapping),
+    allColumns: orderedColumns(mapping, termCode),
+    tableColumns: visibleColumns(mapping, termCode),
     rows,
   };
 }

@@ -35,6 +35,7 @@ import {
   type SigningFieldType,
 } from "~/lib/signing-fields";
 import { ALL_SIGNING_VARIABLES } from "~/lib/signing-variables";
+import { placeholder } from "~/lib/template-variables";
 import { formatDateTime, fullName, UNKNOWN_LABEL } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import {
@@ -265,7 +266,7 @@ function SigningInsertControls({
       >
         {ALL_SIGNING_VARIABLES.map((v) => (
           <Menu.Item key={v} onSelect={() => handleVariable(v)}>
-            <span className="font-mono">{`{{${v}}}`}</span>
+            <span className="font-mono">{placeholder(v)}</span>
             {examples[v] ? (
               <span className="ml-2 text-muted-foreground">→ {examples[v]}</span>
             ) : null}

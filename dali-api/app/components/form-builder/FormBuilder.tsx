@@ -1,5 +1,7 @@
 import { useState, useEffect, type CSSProperties, type MutableRefObject, type ReactNode } from 'react'
 import { Select, Tooltip, InfoTip } from "~/components/ui/floating";
+import { extractPlaceholders, placeholder } from "~/lib/template-variables";
+import { lintFormText } from "~/forms/lib/form-variables";
 import {
   GripVertical,
   Pencil,
@@ -217,6 +219,11 @@ interface FormBuilderTabProps {
   // Terms offered for term-scoped reference sources (e.g. projects active in a
   // chosen term). Empty/omitted when no term picker is needed.
   terms?: { id: string; code: string }[]
+  // The staffing slot this form collects for, when it drives one. {{term}} in
+  // question text resolves from it, so the editor can show an author what the
+  // token reads as — and warn when the form is bound to nothing and the token
+  // will reach members as written.
+  termBinding?: { label: string; termCode?: string } | null
   // Filled with a reader of the live, unsaved builder state so the host's own
   // controls (the page's Preview button) can act on in-progress edits.
   snapshotRef?: MutableRefObject<(() => { questions: Question[]; description: unknown }) | null>
@@ -248,6 +255,7 @@ export function FormBuilderTab({
   snapshotRef,
   formId,
   collabToken,
+  termBinding = null,
 }: FormBuilderTabProps) {
   const [initialQuestions] = useState(() => repairQuestions(rawInitialQuestions))
   // Local state used when the collab room is unavailable (hiring challenge
@@ -487,6 +495,17 @@ export function FormBuilderTab({
     setAcceptCustom('')
   }
   const renderEditForm = () => {
+    // Soft lint, shared with the email and signing editors: a token this
+    // surface doesn't offer stays literal text, so say so rather than letting
+    // an author believe it resolves.
+    const labelUnknownVars = lintFormText(editForm.data?.label || "").unknown;
+    // {{term}} only resolves through a staffing slot binding. Written on a
+    // form that drives no slot, it reaches members verbatim — so say which it
+    // is, rather than leaving the author to find out from a filled form.
+    const usesTermToken = extractPlaceholders(
+      `${editForm.data?.label || ""} ${editForm.data?.description || ""}`,
+    ).includes("term");
+
     return (
       <div className="bg-os-accent/5 border border-os-accent/40 rounded-os-item p-5 space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -509,6 +528,37 @@ export function FormBuilderTab({
               className="block w-full"
               placeholder="e.g. What is your major?"
             />
+            <p className="mt-1 text-xs text-muted-foreground">
+              On a form bound to a staffing slot,{" "}
+              <span className="font-mono">{placeholder("term")}</span> fills in
+              that cycle's term, so one form can serve every round. Anywhere
+              else it stays as written.
+            </p>
+            {labelUnknownVars.length > 0 && (
+              <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                Not a variable:{" "}
+                {labelUnknownVars.map((v) => `{{${v}}}`).join(", ")}. It will
+                show to members as written.
+              </p>
+            )}
+            {usesTermToken &&
+              (termBinding ? (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  <span className="font-mono">{placeholder("term")}</span> reads
+                  as{" "}
+                  <span className="font-medium text-foreground">
+                    {termBinding.termCode ?? termBinding.label}
+                  </span>{" "}
+                  while this form is on {termBinding.label}.
+                </p>
+              ) : (
+                <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                  This form isn't bound to a staffing slot, so{" "}
+                  <span className="font-mono">{placeholder("term")}</span> has
+                  no term to fill in and members will see it as written. Bind it
+                  on the slot's board, or write the term out.
+                </p>
+              ))}
           </div>
 
           <div>

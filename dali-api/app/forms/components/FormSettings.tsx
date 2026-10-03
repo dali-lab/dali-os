@@ -23,7 +23,7 @@ export function FormSettingsButton({
   hiringLinks,
   ...fields
 }: {
-  managing: { label: string; href?: string | null } | null;
+  managing: { kind?: string; label: string; href?: string | null } | null;
   usages: Usage[];
   hiringLinks: HiringFormLink[];
 } & Parameters<typeof FormSettingsFields>[0]) {
@@ -56,16 +56,28 @@ export function FormSettingsButton({
           {managing ? (
             <div className="rounded-os-item bg-os-accent/10 p-4 flex items-start gap-3 text-sm text-foreground">
               <Lock className="w-4 h-4 text-os-accent shrink-0 mt-0.5" />
-              <span>
-                Managed by{" "}
-                {managing.href ? (
-                  <Link to={managing.href} className="font-semibold underline hover:no-underline">
-                    {managing.label}
-                  </Link>
-                ) : (
-                  <span className="font-semibold">{managing.label}</span>
+              <div className="flex flex-col gap-1">
+                <span>
+                  Managed by{" "}
+                  {managing.href ? (
+                    <Link to={managing.href} className="font-semibold underline hover:no-underline">
+                      {managing.label}
+                    </Link>
+                  ) : (
+                    <span className="font-semibold">{managing.label}</span>
+                  )}
+                </span>
+                {/* The response rules below are hidden for a managed form, so
+                    name the one the staffing slot enforces instead of leaving
+                    it to be discovered from a refused submission. */}
+                {managing.kind === "staffing" && (
+                  <span className="text-xs text-muted-foreground">
+                    One response per member, always: a second submit is refused
+                    and the member sees when they filled it. Unbind the slot to
+                    hand the form's settings back.
+                  </span>
                 )}
-              </span>
+              </div>
             </div>
           ) : (
             <FormSettingsFields {...fields} />

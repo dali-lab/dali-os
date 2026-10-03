@@ -152,10 +152,85 @@ describe("submitMemberForm one-response gate", () => {
     // Keyed on the bound tuple, not the unscoped ordinary where-clause.
     expect(mockPrisma.formSubmission.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { userId: "user-1", staffingCycleId: "cyc-1", slot: "level-up" },
+        where: {
+          userId: "user-1",
+          staffingCycleId: { in: ["cyc-1"] },
+          slot: "level-up",
+        },
       }),
     );
     expect(mockPrisma.formSubmission.create).not.toHaveBeenCalled();
+    expect(mockNotify).not.toHaveBeenCalled();
+  });
+
+  it("409s when the prior submission sits under another cycle the form is bound to", async () => {
+    // The prod bug: bound to both the 26F and 27W cycles' slot. The fill
+    // records against the most recently bound cycle, but a row under EITHER
+    // one means they've filled it — the per-cycle @@unique can't see that.
+    mockPrisma.form.findUnique.mockResolvedValue(
+      formRow({
+        cycleBindings: [
+          LEVEL_UP_BINDING,
+          {
+            ...LEVEL_UP_BINDING,
+            updatedAt: new Date("2026-09-29"),
+            staffingCycle: {
+              id: "cyc-2",
+              termId: "term-2",
+              maxPreferencesPerMember: 3,
+            },
+          },
+        ],
+      }),
+    );
+    mockPrisma.formSubmission.findFirst.mockResolvedValue({
+      id: "sub-0",
+      createdAt: new Date("2026-09-24T12:00:00Z"),
+    });
+
+    const result = await submit();
+
+    expect(result).toEqual({
+      error: "You've already filled out this form.",
+      status: 409,
+    });
+    expect(mockPrisma.formSubmission.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          staffingCycleId: { in: ["cyc-1", "cyc-2"] },
+        }),
+      }),
+    );
+    expect(mockPrisma.formSubmission.create).not.toHaveBeenCalled();
+  });
+
+  it("409s the loser of a submit race instead of surfacing the index error", async () => {
+    // Both requests pass the read gate, then @@unique rejects the second with
+    // P2002. The row is refused either way — the member should read the
+    // one-and-done message, not a 500.
+    mockPrisma.form.findUnique.mockResolvedValue(
+      formRow({ cycleBindings: [LEVEL_UP_BINDING] }),
+    );
+    mockPrisma.formSubmission.findFirst.mockResolvedValue(null);
+    mockPrisma.$transaction.mockRejectedValue({ code: "P2002" });
+
+    const result = await submit();
+
+    expect(result).toEqual({
+      error: "You've already filled out this form.",
+      status: 409,
+    });
+    expect(mockNotify).not.toHaveBeenCalled();
+  });
+
+  it("still surfaces a write failure that isn't a duplicate", async () => {
+    mockPrisma.form.findUnique.mockResolvedValue(
+      formRow({ cycleBindings: [LEVEL_UP_BINDING] }),
+    );
+    mockPrisma.formSubmission.findFirst.mockResolvedValue(null);
+    mockPrisma.$transaction.mockRejectedValue({ code: "P1001" });
+
+    await expect(submit()).rejects.toMatchObject({ code: "P1001" });
     expect(mockNotify).not.toHaveBeenCalled();
   });
 
@@ -244,7 +319,7 @@ describe("ordinaryFillBlock", () => {
       expect.objectContaining({
         where: {
           userId: "user-1",
-          staffingCycleId: "cyc-1",
+          staffingCycleId: { in: ["cyc-1"] },
           slot: "project-bids",
         },
       }),
