@@ -776,15 +776,16 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onGuideCh
         const panes = prev.panes.map((p) => ({
           ...p,
           tabs: p.tabs.map((t) => {
-            if (t.id !== tabId || t.url === nextUrl) return t
-            changed = true
-            // Caused by our own back/forward — stacks were already adjusted
-            // by goBack/goForward, so just sync url.
+            if (t.id !== tabId) return t
+            // Caused by our own back/forward — stacks and url were already
+            // adjusted by goBack/goForward. Clear the marker either way, or it
+            // outlives the step and swallows a later real navigation to the
+            // same url.
             const pending = pendingHistoryOpRef.current.get(t.id)
-            if (pending === nextUrl) {
-              pendingHistoryOpRef.current.delete(t.id)
-              return { ...t, url: nextUrl }
-            }
+            if (pending === nextUrl) pendingHistoryOpRef.current.delete(t.id)
+            if (t.url === nextUrl) return t
+            changed = true
+            if (pending === nextUrl) return { ...t, url: nextUrl }
             // A new in-tab navigation: push the old url onto backStack and
             // clear forwardStack (browser semantics). Navigating inside a
             // preview tab is real engagement, so promote it to a kept tab.
@@ -881,6 +882,23 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onGuideCh
     apiRef.current = {
       openTab: (req, opts) => {
         const ephemeral = opts?.ephemeral ?? false
+        // The tab filed under this url may not be showing it: its stored url
+        // only follows the frame through messages, so one that goes missing
+        // leaves the tab claiming a page the frame has left. Focusing it would
+        // then do nothing, and the page asked for would be unreachable from the
+        // sidebar. Ask the frame where it really is, and if it has drifted,
+        // send it to the url and keep the page it was on as the way back.
+        const hit = findTabPane(stateRef.current, req.url)
+        const hitFrame = hit ? iframeElsRef.current.get(hit.tabId) : undefined
+        const driftedFrom = hitFrame ? frameUrl(hitFrame) : null
+        const drifted = driftedFrom !== null && driftedFrom !== comparableUrl(req.url)
+        if (hit && hitFrame && drifted) {
+          pendingHistoryOpRef.current.delete(hit.tabId)
+          hitFrame.contentWindow?.postMessage(
+            { type: 'dali:navigate', url: req.url },
+            window.location.origin,
+          )
+        }
         setState((prev) => {
           const existing = findTabPane(prev, req.url)
           if (existing) {
@@ -892,9 +910,16 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onGuideCh
                   ? {
                       ...p,
                       activeTabId: existing.tabId,
-                      tabs: p.tabs.map((t) =>
-                        t.id === existing.tabId ? { ...t, lastActivatedAt: now() } : t,
-                      ),
+                      tabs: p.tabs.map((t) => {
+                        if (t.id !== existing.tabId) return t
+                        if (!drifted || t.id !== hit?.tabId) return { ...t, lastActivatedAt: now() }
+                        return {
+                          ...t,
+                          lastActivatedAt: now(),
+                          backStack: [...t.backStack, driftedFrom].slice(-HISTORY_CAP),
+                          forwardStack: [],
+                        }
+                      }),
                     }
                   : p,
               ),
@@ -2326,6 +2351,29 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onGuideCh
       })()}
     </div>
   )
+}
+
+// Where a tab's frame actually is, in the form tab urls are stored (`embed`
+// stripped). Null when the frame hasn't loaded a page of ours yet.
+function frameUrl(frame: HTMLIFrameElement): string | null {
+  try {
+    const loc = frame.contentWindow?.location
+    if (!loc || loc.origin !== window.location.origin) return null
+    return comparableUrl(loc.pathname + loc.search)
+  } catch {
+    return null
+  }
+}
+
+// One spelling per url, so a frame's location and a requested url compare equal
+// whenever they name the same page, however their queries were encoded.
+// Exported for unit tests.
+export function comparableUrl(url: string): string {
+  // The base only makes a relative url parseable; it never reaches the result.
+  const parsed = new URL(url, 'http://shell')
+  parsed.searchParams.delete('embed')
+  const query = parsed.searchParams.toString()
+  return parsed.pathname + (query ? `?${query}` : '')
 }
 
 function addEmbedParam(url: string): string {
