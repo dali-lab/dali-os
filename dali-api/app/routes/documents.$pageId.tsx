@@ -1,10 +1,12 @@
 import { useCallback, useRef, useState } from "react";
-import { Link, redirect, useLoaderData, useSearchParams } from "react-router";
+import { Link, redirect, useLoaderData, useRevalidator, useSearchParams } from "react-router";
 import QRCode from "qrcode";
-import { Shapes, Trash2 } from "lucide-react";
+import { Shapes, Trash2, UserCheck } from "lucide-react";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { Button } from "~/components/ui/Button";
 import { useToast } from "~/components/ui/toast";
+import { Modal, ModalHeader } from "~/components/Modal";
+import { modalCardClass, useOsChrome } from "~/components/os-chrome";
 import type { Route } from "./+types/documents.$pageId";
 import { prisma } from "~/lib/db";
 import { ensureOccurrenceRoster } from "~/lib/scheduled-meeting";
@@ -17,7 +19,7 @@ import { isFavorited, recordPageVisit } from "~/lib/user-pages.server";
 import { canManageSharing } from "~/lib/page-share-access.server";
 import { normalizePageTypography } from "~/lib/page-typography";
 import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
-import { driveRootCrumbs, workspaceDriveScope } from "~/lib/drive-crumbs";
+import { workspaceDriveScope } from "~/lib/drive-crumbs";
 import { DocumentEditor } from "~/components/DocumentEditor";
 import { AttendanceChecklist, type AttendanceRow } from "~/components/AttendanceChecklist";
 import { CheckInPanel } from "~/components/CheckInPanel";
@@ -25,9 +27,6 @@ import { MeetingRecorder } from "~/components/MeetingRecorder";
 import { appendBlocks } from "~/components/doc";
 import type { DocEditorInstance } from "~/components/doc/schema/build";
 import { pageDocName } from "~/collab/roomName";
-import { ProjectIcon } from "~/components/ProjectIcon";
-import { PageIcon } from "~/components/PageIcon";
-import { FolderIcon } from "~/components/FolderIcon";
 import { redirectToLogin } from "~/lib/login-next";
 import { walletTokensConfigured } from "~/lib/wallet-token";
 
@@ -36,79 +35,10 @@ export const meta: Route.MetaFunction = ({ data }) => {
   return [{ title: t ? `${t} · DALI OS` : "Document · DALI OS" }];
 };
 
-// Not nested under /projects/:id or /education/:offeringId in the URL (this
-// route is a standalone /documents/:pageId sibling), so Breadcrumbs can't pick
-// up the owning workspace from a parent route match. Expand the leaf into the
-// real trail back to the workspace hub — same fix as documents.file.$fileId.
-// Falls back to a plain (unlinked) title for Lab-workspace pages, which have
-// no dedicated hub to link to.
 export const handle = {
   docKey: "document.editor",
   docTitle: "Documents",
-  // Project/Education pages share the /documents/:pageId viewer, so their URL
-  // root reads "Documents" while their real home is Projects/Education — those
-  // declare the whole trail here. Lab pages (no workspace) genuinely live under
-  // Documents and fall through to the leaf `breadcrumb` below.
-  breadcrumbTrail: (data: unknown) => {
-    const d = data as
-      | {
-          title?: string
-          iconEmoji?: string | null
-          hubName?: string
-          hubHref?: string
-          hubIconEmoji?: string | null
-          workspaceType?: string
-          driveCrumbs?: {
-            scope: string
-            folders: { id: string; title: string; iconEmoji: string | null }[]
-          } | null
-        }
-      | undefined;
-    if (!d?.title) return null;
-    // Lab pages (no workspace hub) root at Drive, then walk the folder path so
-    // nested docs keep their ancestry (Drive ▸ Folder ▸ … ▸ page).
-    if (!d.hubName || !d.hubHref) {
-      const scope = d.driveCrumbs?.scope ?? "lab";
-      return [
-        ...driveRootCrumbs(scope),
-        ...(d.driveCrumbs?.folders ?? []).map((f) => ({
-          label: f.title || "Untitled folder",
-          to: `/drive?scope=${scope}&folder=${f.id}`,
-          icon: <FolderIcon iconEmoji={f.iconEmoji} />,
-        })),
-        { label: d.title, icon: <PageIcon iconEmoji={d.iconEmoji} /> },
-      ];
-    }
-    const root =
-      d.workspaceType === "EducationOffering"
-        ? { label: "Education", to: "/education" }
-        : { label: "Projects", to: "/projects" };
-    // Folder ancestors within a project/offering open in the Drive (drilled to
-    // that folder), not the doc viewer — a folder is not a document.
-    const driveScope = d.workspaceType === "EducationOffering" ? "education" : "projects";
-    return [
-      root,
-      {
-        label: d.hubName,
-        to: d.hubHref,
-        // Project docs carry the project's emoji (or its neutral fallback glyph);
-        // Education offerings have no project icon.
-        icon:
-          d.workspaceType === "EducationOffering" ? undefined : (
-            <ProjectIcon iconEmoji={d.hubIconEmoji} />
-          ),
-      },
-      // Nested pages within a project/offering keep their folder ancestry
-      // (hub ▸ Folder ▸ … ▸ page); folders deep-link into the Drive folder view.
-      ...(d.driveCrumbs?.folders ?? []).map((f) => ({
-        label: f.title || "Untitled folder",
-        to: `/drive?scope=${driveScope}&folder=${f.id}`,
-        icon: <FolderIcon iconEmoji={f.iconEmoji} />,
-      })),
-      // The leaf carries the page's own icon (emoji, or the neutral doc glyph).
-      { label: d.title, icon: <PageIcon iconEmoji={d.iconEmoji} /> },
-    ];
-  },
+  hideBreadcrumbs: true,
 };
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -235,38 +165,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     select: { id: true, label: true, slug: true, color: true },
   });
 
-  // Hub crumb for the breadcrumb trail (see handle.breadcrumb below). Lab
-  // pages have no workspaceId and stay null — they fall back to a plain title.
-  let hubName: string | null = null;
-  let hubHref: string | null = null;
-  let hubIconEmoji: string | null = null;
-  if (page.workspaceType === "Project" && page.workspaceId) {
-    const project = await prisma.project.findUnique({
-      where: { id: page.workspaceId },
-      select: { name: true, iconEmoji: true },
-    });
-    if (project) {
-      hubName = project.name;
-      hubHref = `/projects/${page.workspaceId}`;
-      hubIconEmoji = project.iconEmoji;
-    }
-  } else if (page.workspaceType === "EducationOffering" && page.workspaceId) {
-    const offering = await prisma.educationOffering.findUnique({
-      where: { id: page.workspaceId },
-      select: { title: true },
-    });
-    if (offering) {
-      hubName = offering.title;
-      hubHref = `/education/${page.workspaceId}/hub`;
-    }
-  }
-
-  // Resolve the page's folder ancestry so the breadcrumb shows the full path
-  // (Drive ▸ Folder ▸ … ▸ page for Lab docs; hub ▸ Folder ▸ … ▸ page for
-  // project/offering docs) instead of collapsing to just the parent hub. Only
-  // Lab pages consume the detected scope; project/offering pages use `folders`.
-  const driveCrumbs = await driveFolderCrumbs(page.parentPageId, auth.user.sub, request);
-
   let attendance:
     | {
         meetingId: string;
@@ -378,10 +276,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     title: page.title,
     workspaceType: page.workspaceType,
     workspaceId: page.workspaceId,
-    hubName,
-    hubHref,
-    hubIconEmoji,
-    driveCrumbs,
     iconEmoji: page.iconEmoji,
     coverImageUrl: page.coverImageUrl,
     isTemplate: page.isTemplate,
@@ -450,6 +344,60 @@ function TrashedNoteBanner({ pageId, canRestore }: { pageId: string; canRestore:
         </Button>
       )}
     </div>
+  );
+}
+
+// The roster keeps its own optimistic state, so closing reloads the loader's
+// copy for the next time the dialog opens.
+function AttendanceButton({
+  attendance,
+}: {
+  attendance: {
+    meetingId: string;
+    occurrenceStart: string;
+    meetingLabel: string;
+    canMark: boolean;
+    walletConfigured: boolean;
+    rows: AttendanceRow[];
+  };
+}) {
+  const { actionBtnPrimary, actionIcon } = useOsChrome();
+  const revalidator = useRevalidator();
+  const [open, setOpen] = useState(false);
+  const close = () => {
+    setOpen(false);
+    revalidator.revalidate();
+  };
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)} aria-label="Attendance" className={actionBtnPrimary}>
+        <UserCheck className={actionIcon} />
+        <span className="hidden sm:inline">Attendance</span>
+      </button>
+      <Modal
+        open={open}
+        onClose={close}
+        labelledBy="doc-attendance-title"
+        containerClassName={modalCardClass("max-w-4xl")}
+      >
+        <ModalHeader
+          titleId="doc-attendance-title"
+          title="Attendance"
+          subtitle={attendance.meetingLabel}
+          onClose={close}
+          className="mb-1"
+        />
+        <AttendanceChecklist
+          plain
+          meetingId={attendance.meetingId}
+          occurrenceStart={attendance.occurrenceStart}
+          meetingLabel={attendance.meetingLabel}
+          canEdit={attendance.canMark}
+          canScan={attendance.walletConfigured}
+          attendees={attendance.rows}
+        />
+      </Modal>
+    </>
   );
 }
 
@@ -526,19 +474,6 @@ export default function DocumentPage() {
           checkInQrSvg={attendance.checkInQrSvg}
         />
       )}
-      {recordingEnabled && canEdit && (
-        <MeetingRecorder documentName={pageDocName(pageId)} onInsert={insertMarkdown} />
-      )}
-      {attendance && (
-        <AttendanceChecklist
-          meetingId={attendance.meetingId}
-          occurrenceStart={attendance.occurrenceStart}
-          meetingLabel={attendance.meetingLabel}
-          canEdit={attendance.canMark}
-          canScan={attendance.walletConfigured}
-          attendees={attendance.rows}
-        />
-      )}
       <DocumentEditor
         pageId={pageId}
         initialTitle={title}
@@ -565,6 +500,14 @@ export default function DocumentPage() {
         focusMentionUserId={focusMentionUserId}
         aiEnabled
         onEditorReady={onEditorReady}
+        topBarActions={
+          <>
+            {attendance && <AttendanceButton attendance={attendance} />}
+            {recordingEnabled && canEdit && (
+              <MeetingRecorder documentName={pageDocName(pageId)} onInsert={insertMarkdown} />
+            )}
+          </>
+        }
       />
     </div>
   );

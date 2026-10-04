@@ -8,27 +8,37 @@ import { cn } from "~/lib/cn";
 // and check rendered as SIBLINGS AFTER it so Tailwind's `peer-checked:` can
 // reach them (a nested check can't be targeted by the peer modifier).
 
-export interface CheckboxProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "type"> {
+export interface CheckboxProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "size"> {
   label?: ReactNode;
   description?: ReactNode;
   /** className goes on the wrapping <label>. */
   className?: string;
+  /** "os" fills the checked state with the dali.os accent instead of brand coral. */
+  tone?: "brand" | "os";
+  /** "lg" is the dali.os page scale: a 20px round check and a 16px label. */
+  size?: "md" | "lg";
 }
 
-export function Checkbox({ label, description, className, disabled, ...props }: CheckboxProps) {
+export function Checkbox({ label, description, className, disabled, tone = "brand", size = "md", ...props }: CheckboxProps) {
   return (
     <label
       className={cn(
-        "inline-flex items-start gap-2",
+        cn("inline-flex items-start", size === "lg" ? "gap-3" : "gap-2"),
         disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer",
         className,
       )}
     >
-      <span className="relative mt-0.5 h-4 w-4 shrink-0">
+      <span className={cn("relative mt-0.5 shrink-0", size === "lg" ? "h-5 w-5" : "h-4 w-4")}>
         <input type="checkbox" disabled={disabled} className="peer sr-only" {...props} />
         <span
           aria-hidden="true"
-          className="absolute inset-0 rounded border border-border bg-background transition-colors peer-checked:border-accent-coral peer-checked:bg-accent-coral peer-focus-visible:ring-2 peer-focus-visible:ring-accent-coral/40 peer-focus-visible:ring-offset-1"
+          className={cn(
+            "absolute inset-0 border border-border bg-background transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-offset-1",
+            size === "lg" ? "rounded-full" : "rounded",
+            tone === "os"
+              ? "peer-checked:border-os-accent peer-checked:bg-os-accent peer-focus-visible:ring-os-accent/40"
+              : "peer-checked:border-accent-coral peer-checked:bg-accent-coral peer-focus-visible:ring-accent-coral/40",
+          )}
         />
         <Check
           aria-hidden="true"
@@ -38,7 +48,7 @@ export function Checkbox({ label, description, className, disabled, ...props }: 
       </span>
       {(label || description) && (
         <span className="flex min-w-0 flex-col">
-          {label && <span className="text-sm text-foreground">{label}</span>}
+          {label && <span className={cn(size === "lg" ? "text-base" : "text-sm", "text-foreground")}>{label}</span>}
           {description && <span className="text-xs text-muted-foreground">{description}</span>}
         </span>
       )}
