@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { cn } from "~/lib/cn";
+import { hiringKey } from "~/email/lib/registry";
 import { Form, Link, useParams, useLoaderData, useLocation, useSearchParams, useFetcher, redirect } from 'react-router'
 import { Select, type SelectOption, Tooltip } from "~/components/ui/floating";
 import { useFeatureFlag } from "~/components/FeatureFlags";
@@ -8,7 +9,7 @@ import { prisma } from "~/lib/db";
 import { recordRouteVisit } from "~/lib/user-pages.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { isAdmin, isCycleAdmin } from "~/lib/roles";
+import { isAdmin, isCore, isCycleAdmin } from "~/lib/roles";
 import { changeApplicants } from "~/hiring/lib/cycle-applicants.server";
 import {
   loadStartTermCandidates,
@@ -371,6 +372,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       termOptions,
       startTermCandidates,
       viewerIsAdmin: await isAdmin(auth.user.sub),
+      viewerIsCore: !!(await isCore(auth.user.sub, request)),
       phaseStatusByDomain,
       allDomains,
       allForms,
@@ -2111,6 +2113,7 @@ export default function HiringLeadCycleDetails() {
             title="Decision emails"
             description="The email each released decision sends."
             hiringEmails={loaderData?.hiringEmails ?? {}}
+            canEdit={!!loaderData?.viewerIsCore}
             slots={DECISION_EMAIL_SLOTS.filter(
               (slot) => hasInterviews || slot.type !== "InvitedToInterview",
             ).map((slot) => ({ ...slot, templateSlot: decisionSlot(slot.type) }))}
@@ -2125,6 +2128,7 @@ export default function HiringLeadCycleDetails() {
               title="Notification emails"
               description="The email each notification sends."
               hiringEmails={loaderData?.hiringEmails ?? {}}
+              canEdit={!!loaderData?.viewerIsCore}
               slots={NOTIFICATION_EMAIL_SLOTS.filter((slot) =>
                 slot.type.startsWith('Interview') ? hasInterviews : !isMemberCycle,
               ).map((slot) => ({ ...slot, templateSlot: notificationSlot(slot.type) }))}
@@ -3697,42 +3701,56 @@ function EmailStatusSection({
   description,
   slots,
   hiringEmails,
+  canEdit,
 }: {
   title: string;
   description: string;
   slots: ReadonlyArray<{ label: string; description: string; templateSlot: TemplateSlot }>;
   hiringEmails: Record<string, { subject: string; body: string }>;
+  /** The viewer is Core, so a row opens Core's editor on that email. */
+  canEdit: boolean;
 }) {
-  // Read-only on purpose. These emails are shared by every cycle, so editing them
-  // belongs to Core in Admin -> Email, not to whoever happens to administer this
-  // cycle. What the Setup tab still owes a lead is the answer to "is it written?",
-  // because releasing a decision with no email written fails.
+  // No editor of its own, on purpose. These emails are shared by every cycle, so
+  // editing them belongs to Core in Core -> Communications -> Email, not to
+  // whoever happens to administer this cycle. A Core viewer's rows deep-link
+  // into that editor; for everyone else the Setup tab still answers "is it
+  // written?", because releasing a decision with no email written fails.
   return (
     <SetupCard title={title} description={description}>
       <div className="flex flex-col gap-2">
         {slots.map((slot) => {
           const email = hiringEmails[slot.templateSlot] ?? null;
-          return (
-            <div
-              key={slot.templateSlot}
-              className="flex items-start gap-3 rounded-lg border border-border p-3"
-            >
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">{slot.label}</span>
-                  {email ? null : (
-                    <span className="text-xs text-amber-600 dark:text-amber-500">
-                      No email yet
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-muted-foreground mt-0.5">{slot.description}</p>
-                {email ? (
-                  <p className="text-xs text-muted-foreground mt-1 truncate">
-                    Subject: {email.subject}
-                  </p>
-                ) : null}
+          const rowClass = "flex items-start gap-3 rounded-lg border border-border p-3";
+          const body = (
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">{slot.label}</span>
+                {email ? null : (
+                  <span className="text-xs text-amber-600 dark:text-amber-500">
+                    No email yet
+                  </span>
+                )}
               </div>
+              <p className="text-xs text-muted-foreground mt-0.5">{slot.description}</p>
+              {email ? (
+                <p className="text-xs text-muted-foreground mt-1 truncate">
+                  Subject: {email.subject}
+                </p>
+              ) : null}
+            </div>
+          );
+          return canEdit ? (
+            <Link
+              key={slot.templateSlot}
+              to={`/core/communications/email?key=${encodeURIComponent(hiringKey(slot.templateSlot))}`}
+              aria-label={`Edit ${slot.label} email`}
+              className={cn(rowClass, "transition-colors hover:bg-muted")}
+            >
+              {body}
+            </Link>
+          ) : (
+            <div key={slot.templateSlot} className={rowClass}>
+              {body}
             </div>
           );
         })}
