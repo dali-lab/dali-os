@@ -43,7 +43,12 @@ import { useShellNav } from '~/components/shell-nav'
 import { setFocusPreference } from '~/lib/focus-mode'
 import { useOsShellRoot } from '~/lib/os-shell'
 import { cn } from '~/lib/cn'
-import { osMenuClass, osMenuItemClass, railRowClass } from '~/components/os-shell-chrome'
+import {
+  osMenuClass,
+  osMenuItemClass,
+  railRowClass,
+  useAccountMenuStyle,
+} from '~/components/os-shell-chrome'
 import {
   areaForPath,
   pinnedNavItems,
@@ -150,6 +155,7 @@ export function LayoutOS({
   const areaMenuRef = useRef<HTMLDivElement | null>(null)
   const areaTriggerRef = useRef<HTMLButtonElement | null>(null)
   const userMenuRef = useRef<HTMLDivElement | null>(null)
+  const userMenuStyle = useAccountMenuStyle(userMenuRef, userMenuOpen)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -612,13 +618,11 @@ export function LayoutOS({
           the design has no other home for (profile, settings, help, log out)
           rather than dropping them. */}
       <div ref={userMenuRef} className="relative shrink-0 pt-6">
-        {userMenuOpen && (
+        {userMenuStyle && (
           <div
             role="menu"
-            className={cn(
-              'absolute bottom-full left-0 mb-2 w-full min-w-[180px] motion-safe:animate-area-menu',
-              osMenuClass,
-            )}
+            style={userMenuStyle}
+            className={cn('fixed z-40 motion-safe:animate-area-menu', osMenuClass)}
           >
             {userMenuItems.map((item) => (
               <button
