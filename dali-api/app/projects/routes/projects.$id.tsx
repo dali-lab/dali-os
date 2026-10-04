@@ -4545,8 +4545,20 @@ function ProjectDriveTab({
     (item: DriveItem, heading: string): Promise<Destination | null> => {
       const rootId = projectDriveScope.rootFolderId ?? null;
       const drives: PickerDrive[] = [
-        { id: scopeId, label: projectDriveScope.label, iconEmoji: projectDriveScope.iconEmoji },
+        {
+          id: scopeId,
+          label: projectDriveScope.label,
+          iconEmoji: projectDriveScope.iconEmoji,
+          audience: projectDriveScope.scopeAudience ?? null,
+        },
       ];
+      // One pass gives every folder its child count, so a row can say what's
+      // inside it rather than only its name.
+      const childCount = new Map<string, number>();
+      for (const it of projectDriveScope.items) {
+        if (it.parentFolderId === null) continue;
+        childCount.set(it.parentFolderId, (childCount.get(it.parentFolderId) ?? 0) + 1);
+      }
       const folders: PickerFolder[] = projectDriveScope.items
         .filter((f) => f.type === "folder")
         .map((f) => ({
@@ -4555,6 +4567,7 @@ function ProjectDriveTab({
           parentId: (f.parentFolderId ?? null) === rootId ? null : f.parentFolderId,
           title: f.title,
           iconEmoji: f.iconEmoji,
+          itemCount: childCount.get(f.id) ?? 0,
         }));
       const banned = item.type === "folder" ? folderSubtree(projectDriveScope.items, item.id) : undefined;
       const currentFolder = (item.parentFolderId ?? null) === rootId ? null : (item.parentFolderId ?? null);
