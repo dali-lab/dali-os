@@ -78,16 +78,21 @@ export function useOsChrome() {
       "rounded-os-item p-1.5 text-os-grey transition-colors hover:bg-os-container hover:text-foreground",
     /** A control in a page's action row — the document top bar's favourite,
      *  comments and Share buttons, and anything else that sits beside them.
-     *  Its pressed state is the design's accent. */
+     *  An outlined pill, like the design's other secondary actions
+     *  (`.os-edit-btn`); its pressed state is the design's accent. */
     actionBtn: (active = false) =>
       cn(
         // touch: enlarge the hit area to ~40px on hover-less devices (phones);
         // desktop pointer sizing is unchanged.
-        "inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-sm transition-colors touch:min-h-[40px] touch:min-w-[40px]",
+        "inline-flex items-center justify-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors touch:min-h-[40px] touch:min-w-[40px]",
         active
-          ? "bg-os-accent/15 text-os-accent"
-          : "text-os-grey hover:bg-os-container hover:text-foreground",
+          ? "border-os-accent/30 bg-os-accent/15 text-os-accent"
+          : "border-os-container text-os-grey hover:border-os-container-hi hover:text-foreground",
       ),
+    /** The same pill filled with the accent, for the row's lead actions (a
+     *  meeting note's Attendance and Record). */
+    actionBtnPrimary:
+      "inline-flex items-center justify-center gap-1.5 rounded-full border border-os-accent bg-os-accent px-3 py-1.5 text-sm font-semibold text-os-bg transition-colors hover:border-os-accent-hover hover:bg-os-accent-hover touch:min-h-[40px] touch:min-w-[40px]",
     /** The glyph inside `actionBtn`. The design draws its controls at 16px. */
     actionIcon: "h-4 w-4",
   };

@@ -16,11 +16,14 @@ export function FavoriteStar({
   pageId,
   favorited: initial,
   className = "",
+  iconClassName = "w-3.5 h-3.5",
   onToggled,
 }: {
   pageId: string;
   favorited: boolean;
   className?: string;
+  /** The star's size. Rows use the small default; a page title asks for more. */
+  iconClassName?: string;
   /** Called after a successful write. Home uses it to re-sort the panel, since
    *  un-starring there should move the row out of Favorites immediately. */
   onToggled?: (favorited: boolean) => void;
@@ -68,7 +71,7 @@ export function FavoriteStar({
           favorited ? "text-accent-coral" : "text-muted-foreground hover:text-foreground"
         } ${className}`}
       >
-        <Star className={`w-3.5 h-3.5 ${favorited ? "fill-current" : ""}`} />
+        <Star className={`${iconClassName} ${favorited ? "fill-current" : ""}`} />
       </button>
     </Tooltip>
   );

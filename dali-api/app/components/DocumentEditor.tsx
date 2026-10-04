@@ -5,10 +5,11 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type ReactNode,
   type RefObject,
 } from "react";
 import { useNavigate, useRevalidator } from "react-router";
-import { Check, CloudOff, Copy, FileDown, FolderInput, History, LayoutTemplate, Link, Loader2, MessageSquare, MoreHorizontal, Printer, Search, Star, Upload, Users } from "lucide-react";
+import { Check, CloudOff, Copy, Download, FileDown, FolderInput, History, LayoutTemplate, Link, Loader2, MessageSquare, MoreHorizontal, Printer, Search, Upload, Users } from "lucide-react";
 import { DocEditor, appendBlocks, stripBlockIds, type DocSyncState, type TocHeading } from "~/components/doc";
 import type { DocEditorInstance } from "~/components/doc/schema/build";
 import { DocCommentsPanel, useDocThreadCount } from "~/components/doc/comments";
@@ -17,11 +18,12 @@ import { PresenceProvider } from "./collab/PresenceProvider";
 import { PresenceBar } from "./collab/PresenceBar";
 import { VersionHistoryPanel } from "./collab/VersionHistoryPanel";
 import { TagPicker, type DocTag } from "./TagPicker";
+import { FavoriteStar } from "./FavoriteStar";
 import { PageIconPicker } from "./doc-chrome/PageIconPicker";
 import { PageCover } from "./doc-chrome/PageCover";
 import { DocToc } from "./doc-chrome/DocToc";
 import { relativeTime } from "~/lib/relative-time";
-import { Tooltip } from "~/components/ui/floating";
+import { Menu, Tooltip } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { ShareDialog } from "~/components/sharing/ShareDialog";
@@ -77,6 +79,7 @@ export function DocumentEditor({
   workspaceType,
   workspaceId = null,
   onEditorReady,
+  topBarActions,
 }: {
   pageId: string;
   initialTitle: string;
@@ -94,7 +97,7 @@ export function DocumentEditor({
   updatedAt?: string | null;
   // When true, the page is a template (shown in "Start from template" picker).
   isTemplate?: boolean;
-  // Per-page display prefs (Aa menu) — null renders defaults.
+  // Per-page display prefs (⋯ menu, Page style) — null renders defaults.
   typography?: PageTypography | null;
   // When set (arriving from a comment-mention notification), open the comments
   // panel and scroll to this comment.
@@ -120,6 +123,9 @@ export function DocumentEditor({
   // Hands the live editor to the host page, for surfaces outside the editor
   // that write into the doc (meeting recording).
   onEditorReady?: (editor: DocEditorInstance) => void;
+  // Host controls for the top bar's action row (a meeting note's Attendance
+  // and Record buttons), placed ahead of Share.
+  topBarActions?: ReactNode;
 }) {
   const revalidator = useRevalidator();
   const navigate = useNavigate();
@@ -139,9 +145,6 @@ export function DocumentEditor({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [accessOpen, setAccessOpen] = useState(false);
-  // Optimistic: the star flips immediately and reverts if the write fails.
-  // A bookmark that lags behind the click feels broken.
-  const [favorited, setFavorited] = useState(initialFavorited);
   const [moveOpen, setMoveOpen] = useState(false);
   const [templateImportOpen, setTemplateImportOpen] = useState(false);
   // Optimistic local reflection of isTemplate — revalidator syncs server truth.
@@ -161,48 +164,12 @@ export function DocumentEditor({
   // corners, 14px glyphs and a coral "on" state — beside os pages that had all
   // moved to the design's roomier pills and its accent.
   const { actionBtn, actionIcon, popover, pageTitle, bodyText } = useOsChrome();
-  // "Aa" page-typography menu (Notion's Style section): per-page font /
-  // small-text / full-width, persisted on Page.typography via the API route.
+  // Page style (the ⋯ menu's last section): per-page font / small-text /
+  // full-width, persisted on Page.typography via the API route.
   // Optimistic local state — the revalidator syncs server truth.
   const [typo, setTypo] = useState<PageTypography>(
     initialTypography ?? DEFAULT_TYPOGRAPHY,
   );
-  const [typoOpen, setTypoOpen] = useState(false);
-  const typoRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (!typoOpen) return;
-    const onDown = (e: MouseEvent) => {
-      if (typoRef.current && !typoRef.current.contains(e.target as Node)) {
-        setTypoOpen(false);
-      }
-    };
-    // globalThis: the React KeyboardEvent type import shadows the DOM one.
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key === "Escape") setTypoOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [typoOpen]);
-
-  async function toggleFavorite() {
-    const next = !favorited;
-    setFavorited(next);
-    try {
-      const res = await fetch(`/api/pages/${pageId}/favorite`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ favorited: next }),
-      });
-      if (!res.ok) setFavorited(!next);
-    } catch {
-      setFavorited(!next);
-    }
-  }
 
   async function saveTypography(next: PageTypography) {
     setTypo(next);
@@ -389,7 +356,7 @@ export function DocumentEditor({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ title: trimmed }),
         });
-        // Refresh breadcrumb / tab title elsewhere on the page.
+        // Refresh the tab title elsewhere on the page.
         revalidator.revalidate();
         // Relay to sibling tabs (e.g. a project hub opened split-screen).
         if (typeof window !== "undefined" && window.self !== window.top) {
@@ -494,7 +461,6 @@ export function DocumentEditor({
   // ── Top bar ───────────────────────────────────────────────────────────────
   const topBar = (
     <div className={cn("doc-topbar flex items-center gap-2 py-2", bodyText)}>
-      {/* Breadcrumb/back rendered by the outer shell — we just add meta here */}
       {editedLabel && (
         <span className="shrink-0 hidden sm:inline">{editedLabel}</span>
       )}
@@ -541,83 +507,6 @@ export function DocumentEditor({
       {/* ToC control */}
       <DocToc headings={headings} onJump={jumpToHeading} />
 
-      {/* "Aa" page-typography menu — per-page font / small-text / full-width
-          (what the Aa glyph promises; selection formatting lives in the
-          floating toolbar). Shared prefs: every viewer sees the same doc. */}
-      {canEdit && (
-        <div ref={typoRef} className="relative">
-          <Tooltip content="Page style">
-            <button
-              type="button"
-              onClick={() => setTypoOpen((o) => !o)}
-              aria-expanded={typoOpen}
-              aria-label="Page typography"
-              className={cn(actionBtn(typoOpen), "font-semibold")}
-            >
-              Aa
-            </button>
-          </Tooltip>
-          {typoOpen && (
-            <div className={cn("absolute right-0 z-30 mt-1 w-56 max-w-[calc(100vw-1rem)] p-2 text-sm", popover)}>
-              <div className="grid grid-cols-3 gap-1">
-                {(
-                  [
-                    { key: "default", label: "Default", preview: "font-sans" },
-                    { key: "serif", label: "Serif", preview: "font-serif" },
-                    { key: "mono", label: "Mono", preview: "font-mono" },
-                  ] as const
-                ).map((f) => (
-                  <button
-                    key={f.key}
-                    type="button"
-                    onClick={() => void saveTypography({ ...typo, font: f.key })}
-                    aria-pressed={typo.font === f.key}
-                    className={cn(
-                      "rounded-md border px-1 py-1.5 text-center transition-colors",
-                      typo.font === f.key
-                        ? "border-os-accent/40 bg-os-accent/10"
-                        : "border-border hover:bg-muted",
-                    )}
-                  >
-                    <span className={`block text-lg leading-none text-foreground ${f.preview}`}>
-                      Ag
-                    </span>
-                    <span className="mt-1 block text-[10px] text-muted-foreground">
-                      {f.label}
-                    </span>
-                  </button>
-                ))}
-              </div>
-              <div className="my-2 border-t border-border" />
-              <TypographyToggle
-                label="Small text"
-                checked={typo.smallText}
-                onToggle={() =>
-                  void saveTypography({ ...typo, smallText: !typo.smallText })
-                }
-              />
-              <TypographyToggle
-                label="Full width"
-                checked={typo.fullWidth}
-                onToggle={() =>
-                  void saveTypography({ ...typo, fullWidth: !typo.fullWidth })
-                }
-              />
-              <TypographyToggle
-                label="Nesting guides"
-                checked={typo.nestingGuides}
-                onToggle={() =>
-                  void saveTypography({
-                    ...typo,
-                    nestingGuides: !typo.nestingGuides,
-                  })
-                }
-              />
-            </div>
-          )}
-        </div>
-      )}
-
       {hasComments && (
         <Tooltip content={commentsOpen ? "Hide comments" : "Show comments"}>
           <button
@@ -632,19 +521,7 @@ export function DocumentEditor({
         </Tooltip>
       )}
 
-      {/* Favorite — personal, unlike the ⋯ "Pin" which moves the document for
-          everyone. Anyone who can read the page can bookmark it. */}
-      <Tooltip content={favorited ? "Remove from favorites" : "Add to favorites"}>
-        <button
-          type="button"
-          onClick={() => void toggleFavorite()}
-          aria-label={favorited ? "Remove from favorites" : "Add to favorites"}
-          aria-pressed={favorited}
-          className={actionBtn(favorited)}
-        >
-          <Star className={cn(actionIcon, favorited && "fill-current")} />
-        </button>
-      </Tooltip>
+      {topBarActions}
 
       {/* Share — its own control rather than a ⋯ entry: who can open a document
           is a property of the document, not a rarely-reached utility. */}
@@ -662,6 +539,33 @@ export function DocumentEditor({
         </Tooltip>
       )}
 
+      <Menu
+        align="right"
+        ariaLabel="Download"
+        trigger={
+          <button type="button" aria-label="Download" className={actionBtn()}>
+            <Download className={actionIcon} />
+            <span className="hidden sm:inline">Download</span>
+          </button>
+        }
+      >
+        {(
+          [
+            { format: "pdf", label: "PDF" },
+            { format: "docx", label: "Word" },
+            { format: "md", label: "Markdown" },
+          ] as const
+        ).map((f) => (
+          <Menu.Item
+            key={f.format}
+            icon={<FileDown className="h-3.5 w-3.5" />}
+            onSelect={() => window.location.assign(`/documents/${pageId}/export?format=${f.format}`)}
+          >
+            {f.label}
+          </Menu.Item>
+        ))}
+      </Menu>
+
       {/* ⋯ More menu */}
       <div ref={moreMenuRef} className="relative">
         <button
@@ -675,7 +579,7 @@ export function DocumentEditor({
           <MoreHorizontal className={actionIcon} />
         </button>
         {moreMenuOpen && (
-          <div className={cn("absolute right-0 z-30 mt-1 w-52 max-w-[calc(100vw-1rem)] p-1 text-sm", popover)}>
+          <div className={cn("absolute right-0 z-30 mt-1 w-56 max-w-[calc(100vw-1rem)] p-1 text-sm", popover)}>
             <button
               type="button"
               onClick={() => { setFindInitialQuery(""); setFindOpen(true); setMoreMenuOpen(false); }}
@@ -753,31 +657,66 @@ export function DocumentEditor({
                 Import template
               </button>
             )}
-            <div className="my-1 border-t border-border" />
-            <a
-              href={`/documents/${pageId}/export?format=pdf`}
-              className="flex items-center gap-2 rounded px-2 py-1.5 text-foreground hover:bg-muted"
-              onClick={() => setMoreMenuOpen(false)}
-            >
-              <FileDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              Export as PDF
-            </a>
-            <a
-              href={`/documents/${pageId}/export?format=docx`}
-              className="flex items-center gap-2 rounded px-2 py-1.5 text-foreground hover:bg-muted"
-              onClick={() => setMoreMenuOpen(false)}
-            >
-              <FileDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              Export as Word
-            </a>
-            <a
-              href={`/documents/${pageId}/export?format=md`}
-              className="flex items-center gap-2 rounded px-2 py-1.5 text-foreground hover:bg-muted"
-              onClick={() => setMoreMenuOpen(false)}
-            >
-              <FileDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              Export as Markdown
-            </a>
+            {canEdit && (
+              <>
+                <div className="my-1 border-t border-border" />
+                <div className="px-2 pb-1.5 pt-1 text-xs text-muted-foreground">Page style</div>
+            <div className="grid grid-cols-3 gap-1">
+              {(
+                [
+                  { key: "default", label: "Default", preview: "font-sans" },
+                  { key: "serif", label: "Serif", preview: "font-serif" },
+                  { key: "mono", label: "Mono", preview: "font-mono" },
+                ] as const
+              ).map((f) => (
+                <button
+                  key={f.key}
+                  type="button"
+                  onClick={() => void saveTypography({ ...typo, font: f.key })}
+                  aria-pressed={typo.font === f.key}
+                  className={cn(
+                    "rounded-md border px-1 py-1.5 text-center transition-colors",
+                    typo.font === f.key
+                      ? "border-os-accent/40 bg-os-accent/10"
+                      : "border-border hover:bg-muted",
+                  )}
+                >
+                  <span className={`block text-lg leading-none text-foreground ${f.preview}`}>
+                    Ag
+                  </span>
+                  <span className="mt-1 block text-[10px] text-muted-foreground">
+                    {f.label}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <div className="my-2 border-t border-border" />
+            <TypographyToggle
+              label="Small text"
+              checked={typo.smallText}
+              onToggle={() =>
+                void saveTypography({ ...typo, smallText: !typo.smallText })
+              }
+            />
+            <TypographyToggle
+              label="Full width"
+              checked={typo.fullWidth}
+              onToggle={() =>
+                void saveTypography({ ...typo, fullWidth: !typo.fullWidth })
+              }
+            />
+            <TypographyToggle
+              label="Nesting guides"
+              checked={typo.nestingGuides}
+              onToggle={() =>
+                void saveTypography({
+                  ...typo,
+                  nestingGuides: !typo.nestingGuides,
+                })
+              }
+            />
+              </>
+            )}
             <div className="my-1 border-t border-border" />
             <div className="px-2 py-1.5 text-muted-foreground text-xs tabular-nums">
               {wordCount} {wordCount === 1 ? "word" : "words"}
@@ -889,14 +828,20 @@ export function DocumentEditor({
                   onKeyDown={onTitleKeyDown}
                   className={cn(
                     pageTitle,
-                    "doc-title doc-title-editable min-w-0 flex-1 leading-tight outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/50",
+                    "doc-title doc-title-editable min-w-0 leading-tight outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/50",
                   )}
                 />
               ) : (
-                <h1 className={cn(pageTitle, "doc-title min-w-0 flex-1 leading-tight select-text")}>
+                <h1 className={cn(pageTitle, "doc-title min-w-0 leading-tight select-text")}>
                   {initialTitle}
                 </h1>
               )}
+              {/* Favorite: personal, unlike the ⋯ "Pin" which moves the
+                  document for everyone. Anyone who can read the page can
+                  bookmark it. Same first-line box as the icon. */}
+              <div className="flex h-[50px] shrink-0 items-center print:hidden">
+                <FavoriteStar pageId={pageId} favorited={initialFavorited} iconClassName="h-5 w-5" />
+              </div>
             </div>
 
             {/* Tags row — just below the title */}
