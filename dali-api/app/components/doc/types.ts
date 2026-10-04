@@ -64,6 +64,14 @@ export interface DocEditorProps {
   /** Default true. Signing fill/view surfaces pass false — fields stay
    * interactive via the signing context even when the body is read-only. */
   editable?: boolean;
+  /**
+   * Keep checklist boxes clickable on a read-only (editable=false) surface.
+   * Toggles apply to this mount only and are never persisted — for anonymous
+   * views (public share links) where a reader ticks items for themselves.
+   * Leave off on collab-backed read-only mounts: the local Y.Doc would diverge
+   * from a server that rejects the write.
+   */
+  localChecklistToggle?: boolean;
   /** "compact" drops the side menu + block gutter for short structured inputs;
    * "full" (default) is the document surface. */
   density?: "compact" | "full";
