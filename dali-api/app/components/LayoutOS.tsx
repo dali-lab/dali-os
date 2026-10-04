@@ -24,6 +24,7 @@ import type { FavoritePage } from '~/lib/user-pages.server'
 import { FavoriteIcon } from '~/components/FavoriteIcon'
 import { userInitials } from '~/lib/display'
 import { TabWorkspace } from '~/components/TabWorkspace'
+import { deepLinkTabLabel } from '~/lib/deep-link-tab'
 import { useAttentionFeed } from '~/components/NotificationBell'
 import { TasksDrawer, attentionCount } from '~/components/AttentionPanel'
 import { DesktopBanner } from '~/components/DesktopBanner'
@@ -282,6 +283,24 @@ export function LayoutOS({
           : path.startsWith('/help')
             ? 'Help'
             : (pinnedLabel ?? routeArea?.label)
+
+  // The tab the workspace opens for the url the app was entered on. Pinned to
+  // the first render: `path` above follows the focused tab once the workspace is
+  // live, and document.title belongs to the entry page only until then — while
+  // TabWorkspace reads initialTabs in its mount effect, so a later value would
+  // be silently dropped anyway.
+  const [deepLinkTab] = useState(() =>
+    location.pathname === '/'
+      ? null
+      : {
+          url: location.pathname + location.search,
+          label: deepLinkTabLabel(
+            initialTabLabel,
+            typeof document === 'undefined' ? undefined : document.title,
+            location.pathname,
+          ),
+        },
+  )
 
   const initials = userInitials(user)
   const { tasks: openTasks, items: feedItems, projectTasks } = useAttentionFeed()
@@ -879,9 +898,7 @@ export function LayoutOS({
             onOpenPalette={togglePalette}
             initialTabs={[
               { url: '/', label: 'Home' },
-              ...(initialTabLabel && location.pathname !== '/'
-                ? [{ url: location.pathname + location.search, label: initialTabLabel }]
-                : []),
+              ...(deepLinkTab ? [deepLinkTab] : []),
             ]}
             onActiveUrlChange={setFocusedTabUrl}
             onGuideChange={setWorkspaceGuide}
