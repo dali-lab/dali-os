@@ -532,10 +532,6 @@ type ColumnSelection = {
   levels: ColumnLevel[];
   /** The row id highlighted at each level (parallel to `levels`). */
   highlightedIds: (string | null)[];
-  /** If a leaf is highlighted, it lives at this level index. */
-  leafLevelIdx: number | null;
-  /** The highlighted leaf item (populated when a leaf row is selected). */
-  selectedLeaf: DriveItem | null;
 };
 
 function initialColumnSelection(
@@ -544,11 +540,11 @@ function initialColumnSelection(
   scopes: DriveTreeScope[],
 ): ColumnSelection {
   if (!currentScopeId) {
-    return { levels: [{ kind: "root" }], highlightedIds: [null], leafLevelIdx: null, selectedLeaf: null };
+    return { levels: [{ kind: "root" }], highlightedIds: [null] };
   }
   const scope = scopes.find((s) => s.id === currentScopeId);
   if (!scope) {
-    return { levels: [{ kind: "root" }], highlightedIds: [null], leafLevelIdx: null, selectedLeaf: null };
+    return { levels: [{ kind: "root" }], highlightedIds: [null] };
   }
 
   // Build the path of folder crumbs (root → currentFolderId, inclusive).
@@ -586,7 +582,7 @@ function initialColumnSelection(
     highlightedIds.push(null);
   }
 
-  return { levels, highlightedIds, leafLevelIdx: null, selectedLeaf: null };
+  return { levels, highlightedIds };
 }
 
 // ── Main component ───────────────────────────────────────────────────────────
@@ -741,12 +737,11 @@ export function DriveBrowser({
     setFocusLevel((prev) => Math.min(prev, Math.max(0, next.levels.length - 1)));
   }, [currentScopeId, currentFolderId, scopes]);
 
-  // Auto-scroll the columns container to the right after each column is added,
-  // and when a leaf is picked — the preview column it opens is at the far right.
+  // Auto-scroll the columns container to the right after each column is added.
   useEffect(() => {
     const el = columnsContainerRef.current;
     if (el) el.scrollLeft = el.scrollWidth;
-  }, [colSel.levels.length, colSel.selectedLeaf?.id]);
+  }, [colSel.levels.length]);
 
   // Follow the keyboard: bring the focused column's highlighted row into view
   // (horizontally as well, since a deep trail scrolls the columns off-screen).
@@ -1089,8 +1084,6 @@ export function DriveBrowser({
         { kind: "scope", scopeId, folderId: null },
       ],
       highlightedIds: [scopeId, null],
-      leafLevelIdx: null,
-      selectedLeaf: null,
     });
   }
 
@@ -1099,13 +1092,13 @@ export function DriveBrowser({
     onNavigate(scopeId, null);
   }
 
-  // Click a row inside a column: either drill into folder or highlight leaf.
+  // Click a row inside a column: drill into a folder, open anything else.
   // Cmd/Ctrl- or Shift-click multi-selects within that column (like list/grid)
   // instead of navigating, driving the same bulk bar.
-  function handleColumnRowClick(levelIdx: number, item: DriveItem, scopeId: string, e?: ReactMouseEvent) {
+  function handleColumnRowClick(levelIdx: number, item: DriveItem, scopeId: string, e: ReactMouseEvent) {
     // Take keyboard focus so arrow/Enter/Space nav works without a second tab.
     columnsContainerRef.current?.focus({ preventScroll: true });
-    if (e && (e.metaKey || e.ctrlKey)) {
+    if (e.metaKey || e.ctrlKey) {
       setSelected((prev) => {
         const next = new Set(prev);
         if (next.has(item.id)) next.delete(item.id);
@@ -1115,7 +1108,7 @@ export function DriveBrowser({
       setAnchorId(item.id);
       return;
     }
-    if (e && e.shiftKey && anchorId) {
+    if (e.shiftKey && anchorId) {
       const ids = itemsForLevel(colSel.levels[levelIdx]).map((i) => i.id);
       const a = ids.indexOf(anchorId);
       const b = ids.indexOf(item.id);
@@ -1125,7 +1118,14 @@ export function DriveBrowser({
         return;
       }
     }
-    // Plain click: drop any multi-selection, then navigate/highlight as before.
+    highlightColumnRow(levelIdx, item, scopeId);
+    if (item.type !== "folder") onOpenItem(item);
+  }
+
+  // Highlight a row without opening it: a folder drills in, anything else is
+  // just marked. The keyboard moves through rows with this, so arrowing past a
+  // file doesn't open it — Enter does.
+  function highlightColumnRow(levelIdx: number, item: DriveItem, scopeId: string) {
     if (selected.size > 0) setSelected(new Set());
     setAnchorId(item.id);
     setFocusLevel(levelIdx);
@@ -1145,31 +1145,14 @@ export function DriveBrowser({
       setColSel({
         levels: truncatedLevels,
         highlightedIds: truncatedHighlights,
-        leafLevelIdx: null,
-        selectedLeaf: null,
       });
       onNavigate(scopeId, newFolderId);
     } else {
-      // Leaf: highlight in this column, truncate columns to the right, show toolbar.
+      // Leaf: highlight in this column, truncate columns to the right.
       const truncatedLevels = colSel.levels.slice(0, levelIdx + 1);
       const truncatedHighlights = colSel.highlightedIds.slice(0, levelIdx + 1);
       truncatedHighlights[levelIdx] = item.id;
-      setColSel({
-        levels: truncatedLevels,
-        highlightedIds: truncatedHighlights,
-        leafLevelIdx: levelIdx,
-        selectedLeaf: item,
-      });
-    }
-  }
-
-  // Double-click a leaf → open it. Folders are opened via onOpenItem too, which
-  // drills into them (see the route's onOpenItem); guarding here is unnecessary
-  // but harmless — a double-click on a folder in columns already drilled on the
-  // preceding single click.
-  function handleColumnRowDblClick(item: DriveItem) {
-    if (item.type !== "folder") {
-      onOpenItem(item);
+      setColSel({ levels: truncatedLevels, highlightedIds: truncatedHighlights });
     }
   }
 
@@ -1188,7 +1171,7 @@ export function DriveBrowser({
     return itemsForLevel(level).map((it) => ({ id: it.id, title: it.title || "Untitled" }));
   }
 
-  /** Highlight a row the way a plain click would: drill folders, select leaves. */
+  /** Move the keyboard highlight to a row: drill folders, mark leaves. */
   function activateRow(levelIdx: number, id: string) {
     if (levelIdx === 0) {
       handleScopeClick(id);
@@ -1198,7 +1181,7 @@ export function DriveBrowser({
     const sId = scopeIdForLevel(level);
     if (!sId) return;
     const item = itemsForLevel(level).find((it) => it.id === id);
-    if (item) handleColumnRowClick(levelIdx, item, sId);
+    if (item) highlightColumnRow(levelIdx, item, sId);
   }
 
   function highlightedItemAt(levelIdx: number): DriveItem | null {
@@ -1257,7 +1240,6 @@ export function DriveBrowser({
         return;
       }
       setSelected(new Set());
-      setColSel((prev) => ({ ...prev, selectedLeaf: null, leafLevelIdx: null }));
       return;
     }
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
@@ -1329,21 +1311,10 @@ export function DriveBrowser({
   }
 
   // ── Selection detail (the details rail subject) ────────────────────────────
-  // Column view drives selection through `selectedLeaf`; list / grid / search
-  // drive it through the `selected` set. Resolve them to one `detailItem` so the
-  // side-peek rail behaves identically in every view.
-  const { selectedLeaf } = colSel;
-  let leafScopeId: string | null = null;
-  if (colSel.leafLevelIdx !== null) {
-    leafScopeId = scopeIdForLevel(colSel.levels[colSel.leafLevelIdx]);
-  }
-  const leafActions = leafScopeId ? getInternalScopeActions(leafScopeId) : null;
-
   const columnsActive = viewMode === "columns" && !searching;
-  // In column view the in-column LeafPreviewColumn owns the selected leaf's
-  // details and actions, so the side-peek rail stays out of its way — it
-  // drives only list / grid / search selection (the `selected` set). The bulk
-  // bar still shows in columns.
+  // In column view a click opens the item rather than selecting it, so the
+  // side-peek rail has no subject there — it follows only list / grid / search
+  // selection (the `selected` set). The bulk bar still shows in columns.
   let detailItem: DriveItem | null = null;
   let detailScopeId: string | null = null;
   if (!columnsActive && selected.size === 1) {
@@ -1426,40 +1397,6 @@ export function DriveBrowser({
       /* ignore */
     }
   }
-
-  // ── Column leaf preview (Finder in-column details) ─────────────────────────
-  // The columns view keeps its own selected-leaf surface (LeafPreviewColumn) at
-  // the end of the trail, so it derives its capabilities from `selectedLeaf`
-  // rather than the view-agnostic `detailItem` above.
-  const canLeafRename =
-    selectedLeaf &&
-    (selectedLeaf.type === "folder" ||
-      selectedLeaf.type === "doc" ||
-      selectedLeaf.type === "file" ||
-      selectedLeaf.type === "form" ||
-      selectedLeaf.type === "agreement");
-  const canLeafMove =
-    !!selectedLeaf &&
-    selectedLeaf.type !== "agreement" &&
-    selectedLeaf.type !== "rubric";
-  const canLeafDelete =
-    selectedLeaf &&
-    (selectedLeaf.type === "folder" ||
-      selectedLeaf.type === "doc" ||
-      selectedLeaf.type === "file" ||
-      selectedLeaf.type === "form");
-  // Download: only for files with an href.
-  const canLeafDownload = selectedLeaf && selectedLeaf.type === "file";
-  const leafScope = leafScopeId ? scopes.find((sc) => sc.id === leafScopeId) ?? null : null;
-  const leafPath = selectedLeaf && leafScope
-    ? [leafScope.label, ...crumbsFor(leafScope.items, selectedLeaf.parentFolderId).map((c) => c.title)].join(" › ")
-    : "";
-  // Share: page-backed items only (doc and folder). Folders now support sharing
-  // via PageShare, which was previously impossible from the Drive surface.
-  const canLeafShare =
-    !!selectedLeaf &&
-    (selectedLeaf.type === "doc" || selectedLeaf.type === "folder") &&
-    !!leafActions?.onShare;
 
   // ── The listing header's controls ─────────────────────────────────────────
   // Built here rather than inline so the header itself stays a readable row of
@@ -1602,8 +1539,8 @@ export function DriveBrowser({
           {filterControl}
 
           <div className="ml-auto flex shrink-0 items-center gap-3">
-            {/* Column view carries its own in-column details (LeafPreviewColumn),
-                so the side rail — and its toggle — only apply to list / grid. */}
+            {/* Column view opens an item on click instead of selecting it, so
+                the side rail — and its toggle — only apply to list / grid. */}
             {!columnsActive && (
               <Tooltip content={detailsOpen ? "Hide details" : "Show details"}>
                 <button
@@ -1671,9 +1608,6 @@ export function DriveBrowser({
               onDragOver={onFileDragOver}
               onDragLeave={onFileDragLeave}
               onDrop={onFileDrop}
-              onClick={() =>
-                setColSel((prev) => ({ ...prev, selectedLeaf: null, leafLevelIdx: null }))
-              }
               data-testid="drive-columns"
             >
               {uploadOver && (
@@ -1763,7 +1697,6 @@ export function DriveBrowser({
                               onToggleFavorite={onToggleFavorite}
                               onTogglePartnerVisible={partnerToggle}
                               onClick={(e) => { if (sId) handleColumnRowClick(levelIdx, item, sId, e); }}
-                              onDoubleClick={() => handleColumnRowDblClick(item)}
                               onOpen={() => onOpenItem(item)}
                             />
                           </ContextMenu>
@@ -1772,25 +1705,6 @@ export function DriveBrowser({
                     </MillerColumn>
                   );
                 })}
-
-                {/* Preview column. A selected leaf's details and actions belong
-                    at the end of the trail, next to the row you picked — the
-                    place Finder puts them — rather than in a strip above the
-                    columns, which sat far from the selection and could only
-                    afford the name. */}
-                {selectedLeaf && leafActions && (
-                  <LeafPreviewColumn
-                    item={selectedLeaf}
-                    path={leafPath}
-                    actions={leafActions}
-                    canRename={!!canLeafRename}
-                    canMove={canLeafMove}
-                    canDelete={!!canLeafDelete}
-                    canShare={canLeafShare}
-                    canDownload={!!canLeafDownload}
-                    onToggleFavorite={onToggleFavorite}
-                  />
-                )}
               </div>
             </div>
           ) : (
@@ -2293,7 +2207,6 @@ function ColumnItemRow({
   onToggleFavorite,
   onTogglePartnerVisible,
   onClick,
-  onDoubleClick,
   onOpen,
 }: {
   item: DriveItem;
@@ -2308,7 +2221,6 @@ function ColumnItemRow({
   onToggleFavorite?: (item: DriveItem) => void;
   onTogglePartnerVisible?: (item: DriveItem, next: boolean) => void;
   onClick: (e: ReactMouseEvent) => void;
-  onDoubleClick: () => void;
   onOpen: () => void;
 }) {
   const t = useDriveText();
@@ -2341,7 +2253,6 @@ function ColumnItemRow({
       data-col-level={levelIdx}
       data-row-id={item.id}
       onClick={(e) => { e.stopPropagation(); onClick(e); }}
-      onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick(); }}
       className={`group flex items-center rounded-lg dnd-touch-handle ${t.itemRow} ${t.row} cursor-default select-none ${
         drag.isDragging ? "opacity-40" : ""
       } ${
@@ -2484,112 +2395,6 @@ function DetailAction({
       {icon}
       {label}
     </button>
-  );
-}
-
-function LeafPreviewColumn({
-  item,
-  path,
-  actions,
-  canRename,
-  canMove,
-  canDelete,
-  canShare,
-  canDownload,
-  onToggleFavorite,
-}: {
-  item: DriveItem;
-  /** "Lab-wide › Handbook › Onboarding" — where the item sits. */
-  path: string;
-  actions: RowActions;
-  canRename: boolean;
-  canMove: boolean;
-  canDelete: boolean;
-  canShare: boolean;
-  canDownload: boolean;
-  onToggleFavorite?: (item: DriveItem) => void;
-}) {
-  const isPageBacked = item.type === "doc" || item.type === "folder";
-  return (
-    <div
-      data-testid="drive-leaf-preview"
-      // Clicks inside must not reach the columns container, whose own click
-      // clears the leaf selection — the panel would close under the pointer.
-      onClick={(e) => e.stopPropagation()}
-      // A fixed 280px (.drivepage-detail-panel) rather than a share of the row:
-      // it is the end of the trail, not another column, and the columns beside
-      // it shouldn't narrow to make room for its facts.
-      className="flex w-[280px] shrink-0 flex-col overflow-y-auto p-5 max-h-[420px]"
-    >
-      <div className="flex flex-col items-center text-center">
-        <div className="mb-3.5 flex h-12 w-12 items-center justify-center">
-          {itemIcon(item, "xl")}
-        </div>
-        <span className="text-base font-semibold leading-snug text-foreground break-words">
-          {item.title || "Untitled"}
-        </span>
-        <span className="mt-1 text-[13px] text-muted-foreground">{kindLabel(item)}</span>
-      </div>
-
-      <dl className="mt-4 flex flex-col gap-3.5 border-t border-border pt-3.5">
-        <DetailFact label="Where" value={path} />
-        <DetailFact label="Modified" value={relativeTime(item.updatedAt as unknown as string)} />
-        <DetailFact label="Size" value={formatSize(item.sizeBytes)} />
-      </dl>
-
-      <div className="mt-4 flex flex-col border-t border-border pt-2">
-        {canDownload && item.href && (
-          <DetailAction
-            testid="drive-leaf-download"
-            icon={<Download />}
-            label="Download"
-            href={item.href}
-          />
-        )}
-        {isPageBacked && onToggleFavorite && (
-          <DetailAction
-            testid="drive-leaf-favorite"
-            icon={<Star className={cn(item.favorited && "fill-current")} />}
-            label={item.favorited ? "Remove from favorites" : "Add to favorites"}
-            active={!!item.favorited}
-            onClick={() => onToggleFavorite(item)}
-          />
-        )}
-        {canShare && actions.onShare && (
-          <DetailAction
-            testid="drive-leaf-share"
-            icon={<Share2 />}
-            label="Share…"
-            onClick={() => actions.onShare!(item)}
-          />
-        )}
-        {canRename && (
-          <DetailAction
-            testid="drive-leaf-rename"
-            icon={<Pencil />}
-            label="Rename"
-            onClick={() => actions.onRename(item)}
-          />
-        )}
-        {canMove && (
-          <DetailAction
-            testid="drive-leaf-move"
-            icon={<FolderInput />}
-            label="Move to…"
-            onClick={() => actions.onRequestMove(item)}
-          />
-        )}
-        {canDelete && (
-          <DetailAction
-            testid="drive-leaf-delete"
-            icon={<Trash2 />}
-            label="Delete"
-            destructive
-            onClick={() => actions.onDelete(item)}
-          />
-        )}
-      </div>
-    </div>
   );
 }
 
