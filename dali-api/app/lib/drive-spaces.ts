@@ -6,7 +6,6 @@
 // as `feature-flags.ts`).
 
 import {
-  Briefcase,
   FolderKanban,
   GraduationCap,
   HardDrive,
@@ -104,20 +103,11 @@ export const DRIVE_SPACES: DriveSpaceDef[] = [
     label: "Core",
     icon: Shield,
     // A view over Core-group-scoped folders (ordinary folders shared with the
-    // Core group), not a system-owned scoped root.
+    // Core group), not a system-owned scoped root. Hiring's folder set is
+    // Core-group-scoped too, so it surfaces here as an ordinary "Hiring"
+    // folder rather than as a space of its own.
     backing: "virtual-filter",
     groupQuery: "core",
-    gate: (r) => r.isCore,
-  },
-  {
-    key: "hiring",
-    label: "Hiring",
-    icon: Briefcase,
-    // A view over the Hiring singleton's bound folders (see FOLDER_SLOTS for
-    // HiringCycle / HIRING_PROCESS_ID). Keyed off the BINDING, not the folder's
-    // share scope, so re-sharing a folder never ejects it from this space. The
-    // folders default to Core-group scope, so this space is Core-only.
-    backing: "virtual-filter",
     gate: (r) => r.isCore,
   },
 ];
