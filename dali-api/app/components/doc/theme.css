@@ -320,6 +320,13 @@ html.dark .dali-doc .bn-thread-mark[data-orphan="true"] {
   box-shadow: 0 4px 16px rgb(0 0 0 / 0.1);
 }
 
+/* New-thread composer (comments/CommentComposer.tsx): the nested editor sits
+ * in the composer's own well, so it drops BlockNote's gutter and ground. */
+.dali-comment-composer .bn-editor {
+  padding-inline: 0;
+  background-color: transparent;
+}
+
 /* ThreadsSidebar portaled into the panel: reset BlockNote's sidebar defaults
  * that assume a fixed-width aside. The panel width is set by the panel itself. */
 #doc-comments-panel .bn-threads-sidebar,

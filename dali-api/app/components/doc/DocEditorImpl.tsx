@@ -52,6 +52,8 @@ import { AiBar } from "./ai/AiBar";
 import { AiCardHost } from "./ai/AiCardHost";
 import type { AiBarConfig } from "./ai/AiBar";
 import { DocCommentsRail } from "./comments/DocCommentsRail";
+import { CommentComposer } from "./comments/CommentComposer";
+import { CommentEditorProvider, commentEditorSchema } from "./comments/CommentEditor";
 import { BlockNoteView } from "@blocknote/shadcn";
 
 import { WebSocketStatus } from "@hocuspocus/provider";
@@ -165,6 +167,7 @@ function CollabDocInner(
         ? {
             extensions: [
               CommentsExtension({
+                schema: commentEditorSchema,
                 threadStore,
                 resolveUsers: makeResolveDocUsers(threadStore),
               }),
@@ -741,56 +744,63 @@ function DocView(
         />
       )}
       {/* Custom drag-handle side menu (Notion-ordered: Duplicate / Colors /
-          Comment / Delete). Compact surfaces suppress the side menu entirely
+          Delete). Compact surfaces suppress the side menu entirely
           via sideMenu={false} on BlockNoteView — this controller is a no-op
           there since the SideMenuExtension never shows without the gutter. */}
       {props.density !== "compact" && (
-        <DaliSideMenuController canComment={props.comments?.canComment ?? false} />
+        <DaliSideMenuController />
       )}
       {/* AI-aware floating selection toolbar. Passes a custom component ref
           that renders all default toolbar items + an AI dropdown when AI is
           enabled. The component is memoized in DocView so its identity is stable
           and FormattingToolbarController doesn't remount on every state tick. */}
       <FormattingToolbarController formattingToolbar={aiFormattingToolbar} />
-      {/* Inline comment floating UI — only active when CommentsExtension is
-          wired (i.e. props.comments is set and mode is collab).
-          FloatingComposerController: new-thread composer floating above selection.
-          FloatingThreadController: selected-thread popover anchored to the mark.
-          Both receive portalElement=floatingRootRef.current so they portal into
-          the .dali-doc wrapper — this is what makes clicks inside the composer
-          NOT trigger useDismiss's outside-press detection. */}
-      {hasComments && (
-        <FloatingComposerController portalElement={floatingRootRef.current ?? undefined} />
-      )}
-      {/* FloatingThreadController: mark clicks open an anchored thread popover.
-          Suppressed when the rail is visible — the rail replaces the popover.
-          focusManagerProps.disabled=false enables Floating UI's focus trap so
-          the reply box receives focus when the popover opens. */}
-      {hasComments && !railVisible && (
-        <FloatingThreadController
-          portalElement={floatingRootRef.current ?? undefined}
-          floatingUIOptions={{ focusManagerProps: { disabled: false } }}
-        />
-      )}
-      {/* ThreadsSidebar portaled into the panel when it's open. Stays inside
-          the BlockNoteView context (required for editor/store access). */}
-      {hasComments && panelTarget &&
-        createPortal(
-          // "all": a comment has no resolved state, so every thread is listed.
-          <ThreadsSidebar filter="all" sort="position" />,
-          panelTarget,
-        )
-      }
-      {/* DocCommentsRail portaled into the host-owned rail container when wide. */}
-      {hasComments && railVisible && railTarget && editorContentRef &&
-        createPortal(
-          <DocCommentsRail
-            editorContentRef={editorContentRef}
-            focusCommentId={props.comments?.focusCommentId}
-          />,
-          railTarget,
-        )
-      }
+      {/* Every comment surface below writes and shows comments in our own
+          editor (member @mentions), not BlockNote's paragraph-only one. */}
+      <CommentEditorProvider>
+        {/* Inline comment floating UI — only active when CommentsExtension is
+            wired (i.e. props.comments is set and mode is collab).
+            FloatingComposerController: new-thread composer floating above selection.
+            FloatingThreadController: selected-thread popover anchored to the mark.
+            Both receive portalElement=floatingRootRef.current so they portal into
+            the .dali-doc wrapper — this is what makes clicks inside the composer
+            NOT trigger useDismiss's outside-press detection. */}
+        {hasComments && (
+          <FloatingComposerController
+            floatingComposer={CommentComposer}
+            portalElement={floatingRootRef.current ?? undefined}
+          />
+        )}
+        {/* FloatingThreadController: mark clicks open an anchored thread popover.
+            Suppressed when the rail is visible — the rail replaces the popover.
+            focusManagerProps.disabled=false enables Floating UI's focus trap so
+            the reply box receives focus when the popover opens. */}
+        {hasComments && !railVisible && (
+          <FloatingThreadController
+            portalElement={floatingRootRef.current ?? undefined}
+            floatingUIOptions={{ focusManagerProps: { disabled: false } }}
+          />
+        )}
+        {/* ThreadsSidebar portaled into the panel when it's open. Stays inside
+            the BlockNoteView context (required for editor/store access). */}
+        {hasComments && panelTarget &&
+          createPortal(
+            // "all": a comment has no resolved state, so every thread is listed.
+            <ThreadsSidebar filter="all" sort="position" />,
+            panelTarget,
+          )
+        }
+        {/* DocCommentsRail portaled into the host-owned rail container when wide. */}
+        {hasComments && railVisible && railTarget && editorContentRef &&
+          createPortal(
+            <DocCommentsRail
+              editorContentRef={editorContentRef}
+              focusCommentId={props.comments?.focusCommentId}
+            />,
+            railTarget,
+          )
+        }
+      </CommentEditorProvider>
       {/* AI inline card — anchored to the trigger block via BlockPopover.
           Rendered inside BlockNoteView children so useBlockNoteEditor is in
           scope (BlockPopover requires the editor context). Only mounts when
