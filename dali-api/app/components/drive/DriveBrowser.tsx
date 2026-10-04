@@ -129,7 +129,10 @@ export type DriveBrowserProps = {
   onSearchChange: (q: string) => void;
   onNavigate: (scopeId: string | null, folderId: string | null) => void;
   onOpenItem: (item: DriveItem) => void;
-  onMove: (scopeId: string, item: DriveItem, destFolderId: string | null) => void;
+  /** Re-file every item into `destFolderId` within the scope it already sits
+   *  in. Takes a list because dragging one row of a multi-selection drags the
+   *  whole selection, the way Finder and Drive do. */
+  onMove: (scopeId: string, items: DriveItem[], destFolderId: string | null) => void;
   getScopeActions: (scopeId: string) => RowActions;
   /** Toggle the viewer's favorite on a page item (doc/folder). */
   onToggleFavorite?: (item: DriveItem) => void;
@@ -137,8 +140,8 @@ export type DriveBrowserProps = {
   onBulkDelete?: (items: DriveItem[]) => void;
   /** Move every item in the set to another drive/folder (picker + confirm in the hub). */
   onBulkMove?: (items: DriveItem[]) => void;
-  /** Move a single item from one drive scope to another (confirm + re-scope handled by hub). */
-  onMoveToScope?: (sourceScopeId: string, destScopeId: string, item: DriveItem) => void;
+  /** Move items from one drive scope to another (confirm + re-scope handled by hub). */
+  onMoveToScope?: (sourceScopeId: string, destScopeId: string, items: DriveItem[]) => void;
   /** Upload files dropped from the desktop into the current scope+folder. */
   onUploadFiles?: (files: File[]) => void;
   filterControl?: ReactNode;
@@ -635,12 +638,17 @@ export function DriveBrowser({
         // workspaceType is not on DriveItem directly; infer from the scope id
         // so the ShareDialog can show the correct audience label (Lab/Project/Member).
         const scope = scopes.find((s) => s.id === scopeId);
+        // Only a hint: the dialog replaces it with the server's answer once
+        // loaded. Still worth getting right — education pages are not Project
+        // ones, and the fallback claimed they were.
         const wt =
           !scope || scope.id === "lab" || scope.id === "core"
             ? "Lab"
             : scope.id === "mine"
               ? "Member"
-              : "Project";
+              : scope.id === "education"
+                ? "EducationOffering"
+                : "Project";
         setShareTarget({ id: item.id, title: item.title || "Untitled", workspaceType: wt });
         onShareItem?.(item);
       },
@@ -986,10 +994,22 @@ export function DriveBrowser({
     const src = e.active.data.current as { item: DriveItem; scopeId: string } | undefined;
     const dest = e.over?.data.current as { destFolderId?: string | null; destScopeId?: string } | undefined;
     if (!src || !dest) return;
+    // Dragging a row that's part of a multi-selection drags the whole
+    // selection — Finder and Drive both do this, and moving only the row under
+    // the cursor silently drops the other items the user had picked. A search
+    // selection can span scopes, and a move is scope-relative, so only the ones
+    // sharing the dragged row's scope come along.
+    const multi =
+      selected.has(src.item.id) && selectedItems.length > 1
+        ? searching
+          ? hits.filter((h) => h.scope.id === src.scopeId && selected.has(h.item.id)).map((h) => h.item)
+          : selectedItems
+        : [];
+    const dragged = multi.length > 1 ? multi : [src.item];
     // Cross-drive drop: item dragged onto a scope row in column 0.
     if (dest.destScopeId && dest.destFolderId === undefined) {
       if (dest.destScopeId !== src.scopeId) {
-        onMoveToScope?.(src.scopeId, dest.destScopeId, src.item);
+        onMoveToScope?.(src.scopeId, dest.destScopeId, dragged);
       }
       return;
     }
@@ -1000,16 +1020,23 @@ export function DriveBrowser({
     const destScopeId = dest.destScopeId ?? currentScope?.id ?? null;
     if (!destScopeId) return;
     if (destScopeId !== src.scopeId) {
-      onMoveToScope?.(src.scopeId, destScopeId, src.item);
+      onMoveToScope?.(src.scopeId, destScopeId, dragged);
       return;
     }
     const destScope = scopes.find((sc) => sc.id === destScopeId);
     if (!destScope) return;
-    if (src.item.type === "folder" && dest.destFolderId) {
-      if (folderDescendants(destScope.items, src.item.id).has(dest.destFolderId)) return;
-    }
-    if (src.item.parentFolderId === (dest.destFolderId ?? null)) return;
-    onMove(destScope.id, src.item, dest.destFolderId ?? null);
+    // Drop the items the destination can't accept rather than failing the whole
+    // drag: a folder can't land inside its own subtree, and an item already in
+    // the target folder has nowhere to go.
+    const movable = dragged.filter((item) => {
+      if (item.id === dest.destFolderId) return false;
+      if (item.type === "folder" && dest.destFolderId) {
+        if (folderDescendants(destScope.items, item.id).has(dest.destFolderId)) return false;
+      }
+      return item.parentFolderId !== (dest.destFolderId ?? null);
+    });
+    if (movable.length === 0) return;
+    onMove(destScope.id, movable, dest.destFolderId ?? null);
   }
 
   // ── Drag-to-upload (desktop files) ──────────────────────────────────────
@@ -1823,7 +1850,6 @@ export function DriveBrowser({
                   activeId={activeId}
                   onRowClick={handleRowClick}
                   onOpen={openById}
-                  onMove={onMove}
                   actions={getInternalScopeActions(currentScope.id)}
                   onToggleFavorite={onToggleFavorite}
                   onTogglePartnerVisible={
@@ -2851,7 +2877,6 @@ function ScopeContents({
   activeId,
   onRowClick,
   onOpen,
-  onMove,
   actions,
   onToggleFavorite,
   onTogglePartnerVisible,
@@ -2867,7 +2892,6 @@ function ScopeContents({
   activeId: string | null;
   onRowClick: (id: string, e: ReactMouseEvent) => void;
   onOpen: (id: string) => void;
-  onMove: (scopeId: string, item: DriveItem, destFolderId: string | null) => void;
   actions: RowActions;
   onToggleFavorite?: (item: DriveItem) => void;
   onTogglePartnerVisible?: (item: DriveItem, next: boolean) => void;

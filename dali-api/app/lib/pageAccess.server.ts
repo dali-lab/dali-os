@@ -484,9 +484,11 @@ async function computePageAccessCore(
  * Batch variant of `getPageAccess` — resolves access for a list of pages in
  * one pageShare.findMany instead of N per-page fetches.
  *
- * The result for each page is IDENTICAL to `getPageAccess(userId, page, request)`
- * — same logic, same boolean semantics. This is access control; the batch
- * optimisation must never change the outcome.
+ * The result for each page is IDENTICAL to
+ * `getPageAccess(userId, page, request, options)` — same logic, same boolean
+ * semantics. This is access control; the batch optimisation must never change
+ * the outcome. That holds only if each row carries the fields the computation
+ * reads, so callers must select the full PageShape, not a display subset.
  *
  * The governing-scope ancestry walk (findGoverningScope) remains per-page
  * because materialising the full parent chain for all pages upfront is not
@@ -497,6 +499,7 @@ export async function getPageAccessBulk(
   userId: string,
   pages: PageShape[],
   request?: Request,
+  options?: PageAccessOptions,
 ): Promise<Map<string, PageAccessResult>> {
   if (pages.length === 0) return new Map();
 
@@ -529,7 +532,14 @@ export async function getPageAccessBulk(
   await Promise.all(
     pages.map(async (page) => {
       const sharesForPage = sharesByPage.get(page.id) ?? [];
-      const access = await computePageAccessCore(userId, page, request, sharesForPage, groupIds);
+      const access = await computePageAccessCore(
+        userId,
+        page,
+        request,
+        sharesForPage,
+        groupIds,
+        options,
+      );
       result.set(page.id, access);
     }),
   );

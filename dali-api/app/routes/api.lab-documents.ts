@@ -5,7 +5,7 @@ import { requireMemberSession } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { createLabPage, pageDepth, MAX_PAGE_DEPTH } from "~/lib/pages";
-import { isUnderGoverningScope } from "~/lib/pageAccess.server";
+import { getPageAccess, isUnderGoverningScope } from "~/lib/pageAccess.server";
 
 // POST /api/lab-documents
 //
@@ -59,6 +59,16 @@ export async function action({ request }: Route.ActionArgs) {
     const depth = await pageDepth(body.parentPageId);
     if (depth < 0 || depth >= MAX_PAGE_DEPTH) {
       return withCors(request, Response.json({ error: "Folder is too deeply nested" }, { status: 400 }));
+    }
+    // Any lab member may create at the Lab root, but not inside a folder they
+    // can't edit — the Lab workspace holds the Core-scoped folders too, and
+    // "lab member" is not the gate for those.
+    const parentAccess = await getPageAccess(auth.user.sub, body.parentPageId, request);
+    if (!parentAccess.canEdit) {
+      return withCors(
+        request,
+        Response.json({ error: "You can't put things in that folder" }, { status: 403 }),
+      );
     }
   }
 
