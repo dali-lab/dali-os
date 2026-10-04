@@ -437,6 +437,7 @@ export default function DocumentPage() {
   const focusCommentId = searchParams.get("comment") ?? undefined;
   const focusMentionUserId = searchParams.get("mention") ?? undefined;
   const recordingEnabled = useFeatureFlag("ai-meeting-notes");
+  const { actionBtnPrimary, actionIcon } = useOsChrome();
 
   // Meeting recording writes into the doc through the live editor, so
   // collaborators see the notes arrive like any other edit.
@@ -454,16 +455,6 @@ export default function DocumentPage() {
   return (
     <div className="flex flex-col gap-4">
       {trashed && <TrashedNoteBanner pageId={pageId} canRestore={canRestore} />}
-      {attendance?.whiteboardPageId && (
-        // This meeting also has a whiteboard — link across to it (the board
-        // carries the matching link back).
-        <Link
-          to={`/whiteboard/${attendance.whiteboardPageId}`}
-          className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-foreground transition-colors hover:bg-muted"
-        >
-          <Shapes className="h-4 w-4 text-muted-foreground" /> Open meeting whiteboard
-        </Link>
-      )}
       {attendance?.selfCheckIn && (
         <CheckInPanel
           meetingId={attendance.meetingId}
@@ -505,6 +496,18 @@ export default function DocumentPage() {
             {attendance && <AttendanceButton attendance={attendance} />}
             {recordingEnabled && canEdit && (
               <MeetingRecorder documentName={pageDocName(pageId)} onInsert={insertMarkdown} />
+            )}
+            {attendance?.whiteboardPageId && (
+              // This meeting also has a whiteboard — link across to it (the
+              // board carries the matching link back).
+              <Link
+                to={`/whiteboard/${attendance.whiteboardPageId}`}
+                aria-label="Whiteboard"
+                className={actionBtnPrimary}
+              >
+                <Shapes className={actionIcon} />
+                <span className="hidden sm:inline">Whiteboard</span>
+              </Link>
             )}
           </>
         }
