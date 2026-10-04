@@ -14,7 +14,7 @@ type Destination_ = {
   id: string | null;
   label: string;
   iconEmoji: string | null;
-  folders: { id: string; title: string; parentId: string | null }[];
+  folders: { id: string; title: string; parentId: string | null; itemCount?: number }[];
 };
 
 export function MoveToDialog({
@@ -56,17 +56,53 @@ export function MoveToDialog({
   }, [open, pageId]);
 
   const drives: PickerDrive[] = useMemo(
-    () => destinations.map((d) => ({ id: d.type === "Lab" ? "lab" : d.id!, label: d.label, iconEmoji: d.iconEmoji })),
+    () =>
+      destinations.map((d) => ({
+        id: d.type === "Lab" ? "lab" : d.id!,
+        label: d.label,
+        iconEmoji: d.iconEmoji,
+        // Picking a drive is what changes who can see the doc, so say so.
+        audience: d.type === "Lab" ? "Everyone in the lab" : "Project members",
+      })),
     [destinations],
   );
   const folders: PickerFolder[] = useMemo(
     () =>
       destinations.flatMap((d) => {
         const driveId = d.type === "Lab" ? "lab" : d.id!;
-        return d.folders.map((f) => ({ id: f.id, driveId, parentId: f.parentId, title: f.title }));
+        return d.folders.map((f) => ({
+          id: f.id,
+          driveId,
+          parentId: f.parentId,
+          title: f.title,
+          itemCount: f.itemCount,
+        }));
       }),
     [destinations],
   );
+
+  // The page being moved may itself be a folder, in which case neither it nor
+  // anything under it is a legal destination. The move endpoint rejects that
+  // with a 400 ("can't be moved into its own descendant"), so offering it only
+  // buys the user a failed move. Walked from the flat list the picker already
+  // holds, so it costs no extra request.
+  const disabledFolderIds = useMemo(() => {
+    const banned = new Set<string>();
+    if (!folders.some((f) => f.id === pageId)) return banned;
+    banned.add(pageId);
+    // Repeated passes: the flat list isn't in parent-before-child order.
+    for (let pass = 0; pass < folders.length; pass++) {
+      let grew = false;
+      for (const f of folders) {
+        if (!banned.has(f.id) && f.parentId && banned.has(f.parentId)) {
+          banned.add(f.id);
+          grew = true;
+        }
+      }
+      if (!grew) break;
+    }
+    return banned;
+  }, [folders, pageId]);
 
   async function onConfirm(dest: Destination) {
     const selected = destinations.find((d) => (d.type === "Lab" ? "lab" : d.id) === dest.driveId);
@@ -110,6 +146,7 @@ export function MoveToDialog({
       heading={`Move “${title}”`}
       drives={drives}
       folders={folders}
+      disabledFolderIds={disabledFolderIds}
       initial={drives.some((d) => d.id === currentKey) ? { driveId: currentKey, folderId: null } : undefined}
       onClose={onClose}
       onConfirm={onConfirm}

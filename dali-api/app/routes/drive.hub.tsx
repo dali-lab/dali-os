@@ -1562,15 +1562,19 @@ export default function DriveHub() {
     if (currentScope.id === "lab" || currentScope.id === "core")
       return { scope: { kind: "Lab" }, folderPageId: currentFolderId ?? currentScope.rootFolderId ?? null };
     if (currentScope.id === "projects" || currentScope.id === "education") {
-      // Resolve the project from the current folder to target the upload correctly.
-      // If we can't resolve (e.g. at the group root), fall back to Lab scope as a
-      // safe no-op (the upload endpoint will reject an invalid folderPageId gracefully).
-      const projectId = resolveWorkspaceId(currentScope.items, currentFolderId);
-      if (!projectId) return { scope: { kind: "Lab" } };
-      // If currentFolderId IS the synthetic project folder, the real parent is null.
+      // Resolve the workspace from the current folder. If we can't (e.g. at the
+      // group root), fall back to Lab scope as a safe no-op.
+      const workspaceId = resolveWorkspaceId(currentScope.items, currentFolderId);
+      if (!workspaceId) return { scope: { kind: "Lab" } };
+      // If currentFolderId IS the synthetic workspace folder, the real parent is null.
       const node = currentFolderId ? currentScope.items.find((it) => it.id === currentFolderId) : null;
       const realFolder = node?.parentFolderId === null ? null : currentFolderId;
-      return { scope: { kind: "Project", projectId }, folderPageId: realFolder };
+      // An offering is NOT a project. Sending its id as a projectId is what
+      // made every upload into a course Drive fail — 403 for an instructor,
+      // "Project not found" for Core.
+      return currentScope.id === "education"
+        ? { scope: { kind: "EducationOffering", offeringId: workspaceId }, folderPageId: realFolder }
+        : { scope: { kind: "Project", projectId: workspaceId }, folderPageId: realFolder };
     }
     return { scope: { kind: "Project", projectId: currentScope.id }, folderPageId: currentFolderId };
   }, [currentScope, currentFolderId]);

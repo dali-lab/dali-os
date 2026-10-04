@@ -10,7 +10,7 @@ import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import type { Prisma, WorkspaceType } from "~/generated/prisma/client";
 import { pageDepth, MAX_PAGE_DEPTH, isAncestorOf, collectSubtree } from "~/lib/pages";
-import { isUnderGoverningScope } from "~/lib/pageAccess.server";
+import { getPageAccess, isUnderGoverningScope } from "~/lib/pageAccess.server";
 
 // POST /api/pages/:id/move — move and/or reorder a document.
 //   { parentPageId, beforeId? }                  → reorder within its workspace
@@ -203,6 +203,19 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
     if (parent.kind !== "Folder") {
       return withCors(request, Response.json({ error: "Documents can only nest inside a folder" }, { status: 400 }));
+    }
+    // Being able to edit in the destination WORKSPACE is not the same as being
+    // able to edit in the destination FOLDER: any lab member passes the Lab
+    // check, scoped folders included. Without this, a member could file a doc
+    // into Core's drive — and immediately lose it, since landing in a scope
+    // forces the page Restricted. /api/drive/move already checks this for
+    // files and forms; pages were the gap.
+    const parentAccess = await getPageAccess(userId, body.parentPageId, request);
+    if (!parentAccess.canEdit) {
+      return withCors(
+        request,
+        Response.json({ error: "You can't put things in that folder" }, { status: 403 }),
+      );
     }
     // The moved page lands one below its new parent, and its own subtree keeps
     // going from there — so a 3-deep folder needs 3 levels of headroom, not 1.

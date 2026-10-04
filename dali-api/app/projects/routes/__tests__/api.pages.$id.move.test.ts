@@ -16,6 +16,10 @@ vi.mock("~/lib/roles", () => ({
   isLabMember: vi.fn(),
 }));
 vi.mock("~/lib/page-share-access.server", () => ({ canManageSharing: vi.fn() }));
+vi.mock("~/lib/pageAccess.server", () => ({
+  getPageAccess: vi.fn(),
+  isUnderGoverningScope: vi.fn(),
+}));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/cors", () => ({
   withCors: (_req: Request, res: Response) => res,
@@ -27,6 +31,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
 import { canManageSharing } from "~/lib/page-share-access.server";
+import { getPageAccess, isUnderGoverningScope } from "~/lib/pageAccess.server";
 import { isOfferingManager } from "~/education/lib/access.server";
 import { logAuditEvent } from "~/lib/audit";
 import { action } from "../api.pages.$id.move";
@@ -83,6 +88,8 @@ beforeEach(() => {
   vi.mocked(isProjectMember).mockResolvedValue(false);
   vi.mocked(isLabMember).mockResolvedValue(false);
   vi.mocked(isOfferingManager).mockResolvedValue(false);
+  vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canEdit: true, canComment: true });
+  vi.mocked(isUnderGoverningScope).mockResolvedValue(false);
   childrenByParent = {};
   pagesById = {};
   m.page.findMany.mockImplementation(async ({ where }: any) => {
@@ -354,5 +361,41 @@ describe("POST /api/pages/:id/move", () => {
     childrenByParent = { p1: ["s1"], s1: ["s2"], s2: ["s3"] };
     const res = await call({ parentPageId: "dest" });
     expect(res.status).toBe(200);
+  });
+
+  // Editing in the destination WORKSPACE is not the same as editing in the
+  // destination FOLDER: every lab member passes the Lab check, Core-scoped
+  // folders included. /api/drive/move already gated this for files and forms.
+  it("403 when the actor can't edit the destination folder", async () => {
+    m.page.findUnique.mockImplementation(async ({ where }: any) =>
+      where.id === "p1" ? labPage() : pagesById[where.id] ?? null,
+    );
+    pagesById = {
+      core: { workspaceType: "Lab", workspaceId: null, parentPageId: null, kind: "Folder", archivedAt: null },
+    };
+    vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canEdit: false, canComment: true });
+
+    const res = await call({ parentPageId: "core" });
+    expect(res.status).toBe(403);
+    expect((await res.json()).error).toMatch(/can't put things in that folder/i);
+    expect(m.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("allows the move when the actor can edit the destination folder", async () => {
+    m.page.findUnique.mockImplementation(async ({ where }: any) =>
+      where.id === "p1" ? labPage() : pagesById[where.id] ?? null,
+    );
+    pagesById = {
+      ok: { workspaceType: "Lab", workspaceId: null, parentPageId: null, kind: "Folder", archivedAt: null },
+    };
+    const res = await call({ parentPageId: "ok" });
+    expect(res.status).toBe(200);
+  });
+
+  it("needs no folder check when moving to a drive's top level", async () => {
+    m.page.findUnique.mockResolvedValue(labPage());
+    const res = await call({ parentPageId: null });
+    expect(res.status).toBe(200);
+    expect(getPageAccess).not.toHaveBeenCalled();
   });
 });

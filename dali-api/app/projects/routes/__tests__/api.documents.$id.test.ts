@@ -77,6 +77,12 @@ function labFolder(over: Record<string, unknown> = {}) {
 // sub-pages let a folder full of uploads be archived, stranding every file
 // inside it behind a dead parent with no way back.
 describe("DELETE /api/documents/:id — folder contents guard", () => {
+  beforeEach(() => {
+    // Lab pages now resolve through getPageAccess; these cases are about the
+    // contents guard, so grant edit and let that run.
+    vi.mocked(getPageAccess).mockResolvedValue({ canEdit: true } as any);
+  });
+
   it("archives a folder that holds nothing", async () => {
     m.page.findUnique.mockResolvedValue(labFolder());
     const res = await del();
@@ -153,5 +159,69 @@ describe("POST /api/documents/:id — personal notes", () => {
     const res = await del();
     expect(res.status).toBe(200);
     expect(m.page.update.mock.calls[0][0].data.archivedAt).toBeInstanceOf(Date);
+  });
+});
+
+// The Lab workspace also holds the Core-scoped folders, so the bare
+// lab-member gate let any member rename or delete Core's Agreements folder
+// through this endpoint. The Drive hid those folders; the API didn't.
+describe("Lab pages resolve through getPageAccess, not bare lab membership", () => {
+  it("404s a rename when the caller can't edit the page", async () => {
+    m.page.findUnique.mockResolvedValue(labFolder({ kind: "FreeForm" }));
+    vi.mocked(getPageAccess).mockResolvedValue({ canEdit: false } as any);
+    const res = await post({ title: "Renamed" });
+    expect(res.status).toBe(404);
+    expect(m.page.update).not.toHaveBeenCalled();
+  });
+
+  it("404s a delete when the caller can't edit the page", async () => {
+    m.page.findUnique.mockResolvedValue(labFolder());
+    vi.mocked(getPageAccess).mockResolvedValue({ canEdit: false } as any);
+    const res = await del();
+    expect(res.status).toBe(404);
+    expect(m.page.update).not.toHaveBeenCalled();
+  });
+
+  it("allows both when the caller can edit", async () => {
+    m.page.findUnique.mockResolvedValue(labFolder({ kind: "FreeForm" }));
+    vi.mocked(getPageAccess).mockResolvedValue({ canEdit: true } as any);
+    expect((await post({ title: "Renamed" })).status).toBe(200);
+    expect((await del()).status).toBe(200);
+  });
+});
+
+// The Drive's Education space routes rename and delete through this endpoint,
+// and the route used to reject EducationOffering outright — so neither worked
+// anywhere in that space.
+describe("EducationOffering pages", () => {
+  const offeringPage = (over: Record<string, unknown> = {}) => ({
+    id: "p1",
+    workspaceType: "EducationOffering",
+    workspaceId: "off1",
+    kind: "FreeForm",
+    ...over,
+  });
+
+  it("renames one the caller can edit", async () => {
+    m.page.findUnique.mockResolvedValue(offeringPage());
+    vi.mocked(getPageAccess).mockResolvedValue({ canEdit: true } as any);
+    const res = await post({ title: "Week 3 notes" });
+    expect(res.status).toBe(200);
+    expect(m.page.update.mock.calls[0][0].data.title).toBe("Week 3 notes");
+  });
+
+  it("deletes one the caller can edit", async () => {
+    m.page.findUnique.mockResolvedValue(offeringPage());
+    vi.mocked(getPageAccess).mockResolvedValue({ canEdit: true } as any);
+    const res = await del();
+    expect(res.status).toBe(200);
+    expect(m.page.update.mock.calls[0][0].data.archivedAt).toBeInstanceOf(Date);
+  });
+
+  it("404s for a student with no edit grant", async () => {
+    m.page.findUnique.mockResolvedValue(offeringPage());
+    vi.mocked(getPageAccess).mockResolvedValue({ canEdit: false } as any);
+    expect((await post({ title: "x" })).status).toBe(404);
+    expect(m.page.update).not.toHaveBeenCalled();
   });
 });
