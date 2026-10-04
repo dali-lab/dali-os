@@ -40,9 +40,7 @@ import {
 import { CommentsExtension } from "@blocknote/core/comments";
 import type { User } from "@blocknote/core";
 import {
-  GridSuggestionMenuController,
   SuggestionMenuController,
-  getDefaultReactEmojiPickerItems,
   useCreateBlockNote,
   FloatingComposerController,
   FloatingThreadController,
@@ -78,6 +76,7 @@ import { isAiEnvEnabled } from "./ai/env";
 import { Modal } from "~/components/Modal";
 import { useToast } from "~/components/ui/toast";
 import { useDialog } from "~/components/ui/dialog";
+import { readEmojiSuggestionsPreference } from "~/lib/emoji-suggestions";
 
 export default function DocEditorImpl(props: DocEditorProps) {
   const features = resolveFeatures(props.features);
@@ -686,6 +685,8 @@ function DocView(
     }
   }, [railVisible, railTargetId]);
 
+  const [emojiSuggestions] = useState(readEmojiSuggestionsPreference);
+
   const menus: ReactNode = (
     <>
       {/* Custom "/" menu: AI items first (when enabled), then the standard set. */}
@@ -701,13 +702,6 @@ function DocView(
           getItems={(query) => getMentionMenuItems(editor, query)}
         />
       )}
-      {/* ":" emoji shortcode picker — GridSuggestionMenuController with 10
-          columns matches BlockNote's default emoji grid width. */}
-      <GridSuggestionMenuController
-        triggerCharacter=":"
-        getItems={(query) => getDefaultReactEmojiPickerItems(editor, query)}
-        columns={10}
-      />
       {/* Custom drag-handle side menu (Notion-ordered: Duplicate / Colors /
           Comment / Delete). Compact surfaces suppress the side menu entirely
           via sideMenu={false} on BlockNoteView — this controller is a no-op
@@ -806,8 +800,8 @@ function DocView(
           theme={isDark ? "dark" : "light"}
           editable={props.editable ?? true}
           slashMenu={false}
-          // emojiPicker={false} removed — emoji shortcode suggestions are now
-          // handled by the GridSuggestionMenuController child above.
+          // ":" emoji picker is opt-in per device (Settings → Appearance).
+          emojiPicker={emojiSuggestions}
           // Disable BlockNoteDefaultUI's built-in side menu — we mount
           // DaliSideMenuController manually as a child (above) so we can
           // inject the custom Notion-ordered drag-handle menu. Compact surfaces
