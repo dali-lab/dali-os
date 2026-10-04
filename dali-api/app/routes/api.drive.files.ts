@@ -19,7 +19,8 @@ import { getPageAccess } from "~/lib/pageAccess.server";
 //   fileName     — original client filename (shown on download)
 //   contentType  — MIME type
 //   sizeBytes    — byte count (non-negative integer)
-//   scope        — { kind: "Lab" } | { kind: "Project", projectId: string }
+//   scope        — { kind: "Lab" | "Member" } | { kind: "Project", projectId }
+//                  | { kind: "EducationOffering", offeringId }
 //   folderPageId — optional; must be a Folder page in the same scope
 //
 // ACCESS:
@@ -27,6 +28,8 @@ import { getPageAccess } from "~/lib/pageAccess.server";
 //                  caller must have Edit access to that folder page.
 //   Project scope → caller must be Core or a project member (same as the
 //                   existing per-project file upload route).
+//   Offering scope → caller must manage the offering (Core or an assigned
+//                   instructor), matching who may add documents to its Drive.
 //
 // NO-WIDENING GUARANTEE: access checks mirror the existing per-surface rules
 // exactly. A Lab-scope file is only visible to lab members; a project-scope
@@ -37,6 +40,7 @@ const ScopeSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("Lab") }),
   z.object({ kind: z.literal("Member") }),
   z.object({ kind: z.literal("Project"), projectId: z.string().trim().min(1) }),
+  z.object({ kind: z.literal("EducationOffering"), offeringId: z.string().trim().min(1) }),
 ]);
 
 const CreateDriveFileSchema = z.object({
@@ -182,6 +186,65 @@ export async function action({ request }: { request: Request }) {
     return withCors(request, Response.json({ id: file.id }, { status: 201 }));
   }
 
+  if (scope.kind === "EducationOffering") {
+    // The Education Drive space reads files by workspaceType/workspaceId
+    // (loadEducationFiles), but nothing could write one: the hub posted the
+    // offering id as a projectId, so uploading into a course Drive 403'd for
+    // instructors and 404'd "Project not found" for Core.
+    const { offeringId } = scope;
+    const { isOfferingManager } = await import("~/education/lib/access.server");
+    if (!(await isOfferingManager(userId, offeringId))) {
+      return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+    }
+    if (folderPageId) {
+      const folderAccess = await getPageAccess(userId, folderPageId, request);
+      if (!folderAccess.canEdit) {
+        return withCors(
+          request,
+          Response.json({ error: "No edit access to the target folder" }, { status: 403 }),
+        );
+      }
+    }
+
+    const file = await prisma.$transaction(async (tx) => {
+      const created = await tx.projectFile.create({
+        data: {
+          title: body.title,
+          workspaceType: "EducationOffering",
+          workspaceId: offeringId,
+          folderPageId: folderPageId ?? null,
+        },
+        select: { id: true },
+      });
+      const version = await tx.projectFileVersion.create({
+        data: {
+          fileId: created.id,
+          s3Key: body.s3Key,
+          fileName: body.fileName,
+          contentType: body.contentType,
+          sizeBytes: body.sizeBytes,
+          uploadedById: userId,
+        },
+        select: { id: true },
+      });
+      await tx.projectFile.update({
+        where: { id: created.id },
+        data: { currentVersionId: version.id },
+      });
+      return created;
+    });
+
+    await logAuditEvent({
+      action: "projectFile.create",
+      userId,
+      targetId: file.id,
+      metadata: { scope: "EducationOffering", offeringId, title: body.title },
+      request,
+    });
+
+    return withCors(request, Response.json({ id: file.id }, { status: 201 }));
+  }
+
   // Project scope: caller must be Core or a member of the project.
   const { projectId } = scope;
 
@@ -199,6 +262,19 @@ export async function action({ request }: { request: Request }) {
   });
   if (!project) {
     return withCors(request, Response.json({ error: "Project not found" }, { status: 404 }));
+  }
+
+  // Same folder check the Lab and Member branches do. Without it a project
+  // member could aim an upload at any folder id at all, including a Core one,
+  // and the file would land somewhere no drive lists it.
+  if (folderPageId) {
+    const folderAccess = await getPageAccess(userId, folderPageId, request);
+    if (!folderAccess.canEdit) {
+      return withCors(
+        request,
+        Response.json({ error: "No edit access to the target folder" }, { status: 403 }),
+      );
+    }
   }
 
   const file = await prisma.$transaction(async (tx) => {

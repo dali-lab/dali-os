@@ -16,9 +16,16 @@ import type { Route } from "./+types/api.drive.trash";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { canViewForms as checkCanViewForms } from "~/lib/roles";
-import { getPageAccess } from "~/lib/pageAccess.server";
+import { getPageAccess, getPageAccessBulk } from "~/lib/pageAccess.server";
 import { canEditFile } from "~/lib/fileAccess.server";
 import { withCors, handlePreflight } from "~/lib/cors";
+
+// How many archived rows of each kind to look at before filtering, and how
+// many of the survivors to return. Trash is a recovery surface — you come here
+// for something you deleted recently — so it reads the newest rows rather than
+// scanning every archived row in the database and access-checking each one.
+const SCAN_LIMIT = 500;
+const PER_TYPE_LIMIT = 100;
 
 // ── GET: list archived items ───────────────────────────────────────────────────
 
@@ -32,43 +39,69 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const userCanViewForms = await checkCanViewForms(userId, request);
 
-  // Archived pages (docs + folders) — filtered through access checks.
+  // Archived pages (docs, folders, whiteboards) — filtered through access
+  // checks. Whiteboard belongs here with the rest: the Drive deletes one
+  // through the same archive path as a doc, so leaving it out of this query
+  // meant a trashed whiteboard could never be found or restored.
+  //
+  // Bounded: Trash is a recovery surface, not an archive browser, and every
+  // row costs an access check. Taking the newest PAGE_SCAN keeps the cost flat
+  // as the lab accumulates deleted items; the viewer's own share of them is
+  // then trimmed to PER_TYPE_LIMIT below.
   const archivedPages = await prisma.page.findMany({
     where: {
       archivedAt: { not: null },
-      kind: { in: ["FreeForm", "Folder", "Structured"] },
+      kind: { in: ["FreeForm", "Folder", "Structured", "Whiteboard"] },
     },
-    select: { id: true, title: true, archivedAt: true, kind: true },
+    // The full access shape, not just what the listing renders: the bulk
+    // resolver reads these off the row instead of re-fetching each page, and a
+    // partial row would quietly compute the wrong answer.
+    select: {
+      id: true,
+      title: true,
+      archivedAt: true,
+      kind: true,
+      workspaceType: true,
+      workspaceId: true,
+      parentPageId: true,
+      createdById: true,
+      partnerVisible: true,
+      profileVisible: true,
+      labListing: true,
+      linkAccess: true,
+      linkPermission: true,
+      scopeKind: true,
+      scopeGroupId: true,
+      scopePermission: true,
+    },
     orderBy: { archivedAt: "desc" },
+    take: SCAN_LIMIT,
   });
 
-  // Batch access check — include only items the viewer can at least view.
-  const accessiblePages = (
-    await Promise.all(
-      archivedPages.map(async (p) => {
-        // includeArchived: every page here is archived by definition, so the
-        // default deny would empty the whole listing.
-        const access = await getPageAccess(userId, p.id, request, { includeArchived: true });
-        return access.canView ? p : null;
-      }),
-    )
-  ).filter(Boolean) as typeof archivedPages;
+  // One batched access resolution instead of N sequential getPageAccess calls.
+  // includeArchived: every page here is archived by definition, so the default
+  // deny would empty the whole listing.
+  const pageAccess = await getPageAccessBulk(userId, archivedPages, request, {
+    includeArchived: true,
+  });
+  const accessiblePages = archivedPages
+    .filter((p) => pageAccess.get(p.id)?.canView)
+    .slice(0, PER_TYPE_LIMIT);
 
   // Archived files the viewer can edit (restore/delete requires edit, not just view).
   const archivedFiles = await prisma.projectFile.findMany({
     where: { archivedAt: { not: null } },
     select: { id: true, title: true, archivedAt: true, projectId: true, workspaceType: true, workspaceId: true, folderPageId: true },
     orderBy: { archivedAt: "desc" },
+    take: SCAN_LIMIT,
   });
 
-  const accessibleFiles = (
-    await Promise.all(
-      archivedFiles.map(async (f) => {
-        const ok = await canEditFile(userId, f, request);
-        return ok ? f : null;
-      }),
-    )
-  ).filter(Boolean) as typeof archivedFiles;
+  const fileAccess = await Promise.all(
+    archivedFiles.map((f) => canEditFile(userId, f, request)),
+  );
+  const accessibleFiles = archivedFiles
+    .filter((_, i) => fileAccess[i])
+    .slice(0, PER_TYPE_LIMIT);
 
   // Archived forms — canViewForms gate is sufficient (organisation-only placement).
   const archivedForms = userCanViewForms
@@ -76,6 +109,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         where: { archivedAt: { not: null } },
         select: { id: true, name: true, archivedAt: true },
         orderBy: { archivedAt: "desc" },
+        take: PER_TYPE_LIMIT,
       })
     : [];
 
@@ -198,8 +232,29 @@ export async function action({ request }: Route.ActionArgs) {
       if (!ok) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
       await prisma.projectFile.delete({ where: { id } });
     } else if (type === "doc" || type === "folder") {
-      const access = await getPageAccess(userId, id, request);
+      // includeArchived, same as restore: everything in Trash is archived by
+      // definition, so without it getPageAccess denies every caller and purge
+      // could never succeed for a doc or a folder.
+      const access = await getPageAccess(userId, id, request, { includeArchived: true });
       if (!access.canEdit) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+      // A folder's children carry an onDelete: SetNull parent link, so a hard
+      // delete would silently re-home everything inside it to the drive root.
+      // Purge the contents first, or move them out.
+      const [childPages, childFiles, childForms] = await Promise.all([
+        prisma.page.count({ where: { parentPageId: id } }),
+        prisma.projectFile.count({ where: { folderPageId: id } }),
+        prisma.form.count({ where: { folderPageId: id } }),
+      ]);
+      const held = childPages + childFiles + childForms;
+      if (held > 0) {
+        return withCors(
+          request,
+          Response.json(
+            { error: `This folder still holds ${held} ${held === 1 ? "item" : "items"}. Delete those first.` },
+            { status: 409 },
+          ),
+        );
+      }
       await prisma.page.delete({ where: { id } });
     } else {
       return withCors(request, Response.json({ error: "Unknown type" }, { status: 400 }));

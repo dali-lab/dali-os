@@ -169,7 +169,15 @@ export async function listBindings(
 }
 
 /** Point a slot at an existing folder (settings "Choose existing…"), or clear it
- *  (folderPageId null). Upserts the binding row. */
+ *  (folderPageId null). Upserts the binding row.
+ *
+ *  A process whose folders are confidential by default applies that scope to
+ *  the folder it is pointed at, unless the folder already carries one of its
+ *  own. `ensureProcessFolder` scopes the folders it creates; repointing a slot
+ *  did not, so aiming Core's Agreements slot at an ordinary Lab folder filed
+ *  every future agreement somewhere the whole lab could read, with nothing in
+ *  the UI saying so. Clearing a slot leaves the folder's scope alone — the
+ *  folder is an ordinary one and may be in use for something else. */
 export async function setBinding(
   processType: ProcessType,
   processId: string,
@@ -177,6 +185,24 @@ export async function setBinding(
   folderPageId: string | null,
   createdById: string,
 ): Promise<void> {
+  if (folderPageId && workspaceFor(processType, processId).coreScoped) {
+    const [folder, scope] = await Promise.all([
+      prisma.page.findUnique({ where: { id: folderPageId }, select: { scopeKind: true } }),
+      coreGroupScope(),
+    ]);
+    if (folder && folder.scopeKind == null && scope) {
+      await prisma.page.update({
+        where: { id: folderPageId },
+        data: {
+          ...scope,
+          // The scope is what grants access now; the lab-wide link would
+          // otherwise keep it readable straight through.
+          linkAccess: "Restricted",
+          linkPermission: "View",
+        },
+      });
+    }
+  }
   await prisma.processFolderBinding.upsert({
     where: { processType_processId_purpose: { processType, processId, purpose } },
     update: { folderPageId },

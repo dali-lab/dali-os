@@ -266,8 +266,14 @@ export async function setGeneralAccess(
  * inside (getPageAccess walks to the nearest scoped ancestor). Caller MUST gate
  * first (requirePageShareManager). Only Folders carry a scope. Passing
  * scopeKind=null clears it (the folder inherits from its ancestor/workspace).
- * Applying a Group/Private scope closes the lab-open link so access isn't
- * silently widened (mirrors the old scoped-root behaviour, now editable).
+ *
+ * Applying a Group/Private scope closes the lab-open link on the folder AND on
+ * everything already inside it. The scope is a *base* grant, not a ceiling —
+ * getPageAccess ORs it with each page's own General access — so a child left
+ * at "Everyone in the lab" stays lab-visible inside a Core folder, and sharing
+ * a folder with Core would silently fail to make its contents confidential.
+ * The move endpoint already pushes Restricted down a subtree for exactly this
+ * reason; this is the same rule for the same hole.
  */
 export async function setFolderScope(
   pageId: string,
@@ -310,22 +316,38 @@ export async function setFolderScope(
   let scopePermission = input.scopePermission ?? (scopeKind === "Lab" ? "View" : "Edit");
   if (scopePermission === "FullAccess") scopePermission = "Edit";
 
-  await prisma.page.update({
-    where: { id: pageId },
-    data: {
-      scopeKind,
-      scopeGroupId,
-      scopePermission,
-      ...(scopeKind === "Group" || scopeKind === "Private"
-        ? { linkAccess: "Restricted" as const, linkPermission: "View" as const }
-        : {}),
-    },
-  });
+  // Narrowing scopes close the link; "Lab" is itself lab-wide, so it has
+  // nothing to close and leaves each page's own setting alone.
+  const narrowing = scopeKind === "Group" || scopeKind === "Private";
+  const { collectSubtree } = await import("~/lib/pages");
+  const descendantIds = narrowing ? (await collectSubtree(pageId)).ids : [];
+
+  await prisma.$transaction([
+    prisma.page.update({
+      where: { id: pageId },
+      data: {
+        scopeKind,
+        scopeGroupId,
+        scopePermission,
+        ...(narrowing
+          ? { linkAccess: "Restricted" as const, linkPermission: "View" as const }
+          : {}),
+      },
+    }),
+    ...(descendantIds.length
+      ? [
+          prisma.page.updateMany({
+            where: { id: { in: descendantIds } },
+            data: { linkAccess: "Restricted", linkPermission: "View" },
+          }),
+        ]
+      : []),
+  ]);
   await logAuditEvent({
     action: "page.folder-scope",
     userId: actorId,
     targetId: pageId,
-    metadata: { scopeKind, scopeGroupId, scopePermission },
+    metadata: { scopeKind, scopeGroupId, scopePermission, restrictedDescendants: descendantIds.length },
   });
   return { scopeKind, scopeGroupId, scopePermission };
 }

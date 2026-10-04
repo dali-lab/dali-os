@@ -2,10 +2,12 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { prisma } from "~/lib/db";
 import {
   ensureProcessFolder,
+  setBinding,
   slotFor,
   FOLDER_SLOTS,
   CORE_PROCESS_ID,
   HIRING_PROCESS_ID,
+  LAB_PROCESS_ID,
 } from "~/lib/bindings.server";
 
 vi.mock("~/lib/db", () => ({
@@ -17,7 +19,7 @@ vi.mock("~/lib/db", () => ({
       update: vi.fn(),
       upsert: vi.fn(),
     },
-    page: { findFirst: vi.fn(), create: vi.fn() },
+    page: { findFirst: vi.fn(), create: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
     groupDefinition: { findUnique: vi.fn() },
   },
 }));
@@ -27,8 +29,14 @@ const m = prisma as unknown as {
     findUnique: ReturnType<typeof vi.fn>;
     create: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
+    upsert: ReturnType<typeof vi.fn>;
   };
-  page: { findFirst: ReturnType<typeof vi.fn>; create: ReturnType<typeof vi.fn> };
+  page: {
+    findFirst: ReturnType<typeof vi.fn>;
+    create: ReturnType<typeof vi.fn>;
+    findUnique: ReturnType<typeof vi.fn>;
+    update: ReturnType<typeof vi.fn>;
+  };
   groupDefinition: { findUnique: ReturnType<typeof vi.fn> };
 };
 
@@ -36,7 +44,81 @@ beforeEach(() => {
   vi.clearAllMocks();
   m.processFolderBinding.create.mockResolvedValue({});
   m.processFolderBinding.update.mockResolvedValue({});
+  m.processFolderBinding.upsert.mockResolvedValue({});
   m.page.findFirst.mockResolvedValue(null);
+  m.page.update.mockResolvedValue({});
+  m.page.findUnique.mockResolvedValue(null);
+});
+
+// Pointing a confidential slot at an ordinary folder used to file every future
+// artifact somewhere the whole lab could read, with nothing in the UI saying
+// so. ensureProcessFolder scopes the folders it creates; repointing didn't.
+describe("setBinding — confidential slots carry their scope", () => {
+  const CORE_GROUP = { id: "grp_core" };
+
+  it("applies the Core group scope to an unscoped folder", async () => {
+    m.groupDefinition.findUnique.mockResolvedValue(CORE_GROUP);
+    m.page.findUnique.mockResolvedValue({ scopeKind: null });
+
+    await setBinding("Core", CORE_PROCESS_ID, "agreements", "folder1", "u1");
+
+    expect(m.page.update).toHaveBeenCalledWith({
+      where: { id: "folder1" },
+      data: {
+        scopeKind: "Group",
+        scopeGroupId: "grp_core",
+        scopePermission: "Edit",
+        linkAccess: "Restricted",
+        linkPermission: "View",
+      },
+    });
+  });
+
+  it("leaves a folder that already carries its own scope alone", async () => {
+    m.groupDefinition.findUnique.mockResolvedValue(CORE_GROUP);
+    m.page.findUnique.mockResolvedValue({ scopeKind: "Private" });
+
+    await setBinding("Core", CORE_PROCESS_ID, "agreements", "folder1", "u1");
+    expect(m.page.update).not.toHaveBeenCalled();
+  });
+
+  it("scopes hiring slots too (same Core-group default)", async () => {
+    m.groupDefinition.findUnique.mockResolvedValue(CORE_GROUP);
+    m.page.findUnique.mockResolvedValue({ scopeKind: null });
+
+    await setBinding("HiringCycle", HIRING_PROCESS_ID, "rubrics", "folder1", "u1");
+    expect(m.page.update).toHaveBeenCalled();
+  });
+
+  it("leaves Lab slots unscoped — that set is the communal shelf", async () => {
+    m.page.findUnique.mockResolvedValue({ scopeKind: null });
+
+    await setBinding("Lab", LAB_PROCESS_ID, "meeting-notes", "folder1", "u1");
+    expect(m.page.update).not.toHaveBeenCalled();
+  });
+
+  it("leaves a project's own folders unscoped (access follows the project)", async () => {
+    m.page.findUnique.mockResolvedValue({ scopeKind: null });
+
+    await setBinding("Project", "proj1", "meeting-notes-team", "folder1", "u1");
+    expect(m.page.update).not.toHaveBeenCalled();
+  });
+
+  it("touches no folder when clearing a slot", async () => {
+    // The folder is ordinary and may be in use for something else.
+    await setBinding("Core", CORE_PROCESS_ID, "agreements", null, "u1");
+    expect(m.page.update).not.toHaveBeenCalled();
+    expect(m.processFolderBinding.upsert).toHaveBeenCalled();
+  });
+
+  it("still records the binding when the Core group isn't seeded yet", async () => {
+    m.groupDefinition.findUnique.mockResolvedValue(null);
+    m.page.findUnique.mockResolvedValue({ scopeKind: null });
+
+    await setBinding("Core", CORE_PROCESS_ID, "agreements", "folder1", "u1");
+    expect(m.page.update).not.toHaveBeenCalled();
+    expect(m.processFolderBinding.upsert).toHaveBeenCalled();
+  });
 });
 
 describe("slot registry", () => {

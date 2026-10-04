@@ -635,12 +635,17 @@ export function DriveBrowser({
         // workspaceType is not on DriveItem directly; infer from the scope id
         // so the ShareDialog can show the correct audience label (Lab/Project/Member).
         const scope = scopes.find((s) => s.id === scopeId);
+        // Only a hint: the dialog replaces it with the server's answer once
+        // loaded. Still worth getting right — education pages are not Project
+        // ones, and the fallback claimed they were.
         const wt =
           !scope || scope.id === "lab" || scope.id === "core"
             ? "Lab"
             : scope.id === "mine"
               ? "Member"
-              : "Project";
+              : scope.id === "education"
+                ? "EducationOffering"
+                : "Project";
         setShareTarget({ id: item.id, title: item.title || "Untitled", workspaceType: wt });
         onShareItem?.(item);
       },
