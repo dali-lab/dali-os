@@ -10,7 +10,7 @@ import { Folder, ExternalLink, Plus, X, AlertTriangle } from "lucide-react";
 // plumbing). "Binding" here = which folder auto-files land in; a folder's ACCESS
 // is a separate control (open the folder → Share).
 
-type ProcessType = "Project" | "HiringCycle" | "Core" | "CertificateTemplates";
+type ProcessType = "Project" | "HiringCycle" | "Core" | "Lab" | "CertificateTemplates";
 
 type Row = {
   purpose: string;
@@ -26,6 +26,8 @@ const NOUN: Record<ProcessType, string> = {
   Project: "project",
   HiringCycle: "hiring cycle",
   Core: "Core area",
+  // The open twin of Core: the same Lab workspace, no group scope.
+  Lab: "Lab drive",
   CertificateTemplates: "certificate templates",
 };
 
