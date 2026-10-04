@@ -533,6 +533,44 @@ function DocView(
     return () => dom.removeEventListener("focus", onFocus, true);
   }, [editor]);
 
+  // Read-only checklists: BlockNote disables every checklist <input> and
+  // ignores its change event once the editor is non-editable. Re-enable the
+  // boxes (the node view is rebuilt on every block update, so the observer
+  // keeps re-enabling them) and apply the toggle ourselves. updateBlock is a
+  // plain ProseMirror transaction, which editable=false doesn't block.
+  const localChecklistToggle = !editable && (props.localChecklistToggle ?? false);
+  useEffect(() => {
+    if (!localChecklistToggle) return;
+    const dom = editor.domElement;
+    if (!dom) return;
+    const selector = '[data-content-type="checkListItem"] input[type="checkbox"]';
+    const enable = () => {
+      dom.querySelectorAll<HTMLInputElement>(selector).forEach((box) => {
+        box.disabled = false;
+      });
+    };
+    enable();
+    const observer = new MutationObserver(enable);
+    observer.observe(dom, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["disabled"],
+    });
+    const onChange = (e: Event) => {
+      const box = e.target;
+      if (!(box instanceof HTMLInputElement) || !box.matches(selector)) return;
+      const id = box.closest<HTMLElement>("[data-id]")?.dataset.id;
+      if (!id) return;
+      editor.updateBlock(id, { props: { checked: box.checked } });
+    };
+    dom.addEventListener("change", onChange);
+    return () => {
+      observer.disconnect();
+      dom.removeEventListener("change", onChange);
+    };
+  }, [editor, localChecklistToggle]);
+
   // Cmd/Ctrl+K opens the link editor for the current selection — Google Docs /
   // Notion muscle memory. BlockNote ships no default binding, so we bind it on
   // the editor DOM: prompt for a URL (prefilled if the selection is already a
