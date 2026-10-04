@@ -18,11 +18,13 @@ vi.mock("~/lib/pageAccess.server", () => ({
 vi.mock("~/lib/audit", () => ({
   logAuditEvent: vi.fn(),
 }));
+vi.mock("~/education/lib/access.server", () => ({ isOfferingManager: vi.fn() }));
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
+import { isOfferingManager } from "~/education/lib/access.server";
 import { action } from "~/routes/api.drive.files";
 
 const mockPrisma = prisma as unknown as {
@@ -39,6 +41,15 @@ const VALID_LAB_BODY = {
   contentType: "image/png",
   sizeBytes: 1024,
   scope: { kind: "Lab" },
+};
+
+const VALID_OFFERING_BODY = {
+  s3Key: "uploads/drive-files/syllabus.pdf",
+  title: "Syllabus",
+  fileName: "syllabus.pdf",
+  contentType: "application/pdf",
+  sizeBytes: 4096,
+  scope: { kind: "EducationOffering", offeringId: "off-1" },
 };
 
 const VALID_PROJECT_BODY = {
@@ -67,6 +78,7 @@ beforeEach(() => {
   vi.mocked(isCore).mockResolvedValue(false);
   vi.mocked(isLabMember).mockResolvedValue(true);
   vi.mocked(isProjectMember).mockResolvedValue(false);
+  vi.mocked(isOfferingManager).mockResolvedValue(false);
   vi.mocked(getPageAccess).mockResolvedValue({
     canView: true,
     canEdit: true,
@@ -161,5 +173,86 @@ describe("POST /api/drive/files — Project scope", () => {
     mockPrisma.project.findUnique.mockResolvedValue(null);
     const res = await action({ request: makeRequest(VALID_PROJECT_BODY) });
     expect((res as Response).status).toBe(404);
+  });
+});
+
+// The Education Drive space reads files by workspaceType/workspaceId
+// (loadEducationFiles), but nothing could write one: the hub posted the
+// offering id as a projectId, so uploading into a course Drive 403'd for an
+// instructor and 404'd "Project not found" for Core.
+describe("POST /api/drive/files — EducationOffering scope", () => {
+  it("creates an offering-scoped file for a manager", async () => {
+    vi.mocked(isOfferingManager).mockResolvedValue(true);
+
+    const res = (await action({ request: makeRequest(VALID_OFFERING_BODY) })) as Response;
+
+    expect(res.status).toBe(201);
+    expect(await res.json()).toHaveProperty("id");
+  });
+
+  it("scopes the row to the offering, not to a project", async () => {
+    vi.mocked(isOfferingManager).mockResolvedValue(true);
+    const create = vi.fn().mockResolvedValue({ id: "file-1" });
+    mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) =>
+      fn({
+        projectFile: { create, update: vi.fn() },
+        projectFileVersion: { create: vi.fn().mockResolvedValue({ id: "ver-1" }) },
+      }),
+    );
+
+    await action({ request: makeRequest(VALID_OFFERING_BODY) });
+
+    expect(create.mock.calls[0][0].data).toMatchObject({
+      workspaceType: "EducationOffering",
+      workspaceId: "off-1",
+    });
+    expect(create.mock.calls[0][0].data.projectId).toBeUndefined();
+  });
+
+  it("403s someone who doesn't manage the offering", async () => {
+    vi.mocked(isOfferingManager).mockResolvedValue(false);
+    const res = (await action({ request: makeRequest(VALID_OFFERING_BODY) })) as Response;
+    expect(res.status).toBe(403);
+  });
+
+  it("403s when the target folder isn't editable", async () => {
+    vi.mocked(isOfferingManager).mockResolvedValue(true);
+    vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canEdit: false, canComment: true } as any);
+
+    const res = (await action({
+      request: makeRequest({ ...VALID_OFFERING_BODY, folderPageId: "f1" }),
+    })) as Response;
+
+    expect(res.status).toBe(403);
+  });
+
+  it("never looks for a project", async () => {
+    vi.mocked(isOfferingManager).mockResolvedValue(true);
+    await action({ request: makeRequest(VALID_OFFERING_BODY) });
+    expect(mockPrisma.project.findUnique).not.toHaveBeenCalled();
+  });
+});
+
+// The Lab and Member branches checked the destination folder; the project one
+// didn't, so a member could aim an upload at any folder id at all.
+describe("POST /api/drive/files — Project scope folder check", () => {
+  it("403s when the target folder isn't editable", async () => {
+    vi.mocked(isProjectMember).mockResolvedValue(true);
+    vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canEdit: false, canComment: true } as any);
+
+    const res = (await action({
+      request: makeRequest({ ...VALID_PROJECT_BODY, folderPageId: "core-folder" }),
+    })) as Response;
+
+    expect(res.status).toBe(403);
+  });
+
+  it("still allows an upload to the project root", async () => {
+    vi.mocked(isProjectMember).mockResolvedValue(true);
+    vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canEdit: false, canComment: true } as any);
+
+    const res = (await action({ request: makeRequest(VALID_PROJECT_BODY) })) as Response;
+
+    expect(res.status).toBe(201);
   });
 });
