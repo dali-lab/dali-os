@@ -11,6 +11,7 @@ vi.mock("~/lib/pages", () => ({
 }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn(async () => false) }));
 vi.mock("~/lib/groups", () => ({ resolveGroupMembers: vi.fn(async () => []) }));
+vi.mock("~/lib/general-calendar", () => ({ isGeneralCalendarEvent: vi.fn(() => true) }));
 vi.mock("~/lib/google-calendar", () => ({
   createGoogleCalendarEvent: vi.fn(),
   patchGoogleCalendarEvent: vi.fn(),
@@ -46,6 +47,7 @@ import {
   trackExternalEventAsMeeting,
   updateScheduledMeeting,
 } from "~/lib/scheduled-meeting";
+import { isGeneralCalendarEvent } from "~/lib/general-calendar";
 
 const mockPrisma = prisma as unknown as {
   scheduledMeeting: {
@@ -1351,10 +1353,14 @@ describe("trackExternalEventAsMeeting", () => {
     location: "Baker 101",
     description: "Weekly all-hands",
     attendeeEmails: ["ally@dali.dartmouth.edu", "outsider@example.com"],
+    viewerInvited: false,
   };
 
-  function arrange(over: { core?: boolean; event?: Partial<typeof GOOGLE_EVENT> } = {}) {
+  function arrange(
+    over: { core?: boolean; general?: boolean; event?: Partial<typeof GOOGLE_EVENT> } = {},
+  ) {
     vi.mocked(isCore).mockResolvedValue(over.core ?? true);
+    vi.mocked(isGeneralCalendarEvent).mockReturnValue(over.general ?? true);
     vi.mocked(getGoogleEvent).mockResolvedValue({ ...GOOGLE_EVENT, ...over.event });
     const p = mockPrisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
     p.userCalendarLink!.findUnique.mockResolvedValue({
@@ -1379,13 +1385,22 @@ describe("trackExternalEventAsMeeting", () => {
     calendarId: "dali@dartmouth.edu",
   };
 
-  it("refuses anyone who isn't Core", async () => {
+  it("refuses someone who is neither Core nor on the event", async () => {
     arrange({ core: false });
     expect(await trackExternalEventAsMeeting(input)).toEqual({
       ok: false,
-      error: "Only Core can track an event in DALI",
+      error: "Only someone on this event can track it in DALI",
       status: 403,
     });
+  });
+
+  it("lets a non-Core member track an event they're on, visible to its guests only", async () => {
+    const p = arrange({ core: false, general: false, event: { viewerInvited: true } });
+
+    const res = await trackExternalEventAsMeeting(input);
+
+    expect(res.ok).toBe(true);
+    expect(p.scheduledMeeting!.create.mock.calls[0][0].data.scopeType).toBe("UserList");
   });
 
   it("binds the meeting to the Google event, with title and duration from Google", async () => {
