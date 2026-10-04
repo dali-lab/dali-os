@@ -1399,10 +1399,20 @@ export default function DriveHub() {
         id: s.id,
         label: s.id === "lab" ? "Lab" : s.label,
         iconEmoji: s.iconEmoji,
+        // Picking a drive is the part of a move that changes who can see the
+        // item, so the row says so. The loader already derives this per scope.
+        audience: s.scopeAudience ?? null,
       }));
       const folders: PickerFolder[] = [];
       for (const s of scopes) {
         const rootId = s.rootFolderId ?? null;
+        // One pass over the scope's items gives every folder its child count,
+        // so the picker can say what's inside instead of only its name.
+        const childCount = new Map<string, number>();
+        for (const it of s.items) {
+          if (it.parentFolderId === null) continue;
+          childCount.set(it.parentFolderId, (childCount.get(it.parentFolderId) ?? 0) + 1);
+        }
         for (const f of s.items) {
           if (f.type !== "folder") continue;
           // Normalise a scope's top-level folders (Core/Hiring nest under a root
@@ -1413,6 +1423,7 @@ export default function DriveHub() {
             parentId: (f.parentFolderId ?? null) === rootId ? null : f.parentFolderId,
             title: f.title,
             iconEmoji: f.iconEmoji,
+            itemCount: childCount.get(f.id) ?? 0,
           });
         }
       }
