@@ -420,7 +420,7 @@ export function MeetingRecorder({
           className={cn(
             actionBtnPrimary,
             (phase === "recording" || phase === "stopping") &&
-              "border-accent-coral bg-accent-coral text-white hover:border-accent-coral-light hover:bg-accent-coral-light",
+              "border-accent-coral bg-accent-coral text-navy-deep hover:border-accent-coral-light hover:bg-accent-coral-light",
           )}
         >
           <Mic className={actionIcon} />
@@ -430,7 +430,7 @@ export function MeetingRecorder({
             "Opening app…"
           ) : phase === "recording" ? (
             <>
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" />
               Recording {formatClock(recordedSeconds + (now - startedAt) / 1000)}
             </>
           ) : phase === "stopping" ? (
