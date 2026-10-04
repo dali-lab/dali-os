@@ -8,11 +8,12 @@ import { getPageAccess } from "~/lib/pageAccess.server";
 // Folder ▸ Subfolder ▸ item — instead of just Drive ▸ item.
 //
 // The scope is the folder's workspace: Member → "mine", Project → "projects",
-// EducationOffering → "education". Within the Lab workspace the Core/Hiring
-// scoped roots are represented by the drive scope itself (not a crumb) — detected
-// by systemKey and excluded from the chain while setting the scope — and
-// everything else is a plain Lab folder. A folder that is archived (or deleted)
-// collapses to the General root, matching where the listing surfaces its items.
+// EducationOffering → "education". Within the Lab workspace, a folder shared
+// with the Core group puts everything inside it in the Core scope — including
+// the hiring folder set, which is Core-group-scoped and so lives inside Core
+// rather than in a space of its own. Every such folder stays an ordinary crumb.
+// A folder that is archived (or deleted) collapses to the General root,
+// matching where the listing surfaces its items.
 //
 // The trail is access-filtered against `viewerSub`: a viewer who reaches the
 // item through a share or "Everyone in the lab" General access — but has no
@@ -24,7 +25,7 @@ import { getPageAccess } from "~/lib/pageAccess.server";
 export type DriveCrumb = { id: string; title: string; iconEmoji: string | null };
 
 export type DriveCrumbs = {
-  /** Drive scope the item lives in: "lab" | "core" | "hiring" (Lab workspace) or
+  /** Drive scope the item lives in: "lab" | "core" (Lab workspace) or
    *  "mine" | "projects" | "education" (Member / Project / EducationOffering). */
   scope: string;
   /** Ancestor folders, top-most first (excludes the scoped root itself). */
@@ -100,8 +101,8 @@ export async function driveFolderCrumbs(
   const wsScope = workspaceDriveScope(leafWorkspaceType);
   if (wsScope) scope = wsScope;
 
-  // Access-filter: don't advertise a scoped drive (Core/Hiring) the viewer
-  // can't enter, and drop any ancestor folder they can't view. getPageAccess
+  // Access-filter: don't advertise the Core drive to a viewer who can't enter
+  // it, and drop any ancestor folder they can't view. getPageAccess
   // walks each folder's own scope, so a non-member is denied the scoped root
   // and its Restricted children alike.
   if (scopeRootId && !(await getPageAccess(viewerSub, scopeRootId, request)).canView) {

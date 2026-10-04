@@ -1,7 +1,7 @@
-// The hiring "Library" is an embedded view of the Hiring drive space: reuse the
-// unified Drive hub, which opens straight into the Hiring scope at this path (see
-// the /hiring/library default in drive.hub.tsx). Rubrics, application templates
-// and challenge/application forms — the Hiring singleton's folder set — live
-// there, so this replaces the old tabbed Library without leaving the Hiring area.
-// Core-only (the Hiring space is gated isCore; see drive-spaces.ts + the nav gate).
+// The hiring "Library" is the unified Drive hub, opened on the hiring folder
+// set: rubrics, application templates and challenge/application forms — the
+// HiringCycle/'hiring' singleton's bound folders. Those folders are shared with
+// the Core group, so they live inside the Core drive rather than in a space of
+// their own; the hub resolves the bound folder id for this path and opens there
+// (see drive.hub.tsx). Core-only, same as the Core drive and the nav gate.
 export { loader, default, shouldRevalidate } from "~/routes/drive.hub";

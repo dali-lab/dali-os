@@ -29,6 +29,7 @@ import { resolveTermFilter } from "~/lib/terms";
 import { TermFilter } from "~/components/TermFilter";
 import { prisma } from "~/lib/db";
 import { loadDriveScopes } from "~/lib/drive-scopes.server";
+import { getBoundFolderId, HIRING_PROCESS_ID } from "~/lib/bindings.server";
 import type { DriveTreeScope } from "~/lib/drive-scopes.server";
 import type { DriveItem } from "~/lib/drive.server";
 import { DriveBrowser } from "~/components/drive/DriveBrowser";
@@ -61,7 +62,6 @@ export const handle = {
     if (scope === "mine") return { key: "drive.mine", title: "My Drive" };
     if (scope === "lab") return { key: "drive.lab", title: "Lab-wide Drive" };
     if (scope === "core") return { key: "drive.core", title: "Core Drive" };
-    if (scope === "hiring") return { key: "drive.hiring", title: "Hiring Drive" };
     return { key: "drive.project", title: "Project Drive" };
   },
 };
@@ -184,6 +184,15 @@ export async function loader({ request }: Route.LoaderArgs) {
     kind: "education" as const,
   }));
 
+  // /hiring/library is this same hub, opened on the hiring folder set. Hiring
+  // is no longer a drive space of its own — its folders are Core-group-scoped,
+  // so they live inside Core — which means the embed needs the folder's id
+  // rather than a scope name. Resolved from the binding, so renaming or
+  // repointing the folder keeps the Library pointing at the right place.
+  const hiringLibraryFolderId = new URL(request.url).pathname.startsWith("/hiring/library")
+    ? await getBoundFolderId("HiringCycle", HIRING_PROCESS_ID, "hiring-forms")
+    : null;
+
   const driveScopes = await loadDriveScopes({
     userSub: auth.user.sub,
     projectWorkspaces,
@@ -245,6 +254,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     // My Drive is the Member workspace keyed by the viewer's own id — the
     // cross-drive move needs it to name the source workspace it's leaving.
     viewerId: auth.user.sub,
+    hiringLibraryFolderId,
   };
 }
 
@@ -304,7 +314,7 @@ function TemplatePicker({
   const loadedKey = useRef<string | null>(null);
 
   // In a project drive, offer that project's own templates alongside the Lab
-  // set. Elsewhere (Lab/Core/Hiring/Education) it's Lab-only.
+  // set. Elsewhere (Lab/Core/Education) it's Lab-only.
   const scopeProjectId =
     target.targetWorkspaceType === "Project" ? target.targetWorkspaceId ?? null : null;
 
@@ -492,8 +502,8 @@ function scopeAudience(scopeId: string): string {
 }
 
 // A scope's workspace + drive-root parent for a cross-drive move.
-// Lab/Core/Hiring are all Lab-workspace pages (Core/Hiring nest under their
-// scoped root folder); a project scope is its own Project workspace; My Drive is
+// Lab and Core are both Lab-workspace pages; a project scope is its own
+// Project workspace; My Drive is
 // the viewer's own Member workspace. My Drive only ever appears here as a
 // SOURCE — moveDestinationsFor filters it out of the picker, and the move
 // endpoint refuses it as a destination — but naming it correctly is what makes a
@@ -1104,6 +1114,7 @@ export default function DriveHub() {
     canViewForms,
     canManageAgreements,
     viewerId,
+    hiringLibraryFolderId,
   } = useLoaderData() as LoaderData;
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -1138,11 +1149,13 @@ export default function DriveHub() {
 
   // Location + view state from the URL. No scope/folder = Drive root — except
   // when this same hub is embedded at /hiring/library, where it opens straight
-  // into the Hiring drive space (the shared hiring folder set).
+  // on the hiring folder set, which now lives inside Core.
   const location = useLocation();
   const isHiringLibrary = location.pathname.startsWith("/hiring/library");
-  const currentScopeId = searchParams.get("scope") ?? (isHiringLibrary ? "hiring" : null);
-  const currentFolderId = searchParams.get("folder");
+  // The Library opens inside Core, drilled into the bound hiring folder.
+  const currentScopeId = searchParams.get("scope") ?? (isHiringLibrary ? "core" : null);
+  const currentFolderId =
+    searchParams.get("folder") ?? (isHiringLibrary ? hiringLibraryFolderId : null);
   // In the URL like ?type= and ?term=, so "everything tagged onboarding" is a
   // link someone can send, and the back button steps through filters.
   const selectedTagIds = useMemo(
@@ -1234,7 +1247,7 @@ export default function DriveHub() {
     [scopeActionsMap],
   );
 
-  // ── Cross-drive move: relocate an item to another drive (Lab/Core/Hiring/a
+  // ── Cross-drive move: relocate an item to another drive (Lab/Core/a
   // project), optionally into one of its folders. The page-move endpoint
   // re-scopes visibility automatically (e.g. into Core → Restricted), so we warn
   // first. Managed types (agreement/rubric/emailTemplate) are filed
@@ -1405,8 +1418,8 @@ export default function DriveHub() {
         const rootId = s.rootFolderId ?? null;
         for (const f of s.items) {
           if (f.type !== "folder") continue;
-          // Normalise a scope's top-level folders (Core/Hiring nest under a root
-          // folder) so parentId === null uniformly means "drive top level".
+          // Normalise a scope's top-level folders so parentId === null uniformly
+          // means "drive top level".
           folders.push({
             id: f.id,
             driveId: s.id,
@@ -1582,7 +1595,7 @@ export default function DriveHub() {
   const currentActions = effectiveScopeId ? scopeActionsMap.get(effectiveScopeId) : undefined;
 
   // "From template" lands in the scope currently being browsed (project → that
-  // project; Lab/Core/Hiring → the Lab workspace, into the scoped root folder).
+  // project; Lab/Core → the Lab workspace, into the scoped root folder).
   // For the synthetic group scopes, resolve to the project being browsed.
   const templateTarget: TemplateTarget = useMemo(() => {
     if (!currentScope) return { targetWorkspaceType: "Lab" };
@@ -1685,7 +1698,7 @@ export default function DriveHub() {
         />
       </div>
       {/* Scopes the term-aware spaces — Projects and Education. My Drive /
-          General / Core / Hiring are never term-bound. */}
+          General / Core are never term-bound. */}
       {terms.length > 0 && (
         <div data-testid="drive-term-filter">
           <TermFilter terms={terms} selected={selectedTerm} searchable />
