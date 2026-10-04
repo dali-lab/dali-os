@@ -87,13 +87,28 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   if (request.method === "DELETE") {
     if (page.kind === "Folder") {
-      const childCount = await prisma.page.count({
-        where: { parentPageId: pageId, archivedAt: null },
-      });
-      if (childCount > 0) {
+      // "Empty" has to mean empty of everything a folder can hold, not just of
+      // sub-pages. Files, forms, agreements and rubrics are filed by
+      // folderPageId, and archiving the folder out from under them leaves rows
+      // pointing at a dead parent — which only forms have a safety net for
+      // (loadOrphanForms). Everything else would be silently unreachable.
+      const [pages, files, forms, agreements, rubrics] = await Promise.all([
+        prisma.page.count({ where: { parentPageId: pageId, archivedAt: null } }),
+        prisma.projectFile.count({ where: { folderPageId: pageId, archivedAt: null } }),
+        prisma.form.count({ where: { folderPageId: pageId, archivedAt: null } }),
+        prisma.signingDocument.count({ where: { folderPageId: pageId, archivedAt: null } }),
+        prisma.rubric.count({ where: { folderPageId: pageId } }),
+      ]);
+      const total = pages + files + forms + agreements + rubrics;
+      if (total > 0) {
         return withCors(
           request,
-          Response.json({ error: "Move or archive the documents inside this folder first" }, { status: 400 }),
+          Response.json(
+            {
+              error: `This folder still holds ${total} ${total === 1 ? "item" : "items"}. Move or delete them first.`,
+            },
+            { status: 400 },
+          ),
         );
       }
     }

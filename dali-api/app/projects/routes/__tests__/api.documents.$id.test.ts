@@ -3,6 +3,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("~/lib/db", () => ({
   prisma: {
     page: { findUnique: vi.fn(), update: vi.fn(), count: vi.fn() },
+    projectFile: { count: vi.fn() },
+    form: { count: vi.fn() },
+    signingDocument: { count: vi.fn() },
+    rubric: { count: vi.fn() },
   },
 }));
 vi.mock("~/lib/auth", () => ({
@@ -58,6 +62,58 @@ beforeEach(() => {
   vi.mocked(getPageAccess).mockResolvedValue({ canEdit: false } as any);
   m.page.update.mockResolvedValue({});
   m.page.count.mockResolvedValue(0);
+  m.projectFile.count.mockResolvedValue(0);
+  m.form.count.mockResolvedValue(0);
+  m.signingDocument.count.mockResolvedValue(0);
+  m.rubric.count.mockResolvedValue(0);
+});
+
+/** A Lab folder — the container the delete guard has to check the contents of. */
+function labFolder(over: Record<string, unknown> = {}) {
+  return { id: "p1", workspaceType: "Lab", workspaceId: null, kind: "Folder", ...over };
+}
+
+// "Empty" has to mean empty of everything a folder holds. Counting only
+// sub-pages let a folder full of uploads be archived, stranding every file
+// inside it behind a dead parent with no way back.
+describe("DELETE /api/documents/:id — folder contents guard", () => {
+  it("archives a folder that holds nothing", async () => {
+    m.page.findUnique.mockResolvedValue(labFolder());
+    const res = await del();
+    expect(res.status).toBe(200);
+    expect(m.page.update.mock.calls[0][0].data.archivedAt).toBeInstanceOf(Date);
+  });
+
+  it.each([
+    ["files", "projectFile"],
+    ["forms", "form"],
+    ["agreements", "signingDocument"],
+    ["rubrics", "rubric"],
+    ["sub-pages", "page"],
+  ])("refuses a folder that still holds %s", async (_label, model) => {
+    m.page.findUnique.mockResolvedValue(labFolder());
+    m[model].count.mockResolvedValue(2);
+    const res = await del();
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/still holds 2 items/);
+    expect(m.page.update).not.toHaveBeenCalled();
+  });
+
+  it("counts every kind together in the message", async () => {
+    m.page.findUnique.mockResolvedValue(labFolder());
+    m.page.count.mockResolvedValue(1);
+    m.projectFile.count.mockResolvedValue(1);
+    m.form.count.mockResolvedValue(1);
+    const res = await del();
+    expect((await res.json()).error).toMatch(/still holds 3 items/);
+  });
+
+  it("leaves non-folder deletes alone (no content queries)", async () => {
+    m.page.findUnique.mockResolvedValue(labFolder({ kind: "FreeForm" }));
+    const res = await del();
+    expect(res.status).toBe(200);
+    expect(m.projectFile.count).not.toHaveBeenCalled();
+  });
 });
 
 // The doc editor's title box posts here whatever workspace the page is in, so a

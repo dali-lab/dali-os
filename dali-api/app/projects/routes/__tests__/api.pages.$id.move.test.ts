@@ -2,7 +2,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("~/lib/db", () => ({
   prisma: {
-    page: { findUnique: vi.fn(), findMany: vi.fn(), update: vi.fn() },
+    page: { findUnique: vi.fn(), findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
+    projectFile: { findMany: vi.fn(), updateMany: vi.fn() },
+    signingDocument: { count: vi.fn() },
+    rubric: { count: vi.fn() },
     $transaction: vi.fn().mockResolvedValue([]),
   },
 }));
@@ -62,6 +65,16 @@ function notePage(over: Record<string, unknown> = {}) {
   return labPage({ workspaceType: "Member", workspaceId: "u1", ...over });
 }
 
+/**
+ * Child pages keyed by parent id, driving both the subtree BFS and the
+ * depth walk. The route fires several `page.findMany` calls per request
+ * (one per BFS level, then the destination siblings), so dispatching on the
+ * `where` shape is the only stable way to script them.
+ */
+let childrenByParent: Record<string, string[]> = {};
+/** Extra `page.findUnique` answers by id, for the parent-folder + depth walk. */
+let pagesById: Record<string, Record<string, unknown>> = {};
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: "u1" } } as any);
@@ -70,13 +83,29 @@ beforeEach(() => {
   vi.mocked(isProjectMember).mockResolvedValue(false);
   vi.mocked(isLabMember).mockResolvedValue(false);
   vi.mocked(isOfferingManager).mockResolvedValue(false);
-  m.page.findMany.mockResolvedValue([]); // siblings + children default empty
+  childrenByParent = {};
+  pagesById = {};
+  m.page.findMany.mockImplementation(async ({ where }: any) => {
+    // Subtree BFS: `parentPageId: { in: [...] }`. Siblings: a plain parentPageId.
+    const inList = where?.parentPageId?.in;
+    if (!inList) return [];
+    return inList.flatMap((p: string) => (childrenByParent[p] ?? []).map((id) => ({ id })));
+  });
+  m.projectFile.findMany.mockResolvedValue([]);
+  m.signingDocument.count.mockResolvedValue(0);
+  m.rubric.count.mockResolvedValue(0);
   m.$transaction.mockResolvedValue([]);
 });
 
 /** Data passed to the FIRST prisma.page.update — the moved page. */
 function movedUpdateData() {
   return m.page.update.mock.calls[0][0].data;
+}
+
+/** Ids the route handed to `page.updateMany` as the carried subtree. */
+function carriedPageIds(): string[] {
+  const call = m.page.updateMany.mock.calls.find((c: any) => c[0].data?.workspaceType);
+  return call ? call[0].where.id.in : [];
 }
 
 describe("POST /api/pages/:id/move", () => {
@@ -207,18 +236,123 @@ describe("POST /api/pages/:id/move", () => {
   it("cascades a folder's children to the new workspace (keeping their parent)", async () => {
     m.page.findUnique.mockResolvedValue(projectPage({ kind: "Folder" }));
     vi.mocked(isProjectMember).mockResolvedValue(true);
-    // first findMany = children of the folder, second = destination siblings
-    m.page.findMany.mockResolvedValueOnce([{ id: "c1" }, { id: "c2" }]).mockResolvedValueOnce([]);
+    childrenByParent = { p1: ["c1", "c2"] };
     const res = await call({ parentPageId: null, workspaceType: "Project", workspaceId: "projB" });
     expect(res.status).toBe(200);
-    const childUpdates = m.page.update.mock.calls
-      .map((c: any) => c[0])
-      .filter((u: any) => u.where.id === "c1" || u.where.id === "c2");
-    expect(childUpdates.length).toBe(2);
-    for (const u of childUpdates) {
-      expect(u.data.workspaceType).toBe("Project");
-      expect(u.data.workspaceId).toBe("projB");
-      expect(u.data.parentPageId).toBeUndefined(); // children stay under the folder
-    }
+    expect(carriedPageIds().sort()).toEqual(["c1", "c2"]);
+    const data = m.page.updateMany.mock.calls[0][0].data;
+    expect(data.workspaceType).toBe("Project");
+    expect(data.workspaceId).toBe("projB");
+    expect(data.parentPageId).toBeUndefined(); // children stay under the folder
+  });
+
+  // ── The subtree, not just the first level ─────────────────────────────────
+  // A grandchild left behind is listed by neither drive: the destination
+  // filters it out by workspace, and the source no longer holds its parent.
+
+  it("carries grandchildren, not only direct children", async () => {
+    m.page.findUnique.mockResolvedValue(projectPage({ kind: "Folder" }));
+    vi.mocked(isProjectMember).mockResolvedValue(true);
+    vi.mocked(isLabMember).mockResolvedValue(true);
+    childrenByParent = { p1: ["sub"], sub: ["deep"], deep: ["deeper"] };
+    const res = await call({ parentPageId: null, workspaceType: "Lab", workspaceId: null });
+    expect(res.status).toBe(200);
+    expect(carriedPageIds().sort()).toEqual(["deep", "deeper", "sub"]);
+  });
+
+  it("carries files filed anywhere in the subtree and re-scopes them", async () => {
+    m.page.findUnique.mockResolvedValue(projectPage({ kind: "Folder" }));
+    vi.mocked(isProjectMember).mockResolvedValue(true);
+    vi.mocked(isLabMember).mockResolvedValue(true);
+    childrenByParent = { p1: ["sub"] };
+    m.projectFile.findMany.mockResolvedValue([{ id: "f1" }, { id: "f2" }]);
+
+    const res = await call({ parentPageId: null, workspaceType: "Lab", workspaceId: null });
+    expect(res.status).toBe(200);
+
+    // Every folder in the subtree is a candidate parent for a file.
+    expect(m.projectFile.findMany.mock.calls[0][0].where.folderPageId.in.sort()).toEqual([
+      "p1",
+      "sub",
+    ]);
+    const update = m.projectFile.updateMany.mock.calls[0][0];
+    expect(update.where.id.in).toEqual(["f1", "f2"]);
+    // Lab-scoped files are keyed by workspaceType, not projectId.
+    expect(update.data).toMatchObject({
+      projectId: null,
+      workspaceType: "Lab",
+      workspaceId: null,
+      partnerVisible: false,
+    });
+  });
+
+  it("files landing in a project are keyed by projectId, not workspaceType", async () => {
+    m.page.findUnique.mockResolvedValue(labPage({ kind: "Folder" }));
+    vi.mocked(isCore).mockResolvedValue(true);
+    m.projectFile.findMany.mockResolvedValue([{ id: "f1" }]);
+    const res = await call({ parentPageId: null, workspaceType: "Project", workspaceId: "projB" });
+    expect(res.status).toBe(200);
+    expect(m.projectFile.updateMany.mock.calls[0][0].data).toMatchObject({
+      projectId: "projB",
+      workspaceType: null,
+      workspaceId: null,
+    });
+  });
+
+  it("leaves files alone on a same-workspace reorder", async () => {
+    m.page.findUnique.mockResolvedValue(projectPage({ kind: "Folder" }));
+    const res = await call({ parentPageId: null });
+    expect(res.status).toBe(200);
+    expect(m.projectFile.findMany).not.toHaveBeenCalled();
+    expect(m.projectFile.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("refuses to move a Lab folder holding an agreement out of the Lab drive", async () => {
+    m.page.findUnique.mockResolvedValue(labPage({ kind: "Folder" }));
+    vi.mocked(isCore).mockResolvedValue(true);
+    m.signingDocument.count.mockResolvedValue(1);
+    const res = await call({ parentPageId: null, workspaceType: "Project", workspaceId: "projB" });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/agreements or rubrics/i);
+    expect(m.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("allows a Lab folder holding an agreement to be reordered within Lab", async () => {
+    m.page.findUnique.mockResolvedValue(labPage({ kind: "Folder" }));
+    m.signingDocument.count.mockResolvedValue(1);
+    const res = await call({ parentPageId: null });
+    expect(res.status).toBe(200);
+  });
+
+  it("rejects a move whose subtree would land past the depth cap", async () => {
+    // Destination parent sits at depth 4; a folder 3 levels tall would put its
+    // deepest page at 8, past MAX_PAGE_DEPTH (6).
+    m.page.findUnique.mockImplementation(async ({ where }: any) =>
+      where.id === "p1" ? labPage({ kind: "Folder" }) : pagesById[where.id] ?? null,
+    );
+    pagesById = {
+      dest: { workspaceType: "Lab", workspaceId: null, parentPageId: "a3", kind: "Folder", archivedAt: null },
+      a3: { parentPageId: "a2" },
+      a2: { parentPageId: "a1" },
+      a1: { parentPageId: null },
+    };
+    childrenByParent = { p1: ["s1"], s1: ["s2"], s2: ["s3"] };
+    const res = await call({ parentPageId: "dest" });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/too deeply nested/i);
+  });
+
+  it("allows the same subtree when the destination leaves room for it", async () => {
+    m.page.findUnique.mockImplementation(async ({ where }: any) =>
+      where.id === "p1" ? labPage({ kind: "Folder" }) : pagesById[where.id] ?? null,
+    );
+    // Destination at depth 1 → deepest moved page lands at 5, within the cap.
+    pagesById = {
+      dest: { workspaceType: "Lab", workspaceId: null, parentPageId: "a1", kind: "Folder", archivedAt: null },
+      a1: { parentPageId: null },
+    };
+    childrenByParent = { p1: ["s1"], s1: ["s2"], s2: ["s3"] };
+    const res = await call({ parentPageId: "dest" });
+    expect(res.status).toBe(200);
   });
 });

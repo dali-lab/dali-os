@@ -9,7 +9,7 @@ import { logAuditEvent } from "~/lib/audit";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import type { Prisma, WorkspaceType } from "~/generated/prisma/client";
-import { pageDepth, MAX_PAGE_DEPTH, isAncestorOf } from "~/lib/pages";
+import { pageDepth, MAX_PAGE_DEPTH, isAncestorOf, collectSubtree } from "~/lib/pages";
 import { isUnderGoverningScope } from "~/lib/pageAccess.server";
 
 // POST /api/pages/:id/move — move and/or reorder a document.
@@ -30,6 +30,17 @@ import { isUnderGoverningScope } from "~/lib/pageAccess.server";
 // Overview/PRD can't leave; partner/public sharing and the pin reset on the way
 // out. The collab room (doc:{pageId}:body) is workspace-independent, so content
 // is untouched.
+//
+// A FOLDER moves as a whole subtree. Placement and scope are separate columns
+// in this model — a page carries workspaceType/workspaceId, a file carries
+// projectId or workspaceType/workspaceId, and both are found through a
+// parentPageId/folderPageId chain — so a move that rewrites only the folder row
+// leaves everything under it pointing into a workspace it no longer belongs to.
+// Such a row is listed by neither drive (the old one no longer holds its
+// parent, the new one filters it out by scope) and vanishes. So the move
+// rewrites every descendant page AND every file filed anywhere inside.
+// Agreements and rubrics have no scope column at all and only the Lab drive
+// lists them, so a folder holding one is refused a trip out of Lab.
 
 const BodySchema = z.object({
   parentPageId: z.string().min(1).nullable(),
@@ -145,6 +156,36 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
   }
 
+  // A folder moves as a whole subtree, so everything below depends on knowing
+  // it up front: the depth guard, the per-page workspace rewrite, the
+  // Restricted push, and the files filed anywhere inside it.
+  const subtree = page.kind === "Folder" ? await collectSubtree(pageId) : { ids: [], height: 0 };
+  // `folderPageId` can only point at a Folder, so passing every descendant id
+  // here is harmless — the non-folders simply never match.
+  const subtreeFolderIds = page.kind === "Folder" ? [pageId, ...subtree.ids] : [];
+
+  // Agreements and rubrics are filed by `folderPageId` alone — unlike pages and
+  // files they carry no project/offering scope column, and only the Lab drive
+  // loads them. A folder holding one can't leave the Lab workspace without
+  // stranding it somewhere nothing lists it.
+  if (!sameWorkspace && page.workspaceType === "Lab" && subtreeFolderIds.length > 0) {
+    const [agreements, rubrics] = await Promise.all([
+      prisma.signingDocument.count({
+        where: { folderPageId: { in: subtreeFolderIds }, archivedAt: null },
+      }),
+      prisma.rubric.count({ where: { folderPageId: { in: subtreeFolderIds } } }),
+    ]);
+    if (agreements + rubrics > 0) {
+      return withCors(
+        request,
+        Response.json(
+          { error: "This folder holds agreements or rubrics, which only live in the Lab drive. Move them out first." },
+          { status: 400 },
+        ),
+      );
+    }
+  }
+
   // Parent folder (if nesting) must live in the DESTINATION; depth ≤ MAX_PAGE_DEPTH.
   let parentPageId: string | null = null;
   if (body.parentPageId) {
@@ -163,8 +204,12 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (parent.kind !== "Folder") {
       return withCors(request, Response.json({ error: "Documents can only nest inside a folder" }, { status: 400 }));
     }
+    // The moved page lands one below its new parent, and its own subtree keeps
+    // going from there — so a 3-deep folder needs 3 levels of headroom, not 1.
+    // Checking only the parent let a subtree settle past MAX_PAGE_DEPTH, deeper
+    // than the ancestry walk in getPageAccess reaches.
     const depth = await pageDepth(body.parentPageId);
-    if (depth < 0 || depth >= MAX_PAGE_DEPTH) {
+    if (depth < 0 || depth + 1 + subtree.height > MAX_PAGE_DEPTH) {
       return withCors(request, Response.json({ error: "Folder is too deeply nested" }, { status: 400 }));
     }
     // Cycle guard: the destination can't be a descendant of the page being moved.
@@ -174,17 +219,39 @@ export async function action({ request, params }: Route.ActionArgs) {
     parentPageId = body.parentPageId;
   }
 
-  // When a folder crosses workspaces, its children come along (their workspace
-  // columns change; they stay under the folder with their own positions).
-  const childIds =
-    page.kind === "Folder" && !sameWorkspace
+  // When a folder crosses workspaces its whole subtree comes along — not just
+  // the direct children. A grandchild left on the old workspace is filtered out
+  // of the new drive (wrong workspace) AND out of the old one (its parent
+  // left), so it disappears from the Drive entirely.
+  const movedPageIds = !sameWorkspace ? subtree.ids : [];
+
+  // Files are placed by `folderPageId` but scoped by their own columns, so a
+  // cross-workspace move has to rewrite both. Leaving the scope behind strands
+  // every upload inside the folder exactly the way a stale grandchild strands.
+  const movedFileIds =
+    !sameWorkspace && subtreeFolderIds.length > 0
       ? (
-          await prisma.page.findMany({
-            where: { parentPageId: pageId, archivedAt: null },
+          await prisma.projectFile.findMany({
+            where: { folderPageId: { in: subtreeFolderIds }, archivedAt: null },
             select: { id: true },
           })
-        ).map((c) => c.id)
+        ).map((f) => f.id)
       : [];
+  // Forms need no equivalent: `Form` has no scope column — loadForms resolves a
+  // form's drive purely from the folder it points at, which just moved.
+  const fileScope: Prisma.ProjectFileUncheckedUpdateManyInput =
+    dest.type === "Project"
+      ? { projectId: dest.id, workspaceType: null, workspaceId: null }
+      : dest.type === "Lab"
+        ? { projectId: null, workspaceType: "Lab", workspaceId: null }
+        : { projectId: null, workspaceType: "EducationOffering", workspaceId: dest.id };
+  const fileData: Prisma.ProjectFileUncheckedUpdateManyInput = {
+    ...fileScope,
+    // Same resets the pages get: partner sharing is Project-only, and a session
+    // link only means anything inside the offering it was pinned to.
+    ...(page.workspaceType === "Project" ? { partnerVisible: false } : {}),
+    ...(page.workspaceType === "EducationOffering" ? { sessionId: null } : {}),
+  };
 
   // Rebuild the destination sibling order (in the destination workspace).
   const siblings = await prisma.page.findMany({
@@ -243,23 +310,29 @@ export async function action({ request, params }: Route.ActionArgs) {
   };
 
   // Moving a folder INTO a scope: every descendant must go Restricted too, or a
-  // lab-visible child would keep leaking through the scoped folder. (Cross-
-  // workspace folder moves already carry direct children via childIds/childData;
-  // this covers the same-workspace-into-scope case and deep descendants.)
-  const descendantRestrictIds: string[] =
-    destScoped && page.kind === "Folder" ? await collectDescendantIds(pageId) : [];
+  // lab-visible child would keep leaking through the scoped folder. A
+  // cross-workspace move already pushes that down via childData, so this list
+  // only has to cover the descendants that move didn't touch.
+  const restrictOnlyIds = destScoped
+    ? subtree.ids.filter((id) => !movedPageIds.includes(id))
+    : [];
 
   await prisma.$transaction([
     prisma.page.update({ where: { id: pageId }, data: { parentPageId, ...crossData } }),
-    ...childIds.map((id) => prisma.page.update({ where: { id }, data: childData })),
-    ...descendantRestrictIds
-      .filter((id) => !childIds.includes(id))
-      .map((id) =>
-        prisma.page.update({
-          where: { id },
-          data: { linkAccess: "Restricted", linkPermission: "View" },
-        }),
-      ),
+    ...(movedPageIds.length
+      ? [prisma.page.updateMany({ where: { id: { in: movedPageIds } }, data: childData })]
+      : []),
+    ...(restrictOnlyIds.length
+      ? [
+          prisma.page.updateMany({
+            where: { id: { in: restrictOnlyIds } },
+            data: { linkAccess: "Restricted", linkPermission: "View" },
+          }),
+        ]
+      : []),
+    ...(movedFileIds.length
+      ? [prisma.projectFile.updateMany({ where: { id: { in: movedFileIds } }, data: fileData })]
+      : []),
     ...order.map((id, index) => prisma.page.update({ where: { id }, data: { position: index } })),
   ]);
 
@@ -272,7 +345,8 @@ export async function action({ request, params }: Route.ActionArgs) {
         from: { type: page.workspaceType, id: page.workspaceId },
         to: { type: dest.type, id: dest.id },
         kind: page.kind,
-        childCount: childIds.length,
+        descendantCount: movedPageIds.length,
+        fileCount: movedFileIds.length,
       },
       request,
     });
@@ -281,21 +355,3 @@ export async function action({ request, params }: Route.ActionArgs) {
   return withCors(request, Response.json({ ok: true }));
 }
 
-// Every descendant page id of `rootId` (exclusive). Iterative BFS, bounded by
-// MAX_PAGE_DEPTH so cyclic/broken data can't loop. Used to push Restricted
-// general access down a folder subtree when it moves into a scoped drive.
-async function collectDescendantIds(rootId: string): Promise<string[]> {
-  const out: string[] = [];
-  let frontier = [rootId];
-  for (let depth = 0; depth < MAX_PAGE_DEPTH && frontier.length > 0; depth++) {
-    const children = await prisma.page.findMany({
-      where: { parentPageId: { in: frontier }, archivedAt: null },
-      select: { id: true },
-    });
-    const ids = children.map((c) => c.id).filter((id) => !out.includes(id) && id !== rootId);
-    if (ids.length === 0) break;
-    out.push(...ids);
-    frontier = ids;
-  }
-  return out;
-}
