@@ -116,6 +116,7 @@ import type { RowActions } from "~/components/drive/DriveBrowser";
 import { DestinationPicker } from "~/components/drive/DestinationPicker";
 import type { PickerDrive, PickerFolder, Destination } from "~/components/drive/DestinationPicker";
 import { moveDriveItem, driveErrorFrom } from "~/components/drive/move-item";
+import { reportMoveBatch, runMoveBatch, itemCount } from "~/components/drive/move-batch";
 import { useDriveFileUpload } from "~/components/drive/useDriveFileUpload";
 import { useToast } from "~/components/ui/toast";
 import { filterPillClass } from "~/components/ui/floating/styles";
@@ -4520,23 +4521,38 @@ function ProjectDriveTab({
     [navigate],
   );
 
-  const onMove = useCallback(
-    async (_scopeId: string, item: DriveItem, destFolderId: string | null) => {
+  // One item's move, with no reporting — the callers below decide whether to
+  // speak for one item or for a batch.
+  const moveOne = useCallback(
+    async (item: DriveItem, destFolderId: string | null): Promise<boolean> => {
       // Both endpoints (and what each calls its destination field) live in
       // move-item.ts, shared with the Drive hub — this embed had its own copy
       // and it drifted out of step with the pages endpoint's schema.
       try {
         const res = await moveDriveItem(item, destFolderId);
-        if (!res.ok) {
-          toast.error((await driveErrorFrom(res)) ?? "Couldn't move");
-          return;
-        }
-        revalidator.revalidate();
+        if (res.ok) return true;
+        toast.error((await driveErrorFrom(res)) ?? "Couldn't move");
+        return false;
       } catch {
         toast.error("Couldn't move");
+        return false;
       }
     },
-    [revalidator, toast],
+    [toast],
+  );
+
+  // Dropping a selection onto a folder. Dragging one row of a multi-selection
+  // now brings the whole selection, so this takes a list and revalidates once
+  // for the batch rather than once per item.
+  const onMove = useCallback(
+    async (_scopeId: string, items: DriveItem[], destFolderId: string | null) => {
+      let moved = 0;
+      for (const item of items) {
+        if (await moveOne(item, destFolderId)) moved++;
+      }
+      if (moved > 0) revalidator.revalidate();
+    },
+    [moveOne, revalidator],
   );
 
   // Open the destination picker over this project's folders and resolve with the
@@ -4606,7 +4622,7 @@ function ProjectDriveTab({
       },
       onRequestMove: async (item) => {
         const dest = await pickMoveDestination(item, `Move "${item.title || "Untitled"}"`);
-        if (dest) await onMove(scopeId, item, dest.folderId);
+        if (dest) await onMove(scopeId, [item], dest.folderId);
       },
       onDelete: async (item) => {
         const ok = await dialog.confirm({
@@ -4715,15 +4731,23 @@ function ProjectDriveTab({
     async (items: DriveItem[]) => {
       const movable = items.filter((i) => i.type === "doc" || i.type === "folder" || i.type === "file");
       if (movable.length === 0) return;
-      const dest = await pickMoveDestination(
-        movable[0],
-        `Move ${movable.length} item${movable.length === 1 ? "" : "s"}`,
-      );
+      const dest = await pickMoveDestination(movable[0], `Move ${itemCount(movable.length)}`);
       if (!dest) return;
-      for (const it of movable) await onMove(scopeId, it, dest.folderId);
-      revalidate();
+      const moved = await runMoveBatch(movable, (item) => moveOne(item, dest.folderId));
+      const destName = projectDriveScope.items.find((i) => i.id === dest.folderId)?.title;
+      reportMoveBatch(toast, revalidate, {
+        moved: moved.length,
+        total: movable.length,
+        summary:
+          moved.length < movable.length
+            ? `Moved ${moved.length} of ${itemCount(movable.length)}`
+            : `Moved ${itemCount(moved.length)}${destName ? ` to ${destName}` : ""}`,
+        undo: async () => {
+          for (const o of moved) await moveOne(o.item, o.folderId);
+        },
+      });
     },
-    [pickMoveDestination, onMove, scopeId, revalidate],
+    [pickMoveDestination, moveOne, revalidate, projectDriveScope, toast],
   );
 
   const filterControl = (
