@@ -120,6 +120,38 @@ export async function pageDepth(startId: string): Promise<number> {
 }
 
 /**
+ * Every live descendant page id of `rootId` (exclusive), plus how many levels
+ * deep they go (0 = no children). Iterative BFS, bounded by MAX_PAGE_DEPTH so
+ * cyclic or broken parent chains can't loop.
+ *
+ * The subtree is the unit of work for anything that changes a folder's
+ * standing: a move rewrites every descendant's workspace columns (and the
+ * files filed against any folder in the set), and applying a folder scope
+ * pushes Restricted general access down the same way. Both need the whole
+ * tree — touching only the direct children leaves rows pointing into a
+ * workspace or an audience they no longer belong to.
+ */
+export async function collectSubtree(
+  rootId: string,
+): Promise<{ ids: string[]; height: number }> {
+  const out: string[] = [];
+  let frontier = [rootId];
+  let height = 0;
+  for (let depth = 0; depth < MAX_PAGE_DEPTH && frontier.length > 0; depth++) {
+    const children = await prisma.page.findMany({
+      where: { parentPageId: { in: frontier }, archivedAt: null },
+      select: { id: true },
+    });
+    const ids = children.map((c) => c.id).filter((id) => !out.includes(id) && id !== rootId);
+    if (ids.length === 0) break;
+    out.push(...ids);
+    frontier = ids;
+    height = depth + 1;
+  }
+  return { ids: out, height };
+}
+
+/**
  * Returns true if `ancestorId` appears anywhere in the ancestor chain of
  * `pageId`. Used to prevent cyclic moves: before setting page.parentPageId =
  * newParentId, check `isAncestor(newParentId, pageId)` and reject if true.

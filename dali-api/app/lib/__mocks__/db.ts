@@ -319,8 +319,10 @@ export const prisma = {
     findUnique: vi.fn(),
     findFirst: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
+    groupBy: vi.fn().mockResolvedValue([]),
     create: vi.fn(),
     update: vi.fn(),
+    updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     delete: vi.fn(),
     count: vi.fn().mockResolvedValue(0),
   },
@@ -338,8 +340,12 @@ export const prisma = {
   projectFile: {
     findUnique: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
+    groupBy: vi.fn().mockResolvedValue([]),
     create: vi.fn(),
     update: vi.fn(),
+    updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+    delete: vi.fn(),
+    count: vi.fn().mockResolvedValue(0),
   },
   projectFileVersion: {
     findFirst: vi.fn(),
@@ -418,6 +424,7 @@ export const prisma = {
     update: vi.fn(),
     updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     delete: vi.fn(),
+    count: vi.fn().mockResolvedValue(0),
   },
   formVersion: {
     findUnique: vi.fn(),

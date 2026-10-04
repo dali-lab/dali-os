@@ -49,7 +49,6 @@ describe("DRIVE_SPACES registry", () => {
       "projects",
       "education",
       "core",
-      "hiring",
     ]);
   });
 
@@ -65,6 +64,13 @@ describe("DRIVE_SPACES registry", () => {
     const core = DRIVE_SPACES.find((s) => s.key === "core") as DriveSpaceDef;
     expect(core.backing).toBe("virtual-filter");
     expect(core.groupQuery).toBe("core");
+  });
+
+  // Hiring's folder set is Core-group-scoped, so the Core filter already picks
+  // it up — it surfaces as an ordinary "Hiring" folder inside Core rather than
+  // as a space of its own.
+  it("has no hiring space", () => {
+    expect(DRIVE_SPACES.map((s) => s.key)).not.toContain("hiring");
   });
 
   it("mine and lab have no gate (always visible)", () => {
@@ -90,25 +96,18 @@ describe("visibleDriveSpaces", () => {
     expect(keys).toContain("education");
   });
 
-  it("hides both the core and hiring spaces from a plain member (both Core-gated)", () => {
+  it("hides the core space from a plain member", () => {
     const keys = visibleDriveSpaces(NOBODY).map((s) => s.key);
     expect(keys).not.toContain("core");
-    expect(keys).not.toContain("hiring");
   });
 
-  it("shows all spaces (including core and hiring) to a Core member", () => {
+  it("shows all spaces (including core) to a Core member", () => {
     const keys = visibleDriveSpaces(CORE).map((s) => s.key);
-    expect(keys).toContain("mine");
-    expect(keys).toContain("lab");
-    expect(keys).toContain("projects");
-    expect(keys).toContain("education");
-    expect(keys).toContain("core");
-    expect(keys).toContain("hiring");
+    expect(keys).toEqual(["mine", "lab", "projects", "education", "core"]);
   });
 
-  it("hides core and hiring from a hiring-only member (both are Core-only)", () => {
+  it("hides core from a hiring-only member (the hiring folders are Core-only)", () => {
     const keys = visibleDriveSpaces(HIRING_ONLY).map((s) => s.key);
     expect(keys).not.toContain("core");
-    expect(keys).not.toContain("hiring");
   });
 });

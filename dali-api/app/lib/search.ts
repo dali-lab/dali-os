@@ -62,7 +62,7 @@ export const GUIDE_PAGES: GuidePage[] = [
   { pageKey: "drive.mine", path: "/drive?scope=mine", title: "My Drive", keywords: ["files", "personal"] },
   { pageKey: "drive.lab", path: "/drive?scope=lab", title: "Lab-wide Drive", keywords: ["files", "shared"] },
   { pageKey: "drive.core", path: "/drive?scope=core", title: "Core Drive", keywords: ["files"] },
-  { pageKey: "drive.hiring", path: "/drive?scope=hiring", title: "Hiring Drive", keywords: ["files", "recruiting"] },
+  { pageKey: "drive.hiring", path: "/hiring/library", title: "Hiring Library", keywords: ["files", "recruiting", "drive"] },
   { pageKey: "drive.templates", path: "/drive/templates", title: "Templates", keywords: ["gallery"] },
 ];
 
