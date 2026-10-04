@@ -41,15 +41,18 @@ export function isSlot(value: string): value is Slot {
 // pick from the form's own bindings rather than re-deriving the cycle from the
 // calendar's current term, which would silently drop submissions for any term
 // that isn't "live" today. Normally a form drives one staffing slot for one
-// cycle; if it's reused across cycles we prefer the live term's binding, else
-// the most recently updated one, so the choice is always deterministic.
+// cycle; if it's bound to several, the most recently bound one wins, so the
+// choice follows the manager's last action and is always deterministic.
+//
+// Deliberately NOT "the live term's binding wins": intent-to-work for the
+// next term is collected during this one, so preferring the current term sent
+// 27W intent to the 26F cycle for every form bound to both.
 export function pickStaffingBinding<
   B extends {
     slot: string;
     updatedAt: Date;
-    staffingCycle: { termId: string };
   },
->(bindings: B[], currentTermId: string | null): B | undefined {
+>(bindings: B[]): B | undefined {
   return bindings
     .filter(
       (b) =>
@@ -57,14 +60,22 @@ export function pickStaffingBinding<
         b.slot === "intent-to-work" ||
         b.slot === "level-up",
     )
-    .sort((a, b) => {
-      if (currentTermId) {
-        const aLive = a.staffingCycle.termId === currentTermId;
-        const bLive = b.staffingCycle.termId === currentTermId;
-        if (aLive !== bLive) return aLive ? -1 : 1;
-      }
-      return b.updatedAt.getTime() - a.updatedAt.getTime();
-    })[0];
+    .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0];
+}
+
+// Every cycle this form is bound to for one slot. The one-and-done gate spans
+// all of them: which cycle a fill records against is decided per-fill by
+// pickStaffingBinding, so keying the gate on a single cycle lets a re-bind
+// reopen a form the member already filled under another cycle.
+export async function boundSlotCycleIds(
+  formId: string,
+  slot: string,
+): Promise<string[]> {
+  const rows = await prisma.staffingCycleFormBinding.findMany({
+    where: { formId, slot },
+    select: { staffingCycleId: true },
+  });
+  return rows.map((r) => r.staffingCycleId);
 }
 
 // The form bound to a slot for a cycle, with just enough of its latest
@@ -138,24 +149,89 @@ export async function setSlotColumnMapping(
 
 // Upsert the binding for (cycle, slot). `formId` is validated against an
 // existing form so a stale/forged id can't create a dangling binding.
+// `allowMove` is the caller's acknowledgement that binding this form here
+// will take it off whatever cycle currently holds it. Defaults to false so a
+// non-interactive caller (MCP, a stale picker) can't silently stop another
+// cycle's collection; the picker asks first and then passes it.
 export async function setSlotBinding(
   staffingCycleId: string,
   slot: Slot,
   formId: string,
   userId: string,
-): Promise<{ ok: true } | { ok: false; error: string }> {
+  opts?: { allowMove?: boolean },
+): Promise<{ ok: true; movedFrom?: string } | { ok: false; error: string }> {
+  // SlotFormPicker's "— No form selected —" posts an empty formId: that's an
+  // unbind, not a form lookup. Submissions keep the staffingCycleId and slot
+  // they were filled under — unbinding stops new fills reaching this cycle, it
+  // doesn't rewrite what's already recorded.
+  if (!formId.trim()) {
+    await clearSlotBinding(staffingCycleId, slot);
+    return { ok: true };
+  }
+
   const form = await prisma.form.findUnique({
     where: { id: formId },
     select: { id: true },
   });
   if (!form) return { ok: false, error: "That form no longer exists." };
 
-  await prisma.staffingCycleFormBinding.upsert({
-    where: { staffingCycleId_slot: { staffingCycleId, slot } },
-    create: { staffingCycleId, slot, formId, updatedById: userId },
-    update: { formId, updatedById: userId },
+  // ONE staffing binding per form, across every slot — not one per slot.
+  // pickStaffingBinding chooses among all of a form's slot bindings, so a form
+  // on 26F Project Bids and 27W Intent to Work is just as ambiguous as one on
+  // two cycles of the same slot: a fill is addressed by the form's token and
+  // carries neither cycle nor slot. Binding here MOVES the form.
+  const held = await prisma.staffingCycleFormBinding.findFirst({
+    where: {
+      formId,
+      slot: { in: Object.keys(SLOTS) },
+      NOT: { staffingCycleId, slot },
+    },
+    select: {
+      id: true,
+      slot: true,
+      columnMapping: true,
+      gateAudience: true,
+      gateAudienceGroupId: true,
+      staffingCycle: { select: { name: true } },
+    },
   });
-  return { ok: true };
+  const heldLabel = held
+    ? `${held.staffingCycle.name}${
+        held.slot === slot
+          ? ""
+          : ` (${isSlot(held.slot) ? SLOTS[held.slot] : held.slot})`
+      }`
+    : null;
+  if (held && !opts?.allowMove) {
+    return {
+      ok: false,
+      error: `This form is already collecting for ${heldLabel}. Confirm the move, or pick a different form.`,
+    };
+  }
+
+  // The mapping and app lock only travel within the same slot: a mapping's
+  // roles are slot-shaped (a project-bids mapping can't validate as
+  // intent-to-work), so a cross-slot move starts clean rather than carrying
+  // something the new slot would reject.
+  const carried =
+    held && held.slot === slot
+      ? {
+          columnMapping: held.columnMapping ?? undefined,
+          gateAudience: held.gateAudience,
+          gateAudienceGroupId: held.gateAudienceGroupId,
+        }
+      : {};
+
+  await prisma.$transaction(async (tx) => {
+    if (held)
+      await tx.staffingCycleFormBinding.delete({ where: { id: held.id } });
+    await tx.staffingCycleFormBinding.upsert({
+      where: { staffingCycleId_slot: { staffingCycleId, slot } },
+      create: { staffingCycleId, slot, formId, updatedById: userId, ...carried },
+      update: { formId, updatedById: userId, ...carried },
+    });
+  });
+  return heldLabel ? { ok: true, movedFrom: heldLabel } : { ok: true };
 }
 
 // Set (or clear) the app-lock audience for a bound slot. `audience === null`
@@ -199,17 +275,49 @@ export async function clearSlotBinding(
 
 // Forms an admin can pick for any slot: every form that has at least one
 // version (an empty form can't be filled). id + name, ordered by name.
+// `boundToCycleName` is set when another cycle holds this form for the slot —
+// picking it there is a move, so the picker warns before saving.
 export type SelectableForm = {
   id: string;
   name: string;
   published: boolean;
+  boundToCycleName?: string;
 };
 
-export async function listSelectableForms(): Promise<SelectableForm[]> {
+export async function listSelectableForms(opts?: {
+  slot: Slot;
+  exceptCycleId: string;
+}): Promise<SelectableForm[]> {
   const forms = await prisma.form.findMany({
     where: { versions: { some: {} } },
     orderBy: { name: "asc" },
     select: { id: true, name: true, published: true },
   });
-  return forms;
+  if (!opts) return forms;
+
+  const held = await prisma.staffingCycleFormBinding.findMany({
+    where: {
+      slot: { in: Object.keys(SLOTS) },
+      NOT: { staffingCycleId: opts.exceptCycleId, slot: opts.slot },
+    },
+    select: {
+      formId: true,
+      slot: true,
+      staffingCycle: { select: { name: true } },
+    },
+  });
+  const heldBy = new Map(
+    held.map((b) => [
+      b.formId,
+      `${b.staffingCycle.name}${
+        b.slot === opts.slot
+          ? ""
+          : ` (${isSlot(b.slot) ? SLOTS[b.slot] : b.slot})`
+      }`,
+    ]),
+  );
+  return forms.map((f) => {
+    const cycleName = heldBy.get(f.id);
+    return cycleName ? { ...f, boundToCycleName: cycleName } : f;
+  });
 }

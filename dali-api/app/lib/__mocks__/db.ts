@@ -78,6 +78,8 @@ export const prisma = {
     findMany: vi.fn().mockResolvedValue([]),
     update: vi.fn(),
     upsert: vi.fn(),
+    delete: vi.fn(),
+    deleteMany: vi.fn(),
   },
   partnerApplicationFormBinding: {
     findFirst: vi.fn(),

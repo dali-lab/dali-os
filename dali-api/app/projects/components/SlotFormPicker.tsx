@@ -3,13 +3,22 @@
 // current cycle's slot. Viewers (Core/Admin without staffing management) see
 // the current selection read-only. The board's submission table is unaffected
 // — this only controls which form is surfaced to members.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useFetcher } from "react-router";
 import { Button } from "~/components/ui/Button";
 import { Select, Tooltip } from "~/components/ui/floating";
+import { useDialog } from "~/components/ui/dialog";
+import { useToast } from "~/components/ui/toast";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 
-type SelectableForm = { id: string; name: string; published: boolean };
+type SelectableForm = {
+  id: string;
+  name: string;
+  published: boolean;
+  // Set when another cycle holds this form for the same slot: picking it is a
+  // move, not a copy, so saving asks first.
+  boundToCycleName?: string;
+};
 
 type Binding = {
   formId: string;
@@ -30,6 +39,8 @@ export function SlotFormPicker({
   canManage: boolean;
 }) {
   const fetcher = useFetcher();
+  const { confirm } = useDialog();
+  const toast = useToast();
   const [selected, setSelected] = useState(binding?.formId ?? "");
 
   const saving = fetcher.state !== "idle";
@@ -38,6 +49,38 @@ export function SlotFormPicker({
       ? String((fetcher.data as { error: unknown }).error)
       : null;
   const dirty = selected !== (binding?.formId ?? "");
+  const held = forms.find((f) => f.id === selected)?.boundToCycleName ?? null;
+
+  // A form only collects for one cycle at a time, so saving one that another
+  // cycle holds takes it off that cycle. Confirm first, then send the
+  // acknowledgement the action requires (it refuses the move without it, so a
+  // picker rendered before someone else re-bound the form fails loudly instead
+  // of quietly stopping their round).
+  async function save() {
+    if (held) {
+      const ok = await confirm({
+        title: `Move this form off ${held}?`,
+        description: `"${forms.find((f) => f.id === selected)?.name}" is collecting for ${held}. Moving it here stops that, and brings its column mapping and app lock along. Submissions already recorded for ${held} stay with ${held}.`,
+        confirmLabel: "Move it here",
+        tone: "destructive",
+      });
+      if (!ok) return;
+    }
+    const fd = new FormData();
+    fd.set("intent", "set-slot-form");
+    fd.set("formId", selected);
+    if (held) fd.set("allowMove", "1");
+    fetcher.submit(fd, { method: "post" });
+  }
+
+  // Say where it came from, since the other cycle's board just changed too.
+  const movedFrom =
+    fetcher.data && typeof fetcher.data === "object" && "movedFrom" in fetcher.data
+      ? ((fetcher.data as { movedFrom: unknown }).movedFrom as string | null)
+      : null;
+  useEffect(() => {
+    if (movedFrom) toast(`Moved off ${movedFrom}.`);
+  }, [movedFrom, toast]);
 
   // Slot-bound forms are filled through the AUTHENTICATED member route so the
   // submission is attributed to the member (and, for Project Bids, can be
@@ -59,8 +102,11 @@ export function SlotFormPicker({
           <fetcher.Form
             method="post"
             className="flex flex-1 flex-col sm:flex-row gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void save();
+            }}
           >
-            <input type="hidden" name="intent" value="set-slot-form" />
             <Select
               name="formId"
               value={selected}
@@ -70,7 +116,10 @@ export function SlotFormPicker({
                 { value: "", label: "— No form selected —" },
                 ...forms.map((f) => ({
                   value: f.id,
-                  label: f.name + (f.published ? "" : " (unpublished)"),
+                  label:
+                    f.name +
+                    (f.published ? "" : " (unpublished)") +
+                    (f.boundToCycleName ? ` · on ${f.boundToCycleName}` : ""),
                 })),
               ]}
               buttonClassName="flex-1 px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"

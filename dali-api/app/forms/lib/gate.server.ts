@@ -10,6 +10,7 @@ import { resolveGroupMembers } from "~/lib/groups";
 import { getSignerCohorts } from "~/signing/lib/state.server";
 import { AUDIENCE_RESOLVERS } from "~/signing/lib/audiences";
 import { existingBoundSubmission, formFillAccess } from "~/forms/lib/public-form";
+import { boundSlotCycleIds } from "~/projects/lib/form-slots";
 
 export interface OutstandingBoundForm {
   token: string;
@@ -43,6 +44,7 @@ export async function getBoundFormGateOutstanding(
     orderBy: { slot: "asc" },
     select: {
       slot: true,
+      formId: true,
       gateAudience: true,
       gateAudienceGroupId: true,
       form: {
@@ -90,8 +92,17 @@ export async function getBoundFormGateOutstanding(
       userId,
     );
     if (access !== "ok") continue;
-    // Filled already (one-and-done) ⇒ nothing owed.
-    if (await existingBoundSubmission(userId, cycle.id, b.slot)) continue;
+    // Filled already (one-and-done) ⇒ nothing owed. Spans every cycle the form
+    // is bound to, not just this term's, so a re-bind doesn't gate a member
+    // back into a form they've filled.
+    if (
+      await existingBoundSubmission(
+        userId,
+        await boundSlotCycleIds(b.formId, b.slot),
+        b.slot,
+      )
+    )
+      continue;
     return {
       token: b.form.publicToken as string,
       slot: b.slot,

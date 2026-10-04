@@ -11,7 +11,7 @@ import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
 import { resolveReferenceOptions } from "./reference-sources";
 import { safeParseJsonString } from "./forms-data";
-import { currentTerm, requireMember } from "~/lib/roles";
+import { requireMember } from "~/lib/roles";
 import { isUserInAnyGroup } from "~/lib/groups";
 import { interpretBidForm } from "~/projects/lib/bid-form-interpreter";
 import { validateBids, replaceBidSet } from "~/projects/lib/bid-validation";
@@ -23,6 +23,8 @@ import {
   type ColumnMapping,
 } from "~/projects/lib/slot-roles";
 import { pickStaffingBinding, type Slot } from "~/projects/lib/form-slots";
+import { interpolateVars } from "~/lib/template-variables";
+import { resolveFormVariables } from "./form-variables";
 import {
   interpretProfileForm,
   NEW_MEMBER_PROFILE_FORM_NAME,
@@ -47,6 +49,32 @@ export type PublicForm = {
   questions: Question[];
 };
 
+// Substitute the shared {{token}} merge variables into the text a member
+// reads: label, description and static options. `info` block bodies are left
+// alone (they're block JSON, not a string). Interpolation is read-time only —
+// the stored version keeps the template, so re-binding the form to the next
+// cycle re-resolves it without an edit.
+function applyFormVariables(
+  questions: Question[],
+  termCode: string | null,
+): Question[] {
+  const vars = resolveFormVariables({ term: termCode });
+  if (Object.keys(vars).length === 0) return questions;
+  // Guarded per field: a stored question can carry an empty or missing label
+  // (the builder renders those as "Untitled question"), and a blanket
+  // interpolate would throw on the fill page for the whole form.
+  const sub = (text: string) => interpolateVars(text, vars);
+  return questions.map((q) => ({
+    ...q,
+    data: {
+      ...q.data,
+      ...(q.data.label ? { label: sub(q.data.label) } : {}),
+      ...(q.data.description ? { description: sub(q.data.description) } : {}),
+      ...(q.data.options ? { options: q.data.options.map(sub) } : {}),
+    },
+  }));
+}
+
 // Resolve a public token to its form's latest version. Returns null when the
 // token is unknown, the form is unpublished, or it has no versions yet —
 // callers must treat all three as an indistinguishable 404 (don't leak which).
@@ -70,6 +98,17 @@ export async function loadPublicForm(
         take: 1,
         select: { id: true, questions: true, intro: true, updatedAt: true },
       },
+      // Only to resolve {{term}} in the question text: the cycle this form
+      // collects for names the term, which is what lets one staffing form be
+      // reused every round. Same picker the gate uses, so the term a member
+      // reads and the cycle their answers land in can't disagree.
+      cycleBindings: {
+        select: {
+          slot: true,
+          updatedAt: true,
+          staffingCycle: { select: { term: { select: { code: true } } } },
+        },
+      },
     },
   });
   if (!form || !form.published) return null;
@@ -92,6 +131,10 @@ export async function loadPublicForm(
     }),
   );
 
+  const boundTermCode =
+    pickStaffingBinding(form.cycleBindings ?? [])?.staffingCycle.term.code ??
+    null;
+
   return {
     formId: form.id,
     name: form.name,
@@ -100,7 +143,7 @@ export async function loadPublicForm(
     // Versions may hold legacy ProseMirror JSON — convert on read so fill
     // surfaces only ever see block JSON.
     description: ensureBlocks(safeParseJsonString(version.intro)),
-    questions: normalizeQuestionBodies(resolved),
+    questions: applyFormVariables(normalizeQuestionBodies(resolved), boundTermCode),
   };
 }
 
@@ -216,17 +259,56 @@ export async function existingOrdinarySubmission(
   });
 }
 
-// The member's submission for a bound staffing slot (intent-to-work /
-// project-bids / level-up). Keyed on (userId, cycle, slot) — the tuple the
-// @@unique on FormSubmission enforces — so it's one row at most. Backs both the
-// submit-time 409 gate and the fill-page "already filled" panel.
+// The one-and-done refusal, shared by the read gate and the write race below
+// so the member sees the same sentence either way.
+const ALREADY_FILLED = {
+  error: "You've already filled out this form.",
+  status: 409,
+} as const;
+
+// Race backstop for a bound slot: two in-flight submits can both pass the read
+// gate, and @@unique([userId, staffingCycleId, slot]) then rejects the loser
+// with P2002. The row is refused either way — map it to the same 409 so the
+// second tab reads "already filled" instead of a 500.
+async function recordBoundSubmission(
+  write: () => Promise<void>,
+): Promise<{ ok: true } | { error: string; status: number }> {
+  try {
+    await write();
+  } catch (e) {
+    if ((e as { code?: string })?.code === "P2002") return { ...ALREADY_FILLED };
+    throw e;
+  }
+  return { ok: true };
+}
+
+// The cycles a form is bound to for one slot, read off bindings already in
+// hand (both callers select them to pick the binding), so the gate costs no
+// extra query. boundSlotCycleIds is the same set from a formId.
+function cycleIdsForSlot(
+  bindings: { slot: string; staffingCycle: { id: string } }[],
+  slot: string,
+): string[] {
+  return bindings.filter((b) => b.slot === slot).map((b) => b.staffingCycle.id);
+}
+
+// The member's earliest submission for a bound staffing slot (intent-to-work /
+// project-bids / level-up). Backs both the submit-time 409 gate and the
+// fill-page "already filled" panel.
+//
+// Takes EVERY cycle the form is bound to for the slot, not just the one this
+// fill would record against. The @@unique on FormSubmission is per cycle, so a
+// form bound to two cycles (or re-bound to a new one) leaves the member's old
+// row under the old cycle — keying on the single picked cycle let them fill it
+// a second time, and the index couldn't catch the duplicate.
 export async function existingBoundSubmission(
   userId: string,
-  staffingCycleId: string,
+  staffingCycleIds: string[],
   slot: string,
 ): Promise<{ id: string; createdAt: Date } | null> {
+  if (staffingCycleIds.length === 0) return null;
   return prisma.formSubmission.findFirst({
-    where: { userId, staffingCycleId, slot },
+    where: { userId, staffingCycleId: { in: staffingCycleIds }, slot },
     orderBy: { createdAt: "asc" },
     select: { id: true, createdAt: true },
   });
@@ -255,12 +337,11 @@ export async function ordinaryFillBlock(
     },
   });
   if (!form) return null;
-  const term = await currentTerm();
-  const bound = pickStaffingBinding(form.cycleBindings, term?.id ?? null);
+  const bound = pickStaffingBinding(form.cycleBindings);
   if (bound) {
     const existing = await existingBoundSubmission(
       userId,
-      bound.staffingCycle.id,
+      cycleIdsForSlot(form.cycleBindings, bound.slot),
       bound.slot,
     );
     return existing ? { at: existing.createdAt } : null;
@@ -596,13 +677,9 @@ export async function submitMemberForm(args: {
 
   // Which staffing cycle (if any) this submission feeds is decided by the
   // form's own bindings, not the calendar's current term — see
-  // pickStaffingBinding. currentTerm only breaks ties when a form is reused
-  // across cycles.
-  const term = await currentTerm();
-  const staffingBinding = pickStaffingBinding(
-    form.cycleBindings,
-    term?.id ?? null,
-  );
+  // pickStaffingBinding, which breaks a multi-cycle tie on the most recent
+  // binding.
+  const staffingBinding = pickStaffingBinding(form.cycleBindings);
 
   if (!staffingBinding) {
     // One-response gate (ordinary fills only — the branches above/below keep
@@ -611,9 +688,7 @@ export async function submitMemberForm(args: {
     // row through — acceptable for this surface.
     if (form.oneResponsePerMember) {
       const existing = await existingOrdinarySubmission(form.id, args.userId);
-      if (existing) {
-        return { error: "You've already filled out this form.", status: 409 };
-      }
+      if (existing) return { ...ALREADY_FILLED };
     }
 
     // The onboarding "New Member Profile" form IS the onboarding step: it writes
@@ -683,8 +758,14 @@ export async function submitMemberForm(args: {
   // so re-opening it after submitting shows the "already filled" panel. The
   // @@unique([userId, staffingCycleId, slot]) on FormSubmission is the race-safe
   // backstop; this check is the friendly 409.
-  if (await existingBoundSubmission(args.userId, cycle.id, slot)) {
-    return { error: "You've already filled out this form.", status: 409 };
+  if (
+    await existingBoundSubmission(
+      args.userId,
+      cycleIdsForSlot(form.cycleBindings, slot),
+      slot,
+    )
+  ) {
+    return { ...ALREADY_FILLED };
   }
 
   const mapping = parseColumnMapping(staffingBinding.columnMapping);
@@ -711,40 +792,46 @@ export async function submitMemberForm(args: {
         : { ok: true as const, bids: [] };
     const bidsToWrite = validated.ok ? validated.bids : [];
 
-    await prisma.$transaction(async (tx) => {
-      await tx.formSubmission.create({
-        data: {
-          formId: form.id,
-          formVersionId: version.id,
-          userId: args.userId,
-          staffingCycleId: cycle.id,
-          slot: "project-bids",
-          answers: args.answers as object,
-        },
-      });
-      // Replace (not merge) so a resubmission with fewer bids removes the
-      // old ones; an empty set clears them, matching prior behaviour.
-      await replaceBidSet(tx, args.userId, cycle.id, bidsToWrite);
-      await closeFormTodos(tx, args.userId, form.id);
-    });
+    const recorded = await recordBoundSubmission(() =>
+      prisma.$transaction(async (tx) => {
+        await tx.formSubmission.create({
+          data: {
+            formId: form.id,
+            formVersionId: version.id,
+            userId: args.userId,
+            staffingCycleId: cycle.id,
+            slot: "project-bids",
+            answers: args.answers as object,
+          },
+        });
+        // Replace (not merge) so a resubmission with fewer bids removes the
+        // old ones; an empty set clears them, matching prior behaviour.
+        await replaceBidSet(tx, args.userId, cycle.id, bidsToWrite);
+        await closeFormTodos(tx, args.userId, form.id);
+      }),
+    );
+    if ("error" in recorded) return recorded;
     await notifySubmitted();
     return { ok: true };
   }
 
   if (slot === "level-up") {
-    await prisma.$transaction(async (tx) => {
-      await tx.formSubmission.create({
-        data: {
-          formId: form.id,
-          formVersionId: version.id,
-          userId: args.userId,
-          staffingCycleId: cycle.id,
-          slot: "level-up",
-          answers: args.answers as object,
-        },
-      });
-      await closeFormTodos(tx, args.userId, form.id);
-    });
+    const recorded = await recordBoundSubmission(() =>
+      prisma.$transaction(async (tx) => {
+        await tx.formSubmission.create({
+          data: {
+            formId: form.id,
+            formVersionId: version.id,
+            userId: args.userId,
+            staffingCycleId: cycle.id,
+            slot: "level-up",
+            answers: args.answers as object,
+          },
+        });
+        await closeFormTodos(tx, args.userId, form.id);
+      }),
+    );
+    if ("error" in recorded) return recorded;
     await notifySubmitted();
     return { ok: true };
   }
@@ -758,24 +845,28 @@ export async function submitMemberForm(args: {
         args.answers,
         mapping as ColumnMapping,
         termRows.map((t) => t.id),
+        cycle.termId,
       )
     : { ok: true as const, rows: [] };
   const intentRows = interpreted.ok ? interpreted.rows : [];
 
-  await prisma.$transaction(async (tx) => {
-    await tx.formSubmission.create({
-      data: {
-        formId: form.id,
-        formVersionId: version.id,
-        userId: args.userId,
-        staffingCycleId: cycle.id,
-        slot: "intent-to-work",
-        answers: args.answers as object,
-      },
-    });
-    await replaceIntentSet(tx, args.userId, cycle.id, intentRows);
-    await closeFormTodos(tx, args.userId, form.id);
-  });
+  const recorded = await recordBoundSubmission(() =>
+    prisma.$transaction(async (tx) => {
+      await tx.formSubmission.create({
+        data: {
+          formId: form.id,
+          formVersionId: version.id,
+          userId: args.userId,
+          staffingCycleId: cycle.id,
+          slot: "intent-to-work",
+          answers: args.answers as object,
+        },
+      });
+      await replaceIntentSet(tx, args.userId, cycle.id, intentRows);
+      await closeFormTodos(tx, args.userId, form.id);
+    }),
+  );
+  if ("error" in recorded) return recorded;
   await notifySubmitted();
   return { ok: true };
 }

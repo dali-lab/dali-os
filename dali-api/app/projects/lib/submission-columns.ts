@@ -11,6 +11,8 @@
 // regardless of mapping; see public-form.ts).
 
 import type { ColumnMapping, ColumnMappingEntry } from "./slot-roles";
+import { interpolateVars } from "~/lib/template-variables";
+import { resolveFormVariables } from "~/forms/lib/form-variables";
 
 // A stable per-column key. Question columns key by questionKey (+termId for
 // per-term roles); builtin columns key by the builtin name. Repeated roles
@@ -36,15 +38,23 @@ export type ColumnDescriptor = {
 // Columns in the manager's chosen order. `hidden` ones are excluded from the
 // default table but the detail page shows them, so both are returned and the
 // consumer decides per surface.
+//
+// `termCode` resolves {{term}} in a saved label, which is how a "this cycle's
+// term" status column reads as "Status — 27S" on the board without the stored
+// mapping naming a term. Same token and interpolator as the question text the
+// column came from (app/lib/template-variables.ts); left literal when the
+// caller has no single cycle in view.
 export function orderedColumns(
   mapping: ColumnMapping | null,
+  termCode?: string | null,
 ): ColumnDescriptor[] {
   if (!mapping) return [];
+  const vars = resolveFormVariables({ term: termCode });
   return [...mapping.entries]
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
     .map((e) => ({
       key: columnKey(e),
-      label: e.label,
+      label: interpolateVars(e.label, vars),
       hidden: e.hidden === true,
       source: e.source,
       ...(e.source === "builtin"
@@ -54,8 +64,10 @@ export function orderedColumns(
     }));
 }
 
-export const visibleColumns = (m: ColumnMapping | null): ColumnDescriptor[] =>
-  orderedColumns(m).filter((c) => !c.hidden);
+export const visibleColumns = (
+  m: ColumnMapping | null,
+  termCode?: string | null,
+): ColumnDescriptor[] => orderedColumns(m, termCode).filter((c) => !c.hidden);
 
 // Build one row's cell map (columnKey → display string) from the resolved
 // values the loader supplies. `answerText` covers question columns (already
