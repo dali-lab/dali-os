@@ -1,3 +1,11 @@
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useState,
+  type CSSProperties,
+  type RefObject,
+} from 'react'
 import { cn } from '~/lib/cn'
 
 // The dali.os *shell* dress, in one place — the rail and its menus, as opposed
@@ -36,4 +44,45 @@ export function railRowClass(active: boolean, collapsed: boolean) {
         ),
     collapsed && active && 'bg-os-container text-foreground',
   )
+}
+
+const ACCOUNT_MENU_MIN_WIDTH = 180
+
+// The account menu opens upward from the foot of the rail. It is pinned to the
+// viewport rather than positioned inside the rail: the rail is a scroll
+// container, so anything wider than it is clipped, and collapsed the rail is
+// far narrower than the menu. Null while closed or not yet measured.
+export function useAccountMenuStyle(
+  anchorRef: RefObject<HTMLElement | null>,
+  open: boolean,
+): CSSProperties | null {
+  const [style, setStyle] = useState<CSSProperties | null>(null)
+
+  const measure = useCallback(() => {
+    const rect = anchorRef.current?.getBoundingClientRect()
+    if (!rect) return
+    setStyle({
+      left: rect.left,
+      bottom: window.innerHeight - rect.top + 8,
+      width: Math.max(rect.width, ACCOUNT_MENU_MIN_WIDTH),
+    })
+  }, [anchorRef])
+
+  useLayoutEffect(() => {
+    if (open) measure()
+  }, [open, measure])
+
+  useEffect(() => {
+    if (!open) return
+    window.addEventListener('resize', measure)
+    // Capture phase: the rail is its own scroller, and a scroll there doesn't
+    // bubble to window.
+    window.addEventListener('scroll', measure, true)
+    return () => {
+      window.removeEventListener('resize', measure)
+      window.removeEventListener('scroll', measure, true)
+    }
+  }, [open, measure])
+
+  return open ? style : null
 }
