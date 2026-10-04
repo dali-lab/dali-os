@@ -29,6 +29,10 @@ export type PublicProject = {
   product: string[];
   techStack: string[];
   term: string;
+  // Who the project was built with — the curated public list, separate from
+  // the ProjectPartner CRM links, which include partnerships that were never
+  // meant for the open web.
+  partners: string[];
   teamMembers: string[];
   coverImage: string;
   projectUrls: { label: string; url: string }[];
@@ -95,6 +99,7 @@ function toPublicProject(row: ShowcaseRow, teamMembers: string[]): PublicProject
     product: row.products,
     techStack: row.techStack,
     term: row.year ? String(row.year) : "",
+    partners: row.partners,
     teamMembers,
     // Falls back to the internal hub banner when no public hero is set, so a
     // freshly curated project isn't imageless.
