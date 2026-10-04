@@ -28,6 +28,7 @@ import {
   ensureLabMeetingNotesFolder,
 } from "~/lib/pages";
 import { isCore, isProjectMember } from "~/lib/roles";
+import { isGeneralCalendarEvent } from "~/lib/general-calendar";
 import { normalizeGuestEmails } from "~/calendar/lib/guest-emails";
 import {
   expandOccurrences,
@@ -1974,8 +1975,9 @@ export type TrackExternalEventResult =
 /**
  * Give an external Google event the DALI meeting it never had.
  *
- * The lab's general calendar is authored in Google Calendar, not in DALI, so
- * its events reach the grid as plain external events: there is no
+ * The lab's general calendar is authored in Google Calendar, not in DALI, and a
+ * member's own event can be created as a plain event too, so
+ * these reach the grid as plain external events: there is no
  * ScheduledMeeting row behind them, and therefore no meeting note and no
  * attendance roster — the gap that made those events look broken next to every
  * other meeting on the same grid. This creates the missing row, bound to the
@@ -1995,10 +1997,6 @@ export type TrackExternalEventResult =
 export async function trackExternalEventAsMeeting(
   input: TrackExternalEventInput,
 ): Promise<TrackExternalEventResult> {
-  if (!(await isCore(input.actorId))) {
-    return { ok: false, error: "Only Core can track an event in DALI", status: 403 };
-  }
-
   const link = await prisma.userCalendarLink.findUnique({
     where: { id: input.linkId },
     select: { id: true, userId: true, externalEmail: true },
@@ -2018,6 +2016,14 @@ export async function trackExternalEventAsMeeting(
     });
   } catch {
     return { ok: false, error: "Couldn't read that event from Google", status: 502 };
+  }
+
+  // Core can track any event it can read (the general calendar's have no guest
+  // list). Anyone else has to be on the event: its organizer or a guest, as
+  // Google reports it for their own account.
+  const labWide = isGeneralCalendarEvent(input.calendarId);
+  if (!event.viewerInvited && !(await isCore(input.actorId))) {
+    return { ok: false, error: "Only someone on this event can track it in DALI", status: 403 };
   }
 
   const externalEventId = input.recurringEventId || event.id;
@@ -2084,8 +2090,10 @@ export async function trackExternalEventAsMeeting(
       location: event.location,
       description: event.description,
       // "None" — not scoped to a group or a hand-picked list. It is the marker
-      // the meeting page reads to let any lab member see a lab-wide meeting.
-      scopeType: "None",
+      // the meeting page reads to let any lab member see a lab-wide meeting,
+      // which is right for the general calendar and wrong for anyone's own
+      // event: that one stays with the people on it.
+      scopeType: labWide ? "None" : "UserList",
       participantUserIds,
       guestEmails,
       selectedAt: startDate,

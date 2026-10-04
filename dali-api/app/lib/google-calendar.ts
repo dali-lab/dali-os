@@ -563,6 +563,8 @@ export interface CalendarEvent {
   writable: boolean;
   /** The viewer's own RSVP (self attendee); undefined when not an attendee. */
   responseStatus?: "accepted" | "declined" | "tentative" | "needsAction";
+  /** True when the viewer's account organizes the event. */
+  organizerSelf?: boolean;
 }
 
 // Fetches ALL events for one sub-calendar in the window — all-day, free,
@@ -651,6 +653,7 @@ async function fetchAllEventsForCalendar(
       color,
       writable,
       responseStatus,
+      organizerSelf: ev.organizer?.self === true,
     });
   }
   return out;
@@ -1090,12 +1093,14 @@ export async function getGoogleEvent(opts: {
   location: string | null;
   description: string | null;
   attendeeEmails: string[];
+  /** The account this link reads through organizes the event or is a guest. */
+  viewerInvited: boolean;
 }> {
   const token = await getValidAccessTokenForLink(opts.linkId);
   const calendarId = encodeURIComponent(opts.calendarId ?? "primary");
   const params = new URLSearchParams({
     fields:
-      "id,iCalUID,summary,description,location,recurrence,start(dateTime,date),end(dateTime,date),attendees(email)",
+      "id,iCalUID,summary,description,location,recurrence,start(dateTime,date),end(dateTime,date),organizer(self),attendees(email,self)",
   });
   const res = await fetch(
     `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${encodeURIComponent(opts.eventId)}?${params}`,
@@ -1114,7 +1119,8 @@ export async function getGoogleEvent(opts: {
     recurrence?: string[];
     start?: { dateTime?: string; date?: string };
     end?: { dateTime?: string; date?: string };
-    attendees?: { email?: string }[];
+    organizer?: { self?: boolean };
+    attendees?: { email?: string; self?: boolean }[];
   };
   return {
     id: data.id ?? opts.eventId,
@@ -1130,6 +1136,8 @@ export async function getGoogleEvent(opts: {
     attendeeEmails: (data.attendees ?? [])
       .map((a) => a.email)
       .filter((e): e is string => typeof e === "string" && e.length > 0),
+    viewerInvited:
+      data.organizer?.self === true || (data.attendees ?? []).some((a) => a.self === true),
   };
 }
 

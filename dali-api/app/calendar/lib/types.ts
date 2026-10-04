@@ -291,7 +291,8 @@ export type ExternalEventDTO = {
   /** Set when this Google event is a DALI meeting. */
   meeting?: EventMeetingDTO;
   /** True when this event has no DALI meeting behind it and the viewer may
-   *  give it one — Core, on the lab's general calendar. Drives the popover's
+   *  give it one — Core on the lab's general calendar, or a member on an event
+   *  they organize or are a guest on. Drives the popover's
    *  "Track in DALI" action, which is what unlocks a note and attendance for
    *  events authored in Google rather than in DALI. */
   canTrackAsMeeting?: boolean;
