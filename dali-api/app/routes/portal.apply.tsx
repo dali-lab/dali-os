@@ -1876,6 +1876,20 @@ function ApplyForm() {
             </div>
           )}
 
+          {/* The per-domain cards below only appear for domains with
+              questions, so list the picks themselves here. */}
+          <div className="rounded-os-card bg-os-card px-5 py-4">
+            <h4 className="font-heading text-xs font-bold text-foreground uppercase tracking-wider mb-1">
+              Domains
+            </h4>
+            <p className="text-sm text-foreground">
+              {selectedDomainIds
+                .map(id => (domains as DomainShape[]).find(d => d.id === id)?.name)
+                .filter(Boolean)
+                .join(", ") || "None selected"}
+            </p>
+          </div>
+
           {(() => {
             const beforeQuestions = (formQuestions as Question[]).filter(q => !q.data.afterDomains);
             return beforeQuestions.length > 0 ? (
