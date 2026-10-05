@@ -67,6 +67,28 @@ export function looksLikeProseMirrorDoc(value: unknown): boolean {
  * on `[]`). ProseMirror JSON renders empty with a console.warn — by contract
  * the server loader should have converted it.
  */
+// A paragraph with no text and no children: the blank line BlockNote leaves at
+// the end of a doc so there is somewhere to type.
+function isEmptyParagraph(b: AnyBlock): boolean {
+  if (b?.type !== "paragraph") return false;
+  if (b.children && b.children.length > 0) return false;
+  const content = b.content;
+  if (content == null) return true;
+  if (!Array.isArray(content)) return false;
+  return blocksToPlainText([b]).trim() === "";
+}
+
+/**
+ * Drop trailing empty paragraphs. A read-only embed has no reason to show the
+ * blank line an author left at the end; keep the array non-empty so callers
+ * can still tell "nothing but blanks" from "nothing".
+ */
+export function trimTrailingEmptyBlocks<T>(blocks: T[]): T[] {
+  let end = blocks.length;
+  while (end > 1 && isEmptyParagraph(blocks[end - 1] as AnyBlock)) end--;
+  return end === blocks.length ? blocks : blocks.slice(0, end);
+}
+
 export function normalizeInitialContent<T>(input: unknown): T[] | undefined {
   if (input == null) return undefined;
   if (looksLikeProseMirrorDoc(input)) {

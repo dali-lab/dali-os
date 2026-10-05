@@ -9,6 +9,7 @@ import {
   looksLikeProseMirrorDoc,
   normalizeInitialContent,
   stripBlockIds,
+  trimTrailingEmptyBlocks,
 } from "../blocks-util";
 import { EDITOR_PRESETS, hasSigning, resolveFeatures } from "../features";
 import { blocksToPlainText } from "../schema/configs";
@@ -87,6 +88,32 @@ describe("countWords / extractHeadings", () => {
     expect(extractHeadings([{ type: "heading", content: [{ type: "text", text: "X" }] }])).toEqual([
       { level: 1, text: "X", ordinal: 0 },
     ]);
+  });
+});
+
+describe("trimTrailingEmptyBlocks", () => {
+  const text = { type: "paragraph", content: [{ type: "text", text: "hi", styles: {} }] };
+  const blank = { type: "paragraph", content: [] };
+  const blankSpace = { type: "paragraph", content: [{ type: "text", text: "  ", styles: {} }] };
+
+  it("drops trailing empty paragraphs only", () => {
+    expect(trimTrailingEmptyBlocks([blank, text, blank, blankSpace])).toEqual([blank, text]);
+  });
+
+  it("returns the same array when nothing trails", () => {
+    const blocks = [text];
+    expect(trimTrailingEmptyBlocks(blocks)).toBe(blocks);
+  });
+
+  it("keeps one block when everything is blank", () => {
+    expect(trimTrailingEmptyBlocks([blank, blank])).toEqual([blank]);
+  });
+
+  it("does not treat a paragraph with children or a non-paragraph as blank", () => {
+    const withKids = { type: "paragraph", content: [], children: [text] };
+    const divider = { type: "divider" };
+    expect(trimTrailingEmptyBlocks([text, withKids])).toEqual([text, withKids]);
+    expect(trimTrailingEmptyBlocks([text, divider])).toEqual([text, divider]);
   });
 });
 
