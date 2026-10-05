@@ -1,7 +1,7 @@
 import { useFetcher } from "react-router";
 import { X } from "lucide-react";
 import { buttonClasses } from "~/components/ui/Button";
-import { Select, Tooltip } from "~/components/ui/floating";
+import { Combobox, Tooltip } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
@@ -90,15 +90,16 @@ export function ReviewerPoolCard({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="w-full max-w-xs">
-              <Select
+              <Combobox
                 ariaLabel="Add reviewer"
                 value=""
                 placeholder="Add person"
+                emptyLabel={candidates.length === 0 ? "Everyone is in the pool" : "No matches"}
                 onChange={(userId) => {
                   if (userId) fetcher.submit({ intent: "add-reviewer-pool", userId }, { method: "post" });
                 }}
                 options={candidates.map((m) => ({ value: m.userId, label: m.displayName }))}
-                buttonClassName={rowTrigger(formTrigger)}
+                className={rowTrigger(formTrigger)}
               />
             </div>
             {canResetToDefault && (
