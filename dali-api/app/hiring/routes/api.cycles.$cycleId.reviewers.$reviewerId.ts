@@ -2,6 +2,7 @@ import type { Route } from "./+types/api.cycles.$cycleId.reviewers.$reviewerId";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireCoreOrDomainLead } from "~/lib/auth";
+import { logAuditEvent } from "~/lib/audit";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { idSchema, parseJson } from "~/lib/validate";
 
@@ -29,6 +30,17 @@ export async function action({ request, params }: Route.ActionArgs) {
         domain: true,
       },
     });
+    await logAuditEvent({
+      action: "reviewer.update",
+      userId: gate.auth.user.sub,
+      targetId: reviewer.id,
+      metadata: {
+        cycleId: params.cycleId!,
+        reviewerUserId: reviewer.userId,
+        domainId: reviewer.domainId,
+      },
+      request,
+    });
     return withCors(request, Response.json(reviewer));
   }
 
@@ -36,14 +48,17 @@ export async function action({ request, params }: Route.ActionArgs) {
     // ApplicationReview FK to CycleReviewer is non-cascading (audit-bearing).
     // The confirm dialog already promises that any reviews this reviewer has
     // for this cycle will be deleted, so we cascade explicitly in a tx.
+    let removed: { userId: string; domainId: string; reviewCount: number } | null = null;
     try {
-      await prisma.$transaction(async (tx) => {
-        await tx.applicationReview.deleteMany({
+      removed = await prisma.$transaction(async (tx) => {
+        const { count } = await tx.applicationReview.deleteMany({
           where: { cycleReviewerId: params.reviewerId },
         });
-        await tx.cycleReviewer.delete({
+        const reviewer = await tx.cycleReviewer.delete({
           where: { id: params.reviewerId },
+          select: { userId: true, domainId: true },
         });
+        return { ...reviewer, reviewCount: count };
       });
     } catch (e: any) {
       if (e?.code === "P2025") {
@@ -51,6 +66,18 @@ export async function action({ request, params }: Route.ActionArgs) {
       }
       return withCors(request, Response.json({ error: "Failed to remove reviewer" }, { status: 500 }));
     }
+    await logAuditEvent({
+      action: "reviewer.remove",
+      userId: gate.auth.user.sub,
+      targetId: params.reviewerId!,
+      metadata: {
+        cycleId: params.cycleId!,
+        reviewerUserId: removed.userId,
+        domainId: removed.domainId,
+        deletedReviews: removed.reviewCount,
+      },
+      request,
+    });
     return withCors(request, Response.json({ ok: true }));
   }
 

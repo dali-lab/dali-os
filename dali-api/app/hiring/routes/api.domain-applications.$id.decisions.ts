@@ -2,6 +2,7 @@ import type { Route } from "./+types/api.domain-applications.$id.decisions";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth, forbidden } from "~/lib/auth";
+import { logAuditEvent } from "~/lib/audit";
 import { isCycleAdmin, isDomainLeadForCycle, hasCycleAccess } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
@@ -107,6 +108,20 @@ export async function action({ request, params }: Route.ActionArgs) {
       notes: notes ?? null,
       waitlistRank: waitlistRank ?? null,
     },
+  });
+
+  await logAuditEvent({
+    action: "decision.create",
+    userId: auth.user.sub,
+    targetId: decision.id,
+    metadata: {
+      cycleId: da.application.applicationCycleId,
+      domainApplicationId: params.id!,
+      type,
+      stage,
+      ...(waitlistRank != null ? { waitlistRank } : {}),
+    },
+    request,
   });
 
   return Response.json(decision, { status: 201 });

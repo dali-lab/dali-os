@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth, requireCoreOrDomainLead, forbidden } from "~/lib/auth";
 import { hasCycleAccess } from "~/lib/roles";
+import { logAuditEvent } from "~/lib/audit";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { idSchema, parseJson } from "~/lib/validate";
 
@@ -64,6 +65,14 @@ export async function action({ request, params }: Route.ActionArgs) {
       user: true,
       domain: true,
     },
+  });
+
+  await logAuditEvent({
+    action: "reviewer.add",
+    userId: gate.auth.user.sub,
+    targetId: reviewer.id,
+    metadata: { cycleId: params.cycleId!, reviewerUserId: userId, domainId },
+    request,
   });
 
   return withCors(request, Response.json(reviewer, { status: 201 }));

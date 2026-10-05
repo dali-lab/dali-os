@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth, requireCoreOrDomainLead, forbidden } from "~/lib/auth";
 import { hasCycleAccess } from "~/lib/roles";
+import { logAuditEvent } from "~/lib/audit";
 import { interviewerCalendars } from "~/hiring/lib/interview-availability.server";
 import { idSchema, parseJson } from "~/lib/validate";
 
@@ -76,6 +77,14 @@ export async function action({ request, params }: Route.ActionArgs) {
       },
     });
 
+    await logAuditEvent({
+      action: "interviewer.add",
+      userId: gate.auth.user.sub,
+      targetId: interviewer.id,
+      metadata: { cycleId: params.cycleId!, interviewerUserId: userId, domainId },
+      request,
+    });
+
     return Response.json(interviewer, { status: 201 });
   }
 
@@ -105,13 +114,15 @@ export async function action({ request, params }: Route.ActionArgs) {
         );
     }
 
+    let removed: { userId: string; domainId: string } | null = null;
     try {
-      await prisma.$transaction(async (tx) => {
+      removed = await prisma.$transaction(async (tx) => {
         await tx.interviewAssignment.deleteMany({
           where: { cycleInterviewerId: interviewerId },
         });
-        await tx.cycleInterviewer.delete({
+        return tx.cycleInterviewer.delete({
           where: { id: interviewerId },
+          select: { userId: true, domainId: true },
         });
       });
     } catch (e: any) {
@@ -120,6 +131,18 @@ export async function action({ request, params }: Route.ActionArgs) {
       }
       return Response.json({ error: "Failed to remove interviewer" }, { status: 500 });
     }
+
+    await logAuditEvent({
+      action: "interviewer.remove",
+      userId: gate.auth.user.sub,
+      targetId: interviewerId,
+      metadata: {
+        cycleId: params.cycleId!,
+        interviewerUserId: removed.userId,
+        domainId: removed.domainId,
+      },
+      request,
+    });
 
     return Response.json({ deleted: true });
   }

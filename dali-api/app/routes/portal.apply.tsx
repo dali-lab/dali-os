@@ -3,6 +3,7 @@ import { Link, redirect, useLoaderData, useFetcher } from "react-router";
 import type { Route } from "./+types/portal.apply";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { logAuditEvent } from "~/lib/audit";
 import { redirectToLogin } from "~/lib/login-next";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { renderForSlot, notificationSlot } from "~/hiring/lib/email-variables";
@@ -591,6 +592,13 @@ export async function action({ request }: Route.ActionArgs) {
           applicationId,
           userId: auth.user.sub,
         },
+      });
+      await logAuditEvent({
+        action: "application.submit",
+        userId: auth.user.sub,
+        targetId: applicationId,
+        metadata: { cycleId: application.applicationCycleId, domainIds: selectedDomainIds },
+        request,
       });
 
       // Best-effort confirmation email — enqueued to the outbox (keyed per

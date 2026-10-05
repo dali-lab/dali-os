@@ -1,6 +1,7 @@
 import type { Route } from "./+types/api.cycles.$cycleId.domains.$domainId.auto-assign";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { logAuditEvent } from "~/lib/audit";
 import { isCore, isDomainLead } from "~/lib/roles";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
 import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
@@ -119,6 +120,20 @@ export async function action({ request, params }: Route.ActionArgs) {
       reviewerLoad.set(reviewer.id, (reviewerLoad.get(reviewer.id) ?? 0) + 1);
       assigned++;
     }
+  }
+
+  if (assigned > 0) {
+    await logAuditEvent({
+      action: "review.auto-assign",
+      userId: auth.user.sub,
+      targetId: cycleId!,
+      metadata: {
+        domainId: domainId!,
+        assigned,
+        scoped: applicationIdsFilter !== null && applicationIdsFilter.length > 0,
+      },
+      request,
+    });
   }
 
   return Response.json({ assigned });
