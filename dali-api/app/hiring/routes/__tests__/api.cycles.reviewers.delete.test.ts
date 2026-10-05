@@ -19,10 +19,12 @@ vi.mock("~/lib/cors", () => ({
   withCors: (_req: Request, res: Response) => res,
 }));
 vi.mock("~/lib/roles");
+vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn().mockResolvedValue(undefined) }));
 
 import { prisma } from "~/lib/db";
 import { requireAuth, requireCoreOrDomainLead } from "~/lib/auth";
 import { isCore, isDomainLead } from "~/lib/roles";
+import { logAuditEvent } from "~/lib/audit";
 import { action } from "~/hiring/routes/api.cycles.$cycleId.reviewers.$reviewerId";
 
 const mockPrisma = prisma as unknown as {
@@ -47,7 +49,7 @@ beforeEach(() => {
     deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   };
   (mockPrisma as any).cycleReviewer = {
-    delete: vi.fn().mockResolvedValue({ id: REVIEWER_ID }),
+    delete: vi.fn().mockResolvedValue({ userId: "reviewer-user", domainId: "domain-1" }),
   };
   (mockPrisma as any).$transaction = vi.fn(async (cb: any) => cb(mockPrisma));
   vi.mocked(requireAuth).mockResolvedValue({
@@ -95,6 +97,7 @@ describe("DELETE /api/hiring/cycles/:cycleId/reviewers/:reviewerId", () => {
     });
     expect(mockPrisma.cycleReviewer.delete).toHaveBeenCalledWith({
       where: { id: REVIEWER_ID },
+      select: { userId: true, domainId: true },
     });
   });
 
@@ -112,10 +115,24 @@ describe("DELETE /api/hiring/cycles/:cycleId/reviewers/:reviewerId", () => {
     });
     expect(mockPrisma.cycleReviewer.delete).toHaveBeenCalledWith({
       where: { id: REVIEWER_ID },
+      select: { userId: true, domainId: true },
     });
     const appReviewOrder = mockPrisma.applicationReview.deleteMany.mock.invocationCallOrder[0];
     const cycleReviewerOrder = mockPrisma.cycleReviewer.delete.mock.invocationCallOrder[0];
     expect(appReviewOrder).toBeLessThan(cycleReviewerOrder);
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "reviewer.remove",
+        userId: USER_ID,
+        targetId: REVIEWER_ID,
+        metadata: {
+          cycleId: CYCLE_ID,
+          reviewerUserId: "reviewer-user",
+          domainId: "domain-1",
+          deletedReviews: 4,
+        },
+      }),
+    );
   });
 
   it("returns 404 when the reviewer row is missing (P2025)", async () => {
@@ -126,5 +143,6 @@ describe("DELETE /api/hiring/cycles/:cycleId/reviewers/:reviewerId", () => {
       context: {},
     } as any);
     expect(res.status).toBe(404);
+    expect(logAuditEvent).not.toHaveBeenCalled();
   });
 });
