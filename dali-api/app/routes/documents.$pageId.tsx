@@ -11,6 +11,7 @@ import type { Route } from "./+types/documents.$pageId";
 import { prisma } from "~/lib/db";
 import { ensureOccurrenceRoster } from "~/lib/scheduled-meeting";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
+import { publicDocRedirectForPath } from "~/lib/public-doc.server";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { fullName } from "~/lib/display";
 import { getPresenceUser } from "~/lib/presence-user";
@@ -43,10 +44,13 @@ export const handle = {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirectToLogin(request);
-  if (auth.user.type === "applicant") return redirect("/portal");
+  // Child loaders run alongside the shell's, and the deepest redirect wins, so
+  // the public-doc fallback has to be mirrored here for the shell gate to hold.
+  const publicDoc = () => publicDocRedirectForPath(new URL(request.url).pathname);
+  if (!auth.ok) return (await publicDoc()) ?? redirectToLogin(request);
+  if (auth.user.type === "applicant") return (await publicDoc()) ?? redirect("/portal");
   const partnerRedirect = await redirectPartnerToPortal(auth);
-  if (partnerRedirect) return partnerRedirect;
+  if (partnerRedirect) return (await publicDoc()) ?? partnerRedirect;
 
   const page = await prisma.page.findUnique({
     where: { id: params.pageId },

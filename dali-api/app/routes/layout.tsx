@@ -35,30 +35,19 @@ import { ActivityOverlay } from '~/components/activities/ActivityChrome'
 import { InstructorChrome } from '~/components/InstructorChrome'
 import { timed } from '~/lib/server-timing'
 import { educationPortalTwin } from '~/education/lib/portal-twin'
+import { publicDocRedirectForPath } from '~/lib/public-doc.server'
 import type { Route } from './+types/layout'
 
 export async function loader({ request }: Route.LoaderArgs) {
   const __loaderStart = performance.now()
   const auth = await timed(request, 'auth', () => requireAuth(request))
-  if (!auth.ok) {
-    // "Anyone with the link" documents render to signed-out visitors. The
-    // canonical copied link is the plain /documents/:pageId URL, so route an
-    // anonymous visitor of a public doc to its shell-free read-only view rather
-    // than bouncing them to login. Only runs on the unauthenticated path.
-    const path = new URL(request.url).pathname
-    const match = path.match(/^\/documents\/([^/]+)$/)
-    if (match) {
-      const page = await prisma.page.findUnique({
-        where: { id: match[1] },
-        select: { linkAccess: true, archivedAt: true },
-      })
-      if (page && page.archivedAt === null && page.linkAccess === "Public") {
-        return redirect(`/documents/${match[1]}/public`)
-      }
-    }
-    return redirectToLogin(request)
-  }
-  if (auth.user.type === 'applicant') return redirect('/portal')
+  // "Anyone with the link" documents render the same shell-free read-only
+  // view to anyone without member access, so every gate below that would
+  // bounce such a visitor (login, /portal, /partner) checks for one first.
+  const pathname = new URL(request.url).pathname
+  const publicDoc = () => publicDocRedirectForPath(pathname)
+  if (!auth.ok) return (await publicDoc()) ?? redirectToLogin(request)
+  if (auth.user.type === 'applicant') return (await publicDoc()) ?? redirect('/portal')
 
   // TEMPORARY (remove ~1 week post-cutover): silently migrate a validated legacy
   // session to a BetterAuth session, then reload the same URL so the new cookie
@@ -90,7 +79,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     // without a second lookup — both loaders run concurrently for one nav.
     timed(request, 'shellUser', () => loadShellUser(auth.user.sub, request)),
   ])
-  if (partnerRedirect) return partnerRedirect
+  if (partnerRedirect) return (await publicDoc()) ?? partnerRedirect
 
   const {
     isLabMember,
@@ -119,7 +108,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     const instructorPaths =
       url.pathname.startsWith('/education/manage') ||
       url.pathname === '/education/offerings'
-    if (!instructorPaths) return redirect('/portal')
+    if (!instructorPaths) return (await publicDoc()) ?? redirect('/portal')
   }
 
   // Hard gate: a lab member who owes a signature on an app-enforced agreement
