@@ -58,7 +58,7 @@ import { BlockNoteView } from "@blocknote/shadcn";
 
 import { WebSocketStatus } from "@hocuspocus/provider";
 
-import { countWords, extractHeadings, normalizeInitialContent } from "./blocks-util";
+import { countWords, extractHeadings, normalizeInitialContent, trimTrailingEmptyBlocks } from "./blocks-util";
 import { acquireCollabDoc, nameToHexColor, releaseCollabDoc, type CollabDocEntry } from "./collab-doc";
 import { DaliThreadStore, getOrCreateStore, resolveDocUsers } from "./comments/DaliThreadStore";
 import { DocEditorFallback } from "./DocEditor";
@@ -98,10 +98,13 @@ function LocalDoc(props: ResolvedProps) {
   const dictionary = useDocDictionary(props.placeholder);
   // Normalized once per (schema, content) pair; the editor is recreated on
   // schema/dictionary change anyway, so this rides the same memo.
-  const initialContent = useMemo(
-    () => normalizeInitialContent<DocPartialBlock>(props.initialContent),
-    [props.initialContent],
-  );
+  // Read-only embeds also drop the trailing blank line an author left; there
+  // is nothing to type into, so it only reads as dead space.
+  const readOnly = props.editable === false;
+  const initialContent = useMemo(() => {
+    const blocks = normalizeInitialContent<DocPartialBlock>(props.initialContent);
+    return blocks && readOnly ? trimTrailingEmptyBlocks(blocks) : blocks;
+  }, [props.initialContent, readOnly]);
 
   const editor = useCreateBlockNote(
     {
