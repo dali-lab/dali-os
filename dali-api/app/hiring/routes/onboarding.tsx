@@ -15,6 +15,7 @@ import { useDialog } from "~/components/ui/dialog";
 import { Avatar } from "~/components/ui/Avatar";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { prisma } from "~/lib/db";
+import { logAuditEvent } from "~/lib/audit";
 import { effectiveStartTermId, eligibleStartTerms } from "~/hiring/lib/start-terms";
 import { resolvePhotoUrl } from "~/lib/photo";
 import {
@@ -373,6 +374,13 @@ export async function action({ request }: Route.ActionArgs) {
         where: { id: application.id },
         data: { startTermId: null },
       });
+      await logAuditEvent({
+        action: "application.start-term",
+        userId: auth.user.sub,
+        targetId: application.id,
+        metadata: { cycleId, applicantUserId: userId, startTermId: null },
+        request,
+      });
       return Response.json({ ok: true, startTermId: null });
     }
 
@@ -392,6 +400,13 @@ export async function action({ request }: Route.ActionArgs) {
     await prisma.application.update({
       where: { id: application.id },
       data: { startTermId: termId },
+    });
+    await logAuditEvent({
+      action: "application.start-term",
+      userId: auth.user.sub,
+      targetId: application.id,
+      metadata: { cycleId, applicantUserId: userId, startTermId: termId },
+      request,
     });
     return Response.json({ ok: true, startTermId: termId });
   }

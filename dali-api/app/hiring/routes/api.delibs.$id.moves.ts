@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireCoreOrDomainLead, forbidden } from "~/lib/auth";
 import { hasCycleAccess } from "~/lib/roles";
+import { logAuditEvent } from "~/lib/audit";
 import { findRound, parseTimeline } from "~/hiring/lib/cycle-timeline";
 import { idSchema, parseJson } from "~/lib/validate";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
@@ -96,6 +97,19 @@ export async function action({ request, params }: Route.ActionArgs) {
       },
       { isolationLevel: "Serializable" },
     );
+
+    await logAuditEvent({
+      action: "delibs.move",
+      userId: auth.user.sub,
+      targetId: params.id!,
+      metadata: {
+        cycleId: sessionForAuth.applicationCycleId,
+        cardId,
+        toColumn,
+        ...(typeof position === "number" ? { position } : {}),
+      },
+      request,
+    });
 
     return Response.json(updated);
   } catch (err: any) {

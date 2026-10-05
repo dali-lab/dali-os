@@ -1,5 +1,6 @@
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { logAuditEvent } from "~/lib/audit";
 import { redirectToLogin } from "~/lib/login-next";
 import { requireMember } from "~/lib/roles";
 import { getActiveCycleById, getActiveCycles, type ActiveCycle } from "~/hiring/lib/cycles";
@@ -307,6 +308,13 @@ export async function handleInternalCyclePortalAction(
         await prisma.applicationStatusUpdate.create({
           data: { applicationId: application.id, newStatus: "Submitted", userId: auth.user.sub },
         });
+        await logAuditEvent({
+          action: "application.submit",
+          userId: auth.user.sub,
+          targetId: application.id,
+          metadata: { cycleId: active.id, domainIds: selectedDomainIds },
+          request,
+        });
       }
       return { submitted: true };
     }
@@ -325,6 +333,13 @@ export async function handleInternalCyclePortalAction(
     if (alreadyWithdrawn) return { withdrawn: true };
     await prisma.applicationStatusUpdate.create({
       data: { applicationId: application.id, newStatus: "Withdrawn", userId: auth.user.sub },
+    });
+    await logAuditEvent({
+      action: "application.withdraw",
+      userId: auth.user.sub,
+      targetId: application.id,
+      metadata: { cycleId: active.id },
+      request,
     });
     return { withdrawn: true };
   }

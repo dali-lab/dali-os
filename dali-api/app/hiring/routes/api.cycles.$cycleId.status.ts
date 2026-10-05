@@ -5,6 +5,7 @@ import type { NotificationCopyKey } from "~/email/lib/notification-copy";
 import type { EventType } from "~/lib/notification-events";
 import { parseJson } from "~/lib/validate";
 import { requireAuth } from "~/lib/auth";
+import { logAuditEvent } from "~/lib/audit";
 import { isCycleAdmin, hasCycleAccess } from "~/lib/roles";
 import { autoCloseIfExpired } from "~/hiring/lib/cycles";
 import { applicantGroup, isMemberApplicants } from "~/hiring/lib/applicant-groups.server";
@@ -183,6 +184,14 @@ export async function action({ request, params }: Route.ActionArgs) {
         data: { applicantsNotifiedAt: new Date() },
       });
     }
+  });
+
+  await logAuditEvent({
+    action: "cycle.status",
+    userId: auth.user.sub,
+    targetId: params.cycleId!,
+    metadata: { newStatus, force: force ?? false },
+    request,
   });
 
   // Fan out after commit, best-effort (matching the interview-notifications

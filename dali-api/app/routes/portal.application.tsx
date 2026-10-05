@@ -2,6 +2,7 @@ import { redirect, useLoaderData, useFetcher, Link } from "react-router";
 import type { Route } from "./+types/portal.application";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { logAuditEvent } from "~/lib/audit";
 import { redirectToLogin } from "~/lib/login-next";
 import { getActiveCycleById } from "~/hiring/lib/cycles";
 import { presignAnswers } from "~/hiring/lib/presign";
@@ -147,6 +148,14 @@ export async function action({ request }: Route.ActionArgs) {
     }
 
     return scheduled;
+  });
+
+  await logAuditEvent({
+    action: "application.withdraw",
+    userId: auth.user.sub,
+    targetId: application.id,
+    metadata: { cycleId: active.id, cancelledInterviews: cancelledInterviews.length },
+    request,
   });
 
   for (const { id, domainApplicationId } of cancelledInterviews) {
