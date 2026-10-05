@@ -20,6 +20,7 @@
 // Call sites pass variables already formatted — see the `notification` section of
 // app/lib/template-variables.ts for why.
 
+import type { EmailPurposeKey } from "~/lib/email-identities";
 import type { EventType } from "~/lib/notification-events";
 import type { TemplateVariableName } from "~/lib/template-variables";
 
@@ -35,6 +36,10 @@ export type NotificationCopyDef = {
   // announcements) — the caller's body passes through untouched.
   body?: string;
   linkLabel?: string;
+  // Sender identity. Defaults to General (the lab-notifications account) since
+  // notify() mail goes to members; hiring-cycle messages set Hiring so they
+  // arrive from applications@ like the rest of the cycle's mail.
+  purpose?: EmailPurposeKey;
 };
 
 export const NOTIFICATION_COPY = {
@@ -270,6 +275,7 @@ export const NOTIFICATION_COPY = {
     body: "{{itemDetail}}",
   },
   "hiring.interview_assigned": {
+    purpose: "Hiring",
     eventType: "hiring.interview_assigned",
     label: "Interview assigned",
     description: "Sent to an interviewer when they're assigned an interview.",
@@ -278,6 +284,7 @@ export const NOTIFICATION_COPY = {
     body: "{{itemDetail}}",
   },
   "hiring.fellowship_invite": {
+    purpose: "Hiring",
     eventType: "hiring.fellowship_invite",
     label: "Fellowship applications open",
     description: "Sent to eligible interns when a fellowship cycle opens.",
@@ -286,6 +293,7 @@ export const NOTIFICATION_COPY = {
     body: "{{itemTitle}} is accepting fellowship applications.{{itemDetail}}",
   },
   "hiring.core_invite": {
+    purpose: "Hiring",
     eventType: "hiring.core_invite",
     label: "Core applications open",
     description: "Sent to lab members when a Core cycle opens.",
@@ -294,6 +302,7 @@ export const NOTIFICATION_COPY = {
     body: "{{itemTitle}} is accepting Core applications.{{itemDetail}}",
   },
   "hiring.core_decision.accepted": {
+    purpose: "Hiring",
     eventType: "hiring.core_decision",
     label: "Core decision: accepted",
     description: "Sent in-app when a member is accepted into Core.",
@@ -302,6 +311,7 @@ export const NOTIFICATION_COPY = {
     body: "Welcome to Core. Your assignment is active for this cycle.",
   },
   "hiring.core_decision.waitlisted": {
+    purpose: "Hiring",
     eventType: "hiring.core_decision",
     label: "Core decision: waitlisted",
     description: "Sent in-app when a member is waitlisted for Core.",
@@ -310,6 +320,7 @@ export const NOTIFICATION_COPY = {
     body: "You've been placed on the Core waitlist.",
   },
   "hiring.core_decision.other": {
+    purpose: "Hiring",
     eventType: "hiring.core_decision",
     label: "Core decision: released",
     description: "Sent in-app for any other released Core decision.",

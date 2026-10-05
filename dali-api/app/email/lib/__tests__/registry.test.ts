@@ -141,3 +141,20 @@ describe("the collapse covered what the old stores held", () => {
     expect(education).toHaveLength(5);
   });
 });
+
+describe("notify-projected sender identity", () => {
+  it("sends hiring-cycle notifications as Hiring and the rest as General", () => {
+    const hiring = [
+      "notify:hiring.interview_assigned",
+      "notify:hiring.fellowship_invite",
+      "notify:hiring.core_invite",
+      "notify:hiring.core_decision.accepted",
+      "notify:hiring.core_decision.waitlisted",
+      "notify:hiring.core_decision.other",
+    ] as const;
+    for (const key of hiring) {
+      expect(emailTemplateDef(key).purpose, key).toBe("Hiring");
+    }
+    expect(emailTemplateDef("notify:staffing.assigned").purpose).toBe("General");
+  });
+});

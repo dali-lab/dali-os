@@ -331,8 +331,9 @@ export const EMAIL_TEMPLATES = {
 //     wording byte-for-byte and the 55 rows are opt-in. Clearing a row falls
 //     back to the registry rather than silently switching off a channel people
 //     rely on, which is what hiring's "no row means send nothing" would have done.
-//   * `purpose: "General"` and the notifications footer, since these are the
-//     member-facing mail the settings page governs.
+//   * `purpose: "General"` (unless the copy entry overrides it) and the
+//     notifications footer, since these are the member-facing mail the settings
+//     page governs.
 
 export const NOTIFY_KEY_PREFIX = "notify:" as const;
 
@@ -351,7 +352,7 @@ function notifyDefToEmailDef(copyKey: NotificationCopyKey): EmailTemplateDef {
     area: event.area,
     label: copy.label,
     description: copy.description,
-    purpose: "General",
+    purpose: copy.purpose ?? "General",
     variables: copy.variables,
     sample: notificationSample(copy.variables),
     footer: "notifications",
