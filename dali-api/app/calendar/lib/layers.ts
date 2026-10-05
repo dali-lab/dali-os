@@ -198,6 +198,35 @@ export function visibleExternalEvents(
   return convergedExternalEvents(events, hiddenCalendarIds).map((g) => g.event);
 }
 
+/** calendarId → human label ("Account · Primary"), for an event's source line. */
+export function calendarLabels(data: LoaderData): Map<string, string> {
+  const labels = new Map<string, string>();
+  for (const link of data.calendarLinks) {
+    if (link.provider !== "Google" || !link.subCalendars) continue;
+    const account = link.displayName || link.externalEmail || "Google";
+    for (const sub of link.subCalendars) {
+      labels.set(sub.id, `${account} · ${sub.primary ? "Primary" : sub.summary}`);
+    }
+  }
+  return labels;
+}
+
+/** The calendar event a time entry's hours belong to: the event it was logged
+ *  against, or the one occurrence of the DALI meeting it came from. Null for a
+ *  standalone entry, and when the event isn't among the loaded ones. */
+export function linkedEventFor(t: TimeEntryDTO, events: ExternalEventDTO[]): ExternalEventDTO | null {
+  if (t.sourceEventId) return events.find((e) => e.eventId === t.sourceEventId) ?? null;
+  if (!t.scheduledMeetingId || !t.occurrenceStart) return null;
+  const occurrence = new Date(t.occurrenceStart).getTime();
+  return (
+    events.find(
+      (e) =>
+        e.meeting?.meetingId === t.scheduledMeetingId &&
+        new Date(e.meeting.occurrenceStart).getTime() === occurrence,
+    ) ?? null
+  );
+}
+
 /** External (Google/Outlook) events — real titles + per-calendar colour.
  *  `hiddenCalendarIds` hides individual calendars on the grid (display only —
  *  the events are still fetched; disabling a calendar entirely is a Settings
@@ -216,16 +245,7 @@ export function buildExternalLayer(
    *  logged layer is on; omitted, events draw plain. */
   loggedAccents?: Map<string, LoggedAccent>,
 ): Record<number, EventBlock[]> {
-  // calendarId → human label ("Account · Primary"), for the detail popover's
-  // source line.
-  const calNames = new Map<string, string>();
-  for (const link of data.calendarLinks) {
-    if (link.provider !== "Google" || !link.subCalendars) continue;
-    const account = link.displayName || link.externalEmail || "Google";
-    for (const sub of link.subCalendars) {
-      calNames.set(sub.id, `${account} · ${sub.primary ? "Primary" : sub.summary}`);
-    }
-  }
+  const calNames = calendarLabels(data);
   const into: Record<number, EventBlock[]> = {};
   for (const e of visibleExternalEvents(data.externalEvents, hiddenCalendarIds)) {
     if (e.allDay) continue; // all-day events render in the band, not the grid

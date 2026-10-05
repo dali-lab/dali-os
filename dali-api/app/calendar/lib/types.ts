@@ -144,6 +144,8 @@ export type TimeEntryDTO = {
   id: string;
   source: "Meeting" | "Manual";
   scheduledMeetingId: string | null;
+  /** Which occurrence of that meeting the hours are for (ISO). */
+  occurrenceStart: string | null;
   /** The calendar event these hours were logged against ("count this as work"),
    *  when there is one. The grid draws that event's block with a role accent
    *  instead of drawing this entry as a second, overlapping block. */

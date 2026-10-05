@@ -1655,6 +1655,7 @@ export async function loadCalendarData(
       id: t.id,
       source: t.source,
       scheduledMeetingId: t.scheduledMeetingId,
+      occurrenceStart: t.occurrenceStart ? t.occurrenceStart.toISOString() : null,
       sourceEventId: t.sourceEventId,
       manualBlockId: null,
       meetingNotePageId:

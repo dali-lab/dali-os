@@ -345,24 +345,7 @@ export function EventRsvpControl({
   );
 }
 
-export function CalendarEventDetailPopover({
-  anchorEl,
-  title,
-  timeRange,
-  sourceLabel,
-  accentColor,
-  location,
-  description,
-  organizerName,
-  attendees,
-  links,
-  rsvp,
-  meetingId,
-  eventStartIso,
-  onClose,
-  footer,
-}: {
-  anchorEl: HTMLElement | null;
+type EventDetailBodyProps = {
   title: string;
   timeRange: string;
   // Which calendar the event lives on, shown with a color dot under the time.
@@ -379,11 +362,131 @@ export function CalendarEventDetailPopover({
   meetingId?: string;
   /** ISO start of the event, prefills the propose-time picker. */
   eventStartIso?: string;
-  // When set, the popover is interactive (click-opened): a backdrop dismisses
-  // it and Escape closes it. Hover popovers leave this undefined.
+  /** Renders the close button in the header. */
   onClose?: () => void;
   footer?: React.ReactNode;
-}) {
+};
+
+/** What an event is — title, when, where, who, links. The detail popover's
+ *  card wears it, and so does the timesheet editor's side panel. */
+export function EventDetailBody({
+  title,
+  timeRange,
+  sourceLabel,
+  accentColor,
+  location,
+  description,
+  organizerName,
+  attendees,
+  links,
+  rsvp,
+  meetingId,
+  eventStartIso,
+  onClose,
+  footer,
+}: EventDetailBodyProps) {
+  const videoLink = links?.find((l) => l.kind === "video");
+  const otherLinks = links?.filter((l) => l !== videoLink) ?? [];
+
+  return (
+    <>
+
+    <div className="flex items-start gap-2">
+      <div className="min-w-0 flex-1">
+        <h3 className="font-heading text-[17px] font-semibold leading-snug text-foreground break-words">
+          {title}
+        </h3>
+        <p className="mt-1 text-[13px] text-os-grey">{timeRange}</p>
+        {sourceLabel && (
+          <p className="mt-1.5 flex items-center gap-1.5 text-[13px] text-os-grey">
+            <span
+              className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+              style={{ backgroundColor: accentColor || "var(--color-os-accent)" }}
+              aria-hidden
+            />
+            <span className="truncate">{sourceLabel}</span>
+          </p>
+        )}
+        {organizerName && (
+          <p className="mt-1 text-[13px] text-os-grey">Organized by {organizerName}</p>
+        )}
+      </div>
+      {onClose && (
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close event details"
+          className="-mt-1 -mr-1 shrink-0 rounded-os-item p-1.5 text-os-grey transition-colors hover:bg-os-container hover:text-foreground"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      )}
+    </div>
+
+    {videoLink && (
+      <a
+        href={videoLink.href}
+        target="_blank"
+        rel="noreferrer noopener"
+        onPointerDown={(ev) => ev.stopPropagation()}
+        className="mt-3.5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-os-accent px-4 py-2 text-[13px] font-semibold text-os-bg transition-colors hover:bg-os-accent-hover"
+      >
+        <Video className="h-4 w-4" />
+        {videoLink.label}
+      </a>
+    )}
+
+    {location && (
+      <DetailSection label="Location">
+        <p className="text-[13px] text-foreground whitespace-pre-wrap break-words">{location}</p>
+      </DetailSection>
+    )}
+
+    {rsvp && <EventRsvpControl rsvp={rsvp} meetingId={meetingId} eventStartIso={eventStartIso} />}
+
+    {attendees && attendees.length > 0 && <EventGuestList attendees={attendees} />}
+
+    {description && (
+      <DetailSection label="Description">
+        <p className="text-[13px] text-foreground whitespace-pre-wrap break-words">
+          {description}
+        </p>
+      </DetailSection>
+    )}
+
+    {otherLinks.length > 0 && (
+      <div className="mt-3.5 flex flex-col items-start gap-1.5">
+        {otherLinks.map((l) => (
+          <a
+            key={l.href}
+            href={l.href}
+            target={l.kind === "notes" ? undefined : "_blank"}
+            rel="noreferrer noopener"
+            onPointerDown={(ev) => ev.stopPropagation()}
+            className="inline-flex items-center gap-1.5 text-[13px] font-medium text-os-accent hover:underline break-all"
+          >
+            {l.kind === "notes" ? (
+              <FileText className="h-3.5 w-3.5 shrink-0" />
+            ) : (
+              <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+            )}
+            {l.label}
+          </a>
+        ))}
+      </div>
+    )}
+    {footer}
+    </>
+  );
+}
+
+export function CalendarEventDetailPopover({
+  anchorEl,
+  ...body
+}: EventDetailBodyProps & { anchorEl: HTMLElement | null }) {
+  // With onClose the popover is interactive (click-opened): a backdrop
+  // dismisses it and Escape closes it. Hover popovers leave it undefined.
+  const { title, timeRange, location, description, attendees, links, onClose } = body;
   const cardRef = useRef<HTMLDivElement | null>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
 
@@ -449,9 +552,6 @@ export function CalendarEventDetailPopover({
     }
   }
 
-  const videoLink = links?.find((l) => l.kind === "video");
-  const otherLinks = links?.filter((l) => l !== videoLink) ?? [];
-
   return createPortal(
     <>
       {onClose && (
@@ -478,91 +578,7 @@ export function CalendarEventDetailPopover({
           color: "var(--color-foreground)",
         }}
       >
-        <div className="flex items-start gap-2">
-          <div className="min-w-0 flex-1">
-            <h3 className="font-heading text-[17px] font-semibold leading-snug text-foreground break-words">
-              {title}
-            </h3>
-            <p className="mt-1 text-[13px] text-os-grey">{timeRange}</p>
-            {sourceLabel && (
-              <p className="mt-1.5 flex items-center gap-1.5 text-[13px] text-os-grey">
-                <span
-                  className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
-                  style={{ backgroundColor: accentColor || "var(--color-os-accent)" }}
-                  aria-hidden
-                />
-                <span className="truncate">{sourceLabel}</span>
-              </p>
-            )}
-            {organizerName && (
-              <p className="mt-1 text-[13px] text-os-grey">Organized by {organizerName}</p>
-            )}
-          </div>
-          {onClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close event details"
-              className="-mt-1 -mr-1 shrink-0 rounded-os-item p-1.5 text-os-grey transition-colors hover:bg-os-container hover:text-foreground"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          )}
-        </div>
-
-        {videoLink && (
-          <a
-            href={videoLink.href}
-            target="_blank"
-            rel="noreferrer noopener"
-            onPointerDown={(ev) => ev.stopPropagation()}
-            className="mt-3.5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-os-accent px-4 py-2 text-[13px] font-semibold text-os-bg transition-colors hover:bg-os-accent-hover"
-          >
-            <Video className="h-4 w-4" />
-            {videoLink.label}
-          </a>
-        )}
-
-        {location && (
-          <DetailSection label="Location">
-            <p className="text-[13px] text-foreground whitespace-pre-wrap break-words">{location}</p>
-          </DetailSection>
-        )}
-
-        {rsvp && <EventRsvpControl rsvp={rsvp} meetingId={meetingId} eventStartIso={eventStartIso} />}
-
-        {attendees && attendees.length > 0 && <EventGuestList attendees={attendees} />}
-
-        {description && (
-          <DetailSection label="Description">
-            <p className="text-[13px] text-foreground whitespace-pre-wrap break-words">
-              {description}
-            </p>
-          </DetailSection>
-        )}
-
-        {otherLinks.length > 0 && (
-          <div className="mt-3.5 flex flex-col items-start gap-1.5">
-            {otherLinks.map((l) => (
-              <a
-                key={l.href}
-                href={l.href}
-                target={l.kind === "notes" ? undefined : "_blank"}
-                rel="noreferrer noopener"
-                onPointerDown={(ev) => ev.stopPropagation()}
-                className="inline-flex items-center gap-1.5 text-[13px] font-medium text-os-accent hover:underline break-all"
-              >
-                {l.kind === "notes" ? (
-                  <FileText className="h-3.5 w-3.5 shrink-0" />
-                ) : (
-                  <ExternalLink className="h-3.5 w-3.5 shrink-0" />
-                )}
-                {l.label}
-              </a>
-            ))}
-          </div>
-        )}
-        {footer}
+        <EventDetailBody {...body} />
       </div>
     </>,
     document.body,

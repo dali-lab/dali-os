@@ -79,6 +79,8 @@ import {
   buildAllDayLayer,
   buildLoggedTimeLayer,
   workEventsOnly,
+  linkedEventFor,
+  calendarLabels,
   mergeLayers,
   perCalendarLegend,
   type CalendarLegendGroup,
@@ -744,6 +746,9 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   // agenda keep the event modal.
   const timesheetCreateMode = layers.logged && (view === "week" || view === "day");
 
+  const linkedEvent =
+    timesheetSel?.mode === "edit" ? linkedEventFor(timesheetSel.entry, data.externalEvents) : null;
+
   // A sensible default slot for the Add button, which has no drag to seed it:
   // today if it's in range, else the first visible day, 9am for the user's
   // default duration.
@@ -961,6 +966,13 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                               startLocal={timesheetSel.startLocal}
                               endLocal={timesheetSel.endLocal}
                               myRoles={data.myRoles}
+                              linkedEvent={linkedEvent}
+                              linkedEventCalendar={
+                                linkedEvent?.calendarId
+                                  ? calendarLabels(data).get(linkedEvent.calendarId)
+                                  : undefined
+                              }
+                              timezone={data.timezone}
                               onClose={() => setTimesheetSel(null)}
                             />
                           )
