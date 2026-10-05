@@ -7,10 +7,6 @@ import type { CalendarView } from "~/calendar/lib/types";
 // is showing, which days it spans, what to call the range, and the four moves
 // that change it. Derived entirely from `?view=` / `?anchor=` on the client
 // (see view-window.ts), so a view switch repaints from data already in hand.
-//
-// It lives here rather than in the Events page because the Core hub renders the
-// same grids off its own loader — one implementation keeps the two pages paging
-// and labelling identically.
 
 function pad2(n: number) {
   return String(n).padStart(2, "0");

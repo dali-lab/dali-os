@@ -1,96 +1,74 @@
-import { redirect } from "react-router";
-import { Link } from "react-router";
-import { useState } from "react";
-import { ChevronLeft, ChevronRight, FileText, Plus } from "lucide-react";
+// Core's landing page: the playbook for running a term. One tab per season, a
+// column per week, and a card for each thing that has to happen that week.
+
+import { useEffect, useState } from "react";
+import { redirect, useFetcher, useFetchers, useSearchParams, useSubmit } from "react-router";
+import type { DragEndEvent } from "@dnd-kit/core";
+import { Pin, Plus, Trash2 } from "lucide-react";
+import { z } from "zod";
 import type { Route } from "./+types/core.hub";
+import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { isCore, isAdmin, currentTermMemberWhere } from "~/lib/roles";
+import { currentTerm, getActiveCoreCycleTermIds, isAdmin, isCore } from "~/lib/roles";
 import { getOpenCycles } from "~/hiring/lib/cycles";
 import { isCoreCycleEligible } from "~/hiring/lib/core-hiring.server";
-import { prisma } from "~/lib/db";
-import { fullName } from "~/lib/display";
-import { loadShellUser } from "~/lib/shell-user.server";
-import { resolveUserTimeZone } from "~/lib/timezone";
-import { fetchGeneralCalendarEvents } from "~/lib/general-calendar";
-import { expandOccurrences, noteForOccurrence } from "~/lib/meeting-occurrences";
-import { coreCalendarMeetingWhere } from "~/core/lib/core-calendar";
-import { listCalendarsForLink } from "~/lib/google-calendar";
-import { listAllGroups } from "~/lib/groups";
-
-import { MiniMonth } from "~/calendar/components/MiniMonth";
-import { MonthGrid } from "~/calendar/components/MonthGrid";
-import { AgendaView } from "~/calendar/components/AgendaView";
-import { WeekGrid, type AllDayBlock } from "~/calendar/components/WeekGrid";
-import { ADD_EVENT_BTN, EVENT_TEXT, EVENT_CORAL } from "~/calendar/lib/event-block";
-import { placeBlock } from "~/calendar/lib/layers";
-import { fetchWindow, parseAnchor } from "~/calendar/lib/view-window";
-import { useCalendarView } from "~/calendar/lib/use-calendar-view";
-import type {
-  CalendarView, EventAttendeeDTO, EventBlock, EventMeetingDTO, EventRsvpTarget,
-} from "~/calendar/lib/types";
-import { CreateCoreEventModal } from "~/core/components/CreateCoreEventModal";
-import { coreHandle } from "~/core/coreNav";
-import { useOsChrome } from "~/components/os-chrome";
+import { parseForm } from "~/lib/validate";
+import { fullName, SEASON_NAMES } from "~/lib/display";
 import { cn } from "~/lib/cn";
-
-// Core's landing page: the week Core is running, not a menu. The grid merges
-// the meetings scoped to the Core group (each linking to its notes page) with
-// the lab-wide DALI General Calendar, so "what is Core doing this week" and
-// "what is the lab doing this week" answer in one place.
-//
-// It draws the Events page's grids (month / week / day / agenda, the mini-month
-// rail, the same `?view=`/`?anchor=` paging) so the two calendars read as one
-// surface. What it leaves out is everything personal to a viewer: the linked
-// Google accounts and the "meet with someone" box have no meaning on a shared
-// Core calendar, so the rail carries Core's own upcoming list and deadlines in
-// their place.
+import { coreHandle } from "~/core/coreNav";
+import {
+  ALL_LAB,
+  LAST_MILESTONE_WEEK,
+  MILESTONE_SEASONS,
+  MILESTONE_WEEKS,
+  dropOrder,
+  matchesDomainFilter,
+  termWeek,
+  weekLabel,
+  type MilestoneSeason,
+} from "~/core/lib/milestones";
+import { useOsChrome } from "~/components/os-chrome";
+import { OsTabBar } from "~/components/os-page";
+import { osRoleChipClass } from "~/components/DomainChips";
+import {
+  KanbanBoard,
+  type KanbanCardRenderOpts,
+  type KanbanColumn,
+} from "~/components/board/KanbanBoard";
+import { Modal, ModalFooter, ModalHeader } from "~/components/Modal";
+import { IconButton } from "~/components/ui/IconButton";
+import { MultiSelect, Select } from "~/components/ui/floating";
+import { filterPillClass } from "~/components/ui/floating/styles";
+import { useDialog } from "~/components/ui/dialog";
+import { useToast } from "~/components/ui/toast";
 
 export const handle = coreHandle("hub");
 
 export const meta: Route.MetaFunction = () => [{ title: "Core · DALI OS" }];
 
-// A recurring meeting's occurrences can be moved by an exception, so scan a day
-// either side of the window and let the mapper drop what lands outside it.
-const OCCURRENCE_GUARD_MS = 86_400_000;
-const DEADLINE_WINDOW_DAYS = 30;
-// How far ahead the rail's "Upcoming Core meetings" list looks. Independent of
-// the grid window, so paging the calendar back a month doesn't empty it.
-const UPCOMING_WINDOW_DAYS = 60;
+async function requireCoreUser(request: Request) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return { response: redirectToLogin(request) } as const;
+  if (!(await isCore(auth.user.sub, request))) return { response: redirect("/") } as const;
+  return { userId: auth.user.sub } as const;
+}
 
-/** One thing on the Core calendar, in the shape the grids place blocks from.
- *  Carries the same detail the Events page's popover shows, so clicking a block
- *  reads the same on both calendars. */
-type CoreCalendarEvent = {
-  id: string;
-  kind: "meeting" | "general";
-  title: string;
-  startIso: string;
-  endIso: string;
-  allDay: boolean;
-  location: string | null;
-  description: string | null;
-  organizerName: string | null;
-  /** Join link (a meeting's Meet URL) and the event's own web page. */
-  meetingUrl: string | null;
-  url: string | null;
-  attendees: EventAttendeeDTO[];
-  /** Set on meetings: the notes doc, the attendance page, the timesheet toggle. */
-  meeting: EventMeetingDTO | null;
-  /** The viewer's invite, when they have one — answered through the same
-   *  endpoint the notification bell uses, which pushes on to Google. */
-  rsvp: EventRsvpTarget | null;
-};
+/** The people a milestone can be handed to: this cycle's Core. */
+async function currentCoreIds(request: Request): Promise<string[]> {
+  const termIds = await getActiveCoreCycleTermIds(request);
+  const rows = await prisma.coreAssignment.findMany({
+    where: { termId: { in: termIds } },
+    select: { userId: true },
+    distinct: ["userId"],
+  });
+  return rows.map((r) => r.userId);
+}
 
-/**
- * `view` is resolved on the client, and the window fetched here is wider than
- * any single view of one anchor (see `fetchWindow`), so switching month / week /
- * day needs no round-trip. Only a new anchor does — see shouldRevalidate.
- */
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  if (!(await isCore(auth.user.sub))) {
+  if (!(await isCore(auth.user.sub, request))) {
     // Non-Core members don't get the Core hub. If a Lab members (Core) cycle
     // is open and they're eligible to apply, send them to the application (the
     // invite email links here at /core) instead of bouncing them home. The
@@ -102,603 +80,555 @@ export async function loader({ request }: Route.LoaderArgs) {
     return redirect("/");
   }
 
-  const me = await loadShellUser(auth.user.sub, request);
-  const timeZone = resolveUserTimeZone(me);
-  const now = new Date();
-  const anchor = parseAnchor(new URL(request.url).searchParams.get("anchor"));
-  const { start: gridStart, end: gridEnd } = fetchWindow(timeZone, anchor);
-  const upcomingEnd = new Date(now.getTime() + UPCOMING_WINDOW_DAYS * 86_400_000);
-  // One expansion feeds both the grid and the rail's list, so the scan spans
-  // whichever of the two windows reaches further in each direction.
-  const scanStart = new Date(Math.min(gridStart.getTime(), now.getTime()) - OCCURRENCE_GUARD_MS);
-  const scanEnd = new Date(Math.max(gridEnd.getTime(), upcomingEnd.getTime()) + OCCURRENCE_GUARD_MS);
-
-  // What counts as a Core meeting — see coreCalendarMeetingWhere.
-  const coreGroup = await prisma.groupDefinition.findUnique({
-    where: { systemKey: "core" },
-    select: { id: true },
-  });
-
-  const [meetings, generalEvents, deadlineRows, calendarLinks, groups, termMembers] =
-    await Promise.all([
-    prisma.scheduledMeeting.findMany({
-      where: coreCalendarMeetingWhere(coreGroup?.id ?? null),
+  const [rows, domains, coreIds, term] = await Promise.all([
+    prisma.coreMilestone.findMany({
+      orderBy: [{ position: "asc" }, { createdAt: "asc" }],
       select: {
         id: true,
+        season: true,
+        week: true,
         title: true,
-        selectedAt: true,
-        durationMinutes: true,
-        recurrenceRule: true,
-        meetingUrl: true,
-        organizerId: true,
-        participantUserIds: true,
-        organizer: { select: { firstName: true, lastName: true } },
-        notePages: { select: { id: true, meetingOccurrenceStart: true } },
-        whiteboardPage: { select: { id: true } },
-        meetingType: true,
-        // The guest list and everyone's answer: an invite notification per
-        // recipient is where a DALI meeting keeps its RSVPs.
-        notifications: {
-          where: { kind: "MeetingInvite" },
-          select: { id: true, recipientUserId: true, rsvp: true },
-        },
-        timeEntries: { where: { userId: auth.user.sub }, select: { occurrenceStart: true } },
-        exceptions: {
-          select: {
-            originalStart: true,
-            overrideStart: true,
-            overrideDurationMin: true,
-            cancelled: true,
-          },
-        },
+        detail: true,
+        position: true,
+        pinned: true,
+        owners: { select: { user: { select: { id: true, firstName: true, lastName: true } } } },
+        domains: { select: { domainId: true } },
       },
     }),
-    // Never throws: returns [] when the feed is unconfigured, and serves stale
-    // data rather than failing when the fetch does.
-    fetchGeneralCalendarEvents(gridStart, gridEnd),
-    // Announcements fan out one Notification row per recipient, so the same
-    // deadline appears many times — collapse them below.
-    prisma.notification.findMany({
-      where: {
-        kind: "SystemAnnouncement",
-        dueAt: {
-          gte: now,
-          lt: new Date(now.getTime() + DEADLINE_WINDOW_DAYS * 86_400_000),
-        },
-      },
-      select: { title: true, dueAt: true, link: true },
-      orderBy: { dueAt: "asc" },
+    prisma.domain.findMany({
+      where: { active: true, isSystem: false },
+      select: { id: true, displayName: true },
+      orderBy: { displayName: "asc" },
     }),
-    // The create modal's "Send invite from" list: a Core meeting is a real
-    // Google invite to members' DALI Gmail, so it needs the organizer's linked
-    // accounts. Enabled Google links only — nothing else can send an invite.
-    prisma.userCalendarLink
-      .findMany({
-        where: { userId: auth.user.sub, provider: "Google", enabled: true },
-        select: { id: true, externalEmail: true, displayName: true },
-        orderBy: { linkedAt: "asc" },
-      })
-      // An account is not a destination: a Google account holds several
-      // calendars, and "which calendar does this land on?" is the question the
-      // organizer is actually answering. Only the writable ones — Google
-      // refuses an insert into anything the account can merely read.
-      .then((links) =>
-        Promise.all(
-          links.map(async (l) => {
-            try {
-              const items = await listCalendarsForLink(l.id);
-              return {
-                ...l,
-                calendars: items
-                  .filter((c) => c.accessRole === "owner" || c.accessRole === "writer")
-                  .map((c) => ({
-                    id: c.id,
-                    summary: c.summary,
-                    primary: c.primary === true,
-                  })),
-              };
-            } catch {
-              // Token trouble or a Google outage: the account still sends from
-              // its primary calendar, which is what an unlisted link means.
-              return { ...l, calendars: [] };
-            }
-          }),
-        ),
-      ),
-    // The invite picker is the Events page's, so it needs the same two lists:
-    // every active group, and the people a Core organizer can name.
-    listAllGroups().then((rows) =>
-      rows
-        .filter((r) => !r.archived)
-        .map((r) => ({
-          id: r.id,
-          name: r.name,
-          memberIds: r.memberIds,
-          projectId: r.dynamicQuery?.startsWith("project:")
-            ? r.dynamicQuery.slice("project:".length)
-            : null,
-          systemKey: r.systemKey ?? null,
-        })),
-    ),
-    currentTermMemberWhere(request).then((where) =>
-      prisma.user.findMany({
-        where,
-        select: { id: true, firstName: true, lastName: true, daliEmail: true },
-        orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
-      }),
-    ),
+    currentCoreIds(request),
+    currentTerm(request),
   ]);
+  const current = term ? { season: term.season, week: termWeek(term.startDate, new Date()) } : null;
 
-  // A group roster can name people outside the current term (alumni, inactive
-  // members), and the picker renders a raw cuid for anyone it can't name.
-  const knownIds = new Set(termMembers.map((u) => u.id));
-  const missingIds = Array.from(
-    new Set(groups.flatMap((g) => g.memberIds).filter((id) => !knownIds.has(id))),
-  );
-  const users = [
-    ...termMembers,
-    ...(missingIds.length
-      ? await prisma.user.findMany({
-          where: { id: { in: missingIds } },
-          select: { id: true, firstName: true, lastName: true, daliEmail: true },
-        })
-      : []),
-  ];
-
-  const events: CoreCalendarEvent[] = [];
-  const upcoming: {
-    id: string;
-    title: string;
-    startAt: string;
-    notePageId: string | null;
-  }[] = [];
-
-  // Everyone named on a Core meeting, so the guest list can show names rather
-  // than ids. `users` above covers current-term members; this picks up the rest
-  // (alumni, anyone off-term) in one query.
-  const namedIds = new Map(users.map((u) => [u.id, fullName(u)]));
-  const guestIds = new Set(
-    meetings.flatMap((m) => [m.organizerId, ...m.participantUserIds]).filter((id) => !namedIds.has(id)),
-  );
-  if (guestIds.size > 0) {
-    for (const u of await prisma.user.findMany({
-      where: { id: { in: [...guestIds] } },
-      select: { id: true, firstName: true, lastName: true },
-    })) {
-      namedIds.set(u.id, fullName(u));
-    }
-  }
-
-  for (const m of meetings) {
-    const organizerName = fullName(m.organizer) || null;
-    const rsvpByUser = new Map(m.notifications.map((n) => [n.recipientUserId, n.rsvp]));
-    // The organizer reads as attending without having answered anything —
-    // Google says the same about the person who called the meeting.
-    const attendees: EventAttendeeDTO[] = [
-      { name: organizerName || "Organizer", status: "Accepted" as const, organizer: true },
-      ...m.participantUserIds
-        .filter((uid) => uid !== m.organizerId)
-        .map((uid) => ({
-          name: namedIds.get(uid) || "Guest",
-          status: (rsvpByUser.get(uid) ?? "Pending") as EventAttendeeDTO["status"],
-        })),
-    ];
-    const myInvite = m.notifications.find((n) => n.recipientUserId === auth.user.sub);
-    const meetingFor = (originalStart: Date): EventMeetingDTO => ({
-      meetingId: m.id,
-      occurrenceStart: originalStart.toISOString(),
-      notePageId: noteForOccurrence(m.notePages, originalStart)?.id ?? null,
-      whiteboardPageId: m.whiteboardPage?.id ?? null,
-      hasType: m.meetingType != null,
-      onTimesheet: m.timeEntries.some((t) => t.occurrenceStart?.getTime() === originalStart.getTime()),
-      isCoreMeeting: true,
-      // Everything on this calendar is here *because* it's a Core meeting, so
-      // clearing the flag from here would delete the block you clicked.
-      canMarkCoreMeeting: false,
-      // This page is Core-gated, so every viewer may add a note (the organizer
-      // and Core are exactly who attachMeetingNote allows).
-      canAddNote: true,
-      canOpenNote: m.meetingType != null && m.notePages.length > 0,
-      canAddWhiteboard: true,
-      canInvite: true,
-      // The toggles are the Events page's action; the Core hub only shows them.
-      actionPath: "/calendar",
-    });
-    for (const occ of expandOccurrences(m, m.exceptions, scanStart, scanEnd)) {
-      const id = `${m.id}:${occ.originalStart.toISOString()}`;
-      const meeting = meetingFor(occ.originalStart);
-      if (occ.start < gridEnd && occ.end > gridStart) {
-        events.push({
-          id,
-          kind: "meeting",
-          title: m.title,
-          startIso: occ.start.toISOString(),
-          endIso: occ.end.toISOString(),
-          allDay: false,
-          // A meeting has a join link, not a place.
-          location: null,
-          description: null,
-          organizerName,
-          meetingUrl: m.meetingUrl,
-          url: null,
-          attendees,
-          meeting,
-          rsvp: myInvite
-            ? {
-                via: "notification" as const,
-                status: myInvite.rsvp ?? "Pending",
-                notificationId: myInvite.id,
-              }
-            : null,
-        });
-      }
-      if (occ.start >= now && occ.start < upcomingEnd) {
-        upcoming.push({
-          id,
-          title: m.title,
-          startAt: occ.start.toISOString(),
-          notePageId: meeting.notePageId,
-        });
-      }
-    }
-  }
-  upcoming.sort((a, b) => a.startAt.localeCompare(b.startAt));
-
-  generalEvents.forEach((g, i) => {
-    events.push({
-      id: `general:${i}:${g.start.toISOString()}`,
-      kind: "general",
-      title: g.summary,
-      startIso: g.start.toISOString(),
-      endIso: g.end.toISOString(),
-      allDay: g.allDay,
-      location: g.location,
-      description: g.description,
-      organizerName: g.organizer,
-      meetingUrl: null,
-      url: g.url,
-      // The lab feed is read-only: no guest list to show and nothing to answer.
-      attendees: [],
-      meeting: null,
-      rsvp: null,
-    });
+  const coreMembers = await prisma.user.findMany({
+    where: { id: { in: coreIds } },
+    select: { id: true, firstName: true, lastName: true },
+    orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
   });
-
-  // One row per (title, dueAt) — the recipient fan-out is noise here.
-  const seen = new Set<string>();
-  const deadlines = deadlineRows
-    .filter((d) => {
-      const key = `${d.title}|${d.dueAt?.toISOString() ?? ""}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .slice(0, 6)
-    .map((d) => ({
-      title: d.title,
-      dueAt: d.dueAt!.toISOString(),
-      link: d.link,
-    }));
 
   return {
     isAdmin: await isAdmin(auth.user.sub),
-    timeZone,
-    events,
-    upcoming: upcoming.slice(0, 5),
-    deadlines,
-    coreGroupId: coreGroup?.id ?? null,
-    calendarLinks,
-    groups,
-    users,
+    current,
+    domains: domains.map((d) => ({ id: d.id, name: d.displayName })),
+    coreMembers: coreMembers.map((u) => ({ id: u.id, name: fullName(u) })),
+    milestones: rows.map((m) => ({
+      id: m.id,
+      season: m.season,
+      week: m.week,
+      title: m.title,
+      detail: m.detail,
+      position: m.position,
+      pinned: m.pinned,
+      owners: m.owners.map((o) => ({ id: o.user.id, name: fullName(o.user) })),
+      domainIds: m.domains.map((d) => d.domainId),
+    })),
   };
 }
 
-/**
- * A view switch moves `view` and nothing else, and the loader's window already
- * covers every view of the current anchor — so there is nothing to refetch, and
- * skipping the revalidation is what makes the toggle repaint immediately.
- * `doc` / `comment` are the page guide's URL state, same story. A new anchor
- * still revalidates.
- */
-export function shouldRevalidate({
-  currentUrl,
-  nextUrl,
-  formMethod,
-  defaultShouldRevalidate,
-}: {
-  currentUrl: URL;
-  nextUrl: URL;
-  formMethod?: string;
-  defaultShouldRevalidate: boolean;
-}) {
-  if (formMethod && formMethod.toUpperCase() !== "GET") return defaultShouldRevalidate;
-  if (currentUrl.pathname !== nextUrl.pathname) return defaultShouldRevalidate;
-  const cur = new URLSearchParams(currentUrl.search);
-  const next = new URLSearchParams(nextUrl.search);
-  for (const key of ["view", "doc", "comment"]) {
-    cur.delete(key);
-    next.delete(key);
-  }
-  cur.sort();
-  next.sort();
-  return cur.toString() === next.toString() ? false : defaultShouldRevalidate;
+// parseForm reads one value per key, so id lists travel comma-joined.
+const idList = z
+  .string()
+  .optional()
+  .transform((v) => Array.from(new Set((v ?? "").split(",").filter(Boolean))));
+const week = z.coerce.number().int().min(0).max(LAST_MILESTONE_WEEK);
+
+const MilestoneFields = z.object({
+  season: z.enum(MILESTONE_SEASONS),
+  week,
+  title: z.string().trim().min(1).max(120),
+  detail: z.string().trim().max(1000).optional().transform((v) => v || null),
+  ownerIds: idList,
+  domainIds: idList,
+});
+
+const ActionSchema = z.discriminatedUnion("intent", [
+  MilestoneFields.extend({ intent: z.literal("create") }),
+  MilestoneFields.extend({ intent: z.literal("update"), id: z.string().min(1) }),
+  // `order` is the destination column top to bottom, the moved card included.
+  z.object({ intent: z.literal("move"), id: z.string().min(1), week, order: idList }),
+  z.object({ intent: z.literal("pin"), id: z.string().min(1), pinned: z.enum(["true", "false"]) }),
+  z.object({ intent: z.literal("delete"), id: z.string().min(1) }),
+]);
+
+/** Owners must be current Core and domains real ones. A milestone being edited
+ *  keeps whoever and whatever it already has, so last year's owner or a retired
+ *  domain doesn't block an unrelated edit. */
+async function assigneeError(
+  request: Request,
+  body: { ownerIds: string[]; domainIds: string[] },
+  existingId?: string,
+): Promise<string | null> {
+  const existing = existingId
+    ? await prisma.coreMilestone.findUnique({
+        where: { id: existingId },
+        select: { owners: { select: { userId: true } }, domains: { select: { domainId: true } } },
+      })
+    : null;
+  if (existingId && !existing) return "That milestone no longer exists.";
+
+  const okOwners = new Set([
+    ...(await currentCoreIds(request)),
+    ...(existing?.owners.map((o) => o.userId) ?? []),
+  ]);
+  if (body.ownerIds.some((id) => !okOwners.has(id))) return "Owners must be on the current Core.";
+
+  const okDomains = new Set([
+    ...(
+      await prisma.domain.findMany({
+        where: { id: { in: body.domainIds }, active: true, isSystem: false },
+        select: { id: true },
+      })
+    ).map((d) => d.id),
+    ...(existing?.domains.map((d) => d.domainId) ?? []),
+  ]);
+  if (body.domainIds.some((id) => !okDomains.has(id))) return "Pick domains from the list.";
+  return null;
 }
 
-const VIEW_LABELS: Record<CalendarView, string> = {
-  month: "Month",
-  week: "Week",
-  day: "Day",
-  agenda: "Agenda",
-};
-// Same source-keyed tints the month panel used, so a Core meeting and a General
-// Calendar entry keep the colours they have everywhere else.
-const GENERAL_FILL = `bg-accent-teal-light ${EVENT_TEXT}`;
+export async function action({ request }: Route.ActionArgs) {
+  const gate = await requireCoreUser(request);
+  if ("response" in gate) throw gate.response;
 
-/** One list in the calendar rail, shaped like the Events page's own rail
- *  groups: an eyebrow label straight on the page ground with its rows under it,
- *  not a bordered card. The design draws a rail as one column of lists — a card
- *  per list boxed them into panels the mini-month above them doesn't wear. */
-function RailSection({
-  title,
-  empty,
-  isEmpty,
-  children,
-}: {
-  title: string;
-  /** Shown in place of the rows when there are none. */
-  empty: string;
-  isEmpty: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex flex-col gap-1">
-      <h2 className="px-1 pb-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-        {title}
-      </h2>
-      {isEmpty ? (
-        <p className="px-1 text-xs text-muted-foreground">{empty}</p>
-      ) : (
-        <ul className="flex flex-col gap-1.5">{children}</ul>
-      )}
-    </div>
-  );
-}
+  const body = await parseForm(request, ActionSchema);
+  if (body instanceof Response) return body;
 
-export default function CoreHub({ loaderData }: Route.ComponentProps) {
-  const { timeZone, events, upcoming, deadlines, coreGroupId, calendarLinks, users, groups } =
-    loaderData;
-  const { pageTitle } = useOsChrome();
-  const { view, days, focusDate, anchorMonth, rangeLabel, changeView, navigate, goToday, goToDay } =
-    useCalendarView(timeZone);
-  const [creating, setCreating] = useState(false);
-
-  const eventsByDay: Record<number, EventBlock[]> = {};
-  const allDayByDay: Record<number, AllDayBlock[]> = {};
-  for (const ev of events) {
-    const fill = ev.kind === "meeting" ? EVENT_CORAL : GENERAL_FILL;
-    // Outlining an unanswered invite needs a border colour to move the fill's
-    // hue onto; Tailwind only emits classes it can see, so each fill names its
-    // twin here rather than having one derived from `fill` at runtime.
-    const outline = ev.kind === "meeting" ? "border-accent-coral-light" : "border-accent-teal-light";
-    const unanswered = ev.rsvp?.status === "Pending";
-    // Month draws everything as a chip, so an all-day entry belongs in the same
-    // map there. Week and day have a band above the hour grid for it instead,
-    // and agenda lists timed events only — the Events page reads the same way.
-    if (ev.allDay && view !== "month") {
-      const start = new Date(ev.startIso).getTime();
-      const end = new Date(ev.endIso).getTime(); // exclusive
-      days.forEach((d, idx) => {
-        const dayMs = d.dateUtc.getTime();
-        if (start < dayMs + 86_400_000 && end > dayMs) {
-          (allDayByDay[idx] ??= []).push({ label: ev.title, unanswered });
-        }
+  switch (body.intent) {
+    case "create": {
+      const error = await assigneeError(request, body);
+      if (error) return { error };
+      const last = await prisma.coreMilestone.aggregate({
+        where: { season: body.season, week: body.week },
+        _max: { position: true },
       });
-      continue;
+      await prisma.coreMilestone.create({
+        data: {
+          season: body.season,
+          week: body.week,
+          position: (last._max.position ?? -1) + 1,
+          title: body.title,
+          detail: body.detail,
+          owners: { create: body.ownerIds.map((userId) => ({ userId })) },
+          domains: { create: body.domainIds.map((domainId) => ({ domainId })) },
+        },
+      });
+      return { ok: true };
     }
-    placeBlock(
-      days,
-      timeZone,
-      ev.startIso,
-      ev.endIso,
-      {
-        label: ev.title,
-        className: fill,
-        borderClassName: unanswered ? outline : undefined,
-        unanswered,
-        location: ev.location ?? undefined,
-        description: ev.description ?? undefined,
-        organizerName: ev.organizerName ?? undefined,
-        attendees: ev.attendees.length > 0 ? ev.attendees : undefined,
-        // The notes doc rides on `meeting` (the popover's meeting row), so it
-        // isn't repeated here.
-        links: [
-          ...(ev.meetingUrl
-            ? [{ label: "Join video call", href: ev.meetingUrl, kind: "video" as const }]
-            : []),
-          ...(ev.url ? [{ label: "Open event", href: ev.url, kind: "source" as const }] : []),
-        ],
-        meeting: ev.meeting ?? undefined,
-        rsvp: ev.rsvp ?? undefined,
-      },
-      eventsByDay,
+    case "update": {
+      const error = await assigneeError(request, body, body.id);
+      if (error) return { error };
+      await prisma.coreMilestone.update({
+        where: { id: body.id },
+        data: {
+          season: body.season,
+          week: body.week,
+          title: body.title,
+          detail: body.detail,
+          owners: { deleteMany: {}, create: body.ownerIds.map((userId) => ({ userId })) },
+          domains: { deleteMany: {}, create: body.domainIds.map((domainId) => ({ domainId })) },
+        },
+      });
+      return { ok: true };
+    }
+    case "move": {
+      await prisma.$transaction([
+        prisma.coreMilestone.updateMany({ where: { id: body.id }, data: { week: body.week } }),
+        ...body.order.map((id, position) =>
+          prisma.coreMilestone.updateMany({ where: { id }, data: { position } }),
+        ),
+      ]);
+      return { ok: true };
+    }
+    case "pin": {
+      await prisma.coreMilestone.updateMany({
+        where: { id: body.id },
+        data: { pinned: body.pinned === "true" },
+      });
+      return { ok: true };
+    }
+    case "delete": {
+      await prisma.coreMilestone.deleteMany({ where: { id: body.id } });
+      return { ok: true };
+    }
+  }
+}
+
+type LoaderData = Route.ComponentProps["loaderData"];
+type Milestone = LoaderData["milestones"][number];
+type Named = { id: string; name: string };
+/** What the modal is open on: an existing milestone, or a new one in a week. */
+type Editing = Milestone | { id: null; week: number };
+
+const SEASON_TABS = MILESTONE_SEASONS.map((s) => ({ key: s, label: SEASON_NAMES[s]! }));
+const columnId = (w: number) => `week-${w}`;
+
+export default function CoreMilestones({ loaderData }: Route.ComponentProps) {
+  const { milestones, domains, coreMembers, current } = loaderData;
+  const chrome = useOsChrome();
+  const [params, setParams] = useSearchParams();
+  const [filter, setFilter] = useState<string[]>([]);
+  const [editing, setEditing] = useState<Editing | null>(null);
+  const submit = useSubmit();
+
+  const termParam = params.get("term") as MilestoneSeason | null;
+  const season =
+    termParam && MILESTONE_SEASONS.includes(termParam) ? termParam : (current?.season ?? "F");
+
+  // A drag or a pin shows at once, while its save is still in flight. Each
+  // card saves on its own fetcher, so a second drag never cancels the first.
+  const pendingWeek = new Map<string, number>();
+  const pendingPosition = new Map<string, number>();
+  const pendingPinned = new Map<string, boolean>();
+  for (const f of useFetchers()) {
+    const intent = f.formData?.get("intent");
+    if (intent === "move") {
+      pendingWeek.set(String(f.formData!.get("id")), Number(f.formData!.get("week")));
+      String(f.formData!.get("order")).split(",").forEach((id, i) => pendingPosition.set(id, i));
+    } else if (intent === "pin") {
+      pendingPinned.set(String(f.formData!.get("id")), f.formData!.get("pinned") === "true");
+    }
+  }
+
+  const domainName = new Map(domains.map((d) => [d.id, d.name]));
+  // Array.sort is stable, so cards a drag hasn't touched keep the loader's order.
+  const inSeason = milestones
+    .filter((m) => m.season === season)
+    .map((m) => ({
+      ...m,
+      week: pendingWeek.get(m.id) ?? m.week,
+      position: pendingPosition.get(m.id) ?? m.position,
+      pinned: pendingPinned.get(m.id) ?? m.pinned,
+    }))
+    .sort((x, y) => x.position - y.position);
+  const visible = inSeason.filter((m) => matchesDomainFilter(m.domainIds, filter));
+
+  const columns: KanbanColumn<Milestone>[] = MILESTONE_WEEKS.map((w) => {
+    const cards = visible.filter((m) => m.week === w);
+    return {
+      id: columnId(w),
+      title: weekLabel(w),
+      // The current week is the one tinted column. Restates the board's column
+      // shell, which `className` replaces rather than extends.
+      className: cn(
+        "flex w-full flex-shrink-0 flex-col rounded-os-item border border-transparent md:w-64",
+        current?.season === season && current.week === w ? "bg-os-accent/15" : "bg-os-card",
+      ),
+      cards,
+      listClassName:
+        "flex flex-col gap-2 p-2 min-h-[360px] max-h-[calc(100vh-14rem)] overflow-y-auto",
+      headerExtra: (
+        <div className="flex shrink-0 items-center gap-1">
+          <span className="text-xs text-muted-foreground">{cards.length}</span>
+          <IconButton
+            label={`Add to ${weekLabel(w).toLowerCase()}`}
+            icon={Plus}
+            onClick={() => setEditing({ id: null, week: w })}
+          />
+        </div>
+      ),
+    };
+  });
+
+  function handleDragEnd(event: DragEndEvent) {
+    if (!event.over) return;
+    const id = String(event.active.id);
+    const overId = String(event.over.id);
+    if (overId === id) return;
+    // `over` is a column, or a card standing in for its column and a slot in it.
+    const overCard = inSeason.find((m) => m.id === overId);
+    const toWeek = overCard?.week ?? MILESTONE_WEEKS.find((w) => columnId(w) === overId);
+    if (toWeek === undefined) return;
+    // Ordered against the whole column, not just what the filter is showing,
+    // so hidden cards keep their places.
+    const column = inSeason.filter((m) => m.week === toWeek).map((m) => m.id);
+    const order = dropOrder(column, id, overCard?.id ?? null);
+    if (order.join() === column.join()) return;
+    submit(
+      { intent: "move", id, week: String(toWeek), order: order.join(",") },
+      { method: "post", navigate: false, fetcherKey: `milestone-move-${id}` },
     );
   }
 
-  const when = (iso: string) =>
-    new Intl.DateTimeFormat("en-US", {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-      timeZone,
-    }).format(new Date(iso));
+  function togglePin(m: Milestone) {
+    submit(
+      { intent: "pin", id: m.id, pinned: String(!m.pinned) },
+      { method: "post", navigate: false, fetcherKey: `milestone-pin-${m.id}` },
+    );
+  }
 
-  const dueWhen = (iso: string) =>
-    new Intl.DateTimeFormat("en-US", {
-      month: "short",
-      day: "numeric",
-      timeZone,
-    }).format(new Date(iso));
-
-  const navBtn =
-    "inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground";
+  const renderCard = (
+    m: Milestone,
+    { isDragging = false, dragHandleProps = {} }: Partial<KanbanCardRenderOpts> = {},
+  ) => (
+    <div
+      {...dragHandleProps}
+      role="button"
+      tabIndex={0}
+      onClick={() => setEditing(m)}
+      onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          setEditing(m);
+        }
+      }}
+      className={cn(
+        "flex cursor-grab select-none flex-col gap-2 rounded-os-item bg-os-well p-3 active:cursor-grabbing",
+        // A ring, not a border: app.css sets border-color on `*` outside any
+        // layer, which outranks every border-colour utility.
+        m.pinned && "ring-2 ring-inset ring-os-accent",
+        isDragging ? "opacity-40" : "hover:bg-os-container/60",
+      )}
+    >
+      <div className="flex items-start justify-between gap-1">
+        <h3 className="min-w-0 text-sm font-medium text-foreground">{m.title}</h3>
+        <IconButton
+          label={m.pinned ? "Unpin" : "Pin"}
+          icon={Pin}
+          aria-pressed={m.pinned}
+          className="-mr-1 -mt-1 shrink-0"
+          iconClassName={cn("h-3.5 w-3.5", m.pinned && "fill-current text-os-accent")}
+          onClick={(e) => {
+            e.stopPropagation();
+            togglePin(m);
+          }}
+        />
+      </div>
+      {m.detail && <p className="line-clamp-3 whitespace-pre-line text-xs text-os-grey">{m.detail}</p>}
+      <div className="flex flex-wrap gap-1">
+        {m.domainIds.length === 0 ? (
+          <span className={cn(CHIP, "bg-os-container text-os-grey")}>All lab</span>
+        ) : (
+          m.domainIds.map((id) => {
+            const name = domainName.get(id);
+            return name ? (
+              <span key={id} className={cn(CHIP, osRoleChipClass(name))}>
+                {name}
+              </span>
+            ) : null;
+          })
+        )}
+      </div>
+      <p className="text-xs text-os-grey">
+        {m.owners.length > 0 ? m.owners.map((o) => o.name).join(", ") : "No owner"}
+      </p>
+    </div>
+  );
 
   return (
-    <div className={cn("flex flex-col", "gap-3")}>
-      <h1 className={pageTitle}>Core hub</h1>
-
-      {/* The date navigator belongs to the grid, so it shares a line with the
-          range it is moving — the page title sits above them both. */}
-      <header className="flex flex-wrap items-center gap-3">
-        <h2 className="font-heading text-xl font-semibold text-foreground">{rangeLabel}</h2>
-
-        <div className="ml-auto flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1">
-            <button type="button" className={navBtn} onClick={() => navigate(-1)} aria-label="Previous">
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              onClick={goToday}
-              className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted"
-            >
-              Today
-            </button>
-            <button type="button" className={navBtn} onClick={() => navigate(1)} aria-label="Next">
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-
-          <div className="inline-flex rounded-lg bg-muted p-0.5">
-            {(["month", "week", "day", "agenda"] as CalendarView[]).map((v) => (
-              <button
-                key={v}
-                type="button"
-                onClick={() => changeView(v)}
-                className={cn(
-                  "rounded-md px-3 py-1 text-sm font-medium transition-colors",
-                  v === view
-                    ? "bg-card text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {VIEW_LABELS[v]}
-              </button>
-            ))}
-          </div>
-
-          {/* Last in the row, same capsule as the Events page's — the two
-              calendars open their create flow from the same control. Everything
-              it makes is a Core entry; see CreateCoreEventModal. */}
-          <button type="button" onClick={() => setCreating(true)} className={ADD_EVENT_BTN}>
-            <Plus className="h-4 w-4 stroke-[3]" />
-            Add event
-          </button>
+    <div className="flex flex-col gap-6">
+      <div className="flex items-end justify-between gap-4">
+        <div>
+          <h1 className={chrome.pageTitle}>Milestones</h1>
         </div>
-      </header>
-
-      {/* Column-reverse below lg so the grid stays first on a narrow window and
-          the rail's lists fall under it — the Events page can simply hide its
-          rail there, but Core's carries content that has nowhere else to go. */}
-      <div className="flex flex-col-reverse gap-5 lg:h-[calc(100dvh-12rem)] lg:min-h-[24rem] lg:flex-row">
-        <aside className="flex w-full min-w-0 shrink-0 flex-col gap-5 overflow-x-hidden lg:w-60 lg:overflow-y-auto">
-          <MiniMonth focusDate={focusDate} timezone={timeZone} onPick={goToDay} />
-
-          <RailSection title="Upcoming Core meetings" empty="Nothing scheduled." isEmpty={upcoming.length === 0}>
-            {upcoming.map((m) => (
-              <li key={m.id} className="rounded-md px-1 py-1">
-                <span className="block truncate text-sm text-foreground">{m.title}</span>
-                <span className="block text-xs text-muted-foreground">{when(m.startAt)}</span>
-                {m.notePageId ? (
-                  <Link
-                    to={`/documents/${m.notePageId}`}
-                    prefetch="intent"
-                    className="mt-0.5 inline-flex items-center gap-1 text-xs font-medium text-os-accent hover:underline"
-                  >
-                    <FileText className="h-3 w-3" />
-                    Meeting notes
-                  </Link>
-                ) : null}
-              </li>
-            ))}
-          </RailSection>
-
-          <RailSection
-            title="Deadlines"
-            empty="No announcement deadlines in the next month."
-            isEmpty={deadlines.length === 0}
-          >
-            {deadlines.map((d) => (
-              <li key={`${d.title}-${d.dueAt}`} className="rounded-md px-1 py-1">
-                {d.link ? (
-                  <Link
-                    to={d.link}
-                    prefetch="intent"
-                    className="block truncate text-sm text-foreground hover:underline"
-                  >
-                    {d.title}
-                  </Link>
-                ) : (
-                  <span className="block truncate text-sm text-foreground">{d.title}</span>
-                )}
-                <span className="block text-xs text-muted-foreground">Due {dueWhen(d.dueAt)}</span>
-              </li>
-            ))}
-          </RailSection>
-        </aside>
-
-        {/* No card around the grid — the hour rules and day rules are the only
-            structure it needs, exactly as on the Events page. */}
-        <section className="flex min-w-0 flex-1 flex-col lg:min-h-0">
-          {view === "agenda" ? (
-            <AgendaView
-              days={days}
-              eventsByDay={eventsByDay}
-              timezone={timeZone}
-              onSelectDay={goToDay}
-            />
-          ) : view === "month" ? (
-            <MonthGrid
-              days={days}
-              eventsByDay={eventsByDay}
-              anchorMonth={anchorMonth}
-              timezone={timeZone}
-              onSelectDay={goToDay}
-            />
-          ) : (
-            <WeekGrid
-              fillAndScroll
-              clean
-              days={days}
-              timezone={timeZone}
-              eventsByDay={eventsByDay}
-              allDayByDay={allDayByDay}
-            />
-          )}
-        </section>
+        <button
+          type="button"
+          className="os-add-btn"
+          onClick={() => setEditing({ id: null, week: current?.season === season ? current.week : 1 })}
+        >
+          <Plus className="h-4 w-4" aria-hidden />
+          Add milestone
+        </button>
       </div>
 
-      {creating && (
-        <CreateCoreEventModal
-          coreGroupId={coreGroupId}
-          calendarLinks={calendarLinks}
-          users={users}
-          groups={groups}
-          initialDateLocal={defaultStartLocal(focusDate)}
-          onClose={() => setCreating(false)}
+      <OsTabBar
+        ariaLabel="Term"
+        tabs={SEASON_TABS}
+        active={season}
+        onSelect={(key) => setParams({ term: key }, { replace: true })}
+      />
+
+      <div className="w-full sm:w-64">
+        <MultiSelect
+          values={filter}
+          options={[
+            { value: ALL_LAB, label: "All lab" },
+            ...domains.map((d) => ({ value: d.id, label: d.name })),
+          ]}
+          onChange={setFilter}
+          ariaLabel="Filter by domain"
+          placeholder="All domains"
+          buttonClassName={cn(filterPillClass(), "w-full")}
         />
-      )}
+      </div>
+
+      <KanbanBoard<Milestone>
+        id="core-milestones-board"
+        columns={columns}
+        getCardId={(m) => m.id}
+        getCardData={(m) => ({ week: m.week })}
+        draggable
+        sortable
+        onDragEnd={handleDragEnd}
+        emptyLabel="Nothing yet"
+        renderCard={renderCard}
+        // The floating copy: a column scrolls, so a card dragged in place would
+        // be clipped at its column's edge.
+        renderOverlay={(activeId) => {
+          const m = visible.find((x) => x.id === activeId);
+          return m ? renderCard(m) : null;
+        }}
+      />
+
+      <Modal open={editing !== null} onClose={() => setEditing(null)} labelledBy="milestone-modal-title">
+        {editing && (
+          <MilestoneForm
+            key={editing.id ?? `new-${editing.week}`}
+            editing={editing}
+            season={season}
+            domains={domains}
+            coreMembers={coreMembers}
+            onClose={() => setEditing(null)}
+          />
+        )}
+      </Modal>
     </div>
   );
 }
 
-/** Seed the create form with 9am on the day the grid is focused, so the common
- *  case ("something this week") needs no date picking at all. */
-function defaultStartLocal(focusDate: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
+const CHIP = "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold";
+
+function MilestoneForm({
+  editing,
+  season: boardSeason,
+  domains,
+  coreMembers,
+  onClose,
+}: {
+  editing: Editing;
+  season: MilestoneSeason;
+  domains: Named[];
+  coreMembers: Named[];
+  onClose: () => void;
+}) {
+  const chrome = useOsChrome();
+  const dialog = useDialog();
+  const toast = useToast();
+  const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
+  const existing = editing.id !== null ? editing : null;
+  const busy = fetcher.state !== "idle";
+
+  const [season, setSeason] = useState<MilestoneSeason>(existing?.season ?? boardSeason);
+  const [week, setWeek] = useState(String(editing.week));
+  const [ownerIds, setOwnerIds] = useState(existing?.owners.map((o) => o.id) ?? []);
+  const [domainIds, setDomainIds] = useState(existing?.domainIds ?? []);
+
+  useEffect(() => {
+    if (fetcher.state !== "idle" || !fetcher.data) return;
+    if (fetcher.data.error) toast.error(fetcher.data.error);
+    else if (fetcher.data.ok) onClose();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetcher.state, fetcher.data]);
+
+  // An owner from an earlier Core stays on the list so they can be seen and removed.
+  const ownerOptions = [
+    ...coreMembers,
+    ...(existing?.owners.filter((o) => !coreMembers.some((c) => c.id === o.id)) ?? []),
+  ].map((u) => ({ value: u.id, label: u.name }));
+
+  const remove = async () => {
+    if (!existing) return;
+    const ok = await dialog.confirm({
+      title: `Delete ${existing.title}?`,
+      confirmLabel: "Delete",
+      tone: "destructive",
+    });
+    if (ok) fetcher.submit({ intent: "delete", id: existing.id }, { method: "post" });
+  };
+
   return (
-    `${focusDate.getUTCFullYear()}-${pad(focusDate.getUTCMonth() + 1)}` +
-    `-${pad(focusDate.getUTCDate())}T09:00`
+    <>
+      <ModalHeader
+        titleId="milestone-modal-title"
+        title={existing ? "Edit milestone" : "Add milestone"}
+        onClose={onClose}
+        actions={
+          existing && (
+            <IconButton label="Delete milestone" icon={Trash2} tone="destructive" onClick={remove} />
+          )
+        }
+      />
+      <fetcher.Form method="post" className={`${chrome.formClass} flex flex-col gap-5`}>
+        <input type="hidden" name="intent" value={existing ? "update" : "create"} />
+        {existing && <input type="hidden" name="id" value={existing.id} />}
+        <input type="hidden" name="season" value={season} />
+        <input type="hidden" name="week" value={week} />
+        <input type="hidden" name="ownerIds" value={ownerIds.join(",")} />
+        <input type="hidden" name="domainIds" value={domainIds.join(",")} />
+
+        <label className="os-field-group">
+          <span>Title</span>
+          <input
+            type="text"
+            name="title"
+            required
+            maxLength={120}
+            placeholder="Applications open"
+            defaultValue={existing?.title ?? ""}
+          />
+        </label>
+        <label className="os-field-group">
+          <span>Details</span>
+          <textarea name="detail" rows={3} maxLength={1000} defaultValue={existing?.detail ?? ""} />
+        </label>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div className="os-field-group">
+            <span className="os-field-label">Term</span>
+            <Select
+              value={season}
+              options={SEASON_TABS.map((t) => ({ value: t.key, label: t.label }))}
+              onChange={setSeason}
+              ariaLabel="Term"
+              buttonClassName={chrome.formTrigger}
+            />
+          </div>
+          <div className="os-field-group">
+            <span className="os-field-label">Week</span>
+            <Select
+              value={week}
+              options={MILESTONE_WEEKS.map((w) => ({ value: String(w), label: weekLabel(w) }))}
+              onChange={setWeek}
+              ariaLabel="Week"
+              buttonClassName={chrome.formTrigger}
+            />
+          </div>
+        </div>
+
+        <div className="os-field-group">
+          <span className="os-field-label">Owners</span>
+          <MultiSelect
+            values={ownerIds}
+            options={ownerOptions}
+            onChange={setOwnerIds}
+            ariaLabel="Owners"
+            placeholder="No owner"
+            emptyLabel="No one is on Core this cycle"
+            buttonClassName={chrome.formTrigger}
+          />
+        </div>
+        <div className="os-field-group">
+          <span className="os-field-label">Domains</span>
+          <MultiSelect
+            values={domainIds}
+            options={domains.map((d) => ({ value: d.id, label: d.name }))}
+            onChange={setDomainIds}
+            ariaLabel="Domains"
+            placeholder="All lab"
+            buttonClassName={chrome.formTrigger}
+          />
+        </div>
+
+        <ModalFooter onCancel={onClose}>
+          <button type="submit" className="os-btn-primary" disabled={busy}>
+            {existing ? "Save" : "Add milestone"}
+          </button>
+        </ModalFooter>
+      </fetcher.Form>
+    </>
   );
 }

@@ -182,8 +182,8 @@ export function CreateEventModal({
   const type = hasGuests ? "Meeting" : "Event";
 
   // ── Core meeting ─────────────────────────────────────────────────────────
-  // Core-only marker that lifts the meeting onto the Core hub calendar without
-  // touching its guest list. Inviting the Core group implies it.
+  // Core-only marker that flags the meeting as Core's without touching its
+  // guest list. Inviting the Core group implies it.
   const coreSelected = selectedGroupIds.some((gid) => groupsById.get(gid)?.systemKey === "core");
   const [coreMeeting, setCoreMeeting] = useState(false);
   useEffect(() => {
@@ -936,8 +936,8 @@ export function CreateEventModal({
                     label="Core meeting"
                     description={
                       coreSelected
-                        ? "The Core group is invited, so this is already on the Core calendar."
-                        : "Adds this to the Core hub calendar. Doesn't change who's invited."
+                        ? "The Core group is invited, so this is already a Core meeting."
+                        : "Marks this as a Core meeting. Doesn't change who's invited."
                     }
                   />
                 </div>

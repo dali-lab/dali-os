@@ -509,7 +509,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   // Derived on the client, not read off the loader. The window maths is shared
   // with the server (lib/view-window.ts), so switching month / week / day
   // repaints from data already in hand instead of waiting for a round-trip that
-  // goes out to Google. Shared with the Core hub, which draws the same grids.
+  // goes out to Google.
   const {
     view,
     rangeStart,
