@@ -8,6 +8,7 @@ import {
   ClipboardPen,
   Clock,
   DoorOpen,
+  Flag,
   Files,
   FileSignature,
   FileText,
@@ -246,7 +247,7 @@ const REGROUPED_AREAS: NavArea[] = [
     hubPath: "/core",
     gate: (r) => r.isCore,
     subtabs: [
-      { label: "Hub", href: "/core", icon: LayoutGrid },
+      { label: "Milestones", href: "/core", icon: Flag },
       { label: "Staffing", href: "/core/staffing", icon: Kanban },
       { label: "Intent to Work", href: "/core/intent-to-work", icon: ClipboardPen },
       { label: "Project Bids", href: "/core/project-bids", icon: Gavel },

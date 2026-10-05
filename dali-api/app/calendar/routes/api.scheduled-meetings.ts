@@ -46,8 +46,8 @@ const Base = {
   // SelfCheckIn is independent of meeting notes — attendance rows fan out
   // whenever SelfCheckIn (or meetingType) is set; see createScheduledMeeting.
   attendanceMode: z.enum(["Roster", "SelfCheckIn"]).optional(),
-  // Core-only marker that lifts the meeting onto the Core hub calendar without
-  // changing its participant scope. Gated below, not by the schema.
+  // Core-only marker that flags the meeting as Core's without changing its
+  // participant scope. Gated below, not by the schema.
   isCoreMeeting: z.boolean().optional(),
   // Opt in to a Google Meet link. Only honored when the meeting is pushed to a
   // linked Google calendar.
@@ -118,8 +118,8 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   // Marking a meeting as Core is Core's own call — the form only hints at it,
-  // the server decides. Inviting the Core group counts too: that meeting is on
-  // the Core calendar by construction, whoever scheduled it.
+  // the server decides. Inviting the Core group counts too: that meeting is a
+  // Core meeting by construction, whoever scheduled it.
   const coreMeeting = body.isCoreMeeting
     ? (await isCore(auth.user.sub, request)) ||
       (body.scopeType === "Group" && (await isCoreGroup(body.groupId)))

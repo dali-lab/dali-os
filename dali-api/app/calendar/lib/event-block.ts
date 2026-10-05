@@ -6,8 +6,7 @@ import type { EventAttendeeDTO, EventBlock, TimeEntryDTO } from "~/calendar/lib/
 export const EVENT_TEXT = "text-[hsl(203_38%_18%)]";
 export const EVENT_CORAL = `bg-accent-coral-light ${EVENT_TEXT}`;
 
-// The "Add event" capsule, shared by the Events page and the Core hub so the two
-// calendars open their create flow from the same control. Light mode fills it
+// The "Add event" capsule. Light mode fills it
 // with the shell accent, the same teal as the sidebar's notification count.
 // Dark keeps the mockup's pill, a shade *darker* than the page: a black plate
 // with light ink.

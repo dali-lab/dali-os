@@ -144,6 +144,8 @@ export type TimeEntryDTO = {
   id: string;
   source: "Meeting" | "Manual";
   scheduledMeetingId: string | null;
+  /** Which occurrence of that meeting the hours are for (ISO). */
+  occurrenceStart: string | null;
   /** The calendar event these hours were logged against ("count this as work"),
    *  when there is one. The grid draws that event's block with a role accent
    *  instead of drawing this entry as a second, overlapping block. */
@@ -221,14 +223,14 @@ export type EventMeetingDTO = {
   canInvite: boolean;
   /** Route the toggles post to. Unset means the current route, which is right
    *  on the calendar page; a page that shows the same popover without owning
-   *  the calendar action (the Core hub) names "/calendar" here. */
+   *  the calendar action names "/calendar" here. */
   actionPath?: string;
 };
 
 /**
  * How the viewer answers this invite. Google events on the calendar page
  * answer through Google directly (`google`), against their own copy of the
- * event. A DALI meeting drawn from the database — the Core calendar — has no
+ * event. A DALI meeting drawn from the database has no
  * such copy to hand, so it answers through its invite notification
  * (`notification`), whose endpoint pushes the same answer on to Google using
  * the organizer's link.
@@ -336,7 +338,7 @@ export type LoaderData = {
   timeEntries: TimeEntryDTO[];
   /** Core, Admin, or Instructor — can enable Self check-in (QR) on meetings. */
   canSetSelfCheckIn: boolean;
-  /** Core — can mark a meeting as a Core meeting (shows on the Core hub calendar). */
+  /** Core — can mark a meeting as a Core meeting . */
   canMarkCoreMeeting: boolean;
   // Classes this term. classTerm names the current/default term; classTerms is
   // the selectable set (current + upcoming) for the term picker in the modal;

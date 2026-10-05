@@ -79,6 +79,8 @@ import {
   buildAllDayLayer,
   buildLoggedTimeLayer,
   workEventsOnly,
+  linkedEventFor,
+  calendarLabels,
   mergeLayers,
   perCalendarLegend,
   type CalendarLegendGroup,
@@ -507,7 +509,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   // Derived on the client, not read off the loader. The window maths is shared
   // with the server (lib/view-window.ts), so switching month / week / day
   // repaints from data already in hand instead of waiting for a round-trip that
-  // goes out to Google. Shared with the Core hub, which draws the same grids.
+  // goes out to Google.
   const {
     view,
     rangeStart,
@@ -744,6 +746,9 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   // agenda keep the event modal.
   const timesheetCreateMode = layers.logged && (view === "week" || view === "day");
 
+  const linkedEvent =
+    timesheetSel?.mode === "edit" ? linkedEventFor(timesheetSel.entry, data.externalEvents) : null;
+
   // A sensible default slot for the Add button, which has no drag to seed it:
   // today if it's in range, else the first visible day, 9am for the user's
   // default duration.
@@ -961,6 +966,13 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                               startLocal={timesheetSel.startLocal}
                               endLocal={timesheetSel.endLocal}
                               myRoles={data.myRoles}
+                              linkedEvent={linkedEvent}
+                              linkedEventCalendar={
+                                linkedEvent?.calendarId
+                                  ? calendarLabels(data).get(linkedEvent.calendarId)
+                                  : undefined
+                              }
+                              timezone={data.timezone}
                               onClose={() => setTimesheetSel(null)}
                             />
                           )

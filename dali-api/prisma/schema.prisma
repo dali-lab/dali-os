@@ -206,6 +206,7 @@ model User {
   domainEligibilities      DomainEligibility[]
   projectAssignments       ProjectAssignment[]
   coreAssignments          CoreAssignment[]
+  coreMilestonesOwned      CoreMilestoneOwner[]
   instructorAssignments    InstructorAssignment[]
   technigalaAssignments    TechnigalaAssignment[]
   adminMembership          AdminMembership?
@@ -649,6 +650,7 @@ model Domain {
   partnerApplicationDomains PartnerApplicationDomain[]
   projects                  ProjectDomain[]
   projectScopes             ProjectDomainScope[]
+  coreMilestones            CoreMilestoneDomain[]
 }
 
 // Lifecycle of an application cycle from the DALI side:
@@ -3076,6 +3078,53 @@ model CoreAssignment {
   // the same term. App-level validates "no duplicate (user, term, leadTitle)".
   @@index([userId, termId])
   @@index([termId, leadTitle])
+}
+
+// ─── Core milestones (/core/milestones) ──────────────────────────────────────
+
+// Core's playbook for running a term: what has to happen in which week. Keyed
+// by season rather than by Term because the playbook repeats every year, and
+// some of it only exists in certain terms (hiring runs in Fall and Spring).
+model CoreMilestone {
+  id        String   @id @default(cuid())
+  season    Season
+  // 1-10 are the weeks of the term; 0 is the lead-up before it starts.
+  week      Int
+  title     String
+  detail    String?
+  // Order within its week's column; ties fall back to createdAt.
+  position  Int      @default(0)
+  pinned    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  owners  CoreMilestoneOwner[]
+  // No rows means the milestone is for the whole lab.
+  domains CoreMilestoneDomain[]
+
+  @@index([season, week])
+}
+
+model CoreMilestoneOwner {
+  milestoneId String
+  userId      String
+
+  milestone CoreMilestone @relation(fields: [milestoneId], references: [id], onDelete: Cascade)
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([milestoneId, userId])
+  @@index([userId])
+}
+
+model CoreMilestoneDomain {
+  milestoneId String
+  domainId    String
+
+  milestone CoreMilestone @relation(fields: [milestoneId], references: [id], onDelete: Cascade)
+  domain    Domain        @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  @@id([milestoneId, domainId])
+  @@index([domainId])
 }
 
 // Authority to teach a specific education offering in a specific term.
