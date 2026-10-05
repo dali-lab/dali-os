@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { useFetcher, Link } from "react-router";
-import { Plus, Trash2, Check, StickyNote } from "lucide-react";
+import { Plus, Trash2, Check } from "lucide-react";
+import { ProjectIcon } from "~/components/ProjectIcon";
+import { PartnerFavicon } from "./PartnerFavicon";
 
 export type LooseEnd = {
   id: string;
@@ -52,18 +54,18 @@ export function LooseEnds({ todos }: { todos: LooseEnd[] }) {
   }
 
   return (
-    <section className="flex flex-col h-full min-h-0 rounded-os-card bg-os-card overflow-hidden">
-      <header className="px-4 py-3 border-b border-border flex items-center gap-2">
-        <StickyNote className="h-4 w-4 text-os-grey" aria-hidden />
+    <section className="hub-panel hub-loose-ends">
+      <header className="hub-section-heading">
         <div className="flex-1">
-          <h2 className="section-title text-foreground">Loose ends</h2>
+          <h2>Loose ends<span className="hub-heading-count">{openCount}</span></h2>
           <p className="text-xs text-muted-foreground">
-            {openCount} open · no due dates
+            Your follow-ups. A little less to keep in your head.
           </p>
         </div>
         <button
           type="button"
           onClick={() => setShowDone((s) => !s)}
+          aria-pressed={showDone}
           className="text-xs text-muted-foreground hover:text-foreground"
         >
           {showDone ? "Hide done" : "Show done"}
@@ -72,19 +74,32 @@ export function LooseEnds({ todos }: { todos: LooseEnd[] }) {
       <div className="px-3 pt-3">
         <form
           onSubmit={submitAdd}
-          className="flex items-center gap-2 h-9 px-3 rounded-[10px] border border-border bg-os-well focus-within:border-os-accent"
+          className="hub-todo-form"
         >
-          <Plus className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
+          <Plus className="h-4 w-4 text-muted-foreground" aria-hidden />
           <input
             type="text"
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="Jot a loose end… (Enter to save)"
-            className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+            placeholder="Jot a loose end…"
+            aria-label="New loose end"
+            // !bg-transparent beats the global `input` background rule from
+            // app.css so the input doesn't paint a card-colored rectangle
+            // over its parent's tint.
+            className="flex-1 !bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
           />
+          {text.trim() && (
+            <button
+              type="submit"
+              className="text-[11px] font-semibold uppercase tracking-wider text-accent-coral hover:text-accent-coral-light"
+            >
+              Save
+            </button>
+          )}
         </form>
       </div>
-      <div className="flex-1 overflow-y-auto p-2 min-h-0">
+      {addFetcher.data?.error && <p className="hub-form-error" role="alert">{addFetcher.data.error}</p>}
+      <div className="hub-todo-list">
         {pendingAdd && (
           <LooseEndRow
             todo={{
@@ -124,7 +139,7 @@ function LooseEndRow({ todo, pending }: { todo: LooseEnd; pending?: boolean }) {
   }
 
   return (
-    <div className="group flex items-start gap-2.5 px-2 py-2 rounded-os-item hover:bg-os-hover">
+    <div className="hub-todo-row group">
       <button
         type="button"
         disabled={pending}
@@ -162,7 +177,7 @@ function LooseEndRow({ todo, pending }: { todo: LooseEnd; pending?: boolean }) {
                 to={`/projects/${todo.project.id}`}
                 className="inline-flex items-center gap-1 rounded-full border border-border bg-os-well px-2 py-0.5 text-[11px] text-muted-foreground hover:text-foreground"
               >
-                {todo.project.iconEmoji && <span>{todo.project.iconEmoji}</span>}
+                <ProjectIcon iconEmoji={todo.project.iconEmoji} size="sm" />
                 {todo.project.name}
               </Link>
             )}
@@ -171,7 +186,7 @@ function LooseEndRow({ todo, pending }: { todo: LooseEnd; pending?: boolean }) {
                 to={`/partners/${todo.partnerOrg.id}`}
                 className="inline-flex items-center gap-1 rounded-full border border-border bg-os-well px-2 py-0.5 text-[11px] text-muted-foreground hover:text-foreground"
               >
-                {todo.partnerOrg.faviconChar ?? todo.partnerOrg.name.slice(0, 1).toUpperCase()}
+                <PartnerFavicon name={todo.partnerOrg.name} size="xs" />
                 {todo.partnerOrg.name}
               </Link>
             )}
@@ -187,7 +202,7 @@ function LooseEndRow({ todo, pending }: { todo: LooseEnd; pending?: boolean }) {
               { method: "post", action: "/partners" },
             )
           }
-          className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive mt-0.5"
+          className="hub-todo-delete text-muted-foreground hover:text-destructive"
           aria-label="Delete loose end"
         >
           <Trash2 className="h-3.5 w-3.5" aria-hidden />

@@ -1,14 +1,75 @@
-import { FolderKanban } from "lucide-react";
+import {
+  FolderKanban,
+  Rocket,
+  Target,
+  Lightbulb,
+  Compass,
+  Map,
+  Palette,
+  Brush,
+  Brain,
+  Smartphone,
+  Monitor,
+  Gamepad2,
+  Microscope,
+  FlaskConical,
+  Puzzle,
+  Building2,
+  Sprout,
+  Flame,
+  Star,
+  Heart,
+  Zap,
+  BarChart3,
+  TrendingUp,
+  Bot,
+  Satellite,
+  Globe2,
+  GraduationCap,
+  Trophy,
+  Wrench,
+  Settings2,
+  Package,
+  Link as LinkIcon,
+  BookOpen,
+  Camera,
+  Code2,
+  Database,
+  Leaf,
+  Music,
+  PenTool,
+  Users,
+  type LucideIcon,
+} from "lucide-react";
+
+// Curated set of lucide icons offered to projects. Stored in the string
+// `iconEmoji` column as `lucide:Name` so the migration-free switch stays
+// backward compatible with existing emoji values.
+export const LUCIDE_ICON_LIBRARY: Record<string, LucideIcon> = {
+  Rocket, Target, Lightbulb, Compass, Map, Palette, Brush, Brain,
+  Smartphone, Monitor, Gamepad2, Microscope, FlaskConical, Puzzle, Building2, Sprout,
+  Flame, Star, Heart, Zap, BarChart3, TrendingUp, Bot, Satellite,
+  Globe2, GraduationCap, Trophy, Wrench, Settings2, Package, Link: LinkIcon,
+  BookOpen, Camera, Code2, Database, Leaf, Music, PenTool, Users,
+};
+
+export const LUCIDE_PREFIX = "lucide:";
+
+export function isLucideIcon(value: string | null | undefined): value is string {
+  return typeof value === "string" && value.startsWith(LUCIDE_PREFIX);
+}
+
+export function parseLucideName(value: string): LucideIcon | null {
+  const name = value.slice(LUCIDE_PREFIX.length);
+  return LUCIDE_ICON_LIBRARY[name] ?? null;
+}
 
 /**
- * Leading icon for a project: the project's custom `iconEmoji` when set,
- * otherwise a neutral project glyph. Fixed-width slot so names stay aligned
- * whether or not a project has a custom emoji. Mirrors the document PageIcon.
+ * Leading icon for a project. Supports two stored formats in `iconEmoji`:
+ *   • `lucide:Name` — renders the corresponding lucide SVG.
+ *   • any other string — rendered as-is (emoji compatibility).
+ * Null/empty falls back to a neutral project glyph.
  */
-// Fixed slots for the two long-standing sizes, plus "inherit", which sizes the
-// glyph off the surrounding type instead. The dali.os surfaces set the icon
-// beside 20px and 32px headings, and a 14px emoji in a 16px box next to a 32px
-// title reads as a missing icon rather than a small one.
 const SLOT = {
   sm: { box: "w-4", emoji: "text-sm", glyph: "h-3.5 w-3.5" },
   lg: { box: "w-8", emoji: "text-2xl", glyph: "h-6 w-6" },
@@ -25,13 +86,13 @@ export function ProjectIcon({
   className?: string;
 }) {
   const slot = SLOT[size];
+  const classes = `flex flex-shrink-0 items-center justify-center leading-none ${slot.box}${className ? ` ${className}` : ""}`;
+
+  const Icon = isLucideIcon(iconEmoji) ? parseLucideName(iconEmoji) : null;
   return (
-    <span
-      className={`flex flex-shrink-0 items-center justify-center leading-none ${slot.box}${className ? ` ${className}` : ""}`}
-      aria-hidden
-    >
-      {iconEmoji ? (
-        <span className={slot.emoji}>{iconEmoji}</span>
+    <span className={classes} aria-hidden>
+      {Icon ? (
+        <Icon className={slot.glyph} strokeWidth={1.8} />
       ) : (
         <FolderKanban className={`text-muted-foreground ${slot.glyph}`} />
       )}

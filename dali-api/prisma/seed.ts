@@ -10,6 +10,7 @@ import { replaceIntentSet } from "../app/projects/lib/intent-validation.js";
 import { syncDefaultGroups } from "../app/lib/groups.js";
 import { parseChartString } from "../app/lib/chart-string.js";
 import { seedEducationDemo } from "./seeds/education-demo.js";
+import { seedPartnerRelationsHub } from "./seeds/partner-relations-hub.js";
 import {
   ensureEducationTemplates,
   createOfferingApplicationForm,
@@ -3048,6 +3049,11 @@ async function main() {
     }
   }
   console.log(`  ${partnerApplicationSeeds.length} partner applications, ${partnerApplicationSeeds.reduce((n, a) => n + a.domains.length, 0)} domain-scope rows`);
+
+  // ── Partner Relations hub demo data ────────────────────────────────────────
+  // Fans out partners/projects/terms/role-requests so the hub's bar + pie
+  // charts, contacts rail, and pipeline columns all render against real data.
+  await seedPartnerRelationsHub(prisma);
 
   // The default lab-editable partner application form: /partner/apply appends
   // its questions to the structural pitch fields (title, terms, domain scope).

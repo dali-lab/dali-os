@@ -1,7 +1,12 @@
-import { Link } from "react-router";
-import { X, ArrowUpRight, FileText, Users } from "lucide-react";
-import { Modal } from "~/components/Modal";
+import { FileText, Users, ArrowUpRight } from "lucide-react";
 import { PartnerFavicon } from "./PartnerFavicon";
+import {
+  SlideOver,
+  SheetField,
+  SheetDivider,
+  SheetPrimaryLink,
+  SheetSecondaryLink,
+} from "./SlideOver";
 
 export type DrawerApplication = {
   id: string;
@@ -10,111 +15,172 @@ export type DrawerApplication = {
   partnerName: string;
   faviconChar: string | null;
   summary: string | null;
+  source: string | null;
+  decisionReason: string | null;
+  interviewRating: number | null;
+  ambiguityRating: number | null;
+  fundingModel: string | null;
+  formSubmissionId: string | null;
   updatedAt: string;
   contactName: string | null;
   contactEmail: string | null;
   partnerOrgId: string | null;
+  targetTermCodes: string[];
+  domainNames: string[];
 };
 
-// Slide-over from the right. The hub shows the summary + contact + links; the
-// application detail route (/partners/applications/:id) owns full edits, SOW
-// authoring and the activity timeline — one authoring surface, two entry
-// points. No cycle with the kanban: a drag writes status via the hub action,
-// not through this drawer.
+/**
+ * Slide-over summary for a pipeline card. The hub shows summary + contact +
+ * links; the application detail route (/partners/applications/:id) owns full
+ * edits, SOW authoring and the activity timeline — one authoring surface, two
+ * entry points.
+ */
 export function ProjectDrawer({
   application,
   onClose,
 }: {
-  application: DrawerApplication;
+  application: DrawerApplication | null;
   onClose: () => void;
 }) {
   return (
-    <Modal
-      open
+    <SlideOver
+      open={!!application}
       onClose={onClose}
-      labelledBy="pr-project-drawer-title"
-      className="fixed inset-0 z-50 flex items-stretch justify-end bg-black/40"
-      containerClassName="w-full max-w-md h-full bg-os-card shadow-brand-3 overflow-hidden flex flex-col"
-    >
-      <header className="flex items-start justify-between gap-3 px-5 py-4 border-b border-border">
-        <div className="flex items-start gap-3 min-w-0">
-          <PartnerFavicon
-            char={application.faviconChar}
-            name={application.partnerName}
-            size="md"
-          />
-          <div className="min-w-0">
-            <h2
-              id="pr-project-drawer-title"
-              className="text-lg font-medium text-foreground truncate"
-            >
-              {application.partnerName}
-            </h2>
-            <p className="text-xs text-muted-foreground truncate">
-              {application.title}
-            </p>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close"
-          className="rounded-os-item p-1.5 hover:bg-os-hover text-muted-foreground shrink-0"
-        >
-          <X className="h-4 w-4" aria-hidden />
-        </button>
-      </header>
-
-      <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
-        <section>
-          <p className="os-field-label">Status</p>
-          <p className="mt-1 text-sm text-foreground">{application.status}</p>
-        </section>
-
-        {application.summary && (
-          <section>
-            <p className="os-field-label">Summary</p>
-            <p className="mt-1 text-sm text-foreground whitespace-pre-wrap">
-              {application.summary}
-            </p>
-          </section>
-        )}
-
-        {(application.contactName || application.contactEmail) && (
-          <section>
-            <p className="os-field-label">Point of contact</p>
-            <p className="mt-1 text-sm text-foreground">
-              {application.contactName ?? application.contactEmail}
-            </p>
-            {application.contactEmail && application.contactName && (
-              <p className="text-xs text-muted-foreground">{application.contactEmail}</p>
+      accent="coral"
+      overline="Pipeline card"
+      title={application?.partnerName ?? ""}
+      subtitle={application?.title ?? undefined}
+      footer={
+        application && (
+          <div className="flex items-center justify-end gap-2">
+            {application.partnerOrgId && (
+              <SheetSecondaryLink to={`/partners/${application.partnerOrgId}`}>
+                <Users className="h-3.5 w-3.5" aria-hidden />
+                Organization
+              </SheetSecondaryLink>
             )}
-          </section>
-        )}
-      </div>
+            <SheetPrimaryLink to={`/partners/applications/${application.id}`}>
+              <FileText className="h-3.5 w-3.5" aria-hidden />
+              Open application
+              <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
+            </SheetPrimaryLink>
+          </div>
+        )
+      }
+    >
+      {application && (
+        <div className="space-y-5 pt-2">
+          <div className="flex items-center gap-3">
+            <PartnerFavicon
+              char={application.faviconChar}
+              name={application.partnerName}
+              size="md"
+            />
+            <div className="min-w-0">
+              <div
+                className="text-[13px] font-medium truncate"
+                style={{ color: "#F5F7FA" }}
+              >
+                {application.partnerName}
+              </div>
+              <div
+                className="text-xs truncate"
+                style={{ color: "rgba(245,247,250,0.55)" }}
+              >
+                {application.title}
+              </div>
+            </div>
+          </div>
 
-      <footer className="border-t border-border px-5 py-3 flex flex-col gap-2">
-        <Link
-          to={`/partners/applications/${application.id}`}
-          className="inline-flex items-center justify-between rounded-full border border-border bg-os-well px-4 py-2 text-sm text-foreground hover:border-os-container-hi"
-        >
-          <span className="inline-flex items-center gap-2">
-            <FileText className="h-3.5 w-3.5" aria-hidden /> Open application (SOW, history)
-          </span>
-          <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
-        </Link>
-        {application.partnerOrgId && (
-          <Link
-            to={`/partners/${application.partnerOrgId}`}
-            className="inline-flex items-center justify-between rounded-full border border-border bg-os-well px-4 py-2 text-sm text-foreground hover:border-os-container-hi"
-          >
-            <span className="inline-flex items-center gap-2">
-              <Users className="h-3.5 w-3.5" aria-hidden /> Open organization page
-            </span>
-            <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
-          </Link>
-        )}
-      </footer>
-    </Modal>
+          <SheetDivider />
+
+          <SheetField label="Status">{application.status}</SheetField>
+
+          {application.summary && (
+            <SheetField label="Summary">
+              <p className="whitespace-pre-wrap leading-relaxed">
+                {application.summary}
+              </p>
+            </SheetField>
+          )}
+
+          {(application.contactName || application.contactEmail) && (
+            <SheetField label="Point of contact">
+              <div>{application.contactName ?? application.contactEmail}</div>
+              {application.contactEmail && application.contactName && (
+                <div
+                  className="text-xs mt-0.5"
+                  style={{ color: "rgba(245,247,250,0.55)" }}
+                >
+                  {application.contactEmail}
+                </div>
+              )}
+            </SheetField>
+          )}
+
+          {application.targetTermCodes.length > 0 && (
+            <SheetField label="Target terms">
+              <div className="flex flex-wrap gap-1.5">
+                {application.targetTermCodes.map((code) => (
+                  <span
+                    key={code}
+                    className="rounded-full px-2 py-0.5 text-[11px]"
+                    style={{ background: "rgba(255,255,255,0.08)" }}
+                  >
+                    {code}
+                  </span>
+                ))}
+              </div>
+            </SheetField>
+          )}
+
+          {application.domainNames.length > 0 && (
+            <SheetField label="Domains">
+              <div className="flex flex-wrap gap-1.5">
+                {application.domainNames.map((name) => (
+                  <span
+                    key={name}
+                    className="rounded-full px-2 py-0.5 text-[11px]"
+                    style={{ background: "rgba(255,255,255,0.08)" }}
+                  >
+                    {name}
+                  </span>
+                ))}
+              </div>
+            </SheetField>
+          )}
+
+          {application.source && (
+            <SheetField label="Source">{application.source}</SheetField>
+          )}
+          {application.fundingModel && (
+            <SheetField label="Funding">{application.fundingModel}</SheetField>
+          )}
+          {application.interviewRating != null && (
+            <SheetField label="Interview rating">{application.interviewRating} / 5</SheetField>
+          )}
+          {application.ambiguityRating != null && (
+            <SheetField label="Ambiguity rating">{application.ambiguityRating} / 5</SheetField>
+          )}
+          {application.decisionReason && (
+            <SheetField label="Decision reason">
+              <p className="whitespace-pre-wrap leading-relaxed">{application.decisionReason}</p>
+            </SheetField>
+          )}
+
+          {application.formSubmissionId && (
+            <SheetField label="Form submission">
+              <a
+                className="underline text-[12px]"
+                href={`/partners/applications/${application.id}`}
+                style={{ color: "#F5F7FA" }}
+              >
+                View the partner's answers →
+              </a>
+            </SheetField>
+          )}
+        </div>
+      )}
+    </SlideOver>
   );
 }

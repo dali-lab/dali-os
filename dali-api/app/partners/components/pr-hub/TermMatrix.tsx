@@ -1,7 +1,7 @@
 import { Link } from "react-router";
-import { ArrowUpRight, X } from "lucide-react";
-import { Modal } from "~/components/Modal";
-import { modalCardClass } from "~/components/os-chrome";
+import { ArrowUpRight } from "lucide-react";
+import { SlideOver } from "./SlideOver";
+import { ProjectIcon } from "~/components/ProjectIcon";
 
 export type TermMatrixRow = {
   projectId: string;
@@ -12,21 +12,20 @@ export type TermMatrixRow = {
 };
 
 // Read-only cross-tab for a term: one row per project with planned roles for
-// that term, broken down by domain. The hub shows the picture; per-role
-// staffing edits live under /projects/staffing, which already owns the
-// cycle-aware role-request CRUD.
+// that term, broken down by domain. Rendered inside the hub's right-side
+// SlideOver so the planning view is immediate and dismissible — per-role
+// staffing edits still live under /projects/staffing.
 export function TermMatrix({
+  open,
   termCode,
   rows,
   onClose,
 }: {
+  open: boolean;
   termCode: string;
   rows: TermMatrixRow[];
   onClose: () => void;
 }) {
-  // Union of domain names across the rows, in first-seen order, becomes the
-  // column header set — a project not using a domain renders a dash in that
-  // column rather than a dense per-row list.
   const domains: string[] = [];
   for (const r of rows) {
     for (const role of r.roles) {
@@ -35,99 +34,65 @@ export function TermMatrix({
   }
 
   return (
-    <Modal
-      open
+    <SlideOver
+      open={open}
       onClose={onClose}
-      labelledBy="term-matrix-title"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6"
-      containerClassName={modalCardClass("lg")}
-    >
-      <div className="flex flex-col h-full">
-        <header className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <div>
-            <h2 id="term-matrix-title" className="os-modal-title">
-              Term {termCode}
-            </h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {rows.length} {rows.length === 1 ? "project" : "projects"} planned.
-              Open staffing for per-role edits.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Link
-              to={`/projects/staffing?term=${encodeURIComponent(termCode)}`}
-              className="inline-flex items-center gap-1 rounded-full border border-border bg-os-well px-3 py-1 text-xs text-foreground hover:border-os-container-hi"
-            >
-              Open staffing <ArrowUpRight className="h-3 w-3" aria-hidden />
-            </Link>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close"
-              className="rounded-os-item p-1.5 hover:bg-os-hover text-muted-foreground"
-            >
-              <X className="h-4 w-4" aria-hidden />
-            </button>
-          </div>
-        </header>
-        <div className="flex-1 overflow-auto px-5 py-4">
-          {rows.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-10">
-              No projects planned for this term yet.
-            </p>
-          ) : (
-            <table className="w-full text-sm border-separate border-spacing-0">
-              <thead className="sticky top-0 bg-os-card z-10">
-                <tr>
-                  <th className="text-left font-medium text-muted-foreground px-3 py-2 border-b border-border w-[240px]">
-                    Project
-                  </th>
-                  <th className="text-left font-medium text-muted-foreground px-3 py-2 border-b border-border">
-                    Partners
-                  </th>
-                  {domains.map((d) => (
-                    <th
-                      key={d}
-                      className="text-center font-medium text-muted-foreground px-2 py-2 border-b border-border w-[80px]"
-                    >
-                      {d}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => (
-                  <tr key={r.projectId} className="hover:bg-os-hover">
-                    <td className="px-3 py-2 border-b border-border">
-                      <Link
-                        to={`/projects/${r.projectId}`}
-                        className="inline-flex items-center gap-2 text-foreground hover:text-os-accent"
-                      >
-                        {r.iconEmoji && <span>{r.iconEmoji}</span>}
-                        <span className="font-medium truncate">{r.projectName}</span>
-                      </Link>
-                    </td>
-                    <td className="px-3 py-2 border-b border-border text-xs text-muted-foreground truncate">
-                      {r.partnerNames.length ? r.partnerNames.join(", ") : "—"}
-                    </td>
-                    {domains.map((d) => {
-                      const slots = r.roles.find((role) => role.domainName === d)?.slots ?? 0;
-                      return (
-                        <td
-                          key={d}
-                          className="px-2 py-2 border-b border-border text-center tabular-nums text-foreground"
-                        >
-                          {slots > 0 ? slots : <span className="text-muted-foreground">—</span>}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+      overline="Term plan"
+      accent="coral"
+      title={`Term ${termCode}`}
+      subtitle={`${rows.length} ${rows.length === 1 ? "project" : "projects"} planned. Open staffing for per-role edits.`}
+      width={560}
+      footer={
+        <div className="flex items-center justify-end">
+          <Link
+            to={`/projects/staffing?term=${encodeURIComponent(termCode)}`}
+            className="hub-sheet-primary inline-flex items-center justify-center gap-2 px-4 py-2 text-[13px] font-semibold"
+          >
+            Open staffing <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
+          </Link>
         </div>
-      </div>
-    </Modal>
+      }
+    >
+      {rows.length === 0 ? (
+        <p className="text-sm text-muted-foreground text-center py-10">
+          No projects planned for this term yet.
+        </p>
+      ) : (
+        <div className="hub-term-plan">
+          {rows.map((r) => (
+            <article key={r.projectId} className="hub-term-plan-row">
+              <Link
+                to={`/projects/${r.projectId}`}
+                className="hub-term-plan-head"
+              >
+                <ProjectIcon iconEmoji={r.iconEmoji} size="lg" />
+                <div className="min-w-0">
+                  <h3 className="truncate">{r.projectName}</h3>
+                  <p>
+                    {r.partnerNames.length
+                      ? r.partnerNames.join(" · ")
+                      : "No partner yet"}
+                  </p>
+                </div>
+                <ArrowUpRight aria-hidden />
+              </Link>
+              {r.roles.length > 0 && (
+                <ul className="hub-term-plan-roles" aria-label="Planned roles">
+                  {r.roles.map((role) => (
+                    <li key={role.domainName}>
+                      <span>{role.domainName}</span>
+                      <strong>{role.slots}</strong>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {domains.length > 0 && r.roles.length === 0 && (
+                <p className="hub-term-plan-empty">No roles requested yet.</p>
+              )}
+            </article>
+          ))}
+        </div>
+      )}
+    </SlideOver>
   );
 }
