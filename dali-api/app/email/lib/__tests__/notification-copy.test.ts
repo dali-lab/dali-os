@@ -138,10 +138,11 @@ describe("projection into the email template registry", () => {
     expect(def.defaults?.subject).toBe("Meeting invite: {{itemTitle}}");
   });
 
-  it("routes notification mail through the General identity with the settings footer", () => {
+  it("routes notification mail through the General identity unless the copy overrides it", () => {
     for (const key of NOTIFICATION_COPY_KEYS) {
       const def = emailTemplateDef(notifyTemplateKey(key));
-      expect(def.purpose, key).toBe("General");
+      const expected = key.startsWith("hiring.") ? "Hiring" : "General";
+      expect(def.purpose, key).toBe(expected);
       expect(def.footer, key).toBe("notifications");
     }
   });
