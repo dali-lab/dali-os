@@ -81,6 +81,7 @@ interface LayoutOSProps {
   favorites?: FavoritePage[]
   /** True when this session is an admin "log in as" — shows the exit banner. */
   impersonating?: boolean
+  impersonationAllowsWrites?: boolean
   focusMode?: boolean
   /** The routed page fills the shell's main column instead of growing past it
    *  (see `handle.fitViewport`) — the shell is then bounded to the window and
@@ -117,6 +118,7 @@ export function LayoutOS({
   isInstructor = false,
   favorites = [],
   impersonating = false,
+  impersonationAllowsWrites = false,
   focusMode = false,
   fitViewport = false,
   children,
@@ -881,7 +883,7 @@ export function LayoutOS({
         {/* Impersonation is a session-mode indicator, so it sits above the top
             bar and shows even in focus mode. */}
         {impersonating && (
-          <ImpersonationBanner
+          <ImpersonationBanner allowsWrites={impersonationAllowsWrites}
             userName={`${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || user.email}
           />
         )}

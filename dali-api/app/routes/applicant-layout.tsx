@@ -1,6 +1,6 @@
 import { Outlet, useLoaderData, Link, useMatches, redirect } from "react-router";
 import type { Route } from "./+types/applicant-layout";
-import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
+import { requireAuth, redirectPartnerToPortal, impersonationAllowsWrites } from "~/lib/auth";
 import { maybeUpgradeLegacyToBetterAuth } from "~/lib/betterauth-upgrade.server";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
@@ -55,15 +55,16 @@ export async function loader({ request }: Route.LoaderArgs) {
     }
   }
 
-  return { user: auth.user, avatarUrl, flags, impersonating };
+  return { user: auth.user, avatarUrl, flags, impersonating, impersonationWrites: impersonationAllowsWrites() };
 }
 
 export default function ApplicantLayout() {
-  const { user, avatarUrl, flags, impersonating } = useLoaderData<typeof loader>() as {
+  const { user, avatarUrl, flags, impersonating, impersonationWrites } = useLoaderData<typeof loader>() as {
     user: { sub: string; email: string; type: string; firstName?: string; lastName?: string };
     avatarUrl: string | null;
     flags: FeatureFlagMap;
     impersonating: boolean;
+    impersonationWrites: boolean;
   };
 
   // A page that declares `fitViewport` (the calendar's hour grid) fills the
@@ -75,7 +76,7 @@ export default function ApplicantLayout() {
   );
 
   return (
-    <LayoutPortalOS user={user} photoUrl={avatarUrl} fitViewport={fitViewport} impersonating={impersonating}>
+    <LayoutPortalOS user={user} photoUrl={avatarUrl} fitViewport={fitViewport} impersonating={impersonating} impersonationAllowsWrites={impersonationWrites}>
       <FeatureFlagsProvider flags={flags}>
         <Outlet />
       </FeatureFlagsProvider>

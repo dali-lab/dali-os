@@ -39,10 +39,11 @@ interface LayoutPortalOSProps {
   /** An admin is impersonating this account — show the exit banner so they are
    *  never stranded in a non-member shell. */
   impersonating?: boolean
+  impersonationAllowsWrites?: boolean
   children: React.ReactNode
 }
 
-export function LayoutPortalOS({ user, photoUrl, fitViewport = false, impersonating = false, children }: LayoutPortalOSProps) {
+export function LayoutPortalOS({ user, photoUrl, fitViewport = false, impersonating = false, impersonationAllowsWrites = false, children }: LayoutPortalOSProps) {
   const location = useLocation()
   const path = location.pathname + location.search
   useOsShellRoot(true)
@@ -372,7 +373,7 @@ export function LayoutPortalOS({ user, photoUrl, fitViewport = false, impersonat
         )}
       >
         {impersonating && (
-          <ImpersonationBanner
+          <ImpersonationBanner allowsWrites={impersonationAllowsWrites}
             userName={`${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || user.email}
           />
         )}
