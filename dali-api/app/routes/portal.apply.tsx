@@ -1859,6 +1859,23 @@ function ApplyForm() {
         </p>
 
         <div className="space-y-5">
+          {/* Start term is a first-class field, not an answer, so it is not
+              in any QuestionList below. validateForReview guarantees one is
+              picked whenever the cycle offers a choice. */}
+          {startTermOptions.length > 0 && (
+            <div className="rounded-os-card bg-os-card px-5 py-4">
+              <h4 className="font-heading text-xs font-bold text-foreground uppercase tracking-wider mb-1">
+                Start term
+              </h4>
+              <p className="text-sm text-foreground">
+                {(() => {
+                  const picked = startTermOptions.find(t => t.id === startTermId);
+                  return picked ? termCodeLabel(picked.code) : "Not selected";
+                })()}
+              </p>
+            </div>
+          )}
+
           {(() => {
             const beforeQuestions = (formQuestions as Question[]).filter(q => !q.data.afterDomains);
             return beforeQuestions.length > 0 ? (
