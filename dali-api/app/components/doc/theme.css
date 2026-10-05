@@ -55,6 +55,14 @@
   min-height: 6rem;
 }
 
+/* The floor exists so an empty editable doc has somewhere to click. A
+ * read-only embed (challenge descriptions, form intros, application viewers)
+ * has nothing to click into, and a one-line description sat in a box four
+ * times its height. */
+.dali-doc .bn-editor[contenteditable="false"] {
+  min-height: 0;
+}
+
 /* Compact: no side menu (disabled via the sideMenu prop), so the wide
  * drag-handle gutter is dead space — pull the default 54px inline padding in. */
 .dali-doc--compact .bn-editor {
