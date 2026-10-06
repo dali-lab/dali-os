@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db", () => ({
   prisma: {
     mailAccount: { findFirst: vi.fn(), update: vi.fn() },
+    gmailIntegration: { findFirst: vi.fn().mockResolvedValue(null), update: vi.fn() },
     mailMessageIndex: { findMany: vi.fn(), createMany: vi.fn(), aggregate: vi.fn() },
     userEmail: { findMany: vi.fn() },
     user: { findMany: vi.fn() },

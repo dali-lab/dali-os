@@ -43,6 +43,7 @@ const HIRING_ROW = {
   lastUsedAt: new Date("2026-06-01T00:00:00Z"),
   syncError: null,
   dailyCap: null,
+  scopes: [],
 };
 
 describe("list_email_senders", () => {

@@ -8,18 +8,24 @@
 import { requireAuth } from "~/lib/auth";
 import { isCore } from '~/lib/roles'
 import { getApiBaseUrl, APPLICATIONS_FROM_EMAIL } from '~/lib/app-env'
-import { buildGoogleAuthUrl } from '~/lib/google-oauth'
+import { buildGoogleAuthUrl, GMAIL_READONLY_SCOPE, GMAIL_SEND_SCOPE } from '~/lib/google-oauth'
 import { isEmailPurpose, type EmailPurposeKey } from '~/lib/email-identities'
 import { randomBytes } from 'node:crypto'
 
 const GMAIL_STATE_COOKIE = '__dali_gmail_oauth_state'
 
 const SCOPES = [
-  'https://www.googleapis.com/auth/gmail.send',
+  GMAIL_SEND_SCOPE,
   'https://www.googleapis.com/auth/calendar',
   'openid',
   'email',
 ]
+
+// Only the Hiring identity is read back: the applicant email index walks the
+// applications@ mailbox. Other purposes stay send-only.
+function scopesFor(purpose: EmailPurposeKey): string[] {
+  return purpose === 'Hiring' ? [...SCOPES, GMAIL_READONLY_SCOPE] : SCOPES
+}
 
 export async function loader({ request }: { request: Request }) {
   const auth = await requireAuth(request)
@@ -44,7 +50,7 @@ export async function loader({ request }: { request: Request }) {
   const authUrl = buildGoogleAuthUrl({
     clientId,
     redirectUri: `${apiBase}/admin/authorize-gmail/callback`,
-    scopes: SCOPES,
+    scopes: scopesFor(purpose),
     state,
     accessType: 'offline',
     prompt: 'consent',
