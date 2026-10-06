@@ -4,6 +4,7 @@ import { withCors, handlePreflight } from "~/lib/cors";
 import { isLabMember } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { listVisibleGroupsForUser } from "~/lib/groups";
+import { orderGroupsForPicker } from "~/lib/group-kind";
 import {
   addPageShare,
   listPageShares,
@@ -75,7 +76,7 @@ export async function action({ request, params }: Route.ActionArgs) {
           return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
         }
         const q = (str("q") ?? "").trim();
-        const [members, groups] = await Promise.all([
+        const [members, groups, page, existingGroupShares] = await Promise.all([
           q.length < 2
             ? Promise.resolve([])
             : prisma.user.findMany({
@@ -92,7 +93,18 @@ export async function action({ request, params }: Route.ActionArgs) {
                 select: { id: true, firstName: true, lastName: true },
               }),
           listVisibleGroupsForUser(me),
+          prisma.page.findUnique({ where: { id: pageId }, select: { scopeGroupId: true } }),
+          prisma.pageShare.findMany({
+            where: { pageId, principalType: "Group" },
+            select: { principalId: true },
+          }),
         ]);
+        // Keep the folder's own scope group and any already-shared groups visible
+        // even if they're otherwise-empty auto groups the picker would drop.
+        const keepIds = [
+          ...(page?.scopeGroupId ? [page.scopeGroupId] : []),
+          ...existingGroupShares.map((s) => s.principalId),
+        ];
         return withCors(
           request,
           Response.json({
@@ -101,7 +113,7 @@ export async function action({ request, params }: Route.ActionArgs) {
               id: m.id,
               label: `${m.firstName} ${m.lastName}`.trim(),
             })),
-            groups: groups.map((g) => ({ id: g.id, label: g.name })),
+            groups: orderGroupsForPicker(groups, keepIds).map((g) => ({ id: g.id, label: g.name })),
           }),
         );
       }

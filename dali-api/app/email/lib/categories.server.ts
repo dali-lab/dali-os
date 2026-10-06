@@ -9,6 +9,7 @@ import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";
 import { fullName } from "~/lib/display";
 import { MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
+import { listAllGroups } from "~/lib/groups";
 import { EMAIL_RE, MAX_CATEGORY_DESCRIPTION, MAX_CATEGORY_NAME } from "~/email/lib/categories";
 
 
@@ -34,16 +35,14 @@ export async function loadInboxCategories() {
       orderBy: MEMBER_LIST_ORDER_BY,
       select: { id: true, firstName: true, lastName: true, daliEmail: true },
     }),
-    prisma.groupDefinition.findMany({
-      where: { archivedAt: null },
-      orderBy: { name: "asc" },
-      select: { id: true, name: true },
-    }),
+    listAllGroups(),
   ]);
 
   return {
     members: members.map((m) => ({ id: m.id, name: fullName(m), email: m.daliEmail })),
-    groups,
+    groups: groups
+      .filter((g) => !g.archived)
+      .map((g) => ({ id: g.id, name: g.name, systemKey: g.systemKey, memberCount: g.memberIds.length })),
     categories: categories.map((c) => ({
       id: c.id,
       name: c.name,

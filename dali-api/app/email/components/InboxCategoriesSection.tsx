@@ -8,6 +8,7 @@ import { IconButton } from "~/components/ui/IconButton";
 import { MultiSelect } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
 import { cn } from "~/lib/cn";
+import { orderGroupsForPicker } from "~/lib/group-kind";
 import { EMAIL_RE, MAX_CATEGORY_DESCRIPTION, MAX_CATEGORY_NAME } from "~/email/lib/categories";
 import type { loadInboxCategories } from "~/email/lib/categories.server";
 
@@ -166,7 +167,7 @@ function CategoryModal({
           <MultiSelect
             ariaLabel="Groups who can subscribe"
             values={groupIds}
-            options={data.groups.map((g) => ({ value: g.id, label: g.name }))}
+            options={orderGroupsForPicker(data.groups, groupIds).map((g) => ({ value: g.id, label: g.name }))}
             onChange={setGroupIds}
             placeholder="No groups"
             buttonClassName={formTrigger}

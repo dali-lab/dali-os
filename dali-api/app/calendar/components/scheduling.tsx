@@ -19,6 +19,7 @@ import { usePanelClass } from "~/components/ui/floating/os-styles";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { fullName } from "~/lib/display";
+import { orderGroupsForPicker } from "~/lib/group-kind";
 import type { RsvpStatus } from "~/calendar/lib/types";
 import { isGuestEmail } from "~/calendar/lib/guest-emails";
 import {
@@ -196,7 +197,7 @@ export function ParticipantPicker({
   const listRef = useRef<Array<HTMLElement | null>>([]);
 
   const q = query.trim().toLowerCase();
-  const filteredGroups = groups
+  const filteredGroups = orderGroupsForPicker(groups, selectedGroupIds)
     .filter((g) => !selectedGroupIds.includes(g.id))
     .filter((g) => (q ? g.name.toLowerCase().includes(q) : true))
     .slice(0, 20);
