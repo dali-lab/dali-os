@@ -397,6 +397,66 @@ export const NOTIFICATION_COPY = {
     body: "From {{personName}}",
   },
 
+  // ── Partners ─────────────────────────────────────────────────────────────
+  // No ownership on a partner application (specs/partner-crm.md §3), so every
+  // one of these fans out to all of Core rather than a single assignee.
+  "partner.inquiry_received": {
+    eventType: "partner.inquiry_received",
+    label: "New partner inquiry",
+    description: "Sent to Core when a new partner application comes in from the portal or an inbound email.",
+    variables: ["itemTitle", "itemDetail"],
+    subject: "New partner inquiry: {{itemTitle}}",
+    body: "{{itemDetail}}",
+  },
+  "partner.meeting_requested": {
+    eventType: "partner.meeting_requested",
+    label: "Partner asked for a meeting",
+    description: "Sent to Core when a partner requests a meeting through the portal scheduler.",
+    variables: ["itemTitle", "when"],
+    subject: "{{itemTitle}} requested a meeting",
+    body: "Requested for {{when}}.",
+  },
+  "partner.stale": {
+    eventType: "partner.stale",
+    label: "Partner card gone quiet",
+    description: "Sent to Core when an open partner card has had no activity past the stale threshold.",
+    variables: ["itemTitle", "itemDetail"],
+    subject: "{{itemTitle}} has gone quiet",
+    body: "{{itemDetail}}",
+  },
+  "partner.next_step_due": {
+    eventType: "partner.next_step_due",
+    label: "Partner next step due",
+    description: "Sent to Core when the next step on a partner card is due today or overdue.",
+    variables: ["itemTitle", "itemDetail"],
+    subject: "Next step due: {{itemTitle}}",
+    body: "{{itemDetail}}",
+  },
+  "partner.renewal_due": {
+    eventType: "partner.renewal_due",
+    label: "Renewal application created",
+    description: "Sent to Core when a partner's project is ending soon and a renewal card is created automatically.",
+    variables: ["itemTitle"],
+    subject: "Renewal created: {{itemTitle}}",
+    body: "",
+  },
+  "partner.contract_signed": {
+    eventType: "partner.contract_signed",
+    label: "Partner signed the contract",
+    description: "Sent to Core when a partner signs their contract.",
+    variables: ["itemTitle"],
+    subject: "{{itemTitle}} signed the contract",
+    body: "",
+  },
+  "partner.survey_received": {
+    eventType: "partner.survey_received",
+    label: "Partner feedback received",
+    description: "Sent to Core when a partner submits the post-project feedback survey.",
+    variables: ["itemTitle"],
+    subject: "Feedback received: {{itemTitle}}",
+    body: "",
+  },
+
   // ── Announcements ────────────────────────────────────────────────────────
   // No `body`: Core and instructors author these per send, so only the framing
   // is template-owned.
