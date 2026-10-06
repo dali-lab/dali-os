@@ -6629,6 +6629,8 @@ model RoomDisplay {
   tokenHash   String?   @unique
   activatedAt DateTime?
   lastSeenAt  DateTime?
+  // "0.2.0 (2)", sent by the iPad on every request; shown in Core ▸ Rooms.
+  appVersion  String?
   revokedAt   DateTime?
 
   createdByUserId String?
