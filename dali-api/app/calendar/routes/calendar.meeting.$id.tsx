@@ -179,8 +179,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const ipadScan = canEdit
     ? {
         on: ipadScanOn,
-        // Another event has the iPads; this one waits until that's turned off.
+        // Another event has the iPads; this one can take them over.
         busyWith: activeScan && !ipadScanOn ? activeScan.title : null,
+        busyHref:
+          activeScan && !ipadScanOn
+            ? meetingOccurrenceHref(activeScan.meetingId, activeScan.occurrenceStart.toISOString())
+            : null,
         ended:
           meeting.selectedAt !== null &&
           occurrence.end.getTime() + CHECK_IN_GRACE_MIN * 60_000 <= Date.now(),
@@ -289,7 +293,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
   const form = await request.formData();
   const intent = form.get("intent");
-  if (intent === "start-ipad-scan" || intent === "stop-ipad-scan") {
+  if (intent === "start-ipad-scan" || intent === "takeover-ipad-scan" || intent === "stop-ipad-scan") {
     return ipadScanAction(request, params.id, auth.user.sub, intent, form);
   }
   if (intent !== "enable-self-check-in") {
@@ -328,7 +332,7 @@ async function ipadScanAction(
   request: Request,
   meetingId: string,
   userId: string,
-  intent: "start-ipad-scan" | "stop-ipad-scan",
+  intent: "start-ipad-scan" | "takeover-ipad-scan" | "stop-ipad-scan",
   form: FormData,
 ) {
   const meeting = await prisma.scheduledMeeting.findUnique({
@@ -349,9 +353,11 @@ async function ipadScanAction(
   }
   const occurrenceStart = parseOccurrenceParam(form.get("occurrenceStart"));
   if (!occurrenceStart) return Response.json({ error: "Missing occurrenceStart" }, { status: 400 });
-  const result = await startDisplayScan(meetingId, occurrenceStart, userId);
+  const result = await startDisplayScan(meetingId, occurrenceStart, userId, {
+    takeOver: intent === "takeover-ipad-scan",
+  });
   if (!result.ok) return Response.json({ error: result.error }, { status: result.status });
-  return Response.json({ ok: true });
+  return Response.json({ ok: true, displaced: result.displaced });
 }
 
 function ProposedTimesCard({
@@ -588,19 +594,29 @@ export default function CalendarMeetingPage() {
   const dialog = useDialog();
 
   async function toggleIpadScan() {
-    const on = d.ipadScan?.on;
-    if (!on) {
+    if (!d.ipadScan) return;
+    const { on, busyWith } = d.ipadScan;
+    let intent: "start-ipad-scan" | "takeover-ipad-scan" | "stop-ipad-scan" = "stop-ipad-scan";
+    if (!on && busyWith) {
+      // Pulls the iPads out from under another event's live check-in.
+      const ok = await dialog.confirm({
+        title: `Switch iPads from "${busyWith}"?`,
+        description: `Check-in stops for "${busyWith}" and every door display starts scanning for this event instead.`,
+        confirmLabel: "Switch",
+        tone: "destructive",
+      });
+      if (!ok) return;
+      intent = "takeover-ipad-scan";
+    } else if (!on) {
       const ok = await dialog.confirm({
         title: "Track attendance from iPads?",
         description: "Every door display becomes a pass scanner for this event until you turn it off or the event ends.",
         confirmLabel: "Enable",
       });
       if (!ok) return;
+      intent = "start-ipad-scan";
     }
-    ipadFetcher.submit(
-      { intent: on ? "stop-ipad-scan" : "start-ipad-scan", occurrenceStart: d.occurrenceStart },
-      { method: "post" },
-    );
+    ipadFetcher.submit({ intent, occurrenceStart: d.occurrenceStart }, { method: "post" });
   }
   const showProject = d.projectId || d.canSetProject;
 
@@ -746,11 +762,15 @@ export default function CalendarMeetingPage() {
               <button
                 type="button"
                 onClick={toggleIpadScan}
-                disabled={ipadFetcher.state !== "idle" || d.ipadScan.busyWith !== null}
+                disabled={ipadFetcher.state !== "idle"}
                 className={cn(actionBtnClass, "disabled:opacity-50")}
               >
                 <Tablet className="h-4 w-4" />
-                {d.ipadScan.on ? "Stop attendance tracking from iPad" : "Enable attendance tracking from iPad"}
+                {d.ipadScan.on
+                  ? "Stop attendance tracking from iPad"
+                  : d.ipadScan.busyWith
+                    ? "Switch iPads to this event"
+                    : "Enable attendance tracking from iPad"}
               </button>
             )}
             {d.canEnableSelfCheckIn && (
@@ -770,7 +790,15 @@ export default function CalendarMeetingPage() {
         </div>
         {d.ipadScan?.busyWith && (
           <p className="text-sm text-os-grey">
-            iPads are tracking "{d.ipadScan.busyWith}". Turn that off to use them here.
+            iPads are tracking{" "}
+            {d.ipadScan.busyHref ? (
+              <Link to={d.ipadScan.busyHref} className="underline">
+                {d.ipadScan.busyWith}
+              </Link>
+            ) : (
+              d.ipadScan.busyWith
+            )}
+            . Switching moves them to this event.
           </p>
         )}
         {selfCheckInFetcher.data?.error && (
