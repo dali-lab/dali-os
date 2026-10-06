@@ -1,5 +1,6 @@
 import { prisma } from "~/lib/db";
 import type { OfferingType } from "~/education/lib/offering-type";
+import { summarizeAttendance, type AttendanceSummary } from "~/education/lib/session-time";
 
 // Education engagement for cross-app surfaces: the hiring reviewer view
 // ("demonstrated interest" — what a hiring applicant attended and how it
@@ -18,13 +19,16 @@ export type EngagementEntry = {
   startsAt: Date | null;
   endsAt: Date | null;
   status: string;
-  attendance: { present: number; excused: number; total: number };
+  attendance: AttendanceSummary;
   certificateIssuedAt: Date | null;
   feedback: string | null;
   internalNote: string | null;
 };
 
-export async function getEducationEngagement(userId: string): Promise<EngagementEntry[]> {
+export async function getEducationEngagement(
+  userId: string,
+  now: Date = new Date(),
+): Promise<EngagementEntry[]> {
   const applications = await prisma.educationApplication.findMany({
     where: { applicantUserId: userId },
     orderBy: { submittedAt: "desc" },
@@ -37,10 +41,10 @@ export async function getEducationEngagement(userId: string): Promise<Engagement
           type: true,
           startsAt: true,
           endsAt: true,
-          _count: { select: { sessions: true } },
+          sessions: { select: { id: true, datetime: true, endsAt: true } },
         },
       },
-      attendances: { select: { status: true } },
+      attendances: { select: { sessionId: true, status: true } },
       certificate: { select: { issuedAt: true } },
       note: { select: { feedback: true, internalNote: true } },
     },
@@ -53,11 +57,7 @@ export async function getEducationEngagement(userId: string): Promise<Engagement
     startsAt: a.offering.startsAt,
     endsAt: a.offering.endsAt,
     status: a.status,
-    attendance: {
-      present: a.attendances.filter((x) => x.status === "Present").length,
-      excused: a.attendances.filter((x) => x.status === "Excused").length,
-      total: a.offering._count.sessions,
-    },
+    attendance: summarizeAttendance(a.offering.sessions, a.attendances, now),
     certificateIssuedAt: a.certificate?.issuedAt ?? null,
     feedback: a.note?.feedback ?? null,
     internalNote: a.note?.internalNote ?? null,

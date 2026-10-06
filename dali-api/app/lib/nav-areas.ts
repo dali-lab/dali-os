@@ -27,7 +27,6 @@ import {
   Megaphone,
   Settings,
   Shield,
-  Users,
   UserPlus,
   UsersRound,
   type LucideIcon,
@@ -219,9 +218,6 @@ const REGROUPED_AREAS: NavArea[] = [
     subtabs: [
       { label: "Projects", href: "/projects", icon: LayoutGrid },
       { label: "People", href: "/members", icon: UsersRound },
-      // Groups' own pill row is hidden under the sidebar redesign, so without a
-      // sub-tab here the page would be reachable only from ⌘K.
-      { label: "Groups", href: "/members/groups", icon: Users, gate: (r) => r.canViewForms },
       { label: "Partners", href: "/partners", icon: Handshake },
       { label: "Mentorship", href: "/mentorship", icon: Heart, gate: (r) => r.isLabMentor || r.isCore },
       // Lab-wide Attendance: every meeting/event you're invited to, with each

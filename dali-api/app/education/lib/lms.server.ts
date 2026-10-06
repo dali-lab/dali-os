@@ -11,6 +11,7 @@ import { listAssignments } from "./assignments.server";
 import { listThreads, offeringInstructorIds } from "./discussions.server";
 import { studentVisibleFeedback } from "./student-notes.server";
 import { isSessionCheckInOpen } from "./session-checkin.server";
+import { isSessionUpcoming, summarizeAttendance } from "./session-time";
 import type { AttendanceStatus } from "~/generated/prisma/client";
 
 export async function listMaterialPages(offeringId: string) {
@@ -480,6 +481,7 @@ export async function getStudentDashboard(userId: string) {
     title: string;
     type: string;
     attended: number;
+    held: number;
     total: number;
     nextSessionAt: Date | null;
     isPast: boolean;
@@ -494,15 +496,17 @@ export async function getStudentDashboard(userId: string) {
     const present = new Set(
       app.attendances.filter((a) => a.status === "Present").map((a) => a.sessionId),
     );
+    const summary = summarizeAttendance(off.sessions, app.attendances, now);
     const upcoming = off.sessions
-      .filter((s) => new Date(s.endsAt ?? s.datetime) >= now)
+      .filter((s) => isSessionUpcoming(s, now))
       .sort((a, b) => +new Date(a.datetime) - +new Date(b.datetime));
     myCourses.push({
       offeringId: off.id,
       title: off.title,
       type: off.type,
-      attended: off.sessions.filter((s) => present.has(s.id)).length,
-      total: off.sessions.length,
+      attended: summary.present,
+      held: summary.held,
+      total: summary.total,
       nextSessionAt: upcoming[0]?.datetime ?? null,
       isPast: off.closedOutAt != null || (off.endsAt != null && off.endsAt < now),
     });
