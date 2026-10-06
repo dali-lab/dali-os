@@ -66,6 +66,7 @@ import { useAvatarStatus } from "~/components/presence/PresenceStatusProvider";
 import { formatLastActive } from "~/lib/presence";
 import { isNewMember, isBirthdayToday } from "~/members/lib/warmth";
 import { NewBadge, BirthdayBadge } from "~/members/components/WarmthBadges";
+import { attendanceCopy } from "~/education/lib/session-time";
 
 // A member reads as a project does: the same hero (the photo as this page's
 // icon, the name at 32px, its labelled clusters to the right), the same tab
@@ -1563,7 +1564,7 @@ function EducationSection({
                   </span>
                   <span className="text-xs text-os-grey whitespace-nowrap">
                     {e.status === "Approved" && e.attendance.total > 0
-                      ? `${e.attendance.present}/${e.attendance.total} sessions`
+                      ? attendanceCopy(e.attendance, "ratio")
                       : e.status}
                     {e.certificateIssuedAt ? " · Certificate" : ""}
                   </span>

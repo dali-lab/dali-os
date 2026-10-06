@@ -10,6 +10,7 @@ import {
 } from "./OfferingDiscussion";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { cn } from "~/lib/cn";
+import { isSessionPast, isSessionUpcoming } from "~/education/lib/session-time";
 import { DocEditor } from "~/components/doc";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { Avatar } from "~/components/ui/Avatar";
@@ -621,10 +622,11 @@ function SessionTimeline({
   const generalAssignments = assignments.filter((a) => a.sessionSequence == null);
 
   const present = sessions.filter((s) => s.myAttendance === "Present").length;
+  const held = sessions.filter((s) => isSessionPast(s, now)).length;
   const submitted = assignments.filter((a) => a.mySubmittedAt).length;
   const nextId =
     sessions
-      .filter((s) => new Date(s.endsAt ?? s.datetime) >= now)
+      .filter((s) => isSessionUpcoming(s, now))
       .sort((a, b) => +new Date(a.datetime) - +new Date(b.datetime))[0]?.id ?? null;
   const nextSession = sessions.find((s) => s.id === nextId) ?? null;
 
@@ -639,9 +641,11 @@ function SessionTimeline({
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-os-card bg-os-card px-5 py-3.5 text-sm">
           <span className="text-foreground">
             <strong className="font-semibold">
-              {present}/{sessions.length}
+              {present}/{held}
             </strong>{" "}
-            <span className="text-os-grey">attended</span>
+            <span className="text-os-grey">
+              attended{held < sessions.length ? " so far" : ""}
+            </span>
           </span>
           {assignments.length > 0 && (
             <span className="text-foreground">
@@ -662,7 +666,7 @@ function SessionTimeline({
 
       <ol className="flex flex-col gap-2">
         {sessions.map((s) => {
-          const past = new Date(s.endsAt ?? s.datetime) < now;
+          const past = isSessionPast(s, now);
           const isNext = s.id === nextId;
           const res = resourcesForSession(s.id);
           const asgs = assignmentsForSession(s.sequence);

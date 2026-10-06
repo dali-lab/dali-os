@@ -51,6 +51,7 @@ import { walletAppleConfigured } from "~/lib/wallet-apple.server";
 import { walletGoogleConfigured } from "~/lib/wallet-google.server";
 import { isValidTimezone } from "~/lib/timezone";
 import { getEducationProfile } from "~/education/lib/engagement.server";
+import type { AttendanceSummary } from "~/education/lib/session-time";
 import {
   mentorshipPairWhere,
   mentorNoteWhere,
@@ -183,7 +184,7 @@ export type ProfilePageData = {
       startsAt: Date | null;
       endsAt: Date | null;
       status: string;
-      attendance: { present: number; excused: number; total: number };
+      attendance: AttendanceSummary;
       certificateIssuedAt: Date | null;
     }>;
     taught: Array<{
