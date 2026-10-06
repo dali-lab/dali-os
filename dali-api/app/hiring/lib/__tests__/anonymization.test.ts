@@ -9,6 +9,7 @@ import {
   anonLabelMapForCycle,
   releasedDaIds,
   blindUser,
+  reviewerBlindLabel,
 } from "~/hiring/lib/anonymization.server";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -106,5 +107,52 @@ describe("releasedDaIds", () => {
     const set = await releasedDaIds([]);
     expect(set.size).toBe(0);
     expect(mockPrisma.decision.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("reviewerBlindLabel", () => {
+  it("returns null without querying when anonymizeReview is off", async () => {
+    const label = await reviewerBlindLabel({
+      reviewerId: "rev-1",
+      cycleId: "cycle-1",
+      applicationId: "app-1",
+      anonymizeReview: false,
+    });
+    expect(label).toBeNull();
+    expect(mockPrisma.cycleReviewer.findMany).not.toHaveBeenCalled();
+  });
+
+  it("returns the same label on two calls for the same application", async () => {
+    mockPrisma.cycleReviewer.findMany.mockResolvedValue([{ domainId: "domain-1" }]);
+    mockPrisma.domainApplication.findMany.mockResolvedValue([{ id: "da-1" }]);
+    mockPrisma.decision.findMany.mockResolvedValue([]); // nothing released -> still blinded
+    mockPrisma.application.findMany.mockResolvedValue([{ id: "app-1" }, { id: "app-2" }]);
+
+    const args = {
+      reviewerId: "rev-1",
+      cycleId: "cycle-1",
+      applicationId: "app-1",
+      anonymizeReview: true,
+    };
+    const first = await reviewerBlindLabel(args);
+    const second = await reviewerBlindLabel(args);
+
+    expect(first).toBe("Applicant 1");
+    expect(second).toBe("Applicant 1");
+  });
+
+  it("returns null once the reviewer's domain application has a released decision", async () => {
+    mockPrisma.cycleReviewer.findMany.mockResolvedValue([{ domainId: "domain-1" }]);
+    mockPrisma.domainApplication.findMany.mockResolvedValue([{ id: "da-1" }]);
+    mockPrisma.decision.findMany.mockResolvedValue([{ domainApplicationId: "da-1" }]);
+
+    const label = await reviewerBlindLabel({
+      reviewerId: "rev-1",
+      cycleId: "cycle-1",
+      applicationId: "app-1",
+      anonymizeReview: true,
+    });
+
+    expect(label).toBeNull();
   });
 });

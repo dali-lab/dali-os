@@ -271,3 +271,104 @@ describe("reviewer.application.$id loader — auto-create review row", () => {
     expect(mockPrisma.applicationReview.upsert).not.toHaveBeenCalled();
   });
 });
+
+describe("reviewer.application.$id loader — prior applications", () => {
+  function setApplicationBaseAnonymize(anonymizeReview: boolean) {
+    mockPrisma.application.findUniqueOrThrow = vi.fn().mockResolvedValue({
+      id: APPLICATION_ID,
+      applicationCycleId: CYCLE_ID,
+      answers: {},
+      user: { id: "u-1", firstName: "Ada", lastName: "Lovelace" },
+      applicationFormVersion: {
+        id: "gcv-1",
+        questions: [{ key: "g1", data: { label: "G1" } }],
+      },
+      applicationCycle: {
+        id: CYCLE_ID,
+        name: "Test Cycle",
+        anonymizeReview,
+        statusUpdates: [{ newStatus: "Reviewing" }],
+        generalRubricVersion: { criteria: [], rubric: { id: "r-1", name: "General" } },
+        domains: [],
+      },
+    });
+  }
+
+  function mockHistoryQuery() {
+    mockPrisma.application.findMany = vi.fn().mockImplementation(({ where }: any) => {
+      // anonLabelMapForCycle (inside reviewerBlindLabel) queries by cycle id;
+      // listMyHiringApplications (inside listPriorApplications) queries by user id.
+      if (where?.applicationCycleId) return Promise.resolve([{ id: APPLICATION_ID }]);
+      if (where?.userId) {
+        return Promise.resolve([
+          {
+            id: "prior-app-1",
+            applicationType: "Standard",
+            statusUpdates: [{ newStatus: "Submitted", createdAt: new Date("2025-01-01") }],
+            applicationCycle: {
+              id: "prior-cycle",
+              name: "Prior Cycle",
+              statusUpdates: [{ newStatus: "Completed" }],
+            },
+            domainApplications: [
+              {
+                id: "prior-da-1",
+                domain: { name: "Design" },
+                closureReason: null,
+                application: {
+                  statusUpdates: [
+                    { newStatus: "Submitted", createdAt: new Date("2025-01-01") },
+                  ],
+                },
+                decisions: [
+                  { stage: "Released", type: "Accepted", createdAt: new Date("2025-02-01") },
+                ],
+                interviews: [],
+              },
+            ],
+          },
+        ]);
+      }
+      return Promise.resolve([]);
+    });
+  }
+
+  it("nulls every prior domain status while the current applicant is blinded", async () => {
+    setApplicationBaseAnonymize(true);
+    mockPrisma.cycleReviewer.findMany.mockResolvedValue([
+      { id: DESIGN_REVIEWER_ID, domainId: DESIGN_DOMAIN_ID },
+    ]);
+    mockPrisma.domainApplication.findMany.mockResolvedValue([
+      makeDA(DESIGN_DA_ID, DESIGN_DOMAIN_ID),
+    ]);
+    mockPrisma.decision = { findMany: vi.fn().mockResolvedValue([]) };
+    mockHistoryQuery();
+
+    const result: any = await callLoader();
+
+    expect(result.blinded).toBe(true);
+    expect(result.priorApplications).toHaveLength(1);
+    for (const prior of result.priorApplications) {
+      for (const domain of prior.domains) {
+        expect(domain.status).toBeNull();
+      }
+    }
+  });
+
+  it("keeps prior domain statuses when the current applicant is not blinded", async () => {
+    setApplicationBaseAnonymize(false);
+    mockPrisma.cycleReviewer.findMany.mockResolvedValue([
+      { id: DESIGN_REVIEWER_ID, domainId: DESIGN_DOMAIN_ID },
+    ]);
+    mockPrisma.domainApplication.findMany.mockResolvedValue([
+      makeDA(DESIGN_DA_ID, DESIGN_DOMAIN_ID),
+    ]);
+    mockHistoryQuery();
+
+    const result: any = await callLoader();
+
+    expect(result.blinded).toBe(false);
+    expect(result.priorApplications).toHaveLength(1);
+    expect(result.priorApplications[0].domains[0].status).toBe("Accepted");
+  });
+});
