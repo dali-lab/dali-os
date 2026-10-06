@@ -11,7 +11,7 @@ vi.mock("~/partners/lib/partner-email.server");
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isCore, getUserRoles } from "~/lib/roles";
+import { isCore, getUserRoles, getActiveCoreCycleTermIds } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { getPartnerContactEmailThreads } from "~/partners/lib/partner-email.server";
 import { loader } from "~/partners/routes/api.partner-applications.$id";
@@ -63,11 +63,13 @@ beforeEach(() => {
   });
   (isCore as any).mockResolvedValue(true);
   (getUserRoles as any).mockResolvedValue({ isCore: true });
+  (getActiveCoreCycleTermIds as any).mockResolvedValue([]);
   (isFeatureEnabled as any).mockResolvedValue(false);
   (getPartnerContactEmailThreads as any).mockResolvedValue([]);
   db.partnerApplication.findUnique.mockResolvedValue(baseApplication);
   db.partnerActivity.findMany.mockResolvedValue([]);
   db.user.findMany.mockResolvedValue([]);
+  db.coreAssignment.findMany.mockResolvedValue([]);
 });
 
 describe("GET /api/partner-applications/:id — guards", () => {
@@ -95,7 +97,22 @@ describe("GET /api/partner-applications/:id — payload", () => {
     expect(body.activities).toEqual([]);
     expect(body.emailThreads).toEqual([]);
     expect(body.partnerEmailOn).toBe(false);
+    expect(body.coreMembers).toEqual([]);
     expect(getPartnerContactEmailThreads).not.toHaveBeenCalled();
+  });
+
+  it("returns the active cycle's Core members, name-sorted, for the manual log form", async () => {
+    (getActiveCoreCycleTermIds as any).mockResolvedValue(["term-1"]);
+    db.coreAssignment.findMany.mockResolvedValue([
+      { userId: "u-2", user: { firstName: "Zoe", lastName: "Zhang", daliEmail: "zoe@dali" } },
+      { userId: "u-1", user: { firstName: "Ada", lastName: "Lovelace", daliEmail: "ada@dali" } },
+    ]);
+    const res = (await callLoader()) as Response;
+    const body = await res.json();
+    expect(body.coreMembers).toEqual([
+      { userId: "u-1", name: "Ada Lovelace" },
+      { userId: "u-2", name: "Zoe Zhang" },
+    ]);
   });
 
   it("loads email threads for the applicant contact when partner-email is on", async () => {

@@ -8,6 +8,9 @@ import { Link } from "react-router";
 import { ExternalLink } from "lucide-react";
 import { Button } from "~/components/ui/Button";
 import { Select } from "~/components/ui/floating";
+import { Checkbox } from "~/components/ui/Checkbox";
+import { DateField } from "~/components/ui/DateField";
+import { useDialog } from "~/components/ui/dialog";
 import type { ApplicationDetail } from "../../lib/partner-application-detail";
 import { postPartnerApplicationIntent } from "../../lib/partner-detail-fetch";
 
@@ -27,6 +30,7 @@ export function MeetingsTab({
   applicationId,
   meetings,
   meetingRequests,
+  coreMembers,
   canEdit,
   limit,
   viewAllHref,
@@ -36,12 +40,15 @@ export function MeetingsTab({
   applicationId: string;
   meetings: ApplicationDetail["meetings"];
   meetingRequests: ApplicationDetail["meetingRequests"];
+  /** Attendee picker for the manual "log a meeting" disclosure below. */
+  coreMembers: { userId: string; name: string }[];
   canEdit: boolean;
   limit?: number;
   viewAllHref?: string;
   onScheduleMeeting?: () => void;
   onChanged: () => void;
 }) {
+  const [showLogForm, setShowLogForm] = useState(false);
   const pending = meetingRequests.filter((r) => r.status === "Pending");
   const shownMeetings = limit ? meetings.slice(0, limit) : meetings;
   const truncated = limit !== undefined && meetings.length > limit;
@@ -87,7 +94,144 @@ export function MeetingsTab({
           </Link>
         )}
       </section>
+
+      {/* Secondary disclosure: logging a past meeting that happened outside
+          the real scheduler (no Google invite, no Meet link) — kept out of
+          the way behind a toggle so "Schedule meeting" stays the one
+          prominent action. */}
+      {canEdit && (
+        <section className="flex flex-col gap-2 border-t border-border pt-3">
+          <button
+            type="button"
+            onClick={() => setShowLogForm((v) => !v)}
+            className="self-start text-xs font-medium text-muted-foreground hover:text-foreground"
+          >
+            {showLogForm ? "Cancel manual log" : "Log a meeting manually"}
+          </button>
+          {showLogForm && (
+            <LogMeetingForm
+              applicationId={applicationId}
+              coreMembers={coreMembers}
+              onLogged={() => {
+                setShowLogForm(false);
+                onChanged();
+              }}
+            />
+          )}
+        </section>
+      )}
     </div>
+  );
+}
+
+// Legacy manual "log a meeting" form (date, attendees, notes, optional
+// partner-invite email) — previously the full page's only way to record a
+// meeting. Moved here so both the modal and the full page get it.
+function LogMeetingForm({
+  applicationId,
+  coreMembers,
+  onLogged,
+}: {
+  applicationId: string;
+  coreMembers: { userId: string; name: string }[];
+  onLogged: () => void;
+}) {
+  const dialog = useDialog();
+  const [meetingDate, setMeetingDate] = useState("");
+  const [attendeeUserIds, setAttendeeUserIds] = useState<string[]>([]);
+  const [notes, setNotes] = useState("");
+  const [notifyPartner, setNotifyPartner] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!meetingDate) {
+      setError("Meeting date is required.");
+      return;
+    }
+    if (notifyPartner) {
+      const ok = await dialog.confirm({
+        title: "Email a meeting invite to the partner?",
+        description: "This sends a meeting invitation to the partner's contact email.",
+        confirmLabel: "Send invite",
+      });
+      if (!ok) return;
+    }
+    setSaving(true);
+    setError(null);
+    const res = await postPartnerApplicationIntent(applicationId, "meeting-create", {
+      meetingDate,
+      attendeeUserIds,
+      meetingNotes: notes.trim() || null,
+      notifyPartner: notifyPartner ? "on" : null,
+    });
+    setSaving(false);
+    if (!res.ok) {
+      setError(res.error ?? "Couldn't log the meeting.");
+      return;
+    }
+    setMeetingDate("");
+    setAttendeeUserIds([]);
+    setNotes("");
+    setNotifyPartner(false);
+    onLogged();
+  }
+
+  return (
+    <form onSubmit={submit} className="flex flex-col gap-3 rounded-md border border-border bg-muted/30 p-3">
+      <label className="flex flex-col gap-1 text-xs">
+        <span className="font-medium text-muted-foreground">Date & time *</span>
+        <DateField
+          mode="datetime-local"
+          value={meetingDate}
+          onChange={setMeetingDate}
+          ariaLabel="Meeting date and time"
+        />
+      </label>
+      {coreMembers.length > 0 && (
+        <fieldset>
+          <legend className="mb-1 text-xs font-medium text-muted-foreground">Attendees</legend>
+          <div className="grid max-h-36 grid-cols-2 gap-1 overflow-y-auto">
+            {coreMembers.map((m) => (
+              <Checkbox
+                key={m.userId}
+                label={m.name}
+                className="text-xs"
+                checked={attendeeUserIds.includes(m.userId)}
+                onChange={(e) =>
+                  setAttendeeUserIds((cur) =>
+                    e.target.checked ? [...cur, m.userId] : cur.filter((id) => id !== m.userId),
+                  )
+                }
+              />
+            ))}
+          </div>
+        </fieldset>
+      )}
+      <label className="flex flex-col gap-1 text-xs">
+        <span className="font-medium text-muted-foreground">Notes</span>
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          rows={2}
+          placeholder="Pre-meeting notes or agenda…"
+          className="resize-none rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+        />
+      </label>
+      <Checkbox
+        label="Email partner a meeting invite"
+        className="text-xs"
+        checked={notifyPartner}
+        onChange={(e) => setNotifyPartner(e.target.checked)}
+      />
+      {error && <p className="text-xs text-destructive">{error}</p>}
+      <div className="flex gap-2">
+        <Button type="submit" variant="primary" size="sm" disabled={saving}>
+          {saving ? "Logging…" : "Log meeting"}
+        </Button>
+      </div>
+    </form>
   );
 }
 

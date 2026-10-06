@@ -286,3 +286,30 @@ Each step is a separate commit on one branch so review can follow it.
 
 - 2026-10-06 Kiran: request feature = the partner uses the real calendar scheduling component from the portal (not a Core-offers-slots loop). Manual card ordering inside columns is important; the board is sortable like the task board.
 - Assumed, not yet confirmed: finance (invoices, deal terms, contract) stays in behind `partner-finance`; Rejected cards older than the current term hide by default.
+
+## 18. UI review (2026-10-06, after the first build)
+
+Kiran: "Add new in taskboard doesn't really make sense. Let's not have rows upon rows of navigation. The modal that opens is good in theory but looks very rough rn." Plus: audit CTAs and accents against the rest of the app.
+
+### Board page
+
+- One navigation row only. Left: the Partner CRM pills (Board, Directory, Reports, Settings). Right, same row: `SearchInput`, the Customize button, the shared `ViewToggle` (board/list icons, like the Directory page), and the `os-add-btn` "New application". No h1 (the breadcrumb already says Partner CRM), no List/Board text toggle row, no count line in board view.
+- The board starts directly under that row.
+- Remove the per-column dashed "Add new" list header and the "Add application" column menu item. One create affordance, the top-right button.
+- Move the Application form binding block to `/core/partners/settings` (it is configuration). Remove the headcount chart from the board page; the Reports page's Capacity section owns it, and the Customize panel is the only other control on the page.
+- Column headers: plain label in the header ink (done), count pill, collapse menu.
+
+### Modal
+
+- Header: type badge gets a fill. Add `.os-type-badge--partner` (coral family: `--os-partner-fill` / `--os-partner-ink` defined next to the epic/story/task tokens in both light and dark blocks). Remove the stage `Select` from the header; the rail already has Stage. Header is badge, title (record caps as the task modal does), pencil, close.
+- Tabs: `UnderlineTabButtons` across the left column, not a floating pill container. Content sits directly under the underline with the standard 16px gap.
+- Activity tab: no nested bordered card. The feed is flat; the note composer sits under it the way the task modal's comment composer does (`MentionTextInput` + one small primary button).
+- Rail: every editable value uses the borderless `PROP_CONTROL` style inside `PropRow` (next step text, fee, legal entity). `DateField` and `Select`/`MultiSelect` keep their shared look. Read-only values are plain `text-sm`. Links use the app link treatment the full page already uses.
+- Footer: left "Open full page" ghost link; right the stage-aware primary (`Button variant="primary"`, which the OS shell renders in the OS accent) and the secondary actions. Reject stays a destructive text link. Nothing else in the footer.
+- Width `max-w-4xl`, body scrolls as one region, rail column `lg:w-72` fixed so the tab column does not jump between tabs.
+
+### Everywhere
+
+- CTA: `Button`/`buttonClasses("primary")` for the one primary action per surface, `os-add-btn` only for "make a new record" on list pages, `secondary` for cancel, `ghost` for links that look like buttons. No hand-rolled button classes.
+- Accents: coral is the brand primary (links, focus), the OS shell paints primary buttons in `--color-os-accent`; teal appears only where the shell's accent is teal. Do not introduce ad-hoc Tailwind colour classes (`text-amber-700` etc.) in partner components; use the chip tones in `BoardCardChip` and the stage pill map.
+- Copy: no em dashes anywhere in partner UI strings.

@@ -9,7 +9,7 @@
 // cross-route redirect from a fetcher would navigate the whole app there.
 
 import { useCallback, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link } from "react-router";
 import { Pencil, X } from "lucide-react";
 import { Modal } from "~/components/Modal";
 import { Select, MultiSelect } from "~/components/ui/floating";
@@ -71,7 +71,6 @@ export function PartnerApplicationModal({
 }) {
   const isCreate = !card;
   const dialog = useDialog();
-  const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>("activity");
   const [detail, setDetail] = useState<ApplicationDetailResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -130,23 +129,29 @@ export function PartnerApplicationModal({
     setCreating(true);
     setCreateError(null);
     try {
-      const fd = new FormData();
-      fd.set("title", newTitle.trim());
-      fd.set("applicantName", contactName.trim());
-      fd.set("applicantEmail", contactEmail.trim());
-      if (newSummary.trim()) fd.set("summary", newSummary.trim());
-      fd.set("source", newSource);
-      for (const id of newTermIds) fd.append("targetTermId", id);
-      for (const id of newDomainIds) fd.append("domainId", id);
-      const res = await fetch("/core/partners", { method: "POST", credentials: "include", body: fd });
-      const contentType = res.headers.get("content-type") ?? "";
-      if (contentType.includes("application/json")) {
+      const res = await fetch("/api/partner-applications", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: newTitle.trim(),
+          applicantName: contactName.trim() || null,
+          applicantEmail: contactEmail.trim(),
+          summary: newSummary.trim() || null,
+          source: newSource,
+          targetTermIds: newTermIds,
+          domainIds: newDomainIds,
+        }),
+      });
+      if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
-        if (body.error) throw new Error(body.error);
+        throw new Error(body.error ?? `Request failed: ${res.status}`);
       }
-      if (!res.ok) throw new Error(`Request failed: ${res.status}`);
-      const url = new URL(res.url);
-      navigate(url.pathname + url.search);
+      // Stays on the board (specs/partner-crm.md §5 create mode): close the
+      // modal and let the board revalidate so the new card appears at the
+      // top of New, instead of navigating to the full page.
+      onClose();
+      onChanged();
     } catch (e) {
       setCreateError(e instanceof Error ? e.message : "Couldn't create the application.");
     } finally {
@@ -385,6 +390,7 @@ export function PartnerApplicationModal({
                       applicationId={detail.application.id}
                       meetings={detail.application.meetings}
                       meetingRequests={detail.application.meetingRequests}
+                      coreMembers={detail.coreMembers}
                       canEdit={canEdit}
                       limit={TAB_ROW_LIMIT}
                       viewAllHref={`/core/partners/applications/${detail.application.id}?tab=meetings`}

@@ -13,6 +13,8 @@ const NAVBAR_PATHS = new Set([
   "/members/groups",
   "/core/partners",
   "/core/partners/directory",
+  "/core/partners/reports",
+  "/core/partners/settings",
   "/calendar",
   "/email",
   "/settings",
@@ -27,6 +29,7 @@ export function isNavbarRoute(href: string): boolean {
   if (path.startsWith("/forms/")) return true;
   if (path.startsWith("/core/partners/applications/")) return true;
   if (path.startsWith("/core/partners/orgs/")) return true;
+  if (path.startsWith("/core/partners/contacts/")) return true;
   return false;
 }
 

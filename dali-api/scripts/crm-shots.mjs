@@ -59,6 +59,9 @@ if (await firstCard.count()) {
 await shot("/core/partners/directory", "07-directory", "main");
 await shot("/core/partners/applications/papp-hood-kiosk", "08-full-page", "main");
 await shot("/core/partners/orgs/partner-hood-museum", "09-org", "main");
+await shot("/core/partners/orgs/partner-hood-museum?tab=settings", "09b-org-settings", "main");
+await shot("/core/partners/directory?view=contacts", "09c-directory-contacts", "main");
+await shot("/core/partners/settings", "09d-settings", "main");
 
 // Partner portal.
 await page.goto(`${base}/dev-login-as?personalEmail=partner.tuck@example.com&redirect=${encodeURIComponent(base + "/partner")}`, { waitUntil: "domcontentloaded" });

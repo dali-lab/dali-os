@@ -3,6 +3,7 @@
 // BoardCard/BoardCardMetaRow/BoardCardMeta/BoardCardChip primitives so the
 // two kanbans read as one system.
 
+import { Link } from "react-router";
 import {
   CalendarDays,
   FileText,
@@ -151,9 +152,14 @@ export function PartnerCard({
         )}
 
         {card.resultingProjectId && (
-          <BoardCardChip tone="good" title="Promoted to a project">
-            Project
-          </BoardCardChip>
+          <Link
+            to={`/projects/${card.resultingProjectId}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <BoardCardChip tone="good" title="Promoted to a project — open it">
+              Project
+            </BoardCardChip>
+          </Link>
         )}
 
         {card.pendingRequestCount > 0 && (

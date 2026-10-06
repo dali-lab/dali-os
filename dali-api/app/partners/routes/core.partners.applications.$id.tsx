@@ -21,8 +21,6 @@ import {
 import { UnderlineTabButtons } from "~/components/AreaPillNav";
 import { buttonClasses } from "~/components/ui/Button";
 import { cn } from "~/lib/cn";
-import { Checkbox } from "~/components/ui/Checkbox";
-import { DateField } from "~/components/ui/DateField";
 import type { Route } from "./+types/core.partners.applications.$id";
 import { prisma } from "~/lib/db";
 import { githubTeamSlug } from "~/lib/github-slug";
@@ -47,7 +45,7 @@ import { DocEditor } from "~/components/doc";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { isEmptyBlocks } from "~/lib/blocks";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
-import { useDialog, useConfirmSubmit } from "~/components/ui/dialog";
+import { useDialog } from "~/components/ui/dialog";
 import { EVAL_CRITERIA, EVAL_CRITERIA_VERSION } from "../lib/discovery-rubric";
 import {
   sendTriageNextStepsEmail,
@@ -69,6 +67,9 @@ import { PropertyRail } from "../components/application/PropertyRail";
 import { EvaluationTab } from "../components/application/EvaluationTab";
 import { ActivityTab } from "../components/application/ActivityTab";
 import { EmailTab } from "../components/application/EmailTab";
+import { MeetingsTab } from "../components/application/MeetingsTab";
+import { StageActions } from "../components/application/StageActions";
+import { ScheduleInterviewModal } from "../components/ScheduleInterviewModal";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const a = (data as { application?: { title: string } } | undefined)
@@ -151,6 +152,20 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           notes: true,
           debrief: true,
           outcome: true,
+          scheduledMeeting: { select: { id: true, selectedAt: true, meetingUrl: true } },
+        },
+      },
+      meetingRequests: {
+        where: { status: { in: ["Pending", "Declined"] } },
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          startTime: true,
+          durationMinutes: true,
+          note: true,
+          status: true,
+          responseNote: true,
+          createdAt: true,
         },
       },
     },
@@ -313,6 +328,22 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         notes: m.notes,
         debrief: m.debrief,
         outcome: m.outcome,
+        scheduledMeeting: m.scheduledMeeting
+          ? {
+              id: m.scheduledMeeting.id,
+              startTime: m.scheduledMeeting.selectedAt?.toISOString() ?? null,
+              meetingUrl: m.scheduledMeeting.meetingUrl,
+            }
+          : null,
+      })),
+      meetingRequests: application.meetingRequests.map((r) => ({
+        id: r.id,
+        startTime: r.startTime.toISOString(),
+        durationMinutes: r.durationMinutes,
+        note: r.note,
+        status: r.status,
+        responseNote: r.responseNote,
+        createdAt: r.createdAt.toISOString(),
       })),
     },
     formAnswers,
@@ -900,6 +931,7 @@ export default function PartnerApplicationDetail() {
   const [tab, setTab] = useState<
     "overview" | "evaluation" | "meetings" | "details" | "sow" | "email"
   >("overview");
+  const [showScheduler, setShowScheduler] = useState(false);
 
   const topBar = actionData?.error ? (
     <div className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-md px-3 py-2">
@@ -911,8 +943,18 @@ export default function PartnerApplicationDetail() {
   const details = (
     <DetailsSection application={application} terms={terms} canEdit={canEdit} />
   );
-  // CRM working sections (only meaningful with edit permission).
-  const triageBar = canEdit ? <TriageBar application={application} /> : null;
+  // CRM working sections (only meaningful with edit permission). StageActions
+  // is the same stage-aware footer the modal uses (specs/partner-crm.md §5) —
+  // it also covers the Accepted-stage "Create project" action, so there is no
+  // separate promote block here any more.
+  const stageActions = canEdit ? (
+    <StageActions
+      application={application}
+      canEdit={canEdit}
+      onOpenSchedule={() => setShowScheduler(true)}
+      onChanged={refresh}
+    />
+  ) : null;
   const evaluation = canEdit ? (
     <EvaluationTab
       applicationId={application.id}
@@ -923,17 +965,16 @@ export default function PartnerApplicationDetail() {
     />
   ) : null;
   const meetings = canEdit ? (
-    <div id="partner-meetings" className="scroll-mt-4">
-      <MeetingsSection
-        applicationId={application.id}
-        meetings={application.meetings}
-        coreMembers={coreMembers}
-      />
-    </div>
+    <MeetingsTab
+      applicationId={application.id}
+      meetings={application.meetings}
+      meetingRequests={application.meetingRequests}
+      coreMembers={coreMembers}
+      canEdit={canEdit}
+      onScheduleMeeting={() => setShowScheduler(true)}
+      onChanged={refresh}
+    />
   ) : null;
-  const promoteBlock = (
-    <PromoteBlock application={application} canEdit={canEdit} />
-  );
   const answers =
     formAnswers.length > 0 ? (
       <section className="bg-card border border-border rounded-lg p-4">
@@ -1032,6 +1073,7 @@ export default function PartnerApplicationDetail() {
   ] as const;
 
   return (
+    <>
     <div className="flex flex-col gap-4">
       {topBar}
 
@@ -1039,8 +1081,8 @@ export default function PartnerApplicationDetail() {
           always visible above the tabs. */}
       <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
         {header}
-        {triageBar}
-        {application.stage === "Accepted" && promoteBlock}
+        <StageStepper stage={application.stage} />
+        {stageActions}
       </div>
 
       <UnderlineTabButtons
@@ -1081,6 +1123,19 @@ export default function PartnerApplicationDetail() {
       {tab === "sow" && sow}
       {tab === "email" && emailTab}
     </div>
+    {showScheduler && (
+      <ScheduleInterviewModal
+        applicationId={application.id}
+        partnerName={application.applicant.name}
+        partnerEmail={application.applicant.email}
+        onClose={() => setShowScheduler(false)}
+        onScheduled={() => {
+          setShowScheduler(false);
+          refresh();
+        }}
+      />
+    )}
+    </>
   );
 }
 
@@ -1132,535 +1187,6 @@ function StageStepper({ stage }: { stage: Status }) {
         </li>
       )}
     </ol>
-  );
-}
-
-function TriageBar({
-  application,
-}: {
-  application: LoaderData["application"];
-}) {
-  const submit = useSubmit();
-  const confirmSubmit = useConfirmSubmit();
-  const [showing, setShowing] = useState<
-    "offer-meeting" | "send-application" | "reject" | "learn-more" | null
-  >(null);
-
-  const submitStage = (to: Status) => {
-    const fd = new FormData();
-    fd.set("intent", "stage");
-    fd.set("stage", to);
-    submit(fd, { method: "post" });
-  };
-
-  const SECONDARY =
-    "px-3 py-1.5 text-xs font-medium rounded-md border border-border text-foreground hover:bg-muted transition-colors";
-  const openBtn = (
-    kind: "offer-meeting" | "send-application" | "reject" | "learn-more",
-    label: string,
-    primary = false,
-  ) => (
-    <button
-      type="button"
-      onClick={() => setShowing(showing === kind ? null : kind)}
-      className={primary ? buttonClasses("primary", "sm") : SECONDARY}
-    >
-      {label}
-    </button>
-  );
-
-  // The sequential "advance to next stage" primary CTA is stage-aware — it
-  // reuses the existing side-effecting forms (offer meeting / accept) or a
-  // direct stage move. Off-ramps (reject, learn-more) stay as secondary
-  // actions; the full any→any dropdown lives in the header.
-  const stage = application.stage;
-  let primary: ReactNode = null;
-  const secondary: ReactNode[] = [];
-  switch (stage) {
-    case "New":
-      primary = openBtn("offer-meeting", "Offer meeting →", true);
-      secondary.push(openBtn("send-application", "Send application"));
-      break;
-    case "Interview":
-      primary = (
-        <Form
-          method="post"
-          onSubmit={confirmSubmit({
-            title: "Accept this partner?",
-            description:
-              "This will mark the application as Accepted and notify the partner.",
-            confirmLabel: "Accept",
-          })}
-          className="inline"
-        >
-          <input type="hidden" name="intent" value="accept" />
-          <button type="submit" className={buttonClasses("primary", "sm")}>
-            Accept →
-          </button>
-        </Form>
-      );
-      secondary.push(openBtn("offer-meeting", "Offer another meeting"));
-      secondary.push(openBtn("learn-more", "Need more info"));
-      break;
-    case "Accepted":
-      // Promotion is handled by the PromoteBlock in the top band at this stage.
-      break;
-    case "Rejected":
-      secondary.push(
-        <button
-          key="reopen"
-          type="button"
-          onClick={() => submitStage("Interview")}
-          className={SECONDARY}
-        >
-          Reopen
-        </button>,
-      );
-      break;
-  }
-  if (!["Accepted", "Rejected"].includes(stage)) {
-    secondary.push(openBtn("reject", "Reject"));
-  }
-
-  return (
-    <div className="mt-3 flex flex-col gap-3">
-      <StageStepper stage={stage} />
-      {application.resultingProjectId ? (
-        <p className="text-xs text-muted-foreground">
-          Promoted to a project — this opportunity is complete.
-        </p>
-      ) : primary || secondary.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-2">
-          {primary}
-          {secondary.map((node, i) => (
-            <span key={i}>{node}</span>
-          ))}
-        </div>
-      ) : null}
-
-      {/* Inline forms for actions that need extra input */}
-      {showing === "offer-meeting" && (
-        <Form
-          method="post"
-          onSubmit={confirmSubmit({
-            title: "Send meeting invite?",
-            description: "This emails the partner a meeting invitation.",
-            confirmLabel: "Send invite",
-          })}
-          className="flex flex-col gap-2 p-3 bg-muted/30 rounded-md border border-border"
-        >
-          <input type="hidden" name="intent" value="offer-meeting" />
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-muted-foreground font-medium">Meeting time *</span>
-            <input
-              name="when"
-              required
-              placeholder="e.g. Tuesday Jan 14, 2:00 PM ET"
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-muted-foreground font-medium">Details (optional)</span>
-            <textarea
-              name="details"
-              rows={2}
-              placeholder="Link, location, agenda…"
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 resize-none"
-            />
-          </label>
-          <div className="flex gap-2">
-            <button type="submit" className={buttonClasses("primary", "sm")}>
-              Send invite
-            </button>
-            <button type="button" onClick={() => setShowing(null)} className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors">
-              Cancel
-            </button>
-          </div>
-        </Form>
-      )}
-
-      {showing === "send-application" && (
-        <Form
-          method="post"
-          onSubmit={confirmSubmit({
-            title: "Send application link to partner?",
-            description: "This emails the partner your next-steps message with a link to apply.",
-            confirmLabel: "Send email",
-          })}
-          className="flex flex-col gap-2 p-3 bg-muted/30 rounded-md border border-border"
-        >
-          <input type="hidden" name="intent" value="send-application" />
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-muted-foreground font-medium">Next steps message</span>
-            <textarea
-              name="nextSteps"
-              rows={3}
-              placeholder="Tell the partner what comes next. A link to apply will be appended automatically."
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 resize-none"
-            />
-          </label>
-          <div className="flex gap-2">
-            <button type="submit" className={buttonClasses("primary", "sm")}>
-              Send email
-            </button>
-            <button type="button" onClick={() => setShowing(null)} className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors">
-              Cancel
-            </button>
-          </div>
-        </Form>
-      )}
-
-      {showing === "learn-more" && (
-        <Form
-          method="post"
-          onSubmit={confirmSubmit({
-            title: "Send more-info request to partner?",
-            description: "This emails the partner asking for the information you describe.",
-            confirmLabel: "Send request",
-          })}
-          className="flex flex-col gap-2 p-3 bg-muted/30 rounded-md border border-border"
-        >
-          <input type="hidden" name="intent" value="learn-more" />
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-muted-foreground font-medium">What do we need from them? *</span>
-            <textarea
-              name="whatWeNeed"
-              rows={3}
-              required
-              placeholder="Describe the specific information or materials you need…"
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 resize-none"
-            />
-          </label>
-          <div className="flex gap-2">
-            <button type="submit" className="px-3 py-1.5 text-xs font-medium rounded-md bg-amber-500 text-white hover:bg-amber-600 transition-colors">
-              Send request
-            </button>
-            <button type="button" onClick={() => setShowing(null)} className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors">
-              Cancel
-            </button>
-          </div>
-        </Form>
-      )}
-
-      {showing === "reject" && (
-        <Form
-          method="post"
-          onSubmit={confirmSubmit({
-            title: "Reject this partner application?",
-            description: "This emails the partner a rejection notice.",
-            confirmLabel: "Reject",
-            tone: "destructive",
-          })}
-          className="flex flex-col gap-2 p-3 bg-muted/30 rounded-md border border-border"
-        >
-          <input type="hidden" name="intent" value="reject" />
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-muted-foreground font-medium">Reason *</span>
-            <Select
-              name="rejectReason"
-              defaultValue=""
-              ariaLabel="Rejection reason"
-              placeholder="Choose a reason…"
-              options={PARTNER_REJECT_REASONS.map((r) => ({
-                value: r,
-                label: PARTNER_REJECT_REASON_LABELS[r],
-              }))}
-              buttonClassName="w-full text-sm px-2 py-1.5 border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-muted-foreground font-medium">Note (shown to partner, optional)</span>
-            <textarea
-              name="reason"
-              rows={2}
-              placeholder="Brief, partner-facing explanation…"
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 resize-none"
-            />
-          </label>
-          <div className="flex gap-2">
-            <button type="submit" className="px-3 py-1.5 text-xs font-medium rounded-md bg-destructive text-white hover:bg-destructive/90 transition-colors">
-              Reject
-            </button>
-            <button type="button" onClick={() => setShowing(null)} className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors">
-              Cancel
-            </button>
-          </div>
-        </Form>
-      )}
-    </div>
-  );
-}
-
-// ─── CRM: Acceptance fields ───────────────────────────────────────────────────
-
-function AcceptanceFields({ application }: { application: LoaderData["application"] }) {
-  return (
-    <Form method="post" className="flex flex-col gap-3 mt-4 pt-4 border-t border-border">
-      <input type="hidden" name="intent" value="acceptance" />
-      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Acceptance notes</h3>
-      <div className="grid grid-cols-2 gap-3">
-        <label className="flex flex-col gap-1 text-xs">
-          <span className="text-muted-foreground">Ambiguity rating (1–5)</span>
-          <input
-            type="number"
-            name="ambiguityRating"
-            min={1}
-            max={5}
-            step={1}
-            defaultValue={application.ambiguityRating ?? ""}
-            placeholder="1–5"
-            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-xs">
-          <span className="text-muted-foreground">Funding type</span>
-          <Select
-            name="fundingType"
-            defaultValue={application.fundingType ?? ""}
-            placeholder="Choose a funding type…"
-            options={PROJECT_FUNDING_TYPES.map((t) => ({
-              value: t,
-              label: PROJECT_FUNDING_TYPE_LABELS[t],
-            }))}
-            buttonClassName="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-          />
-        </label>
-      </div>
-      <div className="flex justify-end">
-        <button
-          type="submit"
-          className={buttonClasses("primary", "sm")}
-        >
-          Save
-        </button>
-      </div>
-    </Form>
-  );
-}
-
-// ─── CRM: Meetings section ────────────────────────────────────────────────────
-
-const OUTCOME_LABELS: Record<string, string> = {
-  Advance: "Advance",
-  Hold: "Hold",
-  Reject: "Reject",
-  MoreInfoNeeded: "Need more info",
-};
-
-const OUTCOME_PILL: Record<string, string> = {
-  Advance: "bg-accent-teal/15 text-accent-teal",
-  Hold: "bg-amber-500/15 text-amber-600",
-  Reject: "bg-destructive/10 text-destructive",
-  MoreInfoNeeded: "bg-muted text-muted-foreground",
-};
-
-function MeetingsSection({
-  applicationId,
-  meetings,
-  coreMembers,
-}: {
-  applicationId: string;
-  meetings: LoaderData["application"]["meetings"];
-  coreMembers: LoaderData["coreMembers"];
-}) {
-  const [showAdd, setShowAdd] = useState(false);
-  const [debriefOpenId, setDebriefOpenId] = useState<string | null>(null);
-  const [notifyPartner, setNotifyPartner] = useState(false);
-  const dialog = useDialog();
-  const submitForm = useSubmit();
-
-  const memberById = new Map(coreMembers.map((m) => [m.userId, m.name]));
-
-  return (
-    <section className="bg-card border border-border rounded-lg p-4">
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-sm font-semibold text-foreground">Meetings</h2>
-        {!showAdd && (
-          <button
-            type="button"
-            onClick={() => setShowAdd(true)}
-            className="text-xs font-medium text-accent-coral hover:underline"
-          >
-            + Add meeting
-          </button>
-        )}
-      </div>
-
-      {showAdd && (
-        <Form
-          method="post"
-          onSubmit={async (e) => {
-            if (notifyPartner) {
-              e.preventDefault();
-              const ok = await dialog.confirm({
-                title: "Email a meeting invite to the partner?",
-                description: "This sends a meeting invitation to the partner's contact email.",
-                confirmLabel: "Send invite",
-              });
-              if (!ok) return;
-              submitForm(e.currentTarget, { method: "post" });
-            }
-            setShowAdd(false);
-            setNotifyPartner(false);
-          }}
-          className="flex flex-col gap-3 mb-4 p-3 bg-muted/30 rounded-md border border-border"
-        >
-          <input type="hidden" name="intent" value="meeting-create" />
-          <div className="grid grid-cols-2 gap-3">
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="text-muted-foreground font-medium">Date & time *</span>
-              <DateField
-                mode="datetime-local"
-                name="meetingDate"
-                required
-                ariaLabel="Meeting date and time"
-              />
-            </label>
-          </div>
-          <fieldset>
-            <legend className="text-xs text-muted-foreground font-medium mb-1">Attendees</legend>
-            <div className="grid grid-cols-2 gap-1 max-h-36 overflow-y-auto">
-              {coreMembers.map((m) => (
-                <Checkbox
-                  key={m.userId}
-                  name="attendeeUserIds"
-                  value={m.userId}
-                  label={m.name}
-                  className="text-xs"
-                />
-              ))}
-            </div>
-          </fieldset>
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-muted-foreground font-medium">Notes</span>
-            <textarea
-              name="meetingNotes"
-              rows={2}
-              placeholder="Pre-meeting notes or agenda…"
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 resize-none"
-            />
-          </label>
-          <Checkbox
-            name="notifyPartner"
-            label="Email partner a meeting invite"
-            className="text-xs"
-            checked={notifyPartner}
-            onChange={(e) => setNotifyPartner(e.target.checked)}
-          />
-          <div className="flex gap-2">
-            <button type="submit" className={buttonClasses("primary", "sm")}>
-              Log meeting
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowAdd(false)}
-              className={buttonClasses("secondary", "sm")}
-            >
-              Cancel
-            </button>
-          </div>
-        </Form>
-      )}
-
-      {meetings.length === 0 ? (
-        <p className="text-sm text-muted-foreground italic">No meetings logged yet.</p>
-      ) : (
-        <div className="flex flex-col divide-y divide-border">
-          {meetings.map((m) => {
-            const date = new Date(m.scheduledAt);
-            const attendeeNames = m.attendeeUserIds
-              .map((uid) => memberById.get(uid) ?? uid)
-              .join(", ");
-            return (
-              <div key={m.id} className="py-3 flex flex-col gap-1.5">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-foreground">
-                      {date.toLocaleDateString("en-US", { dateStyle: "medium" })}{" "}
-                      <span className="text-muted-foreground font-normal">
-                        {date.toLocaleTimeString("en-US", { timeStyle: "short" })}
-                      </span>
-                    </p>
-                    {attendeeNames && (
-                      <p className="text-xs text-muted-foreground">{attendeeNames}</p>
-                    )}
-                    {m.notes && (
-                      <p className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap">{m.notes}</p>
-                    )}
-                    {m.debrief && (
-                      <p className="text-xs text-foreground mt-1 whitespace-pre-wrap">{m.debrief}</p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {m.outcome && (
-                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${OUTCOME_PILL[m.outcome] ?? "bg-muted text-muted-foreground"}`}>
-                        {OUTCOME_LABELS[m.outcome] ?? m.outcome}
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setDebriefOpenId(debriefOpenId === m.id ? null : m.id)}
-                      className="text-xs text-muted-foreground hover:text-foreground"
-                    >
-                      {debriefOpenId === m.id ? "Close" : "Debrief"}
-                    </button>
-                  </div>
-                </div>
-
-                {debriefOpenId === m.id && (
-                  <Form
-                    method="post"
-                    onSubmit={() => setDebriefOpenId(null)}
-                    className="flex flex-col gap-2 mt-1 p-3 bg-muted/30 rounded-md border border-border"
-                  >
-                    <input type="hidden" name="intent" value="meeting-debrief" />
-                    <input type="hidden" name="meetingId" value={m.id} />
-                    <label className="flex flex-col gap-1 text-xs">
-                      <span className="text-muted-foreground font-medium">Debrief notes</span>
-                      <textarea
-                        name="debrief"
-                        rows={3}
-                        defaultValue={m.debrief ?? ""}
-                        placeholder="What happened? Key takeaways…"
-                        className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 resize-none"
-                      />
-                    </label>
-                    <label className="flex flex-col gap-1 text-xs">
-                      <span className="text-muted-foreground font-medium">Outcome</span>
-                      <Select
-                        name="outcome"
-                        defaultValue={m.outcome ?? ""}
-                        ariaLabel="Meeting outcome"
-                        options={[
-                          { value: "", label: "No outcome set" },
-                          { value: "Advance", label: "Advance" },
-                          { value: "Hold", label: "Hold" },
-                          { value: "Reject", label: "Reject" },
-                          { value: "MoreInfoNeeded", label: "Need more info" },
-                        ]}
-                        buttonClassName="w-full text-sm px-2 py-1.5 border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1"
-                      />
-                    </label>
-                    <div className="flex gap-2">
-                      <button type="submit" className={buttonClasses("primary", "sm")}>
-                        Save debrief
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setDebriefOpenId(null)}
-                        className={buttonClasses("secondary", "sm")}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </Form>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </section>
   );
 }
 
@@ -1791,49 +1317,6 @@ function Header({
         )}
       </p>
     </header>
-  );
-}
-
-// The accept/promote decision block — the tail of the funnel. Pulled out of the
-// header so it reads at the end of the record flow (after evaluation), not up
-// top. Anchored (#promote) for the "Promote to project →" advance CTA.
-function PromoteBlock({
-  application,
-  canEdit,
-}: {
-  application: LoaderData["application"];
-  canEdit: boolean;
-}) {
-  const confirmSubmit = useConfirmSubmit();
-  if (!canEdit || application.resultingProjectId) return null;
-  return (
-    <Form
-      id="promote"
-      method="post"
-      onSubmit={confirmSubmit({
-        title: "Create a project from this application?",
-        description:
-          "It will carry over the partner, start term, and per-domain role requests, and the two will be linked.",
-        confirmLabel: "Create project",
-      })}
-      className="scroll-mt-4 bg-card border border-border rounded-lg p-4"
-    >
-      <input type="hidden" name="intent" value="promote" />
-      {!application.partner && (
-        <input
-          type="text"
-          name="orgName"
-          placeholder="Organization name (optional — defaults to the applicant)"
-          className="mb-2 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
-        />
-      )}
-      <AcceptanceFields application={application} />
-      <div className="mt-3">
-        <button type="submit" className={buttonClasses("primary", "sm")}>
-          Promote to project →
-        </button>
-      </div>
-    </Form>
   );
 }
 

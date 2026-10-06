@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { MemoryRouter } from "react-router";
 import { PartnerCard } from "../PartnerCard";
 import type { PartnerCardModel } from "../../lib/partner-board";
 
@@ -32,13 +33,17 @@ function card(overrides: Partial<PartnerCardModel> = {}): PartnerCardModel {
 
 function render(c: PartnerCardModel, staleDays = 14) {
   return renderToStaticMarkup(
-    createElement(PartnerCard, {
-      card: c,
-      accentEdge: "#ff0000",
-      staleDays,
-      isDragging: false,
-      onOpen: () => {},
-    }),
+    createElement(
+      MemoryRouter,
+      null,
+      createElement(PartnerCard, {
+        card: c,
+        accentEdge: "#ff0000",
+        staleDays,
+        isDragging: false,
+        onOpen: () => {},
+      }),
+    ),
   );
 }
 
@@ -71,9 +76,10 @@ describe("PartnerCard", () => {
     expect(html).toContain("Paused");
   });
 
-  it("shows a Project chip when resultingProjectId is set", () => {
+  it("shows a Project chip linking to the project when resultingProjectId is set", () => {
     const html = render(card({ resultingProjectId: "proj-1" }));
     expect(html).toContain("Project");
+    expect(html).toContain('href="/projects/proj-1"');
   });
 
   it('shows "Meeting requested" when pendingRequestCount > 0', () => {

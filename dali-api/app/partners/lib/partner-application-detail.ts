@@ -84,4 +84,6 @@ export type ApplicationDetailResponse = {
   actorNames: Record<string, string>;
   emailThreads: ApplicationEmailThread[];
   partnerEmailOn: boolean;
+  /** Attendee picker for the Meetings tab's manual "log a meeting" form. */
+  coreMembers: { userId: string; name: string }[];
 };

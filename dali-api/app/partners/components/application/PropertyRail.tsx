@@ -13,6 +13,7 @@ import { Select, MultiSelect } from "~/components/ui/floating";
 import { DateField } from "~/components/ui/DateField";
 import { Button } from "~/components/ui/Button";
 import { PropRow } from "~/components/ui/modal-fields";
+import { useToast } from "~/components/ui/toast";
 import {
   PARTNER_STAGES,
   PARTNER_STAGE_LABELS,
@@ -72,6 +73,7 @@ export function PropertyRail({
 }) {
   const [stageBusy, setStageBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
 
   async function changeStage(next: PartnerStage) {
     setStageBusy(true);
@@ -164,6 +166,8 @@ export function PropertyRail({
             void run("details", {
               summary: application.summary ?? "",
               targetTermId: ids,
+            }).then((ok) => {
+              if (!ok) toast.error("Couldn't save target terms.");
             })
           }
           options={termOptions.map((t) => ({ value: t.id, label: t.code }))}
@@ -560,7 +564,12 @@ function DealTermsFields({
         </PropRow>
         <PropRow label="Fee">
           <span className="text-sm text-foreground">
-            {application.feeCents != null ? `$${(application.feeCents / 100).toLocaleString()}` : "—"}
+            {application.feeCents != null
+              ? `$${(application.feeCents / 100).toLocaleString(undefined, {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}`
+              : "—"}
           </span>
         </PropRow>
         <PropRow label="Legal entity">

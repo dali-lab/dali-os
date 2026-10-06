@@ -683,6 +683,9 @@ export default [
   route("admin/payroll.csv", "admin/routes/admin.payroll.csv.ts"),
 
   // Partner application status (board drag-and-drop) + domain scope
+  // JSON create path for the board modal's create mode (see the form-based
+  // create intent on core.partners.tsx for the list view's twin).
+  route("api/partner-applications", "partners/routes/api.partner-applications.ts"),
   route("api/partner-applications/:id/move", "partners/routes/api.partner-applications.$id.move.ts"),
   route("api/partner-applications/:id/status", "partners/routes/api.partner-applications.$id.status.ts"),
   route("api/partner-applications/:id/domains", "partners/routes/api.partner-applications.$id.domains.ts"),

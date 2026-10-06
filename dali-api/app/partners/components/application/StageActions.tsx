@@ -15,13 +15,19 @@ import { RejectForm } from "./RejectForm";
 
 type Showing = "accept" | "reject" | "learn-more" | null;
 
+// The smallest slice this needs — a Pick rather than the full ApplicationDetail
+// so the full page (core.partners.applications.$id.tsx), whose loader shapes
+// the rest of the application differently, can pass its own loader data
+// directly instead of reshaping it to match the modal's type.
+export type StageActionsApplication = Pick<ApplicationDetail, "id" | "stage" | "resultingProjectId">;
+
 export function StageActions({
   application,
   canEdit,
   onOpenSchedule,
   onChanged,
 }: {
-  application: ApplicationDetail;
+  application: StageActionsApplication;
   canEdit: boolean;
   onOpenSchedule: () => void;
   onChanged: () => void;

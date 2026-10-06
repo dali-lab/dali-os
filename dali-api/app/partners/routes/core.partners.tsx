@@ -29,7 +29,6 @@ import {
   PROJECTING_STAGES,
   type PartnerStage as Status,
 } from "../lib/partner-application";
-import { notifyPartners } from "../lib/partner-notify.server";
 import { useChartColors } from "~/components/analytics/useChartColors";
 import {
   clearApplicationFormBinding,
@@ -39,7 +38,7 @@ import {
 } from "../lib/application-form.server";
 import type { Question } from "~/types";
 import { listSelectableForms } from "~/projects/lib/form-slots";
-import { logPartnerActivity } from "../lib/partner-activity.server";
+import { createPartnerApplication } from "../lib/partner-application-create.server";
 import { SearchInput } from "~/components/ui/SearchInput";
 import {
   FilterCountBadge,
@@ -289,68 +288,26 @@ export async function action({ request }: Route.ActionArgs) {
   const applicantName = (form.get("applicantName") as string | null)?.trim() ?? "";
   const applicantEmail = (form.get("applicantEmail") as string | null)?.trim().toLowerCase() ?? "";
   const summary = (form.get("summary") as string | null)?.trim() ?? "";
-  const sourceRaw = (form.get("source") as string | null) ?? "Manual";
-  const source = (
-    ["Email", "Form", "Referral", "Manual", "Renewal"] as const
-  ).includes(sourceRaw as never)
-    ? (sourceRaw as "Email" | "Form" | "Referral" | "Manual" | "Renewal")
-    : "Manual";
+  const source = (form.get("source") as string | null) ?? "Manual";
   const targetTermIds = [...new Set(form.getAll("targetTermId").map((v) => String(v).trim()).filter(Boolean))];
   const domainIds = [...new Set(form.getAll("domainId").map((v) => String(v).trim()).filter(Boolean))];
 
-  if (!title) return { error: "A title is required." };
-  if (!applicantEmail || !applicantEmail.includes("@"))
-    return { error: "A valid applicant email is required." };
-
-  // Find or create a PartnerContact keyed on the lowercased email.
-  // Core-created records have no User account yet, so userId stays null.
-  const contact = await prisma.partnerContact.upsert({
-    where: { email: applicantEmail },
-    create: {
-      email: applicantEmail,
-      name: applicantName || (applicantEmail.split("@")[0] ?? applicantEmail),
-      userId: null,
-    },
-    update: {
-      // If a name is supplied and the contact has no name yet, fill it in.
-      ...(applicantName ? { name: applicantName } : {}),
-    },
-    select: { id: true },
-  });
-
-  const created = await prisma.partnerApplication.create({
-    data: {
-      title,
-      applicantContactId: contact.id,
-      partnerOrgId: null,
-      stage: "New",
-      source,
-      summary: summary || null,
-      ...(targetTermIds.length > 0
-        ? { targetTerms: { create: targetTermIds.map((termId) => ({ termId })) } }
-        : {}),
-      ...(domainIds.length > 0
-        ? { domains: { create: domainIds.map((domainId) => ({ domainId })) } }
-        : {}),
-    },
-    select: { id: true },
-  });
-  await logPartnerActivity(prisma, {
-    applicationId: created.id,
+  // This form-based intent is the list view's inline "New application" form;
+  // the board modal's create mode posts JSON to POST /api/partner-applications
+  // instead (api.partner-applications.ts) so it can stay on the board. Both
+  // share createPartnerApplication() for validation and side effects.
+  const result = await createPartnerApplication({
+    title,
+    applicantName,
+    applicantEmail,
+    summary,
+    source,
+    targetTermIds,
+    domainIds,
     actorUserId: auth.user.sub,
-    type: "Created",
-    metadata: { source },
   });
-  // The portal's own inquiry path (app/partners/routes/partner.apply.tsx) is
-  // owned by another branch right now — wire its notifyPartners call there
-  // too when that lands. TODO(partner.apply.tsx): fire partner.inquiry_received.
-  await notifyPartners({
-    eventType: "partner.inquiry_received",
-    title: `New partner opportunity: ${title}`,
-    body: applicantName ? `From ${applicantName} (${applicantEmail})` : applicantEmail,
-    link: `/core/partners/applications/${created.id}`,
-  });
-  return redirect(`/core/partners/applications/${created.id}`);
+  if ("error" in result) return { error: result.error };
+  return redirect(`/core/partners/applications/${result.id}`);
 }
 
 export default function PartnersApplications() {
@@ -664,7 +621,7 @@ export default function PartnersApplications() {
       {view === "list" ? (
         <div className="bg-card border border-border rounded-lg">
           <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-            <h2 className="text-sm font-medium text-foreground">Applications</h2>
+            <h2 className="text-sm font-medium text-foreground">All applications</h2>
           </div>
 
           {filtered.length === 0 ? (
