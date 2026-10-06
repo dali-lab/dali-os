@@ -55,17 +55,14 @@ export async function runApplicantEmailIndex({ now, settings }: JobContext): Pro
   if (!found) {
     return { items: 0, note: `No Shared inbox for ${address}. Add it in Admin → Email.` };
   }
-  if (!found.connection) {
-    return { items: 0, note: `Nobody has connected ${address} yet.` };
-  }
   const { account } = found;
 
   let token: string;
-  let connectionUserId: string;
+  let source: string;
   try {
     const got = await getSharedInboxToken(address);
     token = got.token;
-    connectionUserId = got.connectionUserId;
+    source = got.source;
   } catch (err) {
     if (err instanceof MailboxError) return { items: 0, note: err.message };
     throw err;
@@ -132,8 +129,8 @@ export async function runApplicantEmailIndex({ now, settings }: JobContext): Pro
   }
 
   const note = drained
-    ? `indexed ${created} via ${connectionUserId}'s connection; backfill complete`
-    : `indexed ${created} via ${connectionUserId}'s connection; backfill remaining ${missing.length - toProcess.length}`;
+    ? `indexed ${created} via ${source}; backfill complete`
+    : `indexed ${created} via ${source}; backfill remaining ${missing.length - toProcess.length}`;
 
   return { items: created, note };
 }

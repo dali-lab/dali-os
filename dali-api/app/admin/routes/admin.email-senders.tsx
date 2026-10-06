@@ -16,6 +16,7 @@ import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isAdmin } from "~/lib/roles";
 import { listSenderIntegrations } from "~/lib/gmail-integration";
+import { GMAIL_READONLY_SCOPE } from "~/lib/google-oauth";
 import { buttonClasses } from "~/components/ui/Button";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
@@ -81,6 +82,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       linkedAt: row?.linkedAt?.toISOString() ?? null,
       lastUsedAt: row?.lastUsedAt?.toISOString() ?? null,
       syncError: row?.syncError ?? null,
+      readsInbox: row?.scopes.includes(GMAIL_READONLY_SCOPE) ?? false,
       dailyCap,
       todayCount,
       capped: dailyCap != null && todayCount >= dailyCap,
@@ -267,7 +269,14 @@ function SenderRow({ sender: s }: { sender: SenderInfo }) {
       {s.sendAsEmail && (
         <p className="mt-1 text-xs text-muted-foreground">
           Connected {formatTime(s.linkedAt)} · last used {formatTime(s.lastUsedAt)}
+          {s.readsInbox ? " · reads inbox" : ""}
           {s.syncError ? ` · error: ${s.syncError}` : ""}
+        </p>
+      )}
+      {s.sendAsEmail && s.purpose === "Hiring" && !s.readsInbox && (
+        <p className="mt-1 text-xs text-muted-foreground">
+          Reconnect to grant inbox read access. The applicant email index and thread viewer use it
+          instead of a member's own sign-in.
         </p>
       )}
       {s.integrationId && (

@@ -128,6 +128,9 @@ export async function loader({ request }: { request: Request }) {
   const tokenExpiresAt = tokens.expires_in
     ? new Date(Date.now() + tokens.expires_in * 1000)
     : null;
+  // Google reports what was actually granted; an admin can untick a scope on
+  // the consent screen, so this is the truth about read access, not SCOPES.
+  const scopes = (tokens.scope ?? '').split(' ').filter(Boolean)
 
   await prisma.gmailIntegration.upsert({
     where: { userId_purpose: { userId: user.id, purpose } },
@@ -135,6 +138,7 @@ export async function loader({ request }: { request: Request }) {
       sendAsEmail,
       oauthTokens: refreshToken,
       tokenExpiresAt,
+      scopes,
       enabled: true,
       syncError: null,
     },
@@ -144,6 +148,7 @@ export async function loader({ request }: { request: Request }) {
       sendAsEmail,
       oauthTokens: refreshToken,
       tokenExpiresAt,
+      scopes,
       enabled: true,
     },
   })

@@ -1,5 +1,6 @@
 import { prisma } from "~/lib/db";
 import type { EmailSendPurpose } from "~/generated/prisma/client";
+import { GMAIL_READONLY_SCOPE } from "~/lib/google-oauth";
 
 // Purpose-keyed Gmail send-as identities (GmailIntegration rows, connected
 // via /admin/authorize-gmail?purpose=…). Every outbound-email call site
@@ -105,6 +106,27 @@ export async function isApplicationsGmailConnected(): Promise<boolean> {
   return isSenderConnected("Hiring");
 }
 
+/**
+ * The Hiring identity for READING a mailbox: the enabled integration that
+ * sends as `address` and was granted gmail.readonly. Null until an admin
+ * reconnects it with the read scope (Admin → Email senders → Reconnect).
+ */
+export async function getMailboxReader(
+  address: string,
+): Promise<{ id: string; refreshToken: string } | null> {
+  const row = await prisma.gmailIntegration.findFirst({
+    where: {
+      purpose: "Hiring",
+      enabled: true,
+      sendAsEmail: { equals: address, mode: "insensitive" },
+      scopes: { has: GMAIL_READONLY_SCOPE },
+    },
+    orderBy: { linkedAt: "desc" },
+    select: { id: true, oauthTokens: true },
+  });
+  return row ? { id: row.id, refreshToken: row.oauthTokens } : null;
+}
+
 /** All integrations for the admin Email Senders page, newest first. */
 export async function listSenderIntegrations() {
   return prisma.gmailIntegration.findMany({
@@ -118,6 +140,7 @@ export async function listSenderIntegrations() {
       lastUsedAt: true,
       syncError: true,
       dailyCap: true,
+      scopes: true,
     },
   });
 }
