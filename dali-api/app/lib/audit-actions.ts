@@ -26,6 +26,8 @@ export const AUDIT_ACTIONS = [
   "room.update",
   "room.display.create",
   "room.display.revoke",
+  // Core stopped a live iPad attendance scan from Rooms; metadata names the meeting.
+  "room.display.scan.stop",
   "role.change",
   // Hiring pipeline. "application.*" rows are the applicant's own moves;
   // targetId is the Application id and metadata carries cycleId.
