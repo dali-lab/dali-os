@@ -29,6 +29,7 @@ import { prisma } from "~/lib/db";
 import { recordRouteVisit } from "~/lib/user-pages.server";
 import { formatSessionWhen } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
+import { isSessionPast } from "~/education/lib/session-time";
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `${data?.offering.title ?? "Offering"} · DALI OS` },
@@ -295,7 +296,7 @@ export default function OfferingDetail() {
               {offering.sessions.map((s) => {
                 // A session that has already run stays listed but steps back,
                 // so the next one is what the eye lands on.
-                const past = new Date(s.endsAt ?? s.datetime).getTime() < now;
+                const past = isSessionPast(s, new Date(now));
                 return (
                   <li
                     key={s.id}

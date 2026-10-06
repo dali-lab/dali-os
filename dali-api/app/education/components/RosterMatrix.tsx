@@ -4,6 +4,7 @@ import { Check, Minus, X } from "lucide-react";
 import { Button } from "~/components/ui/Button";
 import { Select, Tooltip, InfoTip } from "~/components/ui/floating";
 import { cn } from "~/lib/cn";
+import { isSessionPast, summarizeAttendance } from "~/education/lib/session-time";
 
 // The roster answers two questions with one grid: who is falling behind
 // (rows × every session, with a running total) and who was here today (the
@@ -16,7 +17,12 @@ import { cn } from "~/lib/cn";
 
 type Status = "Present" | "Absent" | "Excused";
 
-export type MatrixSession = { id: string; sequence: number; datetime: string | Date };
+export type MatrixSession = {
+  id: string;
+  sequence: number;
+  datetime: string | Date;
+  endsAt?: string | Date | null;
+};
 export type MatrixStudent = {
   applicationId: string;
   name: string;
@@ -69,6 +75,8 @@ export function RosterMatrix({
   const [marking, setMarking] = useState(false);
   const [view, setView] = useState<"attendance" | "performance">("attendance");
   const active = sessions.find((s) => s.id === activeSessionId) ?? null;
+  const now = new Date();
+  const held = sessions.filter((s) => isSessionPast(s, now)).length;
 
   // Reset marking when switching views.
   function switchView(next: "attendance" | "performance") {
@@ -190,7 +198,7 @@ export function RosterMatrix({
                   <span className="inline-flex items-center gap-1">
                     Attended
                     <InfoTip
-                      content="Sessions attended out of total. Green ≥ 75%, amber 50–74%, red < 50%. Excused absences count as attended for completion purposes."
+                      content="Sessions attended out of sessions held so far. Green ≥ 75%, amber 50–74%, red < 50%. Excused absences count as attended for completion purposes."
                       placement="top"
                     />
                   </span>
@@ -199,7 +207,7 @@ export function RosterMatrix({
             </thead>
             <tbody className="divide-y divide-border">
               {students.map((st) => {
-                const pct = Math.round((st.attended / sessions.length) * 100);
+                const pct = held > 0 ? Math.round((st.attended / held) * 100) : 0;
                 return (
                   <tr key={st.applicationId} className="hover:bg-os-well/60">
                     <td className="sticky left-0 z-10 whitespace-nowrap bg-os-card px-5 py-2.5 font-medium text-foreground">
@@ -235,7 +243,7 @@ export function RosterMatrix({
                     })}
                     <td className="px-4 py-2 text-right tabular-nums whitespace-nowrap">
                       <span className="text-foreground">
-                        {st.attended}/{sessions.length}
+                        {st.attended}/{held}
                       </span>{" "}
                       <span
                         className={
@@ -282,6 +290,8 @@ function PerformanceTable({
   submissionsByApp: PerformanceSubmissions;
   completionByApp: Record<string, boolean>;
 }) {
+  const now = new Date();
+  const held = sessions.filter((s) => isSessionPast(s, now)).length;
   return (
     <div className="flex flex-col gap-2">
       <p className="text-sm text-os-grey">
@@ -299,7 +309,7 @@ function PerformanceTable({
                 <span className="inline-flex items-center gap-1">
                   Attendance %
                   <InfoTip
-                    content="Present + excused sessions as a percentage of total. Green ≥ 80%, amber 50–79%, red < 50%."
+                    content="Present + excused sessions as a percentage of sessions held so far. Green ≥ 80%, amber 50–79%, red < 50%."
                     placement="top"
                   />
                 </span>
@@ -329,14 +339,13 @@ function PerformanceTable({
           </thead>
           <tbody className="divide-y divide-border">
             {students.map((st) => {
+              const summary = summarizeAttendance(
+                sessions,
+                Object.entries(st.marks).map(([sessionId, status]) => ({ sessionId, status })),
+                now,
+              );
               const pct =
-                sessions.length > 0
-                  ? Math.round(
-                      ((st.attended + Object.values(st.marks).filter((m) => m === "Excused").length) /
-                        sessions.length) *
-                        100,
-                    )
-                  : 0;
+                held > 0 ? Math.round(((summary.present + summary.excused) / held) * 100) : 0;
               const eligible = completionByApp[st.applicationId] ?? false;
               return (
                 <tr key={st.applicationId} className="hover:bg-os-well/60">

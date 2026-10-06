@@ -2,6 +2,7 @@ import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";
 import { syncCreditForAttendance } from "./ce-credits.server";
 import { requestSessionFeedback } from "./feedback.server";
+import { isSessionPast } from "./session-time";
 import type { AttendanceStatus } from "~/generated/prisma/client";
 
 // Instructor attendance marking. The roster is the offering's Approved
@@ -48,12 +49,12 @@ export async function getSessionRoster(offeringId: string, sessionId: string) {
  * behind" and "who was here today" — and they read the same rows, so they're
  * one query. Marking edits a single column of what this returns.
  */
-export async function getAttendanceMatrix(offeringId: string) {
+export async function getAttendanceMatrix(offeringId: string, now: Date = new Date()) {
   const [sessions, students, marks] = await Promise.all([
     prisma.educationSession.findMany({
       where: { offeringId },
       orderBy: { sequence: "asc" },
-      select: { id: true, sequence: true, datetime: true },
+      select: { id: true, sequence: true, datetime: true, endsAt: true },
     }),
     prisma.educationApplication.findMany({
       where: { offeringId, status: "Approved" },
@@ -84,8 +85,11 @@ export async function getAttendanceMatrix(offeringId: string) {
     students: students.map((st) => {
       const row = byApplication.get(st.id) ?? new Map<string, AttendanceStatus>();
       // Excused doesn't count as attended, but it isn't a miss either — it's
-      // shown as its own mark and left out of the numerator.
-      const attended = sessions.filter((s) => row.get(s.id) === "Present").length;
+      // shown as its own mark and left out of the numerator. A Present mark
+      // only counts once the session has actually happened.
+      const attended = sessions.filter(
+        (s) => row.get(s.id) === "Present" && isSessionPast(s, now),
+      ).length;
       return {
         applicationId: st.id,
         name: `${st.applicant.firstName} ${st.applicant.lastName}`.trim(),

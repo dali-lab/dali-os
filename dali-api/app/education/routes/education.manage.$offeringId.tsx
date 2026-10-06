@@ -1835,6 +1835,7 @@ export default function ManageOffering() {
               id: s.id,
               sequence: s.sequence,
               datetime: s.datetime,
+              endsAt: s.endsAt,
             }))}
             students={attendanceMatrix.students}
             activeSessionId={roster?.session.id ?? attendanceMatrix.sessions[0]?.id ?? null}

@@ -1,6 +1,7 @@
 import { Link } from "react-router";
 import { buttonClasses } from "~/components/ui/Button";
 import { formatDateTime, formatSessionWhen } from "~/lib/display";
+import { attendanceCopy } from "~/education/lib/session-time";
 
 // The thin "what's next" shell at the top of the /education landing: open
 // session check-ins and unsubmitted work that need the student now, then their
@@ -29,6 +30,7 @@ export type StudentDashboardData = {
     title: string;
     type: string;
     attended: number;
+    held: number;
     total: number;
     nextSessionAt: string | Date | null;
     isPast: boolean;
@@ -118,7 +120,7 @@ export function StudentDashboard({
           </h2>
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {active.map((c) => {
-              const pct = c.total > 0 ? Math.round((c.attended / c.total) * 100) : 0;
+              const pct = c.held > 0 ? Math.round((c.attended / c.held) * 100) : 0;
               return (
                 <Link
                   key={c.offeringId}
@@ -138,7 +140,11 @@ export function StudentDashboard({
                         />
                       </div>
                       <p className="mt-1.5 text-sm text-os-grey">
-                        {c.attended}/{c.total} sessions attended
+                        {attendanceCopy(
+                          { present: c.attended, excused: 0, held: c.held, total: c.total },
+                          "ratio",
+                        )}
+                        {c.held > 0 ? " attended" : ""}
                       </p>
                     </div>
                   ) : (
