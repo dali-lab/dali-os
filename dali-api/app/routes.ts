@@ -679,8 +679,11 @@ export default [
   route("admin/payroll.csv", "admin/routes/admin.payroll.csv.ts"),
 
   // Partner application status (board drag-and-drop) + domain scope
+  route("api/partner-applications/:id/move", "partners/routes/api.partner-applications.$id.move.ts"),
   route("api/partner-applications/:id/status", "partners/routes/api.partner-applications.$id.status.ts"),
   route("api/partner-applications/:id/domains", "partners/routes/api.partner-applications.$id.domains.ts"),
+  // PartnerApplicationModal's data load (GET).
+  route("api/partner-applications/:id", "partners/routes/api.partner-applications.$id.ts"),
   route("api/partner-application-domains/:id", "partners/routes/api.partner-application-domains.$id.ts"),
   route(
     "api/partner-contacts/:id/email-thread/:indexId",

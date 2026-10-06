@@ -16,13 +16,13 @@ import {
   ClipboardList,
   Info,
   FileText,
+  Mail,
 } from "lucide-react";
 import { UnderlineTabButtons } from "~/components/AreaPillNav";
 import { buttonClasses } from "~/components/ui/Button";
 import { cn } from "~/lib/cn";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
-import { PartnerActivityFeed } from "../components/PartnerActivityFeed";
 import type { Route } from "./+types/core.partners.applications.$id";
 import { prisma } from "~/lib/db";
 import { githubTeamSlug } from "~/lib/github-slug";
@@ -48,13 +48,7 @@ import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { isEmptyBlocks } from "~/lib/blocks";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { useDialog, useConfirmSubmit } from "~/components/ui/dialog";
-import {
-  EVAL_CRITERIA,
-  EVAL_CRITERIA_VERSION,
-  FIRST_MEETING_PROMPTS,
-  parseEvalRubric,
-  type EvalCriterionKey,
-} from "../lib/discovery-rubric";
+import { EVAL_CRITERIA, EVAL_CRITERIA_VERSION } from "../lib/discovery-rubric";
 import {
   sendTriageNextStepsEmail,
   sendMeetingInviteEmail,
@@ -68,6 +62,13 @@ import {
 } from "../lib/partner-activity.server";
 import { getFrontendUrl } from "~/lib/app-env";
 import type { PartnerMeetingOutcome } from "~/generated/prisma/enums";
+import { getUserRoles } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { getPartnerContactEmailThreads } from "../lib/partner-email.server";
+import { PropertyRail } from "../components/application/PropertyRail";
+import { EvaluationTab } from "../components/application/EvaluationTab";
+import { ActivityTab } from "../components/application/ActivityTab";
+import { EmailTab } from "../components/application/EmailTab";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const a = (data as { application?: { title: string } } | undefined)
@@ -102,12 +103,21 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       summary: true,
       stage: true,
       sowDocId: true,
+      sowState: true,
       resultingProjectId: true,
       source: true,
       evalRubric: true,
       interviewRating: true,
       ambiguityRating: true,
+      nextStep: true,
+      nextStepDueAt: true,
+      holdUntil: true,
       fundingType: true,
+      feeCents: true,
+      legalEntityName: true,
+      legalEntityAddress: true,
+      paymentSchedule: true,
+      contractBindingId: true,
       decisionReason: true,
       rejectReason: true,
       partnerOrg: { select: { id: true, name: true, logoUrl: true } },
@@ -251,6 +261,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     );
   }
 
+  const roles = await getUserRoles(auth.user.sub, request);
+  const partnerEmailOn = await isFeatureEnabled("partner-email", auth.user.sub, roles, request);
+  const emailThreads = partnerEmailOn
+    ? await getPartnerContactEmailThreads(application.applicantContact.id)
+    : [];
+
   return {
     application: {
       id: application.id,
@@ -258,6 +274,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       summary: application.summary,
       stage: application.stage,
       sowDocId: application.sowDocId,
+      sowState: application.sowState,
       resultingProjectId: application.resultingProjectId,
       targetTerms: application.targetTerms.map((t) => ({
         termId: t.termId,
@@ -269,7 +286,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       evalRubric: application.evalRubric,
       interviewRating: application.interviewRating,
       ambiguityRating: application.ambiguityRating,
+      nextStep: application.nextStep,
+      nextStepDueAt: application.nextStepDueAt?.toISOString() ?? null,
+      holdUntil: application.holdUntil?.toISOString() ?? null,
       fundingType: application.fundingType,
+      feeCents: application.feeCents,
+      legalEntityName: application.legalEntityName,
+      legalEntityAddress: application.legalEntityAddress,
+      paymentSchedule: application.paymentSchedule,
+      contractBindingId: application.contractBindingId,
       decisionReason: application.decisionReason,
       rejectReason: application.rejectReason,
       domains: application.domains.map((d) => ({
@@ -299,6 +324,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     coreMembers,
     activities,
     actorNames,
+    emailThreads,
+    partnerEmailOn,
     trailLabel: application.title,
   };
 }
@@ -503,7 +530,11 @@ export async function action({ request, params }: Route.ActionArgs) {
     intent === "acceptance" ||
     intent === "meeting-create" ||
     intent === "meeting-debrief" ||
-    intent === "note"
+    intent === "note" ||
+    intent === "next-step" ||
+    intent === "hold" ||
+    intent === "deal-terms" ||
+    intent === "summary"
   ) {
     if (intent === "offer-meeting") {
       const when = (form.get("when") as string | null)?.trim() ?? "";
@@ -783,6 +814,56 @@ export async function action({ request, params }: Route.ActionArgs) {
         type: "Note",
         body,
       });
+
+    } else if (intent === "next-step") {
+      const nextStep = (form.get("nextStep") as string | null)?.trim() ?? "";
+      const nextStepDueAtRaw = (form.get("nextStepDueAt") as string | null)?.trim() ?? "";
+      const nextStepDueAt = nextStepDueAtRaw ? new Date(nextStepDueAtRaw) : null;
+      if (nextStepDueAt && isNaN(nextStepDueAt.getTime())) {
+        return { error: "Invalid due date." };
+      }
+      await prisma.partnerApplication.update({
+        where: { id: params.id },
+        data: { nextStep: nextStep === "" ? null : nextStep, nextStepDueAt },
+      });
+
+    } else if (intent === "hold") {
+      const holdUntilRaw = (form.get("holdUntil") as string | null)?.trim() ?? "";
+      const holdUntil = holdUntilRaw ? new Date(holdUntilRaw) : null;
+      if (holdUntil && isNaN(holdUntil.getTime())) {
+        return { error: "Invalid paused-until date." };
+      }
+      await prisma.partnerApplication.update({
+        where: { id: params.id },
+        data: { holdUntil },
+      });
+
+    } else if (intent === "deal-terms") {
+      const fundingTypeRaw = form.get("fundingType");
+      const fundingType =
+        typeof fundingTypeRaw === "string" &&
+        (PROJECT_FUNDING_TYPES as readonly string[]).includes(fundingTypeRaw)
+          ? (fundingTypeRaw as (typeof PROJECT_FUNDING_TYPES)[number])
+          : null;
+      const feeCentsRaw = (form.get("feeCents") as string | null)?.trim() ?? "";
+      const feeCents = feeCentsRaw ? Math.max(0, Math.round(Number(feeCentsRaw))) : null;
+      if (feeCentsRaw && (feeCents === null || isNaN(feeCents))) {
+        return { error: "Invalid fee." };
+      }
+      const legalEntityName = (form.get("legalEntityName") as string | null)?.trim() || null;
+      const legalEntityAddress = (form.get("legalEntityAddress") as string | null)?.trim() || null;
+      const paymentSchedule = (form.get("paymentSchedule") as string | null)?.trim() || null;
+      await prisma.partnerApplication.update({
+        where: { id: params.id },
+        data: { fundingType, feeCents, legalEntityName, legalEntityAddress, paymentSchedule },
+      });
+
+    } else if (intent === "summary") {
+      const summaryRaw = (form.get("summary") as string | null)?.trim() ?? "";
+      await prisma.partnerApplication.update({
+        where: { id: params.id },
+        data: { summary: summaryRaw === "" ? null : summaryRaw },
+      });
     }
 
   } else {
@@ -807,13 +888,17 @@ export default function PartnerApplicationDetail() {
     coreMembers,
     activities,
     actorNames,
+    emailThreads,
+    partnerEmailOn,
   } = useLoaderData() as LoaderData;
   // Always-inline editing (gated only by permission), matching the rest of the
   // site — no view/edit mode toggle.
   const canEdit = canEditPerm;
   const actionData = useActionData<typeof action>();
+  const revalidator = useRevalidator();
+  const refresh = () => revalidator.revalidate();
   const [tab, setTab] = useState<
-    "overview" | "evaluation" | "meetings" | "details" | "sow"
+    "overview" | "evaluation" | "meetings" | "details" | "sow" | "email"
   >("overview");
 
   const topBar = actionData?.error ? (
@@ -829,7 +914,13 @@ export default function PartnerApplicationDetail() {
   // CRM working sections (only meaningful with edit permission).
   const triageBar = canEdit ? <TriageBar application={application} /> : null;
   const evaluation = canEdit ? (
-    <EvaluationCard application={application} />
+    <EvaluationTab
+      applicationId={application.id}
+      evalRubric={application.evalRubric}
+      interviewRating={application.interviewRating}
+      canEdit={canEdit}
+      onChanged={refresh}
+    />
   ) : null;
   const meetings = canEdit ? (
     <div id="partner-meetings" className="scroll-mt-4">
@@ -884,50 +975,51 @@ export default function PartnerApplicationDetail() {
   // stepper + advance/triage actions (always visible), and the body is tabbed
   // so each heavy section gets full width. Overview (activity feed + key
   // details) is the default, front-and-center, like every CRM record page.
-  const expectedTotal = application.domains.reduce(
-    (s, d) => s + d.expectedMembers,
-    0,
-  );
-
   const activityFeed = (
-    <PartnerActivityFeed
+    <ActivityTab
+      applicationId={application.id}
       activities={activities}
       actorNames={actorNames}
+      emailThreads={partnerEmailOn ? emailThreads : []}
       canEdit={canEdit}
-      headerActions={
-        canEdit ? (
-          <button
-            type="button"
-            onClick={() => setTab("meetings")}
-            className={buttonClasses("ghost", "sm")}
-          >
-            <Calendar className="w-3.5 h-3.5" /> Log meeting
-          </button>
-        ) : undefined
-      }
+      onChanged={refresh}
     />
   );
 
-  const keyFields = (
-    <section className="bg-card border border-border rounded-lg p-4">
-      <h2 className="text-sm font-semibold text-foreground mb-3">Key details</h2>
-      <dl className="flex flex-col gap-2.5">
-        <KeyRow
-          label="Partner"
-          value={application.partner?.name ?? application.applicant?.name ?? "—"}
-        />
-        <KeyRow
-          label="Target terms"
-          value={
-            application.targetTerms.length
-              ? application.targetTerms.map((t) => t.code).join(", ")
-              : "—"
-          }
-        />
-        <KeyRow label="Expected members" value={String(expectedTotal)} />
-        <KeyRow label="Source" value={application.source} />
-      </dl>
-    </section>
+  const propertyRail = (
+    <PropertyRail
+      application={{
+        id: application.id,
+        stage: application.stage,
+        applicant: application.applicant,
+        partner: application.partner,
+        resultingProjectId: application.resultingProjectId,
+        source: application.source,
+        nextStep: application.nextStep,
+        nextStepDueAt: application.nextStepDueAt,
+        holdUntil: application.holdUntil,
+        // This file's target terms are {termId, code} (TargetTermsField below
+        // reads `.termId`); the rail's shared type keys them {id, code}.
+        targetTerms: application.targetTerms.map((t) => ({ id: t.termId, code: t.code })),
+        summary: application.summary,
+        domains: application.domains,
+        fundingType: application.fundingType,
+        feeCents: application.feeCents,
+        legalEntityName: application.legalEntityName,
+        legalEntityAddress: application.legalEntityAddress,
+        paymentSchedule: application.paymentSchedule,
+        sowState: application.sowState,
+        contractBindingId: application.contractBindingId,
+      }}
+      canEdit={canEdit}
+      domainOptions={availableDomains.map((d) => ({ id: d.id, name: d.displayName }))}
+      termOptions={terms.map((t) => ({ id: t.id, code: t.code }))}
+      onChanged={refresh}
+    />
+  );
+
+  const emailTab = (
+    <EmailTab contactId={application.applicant?.id ?? ""} threads={emailThreads} partnerEmailOn={partnerEmailOn} />
   );
 
   const TABS = [
@@ -936,6 +1028,7 @@ export default function PartnerApplicationDetail() {
     { key: "meetings", label: "Meetings", icon: Calendar },
     { key: "details", label: "Details", icon: Info },
     { key: "sow", label: "Statement of Work", icon: FileText },
+    { key: "email", label: "Email", icon: Mail },
   ] as const;
 
   return (
@@ -963,7 +1056,7 @@ export default function PartnerApplicationDetail() {
       {tab === "overview" && (
         <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
           <div className="min-w-0">{activityFeed}</div>
-          {keyFields}
+          {propertyRail}
         </div>
       )}
       {tab === "evaluation" &&
@@ -986,18 +1079,11 @@ export default function PartnerApplicationDetail() {
         </div>
       )}
       {tab === "sow" && sow}
+      {tab === "email" && emailTab}
     </div>
   );
 }
 
-function KeyRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-baseline justify-between gap-3">
-      <dt className="text-xs text-muted-foreground shrink-0">{label}</dt>
-      <dd className="text-sm text-foreground text-right">{value}</dd>
-    </div>
-  );
-}
 
 // ─── CRM: Triage / decision bar ────────────────────────────────────────────────
 
@@ -1349,102 +1435,6 @@ function AcceptanceFields({ application }: { application: LoaderData["applicatio
         </button>
       </div>
     </Form>
-  );
-}
-
-// ─── CRM: Evaluation card ─────────────────────────────────────────────────────
-
-function EvaluationCard({ application }: { application: LoaderData["application"] }) {
-  const rubric = parseEvalRubric(application.evalRubric);
-
-  return (
-    <section className="bg-card border border-border rounded-lg p-4">
-      <h2 className="text-sm font-semibold text-foreground mb-1">Evaluation</h2>
-      <p className="text-xs text-muted-foreground mb-3">
-        Score each criterion 1 (low) – 5 (high) after the discovery meeting.
-      </p>
-
-      {/* First-meeting prompts */}
-      <div className="mb-4 bg-muted/30 rounded-md p-3">
-        <p className="text-xs font-medium text-muted-foreground mb-2">Discovery meeting prompts</p>
-        <ol className="list-decimal list-inside space-y-1">
-          {FIRST_MEETING_PROMPTS.map((p, i) => (
-            <li key={i} className="text-xs text-muted-foreground">{p}</li>
-          ))}
-        </ol>
-      </div>
-
-      <Form method="post" className="flex flex-col gap-3">
-        <input type="hidden" name="intent" value="eval" />
-
-        {EVAL_CRITERIA.map((c) => (
-          <div key={c.key} className="flex items-start gap-3">
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-foreground">{c.label}</p>
-              <p className="text-xs text-muted-foreground">{c.description}</p>
-            </div>
-            <div className="flex items-center gap-0.5">
-              {[1, 2, 3, 4, 5].map((n) => (
-                <label key={n} className="cursor-pointer">
-                  <input
-                    type="radio"
-                    name={`score_${c.key}`}
-                    value={String(n)}
-                    defaultChecked={rubric[c.key as EvalCriterionKey] === n}
-                    className="sr-only peer"
-                  />
-                  <span className="w-7 h-7 flex items-center justify-center text-xs font-medium rounded border border-border text-muted-foreground peer-checked:bg-accent-coral peer-checked:text-white peer-checked:border-accent-coral hover:bg-muted transition-colors">
-                    {n}
-                  </span>
-                </label>
-              ))}
-            </div>
-          </div>
-        ))}
-
-        <div className="flex items-center gap-3 pt-2 border-t border-border">
-          <label className="flex items-center gap-2 text-xs font-medium text-foreground flex-1">
-            <span>Overall interview rating (1–5)</span>
-          </label>
-          <div className="flex items-center gap-0.5">
-            {[1, 2, 3, 4, 5].map((n) => (
-              <label key={n} className="cursor-pointer">
-                <input
-                  type="radio"
-                  name="interviewRating"
-                  value={String(n)}
-                  defaultChecked={application.interviewRating === n}
-                  className="sr-only peer"
-                />
-                <span className="w-7 h-7 flex items-center justify-center text-xs font-medium rounded border border-border text-muted-foreground peer-checked:bg-accent-coral peer-checked:text-white peer-checked:border-accent-coral hover:bg-muted transition-colors">
-                  {n}
-                </span>
-              </label>
-            ))}
-          </div>
-        </div>
-
-        <label className="flex flex-col gap-1 text-xs">
-          <span className="text-muted-foreground">Eval notes</span>
-          <textarea
-            name="evalNotes"
-            rows={3}
-            defaultValue={rubric.notes ?? ""}
-            placeholder="Notes for the team…"
-            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 resize-none"
-          />
-        </label>
-
-        <div className="flex justify-end">
-          <button
-            type="submit"
-            className={buttonClasses("primary", "sm")}
-          >
-            Save evaluation
-          </button>
-        </div>
-      </Form>
-    </section>
   );
 }
 

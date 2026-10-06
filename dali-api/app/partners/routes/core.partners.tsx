@@ -11,16 +11,16 @@ import {
 import { Popover, Select } from "~/components/ui/floating";
 import { resolveTermFilter } from "~/lib/terms";
 import { UPCOMING, termFilterOrder } from "~/lib/terms.shared";
-import type { DragEndEvent } from "@dnd-kit/core";
-import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
 import type { Route } from "./+types/core.partners";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { prisma } from "~/lib/db";
-import { isCore } from "~/lib/roles";
+import { isCore, currentTerm } from "~/lib/roles";
 import { coreHandle } from "~/core/coreNav";
 import { PartnerCrmNav } from "../components/PartnerCrmNav";
+import { PartnerBoard } from "../components/PartnerBoard";
+import type { PartnerCardModel } from "../lib/partner-board";
 import { resolvePhotoUrl } from "~/lib/photo";
 import {
   PARTNER_STAGES as STAGES,
@@ -29,6 +29,7 @@ import {
   PROJECTING_STAGES,
   type PartnerStage as Status,
 } from "../lib/partner-application";
+import { notifyPartners } from "../lib/partner-notify.server";
 import { useChartColors } from "~/components/analytics/useChartColors";
 import {
   clearApplicationFormBinding,
@@ -51,7 +52,7 @@ import {
 } from "~/components/ui/filter-panel";
 import { cn } from "~/lib/cn";
 import { ChevronRight, Plus, SlidersHorizontal } from "lucide-react";
-import { useConfirmSubmit, useDialog } from "~/components/ui/dialog";
+import { useConfirmSubmit } from "~/components/ui/dialog";
 
 // areaSubnav: this page mounts PartnerCrmNav (Board/Directory) itself at the
 // top, so the shell must not add its own sub-nav row above it.
@@ -99,7 +100,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (auth.user.type === "applicant") return redirect("/portal");
   if (!(await isCore(auth.user.sub))) return redirect("/");
 
-  const [applications, canEdit, roleRequests, termFilter] =
+  const [applications, canEdit, roleRequests, termFilter, crmSettings, allDomains, allTerms, currentTermRow] =
     await Promise.all([
     prisma.partnerApplication.findMany({
       orderBy: [{ stage: "asc" }, { createdAt: "desc" }],
@@ -108,7 +109,15 @@ export async function loader({ request }: Route.LoaderArgs) {
         title: true,
         summary: true,
         stage: true,
+        position: true,
         resultingProjectId: true,
+        source: true,
+        nextStep: true,
+        nextStepDueAt: true,
+        lastActivityAt: true,
+        holdUntil: true,
+        meetingRequestedAt: true,
+        createdAt: true,
         partnerOrg: { select: { name: true, logoUrl: true } },
         applicantContact: { select: { id: true, name: true, email: true } },
         formSubmission: {
@@ -128,6 +137,8 @@ export async function loader({ request }: Route.LoaderArgs) {
             domain: { select: { displayName: true } },
           },
         },
+        meetings: { select: { id: true } },
+        meetingRequests: { where: { status: "Pending" }, select: { id: true } },
       },
     }),
     isCore(auth.user.sub),
@@ -144,6 +155,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     // Partner projects are planned several terms out, so default to the current
     // term plus every upcoming one; history stays under "All terms".
     resolveTermFilter(request, { default: "upcoming" }),
+    prisma.partnerCrmSettings.findUnique({ where: { id: "default" } }),
+    prisma.domain.findMany({ where: { active: true }, orderBy: { displayName: "asc" }, select: { id: true, displayName: true } }),
+    prisma.term.findMany({ orderBy: { sortKey: "desc" }, select: { id: true, code: true } }),
+    currentTerm(request),
   ]);
 
   const rows: ApplicationRow[] = await Promise.all(applications.map(async (a) => {
@@ -203,8 +218,36 @@ export async function loader({ request }: Route.LoaderArgs) {
     ? await Promise.all([getApplicationFormBinding(), listSelectableForms()])
     : [null, []];
 
+  // The board's card model (specs/partner-crm.md §4) — PartnerBoard.tsx is
+  // modeled on TaskBoard.tsx, which reads TaskCardModel[] the same way.
+  const cards: PartnerCardModel[] = applications.map((a) => ({
+    id: a.id,
+    title: a.title,
+    stage: a.stage,
+    status: a.stage,
+    position: a.position,
+    contactName: a.applicantContact?.name ?? "Unknown",
+    orgName: a.partnerOrg?.name ?? null,
+    domains: a.domains.map((d) => ({ id: d.domainId, name: d.domain.displayName })),
+    targetTerms: a.targetTerms.map((t) => ({ id: t.term.id, code: t.term.code })),
+    nextStep: a.nextStep,
+    nextStepDueAt: a.nextStepDueAt?.toISOString() ?? null,
+    lastActivityAt: a.lastActivityAt.toISOString(),
+    holdUntil: a.holdUntil?.toISOString() ?? null,
+    resultingProjectId: a.resultingProjectId,
+    meetingRequestedAt: a.meetingRequestedAt?.toISOString() ?? null,
+    pendingRequestCount: a.meetingRequests.length,
+    meetingCount: a.meetings.length,
+    source: a.source,
+    // No cheap per-card unread signal yet — the Email tab reads per-contact
+    // threads on open instead. Revisit once MailMessageIndex is linked here.
+    hasUnreadEmail: false,
+    createdAt: a.createdAt.toISOString(),
+  }));
+
   return {
     rows,
+    cards,
     canEdit,
     requiredCells,
     formBinding,
@@ -213,6 +256,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     selected: termFilter.selected,
     termIds: termFilter.termIds,
     isAll: termFilter.isAll,
+    staleDays: crmSettings?.staleDays ?? 14,
+    domainOptions: allDomains.map((d) => ({ id: d.id, name: d.displayName })),
+    termOptions: allTerms,
+    currentTermStartIso: currentTermRow?.startDate.toISOString() ?? null,
   };
 }
 
@@ -241,6 +288,15 @@ export async function action({ request }: Route.ActionArgs) {
   const title = (form.get("title") as string | null)?.trim() ?? "";
   const applicantName = (form.get("applicantName") as string | null)?.trim() ?? "";
   const applicantEmail = (form.get("applicantEmail") as string | null)?.trim().toLowerCase() ?? "";
+  const summary = (form.get("summary") as string | null)?.trim() ?? "";
+  const sourceRaw = (form.get("source") as string | null) ?? "Manual";
+  const source = (
+    ["Email", "Form", "Referral", "Manual", "Renewal"] as const
+  ).includes(sourceRaw as never)
+    ? (sourceRaw as "Email" | "Form" | "Referral" | "Manual" | "Renewal")
+    : "Manual";
+  const targetTermIds = [...new Set(form.getAll("targetTermId").map((v) => String(v).trim()).filter(Boolean))];
+  const domainIds = [...new Set(form.getAll("domainId").map((v) => String(v).trim()).filter(Boolean))];
 
   if (!title) return { error: "A title is required." };
   if (!applicantEmail || !applicantEmail.includes("@"))
@@ -268,7 +324,14 @@ export async function action({ request }: Route.ActionArgs) {
       applicantContactId: contact.id,
       partnerOrgId: null,
       stage: "New",
-      source: "Manual",
+      source,
+      summary: summary || null,
+      ...(targetTermIds.length > 0
+        ? { targetTerms: { create: targetTermIds.map((termId) => ({ termId })) } }
+        : {}),
+      ...(domainIds.length > 0
+        ? { domains: { create: domainIds.map((domainId) => ({ domainId })) } }
+        : {}),
     },
     select: { id: true },
   });
@@ -276,14 +339,37 @@ export async function action({ request }: Route.ActionArgs) {
     applicationId: created.id,
     actorUserId: auth.user.sub,
     type: "Created",
-    metadata: { source: "Manual" },
+    metadata: { source },
+  });
+  // The portal's own inquiry path (app/partners/routes/partner.apply.tsx) is
+  // owned by another branch right now — wire its notifyPartners call there
+  // too when that lands. TODO(partner.apply.tsx): fire partner.inquiry_received.
+  await notifyPartners({
+    eventType: "partner.inquiry_received",
+    title: `New partner opportunity: ${title}`,
+    body: applicantName ? `From ${applicantName} (${applicantEmail})` : applicantEmail,
+    link: `/core/partners/applications/${created.id}`,
   });
   return redirect(`/core/partners/applications/${created.id}`);
 }
 
 export default function PartnersApplications() {
-  const { rows, canEdit, requiredCells, formBinding, selectableForms, terms, selected, termIds, isAll } =
-    useLoaderData<typeof loader>();
+  const {
+    rows,
+    cards,
+    canEdit,
+    requiredCells,
+    formBinding,
+    selectableForms,
+    terms,
+    selected,
+    termIds,
+    isAll,
+    staleDays,
+    domainOptions: boardDomainOptions,
+    termOptions: boardTermOptions,
+    currentTermStartIso,
+  } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigate = useNavigate();
   const confirmSubmit = useConfirmSubmit();
@@ -292,19 +378,13 @@ export default function PartnersApplications() {
   const [domainFilter, setDomainFilter] = useState<string>("all");
   // Term filter for planning — projects/applications are planned several terms
   // out and can target multiple terms, so a row matches if ANY target term is
-  // in the selected scope. Applies in both list and board views. Persisted in
-  // the URL (?term=) by the Customize panel so a shared/reloaded link keeps the
-  // scope; the loader defaults it to "Current & upcoming" (isAll/termIds come
+  // in the selected scope. Applies to the list view. Persisted in the URL
+  // (?term=) by the Customize panel so a shared/reloaded link keeps the scope;
+  // the loader defaults it to "Current & upcoming" (isAll/termIds come
   // thence).
-  const [view, setView] = useState<"list" | "board">("list");
+  // Board is the default landing per specs/partner-crm.md §4.
+  const [view, setView] = useState<"list" | "board">("board");
   const [creating, setCreating] = useState(false);
-  // Board drag applies a status change here and persists it via the API.
-  // Held at this level (not inside the board) so the projection chart and the
-  // list both reflect a pending move without a full loader refetch — the
-  // chart's other input (required slots) can't change from a status flip.
-  const [pendingStage, setPendingStage] = useState<Record<string, Status>>(
-    {},
-  );
   const [searchParams, setSearchParams] = useSearchParams();
 
   // What the Customize badge counts: every slice bar the search box, which has
@@ -330,14 +410,6 @@ export default function PartnersApplications() {
     setSearchParams(next);
   };
 
-  const effectiveRows = useMemo(
-    () =>
-      rows.map((r) =>
-        pendingStage[r.id] ? { ...r, stage: pendingStage[r.id] } : r,
-      ),
-    [rows, pendingStage],
-  );
-
   const domainOptions = useMemo(() => {
     const seen = new Map<string, string>();
     for (const r of rows) {
@@ -350,7 +422,7 @@ export default function PartnersApplications() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return effectiveRows.filter((r) => {
+    return rows.filter((r) => {
       if (stageFilter !== "all" && r.stage !== stageFilter) return false;
       if (domainFilter !== "all" && !r.domains.some((d) => d.domainId === domainFilter))
         return false;
@@ -363,7 +435,7 @@ export default function PartnersApplications() {
       if (r.partnerName.toLowerCase().includes(q)) return true;
       return r.domains.some((d) => d.domainName.toLowerCase().includes(q));
     });
-  }, [effectiveRows, query, stageFilter, domainFilter, isAll, termIds]);
+  }, [rows, query, stageFilter, domainFilter, isAll, termIds]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -453,102 +525,106 @@ export default function PartnersApplications() {
       )}
 
       <div className="flex items-center gap-4 pt-2 pb-4 flex-wrap">
-        <SearchInput
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search by title, partner, or domain"
-          containerClassName="flex-1 min-w-[200px] max-w-[420px]"
-        />
-        {/* Status, domain and term used to sit here as a row of selects that
-            grew with the lab's domains and every term ever seeded. Behind one
-            control the toolbar stays the width of the page, and the badge says
-            how many slices are on so a filtered list is never silently
-            filtered. */}
-        <Popover
-          align="left"
-          ariaLabel="Customize applications"
-          panelClassName={filterPanelClass(true)}
-          trigger={
-            <button
-              type="button"
-              className={customizeButtonClass(true, activeFilterCount > 0)}
+        {/* The board has its own search + Customize panel (PartnerBoard owns
+            its filters independently) — this row's filtering is for the list
+            view only, so it steps aside in board view rather than doubling
+            the toolbar. */}
+        {view === "list" && (
+          <>
+            <SearchInput
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search by title, partner, or domain"
+              containerClassName="flex-1 min-w-[200px] max-w-[420px]"
+            />
+            {/* Status, domain and term used to sit here as a row of selects
+                that grew with the lab's domains and every term ever seeded.
+                Behind one control the toolbar stays the width of the page,
+                and the badge says how many slices are on so a filtered list
+                is never silently filtered. */}
+            <Popover
+              align="left"
+              ariaLabel="Customize applications"
+              panelClassName={filterPanelClass(true)}
+              trigger={
+                <button
+                  type="button"
+                  className={customizeButtonClass(true, activeFilterCount > 0)}
+                >
+                  <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden />
+                  Customize
+                  <FilterCountBadge os={true} count={activeFilterCount} />
+                </button>
+              }
             >
-              <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden />
-              Customize
-              <FilterCountBadge os={true} count={activeFilterCount} />
-            </button>
-          }
-        >
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between">
-              <FilterSectionLabel os={true}>Filters</FilterSectionLabel>
-              {activeFilterCount > 0 && (
-                <FilterResetButton os={true} onClick={resetFilters} />
-              )}
-            </div>
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <FilterSectionLabel os={true}>Filters</FilterSectionLabel>
+                  {activeFilterCount > 0 && (
+                    <FilterResetButton os={true} onClick={resetFilters} />
+                  )}
+                </div>
 
-            {/* The board shows every status as a column, so slicing by one
-                would silently hide columns — list view only. */}
-            {view === "list" && (
-              <FilterGroup label="Stage" os={true}>
-                <FilterPill
-                  os={true}
-                  selected={stageFilter === "all"}
-                  onClick={() => setStageFilter("all")}
-                >
-                  All
-                </FilterPill>
-                {STAGES.map((st) => (
+                <FilterGroup label="Stage" os={true}>
                   <FilterPill
-                    key={st}
                     os={true}
-                    selected={stageFilter === st}
-                    onClick={() => setStageFilter(st)}
+                    selected={stageFilter === "all"}
+                    onClick={() => setStageFilter("all")}
                   >
-                    {STAGE_LABEL[st]}
+                    All
                   </FilterPill>
-                ))}
-              </FilterGroup>
-            )}
+                  {STAGES.map((st) => (
+                    <FilterPill
+                      key={st}
+                      os={true}
+                      selected={stageFilter === st}
+                      onClick={() => setStageFilter(st)}
+                    >
+                      {STAGE_LABEL[st]}
+                    </FilterPill>
+                  ))}
+                </FilterGroup>
 
-            {domainOptions.length > 0 && (
-              <FilterGroup label="Domain" os={true}>
-                <FilterPill
-                  os={true}
-                  selected={domainFilter === "all"}
-                  onClick={() => setDomainFilter("all")}
-                >
-                  All
-                </FilterPill>
-                {domainOptions.map((d) => (
-                  <FilterPill
-                    key={d.id}
-                    os={true}
-                    selected={domainFilter === d.id}
-                    onClick={() => setDomainFilter(d.id)}
-                  >
-                    {d.name}
-                  </FilterPill>
-                ))}
-              </FilterGroup>
-            )}
+                {domainOptions.length > 0 && (
+                  <FilterGroup label="Domain" os={true}>
+                    <FilterPill
+                      os={true}
+                      selected={domainFilter === "all"}
+                      onClick={() => setDomainFilter("all")}
+                    >
+                      All
+                    </FilterPill>
+                    {domainOptions.map((d) => (
+                      <FilterPill
+                        key={d.id}
+                        os={true}
+                        selected={domainFilter === d.id}
+                        onClick={() => setDomainFilter(d.id)}
+                      >
+                        {d.name}
+                      </FilterPill>
+                    ))}
+                  </FilterGroup>
+                )}
 
-            {terms.length > 0 && (
-              <FilterGroup label="Term" os={true}>
-                {termFilterOrder(terms, { includeUpcoming: true }).map((opt) => (
-                  <FilterPill
-                    key={opt.value}
-                    os={true}
-                    selected={selected === opt.value}
-                    onClick={() => setTerm(opt.value)}
-                  >
-                    {opt.label}
-                  </FilterPill>
-                ))}
-              </FilterGroup>
-            )}
-          </div>
-        </Popover>
+                {terms.length > 0 && (
+                  <FilterGroup label="Term" os={true}>
+                    {termFilterOrder(terms, { includeUpcoming: true }).map((opt) => (
+                      <FilterPill
+                        key={opt.value}
+                        os={true}
+                        selected={selected === opt.value}
+                        onClick={() => setTerm(opt.value)}
+                      >
+                        {opt.label}
+                      </FilterPill>
+                    ))}
+                  </FilterGroup>
+                )}
+              </div>
+            </Popover>
+          </>
+        )}
         <div
           className="inline-flex items-center border border-border overflow-hidden rounded-full bg-card"
         >
@@ -671,7 +747,7 @@ export default function PartnersApplications() {
         </details>
       )}
 
-      <TermProjection rows={effectiveRows} requiredCells={requiredCells} />
+      <TermProjection rows={rows} requiredCells={requiredCells} />
 
       {view === "list" ? (
         <div className="bg-card border border-border rounded-lg">
@@ -690,18 +766,13 @@ export default function PartnersApplications() {
           )}
         </div>
       ) : (
-        <ApplicationsBoard
-          rows={filtered}
+        <PartnerBoard
+          cards={cards}
           canEdit={canEdit}
-          onMove={(id, toStage) =>
-            setPendingStage((m) => ({ ...m, [id]: toStage }))
-          }
-          onRevert={(id) =>
-            setPendingStage((m) => {
-              const { [id]: _drop, ...rest } = m;
-              return rest;
-            })
-          }
+          staleDays={staleDays}
+          domainOptions={boardDomainOptions}
+          termOptions={boardTermOptions}
+          currentTermStartIso={currentTermStartIso}
         />
       )}
     </div>
@@ -1049,183 +1120,3 @@ function ApplicationsTable({ rows }: { rows: ApplicationRow[] }) {
   );
 }
 
-// `rows` already reflects pending moves (the parent merges the optimistic
-// status so the projection chart stays in sync), so a drop just calls onMove
-// then POSTs, and onRevert on failure — no loader refetch. The optimistic state
-// lives in the parent, so the board uses only the POST/rollback half of the
-// shared flow rather than `useOptimisticBoardMove`'s local state.
-// Stages that silently skip the email pipeline — dropping a card here should
-// warn that no email is sent. Mirrors the decision intents in the detail route.
-const BOARD_DECISION_STAGES = new Set<Status>(["Accepted", "Rejected"]);
-
-function ApplicationsBoard({
-  rows,
-  canEdit,
-  onMove,
-  onRevert,
-}: {
-  rows: ApplicationRow[];
-  canEdit: boolean;
-  onMove: (id: string, toStage: Status) => void;
-  onRevert: (id: string) => void;
-}) {
-  const [error, setError] = useState<string | null>(null);
-  const dialog = useDialog();
-
-  const byStage = useMemo(() => {
-    const map = Object.fromEntries(
-      STAGES.map((s) => [s, [] as ApplicationRow[]]),
-    ) as Record<Status, ApplicationRow[]>;
-    for (const a of rows) map[a.stage].push(a);
-    return map;
-  }, [rows]);
-
-  function handleDragEnd(event: DragEndEvent) {
-    if (!canEdit) return;
-    const overId = event.over?.id;
-    if (!overId || typeof overId !== "string") return;
-    const data = event.active.data.current as
-      | { applicationId?: string; fromStage?: Status }
-      | undefined;
-    const id = data?.applicationId;
-    const fromStage = data?.fromStage;
-    if (!id || !fromStage) return;
-    const toStage = overId as Status;
-    if (toStage === fromStage) return;
-
-    const doMove = () => {
-      onMove(id, toStage);
-      setError(null);
-      void (async () => {
-        try {
-          const res = await fetch(`/api/partner-applications/${id}/status`, {
-            method: "POST",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ stage: toStage }),
-          });
-          if (!res.ok) {
-            const b = (await res.json().catch(() => ({}))) as { error?: string };
-            throw new Error(b.error ?? `Request failed: ${res.status}`);
-          }
-        } catch (err) {
-          onRevert(id);
-          setError(err instanceof Error ? err.message : "Failed to move");
-        }
-      })();
-    };
-
-    if (BOARD_DECISION_STAGES.has(toStage)) {
-      void (async () => {
-        const ok = await dialog.confirm({
-          title: `Move to "${STAGE_LABEL[toStage]}"?`,
-          description:
-            "This does NOT email the partner — use the Accept/Reject buttons to notify them.",
-          confirmLabel: "Move anyway",
-        });
-        if (ok) doMove();
-      })();
-      return;
-    }
-
-    doMove();
-  }
-
-  const columns: KanbanColumn<ApplicationRow>[] = STAGES.map((stage) => ({
-    id: stage,
-    title: <StagePill stage={stage} />,
-    cards: byStage[stage],
-    className: "flex-shrink-0 w-full md:w-72 border rounded-lg border-border bg-card flex flex-col",
-  }));
-
-  return (
-    <KanbanBoard<ApplicationRow>
-      // Stable id so SSR/client agree when multiple DndContexts mount (see
-      // StaffingBoard for the hydration-mismatch rationale).
-      id="partner-applications-board"
-      columns={columns}
-      getCardId={(a) => a.id}
-      getCardData={(a) => ({ applicationId: a.id, fromStage: a.stage })}
-      draggable={canEdit}
-      onDragEnd={handleDragEnd}
-      error={error}
-      renderCard={(app, { isDragging, dragHandleProps }) => (
-        <ApplicationCard
-          app={app}
-          draggable={canEdit}
-          dragHandleProps={dragHandleProps}
-          isDragging={isDragging}
-        />
-      )}
-    />
-  );
-}
-
-function ApplicationCard({
-  app,
-  draggable,
-  dragHandleProps,
-  isDragging,
-}: {
-  app: ApplicationRow;
-  draggable: boolean;
-  dragHandleProps: Record<string, unknown>;
-  isDragging: boolean;
-}) {
-  const navigate = useNavigate();
-
-  // The whole card is the drag handle (matching the original behavior); the
-  // activation-distance sensor lets a press that doesn't move land as a click.
-  const dragProps = draggable ? dragHandleProps : {};
-
-  return (
-    <div
-      {...dragProps}
-      onClick={() => {
-        const url = `/core/partners/applications/${app.id}`;
-        if (!requestOpenTabIfEmbedded(url, app.title)) navigate(url);
-      }}
-      className={`border border-border rounded-md bg-background p-2.5 text-sm flex flex-col gap-2 ${
-        draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
-      } ${isDragging ? "opacity-60 shadow-lg" : "hover:bg-muted/20"}`}
-    >
-      <span className="font-semibold text-foreground">{app.title}</span>
-      {app.excerpt && (
-        <span className="text-xs text-muted-foreground line-clamp-2">
-          {app.excerpt}
-        </span>
-      )}
-      <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        {app.partnerLogoUrl && (
-          <img
-            src={app.partnerLogoUrl}
-            alt=""
-            className="w-3.5 h-3.5 rounded-sm object-contain"
-          />
-        )}
-        {app.partnerName}
-      </span>
-      <span className="text-xs text-muted-foreground">
-        {app.targetTerms.length > 0
-          ? `Target ${app.targetTerms.map((t) => t.code).join(", ")}`
-          : "No target term"}
-        {app.totalExpectedMembers > 0
-          ? ` · ${app.totalExpectedMembers} expected`
-          : ""}
-      </span>
-      {app.domains.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {app.domains.map((d) => (
-            <span
-              key={d.domainId}
-              className="inline-flex items-center px-2 py-0.5 text-xs rounded bg-muted text-foreground"
-            >
-              {d.domainName}
-              {d.expectedMembers > 0 ? ` ·${d.expectedMembers}` : ""}
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
