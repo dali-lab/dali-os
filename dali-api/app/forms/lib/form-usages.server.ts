@@ -12,6 +12,7 @@ import { applicantPortalPath } from "~/hiring/lib/applicant-groups";
 export type FormUsageKind =
   | "staffing"
   | "partner-application"
+  | "partner-survey"
   | "hiring"
   | "education"
   | "notification"
@@ -37,6 +38,7 @@ export type FormUsage = {
 const MANAGED_KINDS: ReadonlySet<FormUsageKind> = new Set([
   "staffing",
   "partner-application",
+  "partner-survey",
   "hiring",
   "education",
   "onboarding-profile",
@@ -59,6 +61,7 @@ export async function formUsages(formId: string): Promise<FormUsage[]> {
     form,
     staffingBindings,
     partnerBinding,
+    partnerSurveyBinding,
     hiringCycles,
     hiringChallenges,
     educationOfferings,
@@ -78,6 +81,10 @@ export async function formUsages(formId: string): Promise<FormUsage[]> {
       },
     }),
     prisma.partnerApplicationFormBinding.findFirst({
+      where: { formId },
+      select: { id: true },
+    }),
+    prisma.partnerSurveyFormBinding.findFirst({
       where: { formId },
       select: { id: true },
     }),
@@ -123,6 +130,13 @@ export async function formUsages(formId: string): Promise<FormUsage[]> {
       kind: "partner-application",
       label: "Partner application (/partner/apply)",
       href: "/core/partners",
+    });
+  }
+  if (partnerSurveyBinding) {
+    usages.push({
+      kind: "partner-survey",
+      label: "Post-project survey (/partner/survey)",
+      href: "/core/partners/settings",
     });
   }
   for (const c of hiringCycles) {

@@ -2990,6 +2990,11 @@ async function main() {
       id: "papp-hood-kiosk",
       title: "Interactive gallery kiosk",
       partnerOrgId: "partner-hood-museum",
+      // Owned by the same portal contact the Hood museum signs into the
+      // portal with (see "Harper Hood" below) — not a throwaway seed-only
+      // contact — so the application shows up when that account logs in.
+      contactEmail: "partner.hood@example.com",
+      contactName: "Harper Hood",
       // Multi-term engagement: exercises the new multiple-target-terms UI.
       // 26X may not exist in the minimal local seed; filtered out below.
       targetTermIds: [term26S?.id, term26X?.id],
@@ -3005,6 +3010,10 @@ async function main() {
       id: "papp-tuck-mentor",
       title: "Alumni mentorship matching",
       partnerOrgId: "partner-tuck-school",
+      // Owned by Pat Tuck's real portal contact (see below) so it shows up
+      // when Pat signs in, same reasoning as Hood above.
+      contactEmail: "partner.tuck@example.com",
+      contactName: "Pat Tuck",
       targetTermIds: [term26S?.id],
       stage: "Accepted" as const,
       summary: "Match current students with alumni mentors by industry and interest.",
@@ -3017,6 +3026,9 @@ async function main() {
       id: "papp-thayer-sensors",
       title: "Lab sensor dashboard",
       partnerOrgId: "partner-thayer",
+      // Kept on its own contact, distinct from Tuck/Hood's real portal logins.
+      contactEmail: "partner-thayer@seed.dali",
+      contactName: "Lab sensor dashboard contact",
       targetTermIds: [term26X?.id],
       stage: "New" as const,
       summary: "Real-time dashboard for shared lab equipment sensor data.",
@@ -3026,17 +3038,26 @@ async function main() {
     },
   ];
   for (const a of partnerApplicationSeeds) {
-    // Account-first: every application is owned by a PartnerContact. Seed one
-    // per application (deterministic email) so re-seeding stays idempotent.
+    // Account-first: every application is owned by a PartnerContact. Tuck and
+    // Hood point at the same real portal contacts created below (so each org's
+    // login sees its own application); Thayer keeps a dedicated one. `update`
+    // repoints applicantContactId too, so a dev DB seeded before this change
+    // gets fixed up on re-seed instead of staying stuck on the old contact.
     const applicant = await prisma.partnerContact.upsert({
-      where: { email: `${a.partnerOrgId}@seed.dali` },
-      update: {},
-      create: { email: `${a.partnerOrgId}@seed.dali`, name: `${a.title} contact` },
+      where: { email: a.contactEmail },
+      update: { name: a.contactName },
+      create: { email: a.contactEmail, name: a.contactName },
       select: { id: true },
     });
     await prisma.partnerApplication.upsert({
       where: { id: a.id },
-      update: { title: a.title, partnerOrgId: a.partnerOrgId, stage: a.stage, summary: a.summary },
+      update: {
+        title: a.title,
+        partnerOrgId: a.partnerOrgId,
+        stage: a.stage,
+        summary: a.summary,
+        applicantContactId: applicant.id,
+      },
       create: {
         id: a.id,
         title: a.title,
@@ -3063,6 +3084,191 @@ async function main() {
     }
   }
   console.log(`  ${partnerApplicationSeeds.length} partner applications, ${partnerApplicationSeeds.reduce((n, a) => n + a.domains.length, 0)} domain-scope rows`);
+
+  // Activity history per application (specs/partner-crm.md §12 needs cycle-
+  // time + staleness data to show something in dev): Created/Note/StatusChanged
+  // rows at stable ids so re-seeding replaces rather than duplicates them, with
+  // lastActivityAt explicitly stamped afterward (activity rows alone don't
+  // drive it — logPartnerActivity does that at write time, which seeding
+  // bypasses to control the timestamps precisely).
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const partnerSeedNow = Date.now();
+  const daysAgo = (n: number) => new Date(partnerSeedNow - n * DAY_MS);
+
+  type ActivitySeed = {
+    id: string;
+    applicationId: string;
+    orgId: string;
+    contactId: string;
+    type: "Created" | "Note" | "StatusChanged";
+    createdAt: Date;
+    body?: string;
+    metadata?: object;
+  };
+  const hoodContactForApp = await prisma.partnerApplication.findUnique({
+    where: { id: "papp-hood-kiosk" },
+    select: { applicantContactId: true },
+  });
+  const tuckContactForApp = await prisma.partnerApplication.findUnique({
+    where: { id: "papp-tuck-mentor" },
+    select: { applicantContactId: true },
+  });
+  const thayerContactForApp = await prisma.partnerApplication.findUnique({
+    where: { id: "papp-thayer-sensors" },
+    select: { applicantContactId: true },
+  });
+  const activitySeeds: ActivitySeed[] = [
+    // Hood kiosk (Interview): quiet for 30 days — the stale card in dev.
+    {
+      id: "pact-hood-created",
+      applicationId: "papp-hood-kiosk",
+      orgId: "partner-hood-museum",
+      contactId: hoodContactForApp!.applicantContactId,
+      type: "Created",
+      createdAt: daysAgo(35),
+      metadata: { source: "Form" },
+    },
+    {
+      id: "pact-hood-status",
+      applicationId: "papp-hood-kiosk",
+      orgId: "partner-hood-museum",
+      contactId: hoodContactForApp!.applicantContactId,
+      type: "StatusChanged",
+      createdAt: daysAgo(32),
+      metadata: { from: "New", to: "Interview" },
+    },
+    {
+      id: "pact-hood-note",
+      applicationId: "papp-hood-kiosk",
+      orgId: "partner-hood-museum",
+      contactId: hoodContactForApp!.applicantContactId,
+      type: "Note",
+      createdAt: daysAgo(30),
+      body: "Kiosk mockups shared; waiting on curator feedback.",
+    },
+    // Tuck mentor matching (Accepted): next step due tomorrow.
+    {
+      id: "pact-tuck-created",
+      applicationId: "papp-tuck-mentor",
+      orgId: "partner-tuck-school",
+      contactId: tuckContactForApp!.applicantContactId,
+      type: "Created",
+      createdAt: daysAgo(10),
+      metadata: { source: "Form" },
+    },
+    {
+      id: "pact-tuck-interview",
+      applicationId: "papp-tuck-mentor",
+      orgId: "partner-tuck-school",
+      contactId: tuckContactForApp!.applicantContactId,
+      type: "StatusChanged",
+      createdAt: daysAgo(8),
+      metadata: { from: "New", to: "Interview" },
+    },
+    {
+      id: "pact-tuck-accepted",
+      applicationId: "papp-tuck-mentor",
+      orgId: "partner-tuck-school",
+      contactId: tuckContactForApp!.applicantContactId,
+      type: "StatusChanged",
+      createdAt: daysAgo(5),
+      metadata: { from: "Interview", to: "Accepted" },
+    },
+    {
+      id: "pact-tuck-note",
+      applicationId: "papp-tuck-mentor",
+      orgId: "partner-tuck-school",
+      contactId: tuckContactForApp!.applicantContactId,
+      type: "Note",
+      createdAt: daysAgo(2),
+      body: "Scoping the SOW with Tuck's program office.",
+    },
+    // Thayer sensors (New): fresh, nothing stale here.
+    {
+      id: "pact-thayer-created",
+      applicationId: "papp-thayer-sensors",
+      orgId: "partner-thayer",
+      contactId: thayerContactForApp!.applicantContactId,
+      type: "Created",
+      createdAt: daysAgo(3),
+      metadata: { source: "Form" },
+    },
+    {
+      id: "pact-thayer-note",
+      applicationId: "papp-thayer-sensors",
+      orgId: "partner-thayer",
+      contactId: thayerContactForApp!.applicantContactId,
+      type: "Note",
+      createdAt: daysAgo(1),
+      body: "Waiting on lab equipment specs from Thayer facilities.",
+    },
+  ];
+  for (const act of activitySeeds) {
+    await prisma.partnerActivity.upsert({
+      where: { id: act.id },
+      update: {
+        createdAt: act.createdAt,
+        body: act.body ?? null,
+        metadata: act.metadata ?? undefined,
+      },
+      create: {
+        id: act.id,
+        applicationId: act.applicationId,
+        orgId: act.orgId,
+        contactId: act.contactId,
+        type: act.type,
+        createdAt: act.createdAt,
+        body: act.body ?? null,
+        metadata: act.metadata ?? undefined,
+      },
+    });
+  }
+  await prisma.partnerApplication.update({
+    where: { id: "papp-hood-kiosk" },
+    data: { lastActivityAt: daysAgo(30) },
+  });
+  await prisma.partnerApplication.update({
+    where: { id: "papp-tuck-mentor" },
+    data: { lastActivityAt: daysAgo(2), nextStep: "Send SOW draft", nextStepDueAt: daysAgo(-1) },
+  });
+  await prisma.partnerApplication.update({
+    where: { id: "papp-thayer-sensors" },
+    data: { lastActivityAt: daysAgo(1) },
+  });
+  console.log(`  ${activitySeeds.length} partner activity rows (Hood stale, Tuck next-step due tomorrow)`);
+
+  // One pending meeting request on the Hood application, for next week.
+  await prisma.partnerMeetingRequest.upsert({
+    where: { id: "pmr-hood-kiosk-1" },
+    update: { startTime: daysAgo(-7), status: "Pending" },
+    create: {
+      id: "pmr-hood-kiosk-1",
+      applicationId: "papp-hood-kiosk",
+      contactId: hoodContactForApp!.applicantContactId,
+      startTime: daysAgo(-7),
+      durationMinutes: 30,
+      participantUserIds: [],
+      note: "Walk through the kiosk mockups together.",
+      status: "Pending",
+    },
+  });
+
+  // One issued invoice on Tuck.
+  await prisma.partnerInvoice.upsert({
+    where: { id: "pinv-tuck-1" },
+    update: { amountCents: 500000, status: "Issued" },
+    create: {
+      id: "pinv-tuck-1",
+      orgId: "partner-tuck-school",
+      applicationId: "papp-tuck-mentor",
+      amountCents: 500000,
+      status: "Issued",
+      issuedAt: daysAgo(2),
+      dueAt: daysAgo(-28),
+      reference: "INV-1001",
+    },
+  });
+  console.log("  1 pending meeting request (Hood), 1 issued invoice (Tuck)");
 
   // Singleton operator settings for the partner CRM (interview panel, stale
   // threshold). Defaults are fine locally — just needs the row to exist.

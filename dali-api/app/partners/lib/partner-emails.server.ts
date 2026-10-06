@@ -287,3 +287,32 @@ export async function sendMemberEmailConflictEmail(to: string): Promise<void> {
     { eventType: "partner.member_conflict" },
   );
 }
+
+// Sent once by the partner-survey-send job when a ProjectPartner's endedAt
+// is set, inviting the org's contact to fill the bound post-project survey.
+export async function sendPartnerSurveyEmail(
+  to: string,
+  contactName: string | null,
+  projectName: string,
+  surveyUrl: string,
+  projectPartnerId: string,
+): Promise<void> {
+  await send(
+    to,
+    {
+      subject: "How did your DALI project go?",
+      preheader: "A few questions now that your project has wrapped.",
+      bodyHtml: [
+        greeting(contactName),
+        `<p style="margin:0 0 16px;">Your project${
+          projectName ? `, <strong>${escapeHtml(projectName)}</strong>,` : ""
+        } has wrapped up with the DALI Lab. We'd love to hear how it went.</p>`,
+        aside(`<a href="${escapeHtml(surveyUrl)}">Share your feedback</a>. It only takes a few minutes.`),
+      ].join("\n"),
+    },
+    {
+      dedupKey: `partner.survey.invite:${projectPartnerId}`,
+      eventType: "partner.survey_invite",
+    },
+  );
+}

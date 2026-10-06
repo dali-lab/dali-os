@@ -303,6 +303,24 @@ test.describe('partner portal', () => {
     ).toBeVisible();
   });
 
+  test('application page resolves for Pat Tuck and shows the four-node track', async ({ page }) => {
+    // The seed now points papp-tuck-mentor at Pat Tuck's real portal contact
+    // (not a throwaway seed-only one), so the applicant-scoped loader finds it.
+    const res = await page.goto('/partner/applications/papp-tuck-mentor');
+    expect(res?.status()).toBe(200);
+    await expect(
+      page.getByRole('heading', { name: 'Alumni mentorship matching' }),
+    ).toBeVisible();
+    // Four-node track: Submitted / Interview / Decision / Project. Tuck's
+    // application is Accepted but not yet promoted, so the Decision node
+    // reads as the resolved stage label rather than the generic "Decision".
+    const track = page.locator('ol');
+    await expect(track.getByText('Submitted', { exact: true })).toBeVisible();
+    await expect(track.getByText('Interview', { exact: true })).toBeVisible();
+    await expect(track.getByText('Accepted', { exact: true })).toBeVisible();
+    await expect(track.getByText('Project', { exact: true })).toBeVisible();
+  });
+
   test('unshared pages and other orgs’ projects 404', async ({ page }) => {
     const internalPageId = await getPageId('Internal Retro Notes');
     const unshared = await page.goto(
@@ -314,6 +332,30 @@ test.describe('partner portal', () => {
     await page.goto('/dev-login-as?personalEmail=partner.hood%40example.com');
     const crossOrg = await page.goto('/partner/projects/project-tuck-alumni');
     expect(crossOrg?.status()).toBe(404);
+  });
+});
+
+test.describe('partner portal request-a-meeting (Hood)', () => {
+  test.beforeEach(async ({ loginAs }) => {
+    await loginAs({ personalEmail: 'partner.hood@example.com' });
+  });
+
+  test('an open application shows the Request a meeting button and the full track', async ({ page }) => {
+    // papp-hood-kiosk is seeded in Interview stage, owned by Harper Hood's
+    // real portal contact — canRequestMeeting is true for New/Interview.
+    await page.goto('/partner/applications/papp-hood-kiosk');
+    await expect(
+      page.getByRole('heading', { name: 'Interactive gallery kiosk' }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Request a meeting' }),
+    ).toBeVisible();
+
+    const track = page.locator('ol');
+    await expect(track.getByText('Submitted', { exact: true })).toBeVisible();
+    await expect(track.getByText('Interview', { exact: true })).toBeVisible();
+    await expect(track.getByText('Decision', { exact: true })).toBeVisible();
+    await expect(track.getByText('Project', { exact: true })).toBeVisible();
   });
 });
 

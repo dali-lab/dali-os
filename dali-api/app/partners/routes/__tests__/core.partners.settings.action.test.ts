@@ -3,10 +3,15 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db");
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), getActiveCoreCycleTermIds: vi.fn() }));
+vi.mock("~/partners/lib/partner-survey.server", () => ({
+  setSurveyFormBinding: vi.fn(),
+  clearSurveyFormBinding: vi.fn(),
+}));
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
+import { setSurveyFormBinding, clearSurveyFormBinding } from "~/partners/lib/partner-survey.server";
 import { action } from "~/partners/routes/core.partners.settings";
 
 const db = prisma as unknown as Record<string, any>;
@@ -74,5 +79,30 @@ describe("partner CRM settings action", () => {
   it("rejects an unknown intent", async () => {
     const res = await callAction({ intent: "explode" });
     expect(res).toMatchObject({ error: "Unknown action." });
+  });
+
+  it("binds the survey form", async () => {
+    vi.mocked(setSurveyFormBinding).mockResolvedValue({ ok: true });
+    const res = await callAction({ intent: "bind-survey-form", formId: "form-1" });
+    expect(setSurveyFormBinding).toHaveBeenCalledWith("form-1", "core-1");
+    expect(res).toEqual({ ok: true });
+  });
+
+  it("requires a formId to bind the survey form", async () => {
+    const res = await callAction({ intent: "bind-survey-form", formId: "" });
+    expect(res).toMatchObject({ error: expect.stringContaining("Choose a form") });
+    expect(setSurveyFormBinding).not.toHaveBeenCalled();
+  });
+
+  it("surfaces an error from setSurveyFormBinding", async () => {
+    vi.mocked(setSurveyFormBinding).mockResolvedValue({ ok: false, error: "gone" });
+    const res = await callAction({ intent: "bind-survey-form", formId: "form-1" });
+    expect(res).toEqual({ error: "gone" });
+  });
+
+  it("clears the survey form binding", async () => {
+    const res = await callAction({ intent: "clear-survey-form" });
+    expect(clearSurveyFormBinding).toHaveBeenCalled();
+    expect(res).toEqual({ ok: true });
   });
 });
