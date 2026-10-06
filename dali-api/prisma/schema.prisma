@@ -267,8 +267,6 @@ model User {
   scheduledAnnouncements  ScheduledAnnouncement[]
 
   // ─── Phase 1: partner back-relation (single per User) ─────────────────────
-  // partnerUser is deprecated (see PartnerUser); new code reads partnerContact.
-  partnerUser    PartnerUser?
   partnerContact PartnerContact?
 
   // ─── Phase 1: OAuth / magic-link back-relations ───────────────────────────
@@ -2219,18 +2217,23 @@ model MailMessageIndex {
   fromAddress    String
   toAddresses    String[]       @default([])
   linkedUserId   String?
+  // Partner-funnel counterpart (a PartnerContact may have no User). Set by the
+  // partners@ index job; manual link/unlink works the same as linkedUserId.
+  linkedPartnerContactId String?
   linkSource     MailLinkSource @default(None)
   linkedById     String?
   linkedAt       DateTime?
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
-  account    MailAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  linkedUser User?       @relation("MailMessageIndexLinkedUser", fields: [linkedUserId], references: [id], onDelete: SetNull)
-  linkedBy   User?       @relation("MailMessageIndexLinkedBy", fields: [linkedById], references: [id], onDelete: SetNull)
+  account              MailAccount     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  linkedUser           User?           @relation("MailMessageIndexLinkedUser", fields: [linkedUserId], references: [id], onDelete: SetNull)
+  linkedPartnerContact PartnerContact? @relation(fields: [linkedPartnerContactId], references: [id], onDelete: SetNull)
+  linkedBy             User?           @relation("MailMessageIndexLinkedBy", fields: [linkedById], references: [id], onDelete: SetNull)
 
   @@unique([accountId, gmailMessageId])
   @@index([linkedUserId, sentAt])
+  @@index([linkedPartnerContactId, sentAt])
   @@index([accountId, threadId])
   @@index([accountId, sentAt])
 }
@@ -2339,6 +2342,8 @@ model ScheduledMeeting {
   notifications Notification[]
   reminderLogs  MeetingReminderLog[]
   attendance    MeetingAttendance[]
+  partnerMeeting        PartnerMeeting?
+  partnerMeetingRequest PartnerMeetingRequest?
   timeEntries   TimeEntry[]
   timeProposals MeetingTimeProposal[]
 
@@ -4579,6 +4584,7 @@ model Form {
   cycleBindings StaffingCycleFormBinding[]
 
   partnerApplicationBindings          PartnerApplicationFormBinding[]
+  partnerSurveyBindings               PartnerSurveyFormBinding[]
   educationOfferingsAsApplicationForm EducationOffering[]             @relation("EducationOfferingApplicationForm")
   educationBindings                   EducationFormBinding[]          @relation("EducationFormBindings")
   hiringCyclesAsApplicationForm       ApplicationCycle[]              @relation("CycleApplicationForm")
@@ -5601,15 +5607,36 @@ model PartnerOrg {
   // second code path.
   isIndividual     Boolean @default(false)
 
-  // `users` is the deprecated org membership (see PartnerUser). New code uses
-  // `memberships` (PartnerMembership). Kept only until the PartnerUser drop.
-  users        PartnerUser[]
+  // CRM account fields. Relationship status (prospect/active/past/dormant) is
+  // derived from ProjectPartner rows + activity recency, not stored.
+  type               PartnerOrgType?
+  address            String?
+  legalEntityName    String?
+  tags               String[]        @default([])
+  notes              String?
+  // The partner agreed to be named on the public showcase.
+  showcaseConsent    Boolean         @default(false)
+  // Loose ref to PartnerContact.id: who introduced this org.
+  referredByContactId String?
+
   memberships  PartnerMembership[]
   projects     ProjectPartner[]
   applications PartnerApplication[]
   invites      PartnerInvite[]
+  activities   PartnerActivity[]
+  invoices     PartnerInvoice[]
 
   createdAt DateTime @default(now())
+}
+
+enum PartnerOrgType {
+  DartmouthDepartment
+  FacultyResearch
+  Startup
+  Nonprofit
+  Company
+  Alumni
+  Other
 }
 
 // Teammate invites into an existing PartnerOrg, sent by a partner (from
@@ -5639,23 +5666,6 @@ model PartnerInvite {
   @@index([email])
 }
 
-// DEPRECATED — superseded by PartnerContact + PartnerMembership (the account-
-// first CRM cutover). No longer read/written by app code; retained only so the
-// data survives one deploy for a rollback window. Dropped in a follow-up
-// migration. Do not add new references.
-model PartnerUser {
-  id           String              @id @default(cuid())
-  userId       String              @unique
-  partnerOrgId String
-  displayRole  String?
-  authProvider PartnerAuthProvider
-
-  user       User       @relation(fields: [userId], references: [id])
-  partnerOrg PartnerOrg @relation(fields: [partnerOrgId], references: [id])
-
-  createdAt DateTime @default(now())
-}
-
 enum PartnerAuthProvider {
   MagicLink
   Google
@@ -5679,14 +5689,33 @@ model PartnerContact {
   // PartnerUser — it's a person-level fact, not per-org.
   authProvider PartnerAuthProvider?
 
-  user         User?                @relation(fields: [userId], references: [id])
-  applications PartnerApplication[]
-  memberships  PartnerMembership[]
-  meetings     PartnerMeeting[]
+  // CRM contact card.
+  title            String?
+  phone            String?
+  linkedinUrl      String?
+  // Free text: "Tuck School", "Thayer faculty", "Alum '19".
+  affiliation      String?
+  notes            String?
+  preferredChannel PartnerChannel?
+
+  user            User?                   @relation(fields: [userId], references: [id])
+  applications    PartnerApplication[]
+  memberships     PartnerMembership[]
+  meetings        PartnerMeeting[]
+  activities      PartnerActivity[]
+  meetingRequests PartnerMeetingRequest[]
+  mailMessages    MailMessageIndex[]
 
   createdAt DateTime @default(now())
 
   @@index([email])
+}
+
+enum PartnerChannel {
+  Email
+  Phone
+  Slack
+  Other
 }
 
 // A person's membership in one org (replaces PartnerUser). A PartnerContact
@@ -6082,10 +6111,6 @@ model PartnerApplication {
   interviewRating    Int?
   // Captured on the acceptance checklist, before promotion.
   ambiguityRating    Int?
-  fundingModel       String?
-  // Core member assigned to meet the partner ("who will meet"). Loose ref to
-  // User.id (same convention as PartnerInvite.invitedByUserId).
-  assignedMeeterId   String?
   title              String
   // Short pitch summary. The long-form, versionable Statement of Work lives
   // in the collab doc named `partner-sow:{id}` (see sowDocId) — same Yjs +
@@ -6096,7 +6121,32 @@ model PartnerApplication {
   // opened/created. Not a Prisma relation: CollabDocument is keyed by its
   // unique `name`, addressed at the app layer.
   sowDocId           String?                  @unique
-  status             PartnerApplicationStatus @default(Inquiry)
+  // Board column. "Promoted" is derived: stage Accepted + resultingProjectId.
+  stage              PartnerStage             @default(New)
+  // Manual order inside a column (dense 0..n, renumbered on move) — same
+  // convention as Task.position.
+  position           Int                      @default(0)
+  // The one thing to do next on this card, surfaced on the board.
+  nextStep           String?
+  nextStepDueAt      DateTime?
+  // Stamped by logPartnerActivity; drives the stale sweep and board sort.
+  lastActivityAt     DateTime                 @default(now())
+  // Parks a card (Paused chip) without leaving its column.
+  holdUntil          DateTime?
+  rejectReason       PartnerRejectReason?
+  // Set when the partner asks for a meeting from the portal; cleared when one
+  // is scheduled or Core dismisses the request.
+  meetingRequestedAt DateTime?
+  // Deal terms, filled at acceptance and merged into the contract.
+  fundingType        ProjectFundingType?
+  feeCents           Int?
+  legalEntityName    String?
+  legalEntityAddress String?
+  paymentSchedule    String?
+  sowState           PartnerSowState          @default(Draft)
+  // Loose ref to SigningBinding.id (scopeKey `partner-app:<id>`); the partner
+  // contract once sent. No relation: the signing engine stays partner-agnostic.
+  contractBindingId  String?                  @unique
   // Set when status moves to Accepted and a Project is spun up. Loose ref to
   // Project.id; no relation to avoid a Project→PartnerApplication cycle.
   resultingProjectId String?
@@ -6116,13 +6166,132 @@ model PartnerApplication {
   domains          PartnerApplicationDomain[]
   meetings         PartnerMeeting[]
   activities       PartnerActivity[]
+  meetingRequests  PartnerMeetingRequest[]
+  invoices         PartnerInvoice[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([partnerOrgId])
   @@index([applicantContactId])
-  @@index([status])
+  @@index([stage, position])
+  @@index([lastActivityAt])
+}
+
+enum PartnerStage {
+  New
+  Interview
+  Accepted
+  Rejected
+}
+
+enum PartnerRejectReason {
+  NotAFit
+  NoCapacity
+  Funding
+  Timing
+  Withdrawn
+  Other
+}
+
+enum PartnerSowState {
+  Draft
+  Shared
+  Accepted
+}
+
+// A partner's ask for a meeting, made from the portal on the real scheduler
+// (team mutual free/busy, aggregate only). Core accepts (→ ScheduledMeeting
+// with the partner as a guest email) or declines.
+model PartnerMeetingRequest {
+  id                 String                      @id @default(cuid())
+  applicationId      String?
+  // Loose ref to Project.id for requests made from a project page.
+  projectId          String?
+  contactId          String
+  startTime          DateTime
+  durationMinutes    Int
+  // The team the partner was shown availability for (resolved server-side).
+  participantUserIds String[]
+  note               String?
+  status             PartnerMeetingRequestStatus @default(Pending)
+  // Loose ref to User.id.
+  respondedByUserId  String?
+  respondedAt        DateTime?
+  responseNote       String?
+  scheduledMeetingId String?                     @unique
+
+  application      PartnerApplication? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  contact          PartnerContact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  scheduledMeeting ScheduledMeeting?   @relation(fields: [scheduledMeetingId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([applicationId, status])
+  @@index([projectId, status])
+  @@index([contactId])
+}
+
+enum PartnerMeetingRequestStatus {
+  Pending
+  Accepted
+  Declined
+  Expired
+}
+
+// Manual receivables tracking per partner org. Chart strings join through
+// ProjectPartner → ProjectChartString; no FK here.
+model PartnerInvoice {
+  id            String               @id @default(cuid())
+  orgId         String
+  // Loose ref to Project.id.
+  projectId     String?
+  applicationId String?
+  amountCents   Int
+  status        PartnerInvoiceStatus @default(Draft)
+  issuedAt      DateTime?
+  dueAt         DateTime?
+  paidAt        DateTime?
+  reference     String?
+  note          String?
+
+  org         PartnerOrg          @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  application PartnerApplication? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId])
+}
+
+enum PartnerInvoiceStatus {
+  Draft
+  Issued
+  Paid
+  Void
+}
+
+// Binds the Form sent to a partner when their project ends. At most one row,
+// app-enforced, same shape as PartnerApplicationFormBinding.
+model PartnerSurveyFormBinding {
+  id          String   @id @default(cuid())
+  formId      String
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+
+  form Form @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  @@index([formId])
+}
+
+// Singleton (id "default") of operator knobs for the CRM.
+model PartnerCrmSettings {
+  id                   String   @id @default("default")
+  // Core members whose mutual availability partners see when requesting an
+  // interview. Empty = every active Core member.
+  interviewPanelUserIds String[] @default([])
+  staleDays            Int      @default(14)
+  updatedAt            DateTime @updatedAt
 }
 
 // A Core↔partner meeting attached to an opportunity. Supports "meet in pairs":
@@ -6139,8 +6308,12 @@ model PartnerMeeting {
   notes           String?
   debrief         String?
   outcome         PartnerMeetingOutcome?
+  // The real calendar meeting (Google event, Meet link, partner as guest).
+  // Null only on legacy rows logged before the CRM used ScheduledMeeting.
+  scheduledMeetingId String? @unique
 
-  application PartnerApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  application      PartnerApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  scheduledMeeting ScheduledMeeting?  @relation(fields: [scheduledMeetingId], references: [id], onDelete: SetNull)
   // Denormalized contact link so a meeting is reachable from the account.
   contactId   String?
   contact     PartnerContact?    @relation(fields: [contactId], references: [id], onDelete: SetNull)
@@ -6168,7 +6341,12 @@ enum PartnerMeetingOutcome {
 model PartnerActivity {
   id            String              @id @default(cuid())
   createdAt     DateTime            @default(now())
-  applicationId String
+  // Null for org- or contact-level events (project linked, member added).
+  applicationId String?
+  // Denormalized from the application (or set directly for org/contact
+  // events) so the org and contact pages can read one timeline.
+  orgId         String?
+  contactId     String?
   // Core member who performed the action. Null = system / partner-originated
   // (e.g. the applicant submitting the form). Loose ref to User.id.
   actorUserId   String?
@@ -6177,9 +6355,13 @@ model PartnerActivity {
   body          String?
   metadata      Json?
 
-  application PartnerApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  application PartnerApplication? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  org         PartnerOrg?         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  contact     PartnerContact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
 
   @@index([applicationId, createdAt])
+  @@index([orgId, createdAt])
+  @@index([contactId, createdAt])
 }
 
 enum PartnerActivityType {
@@ -6189,7 +6371,19 @@ enum PartnerActivityType {
   EmailSent
   MeetingScheduled
   MeetingDebriefed
+  MeetingRequested
+  MeetingRequestDeclined
   Evaluated
+  ContractSent
+  ContractSigned
+  InvoiceIssued
+  InvoicePaid
+  ProjectLinked
+  ProjectEnded
+  SurveyReceived
+  OrgUpdated
+  MemberAdded
+  MemberRemoved
 }
 
 enum PartnerApplicationSource {
@@ -6197,6 +6391,7 @@ enum PartnerApplicationSource {
   Form // /partner/apply submission
   Referral // word-of-mouth / introduction
   Manual // Core created it directly (MCP / internal page)
+  Renewal // auto-created by the renewal sweep when a partner's project ends
 }
 
 // Binds the generic Form whose questions partners answer when pitching a
@@ -6250,28 +6445,6 @@ model PartnerApplicationDomain {
 
   @@unique([applicationId, domainId])
   @@index([domainId])
-}
-
-// CRM funnel:
-//   Inquiry → Triaged → Meeting / ApplicationSubmitted → UnderReview
-//   → (Accepted → Promoted) | Rejected | LearnMore, with OnHold as a parking
-//   state reachable from any active stage.
-// (The pre-CRM values were Submitted/UnderReview/OnHold/Accepted/Rejected;
-// Submitted → ApplicationSubmitted and Accepted → Promoted-when-projected in
-// the backfill. Old enum labels linger in the Postgres type — harmless.)
-enum PartnerApplicationStatus {
-  Inquiry
-  Triaged
-  Meeting
-  ApplicationSubmitted
-  UnderReview
-  LearnMore
-  OnHold
-  Accepted
-  Rejected
-  Promoted
-  // Deprecated pre-CRM label, retained because Postgres can't drop enum values.
-  Submitted
 }
 
 // ─── Payroll: Reconcile ──────────────────────────────────────────────────────
