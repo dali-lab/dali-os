@@ -226,6 +226,51 @@ export async function sendMeetingRequestDeclinedEmail(
   );
 }
 
+// Sent when Core sends a partner their contract to sign.
+export async function sendContractSentEmail(
+  to: string,
+  contactName: string | null,
+  signUrl: string,
+): Promise<void> {
+  await send(
+    to,
+    {
+      subject: "Your DALI contract is ready to sign",
+      preheader: "Review and sign your contract to move forward.",
+      bodyHtml: [
+        greeting(contactName),
+        `<p style="margin:0 0 16px;">Your contract is ready. Please review and sign it at your convenience:</p>`,
+        `<p style="margin:0 0 16px;"><a href="${escapeHtml(signUrl)}">Review and sign the contract</a></p>`,
+        aside("Reply to this email with any questions."),
+      ].join("\n"),
+    },
+    { eventType: "partner.contract_sent" },
+  );
+}
+
+// Sent when Core shares the statement of work for the partner to review.
+export async function sendSowSharedEmail(
+  to: string,
+  contactName: string | null,
+  applicationId: string,
+): Promise<void> {
+  const sowUrl = `${getFrontendUrl()}/partner/applications/${applicationId}`;
+  await send(
+    to,
+    {
+      subject: "Your statement of work is ready to review",
+      preheader: "Review the statement of work for your DALI project.",
+      bodyHtml: [
+        greeting(contactName),
+        `<p style="margin:0 0 16px;">The statement of work for your project is ready for you to review:</p>`,
+        `<p style="margin:0 0 16px;"><a href="${escapeHtml(sowUrl)}">Review the statement of work</a></p>`,
+        aside("Once it looks right, you can accept it from that page."),
+      ].join("\n"),
+    },
+    { eventType: "partner.sow_shared" },
+  );
+}
+
 export async function sendMemberEmailConflictEmail(to: string): Promise<void> {
   const loginUrl = `${getFrontendUrl()}/login`;
   await send(

@@ -41,6 +41,8 @@ import { EditableSection } from "~/components/EditableSection";
 import { PartnerActivityFeed } from "../components/PartnerActivityFeed";
 import { OrgAvatar } from "../components/org/OrgAvatar";
 import { OrgStatusPill, OrgTypePill } from "../components/org/OrgStatusPill";
+import { InvoicesPanel } from "../components/org/InvoicesPanel";
+import { upsertInvoice, setInvoiceStatus } from "../lib/partner-finance.server";
 import {
   linkProjectPartner,
   unlinkProjectPartner,
@@ -82,13 +84,6 @@ export const meta: Route.MetaFunction = ({ data }) => {
 export const handle = {
   ...coreHandle("partners", (data) => (data as { trailLabel?: string } | null)?.trailLabel),
   favoriteRoute: true,
-};
-
-const INVOICE_STATUS_PILL: Record<string, string> = {
-  Draft: "bg-muted text-muted-foreground",
-  Issued: "bg-accent-coral/15 text-accent-coral",
-  Paid: "bg-accent-teal/15 text-accent-teal",
-  Void: "bg-destructive/10 text-destructive",
 };
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -908,6 +903,41 @@ export async function action({ request, params }: Route.ActionArgs) {
 
     const embed = new URL(request.url).searchParams.has("embed");
     return redirect(`/core/partners/orgs/${survivorId}${embed ? "?embed=1" : ""}`);
+  }
+
+  if (intent === "invoice-save") {
+    const amountRaw = (form.get("amount") as string | null)?.trim() ?? "";
+    const amountCents = amountRaw ? Math.round(Number(amountRaw) * 100) : NaN;
+    if (!amountRaw || isNaN(amountCents) || amountCents < 0) {
+      return { error: "Enter a valid invoice amount." };
+    }
+    const issuedAtRaw = (form.get("issuedAt") as string | null)?.trim() ?? "";
+    const dueAtRaw = (form.get("dueAt") as string | null)?.trim() ?? "";
+    await upsertInvoice({
+      orgId: org.id,
+      amountCents,
+      reference: (form.get("reference") as string | null)?.trim() || null,
+      note: (form.get("note") as string | null)?.trim() || null,
+      issuedAt: issuedAtRaw ? new Date(issuedAtRaw) : null,
+      dueAt: dueAtRaw ? new Date(dueAtRaw) : null,
+    });
+    return { ok: true };
+  }
+
+  if (intent === "invoice-status") {
+    const invoiceId = (form.get("invoiceId") as string | null) ?? "";
+    const status = form.get("status");
+    const validStatuses = ["Draft", "Issued", "Paid", "Void"];
+    if (!invoiceId || typeof status !== "string" || !validStatuses.includes(status)) {
+      return { error: "Invalid invoice status update." };
+    }
+    const result = await setInvoiceStatus({
+      invoiceId,
+      status: status as "Draft" | "Issued" | "Paid" | "Void",
+      actorUserId: auth.user.sub,
+    });
+    if ("error" in result) return { error: result.error };
+    return { ok: true };
   }
 
   return { error: "Unknown action." };
@@ -1876,33 +1906,7 @@ export default function PartnerOrgDetail() {
             )}
           </section>
 
-          <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
-            <h2 className="font-heading font-semibold text-foreground">Invoices</h2>
-            {org.invoices.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No invoices yet.</p>
-            ) : (
-              <ul className="divide-y divide-border">
-                {org.invoices.map((inv) => (
-                  <li key={inv.id} className="py-2.5 flex items-center gap-3 flex-wrap">
-                    <span className="text-sm font-medium text-foreground">
-                      {formatUsd(inv.amountCents / 100)}
-                    </span>
-                    <span
-                      className={`text-xs rounded-full px-2 py-0.5 ${INVOICE_STATUS_PILL[inv.status]}`}
-                    >
-                      {inv.status}
-                    </span>
-                    {inv.reference && (
-                      <span className="text-xs text-muted-foreground">{inv.reference}</span>
-                    )}
-                    <span className="text-xs text-muted-foreground ml-auto">
-                      {inv.dueAt ? `Due ${new Date(inv.dueAt).toLocaleDateString()}` : ""}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+          <InvoicesPanel orgId={org.id} invoices={org.invoices} canEdit={canEdit} />
         </div>
       )}
 

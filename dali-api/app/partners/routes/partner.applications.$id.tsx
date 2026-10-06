@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Form, Link, useLoaderData, useNavigation, useRevalidator } from "react-router";
-import { CalendarPlus } from "lucide-react";
+import { CalendarPlus, ShieldCheck, Download, FileSignature } from "lucide-react";
 import { PartnerBackLink } from "~/partners/components/PartnerBackLink";
 import { RequestMeetingModal } from "~/partners/components/RequestMeetingModal";
 import { PartnerMeetingsSection } from "~/partners/components/PartnerMeetingsSection";
@@ -14,6 +14,8 @@ import {
   listPartnerMeetingsForContact,
   listPartnerMeetingRequests,
 } from "~/partners/lib/partner-meetings.server";
+import { partnerContractStatus } from "~/partners/lib/partner-contract.server";
+import { setSowState } from "~/partners/lib/partner-finance.server";
 import {
   formAnswerRows,
   type FormAnswerRow,
@@ -49,6 +51,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       stage: true,
       createdAt: true,
       resultingProjectId: true,
+      sowState: true,
+      contractBindingId: true,
       targetTerms: {
         orderBy: { term: { sortKey: "asc" } },
         select: { term: { select: { code: true } } },
@@ -82,14 +86,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     auth.user.email;
   const presenceUser = await getPresenceUser(auth.user.sub, fallbackName);
 
-  const [meetings, meetingRequests] = await Promise.all([
+  const [meetings, meetingRequests, contractStatus] = await Promise.all([
     listPartnerMeetingsForContact(ctx.contact.email),
     listPartnerMeetingRequests({ applicationId: application.id }),
+    partnerContractStatus(application.id),
   ]);
 
   const { formSubmission: _formSubmission, ...applicationOut } = application;
   return {
     application: applicationOut,
+    contractStatus,
     formAnswers,
     canEditDetails: PARTNER_EDITABLE_STAGES.includes(application.stage),
     // Interview stage is the real target (scheduling the meeting the stage is
@@ -112,11 +118,20 @@ export async function action({ request, params }: Route.ActionArgs) {
     select: { id: true, stage: true },
   });
   if (!application) throw new Response("Not found", { status: 404 });
+
+  const form = await request.formData();
+  const intent = (form.get("intent") as string | null) ?? "title";
+
+  if (intent === "sow-accept") {
+    const result = await setSowState({ applicationId: application.id, to: "Accepted", actorUserId: null });
+    if ("error" in result) return { error: result.error };
+    return { ok: true };
+  }
+
   if (!PARTNER_EDITABLE_STAGES.includes(application.stage)) {
     return { error: "This application is no longer editable." };
   }
 
-  const form = await request.formData();
   const title = (form.get("title") as string | null)?.trim() ?? "";
   if (!title) return { error: "A title is required." };
 
@@ -170,6 +185,7 @@ export default function PartnerApplicationDetail({
 }: Route.ComponentProps) {
   const {
     application,
+    contractStatus,
     formAnswers,
     canEditDetails,
     canRequestMeeting,
@@ -182,6 +198,7 @@ export default function PartnerApplicationDetail({
   } = useLoaderData<typeof loader>();
   const navigation = useNavigation();
   const revalidator = useRevalidator();
+  const acceptingSow = navigation.formData?.get("intent") === "sow-accept";
   const submitting = navigation.state === "submitting";
   const error = actionData && "error" in actionData ? actionData.error : null;
   const [requestingMeeting, setRequestingMeeting] = useState(false);
@@ -302,41 +319,88 @@ export default function PartnerApplicationDetail({
         <h2 className="font-heading font-semibold text-dark-blue">
           Statement of Work
         </h2>
-        {application.stage === "Interview" && (
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Drafted together with the DALI team — edits sync live.
-          </p>
-        )}
         <div className="mt-3" />
-        {/* The SOW is a co-owned doc: it opens once the lab is actively
-            engaging (Interview+), not the moment a pitch lands. */}
-        {application.stage === "New" ? (
+        {/* Readable only once Core shares it; a Draft SOW is still being put
+            together on their side. Accepted locks in — no more live editing
+            from the portal, which matches Core's lock on their side. */}
+        {application.sowState === "Draft" ? (
           <p className="text-sm text-muted-foreground bg-muted/30 rounded-lg px-4 py-3">
-            This document opens when the lab starts reviewing your pitch —
-            you'll draft the details here together with the DALI team.
+            The DALI team is still drafting this — you'll be notified when it's ready to review.
           </p>
         ) : collabToken ? (
-          <PresenceProvider
-            pageId={`partnersow:${application.id}`}
-            token={collabToken}
-            userName={userName}
-          >
-            <DocEditor
-              features="notes"
-              placeholder="Draft the statement of work…"
-              className="border border-border rounded-md bg-card py-2"
-              collab={{
-                documentName,
-                token: collabToken,
-                userName,
-                userId: currentUserId,
-              }}
-            />
-          </PresenceProvider>
+          <>
+            <PresenceProvider
+              pageId={`partnersow:${application.id}`}
+              token={collabToken}
+              userName={userName}
+            >
+              <DocEditor
+                features="notes"
+                editable={false}
+                placeholder="No content yet."
+                className="border border-border rounded-md bg-card py-2"
+                collab={{
+                  documentName,
+                  token: collabToken,
+                  userName,
+                  userId: currentUserId,
+                }}
+              />
+            </PresenceProvider>
+            {application.sowState === "Shared" && (
+              <Form method="post" className="mt-3">
+                <input type="hidden" name="intent" value="sow-accept" />
+                <button
+                  type="submit"
+                  disabled={acceptingSow}
+                  className="rounded-xl bg-dark-blue px-4 py-2 text-sm font-heading font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
+                >
+                  {acceptingSow ? "Accepting…" : "Accept statement of work"}
+                </button>
+              </Form>
+            )}
+            {application.sowState === "Accepted" && (
+              <p className="text-xs text-accent-teal mt-3">You accepted this statement of work.</p>
+            )}
+          </>
         ) : (
           <p className="text-xs text-muted-foreground italic">
-            Sign in again to edit the statement of work.
+            Sign in again to view the statement of work.
           </p>
+        )}
+      </section>
+
+      <section className="bg-card border border-border rounded-2xl p-5">
+        <h2 className="font-heading font-semibold text-dark-blue flex items-center gap-2">
+          <FileSignature className="h-4 w-4" /> Contract
+        </h2>
+        <div className="mt-3" />
+        {contractStatus.state === "NotSent" && (
+          <p className="text-sm text-muted-foreground">No contract has been sent yet.</p>
+        )}
+        {contractStatus.state === "Sent" && (
+          <Link
+            to={`/partner/applications/${application.id}/sign-contract`}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-dark-blue px-4 py-2 text-sm font-heading font-semibold text-white transition hover:opacity-90"
+          >
+            <FileSignature className="h-4 w-4" /> Review and sign your contract
+          </Link>
+        )}
+        {contractStatus.state === "Signed" && (
+          <div className="flex items-center gap-3 text-sm">
+            <span className="inline-flex items-center gap-1.5 text-accent-teal">
+              <ShieldCheck className="h-4 w-4" />
+              Signed{contractStatus.signedAt ? ` ${new Date(contractStatus.signedAt).toLocaleDateString()}` : ""}
+            </span>
+            {contractStatus.pdfUrl && (
+              <a
+                href={contractStatus.pdfUrl}
+                className="inline-flex items-center gap-1 text-accent-coral hover:underline"
+              >
+                <Download className="h-3.5 w-3.5" /> Download PDF
+              </a>
+            )}
+          </div>
         )}
       </section>
 

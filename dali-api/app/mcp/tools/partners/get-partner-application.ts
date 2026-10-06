@@ -10,6 +10,7 @@
 
 import { prisma } from "~/lib/db";
 import { canViewStaffing } from "~/lib/roles";
+import { partnerContractStatus } from "~/partners/lib/partner-contract.server";
 import { McpForbiddenError, McpNotFoundError } from "../../registry";
 
 export const GET_PARTNER_APPLICATION_TOOL = {
@@ -18,8 +19,9 @@ export const GET_PARTNER_APPLICATION_TOOL = {
     "Get full details for a partner application. Returns applicant contact, partner org (if promoted), " +
     "target terms, domain scope, eval rubric (8 criteria + interviewRating + notes), acceptance fields " +
     "(ambiguityRating, decisionReason, rejectReason), deal terms (fundingType, feeCents, legalEntityName, " +
-    "legalEntityAddress, paymentSchedule, sowState), next step, source, meetings list, and whether a form " +
-    "submission is attached. Requires staffing-view access (Core or Domain Lead).",
+    "legalEntityAddress, paymentSchedule, sowState), contract status (state: NotSent|Sent|Signed, bindingId, " +
+    "signedAt), next step, source, meetings list, and whether a form submission is attached. Requires " +
+    "staffing-view access (Core or Domain Lead).",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -98,7 +100,10 @@ export async function runGetPartnerApplication(
     throw new McpNotFoundError(`Partner application ${input.applicationId} not found`);
   }
 
+  const contract = await partnerContractStatus(input.applicationId);
+
   return {
+    contract,
     id: application.id,
     title: application.title,
     stage: application.stage,

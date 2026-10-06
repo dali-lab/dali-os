@@ -107,6 +107,36 @@ export const TEMPLATE_VARIABLES_REGISTRY = {
       "The mentee's full name. On a mentee's copy this is the mentee; on a mentor's copy it's the mentee(s) they mentor this term.",
     contexts: ["signing"],
   },
+
+  // ── Partner contracts (PartnerContract documents) ───────────────────────
+  partnerName: {
+    description: "The partner contact's full name — the person signing the contract.",
+    contexts: ["signing"],
+  },
+  orgName: {
+    description: "The partner organization's name, or the contact's own name for an individual partner.",
+    contexts: ["signing"],
+  },
+  legalEntityName: {
+    description: "The legal entity name on file for the deal, if different from the org's display name.",
+    contexts: ["signing"],
+  },
+  legalEntityAddress: {
+    description: "The legal entity's address on file for the deal.",
+    contexts: ["signing"],
+  },
+  fee: {
+    description: "The deal fee, formatted as dollars (e.g. $5,000).",
+    contexts: ["signing"],
+  },
+  fundingType: {
+    description: "The deal's funding type label (e.g. DALI GL, Transfer GL, DALI PTAEO, Other PTAEO).",
+    contexts: ["signing"],
+  },
+  projectTitle: {
+    description: "The partner application's title — the project this contract covers.",
+    contexts: ["signing"],
+  },
 } as const satisfies Record<string, TemplateVariableDef>;
 
 export type TemplateVariableName = keyof typeof TEMPLATE_VARIABLES_REGISTRY;
