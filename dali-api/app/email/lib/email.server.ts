@@ -260,7 +260,7 @@ async function loadThread(
     null;
   if (linkEnabled) {
     const link = await getThreadLink(account.id, threadId);
-    if (link) {
+    if (link && "userId" in link) {
       const linkedUser = await prisma.user.findUnique({
         where: { id: link.userId },
         select: { firstName: true, lastName: true, photoUrl: true },
@@ -440,7 +440,7 @@ export async function submitEmailAction(request: Request) {
     const now = new Date();
 
     if (intent === "unlinkApplicant") {
-      await setThreadLink({ accountId: account.id, threadId, userId: null, byUserId: userId, now });
+      await setThreadLink({ accountId: account.id, threadId, target: null, byUserId: userId, now });
       await logAuditEvent({
         action: "email.applicant_unlink",
         userId,
@@ -453,7 +453,7 @@ export async function submitEmailAction(request: Request) {
 
     const linkUserId = field(form, "userId");
     if (!linkUserId) return Response.json({ error: "Pick someone to link." }, { status: 400 });
-    await setThreadLink({ accountId: account.id, threadId, userId: linkUserId, byUserId: userId, now });
+    await setThreadLink({ accountId: account.id, threadId, target: { userId: linkUserId }, byUserId: userId, now });
 
     // Only addresses the applicant actually wrote from become theirs; a CC'd
     // third party on an outbound reply must not be attached to their account.

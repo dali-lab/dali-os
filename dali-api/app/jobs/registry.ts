@@ -96,6 +96,7 @@ import { runPartnerStaleSweep } from "~/jobs/partner-stale-sweep.server";
 import { runPartnerNextStepReminders } from "~/jobs/partner-next-step-reminders.server";
 import { runPartnerRenewalSweep } from "~/jobs/partner-renewal-sweep.server";
 import { runPartnerRequestExpiry } from "~/jobs/partner-request-expiry.server";
+import { runPartnerEmailIndex } from "~/jobs/shared-inbox-index.server";
 
 export const JOBS: JobDefinition[] = [
   {
@@ -482,6 +483,40 @@ export const JOBS: JobDefinition[] = [
       "Marks a partner's meeting request Expired once its requested start time has passed while still Pending.",
     intervalMinutes: 60,
     handler: runPartnerRequestExpiry,
+  },
+  {
+    name: "partner-email-index",
+    description:
+      "Indexes the partners@ shared inbox (headers only) and links each message to the partner contact it was exchanged with, for the Partner CRM.",
+    intervalMinutes: 10,
+    enabledByDefault: false,
+    settings: [
+      {
+        key: "backfillDays",
+        label: "Initial backfill window",
+        unit: "days",
+        min: 1,
+        max: 730,
+        default: 365,
+      },
+      {
+        key: "maxMessagesPerRun",
+        label: "Max messages indexed per run",
+        unit: "",
+        min: 10,
+        max: 500,
+        default: 100,
+      },
+      {
+        key: "overlapHours",
+        label: "Incremental overlap",
+        unit: "hours",
+        min: 1,
+        max: 168,
+        default: 24,
+      },
+    ],
+    handler: runPartnerEmailIndex,
   },
   {
     name: "wallet-restyle-broadcast",

@@ -116,6 +116,12 @@ export const FEATURE_FLAGS = [
       "Indexes the applications@ inbox (headers only) and shows an applicant's email history on hiring review pages, with a thread viewer and manual link/unlink in the Email tab. Ships off.",
   },
   {
+    key: "partner-email",
+    label: "Partner email capture",
+    description:
+      "Indexes partners@ mail and shows threads on partner records. Ships off.",
+  },
+  {
     key: "start-terms",
     label: "Application start terms",
     description:

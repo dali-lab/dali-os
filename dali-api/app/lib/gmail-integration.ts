@@ -107,16 +107,19 @@ export async function isApplicationsGmailConnected(): Promise<boolean> {
 }
 
 /**
- * The Hiring identity for READING a mailbox: the enabled integration that
- * sends as `address` and was granted gmail.readonly. Null until an admin
- * reconnects it with the read scope (Admin → Email senders → Reconnect).
+ * The identity for READING a shared mailbox: the enabled integration for
+ * `purpose` that sends as `address` and was granted gmail.readonly. Defaults
+ * to Hiring so existing callers (the applications@ index) are unchanged; the
+ * partners@ index job passes "Partners". Null until an admin reconnects it
+ * with the read scope (Admin → Email senders → Reconnect).
  */
 export async function getMailboxReader(
   address: string,
+  purpose: EmailSendPurpose = "Hiring",
 ): Promise<{ id: string; refreshToken: string } | null> {
   const row = await prisma.gmailIntegration.findFirst({
     where: {
-      purpose: "Hiring",
+      purpose,
       enabled: true,
       sendAsEmail: { equals: address, mode: "insensitive" },
       scopes: { has: GMAIL_READONLY_SCOPE },

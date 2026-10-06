@@ -31,6 +31,8 @@ export const WORKSPACE_DOMAIN = 'dali.dartmouth.edu'
 
 export const APPLICATIONS_FROM_EMAIL = 'applications@dali.dartmouth.edu'
 
+export const PARTNERS_FROM_EMAIL = 'partners@dali.dartmouth.edu'
+
 // Where non-prod mail goes instead of its real recipient. Lives here, not in a
 // transport, because there is more than one transport: the transactional sender
 // (lib/gmail.ts) and the Email tab's per-account mailbox
