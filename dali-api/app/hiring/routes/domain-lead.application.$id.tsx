@@ -438,7 +438,11 @@ export default function DomainLeadApplicationView() {
           <PriorApplicationsPanel
             entries={priorApplications}
             outcomesHidden={blinded}
-            hrefFor={(_entry: any, domainApplicationId: string) => `/hiring/applications/${domainApplicationId}`}
+            hrefFor={(entry: { id: string }, domainApplicationId: string) =>
+              blinded
+                ? `/hiring/reviewer/application/${application.id}/prior/${entry.id}`
+                : `/hiring/applications/${domainApplicationId}`
+            }
           />
           <ApplicantEmailPanel
             engagement={emailEngagement}
