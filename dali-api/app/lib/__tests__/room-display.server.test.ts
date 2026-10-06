@@ -104,4 +104,34 @@ describe("requireRoomDisplay", () => {
     await requireRoomDisplay(req("RoomDisplay tok123"));
     expect(rd.update).toHaveBeenCalledTimes(1);
   });
+
+  const versioned = (version: string) =>
+    new Request("http://localhost/api/room-display/schedule", {
+      headers: { Authorization: "RoomDisplay tok123", "X-DaliOS-App-Version": version },
+    });
+
+  it("records a new app version at once, even inside the throttle window", async () => {
+    rd.findUnique.mockResolvedValue({ ...row, appVersion: "0.1.0 (1)" });
+    await requireRoomDisplay(versioned("0.2.0 (2)"));
+    expect(rd.update).toHaveBeenCalledTimes(1);
+    expect(rd.update.mock.calls[0]![0].data.appVersion).toBe("0.2.0 (2)");
+  });
+
+  it("does not write for an unchanged version", async () => {
+    rd.findUnique.mockResolvedValue({ ...row, appVersion: "0.2.0 (2)" });
+    await requireRoomDisplay(versioned("0.2.0 (2)"));
+    expect(rd.update).not.toHaveBeenCalled();
+  });
+
+  it("keeps the stored version when an older build sends none", async () => {
+    rd.findUnique.mockResolvedValue({ ...row, appVersion: "0.2.0 (2)", lastSeenAt: new Date(Date.now() - 10 * 60_000) });
+    await requireRoomDisplay(req("RoomDisplay tok123"));
+    expect(rd.update.mock.calls[0]![0].data).toEqual({ lastSeenAt: expect.any(Date) });
+  });
+
+  it("truncates an oversized version header", async () => {
+    rd.findUnique.mockResolvedValue({ ...row, appVersion: null });
+    await requireRoomDisplay(versioned("x".repeat(100)));
+    expect(rd.update.mock.calls[0]![0].data.appVersion).toHaveLength(40);
+  });
 });

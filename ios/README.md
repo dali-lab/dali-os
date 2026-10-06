@@ -56,6 +56,10 @@ The app signs with the same Apple Developer team as the desktop app: **BrunchLab
 
 Bundle ID: `edu.dartmouth.dali.os.ios`.
 
+## Versioning
+
+Bump `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in the Xcode project (Target → General → Identity) in every PR that changes the iOS app. The app sends its version with every request as `X-DaliOS-App-Version`, and Core ▸ Rooms shows it next to each display's last check-in, so that is how you tell whether an iPad has the current build.
+
 ## TODO before TestFlight
 
 - App icon: add a 1024×1024 opaque PNG to `Assets.xcassets/AppIcon`. `desktop/app-icon.png` has transparent padded corners, so it isn't suitable as-is.

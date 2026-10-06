@@ -5,6 +5,7 @@ struct APIClient: Sendable {
     var session: URLSession = .shared
     /// Full `Authorization` header value, e.g. `RoomDisplay <token>`.
     var authorization: String?
+    static let appVersionHeader = "X-DaliOS-App-Version"
 
     enum APIError: LocalizedError {
         case server(status: Int, message: String?)
@@ -49,6 +50,10 @@ struct APIClient: Sendable {
     private func send<Response: Decodable>(_ request: URLRequest) async throws -> Response {
         var request = request
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        // Core ▸ Rooms shows this next to each display's last check-in, so a
+        // stale iPad is visible without walking to it. Bump the version in
+        // the Xcode project with every iOS change.
+        request.setValue(Bundle.main.appVersion, forHTTPHeaderField: APIClient.appVersionHeader)
         if let authorization {
             request.setValue(authorization, forHTTPHeaderField: "Authorization")
         }
@@ -85,5 +90,14 @@ extension JSONEncoder {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         return encoder
+    }
+}
+
+extension Bundle {
+    /// "0.2.0 (2)": marketing version and build number from the Xcode project.
+    var appVersion: String {
+        let version = infoDictionary?["CFBundleShortVersionString"] as? String ?? "–"
+        let build = infoDictionary?["CFBundleVersion"] as? String ?? "–"
+        return "\(version) (\(build))"
     }
 }
