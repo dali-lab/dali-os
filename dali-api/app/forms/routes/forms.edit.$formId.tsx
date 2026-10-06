@@ -104,7 +104,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     driveCrumbs,
     groups: allGroups
       .filter((g) => !g.archived)
-      .map((g) => ({ id: g.id, name: g.name, type: g.type })),
+      .map((g) => ({
+        id: g.id,
+        name: g.name,
+        type: g.type,
+        systemKey: g.systemKey,
+        memberCount: g.memberIds.length,
+      })),
     // Session cookie forwarded to the client so FormBuilderTab can authenticate
     // its Hocuspocus connection for the form's structured collab room.
     collabToken: await getCollabToken(request),
