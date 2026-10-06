@@ -9,6 +9,7 @@ describe("isApplicationFilters", () => {
         domainIds: ["d1"],
         statuses: ["Submitted"],
         stage: "Interview",
+        engagement: ["returning", "educated"],
         pieIncludesInProgress: true,
         query: "ada",
       }),
@@ -20,5 +21,6 @@ describe("isApplicationFilters", () => {
     expect(isApplicationFilters({ domainIds: "d1" })).toBe(false);
     expect(isApplicationFilters({ ...EMPTY_FILTERS, stage: 3 })).toBe(false);
     expect(isApplicationFilters({ ...EMPTY_FILTERS, domainIds: [1] })).toBe(false);
+    expect(isApplicationFilters({ ...EMPTY_FILTERS, engagement: ["classYear"] })).toBe(false);
   });
 });

@@ -8,6 +8,7 @@ import type { Route } from "./+types/applications";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { prisma } from "~/lib/db";
 import { Popover, Select } from "~/components/ui/floating";
 import { filterPillClass } from "~/components/ui/floating/styles";
@@ -48,7 +49,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return redirectToLogin(request);
   if (auth.user.type === "applicant") return redirect("/portal");
 
-  const { isCore, isAdmin, isDomainLead, isInterviewer } = await getUserRoles(auth.user.sub);
+  const roles = await getUserRoles(auth.user.sub);
+  const { isCore, isAdmin, isDomainLead, isInterviewer } = roles;
 
   // Reviewer assignments across all cycles — used both to decide which cycles
   // a reviewer can see and to scope domains within the selected cycle.
@@ -175,7 +177,7 @@ export async function loader({ request }: Route.LoaderArgs) {
             select: {
               id: true,
               user: {
-                select: { firstName: true, lastName: true, daliEmail: true, dartmouthEmail: true },
+                select: { id: true, firstName: true, lastName: true, daliEmail: true, dartmouthEmail: true },
               },
               // Status is event-sourced via ApplicationStatusUpdate; the
               // newest row is the current status. We also grab the most
@@ -226,6 +228,44 @@ export async function loader({ request }: Route.LoaderArgs) {
     applications: [...daIdsByApplication.entries()].map(([id, daIds]) => ({ id, daIds })),
   });
 
+  // Engagement signals for the filter panel: one grouped lookup each, keyed
+  // on the applicant's User id, which blinding leaves intact.
+  const applicantUserIds = [...new Set(domainApps.map((da) => da.application.user.id))];
+  const emailFilterEnabled = await isFeatureEnabled(
+    "applicant-email-engagement",
+    auth.user.sub,
+    roles,
+    request,
+  );
+  const [priorRows, emailRows, educationRows] = applicantUserIds.length
+    ? await Promise.all([
+        prisma.application.findMany({
+          where: {
+            userId: { in: applicantUserIds },
+            applicationCycleId: { not: selected.id },
+            statusUpdates: { some: { newStatus: "Submitted" } },
+          },
+          select: { userId: true },
+          distinct: ["userId"],
+        }),
+        emailFilterEnabled
+          ? prisma.mailMessageIndex.findMany({
+              where: { linkedUserId: { in: applicantUserIds } },
+              select: { linkedUserId: true },
+              distinct: ["linkedUserId"],
+            })
+          : Promise.resolve([]),
+        prisma.educationApplication.findMany({
+          where: { applicantUserId: { in: applicantUserIds }, status: "Approved" },
+          select: { applicantUserId: true },
+          distinct: ["applicantUserId"],
+        }),
+      ])
+    : [[], [], []];
+  const returningUserIds = new Set(priorRows.map((r) => r.userId));
+  const emailedUserIds = new Set(emailRows.map((r) => r.linkedUserId));
+  const educatedUserIds = new Set(educationRows.map((r) => r.applicantUserId));
+
   const rows = domainApps
     .map((da) => {
       const blindLabel = blindLabels.get(da.application.id);
@@ -244,6 +284,9 @@ export async function loader({ request }: Route.LoaderArgs) {
         status: status as string,
         submittedAt: submittedAt ? submittedAt.toISOString() : null,
         reviewCount: da._count.reviews,
+        returning: returningUserIds.has(da.application.user.id),
+        emailed: emailedUserIds.has(da.application.user.id),
+        educated: educatedUserIds.has(da.application.user.id),
         stage: showPipeline
           ? pipelineStage(da as any, selected.currentStatus as ApplicationCycleStatus)
           : null,
@@ -267,6 +310,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     selectedCycleName: selected.name,
     domainOptions,
     showPipeline,
+    emailFilterEnabled,
     rows,
   };
 }
@@ -288,14 +332,23 @@ const STATUS_TONE: Record<string, string> = {
 };
 
 // Toggle one value in a multi-select filter.
-function toggle(list: string[], value: string): string[] {
+function toggle<T extends string>(list: T[], value: T): T[] {
   return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
 }
+
+export const ENGAGEMENT_FILTERS = [
+  { key: "returning", label: "Returning applicant" },
+  { key: "emailed", label: "Emailed applications@" },
+  { key: "educated", label: "Past DALI education" },
+] as const;
+export type EngagementFilter = (typeof ENGAGEMENT_FILTERS)[number]["key"];
 
 export type ApplicationFilters = {
   domainIds: string[];
   statuses: string[];
   stage: string | null;
+  // Every selected signal must hold (AND), so narrowing stays predictable.
+  engagement: EngagementFilter[];
   pieIncludesInProgress: boolean;
   query: string;
 };
@@ -304,6 +357,7 @@ export const EMPTY_FILTERS: ApplicationFilters = {
   domainIds: [],
   statuses: [],
   stage: null,
+  engagement: [],
   pieIncludesInProgress: false,
   query: "",
 };
@@ -318,6 +372,8 @@ export function isApplicationFilters(v: unknown): v is ApplicationFilters {
     isStringList(f.domainIds) &&
     isStringList(f.statuses) &&
     (f.stage === null || typeof f.stage === "string") &&
+    isStringList(f.engagement) &&
+    f.engagement.every((k) => ENGAGEMENT_FILTERS.some((e) => e.key === k)) &&
     typeof f.pieIncludesInProgress === "boolean" &&
     typeof f.query === "string"
   );
@@ -337,7 +393,7 @@ export default function ApplicationsDatabase() {
     EMPTY_FILTERS,
     isApplicationFilters,
   );
-  const { domainIds, statuses, stage, pieIncludesInProgress, query } = filters;
+  const { domainIds, statuses, stage, engagement, pieIncludesInProgress, query } = filters;
   const patch = (next: Partial<ApplicationFilters>) => setFilters((prev) => ({ ...prev, ...next }));
   const setDomainIds = (f: (prev: string[]) => string[]) => patch({ domainIds: f(domainIds) });
   const setStatuses = (f: (prev: string[]) => string[]) => patch({ statuses: f(statuses) });
@@ -380,11 +436,12 @@ export default function ApplicationsDatabase() {
     return rows.filter((r) => {
       if (activeDomainIds.length && !activeDomainIds.includes(r.domainId)) return false;
       if (statuses.length && !statuses.includes(r.status)) return false;
+      if (engagement.some((k) => !r[k])) return false;
       if (q && !`${r.name} ${r.email ?? ""}`.toLowerCase().includes(q))
         return false;
       return true;
     });
-  }, [rows, activeDomainIds, statuses, query]);
+  }, [rows, activeDomainIds, statuses, engagement, query]);
   const filteredRows = useMemo(
     () => (stage ? pieRows.filter((r) => r.stage === stage) : pieRows),
     [pieRows, stage],
@@ -427,7 +484,11 @@ export default function ApplicationsDatabase() {
   // Only worth offering the domain filter when there's more than one domain
   // to choose between (Core/Admin, or a reviewer covering multiple domains).
   const showDomainFilter = data.domainOptions.length > 1;
-  const activeFilterCount = activeDomainIds.length + statuses.length + (stage ? 1 : 0);
+  const activeFilterCount =
+    activeDomainIds.length + statuses.length + engagement.length + (stage ? 1 : 0);
+  const engagementOptions = ENGAGEMENT_FILTERS.filter(
+    (e) => e.key !== "emailed" || data.emailFilterEnabled,
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -475,7 +536,7 @@ export default function ApplicationsDatabase() {
               {activeFilterCount > 0 && (
                 <FilterResetButton
                   os={true}
-                  onClick={() => patch({ domainIds: [], statuses: [], stage: null })}
+                  onClick={() => patch({ domainIds: [], statuses: [], stage: null, engagement: [] })}
                 />
               )}
             </div>
@@ -505,6 +566,18 @@ export default function ApplicationsDatabase() {
                 ))}
               </FilterGroup>
             )}
+            <FilterGroup label="Engagement" os={true}>
+              {engagementOptions.map((e) => (
+                <FilterPill
+                  key={e.key}
+                  os={true}
+                  selected={engagement.includes(e.key)}
+                  onClick={() => patch({ engagement: toggle(engagement, e.key) })}
+                >
+                  {e.label}
+                </FilterPill>
+              ))}
+            </FilterGroup>
             {showDomainFilter && (
               <FilterGroup label="Domain" os={true}>
                 {data.domainOptions.map((d) => (
