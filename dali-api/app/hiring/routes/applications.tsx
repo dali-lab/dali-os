@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { usePersistedState } from "~/hooks/usePersistedState";
 import { isAdminOnlyCycle } from "~/hiring/lib/applicant-groups";
 import { redirect, useLoaderData, useNavigate, useSearchParams } from "react-router";
 import { SlidersHorizontal } from "lucide-react";
@@ -235,6 +236,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         updates.find((s) => s.newStatus === "Submitted")?.createdAt ?? null;
       return {
         id: da.id,
+        applicationId: da.application.id,
         name: `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || "—",
         email: u.daliEmail ?? u.dartmouthEmail ?? null,
         domainId: da.domainId,
@@ -290,37 +292,109 @@ function toggle(list: string[], value: string): string[] {
   return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
 }
 
+export type ApplicationFilters = {
+  domainIds: string[];
+  statuses: string[];
+  stage: string | null;
+  pieIncludesInProgress: boolean;
+  query: string;
+};
+
+export const EMPTY_FILTERS: ApplicationFilters = {
+  domainIds: [],
+  statuses: [],
+  stage: null,
+  pieIncludesInProgress: false,
+  query: "",
+};
+
+const isStringList = (v: unknown): v is string[] =>
+  Array.isArray(v) && v.every((x) => typeof x === "string");
+
+export function isApplicationFilters(v: unknown): v is ApplicationFilters {
+  if (!v || typeof v !== "object") return false;
+  const f = v as Record<string, unknown>;
+  return (
+    isStringList(f.domainIds) &&
+    isStringList(f.statuses) &&
+    (f.stage === null || typeof f.stage === "string") &&
+    typeof f.pieIncludesInProgress === "boolean" &&
+    typeof f.query === "string"
+  );
+}
+
 export default function ApplicationsDatabase() {
   const data = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const { pageTitle, panel } = useOsChrome();
   const [searchParams, setSearchParams] = useSearchParams();
-  // Client-side filters; an empty list means "all". Cleared when the cycle
-  // changes (a different cycle has a different domain set).
-  const [domainIds, setDomainIds] = useState<string[]>([]);
-  const [statuses, setStatuses] = useState<string[]>([]);
-  const [stage, setStage] = useState<string | null>(null);
-  // Unsubmitted drafts swamp the pie early in a cycle, so it leaves them out
-  // unless asked. The table is unaffected.
-  const [pieIncludesInProgress, setPieIncludesInProgress] = useState(false);
-  const [query, setQuery] = useState("");
+  const selectedCycleId = data.gate === "ok" ? data.selectedCycleId : null;
+  // Filters are remembered per cycle so opening an applicant and coming back
+  // (or returning days later) lands on the same view. An empty list means
+  // "all"; a cycle with nothing stored starts clean.
+  const [filters, setFilters] = usePersistedState<ApplicationFilters>(
+    `dali:applications:filters:${selectedCycleId ?? "none"}`,
+    EMPTY_FILTERS,
+    isApplicationFilters,
+  );
+  const { domainIds, statuses, stage, pieIncludesInProgress, query } = filters;
+  const patch = (next: Partial<ApplicationFilters>) => setFilters((prev) => ({ ...prev, ...next }));
+  const setDomainIds = (f: (prev: string[]) => string[]) => patch({ domainIds: f(domainIds) });
+  const setStatuses = (f: (prev: string[]) => string[]) => patch({ statuses: f(statuses) });
+  const setStage = (next: string | null | ((prev: string | null) => string | null)) =>
+    patch({ stage: typeof next === "function" ? next(stage) : next });
+  const setQuery = (next: string) => patch({ query: next });
+
+  // The last cycle viewed is remembered too: landing on the page without
+  // ?cycle= reopens it instead of the newest cycle.
+  const [lastCycleId, setLastCycleId] = usePersistedState<string | null>(
+    "dali:applications:cycle",
+    null,
+    (v): v is string | null => v === null || typeof v === "string",
+  );
+  const cycleIds = data.gate === "ok" ? data.cycles.map((c) => c.id) : [];
+  useEffect(() => {
+    if (!selectedCycleId) return;
+    if (searchParams.get("cycle")) {
+      if (lastCycleId !== selectedCycleId) setLastCycleId(selectedCycleId);
+      return;
+    }
+    if (lastCycleId && lastCycleId !== selectedCycleId && cycleIds.includes(lastCycleId)) {
+      const next = new URLSearchParams(searchParams);
+      next.set("cycle", lastCycleId);
+      setSearchParams(next, { replace: true });
+    }
+    // Runs when the cycle or the stored preference changes, not on every param edit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCycleId, lastCycleId]);
 
   const rows = data.gate === "ok" ? data.rows : [];
+  // A remembered domain that this viewer can no longer see (reassigned, or a
+  // domain dropped from the cycle) must not silently empty the table.
+  const knownDomainIds = new Set(data.gate === "ok" ? data.domainOptions.map((d) => d.id) : []);
+  const activeDomainIds = domainIds.filter((id) => knownDomainIds.has(id));
   // The pie counts every filter but its own, so picking a slice doesn't
   // collapse the chart to that one slice.
   const pieRows = useMemo(() => {
     const q = query.trim().toLowerCase();
     return rows.filter((r) => {
-      if (domainIds.length && !domainIds.includes(r.domainId)) return false;
+      if (activeDomainIds.length && !activeDomainIds.includes(r.domainId)) return false;
       if (statuses.length && !statuses.includes(r.status)) return false;
       if (q && !`${r.name} ${r.email ?? ""}`.toLowerCase().includes(q))
         return false;
       return true;
     });
-  }, [rows, domainIds, statuses, query]);
+  }, [rows, activeDomainIds, statuses, query]);
   const filteredRows = useMemo(
     () => (stage ? pieRows.filter((r) => r.stage === stage) : pieRows),
     [pieRows, stage],
+  );
+  // One applicant can hold several domain applications, so the row count
+  // overstates how many people are in the cycle.
+  const totalApplicants = useMemo(() => new Set(rows.map((r) => r.applicationId)).size, [rows]);
+  const filteredApplicants = useMemo(
+    () => new Set(filteredRows.map((r) => r.applicationId)).size,
+    [filteredRows],
   );
   const slices = useMemo<StatusSlice[]>(() => {
     const counts = new Map<string, number>();
@@ -353,7 +427,7 @@ export default function ApplicationsDatabase() {
   // Only worth offering the domain filter when there's more than one domain
   // to choose between (Core/Admin, or a reviewer covering multiple domains).
   const showDomainFilter = data.domainOptions.length > 1;
-  const activeFilterCount = domainIds.length + statuses.length + (stage ? 1 : 0);
+  const activeFilterCount = activeDomainIds.length + statuses.length + (stage ? 1 : 0);
 
   return (
     <div className="flex flex-col gap-4">
@@ -364,10 +438,7 @@ export default function ApplicationsDatabase() {
           ariaLabel="Cycle"
           value={data.selectedCycleId}
           onChange={(cycleId) => {
-            setDomainIds([]);
-            setStatuses([]);
-            setStage(null);
-            setQuery("");
+            setLastCycleId(cycleId);
             const next = new URLSearchParams(searchParams);
             next.set("cycle", cycleId);
             setSearchParams(next);
@@ -404,11 +475,7 @@ export default function ApplicationsDatabase() {
               {activeFilterCount > 0 && (
                 <FilterResetButton
                   os={true}
-                  onClick={() => {
-                    setDomainIds([]);
-                    setStatuses([]);
-                    setStage(null);
-                  }}
+                  onClick={() => patch({ domainIds: [], statuses: [], stage: null })}
                 />
               )}
             </div>
@@ -458,6 +525,10 @@ export default function ApplicationsDatabase() {
           {filteredRows.length}{" "}
           {filteredRows.length === 1 ? "application" : "applications"}
           {filteredRows.length !== rows.length ? ` of ${rows.length}` : ""}
+          {" · "}
+          {filteredApplicants}{" "}
+          {filteredApplicants === 1 ? "applicant" : "applicants"}
+          {filteredApplicants !== totalApplicants ? ` of ${totalApplicants}` : ""}
         </span>
       </div>
 
@@ -467,10 +538,12 @@ export default function ApplicationsDatabase() {
             className="self-end"
             label="Include in progress"
             checked={pieIncludesInProgress}
-            onChange={(e) => {
-              setPieIncludesInProgress(e.target.checked);
-              if (!e.target.checked && stage === "InProgress") setStage(null);
-            }}
+            onChange={(e) =>
+              patch({
+                pieIncludesInProgress: e.target.checked,
+                stage: !e.target.checked && stage === "InProgress" ? null : stage,
+              })
+            }
           />
           <StatusPie data={pieSlices} selectedStatus={stage} onSelect={setStage} />
         </section>
