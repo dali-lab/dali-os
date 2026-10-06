@@ -92,6 +92,10 @@ import { runInfraSnapshot } from "~/jobs/infra-snapshot.server";
 import { runTimetableSync } from "~/jobs/timetable-sync.server";
 import { runWalletRestyleBroadcastJob } from "~/jobs/wallet-restyle-broadcast.server";
 import { runApplicantEmailIndex } from "~/jobs/applicant-email-index.server";
+import { runPartnerStaleSweep } from "~/jobs/partner-stale-sweep.server";
+import { runPartnerNextStepReminders } from "~/jobs/partner-next-step-reminders.server";
+import { runPartnerRenewalSweep } from "~/jobs/partner-renewal-sweep.server";
+import { runPartnerRequestExpiry } from "~/jobs/partner-request-expiry.server";
 
 export const JOBS: JobDefinition[] = [
   {
@@ -451,6 +455,33 @@ export const JOBS: JobDefinition[] = [
       },
     ],
     handler: runApplicantEmailIndex,
+  },
+  {
+    name: "partner-stale-sweep",
+    description:
+      "Nags Core once a week about an open partner card with no activity past the stale threshold (PartnerCrmSettings.staleDays).",
+    intervalMinutes: 60,
+    handler: runPartnerStaleSweep,
+  },
+  {
+    name: "partner-next-step-reminders",
+    description: "Reminds Core the morning a partner card's next step is due or overdue.",
+    intervalMinutes: 5,
+    handler: runPartnerNextStepReminders,
+  },
+  {
+    name: "partner-renewal-sweep",
+    description:
+      "Auto-creates a renewal application when a partner's project is in its last planned term and that term ends within 30 days, unless the org already has one open.",
+    intervalMinutes: 1440,
+    handler: runPartnerRenewalSweep,
+  },
+  {
+    name: "partner-request-expiry",
+    description:
+      "Marks a partner's meeting request Expired once its requested start time has passed while still Pending.",
+    intervalMinutes: 60,
+    handler: runPartnerRequestExpiry,
   },
   {
     name: "wallet-restyle-broadcast",
