@@ -8,7 +8,11 @@ vi.mock("~/lib/pages", () => ({
   ensureMeetingNotesFolder: vi.fn(async () => ({ id: "folder-project" })),
   ensureCoreMeetingNotesFolder: vi.fn(async () => "folder-core"),
   ensureLabMeetingNotesFolder: vi.fn(async () => "folder-lab-notes"),
+  ensureMeetingNotebook: vi.fn(async () => ({ id: "notebook-1" })),
+  createNotebookTab: vi.fn(async () => ({ id: "page-tab" })),
+  moveIntoNotebook: vi.fn(),
 }));
+vi.mock("~/lib/terms", () => ({ termWindows: vi.fn(async () => []) }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn(async () => false) }));
 vi.mock("~/lib/groups", () => ({ resolveGroupMembers: vi.fn(async () => []) }));
 vi.mock("~/lib/general-calendar", () => ({ isGeneralCalendarEvent: vi.fn(() => true) }));
@@ -29,6 +33,9 @@ import {
   ensureMeetingNotesFolder,
   ensureCoreMeetingNotesFolder,
   ensureLabMeetingNotesFolder,
+  ensureMeetingNotebook,
+  createNotebookTab,
+  moveIntoNotebook,
 } from "~/lib/pages";
 import {
   createGoogleCalendarEvent,
@@ -62,6 +69,16 @@ beforeEach(() => {
   // clearAllMocks keeps implementations, so a prior test's mockResolvedValue on
   // isCore would leak. Reset to the factory default; tests opt into Core.
   vi.mocked(isCore).mockResolvedValue(false);
+  // What a note's notebook is keyed on (see meeting-notebook.ts).
+  vi.mocked(prisma.scheduledMeeting.findUniqueOrThrow).mockResolvedValue({
+    title: "Sync",
+    isCoreMeeting: false,
+    scopeType: "UserList",
+    scopeId: null,
+    organizerId: "org-1",
+    participantUserIds: ["u2"],
+    guestEmails: [],
+  } as never);
 });
 
 describe("cancelScheduledMeeting", () => {
@@ -309,6 +326,8 @@ describe("createScheduledMeeting — where a note is filed", () => {
   };
   const labPage = createLabMeetingPage as unknown as ReturnType<typeof vi.fn>;
   const projectPage = createProjectPage as unknown as ReturnType<typeof vi.fn>;
+  // A note is a tab of its notebook; these assert where a new notebook goes.
+  const notebook = ensureMeetingNotebook as unknown as ReturnType<typeof vi.fn>;
   const projectFolder = ensureMeetingNotesFolder as unknown as ReturnType<typeof vi.fn>;
   const coreFolder = ensureCoreMeetingNotesFolder as unknown as ReturnType<typeof vi.fn>;
   const labFolder = ensureLabMeetingNotesFolder as unknown as ReturnType<typeof vi.fn>;
@@ -342,10 +361,20 @@ describe("createScheduledMeeting — where a note is filed", () => {
     });
 
     expect(projectFolder).toHaveBeenCalledWith("proj-7", "Team", "org-1");
-    expect(projectPage).toHaveBeenCalledWith(
-      expect.objectContaining({ projectId: "proj-7", parentPageId: "folder-project" }),
+    expect(notebook).toHaveBeenCalledWith(
+      expect.objectContaining({
+        key: "project:proj-7:Team:none",
+        workspaceType: "Project",
+        workspaceId: "proj-7",
+        parentPageId: "folder-project",
+      }),
+    );
+    expect(createNotebookTab).toHaveBeenCalledWith(
+      expect.objectContaining({ notebookId: "notebook-1", meetingNoteId: "m1" }),
     );
     expect(coreFolder).not.toHaveBeenCalled();
+    // The note itself is never a loose page any more.
+    expect(projectPage).not.toHaveBeenCalled();
     expect(labPage).not.toHaveBeenCalled();
   });
 
@@ -359,8 +388,8 @@ describe("createScheduledMeeting — where a note is filed", () => {
     });
 
     expect(coreFolder).toHaveBeenCalledWith("org-1");
-    expect(labPage).toHaveBeenCalledWith(
-      expect.objectContaining({ parentPageId: "folder-core", restricted: true }),
+    expect(notebook).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceType: "Lab", parentPageId: "folder-core", restricted: true }),
     );
   });
 
@@ -371,7 +400,7 @@ describe("createScheduledMeeting — where a note is filed", () => {
 
     // Deliberately the root, not the lab-wide Meeting notes folder: a Core note
     // that lost its folder must not land on the communal shelf.
-    expect(labPage).toHaveBeenCalledWith(
+    expect(notebook).toHaveBeenCalledWith(
       expect.objectContaining({ parentPageId: null, restricted: false }),
     );
     expect(labFolder).not.toHaveBeenCalled();
@@ -382,8 +411,8 @@ describe("createScheduledMeeting — where a note is filed", () => {
 
     expect(coreFolder).not.toHaveBeenCalled();
     expect(labFolder).toHaveBeenCalledWith("org-1");
-    expect(labPage).toHaveBeenCalledWith(
-      expect.objectContaining({ parentPageId: "folder-lab-notes" }),
+    expect(notebook).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceType: "Lab", parentPageId: "folder-lab-notes" }),
     );
   });
 
@@ -404,7 +433,7 @@ describe("createScheduledMeeting — where a note is filed", () => {
       noteLocation: { workspaceType: "Lab", workspaceId: null, parentPageId: "folder-chosen" },
     });
 
-    expect(labPage).toHaveBeenCalledWith(
+    expect(notebook).toHaveBeenCalledWith(
       expect.objectContaining({ parentPageId: "folder-chosen" }),
     );
     expect(labFolder).not.toHaveBeenCalled();
@@ -457,16 +486,19 @@ describe("setMeetingProject", () => {
 
     expect(res.ok).toBe(true);
     expect(projectFolder).toHaveBeenCalledWith("proj-7", "Team", "org-1");
-    expect(p.page.update).toHaveBeenCalledWith(
+    // The note moves to the project's Team notebook, which lives in that folder.
+    expect(ensureMeetingNotebook).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: "note-1" },
-        data: expect.objectContaining({
-          workspaceType: "Project",
-          workspaceId: "proj-7",
-          parentPageId: "folder-project",
-          linkAccess: "Restricted",
-        }),
+        key: "project:proj-7:Team:none",
+        workspaceType: "Project",
+        workspaceId: "proj-7",
+        parentPageId: "folder-project",
       }),
+    );
+    expect(moveIntoNotebook).toHaveBeenCalledWith(
+      "note-1",
+      "notebook-1",
+      "Cortex Team meeting note (Sep 10, 2026)",
     );
     expect(p.scheduledMeeting.update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1184,7 +1216,7 @@ describe("attachMeetingNote", () => {
     const res = await attachMeetingNote({ meetingId: "m1", actorId: "u2" });
 
     expect(res).toEqual({ ok: true, notePageId: "page-x" });
-    expect(createLabMeetingPage).not.toHaveBeenCalled();
+    expect(createNotebookTab).not.toHaveBeenCalled();
   });
 
   it("gives a later occurrence of a recurring meeting its own note, filed beside the first", async () => {
@@ -1218,10 +1250,10 @@ describe("attachMeetingNote", () => {
       occurrence: new Date("2026-09-24T15:00:00Z"),
     });
 
-    expect(res).toEqual({ ok: true, notePageId: "page-lab" });
-    expect(createLabMeetingPage).toHaveBeenCalledWith(
+    expect(res).toEqual({ ok: true, notePageId: "page-tab" });
+    expect(createNotebookTab).toHaveBeenCalledWith(
       expect.objectContaining({
-        parentPageId: "folder-standups",
+        notebookId: "notebook-1",
         meetingNoteId: "m1",
         meetingOccurrenceStart: new Date("2026-09-24T15:00:00Z"),
       }),
@@ -1300,7 +1332,7 @@ describe("attachMeetingNote", () => {
       meetingTypeLabel: "All-hands",
     });
 
-    expect(res).toEqual({ ok: true, notePageId: "page-lab" });
+    expect(res).toEqual({ ok: true, notePageId: "page-tab" });
     expect(p.scheduledMeeting.update).toHaveBeenCalledWith({
       where: { id: "m1" },
       data: { meetingType: "Other", meetingTypeLabel: "All-hands", projectId: null },
@@ -1328,7 +1360,7 @@ describe("attachMeetingNote", () => {
       projectId: "proj-9",
     });
 
-    expect(res).toEqual({ ok: true, notePageId: "page-project" });
+    expect(res).toEqual({ ok: true, notePageId: "page-tab" });
     expect(p.scheduledMeeting.update).toHaveBeenCalledWith({
       where: { id: "m1" },
       data: { meetingType: "Team", meetingTypeLabel: null, projectId: "proj-9" },
