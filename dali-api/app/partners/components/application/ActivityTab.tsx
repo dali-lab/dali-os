@@ -62,7 +62,7 @@ export function ActivityTab({
 
   return (
     <div className="flex flex-col gap-3">
-      <PartnerActivityFeed activities={shown} actorNames={actorNames} canEdit={false} />
+      <PartnerActivityFeed flat activities={shown} actorNames={actorNames} canEdit={false} />
 
       {truncated && viewAllHref && (
         <Link to={viewAllHref} className="self-start text-xs font-medium text-accent-coral hover:underline">
@@ -104,7 +104,7 @@ export function ActivityTab({
           />
           {error && <p className="text-xs text-destructive">{error}</p>}
           <div className="flex justify-end">
-            <Button variant="secondary" size="sm" onClick={() => void postNote()} disabled={!note.trim() || posting}>
+            <Button variant="primary" size="sm" onClick={() => void postNote()} disabled={!note.trim() || posting}>
               {posting ? "Posting…" : "Add note"}
             </Button>
           </div>

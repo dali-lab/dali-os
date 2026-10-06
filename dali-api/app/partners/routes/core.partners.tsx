@@ -1,14 +1,13 @@
 import { useMemo, useState } from "react";
 import {
   Form,
-  Link,
   redirect,
   useActionData,
   useLoaderData,
   useNavigate,
   useSearchParams,
 } from "react-router";
-import { Popover, Select } from "~/components/ui/floating";
+import { Popover } from "~/components/ui/floating";
 import { resolveTermFilter } from "~/lib/terms";
 import { UPCOMING, termFilterOrder } from "~/lib/terms.shared";
 import type { Route } from "./+types/core.partners";
@@ -19,39 +18,38 @@ import { prisma } from "~/lib/db";
 import { isCore, currentTerm } from "~/lib/roles";
 import { coreHandle } from "~/core/coreNav";
 import { PartnerCrmNav } from "../components/PartnerCrmNav";
-import { PartnerBoard } from "../components/PartnerBoard";
+import {
+  PartnerBoard,
+  DEFAULT_FILTERS,
+  SOURCE_OPTIONS,
+  isPartnerFilters,
+  type PartnerFilters,
+} from "../components/PartnerBoard";
 import type { PartnerCardModel } from "../lib/partner-board";
 import { resolvePhotoUrl } from "~/lib/photo";
 import {
   PARTNER_STAGES as STAGES,
   PARTNER_STAGE_LABELS as STAGE_LABEL,
   PARTNER_STAGE_PILL,
-  PROJECTING_STAGES,
   type PartnerStage as Status,
 } from "../lib/partner-application";
-import { useChartColors } from "~/components/analytics/useChartColors";
-import {
-  clearApplicationFormBinding,
-  getApplicationFormBinding,
-  pitchExcerpt,
-  setApplicationFormBinding,
-} from "../lib/application-form.server";
+import { pitchExcerpt } from "../lib/application-form.server";
 import type { Question } from "~/types";
-import { listSelectableForms } from "~/projects/lib/form-slots";
 import { createPartnerApplication } from "../lib/partner-application-create.server";
 import { SearchInput } from "~/components/ui/SearchInput";
+import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
+import { usePersistedState } from "~/hooks/usePersistedState";
 import {
   FilterCountBadge,
   FilterGroup,
   FilterPill,
   FilterResetButton,
   FilterSectionLabel,
+  FilterToggleRow,
   customizeButtonClass,
   filterPanelClass,
 } from "~/components/ui/filter-panel";
-import { cn } from "~/lib/cn";
-import { ChevronRight, Plus, SlidersHorizontal } from "lucide-react";
-import { useConfirmSubmit } from "~/components/ui/dialog";
+import { Plus, SlidersHorizontal } from "lucide-react";
 
 // areaSubnav: this page mounts PartnerCrmNav (Board/Directory) itself at the
 // top, so the shell must not add its own sub-nav row above it.
@@ -83,23 +81,13 @@ type ApplicationRow = {
   totalExpectedMembers: number;
 };
 
-// One (term, domain) cell of the required-headcount series, summed from
-// ProjectRoleRequest.slots across all non-archived projects.
-type RequiredCell = {
-  termCode: string;
-  termSortKey: number;
-  domainId: string;
-  domainName: string;
-  slots: number;
-};
-
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
   if (auth.user.type === "applicant") return redirect("/portal");
   if (!(await isCore(auth.user.sub))) return redirect("/");
 
-  const [applications, canEdit, roleRequests, termFilter, crmSettings, allDomains, allTerms, currentTermRow] =
+  const [applications, canEdit, termFilter, crmSettings, allDomains, allTerms, currentTermRow] =
     await Promise.all([
     prisma.partnerApplication.findMany({
       orderBy: [{ stage: "asc" }, { createdAt: "desc" }],
@@ -141,16 +129,6 @@ export async function loader({ request }: Route.LoaderArgs) {
       },
     }),
     isCore(auth.user.sub),
-    // Required headcount = the slots staffing must fill, per term/domain.
-    // Archived projects no longer need staffing, so exclude them.
-    prisma.projectRoleRequest.findMany({
-      where: { project: { status: { not: "Archived" } } },
-      select: {
-        slots: true,
-        term: { select: { code: true, sortKey: true } },
-        domain: { select: { id: true, displayName: true } },
-      },
-    }),
     // Partner projects are planned several terms out, so default to the current
     // term plus every upcoming one; history stays under "All terms".
     resolveTermFilter(request, { default: "upcoming" }),
@@ -191,32 +169,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     };
   }));
 
-  // Collapse role requests to one cell per (term, domain), summing slots
-  // across projects and across P1/P2/P3 levels.
-  const requiredMap = new Map<string, RequiredCell>();
-  for (const rr of roleRequests) {
-    const key = `${rr.term.code}::${rr.domain.id}`;
-    const cell = requiredMap.get(key);
-    if (cell) {
-      cell.slots += rr.slots;
-    } else {
-      requiredMap.set(key, {
-        termCode: rr.term.code,
-        termSortKey: rr.term.sortKey,
-        domainId: rr.domain.id,
-        domainName: rr.domain.displayName,
-        slots: rr.slots,
-      });
-    }
-  }
-  const requiredCells = [...requiredMap.values()];
-
-  // Which generic Form partners answer on /partner/apply, plus the pickable
-  // forms — Core-only config, so skip both queries for everyone else.
-  const [formBinding, selectableForms] = canEdit
-    ? await Promise.all([getApplicationFormBinding(), listSelectableForms()])
-    : [null, []];
-
   // The board's card model (specs/partner-crm.md §4) — PartnerBoard.tsx is
   // modeled on TaskBoard.tsx, which reads TaskCardModel[] the same way.
   const cards: PartnerCardModel[] = applications.map((a) => ({
@@ -248,9 +200,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     rows,
     cards,
     canEdit,
-    requiredCells,
-    formBinding,
-    selectableForms,
     terms: termFilter.terms,
     selected: termFilter.selected,
     termIds: termFilter.termIds,
@@ -271,18 +220,6 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   const form = await request.formData();
-  const intent = (form.get("intent") as string | null) ?? "create";
-
-  if (intent === "bind-form") {
-    const formId = (form.get("formId") as string | null) ?? "";
-    if (!formId) return { error: "Choose a form to bind." };
-    const result = await setApplicationFormBinding(formId, auth.user.sub);
-    return result.ok ? { ok: true } : { error: result.error };
-  }
-  if (intent === "clear-form") {
-    await clearApplicationFormBinding();
-    return { ok: true };
-  }
 
   const title = (form.get("title") as string | null)?.trim() ?? "";
   const applicantName = (form.get("applicantName") as string | null)?.trim() ?? "";
@@ -315,9 +252,6 @@ export default function PartnersApplications() {
     rows,
     cards,
     canEdit,
-    requiredCells,
-    formBinding,
-    selectableForms,
     terms,
     selected,
     termIds,
@@ -329,7 +263,6 @@ export default function PartnersApplications() {
   } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigate = useNavigate();
-  const confirmSubmit = useConfirmSubmit();
   const [query, setQuery] = useState("");
   const [stageFilter, setStageFilter] = useState<Status | "all">("all");
   const [domainFilter, setDomainFilter] = useState<string>("all");
@@ -339,15 +272,32 @@ export default function PartnersApplications() {
   // (?term=) by the Customize panel so a shared/reloaded link keeps the scope;
   // the loader defaults it to "Current & upcoming" (isAll/termIds come
   // thence).
-  // Board is the default landing per specs/partner-crm.md §4.
-  const [view, setView] = useState<"list" | "board">("board");
+  // Board is the default landing per specs/partner-crm.md §4 — ViewToggle's
+  // "card" is this page's board.
+  const [view, setView] = useViewPreference("partners:pipeline-view", "card");
   const [creating, setCreating] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // What the Customize badge counts: every slice bar the search box, which has
-  // its own visible field. Term counts only when it isn't sitting on the
-  // loader's default scope (current & upcoming); status is always "all" in
-  // board view, so it drops out of the count there on its own.
+  // The board's own search + filters (specs/partner-crm.md §18: one nav row
+  // above the board, with Customize as the only other control on the page).
+  const [boardQuery, setBoardQuery] = useState("");
+  const [boardFilters, setBoardFilters] = usePersistedState<PartnerFilters>(
+    "dali:partnerboard:filters",
+    DEFAULT_FILTERS,
+    isPartnerFilters,
+  );
+  const boardFilterCount =
+    (boardFilters.term ? 1 : 0) +
+    (boardFilters.domain ? 1 : 0) +
+    (boardFilters.source ? 1 : 0) +
+    (boardFilters.staleOnly ? 1 : 0) +
+    (boardFilters.showPaused ? 0 : 1) +
+    (boardFilters.showRejectedPastTerms ? 1 : 0);
+  const resetBoardFilters = () => setBoardFilters(DEFAULT_FILTERS);
+
+  // What the list view's Customize badge counts: every slice bar the search
+  // box, which has its own visible field. Term counts only when it isn't
+  // sitting on the loader's default scope (current & upcoming).
   const activeFilterCount =
     (stageFilter !== "all" ? 1 : 0) +
     (domainFilter !== "all" ? 1 : 0) +
@@ -396,26 +346,148 @@ export default function PartnersApplications() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PartnerCrmNav />
-      <header className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <h1
-            className="font-heading text-foreground text-4xl font-medium"
-          >
-            Pipeline
-          </h1>
+      <div className="flex items-center gap-3 flex-wrap">
+        <PartnerCrmNav />
+        <div className="ml-auto flex items-center gap-2 flex-wrap">
+          {view === "card" && (
+            <>
+              <SearchInput
+                value={boardQuery}
+                onChange={(e) => setBoardQuery(e.target.value)}
+                placeholder="Search applications…"
+                aria-label="Search the partner board"
+                containerClassName="w-56 sm:w-72"
+              />
+              <Popover
+                align="right"
+                ariaLabel="Customize board"
+                panelClassName={filterPanelClass(true)}
+                trigger={
+                  <button type="button" className={customizeButtonClass(true, boardFilterCount > 0)}>
+                    <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden />
+                    Customize
+                    <FilterCountBadge os={true} count={boardFilterCount} />
+                  </button>
+                }
+              >
+                <div className="flex flex-col gap-4">
+                  <section className="flex flex-col gap-3">
+                    <div className="flex items-center justify-between">
+                      <FilterSectionLabel os={true}>Filters</FilterSectionLabel>
+                      {boardFilterCount > 0 && (
+                        <FilterResetButton os={true} onClick={resetBoardFilters} />
+                      )}
+                    </div>
+
+                    {boardTermOptions.length > 0 && (
+                      <FilterGroup label="Term" os={true}>
+                        <FilterPill
+                          os={true}
+                          selected={!boardFilters.term}
+                          onClick={() => setBoardFilters((f) => ({ ...f, term: null }))}
+                        >
+                          All
+                        </FilterPill>
+                        {boardTermOptions.map((t) => (
+                          <FilterPill
+                            key={t.id}
+                            os={true}
+                            selected={boardFilters.term === t.id}
+                            onClick={() => setBoardFilters((f) => ({ ...f, term: t.id }))}
+                          >
+                            {t.code}
+                          </FilterPill>
+                        ))}
+                      </FilterGroup>
+                    )}
+
+                    {boardDomainOptions.length > 0 && (
+                      <FilterGroup label="Domain" os={true}>
+                        <FilterPill
+                          os={true}
+                          selected={!boardFilters.domain}
+                          onClick={() => setBoardFilters((f) => ({ ...f, domain: null }))}
+                        >
+                          All
+                        </FilterPill>
+                        {boardDomainOptions.map((d) => (
+                          <FilterPill
+                            key={d.id}
+                            os={true}
+                            selected={boardFilters.domain === d.id}
+                            onClick={() => setBoardFilters((f) => ({ ...f, domain: d.id }))}
+                          >
+                            {d.name}
+                          </FilterPill>
+                        ))}
+                      </FilterGroup>
+                    )}
+
+                    <FilterGroup label="Source" os={true}>
+                      <FilterPill
+                        os={true}
+                        selected={!boardFilters.source}
+                        onClick={() => setBoardFilters((f) => ({ ...f, source: null }))}
+                      >
+                        All
+                      </FilterPill>
+                      {SOURCE_OPTIONS.map((s) => (
+                        <FilterPill
+                          key={s.value}
+                          os={true}
+                          selected={boardFilters.source === s.value}
+                          onClick={() => setBoardFilters((f) => ({ ...f, source: s.value }))}
+                        >
+                          {s.label}
+                        </FilterPill>
+                      ))}
+                    </FilterGroup>
+                  </section>
+
+                  <section className="flex flex-col gap-3 border-t border-os-container pt-3">
+                    <FilterSectionLabel os={true}>Visibility</FilterSectionLabel>
+                    <FilterToggleRow
+                      label="Stale only"
+                      os={true}
+                      checked={boardFilters.staleOnly}
+                      onChange={(checked) => setBoardFilters((f) => ({ ...f, staleOnly: checked }))}
+                    />
+                    <FilterToggleRow
+                      label="Show paused"
+                      os={true}
+                      checked={boardFilters.showPaused}
+                      onChange={(checked) => setBoardFilters((f) => ({ ...f, showPaused: checked }))}
+                    />
+                    <FilterToggleRow
+                      label="Show rejected from past terms"
+                      os={true}
+                      checked={boardFilters.showRejectedPastTerms}
+                      onChange={(checked) =>
+                        setBoardFilters((f) => ({ ...f, showRejectedPastTerms: checked }))
+                      }
+                    />
+                  </section>
+                </div>
+              </Popover>
+            </>
+          )}
+          <ViewToggle
+            value={view}
+            onChange={(next) => {
+              setView(next);
+              // The board shows every status as a column; a lingering list
+              // status filter would silently hide columns when switching back.
+              if (next === "card") setStageFilter("all");
+            }}
+          />
+          {canEdit && !creating && (
+            <button type="button" onClick={() => setCreating(true)} className="os-add-btn">
+              <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
+              New application
+            </button>
+          )}
         </div>
-        {canEdit && !creating && (
-          <button
-            type="button"
-            onClick={() => setCreating(true)}
-            className="os-add-btn"
-          >
-            <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
-            New application
-          </button>
-        )}
-      </header>
+      </div>
 
       {actionData?.error && (
         <div className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-md px-3 py-2">
@@ -423,7 +495,7 @@ export default function PartnersApplications() {
         </div>
       )}
 
-      {creating && canEdit && (
+      {view === "list" && creating && canEdit && (
         <Form
           method="post"
           onSubmit={() => setCreating(false)}
@@ -481,142 +553,109 @@ export default function PartnersApplications() {
         </Form>
       )}
 
-      <div className="flex items-center gap-4 pt-2 pb-4 flex-wrap">
-        {/* The board has its own search + Customize panel (PartnerBoard owns
-            its filters independently) — this row's filtering is for the list
-            view only, so it steps aside in board view rather than doubling
-            the toolbar. */}
-        {view === "list" && (
-          <>
-            <SearchInput
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search by title, partner, or domain"
-              containerClassName="flex-1 min-w-[200px] max-w-[420px]"
-            />
-            {/* Status, domain and term used to sit here as a row of selects
-                that grew with the lab's domains and every term ever seeded.
-                Behind one control the toolbar stays the width of the page,
-                and the badge says how many slices are on so a filtered list
-                is never silently filtered. */}
-            <Popover
-              align="left"
-              ariaLabel="Customize applications"
-              panelClassName={filterPanelClass(true)}
-              trigger={
-                <button
-                  type="button"
-                  className={customizeButtonClass(true, activeFilterCount > 0)}
-                >
-                  <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden />
-                  Customize
-                  <FilterCountBadge os={true} count={activeFilterCount} />
-                </button>
-              }
-            >
-              <div className="flex flex-col gap-3">
-                <div className="flex items-center justify-between">
-                  <FilterSectionLabel os={true}>Filters</FilterSectionLabel>
-                  {activeFilterCount > 0 && (
-                    <FilterResetButton os={true} onClick={resetFilters} />
-                  )}
-                </div>
+      {/* List view keeps its own search/filters row below the nav row —
+          board view has nothing between the nav row and the columns. */}
+      {view === "list" && (
+        <div className="flex items-center gap-4 flex-wrap">
+          <SearchInput
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search by title, partner, or domain"
+            containerClassName="flex-1 min-w-[200px] max-w-[420px]"
+          />
+          {/* Status, domain and term used to sit here as a row of selects
+              that grew with the lab's domains and every term ever seeded.
+              Behind one control the toolbar stays the width of the page,
+              and the badge says how many slices are on so a filtered list
+              is never silently filtered. */}
+          <Popover
+            align="left"
+            ariaLabel="Customize applications"
+            panelClassName={filterPanelClass(true)}
+            trigger={
+              <button
+                type="button"
+                className={customizeButtonClass(true, activeFilterCount > 0)}
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden />
+                Customize
+                <FilterCountBadge os={true} count={activeFilterCount} />
+              </button>
+            }
+          >
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <FilterSectionLabel os={true}>Filters</FilterSectionLabel>
+                {activeFilterCount > 0 && (
+                  <FilterResetButton os={true} onClick={resetFilters} />
+                )}
+              </div>
 
-                <FilterGroup label="Stage" os={true}>
+              <FilterGroup label="Stage" os={true}>
+                <FilterPill
+                  os={true}
+                  selected={stageFilter === "all"}
+                  onClick={() => setStageFilter("all")}
+                >
+                  All
+                </FilterPill>
+                {STAGES.map((st) => (
+                  <FilterPill
+                    key={st}
+                    os={true}
+                    selected={stageFilter === st}
+                    onClick={() => setStageFilter(st)}
+                  >
+                    {STAGE_LABEL[st]}
+                  </FilterPill>
+                ))}
+              </FilterGroup>
+
+              {domainOptions.length > 0 && (
+                <FilterGroup label="Domain" os={true}>
                   <FilterPill
                     os={true}
-                    selected={stageFilter === "all"}
-                    onClick={() => setStageFilter("all")}
+                    selected={domainFilter === "all"}
+                    onClick={() => setDomainFilter("all")}
                   >
                     All
                   </FilterPill>
-                  {STAGES.map((st) => (
+                  {domainOptions.map((d) => (
                     <FilterPill
-                      key={st}
+                      key={d.id}
                       os={true}
-                      selected={stageFilter === st}
-                      onClick={() => setStageFilter(st)}
+                      selected={domainFilter === d.id}
+                      onClick={() => setDomainFilter(d.id)}
                     >
-                      {STAGE_LABEL[st]}
+                      {d.name}
                     </FilterPill>
                   ))}
                 </FilterGroup>
-
-                {domainOptions.length > 0 && (
-                  <FilterGroup label="Domain" os={true}>
-                    <FilterPill
-                      os={true}
-                      selected={domainFilter === "all"}
-                      onClick={() => setDomainFilter("all")}
-                    >
-                      All
-                    </FilterPill>
-                    {domainOptions.map((d) => (
-                      <FilterPill
-                        key={d.id}
-                        os={true}
-                        selected={domainFilter === d.id}
-                        onClick={() => setDomainFilter(d.id)}
-                      >
-                        {d.name}
-                      </FilterPill>
-                    ))}
-                  </FilterGroup>
-                )}
-
-                {terms.length > 0 && (
-                  <FilterGroup label="Term" os={true}>
-                    {termFilterOrder(terms, { includeUpcoming: true }).map((opt) => (
-                      <FilterPill
-                        key={opt.value}
-                        os={true}
-                        selected={selected === opt.value}
-                        onClick={() => setTerm(opt.value)}
-                      >
-                        {opt.label}
-                      </FilterPill>
-                    ))}
-                  </FilterGroup>
-                )}
-              </div>
-            </Popover>
-          </>
-        )}
-        <div
-          className="inline-flex items-center border border-border overflow-hidden rounded-full bg-card"
-        >
-          {(["list", "board"] as const).map((v) => (
-            <button
-              key={v}
-              type="button"
-              onClick={() => {
-                setView(v);
-                // The board shows every status as a column; a lingering
-                // status filter would silently hide columns.
-                if (v === "board") setStageFilter("all");
-              }}
-              aria-pressed={view === v}
-              className={cn(
-                "px-4 py-2.5 text-sm font-medium transition-colors",
-                view === v
-                  ? "bg-os-container text-foreground"
-                  : "text-muted-foreground hover:bg-muted",
               )}
-            >
-              {v === "list" ? "List" : "Board"}
-            </button>
-          ))}
-        </div>
-        {view === "list" && (
+
+              {terms.length > 0 && (
+                <FilterGroup label="Term" os={true}>
+                  {termFilterOrder(terms, { includeUpcoming: true }).map((opt) => (
+                    <FilterPill
+                      key={opt.value}
+                      os={true}
+                      selected={selected === opt.value}
+                      onClick={() => setTerm(opt.value)}
+                    >
+                      {opt.label}
+                    </FilterPill>
+                  ))}
+                </FilterGroup>
+              )}
+            </div>
+          </Popover>
           <span className="ml-auto text-muted-foreground text-base">
             {filtered.length}{" "}
             {filtered.length === 1 ? "application" : "applications"}
             {filtered.length !== rows.length ? ` of ${rows.length}` : ""}
           </span>
-        )}
-      </div>
-
-
+        </div>
+      )}
 
       {view === "list" ? (
         <div className="bg-card border border-border rounded-lg">
@@ -642,373 +681,12 @@ export default function PartnersApplications() {
           domainOptions={boardDomainOptions}
           termOptions={boardTermOptions}
           currentTermStartIso={currentTermStartIso}
+          query={boardQuery}
+          filters={boardFilters}
+          isCreating={creating}
+          onCreateClose={() => setCreating(false)}
         />
       )}
-
-      <TermProjection rows={rows} requiredCells={requiredCells} />
-
-      {canEdit && (
-        <details className="group bg-card border border-border rounded-lg">
-          {/* Binding a form is once-a-cycle configuration, not something to
-              read past on every visit — so it collapses to a single line that
-              still names the bound form and flags it when partners aren't
-              actually seeing it. */}
-          <summary className="flex items-center gap-2 px-4 py-2.5 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
-            <ChevronRight className="w-4 h-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" />
-            <h2 className="text-sm font-semibold text-foreground">
-              Application form
-            </h2>
-            <span className="text-xs text-muted-foreground truncate">
-              {formBinding ? formBinding.formName : "None bound"}
-            </span>
-            {formBinding && (!formBinding.published || !formBinding.hasVersion) && (
-              <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
-                Not live
-              </span>
-            )}
-          </summary>
-          <div className="px-4 pb-4 pt-1 flex flex-col gap-2">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <p className="text-xs text-muted-foreground">
-                Extra questions partners answer when pitching a project.
-                {formBinding && (
-                  <>
-                    {" "}
-                    <Link
-                      to={`/forms/edit/${formBinding.formId}`}
-                      className="underline hover:text-foreground"
-                    >
-                      Edit “{formBinding.formName}” in Forms
-                    </Link>
-                  </>
-                )}
-              </p>
-              <div className="flex items-center gap-2">
-                <Form method="post" className="flex items-center gap-2">
-                  <input type="hidden" name="intent" value="bind-form" />
-                  <Select
-                    name="formId"
-                    defaultValue={formBinding?.formId ?? ""}
-                    placeholder="Choose a form…"
-                    options={selectableForms.map((f) => ({
-                      value: f.id,
-                      label: `${f.name}${f.published ? "" : " (unpublished)"}`,
-                    }))}
-                    buttonClassName="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-                  />
-                  <button
-                    type="submit"
-                    className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors"
-                  >
-                    {formBinding ? "Change" : "Bind"}
-                  </button>
-                </Form>
-                {formBinding && (
-                  <Form
-                    method="post"
-                    onSubmit={confirmSubmit({
-                      title: "Remove the bound application form?",
-                      description:
-                        "New partner applicants will have no form to fill in until another is bound. Responses already submitted are kept.",
-                      confirmLabel: "Remove",
-                      tone: "destructive",
-                    })}
-                  >
-                    <input type="hidden" name="intent" value="clear-form" />
-                    <button
-                      type="submit"
-                      className="px-3 py-1.5 text-xs font-medium rounded-md border border-border text-muted-foreground hover:text-destructive hover:border-destructive/40 transition-colors"
-                    >
-                      Remove
-                    </button>
-                  </Form>
-                )}
-              </div>
-            </div>
-            {formBinding && (!formBinding.published || !formBinding.hasVersion) && (
-              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5">
-                {formBinding.hasVersion
-                  ? "This form isn't published yet"
-                  : "This form has no saved version yet"}
-                {" "}— partners currently see only the built-in pitch fields.
-              </p>
-            )}
-          </div>
-        </details>
-      )}
-    </div>
-  );
-}
-
-type Series = { perDomain: Map<string, number>; total: number };
-
-function emptySeries(): Series {
-  return { perDomain: new Map(), total: 0 };
-}
-function addTo(s: Series, domainId: string, n: number) {
-  if (n === 0) return;
-  s.perDomain.set(domainId, (s.perDomain.get(domainId) ?? 0) + n);
-  s.total += n;
-}
-
-// Projecting = still speculative headcount. A promoted application
-// (resultingProjectId set) already carries its own role requests, so it
-// drops out of the projection even if its stage is Accepted.
-function isProjecting(r: ApplicationRow): boolean {
-  return PROJECTING_STAGES.includes(r.stage) && !r.resultingProjectId;
-}
-
-// Per-term projection of *expected* lab members (from under-review +
-// accepted partner applications, by target term) against *required* members
-// (from project role-request slots, by term). The domain filter narrows the
-// per-term bars to a single domain's numbers.
-function TermProjection({
-  rows,
-  requiredCells,
-}: {
-  rows: ApplicationRow[];
-  requiredCells: RequiredCell[];
-}) {
-  const chart = useChartColors();
-  const [domainFocus, setDomainFocus] = useState<string>("all");
-
-  // Domain catalog = union of domains seen in either series, name-sorted so
-  // color assignment is stable across renders and reloads.
-  const domains = useMemo(() => {
-    const seen = new Map<string, string>();
-    for (const r of rows) {
-      if (!isProjecting(r)) continue;
-      for (const d of r.domains) {
-        if (!seen.has(d.domainId)) seen.set(d.domainId, d.domainName);
-      }
-    }
-    for (const c of requiredCells) {
-      if (!seen.has(c.domainId)) seen.set(c.domainId, c.domainName);
-    }
-    return [...seen.entries()]
-      .map(([id, name]) => ({ id, name }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [rows, requiredCells]);
-
-  const palette = useMemo(
-    () => [
-      chart.teal,
-      chart.coral,
-      chart.green,
-      chart.pink,
-      chart.yellow,
-      chart.coralLight,
-    ],
-    [chart],
-  );
-  const colorOf = (domainId: string) => {
-    const i = domains.findIndex((d) => d.id === domainId);
-    return i < 0 ? chart.muted : palette[i % palette.length];
-  };
-
-  const inFocus = (domainId: string) =>
-    domainFocus === "all" || domainId === domainFocus;
-
-  // One group per term, oldest → newest, each holding the expected and
-  // required Series for that term. A term appears if either series touches it.
-  const byTerm = useMemo(() => {
-    const map = new Map<
-      string,
-      { code: string; sortKey: number; expected: Series; required: Series }
-    >();
-    const ensure = (code: string, sortKey: number) => {
-      let g = map.get(code);
-      if (!g) {
-        g = { code, sortKey, expected: emptySeries(), required: emptySeries() };
-        map.set(code, g);
-      }
-      return g;
-    };
-    for (const r of rows) {
-      if (!isProjecting(r)) continue;
-      // An application's expected headcount counts toward every term it
-      // targets — a 3-term engagement needs that team in all 3 terms.
-      for (const t of r.targetTerms) {
-        const g = ensure(t.code, t.sortKey);
-        for (const d of r.domains) {
-          if (inFocus(d.domainId))
-            addTo(g.expected, d.domainId, d.expectedMembers);
-        }
-      }
-    }
-    for (const c of requiredCells) {
-      const g = ensure(c.termCode, c.termSortKey);
-      if (inFocus(c.domainId)) addTo(g.required, c.domainId, c.slots);
-    }
-    return [...map.values()].sort((a, b) => a.sortKey - b.sortKey);
-  }, [rows, requiredCells, domainFocus]);
-
-  const hasData = byTerm.some(
-    (t) => t.expected.total > 0 || t.required.total > 0,
-  );
-
-  // Both series share one scale so the bar and the tick in a row are directly
-  // comparable, and so rows are comparable across terms.
-  const scaleMax = useMemo(
-    () =>
-      Math.max(
-        ...byTerm.flatMap((t) => [t.expected.total, t.required.total]),
-        1,
-      ),
-    [byTerm],
-  );
-
-  return (
-    <section className="bg-card border border-border rounded-lg p-4">
-      <div className="flex items-baseline justify-between gap-3 flex-wrap">
-        <h2 className="text-sm font-semibold text-foreground">
-          Lab members by term
-        </h2>
-        {hasData && (
-          <span className="text-[11px] text-muted-foreground tabular-nums">
-            expected <span className="opacity-60">/ required</span>
-          </span>
-        )}
-      </div>
-
-      {!hasData ? (
-        <p className="text-sm text-muted-foreground mt-2">
-          Nothing to project yet. Add expected headcount to an application under
-          review, or role requests to a project.
-        </p>
-      ) : (
-        <>
-          <div className="flex flex-col gap-1.5 mt-3">
-            {byTerm.map((t) => (
-              <TermRow
-                key={t.code}
-                term={t}
-                domains={domains}
-                colorOf={colorOf}
-                scaleMax={scaleMax}
-              />
-            ))}
-          </div>
-          <DomainLegend
-            domains={domains}
-            colorOf={colorOf}
-            focus={domainFocus}
-            onFocus={(id) =>
-              setDomainFocus((cur) => (cur === id ? "all" : id))
-            }
-          />
-        </>
-      )}
-    </section>
-  );
-}
-
-// One term on a single track: expected headcount as a domain-split bar from
-// the left, required as a tick at its own point on the same scale. Putting
-// both on one axis makes the shortfall/surplus the shape of the row, so
-// neither bar needs its own label and neither series needs a washed-out fill
-// to tell it apart from the other.
-function TermRow({
-  term,
-  domains,
-  colorOf,
-  scaleMax,
-}: {
-  term: { code: string; expected: Series; required: Series };
-  domains: { id: string; name: string }[];
-  colorOf: (domainId: string) => string;
-  scaleMax: number;
-}) {
-  const { code, expected, required } = term;
-  const pct = (n: number) => `${(n / scaleMax) * 100}%`;
-
-  return (
-    <div className="grid grid-cols-[2.75rem_1fr_4.5rem] items-center gap-3">
-      <span className="text-xs font-medium text-foreground">{code}</span>
-
-      <div className="relative h-5">
-        <div className="absolute inset-0 rounded-[3px] bg-muted/40" />
-        {expected.total > 0 && (
-          <div
-            className="absolute inset-y-0 left-0 flex overflow-hidden rounded-[3px]"
-            style={{ width: pct(expected.total) }}
-          >
-            {domains.map((d) => {
-              const n = expected.perDomain.get(d.id) ?? 0;
-              if (n === 0) return null;
-              return (
-                <div
-                  key={d.id}
-                  style={{
-                    width: `${(n / expected.total) * 100}%`,
-                    backgroundColor: colorOf(d.id),
-                  }}
-                  title={`${d.name}: ${n} expected`}
-                />
-              );
-            })}
-          </div>
-        )}
-        {required.total > 0 && (
-          <span
-            className="absolute w-0.5 bg-foreground rounded-full"
-            style={{
-              left: pct(required.total),
-              top: -2,
-              bottom: -2,
-              transform: "translateX(-50%)",
-            }}
-            title={`${required.total} required`}
-          />
-        )}
-      </div>
-
-      <span className="text-xs text-right tabular-nums text-foreground">
-        {expected.total}
-        <span className="text-muted-foreground"> / {required.total}</span>
-      </span>
-    </div>
-  );
-}
-
-// The legend doubles as the domain filter: clicking a swatch isolates that
-// domain across every term, clicking it again clears. That keeps the chart
-// self-contained and saves a second domain dropdown on a page whose toolbar
-// already has one for the table.
-function DomainLegend({
-  domains,
-  colorOf,
-  focus,
-  onFocus,
-}: {
-  domains: { id: string; name: string }[];
-  colorOf: (domainId: string) => string;
-  focus: string;
-  onFocus: (domainId: string) => void;
-}) {
-  return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-3 pt-3 border-t border-border">
-      {domains.map((d) => (
-        <button
-          key={d.id}
-          type="button"
-          onClick={() => onFocus(d.id)}
-          aria-pressed={focus === d.id}
-          className={`inline-flex items-center gap-1.5 text-xs text-muted-foreground rounded px-1 -mx-1 transition-opacity hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-coral/40 ${
-            focus === "all" || focus === d.id ? "opacity-100" : "opacity-40"
-          }`}
-        >
-          <span
-            className="w-2.5 h-2.5 rounded-sm"
-            style={{ backgroundColor: colorOf(d.id) }}
-          />
-          {d.name}
-        </button>
-      ))}
-      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground ml-auto">
-        <span className="w-0.5 h-3 bg-foreground rounded-full" />
-        required
-      </span>
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { Form, Link } from "react-router";
+import { cn } from "~/lib/cn";
 import {
   Building2,
   Calendar,
@@ -201,15 +202,50 @@ export function PartnerActivityFeed({
   actorNames,
   canEdit,
   headerActions,
+  flat = false,
 }: {
   activities: PartnerActivity[];
   actorNames: Record<string, string>;
   canEdit: boolean;
   /** Extra affordances for the pinned header (e.g. a "Log meeting" button). */
   headerActions?: ReactNode;
+  /** Strip the card border and "Activity" header so the feed sits directly in
+   *  a tab body that already supplies its own composer (the application
+   *  modal's Activity tab). The full page can opt into this once it adopts
+   *  the same layout. */
+  flat?: boolean;
 }) {
   const [composing, setComposing] = useState(false);
   const [note, setNote] = useState("");
+
+  const list =
+    activities.length === 0 ? (
+      <p className={cn("text-center text-sm text-muted-foreground", flat ? "py-6" : "px-4 py-8")}>
+        No activity yet.
+      </p>
+    ) : (
+      <ul className="divide-y divide-border">
+        {activities.map((a) => {
+          const { icon: Icon, title, detail } = render(a);
+          return (
+            <li key={a.id} className={cn("flex gap-3", flat ? "py-3" : "px-4 py-3")}>
+              <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted/50 text-muted-foreground">
+                <Icon className="h-3.5 w-3.5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm text-foreground">{title}</p>
+                {detail && <div className="mt-0.5 text-sm">{detail}</div>}
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {actorLabel(a, actorNames)} · {relativeTime(a.createdAt)}
+                </p>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    );
+
+  if (flat) return list;
 
   return (
     <section className="bg-card border border-border rounded-2xl">
@@ -270,31 +306,7 @@ export function PartnerActivityFeed({
         </Form>
       )}
 
-      {activities.length === 0 ? (
-        <p className="px-4 py-8 text-center text-sm text-muted-foreground">
-          No activity yet.
-        </p>
-      ) : (
-        <ul className="divide-y divide-border">
-          {activities.map((a) => {
-            const { icon: Icon, title, detail } = render(a);
-            return (
-              <li key={a.id} className="flex gap-3 px-4 py-3">
-                <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted/50 text-muted-foreground">
-                  <Icon className="h-3.5 w-3.5" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm text-foreground">{title}</p>
-                  {detail && <div className="mt-0.5 text-sm">{detail}</div>}
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    {actorLabel(a, actorNames)} · {relativeTime(a.createdAt)}
-                  </p>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      {list}
     </section>
   );
 }

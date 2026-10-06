@@ -130,7 +130,7 @@ export function PartnerCard({
             }
             title={
               card.nextStepDueAt
-                ? `${card.nextStep} — due ${formatDuePill(card.nextStepDueAt)}`
+                ? `${card.nextStep}, due ${formatDuePill(card.nextStepDueAt)}`
                 : card.nextStep
             }
           >
@@ -146,7 +146,7 @@ export function PartnerCard({
         )}
 
         {paused && (
-          <BoardCardChip tone="neutral" title="Parked — hidden from the stale sweep until it lifts">
+          <BoardCardChip tone="neutral" title="Parked, hidden from the stale sweep until it lifts">
             Paused
           </BoardCardChip>
         )}
@@ -156,7 +156,7 @@ export function PartnerCard({
             to={`/projects/${card.resultingProjectId}`}
             onClick={(e) => e.stopPropagation()}
           >
-            <BoardCardChip tone="good" title="Promoted to a project — open it">
+            <BoardCardChip tone="good" title="Promoted to a project, open it">
               Project
             </BoardCardChip>
           </Link>
@@ -181,16 +181,9 @@ export function PartnerCard({
         )}
 
         {card.domains.map((d) => (
-          <span
-            key={d.id}
-            className={
-              os
-                ? "rounded-full border border-transparent bg-os-accent/15 px-1.5 py-0.5 text-os-accent"
-                : "rounded-md border border-blue-100 bg-blue-50 px-1.5 py-0.5 text-blue-700"
-            }
-          >
+          <BoardCardChip key={d.id} tone="accent">
             {d.name}
-          </span>
+          </BoardCardChip>
         ))}
 
         {card.targetTerms.map((t) => (

@@ -12,7 +12,7 @@ import { Pencil, Plus, X } from "lucide-react";
 import { Select, MultiSelect } from "~/components/ui/floating";
 import { DateField } from "~/components/ui/DateField";
 import { Button } from "~/components/ui/Button";
-import { PropRow } from "~/components/ui/modal-fields";
+import { PropRow, PROP_CONTROL } from "~/components/ui/modal-fields";
 import { useToast } from "~/components/ui/toast";
 import {
   PARTNER_STAGES,
@@ -118,7 +118,7 @@ export function PropertyRail({
           disabled={!canEdit || stageBusy}
           onChange={(v) => void changeStage(v as PartnerStage)}
           options={PARTNER_STAGES.map((s) => ({ value: s, label: PARTNER_STAGE_LABELS[s] }))}
-          buttonClassName="w-full bg-transparent text-sm text-foreground py-1 focus:outline-none disabled:opacity-60"
+          buttonClassName={PROP_CONTROL}
         />
       </PropRow>
 
@@ -174,7 +174,7 @@ export function PropertyRail({
           ariaLabel="Target terms"
           placeholder="None"
           emptyLabel="No terms"
-          buttonClassName="w-full bg-transparent text-sm text-foreground py-1 focus:outline-none disabled:opacity-60"
+          buttonClassName={PROP_CONTROL}
         />
       </PropRow>
 
@@ -196,14 +196,14 @@ export function PropertyRail({
           >
             Open
           </Link>
-          <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+          <span className="text-sm text-foreground">
             {SOW_STATE_LABEL[application.sowState] ?? application.sowState}
           </span>
         </div>
       </PropRow>
 
       <PropRow label="Contract">
-        <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+        <span className="text-sm text-foreground">
           {application.contractBindingId ? "Sent" : "Not sent"}
         </span>
       </PropRow>
@@ -269,7 +269,7 @@ function NextStepField({
           onBlur={save}
           disabled={busy}
           placeholder="What's next?"
-          className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+          className={PROP_CONTROL}
         />
         <DateField
           mode="date"
@@ -596,28 +596,28 @@ function DealTermsFields({
           value={feeDollars}
           onChange={(e) => setFeeDollars(e.target.value)}
           placeholder="Fee (USD)"
-          className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm"
+          className={PROP_CONTROL}
         />
         <input
           type="text"
           value={legalEntityName}
           onChange={(e) => setLegalEntityName(e.target.value)}
           placeholder="Legal entity name"
-          className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm"
+          className={PROP_CONTROL}
         />
         <input
           type="text"
           value={legalEntityAddress}
           onChange={(e) => setLegalEntityAddress(e.target.value)}
           placeholder="Legal entity address"
-          className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm"
+          className={PROP_CONTROL}
         />
         <input
           type="text"
           value={paymentSchedule}
           onChange={(e) => setPaymentSchedule(e.target.value)}
           placeholder="Payment schedule"
-          className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm"
+          className={PROP_CONTROL}
         />
         <div className="flex justify-end gap-2">
           <button type="button" onClick={() => setEditing(false)} className="text-xs text-muted-foreground hover:underline">

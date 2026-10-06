@@ -6,32 +6,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRevalidator, useSearchParams } from "react-router";
 import type { DragEndEvent } from "@dnd-kit/core";
-import {
-  ChevronsLeft,
-  ChevronsRight,
-  MoreHorizontal,
-  Plus,
-  SlidersHorizontal,
-} from "lucide-react";
-import { Menu, MenuItem, Popover, Tooltip } from "~/components/ui/floating";
+import { ChevronsLeft, ChevronsRight, MoreHorizontal } from "lucide-react";
+import { Menu, MenuItem, Tooltip } from "~/components/ui/floating";
 import { Confetti } from "~/components/Confetti";
 import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
 import { osStatusAccent, type StatusAccent } from "~/components/board/status-accent";
 import { useOsChrome } from "~/components/os-chrome";
-import {
-  FilterCountBadge,
-  FilterGroup,
-  FilterPill,
-  FilterResetButton,
-  FilterSectionLabel,
-  FilterToggleRow,
-  customizeButtonClass,
-  filterPanelClass,
-} from "~/components/ui/filter-panel";
-import { SearchInput } from "~/components/ui/SearchInput";
 import { cn } from "~/lib/cn";
 import { useOptimisticBoardMove } from "~/components/board/useOptimisticBoardMove";
-import { usePersistedState } from "~/hooks/usePersistedState";
 import {
   PARTNER_STAGES,
   PARTNER_STAGE_LABELS,
@@ -89,7 +71,11 @@ const STAGE_ACCENT_CLASSIC: Record<PartnerStage, StatusAccent> = {
 const stageAccent = (stage: PartnerStage, os: boolean): StatusAccent =>
   (os ? STAGE_ACCENT_OS : STAGE_ACCENT_CLASSIC)[stage];
 
-const SOURCE_OPTIONS: { value: string; label: string }[] = [
+// The board's own search + Customize controls live in the page's nav row
+// (specs/partner-crm.md §18: one row above the board), so the filter
+// vocabulary below is exported for core.partners.tsx to build that row from
+// — this component just applies whatever it's handed.
+export const SOURCE_OPTIONS: { value: string; label: string }[] = [
   { value: "Form", label: "Form" },
   { value: "Email", label: "Email" },
   { value: "Referral", label: "Referral" },
@@ -97,7 +83,7 @@ const SOURCE_OPTIONS: { value: string; label: string }[] = [
   { value: "Renewal", label: "Renewal" },
 ];
 
-type PartnerFilters = {
+export type PartnerFilters = {
   term: string | null;
   domain: string | null;
   source: string | null;
@@ -106,7 +92,7 @@ type PartnerFilters = {
   showRejectedPastTerms: boolean;
 };
 
-const DEFAULT_FILTERS: PartnerFilters = {
+export const DEFAULT_FILTERS: PartnerFilters = {
   term: null,
   domain: null,
   source: null,
@@ -115,7 +101,7 @@ const DEFAULT_FILTERS: PartnerFilters = {
   showRejectedPastTerms: false,
 };
 
-function isPartnerFilters(v: unknown): v is PartnerFilters {
+export function isPartnerFilters(v: unknown): v is PartnerFilters {
   if (!v || typeof v !== "object") return false;
   const o = v as Record<string, unknown>;
   return (
@@ -135,6 +121,10 @@ export function PartnerBoard({
   domainOptions,
   termOptions,
   currentTermStartIso,
+  query,
+  filters,
+  isCreating,
+  onCreateClose,
 }: {
   cards: PartnerCardModel[];
   canEdit: boolean;
@@ -143,6 +133,15 @@ export function PartnerBoard({
   termOptions: { id: string; code: string }[];
   /** Current term's start — "Show rejected from past terms" compares against it. Null when there is no current term. */
   currentTermStartIso: string | null;
+  /** Search text and Customize filters — owned by the page's single nav row
+   *  (core.partners.tsx) rather than this component, so there is exactly one
+   *  search/filter control for the board. */
+  query: string;
+  filters: PartnerFilters;
+  /** The nav row's "New application" button, in board view, opens the create
+   *  modal — this component no longer has a create affordance of its own. */
+  isCreating: boolean;
+  onCreateClose: () => void;
 }) {
   const { os } = useOsChrome();
   const { items: cards, move, error, setError } = useOptimisticBoardMove<PartnerCardModel>(initialCards);
@@ -153,13 +152,6 @@ export function PartnerBoard({
 
   const [searchParams, setSearchParams] = useSearchParams();
   const openId = searchParams.get("application");
-  const [isCreating, setIsCreating] = useState(false);
-  const [query, setQuery] = useState("");
-  const [filters, setFilters] = usePersistedState<PartnerFilters>(
-    "dali:partnerboard:filters",
-    DEFAULT_FILTERS,
-    isPartnerFilters,
-  );
   const [celebrate, setCelebrate] = useState(false);
 
   const [collapsedCols, setCollapsedCols] = useState<PartnerStage[]>([]);
@@ -207,11 +199,10 @@ export function PartnerBoard({
     [setSearchParams],
   );
 
-  const startCreate = useCallback(() => setIsCreating(true), []);
   const closeModal = useCallback(() => {
     setOpenId(null);
-    setIsCreating(false);
-  }, [setOpenId]);
+    onCreateClose();
+  }, [setOpenId, onCreateClose]);
 
   const currentTermStartMs = currentTermStartIso ? new Date(currentTermStartIso).getTime() : null;
 
@@ -289,16 +280,6 @@ export function PartnerBoard({
     );
     if (toStage === "Accepted" && fromStage !== "Accepted") setCelebrate(true);
   }
-
-  const activeFilterCount =
-    (filters.term ? 1 : 0) +
-    (filters.domain ? 1 : 0) +
-    (filters.source ? 1 : 0) +
-    (filters.staleOnly ? 1 : 0) +
-    (filters.showPaused ? 0 : 1) +
-    (filters.showRejectedPastTerms ? 1 : 0);
-
-  const resetFilters = useCallback(() => setFilters(DEFAULT_FILTERS), [setFilters]);
 
   const columns: KanbanColumn<PartnerCardModel>[] = PARTNER_STAGES.map((stage) => {
     const accent = stageAccent(stage, os);
@@ -380,11 +361,6 @@ export function PartnerBoard({
               </button>
             }
           >
-            {canEdit && (
-              <MenuItem icon={<Plus className="h-4 w-4" aria-hidden />} onSelect={startCreate}>
-                Add application
-              </MenuItem>
-            )}
             <MenuItem
               icon={<ChevronsLeft className="h-4 w-4" aria-hidden />}
               onSelect={() => toggleCollapsed(stage)}
@@ -397,135 +373,12 @@ export function PartnerBoard({
       cards: stageCards,
       listClassName:
         "flex flex-col gap-2 p-2 min-h-[360px] max-h-[calc(100vh-14rem)] overflow-y-auto",
-      listHeader: canEdit ? (
-        <button
-          type="button"
-          onClick={startCreate}
-          className={cn(
-            "mb-2 flex w-full items-center justify-center gap-1.5 border border-dashed transition-colors",
-            META_TEXT(os),
-            os
-              ? "rounded-os-item border-os-container py-2 text-os-grey hover:border-os-container-hi hover:bg-os-container/30 hover:text-foreground"
-              : "rounded-md border-border py-1.5 text-muted-foreground hover:bg-muted/30 hover:text-foreground",
-          )}
-        >
-          <Plus className="h-3.5 w-3.5" aria-hidden />
-          Add new
-        </button>
-      ) : null,
     };
   });
 
   return (
     <div className={cn("flex flex-col", os ? "gap-4" : "gap-3")}>
       <Confetti trigger={celebrate} onFire={() => setCelebrate(false)} />
-      <div className={cn("flex min-w-0 items-center", os ? "gap-3" : "gap-2")}>
-        <SearchInput
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search applications…"
-          aria-label="Search the partner board"
-          containerClassName={cn("shrink-0", os ? "w-56 sm:w-72" : "w-44 sm:w-56")}
-        />
-
-        <div className="ml-auto flex shrink-0 items-center gap-2">
-          <Popover
-            align="right"
-            ariaLabel="Customize board"
-            panelClassName={filterPanelClass(os)}
-            trigger={
-              <button type="button" className={customizeButtonClass(os, activeFilterCount > 0)}>
-                <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden />
-                Customize
-                <FilterCountBadge os={os} count={activeFilterCount} />
-              </button>
-            }
-          >
-            <div className="flex flex-col gap-4">
-              <section className="flex flex-col gap-3">
-                <div className="flex items-center justify-between">
-                  <FilterSectionLabel os={os}>Filters</FilterSectionLabel>
-                  {activeFilterCount > 0 && <FilterResetButton os={os} onClick={resetFilters} />}
-                </div>
-
-                {termOptions.length > 0 && (
-                  <FilterGroup label="Term" os={os}>
-                    <FilterPill os={os} selected={!filters.term} onClick={() => setFilters((f) => ({ ...f, term: null }))}>
-                      All
-                    </FilterPill>
-                    {termOptions.map((t) => (
-                      <FilterPill
-                        key={t.id}
-                        os={os}
-                        selected={filters.term === t.id}
-                        onClick={() => setFilters((f) => ({ ...f, term: t.id }))}
-                      >
-                        {t.code}
-                      </FilterPill>
-                    ))}
-                  </FilterGroup>
-                )}
-
-                {domainOptions.length > 0 && (
-                  <FilterGroup label="Domain" os={os}>
-                    <FilterPill os={os} selected={!filters.domain} onClick={() => setFilters((f) => ({ ...f, domain: null }))}>
-                      All
-                    </FilterPill>
-                    {domainOptions.map((d) => (
-                      <FilterPill
-                        key={d.id}
-                        os={os}
-                        selected={filters.domain === d.id}
-                        onClick={() => setFilters((f) => ({ ...f, domain: d.id }))}
-                      >
-                        {d.name}
-                      </FilterPill>
-                    ))}
-                  </FilterGroup>
-                )}
-
-                <FilterGroup label="Source" os={os}>
-                  <FilterPill os={os} selected={!filters.source} onClick={() => setFilters((f) => ({ ...f, source: null }))}>
-                    All
-                  </FilterPill>
-                  {SOURCE_OPTIONS.map((s) => (
-                    <FilterPill
-                      key={s.value}
-                      os={os}
-                      selected={filters.source === s.value}
-                      onClick={() => setFilters((f) => ({ ...f, source: s.value }))}
-                    >
-                      {s.label}
-                    </FilterPill>
-                  ))}
-                </FilterGroup>
-              </section>
-
-              <section className={cn("flex flex-col gap-3 border-t pt-3", os ? "border-os-container" : "border-border")}>
-                <FilterSectionLabel os={os}>Visibility</FilterSectionLabel>
-                <FilterToggleRow
-                  label="Stale only"
-                  os={os}
-                  checked={filters.staleOnly}
-                  onChange={(checked) => setFilters((f) => ({ ...f, staleOnly: checked }))}
-                />
-                <FilterToggleRow
-                  label="Show paused"
-                  os={os}
-                  checked={filters.showPaused}
-                  onChange={(checked) => setFilters((f) => ({ ...f, showPaused: checked }))}
-                />
-                <FilterToggleRow
-                  label="Show rejected from past terms"
-                  os={os}
-                  checked={filters.showRejectedPastTerms}
-                  onChange={(checked) => setFilters((f) => ({ ...f, showRejectedPastTerms: checked }))}
-                />
-              </section>
-            </div>
-          </Popover>
-        </div>
-      </div>
 
       {query.trim() && filteredCards.length === 0 && (
         <p className="text-sm text-muted-foreground">

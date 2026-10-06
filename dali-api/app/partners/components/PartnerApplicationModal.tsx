@@ -12,17 +12,12 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
 import { Pencil, X } from "lucide-react";
 import { Modal } from "~/components/Modal";
-import { Select, MultiSelect } from "~/components/ui/floating";
+import { MultiSelect, Select } from "~/components/ui/floating";
 import { Button, buttonClasses } from "~/components/ui/Button";
 import { UnderlineTabButtons } from "~/components/AreaPillNav";
 import { useDialog } from "~/components/ui/dialog";
 import { modalCardClass } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
-import {
-  PARTNER_STAGES,
-  PARTNER_STAGE_LABELS,
-  type PartnerStage,
-} from "../lib/partner-application";
 import type { PartnerCardModel } from "../lib/partner-board";
 import type { ApplicationDetailResponse } from "../lib/partner-application-detail";
 import { ActivityTab } from "./application/ActivityTab";
@@ -171,22 +166,6 @@ export function PartnerApplicationModal({
     onClose();
   }
 
-  async function changeStage(next: PartnerStage) {
-    if (!detail) return;
-    try {
-      const res = await fetch(`/api/partner-applications/${detail.application.id}/status`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stage: next }),
-      });
-      if (!res.ok) throw new Error(`Request failed: ${res.status}`);
-      refresh();
-    } catch {
-      /* surfaced via the property rail's own stage control on retry */
-    }
-  }
-
   async function saveTitle() {
     if (!detail) return;
     const trimmed = titleDraft.trim();
@@ -216,7 +195,9 @@ export function PartnerApplicationModal({
         containerClassName={cn(modalCardClass("max-w-4xl max-h-[85vh]"), "flex flex-col")}
       >
         <div className="flex flex-shrink-0 items-start justify-between gap-3 px-6 pt-6 pb-0">
-          <span className="os-type-badge mt-1.5 flex-shrink-0">Partner application</span>
+          <span className="os-type-badge os-type-badge--partner mt-1.5 flex-shrink-0">
+            Partner application
+          </span>
           {isCreate ? (
             <h2 id="partner-application-modal-title" className="os-modal-title min-w-0 flex-1">
               New partner application
@@ -253,15 +234,6 @@ export function PartnerApplicationModal({
               >
                 <Pencil className="h-4 w-4" aria-hidden />
               </button>
-            )}
-            {!isCreate && detail && (
-              <Select
-                value={detail.application.stage}
-                disabled={!canEdit}
-                onChange={(v) => void changeStage(v as PartnerStage)}
-                options={PARTNER_STAGES.map((s) => ({ value: s, label: PARTNER_STAGE_LABELS[s] }))}
-                buttonClassName="text-xs px-2 py-1 border border-border rounded-full bg-background text-muted-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-              />
             )}
             <button type="button" onClick={() => void guardedClose()} className="os-icon-btn" aria-label="Close">
               <X className="h-5 w-5" aria-hidden />
@@ -357,7 +329,7 @@ export function PartnerApplicationModal({
           ) : !detail ? (
             <p className="text-sm text-muted-foreground">Loading…</p>
           ) : (
-            <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
+            <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
               <div className="min-w-0">
                 <UnderlineTabButtons
                   label="Application sections"
@@ -416,7 +388,7 @@ export function PartnerApplicationModal({
                   )}
                 </div>
               </div>
-              <div className="border-border lg:border-l lg:pl-6">
+              <div className="border-border lg:w-72 lg:border-l lg:pl-6">
                 <PropertyRail
                   application={detail.application}
                   canEdit={canEdit}

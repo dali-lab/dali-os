@@ -100,7 +100,7 @@ export function ContractPanel({
         <div className="flex flex-col gap-2">
           {documents.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No partner contract templates yet — author one in Core ▸ Agreements
+              No partner contract templates yet. Author one in Core ▸ Agreements
               and mark it "Partner contract template".
             </p>
           ) : (

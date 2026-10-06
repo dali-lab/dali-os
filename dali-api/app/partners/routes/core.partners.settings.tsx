@@ -12,6 +12,11 @@ import { EditableSection } from "~/components/EditableSection";
 import { PartnerCrmNav } from "../components/PartnerCrmNav";
 import { listSelectableForms } from "~/projects/lib/form-slots";
 import {
+  clearApplicationFormBinding,
+  getApplicationFormBinding,
+  setApplicationFormBinding,
+} from "../lib/application-form.server";
+import {
   clearSurveyFormBinding,
   getSurveyFormBinding,
   setSurveyFormBinding,
@@ -30,12 +35,14 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (auth.user.type === "applicant") return redirect("/portal");
   if (!(await isCore(auth.user.sub))) return redirect("/");
 
-  const [settings, cycleTermIds, surveyFormBinding, selectableForms] = await Promise.all([
+  const [settings, cycleTermIds, applicationFormBinding, surveyFormBinding, selectableForms] =
+    await Promise.all([
     prisma.partnerCrmSettings.findUnique({
       where: { id: "default" },
       select: { interviewPanelUserIds: true, staleDays: true },
     }),
     getActiveCoreCycleTermIds(request),
+    getApplicationFormBinding(),
     getSurveyFormBinding(),
     listSelectableForms(),
   ]);
@@ -66,6 +73,7 @@ export async function loader({ request }: Route.LoaderArgs) {
           a.userId,
       }))
       .sort((a, b) => a.name.localeCompare(b.name)),
+    applicationFormBinding,
     surveyFormBinding,
     selectableForms,
   };
@@ -93,6 +101,17 @@ export async function action({ request }: Route.ActionArgs) {
       create: { id: "default", interviewPanelUserIds, staleDays },
       update: { interviewPanelUserIds, staleDays },
     });
+    return { ok: true };
+  }
+
+  if (intent === "bind-form") {
+    const formId = (form.get("formId") as string | null) ?? "";
+    if (!formId) return { error: "Choose a form to bind." };
+    const result = await setApplicationFormBinding(formId, auth.user.sub);
+    return result.ok ? { ok: true } : { error: result.error };
+  }
+  if (intent === "clear-form") {
+    await clearApplicationFormBinding();
     return { ok: true };
   }
 
@@ -146,7 +165,7 @@ function SettingsFields({
         ) : (
           <div className="text-sm text-foreground">
             {panelIds.length === 0
-              ? "Everyone — no panel set"
+              ? "Everyone (no panel set)"
               : coreMembers
                   .filter((m) => panelIds.includes(m.userId))
                   .map((m) => m.name)
@@ -175,7 +194,8 @@ function SettingsFields({
 }
 
 export default function PartnerCrmSettingsPage() {
-  const { settings, coreMembers, surveyFormBinding, selectableForms } = useLoaderData<typeof loader>();
+  const { settings, coreMembers, applicationFormBinding, surveyFormBinding, selectableForms } =
+    useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const submit = useSubmit();
   const formRef = useRef<HTMLFormElement>(null);
@@ -213,12 +233,68 @@ export default function PartnerCrmSettingsPage() {
       <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-2">
         <h2 className="text-sm font-semibold text-foreground">Application form</h2>
         <p className="text-sm text-muted-foreground">
-          The form partners fill out at <code>/partner/apply</code> is bound from the{" "}
-          <Link to="/core/partners" className="text-dark-blue hover:underline">
-            board page
-          </Link>
-          .
+          Extra questions partners answer when pitching a project at <code>/partner/apply</code>.
+          {applicationFormBinding && (
+            <>
+              {" "}
+              <Link
+                to={`/forms/edit/${applicationFormBinding.formId}`}
+                className="text-dark-blue hover:underline"
+              >
+                Edit “{applicationFormBinding.formName}” in Forms
+              </Link>
+            </>
+          )}
         </p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Form method="post" className="flex items-center gap-2">
+            <input type="hidden" name="intent" value="bind-form" />
+            <Select
+              name="formId"
+              defaultValue={applicationFormBinding?.formId ?? ""}
+              placeholder="Choose a form…"
+              options={selectableForms.map((f) => ({
+                value: f.id,
+                label: `${f.name}${f.published ? "" : " (unpublished)"}`,
+              }))}
+              buttonClassName="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+            />
+            <button
+              type="submit"
+              className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors"
+            >
+              {applicationFormBinding ? "Change" : "Bind"}
+            </button>
+          </Form>
+          {applicationFormBinding && (
+            <Form
+              method="post"
+              onSubmit={confirmSubmit({
+                title: "Remove the bound application form?",
+                description:
+                  "New partner applicants will have no form to fill in until another is bound. Responses already submitted are kept.",
+                confirmLabel: "Remove",
+                tone: "destructive",
+              })}
+            >
+              <input type="hidden" name="intent" value="clear-form" />
+              <button
+                type="submit"
+                className="px-3 py-1.5 text-xs font-medium rounded-md border border-border text-muted-foreground hover:text-destructive hover:border-destructive/40 transition-colors"
+              >
+                Remove
+              </button>
+            </Form>
+          )}
+        </div>
+        {applicationFormBinding && (!applicationFormBinding.published || !applicationFormBinding.hasVersion) && (
+          <p className="text-xs text-os-amber">
+            {applicationFormBinding.hasVersion
+              ? "This form isn't published yet."
+              : "This form has no saved version yet."}
+            {" "}Partners currently see only the built-in pitch fields.
+          </p>
+        )}
       </section>
 
       <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-2">
@@ -279,11 +355,11 @@ export default function PartnerCrmSettingsPage() {
           )}
         </div>
         {surveyFormBinding && (!surveyFormBinding.published || !surveyFormBinding.hasVersion) && (
-          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5">
+          <p className="text-xs text-os-amber">
             {surveyFormBinding.hasVersion
-              ? "This form isn't published yet"
-              : "This form has no saved version yet"}
-            {" "}— partners won't see a survey until it is.
+              ? "This form isn't published yet."
+              : "This form has no saved version yet."}
+            {" "}Partners won't see a survey until it is.
           </p>
         )}
       </section>
