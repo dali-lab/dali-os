@@ -30,6 +30,7 @@ const AREA_ORDER = [
   "Hiring",
   "Education",
   "Onboarding",
+  "Partners",
 ] as const;
 
 export const DIGEST_VALUES = ["Instant", "Daily", "Weekly", "Off"] as const;
@@ -67,6 +68,9 @@ export type NotificationsSettingsData = {
   };
   // Admin-only events (e.g. member promotions) are shown only to admins.
   isAdmin: boolean;
+  // Core-only events (the Partners area — no application has an owner, so
+  // every partner event fans out to all of Core) are shown only to Core.
+  isCore: boolean;
 };
 
 type SaveResult = { ok: boolean; error: string | null };
@@ -76,6 +80,7 @@ export function NotificationsSettingsBlock({
   slackConnected,
   digestSchedule,
   isAdmin,
+  isCore,
 }: NotificationsSettingsData) {
   const fetcher = useFetcher<SaveResult>();
   const busy = fetcher.state !== "idle";
@@ -98,7 +103,11 @@ export function NotificationsSettingsBlock({
     area,
     events: VISIBLE_EVENTS.filter((k) => {
       const def: EventDef = EVENT_TYPES[k];
-      return def.area === area && !(def.adminOnly && !isAdmin);
+      return (
+        def.area === area &&
+        !(def.adminOnly && !isAdmin) &&
+        !(def.coreOnly && !isCore)
+      );
     }),
   })).filter((g) => g.events.length > 0);
 

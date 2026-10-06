@@ -135,9 +135,12 @@ export default [
     // (singular) is a separate surface and does not move.
     route("core/partners", "partners/routes/core.partners.tsx"),
     route("core/partners/directory", "partners/routes/core.partners.directory.tsx"),
+    route("core/partners/reports", "partners/routes/core.partners.reports.tsx"),
+    route("core/partners/settings", "partners/routes/core.partners.settings.tsx"),
     // Literal segments above the param routes (repo route-ordering convention).
     route("core/partners/applications/:id", "partners/routes/core.partners.applications.$id.tsx"),
     route("core/partners/orgs/:orgId", "partners/routes/core.partners.orgs.$orgId.tsx"),
+    route("core/partners/contacts/:contactId", "partners/routes/core.partners.contacts.$contactId.tsx"),
 
     // Projects. The bare /projects route is the area hub (the project list).
     route("projects", "projects/routes/projects.hub.tsx"),
@@ -703,6 +706,7 @@ export default [
   // Scheduling: the partner portal's real-availability grid + request submit.
   route("api/partner/availability", "partners/routes/api.partner.availability.ts"),
   route("api/partner/meeting-requests", "partners/routes/api.partner.meeting-requests.ts"),
+  route("api/partner-directory.csv", "partners/routes/api.partner-directory.csv.ts"),
 
 
   // Hiring API — cycles, scheduling, applications, reviews, decisions, interviews, delibs

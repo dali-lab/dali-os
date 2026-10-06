@@ -122,6 +122,12 @@ export const FEATURE_FLAGS = [
       "Indexes partners@ mail and shows threads on partner records. Ships off.",
   },
   {
+    key: "partner-finance",
+    label: "Partner finance tab",
+    description:
+      "Finance tab, invoices and deal terms on partner records. Ships off.",
+  },
+  {
     key: "start-terms",
     label: "Application start terms",
     description:

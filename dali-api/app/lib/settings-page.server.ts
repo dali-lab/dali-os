@@ -3,7 +3,7 @@ import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { listCalendarsForLink } from "~/lib/google-calendar";
-import { isAdmin } from "~/lib/roles";
+import { isAdmin, isCore } from "~/lib/roles";
 import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { jobByName, resolveJobSettings } from "~/jobs/registry";
 import { walletAppleConfigured } from "~/lib/wallet-apple.server";
@@ -96,6 +96,7 @@ export async function loadSettingsPageData(request: Request) {
     notificationPrefs,
     digestRows,
     viewerIsAdmin,
+    viewerIsCore,
     passkeysEnabled,
     authSessionRows,
   ] = await Promise.all([
@@ -145,6 +146,7 @@ export async function loadSettingsPageData(request: Request) {
       select: { name: true, settings: true },
     }),
     isAdmin(userId),
+    isCore(userId),
     // Passkey management only makes sense once auth runs on BetterAuth — gate
     // the Settings section on the same global switch that flips the login flow.
     isFeatureEnabledForEveryone("betterauth", request),
@@ -271,6 +273,7 @@ export async function loadSettingsPageData(request: Request) {
         weeklyWeekday: weekly.sendWeekday ?? 1,
       },
       isAdmin: viewerIsAdmin,
+      isCore: viewerIsCore,
     },
     wallet: {
       apple: walletAppleConfigured(),
