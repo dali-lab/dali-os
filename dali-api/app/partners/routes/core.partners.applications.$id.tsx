@@ -23,13 +23,14 @@ import { cn } from "~/lib/cn";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
 import { PartnerActivityFeed } from "../components/PartnerActivityFeed";
-import type { Route } from "./+types/partners.applications.$id";
+import type { Route } from "./+types/core.partners.applications.$id";
 import { prisma } from "~/lib/db";
 import { githubTeamSlug } from "~/lib/github-slug";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getCollabToken } from "~/lib/collab-token.server";
-import { canViewStaffing, isCore, getActiveCoreCycleTermIds } from "~/lib/roles";
+import { isCore, getActiveCoreCycleTermIds } from "~/lib/roles";
+import { coreHandle } from "~/core/coreNav";
 import {
   PARTNER_STAGES as STAGES,
   PARTNER_STAGE_LABELS as STAGE_LABEL,
@@ -80,20 +81,18 @@ export const meta: Route.MetaFunction = ({ data }) => {
   ];
 };
 
-// Resolves the dynamic leaf crumb so the trail reads
-// "Partners › Applications › <title>" instead of a raw id.
+// The trailing crumb reads the application title off `trailLabel`, set below,
+// so the trail is "Core › Partner CRM › <application title>".
 export const handle = {
-  breadcrumb: (data: unknown) =>
-    (data as { application?: { title?: string } } | undefined)?.application
-      ?.title ?? null,
+  ...coreHandle("partners", (data) => (data as { trailLabel?: string } | null)?.trailLabel),
+  favoriteRoute: true,
 };
-
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
   if (auth.user.type === "applicant") return redirect("/portal");
-  if (!(await canViewStaffing(auth.user.sub))) return redirect("/");
+  if (!(await isCore(auth.user.sub))) return redirect("/");
 
   const application = await prisma.partnerApplication.findUnique({
     where: { id: params.id },
@@ -300,6 +299,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     coreMembers,
     activities,
     actorNames,
+    trailLabel: application.title,
   };
 }
 
@@ -788,7 +788,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   } else {
     return { error: "Unknown action." };
   }
-  return redirect(`/partners/applications/${params.id}`);
+  return redirect(`/core/partners/applications/${params.id}`);
 }
 
 // loader returns redirect() (a Response) on auth-fail branches; the component

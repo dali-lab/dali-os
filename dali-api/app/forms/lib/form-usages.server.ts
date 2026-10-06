@@ -122,7 +122,7 @@ export async function formUsages(formId: string): Promise<FormUsage[]> {
     usages.push({
       kind: "partner-application",
       label: "Partner application (/partner/apply)",
-      href: "/partners/applications",
+      href: "/core/partners",
     });
   }
   for (const c of hiringCycles) {

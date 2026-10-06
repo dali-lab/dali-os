@@ -130,6 +130,15 @@ export default [
     route("core/communications/email/:id", "admin/routes/admin.email.legacy-redirect.ts", { id: "legacy-email-core-id" }),
     route("core/communications/email-senders", "core/routes/core.communications.email-senders.tsx"),
 
+    // Partner CRM — the internal partner pipeline (board, directory, org and
+    // application records), Core-only. The external portal at /partner/*
+    // (singular) is a separate surface and does not move.
+    route("core/partners", "partners/routes/core.partners.tsx"),
+    route("core/partners/directory", "partners/routes/core.partners.directory.tsx"),
+    // Literal segments above the param routes (repo route-ordering convention).
+    route("core/partners/applications/:id", "partners/routes/core.partners.applications.$id.tsx"),
+    route("core/partners/orgs/:orgId", "partners/routes/core.partners.orgs.$orgId.tsx"),
+
     // Projects. The bare /projects route is the area hub (the project list).
     route("projects", "projects/routes/projects.hub.tsx"),
     route("projects/staffing", "projects/routes/projects.staffing.tsx"),
@@ -200,12 +209,15 @@ export default [
     route("members/groups", "members/routes/members.groups.tsx"),
     route("members/:id", "members/routes/members.$id.tsx"),
 
-    // Partners
-    route("partners", "partners/routes/partners.tsx"),
-    route("partners/applications", "partners/routes/partners.applications.tsx"),
-    route("partners/applications/:id", "partners/routes/partners.applications.$id.tsx"),
+    // Partners — legacy pre-regroup paths. The internal surface moved to
+    // /core/partners (Partner CRM, see the core block above); these redirect,
+    // preserving sub-path and query string. The external portal at /partner/*
+    // (singular) is untouched.
+    route("partners", "partners/routes/partners.legacy-redirect.ts", { id: "legacy-partners-hub" }),
+    route("partners/applications", "partners/routes/partners.legacy-redirect.ts", { id: "legacy-partners-applications" }),
+    route("partners/applications/:id", "partners/routes/partners.legacy-redirect.ts", { id: "legacy-partners-application-id" }),
     // Literal segments above the param route (repo route-ordering convention).
-    route("partners/:orgId", "partners/routes/partners.$orgId.tsx"),
+    route("partners/:orgId", "partners/routes/partners.legacy-redirect.ts", { id: "legacy-partners-org-id" }),
 
     // Education. Literal "manage" segments must precede the :offeringId param
     // so /education/manage/* isn't captured as an offering id.

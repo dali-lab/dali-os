@@ -59,7 +59,7 @@ test.describe('internal Organizations pages (Core)', () => {
   // ?embed=1 renders member routes standalone instead of inside the
   // TabWorkspace iframe shell (see kanban-drag.spec.ts).
   test('lists partner orgs with counts', async ({ page }) => {
-    await page.goto('/partners?embed=1');
+    await page.goto('/core/partners/directory?embed=1');
     await expect(
       page.getByRole('heading', { name: 'Partners' }),
     ).toBeVisible();
@@ -67,7 +67,7 @@ test.describe('internal Organizations pages (Core)', () => {
   });
 
   test('org detail shows members, pending invites, and projects', async ({ page }) => {
-    await page.goto('/partners/partner-tuck-school?embed=1');
+    await page.goto('/core/partners/orgs/partner-tuck-school?embed=1');
     await expect(
       page.getByRole('heading', { name: 'Tuck School of Business' }),
     ).toBeVisible();
@@ -114,14 +114,14 @@ test.describe('internal Organizations pages (Core)', () => {
       // clicking the dialog's action button.
 
       // Move: Tuck → Hood.
-      await page.goto('/partners/partner-tuck-school?embed=1');
+      await page.goto('/core/partners/orgs/partner-tuck-school?embed=1');
       const row = page.locator('li', { hasText: 'Movey Tester' });
       await row.getByRole('button', { name: 'Move', exact: true }).click();
       await row.locator('select[name="targetOrgId"]').selectOption({ label: 'Hood Museum of Art' });
       await row.getByRole('button', { name: 'Move', exact: true }).last().click();
       await page.getByRole('dialog').getByRole('button', { name: 'Move', exact: true }).click();
       await expect(page.getByText('Movey Tester')).not.toBeVisible();
-      await page.goto('/partners/partner-hood-museum?embed=1');
+      await page.goto('/core/partners/orgs/partner-hood-museum?embed=1');
       await expect(page.getByText('Movey Tester')).toBeVisible();
 
       // Remove from Hood.
@@ -133,7 +133,7 @@ test.describe('internal Organizations pages (Core)', () => {
       await expect(page.getByText('Movey Tester')).not.toBeVisible();
 
       // Delete the empty org — lands back on the org list without it.
-      await page.goto(`/partners/${emptyOrgId}?embed=1`);
+      await page.goto(`/core/partners/orgs/${emptyOrgId}?embed=1`);
       await page.getByRole('button', { name: 'Delete organization' }).click();
       await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click();
       await expect(

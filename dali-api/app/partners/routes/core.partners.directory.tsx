@@ -7,26 +7,25 @@ import {
   useLoaderData,
   useNavigate,
 } from "react-router";
-import type { Route } from "./+types/partners";
+import type { Route } from "./+types/core.partners.directory";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
-import { canViewStaffing, isCore, isLabMember } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { classifyPartnerEmail, normalizeEmail } from "../lib/magic-link.server";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
-import { SegmentedTabButtons } from "~/components/AreaPillNav";
 import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
-import { FileText, LayoutGrid, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { SearchInput } from "~/components/ui/SearchInput";
+import { coreHandle } from "~/core/coreNav";
+import { PartnerCrmNav } from "../components/PartnerCrmNav";
 
-// areaSubnav (not areaPills): this page hosts the Organizations/Pipeline
-// switcher itself under either shell — a full-width underline row above the
-// title in the brand shell, the segmented pill in its own toolbar under os —
-// so it reserves the flush top spacing regardless of the flag.
-export const handle = { areaSubnav: true };
+// areaSubnav: this page mounts PartnerCrmNav (Board/Directory) itself at the
+// top, so the shell must not add its own sub-nav row above it.
+export const handle = { ...coreHandle("partners"), areaSubnav: true };
 
 export const meta: Route.MetaFunction = () => [{ title: "Partners · DALI OS" }];
 
@@ -45,13 +44,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
   if (auth.user.type === "applicant") return redirect("/portal");
-  // The org directory is lab-wide; editing and the applications pipeline stay
-  // Core/Admin (canViewStaffing).
-  const [labMember, canViewApplications] = await Promise.all([
-    isLabMember(auth.user.sub, request),
-    canViewStaffing(auth.user.sub, request),
-  ]);
-  if (!labMember && !canViewApplications) return redirect("/");
+  if (!(await isCore(auth.user.sub))) return redirect("/");
 
   const now = new Date();
   const [orgs, canEdit] = await Promise.all([
@@ -97,7 +90,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     })),
   );
 
-  return { rows, canEdit, canViewApplications };
+  return { rows, canEdit };
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -115,8 +108,8 @@ export async function action({ request }: Route.ActionArgs) {
 
   // An individual partner is a person, not an org. Capture their email and set
   // up the contact + membership + primary contact up front (mirrors the
-  // promotion path in partners.applications.$id) so the detail page renders a
-  // person instead of an empty organization.
+  // promotion path in core.partners.applications.$id) so the detail page
+  // renders a person instead of an empty organization.
   if (isIndividual) {
     const email = normalizeEmail((form.get("email") as string | null) ?? "");
     if (!email.includes("@")) {
@@ -159,7 +152,7 @@ export async function action({ request }: Route.ActionArgs) {
       metadata: { via: "core", individual: true },
       request,
     });
-    return redirect(`/partners/${org.id}`);
+    return redirect(`/core/partners/orgs/${org.id}`);
   }
 
   const website = (form.get("website") as string | null)?.trim() || null;
@@ -174,11 +167,11 @@ export async function action({ request }: Route.ActionArgs) {
     metadata: { via: "core" },
     request,
   });
-  return redirect(`/partners/${org.id}`);
+  return redirect(`/core/partners/orgs/${org.id}`);
 }
 
 export default function PartnersOrganizations() {
-  const { rows, canEdit, canViewApplications } = useLoaderData<typeof loader>();
+  const { rows, canEdit } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigate = useNavigate();
   const [creating, setCreating] = useState(false);
@@ -191,23 +184,9 @@ export default function PartnersOrganizations() {
     return rows.filter((r) => r.name.toLowerCase().includes(q));
   }, [rows, query]);
 
-  const areaTabs = [
-    {
-      label: "Organizations",
-      icon: LayoutGrid,
-      active: true,
-      onClick: () => navigate("/partners"),
-    },
-    {
-      label: "Applications",
-      icon: FileText,
-      active: false,
-      onClick: () => navigate("/partners/applications"),
-    },
-  ];
-
   return (
     <div className="flex flex-col gap-4">
+      <PartnerCrmNav />
       <header className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1
@@ -314,7 +293,6 @@ export default function PartnersOrganizations() {
       )}
 
       <div className="flex items-center gap-4 pt-2 pb-4 flex-wrap">
-        {canViewApplications && <SegmentedTabButtons label="Partners" items={areaTabs} />}
         <SearchInput
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -361,7 +339,7 @@ function PartnersTable({ rows }: { rows: OrgRow[] }) {
             <tr
               key={o.id}
               onClick={() => {
-                const url = `/partners/${o.id}`;
+                const url = `/core/partners/orgs/${o.id}`;
                 if (!requestOpenTabIfEmbedded(url, o.name)) navigate(url);
               }}
               className="border-t border-border hover:bg-muted/20 cursor-pointer"
@@ -409,7 +387,7 @@ function PartnersCards({ rows }: { rows: OrgRow[] }) {
 function PartnerCard({ org }: { org: OrgRow }) {
   return (
     <Link
-      to={`/partners/${org.id}`}
+      to={`/core/partners/orgs/${org.id}`}
       className="border border-border rounded-md p-3 bg-background flex items-start gap-3 hover:bg-muted/10 transition-colors"
     >
       <OrgAvatar org={org} />

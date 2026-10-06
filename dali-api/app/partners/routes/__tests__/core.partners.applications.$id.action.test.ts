@@ -17,7 +17,7 @@ import {
   sendLearnMoreRequestEmail,
   sendDecisionAcceptedEmail,
 } from "~/partners/lib/partner-emails.server";
-import { action } from "~/partners/routes/partners.applications.$id";
+import { action } from "~/partners/routes/core.partners.applications.$id";
 
 const db = prisma as unknown as Record<string, any>;
 const APP_ID = "app-1";
@@ -28,7 +28,7 @@ function callAction(fields: Record<string, string | string[]>) {
     if (Array.isArray(v)) v.forEach((x) => form.append(k, x));
     else form.append(k, v);
   }
-  const request = new Request(`http://localhost/partners/applications/${APP_ID}`, {
+  const request = new Request(`http://localhost/core/partners/applications/${APP_ID}`, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: form.toString(),

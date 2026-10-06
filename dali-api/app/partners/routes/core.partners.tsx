@@ -13,12 +13,14 @@ import { resolveTermFilter } from "~/lib/terms";
 import { UPCOMING, termFilterOrder } from "~/lib/terms.shared";
 import type { DragEndEvent } from "@dnd-kit/core";
 import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
-import type { Route } from "./+types/partners.applications";
+import type { Route } from "./+types/core.partners";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { prisma } from "~/lib/db";
-import { canViewStaffing, isCore } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
+import { coreHandle } from "~/core/coreNav";
+import { PartnerCrmNav } from "../components/PartnerCrmNav";
 import { resolvePhotoUrl } from "~/lib/photo";
 import {
   PARTNER_STAGES as STAGES,
@@ -37,7 +39,6 @@ import {
 import type { Question } from "~/types";
 import { listSelectableForms } from "~/projects/lib/form-slots";
 import { logPartnerActivity } from "../lib/partner-activity.server";
-import { SegmentedTabButtons } from "~/components/AreaPillNav";
 import { SearchInput } from "~/components/ui/SearchInput";
 import {
   FilterCountBadge,
@@ -49,17 +50,12 @@ import {
   filterPanelClass,
 } from "~/components/ui/filter-panel";
 import { cn } from "~/lib/cn";
-import { ChevronRight, FileText, LayoutGrid, Plus, SlidersHorizontal } from "lucide-react";
+import { ChevronRight, Plus, SlidersHorizontal } from "lucide-react";
 import { useConfirmSubmit, useDialog } from "~/components/ui/dialog";
 
-// areaSubnav (not areaPills): this page hosts the Organizations/Pipeline
-// switcher itself under either shell — a full-width underline row above the
-// title in the brand shell, the segmented pill in its own toolbar under os —
-// so it reserves the flush top spacing regardless of the flag. That row is also
-// this page's trail back to Organizations, so it stands the breadcrumbs down —
-// otherwise the header carries "Partners › Applications" above a switcher that
-// says the same thing, and the two Partners tabs no longer start the same way.
-export const handle = { areaSubnav: true, hideBreadcrumbs: true };
+// areaSubnav: this page mounts PartnerCrmNav (Board/Directory) itself at the
+// top, so the shell must not add its own sub-nav row above it.
+export const handle = { ...coreHandle("partners"), areaSubnav: true };
 
 export const meta: Route.MetaFunction = () => [
   { title: "Partner Applications · DALI OS" },
@@ -101,7 +97,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
   if (auth.user.type === "applicant") return redirect("/portal");
-  if (!(await canViewStaffing(auth.user.sub))) return redirect("/");
+  if (!(await isCore(auth.user.sub))) return redirect("/");
 
   const [applications, canEdit, roleRequests, termFilter] =
     await Promise.all([
@@ -282,7 +278,7 @@ export async function action({ request }: Route.ActionArgs) {
     type: "Created",
     metadata: { source: "Manual" },
   });
-  return redirect(`/partners/applications/${created.id}`);
+  return redirect(`/core/partners/applications/${created.id}`);
 }
 
 export default function PartnersApplications() {
@@ -334,21 +330,6 @@ export default function PartnersApplications() {
     setSearchParams(next);
   };
 
-  const areaTabs = [
-    {
-      label: "Organizations",
-      icon: LayoutGrid,
-      active: false,
-      onClick: () => navigate("/partners"),
-    },
-    {
-      label: "Applications",
-      icon: FileText,
-      active: true,
-      onClick: () => navigate("/partners/applications"),
-    },
-  ];
-
   const effectiveRows = useMemo(
     () =>
       rows.map((r) =>
@@ -386,6 +367,7 @@ export default function PartnersApplications() {
 
   return (
     <div className="flex flex-col gap-4">
+      <PartnerCrmNav />
       <header className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1
@@ -471,7 +453,6 @@ export default function PartnersApplications() {
       )}
 
       <div className="flex items-center gap-4 pt-2 pb-4 flex-wrap">
-        <SegmentedTabButtons label="Partners" items={areaTabs} />
         <SearchInput
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -1030,7 +1011,7 @@ function ApplicationsTable({ rows }: { rows: ApplicationRow[] }) {
             <tr
               key={a.id}
               onClick={() => {
-                const url = `/partners/applications/${a.id}`;
+                const url = `/core/partners/applications/${a.id}`;
                 if (!requestOpenTabIfEmbedded(url, a.title)) navigate(url);
               }}
               className="border-t border-border hover:bg-muted/20 cursor-pointer"
@@ -1201,7 +1182,7 @@ function ApplicationCard({
     <div
       {...dragProps}
       onClick={() => {
-        const url = `/partners/applications/${app.id}`;
+        const url = `/core/partners/applications/${app.id}`;
         if (!requestOpenTabIfEmbedded(url, app.title)) navigate(url);
       }}
       className={`border border-border rounded-md bg-background p-2.5 text-sm flex flex-col gap-2 ${

@@ -32,7 +32,7 @@ function ResponseDetailBody({ response }: { response: ResponseRow }) {
     <div className="space-y-4">
       {response.partnerApplication && (
         <Link
-          to={`/partners/applications/${response.partnerApplication.id}`}
+          to={`/core/partners/applications/${response.partnerApplication.id}`}
           className="inline-block text-xs font-medium text-os-accent hover:underline"
         >
           Partner application: {response.partnerApplication.title} →
@@ -103,7 +103,7 @@ export function VersionResults({
     <div className="space-y-4">
       {isPartnerApplicationForm && (
         <Link
-          to="/partners/applications"
+          to="/core/partners"
           className="block bg-os-accent/10 rounded-os-item px-4 py-3 text-sm text-os-accent font-medium hover:bg-os-accent/15 transition"
         >
           These responses are partner applications. Review them on the
@@ -234,7 +234,7 @@ export function VersionResults({
                           <td className="px-4 py-2.5">
                             {r.partnerApplication ? (
                               <Link
-                                to={`/partners/applications/${r.partnerApplication.id}`}
+                                to={`/core/partners/applications/${r.partnerApplication.id}`}
                                 onClick={(e) => e.stopPropagation()}
                                 className="text-xs font-medium text-os-accent hover:underline whitespace-nowrap"
                               >

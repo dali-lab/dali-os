@@ -33,7 +33,6 @@ const TRACKED_PREFIXES = [
   "/hiring",
   "/projects",
   "/members",
-  "/partners",
   "/education",
   "/forms",
   "/admin",

@@ -13,12 +13,13 @@ import { Checkbox } from "~/components/ui/Checkbox";
 import { Tooltip } from "~/components/ui/floating";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { ProjectIcon } from "~/components/ProjectIcon";
-import type { Route } from "./+types/partners.$orgId";
+import type { Route } from "./+types/core.partners.orgs.$orgId";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { recordRouteVisit } from "~/lib/user-pages.server";
 import { prisma } from "~/lib/db";
-import { canViewStaffing, isCore, isLabMember } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
+import { coreHandle } from "~/core/coreNav";
 import { logAuditEvent } from "~/lib/audit";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { EditableSection } from "~/components/EditableSection";
@@ -47,11 +48,10 @@ export const meta: Route.MetaFunction = ({ data }) => {
   return [{ title: name ? `${name} · DALI OS` : "Organization · DALI OS" }];
 };
 
+// The trailing crumb reads the org name off `trailLabel`, set below, so the
+// trail is "Core › Partner CRM › <org name>".
 export const handle = {
-  breadcrumb: (data: unknown) => {
-    const org = (data as { org?: { name: string } } | undefined)?.org;
-    return org?.name;
-  },
+  ...coreHandle("partners", (data) => (data as { trailLabel?: string } | null)?.trailLabel),
   favoriteRoute: true,
 };
 
@@ -59,14 +59,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
   if (auth.user.type === "applicant") return redirect("/portal");
-  // Org pages are lab-wide; editing and the org's applications stay Core/Admin.
-  const [labMember, canViewApplications] = await Promise.all([
-    isLabMember(auth.user.sub, request),
-    canViewStaffing(auth.user.sub, request),
-  ]);
-  if (!labMember && !canViewApplications) return redirect("/");
-
   const canEdit = await isCore(auth.user.sub);
+  if (!canEdit) return redirect("/");
+
   const now = new Date();
 
   const org = await prisma.partnerOrg.findUnique({
@@ -116,7 +111,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   // After the gate, so a 404 never lands in someone's recents. Detached — a
   // failed bookkeeping write must not cost the reader their org page.
-  recordRouteVisit(auth.user.sub, `/partners/${org.id}`, org.name, request);
+  recordRouteVisit(auth.user.sub, `/core/partners/orgs/${org.id}`, org.name, request);
 
   const [pendingInvites, linkableProjects, otherOrgs] = await Promise.all([
     canEdit ? listPendingInvites(org.id) : Promise.resolve([]),
@@ -143,7 +138,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   return {
     org: {
       ...org,
-      applications: canViewApplications ? org.applications : [],
       // Presigned display URL; `logoUrl` stays the raw stored value (an S3
       // key for partner-uploaded logos) for the edit form.
       logoDisplayUrl: await resolvePhotoUrl(org.logoUrl),
@@ -169,7 +163,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       org.applications.length === 0 &&
       pendingInvites.length === 0,
     canEdit,
-    canViewApplications,
+    trailLabel: org.name,
   };
 }
 
@@ -429,7 +423,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     // Preserve ?embed=1 — dropping it would swap the standalone page for the
     // full workspace shell (or nest a shell inside the workspace iframe).
     const embed = new URL(request.url).searchParams.has("embed");
-    return redirect(embed ? "/partners?embed=1" : "/partners");
+    return redirect(embed ? "/core/partners/directory?embed=1" : "/core/partners/directory");
   }
 
   if (intent === "member-remove") {
@@ -646,7 +640,7 @@ function DetailsFields({
 }
 
 export default function PartnerOrgDetail() {
-  const { org, pendingInvites, linkableProjects, otherOrgs, canDeleteOrg, canEdit, canViewApplications } =
+  const { org, pendingInvites, linkableProjects, otherOrgs, canDeleteOrg, canEdit } =
     useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const submit = useSubmit();
@@ -1106,32 +1100,30 @@ export default function PartnerOrgDetail() {
       </section>
 
       {/* Applications */}
-      {canViewApplications && (
-        <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
-          <h2 className="font-heading font-semibold text-foreground">Applications</h2>
-          {org.applications.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No applications.</p>
-          ) : (
-            <ul className="divide-y divide-border">
-              {org.applications.map((a) => (
-                <li key={a.id} className="py-2.5 flex items-center gap-3">
-                  <Link
-                    to={`/partners/applications/${a.id}`}
-                    className="text-sm font-medium text-foreground hover:underline flex-1 min-w-0 truncate"
-                  >
-                    {a.title}
-                  </Link>
-                  <span
-                    className={`text-xs rounded-full px-2 py-0.5 ${PARTNER_STAGE_PILL[a.stage]}`}
-                  >
-                    {PARTNER_STAGE_LABELS[a.stage]}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      )}
+      <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
+        <h2 className="font-heading font-semibold text-foreground">Applications</h2>
+        {org.applications.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No applications.</p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {org.applications.map((a) => (
+              <li key={a.id} className="py-2.5 flex items-center gap-3">
+                <Link
+                  to={`/core/partners/applications/${a.id}`}
+                  className="text-sm font-medium text-foreground hover:underline flex-1 min-w-0 truncate"
+                >
+                  {a.title}
+                </Link>
+                <span
+                  className={`text-xs rounded-full px-2 py-0.5 ${PARTNER_STAGE_PILL[a.stage]}`}
+                >
+                  {PARTNER_STAGE_LABELS[a.stage]}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       {/* Cleanup for duplicate-org husks — only offered when truly empty. */}
       {canDeleteOrg && (
