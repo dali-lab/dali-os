@@ -639,7 +639,11 @@ export default function ApplicationReadOnlyDetail() {
       <PriorApplicationsPanel
         entries={data.priorApplications}
         outcomesHidden={data.blinded}
-        hrefFor={(_entry, domainApplicationId) => `/hiring/applications/${domainApplicationId}`}
+        hrefFor={(entry, domainApplicationId) =>
+          data.blinded
+            ? `/hiring/reviewer/application/${data.applicationId}/prior/${entry.id}`
+            : `/hiring/applications/${domainApplicationId}`
+        }
       />
       <ApplicantEmailPanel
         engagement={data.emailEngagement}
