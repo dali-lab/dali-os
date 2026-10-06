@@ -4958,6 +4958,13 @@ model Page {
   meetingNote            ScheduledMeeting? @relation("MeetingNotePage", fields: [meetingNoteId], references: [id])
   meetingOccurrenceStart DateTime?
 
+  // Set when this page is a meeting notebook: the one Drive document that
+  // holds a run of meeting notes, each note a child page shown as a side tab
+  // (Google Docs tabs). The key says which notes belong in it (see
+  // app/lib/meeting-notebook.ts) and makes find-or-create race safe. The
+  // notebook has no body of its own; opening it lands on a tab.
+  notebookKey String? @unique
+
   // Set when this page is a meeting's linked whiteboard (kind = Whiteboard).
   // Parallel to meetingNoteId: a meeting can have a note doc and/or a whiteboard,
   // each 1:1. See ScheduledMeeting.whiteboardPage.

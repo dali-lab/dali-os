@@ -74,6 +74,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       workspaceType: true,
       workspaceId: true,
       kind: true,
+      notebookKey: true,
       archivedAt: true,
       createdById: true,
       partnerVisible: true,
@@ -159,7 +160,11 @@ export async function action({ request, params }: Route.ActionArgs) {
   // A folder moves as a whole subtree, so everything below depends on knowing
   // it up front: the depth guard, the per-page workspace rewrite, the
   // Restricted push, and the files filed anywhere inside it.
-  const subtree = page.kind === "Folder" ? await collectSubtree(pageId) : { ids: [], height: 0 };
+  // A meeting notebook carries its tabs (child pages) the same way.
+  const subtree =
+    page.kind === "Folder" || page.notebookKey !== null
+      ? await collectSubtree(pageId)
+      : { ids: [], height: 0 };
   // `folderPageId` can only point at a Folder, so passing every descendant id
   // here is harmless — the non-folders simply never match.
   const subtreeFolderIds = page.kind === "Folder" ? [pageId, ...subtree.ids] : [];
