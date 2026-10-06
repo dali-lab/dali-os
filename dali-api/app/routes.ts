@@ -532,6 +532,7 @@ export default [
   route("api/wallet/apple/v1/log", "wallet/routes/api.wallet.apple.v1.log.ts"),
   route("api/calendar/group-availability", "calendar/routes/api.calendar.group-availability.ts"),
   route("api/calendar/search", "calendar/routes/api.calendar.search.ts"),
+  route("api/scheduling-data", "calendar/routes/api.scheduling-data.ts"),
   route("api/timetable/courses", "calendar/routes/api.timetable.courses.ts"),
   // JobX browser extension export — see jobx-extension/README.md.
   route("api/timesheets/export", "routes/api.timesheets.export.ts"),
@@ -686,6 +687,19 @@ export default [
     "api/partner-contacts/:id/email-thread/:indexId",
     "partners/routes/api.partner-contacts.$id.email-thread.$indexId.ts",
   ),
+  // Scheduling: Core links a real ScheduledMeeting to an application, and
+  // responds to a partner's self-service meeting request.
+  route(
+    "api/partner-applications/:id/meetings/link",
+    "partners/routes/api.partner-applications.$id.meetings.link.ts",
+  ),
+  route(
+    "api/partner-meeting-requests/:id",
+    "partners/routes/api.partner-meeting-requests.$id.ts",
+  ),
+  // Scheduling: the partner portal's real-availability grid + request submit.
+  route("api/partner/availability", "partners/routes/api.partner.availability.ts"),
+  route("api/partner/meeting-requests", "partners/routes/api.partner.meeting-requests.ts"),
 
 
   // Hiring API — cycles, scheduling, applications, reviews, decisions, interviews, delibs

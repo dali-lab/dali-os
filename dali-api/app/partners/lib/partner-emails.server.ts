@@ -200,6 +200,32 @@ export async function sendApplicationReceivedEmail(
   );
 }
 
+// Sent when Core declines a partner's self-service meeting request (the real
+// scheduler grid on the portal).
+export async function sendMeetingRequestDeclinedEmail(
+  to: string,
+  contactName: string | null,
+  note?: string | null,
+): Promise<void> {
+  const portalUrl = `${getFrontendUrl()}/partner`;
+  await send(
+    to,
+    {
+      subject: "About your meeting request",
+      preheader: "The DALI team can't make that time work.",
+      bodyHtml: [
+        greeting(contactName),
+        `<p style="margin:0 0 16px;">We're not able to meet at the time you requested.</p>`,
+        note ? typed(note) : "",
+        `<p style="margin:0;"><a href="${escapeHtml(portalUrl)}">Request another time</a> whenever works for you.</p>`,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    },
+    { eventType: "partner.meeting_request_declined" },
+  );
+}
+
 export async function sendMemberEmailConflictEmail(to: string): Promise<void> {
   const loginUrl = `${getFrontendUrl()}/login`;
   await send(

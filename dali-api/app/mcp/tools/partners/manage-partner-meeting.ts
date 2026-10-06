@@ -2,19 +2,31 @@
 // Scope: mcp:write. Gated to isCore.
 //
 // Actions:
-//   create  — create a PartnerMeeting row for an application (mirrors meeting-create intent).
-//             Accepts scheduledAt (ISO string), optional attendeeUserIds, optional notes.
-//             Does NOT email the partner — the web intent's notifyPartner option is intentionally
-//             omitted here per the no-email rule. Use update_stage or add_note for comms context.
+//   create  — three ways to create a PartnerMeeting row for an application:
+//             (a) scheduledMeetingId — link an already-created ScheduledMeeting
+//                 (routes through linkScheduledMeetingToApplication, the same
+//                 helper the web scheduler uses).
+//             (b) startTime + participantUserIds — create a real
+//                 ScheduledMeeting (Google invite + Meet link when the caller
+//                 has a linked calendar) and link it, same as (a).
+//             (c) scheduledAt (legacy) — a bare log row with no ScheduledMeeting
+//                 behind it, for a meeting that didn't go through the real
+//                 scheduler. Accepts optional attendeeUserIds / notes.
+//             None of these email the partner directly — Google's own invite
+//             does for (a)/(b); (c) stays silent, matching the no-email rule.
 //   debrief — set debrief text and/or outcome on an existing meeting (mirrors meeting-debrief intent).
 //
 // Web fns reused: logPartnerActivity (from partner-activity.server) for the
-// MeetingScheduled / MeetingDebriefed activity rows. The PartnerMeeting create/update
-// themselves are direct Prisma calls (same as the web action — no helper wrapping them).
+// MeetingDebriefed activity row, and linkScheduledMeetingToApplication /
+// createScheduledMeeting (from partner-meetings.server / scheduled-meeting)
+// for the (a)/(b) create paths. The legacy (c) path and debrief stay direct
+// Prisma calls, same as the original web action.
 
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
 import { logPartnerActivity } from "~/partners/lib/partner-activity.server";
+import { linkScheduledMeetingToApplication } from "~/partners/lib/partner-meetings.server";
+import { createScheduledMeeting } from "~/lib/scheduled-meeting";
 import {
   McpForbiddenError,
   McpNotFoundError,
@@ -29,7 +41,9 @@ export const MANAGE_PARTNER_MEETING_TOOL = {
   name: "manage_partner_meeting",
   description:
     "Log and debrief discovery/partner meetings (Core only). " +
-    "Actions: create (applicationId+scheduledAt required; attendeeUserIds optional array of user ids; notes optional — does NOT email the partner), " +
+    "create (applicationId required) takes exactly one of: scheduledMeetingId (link an existing ScheduledMeeting), " +
+    "startTime+participantUserIds (create a real ScheduledMeeting via the calendar and link it; optional durationMinutes default 30, title default 'DALI x <contact>', guestEmails default the applicant's email), " +
+    "or scheduledAt (legacy log-only row, no ScheduledMeeting; attendeeUserIds/notes optional) — none of these email the partner directly. " +
     "debrief (meetingId+applicationId required; debrief text and/or outcome: Advance|Hold|Reject|MoreInfoNeeded).",
   inputSchema: {
     type: "object" as const,
@@ -43,18 +57,47 @@ export const MANAGE_PARTNER_MEETING_TOOL = {
         type: "string",
         description: "PartnerApplication id. Required for both actions.",
       },
+      scheduledMeetingId: {
+        type: "string",
+        description: "Link this already-created ScheduledMeeting.id to the application (create).",
+      },
+      startTime: {
+        type: "string",
+        description: "ISO 8601 start time — creates a real ScheduledMeeting via the calendar (create).",
+      },
+      participantUserIds: {
+        type: "array",
+        items: { type: "string" },
+        description: "DALI member user ids to invite — required alongside startTime (create).",
+      },
+      durationMinutes: {
+        type: "integer",
+        minimum: 5,
+        maximum: 480,
+        description: "Meeting length when creating via startTime (create). Defaults to 30.",
+      },
+      title: {
+        type: "string",
+        description: "Meeting title when creating via startTime (create). Defaults to 'DALI x <contact name>'.",
+      },
+      guestEmails: {
+        type: "array",
+        items: { type: "string" },
+        description: "Guest emails when creating via startTime (create). Defaults to the applicant contact's email.",
+      },
       scheduledAt: {
         type: "string",
-        description: "ISO 8601 datetime for the meeting (create). E.g. '2026-10-15T14:00:00Z'.",
+        description:
+          "ISO 8601 datetime for a legacy log-only meeting with no ScheduledMeeting behind it (create).",
       },
       attendeeUserIds: {
         type: "array",
         items: { type: "string" },
-        description: "User ids of Core attendees (create, optional).",
+        description: "User ids of Core attendees (create via scheduledAt, optional).",
       },
       notes: {
         type: "string",
-        description: "Pre-meeting notes or agenda (create, optional).",
+        description: "Pre-meeting notes or agenda (create via scheduledAt, optional).",
       },
       meetingId: {
         type: "string",
@@ -87,14 +130,103 @@ export async function runManagePartnerMeeting(
   const action = input.action as string;
 
   requireForAction(action, input, {
-    create: ["applicationId", "scheduledAt"],
+    create: ["applicationId"],
     debrief: ["applicationId", "meetingId"],
   });
 
   // ── create ────────────────────────────────────────────────────────────────
   if (action === "create") {
     const applicationId = input.applicationId as string;
-    const scheduledAtRaw = (input.scheduledAt as string).trim();
+
+    const scheduledMeetingId =
+      typeof input.scheduledMeetingId === "string" ? input.scheduledMeetingId.trim() : null;
+    const startTimeRaw = typeof input.startTime === "string" ? input.startTime.trim() : null;
+    const participantUserIds = Array.isArray(input.participantUserIds)
+      ? (input.participantUserIds as string[]).map((v) => String(v).trim()).filter(Boolean)
+      : [];
+    const scheduledAtRaw = typeof input.scheduledAt === "string" ? input.scheduledAt.trim() : null;
+
+    // ── (a) link an already-created ScheduledMeeting ──────────────────────
+    if (scheduledMeetingId) {
+      const linked = await linkScheduledMeetingToApplication({
+        applicationId,
+        scheduledMeetingId,
+        actorUserId: callerId,
+      });
+      if (!linked) {
+        throw new McpNotFoundError(
+          `Partner application ${applicationId} or scheduled meeting ${scheduledMeetingId} not found`,
+        );
+      }
+      return { id: linked.id, scheduledAt: linked.scheduledAt.toISOString(), scheduledMeetingId };
+    }
+
+    // ── (b) create a real ScheduledMeeting, then link it ──────────────────
+    if (startTimeRaw) {
+      if (participantUserIds.length === 0) {
+        throw new McpInvalidError("participantUserIds is required alongside startTime");
+      }
+      const startTime = new Date(startTimeRaw);
+      if (isNaN(startTime.getTime())) {
+        throw new McpInvalidError(`Invalid startTime value: '${startTimeRaw}'`);
+      }
+      const app = await prisma.partnerApplication.findUnique({
+        where: { id: applicationId },
+        select: { applicantContact: { select: { name: true, email: true } } },
+      });
+      if (!app) throw new McpNotFoundError(`Partner application ${applicationId} not found`);
+
+      const organizer = await prisma.user.findUnique({
+        where: { id: callerId },
+        select: { daliEmail: true, dartmouthEmail: true },
+      });
+      const organizerEmail = organizer?.daliEmail ?? organizer?.dartmouthEmail;
+      if (!organizerEmail) {
+        throw new McpInvalidError("Caller has no email on file to organize the meeting");
+      }
+
+      const guestEmails = Array.isArray(input.guestEmails)
+        ? (input.guestEmails as string[]).map((v) => String(v).trim()).filter(Boolean)
+        : app.applicantContact?.email
+          ? [app.applicantContact.email]
+          : undefined;
+
+      const created = await createScheduledMeeting({
+        organizerId: callerId,
+        organizerEmail,
+        title:
+          typeof input.title === "string" && input.title.trim()
+            ? input.title.trim()
+            : `DALI x ${app.applicantContact?.name ?? "partner"}`,
+        durationMinutes:
+          typeof input.durationMinutes === "number" && input.durationMinutes > 0
+            ? input.durationMinutes
+            : 30,
+        scope: { type: "UserList", participantUserIds },
+        startTime: startTime.toISOString(),
+        guestEmails,
+        addMeet: true,
+      });
+      if (!created.ok) throw new McpInvalidError(created.error);
+
+      const linked = await linkScheduledMeetingToApplication({
+        applicationId,
+        scheduledMeetingId: created.meeting.id,
+        actorUserId: callerId,
+      });
+      return {
+        id: linked?.id ?? created.meeting.id,
+        scheduledAt: created.meeting.selectedAt?.toISOString() ?? startTime.toISOString(),
+        scheduledMeetingId: created.meeting.id,
+      };
+    }
+
+    // ── (c) legacy log-only row, no ScheduledMeeting ───────────────────────
+    if (!scheduledAtRaw) {
+      throw new McpInvalidError(
+        "create requires one of: scheduledMeetingId, startTime+participantUserIds, or scheduledAt",
+      );
+    }
     const scheduledAt = new Date(scheduledAtRaw);
     if (isNaN(scheduledAt.getTime())) {
       throw new McpInvalidError(`Invalid scheduledAt value: '${scheduledAtRaw}'`);
