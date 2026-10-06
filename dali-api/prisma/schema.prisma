@@ -1833,10 +1833,23 @@ model SigningDocument {
   // opt-in (set on the mentorship agreement).
   requiresMenteeCountersign Boolean @default(false)
 
+  // Optional categorical tag for special-purpose documents (e.g. the partner
+  // contract template picker). Audience/cadence/gateScope still drive all
+  // enforcement — this is a UI/API filter only. Null = an ordinary agreement.
+  kind SigningDocumentKind?
+
   archivedAt DateTime?
 
   versions SigningDocumentVersion[]
   bindings SigningBinding[]
+}
+
+// One value today. A document flagged PartnerContract is offered in the
+// Partner CRM's contract-send picker; bound ad hoc per application
+// (scopeKey `partner-app:<id>`) rather than through the member audience
+// system, so it stays outside SigningAudience/SigningCadence entirely.
+enum SigningDocumentKind {
+  PartnerContract
 }
 
 enum SigningGateScope {

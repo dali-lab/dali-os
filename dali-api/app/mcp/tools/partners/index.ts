@@ -59,6 +59,10 @@ import {
   MANAGE_PARTNER_CONTACT_TOOL,
   runManagePartnerContact,
 } from "./manage-partner-contact";
+import {
+  MANAGE_PARTNER_INVOICE_TOOL,
+  runManagePartnerInvoice,
+} from "./manage-partner-invoice";
 
 export const PARTNERS_TOOLS: McpTool[] = [
   {
@@ -134,5 +138,9 @@ export const PARTNERS_TOOLS: McpTool[] = [
   {
     def: MANAGE_PARTNER_CONTACT_TOOL,
     run: (ctx: McpCtx, args) => runManagePartnerContact(ctx.user.id, args),
+  },
+  {
+    def: MANAGE_PARTNER_INVOICE_TOOL,
+    run: (ctx: McpCtx, args) => runManagePartnerInvoice(ctx.user.id, args),
   },
 ];

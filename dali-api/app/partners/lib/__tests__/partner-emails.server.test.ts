@@ -22,6 +22,8 @@ import {
   sendLearnMoreRequestEmail,
   sendMeetingInviteEmail,
   sendMemberEmailConflictEmail,
+  sendContractSentEmail,
+  sendSowSharedEmail,
 } from "~/partners/lib/partner-emails.server";
 
 const mockEnqueue = enqueueOutbound as unknown as ReturnType<typeof vi.fn>;
@@ -66,6 +68,16 @@ describe("partner emails escape interpolated values", () => {
   it("escapes a proposed meeting time", async () => {
     await sendMeetingInviteEmail("p@x.com", "Ada", "Tue 2pm <ET>");
     expect(sent().bodyHtml).toContain("&lt;ET&gt;");
+  });
+
+  it("escapes a contact name on the contract-sent email", async () => {
+    await sendContractSentEmail("p@x.com", '<img src=x onerror="alert(1)">', "https://os.dali.dartmouth.edu/x");
+    expect(sent().bodyHtml).not.toContain("<img");
+  });
+
+  it("escapes a contact name on the SOW-shared email", async () => {
+    await sendSowSharedEmail("p@x.com", "<b>Ada</b>", "app-1");
+    expect(sent().bodyHtml).not.toContain("<b>Ada</b>");
   });
 });
 

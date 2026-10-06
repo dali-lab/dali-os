@@ -97,7 +97,9 @@ export const prisma = {
   },
   collabDocumentVersion: {
     findMany: vi.fn().mockResolvedValue([]),
+    findFirst: vi.fn(),
     create: vi.fn(),
+    update: vi.fn(),
   },
   interviewAssignment: {
     findUnique: vi.fn(),
@@ -129,16 +131,22 @@ export const prisma = {
   signingDocument: {
     findMany: vi.fn().mockResolvedValue([]),
   },
+  signingDocumentVersion: {
+    findFirst: vi.fn(),
+    findUnique: vi.fn(),
+  },
   signingBinding: {
     findFirst: vi.fn().mockResolvedValue({ versionId: "mock-cav-id" }),
     findUnique: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
     create: vi.fn(),
+    upsert: vi.fn(),
   },
   signingSignature: {
     findFirst: vi.fn().mockResolvedValue({ versionId: "mock-cav-id" }),
     findMany: vi.fn().mockResolvedValue([]),
     count: vi.fn().mockResolvedValue(0),
+    upsert: vi.fn(),
   },
   oAuthClient: {
     findUnique: vi.fn(),
@@ -241,6 +249,9 @@ export const prisma = {
   },
   projectPartner: {
     findFirst: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+  },
+  projectChartString: {
     findMany: vi.fn().mockResolvedValue([]),
   },
   partnerInvite: {

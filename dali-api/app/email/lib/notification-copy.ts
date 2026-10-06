@@ -641,6 +641,13 @@ export const NOTIFICATION_SAMPLES: Record<TemplateVariableName, string> = {
   memberName: "Alex Rivera",
   supervisorName: "Sean Noh",
   menteeName: "Jordan Lee",
+  partnerName: "Jamie Chen",
+  orgName: "Acme Co.",
+  legalEntityName: "Acme LLC",
+  legalEntityAddress: "123 Main St, Hanover, NH",
+  fee: "$5,000.00",
+  fundingType: "DALI GL",
+  projectTitle: "Gallery Kiosk",
 };
 
 export function notificationSample(
