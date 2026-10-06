@@ -47,6 +47,14 @@ import {
   PROMOTE_PARTNER_APPLICATION_TOOL,
   runPromotePartnerApplication,
 } from "./promote-partner-application";
+import {
+  LIST_PARTNER_CONTACTS_TOOL,
+  runListPartnerContacts,
+} from "./list-partner-contacts";
+import {
+  MANAGE_PARTNER_CONTACT_TOOL,
+  runManagePartnerContact,
+} from "./manage-partner-contact";
 
 export const PARTNERS_TOOLS: McpTool[] = [
   {
@@ -109,5 +117,14 @@ export const PARTNERS_TOOLS: McpTool[] = [
         ctx.user.id,
         args as Parameters<typeof runPromotePartnerApplication>[1],
       ),
+  },
+  {
+    def: LIST_PARTNER_CONTACTS_TOOL,
+    run: (ctx: McpCtx, args) =>
+      runListPartnerContacts(ctx.user.id, args as Parameters<typeof runListPartnerContacts>[1]),
+  },
+  {
+    def: MANAGE_PARTNER_CONTACT_TOOL,
+    run: (ctx: McpCtx, args) => runManagePartnerContact(ctx.user.id, args),
   },
 ];

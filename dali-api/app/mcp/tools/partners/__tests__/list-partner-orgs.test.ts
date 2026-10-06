@@ -111,4 +111,28 @@ describe("list_partner_orgs", () => {
     expect(org.openApplicationCount).toBeUndefined();
     expect(out.openInquiryCount).toBe(2);
   });
+
+  it("includes type and derived relationship status", async () => {
+    vi.mocked(canViewStaffing).mockResolvedValue(true);
+    mockPrisma.partnerOrg = {
+      findMany: vi.fn().mockResolvedValue([
+        {
+          id: "org-1",
+          name: "Dormant Co",
+          website: null,
+          isIndividual: false,
+          type: "Startup",
+          memberships: [],
+          projects: [{ startedAt: null, endedAt: new Date("2020-01-01"), project: { status: "Active" } }],
+          activities: [{ createdAt: new Date("2020-02-01") }],
+        },
+      ]),
+    };
+    mockPrisma.partnerApplication = { count: vi.fn().mockResolvedValue(0) };
+
+    const out = await runListPartnerOrgs("u1", {});
+    const org = (out.orgs as Array<Record<string, unknown>>)[0];
+    expect(org.type).toBe("Startup");
+    expect(org.status).toBe("Dormant");
+  });
 });
