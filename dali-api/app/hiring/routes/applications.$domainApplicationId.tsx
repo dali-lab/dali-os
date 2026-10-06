@@ -33,6 +33,8 @@ import {
 import { findFinalizableDraft } from "~/hiring/lib/decision-pills";
 import { getEducationEngagement } from "~/education/lib/engagement.server";
 import { EducationEngagementPanel } from "~/education/components/EducationEngagementPanel";
+import { listPriorApplications } from "~/hiring/lib/prior-applications.server";
+import { PriorApplicationsPanel } from "~/hiring/components/PriorApplicationsPanel";
 import type { Question, RubricCriterion } from "~/types";
 import { findRound, parseTimeline } from "~/hiring/lib/cycle-timeline";
 import { Select } from "~/components/ui/floating";
@@ -474,6 +476,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // the shared User row. Includes internal instructor notes — this page
   // already sits behind reviewer access + confidentiality signing.
   const educationEngagement = await getEducationEngagement(da.application.user.id);
+  const priorApplications = await listPriorApplications({
+    userId: da.application.user.id,
+    currentApplicationId: da.application.id,
+    hideOutcomes: false,
+  });
 
   return {
     applicantName:
@@ -482,6 +489,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         .join(" ")
         .trim() || "Applicant",
     educationEngagement,
+    priorApplications,
     cycleName: da.application.applicationCycle.name,
     domainName,
     application,
@@ -598,6 +606,11 @@ export default function ApplicationReadOnlyDetail() {
       </div>
 
       <EducationEngagementPanel entries={data.educationEngagement} />
+      <PriorApplicationsPanel
+        entries={data.priorApplications}
+        outcomesHidden={false}
+        hrefFor={(_entry, domainApplicationId) => `/hiring/applications/${domainApplicationId}`}
+      />
 
       <InterviewsSection
         interviews={data.interviews}

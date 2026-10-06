@@ -34,6 +34,8 @@ import {
   inferDomainApplicationStatus,
   domainApplicationStatusInclude,
 } from "~/hiring/lib/domain-application-status";
+import { listPriorApplications } from "~/hiring/lib/prior-applications.server";
+import { PriorApplicationsPanel } from "~/hiring/components/PriorApplicationsPanel";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
 import type { Question } from "~/types";
 import { RECOMMENDATION_TONES } from "~/hiring/lib/labels";
@@ -291,6 +293,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     })),
   );
 
+  const priorApplications = await listPriorApplications({
+    userId: da.application.user.id,
+    currentApplicationId: da.application.id,
+    hideOutcomes: false,
+  });
+
   return {
       domainApplication: {
         ...da,
@@ -322,12 +330,20 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       criteriaByKey,
       timeline,
       canMoveStage,
+      priorApplications,
     };
 }
 
 export default function DomainLeadApplicationView() {
-  const { domainApplication: da, application, inferredStatus, criteriaByKey, timeline, canMoveStage } =
-    useLoaderData<typeof loader>() as any;
+  const {
+    domainApplication: da,
+    application,
+    inferredStatus,
+    criteriaByKey,
+    timeline,
+    canMoveStage,
+    priorApplications,
+  } = useLoaderData<typeof loader>() as any;
 
   const generalQuestions: any[] = application.generalChallengeVersion?.questions ?? [];
   const challengeQuestions: any[] = da.challengeVersion?.questions ?? [];
@@ -384,11 +400,16 @@ export default function DomainLeadApplicationView() {
       {/* Two-column layout */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left: Application content */}
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-2 space-y-6">
           <ApplicationViewer
             application={viewerApplication}
             questionLabels={questionLabels}
             readOnly
+          />
+          <PriorApplicationsPanel
+            entries={priorApplications}
+            outcomesHidden={false}
+            hrefFor={(_entry: any, domainApplicationId: string) => `/hiring/applications/${domainApplicationId}`}
           />
         </div>
 

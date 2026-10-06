@@ -47,6 +47,7 @@ describe("listMyHiringApplications", () => {
     mockPrisma.application.findMany.mockResolvedValue([
       {
         id: "app-1",
+        applicationType: "Standard",
         statusUpdates: [
           { newStatus: "Draft", createdAt: d("2026-01-01") },
           { newStatus: "Submitted", createdAt: d("2026-01-03") },
@@ -83,6 +84,7 @@ describe("listMyHiringApplications", () => {
       cycleId: "cycle-1",
       cycleName: "Fall 2026",
       applicationStatus: "Submitted",
+      applicationType: "Standard",
       domains: [{ id: "da-1", domainName: "Design", status: "Pending" }],
     });
     expect(entry.submittedAt).toEqual(d("2026-01-03"));
@@ -92,6 +94,7 @@ describe("listMyHiringApplications", () => {
     mockPrisma.application.findMany.mockResolvedValue([
       {
         id: "app-2",
+        applicationType: "Fellowship",
         statusUpdates: [{ newStatus: "Draft", createdAt: d("2026-02-01") }],
         applicationCycle: {
           id: "cycle-2",
@@ -115,6 +118,7 @@ describe("listMyHiringApplications", () => {
 
     expect(entry.applicationStatus).toBe("Draft");
     expect(entry.submittedAt).toBeNull();
+    expect(entry.applicationType).toBe("Fellowship");
     expect(entry.domains[0].status).toBe("ApplicationOpen");
   });
 });
