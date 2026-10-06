@@ -7,9 +7,11 @@ const tx = vi.hoisted(() => ({
 vi.mock("~/lib/db", () => ({
   prisma: {
     scheduledMeeting: { findUnique: vi.fn() },
+    displayScanSession: { deleteMany: vi.fn() },
     $transaction: vi.fn((fn: (t: typeof tx) => unknown) => fn(tx)),
   },
 }));
+vi.mock("~/lib/display", () => ({ fullName: vi.fn() }));
 vi.mock("~/lib/scheduled-meeting", () => ({
   CHECK_IN_GRACE_MIN: 15,
   resolveMeetingOccurrence: vi.fn(),
@@ -17,7 +19,7 @@ vi.mock("~/lib/scheduled-meeting", () => ({
 
 import { prisma } from "~/lib/db";
 import { resolveMeetingOccurrence } from "~/lib/scheduled-meeting";
-import { startDisplayScan } from "~/lib/display-scan.server";
+import { startDisplayScan, stopDisplayScan } from "~/lib/display-scan.server";
 
 const occurrenceStart = new Date("2026-09-30T22:00:00Z");
 const meeting = {
@@ -48,7 +50,7 @@ afterEach(() => vi.useRealTimers());
 describe("startDisplayScan", () => {
   it("lapses at the occurrence's end plus the check-in grace", async () => {
     const expiresAt = new Date("2026-09-30T23:15:00Z");
-    expect(await startDisplayScan("m1", occurrenceStart, "u1")).toEqual({ ok: true, expiresAt });
+    expect(await startDisplayScan("m1", occurrenceStart, "u1")).toEqual({ ok: true, expiresAt, displaced: null });
     expect(tx.displayScanSession.create).toHaveBeenCalledWith({
       data: { scheduledMeetingId: "m1", occurrenceStart, expiresAt, startedByUserId: "u1" },
     });
@@ -64,6 +66,20 @@ describe("startDisplayScan", () => {
     expect(result).toMatchObject({ ok: false, status: 409, error: expect.stringContaining("Design critique") });
     expect(tx.displayScanSession.deleteMany).not.toHaveBeenCalled();
     expect(tx.displayScanSession.create).not.toHaveBeenCalled();
+  });
+
+  it("takes the iPads over from another event when asked", async () => {
+    tx.displayScanSession.findFirst.mockResolvedValue({
+      scheduledMeetingId: "m2",
+      occurrenceStart,
+      scheduledMeeting: { title: "Design critique" },
+    });
+    const result = await startDisplayScan("m1", occurrenceStart, "u1", { takeOver: true });
+    expect(result).toEqual({ ok: true, expiresAt: new Date("2026-09-30T23:15:00Z"), displaced: "Design critique" });
+    expect(tx.displayScanSession.deleteMany).toHaveBeenCalledWith({});
+    expect(tx.displayScanSession.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ scheduledMeetingId: "m1" }) }),
+    );
   });
 
   it("refuses another occurrence of the same series too", async () => {
@@ -96,6 +112,19 @@ describe("startDisplayScan", () => {
     expect(await startDisplayScan("m1", occurrenceStart, "u1")).toEqual({
       ok: true,
       expiresAt: new Date("2026-10-01T09:00:00Z"),
+      displaced: null,
     });
+  });
+});
+
+describe("stopDisplayScan", () => {
+  it("stops one meeting's scan from its page", async () => {
+    await stopDisplayScan("m1");
+    expect(prisma.displayScanSession.deleteMany).toHaveBeenCalledWith({ where: { scheduledMeetingId: "m1" } });
+  });
+
+  it("stops whatever is live when no meeting is named", async () => {
+    await stopDisplayScan();
+    expect(prisma.displayScanSession.deleteMany).toHaveBeenCalledWith({ where: {} });
   });
 });

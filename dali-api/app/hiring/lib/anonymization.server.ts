@@ -99,3 +99,39 @@ export function blindUser<T extends { firstName?: unknown; lastName?: unknown }>
   }
   return blinded as T;
 }
+
+/**
+ * The reviewer-page blind-review predicate as a reusable label lookup: null
+ * when this reviewer should see the applicant's real identity on this
+ * application, otherwise the stable "Applicant N" pseudonym. Scopes the
+ * released-decision check to the domain applications this reviewer is
+ * actually assigned to, same as reviewer.application.$id's loader.
+ */
+export async function reviewerBlindLabel(args: {
+  reviewerId: string;
+  cycleId: string;
+  applicationId: string;
+  anonymizeReview: boolean;
+}): Promise<string | null> {
+  const { reviewerId, cycleId, applicationId, anonymizeReview } = args;
+  if (!anonymizeReview) return null;
+
+  const cycleReviewers = await prisma.cycleReviewer.findMany({
+    where: { applicationCycleId: cycleId, userId: reviewerId },
+    select: { domainId: true },
+  });
+  const domainIds = cycleReviewers.map((cr) => cr.domainId);
+
+  const domainApplications = await prisma.domainApplication.findMany({
+    where: { applicationId, selected: true, domainId: { in: domainIds } },
+    select: { id: true },
+  });
+  const daIds = domainApplications.map((da) => da.id);
+
+  const released = await releasedDaIds(daIds);
+  const blinded = daIds.length === 0 || daIds.some((id) => !released.has(id));
+  if (!blinded) return null;
+
+  const labelMap = await anonLabelMapForCycle(cycleId);
+  return labelMap.get(applicationId) ?? anonLabel(1);
+}

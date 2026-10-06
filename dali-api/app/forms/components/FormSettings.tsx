@@ -10,6 +10,7 @@ import { DateField } from "~/components/ui/DateField";
 import { Tooltip } from "~/components/ui/floating";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import type { HiringFormLink } from "~/hiring/lib/form-links.server";
+import { orderGroupsForPicker } from "~/lib/group-kind";
 
 type Usage = { kind: string; label: string; href?: string | null };
 
@@ -116,7 +117,13 @@ export function FormSettingsButton({
 }
 
 type AudienceValue = "Members" | "SignedIn" | "Groups" | "Public";
-type GroupOption = { id: string; name: string; type: "Static" | "Dynamic" };
+type GroupOption = {
+  id: string;
+  name: string;
+  type: "Static" | "Dynamic";
+  systemKey: string | null;
+  memberCount: number;
+};
 
 const AUDIENCE_OPTIONS: { value: AudienceValue; label: string }[] = [
   { value: "Members", label: "Lab members" },
@@ -323,10 +330,10 @@ function FormSettingsFields({
           <div className="ml-6 flex flex-col gap-1.5">
             {groups.length === 0 ? (
               <span className="text-xs text-muted-foreground">
-                No groups yet. Create them in Admin › Groups.
+                No groups yet. Create them in People › Groups.
               </span>
             ) : (
-              groups.map((g) => (
+              orderGroupsForPicker(groups, groupSel).map((g) => (
                 <Checkbox
                   key={g.id}
                   checked={groupSel.has(g.id)}

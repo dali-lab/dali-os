@@ -24,6 +24,7 @@ import {
 import { listMemberStaffingForms, type MemberStaffingForm } from "~/projects/lib/member-staffing.server";
 import { listMySignedDocuments } from "~/signing/lib/state.server";
 import {
+  canViewForms,
   currentTerm,
   getUserRoles,
   instructorRoleLabel,
@@ -31,6 +32,8 @@ import {
   isCore,
   isLabMentor,
 } from "~/lib/roles";
+import { listAllGroups } from "~/lib/groups";
+import { groupKind, orderGroupsForPicker, type GroupKind } from "~/lib/group-kind";
 import {
   ALLOWED_LEVELS,
   parseLevel,
@@ -48,6 +51,7 @@ import { walletAppleConfigured } from "~/lib/wallet-apple.server";
 import { walletGoogleConfigured } from "~/lib/wallet-google.server";
 import { isValidTimezone } from "~/lib/timezone";
 import { getEducationProfile } from "~/education/lib/engagement.server";
+import type { AttendanceSummary } from "~/education/lib/session-time";
 import {
   mentorshipPairWhere,
   mentorNoteWhere,
@@ -180,7 +184,7 @@ export type ProfilePageData = {
       startsAt: Date | null;
       endsAt: Date | null;
       status: string;
-      attendance: { present: number; excused: number; total: number };
+      attendance: AttendanceSummary;
       certificateIssuedAt: Date | null;
     }>;
     taught: Array<{
@@ -200,6 +204,13 @@ export type ProfilePageData = {
   /** Whether the viewer may reset/revoke this member's wallet pass — the member
    *  themself (lost phone) or Core (offboarding / abuse). */
   canRevokeWalletPass: boolean;
+  /** Custom and lab-wide groups this member belongs to. Project/domain/term/
+   *  offering groups are excluded — those are already shown elsewhere on the
+   *  profile as assignments and domain eligibilities. */
+  groups: Array<{ id: string; name: string; kind: GroupKind }>;
+  /** Whether the viewer may see the Groups card at all — mirrors the Groups
+   *  page's own canViewForms gate (Core/Admin/Instructor). */
+  canSeeGroups: boolean;
 };
 
 const TEXT_FIELDS = [
@@ -298,7 +309,7 @@ export async function loadProfilePage({
   });
   if (!member) throw new Response("Not found", { status: 404 });
 
-  const [roles, term, allDomains, photoUrlResolved, presenceUser] =
+  const [roles, term, allDomains, photoUrlResolved, presenceUser, canSeeGroups, allGroups] =
     await Promise.all([
       getUserRoles(targetId),
       currentTerm(),
@@ -309,7 +320,17 @@ export async function loadProfilePage({
       }),
       resolvePhotoUrl(member.photoUrl),
       getPresenceUser(auth.user.sub),
+      canViewForms(auth.user.sub, request),
+      listAllGroups(),
     ]);
+
+  const groups = orderGroupsForPicker(
+    allGroups.filter((g) => {
+      if (g.archived || !g.memberIds.includes(targetId)) return false;
+      const kind = groupKind(g);
+      return kind === "custom" || kind === "lab";
+    }),
+  ).map((g) => ({ id: g.id, name: g.name, kind: groupKind(g) }));
 
   const [projectAssignmentRows, pendingReviews] = await Promise.all([
     term
@@ -605,6 +626,8 @@ export async function loadProfilePage({
     education,
     wallet,
     canRevokeWalletPass,
+    groups,
+    canSeeGroups,
 
     mentorshipPanel,
   };

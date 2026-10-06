@@ -13,7 +13,8 @@ import { getCollabToken } from "~/lib/collab-token.server";
 import { getPresenceUser } from '~/lib/presence-user'
 import { requirePageSignedOrRedirect } from '~/hiring/lib/confidentiality'
 import { presignAnswers } from '~/hiring/lib/presign'
-import { anonLabelMapForCycle, releasedDaIds, blindUser, anonLabel } from '~/hiring/lib/anonymization.server'
+import { blindUser, reviewerBlindLabel } from '~/hiring/lib/anonymization.server'
+import { listPriorApplications } from '~/hiring/lib/prior-applications.server'
 import { ensureBlocks } from '~/collab/legacy/pm-to-blocknote'
 import { safeParseJsonString } from '~/forms/lib/forms-data'
 import type { Route } from './+types/reviewer.application.$id'
@@ -24,6 +25,7 @@ import { PresenceProvider } from '~/components/collab/PresenceProvider'
 import { PresenceBar } from '~/components/collab/PresenceBar'
 import { getEducationEngagement } from '~/education/lib/engagement.server'
 import { EducationEngagementPanel } from '~/education/components/EducationEngagementPanel'
+import { PriorApplicationsPanel } from '~/hiring/components/PriorApplicationsPanel'
 import { Radio } from '~/components/ui/Radio'
 import { Tooltip, InfoTip } from "~/components/ui/floating";
 import type { Question, RubricCriterion } from '~/types'
@@ -112,18 +114,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // education engagement below still keys off it, server-side.
   const applicantUserId = applicationBase.user.id
   const cycle = applicationBase.applicationCycle
-  if (cycle.anonymizeReview) {
-    const daIds = domainApplications.map((d) => d.id)
-    const released = await releasedDaIds(daIds)
-    const blinded = daIds.length === 0 || daIds.some((id) => !released.has(id))
-    if (blinded) {
-      const labelMap = await anonLabelMapForCycle(applicationBase.applicationCycleId)
-      applicationBase.user = blindUser(
-        applicationBase.user,
-        labelMap.get(applicationBase.id) ?? anonLabel(1),
-      )
-    }
-  }
+  const blindLabel = await reviewerBlindLabel({
+    reviewerId: auth.user.sub,
+    cycleId: applicationBase.applicationCycleId,
+    applicationId: applicationBase.id,
+    anonymizeReview: cycle.anonymizeReview,
+  })
+  const blinded = blindLabel != null
+  if (blindLabel) applicationBase.user = blindUser(applicationBase.user, blindLabel)
 
   // After the cycle-access + confidentiality gates — the application the reviewer
   // can open lands in their recents, keyed to the applicant's (possibly blinded)
@@ -232,11 +230,21 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // instructor notes; this page is behind cycle access + confidentiality.
   const educationEngagement = await getEducationEngagement(applicantUserId)
 
+  // This applicant's other submitted cycles. Outcomes are nulled server-side
+  // while this reviewer is still blinded to them.
+  const priorApplications = await listPriorApplications({
+    userId: applicantUserId,
+    currentApplicationId: applicationBase.id,
+    hideOutcomes: blinded,
+  })
+
   return {
     application,
     reviewer,
     existingReview: review,
     educationEngagement,
+    priorApplications,
+    blinded,
     collabToken,
     userName,
     currentUserId: auth.user.sub,
@@ -318,6 +326,8 @@ export default function ReviewerApplicationReview() {
     reviewer,
     existingReview,
     educationEngagement,
+    priorApplications,
+    blinded,
     collabToken,
     userName,
     currentUserId,
@@ -449,6 +459,11 @@ export default function ReviewerApplicationReview() {
         {/* Left: Application Content */}
         <div className="lg:col-span-2 space-y-6">
           <EducationEngagementPanel entries={educationEngagement} />
+          <PriorApplicationsPanel
+            entries={priorApplications}
+            outcomesHidden={blinded}
+            hrefFor={(entry) => `/hiring/reviewer/application/${application.id}/prior/${entry.id}`}
+          />
           <ApplicationViewer
             application={application}
             questionLabels={questionLabels}

@@ -229,12 +229,12 @@ describe("meeting page — attendance tracking from iPad", () => {
     vi.useFakeTimers({ now: new Date("2026-01-05T14:00:00.000Z") });
     mockAuth.mockResolvedValue({ ok: true, user: { sub: "organizer-1", type: "member" } });
     vi.mocked(getActiveDisplayScan).mockResolvedValue(null);
-    vi.mocked(startDisplayScan).mockResolvedValue({ ok: true, expiresAt: new Date() });
+    vi.mocked(startDisplayScan).mockResolvedValue({ ok: true, expiresAt: new Date(), displaced: null });
   });
   afterEach(() => vi.useRealTimers());
 
   it("offers it to the organizer", async () => {
-    expect(await ipadScan()).toEqual({ on: false, busyWith: null, ended: false });
+    expect(await ipadScan()).toEqual({ on: false, busyWith: null, busyHref: null, ended: false });
   });
 
   it("shows it on for the occurrence that has the iPads", async () => {
@@ -245,6 +245,8 @@ describe("meeting page — attendance tracking from iPad", () => {
       start: null,
       end: null,
       isEvent: false,
+      startedBy: null,
+      expiresAt: new Date(),
     });
     expect(await ipadScan()).toMatchObject({ on: true, busyWith: null });
   });
@@ -257,8 +259,24 @@ describe("meeting page — attendance tracking from iPad", () => {
       start: null,
       end: null,
       isEvent: true,
+      startedBy: null,
+      expiresAt: new Date(),
     });
-    expect(await ipadScan()).toMatchObject({ on: false, busyWith: "Lab night" });
+    expect(await ipadScan()).toMatchObject({
+      on: false,
+      busyWith: "Lab night",
+      busyHref: `/calendar/meeting/m2?occurrence=${encodeURIComponent(occurrenceStart)}`,
+    });
+  });
+
+  it("takes the iPads over from the other event", async () => {
+    vi.mocked(startDisplayScan).mockResolvedValue({ ok: true, expiresAt: new Date(), displaced: "Lab night" });
+    const res = await toggle("takeover-ipad-scan");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, displaced: "Lab night" });
+    expect(startDisplayScan).toHaveBeenCalledWith("m1", new Date(occurrenceStart), "organizer-1", {
+      takeOver: true,
+    });
   });
 
   it("withholds it from a project member", async () => {
@@ -271,7 +289,9 @@ describe("meeting page — attendance tracking from iPad", () => {
 
   it("starts and stops scanning for this occurrence", async () => {
     expect((await toggle("start-ipad-scan")).status).toBe(200);
-    expect(startDisplayScan).toHaveBeenCalledWith("m1", new Date(occurrenceStart), "organizer-1");
+    expect(startDisplayScan).toHaveBeenCalledWith("m1", new Date(occurrenceStart), "organizer-1", {
+      takeOver: false,
+    });
     expect((await toggle("stop-ipad-scan")).status).toBe(200);
     expect(stopDisplayScan).toHaveBeenCalledWith("m1");
   });

@@ -3,7 +3,7 @@ import {
   domainApplicationStatusInclude,
   inferDomainApplicationStatus,
 } from "./domain-application-status";
-import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
+import type { ApplicationCycleStatus, ApplicationType } from "~/generated/prisma/enums";
 import type { DomainApplicationStatus } from "~/types";
 
 // An applicant's own hiring history — every cycle they've applied to, newest
@@ -18,6 +18,7 @@ export type HiringHistoryEntry = {
   /** Draft | Submitted | Withdrawn — the applicant's own progress, not the lab's. */
   applicationStatus: "Draft" | "Submitted" | "Withdrawn";
   submittedAt: Date | null;
+  applicationType: ApplicationType;
   domains: { id: string; domainName: string; status: DomainApplicationStatus }[];
 };
 
@@ -75,6 +76,7 @@ export async function listMyHiringApplications(
       cycleName: a.applicationCycle.name,
       applicationStatus: overallApplicationStatus(a.statusUpdates),
       submittedAt: submitted?.createdAt ?? null,
+      applicationType: a.applicationType,
       domains: a.domainApplications.map((da) => ({
         id: da.id,
         domainName: da.domain?.name ?? "Unknown",

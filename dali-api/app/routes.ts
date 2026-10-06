@@ -34,6 +34,12 @@ export default [
     // Redirects into My work, as does hiring/interviews.
     route("hiring/reviewer", "hiring/routes/reviewer.tsx"),
     route("hiring/reviewer/application/:id", "hiring/routes/reviewer.application.$id.tsx"),
+    // Read-only view of this same applicant's earlier, already-decided
+    // submission — reviews/decisions from that cycle are never shown.
+    route(
+      "hiring/reviewer/application/:id/prior/:priorId",
+      "hiring/routes/reviewer.application.$id.prior.$priorId.tsx",
+    ),
     // Applications database: list of all submissions for a cycle, scoped by
     // role (Core = all domains, reviewer = own domains). Read-only detail.
     route("hiring/applications", "hiring/routes/applications.tsx"),

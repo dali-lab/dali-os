@@ -3,6 +3,7 @@ import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { TypeBadge, MyStatusChip } from "./OfferingCard";
 import { InfoTip } from "~/components/ui/floating";
 import type { OfferingType } from "~/education/lib/offering-type";
+import { attendanceCopy, type AttendanceSummary } from "~/education/lib/session-time";
 
 // "Past DALI education" panel on the hiring application views: what this
 // applicant attended, how consistently they showed up, and what instructors
@@ -16,7 +17,7 @@ export type EngagementRow = {
   startsAt: string | Date | null;
   endsAt: string | Date | null;
   status: string;
-  attendance: { present: number; excused: number; total: number };
+  attendance: AttendanceSummary;
   certificateIssuedAt: string | Date | null;
   feedback: string | null;
   internalNote: string | null;
@@ -52,9 +53,7 @@ export function EducationEngagementPanel({ entries }: { entries: EngagementRow[]
             </div>
             {e.status === "Approved" && e.attendance.total > 0 && (
               <p className="text-xs text-muted-foreground mt-1">
-                Attended {e.attendance.present}
-                {e.attendance.excused > 0 ? ` (+${e.attendance.excused} excused)` : ""} of{" "}
-                {e.attendance.total} session{e.attendance.total === 1 ? "" : "s"}
+                {attendanceCopy(e.attendance, "sentence")}
               </p>
             )}
             {e.feedback && (
