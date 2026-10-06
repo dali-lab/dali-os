@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db");
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
+vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn().mockResolvedValue(false) }));
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
@@ -73,7 +74,11 @@ beforeEach(() => {
   mockPrisma.domainApplicationCycle = { findMany: vi.fn().mockResolvedValue([{ domainId: DOMAIN_ID }]) };
   mockPrisma.domain = { findMany: vi.fn().mockResolvedValue([{ id: DOMAIN_ID, displayName: "Design" }]) };
   mockPrisma.decision = { findMany: vi.fn().mockResolvedValue([]) };
+  // application.findMany serves both the anon label map and the returning-
+  // applicant lookup; neither test asserts on the latter, so one shape does.
   mockPrisma.application = { findMany: vi.fn().mockResolvedValue([{ id: APPLICATION_ID }]) };
+  mockPrisma.mailMessageIndex = { findMany: vi.fn().mockResolvedValue([]) };
+  mockPrisma.educationApplication = { findMany: vi.fn().mockResolvedValue([]) };
 
   // domainApplication.findMany is called twice with different `where` shapes:
   // once scoped to visible domains (builds the rows), once unscoped per

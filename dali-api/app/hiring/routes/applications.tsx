@@ -1,4 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { usePersistedState } from "~/hooks/usePersistedState";
+import {
+  EMPTY_FILTERS,
+  ENGAGEMENT_FILTERS,
+  isApplicationFilters,
+  type ApplicationFilters,
+} from "~/hiring/lib/application-filters";
 import { isAdminOnlyCycle } from "~/hiring/lib/applicant-groups";
 import { redirect, useLoaderData, useNavigate, useSearchParams } from "react-router";
 import { SlidersHorizontal } from "lucide-react";
@@ -7,6 +14,7 @@ import type { Route } from "./+types/applications";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { prisma } from "~/lib/db";
 import { Popover, Select } from "~/components/ui/floating";
 import { filterPillClass } from "~/components/ui/floating/styles";
@@ -47,7 +55,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return redirectToLogin(request);
   if (auth.user.type === "applicant") return redirect("/portal");
 
-  const { isCore, isAdmin, isDomainLead, isInterviewer } = await getUserRoles(auth.user.sub);
+  const roles = await getUserRoles(auth.user.sub);
+  const { isCore, isAdmin, isDomainLead, isInterviewer } = roles;
 
   // Reviewer assignments across all cycles — used both to decide which cycles
   // a reviewer can see and to scope domains within the selected cycle.
@@ -174,7 +183,7 @@ export async function loader({ request }: Route.LoaderArgs) {
             select: {
               id: true,
               user: {
-                select: { firstName: true, lastName: true, daliEmail: true, dartmouthEmail: true },
+                select: { id: true, firstName: true, lastName: true, daliEmail: true, dartmouthEmail: true },
               },
               // Status is event-sourced via ApplicationStatusUpdate; the
               // newest row is the current status. We also grab the most
@@ -225,6 +234,44 @@ export async function loader({ request }: Route.LoaderArgs) {
     applications: [...daIdsByApplication.entries()].map(([id, daIds]) => ({ id, daIds })),
   });
 
+  // Engagement signals for the filter panel: one grouped lookup each, keyed
+  // on the applicant's User id, which blinding leaves intact.
+  const applicantUserIds = [...new Set(domainApps.map((da) => da.application.user.id))];
+  const emailFilterEnabled = await isFeatureEnabled(
+    "applicant-email-engagement",
+    auth.user.sub,
+    roles,
+    request,
+  );
+  const [priorRows, emailRows, educationRows] = applicantUserIds.length
+    ? await Promise.all([
+        prisma.application.findMany({
+          where: {
+            userId: { in: applicantUserIds },
+            applicationCycleId: { not: selected.id },
+            statusUpdates: { some: { newStatus: "Submitted" } },
+          },
+          select: { userId: true },
+          distinct: ["userId"],
+        }),
+        emailFilterEnabled
+          ? prisma.mailMessageIndex.findMany({
+              where: { linkedUserId: { in: applicantUserIds } },
+              select: { linkedUserId: true },
+              distinct: ["linkedUserId"],
+            })
+          : Promise.resolve([]),
+        prisma.educationApplication.findMany({
+          where: { applicantUserId: { in: applicantUserIds }, status: "Approved" },
+          select: { applicantUserId: true },
+          distinct: ["applicantUserId"],
+        }),
+      ])
+    : [[], [], []];
+  const returningUserIds = new Set(priorRows.map((r) => r.userId));
+  const emailedUserIds = new Set(emailRows.map((r) => r.linkedUserId));
+  const educatedUserIds = new Set(educationRows.map((r) => r.applicantUserId));
+
   const rows = domainApps
     .map((da) => {
       const blindLabel = blindLabels.get(da.application.id);
@@ -235,6 +282,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         updates.find((s) => s.newStatus === "Submitted")?.createdAt ?? null;
       return {
         id: da.id,
+        applicationId: da.application.id,
         name: `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || "—",
         email: u.daliEmail ?? u.dartmouthEmail ?? null,
         domainId: da.domainId,
@@ -242,6 +290,9 @@ export async function loader({ request }: Route.LoaderArgs) {
         status: status as string,
         submittedAt: submittedAt ? submittedAt.toISOString() : null,
         reviewCount: da._count.reviews,
+        returning: returningUserIds.has(da.application.user.id),
+        emailed: emailedUserIds.has(da.application.user.id),
+        educated: educatedUserIds.has(da.application.user.id),
         stage: showPipeline
           ? pipelineStage(da as any, selected.currentStatus as ApplicationCycleStatus)
           : null,
@@ -265,6 +316,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     selectedCycleName: selected.name,
     domainOptions,
     showPipeline,
+    emailFilterEnabled,
     rows,
   };
 }
@@ -286,7 +338,7 @@ const STATUS_TONE: Record<string, string> = {
 };
 
 // Toggle one value in a multi-select filter.
-function toggle(list: string[], value: string): string[] {
+function toggle<T extends string>(list: T[], value: T): T[] {
   return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
 }
 
@@ -295,32 +347,74 @@ export default function ApplicationsDatabase() {
   const navigate = useNavigate();
   const { pageTitle, panel } = useOsChrome();
   const [searchParams, setSearchParams] = useSearchParams();
-  // Client-side filters; an empty list means "all". Cleared when the cycle
-  // changes (a different cycle has a different domain set).
-  const [domainIds, setDomainIds] = useState<string[]>([]);
-  const [statuses, setStatuses] = useState<string[]>([]);
-  const [stage, setStage] = useState<string | null>(null);
-  // Unsubmitted drafts swamp the pie early in a cycle, so it leaves them out
-  // unless asked. The table is unaffected.
-  const [pieIncludesInProgress, setPieIncludesInProgress] = useState(false);
-  const [query, setQuery] = useState("");
+  const selectedCycleId = data.gate === "ok" ? data.selectedCycleId : null;
+  // Filters are remembered per cycle so opening an applicant and coming back
+  // (or returning days later) lands on the same view. An empty list means
+  // "all"; a cycle with nothing stored starts clean.
+  const [filters, setFilters] = usePersistedState<ApplicationFilters>(
+    `dali:applications:filters:${selectedCycleId ?? "none"}`,
+    EMPTY_FILTERS,
+    isApplicationFilters,
+  );
+  const { domainIds, statuses, stage, engagement, pieIncludesInProgress, query } = filters;
+  const patch = (next: Partial<ApplicationFilters>) => setFilters((prev) => ({ ...prev, ...next }));
+  const setDomainIds = (f: (prev: string[]) => string[]) => patch({ domainIds: f(domainIds) });
+  const setStatuses = (f: (prev: string[]) => string[]) => patch({ statuses: f(statuses) });
+  const setStage = (next: string | null | ((prev: string | null) => string | null)) =>
+    patch({ stage: typeof next === "function" ? next(stage) : next });
+  const setQuery = (next: string) => patch({ query: next });
+
+  // The last cycle viewed is remembered too: landing on the page without
+  // ?cycle= reopens it instead of the newest cycle.
+  const [lastCycleId, setLastCycleId] = usePersistedState<string | null>(
+    "dali:applications:cycle",
+    null,
+    (v): v is string | null => v === null || typeof v === "string",
+  );
+  const cycleIds = data.gate === "ok" ? data.cycles.map((c) => c.id) : [];
+  useEffect(() => {
+    if (!selectedCycleId) return;
+    if (searchParams.get("cycle")) {
+      if (lastCycleId !== selectedCycleId) setLastCycleId(selectedCycleId);
+      return;
+    }
+    if (lastCycleId && lastCycleId !== selectedCycleId && cycleIds.includes(lastCycleId)) {
+      const next = new URLSearchParams(searchParams);
+      next.set("cycle", lastCycleId);
+      setSearchParams(next, { replace: true });
+    }
+    // Runs when the cycle or the stored preference changes, not on every param edit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCycleId, lastCycleId]);
 
   const rows = data.gate === "ok" ? data.rows : [];
+  // A remembered domain that this viewer can no longer see (reassigned, or a
+  // domain dropped from the cycle) must not silently empty the table.
+  const knownDomainIds = new Set(data.gate === "ok" ? data.domainOptions.map((d) => d.id) : []);
+  const activeDomainIds = domainIds.filter((id) => knownDomainIds.has(id));
   // The pie counts every filter but its own, so picking a slice doesn't
   // collapse the chart to that one slice.
   const pieRows = useMemo(() => {
     const q = query.trim().toLowerCase();
     return rows.filter((r) => {
-      if (domainIds.length && !domainIds.includes(r.domainId)) return false;
+      if (activeDomainIds.length && !activeDomainIds.includes(r.domainId)) return false;
       if (statuses.length && !statuses.includes(r.status)) return false;
+      if (engagement.some((k) => !r[k])) return false;
       if (q && !`${r.name} ${r.email ?? ""}`.toLowerCase().includes(q))
         return false;
       return true;
     });
-  }, [rows, domainIds, statuses, query]);
+  }, [rows, activeDomainIds, statuses, engagement, query]);
   const filteredRows = useMemo(
     () => (stage ? pieRows.filter((r) => r.stage === stage) : pieRows),
     [pieRows, stage],
+  );
+  // One applicant can hold several domain applications, so the row count
+  // overstates how many people are in the cycle.
+  const totalApplicants = useMemo(() => new Set(rows.map((r) => r.applicationId)).size, [rows]);
+  const filteredApplicants = useMemo(
+    () => new Set(filteredRows.map((r) => r.applicationId)).size,
+    [filteredRows],
   );
   const slices = useMemo<StatusSlice[]>(() => {
     const counts = new Map<string, number>();
@@ -353,7 +447,11 @@ export default function ApplicationsDatabase() {
   // Only worth offering the domain filter when there's more than one domain
   // to choose between (Core/Admin, or a reviewer covering multiple domains).
   const showDomainFilter = data.domainOptions.length > 1;
-  const activeFilterCount = domainIds.length + statuses.length + (stage ? 1 : 0);
+  const activeFilterCount =
+    activeDomainIds.length + statuses.length + engagement.length + (stage ? 1 : 0);
+  const engagementOptions = ENGAGEMENT_FILTERS.filter(
+    (e) => e.key !== "emailed" || data.emailFilterEnabled,
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -364,10 +462,7 @@ export default function ApplicationsDatabase() {
           ariaLabel="Cycle"
           value={data.selectedCycleId}
           onChange={(cycleId) => {
-            setDomainIds([]);
-            setStatuses([]);
-            setStage(null);
-            setQuery("");
+            setLastCycleId(cycleId);
             const next = new URLSearchParams(searchParams);
             next.set("cycle", cycleId);
             setSearchParams(next);
@@ -404,11 +499,7 @@ export default function ApplicationsDatabase() {
               {activeFilterCount > 0 && (
                 <FilterResetButton
                   os={true}
-                  onClick={() => {
-                    setDomainIds([]);
-                    setStatuses([]);
-                    setStage(null);
-                  }}
+                  onClick={() => patch({ domainIds: [], statuses: [], stage: null, engagement: [] })}
                 />
               )}
             </div>
@@ -438,6 +529,18 @@ export default function ApplicationsDatabase() {
                 ))}
               </FilterGroup>
             )}
+            <FilterGroup label="Engagement" os={true}>
+              {engagementOptions.map((e) => (
+                <FilterPill
+                  key={e.key}
+                  os={true}
+                  selected={engagement.includes(e.key)}
+                  onClick={() => patch({ engagement: toggle(engagement, e.key) })}
+                >
+                  {e.label}
+                </FilterPill>
+              ))}
+            </FilterGroup>
             {showDomainFilter && (
               <FilterGroup label="Domain" os={true}>
                 {data.domainOptions.map((d) => (
@@ -458,6 +561,10 @@ export default function ApplicationsDatabase() {
           {filteredRows.length}{" "}
           {filteredRows.length === 1 ? "application" : "applications"}
           {filteredRows.length !== rows.length ? ` of ${rows.length}` : ""}
+          {" · "}
+          {filteredApplicants}{" "}
+          {filteredApplicants === 1 ? "applicant" : "applicants"}
+          {filteredApplicants !== totalApplicants ? ` of ${totalApplicants}` : ""}
         </span>
       </div>
 
@@ -467,10 +574,12 @@ export default function ApplicationsDatabase() {
             className="self-end"
             label="Include in progress"
             checked={pieIncludesInProgress}
-            onChange={(e) => {
-              setPieIncludesInProgress(e.target.checked);
-              if (!e.target.checked && stage === "InProgress") setStage(null);
-            }}
+            onChange={(e) =>
+              patch({
+                pieIncludesInProgress: e.target.checked,
+                stage: !e.target.checked && stage === "InProgress" ? null : stage,
+              })
+            }
           />
           <StatusPie data={pieSlices} selectedStatus={stage} onSelect={setStage} />
         </section>
