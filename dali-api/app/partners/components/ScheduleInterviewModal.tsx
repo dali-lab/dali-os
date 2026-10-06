@@ -1,14 +1,12 @@
-// STUB: replaced by feat/partner-crm-sched
-//
-// Temporary placeholder so the board and the application modal can call the
-// real scheduler's contract (specs/partner-crm.md §6) before it lands. Takes
-// the exact named export another branch will fill in with the refactored
-// CreateEventModal (mode: "meeting-only").
-
+import { useEffect, useState } from "react";
 import { Modal } from "~/components/Modal";
-import { buttonClasses } from "~/components/ui/Button";
-import { modalCardClass } from "~/components/os-chrome";
+import { CreateEventModal } from "~/calendar/components/CreateEventModal";
+import type { SchedulingData } from "~/calendar/lib/types";
 
+// Opens the real calendar scheduler, scoped to one partner interview: Core
+// picks a time on the shared availability grid, the meeting is created as a
+// real ScheduledMeeting (Google invite + Meet link for the partner), and it's
+// linked back to the application (specs/partner-crm.md §6).
 export function ScheduleInterviewModal({
   applicationId,
   partnerName,
@@ -22,31 +20,75 @@ export function ScheduleInterviewModal({
   onClose: () => void;
   onScheduled: () => void;
 }) {
-  // Unused until the real scheduler lands — keeps the contract's params in
-  // the type signature without tripping noUnusedParameters.
-  void applicationId;
-  void partnerName;
-  void partnerEmail;
-  void onScheduled;
+  const [data, setData] = useState<SchedulingData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/scheduling-data", { credentials: "include" })
+      .then(async (r) => {
+        const json = await r.json();
+        if (cancelled) return;
+        if (!r.ok) {
+          setError((json as { error?: string }).error ?? "Failed to load your calendar");
+        } else {
+          setData(json as SchedulingData);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Network error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Links the just-created ScheduledMeeting back to the application, then
+  // hands control back to the caller — same order CreateEventModal calls it
+  // in (onCreated before its own onClose).
+  async function link(scheduledMeetingId: string) {
+    try {
+      await fetch(`/api/partner-applications/${applicationId}/meetings/link`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scheduledMeetingId }),
+      });
+    } finally {
+      onScheduled();
+      onClose();
+    }
+  }
+
+  if (!data) {
+    return (
+      <Modal open onClose={onClose} labelledBy="schedule-interview-title">
+        <h2 id="schedule-interview-title" className="text-lg font-semibold text-foreground mb-2">
+          Schedule interview
+        </h2>
+        <p className="text-sm text-muted-foreground">{error ?? "Loading your calendar…"}</p>
+        {error && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="mt-4 rounded-full px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground"
+          >
+            Close
+          </button>
+        )}
+      </Modal>
+    );
+  }
 
   return (
-    <Modal
-      open
+    <CreateEventModal
+      data={data}
+      mode="meeting-only"
+      fixedGuestEmails={[partnerEmail]}
+      defaultTitle={`DALI x ${partnerName}`}
+      initialUserIds={[data.currentUserId]}
+      onCreated={link}
       onClose={onClose}
-      labelledBy="schedule-interview-stub-title"
-      containerClassName={modalCardClass("max-w-sm")}
-    >
-      <h2 id="schedule-interview-stub-title" className="text-lg font-semibold text-foreground">
-        Scheduler loading
-      </h2>
-      <p className="mt-2 text-sm text-muted-foreground">
-        The interview scheduler isn't wired up yet in this build.
-      </p>
-      <div className="mt-4 flex justify-end">
-        <button type="button" onClick={onClose} className={buttonClasses("secondary", "sm")}>
-          Close
-        </button>
-      </div>
-    </Modal>
+    />
   );
 }

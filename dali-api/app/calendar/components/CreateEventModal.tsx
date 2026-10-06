@@ -37,12 +37,12 @@ import {
   MeetingNoteFields,
 } from "~/calendar/components/MeetingNoteFields";
 import { TimesheetFields } from "~/calendar/components/TimesheetFields";
-import type { LoaderData } from "~/calendar/lib/types";
+import type { LoaderData, SchedulingData } from "~/calendar/lib/types";
 
 // ── Props ──────────────────────────────────────────────────────────────────
 
 export type CreateEventModalProps = {
-  data: LoaderData;
+  data: SchedulingData;
   startLocal?: string;
   endLocal?: string;
   /** Guests to open with already invited — the "Meet with" flow passes one
@@ -52,6 +52,23 @@ export type CreateEventModalProps = {
    *  deep link passes that project's group so the whole team is preselected. */
   initialGroupIds?: string[];
   onClose: () => void;
+  /**
+   * "meeting-only" (used by the partner CRM's ScheduleInterviewModal) hides
+   * Event mode, groups, rooms, and the note/whiteboard asset toggles, and
+   * defaults Google Meet on once there's an invite destination. Default
+   * "full" — the calendar route's own usage is unchanged.
+   */
+  mode?: "full" | "meeting-only";
+  /** Guests pre-invited by the caller — shown as chips but not removable
+   *  (the caller owns the invite, e.g. the partner being interviewed). */
+  fixedGuestEmails?: string[];
+  /** Called with the created ScheduledMeeting's id right after a successful
+   *  meeting POST, before onClose. */
+  onCreated?: (meetingId: string) => void;
+  /** Prefills the title field (e.g. "DALI x Acme Co"). */
+  defaultTitle?: string;
+  /** Hides group selection entirely. Always true in "meeting-only" mode. */
+  hideGroups?: boolean;
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -126,20 +143,36 @@ export function CreateEventModal({
   initialUserIds,
   initialGroupIds,
   onClose,
+  mode = "full",
+  fixedGuestEmails,
+  onCreated,
+  defaultTitle,
+  hideGroups = false,
 }: CreateEventModalProps) {
+  const meetingOnly = mode === "meeting-only";
+  // Groups are hidden entirely in meeting-only mode (not just unofferable —
+  // there's no Core-group-invite path there either).
+  const groupsHidden = hideGroups || meetingOnly;
+  const effectiveGroups = groupsHidden ? [] : data.groups;
+
   // ── Destination (writable Google calendars) ──────────────────────────────
-  const dests = eventDestinations(data);
+  // SchedulingData only ever carries calendarLinks (eventDestinations reads
+  // nothing else), so this cast is safe for both callers: the calendar route
+  // passes the real LoaderData, and a meeting-only mount never reaches Event
+  // mode, where `dests` would otherwise matter.
+  const dests = eventDestinations(data as unknown as LoaderData);
   const defaultDest =
     data.defaultEventDest && dests.some((d) => d.value === data.defaultEventDest)
       ? data.defaultEventDest
       : dests[0]?.value ?? "";
   // Dev keeps the full form even with nothing linked, so the create UI is
   // workable against a local database that has no calendar links. Vite folds
-  // this to `dests.length > 0` in a production build.
-  const hasWritableDest = dests.length > 0 || import.meta.env.DEV;
+  // this to `dests.length > 0` in a production build. Meeting-only mode never
+  // shows Event mode, so it has no writable-destination gate to satisfy.
+  const hasWritableDest = meetingOnly || dests.length > 0 || import.meta.env.DEV;
 
   // ── Core form state ──────────────────────────────────────────────────────
-  const [title, setTitle] = useState("");
+  const [title, setTitle] = useState(defaultTitle ?? "");
   const [date, setDate] = useState<string>(() => extractDate(initStart ?? ""));
   const [startTime, setStartTime] = useState<string>(() => extractTime(initStart ?? ""));
   const [endTime, setEndTime] = useState<string>(() => extractTime(initEnd ?? ""));
@@ -167,7 +200,7 @@ export function CreateEventModal({
   const [guestEmails, setGuestEmails] = useState<string[]>([]);
 
   const usersById = new Map(data.users.map((u) => [u.id, u]));
-  const groupsById = new Map(data.groups.map((g) => [g.id, g]));
+  const groupsById = new Map(effectiveGroups.map((g) => [g.id, g]));
 
   const resolvedParticipantIds = (() => {
     const set = new Set<string>(selectedUserIds);
@@ -178,8 +211,13 @@ export function CreateEventModal({
     return Array.from(set);
   })();
 
-  const hasGuests = selectedUserIds.length > 0 || selectedGroupIds.length > 0 || guestEmails.length > 0;
-  const type = hasGuests ? "Meeting" : "Event";
+  // Fixed (caller-invited, non-removable) guests count toward "has guests" the
+  // same as a typed one — a meeting-only mount with only a fixed guest should
+  // still open straight into the Meeting form's availability grid.
+  const allGuestEmails = Array.from(new Set([...(fixedGuestEmails ?? []), ...guestEmails]));
+  const hasGuests =
+    selectedUserIds.length > 0 || selectedGroupIds.length > 0 || allGuestEmails.length > 0;
+  const type = meetingOnly ? "Meeting" : hasGuests ? "Meeting" : "Event";
 
   // ── Core meeting ─────────────────────────────────────────────────────────
   // Core-only marker that flags the meeting as Core's without touching its
@@ -221,6 +259,12 @@ export function CreateEventModal({
   const [optimalSuggestions, setOptimalSuggestions] = useState<SlotSuggestions | null>(null);
   const [addMeet, setAddMeet] = useState(false);
   const canAddMeet = !!inviteFrom && hasGuests;
+  // Meeting-only mounts (the partner CRM scheduler) default Meet on as soon as
+  // there's somewhere to send the invite from — Core always wants a join link
+  // on a partner interview, and there's no toggle-off state to preserve yet.
+  useEffect(() => {
+    if (meetingOnly && canAddMeet) setAddMeet(true);
+  }, [meetingOnly, canAddMeet]);
 
   // ── Week navigation for the left panel ───────────────────────────────────
   const weekStartForDate = (day: string) => weekStartIsoForDay(data.timezone, day);
@@ -379,7 +423,7 @@ export function CreateEventModal({
       if (isCoreMeeting) {
         payload.isCoreMeeting = true;
       }
-      if (guestEmails.length > 0) payload.guestEmails = guestEmails;
+      if (allGuestEmails.length > 0) payload.guestEmails = allGuestEmails;
       if (selectedGroupIds.length === 1 && selectedUserIds.length === 0) {
         payload.scopeType = "Group";
         payload.groupId = selectedGroupIds[0];
@@ -407,12 +451,13 @@ export function CreateEventModal({
           notePageId: json.notePageId ?? null,
           whiteboardPageId: json.whiteboardPageId ?? null,
         });
+        const createdMeetingId = json.meeting?.id as string | undefined;
         // If isWork, log the organizer's time against the meeting we just
         // created — linked by its id so it shows as an accent on the meeting
         // block (not a duplicate) and isn't mirrored to the Timesheet calendar.
         if (isWork && roleKey && startIso && endIso) {
           const [assignmentType, roleRefId] = roleKey.split("::");
-          const meetingId = json.meeting?.id as string | undefined;
+          const meetingId = createdMeetingId;
           if (assignmentType && roleRefId) {
             timeFetcher.submit(
               {
@@ -438,6 +483,7 @@ export function CreateEventModal({
         // the modal closes. (calendar.tsx's shouldRevalidate deliberately lets a
         // same-URL revalidate through for exactly this case.)
         revalidator.revalidate();
+        if (createdMeetingId) onCreated?.(createdMeetingId);
         setTimeout(() => onClose(), 1200);
       }
     } catch (err) {
@@ -619,7 +665,7 @@ export function CreateEventModal({
               <FieldRow icon={UsersRound}>
                 <ParticipantPicker
                   users={data.users}
-                  groups={data.groups}
+                  groups={effectiveGroups}
                   selectedUserIds={selectedUserIds}
                   selectedGroupIds={selectedGroupIds}
                   onChangeUsers={setSelectedUserIds}
@@ -797,7 +843,7 @@ export function CreateEventModal({
               <FieldRow icon={UsersRound}>
                 <ParticipantPicker
                   users={data.users}
-                  groups={data.groups}
+                  groups={effectiveGroups}
                   selectedUserIds={selectedUserIds}
                   selectedGroupIds={selectedGroupIds}
                   onChangeUsers={setSelectedUserIds}
@@ -807,8 +853,18 @@ export function CreateEventModal({
                   resolvedCount={resolvedParticipantIds.length}
                   guestEmails={guestEmails}
                   onChangeGuestEmails={inviteDests.length > 0 ? setGuestEmails : undefined}
+                  fixedGuestEmails={fixedGuestEmails}
                 />
               </FieldRow>
+              {/* ParticipantAvailabilityList (in the left panel) only ever
+                  renders DALI members — a fixed guest invited by email has no
+                  row there, so call it out here instead. */}
+              {(fixedGuestEmails?.length ?? 0) > 0 && (
+                <p className="-mt-3 pl-[34px] text-xs text-muted-foreground">
+                  {fixedGuestEmails!.join(", ")} {fixedGuestEmails!.length === 1 ? "is" : "are"}{" "}
+                  invited by email. Their availability is not shown.
+                </p>
+              )}
 
               {/* Date & Time */}
               <div>
@@ -896,7 +952,7 @@ export function CreateEventModal({
                   </span>
                 </label>
                 <RoomLocationField
-                  enabled
+                  enabled={!meetingOnly}
                   id="cem-mtg-location"
                   placeholder="Video call, room, or address"
                   value={location}
@@ -944,7 +1000,10 @@ export function CreateEventModal({
               )}
 
               {/* Meeting assets: a note doc and/or a whiteboard, sharing the
-                  same About/type. The fields appear once either is enabled. */}
+                  same About/type. The fields appear once either is enabled.
+                  Hidden in meeting-only mode — a partner interview has no
+                  project/Core note to attach to. */}
+              {!meetingOnly && (
               <div className="rounded-md border border-border bg-muted/20 p-3">
                 <Toggle
                   checked={note.state.enabled}
@@ -972,6 +1031,7 @@ export function CreateEventModal({
                   </div>
                 )}
               </div>
+              )}
 
               {/* Timesheet — a repeating meeting logs its first occurrence. */}
               {timesheetSection}

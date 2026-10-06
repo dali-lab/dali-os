@@ -114,6 +114,12 @@ export const SCHEDULE_MEETING_TOOL = {
         description:
           "Attach a Google Meet link. Requires an organizerCalendarLinkId (the link is minted on that calendar); ignored otherwise.",
       },
+      guestEmails: {
+        type: "array",
+        items: { type: "string" },
+        description:
+          "People with no DALI profile, invited by address (e.g. an outside partner). They reach the meeting only through the Google event invite, which requires organizerCalendarLinkId and a startTime.",
+      },
     },
     required: ["title", "durationMinutes"],
     additionalProperties: false,
@@ -142,6 +148,7 @@ type Input = {
   attendanceMode?: "Roster" | "SelfCheckIn";
   isCoreMeeting?: boolean;
   addMeet?: boolean;
+  guestEmails?: string[];
 };
 
 export class ScheduleMeetingError extends Error {
@@ -219,6 +226,7 @@ export async function runScheduleMeeting(
     attendanceMode: input.attendanceMode,
     isCoreMeeting: resolvedIsCore,
     addMeet: input.addMeet,
+    guestEmails: input.guestEmails,
   });
 
   if (!result.ok) {

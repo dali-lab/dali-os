@@ -40,6 +40,10 @@ import {
   runManagePartnerMeeting,
 } from "./manage-partner-meeting";
 import {
+  RESPOND_PARTNER_MEETING_REQUEST_TOOL,
+  runRespondPartnerMeetingRequest,
+} from "./respond-partner-meeting-request";
+import {
   MANAGE_PARTNER_PROJECT_LINK_TOOL,
   runManagePartnerProjectLink,
 } from "./manage-partner-project-link";
@@ -97,6 +101,10 @@ export const PARTNERS_TOOLS: McpTool[] = [
   {
     def: MANAGE_PARTNER_MEETING_TOOL,
     run: (ctx: McpCtx, args) => runManagePartnerMeeting(ctx.user.id, args),
+  },
+  {
+    def: RESPOND_PARTNER_MEETING_REQUEST_TOOL,
+    run: (ctx: McpCtx, args) => runRespondPartnerMeetingRequest(ctx.user.id, args),
   },
   {
     def: MANAGE_PARTNER_PROJECT_LINK_TOOL,

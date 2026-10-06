@@ -1,11 +1,19 @@
-import { Form, Link, useLoaderData, useNavigation } from "react-router";
+import { useState } from "react";
+import { Form, Link, useLoaderData, useNavigation, useRevalidator } from "react-router";
+import { CalendarPlus } from "lucide-react";
 import { PartnerBackLink } from "~/partners/components/PartnerBackLink";
+import { RequestMeetingModal } from "~/partners/components/RequestMeetingModal";
+import { PartnerMeetingsSection } from "~/partners/components/PartnerMeetingsSection";
 import type { Route } from "./+types/partner.applications.$id";
 import { prisma } from "~/lib/db";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { getPresenceUser } from "~/lib/presence-user";
 import { termCodeLabel } from "~/lib/display";
 import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
+import {
+  listPartnerMeetingsForContact,
+  listPartnerMeetingRequests,
+} from "~/partners/lib/partner-meetings.server";
 import {
   formAnswerRows,
   type FormAnswerRow,
@@ -74,11 +82,23 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     auth.user.email;
   const presenceUser = await getPresenceUser(auth.user.sub, fallbackName);
 
+  const [meetings, meetingRequests] = await Promise.all([
+    listPartnerMeetingsForContact(ctx.contact.email),
+    listPartnerMeetingRequests({ applicationId: application.id }),
+  ]);
+
   const { formSubmission: _formSubmission, ...applicationOut } = application;
   return {
     application: applicationOut,
     formAnswers,
     canEditDetails: PARTNER_EDITABLE_STAGES.includes(application.stage),
+    // Interview stage is the real target (scheduling the meeting the stage is
+    // named for); New is allowed too so a partner isn't stuck waiting for
+    // Core to move the card before they can ask for time.
+    canRequestMeeting: application.stage === "New" || application.stage === "Interview",
+    meetings,
+    pendingMeetingRequests: meetingRequests.pending,
+    declinedMeetingRequests: meetingRequests.declined,
     collabToken: await getCollabToken(request),
     userName: presenceUser?.name ?? fallbackName,
     currentUserId: auth.user.sub,
@@ -148,11 +168,23 @@ function StageTimeline({
 export default function PartnerApplicationDetail({
   actionData,
 }: Route.ComponentProps) {
-  const { application, formAnswers, canEditDetails, collabToken, userName, currentUserId } =
-    useLoaderData<typeof loader>();
+  const {
+    application,
+    formAnswers,
+    canEditDetails,
+    canRequestMeeting,
+    meetings,
+    pendingMeetingRequests,
+    declinedMeetingRequests,
+    collabToken,
+    userName,
+    currentUserId,
+  } = useLoaderData<typeof loader>();
   const navigation = useNavigation();
+  const revalidator = useRevalidator();
   const submitting = navigation.state === "submitting";
   const error = actionData && "error" in actionData ? actionData.error : null;
+  const [requestingMeeting, setRequestingMeeting] = useState(false);
 
   const documentName = `partnersow:${application.id}:body`;
   const inputClass =
@@ -171,6 +203,15 @@ export default function PartnerApplicationDetail({
         <p className="text-sm text-muted-foreground mt-1">
           Submitted {new Date(application.createdAt).toLocaleDateString()}
         </p>
+        {canRequestMeeting && (
+          <button
+            type="button"
+            onClick={() => setRequestingMeeting(true)}
+            className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-dark-blue px-4 py-2 text-sm font-heading font-semibold text-white transition hover:opacity-90"
+          >
+            <CalendarPlus className="h-4 w-4" /> Request a meeting
+          </button>
+        )}
       </div>
 
       {application.stage === "Accepted" && application.resultingProjectId && (
@@ -298,6 +339,21 @@ export default function PartnerApplicationDetail({
           </p>
         )}
       </section>
+
+      <PartnerMeetingsSection
+        meetings={meetings}
+        pendingRequests={pendingMeetingRequests}
+        declinedRequests={declinedMeetingRequests}
+        onRequestAnother={canRequestMeeting ? () => setRequestingMeeting(true) : undefined}
+      />
+
+      {requestingMeeting && (
+        <RequestMeetingModal
+          scope={{ applicationId: application.id }}
+          onClose={() => setRequestingMeeting(false)}
+          onSent={() => revalidator.revalidate()}
+        />
+      )}
     </div>
   );
 }
