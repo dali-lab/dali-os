@@ -7,6 +7,7 @@ import { IconButton } from "~/components/ui/IconButton";
 import { useDialog } from "~/components/ui/dialog";
 import { MentionTextInput } from "~/components/MentionTextInput";
 import { MailBody } from "~/email/components/MailBody";
+import { ApplicantLinkSection } from "~/email/components/ApplicantLinkSection";
 import { Composer, type RecipientDirectory } from "~/email/components/Composer";
 import { cn } from "~/lib/cn";
 import { formatBytes } from "~/lib/upload-client";
@@ -162,6 +163,10 @@ export function ThreadView({
           );
         })}
       </div>
+
+      {thread.applicantLinksEnabled && (
+        <ApplicantLinkSection accountId={accountId} threadId={threadId} link={thread.applicantLink} />
+      )}
 
       <section className="flex flex-col gap-2 rounded-os-card bg-os-container/60 p-4" aria-label="Private comments">
         <h3 className="flex items-center gap-1.5 text-xs font-semibold text-os-muted">

@@ -692,6 +692,8 @@ export default [
   route("api/hiring/my-interview/cancel", "hiring/routes/api.my-interview.cancel.ts"),
   route("api/hiring/my-interview/reschedule", "hiring/routes/api.my-interview.reschedule.ts"),
 
+  route("api/hiring/applications/:id/email-thread/:indexId", "hiring/routes/api.applications.$id.email-thread.$indexId.ts"),
+
   route("api/hiring/domain-applications/:id/decisions", "hiring/routes/api.domain-applications.$id.decisions.ts"),
   route("api/hiring/domain-applications/:id/reviews", "hiring/routes/api.domain-applications.$id.reviews.ts"),
   route("api/hiring/domain-applications/:id/full-context", "hiring/routes/api.domain-applications.$id.full-context.ts"),
@@ -773,6 +775,8 @@ export default [
   route("api/email/contacts", "routes/api.email.contacts.ts"),
   route("api/email/unread", "routes/api.email.unread.ts"),
   route("api/email/attachment", "routes/api.email.attachment.ts"),
+  // Core/Admin member search — manual applicant-email link in the Email tab.
+  route("api/users/search", "routes/api.users.search.ts"),
 
   // BetterAuth catch-all: all /api/auth/* requests (sign-in, sign-up, session,
   // callback, etc.) are forwarded to the BetterAuth handler. Phase 0 scaffolding

@@ -237,6 +237,58 @@ export async function inboxUnreadCount(token: string): Promise<number> {
   return label.messagesUnread ?? 0;
 }
 
+// Bare message/thread ids matching a search, for the applicant-email indexer
+// (which only ever wants headers — see getMessageMetadata). One page at a
+// time; the caller drives pagination via pageToken.
+export async function listMessageIds(
+  token: string,
+  opts: { query: string; max: number; pageToken?: string },
+): Promise<{ messages: { id: string; threadId: string }[]; nextPageToken: string | null }> {
+  const params = new URLSearchParams({ maxResults: String(opts.max) });
+  if (opts.query) params.set("q", opts.query);
+  if (opts.pageToken) params.set("pageToken", opts.pageToken);
+  const list = await gmail<{
+    messages?: { id: string; threadId: string }[];
+    nextPageToken?: string;
+  }>(token, `/messages?${params}`);
+  return { messages: list.messages ?? [], nextPageToken: list.nextPageToken ?? null };
+}
+
+export interface MessageMeta {
+  id: string;
+  threadId: string;
+  labelIds: string[];
+  // ISO, from Gmail's internalDate.
+  date: string;
+  from: string;
+  to: string;
+  cc: string;
+  subject: string;
+}
+
+const METADATA_HEADERS = ["From", "To", "Cc", "Subject"]
+  .map((h) => `metadataHeaders=${h}`)
+  .join("&");
+
+// Headers only — no body, no attachments. The applicant-email index never
+// reads message content, only who exchanged mail with whom and when.
+export async function getMessageMetadata(token: string, id: string): Promise<MessageMeta> {
+  const m = await gmail<GmailMessage>(
+    token,
+    `/messages/${encodeURIComponent(id)}?format=metadata&${METADATA_HEADERS}`,
+  );
+  return {
+    id: m.id,
+    threadId: m.threadId,
+    labelIds: m.labelIds ?? [],
+    date: new Date(Number(m.internalDate ?? 0)).toISOString(),
+    from: header(m.payload, "From"),
+    to: header(m.payload, "To"),
+    cc: header(m.payload, "Cc"),
+    subject: header(m.payload, "Subject"),
+  };
+}
+
 export async function getThread(token: string, threadId: string): Promise<MailMessage[]> {
   const t = await gmail<{ messages?: GmailMessage[] }>(
     token,

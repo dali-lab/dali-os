@@ -22,6 +22,9 @@ import { logAuditEvent } from "~/lib/audit";
 import { PERSONAL_MAIL_NOTICE_VERSION } from "~/email/lib/personal-notice";
 import { folderQuery, mailFolder } from "~/email/lib/folders";
 import { notifyMailCommentMentions } from "~/email/lib/comment-mentions.server";
+import { senderAddress } from "~/email/lib/format";
+import { resolvePhotoUrl } from "~/lib/photo";
+import { recordUserEmail } from "~/lib/user-email.server";
 import {
   getMailboxToken,
   getThread,
@@ -33,6 +36,10 @@ import {
   type MailMessage,
   type ThreadSummary,
 } from "~/email/lib/gmail-mailbox.server";
+import { getThreadLink, indexMessages, setThreadLink, type IndexableMessage } from "~/email/lib/mail-index.server";
+
+const APPLICANT_EMAIL_FLAG = "applicant-email-engagement";
+const DALI_EMAIL_SUFFIX = "@dali.dartmouth.edu";
 
 const THREADS_PER_INBOX = 20;
 // Keep the whole message comfortably under Gmail's simple-send ceiling once
@@ -135,13 +142,17 @@ async function loadLiveEmailPage(request: Request, userId: string, roles: UserRo
   const selectedAccount = selectedRef
     ? connected.find((a) => a.id === selectedRef.accountId) ?? null
     : null;
+  const applicantLinksEnabled =
+    selectedAccount?.kind === "Shared"
+      ? await isFeatureEnabled(APPLICANT_EMAIL_FLAG, userId, roles, request)
+      : false;
 
   const [feed, selected, drafts, categories, myConnections, unread] = await Promise.all([
     view === "inbox"
       ? loadFeed(feedAccounts, folderQuery(folder, search), folder.spamTrash)
       : { threads: [], errors: [] },
     selectedAccount && selectedRef
-      ? loadThread(userId, selectedAccount, selectedRef.threadId)
+      ? loadThread(userId, selectedAccount, selectedRef.threadId, applicantLinksEnabled)
       : null,
     prisma.mailDraft.findMany({
       where: { accountId: { in: connected.map((a) => a.id) }, ...draftVisibleTo(userId) },
@@ -223,7 +234,12 @@ async function loadLiveEmailPage(request: Request, userId: string, roles: UserRo
   };
 }
 
-async function loadThread(userId: string, account: ReadableMailAccount, threadId: string) {
+async function loadThread(
+  userId: string,
+  account: ReadableMailAccount,
+  threadId: string,
+  applicantLinksEnabled: boolean,
+) {
   let messages: MailMessage[];
   try {
     const token = await getMailboxToken(account);
@@ -238,6 +254,28 @@ async function loadThread(userId: string, account: ReadableMailAccount, threadId
     orderBy: { createdAt: "asc" },
     include: { author: { select: { id: true, firstName: true, lastName: true, photoUrl: true } } },
   });
+
+  const linkEnabled = account.kind === "Shared" && applicantLinksEnabled;
+  let applicantLink: { userId: string; name: string; photoUrl: string | null; source: "Auto" | "Manual" } | null =
+    null;
+  if (linkEnabled) {
+    const link = await getThreadLink(account.id, threadId);
+    if (link) {
+      const linkedUser = await prisma.user.findUnique({
+        where: { id: link.userId },
+        select: { firstName: true, lastName: true, photoUrl: true },
+      });
+      if (linkedUser) {
+        applicantLink = {
+          userId: link.userId,
+          name: `${linkedUser.firstName} ${linkedUser.lastName}`.trim(),
+          photoUrl: await resolvePhotoUrl(linkedUser.photoUrl),
+          source: link.source,
+        };
+      }
+    }
+  }
+
   return {
     accountId: account.id,
     threadId,
@@ -254,6 +292,8 @@ async function loadThread(userId: string, account: ReadableMailAccount, threadId
       },
       mine: c.authorId === userId,
     })),
+    applicantLink,
+    applicantLinksEnabled: linkEnabled,
   };
 }
 
@@ -359,6 +399,92 @@ export async function submitEmailAction(request: Request) {
   const account = await findReadableAccount(userId, field(form, "accountId"), request);
   if (!account) return Response.json({ error: "Inbox not found." }, { status: 404 });
   const threadId = field(form, "threadId") || null;
+
+  if (intent === "linkApplicant" || intent === "unlinkApplicant") {
+    if (!(await isFeatureEnabled(APPLICANT_EMAIL_FLAG, userId, roles, request))) {
+      return Response.json({ error: "Not available." }, { status: 403 });
+    }
+    if (account.kind !== "Shared") {
+      return Response.json({ error: "Only shared inboxes support applicant linking." }, { status: 403 });
+    }
+    if (!threadId) return Response.json({ error: "No thread." }, { status: 400 });
+
+    const hasIndexRows =
+      (await prisma.mailMessageIndex.count({ where: { accountId: account.id, threadId } })) > 0;
+    if (!hasIndexRows) {
+      try {
+        const token = await getMailboxToken(account);
+        const threadMessages = await getThread(token, threadId);
+        const metas: IndexableMessage[] = threadMessages.map((m) => ({
+          id: m.id,
+          threadId,
+          direction:
+            senderAddress(m.from).toLowerCase() === account.address.toLowerCase()
+              ? ("Outbound" as const)
+              : ("Inbound" as const),
+          subject: m.subject,
+          date: m.date,
+          from: m.from,
+          to: m.to,
+          cc: m.cc,
+        }));
+        await indexMessages({ accountId: account.id, inboxAddress: account.address, metas });
+      } catch (err) {
+        if (err instanceof MailboxError) {
+          return Response.json({ error: "Gmail didn't respond. Try again." }, { status: 502 });
+        }
+        throw err;
+      }
+    }
+
+    const now = new Date();
+
+    if (intent === "unlinkApplicant") {
+      await setThreadLink({ accountId: account.id, threadId, userId: null, byUserId: userId, now });
+      await logAuditEvent({
+        action: "email.applicant_unlink",
+        userId,
+        targetId: `${account.id}~${threadId}`,
+        metadata: {},
+        request,
+      });
+      return { ok: true };
+    }
+
+    const linkUserId = field(form, "userId");
+    if (!linkUserId) return Response.json({ error: "Pick someone to link." }, { status: 400 });
+    await setThreadLink({ accountId: account.id, threadId, userId: linkUserId, byUserId: userId, now });
+
+    // Only addresses the applicant actually wrote from become theirs; a CC'd
+    // third party on an outbound reply must not be attached to their account.
+    const threadRows = await prisma.mailMessageIndex.findMany({
+      where: { accountId: account.id, threadId, direction: "Inbound" },
+      select: { fromAddress: true },
+    });
+    const counterparts = new Set<string>();
+    for (const row of threadRows) {
+      const address = row.fromAddress.toLowerCase();
+      if (address === account.address.toLowerCase()) continue;
+      if (address.endsWith(DALI_EMAIL_SUFFIX)) continue;
+      counterparts.add(address);
+    }
+    let warned = false;
+    for (const address of counterparts) {
+      const result = await recordUserEmail({ userId: linkUserId, address, verified: false });
+      if (!result.ok) warned = true;
+    }
+
+    await logAuditEvent({
+      action: "email.applicant_link",
+      userId,
+      targetId: `${account.id}~${threadId}`,
+      metadata: { userId: linkUserId },
+      request,
+    });
+    return warned
+      ? { ok: true, warning: "One address already belongs to another account and wasn't saved." }
+      : { ok: true };
+  }
 
   if (intent === "deleteDraft") {
     const where = { id: field(form, "draftId"), accountId: account.id, ...draftVisibleTo(userId) };

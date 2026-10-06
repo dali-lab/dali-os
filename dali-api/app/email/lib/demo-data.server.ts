@@ -253,6 +253,8 @@ export function demoEmailPage(request: Request): EmailPageData {
           author: { id: `demo-user-${c.author}`, name: c.author, photoUrl: null },
           mine: c.mine,
         })),
+        applicantLink: null,
+        applicantLinksEnabled: false,
       }
     : null;
 

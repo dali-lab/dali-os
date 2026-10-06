@@ -91,6 +91,7 @@ import { runDocSearchIndex } from "~/jobs/doc-search-index.server";
 import { runInfraSnapshot } from "~/jobs/infra-snapshot.server";
 import { runTimetableSync } from "~/jobs/timetable-sync.server";
 import { runWalletRestyleBroadcastJob } from "~/jobs/wallet-restyle-broadcast.server";
+import { runApplicantEmailIndex } from "~/jobs/applicant-email-index.server";
 
 export const JOBS: JobDefinition[] = [
   {
@@ -416,6 +417,40 @@ export const JOBS: JobDefinition[] = [
       },
     ],
     handler: runTimetableSync,
+  },
+  {
+    name: "applicant-email-index",
+    description:
+      "Indexes the applications@ shared inbox (headers only) and links each message to the applicant it was exchanged with, for the hiring review pages.",
+    intervalMinutes: 10,
+    enabledByDefault: false,
+    settings: [
+      {
+        key: "backfillDays",
+        label: "Initial backfill window",
+        unit: "days",
+        min: 1,
+        max: 730,
+        default: 365,
+      },
+      {
+        key: "maxMessagesPerRun",
+        label: "Max messages indexed per run",
+        unit: "",
+        min: 10,
+        max: 500,
+        default: 100,
+      },
+      {
+        key: "overlapHours",
+        label: "Incremental overlap",
+        unit: "hours",
+        min: 1,
+        max: 168,
+        default: 24,
+      },
+    ],
+    handler: runApplicantEmailIndex,
   },
   {
     name: "wallet-restyle-broadcast",
