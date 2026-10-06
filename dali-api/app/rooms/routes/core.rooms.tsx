@@ -4,8 +4,8 @@
 // app/lib/room-display.server.ts).
 
 import { useEffect, useState } from "react";
-import { redirect, useFetcher, useLoaderData } from "react-router";
-import { Archive, ArchiveRestore, Pencil, Plus, Trash2 } from "lucide-react";
+import { Link, redirect, useFetcher, useLoaderData } from "react-router";
+import { Archive, ArchiveRestore, Pencil, Plus, Tablet, Trash2 } from "lucide-react";
 import { z } from "zod";
 import type { Route } from "./+types/core.rooms";
 import { prisma } from "~/lib/db";
@@ -16,9 +16,12 @@ import { logAuditEvent } from "~/lib/audit";
 import { parseForm } from "~/lib/validate";
 import { formatUserCode } from "~/lib/pairing";
 import { createDisplaySetupCode } from "~/lib/room-display.server";
+import { getActiveDisplayScan, stopDisplayScan } from "~/lib/display-scan.server";
+import { meetingOccurrenceHref } from "~/calendar/lib/meeting-href";
 import { coreHandle } from "~/core/coreNav";
 import { useOsChrome } from "~/components/os-chrome";
 import { Modal, ModalFooter, ModalHeader } from "~/components/Modal";
+import { Button } from "~/components/ui/Button";
 import { IconButton } from "~/components/ui/IconButton";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
@@ -43,7 +46,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   const gate = await requireCoreRooms(request);
   if ("response" in gate) throw gate.response;
 
-  const rooms = await prisma.room.findMany({
+  const [rooms, scan] = await Promise.all([
+    prisma.room.findMany({
     orderBy: [{ archivedAt: { sort: "asc", nulls: "first" } }, { name: "asc" }],
     include: {
       displays: {
@@ -58,10 +62,20 @@ export async function loader({ request }: Route.LoaderArgs) {
         },
       },
     },
-  });
+    }),
+    getActiveDisplayScan(),
+  ]);
 
   return {
     isAdmin: await isAdmin(gate.userId),
+    // The lab-wide iPad scan, if one is live, so Core can stop it from here
+    // without finding the event that switched it on.
+    activeScan: scan && {
+      title: scan.title,
+      href: meetingOccurrenceHref(scan.meetingId, scan.occurrenceStart.toISOString()),
+      startedBy: scan.startedBy,
+      expiresAt: scan.expiresAt.toISOString(),
+    },
     rooms: rooms.map((r) => ({
       id: r.id,
       name: r.name,
@@ -104,6 +118,7 @@ const ActionSchema = z.discriminatedUnion("intent", [
   z.object({ intent: z.literal("unarchive-room"), id: z.string().min(1) }),
   z.object({ intent: z.literal("add-display"), roomId: z.string().min(1), label: z.string().trim().min(1).max(100) }),
   z.object({ intent: z.literal("revoke-display"), id: z.string().min(1) }),
+  z.object({ intent: z.literal("stop-display-scan") }),
 ]);
 
 export async function action({ request }: Route.ActionArgs) {
@@ -174,6 +189,19 @@ export async function action({ request }: Route.ActionArgs) {
       await logAuditEvent({ action: "room.display.revoke", userId, targetId: body.id, request });
       return { ok: true };
     }
+    case "stop-display-scan": {
+      const scan = await getActiveDisplayScan();
+      if (!scan) return { ok: true };
+      await stopDisplayScan();
+      await logAuditEvent({
+        action: "room.display.scan.stop",
+        userId,
+        targetId: scan.meetingId,
+        metadata: { title: scan.title, occurrenceStart: scan.occurrenceStart.toISOString() },
+        request,
+      });
+      return { ok: true };
+    }
   }
 }
 
@@ -181,7 +209,7 @@ type LoaderRoom = Awaited<ReturnType<typeof loader>>["rooms"][number];
 type SetupResult = { label: string; code: string; expiresAt: string };
 
 export default function CoreRoomsPage() {
-  const { rooms } = useLoaderData<typeof loader>();
+  const { rooms, activeScan } = useLoaderData<typeof loader>();
   const chrome = useOsChrome();
   const [editing, setEditing] = useState<LoaderRoom | "new" | null>(null);
   const [setup, setSetup] = useState<SetupResult | null>(null);
@@ -201,6 +229,8 @@ export default function CoreRoomsPage() {
         </button>
       </div>
 
+      {activeScan && <ActiveScanBanner scan={activeScan} />}
+
       {rooms.length === 0 ? (
         <p className={chrome.bodyText}>No rooms yet.</p>
       ) : (
@@ -212,6 +242,51 @@ export default function CoreRoomsPage() {
       <RoomModal room={editing} onClose={() => setEditing(null)} />
       <SetupCodeModal setup={setup} onClose={() => setSetup(null)} />
     </div>
+  );
+}
+
+function ActiveScanBanner({ scan }: { scan: NonNullable<Awaited<ReturnType<typeof loader>>["activeScan"]> }) {
+  const chrome = useOsChrome();
+  const dialog = useDialog();
+  const toast = useToast();
+  const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
+
+  useEffect(() => {
+    if (fetcher.state === "idle" && fetcher.data?.error) toast.error(fetcher.data.error);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetcher.state, fetcher.data]);
+
+  const stop = async () => {
+    const ok = await dialog.confirm({
+      title: `Stop scanning for "${scan.title}"?`,
+      description: "Check-in from the iPads ends for that event and every door display goes back to showing its room.",
+      confirmLabel: "Stop scanning",
+      tone: "destructive",
+    });
+    if (ok) fetcher.submit({ intent: "stop-display-scan" }, { method: "post" });
+  };
+
+  const endsAt = new Date(scan.expiresAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return (
+    <section className={`${chrome.panel} ${chrome.panelPad} flex flex-wrap items-center justify-between gap-4`}>
+      <div className="flex min-w-0 items-start gap-3">
+        <Tablet className="mt-0.5 h-5 w-5 shrink-0 text-os-accent" aria-hidden />
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <Pill dot="success">Scanning on iPads</Pill>
+            <Link to={scan.href} className="truncate font-medium text-foreground underline">
+              {scan.title}
+            </Link>
+          </div>
+          <p className={`mt-1 ${chrome.bodyText}`}>
+            {scan.startedBy ? `Switched on by ${scan.startedBy}. ` : ""}Lapses on its own at {endsAt}.
+          </p>
+        </div>
+      </div>
+      <Button variant="destructive" className="shrink-0" onClick={stop} disabled={fetcher.state !== "idle"}>
+        Stop scanning
+      </Button>
+    </section>
   );
 }
 

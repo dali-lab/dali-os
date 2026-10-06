@@ -84,6 +84,8 @@ describe("room-display scan", () => {
       start: occurrenceStart,
       end: new Date("2026-09-30T23:00:00Z"),
       isEvent: false,
+      startedBy: null,
+      expiresAt: new Date("2026-09-30T23:15:00Z"),
     };
 
     it("checks in to that event's occurrence instead of the room's", async () => {

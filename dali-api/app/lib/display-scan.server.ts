@@ -3,6 +3,7 @@
 // event occurrence instead of showing its room (see api.room-display.*).
 
 import { prisma } from "~/lib/db";
+import { fullName } from "~/lib/display";
 import { CHECK_IN_GRACE_MIN, resolveMeetingOccurrence } from "~/lib/scheduled-meeting";
 
 // An event with no scheduled time has no end to lapse at.
@@ -16,6 +17,8 @@ export type ActiveDisplayScan = {
   end: Date | null;
   /** Walk-ins count only at SelfCheckIn events, as at a room's own event. */
   isEvent: boolean;
+  startedBy: string | null;
+  expiresAt: Date;
 };
 
 const MEETING_SELECT = {
@@ -33,11 +36,24 @@ export async function getActiveDisplayScan(now: Date = new Date()): Promise<Acti
   const session = await prisma.displayScanSession.findFirst({
     where: { expiresAt: { gt: now } },
     orderBy: { createdAt: "desc" },
-    select: { occurrenceStart: true, scheduledMeeting: { select: MEETING_SELECT } },
+    select: {
+      occurrenceStart: true,
+      expiresAt: true,
+      startedByUserId: true,
+      scheduledMeeting: { select: MEETING_SELECT },
+    },
   });
   if (!session) return null;
   const meeting = session.scheduledMeeting;
-  const occ = meeting.selectedAt ? await resolveMeetingOccurrence(meeting, session.occurrenceStart) : null;
+  const [occ, starter] = await Promise.all([
+    meeting.selectedAt ? resolveMeetingOccurrence(meeting, session.occurrenceStart) : null,
+    session.startedByUserId
+      ? prisma.user.findUnique({
+          where: { id: session.startedByUserId },
+          select: { firstName: true, lastName: true },
+        })
+      : null,
+  ]);
   return {
     meetingId: meeting.id,
     occurrenceStart: session.occurrenceStart,
@@ -45,19 +61,23 @@ export async function getActiveDisplayScan(now: Date = new Date()): Promise<Acti
     start: occ?.start ?? null,
     end: occ?.end ?? null,
     isEvent: meeting.attendanceMode === "SelfCheckIn",
+    startedBy: starter ? fullName(starter) || null : null,
+    expiresAt: session.expiresAt,
   };
 }
 
 export type StartDisplayScanResult =
-  | { ok: true; expiresAt: Date }
+  | { ok: true; expiresAt: Date; displaced: string | null }
   | { ok: false; error: string; status: number };
 
 /** Point every door display at this occurrence. Refused while another event
- *  has the iPads: that one has to be turned off (or lapse) first. */
+ *  has the iPads unless `takeOver` is set, which stops that event's scan in
+ *  the same transaction and reports its title as `displaced`. */
 export async function startDisplayScan(
   meetingId: string,
   occurrenceStart: Date,
   userId: string,
+  { takeOver = false }: { takeOver?: boolean } = {},
 ): Promise<StartDisplayScanResult> {
   const meeting = await prisma.scheduledMeeting.findUnique({ where: { id: meetingId }, select: MEETING_SELECT });
   if (!meeting) return { ok: false, error: "Not found", status: 404 };
@@ -78,22 +98,26 @@ export async function startDisplayScan(
     if (active) {
       const same =
         active.scheduledMeetingId === meetingId && active.occurrenceStart.getTime() === occurrenceStart.getTime();
-      if (same) return { ok: true as const, expiresAt };
-      return {
-        ok: false as const,
-        error: `iPads are already tracking "${active.scheduledMeeting.title}"`,
-        status: 409,
-      };
+      if (same) return { ok: true as const, expiresAt, displaced: null };
+      if (!takeOver) {
+        return {
+          ok: false as const,
+          error: `iPads are already tracking "${active.scheduledMeeting.title}"`,
+          status: 409,
+        };
+      }
     }
-    // Only lapsed sessions are left; clear them out.
+    // Lapsed sessions, or the one being taken over: clear them out.
     await tx.displayScanSession.deleteMany({});
     await tx.displayScanSession.create({
       data: { scheduledMeetingId: meetingId, occurrenceStart, expiresAt, startedByUserId: userId },
     });
-    return { ok: true as const, expiresAt };
+    return { ok: true as const, expiresAt, displaced: active?.scheduledMeeting.title ?? null };
   });
 }
 
-export async function stopDisplayScan(meetingId: string) {
-  await prisma.displayScanSession.deleteMany({ where: { scheduledMeetingId: meetingId } });
+/** Turn the iPads back into room displays. Scoped to one meeting from its
+ *  page; with no meeting (Core ▸ Rooms) it stops whatever is live. */
+export async function stopDisplayScan(meetingId?: string) {
+  await prisma.displayScanSession.deleteMany({ where: meetingId ? { scheduledMeetingId: meetingId } : {} });
 }
