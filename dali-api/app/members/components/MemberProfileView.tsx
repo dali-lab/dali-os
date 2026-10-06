@@ -30,6 +30,7 @@ import {
   Shield,
   Smartphone,
   User as UserIcon,
+  UsersRound,
   Utensils,
   Wallet,
   X,
@@ -120,6 +121,8 @@ export function MemberProfileView({
     compliance,
     wallet,
     canRevokeWalletPass,
+    groups,
+    canSeeGroups,
   } = data;
 
   // /members/:id renders inside a TabWorkspace iframe; a successful save only
@@ -267,6 +270,7 @@ export function MemberProfileView({
               canManage={canManageEligibility}
               allowedLevels={allowedLevels}
             />
+            {canSeeGroups && <GroupsCard groups={groups} />}
             <AccountCard member={member} canEdit={canEdit} />
             {!isSelf && canRevokeWalletPass && (
               <WalletCard
@@ -1078,6 +1082,49 @@ function DomainsCard({
               All active domains are assigned.
             </p>
           )}
+      </div>
+    </article>
+  );
+}
+
+// ─── Groups card ─────────────────────────────────────────────────────────────
+
+function GroupsCard({
+  groups,
+}: {
+  groups: ProfilePageData["groups"];
+}) {
+  return (
+    <article className="rounded-os-card bg-os-card overflow-hidden h-full">
+      <CardHeader
+        icon={<UsersRound className="w-[17px] h-[17px]" />}
+        iconBg="rgba(242,184,75,0.14)"
+        iconColor="#f2b84b"
+        title="Groups"
+      />
+      <div className="px-5 pb-5 flex flex-col gap-2">
+        {groups.length === 0 ? (
+          <p className="text-sm text-os-muted italic">
+            Not in any custom groups.
+          </p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {groups.map((g) => (
+              <Link
+                key={g.id}
+                to="/members/groups"
+                className="inline-flex items-center gap-1.5 rounded-full bg-os-container px-3 py-[5px] text-[13px] font-semibold text-foreground hover:bg-os-container-hi transition-colors"
+              >
+                {g.name}
+                {g.kind === "lab" && (
+                  <span className="rounded-full border border-os-accent/35 px-2.5 py-0.5 text-xs text-os-accent font-medium uppercase tracking-wide">
+                    Auto
+                  </span>
+                )}
+              </Link>
+            ))}
+          </div>
+        )}
       </div>
     </article>
   );

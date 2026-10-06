@@ -282,9 +282,9 @@ describe("areaForPath", () => {
     }
   });
 
-  it("keeps Groups reachable, gated as before", () => {
+  it("Groups is no longer a General sub-tab (it lives under People)", () => {
     const projectsArea = areasFor(REGROUP).find((a) => a.key === "projects")!;
-    expect(visibleSubtabs(projectsArea, CORE).map((t) => t.href)).toContain(
+    expect(visibleSubtabs(projectsArea, CORE).map((t) => t.href)).not.toContain(
       "/members/groups",
     );
     expect(visibleSubtabs(projectsArea, NOBODY).map((t) => t.href)).not.toContain(

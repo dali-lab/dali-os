@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import {
   Form,
+  Link,
   redirect,
   useActionData,
   useLoaderData,
@@ -26,10 +27,11 @@ import { resolvePhotoUrl } from "~/lib/photo";
 import { TermFilter } from "~/components/TermFilter";
 import { resolveTermFilter } from "~/lib/terms";
 import { deriveCoreTitles } from "~/lib/core-titles";
-import { Plus } from "lucide-react";
+import { Plus, UsersRound } from "lucide-react";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { Select, type SelectOption } from "~/components/ui/floating";
 import { filterPillClass } from "~/components/ui/floating/styles";
+import { buttonClasses } from "~/components/ui/Button";
 import { cn } from "~/lib/cn";
 export const meta: Route.MetaFunction = () => [{ title: "Directory · People · DALI OS" }];
 
@@ -105,6 +107,26 @@ export async function loader({ request }: Route.LoaderArgs) {
     ? { domainEligibilities: { some: { domainId } } }
     : {};
 
+  // Project filter: members are tied to projects via ProjectAssignment. Only
+  // projects with at least one assignment are offered, so the dropdown isn't
+  // full of empty projects. An unknown or empty ?project= is ignored, same as
+  // ?domain=. When a term is also selected, the project match is scoped to
+  // that term so the two filters compose.
+  const projects = await prisma.project.findMany({
+    where: { assignments: { some: {} } },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true },
+  });
+  const projectParam = url.searchParams.get("project") ?? "";
+  const projectId = projects.some((p) => p.id === projectParam) ? projectParam : "";
+  const inProject = projectId
+    ? {
+        projectAssignments: {
+          some: { projectId, ...(termId && !isAll ? { termId } : {}) },
+        },
+      }
+    : {};
+
   // Lab members are Users with a DALIMember row attached. Roles derive from
   // AdminMembership + CoreAssignment per the Phase 2 identity model — see
   // app/admin/routes/api.members.ts for the canonical shape.
@@ -136,7 +158,14 @@ export async function loader({ request }: Route.LoaderArgs) {
   const inClass = classYear ? { classYear } : {};
 
   const users = await prisma.user.findMany({
-    where: { ...LAB_MEMBER_WHERE, ...activeInTerm, ...inDomain, ...inClass, ...statusCondition },
+    where: {
+      ...LAB_MEMBER_WHERE,
+      ...activeInTerm,
+      ...inDomain,
+      ...inProject,
+      ...inClass,
+      ...statusCondition,
+    },
     orderBy:
       status === "alumni"
         ? [{ classYear: "desc" as const }, ...MEMBER_LIST_ORDER_BY]
@@ -200,6 +229,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     selectedTerm: selected,
     domains,
     selectedDomain: domainId,
+    projects,
+    selectedProject: projectId,
     classYears,
     selectedClassYear: classYear,
     canEdit,
@@ -350,6 +381,8 @@ export default function MembersList() {
     selectedTerm,
     domains,
     selectedDomain,
+    projects,
+    selectedProject,
     classYears,
     selectedClassYear,
     canEdit,
@@ -383,16 +416,24 @@ export default function MembersList() {
             People
           </h1>
         </div>
-        {canEdit && !creating && (
-          <button
-            type="button"
-            onClick={() => setCreating(true)}
-            className="os-add-btn"
-          >
-            <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
-            New member
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {canSeeGroups && (
+            <Link to="/members/groups" className={buttonClasses("secondary", "md")}>
+              <UsersRound className="h-[17px] w-[17px]" aria-hidden />
+              Groups
+            </Link>
+          )}
+          {canEdit && !creating && (
+            <button
+              type="button"
+              onClick={() => setCreating(true)}
+              className="os-add-btn"
+            >
+              <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
+              New member
+            </button>
+          )}
+        </div>
       </header>
 
       {actionData?.error && (
@@ -469,6 +510,7 @@ export default function MembersList() {
         />
         {status === "active" && <TermFilter terms={terms} selected={selectedTerm} />}
         <DomainFilter domains={domains} selected={selectedDomain} />
+        <ProjectFilter projects={projects} selected={selectedProject} />
         <ClassYearFilter classYears={classYears} selected={selectedClassYear} />
         <span className="text-xs text-muted-foreground ml-auto">
           {filtered.length}{" "}
@@ -605,6 +647,37 @@ function DomainFilter({
         const next = new URLSearchParams(searchParams);
         if (value) next.set("domain", value);
         else next.delete("domain");
+        setSearchParams(next);
+      }}
+    />
+  );
+}
+
+// Project dropdown for the members directory. Like DomainFilter, it drives the
+// loader via a search param (`?project=`) and preserves the other params so it
+// composes with the term filter. "" is the "All projects" choice.
+function ProjectFilter({
+  projects,
+  selected,
+}: {
+  projects: { id: string; name: string }[];
+  selected: string;
+}) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const options: SelectOption<string>[] = [
+    { value: "", label: "All projects" },
+    ...projects.map((p) => ({ value: p.id, label: p.name })),
+  ];
+  return (
+    <Select
+      value={selected}
+      options={options}
+      ariaLabel="Filter by project"
+      buttonClassName={cn(filterPillClass(), "w-full sm:w-44")}
+      onChange={(value) => {
+        const next = new URLSearchParams(searchParams);
+        if (value) next.set("project", value);
+        else next.delete("project");
         setSearchParams(next);
       }}
     />

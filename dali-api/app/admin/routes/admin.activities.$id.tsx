@@ -13,6 +13,8 @@ import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
 import { prisma } from "~/lib/db";
+import { listAllGroups } from "~/lib/groups";
+import { orderGroupsForPicker } from "~/lib/group-kind";
 import { logAuditEvent } from "~/lib/audit";
 import { buttonClasses } from "~/components/ui/Button";
 import { useConfirmSubmit } from "~/components/ui/dialog";
@@ -73,17 +75,22 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const activity = await prisma.activity.findUnique({ where: { id: params.id } });
   if (!activity) throw new Response("Not found", { status: 404 });
 
-  const [terms, groups, eventCount, roster, teams] = await Promise.all([
+  const [terms, allGroups, eventCount, roster, teams] = await Promise.all([
     prisma.term.findMany({ orderBy: { sortKey: "desc" }, select: { id: true, code: true } }),
-    prisma.groupDefinition.findMany({
-      where: { archivedAt: null },
-      orderBy: { name: "asc" },
-      select: { id: true, name: true, type: true },
-    }),
+    listAllGroups(),
     prisma.activityEvent.count({ where: { activityId: params.id } }),
     resolveActivityRoster(activity),
     listActivityTeams(params.id),
   ]);
+  const groups = allGroups
+    .filter((g) => !g.archived)
+    .map((g) => ({
+      id: g.id,
+      name: g.name,
+      type: g.type,
+      systemKey: g.systemKey,
+      memberCount: g.memberIds.length,
+    }));
 
   // Everyone the teams panel has to name: the audience, plus anyone already on
   // a team who has since fallen out of it (a group edited mid-activity), who
@@ -398,7 +405,7 @@ export default function AdminActivityEditor() {
                 className="rounded-md border border-border bg-background px-3 py-2 text-sm"
               >
                 <option value="">— None —</option>
-                {groups.map((g) => (
+                {orderGroupsForPicker(groups, groupId ? [groupId] : []).map((g) => (
                   <option key={g.id} value={g.id}>
                     {g.name} ({g.type})
                   </option>
