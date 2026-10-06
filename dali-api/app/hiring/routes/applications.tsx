@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePersistedState } from "~/hooks/usePersistedState";
+import {
+  EMPTY_FILTERS,
+  ENGAGEMENT_FILTERS,
+  isApplicationFilters,
+  type ApplicationFilters,
+} from "~/hiring/lib/application-filters";
 import { isAdminOnlyCycle } from "~/hiring/lib/applicant-groups";
 import { redirect, useLoaderData, useNavigate, useSearchParams } from "react-router";
 import { SlidersHorizontal } from "lucide-react";
@@ -334,49 +340,6 @@ const STATUS_TONE: Record<string, string> = {
 // Toggle one value in a multi-select filter.
 function toggle<T extends string>(list: T[], value: T): T[] {
   return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
-}
-
-export const ENGAGEMENT_FILTERS = [
-  { key: "returning", label: "Returning applicant" },
-  { key: "emailed", label: "Emailed applications@" },
-  { key: "educated", label: "Past DALI education" },
-] as const;
-export type EngagementFilter = (typeof ENGAGEMENT_FILTERS)[number]["key"];
-
-export type ApplicationFilters = {
-  domainIds: string[];
-  statuses: string[];
-  stage: string | null;
-  // Every selected signal must hold (AND), so narrowing stays predictable.
-  engagement: EngagementFilter[];
-  pieIncludesInProgress: boolean;
-  query: string;
-};
-
-export const EMPTY_FILTERS: ApplicationFilters = {
-  domainIds: [],
-  statuses: [],
-  stage: null,
-  engagement: [],
-  pieIncludesInProgress: false,
-  query: "",
-};
-
-const isStringList = (v: unknown): v is string[] =>
-  Array.isArray(v) && v.every((x) => typeof x === "string");
-
-export function isApplicationFilters(v: unknown): v is ApplicationFilters {
-  if (!v || typeof v !== "object") return false;
-  const f = v as Record<string, unknown>;
-  return (
-    isStringList(f.domainIds) &&
-    isStringList(f.statuses) &&
-    (f.stage === null || typeof f.stage === "string") &&
-    isStringList(f.engagement) &&
-    f.engagement.every((k) => ENGAGEMENT_FILTERS.some((e) => e.key === k)) &&
-    typeof f.pieIncludesInProgress === "boolean" &&
-    typeof f.query === "string"
-  );
 }
 
 export default function ApplicationsDatabase() {

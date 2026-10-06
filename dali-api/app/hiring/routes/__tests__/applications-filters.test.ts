@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EMPTY_FILTERS, isApplicationFilters } from "../applications";
+import { EMPTY_FILTERS, isApplicationFilters } from "~/hiring/lib/application-filters";
 
 describe("isApplicationFilters", () => {
   it("accepts the empty shape and a populated one", () => {
