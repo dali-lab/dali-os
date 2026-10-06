@@ -6,6 +6,7 @@
 // blinded reviewer couldn't already infer from the counts.
 
 import { prisma } from "~/lib/db";
+import { APPLICATIONS_FROM_EMAIL } from "~/lib/app-env";
 
 export type EmailEngagement = {
   totals: { inbound: number; outbound: number; firstAt: string | null; lastAt: string | null };
@@ -21,10 +22,15 @@ export type EmailEngagement = {
 
 export async function getApplicantEmailEngagement(
   userId: string,
-  opts: { blinded: boolean },
+  opts: { blinded: boolean; accountAddress?: string },
 ): Promise<EmailEngagement> {
+  // Scoped to one shared inbox (applications@ by default) so a user who is
+  // also linked on another inbox's index rows — e.g. a partner contact who
+  // happens to share an address with a hiring applicant — never has that
+  // other inbox's mail folded into this account's engagement.
+  const accountAddress = opts.accountAddress ?? APPLICATIONS_FROM_EMAIL;
   const rows = await prisma.mailMessageIndex.findMany({
-    where: { linkedUserId: userId },
+    where: { linkedUserId: userId, account: { address: { equals: accountAddress, mode: "insensitive" } } },
     orderBy: { sentAt: "asc" },
     select: { id: true, accountId: true, threadId: true, direction: true, subject: true, sentAt: true },
   });

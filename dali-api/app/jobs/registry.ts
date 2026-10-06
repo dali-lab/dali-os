@@ -92,6 +92,7 @@ import { runInfraSnapshot } from "~/jobs/infra-snapshot.server";
 import { runTimetableSync } from "~/jobs/timetable-sync.server";
 import { runWalletRestyleBroadcastJob } from "~/jobs/wallet-restyle-broadcast.server";
 import { runApplicantEmailIndex } from "~/jobs/applicant-email-index.server";
+import { runPartnerEmailIndex } from "~/jobs/shared-inbox-index.server";
 
 export const JOBS: JobDefinition[] = [
   {
@@ -451,6 +452,40 @@ export const JOBS: JobDefinition[] = [
       },
     ],
     handler: runApplicantEmailIndex,
+  },
+  {
+    name: "partner-email-index",
+    description:
+      "Indexes the partners@ shared inbox (headers only) and links each message to the partner contact it was exchanged with, for the Partner CRM.",
+    intervalMinutes: 10,
+    enabledByDefault: false,
+    settings: [
+      {
+        key: "backfillDays",
+        label: "Initial backfill window",
+        unit: "days",
+        min: 1,
+        max: 730,
+        default: 365,
+      },
+      {
+        key: "maxMessagesPerRun",
+        label: "Max messages indexed per run",
+        unit: "",
+        min: 10,
+        max: 500,
+        default: 100,
+      },
+      {
+        key: "overlapHours",
+        label: "Incremental overlap",
+        unit: "hours",
+        min: 1,
+        max: 168,
+        default: 24,
+      },
+    ],
+    handler: runPartnerEmailIndex,
   },
   {
     name: "wallet-restyle-broadcast",

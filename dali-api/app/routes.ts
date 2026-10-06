@@ -670,6 +670,10 @@ export default [
   route("api/partner-applications/:id/status", "partners/routes/api.partner-applications.$id.status.ts"),
   route("api/partner-applications/:id/domains", "partners/routes/api.partner-applications.$id.domains.ts"),
   route("api/partner-application-domains/:id", "partners/routes/api.partner-application-domains.$id.ts"),
+  route(
+    "api/partner-contacts/:id/email-thread/:indexId",
+    "partners/routes/api.partner-contacts.$id.email-thread.$indexId.ts",
+  ),
 
 
   // Hiring API — cycles, scheduling, applications, reviews, decisions, interviews, delibs
