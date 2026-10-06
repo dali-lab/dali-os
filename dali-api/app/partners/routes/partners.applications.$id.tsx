@@ -31,11 +31,15 @@ import { redirectToLogin } from "~/lib/login-next";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { canViewStaffing, isCore, getActiveCoreCycleTermIds } from "~/lib/roles";
 import {
-  PARTNER_APPLICATION_STATUSES as STATUSES,
-  PARTNER_APPLICATION_STATUS_LABELS as STATUS_LABEL,
-  isPartnerApplicationStatus,
-  type PartnerApplicationStatus as Status,
+  PARTNER_STAGES as STAGES,
+  PARTNER_STAGE_LABELS as STAGE_LABEL,
+  PARTNER_REJECT_REASONS,
+  PARTNER_REJECT_REASON_LABELS,
+  isPartnerStage,
+  isPartnerRejectReason,
+  type PartnerStage as Status,
 } from "../lib/partner-application";
+import { PROJECT_FUNDING_TYPES, PROJECT_FUNDING_TYPE_LABELS } from "~/lib/chart-string";
 import { formAnswerRows } from "~/forms/lib/answer-rows.server";
 import type { Question } from "~/types";
 import { DocEditor } from "~/components/doc";
@@ -59,7 +63,7 @@ import {
 } from "../lib/partner-emails.server";
 import {
   logPartnerActivity,
-  setApplicationStatus,
+  setApplicationStage,
 } from "../lib/partner-activity.server";
 import { getFrontendUrl } from "~/lib/app-env";
 import type { PartnerMeetingOutcome } from "~/generated/prisma/enums";
@@ -97,16 +101,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       id: true,
       title: true,
       summary: true,
-      status: true,
+      stage: true,
       sowDocId: true,
       resultingProjectId: true,
       source: true,
-      assignedMeeterId: true,
       evalRubric: true,
       interviewRating: true,
       ambiguityRating: true,
-      fundingModel: true,
+      fundingType: true,
       decisionReason: true,
+      rejectReason: true,
       partnerOrg: { select: { id: true, name: true, logoUrl: true } },
       applicantContact: { select: { id: true, name: true, email: true } },
       targetTerms: {
@@ -201,6 +205,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   let activities: {
     id: string;
     createdAt: string;
+    applicationId: string | null;
     actorUserId: string | null;
     type: string;
     body: string | null;
@@ -213,6 +218,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     select: {
       id: true,
       createdAt: true,
+      applicationId: true,
       actorUserId: true,
       type: true,
       body: true,
@@ -222,6 +228,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   activities = rows.map((r) => ({
     id: r.id,
     createdAt: r.createdAt.toISOString(),
+    applicationId: r.applicationId,
     actorUserId: r.actorUserId,
     type: r.type,
     body: r.body,
@@ -250,7 +257,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       id: application.id,
       title: application.title,
       summary: application.summary,
-      status: application.status,
+      stage: application.stage,
       sowDocId: application.sowDocId,
       resultingProjectId: application.resultingProjectId,
       targetTerms: application.targetTerms.map((t) => ({
@@ -260,12 +267,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       partner: application.partnerOrg,
       applicant: application.applicantContact,
       source: application.source,
-      assignedMeeterId: application.assignedMeeterId,
       evalRubric: application.evalRubric,
       interviewRating: application.interviewRating,
       ambiguityRating: application.ambiguityRating,
-      fundingModel: application.fundingModel,
+      fundingType: application.fundingType,
       decisionReason: application.decisionReason,
+      rejectReason: application.rejectReason,
       domains: application.domains.map((d) => ({
         id: d.id,
         domainId: d.domainId,
@@ -314,14 +321,14 @@ export async function action({ request, params }: Route.ActionArgs) {
       where: { id: params.id },
       data: { title },
     });
-  } else if (intent === "status") {
-    const status = form.get("status");
-    if (!isPartnerApplicationStatus(status)) {
-      return { error: "Invalid status." };
+  } else if (intent === "stage") {
+    const stage = form.get("stage");
+    if (!isPartnerStage(stage)) {
+      return { error: "Invalid stage." };
     }
-    await setApplicationStatus(prisma, {
+    await setApplicationStage(prisma, {
       applicationId: params.id,
-      to: status,
+      to: stage,
       actorUserId: auth.user.sub,
     });
   } else if (intent === "details") {
@@ -469,9 +476,13 @@ export async function action({ request, params }: Route.ActionArgs) {
         },
         select: { id: true },
       });
-      await setApplicationStatus(tx, {
+      // "Promoted" is derived (stage Accepted + resultingProjectId), not a
+      // stage of its own — the move here is a no-op if already Accepted, but
+      // still worth routing through setApplicationStage for the resultingProjectId
+      // write and so a reject-then-promote edge case can't skip the activity log.
+      await setApplicationStage(tx, {
         applicationId: app.id,
-        to: "Promoted",
+        to: "Accepted",
         actorUserId: auth.user.sub,
         data: { resultingProjectId: created.id, partnerOrgId: orgId },
         meta: { projectId: created.id },
@@ -488,7 +499,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     intent === "reject" ||
     intent === "learn-more" ||
     intent === "accept" ||
-    intent === "assign-meeter" ||
     intent === "eval" ||
     intent === "acceptance" ||
     intent === "meeting-create" ||
@@ -503,9 +513,9 @@ export async function action({ request, params }: Route.ActionArgs) {
         where: { id: params.id },
         select: { applicantContact: { select: { name: true, email: true } } },
       });
-      await setApplicationStatus(prisma, {
+      await setApplicationStage(prisma, {
         applicationId: params.id,
-        to: "Meeting",
+        to: "Interview",
         actorUserId: auth.user.sub,
       });
       if (applicant?.applicantContact?.email) {
@@ -531,11 +541,8 @@ export async function action({ request, params }: Route.ActionArgs) {
         where: { id: params.id },
         select: { applicantContact: { select: { name: true, email: true } } },
       });
-      await setApplicationStatus(prisma, {
-        applicationId: params.id,
-        to: "Triaged",
-        actorUserId: auth.user.sub,
-      });
+      // No stage change — this just nudges the partner toward the application
+      // form. A card can sit in New and get this email more than once.
       if (applicant?.applicantContact?.email) {
         await sendTriageNextStepsEmail(
           applicant.applicantContact.email,
@@ -551,17 +558,21 @@ export async function action({ request, params }: Route.ActionArgs) {
       }
 
     } else if (intent === "reject") {
+      const rejectReason = form.get("rejectReason");
+      if (!isPartnerRejectReason(rejectReason)) {
+        return { error: "Choose a rejection reason." };
+      }
       const reason = (form.get("reason") as string | null)?.trim() || undefined;
       const applicant = await prisma.partnerApplication.findUnique({
         where: { id: params.id },
         select: { applicantContact: { select: { name: true, email: true } } },
       });
-      await setApplicationStatus(prisma, {
+      await setApplicationStage(prisma, {
         applicationId: params.id,
         to: "Rejected",
         actorUserId: auth.user.sub,
-        data: { decisionReason: reason ?? null },
-        ...(reason ? { meta: { reason } } : {}),
+        data: { decisionReason: reason ?? null, rejectReason },
+        meta: { rejectReason, ...(reason ? { reason } : {}) },
       });
       if (applicant?.applicantContact?.email) {
         await sendDecisionRejectedEmail(
@@ -584,12 +595,10 @@ export async function action({ request, params }: Route.ActionArgs) {
         where: { id: params.id },
         select: { applicantContact: { select: { name: true, email: true } } },
       });
-      await setApplicationStatus(prisma, {
-        applicationId: params.id,
-        to: "LearnMore",
-        actorUserId: auth.user.sub,
+      // No stage change — "learn more" is a side-request, not a funnel move.
+      await prisma.partnerApplication.update({
+        where: { id: params.id },
         data: { decisionReason: whatWeNeed },
-        meta: { reason: whatWeNeed },
       });
       if (applicant?.applicantContact?.email) {
         await sendLearnMoreRequestEmail(
@@ -613,7 +622,7 @@ export async function action({ request, params }: Route.ActionArgs) {
           applicantContact: { select: { name: true, email: true } },
         },
       });
-      await setApplicationStatus(prisma, {
+      await setApplicationStage(prisma, {
         applicationId: params.id,
         to: "Accepted",
         actorUserId: auth.user.sub,
@@ -631,13 +640,6 @@ export async function action({ request, params }: Route.ActionArgs) {
           metadata: { kind: "accepted" },
         });
       }
-
-    } else if (intent === "assign-meeter") {
-      const meeterId = (form.get("meeterId") as string | null)?.trim() || null;
-      await prisma.partnerApplication.update({
-        where: { id: params.id },
-        data: { assignedMeeterId: meeterId },
-      });
 
     } else if (intent === "eval") {
       const rubric: Record<string, unknown> = {};
@@ -681,12 +683,17 @@ export async function action({ request, params }: Route.ActionArgs) {
         ambiguityRaw !== null && ambiguityRaw !== ""
           ? Math.min(5, Math.max(1, Math.round(Number(ambiguityRaw))))
           : null;
-      const fundingModel = (form.get("fundingModel") as string | null)?.trim() || null;
+      const fundingTypeRaw = form.get("fundingType");
+      const fundingType =
+        typeof fundingTypeRaw === "string" &&
+        (PROJECT_FUNDING_TYPES as readonly string[]).includes(fundingTypeRaw)
+          ? (fundingTypeRaw as (typeof PROJECT_FUNDING_TYPES)[number])
+          : null;
       await prisma.partnerApplication.update({
         where: { id: params.id },
         data: {
           ...(ambiguityRating !== null ? { ambiguityRating } : {}),
-          fundingModel,
+          fundingType,
         },
       });
 
@@ -820,9 +827,7 @@ export default function PartnerApplicationDetail() {
     <DetailsSection application={application} terms={terms} canEdit={canEdit} />
   );
   // CRM working sections (only meaningful with edit permission).
-  const triageBar = canEdit ? (
-    <TriageBar application={application} coreMembers={coreMembers} />
-  ) : null;
+  const triageBar = canEdit ? <TriageBar application={application} /> : null;
   const evaluation = canEdit ? (
     <EvaluationCard application={application} />
   ) : null;
@@ -879,9 +884,6 @@ export default function PartnerApplicationDetail() {
   // stepper + advance/triage actions (always visible), and the body is tabbed
   // so each heavy section gets full width. Overview (activity feed + key
   // details) is the default, front-and-center, like every CRM record page.
-  const assignedMeeterName =
-    coreMembers.find((m) => m.userId === application.assignedMeeterId)?.name ??
-    null;
   const expectedTotal = application.domains.reduce(
     (s, d) => s + d.expectedMembers,
     0,
@@ -922,10 +924,6 @@ export default function PartnerApplicationDetail() {
               : "—"
           }
         />
-        <KeyRow
-          label="Assigned meeter"
-          value={assignedMeeterName ?? "Unassigned"}
-        />
         <KeyRow label="Expected members" value={String(expectedTotal)} />
         <KeyRow label="Source" value={application.source} />
       </dl>
@@ -949,7 +947,7 @@ export default function PartnerApplicationDetail() {
       <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
         {header}
         {triageBar}
-        {application.status === "Accepted" && promoteBlock}
+        {application.stage === "Accepted" && promoteBlock}
       </div>
 
       <UnderlineTabButtons
@@ -1001,45 +999,22 @@ function KeyRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-// ─── CRM: Triage / decision bar + assign-meeter ───────────────────────────────
+// ─── CRM: Triage / decision bar ────────────────────────────────────────────────
 
 // Happy-path funnel order for the stepper + the sequential "advance" CTA.
-// Branch states (LearnMore, OnHold, Rejected) sit off this main line.
-const FUNNEL_ORDER = [
-  "Inquiry",
-  "Triaged",
-  "Meeting",
-  "ApplicationSubmitted",
-  "UnderReview",
-  "Accepted",
-  "Promoted",
-] as const;
+// Rejected is the off-ramp and sits off this main line.
+const FUNNEL_ORDER = ["New", "Interview", "Accepted"] as const;
 
-const STEP_SHORT: Record<(typeof FUNNEL_ORDER)[number], string> = {
-  Inquiry: "Inquiry",
-  Triaged: "Triaged",
-  Meeting: "Meeting",
-  ApplicationSubmitted: "Applied",
-  UnderReview: "Review",
-  Accepted: "Accepted",
-  Promoted: "Promoted",
-};
+// Rejected can happen from New or Interview; anchor its stepper position at
+// Interview so the chip reads as "got this far, then rejected" rather than
+// resetting to the start.
+const REJECTED_ANCHOR_IDX = FUNNEL_ORDER.indexOf("Interview");
 
-// Branch/legacy states map onto the nearest main-line stage for the stepper.
-const BRANCH_ANCHOR: Record<string, (typeof FUNNEL_ORDER)[number]> = {
-  LearnMore: "UnderReview",
-  OnHold: "UnderReview",
-  Rejected: "UnderReview",
-  Submitted: "ApplicationSubmitted",
-};
-
-function StatusStepper({ status }: { status: Status }) {
-  const onPath = (FUNNEL_ORDER as readonly string[]).includes(status);
-  const currentIdx = FUNNEL_ORDER.indexOf(
-    onPath
-      ? (status as (typeof FUNNEL_ORDER)[number])
-      : (BRANCH_ANCHOR[status] ?? "Inquiry"),
-  );
+function StageStepper({ stage }: { stage: Status }) {
+  const onPath = (FUNNEL_ORDER as readonly string[]).includes(stage);
+  const currentIdx = onPath
+    ? FUNNEL_ORDER.indexOf(stage as (typeof FUNNEL_ORDER)[number])
+    : REJECTED_ANCHOR_IDX;
   return (
     <ol className="flex flex-wrap items-center gap-1">
       {FUNNEL_ORDER.map((s, i) => {
@@ -1057,7 +1032,7 @@ function StatusStepper({ status }: { status: Status }) {
                     : "bg-muted/40 text-muted-foreground border-border",
               )}
             >
-              {STEP_SHORT[s]}
+              {STAGE_LABEL[s]}
             </span>
             {i < FUNNEL_ORDER.length - 1 && (
               <span className="text-muted-foreground/40 text-[10px]">›</span>
@@ -1065,7 +1040,7 @@ function StatusStepper({ status }: { status: Status }) {
           </li>
         );
       })}
-      {status === "Rejected" && (
+      {stage === "Rejected" && (
         <li className="ml-1 text-[11px] px-2 py-0.5 rounded-full border bg-destructive/10 text-destructive border-destructive/20">
           Rejected
         </li>
@@ -1076,10 +1051,8 @@ function StatusStepper({ status }: { status: Status }) {
 
 function TriageBar({
   application,
-  coreMembers,
 }: {
   application: LoaderData["application"];
-  coreMembers: LoaderData["coreMembers"];
 }) {
   const submit = useSubmit();
   const confirmSubmit = useConfirmSubmit();
@@ -1087,10 +1060,10 @@ function TriageBar({
     "offer-meeting" | "send-application" | "reject" | "learn-more" | null
   >(null);
 
-  const submitStatus = (to: Status) => {
+  const submitStage = (to: Status) => {
     const fd = new FormData();
-    fd.set("intent", "status");
-    fd.set("status", to);
+    fd.set("intent", "stage");
+    fd.set("stage", to);
     submit(fd, { method: "post" });
   };
 
@@ -1110,36 +1083,19 @@ function TriageBar({
     </button>
   );
 
-  // The sequential "advance to next status" primary CTA is status-aware — it
-  // reuses the existing side-effecting forms (offer meeting / send application /
-  // accept) or a direct status move. Off-ramps (reject, learn-more) stay as
-  // secondary actions; the full any→any dropdown lives in the header.
-  const status = application.status;
+  // The sequential "advance to next stage" primary CTA is stage-aware — it
+  // reuses the existing side-effecting forms (offer meeting / accept) or a
+  // direct stage move. Off-ramps (reject, learn-more) stay as secondary
+  // actions; the full any→any dropdown lives in the header.
+  const stage = application.stage;
   let primary: ReactNode = null;
   const secondary: ReactNode[] = [];
-  switch (status) {
-    case "Inquiry":
-      primary = openBtn("send-application", "Send application →", true);
-      secondary.push(openBtn("offer-meeting", "Offer meeting"));
-      break;
-    case "Triaged":
+  switch (stage) {
+    case "New":
       primary = openBtn("offer-meeting", "Offer meeting →", true);
-      secondary.push(openBtn("send-application", "Resend application"));
+      secondary.push(openBtn("send-application", "Send application"));
       break;
-    case "Meeting":
-    case "ApplicationSubmitted":
-      primary = (
-        <button
-          type="button"
-          onClick={() => submitStatus("UnderReview")}
-          className={buttonClasses("primary", "sm")}
-        >
-          Start review →
-        </button>
-      );
-      secondary.push(openBtn("offer-meeting", "Offer another meeting"));
-      break;
-    case "UnderReview":
+    case "Interview":
       primary = (
         <Form
           method="post"
@@ -1157,19 +1113,8 @@ function TriageBar({
           </button>
         </Form>
       );
+      secondary.push(openBtn("offer-meeting", "Offer another meeting"));
       secondary.push(openBtn("learn-more", "Need more info"));
-      break;
-    case "LearnMore":
-    case "OnHold":
-      primary = (
-        <button
-          type="button"
-          onClick={() => submitStatus("UnderReview")}
-          className={buttonClasses("primary", "sm")}
-        >
-          Resume review →
-        </button>
-      );
       break;
     case "Accepted":
       // Promotion is handled by the PromoteBlock in the top band at this stage.
@@ -1179,23 +1124,22 @@ function TriageBar({
         <button
           key="reopen"
           type="button"
-          onClick={() => submitStatus("UnderReview")}
+          onClick={() => submitStage("Interview")}
           className={SECONDARY}
         >
           Reopen
         </button>,
       );
       break;
-    // Promoted: terminal — no actions.
   }
-  if (!["Accepted", "Rejected", "Promoted"].includes(status)) {
+  if (!["Accepted", "Rejected"].includes(stage)) {
     secondary.push(openBtn("reject", "Reject"));
   }
 
   return (
     <div className="mt-3 flex flex-col gap-3">
-      <StatusStepper status={status} />
-      {status === "Promoted" ? (
+      <StageStepper stage={stage} />
+      {application.resultingProjectId ? (
         <p className="text-xs text-muted-foreground">
           Promoted to a project — this opportunity is complete.
         </p>
@@ -1325,7 +1269,21 @@ function TriageBar({
         >
           <input type="hidden" name="intent" value="reject" />
           <label className="flex flex-col gap-1 text-xs">
-            <span className="text-muted-foreground font-medium">Reason (shown to partner, optional)</span>
+            <span className="text-muted-foreground font-medium">Reason *</span>
+            <Select
+              name="rejectReason"
+              defaultValue=""
+              ariaLabel="Rejection reason"
+              placeholder="Choose a reason…"
+              options={PARTNER_REJECT_REASONS.map((r) => ({
+                value: r,
+                label: PARTNER_REJECT_REASON_LABELS[r],
+              }))}
+              buttonClassName="w-full text-sm px-2 py-1.5 border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs">
+            <span className="text-muted-foreground font-medium">Note (shown to partner, optional)</span>
             <textarea
               name="reason"
               rows={2}
@@ -1343,27 +1301,6 @@ function TriageBar({
           </div>
         </Form>
       )}
-
-      {/* Assign meeter */}
-      <div className="flex items-center gap-2 pt-1">
-        <span className="text-xs text-muted-foreground shrink-0">Assigned meeter</span>
-        <Select
-          name="meeterId"
-          value={application.assignedMeeterId ?? ""}
-          onChange={(value) => {
-            const fd = new FormData();
-            fd.set("intent", "assign-meeter");
-            fd.set("meeterId", value);
-            submit(fd, { method: "post" });
-          }}
-          placeholder="Unassigned"
-          options={[
-            { value: "", label: "Unassigned" },
-            ...coreMembers.map((m) => ({ value: m.userId, label: m.name })),
-          ]}
-          buttonClassName="text-xs px-2 py-1 border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 min-w-[140px] transition-colors hover:bg-muted/40"
-        />
-      </div>
     </div>
   );
 }
@@ -1390,13 +1327,16 @@ function AcceptanceFields({ application }: { application: LoaderData["applicatio
           />
         </label>
         <label className="flex flex-col gap-1 text-xs">
-          <span className="text-muted-foreground">Funding model</span>
-          <input
-            type="text"
-            name="fundingModel"
-            defaultValue={application.fundingModel ?? ""}
-            placeholder="e.g. Magnuson grant, self-funded…"
-            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+          <span className="text-muted-foreground">Funding type</span>
+          <Select
+            name="fundingType"
+            defaultValue={application.fundingType ?? ""}
+            placeholder="Choose a funding type…"
+            options={PROJECT_FUNDING_TYPES.map((t) => ({
+              value: t,
+              label: PROJECT_FUNDING_TYPE_LABELS[t],
+            }))}
+            buttonClassName="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
           />
         </label>
       </div>
@@ -1736,9 +1676,9 @@ function MeetingsSection({
 
 // ─── Existing components (unchanged below) ────────────────────────────────────
 
-// Decision statuses that silently skip the email pipeline — selecting any of
+// Decision stages that silently skip the email pipeline — selecting either of
 // these via the dropdown should warn that no email is sent.
-const SILENT_DECISION_STATUSES = new Set<Status>(["Accepted", "Rejected", "Promoted"]);
+const SILENT_DECISION_STAGES = new Set<Status>(["Accepted", "Rejected"]);
 
 function Header({
   application,
@@ -1751,11 +1691,11 @@ function Header({
   const submit = useSubmit();
   const dialog = useDialog();
 
-  const handleStatusChange = async (value: string) => {
-    const toStatus = value as Status;
-    if (SILENT_DECISION_STATUSES.has(toStatus)) {
+  const handleStageChange = async (value: string) => {
+    const toStage = value as Status;
+    if (SILENT_DECISION_STAGES.has(toStage)) {
       const ok = await dialog.confirm({
-        title: `Move to "${STATUS_LABEL[toStatus]}"?`,
+        title: `Move to "${STAGE_LABEL[toStage]}"?`,
         description:
           "This does NOT email the partner — use the Accept/Reject buttons to notify them.",
         confirmLabel: "Move anyway",
@@ -1763,8 +1703,8 @@ function Header({
       if (!ok) return;
     }
     const fd = new FormData();
-    fd.set("intent", "status");
-    fd.set("status", value);
+    fd.set("intent", "stage");
+    fd.set("stage", value);
     submit(fd, { method: "post" });
   };
 
@@ -1817,16 +1757,16 @@ function Header({
 
         {canEdit ? (
           <Select
-            name="status"
-            defaultValue={application.status}
-            ariaLabel="Application status"
-            onChange={handleStatusChange}
-            options={STATUSES.map((s) => ({ value: s, label: STATUS_LABEL[s] }))}
+            name="stage"
+            defaultValue={application.stage}
+            ariaLabel="Application stage"
+            onChange={handleStageChange}
+            options={STAGES.map((s) => ({ value: s, label: STAGE_LABEL[s] }))}
             buttonClassName="text-xs px-2 py-1 border border-border rounded-full bg-background text-muted-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
           />
         ) : (
           <span className="text-[11px] px-2 py-0.5 rounded-full border border-border text-muted-foreground">
-            {STATUS_LABEL[application.status]}
+            {STAGE_LABEL[application.stage]}
           </span>
         )}
       </div>

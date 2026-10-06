@@ -8,10 +8,10 @@ vi.mock("~/lib/roles", async (orig) => {
 vi.mock("~/lib/github-slug", () => ({
   githubTeamSlug: (s: string) => s.toLowerCase().replace(/\s+/g, "-"),
 }));
-// Promote now routes the status flip through setApplicationStatus (logs a
+// Promote now routes the stage flip through setApplicationStage (logs a
 // StatusChanged activity). Mock it so the tx doesn't need the activity plumbing.
 vi.mock("~/partners/lib/partner-activity.server", () => ({
-  setApplicationStatus: vi.fn().mockResolvedValue("Inquiry"),
+  setApplicationStage: vi.fn().mockResolvedValue("New"),
 }));
 // Stub the registry so the BY_NAME map side-effect doesn't pull in every
 // tool module. We only need the error classes here.
@@ -44,7 +44,7 @@ vi.mock("~/mcp/registry", () => {
 
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
-import { setApplicationStatus } from "~/partners/lib/partner-activity.server";
+import { setApplicationStage } from "~/partners/lib/partner-activity.server";
 import {
   runPromotePartnerApplication,
   PROMOTE_PARTNER_APPLICATION_TOOL,
@@ -122,13 +122,14 @@ describe("promote_partner_application", () => {
 
     const out = await runPromotePartnerApplication("u1", { applicationId: "app-1" });
     expect(out).toMatchObject({ projectId: "proj-new", name: "AI Health Tool", alreadyExisted: false });
-    // A5: promotion is logged via setApplicationStatus (from → Promoted) rather
+    // A5: promotion is logged via setApplicationStage (from → Accepted) rather
     // than a bare inline update, so the application timeline records it.
-    expect(setApplicationStatus).toHaveBeenCalledWith(
+    // "Promoted" is derived (Accepted + resultingProjectId), not a stage.
+    expect(setApplicationStage).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         applicationId: "app-1",
-        to: "Promoted",
+        to: "Accepted",
         actorUserId: "u1",
         data: expect.objectContaining({ resultingProjectId: "proj-new" }),
       }),

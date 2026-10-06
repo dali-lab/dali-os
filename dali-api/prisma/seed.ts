@@ -2993,7 +2993,7 @@ async function main() {
       // Multi-term engagement: exercises the new multiple-target-terms UI.
       // 26X may not exist in the minimal local seed; filtered out below.
       targetTermIds: [term26S?.id, term26X?.id],
-      status: "UnderReview" as const,
+      stage: "Interview" as const,
       summary: "Touchscreen kiosks that let visitors explore the permanent collection by theme.",
       domains: [
         { domainId: designDomain.id, expectedMembers: 2, expectedChallenges: "Kiosk UX, wayfinding, and an accessible browsing flow for all ages." },
@@ -3006,7 +3006,7 @@ async function main() {
       title: "Alumni mentorship matching",
       partnerOrgId: "partner-tuck-school",
       targetTermIds: [term26S?.id],
-      status: "Accepted" as const,
+      stage: "Accepted" as const,
       summary: "Match current students with alumni mentors by industry and interest.",
       domains: [
         { domainId: engDomain.id, expectedMembers: 2, expectedChallenges: "Matching algorithm + scheduling integration." },
@@ -3018,7 +3018,7 @@ async function main() {
       title: "Lab sensor dashboard",
       partnerOrgId: "partner-thayer",
       targetTermIds: [term26X?.id],
-      status: "ApplicationSubmitted" as const,
+      stage: "New" as const,
       summary: "Real-time dashboard for shared lab equipment sensor data.",
       domains: [
         { domainId: engDomain.id, expectedMembers: 3, expectedChallenges: "Time-series ingestion + live dashboard." },
@@ -3036,13 +3036,13 @@ async function main() {
     });
     await prisma.partnerApplication.upsert({
       where: { id: a.id },
-      update: { title: a.title, partnerOrgId: a.partnerOrgId, status: a.status, summary: a.summary },
+      update: { title: a.title, partnerOrgId: a.partnerOrgId, stage: a.stage, summary: a.summary },
       create: {
         id: a.id,
         title: a.title,
         partnerOrgId: a.partnerOrgId,
         applicantContactId: applicant.id,
-        status: a.status,
+        stage: a.stage,
         summary: a.summary,
       },
     });
@@ -3063,6 +3063,14 @@ async function main() {
     }
   }
   console.log(`  ${partnerApplicationSeeds.length} partner applications, ${partnerApplicationSeeds.reduce((n, a) => n + a.domains.length, 0)} domain-scope rows`);
+
+  // Singleton operator settings for the partner CRM (interview panel, stale
+  // threshold). Defaults are fine locally — just needs the row to exist.
+  await prisma.partnerCrmSettings.upsert({
+    where: { id: "default" },
+    update: {},
+    create: { id: "default" },
+  });
 
   // The default lab-editable partner application form: /partner/apply appends
   // its questions to the structural pitch fields (title, terms, domain scope).

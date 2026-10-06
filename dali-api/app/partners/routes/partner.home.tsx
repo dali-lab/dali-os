@@ -7,9 +7,11 @@ import { partnerProjectsWhereForOrgs } from "~/partners/lib/partner-access";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { ProjectCoverImage } from "~/projects/components/ProjectCoverImage";
 import {
-  PARTNER_APPLICATION_STATUS_LABELS,
-  PARTNER_APPLICATION_STATUS_PILL,
-  type PartnerApplicationStatus,
+  PARTNER_STAGE_LABELS,
+  PARTNER_STAGE_PILL,
+  PARTNER_TRACK_NODES,
+  partnerTrackIndex,
+  type PartnerStage,
 } from "../lib/partner-application";
 
 export const meta: Route.MetaFunction = () => [
@@ -31,7 +33,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       select: {
         id: true,
         title: true,
-        status: true,
+        stage: true,
         createdAt: true,
         resultingProjectId: true,
       },
@@ -62,78 +64,42 @@ export async function loader({ request }: Route.LoaderArgs) {
   };
 }
 
-// Partner-safe journey: the ten internal funnel statuses collapse to five
-// public milestones, each mapping to exactly one node so the track only ever
-// moves forward. Internal triage granularity (Triaged/LearnMore/OnHold) stays
-// hidden.
-const TRACK = [
-  "Submitted",
-  "Meeting",
-  "Under review",
-  "Decision",
-  "Project",
-] as const;
-const DECISION_NODE = 3;
+// Partner-safe journey: the four pipeline stages collapse to the four public
+// milestones in PARTNER_TRACK_NODES, so the track only ever moves forward.
+const DECISION_NODE = PARTNER_TRACK_NODES.indexOf("Decision");
 
-function trackIndex(status: PartnerApplicationStatus): number {
-  switch (status) {
-    case "Inquiry":
-    case "Triaged":
-      return 0;
-    case "Meeting":
-      return 1;
-    case "ApplicationSubmitted":
-    case "UnderReview":
-    case "LearnMore":
-    case "OnHold":
-    case "Submitted":
-      return 2;
-    case "Accepted":
-    case "Rejected":
-      return 3;
-    case "Promoted":
-      return 4;
-    default:
-      return 0;
-  }
-}
-
-function statusHint(status: PartnerApplicationStatus): string {
-  switch (status) {
-    case "Inquiry":
-    case "Triaged":
+function stageHint(stage: PartnerStage, resultingProjectId: string | null): string {
+  if (resultingProjectId) return "Your project is live — see it under Projects.";
+  switch (stage) {
+    case "New":
       return "We've received your pitch and will be in touch to schedule a meeting.";
-    case "Meeting":
+    case "Interview":
       return "A meeting with the DALI team is being arranged.";
-    case "ApplicationSubmitted":
-    case "UnderReview":
-    case "Submitted":
-      return "The DALI team is reviewing your pitch.";
-    case "LearnMore":
-      return "The DALI team has a few follow-up questions for you.";
-    case "OnHold":
-      return "Your pitch is on hold for now — we'll follow up.";
     case "Accepted":
       return "Accepted! We'll draft a statement of work together.";
     case "Rejected":
       return "Not selected this cycle. Thank you for pitching.";
-    case "Promoted":
-      return "Your project is live — see it under Projects.";
     default:
       return "";
   }
 }
 
-function ProgressTrack({ status }: { status: PartnerApplicationStatus }) {
-  const current = trackIndex(status);
-  const declined = status === "Rejected";
+function ProgressTrack({
+  stage,
+  resultingProjectId,
+}: {
+  stage: PartnerStage;
+  resultingProjectId: string | null;
+}) {
+  const current = partnerTrackIndex({ stage, resultingProjectId });
+  const declined = stage === "Rejected";
   return (
     <ol className="flex" aria-label="Application progress">
-      {TRACK.map((label, i) => {
+      {PARTNER_TRACK_NODES.map((label, i) => {
         const done = i < current;
         const isCurrent = i === current;
         const declinedNode = declined && i === DECISION_NODE;
-        const last = i === TRACK.length - 1;
+        const last = i === PARTNER_TRACK_NODES.length - 1;
         return (
           <li
             key={label}
@@ -172,8 +138,9 @@ function ProgressTrack({ status }: { status: PartnerApplicationStatus }) {
 type AppRow = {
   id: string;
   title: string;
-  status: PartnerApplicationStatus;
+  stage: PartnerStage;
   createdAt: string | Date;
+  resultingProjectId: string | null;
 };
 
 function ApplicationCard({ app }: { app: AppRow }) {
@@ -197,14 +164,14 @@ function ApplicationCard({ app }: { app: AppRow }) {
           </span>
         </div>
         <span
-          className={`text-xs rounded-full px-2 py-0.5 flex-shrink-0 ${PARTNER_APPLICATION_STATUS_PILL[app.status]}`}
+          className={`text-xs rounded-full px-2 py-0.5 flex-shrink-0 ${PARTNER_STAGE_PILL[app.stage]}`}
         >
-          {PARTNER_APPLICATION_STATUS_LABELS[app.status]}
+          {PARTNER_STAGE_LABELS[app.stage]}
         </span>
       </div>
-      <ProgressTrack status={app.status} />
+      <ProgressTrack stage={app.stage} resultingProjectId={app.resultingProjectId} />
       <p className="mt-4 text-xs text-muted-foreground">
-        {statusHint(app.status)}
+        {stageHint(app.stage, app.resultingProjectId)}
       </p>
     </Link>
   );

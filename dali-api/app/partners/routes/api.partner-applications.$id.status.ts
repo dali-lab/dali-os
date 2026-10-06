@@ -3,14 +3,15 @@ import { prisma } from "~/lib/db";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { isPartnerApplicationStatus } from "../lib/partner-application";
-import { setApplicationStatus } from "../lib/partner-activity.server";
+import { isPartnerStage } from "../lib/partner-application";
+import { setApplicationStage } from "../lib/partner-activity.server";
 
 // POST /api/partner-applications/:id/status
 //
-// Move an application to a different status column (board drag-and-drop, also
-// used by the detail-page status dropdown). Body: { status }. Same permission
-// model as application edit (isCore === Admin || Core).
+// Move an application to a different stage column (board drag-and-drop, also
+// used by the detail-page stage dropdown). Body: { stage } — { status } is
+// accepted as a legacy alias for the same value. Same permission model as
+// application edit (isCore === Admin || Core).
 
 export async function action({ request, params }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
@@ -38,17 +39,18 @@ export async function action({ request, params }: Route.ActionArgs) {
       Response.json({ error: "Invalid JSON" }, { status: 400 }),
     );
   }
-  const status = (body as { status?: unknown } | null)?.status;
-  if (!isPartnerApplicationStatus(status)) {
+  const parsed = body as { stage?: unknown; status?: unknown } | null;
+  const stage = parsed?.stage ?? parsed?.status;
+  if (!isPartnerStage(stage)) {
     return withCors(
       request,
-      Response.json({ error: "Invalid status" }, { status: 400 }),
+      Response.json({ error: "Invalid stage" }, { status: 400 }),
     );
   }
 
-  const prev = await setApplicationStatus(prisma, {
+  const prev = await setApplicationStage(prisma, {
     applicationId: params.id,
-    to: status,
+    to: stage,
     actorUserId: auth.user.sub,
   });
   if (prev === null) {

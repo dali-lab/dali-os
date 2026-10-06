@@ -114,7 +114,7 @@ export async function action({ request }: Route.ActionArgs) {
       data: {
         applicantContactId: ctx.contact.id,
         partnerOrgId: null,
-        status: "ApplicationSubmitted",
+        stage: "New",
         source: "Form",
         title,
         formSubmissionId: submission.id,

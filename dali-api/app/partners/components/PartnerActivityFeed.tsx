@@ -1,23 +1,35 @@
 import { useState, type ReactNode } from "react";
 import { Form, Link } from "react-router";
 import {
+  Building2,
   Calendar,
+  CalendarPlus,
+  CalendarX,
+  CheckCircle2,
+  CircleDollarSign,
   ClipboardCheck,
   ClipboardList,
+  FileCheck2,
   FilePlus2,
+  FileSignature,
+  Link2,
   Mail,
   MessageSquarePlus,
   Plus,
+  Receipt,
+  UserMinus,
+  UserPlus,
   ArrowRight,
   type LucideIcon,
 } from "lucide-react";
 import { buttonClasses } from "~/components/ui/Button";
 import { relativeTime } from "~/lib/relative-time";
-import { PARTNER_APPLICATION_STATUS_LABELS } from "../lib/partner-application";
+import { PARTNER_STAGE_LABELS } from "../lib/partner-application";
 
 export type PartnerActivity = {
   id: string;
   createdAt: string;
+  applicationId: string | null;
   actorUserId: string | null;
   type: string;
   body: string | null;
@@ -38,9 +50,9 @@ function str(v: unknown): string | null {
 function num(v: unknown): number | null {
   return typeof v === "number" ? v : null;
 }
-function statusLabel(v: unknown): string {
+function stageLabel(v: unknown): string {
   const s = str(v);
-  return (s && PARTNER_APPLICATION_STATUS_LABELS[s as never]) || s || "—";
+  return (s && PARTNER_STAGE_LABELS[s as never]) || s || "—";
 }
 
 type Rendered = { icon: LucideIcon; title: ReactNode; detail?: ReactNode };
@@ -63,10 +75,10 @@ function render(a: PartnerActivity): Rendered {
         icon: ArrowRight,
         title: (
           <>
-            Moved to <strong>{statusLabel(m.to)}</strong>
+            Moved to <strong>{stageLabel(m.to)}</strong>
             <span className="text-muted-foreground">
               {" "}
-              from {statusLabel(m.from)}
+              from {stageLabel(m.from)}
             </span>
           </>
         ),
@@ -130,6 +142,49 @@ function render(a: PartnerActivity): Rendered {
         ) : undefined,
       };
     }
+    case "MeetingRequested":
+      return { icon: CalendarPlus, title: "Partner requested a meeting" };
+    case "MeetingRequestDeclined": {
+      const note = str(m.note);
+      return {
+        icon: CalendarX,
+        title: "Meeting request declined",
+        detail: note ? (
+          <span className="text-muted-foreground">“{note}”</span>
+        ) : undefined,
+      };
+    }
+    case "ContractSent":
+      return { icon: FileSignature, title: "Contract sent to the partner" };
+    case "ContractSigned":
+      return { icon: FileCheck2, title: "Contract signed" };
+    case "InvoiceIssued": {
+      const amount = num(m.amountCents);
+      return {
+        icon: Receipt,
+        title: "Invoice issued",
+        detail:
+          amount != null ? (
+            <span className="text-muted-foreground">
+              ${(amount / 100).toLocaleString()}
+            </span>
+          ) : undefined,
+      };
+    }
+    case "InvoicePaid":
+      return { icon: CircleDollarSign, title: "Invoice paid" };
+    case "ProjectLinked":
+      return { icon: Link2, title: "Linked to a project" };
+    case "ProjectEnded":
+      return { icon: CheckCircle2, title: "Project ended" };
+    case "SurveyReceived":
+      return { icon: ClipboardCheck, title: "Post-project survey received" };
+    case "OrgUpdated":
+      return { icon: Building2, title: "Organization details updated" };
+    case "MemberAdded":
+      return { icon: UserPlus, title: "Member added" };
+    case "MemberRemoved":
+      return { icon: UserMinus, title: "Member removed" };
     default:
       return { icon: ArrowRight, title: a.type };
   }

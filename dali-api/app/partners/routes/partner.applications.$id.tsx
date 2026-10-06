@@ -14,10 +14,12 @@ import type { Question } from "~/types";
 import { DocEditor } from "~/components/doc";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import {
-  PARTNER_APPLICATION_STATUS_LABELS,
-  PARTNER_APPLICATION_STATUS_PILL,
-  PARTNER_EDITABLE_STATUSES,
-  type PartnerApplicationStatus,
+  PARTNER_STAGE_LABELS,
+  PARTNER_STAGE_PILL,
+  PARTNER_EDITABLE_STAGES,
+  PARTNER_TRACK_NODES,
+  partnerTrackIndex,
+  type PartnerStage,
 } from "../lib/partner-application";
 
 export const meta: Route.MetaFunction = ({ data }) => {
@@ -36,7 +38,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     select: {
       id: true,
       title: true,
-      status: true,
+      stage: true,
       createdAt: true,
       resultingProjectId: true,
       targetTerms: {
@@ -76,7 +78,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   return {
     application: applicationOut,
     formAnswers,
-    canEditDetails: PARTNER_EDITABLE_STATUSES.includes(application.status),
+    canEditDetails: PARTNER_EDITABLE_STAGES.includes(application.stage),
     collabToken: await getCollabToken(request),
     userName: presenceUser?.name ?? fallbackName,
     currentUserId: auth.user.sub,
@@ -87,10 +89,10 @@ export async function action({ request, params }: Route.ActionArgs) {
   const ctx = await requirePartnerAccount(request);
   const application = await prisma.partnerApplication.findFirst({
     where: { id: params.id, applicantContactId: ctx.contact.id },
-    select: { id: true, status: true },
+    select: { id: true, stage: true },
   });
   if (!application) throw new Response("Not found", { status: 404 });
-  if (!PARTNER_EDITABLE_STATUSES.includes(application.status)) {
+  if (!PARTNER_EDITABLE_STAGES.includes(application.stage)) {
     return { error: "This application is no longer editable." };
   }
 
@@ -105,42 +107,40 @@ export async function action({ request, params }: Route.ActionArgs) {
   return { ok: true };
 }
 
-function StatusTimeline({ status }: { status: PartnerApplicationStatus }) {
-  // The three display stages of a partner-facing application lifecycle,
-  // mapped onto the CRM funnel statuses. "Submitted" is dead code (backfilled
-  // out of the DB); the new submitted status is ApplicationSubmitted.
-  const terminal =
-    status === "Accepted" || status === "Rejected" || status === "Promoted";
-  const atReview =
-    status === "UnderReview" ||
-    status === "LearnMore" ||
-    status === "OnHold";
-  const activeIndex = terminal ? 2 : atReview ? 1 : 0;
+const DECISION_NODE_INDEX = PARTNER_TRACK_NODES.indexOf("Decision");
 
-  const steps: { label: string; pillStatus: PartnerApplicationStatus }[] = [
-    { label: PARTNER_APPLICATION_STATUS_LABELS["ApplicationSubmitted"], pillStatus: "ApplicationSubmitted" },
-    { label: PARTNER_APPLICATION_STATUS_LABELS["UnderReview"], pillStatus: "UnderReview" },
-    {
-      label: terminal ? PARTNER_APPLICATION_STATUS_LABELS[status] : "Decision",
-      pillStatus: terminal ? status : "OnHold",
-    },
-  ];
+function StageTimeline({
+  stage,
+  resultingProjectId,
+}: {
+  stage: PartnerStage;
+  resultingProjectId: string | null;
+}) {
+  const activeIndex = partnerTrackIndex({ stage, resultingProjectId });
+  const declinedHere = stage === "Rejected" && activeIndex === DECISION_NODE_INDEX;
+
   return (
     <ol className="flex items-center gap-2 text-xs">
-      {steps.map((step, i) => (
-        <li key={step.label} className="flex items-center gap-2">
-          {i > 0 && <span className="w-6 h-px bg-border" />}
-          <span
-            className={`rounded-full px-2.5 py-1 ${
-              i <= activeIndex
-                ? PARTNER_APPLICATION_STATUS_PILL[step.pillStatus]
-                : "bg-muted/40 text-muted-foreground"
-            }`}
-          >
-            {step.label}
-          </span>
-        </li>
-      ))}
+      {PARTNER_TRACK_NODES.map((label, i) => {
+        const atDecision = i === DECISION_NODE_INDEX && i === activeIndex;
+        const displayLabel = atDecision ? PARTNER_STAGE_LABELS[stage] : label;
+        return (
+          <li key={label} className="flex items-center gap-2">
+            {i > 0 && <span className="w-6 h-px bg-border" />}
+            <span
+              className={`rounded-full px-2.5 py-1 ${
+                declinedHere && atDecision
+                  ? PARTNER_STAGE_PILL.Rejected
+                  : i <= activeIndex
+                    ? PARTNER_STAGE_PILL.Accepted
+                    : "bg-muted/40 text-muted-foreground"
+              }`}
+            >
+              {displayLabel}
+            </span>
+          </li>
+        );
+      })}
     </ol>
   );
 }
@@ -166,14 +166,14 @@ export default function PartnerApplicationDetail({
           <h1 className="font-heading text-3xl font-bold text-dark-blue">
             {application.title}
           </h1>
-          <StatusTimeline status={application.status} />
+          <StageTimeline stage={application.stage} resultingProjectId={application.resultingProjectId} />
         </div>
         <p className="text-sm text-muted-foreground mt-1">
           Submitted {new Date(application.createdAt).toLocaleDateString()}
         </p>
       </div>
 
-      {application.status === "Accepted" && application.resultingProjectId && (
+      {application.stage === "Accepted" && application.resultingProjectId && (
         <Link
           to={`/partner/projects/${application.resultingProjectId}`}
           className="bg-accent-teal/10 border border-accent-teal/30 rounded-2xl px-5 py-4 text-sm text-accent-teal font-medium hover:bg-accent-teal/15 transition"
@@ -261,18 +261,15 @@ export default function PartnerApplicationDetail({
         <h2 className="font-heading font-semibold text-dark-blue">
           Statement of Work
         </h2>
-        {application.status === "UnderReview" && (
+        {application.stage === "Interview" && (
           <p className="text-xs text-muted-foreground mt-0.5">
             Drafted together with the DALI team — edits sync live.
           </p>
         )}
         <div className="mt-3" />
         {/* The SOW is a co-owned doc: it opens once the lab is actively
-            reviewing (UnderReview+), not the moment a pitch lands. */}
-        {(application.status === "ApplicationSubmitted" ||
-          application.status === "Inquiry" ||
-          application.status === "Triaged" ||
-          application.status === "Meeting") ? (
+            engaging (Interview+), not the moment a pitch lands. */}
+        {application.stage === "New" ? (
           <p className="text-sm text-muted-foreground bg-muted/30 rounded-lg px-4 py-3">
             This document opens when the lab starts reviewing your pitch —
             you'll draft the details here together with the DALI team.

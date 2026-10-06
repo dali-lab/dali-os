@@ -5,7 +5,7 @@
 //   create  — create a PartnerMeeting row for an application (mirrors meeting-create intent).
 //             Accepts scheduledAt (ISO string), optional attendeeUserIds, optional notes.
 //             Does NOT email the partner — the web intent's notifyPartner option is intentionally
-//             omitted here per the no-email rule. Use update_status or add_note for comms context.
+//             omitted here per the no-email rule. Use update_stage or add_note for comms context.
 //   debrief — set debrief text and/or outcome on an existing meeting (mirrors meeting-debrief intent).
 //
 // Web fns reused: logPartnerActivity (from partner-activity.server) for the

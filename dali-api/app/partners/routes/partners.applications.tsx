@@ -21,11 +21,11 @@ import { prisma } from "~/lib/db";
 import { canViewStaffing, isCore } from "~/lib/roles";
 import { resolvePhotoUrl } from "~/lib/photo";
 import {
-  PARTNER_APPLICATION_STATUSES as STATUSES,
-  PARTNER_APPLICATION_STATUS_LABELS as STATUS_LABEL,
-  PARTNER_APPLICATION_STATUS_PILL,
-  PROJECTING_STATUSES,
-  type PartnerApplicationStatus as Status,
+  PARTNER_STAGES as STAGES,
+  PARTNER_STAGE_LABELS as STAGE_LABEL,
+  PARTNER_STAGE_PILL,
+  PROJECTING_STAGES,
+  type PartnerStage as Status,
 } from "../lib/partner-application";
 import { useChartColors } from "~/components/analytics/useChartColors";
 import {
@@ -75,7 +75,8 @@ type DomainScopeOut = {
 type ApplicationRow = {
   id: string;
   title: string;
-  status: Status;
+  stage: Status;
+  resultingProjectId: string | null;
   partnerName: string;
   partnerLogoUrl: string | null;
   // The partner's pitch prose: first textarea answer from their form
@@ -105,12 +106,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   const [applications, canEdit, roleRequests, termFilter] =
     await Promise.all([
     prisma.partnerApplication.findMany({
-      orderBy: [{ status: "asc" }, { createdAt: "desc" }],
+      orderBy: [{ stage: "asc" }, { createdAt: "desc" }],
       select: {
         id: true,
         title: true,
         summary: true,
-        status: true,
+        stage: true,
+        resultingProjectId: true,
         partnerOrg: { select: { name: true, logoUrl: true } },
         applicantContact: { select: { id: true, name: true, email: true } },
         formSubmission: {
@@ -163,7 +165,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     return {
       id: a.id,
       title: a.title,
-      status: a.status,
+      stage: a.stage,
+      resultingProjectId: a.resultingProjectId,
       partnerName: a.partnerOrg?.name ?? a.applicantContact?.name ?? "Unknown",
       excerpt: answerExcerpt ?? a.summary,
       // Uploaded logos are stored as S3 keys; presign for display.
@@ -268,7 +271,7 @@ export async function action({ request }: Route.ActionArgs) {
       title,
       applicantContactId: contact.id,
       partnerOrgId: null,
-      status: "Inquiry",
+      stage: "New",
       source: "Manual",
     },
     select: { id: true },
@@ -289,7 +292,7 @@ export default function PartnersApplications() {
   const navigate = useNavigate();
   const confirmSubmit = useConfirmSubmit();
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<Status | "all">("all");
+  const [stageFilter, setStageFilter] = useState<Status | "all">("all");
   const [domainFilter, setDomainFilter] = useState<string>("all");
   // Term filter for planning — projects/applications are planned several terms
   // out and can target multiple terms, so a row matches if ANY target term is
@@ -303,7 +306,7 @@ export default function PartnersApplications() {
   // Held at this level (not inside the board) so the projection chart and the
   // list both reflect a pending move without a full loader refetch — the
   // chart's other input (required slots) can't change from a status flip.
-  const [pendingStatus, setPendingStatus] = useState<Record<string, Status>>(
+  const [pendingStage, setPendingStage] = useState<Record<string, Status>>(
     {},
   );
   const [searchParams, setSearchParams] = useSearchParams();
@@ -313,7 +316,7 @@ export default function PartnersApplications() {
   // loader's default scope (current & upcoming); status is always "all" in
   // board view, so it drops out of the count there on its own.
   const activeFilterCount =
-    (statusFilter !== "all" ? 1 : 0) +
+    (stageFilter !== "all" ? 1 : 0) +
     (domainFilter !== "all" ? 1 : 0) +
     (selected !== UPCOMING ? 1 : 0);
 
@@ -324,7 +327,7 @@ export default function PartnersApplications() {
   };
 
   const resetFilters = () => {
-    setStatusFilter("all");
+    setStageFilter("all");
     setDomainFilter("all");
     const next = new URLSearchParams(searchParams);
     next.delete("term");
@@ -349,9 +352,9 @@ export default function PartnersApplications() {
   const effectiveRows = useMemo(
     () =>
       rows.map((r) =>
-        pendingStatus[r.id] ? { ...r, status: pendingStatus[r.id] } : r,
+        pendingStage[r.id] ? { ...r, stage: pendingStage[r.id] } : r,
       ),
-    [rows, pendingStatus],
+    [rows, pendingStage],
   );
 
   const domainOptions = useMemo(() => {
@@ -367,7 +370,7 @@ export default function PartnersApplications() {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return effectiveRows.filter((r) => {
-      if (statusFilter !== "all" && r.status !== statusFilter) return false;
+      if (stageFilter !== "all" && r.stage !== stageFilter) return false;
       if (domainFilter !== "all" && !r.domains.some((d) => d.domainId === domainFilter))
         return false;
       // isAll → no term scope; otherwise a row matches if any target term is in
@@ -379,7 +382,7 @@ export default function PartnersApplications() {
       if (r.partnerName.toLowerCase().includes(q)) return true;
       return r.domains.some((d) => d.domainName.toLowerCase().includes(q));
     });
-  }, [effectiveRows, query, statusFilter, domainFilter, isAll, termIds]);
+  }, [effectiveRows, query, stageFilter, domainFilter, isAll, termIds]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -506,22 +509,22 @@ export default function PartnersApplications() {
             {/* The board shows every status as a column, so slicing by one
                 would silently hide columns — list view only. */}
             {view === "list" && (
-              <FilterGroup label="Status" os={true}>
+              <FilterGroup label="Stage" os={true}>
                 <FilterPill
                   os={true}
-                  selected={statusFilter === "all"}
-                  onClick={() => setStatusFilter("all")}
+                  selected={stageFilter === "all"}
+                  onClick={() => setStageFilter("all")}
                 >
                   All
                 </FilterPill>
-                {STATUSES.map((st) => (
+                {STAGES.map((st) => (
                   <FilterPill
                     key={st}
                     os={true}
-                    selected={statusFilter === st}
-                    onClick={() => setStatusFilter(st)}
+                    selected={stageFilter === st}
+                    onClick={() => setStageFilter(st)}
                   >
-                    {STATUS_LABEL[st]}
+                    {STAGE_LABEL[st]}
                   </FilterPill>
                 ))}
               </FilterGroup>
@@ -576,7 +579,7 @@ export default function PartnersApplications() {
                 setView(v);
                 // The board shows every status as a column; a lingering
                 // status filter would silently hide columns.
-                if (v === "board") setStatusFilter("all");
+                if (v === "board") setStageFilter("all");
               }}
               aria-pressed={view === v}
               className={cn(
@@ -709,11 +712,11 @@ export default function PartnersApplications() {
         <ApplicationsBoard
           rows={filtered}
           canEdit={canEdit}
-          onMove={(id, toStatus) =>
-            setPendingStatus((m) => ({ ...m, [id]: toStatus }))
+          onMove={(id, toStage) =>
+            setPendingStage((m) => ({ ...m, [id]: toStage }))
           }
           onRevert={(id) =>
-            setPendingStatus((m) => {
+            setPendingStage((m) => {
               const { [id]: _drop, ...rest } = m;
               return rest;
             })
@@ -735,6 +738,13 @@ function addTo(s: Series, domainId: string, n: number) {
   s.total += n;
 }
 
+// Projecting = still speculative headcount. A promoted application
+// (resultingProjectId set) already carries its own role requests, so it
+// drops out of the projection even if its stage is Accepted.
+function isProjecting(r: ApplicationRow): boolean {
+  return PROJECTING_STAGES.includes(r.stage) && !r.resultingProjectId;
+}
+
 // Per-term projection of *expected* lab members (from under-review +
 // accepted partner applications, by target term) against *required* members
 // (from project role-request slots, by term). The domain filter narrows the
@@ -754,7 +764,7 @@ function TermProjection({
   const domains = useMemo(() => {
     const seen = new Map<string, string>();
     for (const r of rows) {
-      if (!PROJECTING_STATUSES.includes(r.status)) continue;
+      if (!isProjecting(r)) continue;
       for (const d of r.domains) {
         if (!seen.has(d.domainId)) seen.set(d.domainId, d.domainName);
       }
@@ -802,7 +812,7 @@ function TermProjection({
       return g;
     };
     for (const r of rows) {
-      if (!PROJECTING_STATUSES.includes(r.status)) continue;
+      if (!isProjecting(r)) continue;
       // An application's expected headcount counts toward every term it
       // targets — a 3-term engagement needs that team in all 3 terms.
       for (const t of r.targetTerms) {
@@ -990,12 +1000,12 @@ function DomainLegend({
   );
 }
 
-function StatusPill({ status }: { status: Status }) {
+function StagePill({ stage }: { stage: Status }) {
   return (
     <span
-      className={`inline-flex items-center px-2 py-0.5 text-xs font-medium rounded ${PARTNER_APPLICATION_STATUS_PILL[status]}`}
+      className={`inline-flex items-center px-2 py-0.5 text-xs font-medium rounded ${PARTNER_STAGE_PILL[stage]}`}
     >
-      {STATUS_LABEL[status]}
+      {STAGE_LABEL[stage]}
     </span>
   );
 }
@@ -1009,7 +1019,7 @@ function ApplicationsTable({ rows }: { rows: ApplicationRow[] }) {
           <tr>
             <th className="text-left font-medium px-4 py-2">Title</th>
             <th className="text-left font-medium px-4 py-2">Partner</th>
-            <th className="text-left font-medium px-4 py-2">Status</th>
+            <th className="text-left font-medium px-4 py-2">Stage</th>
             <th className="text-left font-medium px-4 py-2">Target term</th>
             <th className="text-left font-medium px-4 py-2">Domains</th>
             <th className="text-right font-medium px-4 py-2">Expected</th>
@@ -1035,7 +1045,7 @@ function ApplicationsTable({ rows }: { rows: ApplicationRow[] }) {
               </td>
               <td className="px-4 py-2 text-muted-foreground">{a.partnerName}</td>
               <td className="px-4 py-2">
-                <StatusPill status={a.status} />
+                <StagePill stage={a.stage} />
               </td>
               <td className="px-4 py-2 text-muted-foreground">
                 {a.targetTerms.length > 0
@@ -1063,9 +1073,9 @@ function ApplicationsTable({ rows }: { rows: ApplicationRow[] }) {
 // then POSTs, and onRevert on failure — no loader refetch. The optimistic state
 // lives in the parent, so the board uses only the POST/rollback half of the
 // shared flow rather than `useOptimisticBoardMove`'s local state.
-// Statuses that silently skip the email pipeline — dropping a card here should
-// warn that no email is sent. Mirrors SILENT_DECISION_STATUSES in the detail route.
-const BOARD_DECISION_STATUSES = new Set<Status>(["Accepted", "Rejected", "Promoted"]);
+// Stages that silently skip the email pipeline — dropping a card here should
+// warn that no email is sent. Mirrors the decision intents in the detail route.
+const BOARD_DECISION_STAGES = new Set<Status>(["Accepted", "Rejected"]);
 
 function ApplicationsBoard({
   rows,
@@ -1075,17 +1085,17 @@ function ApplicationsBoard({
 }: {
   rows: ApplicationRow[];
   canEdit: boolean;
-  onMove: (id: string, toStatus: Status) => void;
+  onMove: (id: string, toStage: Status) => void;
   onRevert: (id: string) => void;
 }) {
   const [error, setError] = useState<string | null>(null);
   const dialog = useDialog();
 
-  const byStatus = useMemo(() => {
+  const byStage = useMemo(() => {
     const map = Object.fromEntries(
-      STATUSES.map((s) => [s, [] as ApplicationRow[]]),
+      STAGES.map((s) => [s, [] as ApplicationRow[]]),
     ) as Record<Status, ApplicationRow[]>;
-    for (const a of rows) map[a.status].push(a);
+    for (const a of rows) map[a.stage].push(a);
     return map;
   }, [rows]);
 
@@ -1094,16 +1104,16 @@ function ApplicationsBoard({
     const overId = event.over?.id;
     if (!overId || typeof overId !== "string") return;
     const data = event.active.data.current as
-      | { applicationId?: string; fromStatus?: Status }
+      | { applicationId?: string; fromStage?: Status }
       | undefined;
     const id = data?.applicationId;
-    const fromStatus = data?.fromStatus;
-    if (!id || !fromStatus) return;
-    const toStatus = overId as Status;
-    if (toStatus === fromStatus) return;
+    const fromStage = data?.fromStage;
+    if (!id || !fromStage) return;
+    const toStage = overId as Status;
+    if (toStage === fromStage) return;
 
     const doMove = () => {
-      onMove(id, toStatus);
+      onMove(id, toStage);
       setError(null);
       void (async () => {
         try {
@@ -1111,7 +1121,7 @@ function ApplicationsBoard({
             method: "POST",
             credentials: "include",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ status: toStatus }),
+            body: JSON.stringify({ stage: toStage }),
           });
           if (!res.ok) {
             const b = (await res.json().catch(() => ({}))) as { error?: string };
@@ -1124,10 +1134,10 @@ function ApplicationsBoard({
       })();
     };
 
-    if (BOARD_DECISION_STATUSES.has(toStatus)) {
+    if (BOARD_DECISION_STAGES.has(toStage)) {
       void (async () => {
         const ok = await dialog.confirm({
-          title: `Move to "${STATUS_LABEL[toStatus]}"?`,
+          title: `Move to "${STAGE_LABEL[toStage]}"?`,
           description:
             "This does NOT email the partner — use the Accept/Reject buttons to notify them.",
           confirmLabel: "Move anyway",
@@ -1140,10 +1150,10 @@ function ApplicationsBoard({
     doMove();
   }
 
-  const columns: KanbanColumn<ApplicationRow>[] = STATUSES.map((status) => ({
-    id: status,
-    title: <StatusPill status={status} />,
-    cards: byStatus[status],
+  const columns: KanbanColumn<ApplicationRow>[] = STAGES.map((stage) => ({
+    id: stage,
+    title: <StagePill stage={stage} />,
+    cards: byStage[stage],
     className: "flex-shrink-0 w-full md:w-72 border rounded-lg border-border bg-card flex flex-col",
   }));
 
@@ -1154,7 +1164,7 @@ function ApplicationsBoard({
       id="partner-applications-board"
       columns={columns}
       getCardId={(a) => a.id}
-      getCardData={(a) => ({ applicationId: a.id, fromStatus: a.status })}
+      getCardData={(a) => ({ applicationId: a.id, fromStage: a.stage })}
       draggable={canEdit}
       onDragEnd={handleDragEnd}
       error={error}

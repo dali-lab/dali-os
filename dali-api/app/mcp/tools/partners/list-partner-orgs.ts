@@ -3,7 +3,6 @@
 
 import { prisma } from "~/lib/db";
 import { canViewStaffing } from "~/lib/roles";
-import { OPEN_APPLICATION_STATUSES } from "~/partners/lib/partner-application";
 import { McpForbiddenError } from "../../registry";
 
 export const LIST_PARTNER_ORGS_TOOL = {
@@ -49,9 +48,10 @@ export async function runListPartnerOrgs(
       },
     }),
     // Open inquiries are org-independent until promotion, so this is a single
-    // lab-wide number rather than a (dead) per-org count.
+    // lab-wide number rather than a (dead) per-org count. New = not yet
+    // through the interview stage.
     prisma.partnerApplication.count({
-      where: { status: { in: OPEN_APPLICATION_STATUSES } },
+      where: { stage: "New" },
     }),
   ]);
 

@@ -38,8 +38,8 @@ import {
   normalizeEmail,
 } from "../lib/magic-link.server";
 import {
-  PARTNER_APPLICATION_STATUS_LABELS,
-  PARTNER_APPLICATION_STATUS_PILL,
+  PARTNER_STAGE_LABELS,
+  PARTNER_STAGE_PILL,
 } from "../lib/partner-application";
 
 export const meta: Route.MetaFunction = ({ data }) => {
@@ -108,7 +108,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       },
       applications: {
         orderBy: { createdAt: "desc" },
-        select: { id: true, title: true, status: true, createdAt: true },
+        select: { id: true, title: true, stage: true, createdAt: true },
       },
     },
   });
@@ -1122,9 +1122,9 @@ export default function PartnerOrgDetail() {
                     {a.title}
                   </Link>
                   <span
-                    className={`text-xs rounded-full px-2 py-0.5 ${PARTNER_APPLICATION_STATUS_PILL[a.status]}`}
+                    className={`text-xs rounded-full px-2 py-0.5 ${PARTNER_STAGE_PILL[a.stage]}`}
                   >
-                    {PARTNER_APPLICATION_STATUS_LABELS[a.status]}
+                    {PARTNER_STAGE_LABELS[a.stage]}
                   </span>
                 </li>
               ))}

@@ -62,7 +62,7 @@ export async function runGetPartnerOrg(
       },
       applications: {
         orderBy: { createdAt: "desc" },
-        select: { id: true, title: true, status: true, createdAt: true },
+        select: { id: true, title: true, stage: true, createdAt: true },
       },
     },
   });
@@ -102,7 +102,7 @@ export async function runGetPartnerOrg(
     applications: org.applications.map((a) => ({
       id: a.id,
       title: a.title,
-      status: a.status,
+      stage: a.stage,
       createdAt: a.createdAt,
     })),
     pendingInvites: pendingInvites.map((i) => ({
