@@ -1,12 +1,17 @@
 import { prisma } from "~/lib/db";
 
-// Blind review hides applicant identity from reviewers during the reading +
-// Initial-delibs stage of a hiring cycle, so a reviewer's read of an
-// application isn't biased by who the applicant is. It lifts per applicant the
-// moment a decision is Released for them. Any cycle can opt in
-// (ApplicationCycle.anonymizeReview); Core/lead cycle-management views are never
-// blinded — only the reviewer + Initial-delibs surfaces route applicant
-// identity through here.
+// Blind review hides applicant identity during the reading + Initial-delibs
+// stage of a hiring cycle, so a read of an application isn't biased by who
+// the applicant is. It lifts per applicant the moment a decision is Released
+// for them. Any cycle can opt in (ApplicationCycle.anonymizeReview). Core and
+// leads are no longer exempt everywhere: the applications list
+// (applications.tsx) and the two read-only applicant-detail pages
+// (applications.$domainApplicationId.tsx, domain-lead.application.$id.tsx)
+// blind everyone alike via applicationBlindLabel/applicationBlindLabelsForCycle
+// below. Only the lead cycle-management page, delibs, and interviews surfaces
+// stay untouched by this — a lead can still turn blind review off per cycle
+// there if they need names. reviewerBlindLabel (scoped to one reviewer's
+// assigned domains) remains the predicate for the reviewer review surface.
 
 /**
  * The blind-review predicate. `hasReleasedDecision` is true when a Decision at
@@ -134,4 +139,61 @@ export async function reviewerBlindLabel(args: {
 
   const labelMap = await anonLabelMapForCycle(cycleId);
   return labelMap.get(applicationId) ?? anonLabel(1);
+}
+
+/**
+ * The applications-list / applicant-detail blind-review predicate: unlike
+ * reviewerBlindLabel (scoped to one reviewer's assigned domains), this checks
+ * ALL of the application's selected DomainApplications — so it blinds the
+ * same way for every viewer (Core, Admin, leads, reviewers alike) who lands on
+ * `applications.$domainApplicationId` or `domain-lead.application.$id`.
+ */
+export async function applicationBlindLabel(args: {
+  cycleId: string;
+  applicationId: string;
+  anonymizeReview: boolean;
+}): Promise<string | null> {
+  const { cycleId, applicationId, anonymizeReview } = args;
+  if (!anonymizeReview) return null;
+
+  const domainApplications = await prisma.domainApplication.findMany({
+    where: { applicationId, selected: true },
+    select: { id: true },
+  });
+  const daIds = domainApplications.map((da) => da.id);
+
+  const released = await releasedDaIds(daIds);
+  const blinded = daIds.length === 0 || daIds.some((id) => !released.has(id));
+  if (!blinded) return null;
+
+  const labelMap = await anonLabelMapForCycle(cycleId);
+  return labelMap.get(applicationId) ?? anonLabel(1);
+}
+
+/**
+ * Batched applicationBlindLabel for a page that renders many applications at
+ * once (the applications list): one releasedDaIds call plus one
+ * anonLabelMapForCycle call instead of one pair per row. Callers supply each
+ * application's FULL set of selected DomainApplication ids (not just the ones
+ * visible to the current viewer) — blinding is a whole-application state, so
+ * a domain this viewer can't see still has to count toward it. Returns only
+ * the ids that are blinded.
+ */
+export async function applicationBlindLabelsForCycle(args: {
+  cycleId: string;
+  anonymizeReview: boolean;
+  applications: { id: string; daIds: string[] }[];
+}): Promise<Map<string, string>> {
+  const { cycleId, anonymizeReview, applications } = args;
+  const result = new Map<string, string>();
+  if (!anonymizeReview) return result;
+
+  const released = await releasedDaIds(applications.flatMap((a) => a.daIds));
+  const labelMap = await anonLabelMapForCycle(cycleId);
+
+  for (const a of applications) {
+    const blinded = a.daIds.length === 0 || a.daIds.some((id) => !released.has(id));
+    if (blinded) result.set(a.id, labelMap.get(a.id) ?? anonLabel(1));
+  }
+  return result;
 }

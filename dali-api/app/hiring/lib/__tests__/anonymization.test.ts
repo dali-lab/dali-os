@@ -10,6 +10,8 @@ import {
   releasedDaIds,
   blindUser,
   reviewerBlindLabel,
+  applicationBlindLabel,
+  applicationBlindLabelsForCycle,
 } from "~/hiring/lib/anonymization.server";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -154,5 +156,90 @@ describe("reviewerBlindLabel", () => {
     });
 
     expect(label).toBeNull();
+  });
+});
+
+describe("applicationBlindLabel", () => {
+  it("returns null without querying when anonymizeReview is off", async () => {
+    const label = await applicationBlindLabel({
+      cycleId: "cycle-1",
+      applicationId: "app-1",
+      anonymizeReview: false,
+    });
+    expect(label).toBeNull();
+    expect(mockPrisma.domainApplication.findMany).not.toHaveBeenCalled();
+  });
+
+  it("returns null once every selected domain application has a released decision", async () => {
+    mockPrisma.domainApplication.findMany.mockResolvedValue([{ id: "da-1" }, { id: "da-2" }]);
+    mockPrisma.decision.findMany.mockResolvedValue([
+      { domainApplicationId: "da-1" },
+      { domainApplicationId: "da-2" },
+    ]);
+
+    const label = await applicationBlindLabel({
+      cycleId: "cycle-1",
+      applicationId: "app-1",
+      anonymizeReview: true,
+    });
+
+    expect(label).toBeNull();
+  });
+
+  it("stays blinded while even one selected domain application is unreleased", async () => {
+    mockPrisma.domainApplication.findMany.mockResolvedValue([{ id: "da-1" }, { id: "da-2" }]);
+    mockPrisma.decision.findMany.mockResolvedValue([{ domainApplicationId: "da-1" }]);
+    mockPrisma.application.findMany.mockResolvedValue([{ id: "app-1" }]);
+
+    const label = await applicationBlindLabel({
+      cycleId: "cycle-1",
+      applicationId: "app-1",
+      anonymizeReview: true,
+    });
+
+    expect(label).toBe("Applicant 1");
+  });
+
+  it("blinds an application with no selected domain applications at all", async () => {
+    mockPrisma.domainApplication.findMany.mockResolvedValue([]);
+    mockPrisma.application.findMany.mockResolvedValue([{ id: "app-1" }]);
+
+    const label = await applicationBlindLabel({
+      cycleId: "cycle-1",
+      applicationId: "app-1",
+      anonymizeReview: true,
+    });
+
+    expect(label).toBe("Applicant 1");
+  });
+});
+
+describe("applicationBlindLabelsForCycle", () => {
+  it("returns an empty map without querying when anonymizeReview is off", async () => {
+    const map = await applicationBlindLabelsForCycle({
+      cycleId: "cycle-1",
+      anonymizeReview: false,
+      applications: [{ id: "app-1", daIds: ["da-1"] }],
+    });
+    expect(map.size).toBe(0);
+    expect(mockPrisma.decision.findMany).not.toHaveBeenCalled();
+  });
+
+  it("includes only the applications with an unreleased domain, in one batched pair of queries", async () => {
+    mockPrisma.decision.findMany.mockResolvedValue([{ domainApplicationId: "da-1" }]);
+    mockPrisma.application.findMany.mockResolvedValue([{ id: "app-1" }, { id: "app-2" }]);
+
+    const map = await applicationBlindLabelsForCycle({
+      cycleId: "cycle-1",
+      anonymizeReview: true,
+      applications: [
+        { id: "app-1", daIds: ["da-1"] }, // released -> not blinded
+        { id: "app-2", daIds: ["da-2"] }, // unreleased -> blinded
+      ],
+    });
+
+    expect(map.has("app-1")).toBe(false);
+    expect(map.get("app-2")).toBe("Applicant 2");
+    expect(mockPrisma.decision.findMany).toHaveBeenCalledTimes(1);
   });
 });

@@ -4,7 +4,7 @@ import type { Route } from "./+types/domain-lead.application.$id";
 import { prisma } from "~/lib/db";
 import { recordRouteVisit } from "~/lib/user-pages.server";
 import { requireAuth } from "~/lib/auth";
-import { isDomainLeadForCycle } from "~/lib/roles";
+import { getUserRoles, isDomainLeadForCycle } from "~/lib/roles";
 import { redirectToLogin } from "~/lib/login-next";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { presignAnswers } from "~/hiring/lib/presign";
@@ -36,6 +36,10 @@ import {
 } from "~/hiring/lib/domain-application-status";
 import { listPriorApplications } from "~/hiring/lib/prior-applications.server";
 import { PriorApplicationsPanel } from "~/hiring/components/PriorApplicationsPanel";
+import { applicationBlindLabel, blindUser } from "~/hiring/lib/anonymization.server";
+import { getApplicantEmailEngagement } from "~/hiring/lib/email-engagement.server";
+import { ApplicantEmailPanel } from "~/hiring/components/ApplicantEmailPanel";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
 import type { Question } from "~/types";
 import { RECOMMENDATION_TONES } from "~/hiring/lib/labels";
@@ -132,8 +136,19 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   );
   if (confRedirect) return confRedirect;
 
+  // Blind review applies on this page to every viewer alike (domain leads
+  // included) — only a Released decision on every domain the applicant
+  // selected lifts it.
+  const blindLabel = await applicationBlindLabel({
+    cycleId: da.application.applicationCycleId,
+    applicationId: da.application.id,
+    anonymizeReview: da.application.applicationCycle.anonymizeReview,
+  });
+  const blinded = blindLabel != null;
+  if (blindLabel) da.application.user = blindUser(da.application.user, blindLabel);
+
   // After the domain + confidentiality gates — this application lands in the
-  // lead's recents, keyed to the applicant's name.
+  // lead's recents, keyed to the applicant's (possibly blinded) name.
   recordRouteVisit(
     auth.user.sub,
     `/hiring/domain-lead/application/${params.id}`,
@@ -296,8 +311,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const priorApplications = await listPriorApplications({
     userId: da.application.user.id,
     currentApplicationId: da.application.id,
-    hideOutcomes: false,
+    hideOutcomes: blinded,
   });
+  const roles = await getUserRoles(auth.user.sub, request);
+  const emailEngagementEnabled = await isFeatureEnabled(
+    "applicant-email-engagement",
+    auth.user.sub,
+    roles,
+    request,
+  );
+  const emailEngagement = emailEngagementEnabled
+    ? await getApplicantEmailEngagement(da.application.user.id, { blinded })
+    : null;
 
   return {
       domainApplication: {
@@ -331,6 +356,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       timeline,
       canMoveStage,
       priorApplications,
+      emailEngagement,
+      blinded,
     };
 }
 
@@ -343,6 +370,8 @@ export default function DomainLeadApplicationView() {
     timeline,
     canMoveStage,
     priorApplications,
+    emailEngagement,
+    blinded,
   } = useLoaderData<typeof loader>() as any;
 
   const generalQuestions: any[] = application.generalChallengeVersion?.questions ?? [];
@@ -408,8 +437,13 @@ export default function DomainLeadApplicationView() {
           />
           <PriorApplicationsPanel
             entries={priorApplications}
-            outcomesHidden={false}
+            outcomesHidden={blinded}
             hrefFor={(_entry: any, domainApplicationId: string) => `/hiring/applications/${domainApplicationId}`}
+          />
+          <ApplicantEmailPanel
+            engagement={emailEngagement}
+            blinded={blinded}
+            applicationId={application.id}
           />
         </div>
 

@@ -110,6 +110,12 @@ export const FEATURE_FLAGS = [
       "Lets a member connect their own @dali.dartmouth.edu mailbox to the Email tab, next to project and shared inboxes. Only they can read it. Connecting requires agreeing to a risk notice first, and each agreement is recorded in the audit log. Turning this off hides connected personal inboxes without deleting the sign-in. Ships off.",
   },
   {
+    key: "applicant-email-engagement",
+    label: "Applicant email engagement",
+    description:
+      "Indexes the applications@ inbox (headers only) and shows an applicant's email history on hiring review pages, with a thread viewer and manual link/unlink in the Email tab. Ships off.",
+  },
+  {
     key: "start-terms",
     label: "Application start terms",
     description:

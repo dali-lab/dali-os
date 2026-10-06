@@ -30,6 +30,7 @@ import {
   type PipelineStage,
 } from "~/hiring/lib/pipeline-stage";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
+import { applicationBlindLabelsForCycle, blindUser } from "~/hiring/lib/anonymization.server";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Applications · Hiring · DALI OS" },
@@ -83,6 +84,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       name: true,
       createdAt: true,
       applicants: true,
+      anonymizeReview: true,
       // Status is event-sourced; newest update wins, default Draft.
       statusUpdates: {
         orderBy: { createdAt: "desc" },
@@ -96,6 +98,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     name: c.name,
     createdAt: c.createdAt,
     applicants: c.applicants,
+    anonymizeReview: c.anonymizeReview,
     currentStatus: c.statusUpdates[0]?.newStatus ?? "Draft",
   }));
 
@@ -169,6 +172,7 @@ export async function loader({ request }: Route.LoaderArgs) {
           domain: { select: { displayName: true } },
           application: {
             select: {
+              id: true,
               user: {
                 select: { firstName: true, lastName: true, daliEmail: true, dartmouthEmail: true },
               },
@@ -196,9 +200,35 @@ export async function loader({ request }: Route.LoaderArgs) {
       })
     : [];
 
+  // Blind review applies here the same way it does on the applicant-detail
+  // pages: everyone (Core, Admin, leads, reviewers) sees "Applicant N" until
+  // every domain the applicant selected has a Released decision. A domain
+  // outside this viewer's visible set still counts, so the full set of each
+  // application's selected DomainApplications is looked up separately from
+  // the (possibly domain-filtered) `domainApps` rows above.
+  const applicationIds = [...new Set(domainApps.map((da) => da.application.id))];
+  const daIdsByApplication = new Map<string, string[]>();
+  if (applicationIds.length > 0) {
+    const allSelectedDas = await prisma.domainApplication.findMany({
+      where: { applicationId: { in: applicationIds }, selected: true },
+      select: { id: true, applicationId: true },
+    });
+    for (const row of allSelectedDas) {
+      const arr = daIdsByApplication.get(row.applicationId) ?? [];
+      arr.push(row.id);
+      daIdsByApplication.set(row.applicationId, arr);
+    }
+  }
+  const blindLabels = await applicationBlindLabelsForCycle({
+    cycleId: selected.id,
+    anonymizeReview: selected.anonymizeReview,
+    applications: [...daIdsByApplication.entries()].map(([id, daIds]) => ({ id, daIds })),
+  });
+
   const rows = domainApps
     .map((da) => {
-      const u = da.application.user;
+      const blindLabel = blindLabels.get(da.application.id);
+      const u = blindLabel ? blindUser(da.application.user, blindLabel) : da.application.user;
       const updates = da.application.statusUpdates;
       const status = updates[0]?.newStatus ?? "Draft";
       const submittedAt =

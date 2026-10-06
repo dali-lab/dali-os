@@ -107,6 +107,10 @@ export const AUDIT_ACTIONS = [
   // A member agreeing to the risk notice before connecting their personal
   // DALI mailbox. targetId is the notice version they agreed to.
   "email.personal_consent",
+  // Manual link/unlink of a Shared-inbox thread to the applicant it belongs
+  // to (Email tab "Linked applicant" section). targetId is "<accountId>~<threadId>".
+  "email.applicant_link",
+  "email.applicant_unlink",
   "confidentiality.sign",
   "signing.sign",
   "signing.publish",

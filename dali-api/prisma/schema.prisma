@@ -194,6 +194,8 @@ model User {
   mailSubscriptions    MailSubscription[]
   mailConnections      MailAccountConnection[]
   mailInboxArchives    MailInboxArchive[]
+  linkedMailMessages   MailMessageIndex[]      @relation("MailMessageIndexLinkedUser")
+  mailLinksMade        MailMessageIndex[]      @relation("MailMessageIndexLinkedBy")
   scheduledMeetings    ScheduledMeeting[]
   meetingTimeProposals MeetingTimeProposal[]
   availabilitySettings UserAvailabilitySettings?
@@ -2032,6 +2034,10 @@ model MailAccount {
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 
+  // Set once a Shared inbox's applicant-email index has swept its full
+  // backfill window; null means still backfilling (or never started).
+  indexBackfilledAt DateTime?
+
   user     User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
   project  Project?      @relation(fields: [projectId], references: [id], onDelete: Cascade)
   drafts      MailDraft[]
@@ -2039,6 +2045,7 @@ model MailAccount {
   categories  MailCategoryAccount[]
   connections MailAccountConnection[]
   archives    MailInboxArchive[]
+  indexedMessages MailMessageIndex[]
 
   @@unique([scopeKey, address])
   @@index([userId])
@@ -2186,6 +2193,46 @@ model MailComment {
   author  User        @relation(fields: [authorId], references: [id], onDelete: Cascade)
 
   @@index([accountId, threadId])
+}
+
+enum MailDirection {
+  Inbound
+  Outbound
+}
+
+enum MailLinkSource {
+  None
+  Auto
+  Manual
+}
+
+// Thin index of one Gmail message in a Shared inbox, linked to the User it was
+// exchanged with. Headers only; mail stays in Gmail. Staff-only surfaces.
+model MailMessageIndex {
+  id             String         @id @default(cuid())
+  accountId      String
+  gmailMessageId String
+  threadId       String
+  direction      MailDirection
+  subject        String         @default("")
+  sentAt         DateTime
+  fromAddress    String
+  toAddresses    String[]       @default([])
+  linkedUserId   String?
+  linkSource     MailLinkSource @default(None)
+  linkedById     String?
+  linkedAt       DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  account    MailAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  linkedUser User?       @relation("MailMessageIndexLinkedUser", fields: [linkedUserId], references: [id], onDelete: SetNull)
+  linkedBy   User?       @relation("MailMessageIndexLinkedBy", fields: [linkedById], references: [id], onDelete: SetNull)
+
+  @@unique([accountId, gmailMessageId])
+  @@index([linkedUserId, sentAt])
+  @@index([accountId, threadId])
+  @@index([accountId, sentAt])
 }
 
 model ScheduledMeeting {

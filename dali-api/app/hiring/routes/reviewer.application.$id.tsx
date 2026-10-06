@@ -8,13 +8,16 @@ import { prisma } from '~/lib/db'
 import { recordRouteVisit } from '~/lib/user-pages.server'
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from '~/lib/login-next'
-import { hasCycleAccess } from '~/lib/roles'
+import { getUserRoles, hasCycleAccess } from '~/lib/roles'
+import { isFeatureEnabled } from '~/lib/feature-flags.server'
 import { getCollabToken } from "~/lib/collab-token.server";
 import { getPresenceUser } from '~/lib/presence-user'
 import { requirePageSignedOrRedirect } from '~/hiring/lib/confidentiality'
 import { presignAnswers } from '~/hiring/lib/presign'
 import { blindUser, reviewerBlindLabel } from '~/hiring/lib/anonymization.server'
 import { listPriorApplications } from '~/hiring/lib/prior-applications.server'
+import { getApplicantEmailEngagement } from '~/hiring/lib/email-engagement.server'
+import { ApplicantEmailPanel } from '~/hiring/components/ApplicantEmailPanel'
 import { ensureBlocks } from '~/collab/legacy/pm-to-blocknote'
 import { safeParseJsonString } from '~/forms/lib/forms-data'
 import type { Route } from './+types/reviewer.application.$id'
@@ -238,12 +241,24 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     hideOutcomes: blinded,
   })
 
+  const roles = await getUserRoles(auth.user.sub, request)
+  const emailEngagementEnabled = await isFeatureEnabled(
+    'applicant-email-engagement',
+    auth.user.sub,
+    roles,
+    request,
+  )
+  const emailEngagement = emailEngagementEnabled
+    ? await getApplicantEmailEngagement(applicantUserId, { blinded })
+    : null
+
   return {
     application,
     reviewer,
     existingReview: review,
     educationEngagement,
     priorApplications,
+    emailEngagement,
     blinded,
     collabToken,
     userName,
@@ -327,6 +342,7 @@ export default function ReviewerApplicationReview() {
     existingReview,
     educationEngagement,
     priorApplications,
+    emailEngagement,
     blinded,
     collabToken,
     userName,
@@ -463,6 +479,11 @@ export default function ReviewerApplicationReview() {
             entries={priorApplications}
             outcomesHidden={blinded}
             hrefFor={(entry) => `/hiring/reviewer/application/${application.id}/prior/${entry.id}`}
+          />
+          <ApplicantEmailPanel
+            engagement={emailEngagement}
+            blinded={blinded}
+            applicationId={application.id}
           />
           <ApplicationViewer
             application={application}

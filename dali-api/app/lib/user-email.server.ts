@@ -187,3 +187,76 @@ export async function markEmailProven(address: string): Promise<void> {
     data: { verifiedAt: new Date() },
   });
 }
+
+const DARTMOUTH_EMAIL_SUFFIX = "@dartmouth.edu";
+
+/**
+ * Batch address → user resolution for the applicant-email indexer: given a set
+ * of addresses seen in mail headers, which DALI users do they belong to?
+ *
+ * Checked in order, cheapest first: the UserEmail alias table, then the
+ * legacy identity columns (case-insensitive — some rows were populated before
+ * everything funneled through normalizeEmailAddress), then NetID-form
+ * `<netid>@dartmouth.edu` addresses that were never written anywhere but
+ * match a User.netId directly. Returns normalized address -> userId; an
+ * address nobody owns is simply absent from the map.
+ */
+export async function findUserIdsByAddresses(addresses: string[]): Promise<Map<string, string>> {
+  const normalized = [...new Set(addresses.map(normalizeEmailAddress).filter(Boolean))];
+  const result = new Map<string, string>();
+  if (normalized.length === 0) return result;
+
+  const aliasRows = await prisma.userEmail.findMany({
+    where: { address: { in: normalized } },
+    select: { address: true, userId: true },
+  });
+  for (const row of aliasRows) result.set(row.address, row.userId);
+
+  const afterAlias = normalized.filter((a) => !result.has(a));
+  if (afterAlias.length > 0) {
+    const users = await prisma.user.findMany({
+      where: {
+        OR: [
+          { email: { in: afterAlias, mode: "insensitive" } },
+          { daliEmail: { in: afterAlias, mode: "insensitive" } },
+          { dartmouthEmail: { in: afterAlias, mode: "insensitive" } },
+          { personalEmail: { in: afterAlias, mode: "insensitive" } },
+        ],
+      },
+      select: { id: true, email: true, daliEmail: true, dartmouthEmail: true, personalEmail: true },
+    });
+    for (const u of users) {
+      for (const column of [u.email, u.daliEmail, u.dartmouthEmail, u.personalEmail]) {
+        if (!column) continue;
+        const normalizedColumn = normalizeEmailAddress(column);
+        if (!result.has(normalizedColumn) && afterAlias.includes(normalizedColumn)) {
+          result.set(normalizedColumn, u.id);
+        }
+      }
+    }
+  }
+
+  const afterColumns = normalized.filter(
+    (a) => !result.has(a) && a.endsWith(DARTMOUTH_EMAIL_SUFFIX),
+  );
+  if (afterColumns.length > 0) {
+    const netIds = afterColumns.map((a) => a.slice(0, -DARTMOUTH_EMAIL_SUFFIX.length));
+    const users = await prisma.user.findMany({
+      where: { netId: { in: netIds, mode: "insensitive" } },
+      select: { id: true, netId: true },
+    });
+    for (const u of users) {
+      if (!u.netId) continue;
+      const address = `${u.netId.toLowerCase()}${DARTMOUTH_EMAIL_SUFFIX}`;
+      if (!result.has(address) && afterColumns.includes(address)) result.set(address, u.id);
+    }
+  }
+
+  return result;
+}
+
+/** Single-address convenience wrapper around findUserIdsByAddresses. */
+export async function findUserIdByAddress(address: string): Promise<string | null> {
+  const map = await findUserIdsByAddresses([address]);
+  return map.get(normalizeEmailAddress(address)) ?? null;
+}

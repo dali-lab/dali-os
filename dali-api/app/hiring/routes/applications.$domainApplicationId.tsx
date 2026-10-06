@@ -35,6 +35,10 @@ import { getEducationEngagement } from "~/education/lib/engagement.server";
 import { EducationEngagementPanel } from "~/education/components/EducationEngagementPanel";
 import { listPriorApplications } from "~/hiring/lib/prior-applications.server";
 import { PriorApplicationsPanel } from "~/hiring/components/PriorApplicationsPanel";
+import { applicationBlindLabel, blindUser } from "~/hiring/lib/anonymization.server";
+import { getApplicantEmailEngagement } from "~/hiring/lib/email-engagement.server";
+import { ApplicantEmailPanel } from "~/hiring/components/ApplicantEmailPanel";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import type { Question, RubricCriterion } from "~/types";
 import { findRound, parseTimeline } from "~/hiring/lib/cycle-timeline";
 import { Select } from "~/components/ui/floating";
@@ -84,6 +88,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
               applicants: true,
               timeline: true,
               hasChallenges: true,
+              anonymizeReview: true,
               generalRubricVersion: { select: { criteria: true } },
               domains: { select: { domainId: true, rubricVersion: { select: { criteria: true } } } },
             },
@@ -126,8 +131,21 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const confRedirect = await requirePageSignedOrRedirect(auth.user.sub, cycleId, request);
   if (confRedirect) return confRedirect;
 
+  // Blind review applies on this page to every viewer alike (Core, Admin,
+  // leads, reviewers) — only a Released decision on every domain the
+  // applicant selected lifts it. Must happen before anything below derives a
+  // display name (recents, meta title, prior-applications outcomes, email
+  // engagement).
+  const blindLabel = await applicationBlindLabel({
+    cycleId,
+    applicationId: da.application.id,
+    anonymizeReview: da.application.applicationCycle.anonymizeReview,
+  });
+  const blinded = blindLabel != null;
+  if (blindLabel) da.application.user = blindUser(da.application.user, blindLabel);
+
   // After the access + confidentiality gates — this submission lands in the
-  // viewer's recents, keyed to the applicant's name.
+  // viewer's recents, keyed to the applicant's (possibly blinded) name.
   recordRouteVisit(
     auth.user.sub,
     `/hiring/applications/${params.domainApplicationId}`,
@@ -479,8 +497,17 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const priorApplications = await listPriorApplications({
     userId: da.application.user.id,
     currentApplicationId: da.application.id,
-    hideOutcomes: false,
+    hideOutcomes: blinded,
   });
+  const emailEngagementEnabled = await isFeatureEnabled(
+    "applicant-email-engagement",
+    auth.user.sub,
+    roles,
+    request,
+  );
+  const emailEngagement = emailEngagementEnabled
+    ? await getApplicantEmailEngagement(da.application.user.id, { blinded })
+    : null;
 
   return {
     applicantName:
@@ -490,9 +517,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         .trim() || "Applicant",
     educationEngagement,
     priorApplications,
+    emailEngagement,
+    blinded,
     cycleName: da.application.applicationCycle.name,
     domainName,
     application,
+    applicationId: da.application.id,
     questionLabels,
     criterionLabels,
     reviews,
@@ -608,8 +638,13 @@ export default function ApplicationReadOnlyDetail() {
       <EducationEngagementPanel entries={data.educationEngagement} />
       <PriorApplicationsPanel
         entries={data.priorApplications}
-        outcomesHidden={false}
+        outcomesHidden={data.blinded}
         hrefFor={(_entry, domainApplicationId) => `/hiring/applications/${domainApplicationId}`}
+      />
+      <ApplicantEmailPanel
+        engagement={data.emailEngagement}
+        blinded={data.blinded}
+        applicationId={data.applicationId}
       />
 
       <InterviewsSection
