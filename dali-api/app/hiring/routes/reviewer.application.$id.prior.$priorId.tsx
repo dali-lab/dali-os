@@ -7,7 +7,7 @@ import { redirectToLogin } from "~/lib/login-next";
 import { hasCycleAccess } from "~/lib/roles";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { presignAnswers } from "~/hiring/lib/presign";
-import { reviewerBlindLabel, blindUser } from "~/hiring/lib/anonymization.server";
+import { applicationBlindLabel, reviewerBlindLabel, blindUser } from "~/hiring/lib/anonymization.server";
 import { overallApplicationStatus } from "~/hiring/lib/applicant-history.server";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { safeParseJsonString } from "~/forms/lib/forms-data";
@@ -84,12 +84,23 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw new Response("Not found", { status: 404 });
   }
 
-  const blindLabel = await reviewerBlindLabel({
-    reviewerId: auth.user.sub,
-    cycleId: current.applicationCycleId,
-    applicationId: current.id,
-    anonymizeReview: current.applicationCycle.anonymizeReview,
-  });
+  // Blinded here if the viewer is blinded to the CURRENT applicant on either
+  // surface that links here (the reviewer page or the lead detail pages). The
+  // prior cycle's own released decisions don't lift it.
+  const [reviewerLabel, applicationLabel] = await Promise.all([
+    reviewerBlindLabel({
+      reviewerId: auth.user.sub,
+      cycleId: current.applicationCycleId,
+      applicationId: current.id,
+      anonymizeReview: current.applicationCycle.anonymizeReview,
+    }),
+    applicationBlindLabel({
+      cycleId: current.applicationCycleId,
+      applicationId: current.id,
+      anonymizeReview: current.applicationCycle.anonymizeReview,
+    }),
+  ]);
+  const blindLabel = reviewerLabel ?? applicationLabel;
   if (blindLabel) prior.user = blindUser(prior.user, blindLabel);
 
   // Presign file-type answers and synthesize the viewer's challenge-version

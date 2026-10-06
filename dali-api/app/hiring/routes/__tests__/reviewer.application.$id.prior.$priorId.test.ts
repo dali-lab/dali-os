@@ -167,6 +167,22 @@ describe("reviewer.application.$id.prior.$priorId loader", () => {
     expect(result.blinded).toBe(true);
   });
 
+  it("blinds a lead with no reviewer assignment while the current applicant is blinded on the detail pages", async () => {
+    setupCurrentAndPrior(
+      makeCurrent({ applicationCycle: { anonymizeReview: true } }),
+      makePrior(),
+    );
+    mockPrisma.cycleReviewer.findMany.mockResolvedValue([]);
+    mockPrisma.domainApplication.findMany.mockResolvedValue([{ id: "da-1" }]);
+    mockPrisma.decision.findMany.mockResolvedValue([]);
+    mockPrisma.application.findMany.mockResolvedValue([{ id: CURRENT_ID }]);
+
+    const result: any = await callLoader();
+
+    expect(result.application.user.firstName).toMatch(/^Applicant/);
+    expect(result.blinded).toBe(true);
+  });
+
   it("shows the real name when not blinded", async () => {
     setupCurrentAndPrior(makeCurrent(), makePrior());
 
