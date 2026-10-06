@@ -35,7 +35,6 @@ import { usePersistedState } from "~/hooks/usePersistedState";
 import {
   PARTNER_STAGES,
   PARTNER_STAGE_LABELS,
-  PARTNER_STAGE_PILL,
   type PartnerStage,
 } from "../lib/partner-application";
 import {
@@ -354,17 +353,8 @@ export function PartnerBoard({
 
     return {
       id: stage,
-      title: (
-        <span
-          className={cn(
-            "inline-flex items-center rounded px-2 py-0.5 text-xs font-medium",
-            PARTNER_STAGE_PILL[stage],
-          )}
-        >
-          {label}
-        </span>
-      ),
-      className: cn(shell, "w-full md:w-72"),
+      title: <span className="text-sm font-medium">{label}</span>,
+      className: cn(shell, "w-full md:flex-1 md:min-w-[15rem]"),
       headerClassName: cn("flex items-center justify-between gap-2 px-3 py-2", roundedTop),
       headerStyle: { background: accent.fill, color: accent.ink },
       headerExtra: (

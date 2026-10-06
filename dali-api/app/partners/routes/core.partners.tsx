@@ -59,7 +59,7 @@ import { useConfirmSubmit } from "~/components/ui/dialog";
 export const handle = { ...coreHandle("partners"), areaSubnav: true };
 
 export const meta: Route.MetaFunction = () => [
-  { title: "Partner Applications · DALI OS" },
+  { title: "Partner CRM · DALI OS" },
 ];
 
 
@@ -445,7 +445,7 @@ export default function PartnersApplications() {
           <h1
             className="font-heading text-foreground text-4xl font-medium"
           >
-            Partner Applications
+            Pipeline
           </h1>
         </div>
         {canEdit && !creating && (
@@ -650,12 +650,45 @@ export default function PartnersApplications() {
             </button>
           ))}
         </div>
-        <span className="ml-auto text-muted-foreground text-base">
-          {filtered.length}{" "}
-          {filtered.length === 1 ? "application" : "applications"}
-          {filtered.length !== rows.length ? ` of ${rows.length}` : ""}
-        </span>
+        {view === "list" && (
+          <span className="ml-auto text-muted-foreground text-base">
+            {filtered.length}{" "}
+            {filtered.length === 1 ? "application" : "applications"}
+            {filtered.length !== rows.length ? ` of ${rows.length}` : ""}
+          </span>
+        )}
       </div>
+
+
+
+      {view === "list" ? (
+        <div className="bg-card border border-border rounded-lg">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+            <h2 className="text-sm font-medium text-foreground">Applications</h2>
+          </div>
+
+          {filtered.length === 0 ? (
+            <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+              {rows.length === 0
+                ? "No partner applications yet."
+                : "No applications match these filters."}
+            </div>
+          ) : (
+            <ApplicationsTable rows={filtered} />
+          )}
+        </div>
+      ) : (
+        <PartnerBoard
+          cards={cards}
+          canEdit={canEdit}
+          staleDays={staleDays}
+          domainOptions={boardDomainOptions}
+          termOptions={boardTermOptions}
+          currentTermStartIso={currentTermStartIso}
+        />
+      )}
+
+      <TermProjection rows={rows} requiredCells={requiredCells} />
 
       {canEdit && (
         <details className="group bg-card border border-border rounded-lg">
@@ -745,35 +778,6 @@ export default function PartnersApplications() {
             )}
           </div>
         </details>
-      )}
-
-      <TermProjection rows={rows} requiredCells={requiredCells} />
-
-      {view === "list" ? (
-        <div className="bg-card border border-border rounded-lg">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-            <h2 className="text-sm font-medium text-foreground">Applications</h2>
-          </div>
-
-          {filtered.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-              {rows.length === 0
-                ? "No partner applications yet."
-                : "No applications match these filters."}
-            </div>
-          ) : (
-            <ApplicationsTable rows={filtered} />
-          )}
-        </div>
-      ) : (
-        <PartnerBoard
-          cards={cards}
-          canEdit={canEdit}
-          staleDays={staleDays}
-          domainOptions={boardDomainOptions}
-          termOptions={boardTermOptions}
-          currentTermStartIso={currentTermStartIso}
-        />
       )}
     </div>
   );
