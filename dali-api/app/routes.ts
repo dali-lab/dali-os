@@ -202,6 +202,7 @@ export default [
 
     // Partners
     route("partners", "partners/routes/partners.tsx"),
+    route("partners/organizations", "partners/routes/partners.organizations.tsx"),
     route("partners/applications", "partners/routes/partners.applications.tsx"),
     route("partners/applications/:id", "partners/routes/partners.applications.$id.tsx"),
     // Literal segments above the param route (repo route-ordering convention).

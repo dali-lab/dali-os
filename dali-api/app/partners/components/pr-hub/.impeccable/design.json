@@ -1,0 +1,286 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-04T00:00:00Z",
+  "title": "Design System: DALI Partner Relations Hub",
+  "extensions": {
+    "colorMeta": {
+      "hub-bg": {
+        "role": "neutral",
+        "displayName": "Wall charcoal",
+        "tonalRamp": [
+          "oklch(15% 0.012 285)",
+          "oklch(26% 0.012 285)",
+          "oklch(38% 0.012 285)",
+          "oklch(49% 0.012 285)",
+          "oklch(61% 0.012 285)",
+          "oklch(72% 0.012 285)",
+          "oklch(84% 0.012 285)",
+          "oklch(95% 0.012 285)"
+        ]
+      },
+      "hub-surface": {
+        "role": "neutral",
+        "displayName": "Deep charcoal",
+        "tonalRamp": [
+          "oklch(15% 0.01 285)",
+          "oklch(26% 0.01 285)",
+          "oklch(38% 0.01 285)",
+          "oklch(49% 0.01 285)",
+          "oklch(61% 0.01 285)",
+          "oklch(72% 0.01 285)",
+          "oklch(84% 0.01 285)",
+          "oklch(95% 0.01 285)"
+        ]
+      },
+      "hub-card": {
+        "role": "neutral",
+        "displayName": "Raised charcoal",
+        "tonalRamp": [
+          "oklch(15% 0.015 285)",
+          "oklch(26% 0.015 285)",
+          "oklch(38% 0.015 285)",
+          "oklch(49% 0.015 285)",
+          "oklch(61% 0.015 285)",
+          "oklch(72% 0.015 285)",
+          "oklch(84% 0.015 285)",
+          "oklch(95% 0.015 285)"
+        ]
+      },
+      "hub-line": {
+        "role": "neutral",
+        "displayName": "Graphite line",
+        "tonalRamp": [
+          "oklch(15% 0.015 285)",
+          "oklch(26% 0.015 285)",
+          "oklch(38% 0.015 285)",
+          "oklch(49% 0.015 285)",
+          "oklch(61% 0.015 285)",
+          "oklch(72% 0.015 285)",
+          "oklch(84% 0.015 285)",
+          "oklch(95% 0.015 285)"
+        ]
+      },
+      "hub-ink": {
+        "role": "neutral",
+        "displayName": "Chalk white",
+        "tonalRamp": [
+          "oklch(15% 0.003 265)",
+          "oklch(26% 0.003 265)",
+          "oklch(38% 0.003 265)",
+          "oklch(49% 0.003 265)",
+          "oklch(61% 0.003 265)",
+          "oklch(72% 0.003 265)",
+          "oklch(84% 0.003 265)",
+          "oklch(95% 0.003 265)"
+        ]
+      },
+      "hub-muted": {
+        "role": "neutral",
+        "displayName": "Soft grey",
+        "tonalRamp": [
+          "oklch(15% 0.012 285)",
+          "oklch(26% 0.012 285)",
+          "oklch(38% 0.012 285)",
+          "oklch(49% 0.012 285)",
+          "oklch(61% 0.012 285)",
+          "oklch(72% 0.012 285)",
+          "oklch(84% 0.012 285)",
+          "oklch(95% 0.012 285)"
+        ]
+      },
+      "hub-yellow": {
+        "role": "primary",
+        "displayName": "Mustard action",
+        "tonalRamp": [
+          "oklch(15% 0.14 90)",
+          "oklch(26% 0.14 90)",
+          "oklch(38% 0.14 90)",
+          "oklch(49% 0.14 90)",
+          "oklch(61% 0.14 90)",
+          "oklch(72% 0.14 90)",
+          "oklch(84% 0.14 90)",
+          "oklch(95% 0.14 90)"
+        ]
+      },
+      "hub-coral": {
+        "role": "secondary",
+        "displayName": "Soft coral",
+        "tonalRamp": [
+          "oklch(15% 0.11 28)",
+          "oklch(26% 0.11 28)",
+          "oklch(38% 0.11 28)",
+          "oklch(49% 0.11 28)",
+          "oklch(61% 0.11 28)",
+          "oklch(72% 0.11 28)",
+          "oklch(84% 0.11 28)",
+          "oklch(95% 0.11 28)"
+        ]
+      },
+      "hub-teal": {
+        "role": "secondary",
+        "displayName": "Working teal",
+        "tonalRamp": [
+          "oklch(15% 0.09 195)",
+          "oklch(26% 0.09 195)",
+          "oklch(38% 0.09 195)",
+          "oklch(49% 0.09 195)",
+          "oklch(61% 0.09 195)",
+          "oklch(72% 0.09 195)",
+          "oklch(84% 0.09 195)",
+          "oklch(95% 0.09 195)"
+        ]
+      },
+      "stage-rejected": {
+        "role": "tertiary",
+        "displayName": "Muted lavender",
+        "tonalRamp": [
+          "oklch(15% 0.07 310)",
+          "oklch(26% 0.07 310)",
+          "oklch(38% 0.07 310)",
+          "oklch(49% 0.07 310)",
+          "oklch(61% 0.07 310)",
+          "oklch(72% 0.07 310)",
+          "oklch(84% 0.07 310)",
+          "oklch(95% 0.07 310)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Hero display",
+        "purpose": "Hub hero title only."
+      },
+      "headline": {
+        "displayName": "Section heading",
+        "purpose": "Main hub sections."
+      }
+    },
+    "shadows": [
+      {
+        "name": "opportunity-hover",
+        "value": "0 5px 12px #16161c40",
+        "purpose": "Opportunity hover only."
+      },
+      {
+        "name": "sheet",
+        "value": "-24px 0 48px -8px rgba(0, 0, 0, 0.55), -1px 0 0 0 rgba(255, 255, 255, 0.06)",
+        "purpose": "Right-side detail sheet."
+      }
+    ],
+    "motion": [
+      {
+        "name": "state",
+        "value": "160ms ease",
+        "purpose": "Hover state changes; removed under reduced motion."
+      },
+      {
+        "name": "sheet-enter",
+        "value": "320ms cubic-bezier(0.22, 1, 0.36, 1)",
+        "purpose": "Sheet transform and backdrop entry."
+      },
+      {
+        "name": "sheet-exit-lifecycle",
+        "value": "260ms",
+        "purpose": "Retains closing sheet content before unmount."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "mobile-max",
+        "value": "700px"
+      },
+      {
+        "name": "compact-max",
+        "value": "1100px"
+      },
+      {
+        "name": "wide-min",
+        "value": "1600px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary action",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The planning action.",
+      "html": "<button class=\"ds-primary\">Explore term plans</button>",
+      "css": ".ds-primary{font-family:Mulish,-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,sans-serif;display:inline-flex;align-items:center;justify-content:center;gap:10px;min-height:46px;padding:12px 17px;border-radius:7px;font-size:13px;font-weight:800;cursor:pointer;transition:background 160ms ease;background:#e4b936;color:#242429;border:0}.ds-primary:hover{background:#f1c849}.ds-primary:focus-visible{outline:2px solid #e4b936;outline-offset:4px}.ds-primary:disabled{cursor:wait;opacity:.55}@media(prefers-reduced-motion:reduce){.ds-primary{transition:none}}"
+    },
+    {
+      "name": "Secondary action",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Outlined companion action.",
+      "html": "<button class=\"ds-secondary\">Log new opportunity</button>",
+      "css": ".ds-secondary{font-family:Mulish,-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,sans-serif;display:inline-flex;align-items:center;justify-content:center;gap:10px;min-height:46px;padding:12px 17px;border-radius:7px;font-size:13px;font-weight:800;cursor:pointer;transition:background 160ms ease;background:transparent;color:#f2f3f5;border:1px solid #777780}.ds-secondary:hover{background:#3b3b44}.ds-secondary:focus-visible{outline:2px solid #e4b936;outline-offset:4px}@media(prefers-reduced-motion:reduce){.ds-secondary{transition:none}}"
+    },
+    {
+      "name": "Search",
+      "kind": "input",
+      "refersTo": "search",
+      "description": "Compact search using the hub surface and shared field spacing.",
+      "html": "<div class=\"ds-search-wrap\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><circle cx=\"11\" cy=\"11\" r=\"8\"/><path d=\"m21 21-4.3-4.3\"/></svg><input class=\"ds-search\" type=\"search\" aria-label=\"Find an opportunity\" placeholder=\"Find an opportunity…\"></div>",
+      "css": ".ds-search-wrap{position:relative;width:260px}.ds-search-wrap svg{position:absolute;top:50%;transform:translateY(-50%);left:16px;width:16px;height:16px;color:#bcbcc4;pointer-events:none}.ds-search{font-family:Mulish,-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,sans-serif;width:100%;padding:10px 16px 10px 40px;background:#242429;color:#f2f3f5;border:1px solid #45454e;border-radius:6px;font-size:12px;caret-color:#e4b936}.ds-search::placeholder{color:#bcbcc4}.ds-search:focus-visible{outline:2px solid #e4b936;outline-offset:4px}"
+    },
+    {
+      "name": "Hub navigation",
+      "kind": "nav",
+      "description": "Selected page uses yellow type and underline.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Partner Relations\"><a href=\"#overview\" aria-current=\"page\">Overview</a><a href=\"#organizations\">Organizations</a><a href=\"#applications\">Applications</a></nav>",
+      "css": ".ds-nav{font-family:Mulish,-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,sans-serif;display:flex;gap:32px;padding:0 32px;background:#292931;border-bottom:1px solid #45454e;overflow-x:auto}.ds-nav a{display:flex;align-items:center;min-height:58px;border-bottom:2px solid transparent;color:#bcbcc4;font-size:13px;font-weight:700;white-space:nowrap;text-decoration:none}.ds-nav a:hover{color:#f2f3f5}.ds-nav a[aria-current]{color:#e4b936;border-bottom-color:#e4b936}.ds-nav a:focus-visible{outline:2px solid #e4b936;outline-offset:4px}"
+    },
+    {
+      "name": "Stage filter",
+      "kind": "chip",
+      "refersTo": "filter-selected",
+      "description": "Stage selection remains explicit in text and pressed state.",
+      "html": "<button class=\"ds-filter\" aria-pressed=\"true\">Accepted <span>4</span></button>",
+      "css": ".ds-filter{font-family:Mulish,-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,sans-serif;display:inline-flex;align-items:center;gap:9px;min-height:38px;padding:8px 12px;border:1px solid #e4b936;border-radius:6px;background:#e4b936;color:#242429;font-size:12px;font-weight:700;cursor:pointer}.ds-filter span{font-size:11px}.ds-filter:hover{border-color:#bcbcc4}.ds-filter:focus-visible{outline:2px solid #e4b936;outline-offset:4px}"
+    },
+    {
+      "name": "Chart container",
+      "kind": "card",
+      "refersTo": "chart",
+      "description": "Deep charcoal panels frame planning data.",
+      "html": "<section class=\"ds-chart\"><h3>Projects per term</h3><p>From current work to what’s next.</p></section>",
+      "css": ".ds-chart{font-family:Mulish,-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,sans-serif;border:1px solid #45454e;border-radius:10px;padding:22px;background:#242429;color:#f2f3f5}.ds-chart h3{font-size:18px;line-height:1.3;font-weight:800;margin:0}.ds-chart p{font-size:11px;color:#bcbcc4;line-height:1.6;margin:4px 0 0}"
+    },
+    {
+      "name": "Current term tile",
+      "kind": "button",
+      "refersTo": "term-current",
+      "description": "Coral denotes the current term; the tile opens its matrix.",
+      "html": "<button class=\"ds-term\"><div>Current term</div><strong>26F</strong><p>8 projects · 6 partners</p></button>",
+      "css": ".ds-term{font-family:Mulish,-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,sans-serif;min-width:140px;padding:14px;border:1px solid #f3978b;border-radius:7px;text-align:left;background:#f3978b;color:#282830;cursor:pointer}.ds-term div,.ds-term p{font-size:10px;color:#3c3034}.ds-term strong{display:block;font-size:28px;line-height:1.2;font-weight:900;margin:9px 0 5px}.ds-term p{margin:0;line-height:1.6}.ds-term:hover{border-color:#bcbcc4}.ds-term:focus-visible{outline:2px solid #e4b936;outline-offset:4px}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Crit Wall",
+    "overview": "A charcoal working wall with bold white type, mustard actions, a faint square-grid hero, and coral and teal notation. The expression follows the user's supplied Crit Wall reference and keeps dense operational information legible.\n\nThis document applies only to the Partner Relations hub and its components, not the global DALI OS shell or sibling routes. It records the implementation in `partner-hub.css`, the hub route, and its components. Source inspection informed this capture; rendered desktop/mobile appearance and interactions have not been verified because browser permissions were unavailable.",
+    "keyCharacteristics": [
+      "Charcoal surfaces with strong white heading hierarchy.",
+      "Yellow actions and keyboard focus; coral and teal informational accents.",
+      "Grid-backed hero, diamond markers, compact charts, and bordered work cards."
+    ],
+    "rules": [
+      {
+        "name": "The Action Color Rule",
+        "body": "Keep yellow as the hub's action and focus cue; retain text labels and counts alongside stage colors.",
+        "section": "colors"
+      }
+    ],
+    "dos": [
+      "Do keep term planning and project mix first in this hub's content hierarchy.",
+      "Do preserve the Crit Wall charcoal, bold white type, square-grid hero, and mustard actions.",
+      "Do pair stage and chart colors with labels or counts.",
+      "Do retain keyboard stage selection, visible focus, and reduced-motion support."
+    ],
+    "donts": [
+      "Don't apply this scoped visual system to unrelated DALI OS routes without a separate decision.",
+      "Don't let inherited navy textures or coral primary actions override the hub's sheet treatment.",
+      "Don't describe this source capture as rendered or interaction-tested verification."
+    ]
+  }
+}

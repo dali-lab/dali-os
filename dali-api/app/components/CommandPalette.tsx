@@ -13,6 +13,8 @@ import {
   UsersRound,
   Handshake,
   GraduationCap,
+  CalendarDays,
+  StickyNote,
   Settings,
   HelpCircle,
   UserCircle,
@@ -252,7 +254,49 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles = NO_R
       navItem("Help", "/help", HelpCircle),
     ];
 
+    // Partner Relations hub shortcuts. Gated on canViewStaffing — the same
+    // gate the hub route uses — so a non-Core/Admin viewer doesn't see entries
+    // that bounce them back to /.
+    const partnerRelationsCommands: PaletteItem[] = roles.canViewStaffing
+      ? [
+          {
+            id: "cmd-pr-hub",
+            title: "Jump to Partner Relations hub",
+            subtitle: "Partner Relations",
+            icon: Handshake,
+            action: {
+              kind: "navigate",
+              url: "/partners",
+              label: "Partner Relations",
+            },
+          },
+          {
+            id: "cmd-pr-loose-end",
+            title: "New loose end…",
+            subtitle: "Partner Relations",
+            icon: StickyNote,
+            action: {
+              kind: "navigate",
+              url: "/partners?focus=loose-end",
+              label: "New loose end",
+            },
+          },
+          {
+            id: "cmd-pr-term",
+            title: "Jump to term…",
+            subtitle: "Partner Relations",
+            icon: CalendarDays,
+            action: {
+              kind: "navigate",
+              url: "/partners?focus=terms",
+              label: "Partner Relations terms",
+            },
+          },
+        ]
+      : [];
+
     const commands: PaletteItem[] = [
+      ...partnerRelationsCommands,
       {
         id: "cmd-workspace",
         title: tabless ? "Switch to tabbed workspace" : "Switch to single-page mode",

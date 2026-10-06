@@ -155,6 +155,8 @@ export const NAV_AREAS: NavArea[] = [
     label: "Partners",
     icon: Handshake,
     hubPath: "/partners",
+    // Partner Relations is a Core-only surface.
+    gate: (r) => r.isCore,
     subtabs: [
       { label: "Hub", href: "/partners", icon: LayoutGrid },
       { label: "Applications", href: "/partners/applications", icon: FileText, gate: (r) => r.canViewStaffing },
@@ -218,7 +220,6 @@ const REGROUPED_AREAS: NavArea[] = [
     subtabs: [
       { label: "Projects", href: "/projects", icon: LayoutGrid },
       { label: "People", href: "/members", icon: UsersRound },
-      { label: "Partners", href: "/partners", icon: Handshake },
       { label: "Mentorship", href: "/mentorship", icon: Heart, gate: (r) => r.isLabMentor || r.isCore },
       // Lab-wide Attendance: every meeting/event you're invited to, with each
       // event's roster (invited-scoped, see app/routes/attendance.tsx).
@@ -244,6 +245,7 @@ const REGROUPED_AREAS: NavArea[] = [
     gate: (r) => r.isCore,
     subtabs: [
       { label: "Milestones", href: "/core", icon: Flag },
+      { label: "Partners", href: "/partners", icon: Handshake },
       { label: "Staffing", href: "/core/staffing", icon: Kanban },
       { label: "Intent to Work", href: "/core/intent-to-work", icon: ClipboardPen },
       { label: "Project Bids", href: "/core/project-bids", icon: Gavel },

@@ -9,6 +9,12 @@ services:
       POSTGRES_DB: dali
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # `prisma db push --force-reset` (api service) skips the migrations
+      # folder, so the `CREATE EXTENSION` statements that live in migrations
+      # never run against this DB. Postgres runs anything in this directory
+      # once, when the data directory is first initialised, which is the
+      # right place to declare dev-env extensions the schema depends on.
+      - ./dali-api/prisma/docker-init.sql:/docker-entrypoint-initdb.d/01-extensions.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U dali -d dali"]
       interval: 2s
