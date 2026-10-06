@@ -84,6 +84,20 @@ describe("domain-lead action — access", () => {
 });
 
 describe("domain-lead action — create-challenge-form", () => {
+  it("links the form the lead picked", async () => {
+    mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue({ newStatus: "Draft" });
+    mockPrisma.form = { findUnique: vi.fn().mockResolvedValue({ id: "form-1" }) };
+    mockPrisma.cycleDomainForm.upsert = vi.fn();
+
+    await callAction({ intent: "create-challenge-form", cycleId: CYCLE_ID, domainId: DOMAIN_ID, formId: "form-1" });
+
+    expect(mockPrisma.cycleDomainForm.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: { applicationCycleId: CYCLE_ID, domainId: DOMAIN_ID, formId: "form-1" },
+      }),
+    );
+  });
+
   it("is a no-op when cycle is past Draft", async () => {
     mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue({ newStatus: "Open" });
 

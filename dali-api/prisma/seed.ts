@@ -11,6 +11,7 @@ import { syncDefaultGroups } from "../app/lib/groups.js";
 import { parseChartString } from "../app/lib/chart-string.js";
 import { seedEducationDemo } from "./seeds/education-demo.js";
 import { seedPartnerRelationsHub } from "./seeds/partner-relations-hub.js";
+import { seedResourcesDemo } from "./seeds/resources-demo.js";
 import {
   ensureEducationTemplates,
   createOfferingApplicationForm,
@@ -57,7 +58,7 @@ async function main() {
   const now = new Date();
   const seedTermStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   const seedTermEnd = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
-  await prisma.term.upsert({
+  const seedTerm = await prisma.term.upsert({
     where: { code: "26S" },
     // Update dates too, so an existing seed DB created before this fix (with the
     // old fixed 2026-03-28 → 2026-06-05 window) is corrected on re-seed.
@@ -71,6 +72,36 @@ async function main() {
       endDate: seedTermEnd,
     },
   });
+
+  // Two terms AFTER the active one, so surfaces that offer a forward range of
+  // terms (a cycle's start terms) have something to offer locally. Both windows
+  // sit entirely in the future relative to the seed run, so `currentTerm()`
+  // still resolves to 26S by its date window and nothing else shifts.
+  const day = 24 * 60 * 60 * 1000;
+  const futureTerms = [
+    { code: "26X", year: 2026, season: "X" as const, sortKey: 20263, afterDays: 75 },
+    { code: "26F", year: 2026, season: "F" as const, sortKey: 20264, afterDays: 160 },
+  ];
+  const upcomingTerms: { id: string; code: string }[] = [];
+  for (const t of futureTerms) {
+    const startDate = new Date(now.getTime() + t.afterDays * day);
+    const endDate = new Date(startDate.getTime() + 70 * day);
+    upcomingTerms.push(
+      await prisma.term.upsert({
+        where: { code: t.code },
+        update: { startDate, endDate },
+        create: {
+          code: t.code,
+          year: t.year,
+          season: t.season,
+          sortKey: t.sortKey,
+          startDate,
+          endDate,
+        },
+        select: { id: true, code: true },
+      }),
+    );
+  }
 
   // ── Domains ────────────────────────────────────────────────────────────────
   // Phase 1 adds `code` + `displayName` to Domain. Local seeds populate them
@@ -624,6 +655,11 @@ async function main() {
       // to UnderReview the instant it passes — which empties /portal/apply and
       // fails the portal specs on a date boundary rather than on a code change.
       closeDate: ts(30 * 24 * 60 * 60 * 1000),
+      // Hiring runs in the active term, and offers a start in it or the two
+      // after it — a real choice, so /portal/apply shows the start-term picker
+      // (behind the `start-terms` flag) with something to pick.
+      termId: seedTerm.id,
+      startTermIds: [seedTerm.id, ...upcomingTerms.map((t) => t.id)],
       generalRubricVersionId: "rv-general-v1",
       applicationFormId: generalApplicationForm.id,
       domains: {
@@ -2851,57 +2887,36 @@ async function main() {
       body: `Hi {{firstName}},\n\nWe are thrilled to offer you a spot in DALI!\n\nAfter a highly competitive review process, we believe you'll be a fantastic addition to our team. Please log in to your application portal to confirm your acceptance.\n\nOnboarding details and next steps will follow shortly. In the meantime, if you have any questions, feel free to reach out to us at applications@dali.dartmouth.edu.\n\nWelcome to the family — we can't wait to work with you!\n\nWarmly,\nThe DALI Team`,
     },
   ]
-  // Every template lives as a named EmailTemplate parent + EmailTemplateVersion
-  // (below); ApplicationReceived / InterviewInviteMentor bind to a cycle via
-  // CycleNotificationEmail, the rest via CycleDecisionEmail. The old type-keyed
-  // LegacyEmailTemplate table has been dropped.
-
-  // New rubric-pattern templates: one named parent + one EmailTemplateVersion
-  // per legacy type. Deterministic ids match the migration backfill so re-seeding
-  // a freshly-migrated DB doesn't double-write.
-  for (const t of seedTemplates) {
-    const templateId = `tmpl_${t.type.toLowerCase()}`
-    await prisma.emailTemplate.upsert({
-      where: { id: templateId },
-      update: {},
-      create: { id: templateId, name: t.type },
-    })
-    const existingVersion = await prisma.emailTemplateVersion.findFirst({
-      where: { templateId },
-    })
-    if (!existingVersion) {
-      await prisma.emailTemplateVersion.create({
-        data: {
-          templateId,
-          versionNumber: 1,
-          subject: t.subject,
-          body: t.body,
-          createdById: engLead.id,
-        },
-      })
-    }
-  }
-
-  // Hiring's shared emails (one per slot, used by every cycle), seeded from
-  // the templates above.
+  // Hiring's emails: one EmailTemplate row per registry key, shared by every
+  // cycle. The seed copy above is keyed by decision/notification type; the
+  // registry key is that slot prefixed with its area.
   const hiringSlots = [
-    ...(['Rejected', 'InvitedToInterview', 'Accepted', 'Waitlisted'] as const).map((t) => ({ slot: `decision:${t}`, tmpl: t })),
-    ...(['ApplicationReceived', 'ApplicationExtensionNotice', 'InterviewInviteMentor', 'InterviewConfirmedApplicant', 'InterviewCancelledApplicant', 'InterviewCancelledInterviewer', 'InterviewLocationChanged'] as const).map((t) => ({ slot: `notification:${t}`, tmpl: t })),
+    ...(['Rejected', 'InvitedToInterview', 'Accepted', 'Waitlisted'] as const).map(
+      (t) => ({ slot: `decision:${t}`, tmpl: t as string }),
+    ),
+    ...([
+      'ApplicationReceived',
+      'ApplicationExtensionNotice',
+      'InterviewInviteMentor',
+      'InterviewConfirmedApplicant',
+      'InterviewCancelledApplicant',
+      'InterviewCancelledInterviewer',
+      'InterviewLocationChanged',
+    ] as const).map((t) => ({ slot: `notification:${t}`, tmpl: t as string })),
   ]
+  let seededEmails = 0
   for (const { slot, tmpl } of hiringSlots) {
-    const version = await prisma.emailTemplateVersion.findFirst({
-      where: { templateId: `tmpl_${tmpl.toLowerCase()}` },
-      orderBy: { versionNumber: 'desc' },
+    const copy = seedTemplates.find((t) => t.type === tmpl)
+    if (!copy) continue
+    const key = `hiring:${slot}`
+    await prisma.emailTemplate.upsert({
+      where: { key },
+      update: {},
+      create: { key, subject: copy.subject, body: copy.body, updatedById: engLead.id },
     })
-    if (version) {
-      await prisma.hiringEmail.upsert({
-        where: { slot },
-        update: { subject: version.subject, body: version.body },
-        create: { slot, subject: version.subject, body: version.body },
-      })
-    }
+    seededEmails += 1
   }
-  console.log(`  ${seedTemplates.length} email templates seeded (2 legacy + 7 new), plus hiring's shared emails`)
+  console.log(`  ${seededEmails} hiring emails seeded into the unified template store`)
   console.log(`  ${reviewSpecs.length} ApplicationReviews + ${decisionSpecs.filter(s => s.type === "InvitedToInterview").length * 3 + decisionSpecs.filter(s => s.type !== "InvitedToInterview").length * 2} Decisions + ${interviewBookings.length} booked interviews for Fall 2026`);
 
   // ── Partners + projects ────────────────────────────────────────────────────
@@ -4554,6 +4569,10 @@ async function main() {
         adminId: admin.id,
         termId: term26S.id,
       });
+
+      // Blog posts on The Scoop and two bookmark pages. See
+      // prisma/seeds/resources-demo.ts.
+      await seedResourcesDemo(prisma, { adminId: admin.id });
 
       // Lab-workspace Page + a NotificationPreference row for the admin.
       await prisma.page.deleteMany({

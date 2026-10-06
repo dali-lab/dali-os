@@ -124,12 +124,15 @@ export type DriveBrowserProps = {
   scopes: DriveTreeScope[];
   currentScopeId: string | null;
   currentFolderId: string | null;
-  typeFilter: "all" | "doc" | "file" | "form" | "agreement" | "emailTemplate" | "rubric";
+  typeFilter: "all" | "doc" | "file" | "form" | "agreement" | "rubric";
   search: string;
   onSearchChange: (q: string) => void;
   onNavigate: (scopeId: string | null, folderId: string | null) => void;
   onOpenItem: (item: DriveItem) => void;
-  onMove: (scopeId: string, item: DriveItem, destFolderId: string | null) => void;
+  /** Re-file every item into `destFolderId` within the scope it already sits
+   *  in. Takes a list because dragging one row of a multi-selection drags the
+   *  whole selection, the way Finder and Drive do. */
+  onMove: (scopeId: string, items: DriveItem[], destFolderId: string | null) => void;
   getScopeActions: (scopeId: string) => RowActions;
   /** Toggle the viewer's favorite on a page item (doc/folder). */
   onToggleFavorite?: (item: DriveItem) => void;
@@ -137,8 +140,8 @@ export type DriveBrowserProps = {
   onBulkDelete?: (items: DriveItem[]) => void;
   /** Move every item in the set to another drive/folder (picker + confirm in the hub). */
   onBulkMove?: (items: DriveItem[]) => void;
-  /** Move a single item from one drive scope to another (confirm + re-scope handled by hub). */
-  onMoveToScope?: (sourceScopeId: string, destScopeId: string, item: DriveItem) => void;
+  /** Move items from one drive scope to another (confirm + re-scope handled by hub). */
+  onMoveToScope?: (sourceScopeId: string, destScopeId: string, items: DriveItem[]) => void;
   /** Upload files dropped from the desktop into the current scope+folder. */
   onUploadFiles?: (files: File[]) => void;
   filterControl?: ReactNode;
@@ -196,8 +199,6 @@ function kindLabel(item: DriveItem): string {
       return "Form";
     case "rubric":
       return "Rubric";
-    case "emailTemplate":
-      return "Email Template";
     default:
       return "Agreement";
   }
@@ -336,8 +337,6 @@ function itemIcon(item: DriveItem, size: IconSize = "sm") {
       return <FileSignature className={`${cls} text-muted-foreground shrink-0`} />;
     case "rubric":
       return <ClipboardCheck className={`${cls} text-muted-foreground shrink-0`} />;
-    case "emailTemplate":
-      return <Mail className={`${cls} text-muted-foreground shrink-0`} />;
     default:
       // Docs: respect size so grid/preview icons dwarf the label the way a
       // Finder icon does (PageIcon is a fixed list-row glyph and ignores size).
@@ -533,10 +532,6 @@ type ColumnSelection = {
   levels: ColumnLevel[];
   /** The row id highlighted at each level (parallel to `levels`). */
   highlightedIds: (string | null)[];
-  /** If a leaf is highlighted, it lives at this level index. */
-  leafLevelIdx: number | null;
-  /** The highlighted leaf item (populated when a leaf row is selected). */
-  selectedLeaf: DriveItem | null;
 };
 
 function initialColumnSelection(
@@ -545,11 +540,11 @@ function initialColumnSelection(
   scopes: DriveTreeScope[],
 ): ColumnSelection {
   if (!currentScopeId) {
-    return { levels: [{ kind: "root" }], highlightedIds: [null], leafLevelIdx: null, selectedLeaf: null };
+    return { levels: [{ kind: "root" }], highlightedIds: [null] };
   }
   const scope = scopes.find((s) => s.id === currentScopeId);
   if (!scope) {
-    return { levels: [{ kind: "root" }], highlightedIds: [null], leafLevelIdx: null, selectedLeaf: null };
+    return { levels: [{ kind: "root" }], highlightedIds: [null] };
   }
 
   // Build the path of folder crumbs (root → currentFolderId, inclusive).
@@ -587,7 +582,7 @@ function initialColumnSelection(
     highlightedIds.push(null);
   }
 
-  return { levels, highlightedIds, leafLevelIdx: null, selectedLeaf: null };
+  return { levels, highlightedIds };
 }
 
 // ── Main component ───────────────────────────────────────────────────────────
@@ -639,12 +634,17 @@ export function DriveBrowser({
         // workspaceType is not on DriveItem directly; infer from the scope id
         // so the ShareDialog can show the correct audience label (Lab/Project/Member).
         const scope = scopes.find((s) => s.id === scopeId);
+        // Only a hint: the dialog replaces it with the server's answer once
+        // loaded. Still worth getting right — education pages are not Project
+        // ones, and the fallback claimed they were.
         const wt =
           !scope || scope.id === "lab" || scope.id === "core"
             ? "Lab"
             : scope.id === "mine"
               ? "Member"
-              : "Project";
+              : scope.id === "education"
+                ? "EducationOffering"
+                : "Project";
         setShareTarget({ id: item.id, title: item.title || "Untitled", workspaceType: wt });
         onShareItem?.(item);
       },
@@ -737,12 +737,11 @@ export function DriveBrowser({
     setFocusLevel((prev) => Math.min(prev, Math.max(0, next.levels.length - 1)));
   }, [currentScopeId, currentFolderId, scopes]);
 
-  // Auto-scroll the columns container to the right after each column is added,
-  // and when a leaf is picked — the preview column it opens is at the far right.
+  // Auto-scroll the columns container to the right after each column is added.
   useEffect(() => {
     const el = columnsContainerRef.current;
     if (el) el.scrollLeft = el.scrollWidth;
-  }, [colSel.levels.length, colSel.selectedLeaf?.id]);
+  }, [colSel.levels.length]);
 
   // Follow the keyboard: bring the focused column's highlighted row into view
   // (horizontally as well, since a deep trail scrolls the columns off-screen).
@@ -990,10 +989,22 @@ export function DriveBrowser({
     const src = e.active.data.current as { item: DriveItem; scopeId: string } | undefined;
     const dest = e.over?.data.current as { destFolderId?: string | null; destScopeId?: string } | undefined;
     if (!src || !dest) return;
+    // Dragging a row that's part of a multi-selection drags the whole
+    // selection — Finder and Drive both do this, and moving only the row under
+    // the cursor silently drops the other items the user had picked. A search
+    // selection can span scopes, and a move is scope-relative, so only the ones
+    // sharing the dragged row's scope come along.
+    const multi =
+      selected.has(src.item.id) && selectedItems.length > 1
+        ? searching
+          ? hits.filter((h) => h.scope.id === src.scopeId && selected.has(h.item.id)).map((h) => h.item)
+          : selectedItems
+        : [];
+    const dragged = multi.length > 1 ? multi : [src.item];
     // Cross-drive drop: item dragged onto a scope row in column 0.
     if (dest.destScopeId && dest.destFolderId === undefined) {
       if (dest.destScopeId !== src.scopeId) {
-        onMoveToScope?.(src.scopeId, dest.destScopeId, src.item);
+        onMoveToScope?.(src.scopeId, dest.destScopeId, dragged);
       }
       return;
     }
@@ -1004,16 +1015,23 @@ export function DriveBrowser({
     const destScopeId = dest.destScopeId ?? currentScope?.id ?? null;
     if (!destScopeId) return;
     if (destScopeId !== src.scopeId) {
-      onMoveToScope?.(src.scopeId, destScopeId, src.item);
+      onMoveToScope?.(src.scopeId, destScopeId, dragged);
       return;
     }
     const destScope = scopes.find((sc) => sc.id === destScopeId);
     if (!destScope) return;
-    if (src.item.type === "folder" && dest.destFolderId) {
-      if (folderDescendants(destScope.items, src.item.id).has(dest.destFolderId)) return;
-    }
-    if (src.item.parentFolderId === (dest.destFolderId ?? null)) return;
-    onMove(destScope.id, src.item, dest.destFolderId ?? null);
+    // Drop the items the destination can't accept rather than failing the whole
+    // drag: a folder can't land inside its own subtree, and an item already in
+    // the target folder has nowhere to go.
+    const movable = dragged.filter((item) => {
+      if (item.id === dest.destFolderId) return false;
+      if (item.type === "folder" && dest.destFolderId) {
+        if (folderDescendants(destScope.items, item.id).has(dest.destFolderId)) return false;
+      }
+      return item.parentFolderId !== (dest.destFolderId ?? null);
+    });
+    if (movable.length === 0) return;
+    onMove(destScope.id, movable, dest.destFolderId ?? null);
   }
 
   // ── Drag-to-upload (desktop files) ──────────────────────────────────────
@@ -1066,8 +1084,6 @@ export function DriveBrowser({
         { kind: "scope", scopeId, folderId: null },
       ],
       highlightedIds: [scopeId, null],
-      leafLevelIdx: null,
-      selectedLeaf: null,
     });
   }
 
@@ -1076,13 +1092,13 @@ export function DriveBrowser({
     onNavigate(scopeId, null);
   }
 
-  // Click a row inside a column: either drill into folder or highlight leaf.
+  // Click a row inside a column: drill into a folder, open anything else.
   // Cmd/Ctrl- or Shift-click multi-selects within that column (like list/grid)
   // instead of navigating, driving the same bulk bar.
-  function handleColumnRowClick(levelIdx: number, item: DriveItem, scopeId: string, e?: ReactMouseEvent) {
+  function handleColumnRowClick(levelIdx: number, item: DriveItem, scopeId: string, e: ReactMouseEvent) {
     // Take keyboard focus so arrow/Enter/Space nav works without a second tab.
     columnsContainerRef.current?.focus({ preventScroll: true });
-    if (e && (e.metaKey || e.ctrlKey)) {
+    if (e.metaKey || e.ctrlKey) {
       setSelected((prev) => {
         const next = new Set(prev);
         if (next.has(item.id)) next.delete(item.id);
@@ -1092,7 +1108,7 @@ export function DriveBrowser({
       setAnchorId(item.id);
       return;
     }
-    if (e && e.shiftKey && anchorId) {
+    if (e.shiftKey && anchorId) {
       const ids = itemsForLevel(colSel.levels[levelIdx]).map((i) => i.id);
       const a = ids.indexOf(anchorId);
       const b = ids.indexOf(item.id);
@@ -1102,7 +1118,14 @@ export function DriveBrowser({
         return;
       }
     }
-    // Plain click: drop any multi-selection, then navigate/highlight as before.
+    highlightColumnRow(levelIdx, item, scopeId);
+    if (item.type !== "folder") onOpenItem(item);
+  }
+
+  // Highlight a row without opening it: a folder drills in, anything else is
+  // just marked. The keyboard moves through rows with this, so arrowing past a
+  // file doesn't open it — Enter does.
+  function highlightColumnRow(levelIdx: number, item: DriveItem, scopeId: string) {
     if (selected.size > 0) setSelected(new Set());
     setAnchorId(item.id);
     setFocusLevel(levelIdx);
@@ -1122,31 +1145,14 @@ export function DriveBrowser({
       setColSel({
         levels: truncatedLevels,
         highlightedIds: truncatedHighlights,
-        leafLevelIdx: null,
-        selectedLeaf: null,
       });
       onNavigate(scopeId, newFolderId);
     } else {
-      // Leaf: highlight in this column, truncate columns to the right, show toolbar.
+      // Leaf: highlight in this column, truncate columns to the right.
       const truncatedLevels = colSel.levels.slice(0, levelIdx + 1);
       const truncatedHighlights = colSel.highlightedIds.slice(0, levelIdx + 1);
       truncatedHighlights[levelIdx] = item.id;
-      setColSel({
-        levels: truncatedLevels,
-        highlightedIds: truncatedHighlights,
-        leafLevelIdx: levelIdx,
-        selectedLeaf: item,
-      });
-    }
-  }
-
-  // Double-click a leaf → open it. Folders are opened via onOpenItem too, which
-  // drills into them (see the route's onOpenItem); guarding here is unnecessary
-  // but harmless — a double-click on a folder in columns already drilled on the
-  // preceding single click.
-  function handleColumnRowDblClick(item: DriveItem) {
-    if (item.type !== "folder") {
-      onOpenItem(item);
+      setColSel({ levels: truncatedLevels, highlightedIds: truncatedHighlights });
     }
   }
 
@@ -1165,7 +1171,7 @@ export function DriveBrowser({
     return itemsForLevel(level).map((it) => ({ id: it.id, title: it.title || "Untitled" }));
   }
 
-  /** Highlight a row the way a plain click would: drill folders, select leaves. */
+  /** Move the keyboard highlight to a row: drill folders, mark leaves. */
   function activateRow(levelIdx: number, id: string) {
     if (levelIdx === 0) {
       handleScopeClick(id);
@@ -1175,7 +1181,7 @@ export function DriveBrowser({
     const sId = scopeIdForLevel(level);
     if (!sId) return;
     const item = itemsForLevel(level).find((it) => it.id === id);
-    if (item) handleColumnRowClick(levelIdx, item, sId);
+    if (item) highlightColumnRow(levelIdx, item, sId);
   }
 
   function highlightedItemAt(levelIdx: number): DriveItem | null {
@@ -1234,7 +1240,6 @@ export function DriveBrowser({
         return;
       }
       setSelected(new Set());
-      setColSel((prev) => ({ ...prev, selectedLeaf: null, leafLevelIdx: null }));
       return;
     }
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
@@ -1305,23 +1310,11 @@ export function DriveBrowser({
     return level.scopeId;
   }
 
-  // ── Selection detail (the action strip + details rail subject) ─────────────
-  // Column view drives selection through `selectedLeaf`; list / grid / search
-  // drive it through the `selected` set. Resolve them to one `detailItem` so the
-  // strip and the side-peek rail behave identically in every view.
-  const { selectedLeaf } = colSel;
-  let leafScopeId: string | null = null;
-  if (colSel.leafLevelIdx !== null) {
-    leafScopeId = scopeIdForLevel(colSel.levels[colSel.leafLevelIdx]);
-  }
-  const leafActions = leafScopeId ? getInternalScopeActions(leafScopeId) : null;
-
+  // ── Selection detail (the details rail subject) ────────────────────────────
   const columnsActive = viewMode === "columns" && !searching;
-  // In column view the in-column LeafPreviewColumn owns the selected leaf's
-  // details and actions, so the action strip's single-item state and the
-  // side-peek rail stay out of its way — they drive only list / grid / search
-  // selection (the `selected` set). The strip still shows the resting count and
-  // bulk actions in columns.
+  // In column view a click opens the item rather than selecting it, so the
+  // side-peek rail has no subject there — it follows only list / grid / search
+  // selection (the `selected` set). The bulk bar still shows in columns.
   let detailItem: DriveItem | null = null;
   let detailScopeId: string | null = null;
   if (!columnsActive && selected.size === 1) {
@@ -1404,40 +1397,6 @@ export function DriveBrowser({
       /* ignore */
     }
   }
-
-  // ── Column leaf preview (Finder in-column details) ─────────────────────────
-  // The columns view keeps its own selected-leaf surface (LeafPreviewColumn) at
-  // the end of the trail, so it derives its capabilities from `selectedLeaf`
-  // rather than the view-agnostic `detailItem` above.
-  const canLeafRename =
-    selectedLeaf &&
-    (selectedLeaf.type === "folder" ||
-      selectedLeaf.type === "doc" ||
-      selectedLeaf.type === "file" ||
-      selectedLeaf.type === "form" ||
-      selectedLeaf.type === "agreement");
-  const canLeafMove =
-    !!selectedLeaf &&
-    selectedLeaf.type !== "agreement" &&
-    selectedLeaf.type !== "rubric";
-  const canLeafDelete =
-    selectedLeaf &&
-    (selectedLeaf.type === "folder" ||
-      selectedLeaf.type === "doc" ||
-      selectedLeaf.type === "file" ||
-      selectedLeaf.type === "form");
-  // Download: only for files with an href.
-  const canLeafDownload = selectedLeaf && selectedLeaf.type === "file";
-  const leafScope = leafScopeId ? scopes.find((sc) => sc.id === leafScopeId) ?? null : null;
-  const leafPath = selectedLeaf && leafScope
-    ? [leafScope.label, ...crumbsFor(leafScope.items, selectedLeaf.parentFolderId).map((c) => c.title)].join(" › ")
-    : "";
-  // Share: page-backed items only (doc and folder). Folders now support sharing
-  // via PageShare, which was previously impossible from the Drive surface.
-  const canLeafShare =
-    !!selectedLeaf &&
-    (selectedLeaf.type === "doc" || selectedLeaf.type === "folder") &&
-    !!leafActions?.onShare;
 
   // ── The listing header's controls ─────────────────────────────────────────
   // Built here rather than inline so the header itself stays a readable row of
@@ -1580,8 +1539,8 @@ export function DriveBrowser({
           {filterControl}
 
           <div className="ml-auto flex shrink-0 items-center gap-3">
-            {/* Column view carries its own in-column details (LeafPreviewColumn),
-                so the side rail — and its toggle — only apply to list / grid. */}
+            {/* Column view opens an item on click instead of selecting it, so
+                the side rail — and its toggle — only apply to list / grid. */}
             {!columnsActive && (
               <Tooltip content={detailsOpen ? "Hide details" : "Show details"}>
                 <button
@@ -1649,9 +1608,6 @@ export function DriveBrowser({
               onDragOver={onFileDragOver}
               onDragLeave={onFileDragLeave}
               onDrop={onFileDrop}
-              onClick={() =>
-                setColSel((prev) => ({ ...prev, selectedLeaf: null, leafLevelIdx: null }))
-              }
               data-testid="drive-columns"
             >
               {uploadOver && (
@@ -1741,7 +1697,6 @@ export function DriveBrowser({
                               onToggleFavorite={onToggleFavorite}
                               onTogglePartnerVisible={partnerToggle}
                               onClick={(e) => { if (sId) handleColumnRowClick(levelIdx, item, sId, e); }}
-                              onDoubleClick={() => handleColumnRowDblClick(item)}
                               onOpen={() => onOpenItem(item)}
                             />
                           </ContextMenu>
@@ -1750,25 +1705,6 @@ export function DriveBrowser({
                     </MillerColumn>
                   );
                 })}
-
-                {/* Preview column. A selected leaf's details and actions belong
-                    at the end of the trail, next to the row you picked — the
-                    place Finder puts them — rather than in a strip above the
-                    columns, which sat far from the selection and could only
-                    afford the name. */}
-                {selectedLeaf && leafActions && (
-                  <LeafPreviewColumn
-                    item={selectedLeaf}
-                    path={leafPath}
-                    actions={leafActions}
-                    canRename={!!canLeafRename}
-                    canMove={canLeafMove}
-                    canDelete={!!canLeafDelete}
-                    canShare={canLeafShare}
-                    canDownload={!!canLeafDownload}
-                    onToggleFavorite={onToggleFavorite}
-                  />
-                )}
               </div>
             </div>
           ) : (
@@ -1828,7 +1764,6 @@ export function DriveBrowser({
                   activeId={activeId}
                   onRowClick={handleRowClick}
                   onOpen={openById}
-                  onMove={onMove}
                   actions={getInternalScopeActions(currentScope.id)}
                   onToggleFavorite={onToggleFavorite}
                   onTogglePartnerVisible={
@@ -1841,30 +1776,20 @@ export function DriveBrowser({
             </div>
           )}
 
-          {/* ── Selection actions ─────────────────────────────────────────
+          {/* ── Bulk selection actions ────────────────────────────────────────
               Floated over the listing rather than stacked above it. A bar in
               the flow appears the instant the first click of a double-click
               lands, shoving the row out from under the second click — which is
               what an always-mounted fixed-height row used to prevent, at the
               cost of an empty band over every resting listing. Out of the flow
               it can be absent at rest AND move nothing when it arrives. ── */}
-          <DriveActionStrip
-            os={true}
+          <DriveBulkBar
             showBulk={showBulk}
             selectedCount={selected.size}
             selectedItems={selectedItems}
             onBulkMove={onBulkMove}
             onBulkDelete={onBulkDelete}
             onClearSelection={() => setSelected(new Set())}
-            item={detailItem}
-            actions={detailActions}
-            canDownload={!!canItemDownload}
-            canRename={!!canItemRename}
-            canMove={!!canItemMove}
-            canShare={!!canItemShare}
-            canDelete={!!canItemDelete}
-            detailsOpen={detailsOpen}
-            onOpenDetails={() => setDetailsOpen(true)}
           />
           </div>
 
@@ -1920,146 +1845,61 @@ export function DriveBrowser({
   );
 }
 
-// ── Action strip ─────────────────────────────────────────────────────────────
-// Always mounted, one fixed-height row. Swaps contents by selection state so the
-// list below never moves. `data-testid` is "drive-bulk-bar" in the multi-select
-// state (the e2e and prior behaviour depend on that id + "N selected" text) and
-// "drive-action-strip" otherwise.
+// ── Bulk bar ─────────────────────────────────────────────────────────────────
+// Multi-select actions only. A single selected item has no bar: its actions
+// live in the row's context menu and the details rail.
 
-function DriveActionStrip({
-  os,
+function DriveBulkBar({
   showBulk,
   selectedCount,
   selectedItems,
   onBulkMove,
   onBulkDelete,
   onClearSelection,
-  item,
-  actions,
-  canDownload,
-  canRename,
-  canMove,
-  canShare,
-  canDelete,
-  detailsOpen,
-  onOpenDetails,
 }: {
-  os: boolean;
   showBulk: boolean;
   selectedCount: number;
   selectedItems: DriveItem[];
   onBulkMove?: (items: DriveItem[]) => void;
   onBulkDelete?: (items: DriveItem[]) => void;
   onClearSelection: () => void;
-  item: DriveItem | null;
-  actions: RowActions | null;
-  canDownload: boolean;
-  canRename: boolean;
-  canMove: boolean;
-  canShare: boolean;
-  canDelete: boolean;
-  detailsOpen: boolean;
-  onOpenDetails: () => void;
 }) {
-  const btn = cn(
-    "inline-flex items-center gap-1 rounded px-2 py-1 text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-    os ? "text-sm" : "text-xs",
-  );
-  // With nothing selected the strip has nothing to say — Finder keeps no
-  // item-count banner over its listing — so it leaves the flow entirely rather
-  // than holding an empty band (and the gap above the listing) open. It returns
-  // the moment a selection gives it something to carry.
-  if (!showBulk && !(item && actions && !detailsOpen)) return null;
+  if (!showBulk) return null;
   return (
     <div
-      className={cn(
-        // Pinned to the bottom of the listing it belongs to, clear of the rows
-        // it acts on. Its own surface and shadow, since it sits over content.
-        "absolute inset-x-3 bottom-3 z-20 flex items-center gap-2 rounded-md border px-3 min-h-9 shadow-brand-2",
-        showBulk ? "border-os-accent/40 bg-os-accent/10" : "border-border bg-card",
-        os ? "text-base" : "text-sm",
-      )}
-      data-testid={showBulk ? "drive-bulk-bar" : "drive-action-strip"}
+      // Pinned to the bottom of the listing it belongs to, clear of the rows
+      // it acts on. Its own surface and shadow, since it sits over content.
+      className="absolute inset-x-3 bottom-3 z-20 flex min-h-9 items-center gap-2 rounded-md border border-os-accent/40 bg-os-accent/10 px-3 text-base shadow-brand-2"
+      data-testid="drive-bulk-bar"
       onClick={(e) => e.stopPropagation()}
     >
-      {showBulk ? (
-        <>
-          <span className="font-medium text-foreground">{selectedCount} selected</span>
-          {onBulkMove && (
-            <button
-              type="button"
-              data-testid="drive-bulk-move"
-              onClick={() => onBulkMove(selectedItems)}
-              className="inline-flex items-center gap-1 text-foreground hover:text-accent-coral"
-            >
-              <FolderInput className="w-3.5 h-3.5" /> Move
-            </button>
-          )}
-          {onBulkDelete && (
-            <button
-              type="button"
-              onClick={() => onBulkDelete(selectedItems)}
-              className="inline-flex items-center gap-1 text-destructive hover:text-destructive/80"
-            >
-              <Trash2 className="w-3.5 h-3.5" /> Delete
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={onClearSelection}
-            className="ml-auto text-muted-foreground hover:text-foreground"
-          >
-            Clear
-          </button>
-        </>
-      ) : item && actions && !detailsOpen ? (
-        <>
-          <span className="flex items-center gap-1.5 min-w-0 flex-1">
-            {itemIcon(item)}
-            <span className="font-medium text-foreground truncate">{item.title || "Untitled"}</span>
-            <span className={cn("text-muted-foreground shrink-0", os ? "text-sm" : "text-xs")}>
-              {kindLabel(item)}
-            </span>
-          </span>
-          <div className="flex items-center gap-1 shrink-0">
-            {canDownload && item.href && (
-              <a href={item.href} download data-testid="drive-leaf-download" onClick={(e) => e.stopPropagation()} className={btn}>
-                <Download className="w-3.5 h-3.5" /> Download
-              </a>
-            )}
-            {canRename && (
-              <button type="button" data-testid="drive-leaf-rename" onClick={() => actions.onRename(item)} className={btn}>
-                <Pencil className="w-3.5 h-3.5" /> Rename
-              </button>
-            )}
-            {canMove && (
-              <button type="button" data-testid="drive-leaf-move" onClick={() => actions.onRequestMove(item)} className={btn}>
-                <FolderInput className="w-3.5 h-3.5" /> Move
-              </button>
-            )}
-            {canShare && actions.onShare && (
-              <button type="button" data-testid="drive-leaf-share" onClick={() => actions.onShare!(item)} className={btn}>
-                <Share2 className="w-3.5 h-3.5" /> Share
-              </button>
-            )}
-            {canDelete && (
-              <button
-                type="button"
-                data-testid="drive-leaf-delete"
-                onClick={() => actions.onDelete(item)}
-                className={cn("inline-flex items-center gap-1 rounded px-2 py-1 text-destructive hover:bg-destructive/10", os ? "text-sm" : "text-xs")}
-              >
-                <Trash2 className="w-3.5 h-3.5" /> Delete
-              </button>
-            )}
-            {!detailsOpen && (
-              <button type="button" data-testid="drive-open-details" aria-label="Show details" onClick={onOpenDetails} className={btn}>
-                <Info className="w-3.5 h-3.5" /> Details
-              </button>
-            )}
-          </div>
-        </>
-      ) : null}
+      <span className="font-medium text-foreground">{selectedCount} selected</span>
+      {onBulkMove && (
+        <button
+          type="button"
+          data-testid="drive-bulk-move"
+          onClick={() => onBulkMove(selectedItems)}
+          className="inline-flex items-center gap-1 text-foreground hover:text-accent-coral"
+        >
+          <FolderInput className="w-3.5 h-3.5" /> Move
+        </button>
+      )}
+      {onBulkDelete && (
+        <button
+          type="button"
+          onClick={() => onBulkDelete(selectedItems)}
+          className="inline-flex items-center gap-1 text-destructive hover:text-destructive/80"
+        >
+          <Trash2 className="w-3.5 h-3.5" /> Delete
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={onClearSelection}
+        className="ml-auto text-muted-foreground hover:text-foreground"
+      >
+        Clear
+      </button>
     </div>
   );
 }
@@ -2367,7 +2207,6 @@ function ColumnItemRow({
   onToggleFavorite,
   onTogglePartnerVisible,
   onClick,
-  onDoubleClick,
   onOpen,
 }: {
   item: DriveItem;
@@ -2382,12 +2221,11 @@ function ColumnItemRow({
   onToggleFavorite?: (item: DriveItem) => void;
   onTogglePartnerVisible?: (item: DriveItem, next: boolean) => void;
   onClick: (e: ReactMouseEvent) => void;
-  onDoubleClick: () => void;
   onOpen: () => void;
 }) {
   const t = useDriveText();
   const isFolder = item.type === "folder";
-  const isManaged = item.type === "agreement" || item.type === "rubric" || item.type === "emailTemplate";
+  const isManaged = item.type === "agreement" || item.type === "rubric";
   const drag = useDraggable({
     id: `col::${scopeId}::${item.id}`,
     data: { item, scopeId },
@@ -2415,7 +2253,6 @@ function ColumnItemRow({
       data-col-level={levelIdx}
       data-row-id={item.id}
       onClick={(e) => { e.stopPropagation(); onClick(e); }}
-      onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick(); }}
       className={`group flex items-center rounded-lg dnd-touch-handle ${t.itemRow} ${t.row} cursor-default select-none ${
         drag.isDragging ? "opacity-40" : ""
       } ${
@@ -2558,112 +2395,6 @@ function DetailAction({
       {icon}
       {label}
     </button>
-  );
-}
-
-function LeafPreviewColumn({
-  item,
-  path,
-  actions,
-  canRename,
-  canMove,
-  canDelete,
-  canShare,
-  canDownload,
-  onToggleFavorite,
-}: {
-  item: DriveItem;
-  /** "Lab-wide › Handbook › Onboarding" — where the item sits. */
-  path: string;
-  actions: RowActions;
-  canRename: boolean;
-  canMove: boolean;
-  canDelete: boolean;
-  canShare: boolean;
-  canDownload: boolean;
-  onToggleFavorite?: (item: DriveItem) => void;
-}) {
-  const isPageBacked = item.type === "doc" || item.type === "folder";
-  return (
-    <div
-      data-testid="drive-leaf-preview"
-      // Clicks inside must not reach the columns container, whose own click
-      // clears the leaf selection — the panel would close under the pointer.
-      onClick={(e) => e.stopPropagation()}
-      // A fixed 280px (.drivepage-detail-panel) rather than a share of the row:
-      // it is the end of the trail, not another column, and the columns beside
-      // it shouldn't narrow to make room for its facts.
-      className="flex w-[280px] shrink-0 flex-col overflow-y-auto p-5 max-h-[420px]"
-    >
-      <div className="flex flex-col items-center text-center">
-        <div className="mb-3.5 flex h-12 w-12 items-center justify-center">
-          {itemIcon(item, "xl")}
-        </div>
-        <span className="text-base font-semibold leading-snug text-foreground break-words">
-          {item.title || "Untitled"}
-        </span>
-        <span className="mt-1 text-[13px] text-muted-foreground">{kindLabel(item)}</span>
-      </div>
-
-      <dl className="mt-4 flex flex-col gap-3.5 border-t border-border pt-3.5">
-        <DetailFact label="Where" value={path} />
-        <DetailFact label="Modified" value={relativeTime(item.updatedAt as unknown as string)} />
-        <DetailFact label="Size" value={formatSize(item.sizeBytes)} />
-      </dl>
-
-      <div className="mt-4 flex flex-col border-t border-border pt-2">
-        {canDownload && item.href && (
-          <DetailAction
-            testid="drive-leaf-download"
-            icon={<Download />}
-            label="Download"
-            href={item.href}
-          />
-        )}
-        {isPageBacked && onToggleFavorite && (
-          <DetailAction
-            testid="drive-leaf-favorite"
-            icon={<Star className={cn(item.favorited && "fill-current")} />}
-            label={item.favorited ? "Remove from favorites" : "Add to favorites"}
-            active={!!item.favorited}
-            onClick={() => onToggleFavorite(item)}
-          />
-        )}
-        {canShare && actions.onShare && (
-          <DetailAction
-            testid="drive-leaf-share"
-            icon={<Share2 />}
-            label="Share…"
-            onClick={() => actions.onShare!(item)}
-          />
-        )}
-        {canRename && (
-          <DetailAction
-            testid="drive-leaf-rename"
-            icon={<Pencil />}
-            label="Rename"
-            onClick={() => actions.onRename(item)}
-          />
-        )}
-        {canMove && (
-          <DetailAction
-            testid="drive-leaf-move"
-            icon={<FolderInput />}
-            label="Move to…"
-            onClick={() => actions.onRequestMove(item)}
-          />
-        )}
-        {canDelete && (
-          <DetailAction
-            testid="drive-leaf-delete"
-            icon={<Trash2 />}
-            label="Delete"
-            destructive
-            onClick={() => actions.onDelete(item)}
-          />
-        )}
-      </div>
-    </div>
   );
 }
 
@@ -2951,7 +2682,6 @@ function ScopeContents({
   activeId,
   onRowClick,
   onOpen,
-  onMove,
   actions,
   onToggleFavorite,
   onTogglePartnerVisible,
@@ -2967,7 +2697,6 @@ function ScopeContents({
   activeId: string | null;
   onRowClick: (id: string, e: ReactMouseEvent) => void;
   onOpen: (id: string) => void;
-  onMove: (scopeId: string, item: DriveItem, destFolderId: string | null) => void;
   actions: RowActions;
   onToggleFavorite?: (item: DriveItem) => void;
   onTogglePartnerVisible?: (item: DriveItem, next: boolean) => void;
@@ -3091,7 +2820,7 @@ function ListRow({
 }) {
   const t = useDriveText();
   const isFolder = item.type === "folder";
-  const isManaged = item.type === "agreement" || item.type === "rubric" || item.type === "emailTemplate";
+  const isManaged = item.type === "agreement" || item.type === "rubric";
   const drag = useDraggable({
     id: `${scopeId}::${item.id}`,
     data: { item, scopeId },
@@ -3198,7 +2927,7 @@ function GridTile({
 }) {
   const t = useDriveText();
   const isFolder = item.type === "folder";
-  const isManaged = item.type === "agreement" || item.type === "rubric" || item.type === "emailTemplate";
+  const isManaged = item.type === "agreement" || item.type === "rubric";
   const drag = useDraggable({
     id: `${scopeId}::${item.id}`,
     data: { item, scopeId },

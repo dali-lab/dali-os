@@ -1,103 +1,141 @@
-import { useState } from "react";
-import { redirect, useLoaderData } from "react-router";
-import { Check, Pencil } from "lucide-react";
+import { NavLink, Outlet, redirect, useFetcher, useLoaderData } from "react-router";
+import { PenLine, Plus } from "lucide-react";
 import type { Route } from "./+types/resources";
-import { DocEditor } from "~/components/doc";
-import { RESOURCES_ROOM } from "~/collab/roomName";
-import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
-import { getCollabToken } from "~/lib/collab-token.server";
-import { redirectToLogin } from "~/lib/login-next";
-import { getUserRoles, isCore, isLabMember } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { prisma } from "~/lib/db";
+import { blogPostRoomName } from "~/collab/roomName";
+import { cn } from "~/lib/cn";
+import { requireResourcesViewer } from "~/lib/resources.server";
+import { UNTOUCHED_DRAFT } from "~/lib/blog-post.server";
+import { IconButton } from "~/components/ui/IconButton";
+import { useDialog } from "~/components/ui/dialog";
 
 export const meta: Route.MetaFunction = () => [{ title: "Resources · DALI OS" }];
 
-// Edge to edge: the document IS the page here, so there is no view gutter and
-// no paper card floating on a tinted wash — the two pieces of chrome the
-// /documents viewer adds around the same editor.
+// Edge to edge: Resources is a paper sheet, not cards on a tinted wash.
 export const handle = { bleedPane: true };
 
-// The lab's shared reference document: one fixed collab room (RESOURCES_ROOM),
-// not a Drive page. Every lab member reads it; Core/Admin write. The socket
-// enforces the same split (collabAuth's `resources` branch) — `canEdit` here
-// only decides whether the Edit button appears.
 export async function loader({ request }: Route.LoaderArgs) {
-  const auth = await requireAuth(request);
-  if (!auth.ok) return redirectToLogin(request);
-  if (auth.user.type === "applicant") return redirect("/portal");
-  const partnerRedirect = await redirectPartnerToPortal(auth);
-  if (partnerRedirect) return partnerRedirect;
-
-  // Behind the `resources` flag; 404 (not redirect) so a disabled feature isn't
-  // reachable by URL and its existence isn't leaked.
-  const roles = await getUserRoles(auth.user.sub);
-  if (!(await isFeatureEnabled("resources", auth.user.sub, roles, request))) {
-    throw new Response("Not found", { status: 404 });
-  }
-
-  const [core, labMember] = await Promise.all([
-    isCore(auth.user.sub, request),
-    isLabMember(auth.user.sub, request),
-  ]);
-  if (!core && !labMember) throw new Response("Not found", { status: 404 });
-
-  return {
-    canEdit: core,
-    collabToken: await getCollabToken(request),
-    currentUserId: auth.user.sub,
-    userName:
-      [auth.user.firstName, auth.user.lastName].filter(Boolean).join(" ") ||
-      auth.user.email,
-  };
+  const { core } = await requireResourcesViewer(request);
+  const bookmarks = await prisma.resourceBookmark.findMany({
+    orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+    select: { id: true, title: true },
+  });
+  return { bookmarks, canManage: core };
 }
 
-export default function ResourcesPage() {
-  const { canEdit, collabToken, currentUserId, userName } = useLoaderData() as Exclude<
-    Awaited<ReturnType<typeof loader>>,
-    Response
-  >;
-  // Read mode by default, for Core too: this is the page the whole lab opens to
-  // look something up, so a stray keystroke should not change it. Toggling the
-  // prop is safe mid-session — BlockNote remounts the view, not the collab doc.
-  const [editing, setEditing] = useState(false);
+export async function action({ request }: Route.ActionArgs) {
+  const { user, core } = await requireResourcesViewer(request);
+  const form = await request.formData();
+  const intent = form.get("intent");
 
-  if (!collabToken) {
-    return (
-      <p className="px-5 py-8 text-sm italic text-muted-foreground">
-        Sign in again to open Resources.
-      </p>
+  if (intent === "createPost") {
+    // An untouched draft is never kept: Write reopens one if it exists and
+    // clears any others, instead of leaving an empty row behind per click.
+    const [reuse, ...stale] = await prisma.blogPost.findMany({
+      where: { authorId: user.sub, ...UNTOUCHED_DRAFT },
+      orderBy: { createdAt: "desc" },
+      select: { id: true },
+    });
+    if (stale.length > 0) {
+      const ids = stale.map((p) => p.id);
+      await prisma.$transaction([
+        prisma.collabDocument.deleteMany({ where: { name: { in: ids.map(blogPostRoomName) } } }),
+        prisma.blogPost.deleteMany({ where: { id: { in: ids } } }),
+      ]);
+    }
+    const post =
+      reuse ??
+      (await prisma.blogPost.create({
+        data: { title: UNTOUCHED_DRAFT.title, authorId: user.sub },
+        select: { id: true },
+      }));
+    return redirect(`/resources/write/${post.id}`);
+  }
+
+  if (intent === "createBookmark") {
+    if (!core) throw new Response("Forbidden", { status: 403 });
+    const title = String(form.get("title") ?? "").trim();
+    if (!title) return Response.json({ error: "Title is required" }, { status: 400 });
+    const last = await prisma.resourceBookmark.aggregate({ _max: { position: true } });
+    const bookmark = await prisma.resourceBookmark.create({
+      data: { title, position: (last._max.position ?? -1) + 1 },
+      select: { id: true },
+    });
+    return redirect(`/resources/b/${bookmark.id}`);
+  }
+
+  throw new Response("Bad request", { status: 400 });
+}
+
+const TAB =
+  "whitespace-nowrap border-b-2 px-1 py-2.5 text-sm font-semibold uppercase tracking-wider transition-colors";
+
+export default function ResourcesLayout() {
+  const { bookmarks, canManage } = useLoaderData<typeof loader>();
+  const fetcher = useFetcher();
+  const dialog = useDialog();
+
+  const tabClass = ({ isActive }: { isActive: boolean }) =>
+    cn(
+      TAB,
+      isActive
+        ? "border-foreground text-foreground"
+        : "border-transparent text-os-grey hover:text-foreground",
     );
+
+  async function addBookmark() {
+    const title = await dialog.prompt({
+      title: "New bookmark",
+      label: "Name",
+      confirmLabel: "Create",
+    });
+    if (title?.trim()) {
+      fetcher.submit({ intent: "createBookmark", title }, { method: "post", action: "/resources" });
+    }
   }
 
   return (
-    <div className="min-h-dvh bg-card pb-10">
-      {/* Always rendered: with no button in it the row is simply the page's top
-          gutter, which a read-only viewer needs anyway. */}
-      <div className="sticky top-0 z-20 flex justify-end bg-card px-6 py-5">
-        {canEdit && (
-          <button
-            type="button"
-            onClick={() => setEditing((on) => !on)}
-            aria-pressed={editing}
-            className="os-btn-primary os-btn-primary--sm"
-          >
-            {editing ? <Check className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
-            {editing ? "Done" : "Edit"}
-          </button>
-        )}
-      </div>
-      <DocEditor
-        features="document"
-        editable={canEdit && editing}
-        collab={{
-          documentName: RESOURCES_ROOM,
-          token: collabToken,
-          userName,
-          userId: currentUserId,
-        }}
-        placeholder="Write something, or press '/' for commands"
-        className="min-h-[70vh]"
-      />
+    <div className="min-h-dvh bg-card px-6 pb-16 sm:px-10">
+      <header className="relative border-b border-foreground pb-4 pt-8 text-center">
+        <p className="text-xs font-semibold uppercase tracking-widest text-os-grey">
+          {new Date().toLocaleDateString("en-US", {
+            weekday: "long",
+            month: "long",
+            day: "numeric",
+            year: "numeric",
+            timeZone: "America/New_York",
+          })}
+        </p>
+        <h1 className="mt-1 font-serif text-5xl font-bold tracking-tight text-foreground">
+          Everything DALI
+        </h1>
+        <button
+          type="button"
+          onClick={() =>
+            fetcher.submit({ intent: "createPost" }, { method: "post", action: "/resources" })
+          }
+          disabled={fetcher.state !== "idle"}
+          className="os-btn-primary os-btn-primary--sm absolute bottom-4 right-0"
+        >
+          <PenLine className="h-4 w-4" />
+          Write
+        </button>
+      </header>
+      <nav
+        aria-label="Bookmarks"
+        className="flex items-center gap-6 overflow-x-auto border-b border-border"
+      >
+        <NavLink to="/resources" end className={tabClass}>
+          The Scoop
+        </NavLink>
+        {bookmarks.map((b) => (
+          <NavLink key={b.id} to={`/resources/b/${b.id}`} className={tabClass}>
+            {b.title}
+          </NavLink>
+        ))}
+        {canManage && <IconButton label="New bookmark" icon={Plus} onClick={addBookmark} />}
+      </nav>
+      <Outlet />
     </div>
   );
 }

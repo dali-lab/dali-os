@@ -33,7 +33,7 @@ If your change touches collaboratively edited documents (Tiptap/Yjs), flag it in
 
 Run these before pushing:
 
-- `npm test` — unit tests (Vitest).
+- `npm test` — unit tests (Vitest). `npm run test:coverage` for the same run with a V8 coverage report in `coverage/index.html`.
 - `npm run typecheck` — always run this; it also regenerates React Router type stubs.
 - `npm run test:e2e` — Playwright against a real seeded Postgres. You don't need it for every change, but run it when touching routes, auth, or data flows.
 

@@ -110,7 +110,7 @@ export function SettingsPage({
             <SettingsBlock
               id="workspace"
               title="Workspace"
-              description="How pages open, and whether to show the sidebar."
+              description="How pages open, the sidebar, and editor behavior."
             >
               <WorkspaceSettingsBlock hideActivity={data.workspace.hideActivity} />
             </SettingsBlock>

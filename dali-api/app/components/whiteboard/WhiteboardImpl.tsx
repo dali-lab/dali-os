@@ -68,7 +68,7 @@ export default function WhiteboardImpl(props: WhiteboardEditorProps) {
   async function handleClearCanvas() {
     if (!api) return;
     const confirmed = await dialog.confirm({
-      title: "Clear canvas",
+      title: "Clear the canvas?",
       description: "This will clear the whole whiteboard for everyone. Are you sure?",
       tone: "destructive",
       confirmLabel: "Clear",

@@ -16,14 +16,12 @@ vi.mock("~/lib/display-scan.server", () => ({
   startDisplayScan: vi.fn(),
   stopDisplayScan: vi.fn(),
 }));
-vi.mock("~/rooms/lib/access.server", () => ({ isRoomBookingEnabled: vi.fn() }));
 vi.mock("qrcode", () => ({ default: { toString: vi.fn().mockResolvedValue("<svg/>") } }));
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { getUserRoles, isProjectMember } from "~/lib/roles";
 import { getActiveDisplayScan, startDisplayScan, stopDisplayScan } from "~/lib/display-scan.server";
-import { isRoomBookingEnabled } from "~/rooms/lib/access.server";
 import { action, loader } from "~/calendar/routes/calendar.meeting.$id";
 
 const mockPrisma = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
@@ -230,7 +228,6 @@ describe("meeting page — attendance tracking from iPad", () => {
   beforeEach(() => {
     vi.useFakeTimers({ now: new Date("2026-01-05T14:00:00.000Z") });
     mockAuth.mockResolvedValue({ ok: true, user: { sub: "organizer-1", type: "member" } });
-    vi.mocked(isRoomBookingEnabled).mockResolvedValue(true);
     vi.mocked(getActiveDisplayScan).mockResolvedValue(null);
     vi.mocked(startDisplayScan).mockResolvedValue({ ok: true, expiresAt: new Date() });
   });
@@ -270,12 +267,6 @@ describe("meeting page — attendance tracking from iPad", () => {
     expect(await ipadScan()).toBeNull();
     expect((await toggle("start-ipad-scan")).status).toBe(403);
     expect(startDisplayScan).not.toHaveBeenCalled();
-  });
-
-  it("withholds it when room booking is off", async () => {
-    vi.mocked(isRoomBookingEnabled).mockResolvedValue(false);
-    expect(await ipadScan()).toBeNull();
-    expect((await toggle("start-ipad-scan")).status).toBe(403);
   });
 
   it("starts and stops scanning for this occurrence", async () => {

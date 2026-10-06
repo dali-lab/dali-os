@@ -75,7 +75,7 @@ import {
   updateProjectPartnerDates,
 } from "~/partners/lib/partner-access";
 import { getPresenceUser } from "~/lib/presence-user";
-import { TaskBoard } from "../components/TaskBoard";
+import { TaskBoard, type TaskCreateSeed } from "../components/TaskBoard";
 import { ProjectMentorshipTab } from "~/mentorship/components/ProjectMentorshipTab";
 import {
   type TimelineEpic,
@@ -116,6 +116,7 @@ import type { RowActions } from "~/components/drive/DriveBrowser";
 import { DestinationPicker } from "~/components/drive/DestinationPicker";
 import type { PickerDrive, PickerFolder, Destination } from "~/components/drive/DestinationPicker";
 import { moveDriveItem, driveErrorFrom } from "~/components/drive/move-item";
+import { reportMoveBatch, runMoveBatch, itemCount } from "~/components/drive/move-batch";
 import { useDriveFileUpload } from "~/components/drive/useDriveFileUpload";
 import { useToast } from "~/components/ui/toast";
 import { filterPillClass } from "~/components/ui/floating/styles";
@@ -1770,9 +1771,13 @@ export default function ProjectDetail() {
   const [scopeSettingsOpen, setScopeSettingsOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const partnerNames = project.partners.map((p) => p.org.name);
-  // Add ▸ Task on the timeline toolbar opens the board's create form; the two
-  // are siblings under Progress, so the signal goes up here and back down.
-  const [taskCreateNonce, setTaskCreateNonce] = useState(0);
+  // Add ▸ Task on the timeline toolbar, and a story row's own Add task, open the
+  // board's create form; the two are siblings under Progress, so the signal goes
+  // up here and back down — carrying the epic/story it came from, if any.
+  const [taskCreateSeed, setTaskCreateSeed] = useState<TaskCreateSeed | null>(null);
+  // And the return leg: an epic the planning tab closed for a task form gets
+  // put back once that form closes, saved or dismissed.
+  const [epicReopen, setEpicReopen] = useState<{ epicId: string } | null>(null);
 
   // Per-epic term footprint, indexed for the planning list's term filter.
   const epicTermIds = useMemo(
@@ -1879,8 +1884,16 @@ export default function ProjectDetail() {
       userName={userName}
       onTaskClick={openTaskFromTimeline}
       // Only on the os Progress tab, where the board is on this same surface
-      // for the created task to appear in.
-      onAddTask={() => setTaskCreateNonce((n) => n + 1)}
+      // for the created task to appear in. A fresh object per add, so repeat
+      // adds on the same story each reach the board.
+      onAddTask={(link) =>
+        setTaskCreateSeed({
+          epicId: link?.epicId ?? null,
+          storyId: link?.storyId ?? null,
+          reopenEpicId: link?.reopenEpicId ?? null,
+        })
+      }
+      reopenEpic={epicReopen}
     />
   );
   const board = (
@@ -1891,7 +1904,10 @@ export default function ProjectDetail() {
       canManage={canEdit}
       currentUserId={currentUserId}
       currentUserName={userName}
-      createNonce={taskCreateNonce}
+      createSeed={taskCreateSeed}
+      onCreateClosed={(seed) =>
+        setEpicReopen(seed.reopenEpicId ? { epicId: seed.reopenEpicId } : null)
+      }
       // The people filter lives on the board's own toolbar (os), beside search;
       // it only narrows the board's tasks.
       peopleOptions={peopleOptions}
@@ -3784,6 +3800,7 @@ function DeleteProjectSection({
       label: `Type the project name to confirm`,
       placeholder: projectName,
       confirmLabel: "Delete project",
+      tone: "destructive",
       validate: (value) =>
         value.trim() === projectName ? null : "That doesn't match the project name.",
     });
@@ -4504,23 +4521,38 @@ function ProjectDriveTab({
     [navigate],
   );
 
-  const onMove = useCallback(
-    async (_scopeId: string, item: DriveItem, destFolderId: string | null) => {
+  // One item's move, with no reporting — the callers below decide whether to
+  // speak for one item or for a batch.
+  const moveOne = useCallback(
+    async (item: DriveItem, destFolderId: string | null): Promise<boolean> => {
       // Both endpoints (and what each calls its destination field) live in
       // move-item.ts, shared with the Drive hub — this embed had its own copy
       // and it drifted out of step with the pages endpoint's schema.
       try {
         const res = await moveDriveItem(item, destFolderId);
-        if (!res.ok) {
-          toast.error((await driveErrorFrom(res)) ?? "Couldn't move");
-          return;
-        }
-        revalidator.revalidate();
+        if (res.ok) return true;
+        toast.error((await driveErrorFrom(res)) ?? "Couldn't move");
+        return false;
       } catch {
         toast.error("Couldn't move");
+        return false;
       }
     },
-    [revalidator, toast],
+    [toast],
+  );
+
+  // Dropping a selection onto a folder. Dragging one row of a multi-selection
+  // now brings the whole selection, so this takes a list and revalidates once
+  // for the batch rather than once per item.
+  const onMove = useCallback(
+    async (_scopeId: string, items: DriveItem[], destFolderId: string | null) => {
+      let moved = 0;
+      for (const item of items) {
+        if (await moveOne(item, destFolderId)) moved++;
+      }
+      if (moved > 0) revalidator.revalidate();
+    },
+    [moveOne, revalidator],
   );
 
   // Open the destination picker over this project's folders and resolve with the
@@ -4529,8 +4561,20 @@ function ProjectDriveTab({
     (item: DriveItem, heading: string): Promise<Destination | null> => {
       const rootId = projectDriveScope.rootFolderId ?? null;
       const drives: PickerDrive[] = [
-        { id: scopeId, label: projectDriveScope.label, iconEmoji: projectDriveScope.iconEmoji },
+        {
+          id: scopeId,
+          label: projectDriveScope.label,
+          iconEmoji: projectDriveScope.iconEmoji,
+          audience: projectDriveScope.scopeAudience ?? null,
+        },
       ];
+      // One pass gives every folder its child count, so a row can say what's
+      // inside it rather than only its name.
+      const childCount = new Map<string, number>();
+      for (const it of projectDriveScope.items) {
+        if (it.parentFolderId === null) continue;
+        childCount.set(it.parentFolderId, (childCount.get(it.parentFolderId) ?? 0) + 1);
+      }
       const folders: PickerFolder[] = projectDriveScope.items
         .filter((f) => f.type === "folder")
         .map((f) => ({
@@ -4539,6 +4583,7 @@ function ProjectDriveTab({
           parentId: (f.parentFolderId ?? null) === rootId ? null : f.parentFolderId,
           title: f.title,
           iconEmoji: f.iconEmoji,
+          itemCount: childCount.get(f.id) ?? 0,
         }));
       const banned = item.type === "folder" ? folderSubtree(projectDriveScope.items, item.id) : undefined;
       const currentFolder = (item.parentFolderId ?? null) === rootId ? null : (item.parentFolderId ?? null);
@@ -4590,7 +4635,7 @@ function ProjectDriveTab({
       },
       onRequestMove: async (item) => {
         const dest = await pickMoveDestination(item, `Move "${item.title || "Untitled"}"`);
-        if (dest) await onMove(scopeId, item, dest.folderId);
+        if (dest) await onMove(scopeId, [item], dest.folderId);
       },
       onDelete: async (item) => {
         const ok = await dialog.confirm({
@@ -4699,15 +4744,23 @@ function ProjectDriveTab({
     async (items: DriveItem[]) => {
       const movable = items.filter((i) => i.type === "doc" || i.type === "folder" || i.type === "file");
       if (movable.length === 0) return;
-      const dest = await pickMoveDestination(
-        movable[0],
-        `Move ${movable.length} item${movable.length === 1 ? "" : "s"}`,
-      );
+      const dest = await pickMoveDestination(movable[0], `Move ${itemCount(movable.length)}`);
       if (!dest) return;
-      for (const it of movable) await onMove(scopeId, it, dest.folderId);
-      revalidate();
+      const moved = await runMoveBatch(movable, (item) => moveOne(item, dest.folderId));
+      const destName = projectDriveScope.items.find((i) => i.id === dest.folderId)?.title;
+      reportMoveBatch(toast, revalidate, {
+        moved: moved.length,
+        total: movable.length,
+        summary:
+          moved.length < movable.length
+            ? `Moved ${moved.length} of ${itemCount(movable.length)}`
+            : `Moved ${itemCount(moved.length)}${destName ? ` to ${destName}` : ""}`,
+        undo: async () => {
+          for (const o of moved) await moveOne(o.item, o.folderId);
+        },
+      });
     },
-    [pickMoveDestination, onMove, scopeId, revalidate],
+    [pickMoveDestination, moveOne, revalidate, projectDriveScope, toast],
   );
 
   const filterControl = (
@@ -5015,6 +5068,8 @@ function DocumentsBlock({
     if (
       !(await dialog.confirm({
         title: `Delete document "${title}"?`,
+        description:
+          "It moves to Trash. Restore it from there, or purge it permanently.",
         confirmLabel: "Delete",
         tone: "destructive",
       }))
@@ -5607,6 +5662,7 @@ function PlanningTab({
   userName,
   onTaskClick,
   onAddTask,
+  reopenEpic,
 }: {
   projectId: string;
   epics: TimelineEpic[];
@@ -5622,7 +5678,12 @@ function PlanningTab({
   collabToken: string | null;
   userName: string;
   onTaskClick: (taskId: string) => void;
-  onAddTask?: () => void;
+  onAddTask?: (link?: {
+    epicId: string;
+    storyId: string;
+    reopenEpicId?: string;
+  }) => void;
+  reopenEpic?: { epicId: string } | null;
 }) {
   return (
     <div className="flex flex-col gap-3">
@@ -5642,6 +5703,7 @@ function PlanningTab({
         currentTermId={currentTermId}
         onTaskClick={onTaskClick}
         onAddTask={onAddTask}
+        reopenEpic={reopenEpic}
       />
     </div>
   );

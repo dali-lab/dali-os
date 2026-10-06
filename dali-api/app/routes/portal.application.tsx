@@ -1,14 +1,15 @@
-import { useState } from "react";
 import { redirect, useLoaderData, useFetcher, Link } from "react-router";
 import type { Route } from "./+types/portal.application";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { logAuditEvent } from "~/lib/audit";
 import { redirectToLogin } from "~/lib/login-next";
 import { getActiveCycleById } from "~/hiring/lib/cycles";
 import { presignAnswers } from "~/hiring/lib/presign";
 import type { Question } from "~/types";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
-import { Modal } from "~/components/Modal";
+import { buttonClasses } from "~/components/ui/Button";
+import { useDialog } from "~/components/ui/dialog";
 import { QuestionList } from "~/hiring/components/ApplicationAnswers";
 import { sendInterviewCancelEmails } from "~/hiring/lib/interview-emails";
 
@@ -149,6 +150,14 @@ export async function action({ request }: Route.ActionArgs) {
     return scheduled;
   });
 
+  await logAuditEvent({
+    action: "application.withdraw",
+    userId: auth.user.sub,
+    targetId: application.id,
+    metadata: { cycleId: active.id, cancelledInterviews: cancelledInterviews.length },
+    request,
+  });
+
   for (const { id, domainApplicationId } of cancelledInterviews) {
     sendInterviewCancelEmails(id, domainApplicationId).catch(() => {});
   }
@@ -168,9 +177,9 @@ function DomainSection({
   answers: Record<string, string>;
 }) {
   return (
-    <details className="group rounded-2xl border border-border overflow-hidden">
-      <summary className="flex items-center justify-between px-6 py-4 bg-brand-tint cursor-pointer list-none select-none">
-        <span className="font-heading text-base font-bold text-dark-blue">{name}</span>
+    <details className="group rounded-os-card border border-border overflow-hidden">
+      <summary className="flex items-center justify-between px-6 py-4 bg-os-card cursor-pointer list-none select-none">
+        <span className="font-heading text-base font-bold text-foreground">{name}</span>
         <svg
           className="w-5 h-5 text-muted-foreground transition-transform group-open:rotate-180"
           fill="none"
@@ -202,7 +211,7 @@ export default function PortalApplication() {
     };
 
   const isWithdrawn = withdrawnAt !== null;
-  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+  const dialog = useDialog();
   const withdrawFetcher = useFetcher();
   const submittingWithdraw = withdrawFetcher.state !== "idle";
 
@@ -219,29 +228,37 @@ export default function PortalApplication() {
       })
     : null;
 
-  function confirmWithdraw() {
+  async function withdraw() {
+    const ok = await dialog.confirm({
+      title: "Withdraw your application?",
+      description:
+        "Your application comes out of review. You can't undo this from the portal — you'd need to contact the DALI team to reverse it.",
+      confirmLabel: "Withdraw",
+      cancelLabel: "Keep it in review",
+      tone: "destructive",
+    });
+    if (!ok) return;
     const form = new FormData();
     form.set("intent", "withdraw");
     form.set("cycleId", cycleId);
     withdrawFetcher.submit(form, { method: "post" });
-    setShowWithdrawModal(false);
   }
 
   return (
     <div>
       {/* Header */}
-      <div className="bg-brand-tint px-6 md:px-16 lg:px-24 py-10">
-        <div className="max-w-3xl mx-auto">
+      <div className="bg-os-card px-6 py-10">
+        <div>
           <Link
             to={`/portal/hiring?cycle=${cycleId}`}
-            className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-accent-coral transition mb-4"
+            className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-os-accent transition mb-4"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
             Back to portal
           </Link>
-          <h1 className="font-heading text-xl font-bold text-dark-blue">Your Application</h1>
+          <h1 className="font-heading text-4xl font-medium text-foreground">Your Application</h1>
           <p className="text-sm text-muted-foreground mt-1">
             Submitted {submittedDate} — this view reflects your most recently saved answers.
           </p>
@@ -249,19 +266,19 @@ export default function PortalApplication() {
       </div>
 
       {/* Content */}
-      <div className="px-6 md:px-16 lg:px-24 py-10">
-        <div className="max-w-3xl mx-auto space-y-8">
+      <div className="px-6 py-10">
+        <div className="space-y-8">
           {/* Withdrawn notice OR withdraw action */}
           {isWithdrawn ? (
             <div
               role="status"
-              className="rounded-2xl border border-border bg-muted/30 px-6 py-5 flex items-start gap-3"
+              className="rounded-os-card border border-border bg-muted/30 px-6 py-5 flex items-start gap-3"
             >
               <svg className="w-5 h-5 text-muted-foreground mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               <div>
-                <p className="text-sm font-semibold text-dark-blue">
+                <p className="text-sm font-semibold text-foreground">
                   You withdrew this application on {withdrawnDate}.
                 </p>
                 <p className="text-sm text-muted-foreground mt-1">
@@ -270,27 +287,27 @@ export default function PortalApplication() {
               </div>
             </div>
           ) : canWithdraw ? (
-            <div className="rounded-2xl border border-border px-6 py-5 flex items-center justify-between gap-4">
+            <div className="rounded-os-card border border-border px-6 py-5 flex items-center justify-between gap-4">
               <div>
-                <p className="text-sm font-semibold text-dark-blue">No longer want to be considered?</p>
+                <p className="text-sm font-semibold text-foreground">No longer want to be considered?</p>
                 <p className="text-sm text-muted-foreground mt-1">
                   Withdrawing removes your application from review. This cannot be undone from the portal.
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => setShowWithdrawModal(true)}
+                onClick={() => void withdraw()}
                 disabled={submittingWithdraw}
-                className="shrink-0 px-5 py-2 rounded-full border-2 border-red-500 text-red-500 text-sm font-semibold hover:bg-red-500 hover:text-white transition disabled:opacity-50"
+                className={buttonClasses("secondary", "md", "shrink-0")}
               >
-                Withdraw Application
+                {submittingWithdraw ? "Withdrawing…" : "Withdraw Application"}
               </button>
             </div>
           ) : null}
 
           {/* General questions */}
-          <div className="rounded-2xl bg-brand-tint px-6 py-5">
-            <h2 className="font-heading text-sm font-bold text-dark-blue uppercase tracking-wider mb-5">
+          <div className="rounded-os-card bg-os-card px-6 py-5">
+            <h2 className="font-heading text-sm font-bold text-foreground uppercase tracking-wider mb-5">
               General Questions
             </h2>
             <QuestionList questions={generalQuestions} answers={generalAnswers} />
@@ -299,7 +316,7 @@ export default function PortalApplication() {
           {/* Domain sections */}
           {domains.length > 0 && (
             <div className="space-y-4">
-              <h2 className="font-heading text-sm font-bold text-dark-blue uppercase tracking-wider">
+              <h2 className="font-heading text-sm font-bold text-foreground uppercase tracking-wider">
                 Domain Questions
               </h2>
               {domains.map(d => (
@@ -315,38 +332,6 @@ export default function PortalApplication() {
         </div>
       </div>
 
-      {/* Withdraw confirmation modal */}
-      <Modal
-        open={showWithdrawModal}
-        onClose={() => setShowWithdrawModal(false)}
-        labelledBy="withdraw-modal-title"
-        disableEscape={submittingWithdraw}
-      >
-        <h3 id="withdraw-modal-title" className="font-heading text-base font-bold text-dark-blue mb-2">
-          Withdraw your application?
-        </h3>
-        <p className="text-sm text-muted-foreground mb-5">
-          Your application will be removed from review. You can't undo this from the portal — you'd need to contact the DALI team to reverse it.
-        </p>
-        <div className="flex gap-3 justify-end">
-          <button
-            type="button"
-            onClick={() => setShowWithdrawModal(false)}
-            disabled={submittingWithdraw}
-            className="px-5 py-2 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={confirmWithdraw}
-            disabled={submittingWithdraw}
-            className="px-5 py-2 rounded-full bg-red-500 text-white text-sm font-semibold hover:bg-red-500/90 transition disabled:opacity-50"
-          >
-            {submittingWithdraw ? "Withdrawing..." : "Withdraw"}
-          </button>
-        </div>
-      </Modal>
     </div>
   );
 }

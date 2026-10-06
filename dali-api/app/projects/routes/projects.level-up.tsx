@@ -18,6 +18,7 @@ import {
   setSlotGate,
 } from "../lib/form-slots";
 import { SubmissionFilters } from "../components/SubmissionFilters";
+import { ColumnFilters, useColumnFilters } from "../components/ColumnFilters";
 import { SlotAdvancedSettingsModal } from "../components/SlotAdvancedSettingsModal";
 import { DomainFilter } from "../components/DomainFilter";
 import { TermFilter } from "~/components/TermFilter";
@@ -102,7 +103,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   const canManage = await canManageStaffing(auth.user.sub);
   const [binding, selectableForms] = await Promise.all([
     singleCycleId ? getSlotBinding(singleCycleId, SLOT) : Promise.resolve(null),
-    canManage && singleCycleId ? listSelectableForms() : Promise.resolve([]),
+    canManage && singleCycleId
+      ? listSelectableForms({ slot: SLOT, exceptCycleId: singleCycleId })
+      : Promise.resolve([]),
   ]);
 
   const view = await buildSubmissionView({
@@ -342,10 +345,14 @@ export async function action({ request }: Route.ActionArgs) {
 
     if (intent === "set-slot-form") {
       const formId = String(form.get("formId") ?? "");
-      const result = await setSlotBinding(cycle.id, SLOT, formId, auth.user.sub);
+      // The picker sets allowMove only after the manager confirms taking the
+      // form off the cycle that currently holds it.
+      const result = await setSlotBinding(cycle.id, SLOT, formId, auth.user.sub, {
+        allowMove: form.get("allowMove") === "1",
+      });
       if (!result.ok)
         return Response.json({ error: result.error }, { status: 400 });
-      return Response.json({ ok: true });
+      return Response.json({ ok: true, movedFrom: result.movedFrom ?? null });
     }
 
     if (intent === "set-slot-mapping") {
@@ -445,10 +452,15 @@ function Loaded({ data }: { data: LoadedData }) {
     targetLevel: Level;
   } | null>(null);
 
+  const columnFilters = useColumnFilters(data.tableColumns);
+
   const { search, setSearch, filtered } = useFilteredList(data.submissions, {
     searchFields: (s) => [s.name, s.email],
-    predicates: [(s) => !domainId || s.domainIds.includes(domainId)],
-    deps: [domainId],
+    predicates: [
+      (s) => !domainId || s.domainIds.includes(domainId),
+      columnFilters.predicate,
+    ],
+    deps: [domainId, columnFilters.active],
   });
 
   const domains = useMemo(
@@ -497,6 +509,16 @@ function Loaded({ data }: { data: LoadedData }) {
         <DomainFilter domains={domains} value={domainId} onChange={setDomainId} />
         <TermFilter terms={data.termOptions} selected={data.selectedTerm} />
       </div>
+
+      {!data.noFormConnected && (
+        <ColumnFilters
+          columns={data.tableColumns}
+          rows={data.submissions}
+          filters={columnFilters.filters}
+          onChange={columnFilters.setFilters}
+          shownCount={filtered.length}
+        />
+      )}
 
       <div
         className={cn(

@@ -118,6 +118,8 @@ export function AttendanceChecklist({
               disabled={!canEdit || pendingIds.has(r.userId)}
               onChange={(e) => toggle(r.userId, e.target.checked)}
               label={r.name}
+              tone={plain ? "os" : "brand"}
+              size={plain ? "lg" : "md"}
             />
             {/* Notes belong to an absence, so the editor follows whoever
                 isn't checked in. A note left behind on someone later marked

@@ -50,7 +50,7 @@ import {
 } from "~/components/ui/filter-panel";
 import { cn } from "~/lib/cn";
 import { ChevronRight, FileText, LayoutGrid, Plus, SlidersHorizontal } from "lucide-react";
-import { useDialog } from "~/components/ui/dialog";
+import { useConfirmSubmit, useDialog } from "~/components/ui/dialog";
 
 // areaSubnav (not areaPills): this page hosts the Organizations/Pipeline
 // switcher itself under either shell — a full-width underline row above the
@@ -287,6 +287,7 @@ export default function PartnersApplications() {
     useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigate = useNavigate();
+  const confirmSubmit = useConfirmSubmit();
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<Status | "all">("all");
   const [domainFilter, setDomainFilter] = useState<string>("all");
@@ -659,7 +660,16 @@ export default function PartnersApplications() {
                   </button>
                 </Form>
                 {formBinding && (
-                  <Form method="post">
+                  <Form
+                    method="post"
+                    onSubmit={confirmSubmit({
+                      title: "Remove the bound application form?",
+                      description:
+                        "New partner applicants will have no form to fill in until another is bound. Responses already submitted are kept.",
+                      confirmLabel: "Remove",
+                      tone: "destructive",
+                    })}
+                  >
                     <input type="hidden" name="intent" value="clear-form" />
                     <button
                       type="submit"

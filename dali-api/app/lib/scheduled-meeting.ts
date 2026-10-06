@@ -14,7 +14,11 @@ import {
   type GoogleAttendee,
 } from "~/lib/google-calendar";
 import { primaryEmail, formatDateShort } from "~/lib/display";
-import { resolveUserTimeZone } from "~/lib/timezone";
+import {
+  APPLICATION_TZ,
+  formatInstantWithZoneLabel,
+  resolveUserTimeZone,
+} from "~/lib/timezone";
 import { buildIcs } from "~/lib/ics";
 import {
   createProjectPage,
@@ -24,6 +28,7 @@ import {
   ensureLabMeetingNotesFolder,
 } from "~/lib/pages";
 import { isCore, isProjectMember } from "~/lib/roles";
+import { isGeneralCalendarEvent } from "~/lib/general-calendar";
 import { normalizeGuestEmails } from "~/calendar/lib/guest-emails";
 import {
   expandOccurrences,
@@ -126,13 +131,16 @@ async function googleAttendeesFor(
 // meeting, Google's own invite) carries these fields too, but the in-app feed and
 // the Slack DM have no attachment to open — so where and what the meeting is has
 // to be in the message itself.
+//
+// `when` arrives already formatted in the recipient's own display zone, which is
+// why the body is composed per recipient rather than once for the fan-out.
 function inviteBody(
-  startDate: Date | null,
+  when: string | null,
   location: string | null,
   description: string | null,
 ): string | null {
   const lines = [
-    startDate ? `Starts ${startDate.toISOString()}` : null,
+    when ? `Starts ${when}` : null,
     location ? `Location: ${location}` : null,
     description || null,
   ].filter(Boolean);
@@ -171,18 +179,39 @@ async function sendMeetingInvites(args: {
           userIds: args.recipientIds,
         })
       : null;
+  // Each recipient's display zone, so the start reads in their own local time
+  // with a zone label — the same resolution meeting reminders do.
+  const tzRows = args.startDate
+    ? await prisma.user.findMany({
+        where: { id: { in: args.recipientIds } },
+        select: { id: true, timeZone: true },
+      })
+    : [];
+  const tzByUser = new Map(tzRows.map((r) => [r.id, resolveUserTimeZone(r)]));
   return notify({
     eventType: "meeting.invite",
     createdByUserId: args.actorUserId,
     message: {
-      title: `Meeting invite: ${args.title}`,
-      body: inviteBody(args.startDate, args.location, args.description),
+      vars: { itemTitle: args.title },
       link: `/calendar?meeting=${args.meetingId}`,
       sourceGroupId: args.sourceGroupId,
       scheduledMeetingId: args.meetingId,
     },
     recipients: args.recipientIds.map((userId) => ({
       userId,
+      vars: {
+        itemDetail:
+          inviteBody(
+            args.startDate
+              ? formatInstantWithZoneLabel(
+                  args.startDate,
+                  tzByUser.get(userId) ?? APPLICATION_TZ,
+                )
+              : null,
+            args.location,
+            args.description,
+          ) ?? "",
+      },
       ics: icsByUser?.get(userId) ?? null,
     })),
   });
@@ -1401,7 +1430,8 @@ export async function cancelScheduledMeeting(
           eventType: "meeting.cancelled",
           createdByUserId: actorUserId,
           message: {
-            title: `Meeting occurrence cancelled: ${meeting.title}`,
+            copyKey: "meeting.cancelled.occurrence",
+      vars: { itemTitle: meeting.title },
             link: "/calendar",
           },
           recipients: recipients.map((userId) => ({ userId, ics: null })),
@@ -1504,7 +1534,8 @@ export async function cancelScheduledMeeting(
         eventType: "meeting.cancelled",
         createdByUserId: actorUserId,
         message: {
-          title: `Meeting cancelled: ${meeting.title}`,
+          copyKey: "meeting.cancelled.series",
+      vars: { itemTitle: meeting.title },
           link: "/calendar",
         },
         recipients: recipients.map((userId) => ({
@@ -1900,7 +1931,8 @@ export async function updateScheduledMeeting(
         eventType: "meeting.cancelled",
         createdByUserId: actorUserId,
         message: {
-          title: `Removed from meeting: ${input.title}`,
+          copyKey: "meeting.removed",
+      vars: { itemTitle: input.title },
           link: "/calendar",
         },
         recipients: removedRecipients.map((userId) => ({
@@ -1943,8 +1975,9 @@ export type TrackExternalEventResult =
 /**
  * Give an external Google event the DALI meeting it never had.
  *
- * The lab's general calendar is authored in Google Calendar, not in DALI, so
- * its events reach the grid as plain external events: there is no
+ * The lab's general calendar is authored in Google Calendar, not in DALI, and a
+ * member's own event can be created as a plain event too, so
+ * these reach the grid as plain external events: there is no
  * ScheduledMeeting row behind them, and therefore no meeting note and no
  * attendance roster — the gap that made those events look broken next to every
  * other meeting on the same grid. This creates the missing row, bound to the
@@ -1964,10 +1997,6 @@ export type TrackExternalEventResult =
 export async function trackExternalEventAsMeeting(
   input: TrackExternalEventInput,
 ): Promise<TrackExternalEventResult> {
-  if (!(await isCore(input.actorId))) {
-    return { ok: false, error: "Only Core can track an event in DALI", status: 403 };
-  }
-
   const link = await prisma.userCalendarLink.findUnique({
     where: { id: input.linkId },
     select: { id: true, userId: true, externalEmail: true },
@@ -1987,6 +2016,14 @@ export async function trackExternalEventAsMeeting(
     });
   } catch {
     return { ok: false, error: "Couldn't read that event from Google", status: 502 };
+  }
+
+  // Core can track any event it can read (the general calendar's have no guest
+  // list). Anyone else has to be on the event: its organizer or a guest, as
+  // Google reports it for their own account.
+  const labWide = isGeneralCalendarEvent(input.calendarId);
+  if (!event.viewerInvited && !(await isCore(input.actorId))) {
+    return { ok: false, error: "Only someone on this event can track it in DALI", status: 403 };
   }
 
   const externalEventId = input.recurringEventId || event.id;
@@ -2053,8 +2090,10 @@ export async function trackExternalEventAsMeeting(
       location: event.location,
       description: event.description,
       // "None" — not scoped to a group or a hand-picked list. It is the marker
-      // the meeting page reads to let any lab member see a lab-wide meeting.
-      scopeType: "None",
+      // the meeting page reads to let any lab member see a lab-wide meeting,
+      // which is right for the general calendar and wrong for anyone's own
+      // event: that one stays with the people on it.
+      scopeType: labWide ? "None" : "UserList",
       participantUserIds,
       guestEmails,
       selectedAt: startDate,

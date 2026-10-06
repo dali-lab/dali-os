@@ -55,23 +55,23 @@ export function StudentDashboard({
   const hasNext = openCheckIns.length > 0 || dueSoon.length > 0;
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-8">
       {hasNext && (
-        <section className="rounded-lg border border-border bg-card p-4">
-          <h2 className="mb-2 font-heading text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+        <section className="rounded-os-card bg-os-card p-6">
+          <h2 className="mb-3 font-heading text-[19px] font-semibold text-foreground">
             What&apos;s next
           </h2>
           <ul className="flex flex-col divide-y divide-border">
             {openCheckIns.map((c) => (
               <li
                 key={c.sessionId}
-                className="flex flex-wrap items-center justify-between gap-2 py-2 first:pt-0"
+                className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"
               >
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-foreground">
                     Check in — {c.sessionLabel}
                   </p>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-sm text-os-grey">
                     {c.offeringTitle} · {formatSessionWhen(c.datetime, c.endsAt, tz)}
                   </p>
                 </div>
@@ -85,13 +85,13 @@ export function StudentDashboard({
               return (
                 <li
                   key={a.assignmentId}
-                  className="flex flex-wrap items-center justify-between gap-2 py-2 first:pt-0"
+                  className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"
                 >
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-foreground">☐ {a.title}</p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-sm font-medium text-foreground">{a.title}</p>
+                    <p className="text-sm text-os-grey">
                       {a.offeringTitle} ·{" "}
-                      <span className={overdue ? "font-medium text-red-600" : ""}>
+                      <span className={overdue ? "font-medium text-destructive" : ""}>
                         {a.dueAt ? `due ${formatDateTime(a.dueAt, tz)}` : "no due date"}
                       </span>
                     </p>
@@ -112,40 +112,40 @@ export function StudentDashboard({
       )}
 
       {active.length > 0 && (
-        <section>
-          <h2 className="mb-2 font-heading text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+        <section className="flex flex-col gap-3">
+          <h2 className="font-heading text-[19px] font-semibold text-foreground">
             My courses
           </h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {active.map((c) => {
               const pct = c.total > 0 ? Math.round((c.attended / c.total) * 100) : 0;
               return (
                 <Link
                   key={c.offeringId}
                   to={paths.course(c.offeringId)}
-                  className="flex flex-col gap-2 rounded-lg border border-border bg-card p-4 transition-colors hover:border-accent-coral/50"
+                  className="flex flex-col gap-3 rounded-os-card bg-os-card p-5 transition-colors hover:bg-os-card-hover"
                 >
                   <div>
-                    <p className="font-heading font-semibold text-foreground">{c.title}</p>
-                    <p className="text-xs text-muted-foreground">{c.type}</p>
+                    <p className="font-heading text-lg font-semibold text-foreground">{c.title}</p>
+                    <p className="text-sm text-os-grey">{c.type}</p>
                   </div>
                   {c.total > 0 ? (
                     <div>
-                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-os-container">
                         <div
-                          className="h-full rounded-full bg-accent-teal"
+                          className="h-full rounded-full bg-os-accent"
                           style={{ width: `${pct}%` }}
                         />
                       </div>
-                      <p className="mt-1 text-xs text-muted-foreground">
+                      <p className="mt-1.5 text-sm text-os-grey">
                         {c.attended}/{c.total} sessions attended
                       </p>
                     </div>
                   ) : (
-                    <p className="text-xs text-muted-foreground">No sessions scheduled yet</p>
+                    <p className="text-sm text-os-grey">No sessions scheduled yet</p>
                   )}
                   {c.nextSessionAt && (
-                    <p className="text-xs text-accent-coral">
+                    <p className="text-sm text-os-accent">
                       Next session {formatDateTime(c.nextSessionAt, tz)}
                     </p>
                   )}

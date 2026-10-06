@@ -11,6 +11,7 @@ import { isCore, isDomainLead, isProjectMember } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { displayEmail } from "~/lib/display";
 import { cachedForRequest } from "~/lib/request-cache";
+import { getAppEnv } from "~/lib/app-env";
 
 // Session-backed auth middleware. See SESSION_AUTH_PLAN.md for design.
 // The `user.sub` shape is preserved from the legacy JWT payload so existing
@@ -120,6 +121,10 @@ function isReadOnlyMethod(method: string): boolean {
 // impersonated session, which is recoverable, while under-blocking a write is
 // the bug this exists to prevent.
 //
+// Staging is the exception (see impersonationAllowsWrites): there the point of
+// impersonating is to test a flow end to end as that member, so writes go
+// through.
+//
 // Exiting impersonation is deliberately NOT routed through here:
 // /admin/stop-impersonating resolves its own session via getBetterAuthUser, so
 // this block can never trap an admin inside a session they can't leave.
@@ -133,6 +138,7 @@ export async function requireAuth(
   const result = await cachedForRequest(request, "requireAuth", () => computeAuth(request));
   if (!result.ok || isReadOnlyMethod(request.method)) return result;
   if (opts?.allowImpersonatedWrite || !isImpersonating(result)) return result;
+  if (impersonationAllowsWrites()) return result;
   return {
     ok: false,
     response: withCors(
@@ -307,6 +313,17 @@ export function forbidden(request: Request): Response {
 // reading what they wrote.
 export function isImpersonating(auth: AuthSuccess): boolean {
   return auth.impersonatedBy != null;
+}
+
+// Whether an impersonated session may mutate. Staging runs on a throwaway
+// restore of prod with outbound mail redirected, so acting as a member there
+// (applying, submitting a form, signing) is how a flow gets tested without a
+// second account. Prod stays read-only; dev has dev-login and needs no
+// exception. The privacy gates (forbiddenWhileImpersonating, hidden Google
+// Calendar/notes) are unaffected: those protect what the member wrote, not
+// what they can do.
+export function impersonationAllowsWrites(): boolean {
+  return getAppEnv() === "staging";
 }
 
 // 403 for a personal-data endpoint that has no meaningful degraded shape (an

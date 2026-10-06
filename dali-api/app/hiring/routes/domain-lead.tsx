@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { delibsQualifier } from "~/hiring/lib/cycle-stages.server";
 import { cn } from "~/lib/cn";
-import { Form, Link, useActionData, useLoaderData, useNavigate, useNavigation, useSearchParams, useRevalidator } from "react-router";
+import { Form, Link, useActionData, useLoaderData, useNavigate, useNavigation, useSearchParams, useRevalidator, useSubmit } from "react-router";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { redirect } from "react-router";
 import type { Route } from "./+types/domain-lead";
@@ -49,7 +49,8 @@ import { useOsChrome } from "~/components/os-chrome";
 import { SegmentedTabButtons } from "~/components/AreaPillNav";
 import { NavSection, SectionNavLayout } from "~/hiring/components/cycle-setup/SectionNav";
 import { AlertIcon, Pill, type PillTone, SetupCard, pillTrigger, rowTrigger } from "~/hiring/components/cycle-setup/SetupCard";
-import { DomainSubRow, SubRowEmpty } from "~/hiring/components/cycle-setup/DomainSubRow";
+import { DomainSubRow, SubRowEmpty, SubRowVersion } from "~/hiring/components/cycle-setup/DomainSubRow";
+import { ChallengeFormPicker } from "~/hiring/components/cycle-setup/ChallengeLine";
 import { DomainRosterCard, type RosterPerson } from "~/hiring/components/cycle-setup/DomainRosterCard";
 import { addDomainMentors, domainMentorIds } from "~/hiring/lib/cycle-rosters.server";
 
@@ -397,7 +398,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     })
   );
 
-  return { domainData: domainData.flat(), pillRoles };
+  // All Drive Forms, for the challenge picker.
+  const allForms = await prisma.form.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } });
+
+  return { domainData: domainData.flat(), pillRoles, allForms };
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -465,8 +469,13 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   if (intent === "create-challenge-form") {
-    // Auto-create a Drive challenge Form for this domain and link it (Draft only).
-    await addDomainChallenge(formData.get("cycleId") as string, domainId, auth.user.sub);
+    // Link the picked form, or auto-create a Drive challenge Form (Draft only).
+    await addDomainChallenge(
+      formData.get("cycleId") as string,
+      domainId,
+      auth.user.sub,
+      (formData.get("formId") as string) || null,
+    );
     return redirect("/hiring/domain-lead");
   }
 
@@ -495,50 +504,6 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   return redirect("/hiring/domain-lead");
-}
-
-function ConfirmDialog({
-  open,
-  title,
-  body,
-  confirmLabel,
-  destructive = false,
-  onConfirm,
-  onCancel,
-}: {
-  open: boolean;
-  title: string;
-  body: React.ReactNode;
-  confirmLabel: string;
-  destructive?: boolean;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  const titleId = "confirm-dialog-title";
-  return (
-    <Modal open={open} onClose={onCancel} labelledBy={titleId}>
-      <div className="space-y-4">
-        <h2 id={titleId} className="text-base font-semibold text-foreground">{title}</h2>
-        <div className="text-sm text-muted-foreground">{body}</div>
-        <div className="flex justify-end gap-2 pt-1">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="px-3 py-1.5 text-sm font-medium rounded-md border border-border bg-card hover:bg-muted/50 transition"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            className={`px-3 py-1.5 text-sm font-medium rounded-md text-white transition ${destructive ? "bg-red-600 hover:bg-red-700" : "bg-accent-coral hover:bg-accent-coral/90"}`}
-          >
-            {confirmLabel}
-          </button>
-        </div>
-      </div>
-    </Modal>
-  );
 }
 
 export default function DomainLeadDashboard() {
@@ -588,12 +553,12 @@ export default function DomainLeadDashboard() {
           }))}
         />
       )}
-      <DomainPanel key={`${current.assignment.id}-${current.cycle?.id ?? "none"}`} entry={current} />
+      <DomainPanel key={`${current.assignment.id}-${current.cycle?.id ?? "none"}`} entry={current} allForms={data?.allForms ?? []} />
     </div>
   );
 }
 
-function DomainPanel({ entry }: { entry: any }) {
+function DomainPanel({ entry, allForms }: { entry: any; allForms: { id: string; name: string }[] }) {
   const { assignment, cycle, availableCycles, apps, linkedChallengeForms, isChallengeReady, interviews, reviewers: cycleReviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, delibRounds: roundSummaries, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews, confidentialityRequired } = entry;
   const os = useOsChrome();
   const navigate = useNavigate();
@@ -757,6 +722,7 @@ function DomainPanel({ entry }: { entry: any }) {
                 cycle={cycle}
                 domainId={assignment.domainId}
                 linkedChallengeForms={linkedChallengeForms ?? []}
+                allForms={allForms}
                 isChallengeReady={isChallengeReady}
               />
             </SetupCard>
@@ -1202,15 +1168,26 @@ function FreeTime({ hours, hasCalendar }: { hours: number; hasCalendar?: boolean
   );
 }
 
-function DraftSection({ cycle, domainId, linkedChallengeForms, isChallengeReady }: {
+function DraftSection({ cycle, domainId, linkedChallengeForms, allForms, isChallengeReady }: {
   cycle: any;
   domainId: string;
   linkedChallengeForms: any[];
+  allForms: { id: string; name: string }[];
   isChallengeReady: boolean;
 }) {
   const { bodyText } = useOsChrome();
   const hasLinked = linkedChallengeForms.length > 0;
   const navigation = useNavigation();
+  const submit = useSubmit();
+  const [picking, setPicking] = useState(false);
+  const linkedFormIds = new Set(linkedChallengeForms.map((cf: any) => cf.formId));
+  const addChallenge = (formId?: string) => {
+    setPicking(false);
+    submit(
+      { intent: "create-challenge-form", cycleId: cycle.id, domainId, ...(formId && { formId }) },
+      { method: "post", preventScrollReset: true },
+    );
+  };
   // Creating a challenge form isn't idempotent (each submit makes a new
   // form), so the button is disabled while one is in flight.
   const creatingChallenge =
@@ -1262,14 +1239,25 @@ function DraftSection({ cycle, domainId, linkedChallengeForms, isChallengeReady 
       ) : (
         <p className={cn(bodyText, "py-3 text-center")}>No challenge form yet. Add one to author it in Forms.</p>
       )}
+      {picking && (
+        <ChallengeFormPicker
+          pickable={allForms.filter((f) => !linkedFormIds.has(f.id))}
+          onAdd={addChallenge}
+          onCancel={() => setPicking(false)}
+        />
+      )}
       <div className="flex flex-wrap items-center gap-2">
-        <Form method="post" preventScrollReset>
-          {hidden("create-challenge-form")}
-          <button type="submit" disabled={creatingChallenge} className={buttonClasses("secondary", "md")}>
+        {!picking && (
+          <button
+            type="button"
+            disabled={creatingChallenge}
+            onClick={() => setPicking(true)}
+            className={buttonClasses("secondary", "md")}
+          >
             <Plus className="h-4 w-4" aria-hidden />
             {creatingChallenge ? "Adding…" : "Add challenge form"}
           </button>
-        </Form>
+        )}
         {hasLinked && (
           <Form method="post" preventScrollReset>
             {hidden("mark-ready")}
@@ -1293,19 +1281,18 @@ function RubricPicker({ cycleId, domainId, options, selectedId, locked }: {
   locked: boolean;
 }) {
   const { formTrigger } = useOsChrome();
-  const label = (rv: any) =>
-    formatVersionLabel({
-      name: rv.rubric?.name ?? "Rubric",
-      versionNumber: rv.versionNumber,
-      createdAt: rv.createdAt,
-      createdBy: rv.createdBy,
-    });
+  const version = (rv: any) => ({
+    name: rv.rubric?.name ?? "Rubric",
+    versionNumber: rv.versionNumber,
+    createdAt: rv.createdAt,
+    createdBy: rv.createdBy,
+  });
   const selectedRv = options.find((rv: any) => rv.id === selectedId);
   if (locked) {
     return (
       <DomainSubRow
         label="Rubric"
-        value={selectedRv ? label(selectedRv) : <SubRowEmpty>None</SubRowEmpty>}
+        value={selectedRv ? <SubRowVersion version={version(selectedRv)} /> : <SubRowEmpty>None</SubRowEmpty>}
         action={<Pill>Locked</Pill>}
       />
     );
@@ -1321,7 +1308,7 @@ function RubricPicker({ cycleId, domainId, options, selectedId, locked }: {
           ariaLabel="Rubric version"
           defaultValue={selectedId ?? ""}
           placeholder="No rubric"
-          options={[{ value: "", label: "No rubric" }, ...options.map((rv: any) => ({ value: rv.id as string, label: label(rv) }))]}
+          options={[{ value: "", label: "No rubric" }, ...options.map((rv: any) => ({ value: rv.id as string, label: formatVersionLabel(version(rv)) }))]}
           buttonClassName={rowTrigger(formTrigger)}
         />
       </div>
@@ -1947,12 +1934,12 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
   rubricCriteria?: any[];
 }) {
   const toast = useToast();
+  const dialog = useDialog();
   const [localReviews, setLocalReviews] = useState(reviews);
   const [adding, setAdding] = useState(false);
   const [selectedReviewerId, setSelectedReviewerId] = useState("");
   const [openReview, setOpenReview] = useState<any | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
-  const [pendingRemoveReview, setPendingRemoveReview] = useState<any | null>(null);
 
   // Resync from props after the loader revalidates (e.g. when bulk auto-assign
   // adds reviewers to this row). Without this, the pills shown here would lag
@@ -2009,8 +1996,25 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
     }
   }
 
-  function requestRemoveReview(review: any) {
-    setPendingRemoveReview(review);
+  async function requestRemoveReview(review: any) {
+    const submitted = getReviewStatus(review) === "submitted";
+    const m = review?.cycleReviewer?.user;
+    const who =
+      m?.firstName && m?.lastName
+        ? `${m.firstName} ${m.lastName}`
+        : (m?.daliEmail ?? "This reviewer");
+    const ok = await dialog.confirm({
+      title: submitted
+        ? "Remove this reviewer's submitted review?"
+        : "Remove this reviewer's in-progress review?",
+      description: submitted
+        ? `${who} has already submitted. Removing them permanently deletes their scores and feedback.`
+        : `${who} has a review in progress. Removing them discards it.`,
+      confirmLabel: submitted ? "Remove and delete review" : "Discard review",
+      tone: "destructive",
+    });
+    if (!ok) return;
+    await performRemoveReview(review.id);
   }
 
   const cellClass = editable && adding
@@ -2057,7 +2061,7 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  requestRemoveReview(r);
+                  void requestRemoveReview(r);
                 }}
                 disabled={removing === r.id}
                 className="ml-0.5 text-muted-foreground/70 hover:text-red-500 transition"
@@ -2122,40 +2126,6 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
           onClose={() => setOpenReview(null)}
         />
       )}
-      <ConfirmDialog
-        open={!!pendingRemoveReview}
-        title={
-          pendingRemoveReview && getReviewStatus(pendingRemoveReview) === "submitted"
-            ? "Remove this reviewer's submitted review?"
-            : "Remove this reviewer's in-progress review?"
-        }
-        body={
-          <p>
-            <strong>
-              {(() => {
-                const m = pendingRemoveReview?.cycleReviewer?.user;
-                if (!m) return "This reviewer";
-                return m.firstName && m.lastName ? `${m.firstName} ${m.lastName}` : (m.daliEmail ?? "This reviewer");
-              })()}
-            </strong>{" "}
-            {pendingRemoveReview && getReviewStatus(pendingRemoveReview) === "submitted"
-              ? "has already submitted their review. Removing them will permanently delete their scores and feedback."
-              : "has a review in progress. Discards their in-progress review."}
-          </p>
-        }
-        confirmLabel={
-          pendingRemoveReview && getReviewStatus(pendingRemoveReview) === "submitted"
-            ? "Remove and delete review"
-            : "Discard review"
-        }
-        destructive
-        onCancel={() => setPendingRemoveReview(null)}
-        onConfirm={() => {
-          const r = pendingRemoveReview;
-          setPendingRemoveReview(null);
-          if (r) performRemoveReview(r.id);
-        }}
-      />
     </div>
   );
 }

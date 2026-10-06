@@ -11,6 +11,7 @@ vi.mock("~/lib/pages", () => ({
 }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn(async () => false) }));
 vi.mock("~/lib/groups", () => ({ resolveGroupMembers: vi.fn(async () => []) }));
+vi.mock("~/lib/general-calendar", () => ({ isGeneralCalendarEvent: vi.fn(() => true) }));
 vi.mock("~/lib/google-calendar", () => ({
   createGoogleCalendarEvent: vi.fn(),
   patchGoogleCalendarEvent: vi.fn(),
@@ -46,6 +47,7 @@ import {
   trackExternalEventAsMeeting,
   updateScheduledMeeting,
 } from "~/lib/scheduled-meeting";
+import { isGeneralCalendarEvent } from "~/lib/general-calendar";
 
 const mockPrisma = prisma as unknown as {
   scheduledMeeting: {
@@ -83,7 +85,8 @@ describe("cancelScheduledMeeting", () => {
     expect(mockNotify).toHaveBeenCalledTimes(1);
     const call = mockNotify.mock.calls[0][0];
     expect(call.eventType).toBe("meeting.cancelled");
-    expect(call.message.title).toBe("Meeting cancelled: Sprint sync");
+    expect(call.message.copyKey).toBe("meeting.cancelled.series");
+    expect(call.message.vars).toEqual({ itemTitle: "Sprint sync" });
     // Not stamped: surfaces hide rows whose meeting is Cancelled.
     expect(call.message.scheduledMeetingId).toBeUndefined();
     expect(call.recipients).toEqual([
@@ -604,7 +607,13 @@ describe("createScheduledMeeting — location and description", () => {
     p.scheduledMeeting.update.mockResolvedValue({});
     p.meetingAttendance.createMany.mockResolvedValue({});
     p.user.findMany.mockResolvedValue([
-      { id: "u2", firstName: "Ally", lastName: "Kim", daliEmail: "ally@dali.dartmouth.edu" },
+      {
+        id: "u2",
+        firstName: "Ally",
+        lastName: "Kim",
+        daliEmail: "ally@dali.dartmouth.edu",
+        timeZone: "America/Los_Angeles",
+      },
     ]);
     p.user.findUnique.mockResolvedValue({ timeZone: "America/New_York" });
     mockNotify.mockResolvedValue({ inApp: 1 });
@@ -682,8 +691,15 @@ describe("createScheduledMeeting — location and description", () => {
 
     expect(res.ok).toBe(true);
     const call = mockNotify.mock.calls[0]![0];
-    expect(call.message.body).toContain("Location: Baker 101");
-    expect(call.message.body).toContain("Bring the latest mocks.");
+    // The invite's when-where-and-what lines reach the template as one detail
+    // value, because the in-app feed and the Slack DM have no attachment. It is
+    // per-recipient so the start reads in that person's own zone — u2 is on
+    // Pacific, and 17:00 UTC is 10:00 AM there — rather than as a raw instant.
+    expect(call.recipients[0].vars.itemDetail).toContain(
+      "Starts Tue, Sep 22, 10:00 AM PT",
+    );
+    expect(call.recipients[0].vars.itemDetail).toContain("Location: Baker 101");
+    expect(call.recipients[0].vars.itemDetail).toContain("Bring the latest mocks.");
     expect(call.recipients[0].ics).toContain("LOCATION:Baker 101");
     expect(call.recipients[0].ics).toContain("DESCRIPTION:Bring the latest mocks.");
   });
@@ -1337,10 +1353,14 @@ describe("trackExternalEventAsMeeting", () => {
     location: "Baker 101",
     description: "Weekly all-hands",
     attendeeEmails: ["ally@dali.dartmouth.edu", "outsider@example.com"],
+    viewerInvited: false,
   };
 
-  function arrange(over: { core?: boolean; event?: Partial<typeof GOOGLE_EVENT> } = {}) {
+  function arrange(
+    over: { core?: boolean; general?: boolean; event?: Partial<typeof GOOGLE_EVENT> } = {},
+  ) {
     vi.mocked(isCore).mockResolvedValue(over.core ?? true);
+    vi.mocked(isGeneralCalendarEvent).mockReturnValue(over.general ?? true);
     vi.mocked(getGoogleEvent).mockResolvedValue({ ...GOOGLE_EVENT, ...over.event });
     const p = mockPrisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
     p.userCalendarLink!.findUnique.mockResolvedValue({
@@ -1365,13 +1385,22 @@ describe("trackExternalEventAsMeeting", () => {
     calendarId: "dali@dartmouth.edu",
   };
 
-  it("refuses anyone who isn't Core", async () => {
+  it("refuses someone who is neither Core nor on the event", async () => {
     arrange({ core: false });
     expect(await trackExternalEventAsMeeting(input)).toEqual({
       ok: false,
-      error: "Only Core can track an event in DALI",
+      error: "Only someone on this event can track it in DALI",
       status: 403,
     });
+  });
+
+  it("lets a non-Core member track an event they're on, visible to its guests only", async () => {
+    const p = arrange({ core: false, general: false, event: { viewerInvited: true } });
+
+    const res = await trackExternalEventAsMeeting(input);
+
+    expect(res.ok).toBe(true);
+    expect(p.scheduledMeeting!.create.mock.calls[0][0].data.scopeType).toBe("UserList");
   });
 
   it("binds the meeting to the Google event, with title and duration from Google", async () => {

@@ -35,6 +35,7 @@ import {
   type SigningFieldType,
 } from "~/lib/signing-fields";
 import { ALL_SIGNING_VARIABLES } from "~/lib/signing-variables";
+import { placeholder } from "~/lib/template-variables";
 import { formatDateTime, fullName, UNKNOWN_LABEL } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import {
@@ -265,7 +266,7 @@ function SigningInsertControls({
       >
         {ALL_SIGNING_VARIABLES.map((v) => (
           <Menu.Item key={v} onSelect={() => handleVariable(v)}>
-            <span className="font-mono">{`{{${v}}}`}</span>
+            <span className="font-mono">{placeholder(v)}</span>
             {examples[v] ? (
               <span className="ml-2 text-muted-foreground">→ {examples[v]}</span>
             ) : null}
@@ -520,7 +521,7 @@ export function SigningDocumentDetail() {
       />
       {/* Mentee countersignature — only meaningful on a mentor-audience
           agreement, so it's surfaced there. Requires a "mentee" signature field
-          in the body and the mentee-countersign feature flag to take effect. */}
+          in the body to take effect. */}
       {document.audience === "Mentors" && (
         <span className="inline-flex items-center gap-1">
           <ConfigPill
@@ -561,6 +562,8 @@ export function SigningDocumentDetail() {
         method="post"
         onSubmit={confirmSubmit({
           title: "Archive this agreement?",
+          description:
+            "It moves out of the active list and stops accepting signatures. There's no unarchive — signatures already collected are kept.",
           tone: "destructive",
           confirmLabel: "Archive",
         })}

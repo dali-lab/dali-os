@@ -14,6 +14,13 @@ vi.mock("~/lib/outbound.server", () => ({
   enqueueOutbound: vi.fn(),
   drainNow: vi.fn(),
 }));
+// Off by default, matching the registry, so every describe below exercises the
+// pre-feature behavior. The start-term describe turns it on for itself.
+const mockStartTermsFlag = vi.fn().mockResolvedValue(false);
+vi.mock("~/lib/feature-flags.server", () => ({
+  isFeatureEnabledForEveryone: (key: string) =>
+    key === "start-terms" ? mockStartTermsFlag() : Promise.resolve(false),
+}));
 vi.mock("~/hiring/lib/email-variables", async () => {
   const actual = await vi.importActual<typeof import("~/hiring/lib/email-variables")>(
     "~/hiring/lib/email-variables",
@@ -52,7 +59,7 @@ const mockPrisma = prisma as unknown as {
     findMany: ReturnType<typeof vi.fn>;
   };
   user: { findUnique: ReturnType<typeof vi.fn> };
-  hiringEmail: { findUnique: ReturnType<typeof vi.fn> };
+  emailTemplate: { findUnique: ReturnType<typeof vi.fn> };
   gmailIntegration: { findFirst: ReturnType<typeof vi.fn> };
 };
 
@@ -99,6 +106,8 @@ const domainQuestions = [
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // clearAllMocks wipes the resolved value too, so restore the default.
+  mockStartTermsFlag.mockResolvedValue(false);
   (mockPrisma as any).application = {
     // The action's ownership check: the application is the caller's own.
     findFirst: vi.fn().mockResolvedValue({ id: APP_ID, applicationCycleId: CYCLE_ID }),
@@ -121,7 +130,7 @@ beforeEach(() => {
     findMany: vi.fn().mockResolvedValue([]),
   };
   (mockPrisma as any).user = { findUnique: vi.fn().mockResolvedValue(null) };
-  (mockPrisma as any).hiringEmail = {
+  (mockPrisma as any).emailTemplate = {
     findUnique: vi.fn().mockResolvedValue(null),
   };
   (mockPrisma as any).gmailIntegration = {
@@ -386,7 +395,7 @@ describe("POST /portal/apply (submit) confirmation email", () => {
     mockPrisma.domainApplication.findMany.mockResolvedValue([]);
     mockPrisma.applicationStatusUpdate.findFirst.mockResolvedValue(null);
     mockApplicantsAndGmail();
-    (mockPrisma as any).hiringEmail.findUnique.mockResolvedValue({ subject: "s", body: "b" });
+    (mockPrisma as any).emailTemplate.findUnique.mockResolvedValue({ subject: "s", body: "b" });
 
     const res = await action({
       request: makeSubmitRequest({ answers: {} }),
@@ -395,9 +404,8 @@ describe("POST /portal/apply (submit) confirmation email", () => {
     } as any);
 
     expect((res as Response).status).toBe(302);
-    expect(mockPrisma.hiringEmail.findUnique).toHaveBeenCalledWith({
-      where: { slot: "notification:ApplicationReceived" },
-      select: { subject: true, body: true },
+    expect(mockPrisma.emailTemplate.findUnique).toHaveBeenCalledWith({
+      where: { key: "hiring:notification:ApplicationReceived" },
     });
     expect(enqueueOutbound).toHaveBeenCalledTimes(1);
     expect(enqueueOutbound).toHaveBeenCalledWith(
@@ -434,7 +442,7 @@ describe("POST /portal/apply (submit) confirmation email", () => {
     mockPrisma.domainApplication.findMany.mockResolvedValue([]);
     mockPrisma.applicationStatusUpdate.findFirst.mockResolvedValue(null);
     mockApplicantsAndGmail();
-    (mockPrisma as any).hiringEmail.findUnique.mockResolvedValue(null);
+    (mockPrisma as any).emailTemplate.findUnique.mockResolvedValue(null);
 
     const res = await action({
       request: makeSubmitRequest({ answers: {} }),
@@ -454,7 +462,7 @@ describe("POST /portal/apply (submit) confirmation email", () => {
     mockPrisma.domainApplication.findMany.mockResolvedValue([]);
     mockPrisma.applicationStatusUpdate.findFirst.mockResolvedValue(null);
     mockApplicantsAndGmail();
-    (mockPrisma as any).hiringEmail.findUnique.mockResolvedValue({ subject: "s", body: "b" });
+    (mockPrisma as any).emailTemplate.findUnique.mockResolvedValue({ subject: "s", body: "b" });
     vi.mocked(enqueueOutbound).mockRejectedValueOnce(new Error("Gmail send failed: 401"));
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
@@ -767,5 +775,147 @@ describe("POST /portal/apply (create-draft) — cycle without challenges", () =>
 
     const created = mockPrisma.application.upsert.mock.calls[0][0].create.domainApplications.create;
     expect(created).toEqual([{ domainId: DOMAIN_A, answers: {} }]);
+  });
+});
+
+// The start term is a first-class field, not a form answer: the choices are
+// per-cycle config and the answers blob is the frozen record of submission. The
+// server re-validates the pick against what the cycle offers, since the client
+// gate is only as trustworthy as the body it posts.
+describe("POST /portal/apply — start term", () => {
+  const T_26S = "t-26s";
+  const T_26F = "t-26f";
+  const CHOICE_CYCLE = {
+    ...OPEN_STUDENTS_CYCLE,
+    hasChallenges: false,
+    startTermIds: [T_26S, T_26F],
+  };
+
+  function submitWith(startTermId?: string) {
+    const body: Record<string, string> = {
+      intent: "submit",
+      applicationId: APP_ID,
+      answers: JSON.stringify({}),
+      domainAnswers: JSON.stringify([]),
+      selectedDomainIds: JSON.stringify([]),
+      urlQuestions: JSON.stringify([]),
+    };
+    if (startTermId !== undefined) body.startTermId = startTermId;
+    return new Request("http://localhost/portal/apply", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(body).toString(),
+    });
+  }
+
+  function saveDraftWith(startTermId?: string) {
+    const body: Record<string, string> = {
+      intent: "save-draft",
+      applicationId: APP_ID,
+      answers: JSON.stringify({}),
+      domainAnswers: JSON.stringify([]),
+    };
+    if (startTermId !== undefined) body.startTermId = startTermId;
+    return new Request("http://localhost/portal/apply", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(body).toString(),
+    });
+  }
+
+  const lastUpdateData = () =>
+    mockPrisma.application.update.mock.calls.at(-1)?.[0]?.data;
+
+  beforeEach(() => {
+    mockStartTermsFlag.mockResolvedValue(true);
+    vi.mocked(getActiveCycleById).mockResolvedValue(CHOICE_CYCLE as any);
+    // No questions to answer, so the start term is the only submit gate.
+    mockPrisma.application.findUnique.mockResolvedValue({
+      applicationCycleId: CYCLE_ID,
+      applicationFormVersion: { questions: [] },
+      startTermId: null,
+    });
+    mockPrisma.domainApplication.findMany.mockResolvedValue([]);
+  });
+
+  it("stores a pick the cycle offers", async () => {
+    await action({ request: submitWith(T_26F), params: {}, context: {} } as any);
+    expect(lastUpdateData()).toMatchObject({ startTermId: T_26F });
+  });
+
+  it("refuses a term the cycle does not offer", async () => {
+    const res: any = await action({
+      request: submitWith("t-28w"),
+      params: {},
+      context: {},
+    } as any);
+    expect(res.error).toMatch(/term you'd start in/i);
+    expect(mockPrisma.application.update).not.toHaveBeenCalled();
+  });
+
+  it("refuses a submit with no pick at all", async () => {
+    const res: any = await action({
+      request: submitWith(""),
+      params: {},
+      context: {},
+    } as any);
+    expect(res.error).toMatch(/term you'd start in/i);
+    expect(mockPrisma.application.update).not.toHaveBeenCalled();
+  });
+
+  it("keeps the stored pick when the field is absent from a resubmit", async () => {
+    mockPrisma.application.findUnique.mockResolvedValue({
+      applicationCycleId: CYCLE_ID,
+      applicationFormVersion: { questions: [] },
+      startTermId: T_26S,
+    });
+    await action({ request: submitWith(), params: {}, context: {} } as any);
+    expect(lastUpdateData()).toMatchObject({ startTermId: T_26S });
+  });
+
+  it("saves a pick from a draft autosave", async () => {
+    await action({ request: saveDraftWith(T_26S), params: {}, context: {} } as any);
+    expect(lastUpdateData()).toMatchObject({ startTermId: T_26S });
+  });
+
+  it("clears the pick when a draft autosave posts an empty one", async () => {
+    await action({ request: saveDraftWith(""), params: {}, context: {} } as any);
+    expect(lastUpdateData()).toMatchObject({ startTermId: null });
+  });
+
+  it("ignores an off-menu pick on autosave rather than storing it", async () => {
+    await action({ request: saveDraftWith("t-28w"), params: {}, context: {} } as any);
+    expect(lastUpdateData()).not.toHaveProperty("startTermId");
+  });
+
+  it("records the only offered term at draft creation without asking", async () => {
+    vi.mocked(getActiveCycleById).mockResolvedValue({
+      ...OPEN_STUDENTS_CYCLE,
+      hasChallenges: false,
+      startTermIds: [T_26F],
+    } as any);
+    mockPrisma.application.upsert.mockResolvedValue({ id: APP_ID, domainApplications: [] });
+    mockPrisma.application.findFirst.mockResolvedValue(null);
+
+    await action({
+      request: new Request("http://localhost/portal/apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          intent: "create-draft",
+          selectedDomains: JSON.stringify([]),
+        }).toString(),
+      }),
+      params: {},
+      context: {},
+    } as any);
+
+    expect(mockPrisma.application.upsert.mock.calls[0][0].create.startTermId).toBe(T_26F);
+  });
+
+  it("writes no start term at all while the flag is off", async () => {
+    mockStartTermsFlag.mockResolvedValue(false);
+    await action({ request: submitWith(T_26F), params: {}, context: {} } as any);
+    expect(lastUpdateData()).not.toHaveProperty("startTermId");
   });
 });

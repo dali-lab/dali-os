@@ -53,8 +53,7 @@ export async function notifyTaskAssigned(args: {
     eventType: "task.assigned",
     createdByUserId: args.actorUserId ?? null,
     message: {
-      title: `Task assigned: ${task.title}`,
-      body: `In ${task.project.name}.`,
+      vars: { itemTitle: task.title, contextName: task.project.name },
       link: taskLink(task.projectId, task.id),
       dueAt: task.dueAt,
     },
@@ -103,8 +102,7 @@ export async function notifyTaskComment(args: {
       eventType: "task.comment",
       createdByUserId: args.authorId,
       message: {
-        title: `New comment on: ${task.title}`,
-        body: preview,
+        vars: { itemTitle: task.title, itemDetail: preview },
         link: taskLink(task.projectId, task.id),
       },
       recipients: recipients.map((userId) => ({ userId })),
@@ -116,7 +114,8 @@ export async function notifyTaskComment(args: {
       recipientUserIds: [...mentioned],
       actorId: args.authorId,
       link: taskLink(task.projectId, task.id),
-      title: `You were mentioned on: ${task.title}`,
+      copyKey: "mention.task",
+      itemTitle: task.title,
       preview: args.body,
     });
   }
@@ -150,8 +149,11 @@ export async function notifyTaskStatusChanged(
     eventType: "task.status_changed",
     createdByUserId: actorUserId,
     message: {
-      title: `Task moved to ${label}: ${task.title}`,
-      body: `In ${task.project.name}.`,
+      vars: {
+        itemTitle: task.title,
+        contextName: task.project.name,
+        statusLabel: label,
+      },
       link: taskLink(task.projectId, task.id),
     },
     recipients: recipients.map((userId) => ({ userId })),
@@ -183,13 +185,13 @@ export async function notifyTaskGithubUpdate(args: {
     message:
       args.action === "closed"
         ? {
-            title: `Task closed from GitHub: ${task.title}`,
-            body: `The linked issue was closed — status set to ${args.newStatus}.`,
+            copyKey: "task.github_closed" as const,
+            vars: { itemTitle: task.title, statusLabel: args.newStatus },
             link: taskLink(task.projectId, task.id),
           }
         : {
-            title: `Task reopened from GitHub: ${task.title}`,
-            body: `The linked issue was reopened — status set to ${args.newStatus}.`,
+            copyKey: "task.github_reopened" as const,
+            vars: { itemTitle: task.title, statusLabel: args.newStatus },
             link: taskLink(task.projectId, task.id),
           },
     recipients: recipients.map((userId) => ({ userId })),

@@ -58,18 +58,21 @@ const DOT_TONES: Record<PillTone, string> = {
 export function Pill({
   tone = "neutral",
   dot,
+  outline = false,
   children,
 }: {
   tone?: PillTone;
   /** Colour the state as a leading dot and keep the chip neutral. */
   dot?: PillTone;
+  /** No fill, just a hairline border: the applicant-facing dress. */
+  outline?: boolean;
   children: ReactNode;
 }) {
   return (
     <span
       className={cn(
         "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium",
-        PILL_TONES[dot ? "neutral" : tone],
+        outline ? "border border-os-container text-os-grey" : PILL_TONES[dot ? "neutral" : tone],
       )}
     >
       {dot && <span className={cn("h-2 w-2 shrink-0 rounded-full", DOT_TONES[dot])} aria-hidden />}

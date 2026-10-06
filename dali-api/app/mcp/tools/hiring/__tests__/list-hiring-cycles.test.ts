@@ -85,6 +85,18 @@ describe("list_hiring_cycles", () => {
     await expect(runListHiringCycles("u1")).rejects.toMatchObject({ status: 403 });
   });
 
+  // MCP validates a tool result's `structuredContent` as a JSON object, so a
+  // bare array fails validation client-side and the caller never sees a cycle.
+  it("wraps the cycles in an object", async () => {
+    vi.mocked(getUserRoles).mockResolvedValue(coreRoles);
+    mockPrisma.cycleReviewer.findMany.mockResolvedValue([]);
+    mockPrisma.cycleInterviewer.findMany.mockResolvedValue([]);
+    mockPrisma.applicationCycle.findMany.mockResolvedValue([]);
+    const result = await runListHiringCycles("u1");
+    expect(Array.isArray(result)).toBe(false);
+    expect(result).toEqual({ cycles: [] });
+  });
+
   it("returns all cycles for a Core user", async () => {
     vi.mocked(getUserRoles).mockResolvedValue(coreRoles);
     mockPrisma.applicationCycle.findMany.mockResolvedValue([
@@ -97,9 +109,9 @@ describe("list_hiring_cycles", () => {
         statusUpdates: [{ newStatus: "Open" }],
       },
     ]);
-    const result = await runListHiringCycles("u1") as any[];
-    expect(result).toHaveLength(1);
-    expect(result[0]).toMatchObject({
+    const { cycles } = await runListHiringCycles("u1") as { cycles: any[] };
+    expect(cycles).toHaveLength(1);
+    expect(cycles[0]).toMatchObject({
       id: "cy1",
       name: "Fall 2026",
       status: "Open",
@@ -147,9 +159,9 @@ describe("list_hiring_cycles", () => {
         statusUpdates: [{ newStatus: "Draft" }],
       },
     ]);
-    const result = await runListHiringCycles("u2") as any[];
-    expect(result).toHaveLength(1);
-    expect(result[0].id).toBe("cy2");
+    const { cycles } = await runListHiringCycles("u2") as { cycles: any[] };
+    expect(cycles).toHaveLength(1);
+    expect(cycles[0].id).toBe("cy2");
     // Confirm the findMany was called with the scoped id filter.
     expect(mockPrisma.applicationCycle.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: { in: ["cy2"] } } }),

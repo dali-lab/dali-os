@@ -57,7 +57,7 @@ const mockPrisma = prisma as unknown as {
     findUnique: ReturnType<typeof vi.fn>;
     updateMany: ReturnType<typeof vi.fn>;
   };
-  hiringEmail: { findUnique: ReturnType<typeof vi.fn> };
+  emailTemplate: { findUnique: ReturnType<typeof vi.fn> };
   user: { findUnique: ReturnType<typeof vi.fn> };
   gmailIntegration: { findFirst: ReturnType<typeof vi.fn> };
 };
@@ -119,7 +119,7 @@ beforeEach(() => {
     findUnique: vi.fn(),
     updateMany: vi.fn().mockResolvedValue({ count: 0 }),
   };
-  (mockPrisma as any).hiringEmail = { findUnique: vi.fn() };
+  (mockPrisma as any).emailTemplate = { findUnique: vi.fn() };
   (mockPrisma as any).user = { findUnique: vi.fn() };
   (mockPrisma as any).gmailIntegration = { findFirst: vi.fn() };
 });
@@ -137,14 +137,15 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     setupAuth();
     setupFinalDecision("Accepted");
     setupApplicantContext();
-    mockPrisma.hiringEmail.findUnique.mockResolvedValue({ subject: "Welcome, {{firstName}}!", body: "Hi {{firstName}},\n\nYou're in." });
+    mockPrisma.emailTemplate.findUnique.mockResolvedValue({ subject: "Welcome, {{firstName}}!", body: "Hi {{firstName}},\n\nYou're in." });
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
     expect(res.status).toBe(201);
 
-    expect(mockPrisma.hiringEmail.findUnique).toHaveBeenCalledWith({
-      where: { slot: "decision:Accepted" },
-      select: { subject: true, body: true },
+    // Hiring slots now resolve through the unified store, keyed by the slot
+    // prefixed with its area (the bare slot collided with education's).
+    expect(mockPrisma.emailTemplate.findUnique).toHaveBeenCalledWith({
+      where: { key: "hiring:decision:Accepted" },
     });
 
     const emailCall = mockEnqueue.mock.calls.map((c: any[]) => c[0]).find((a: any) => a.channel === "email");
@@ -161,7 +162,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     setupAuth();
     setupFinalDecision("Rejected");
     setupApplicantContext({ domainName: "Design" });
-    mockPrisma.hiringEmail.findUnique.mockResolvedValue({ subject: "Your {{domain}} application", body: "Hi {{firstName}}, regarding {{domain}}." });
+    mockPrisma.emailTemplate.findUnique.mockResolvedValue({ subject: "Your {{domain}} application", body: "Hi {{firstName}}, regarding {{domain}}." });
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
     expect(res.status).toBe(201);
@@ -177,7 +178,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     setupAuth();
     setupFinalDecision("Rejected");
     setupApplicantContext({ domainName: null });
-    mockPrisma.hiringEmail.findUnique.mockResolvedValue({ subject: "About {{domain}}", body: "{{firstName}} / {{domain}}" });
+    mockPrisma.emailTemplate.findUnique.mockResolvedValue({ subject: "About {{domain}}", body: "{{firstName}} / {{domain}}" });
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
     expect(res.status).toBe(409);
@@ -189,7 +190,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     setupAuth();
     setupFinalDecision("Rejected");
     setupApplicantContext();
-    mockPrisma.hiringEmail.findUnique.mockResolvedValue(null);
+    mockPrisma.emailTemplate.findUnique.mockResolvedValue(null);
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
 
@@ -245,7 +246,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
         },
       },
     });
-    mockPrisma.hiringEmail.findUnique.mockResolvedValue({ subject: "Interview invite", body: "Hi {{firstName}}" });
+    mockPrisma.emailTemplate.findUnique.mockResolvedValue({ subject: "Interview invite", body: "Hi {{firstName}}" });
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
     expect(res.status).toBe(201);
@@ -258,7 +259,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     setupAuth();
     setupFinalDecision("Waitlisted");
     setupApplicantContext();
-    mockPrisma.hiringEmail.findUnique.mockResolvedValue({ subject: "x", body: "y" });
+    mockPrisma.emailTemplate.findUnique.mockResolvedValue({ subject: "x", body: "y" });
     mockEnqueue.mockRejectedValueOnce(new Error("outbox down"));
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
@@ -276,26 +277,26 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     setupAuth();
     setupFinalDecision("Accepted");
     setupApplicantContext();
-    mockPrisma.hiringEmail.findUnique.mockResolvedValue({ subject: "Welcome!", body: "Hi {{firstName}}" });
+    mockPrisma.emailTemplate.findUnique.mockResolvedValue({ subject: "Welcome!", body: "Hi {{firstName}}" });
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
     expect(res.status).toBe(201);
-    // In non-prod the route calls resolveCandidateEmail which redirects to TEST_INBOX,
-    // so the enqueued target is the test inbox (not ada@dartmouth.edu). The banner
-    // naming the real recipient is included in bodyHtml.
     const emailCall = mockEnqueue.mock.calls.map((c: any[]) => c[0]).find((a: any) => a.channel === "email");
     expect(emailCall).toBeDefined();
-    // The redirect happens in the route via resolveCandidateEmail — in dev/staging
-    // the test inbox receives it and the real address appears in the banner.
-    expect(emailCall.bodyHtml).toContain("ada@dartmouth.edu");
-    expect(emailCall.bodyHtml).toContain("Test environment");
+    // The enqueued row now names the real applicant, and env safety is entirely
+    // the transport's: it redirects To: and injects the banner. Previously the
+    // producer ALSO redirected and prepended its own banner, so staging mail had
+    // two of them and the transport's banner reported the test inbox as the
+    // "original" recipient rather than the applicant.
+    expect(emailCall.target).toBe("ada@dartmouth.edu");
+    expect(emailCall.bodyHtml).not.toContain("Test environment");
   });
 
   it("on Accepted, promotes to member, provisions, and sends welcome — all for the applicant", async () => {
     setupAuth();
     setupFinalDecision("Accepted");
     setupApplicantContext();
-    mockPrisma.hiringEmail.findUnique.mockResolvedValue({ subject: "Welcome!", body: "Hi {{firstName}}" });
+    mockPrisma.emailTemplate.findUnique.mockResolvedValue({ subject: "Welcome!", body: "Hi {{firstName}}" });
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
     expect(res.status).toBe(201);
@@ -328,7 +329,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     setupAuth();
     setupFinalDecision("Accepted");
     setupApplicantContext();
-    mockPrisma.hiringEmail.findUnique.mockResolvedValue({ subject: "Welcome!", body: "Hi {{firstName}}" });
+    mockPrisma.emailTemplate.findUnique.mockResolvedValue({ subject: "Welcome!", body: "Hi {{firstName}}" });
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
     expect(res.status).toBe(201);
@@ -349,7 +350,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     setupAuth();
     setupFinalDecision("Rejected");
     setupApplicantContext();
-    mockPrisma.hiringEmail.findUnique.mockResolvedValue({ subject: "Update", body: "Hi {{firstName}}" });
+    mockPrisma.emailTemplate.findUnique.mockResolvedValue({ subject: "Update", body: "Hi {{firstName}}" });
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
     expect(res.status).toBe(201);
@@ -366,7 +367,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
       slack: { status: "skipped", message: "" },
       gmail: { status: "skipped", message: "" },
     } as any);
-    mockPrisma.hiringEmail.findUnique.mockResolvedValue({ subject: "Welcome!", body: "Hi {{firstName}}" });
+    mockPrisma.emailTemplate.findUnique.mockResolvedValue({ subject: "Welcome!", body: "Hi {{firstName}}" });
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
     expect(res.status).toBe(201);
@@ -385,7 +386,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
       github: { status: "skipped", message: "" },
       slack: { status: "skipped", message: "" },
     } as any);
-    mockPrisma.hiringEmail.findUnique.mockResolvedValue({ subject: "Welcome!", body: "Hi {{firstName}}" });
+    mockPrisma.emailTemplate.findUnique.mockResolvedValue({ subject: "Welcome!", body: "Hi {{firstName}}" });
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
     expect(res.status).toBe(201);
@@ -407,7 +408,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     setupAuth();
     setupFinalDecision("Rejected");
     setupApplicantContext();
-    mockPrisma.hiringEmail.findUnique.mockResolvedValue({ subject: "x", body: "y" });
+    mockPrisma.emailTemplate.findUnique.mockResolvedValue({ subject: "x", body: "y" });
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
     expect(res.status).toBe(201);
@@ -425,7 +426,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     setupFinalDecision("Accepted");
     setupApplicantContext();
     vi.mocked(provisionNewMember).mockRejectedValueOnce(new Error("workspace 500"));
-    mockPrisma.hiringEmail.findUnique.mockResolvedValue({ subject: "Welcome!", body: "Hi {{firstName}}" });
+    mockPrisma.emailTemplate.findUnique.mockResolvedValue({ subject: "Welcome!", body: "Hi {{firstName}}" });
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);

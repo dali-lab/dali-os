@@ -94,9 +94,9 @@ const TABS = [
 ] as const;
 
 const ATTENDANCE_STYLE: Record<string, string> = {
-  Present: "bg-green-100 text-green-800",
-  Absent: "bg-red-100 text-red-700",
-  Excused: "bg-amber-100 text-amber-800",
+  Present: "bg-os-green/15 text-os-green",
+  Absent: "bg-destructive/10 text-destructive",
+  Excused: "bg-os-amber/15 text-os-amber",
 };
 
 export function CourseHub({
@@ -462,6 +462,7 @@ function PostBody({
             method="post"
             onSubmit={confirmSubmit({
               title: "Delete this post?",
+              description: "Its replies go with it. This can't be undone.",
               confirmLabel: "Delete",
               tone: "destructive",
             })}
@@ -798,18 +799,18 @@ function AssignmentRow({
         {a.title}
       </Link>
       {graded ? (
-        <span className="rounded-full bg-green-100 px-2 py-0.5 font-semibold text-green-800">
+        <span className="rounded-full bg-os-green/15 px-2 py-0.5 font-semibold text-os-green">
           {a.myScore != null && a.points != null
             ? `${a.myScore}/${a.points}`
             : (a.myGrade ?? String(a.myScore))}
         </span>
       ) : a.mySubmittedAt ? (
-        <span className="rounded-full bg-blue-100 px-2 py-0.5 font-semibold text-blue-800">
+        <span className="rounded-full bg-os-accent/15 px-2 py-0.5 font-semibold text-os-accent">
           Submitted
         </span>
       ) : (
         <>
-          <span className={overdue ? "font-medium text-red-600" : "text-os-grey"}>
+          <span className={overdue ? "font-medium text-destructive" : "text-os-grey"}>
             {a.dueAt ? `due ${formatDateTime(a.dueAt, tz)}` : "no due date"}
           </span>
           <Link

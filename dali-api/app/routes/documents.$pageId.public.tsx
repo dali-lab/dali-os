@@ -1,8 +1,12 @@
 import { useLoaderData } from "react-router";
 import type { Route } from "./+types/documents.$pageId.public";
 import { prisma } from "~/lib/db";
+import { cn } from "~/lib/cn";
+import { normalizePageTypography } from "~/lib/page-typography";
 import { DocEditor } from "~/components/doc";
-import { PageIcon } from "~/components/PageIcon";
+import { PageCover } from "~/components/doc-chrome/PageCover";
+import { PageIconPicker } from "~/components/doc-chrome/PageIconPicker";
+import { useOsChrome } from "~/components/os-chrome";
 import { readDocAsBlocks } from "~/collab/read";
 import { pageDocName } from "~/collab/roomName";
 
@@ -25,6 +29,8 @@ export async function loader({ params }: Route.LoaderArgs) {
       id: true,
       title: true,
       iconEmoji: true,
+      coverImageUrl: true,
+      typography: true,
       archivedAt: true,
       linkAccess: true,
       updatedAt: true,
@@ -40,24 +46,59 @@ export async function loader({ params }: Route.LoaderArgs) {
   return {
     title: page.title,
     iconEmoji: page.iconEmoji,
+    coverImageUrl: page.coverImageUrl,
+    typography: normalizePageTypography(page.typography),
     blocks,
     updatedAt: page.updatedAt.toISOString(),
   };
 }
 
+// Mirrors DocumentEditor's paper canvas (card, 54px gutter, cover, 4xl icon,
+// os page title, per-page typography) so a shared link reads exactly like the
+// document does in the app, minus the editing chrome.
 export default function PublicDocument() {
   const data = useLoaderData<typeof loader>();
+  const { pageTitle } = useOsChrome();
+  const typo = data.typography;
   return (
-    <div className="min-h-screen bg-white">
-      <div className="mx-auto max-w-3xl px-6 py-12">
-        <div className="mb-6 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-neutral-400">
-          <span>Shared via link · read-only</span>
+    <div className="doc-surface min-h-screen">
+      <div className="doc-canvas-outer flex justify-center pb-12 pt-4 bg-page">
+        <div
+          className={cn(
+            "doc-canvas rounded-xl border border-border bg-card shadow-brand-1",
+            typo.fullWidth ? "w-full" : "w-full max-w-[1400px]",
+            typo.font !== "default" && `doc-canvas--${typo.font}`,
+            typo.smallText && "doc-canvas--small",
+            typo.nestingGuides && "doc-canvas--guides",
+          )}
+        >
+          {data.coverImageUrl && (
+            <PageCover coverImageUrl={data.coverImageUrl} canEdit={false} onChange={() => {}} />
+          )}
+          <div className="px-4 sm:px-[54px] pt-12 pb-6">
+            <div className="mb-1 pl-3 sm:pl-[54px]">
+              <div className="flex items-start gap-3">
+                {data.iconEmoji && (
+                  <div className="flex h-[50px] shrink-0 items-center">
+                    <PageIconPicker iconEmoji={data.iconEmoji} canEdit={false} onChange={() => {}} />
+                  </div>
+                )}
+                <h1 className={cn(pageTitle, "doc-title min-w-0 flex-1 leading-tight select-text")}>
+                  {data.title}
+                </h1>
+              </div>
+            </div>
+            <div className="mt-4">
+              <DocEditor
+                features="document"
+                editable={false}
+                localChecklistToggle
+                initialContent={data.blocks}
+                className="min-h-[70vh]"
+              />
+            </div>
+          </div>
         </div>
-        <h1 className="mb-8 flex items-center gap-3 text-3xl font-semibold text-neutral-900">
-          <PageIcon iconEmoji={data.iconEmoji} />
-          {data.title}
-        </h1>
-        <DocEditor features="document" editable={false} initialContent={data.blocks} />
       </div>
     </div>
   );

@@ -68,6 +68,8 @@ function decisionRow(over: {
   slackUserId?: string | null;
   figmaInvitedAt?: Date | null;
   onboardedAt?: Date | null;
+  /** The applicant's own start-term pick; absent means they have none. */
+  startTermId?: string | null;
 }) {
   const cycleId = over.cycleId ?? "cyc-new";
   const cycleName = over.cycleName ?? "Spring 2026";
@@ -78,6 +80,7 @@ function decisionRow(over: {
       domain: { displayName: over.domainName, name: over.domainName, code: over.domainCode },
       application: {
         applicationCycleId: cycleId,
+        startTermId: over.startTermId ?? null,
         applicationCycle: { id: cycleId, name: cycleName },
         user: {
           id: over.userId,
@@ -111,6 +114,18 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockPrisma.applicationCycle = { findMany: vi.fn().mockResolvedValue([]) };
   mockPrisma.decision = { findMany: vi.fn().mockResolvedValue([]) };
+  // The board resolves start-term codes, so the calendar is always read.
+  mockPrisma.term = {
+    findMany: vi.fn().mockResolvedValue([
+      { id: "t-26w", code: "26W", sortKey: 20261 },
+      { id: "t-26s", code: "26S", sortKey: 20262 },
+      { id: "t-26x", code: "26X", sortKey: 20263 },
+      { id: "t-26f", code: "26F", sortKey: 20264 },
+    ]),
+    // Always a spy, so a test can assert the clear path never looks a term up.
+    findUnique: vi.fn(),
+  };
+  mockPrisma.application = { findUnique: vi.fn(), update: vi.fn().mockResolvedValue({}) };
   vi.mocked(requireAuth).mockResolvedValue({
     ok: true,
     user: { sub: CORE_ID, type: "member" },
@@ -168,11 +183,11 @@ describe("hiring/onboarding loader", () => {
 
     expect(data.selectedCycleId).toBe("cyc-new");
     expect(data.allCycles).toBe(false);
+    // The query is unscoped — cycle, start term, and domain are all row
+    // predicates now, so the roster is fetched once and narrowed in memory.
     expect(mockPrisma.decision.findMany).toHaveBeenCalledTimes(1);
     const where = mockPrisma.decision.findMany.mock.calls[0][0].where;
-    expect(where.stage).toBe("Released");
-    expect(where.type).toBe("Accepted");
-    expect(where.domainApplication.application.applicationCycleId).toBe("cyc-new");
+    expect(where).toEqual({ stage: "Released", type: "Accepted" });
 
     expect(data.rows).toEqual([
       {
@@ -183,6 +198,10 @@ describe("hiring/onboarding loader", () => {
         role: "Fullstack",
         cycleId: "cyc-new",
         cycleName: "Spring 2026",
+        startTermId: null,
+        startTermCode: null,
+        ownStartTermId: null,
+        cycleTermSortKey: null,
         daliEmail: "ada@dali.dartmouth.edu",
         emailCreated: true,
         inSlack: true,
@@ -197,6 +216,10 @@ describe("hiring/onboarding loader", () => {
         role: "Design",
         cycleId: "cyc-new",
         cycleName: "Spring 2026",
+        startTermId: null,
+        startTermCode: null,
+        ownStartTermId: null,
+        cycleTermSortKey: null,
         daliEmail: null,
         emailCreated: false,
         inSlack: false,
@@ -257,7 +280,7 @@ describe("hiring/onboarding loader", () => {
     expect(data.selectedCycleId).toBe("all");
     expect(data.allCycles).toBe(true);
     const where = mockPrisma.decision.findMany.mock.calls[0][0].where;
-    expect(where.domainApplication.application).toEqual({});
+    expect(where).toEqual({ stage: "Released", type: "Accepted" });
     expect(data.rows).toHaveLength(2);
     expect(data.rows.map((r: any) => r.cycleName).sort()).toEqual([
       "Fall 2025",
@@ -265,56 +288,134 @@ describe("hiring/onboarding loader", () => {
     ]);
   });
 
+  // The start term belongs to the HIRE, not to their cycle, so the two filters
+  // are independent predicates over the accepted set and picking both
+  // intersects. Neither narrows what the other offers.
   describe("start term filter", () => {
-    const TERMED = [
-      { id: "cyc-f26", name: "26F Core", term: { id: "t-26f", code: "26F", startDate: new Date("2026-09-14") } },
-      { id: "cyc-w26", name: "26W Core", term: { id: "t-26w", code: "26W", startDate: new Date("2026-01-05") } },
-      { id: "cyc-none", name: "Ad hoc", term: null },
+    // Two cycles, each anchored to the term its hiring ran in.
+    const CYCLES = [
+      { id: "cyc-s26", name: "Spring 2026", termId: "t-26s" },
+      { id: "cyc-w26", name: "Winter 2026", termId: "t-26w" },
+      { id: "cyc-none", name: "Ad hoc", termId: null },
     ];
 
-    it("lists each term once, newest start first, separately from the cycles", async () => {
-      mockPrisma.applicationCycle.findMany.mockResolvedValue(TERMED);
-      const data = (await call("http://localhost/hiring/onboarding")) as any;
+    // Ada applied in the 26S cycle and starts then (no pick of her own).
+    // Bo applied in the same cycle but was DEFERRED to 26F.
+    // Cy applied in the 26W cycle and starts then.
+    // Di's cycle has no term and Di has no pick, so nothing says when they start.
+    const ROSTER = [
+      decisionRow({ userId: "u-ada", first: "Ada", domainCode: "dev", domainName: "Dev", cycleId: "cyc-s26", cycleName: "Spring 2026" }),
+      decisionRow({ userId: "u-bo", first: "Bo", domainCode: "design", domainName: "Design", cycleId: "cyc-s26", cycleName: "Spring 2026", startTermId: "t-26f" }),
+      decisionRow({ userId: "u-cy", first: "Cy", domainCode: "dev", domainName: "Dev", cycleId: "cyc-w26", cycleName: "Winter 2026" }),
+      decisionRow({ userId: "u-di", first: "Di", domainCode: "dev", domainName: "Dev", cycleId: "cyc-none", cycleName: "Ad hoc" }),
+    ];
+
+    const names = (data: any) => data.rows.map((r: any) => r.name.split(" ")[0]).sort();
+
+    beforeEach(() => {
+      mockPrisma.applicationCycle.findMany.mockResolvedValue(CYCLES);
+      mockPrisma.decision.findMany.mockResolvedValue(ROSTER);
+    });
+
+    it("falls back to the cycle's term for a hire with no pick of their own", async () => {
+      const data = (await call("http://localhost/hiring/onboarding?cycle=all")) as any;
+      const ada = data.rows.find((r: any) => r.userId === "u-ada");
+      expect(ada).toMatchObject({
+        startTermId: "t-26s",
+        startTermCode: "26S",
+        ownStartTermId: null,
+      });
+    });
+
+    it("uses the hire's own pick over their cycle's term", async () => {
+      const data = (await call("http://localhost/hiring/onboarding?cycle=all")) as any;
+      const bo = data.rows.find((r: any) => r.userId === "u-bo");
+      expect(bo).toMatchObject({
+        startTermId: "t-26f",
+        startTermCode: "26F",
+        ownStartTermId: "t-26f",
+      });
+    });
+
+    it("offers the start terms the roster actually uses, newest first", async () => {
+      const data = (await call("http://localhost/hiring/onboarding?cycle=all")) as any;
+      // 26F because Bo was deferred into it, even though no CYCLE runs in it.
       expect(data.terms).toEqual([
         { id: "t-26f", code: "26F" },
+        { id: "t-26s", code: "26S" },
         { id: "t-26w", code: "26W" },
       ]);
       expect(data.selectedTermId).toBeNull();
     });
 
-    it("narrows the cycle list and the rows to the chosen term", async () => {
-      mockPrisma.applicationCycle.findMany.mockResolvedValue(TERMED);
+    it("filters rows by start term without touching the cycle list", async () => {
       const data = (await call("http://localhost/hiring/onboarding?term=t-26f")) as any;
       expect(data.selectedTermId).toBe("t-26f");
-      expect(data.cycles.map((c: any) => c.id)).toEqual(["cyc-f26"]);
-      // The term alone filters, so the cycle filter opens on every cycle in it.
-      expect(data.selectedCycleId).toBe("all");
-      const where = mockPrisma.decision.findMany.mock.calls[0][0].where;
-      expect(where.domainApplication.application).toEqual({ applicationCycleId: { in: ["cyc-f26"] } });
+      // Only the deferred hire starts in 26F, from a cycle that ran in 26S.
+      expect(names(data)).toEqual(["Bo"]);
+      // Every cycle is still offered — the term no longer narrows the list.
+      expect(data.cycles.map((c: any) => c.id)).toEqual(["cyc-s26", "cyc-w26", "cyc-none"]);
     });
 
-    it("groups cycles with no term under ?term=none", async () => {
-      mockPrisma.applicationCycle.findMany.mockResolvedValue(TERMED);
+    it("opens the cycle filter at all when a term is picked alone", async () => {
+      const data = (await call("http://localhost/hiring/onboarding?term=t-26s")) as any;
+      expect(data.selectedCycleId).toBe("all");
+      expect(names(data)).toEqual(["Ada"]);
+    });
+
+    it("intersects an explicit cycle with an explicit start term", async () => {
+      const data = (await call(
+        "http://localhost/hiring/onboarding?cycle=cyc-s26&term=t-26f",
+      )) as any;
+      expect(data.selectedCycleId).toBe("cyc-s26");
+      expect(data.selectedTermId).toBe("t-26f");
+      // Of the 26S cycle's two hires, only the one deferred to 26F.
+      expect(names(data)).toEqual(["Bo"]);
+    });
+
+    it("returns nothing when the two filters don't overlap", async () => {
+      const data = (await call(
+        "http://localhost/hiring/onboarding?cycle=cyc-w26&term=t-26f",
+      )) as any;
+      expect(data.rows).toEqual([]);
+    });
+
+    it("filters by cycle alone across every start term in it", async () => {
+      const data = (await call("http://localhost/hiring/onboarding?cycle=cyc-s26")) as any;
+      expect(data.selectedTermId).toBeNull();
+      expect(names(data)).toEqual(["Ada", "Bo"]);
+    });
+
+    it("buckets a hire with no pick and no cycle term under ?term=none", async () => {
       const data = (await call("http://localhost/hiring/onboarding?term=none")) as any;
       expect(data.hasUntermed).toBe(true);
       expect(data.selectedTermId).toBe("none");
-      expect(data.cycles.map((c: any) => c.id)).toEqual(["cyc-none"]);
-      const where = mockPrisma.decision.findMany.mock.calls[0][0].where;
-      expect(where.domainApplication.application).toEqual({ applicationCycleId: { in: ["cyc-none"] } });
+      expect(names(data)).toEqual(["Di"]);
     });
 
-    it("drops ?term=none when every cycle has a term", async () => {
-      mockPrisma.applicationCycle.findMany.mockResolvedValue(TERMED.slice(0, 2));
+    it("drops ?term=none when every hire has a start term", async () => {
+      mockPrisma.decision.findMany.mockResolvedValue(ROSTER.slice(0, 3));
       const data = (await call("http://localhost/hiring/onboarding?term=none")) as any;
       expect(data.hasUntermed).toBe(false);
       expect(data.selectedTermId).toBeNull();
     });
 
     it("ignores an unknown ?term= and keeps the newest cycle", async () => {
-      mockPrisma.applicationCycle.findMany.mockResolvedValue(TERMED);
       const data = (await call("http://localhost/hiring/onboarding?term=bogus")) as any;
       expect(data.selectedTermId).toBeNull();
-      expect(data.selectedCycleId).toBe("cyc-f26");
+      expect(data.selectedCycleId).toBe("cyc-s26");
+    });
+
+    it("offers only the domains the other two filters left", async () => {
+      const data = (await call("http://localhost/hiring/onboarding?term=t-26f")) as any;
+      // 26F holds only Bo, a designer, so Dev isn't offered.
+      expect(data.domains).toEqual([{ key: "design", label: "Design" }]);
+    });
+
+    it("exposes the cycle's term as each row's editor floor", async () => {
+      const data = (await call("http://localhost/hiring/onboarding?cycle=all")) as any;
+      expect(data.rows.find((r: any) => r.userId === "u-ada").cycleTermSortKey).toBe(20262);
+      expect(data.rows.find((r: any) => r.userId === "u-di").cycleTermSortKey).toBeNull();
     });
   });
 
@@ -704,5 +805,114 @@ describe("hiring/onboarding action (remind)", () => {
     expect(res.status).toBe(400);
     expect(notify).not.toHaveBeenCalled();
     expect(sendEmail).not.toHaveBeenCalled();
+  });
+});
+
+// Core moving one hire's start term. Not limited to the cycle's offered set —
+// that was the applicants' menu, and a deferral is decided afterward — but it
+// is floored at the term the hiring ran in.
+describe("hiring/onboarding action (set start term)", () => {
+  function postForm(fields: Record<string, string>) {
+    const body = new URLSearchParams(fields);
+    return action({
+      request: new Request("http://localhost/hiring/onboarding", {
+        method: "POST",
+        body,
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+      }),
+      params: {},
+      context: {},
+    } as any);
+  }
+
+  const base = {
+    intent: "setStartTerm",
+    userId: "u-bo",
+    cycleId: "cyc-s26",
+  };
+
+  beforeEach(() => {
+    // The 26S cycle: its own term is the floor for every hire in it.
+    mockPrisma.application.findUnique.mockResolvedValue({
+      id: "app-bo",
+      applicationCycle: { term: { sortKey: 20262 } },
+    });
+  });
+
+  it("stores a later term — the deferral case", async () => {
+    mockPrisma.term.findUnique.mockResolvedValue({ sortKey: 20264 });
+    const res = (await postForm({ ...base, termId: "t-26f" })) as Response;
+    expect(res.status).toBe(200);
+    expect(mockPrisma.application.update).toHaveBeenCalledWith({
+      where: { id: "app-bo" },
+      data: { startTermId: "t-26f" },
+    });
+  });
+
+  it("stores the cycle's own term", async () => {
+    mockPrisma.term.findUnique.mockResolvedValue({ sortKey: 20262 });
+    await postForm({ ...base, termId: "t-26s" });
+    expect(mockPrisma.application.update.mock.calls[0][0].data).toEqual({
+      startTermId: "t-26s",
+    });
+  });
+
+  it("refuses a term before the one the hiring ran in", async () => {
+    mockPrisma.term.findUnique.mockResolvedValue({ sortKey: 20261 });
+    const res = (await postForm({ ...base, termId: "t-26w" })) as Response;
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({
+      error: expect.stringMatching(/can't be before the term the cycle ran in/i),
+    });
+    expect(mockPrisma.application.update).not.toHaveBeenCalled();
+  });
+
+  it("allows any term when the cycle has no term of its own", async () => {
+    mockPrisma.application.findUnique.mockResolvedValue({
+      id: "app-di",
+      applicationCycle: { term: null },
+    });
+    mockPrisma.term.findUnique.mockResolvedValue({ sortKey: 20261 });
+    const res = (await postForm({ ...base, termId: "t-26w" })) as Response;
+    expect(res.status).toBe(200);
+    expect(mockPrisma.application.update).toHaveBeenCalled();
+  });
+
+  it("clears the pick back to the cycle's term on an empty value", async () => {
+    const res = (await postForm({ ...base, termId: "" })) as Response;
+    expect(res.status).toBe(200);
+    expect(mockPrisma.application.update).toHaveBeenCalledWith({
+      where: { id: "app-bo" },
+      data: { startTermId: null },
+    });
+    // Clearing needs no term lookup at all.
+    expect(mockPrisma.term.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("404s when that user has no application in that cycle", async () => {
+    mockPrisma.application.findUnique.mockResolvedValue(null);
+    const res = (await postForm({ ...base, termId: "t-26f" })) as Response;
+    expect(res.status).toBe(404);
+    expect(mockPrisma.application.update).not.toHaveBeenCalled();
+  });
+
+  it("400s on an unknown term", async () => {
+    mockPrisma.term.findUnique.mockResolvedValue(null);
+    const res = (await postForm({ ...base, termId: "t-nope" })) as Response;
+    expect(res.status).toBe(400);
+    expect(mockPrisma.application.update).not.toHaveBeenCalled();
+  });
+
+  it("400s without a userId or cycleId", async () => {
+    const res = (await postForm({ intent: "setStartTerm", termId: "t-26f" })) as Response;
+    expect(res.status).toBe(400);
+    expect(mockPrisma.application.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("403s for non-core users", async () => {
+    vi.mocked(isCore).mockResolvedValueOnce(false);
+    const res = (await postForm({ ...base, termId: "t-26f" })) as Response;
+    expect(res.status).toBe(403);
+    expect(mockPrisma.application.update).not.toHaveBeenCalled();
   });
 });

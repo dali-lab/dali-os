@@ -1,7 +1,5 @@
 import type { Route } from "./+types/api.email.attachment";
 import { requireAuth } from "~/lib/auth";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { getUserRoles } from "~/lib/roles";
 import { findReadableAccount } from "~/email/lib/access.server";
 import { getAttachment, getMailboxToken, getThread, MailboxError } from "~/email/lib/gmail-mailbox.server";
 
@@ -15,10 +13,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
   const userId = auth.user.sub;
-  const roles = await getUserRoles(userId, request);
-  if (!(await isFeatureEnabled("email", userId, roles, request))) {
-    return new Response("Not found", { status: 404 });
-  }
 
   const url = new URL(request.url);
   const accountId = url.searchParams.get("account") ?? "";

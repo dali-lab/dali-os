@@ -72,3 +72,38 @@ describe("submission-columns", () => {
     expect(new Set(keys).size).toBe(2);
   });
 });
+
+describe("term token in column labels", () => {
+  // A cycle-term status column stores {{term}} in its label rather than a term
+  // code, so the board reads it as whichever cycle is in view.
+  const cycleTerm: ColumnMapping = {
+    version: 1,
+    entries: [
+      {
+        source: "question",
+        questionKey: "q-status",
+        role: "intent-status",
+        label: "Status — {{term}}",
+        order: 0,
+      },
+    ],
+  };
+
+  it("resolves the token to the cycle's term code", () => {
+    expect(orderedColumns(cycleTerm, "27S")[0].label).toBe("Status — 27S");
+    expect(visibleColumns(cycleTerm, "27S")[0].label).toBe("Status — 27S");
+  });
+
+  it("leaves the token literal for the all-terms aggregate, which has no one term", () => {
+    expect(orderedColumns(cycleTerm)[0].label).toBe("Status — {{term}}");
+    expect(orderedColumns(cycleTerm, null)[0].label).toBe("Status — {{term}}");
+  });
+
+  it("leaves labels without the token untouched", () => {
+    expect(orderedColumns(m, "27S").map((c) => c.label)).toEqual([
+      "1st choice",
+      "Why",
+      "By",
+    ]);
+  });
+});

@@ -9,7 +9,8 @@
  *   interview:{interviewId}:notes
  *   interview:{interviewId}:recommendation
  *   doc:{pageId}:body                  FreeForm Page bodies (DocumentEditor)
- *   resources:lab:body                 the single lab-wide Resources document
+ *   resources:{bookmarkId}:body        a Resources bookmark page
+ *   blogPost:{postId}:body             a blog post body (synced to contentJson)
  *   presence:{pageId}                  ephemeral, no persistence
  *   signing:{documentId}:draft         SigningDocument body — prose (BlockNote)
  *   form:{formId}:draft                Form question list — structured Y.Array
@@ -19,12 +20,18 @@
 export const PRESENCE_ROOM_PREFIX = "presence:";
 
 /**
- * The lab-wide Resources document (route /resources). A fixed singleton room
- * rather than a Drive Page: there is exactly one of it, it is never renamed,
- * moved or archived, and its gate is a role (Core/Admin write, every lab member
- * reads) rather than a per-page share list.
+ * A Resources bookmark page (route /resources/b/:bookmarkId). Not a Drive Page:
+ * its gate is a role (Core/Admin write, every lab member reads) rather than a
+ * per-page share list. The pre-bookmarks singleton lives on as bookmark "lab".
  */
-export const RESOURCES_ROOM = "resources:lab:body";
+export function resourcesRoomName(bookmarkId: string): string {
+  return `resources:${bookmarkId}:body`;
+}
+
+/** A blog post body. Registry-backed (COLLAB_SOURCES.blogPost). */
+export function blogPostRoomName(postId: string): string {
+  return `blogPost:${postId}:body`;
+}
 
 // The collab room backing a FreeForm Page's rich-text body. Seeded pages can
 // override via Page.contentDocId; everything created in-app uses this shape.

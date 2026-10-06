@@ -113,11 +113,26 @@ export function TimeField({
     const el = wrapRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
-    setPos({ top: r.bottom + 4, left: r.left, width: Math.max(r.width, 140) });
+    // Flip above the field when the list would run off the bottom of the window
+    // (a late-evening row in a dialog near the foot of the screen).
+    const h = popRef.current?.offsetHeight ?? 224;
+    const below = r.bottom + 4;
+    const top = below + h > window.innerHeight ? Math.max(8, r.top - 4 - h) : below;
+    const width = Math.max(r.width, 140);
+    setPos((prev) =>
+      prev && prev.top === top && prev.left === r.left && prev.width === width
+        ? prev
+        : { top, left: r.left, width },
+    );
   };
 
   useLayoutEffect(() => {
-    if (open) reposition();
+    if (!open) {
+      setPos(null);
+      return;
+    }
+    reposition();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   useEffect(() => {
@@ -149,18 +164,29 @@ export function TimeField({
     };
   }, [open, value]);
 
-  // Scroll the current/active option into view when the list opens.
-  useEffect(() => {
-    if (!open) return;
+  // Scroll the current/active option into view once the list is on screen. This
+  // has to wait for `pos` — until the list is placed it is invisible and its
+  // rows have no box to scroll to, which is why the dropdown used to open on
+  // 12:00 AM however late the selected time was.
+  const scrolledFor = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    if (!open || !pos) {
+      scrolledFor.current = null;
+      return;
+    }
+    if (scrolledFor.current === value) return;
+    scrolledFor.current = value;
     const idx = activeIdx >= 0 ? activeIdx : filtered.findIndex((o) => o.v === value);
-    if (idx >= 0) optRefs.current[idx]?.scrollIntoView({ block: "nearest" });
+    if (idx >= 0) optRefs.current[idx]?.scrollIntoView({ block: "center" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, pos, value]);
 
   const commitText = () => {
     const parsed = parseTimeInput(text);
     if (parsed) {
-      onChange(parsed);
+      // Only when it actually moved: every blur used to re-emit the same time,
+      // which marks the host form dirty for a field the user merely tabbed past.
+      if (parsed !== value) onChange(parsed);
       setText(formatTime12(parsed));
     } else {
       setText(formatTime12(value)); // revert to last valid
@@ -196,6 +222,8 @@ export function TimeField({
           onBlur={() => {
             setFocused(false);
             commitText();
+            setOpen(false);
+            setActiveIdx(-1);
           }}
           onChange={(e) => {
             setText(e.target.value);
@@ -239,12 +267,18 @@ export function TimeField({
       </div>
 
       {open &&
-        pos &&
         createPortal(
           <div
             ref={popRef}
             role="dialog"
-            style={{ position: "fixed", top: pos.top, left: pos.left, width: pos.width }}
+            data-field-popover
+            style={{
+              position: "fixed",
+              top: pos?.top ?? 0,
+              left: pos?.left ?? 0,
+              width: pos?.width,
+              visibility: pos ? "visible" : "hidden",
+            }}
             className="z-[60] max-h-56 overflow-y-auto rounded-lg border border-border bg-card py-1 shadow-brand-2"
             // Keep focus in the input so blur-commit doesn't fire mid-pick.
             onMouseDown={(e) => e.preventDefault()}

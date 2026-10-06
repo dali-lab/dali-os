@@ -15,12 +15,21 @@ export type UnderlineTabButton = {
   count?: number;
 };
 
-const osSegmentedTrackClass =
-  "inline-flex w-fit max-w-full items-center gap-1 overflow-x-auto no-scrollbar rounded-full border border-border bg-os-card p-1";
+/** "sm" is the switcher at rail width — same pill, one size down, for places
+ *  that can't spare 44px of height (the calendar's left rail). */
+export type SegmentedSize = "sm" | "md";
 
-function osSegmentedItemClass(active: boolean) {
+function osSegmentedTrackClass(size: SegmentedSize) {
   return cn(
-    "inline-flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition-colors",
+    "inline-flex w-fit max-w-full items-center overflow-x-auto no-scrollbar rounded-full border border-border bg-os-card",
+    size === "sm" ? "gap-0.5 p-0.5" : "gap-1 p-1",
+  );
+}
+
+function osSegmentedItemClass(active: boolean, size: SegmentedSize) {
+  return cn(
+    "inline-flex shrink-0 items-center gap-1.5 rounded-full font-medium transition-colors",
+    size === "sm" ? "px-3 py-1 text-xs" : "px-4 py-2 text-sm",
     active
       ? "bg-os-container text-foreground"
       : "text-muted-foreground hover:text-foreground",
@@ -64,16 +73,18 @@ export function SegmentedTabButtons({
   label = "Section",
   className,
   stretch = false,
+  size = "md",
 }: {
   items: UnderlineTabButton[];
   label?: string;
   className?: string;
   /** Fill the container, segments sharing the width equally. */
   stretch?: boolean;
+  size?: SegmentedSize;
 }) {
   return (
     <div
-      className={cn(osSegmentedTrackClass, stretch && "w-full", className)}
+      className={cn(osSegmentedTrackClass(size), stretch && "w-full", className)}
       role="tablist"
       aria-label={label}
     >
@@ -85,7 +96,7 @@ export function SegmentedTabButtons({
           aria-selected={item.active ?? false}
           onClick={item.onClick}
           className={cn(
-            osSegmentedItemClass(!!item.active),
+            osSegmentedItemClass(!!item.active, size),
             stretch && "flex-1 justify-center",
           )}
         >

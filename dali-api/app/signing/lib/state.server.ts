@@ -8,7 +8,6 @@ import { prisma } from "~/lib/db";
 import { currentTerm } from "~/lib/roles";
 import { isUserActiveInTerm, resolveGroupMembers } from "~/lib/groups";
 import { isNewMemberCohort } from "~/hiring/lib/new-member-cohort.server";
-import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { bakeSigningBody } from "~/lib/signing-fields";
 import { isStaffedInTerm, isStaffedMentorInTerm } from "./staffing-audience.server";
 import { AUDIENCE_RESOLVERS } from "./audiences";
@@ -222,15 +221,11 @@ export async function listOutstandingBindings(
 
   // Mentee countersignatures — a parallel obligation the audience machinery
   // doesn't express (a mentee is not in the Mentors audience). Runs only when
-  // the feature is live for everyone and the caller opts in (the web gate/inbox
+  // the caller opts in (the web gate/inbox
   // do; MCP does not — it can't sign a countersignature yet). All lookups are
   // batched OUTSIDE the per-binding loop to keep this hot path free of
   // per-binding round-trips (mirrors the userGroupIds precompute above).
-  if (
-    includeMentee &&
-    current &&
-    (await isFeatureEnabledForEveryone("mentee-countersign", opts.request))
-  ) {
+  if (includeMentee && current) {
     // Candidate bindings: opt-in doc, term-scoped, current-or-upcoming (a past
     // term's agreement never blocks the app, matching the member rule above).
     const candidates = bindings.filter(
@@ -482,7 +477,6 @@ export async function menteeCountersignState(
   ) {
     return "not_owed";
   }
-  if (!(await isFeatureEnabledForEveryone("mentee-countersign", request))) return "not_owed";
   const current = await currentTerm(request);
   if (!current || b.term.sortKey < current.sortKey) return "not_owed";
 

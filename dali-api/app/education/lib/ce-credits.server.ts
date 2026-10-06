@@ -225,8 +225,7 @@ export async function remindNonCompliant(args: {
     eventType: "education.ce_reminder",
     createdByUserId: args.actorId,
     message: {
-      title: `You still owe a CE credit for ${term?.code ?? "this term"}`,
-      body: "Attend a workshop or miniseries session to earn it, or complete the async CEC check-in.",
+      vars: { itemTitle: term?.code ?? "this term" },
     },
     recipients: targets.map((t) => ({ userId: t.userId, link: "/education" })),
   });

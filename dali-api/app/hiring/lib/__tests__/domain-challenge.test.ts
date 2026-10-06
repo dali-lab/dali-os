@@ -29,6 +29,23 @@ describe("addDomainChallenge", () => {
     expect(mockPrisma.applicationCycle.findUnique).toHaveBeenCalled();
   });
 
+  it("links a picked form instead of creating one", async () => {
+    status("Draft");
+    mockPrisma.form = { findUnique: vi.fn().mockResolvedValue({ id: "f2" }) };
+    mockPrisma.cycleDomainForm.upsert = vi.fn();
+    expect(await addDomainChallenge("c1", "d1", "u1", "f2")).toBeNull();
+    const link = { applicationCycleId: "c1", domainId: "d1", formId: "f2" };
+    expect(mockPrisma.cycleDomainForm.upsert).toHaveBeenCalledWith({
+      where: { applicationCycleId_domainId_formId: link },
+      create: link,
+      update: {},
+    });
+    expect(mockPrisma.applicationCycle.findUnique).not.toHaveBeenCalled();
+
+    mockPrisma.form.findUnique.mockResolvedValue(null);
+    expect(await addDomainChallenge("c1", "d1", "u1", "gone")).toBe("not-found");
+  });
+
   it("refuses once the cycle has opened", async () => {
     status("Open");
     expect(await addDomainChallenge("c1", "d1", "u1")).toBe("not-draft");

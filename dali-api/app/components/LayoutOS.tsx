@@ -24,6 +24,7 @@ import type { FavoritePage } from '~/lib/user-pages.server'
 import { FavoriteIcon } from '~/components/FavoriteIcon'
 import { userInitials } from '~/lib/display'
 import { TabWorkspace } from '~/components/TabWorkspace'
+import { deepLinkTabLabel } from '~/lib/deep-link-tab'
 import { useAttentionFeed } from '~/components/NotificationBell'
 import { TasksDrawer, attentionCount } from '~/components/AttentionPanel'
 import { DesktopBanner } from '~/components/DesktopBanner'
@@ -42,11 +43,16 @@ import { useShellNav } from '~/components/shell-nav'
 import { setFocusPreference } from '~/lib/focus-mode'
 import { useOsShellRoot } from '~/lib/os-shell'
 import { cn } from '~/lib/cn'
-import { osMenuClass, osMenuItemClass, railRowClass } from '~/components/os-shell-chrome'
+import {
+  osMenuClass,
+  osMenuItemClass,
+  railRowClass,
+  useAccountMenuStyle,
+} from '~/components/os-shell-chrome'
 import {
   areaForPath,
   pinnedNavItems,
-  roomBookingNavItem,
+  ROOM_BOOKING_NAV_ITEM,
   activeSubtabHref,
   isPinnedActive,
   visibleAreas,
@@ -75,6 +81,7 @@ interface LayoutOSProps {
   favorites?: FavoritePage[]
   /** True when this session is an admin "log in as" — shows the exit banner. */
   impersonating?: boolean
+  impersonationAllowsWrites?: boolean
   focusMode?: boolean
   /** The routed page fills the shell's main column instead of growing past it
    *  (see `handle.fitViewport`) — the shell is then bounded to the window and
@@ -111,6 +118,7 @@ export function LayoutOS({
   isInstructor = false,
   favorites = [],
   impersonating = false,
+  impersonationAllowsWrites = false,
   focusMode = false,
   fitViewport = false,
   children,
@@ -149,6 +157,7 @@ export function LayoutOS({
   const areaMenuRef = useRef<HTMLDivElement | null>(null)
   const areaTriggerRef = useRef<HTMLButtonElement | null>(null)
   const userMenuRef = useRef<HTMLDivElement | null>(null)
+  const userMenuStyle = useAccountMenuStyle(userMenuRef, userMenuOpen)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -246,13 +255,12 @@ export function LayoutOS({
   // The `resources` flag decides the pinned tail (Resources vs Drive) and
   // whether Drive is a General sub-tab, so every nav matcher below has to be
   // handed the same map — a pin and an area disagreeing would light both.
-  const navFlags = { resources: useFeatureFlag('resources'), 'room-booking': useFeatureFlag('room-booking') }
-  const emailEnabled = useFeatureFlag('email')
-  const emailUnread = useEmailUnread(emailEnabled, path)
+  const navFlags = { resources: useFeatureFlag('resources') }
+  const emailUnread = useEmailUnread(path)
   const areas = visibleAreas(roleFlags, navFlags)
   const routeArea = areaForPath(path, navFlags)
   const pinned = pinnedNavItems(navFlags)
-  const roomBooking = roomBookingNavItem(navFlags)
+  const roomBooking = ROOM_BOOKING_NAV_ITEM
   const activeArea = routeArea ?? areas.find((a) => a.key === lastAreaKey) ?? areas[0]
   const activeSubtabs = activeArea ? visibleSubtabs(activeArea, roleFlags) : []
   const activeHref = activeArea ? activeSubtabHref(activeArea, path) : undefined
@@ -271,7 +279,7 @@ export function LayoutOS({
     tabClickProps({ url: area.hubPath, label: area.label }).onClick(e)
   }
 
-  const pinnedLabel = [...pinned, ...(roomBooking ? [roomBooking] : [])].find((i) => isPinnedActive(path, i.href, navFlags))?.label
+  const pinnedLabel = [...pinned, roomBooking].find((i) => isPinnedActive(path, i.href, navFlags))?.label
   const initialTabLabel = path.startsWith('/notifications')
     ? 'My Tasks'
     : path.startsWith('/calendar')
@@ -283,6 +291,24 @@ export function LayoutOS({
           : path.startsWith('/help')
             ? 'Help'
             : (pinnedLabel ?? routeArea?.label)
+
+  // The tab the workspace opens for the url the app was entered on. Pinned to
+  // the first render: `path` above follows the focused tab once the workspace is
+  // live, and document.title belongs to the entry page only until then — while
+  // TabWorkspace reads initialTabs in its mount effect, so a later value would
+  // be silently dropped anyway.
+  const [deepLinkTab] = useState(() =>
+    location.pathname === '/'
+      ? null
+      : {
+          url: location.pathname + location.search,
+          label: deepLinkTabLabel(
+            initialTabLabel,
+            typeof document === 'undefined' ? undefined : document.title,
+            location.pathname,
+          ),
+        },
+  )
 
   const initials = userInitials(user)
   const { tasks: openTasks, items: feedItems, projectTasks } = useAttentionFeed()
@@ -413,28 +439,26 @@ export function LayoutOS({
               {!collapsed && 'Calendar'}
             </button>
           </Tooltip>
-          {emailEnabled && (
-            <Tooltip
-              content={collapsed ? (emailUnread > 0 ? `Email · ${emailUnread} unread` : 'Email') : ''}
-              placement="right"
+          <Tooltip
+            content={collapsed ? (emailUnread > 0 ? `Email · ${emailUnread} unread` : 'Email') : ''}
+            placement="right"
+          >
+            <button
+              type="button"
+              {...tabClickProps({ url: '/email', label: 'Email' })}
+              className={cn(railRowClass(path.startsWith('/email'), collapsed), 'relative')}
             >
-              <button
-                type="button"
-                {...tabClickProps({ url: '/email', label: 'Email' })}
-                className={cn(railRowClass(path.startsWith('/email'), collapsed), 'relative')}
-              >
-                <Mail className="h-5 w-5 flex-shrink-0 opacity-85" />
-                {!collapsed && 'Email'}
-                {collapsed ? (
-                  emailUnread > 0 && (
-                    <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-accent-yellow" aria-hidden />
-                  )
-                ) : (
-                  <UnreadBadge count={emailUnread} className="ml-auto" />
-                )}
-              </button>
-            </Tooltip>
-          )}
+              <Mail className="h-5 w-5 flex-shrink-0 opacity-85" />
+              {!collapsed && 'Email'}
+              {collapsed ? (
+                emailUnread > 0 && (
+                  <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-accent-yellow" aria-hidden />
+                )
+              ) : (
+                <UnreadBadge count={emailUnread} className="ml-auto" />
+              )}
+            </button>
+          </Tooltip>
           {pinned.map((item) => {
             const Icon = item.icon
             const active = isPinnedActive(path, item.href, navFlags)
@@ -596,13 +620,11 @@ export function LayoutOS({
           the design has no other home for (profile, settings, help, log out)
           rather than dropping them. */}
       <div ref={userMenuRef} className="relative shrink-0 pt-6">
-        {userMenuOpen && (
+        {userMenuStyle && (
           <div
             role="menu"
-            className={cn(
-              'absolute bottom-full left-0 mb-2 w-full min-w-[180px] motion-safe:animate-area-menu',
-              osMenuClass,
-            )}
+            style={userMenuStyle}
+            className={cn('fixed z-40 motion-safe:animate-area-menu', osMenuClass)}
           >
             {userMenuItems.map((item) => (
               <button
@@ -686,16 +708,14 @@ export function LayoutOS({
       </div>
 
       <div className="flex flex-shrink-0 items-center gap-3">
-        {roomBooking && (
-          <button
-            type="button"
-            {...tabClickProps({ url: roomBooking.href, label: roomBooking.label })}
-            className="os-topbar-btn shrink-0 text-base font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-os-accent"
-          >
-            <roomBooking.icon className="h-5 w-5 shrink-0" aria-hidden />
-            {roomBooking.label}
-          </button>
-        )}
+        <button
+          type="button"
+          {...tabClickProps({ url: roomBooking.href, label: roomBooking.label })}
+          className="os-topbar-btn shrink-0 text-base font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-os-accent"
+        >
+          <roomBooking.icon className="h-5 w-5 shrink-0" aria-hidden />
+          {roomBooking.label}
+        </button>
         {/* The page's guide, on the same plate as the bell beside it, in both
             shells. Tabless mode shares this document with the page and reads
             the route itself; tab mode takes the focused frame's report and
@@ -863,7 +883,7 @@ export function LayoutOS({
         {/* Impersonation is a session-mode indicator, so it sits above the top
             bar and shows even in focus mode. */}
         {impersonating && (
-          <ImpersonationBanner
+          <ImpersonationBanner allowsWrites={impersonationAllowsWrites}
             userName={`${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || user.email}
           />
         )}
@@ -884,9 +904,7 @@ export function LayoutOS({
             onOpenPalette={togglePalette}
             initialTabs={[
               { url: '/', label: 'Home' },
-              ...(initialTabLabel && location.pathname !== '/'
-                ? [{ url: location.pathname + location.search, label: initialTabLabel }]
-                : []),
+              ...(deepLinkTab ? [deepLinkTab] : []),
             ]}
             onActiveUrlChange={setFocusedTabUrl}
             onGuideChange={setWorkspaceGuide}
@@ -930,7 +948,7 @@ export function LayoutOS({
         tabless={tabless}
         focusMode={focusMode}
         roles={roleFlags}
-        flags={{ ...navFlags, email: emailEnabled }}
+        flags={navFlags}
         onOpen={openFromPalette}
       />
     </div>

@@ -4,9 +4,12 @@ import { logAuditEvent } from "~/lib/audit";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { getFrontendUrl, getAppEnv } from "~/lib/app-env";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
+import { renderFramedEmail } from "~/email/lib/layout.server";
+import { humanDuration } from "~/email/lib/auth-email";
+import { MAGIC_LINK_TTL_MS } from "./magic-link";
 import { sendMemberEmailConflictEmail } from "./partner-emails.server";
 
-export const MAGIC_LINK_TTL_MS = 15 * 60 * 1000;
+export { MAGIC_LINK_TTL_MS } from "./magic-link";
 
 // Same digest convention as Session ids and OneTimeToken's schema comment:
 // sha256(raw), base64url. The raw value only ever travels in the email link.
@@ -120,24 +123,37 @@ export async function issuePartnerMagicLink(
   if (getAppEnv() === "dev") {
     console.info(`[partner-magic-link:dev] ${url}`);
   }
+  // Expiry copy derived from the TTL constant, never hand-written — the two
+  // emails whose expiry sentence had drifted were the two that hand-wrote it.
+  const expiry = humanDuration(MAGIC_LINK_TTL_MS / 1000);
+  const mail = await renderFramedEmail(
+    {
+      // Subject names the thing, button names the action. The BetterAuth
+      // sign-in-link email had these two the other way round from this one.
+      subject: "Your DALI OS sign-in link",
+      preheader: `Sign in to the partner portal. Expires in ${expiry}.`,
+      cta: { href: url, label: "Sign in to DALI OS" },
+      bodyHtml: [
+        `<p style="margin:0 0 16px;">Use the button below to sign in to the DALI Lab partner portal.</p>`,
+        `<p style="margin:0;color:#52525b;font-size:14px;">The link works once and expires in ${expiry}. If you didn't request this, you can ignore this email.</p>`,
+      ].join("\n"),
+      text: [
+        "Use the link below to sign in to the DALI Lab partner portal.",
+        url,
+        `The link works once and expires in ${expiry}. If you didn't request this, you can ignore this email.`,
+      ].join("\n\n"),
+    },
+    { footer: "transactional" },
+  );
   const { id: outboundId } = await enqueueOutbound({
     channel: "email",
     purpose: "Partners",
     dedupKey: `partner.magiclink:${token.id}`,
     target: email,
     recipientUserId: userId,
-    subject: "Sign in to DALI OS",
-    bodyHtml: `
-  <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; color: #1f2937;">
-    <p>Use the button below to sign in to the DALI Lab partner portal. This link works once and expires in 15 minutes.</p>
-    <p style="margin: 24px 0;">
-      <a href="${url}" style="background: #1e3a8a; color: #fff; padding: 10px 20px; border-radius: 8px; text-decoration: none;">Sign in to DALI OS</a>
-    </p>
-    <p style="color: #6b7280; font-size: 13px;">If you didn't request this, you can ignore this email.</p>
-    <p style="color: #6b7280; font-size: 12px; margin-top: 32px;">
-      DALI Lab · Dartmouth College
-    </p>
-  </div>`,
+    subject: mail.subject,
+    bodyHtml: mail.html,
+    bodyText: mail.text,
     eventType: "partner.magiclink",
   });
   await drainNow([outboundId]);

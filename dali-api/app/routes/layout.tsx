@@ -9,7 +9,7 @@ import { useLiveFavorites } from '~/components/favorites-live'
 import { LaunchWelcome } from '~/components/LaunchWelcome'
 import { NavPreloader } from '~/components/NavPreloader'
 import { TimeZonePrompt } from '~/components/TimeZonePrompt'
-import { requireAuth, redirectPartnerToPortal } from "~/lib/auth"
+import { requireAuth, redirectPartnerToPortal, impersonationAllowsWrites } from "~/lib/auth"
 import { maybeUpgradeLegacyToBetterAuth } from "~/lib/betterauth-upgrade.server"
 import { redirectToLogin } from '~/lib/login-next';
 import { getUserRoles, isLabMentor } from '~/lib/roles'
@@ -35,30 +35,19 @@ import { ActivityOverlay } from '~/components/activities/ActivityChrome'
 import { InstructorChrome } from '~/components/InstructorChrome'
 import { timed } from '~/lib/server-timing'
 import { educationPortalTwin } from '~/education/lib/portal-twin'
+import { publicDocRedirectForPath } from '~/lib/public-doc.server'
 import type { Route } from './+types/layout'
 
 export async function loader({ request }: Route.LoaderArgs) {
   const __loaderStart = performance.now()
   const auth = await timed(request, 'auth', () => requireAuth(request))
-  if (!auth.ok) {
-    // "Anyone with the link" documents render to signed-out visitors. The
-    // canonical copied link is the plain /documents/:pageId URL, so route an
-    // anonymous visitor of a public doc to its shell-free read-only view rather
-    // than bouncing them to login. Only runs on the unauthenticated path.
-    const path = new URL(request.url).pathname
-    const match = path.match(/^\/documents\/([^/]+)$/)
-    if (match) {
-      const page = await prisma.page.findUnique({
-        where: { id: match[1] },
-        select: { linkAccess: true, archivedAt: true },
-      })
-      if (page && page.archivedAt === null && page.linkAccess === "Public") {
-        return redirect(`/documents/${match[1]}/public`)
-      }
-    }
-    return redirectToLogin(request)
-  }
-  if (auth.user.type === 'applicant') return redirect('/portal')
+  // "Anyone with the link" documents render the same shell-free read-only
+  // view to anyone without member access, so every gate below that would
+  // bounce such a visitor (login, /portal, /partner) checks for one first.
+  const pathname = new URL(request.url).pathname
+  const publicDoc = () => publicDocRedirectForPath(pathname)
+  if (!auth.ok) return (await publicDoc()) ?? redirectToLogin(request)
+  if (auth.user.type === 'applicant') return (await publicDoc()) ?? redirect('/portal')
 
   // TEMPORARY (remove ~1 week post-cutover): silently migrate a validated legacy
   // session to a BetterAuth session, then reload the same URL so the new cookie
@@ -90,7 +79,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     // without a second lookup — both loaders run concurrently for one nav.
     timed(request, 'shellUser', () => loadShellUser(auth.user.sub, request)),
   ])
-  if (partnerRedirect) return partnerRedirect
+  if (partnerRedirect) return (await publicDoc()) ?? partnerRedirect
 
   const {
     isLabMember,
@@ -119,7 +108,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     const instructorPaths =
       url.pathname.startsWith('/education/manage') ||
       url.pathname === '/education/offerings'
-    if (!instructorPaths) return redirect('/portal')
+    if (!instructorPaths) return (await publicDoc()) ?? redirect('/portal')
   }
 
   // Hard gate: a lab member who owes a signature on an app-enforced agreement
@@ -141,8 +130,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     }
   }
 
-  // Bound-form app-lock: the staffing analog of the signing gate above, behind
-  // the `bound-form-lock` flag. A member in a locked staffing form's audience
+  // Bound-form app-lock: the staffing analog of the signing gate above.
+  // A member in a locked staffing form's audience
   // who hasn't filled it is redirected to the fill page until they do. Exempt
   // the fill surface itself, /logout, and /sign (don't fight the signing gate).
   {
@@ -151,7 +140,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     const gateExempt =
       path.startsWith('/forms/fill/') || path.startsWith('/logout') || path.startsWith('/sign')
     if (isLabMember && !gateExempt) {
-      const owed = await timed(request, 'formGate', () => getBoundFormGateOutstanding(auth.user.sub, roles, request))
+      const owed = await timed(request, 'formGate', () => getBoundFormGateOutstanding(auth.user.sub, request))
       if (owed) {
         return redirect(
           `/forms/fill/${owed.token}?next=${encodeURIComponent(path + url.search)}`,
@@ -260,6 +249,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   // banner. Gated on the flag so the extra session read never runs in the
   // default (flag-off) path, and wrapped so the probe can't break the shell.
   let impersonating = false
+  const impersonationWrites = impersonationAllowsWrites()
   if (flags['betterauth']) {
     try {
       const { getImpersonationState } = await import('~/lib/betterauth-compat.server')
@@ -279,7 +269,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const __loaderTotal = performance.now() - __loaderStart
   if (__loaderTotal >= 400) console.log(`[perf-total] layout loader ${__loaderTotal.toFixed(0)}ms`)
 
-  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, instructorChrome, favorites: sidebarPages.favorites, recents: sidebarPages.recents, flags, impersonating, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities }
+  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, instructorChrome, favorites: sidebarPages.favorites, recents: sidebarPages.recents, flags, impersonating, impersonationWrites, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities }
 }
 
 // Layout data (roles, avatar, hiring access) changes rarely, but default
@@ -313,7 +303,7 @@ export function shouldRevalidate({ formAction, currentUrl, nextUrl, defaultShoul
 }
 
 export default function AppLayoutRoute() {
-  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, instructorChrome, favorites, recents, flags, impersonating, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities } = useLoaderData<typeof loader>()
+  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, instructorChrome, favorites, recents, flags, impersonating, impersonationWrites, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities } = useLoaderData<typeof loader>()
 
   // Non-member (external instructor) shell: the lightweight, sidebar-free chrome
   // for the education-management routes they're allowed into. Rendered before the
@@ -326,6 +316,7 @@ export default function AppLayoutRoute() {
       <FeatureFlagsProvider flags={flags}>
         <InstructorChrome
           impersonating={impersonating}
+          impersonationAllowsWrites={impersonationWrites}
           userName={`${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || user.email}
         />
       </FeatureFlagsProvider>
@@ -600,7 +591,7 @@ export default function AppLayoutRoute() {
       {/* Above Layout, not inside pageContent: the tabless desktop nav row
           renders the Guide CTA from the shell, outside the routed page. */}
       <PageDocProvider>
-        <LayoutOS fitViewport={fitViewport} user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} hasActiveHiringAccess={hasActiveHiringAccess} isInstructor={isInstructor} isLabMentor={isLabMentorFlag} favorites={liveFavorites} impersonating={impersonating} focusMode={focus}>
+        <LayoutOS fitViewport={fitViewport} user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} hasActiveHiringAccess={hasActiveHiringAccess} isInstructor={isInstructor} isLabMentor={isLabMentorFlag} favorites={liveFavorites} impersonating={impersonating} impersonationAllowsWrites={impersonationWrites} focusMode={focus}>
           {tablessChild}
         </LayoutOS>
       </PageDocProvider>

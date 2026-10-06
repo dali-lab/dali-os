@@ -11,6 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { DocEditor } from "~/components/doc";
+import { useDialog } from "~/components/ui/dialog";
 import { isEmptyBlocks } from "~/lib/blocks";
 import { CommentsRail } from "~/components/collab/CommentsRail";
 import { uploadFileToS3 } from "~/lib/upload-client";
@@ -107,6 +108,7 @@ export function PageDocPage({
   // Edit draft state lives here so Cancel/Save can sit in the shared header.
   const [draftTitle, setDraftTitle] = useState("");
   const [draftSections, setDraftSections] = useState<DraftSection[]>([]);
+  const dialog = useDialog();
   const [maintainerId, setMaintainerId] = useState<string | null>(null);
   const [maintainerLabel, setMaintainerLabel] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -360,7 +362,17 @@ export function PageDocPage({
                   return next;
                 });
               }}
-              onDelete={(id) => {
+              onDelete={async (id) => {
+                // A section carries its own body, so deleting one drops written
+                // content even though the draft hasn't been saved yet.
+                const ok = await dialog.confirm({
+                  title: "Delete this section?",
+                  description:
+                    "Everything written in it goes too. Save the page first if you want to keep a copy.",
+                  confirmLabel: "Delete",
+                  tone: "destructive",
+                });
+                if (!ok) return;
                 setDraftSections((prev) => {
                   if (prev.length <= 1) return prev;
                   const next = prev.filter((s) => s.id !== id);
@@ -429,7 +441,7 @@ function SectionSidebar({
   onAdd: () => void;
   onRename: (id: string, title: string) => void;
   onMove: (id: string, dir: "up" | "down") => void;
-  onDelete: (id: string) => void;
+  onDelete: (id: string) => void | Promise<void>;
 }) {
   const labelClass = useOsLabelClass();
   return (
@@ -506,7 +518,7 @@ function SectionSidebar({
                     type="button"
                     aria-label="Delete section"
                     disabled={sections.length <= 1}
-                    onClick={() => onDelete(s.id)}
+                    onClick={() => void onDelete(s.id)}
                     className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-destructive disabled:opacity-30"
                   >
                     <Trash2 className="h-3.5 w-3.5" aria-hidden />

@@ -4,12 +4,16 @@ vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
 }));
 vi.mock("~/lib/db");
+vi.mock("~/lib/roles", () => ({
+  isCore: vi.fn(async () => true),
+}));
 vi.mock("~/lib/outbound.server", () => ({
   enqueueOutbound: vi.fn(async () => ({ id: "om-test", deduped: false })),
   drainNow: vi.fn(async () => {}),
 }));
 
 import { requireAuth } from "~/lib/auth";
+import { isCore } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { _resetForTests } from "~/lib/rate-limit";
@@ -47,6 +51,7 @@ beforeEach(() => {
     ok: true,
     user: { sub: USER_ID, email: "u@x.com", type: "user" },
   } as any);
+  vi.mocked(isCore).mockResolvedValue(true);
 });
 
 describe("POST /api/email/send rate limiting", () => {
@@ -143,5 +148,54 @@ describe("POST /api/email/send recipient and header validation", () => {
     } as any);
     expect(res.status).toBe(400);
     expect(mockEnqueue).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/email/send authorization", () => {
+  it("rejects an authenticated non-Core member", async () => {
+    // This route sends as the Hiring identity (applications@), so a plain
+    // member reaching it means arbitrary mail from the admissions address.
+    vi.mocked(isCore).mockResolvedValue(false);
+    const res = await action({ request: makeRequest() } as any);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "Forbidden" });
+    expect(mockEnqueue).not.toHaveBeenCalled();
+  });
+
+  it("checks authorization before spending rate-limit budget", async () => {
+    vi.mocked(isCore).mockResolvedValue(false);
+    for (let i = 0; i < 150; i++) {
+      const res = await action({ request: makeRequest() } as any);
+      expect(res.status).toBe(403);
+    }
+  });
+});
+
+describe("POST /api/email/send body sanitization", () => {
+  it("strips script tags from caller-supplied HTML", async () => {
+    const res = await action({
+      request: makeRequest({ html: "<p>hi</p><script>alert(1)</script>" }),
+    } as any);
+    expect(res.status).toBe(200);
+    expect(mockEnqueue.mock.calls[0][0].bodyHtml).toBe("<p>hi</p>");
+  });
+
+  it("neutralizes a javascript: href", async () => {
+    await action({
+      request: makeRequest({ html: '<a href="javascript:alert(1)">x</a>' }),
+    } as any);
+    const sent = mockEnqueue.mock.calls[0][0].bodyHtml as string;
+    expect(sent).not.toContain("javascript:");
+  });
+
+  it("keeps ordinary formatting and links intact", async () => {
+    await action({
+      request: makeRequest({
+        html: '<p><strong>Hi</strong> <a href="https://dali.dartmouth.edu">link</a></p>',
+      }),
+    } as any);
+    const sent = mockEnqueue.mock.calls[0][0].bodyHtml as string;
+    expect(sent).toContain("<strong>Hi</strong>");
+    expect(sent).toContain('href="https://dali.dartmouth.edu"');
   });
 });

@@ -1,16 +1,17 @@
-// Core-namespaced email templates.
+// Core-namespaced email editor.
 //
-// PURE RE-EXPORT of ~/admin/routes/admin.email-templates — there is exactly one implementation and this
-// module delegates to it entirely. The /core URL is canonical while the
-// nav-regroup flag is on; the pre-regroup URL redirects here for those
-// viewers (regroupRedirect, called in the source loader).
+// PURE RE-EXPORT of ~/admin/routes/admin.email — there is exactly one
+// implementation and this module delegates to it entirely. /core is the
+// canonical URL (Core ▸ Communications ▸ Email is the only nav entry that
+// points at this page); /admin/email redirects here via regroupRedirect in the
+// source loader.
 //
-// `handle` is overridden rather than re-exported so the breadcrumb reads
-// "Core › …" instead of the source page's own trail. That override is the
-// reason these aliases are files rather than a second route id.
+// `handle` is overridden rather than re-exported so the trail reads
+// "Core › Communications › Email" and carries the section switcher. That
+// override is the reason these aliases are files rather than a second route id.
 
 import { coreHandle } from "~/core/coreNav";
 
-export { meta, loader, action, default } from "~/admin/routes/admin.email-templates";
+export { meta, loader, action, default } from "~/admin/routes/admin.email";
 
-export const handle = coreHandle("email-templates");
+export const handle = coreHandle("email");

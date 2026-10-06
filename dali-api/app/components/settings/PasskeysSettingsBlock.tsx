@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Check, KeyRound, Pencil, Plus, Trash2, X } from "lucide-react";
 import { buttonClasses } from "~/components/ui/Button";
+import { useDialog } from "~/components/ui/dialog";
 import { getAuthenticatorLabel } from "~/lib/passkey-authenticators";
 
 // Passkey management, entirely client-side: the WebAuthn ceremonies and the
@@ -32,6 +33,7 @@ export function PasskeysSettingsBlock() {
   const [passkeys, setPasskeys] = useState<PasskeyRow[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const dialog = useDialog();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [savingRename, setSavingRename] = useState(false);
@@ -123,7 +125,15 @@ export function PasskeysSettingsBlock() {
     }
   }
 
-  async function removePasskey(id: string) {
+  async function removePasskey(id: string, label: string) {
+    const ok = await dialog.confirm({
+      title: `Remove ${label}?`,
+      description:
+        "That device can no longer sign you in. You'll need to add a new passkey on it, or sign in another way.",
+      confirmLabel: "Remove",
+      tone: "destructive",
+    });
+    if (!ok) return;
     setError(null);
     if (editingId === id) cancelRename();
     try {
@@ -212,9 +222,9 @@ export function PasskeysSettingsBlock() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => void removePasskey(pk.id)}
-                      className="p-1 text-muted-foreground transition hover:text-red-600"
-                      aria-label="Remove passkey"
+                      onClick={() => void removePasskey(pk.id, labelFor(pk))}
+                      className="p-1 text-muted-foreground transition hover:text-destructive"
+                      aria-label={`Remove ${labelFor(pk)}`}
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>

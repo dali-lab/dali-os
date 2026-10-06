@@ -8,7 +8,7 @@ import {
   isAreaSubtabPath,
   isPinnedActive,
   pinnedNavItems,
-  roomBookingNavItem,
+  ROOM_BOOKING_NAV_ITEM,
   visibleAreas,
   visibleSubtabs,
   type RoleFlags,
@@ -252,6 +252,36 @@ describe("areaForPath", () => {
     expect(areaForPath("/projects/42", REGROUP)?.key).toBe("projects");
   });
 
+  // The email editor's URL and its only nav entry have to agree, or clicking
+  // Core ▸ Communications ▸ Email swaps the sidebar to Admin and highlights
+  // nothing. Editing copy is process, so Core owns the address; the transport
+  // (senders, outbox) stays in Admin.
+  it("keeps the email editor in Core and the email transport in Admin", () => {
+    const core = areasFor(REGROUP).find((a) => a.key === "core")!;
+    expect(areaForPath("/core/communications/email", REGROUP)?.key).toBe("core");
+    expect(activeSubtabHref(core, "/core/communications/email")).toBe(
+      "/core/communications",
+    );
+    expect(areaForPath("/core/communications/email?key=hiring:decision:Rejected", REGROUP)?.key)
+      .toBe("core");
+    expect(areaForPath("/admin/email-senders", REGROUP)?.key).toBe("admin");
+    expect(areaForPath("/admin/outbound-messages", REGROUP)?.key).toBe("admin");
+  });
+
+  // Every sidebar entry must point at a path its own area owns — the invariant
+  // that a subtab linking out of its area (the retired `matchPrefix` escape
+  // hatch) quietly broke.
+  it("points every sub-tab at a path its own area claims", () => {
+    for (const area of areasFor(REGROUP)) {
+      for (const tab of area.subtabs) {
+        if (tab.href.includes("?")) continue; // query-scoped deep links have their own rule
+        expect(areaForPath(tab.href, REGROUP)?.key, `${area.key} ▸ ${tab.label}`).toBe(
+          area.key,
+        );
+      }
+    }
+  });
+
   it("keeps Groups reachable, gated as before", () => {
     const projectsArea = areasFor(REGROUP).find((a) => a.key === "projects")!;
     expect(visibleSubtabs(projectsArea, CORE).map((t) => t.href)).toContain(
@@ -356,14 +386,11 @@ describe("pinnedNavItems", () => {
       .not.toContain("/drive");
   });
 
-  it("puts Room booking in the top bar, not the pinned rail, behind the room-booking flag", () => {
-    expect(pinnedNavItems({ ...RESOURCES, "room-booking": true }).map((i) => i.href)).toEqual([
-      "/resources",
-    ]);
-    expect(roomBookingNavItem({ "room-booking": true })?.href).toBe("/rooms");
-    expect(roomBookingNavItem({})).toBeNull();
+  it("puts Room booking in the top bar, not the pinned rail", () => {
+    expect(pinnedNavItems(RESOURCES).map((i) => i.href)).toEqual(["/resources"]);
+    expect(ROOM_BOOKING_NAV_ITEM.href).toBe("/rooms");
     // Booking is not a General sub-tab; Core keeps room management.
-    const areas = areasFor({ "room-booking": true });
+    const areas = areasFor();
     expect(areas.find((a) => a.key === "projects")!.subtabs.map((t) => t.href)).not.toContain("/rooms");
     expect(areas.find((a) => a.key === "core")!.subtabs.map((t) => t.href)).toContain("/core/rooms");
   });

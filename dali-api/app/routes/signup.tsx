@@ -1,6 +1,10 @@
 import type { ReactNode } from "react";
 import { Form, Link, redirect, useActionData, useLoaderData, useNavigation, useSearchParams } from "react-router";
 import type { Route } from "./+types/signup";
+import {
+  humanDuration,
+  MAGIC_LINK_TTL_SECONDS,
+} from "~/email/lib/auth-email";
 import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { pickSafeLoginNext } from "~/lib/login-next";
 import { requireAuth } from "~/lib/auth";
@@ -266,8 +270,8 @@ function DoorSignup({ door, next, actionData }: {
           <p className="text-sm text-muted-foreground">
             We sent an email to{" "}
             <span className="font-medium text-dark-blue">{sent.email}</span>.
-            Open it and follow the link to continue. Sign-in links expire in a
-            few minutes.
+            Open it and follow the link to continue. Sign-in links expire in{" "}
+            {humanDuration(MAGIC_LINK_TTL_SECONDS)}.
           </p>
           <div className="mt-4">
             <Link

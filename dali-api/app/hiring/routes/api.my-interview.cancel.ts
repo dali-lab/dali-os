@@ -2,6 +2,7 @@ import type { Route } from "./+types/api.my-interview.cancel";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { logAuditEvent } from "~/lib/audit";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { idSchema, parseJson } from "~/lib/validate";
 // import { deprovisionZoomMeeting } from "~/lib/zoom"; // S2S Zoom not configured yet
@@ -68,6 +69,18 @@ export async function action({ request }: Route.ActionArgs) {
   // Tear down the Google Meet link / hiring-calendar event. Best-effort no-op
   // when the interview never had one. Zoom S2S (app/lib/zoom.ts) stays dormant.
   await deprovisionInterviewMeet({ id: interview.id, calendarEventId: interview.calendarEventId });
+
+  await logAuditEvent({
+    action: "interview.cancel",
+    userId: auth.user.sub,
+    targetId: interview.id,
+    metadata: {
+      cycleId: interview.applicationCycleId,
+      domainApplicationId,
+      startTime: interview.startTime.toISOString(),
+    },
+    request,
+  });
 
   // Best-effort: send cancellation ICS to applicant + interviewers
   sendInterviewCancelEmails(interview.id, domainApplicationId).catch(() => {});

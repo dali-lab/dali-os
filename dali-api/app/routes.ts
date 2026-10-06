@@ -58,8 +58,8 @@ export default [
     // Hiring singleton's slots) — Core-only, the Hiring peer of /core/drive-folders.
     route("hiring/drive-folders", "hiring/routes/hiring.drive-folders.tsx"),
     route("hiring/rubrics/:id", "hiring/routes/rubrics.$id.tsx"),
-    route("hiring/emails", "hiring/routes/email-templates.tsx"),
-    route("hiring/emails/:id", "hiring/routes/email-templates.$id.tsx"),
+    route("hiring/emails", "admin/routes/admin.email.legacy-redirect.ts", { id: "legacy-email-hiring" }),
+    route("hiring/emails/:id", "admin/routes/admin.email.legacy-redirect.ts", { id: "legacy-email-hiring-id" }),
     route("hiring/confidentiality-agreements/:id", "hiring/routes/confidentiality-agreements.$id.tsx"),
     route("hiring/cycles/:cycleId/confidentiality", "hiring/routes/cycles.$cycleId.confidentiality.tsx"),
     route("hiring/interviews", "hiring/routes/interviews.tsx"),
@@ -86,8 +86,9 @@ export default [
     route("admin/activities/:id", "admin/routes/admin.activities.$id.tsx"),
     route("admin/email-senders", "admin/routes/admin.email-senders.tsx"),
     route("admin/outbound-messages", "admin/routes/admin.outbound-messages.tsx"),
-    route("admin/email-templates", "admin/routes/admin.email-templates.tsx"),
-    route("admin/email-templates/:id", "admin/routes/admin.email-templates.$id.tsx"),
+    route("admin/email", "admin/routes/admin.email.tsx"),
+    route("admin/email-templates", "admin/routes/admin.email.legacy-redirect.ts", { id: "legacy-email-admin" }),
+    route("admin/email-templates/:id", "admin/routes/admin.email.legacy-redirect.ts", { id: "legacy-email-admin-id" }),
     route("admin/infrastructure", "admin/routes/admin.infrastructure.tsx"),
     // Document signing: author agreements, place fields, put versions in force,
     // track signatories.
@@ -120,7 +121,7 @@ export default [
     route("core/communications", "core/routes/core.communications.tsx"),
     route("core/communications/announcements", "core/routes/core.communications.announcements.tsx"),
     route("core/communications/email", "core/routes/core.communications.email.tsx"),
-    route("core/communications/email/:id", "core/routes/core.communications.email.$id.tsx"),
+    route("core/communications/email/:id", "admin/routes/admin.email.legacy-redirect.ts", { id: "legacy-email-core-id" }),
     route("core/communications/email-senders", "core/routes/core.communications.email-senders.tsx"),
 
     // Projects. The bare /projects route is the area hub (the project list).
@@ -153,9 +154,16 @@ export default [
       "projects/routes/projects.$id.public-view.tsx",
     ),
 
-    // Resources — the lab's shared reference document. One fixed collab room
-    // (no Drive page behind it), read by every lab member, written by Core.
-    route("resources", "routes/resources.tsx"),
+    // Resources — a curated front page of member blog posts, plus bookmark
+    // tabs (Core-managed reference pages, each its own collab room).
+    route("resources", "routes/resources.tsx", [
+      index("routes/resources._index.tsx"),
+      route("b/:bookmarkId", "routes/resources.b.$bookmarkId.tsx"),
+      route("blog/:postId", "routes/resources.blog.$postId.tsx"),
+    ]),
+    // The writing page sits outside the Resources layout: no masthead or
+    // bookmark tabs, just the post and its settings.
+    route("resources/write/:postId", "routes/resources.write.$postId.tsx"),
 
     // Drive — the unified documents + files + forms + agreements hub. This is the
     // only browsing surface; the old /documents and /forms hubs have been removed
@@ -208,9 +216,6 @@ export default [
     // Before education/:offeringId so the literal path isn't read as an offering id.
     route("education/certificate-templates", "education/routes/education.certificate-templates.tsx"),
     route("education/certificate-templates/:templateId", "education/routes/education.certificate-templates.$templateId.tsx"),
-    // Standalone session self-check-in surface (the projected QR / link target).
-    // Literal "check-in" precedes :offeringId so it isn't read as an offering id.
-    route("education/check-in/:sessionId", "education/routes/education.check-in.$sessionId.tsx"),
     route("education/:offeringId", "education/routes/education.$offeringId.tsx"),
     route("education/:offeringId/apply", "education/routes/education.$offeringId.apply.tsx"),
     route("education/:offeringId/hub", "education/routes/education.$offeringId.hub.tsx"),
@@ -326,6 +331,14 @@ export default [
   // is a resource route that streams a bare body).
   route("education/certificates/:certificateId", "education/routes/certificates.$certificateId.tsx"),
   route("education/certificates/:certificateId/pdf", "education/routes/certificates.$certificateId.pdf.ts"),
+
+  // Session self-check-in (the projected QR / link target). Outside the member
+  // layout on purpose: most students in a course are Dartmouth accounts with no
+  // DALIMember row, and the layout's non-member gate bounces every path it
+  // doesn't recognise to /portal — which is where a scan used to land. The route
+  // gates itself on enrollment and renders its own full-screen card, so it needs
+  // no shell.
+  route("education/check-in/:sessionId", "education/routes/education.check-in.$sessionId.tsx"),
 
   // Public policy pages (no auth, no layout) — linked from the Google OAuth
   // consent screen, so they must load for an unauthenticated reviewer.
@@ -445,6 +458,8 @@ export default [
     "public-api/routes/api.public.application-cycle.ts",
   ),
   route("api/public/media", "public-api/routes/api.public.media.ts"),
+  route("api/public/blogs", "public-api/routes/api.public.blogs.ts"),
+  route("api/public/blogs/:id", "public-api/routes/api.public.blogs.$id.ts"),
 
   // Scheduled meetings
   route("api/scheduled-meetings", "calendar/routes/api.scheduled-meetings.ts"),
@@ -748,7 +763,7 @@ export default [
   // AI project TL;DR — cached work-status summary for the Progress-tab status
   // bar. Same provider gating as api/ai/doc, plus the `project-tldr-ai` flag.
   route("api/ai/project-tldr", "routes/api.ai.project-tldr.ts"),
-  // Email tab AI tools (draft, rephrase, proofread, translate, search); `email` flag.
+  // Email tab AI tools (draft, rephrase, proofread, translate, search).
   route("api/ai/email", "routes/api.ai.email.ts"),
   route("api/email/contacts", "routes/api.email.contacts.ts"),
   route("api/email/unread", "routes/api.email.unread.ts"),

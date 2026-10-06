@@ -206,6 +206,7 @@ model User {
   domainEligibilities      DomainEligibility[]
   projectAssignments       ProjectAssignment[]
   coreAssignments          CoreAssignment[]
+  coreMilestonesOwned      CoreMilestoneOwner[]
   instructorAssignments    InstructorAssignment[]
   technigalaAssignments    TechnigalaAssignment[]
   adminMembership          AdminMembership?
@@ -290,7 +291,7 @@ model User {
   applicationReviewsSubmitted  ApplicationReview[]    @relation("ApplicationReviewSubmittedBy")
   delibsSessionsOpened         DelibsSession[]
   emailTemplateVersionsCreated EmailTemplateVersion[]
-  educationEmailsEdited        EducationEmail[]       @relation("EducationEmailEditor")
+  emailTemplatesEdited         EmailTemplate[]        @relation("EmailTemplateEditor")
 
   // ─── Documents & files ───────────────────────────────────────────────────
   projectFileVersionsUploaded ProjectFileVersion[] @relation("ProjectFileVersionUploader")
@@ -299,6 +300,7 @@ model User {
 
   // ─── Page documentation (per-page guides) ─────────────────────────────────
   pageDocsMaintained PageDoc[] @relation("PageDocMaintainer")
+  blogPosts          BlogPost[]
   pageDocsCreated    PageDoc[] @relation("PageDocCreatedBy")
   pageDocsLastEdited PageDoc[] @relation("PageDocLastEditedBy")
 
@@ -309,7 +311,6 @@ model User {
 
   // ─── Public showcase ──────────────────────────────────────────────────────
   projectShowcasesUpdated ProjectShowcase[] @relation("ProjectShowcaseUpdatedBy")
-  hiringEmailsEdited      HiringEmail[]     @relation("HiringEmailEditor")
 
   // ─── Partner Relations hub (personal loose-end list) ──────────────────────
   partnerRelationsTodos PartnerRelationsTodo[]
@@ -353,10 +354,25 @@ model ApplicationCycle {
   // ApplicationCycleStatusUpdate rather than stored directly here.
   name String
 
-  // The term the hiring runs in. Its start date anchors the phase weeks
-  // (Week N starts termStartDate + N-1 weeks; app/hiring/lib/cycle-phases.ts).
+  // The term the hiring RUNS in — not the term its hires start in. Its start
+  // date anchors the phase weeks (Week N starts termStartDate + N-1 weeks;
+  // app/hiring/lib/cycle-phases.ts). Start terms are `startTermIds` below.
   termId String?
   term   Term?   @relation(fields: [termId], references: [id])
+
+  // The start terms a Students cycle offers its applicants (Term ids). The
+  // applicant's pick lands on Application.startTermId. Empty = no picker:
+  // every cycle before this existed, and non-Students cycles never show one
+  // (Fellowship/Core hires are already members, so they have no start term to
+  // choose). Never holds a term earlier than `termId` above — you cannot be
+  // hired into a term before the one your cycle ran in.
+  //
+  // Term ids without an FK, matching the other id arrays in this schema
+  // (Group.staticMemberIds, ScheduledMeeting.participantUserIds); terms are
+  // registrar-seeded and never deleted. Kept canonical (chronological,
+  // de-duplicated, floored) by pruneStartTermIds, its only writer, so readers
+  // render it in array order — see app/hiring/lib/start-terms.ts.
+  startTermIds String[] @default([])
 
   // Planned date applications open (Week 4 by default). Opening itself is
   // still a status change; this is the target shown on the phase timeline.
@@ -472,6 +488,18 @@ model Application {
   applicationFormVersionId String?
   applicationFormVersion   FormVersion?     @relation("ApplicationApplicationForm", fields: [applicationFormVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
+  // The term this applicant chose to start in, from the offered set on
+  // ApplicationCycle.startTermIds. Picked on the application (a first-class
+  // field, not a form answer, because the offered set is per-cycle and the
+  // answers blob is the frozen record of submission), then editable by Core
+  // from the hiring onboarding board — a deferral is an operator decision made
+  // after the fact as often as an applicant's up-front pick.
+  //
+  // Null means "no pick recorded": a cycle with no picker, or an application
+  // predating it. Readers fall back to the cycle's own term.
+  startTermId String?
+  startTerm   Term?   @relation(fields: [startTermId], references: [id])
+
   // Phase 1: distinguishes the application's purpose. Standard = regular DALI
   // hire cycle (only value used today). Intern = shorter form for intern
   // programs (ERAS, EEJUST, WISP). Fellowship = current intern applying for
@@ -485,6 +513,8 @@ model Application {
   @@unique([userId, applicationCycleId])
   // By-cycle listings can't use the unique above (wrong leading column).
   @@index([applicationCycleId])
+  // The onboarding board filters the accepted set by start term.
+  @@index([startTermId])
 }
 
 enum ApplicationType {
@@ -623,6 +653,7 @@ model Domain {
   partnerApplicationDomains PartnerApplicationDomain[]
   projects                  ProjectDomain[]
   projectScopes             ProjectDomainScope[]
+  coreMilestones            CoreMilestoneDomain[]
 }
 
 // Lifecycle of an application cycle from the DALI side:
@@ -1589,30 +1620,32 @@ model Passkey {
 
 // ─── Email Templates ────────────────────────────────────────────────────────
 
-// Named, versioned email template — independent of any cycle. Mirrors
-// Rubric/RubricVersion. The "slot" a template fills (e.g. which DecisionType
-// it sends for) is determined by the cycle binding row that points at it.
+// One operator-editable email per registry key (app/email/lib/registry.ts
+// EMAIL_TEMPLATES). Shared by every cycle and course and edited in place; the
+// registry decides what a missing row means (skip / error / fall back to its own
+// copy), so absence stays meaningful rather than ambiguous.
+//
+// This replaced three stores: a versioned-but-unread template library, plus
+// HiringEmail and EducationEmail, which were byte-identical in shape and keyed
+// on a bare slot that collided across areas ("decision:Rejected" existed in
+// both). Keys are the slot prefixed with its area. The library's version history
+// is kept — it was the one capability the live stores lacked.
 model EmailTemplate {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
+  // An EMAIL_TEMPLATES key, e.g. "hiring:decision:Accepted".
+  key       String   @id
+  subject   String
+  body      String
   updatedAt DateTime @updatedAt
 
-  name String
-
-  // Unified-Drive tree placement (Page of kind=Folder). Null = unplaced.
-  // Organisation only — never affects who can send or edit the template.
-  // Email templates live under the Core drive's "Templates" area (auto-filed
-  // into Hiring/Education subfolders by their bindings); templates are global
-  // and shared across features, so they aren't hiring-owned.
-  folderPageId String?
+  updatedById String?
+  updatedBy   User?   @relation("EmailTemplateEditor", fields: [updatedById], references: [id])
 
   versions EmailTemplateVersion[]
-
-  @@index([folderPageId])
 }
 
-// Immutable snapshot of an EmailTemplate. Never update — append a new version.
-// Subject and body use {{firstName}} interpolation.
+// Immutable snapshot of an EmailTemplate, written on every save. Never updated —
+// append a new version. Subject and body use {{token}} interpolation
+// (app/lib/template-variables.ts).
 model EmailTemplateVersion {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
@@ -1621,13 +1654,13 @@ model EmailTemplateVersion {
   subject       String
   body          String
 
-  templateId String
-  template   EmailTemplate @relation(fields: [templateId], references: [id])
+  templateKey String
+  template    EmailTemplate @relation(fields: [templateKey], references: [key], onDelete: Cascade)
 
   createdById String
   createdBy   User   @relation(fields: [createdById], references: [id])
 
-  @@index([templateId, versionNumber])
+  @@index([templateKey, versionNumber])
 }
 
 // Non-decision email slots managed per-cycle. Mirrors CycleDecisionEmail but
@@ -2793,6 +2826,7 @@ model Term {
   staffingAssignments   StaffingAssignment[]
   partnerApplications   PartnerApplicationTargetTerm[]
   applicationCycles     ApplicationCycle[]
+  applicationStartTerms Application[]
   intentToWork          IntentToWork[]
   projectDomainScopes   ProjectDomainScope[]
   ceCredits             CECredit[]
@@ -3047,6 +3081,53 @@ model CoreAssignment {
   // the same term. App-level validates "no duplicate (user, term, leadTitle)".
   @@index([userId, termId])
   @@index([termId, leadTitle])
+}
+
+// ─── Core milestones (/core/milestones) ──────────────────────────────────────
+
+// Core's playbook for running a term: what has to happen in which week. Keyed
+// by season rather than by Term because the playbook repeats every year, and
+// some of it only exists in certain terms (hiring runs in Fall and Spring).
+model CoreMilestone {
+  id        String   @id @default(cuid())
+  season    Season
+  // 1-10 are the weeks of the term; 0 is the lead-up before it starts.
+  week      Int
+  title     String
+  detail    String?
+  // Order within its week's column; ties fall back to createdAt.
+  position  Int      @default(0)
+  pinned    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  owners  CoreMilestoneOwner[]
+  // No rows means the milestone is for the whole lab.
+  domains CoreMilestoneDomain[]
+
+  @@index([season, week])
+}
+
+model CoreMilestoneOwner {
+  milestoneId String
+  userId      String
+
+  milestone CoreMilestone @relation(fields: [milestoneId], references: [id], onDelete: Cascade)
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([milestoneId, userId])
+  @@index([userId])
+}
+
+model CoreMilestoneDomain {
+  milestoneId String
+  domainId    String
+
+  milestone CoreMilestone @relation(fields: [milestoneId], references: [id], onDelete: Cascade)
+  domain    Domain        @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  @@id([milestoneId, domainId])
+  @@index([domainId])
 }
 
 // Authority to teach a specific education offering in a specific term.
@@ -4120,20 +4201,6 @@ model EducationAnnouncement {
 enum EduPostKind {
   Announcement
   Message
-}
-
-// Education's emails: one per slot ("decision:Approved", …; see
-// app/education/lib/education-emails.ts EducationEmailSlot), shared by every
-// course and edited in place, with no versions. No row means that slot sends
-// no email — the in-app notification still fires. Mirrors HiringEmail.
-model EducationEmail {
-  slot      String   @id
-  subject   String
-  body      String
-  updatedAt DateTime @updatedAt
-
-  updatedById String?
-  updatedBy   User?   @relation("EducationEmailEditor", fields: [updatedById], references: [id])
 }
 
 // Course discussion board: top-level posts + one reply level (replies to
@@ -6376,20 +6443,6 @@ model LabProcessWeekContent {
   updatedAt       DateTime @updatedAt
 }
 
-// Hiring's emails: one per slot ("decision:Rejected", "notification:
-// ApplicationReceived", …; app/hiring/lib/email-variables.ts TemplateSlot),
-// shared by every cycle and edited in place, with no versions. No row means
-// that slot sends no email.
-model HiringEmail {
-  slot      String   @id
-  subject   String
-  body      String
-  updatedAt DateTime @updatedAt
-
-  updatedById String?
-  updatedBy   User?   @relation("HiringEmailEditor", fields: [updatedById], references: [id])
-}
-
 // A chart string a project charges against, for one term, with full history.
 // Nothing is ever edited in place: superseding writes a new row and points it
 // at the one it replaces — which is also what OSP does upstream, where Katie
@@ -6595,4 +6648,56 @@ model DisplayScanSession {
   createdAt DateTime @default(now())
 
   @@index([scheduledMeetingId])
+}
+
+// ─── Resources ───────────────────────────────────────────────────────────────
+
+// One tab on /resources. Each bookmark is a reference page whose body is the
+// collab room `resources:{id}:body` (Core/Admin write, lab members read). The
+// row with id "lab" carries the pre-bookmarks singleton document.
+model ResourceBookmark {
+  id       String @id @default(cuid())
+  title    String
+  position Int    @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([position])
+}
+
+enum BlogVisibility {
+  Internal
+  Public
+}
+
+// A member-written post on the /resources front page. Internal posts stay in
+// the app; Public ones are also served to dali.website (api/public/blogs).
+// The body is the collab room `blogPost:{id}:body`, synced back to contentJson
+// (see COLLAB_SOURCES) along with the excerpt and cover derived from it.
+model BlogPost {
+  id            String         @id @default(cuid())
+  title         String
+  contentJson   Json?
+  excerpt       String         @default("")
+  coverImageUrl String?
+  // The author's own picks on the write page. Each wins over the value derived
+  // from the body (excerpt / coverImageUrl) wherever the post is listed.
+  summary        String?
+  customCoverUrl String?
+  visibility    BlogVisibility @default(Internal)
+  // Null = draft, seen only by its author and Core.
+  publishedAt   DateTime?
+  // Core's front page arrangement: pinned posts lead in rank order (lowest
+  // first); null = unpinned, falling in behind them newest first.
+  frontPageRank Int?
+
+  authorId String
+  author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([publishedAt])
+  @@index([authorId])
 }

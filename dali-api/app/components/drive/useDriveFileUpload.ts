@@ -8,7 +8,8 @@ import { useRef, useState } from "react";
 export type UploadScope =
   | { kind: "Lab" }
   | { kind: "Member" }
-  | { kind: "Project"; projectId: string };
+  | { kind: "Project"; projectId: string }
+  | { kind: "EducationOffering"; offeringId: string };
 
 export type UploadTarget = { scope: UploadScope; folderPageId?: string | null };
 

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "~/lib/cn";
 
 // Email HTML is untrusted. It renders in a sandboxed frame with scripts off
@@ -34,16 +34,7 @@ export function frameDoc(html: string, themed: boolean): string {
 export function MailBody({ html, text }: { html: string | null; text: string | null }) {
   const ref = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(120);
-
-  if (!html) {
-    return (
-      <div className="whitespace-pre-wrap break-words rounded-os-item bg-os-well p-4 text-sm leading-relaxed text-foreground">
-        {text ?? ""}
-      </div>
-    );
-  }
-
-  const themed = !isDesigned(html);
+  const themed = !!html && !isDesigned(html);
 
   const measure = () => {
     const frame = ref.current;
@@ -59,13 +50,31 @@ export function MailBody({ html, text }: { html: string | null; text: string | n
     setHeight(body.scrollHeight + 8);
   };
 
+  // Written into the frame rather than set as srcDoc: the desktop shell cancels
+  // non-http frame navigations, about:srcdoc included, which left the frame blank.
+  useEffect(() => {
+    const doc = ref.current?.contentDocument;
+    if (!doc || !html) return;
+    doc.open();
+    doc.write(frameDoc(html, themed));
+    doc.close();
+    measure();
+  }, [html, themed]);
+
+  if (!html) {
+    return (
+      <div className="whitespace-pre-wrap break-words rounded-os-item bg-os-well p-4 text-sm leading-relaxed text-foreground">
+        {text ?? ""}
+      </div>
+    );
+  }
+
   return (
     <div className={cn("overflow-hidden", themed ? "rounded-os-item bg-os-well p-4" : "rounded-[10px] bg-[#fff] p-3")}>
       <iframe
         ref={ref}
         title="Email message"
         sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-        srcDoc={frameDoc(html, themed)}
         onLoad={measure}
         style={{ height }}
         className="w-full border-0 text-foreground"

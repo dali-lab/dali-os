@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useDialog } from "~/components/ui/dialog";
 import { useRevalidator, useSearchParams } from "react-router";
 import { Menu, MenuItem, Popover, Tooltip, InfoTip } from "~/components/ui/floating";
@@ -65,6 +72,18 @@ import { SearchInput } from "~/components/ui/SearchInput";
 import { PeopleFilter, type PersonOption } from "./PeopleFilter";
 import { TaskModal, type NewTaskValues } from "./TaskModal";
 
+/** Epic/story context an outside Add task carries into the create form. Either
+ *  side may be null — Add ▸ Task from the timeline toolbar has neither. */
+export type TaskCreateSeed = {
+  epicId: string | null;
+  storyId: string | null;
+  // The epic modal that closed to make room for this form, handed back when the
+  // form closes so the next task is one click away instead of a trip back
+  // through the timeline. Null where the add covered nothing up (the outline,
+  // the Add menu, a column) — there, nothing should spring open.
+  reopenEpicId?: string | null;
+};
+
 type Props = {
   projectId: string;
   initialTasks: TaskCardModel[];
@@ -77,9 +96,16 @@ type Props = {
   // session, so it's display-only here).
   currentUserId: string;
   currentUserName: string;
-  // Bumped by an outside control (the timeline's Add ▸ Task) to open the
-  // create form. A counter rather than a boolean so repeated adds each fire.
-  createNonce?: number;
+  // Set by an outside control (the planning timeline's Add ▸ Task, or a story
+  // row's own Add task) to open the create form, carrying the epic/story the
+  // request came from. The parent holds it in state and sets a fresh object per
+  // request, so two adds on the same story still differ by reference and the
+  // effect below fires for each — no counter needed.
+  createSeed?: TaskCreateSeed | null;
+  // Fires when a seeded create form closes, saved or dismissed, with the seed it
+  // was opened from — the caller uses it to put back whatever it closed. Not
+  // called for the board's own adds, which were opened from nothing.
+  onCreateClosed?: (seed: TaskCreateSeed) => void;
   // The board's people filter (os). Rendered beside the search input and
   // applied only to the board's tasks. Empty = no people filter; the board's
   // own filters (epic/sprint/term/mine/search) still apply on top.
@@ -187,7 +213,8 @@ export function TaskBoard({
   canManage,
   currentUserId,
   currentUserName,
-  createNonce = 0,
+  createSeed = null,
+  onCreateClosed,
   filterPeopleIds = [],
   peopleOptions = [],
   onPeopleChange,
@@ -203,13 +230,13 @@ export function TaskBoard({
   // Which column the open create form was launched from — its "Add task"
   // seeds the modal's status so the card lands where you asked for it.
   const [createStatus, setCreateStatus] = useState<TaskStatus>("Todo");
-
-  useEffect(() => {
-    if (createNonce > 0) {
-      setCreateStatus("Todo");
-      setIsCreating(true);
-    }
-  }, [createNonce]);
+  // The epic/story the open create form was launched for (null when it came
+  // from the board itself). Adopted from the createSeed prop below; cleared by
+  // a column's own Add task so it can't inherit a story from an earlier add.
+  // The state renders the form's seeded pickers; the ref is what closeCreate
+  // reads, so closing is once-only regardless of render timing.
+  const [createLinks, setCreateLinks] = useState<TaskCreateSeed | null>(null);
+  const createLinksRef = useRef<TaskCreateSeed | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const [celebrate, setCelebrate] = useState(false);
@@ -433,6 +460,25 @@ export function TaskBoard({
     (id: string | null) => setParam("task", id),
     [setParam],
   );
+
+  // An outside Add task opens the create form here. Placed below the filter
+  // state because it has to read the epic filter: a seeded epic the filter
+  // excludes would create the card and hide it in the same breath, so the
+  // filter steps aside. (Term and sprint are date-derived — nothing to clear
+  // until the deadline is picked.)
+  useEffect(() => {
+    if (!createSeed) return;
+    setCreateStatus("Todo");
+    setCreateLinks(createSeed);
+    createLinksRef.current = createSeed;
+    setIsCreating(true);
+    if (createSeed.epicId && epicFilter && epicFilter !== createSeed.epicId) {
+      setParam("epic", null);
+    }
+    // epicFilter/setParam are read, not tracked: a filter change mid-form must
+    // not reopen the modal. Only a fresh seed object should.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [createSeed]);
 
   // Epic pills for the selected term: an epic shows only if it has work in the
   // term (its termIds cover it). The currently-selected epic is always kept so
@@ -711,7 +757,11 @@ export function TaskBoard({
         hasUnread: false,
       },
     ]);
-    setIsCreating(false);
+    // Closed before the follow-up patches: the card is already on the board
+    // optimistically, so there's nothing to wait for before handing the epic
+    // modal back. (Declared below as a const — only ever called from here, long
+    // after render.)
+    closeCreate();
 
     // Push the fields the create endpoint doesn't accept. patchTask owns its
     // own optimistic update + rollback, so the card already reflects them.
@@ -726,8 +776,28 @@ export function TaskBoard({
     }
   }
 
+  // The single exit from the create form, used by both Save and Cancel: a task
+  // filed from a story row is rarely the only one, so whatever had to close to
+  // make room for the form is handed back its turn here.
+  //
+  // It reads the seed off a ref, not state, because this runs twice on a save:
+  // the board closes the form before awaiting the follow-up patches (so it
+  // doesn't sit there spinning), and TaskModal then calls onClose of its own
+  // accord once onCreate resolves — by which point it has already unmounted and
+  // is holding an older closure. Clearing the ref is synchronous, so the second
+  // call sees null and onCreateClosed fires exactly once per form.
+  const closeCreate = useCallback(() => {
+    const seed = createLinksRef.current;
+    createLinksRef.current = null;
+    setIsCreating(false);
+    setCreateLinks(null);
+    if (seed) onCreateClosed?.(seed);
+  }, [onCreateClosed]);
+
   const startCreate = useCallback((status: TaskStatus) => {
     setCreateStatus(status);
+    setCreateLinks(null);
+    createLinksRef.current = null;
     setIsCreating(true);
   }, []);
 
@@ -1167,11 +1237,15 @@ export function TaskBoard({
           options={options}
           allTasks={tasks}
           canManage={canManage}
+          // An outside add's own epic/story wins; otherwise the board's epic
+          // filter stands in, as it always has.
           defaultEpicId={
-            epicFilter && epicFilter !== NO_EPIC ? epicFilter : null
+            createLinks?.epicId ??
+            (epicFilter && epicFilter !== NO_EPIC ? epicFilter : null)
           }
+          defaultStoryId={createLinks?.storyId ?? null}
           defaultStatus={createStatus}
-          onClose={() => setIsCreating(false)}
+          onClose={closeCreate}
           onCreate={handleCreate}
         />
       )}

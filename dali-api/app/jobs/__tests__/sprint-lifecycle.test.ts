@@ -72,8 +72,9 @@ describe("sprint-lifecycle (per-sprint wrap-up)", () => {
     expect(mockNotify).toHaveBeenCalledTimes(1);
     const arg = mockNotify.mock.calls[0][0];
     expect(arg.eventType).toBe("project.sprint_closed");
-    expect(arg.message.title).toBe("Sprint 2 wrapped up");
-    expect(arg.message.body).toContain("1 of 2 tasks done");
+    expect(arg.message.vars.itemTitle).toBe("Sprint 2");
+    expect(arg.message.vars.contextName).toBe("DALI OS");
+    expect(arg.message.vars.itemDetail).toContain("1 of 2 tasks done");
     expect(arg.message.link).toBe("/projects/p1?tab=board");
     expect(arg.message.dedupKey).toBe(`sprint-closed:p1:${SPRINT2_KEY}`);
     expect(arg.recipients.map((r: { userId: string }) => r.userId).sort()).toEqual(["u1", "u2"]);

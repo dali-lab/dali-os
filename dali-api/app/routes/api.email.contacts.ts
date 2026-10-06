@@ -1,8 +1,7 @@
 import type { Route } from "./+types/api.email.contacts";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { getUserRoles, isLabMember } from "~/lib/roles";
+import { isLabMember } from "~/lib/roles";
 import { LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
 
 // GET /api/email/contacts?q=...
@@ -20,10 +19,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   const userId = auth.user.sub;
   if (!(await isLabMember(userId))) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
-  }
-  const roles = await getUserRoles(userId, request);
-  if (!(await isFeatureEnabled("email", userId, roles, request))) {
-    return Response.json({ error: "Not available" }, { status: 403 });
   }
 
   const q = new URL(request.url).searchParams.get("q")?.trim().slice(0, 100) ?? "";

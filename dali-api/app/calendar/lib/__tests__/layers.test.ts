@@ -11,9 +11,10 @@ import {
   externalCalendarLegend,
   perCalendarLegend,
   visibleExternalEvents,
+  linkedEventFor,
 } from "../layers";
 import { EVENT_CORAL } from "../event-block";
-import type { LoaderData } from "../types";
+import type { LoaderData, TimeEntryDTO } from "../types";
 
 // Minimal loader fixture — only the fields the builders read. Timezone UTC keeps
 // the hour math trivial (zonedDayStartUtc(y,m,d,"UTC") === Date.UTC(y,m,d)).
@@ -642,5 +643,42 @@ describe("externalCalendarLegend", () => {
     });
     const legend = externalCalendarLegend(data);
     expect(legend).toEqual([{ swatch: "#aaa", label: "Personal" }]);
+  });
+});
+
+describe("linkedEventFor", () => {
+  const events = [
+    { startIso: "2026-08-18T13:00:00.000Z", endIso: "2026-08-18T15:00:00.000Z", title: "Studio", color: null, eventId: "e1" },
+    {
+      startIso: "2026-08-11T10:00:00.000Z", endIso: "2026-08-11T10:30:00.000Z", title: "Standup", color: null, eventId: "g1",
+      meeting: { meetingId: "m1", occurrenceStart: "2026-08-11T10:00:00.000Z" },
+    },
+    {
+      startIso: "2026-08-18T10:00:00.000Z", endIso: "2026-08-18T10:30:00.000Z", title: "Standup", color: null, eventId: "g2",
+      meeting: { meetingId: "m1", occurrenceStart: "2026-08-18T10:00:00.000Z" },
+    },
+  ] as LoaderData["externalEvents"];
+  const entry = (over: Partial<TimeEntryDTO>) =>
+    ({ scheduledMeetingId: null, occurrenceStart: null, sourceEventId: null, ...over }) as TimeEntryDTO;
+
+  it("finds the event the hours were logged against", () => {
+    expect(linkedEventFor(entry({ sourceEventId: "e1" }), events)?.title).toBe("Studio");
+  });
+
+  it("finds the one occurrence a meeting entry is for, even after the entry is retimed", () => {
+    const t = entry({
+      scheduledMeetingId: "m1",
+      occurrenceStart: "2026-08-18T10:00:00.000Z",
+      startTime: "2026-08-18T11:00:00.000Z",
+    });
+    expect(linkedEventFor(t, events)?.eventId).toBe("g2");
+  });
+
+  it("is null for a standalone entry or an event that isn't loaded", () => {
+    expect(linkedEventFor(entry({}), events)).toBeNull();
+    expect(linkedEventFor(entry({ sourceEventId: "gone" }), events)).toBeNull();
+    expect(
+      linkedEventFor(entry({ scheduledMeetingId: "m1", occurrenceStart: "2026-08-25T10:00:00.000Z" }), events),
+    ).toBeNull();
   });
 });

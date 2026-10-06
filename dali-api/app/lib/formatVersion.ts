@@ -20,16 +20,27 @@ export function formatCreator(
   return first || last;
 }
 
-export function formatVersionLabel(opts: VersionLabelInput): string {
-  const parts: string[] = [opts.name || "Untitled"];
-  if (opts.versionNumber != null) parts.push(`v${opts.versionNumber}`);
+/** "Name (v2)". */
+export function formatVersionName(opts: VersionLabelInput): string {
+  const name = opts.name || "Untitled";
+  return opts.versionNumber != null ? `${name} (v${opts.versionNumber})` : name;
+}
+
+/** "10/1/2026 · Sophie P.", or null when neither is known. */
+export function formatVersionMeta(opts: VersionLabelInput): string | null {
+  const parts: string[] = [];
   if (opts.createdAt) {
     const d = typeof opts.createdAt === "string" ? new Date(opts.createdAt) : opts.createdAt;
     if (!isNaN(d.getTime())) parts.push(d.toLocaleDateString());
   }
   const creator = formatCreator(opts.createdBy ?? null);
-  if (creator) parts.push(`by ${creator}`);
-  return parts.join(" — ");
+  if (creator) parts.push(creator);
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+export function formatVersionLabel(opts: VersionLabelInput): string {
+  const meta = formatVersionMeta(opts);
+  return meta ? `${formatVersionName(opts)} · ${meta}` : formatVersionName(opts);
 }
 
 /**

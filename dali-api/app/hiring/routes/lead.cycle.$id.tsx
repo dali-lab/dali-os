@@ -1,14 +1,22 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { cn } from "~/lib/cn";
+import { hiringKey } from "~/email/lib/registry";
 import { Form, Link, useParams, useLoaderData, useLocation, useSearchParams, useFetcher, redirect } from 'react-router'
 import { Select, type SelectOption, Tooltip } from "~/components/ui/floating";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import type { Route } from "./+types/lead.cycle.$id";
 import { prisma } from "~/lib/db";
 import { recordRouteVisit } from "~/lib/user-pages.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { isAdmin, isCycleAdmin } from "~/lib/roles";
+import { isAdmin, isCore, isCycleAdmin } from "~/lib/roles";
 import { changeApplicants } from "~/hiring/lib/cycle-applicants.server";
+import {
+  loadStartTermCandidates,
+  parseStartTermIds,
+  reflowStartTermsForTermChange,
+  setCycleStartTerms,
+} from "~/hiring/lib/start-terms.server";
 import { APPLICANT_GROUPS, defaultTimelineFor, isMemberApplicants } from "~/hiring/lib/applicant-groups";
 import type { CycleApplicants } from "~/generated/prisma/enums";
 import {
@@ -30,7 +38,7 @@ import {
   type Timeline,
 } from "~/hiring/lib/cycle-timeline";
 import { addDomainMentors, domainMentorIds } from "~/hiring/lib/cycle-rosters.server";
-import { listHiringEmails, saveHiringEmail } from "~/hiring/lib/hiring-emails.server";
+import { listHiringEmails } from "~/hiring/lib/hiring-emails.server";
 import { roundsWithBoards, saveCycleTimeline } from "~/hiring/lib/cycle-timeline.server";
 import { buildPhaseTabs, resolvePhaseTab } from "~/hiring/lib/cycle-phase-tabs";
 import { TargetDomainsCard } from "~/hiring/components/cycle-setup/TargetDomainsCard";
@@ -56,7 +64,7 @@ import { Checkbox } from "~/components/ui/Checkbox";
 import { Toggle } from "~/components/ui/Toggle";
 import { DateField } from "~/components/ui/DateField";
 import { useToast } from "~/components/ui/toast";
-import { useDialog } from "~/components/ui/dialog";
+import { useConfirmSubmit, useDialog } from "~/components/ui/dialog";
 import { AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, X, Eye, Mail, CheckCircle2, CircleDot, AlertCircle } from 'lucide-react'
 import { useOsChrome } from "~/components/os-chrome";
 import { SegmentedTabButtons } from "~/components/AreaPillNav";
@@ -65,7 +73,7 @@ import { OpenApplicationsConfirmModal } from "~/hiring/components/cycle-setup/Op
 import { TermDatesCard } from "~/hiring/components/cycle-setup/TermDatesCard";
 import { AudienceCard } from "~/hiring/components/cycle-setup/AudienceCard";
 import { NavSection, SectionNavLayout } from "~/hiring/components/cycle-setup/SectionNav";
-import { DomainSubRow, SubRowEmpty } from "~/hiring/components/cycle-setup/DomainSubRow";
+import { DomainSubRow, SubRowEmpty, SubRowVersion } from "~/hiring/components/cycle-setup/DomainSubRow";
 import { ChallengeLine, NotReadyIcon, type DomainChallenge } from "~/hiring/components/cycle-setup/ChallengeLine";
 import { DomainRosterCard } from "~/hiring/components/cycle-setup/DomainRosterCard";
 import { TimelineCard } from "~/hiring/components/cycle-setup/TimelineCard";
@@ -179,7 +187,23 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       },
       statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
       applicationForm: { include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } } },
-      domainChallengeForms: { select: { id: true, domainId: true, formId: true, form: { select: { name: true } } } },
+      domainChallengeForms: {
+        select: {
+          id: true,
+          domainId: true,
+          formId: true,
+          form: {
+            select: {
+              name: true,
+              versions: {
+                orderBy: { versionNumber: "desc" },
+                take: 1,
+                select: { versionNumber: true, createdAt: true, createdBy: { select: { firstName: true, lastName: true } } },
+              },
+            },
+          },
+        },
+      },
     },
   });
 
@@ -203,7 +227,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const allDomains = await prisma.domain.findMany({ orderBy: { name: "asc" } });
 
-  // All Drive Forms — for the "bind a different form" picker in Setup.
+  // All Drive Forms — for the application form and challenge pickers in Setup.
   const allForms = await prisma.form.findMany({
     orderBy: { name: "asc" },
     select: { id: true, name: true },
@@ -267,7 +291,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // Which domains already have reviews assigned (used to gate rubric edits —
   // once any domain application has a review, changing the rubric out from
   // under it would invalidate scoring).
-  const domainIds: string[] = cycle.domains.map((d: any) => d.domainId);
   const domainRubricVersions = await prisma.rubricVersion.findMany({
     include: { rubric: { select: { name: true } }, createdBy: { select: { firstName: true, lastName: true } } },
     orderBy: { createdAt: "desc" },
@@ -330,28 +353,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     (await listHiringEmails()).map((e) => [e.slot, { subject: e.subject, body: e.body }]),
   );
 
-  // Domain leads per cycle domain, used to name who owes a missing
-  // challenge. DomainLeadAssignment has no "current" flag;
-  // ordering by createdAt desc picks the most-recently-assigned lead first,
-  // and we dedupe by user across terms.
-  const domainLeadAssignments = domainIds.length > 0
-    ? await prisma.domainLeadAssignment.findMany({
-        where: { domainId: { in: domainIds } },
-        include: { user: { select: { id: true, firstName: true, lastName: true } } },
-        orderBy: { createdAt: "desc" },
-      })
-    : [];
-  const domainLeadsByDomain: Record<string, Array<{ id: string; firstName: string | null; lastName: string | null }>> = {};
-  for (const a of domainLeadAssignments) {
-    const list = (domainLeadsByDomain[a.domainId] ??= []);
-    if (!list.some((u) => u.id === a.user.id)) list.push(a.user);
-  }
-
   const memberSetup = isMemberCycle ? await loadMemberCycleSetup(params.id) : null;
-  const [progress, termOptions, phaseStatusByDomain] = await Promise.all([
+  const [progress, termOptions, phaseStatusByDomain, startTermCandidates] = await Promise.all([
     getCycleProgress(params.id),
     loadTermOptions(request),
     confidentialityRequired ? null : loadPhaseStatusByDomain(params.id),
+    loadStartTermCandidates(),
   ]);
 
   const collabToken = await getCollabToken(request);
@@ -363,7 +370,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       progress,
       roundsWithBoards: [...(await roundsWithBoards(params.id))],
       termOptions,
+      startTermCandidates,
       viewerIsAdmin: await isAdmin(auth.user.sub),
+      viewerIsCore: !!(await isCore(auth.user.sub, request)),
       phaseStatusByDomain,
       allDomains,
       allForms,
@@ -373,7 +382,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       hiringEmails,
       domainRubricVersions,
       reviewedDomainIds,
-      domainLeadsByDomain,
       confidentialityAgreementOptions,
       currentConfidentialityBinding,
       confidentialitySignatures,
@@ -500,6 +508,10 @@ export async function action({ request, params }: Route.ActionArgs) {
         }),
       },
     });
+    // Moving the cycle's term can push offered start terms below the new floor
+    // (and invalidate picks made against them). Re-floored here, in the single
+    // writer of termId, so no caller can move the term and skip it.
+    await reflowStartTermsForTermChange(params.id!);
     return null;
   }
 
@@ -580,6 +592,14 @@ export async function action({ request, params }: Route.ActionArgs) {
     // entered in the same save win over it.
     const bad = await applyTerm(termId, !openRaw && !closeRaw);
     if (bad) return bad;
+    // After applyTerm, so the start terms in this same save are floored at the
+    // term this save just set rather than the one it replaced. Absent field =
+    // a card rendered without the picker (non-Students, or the flag off), which
+    // must leave the stored set alone rather than clear it.
+    const startTermsRaw = formData.get("startTermIds");
+    if (typeof startTermsRaw === "string") {
+      await setCycleStartTerms(params.id!, parseStartTermIds(startTermsRaw));
+    }
     // Only touch a date that actually changed, so saving the term alone never
     // disturbs an active extension. The open date is fixed once applications open.
     if (openRaw !== ymd(before.openDate) && (before.statusUpdates[0]?.newStatus ?? "Draft") === "Draft") {
@@ -645,7 +665,12 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (intent === "create-challenge-form" || intent === "remove-challenge-form") {
     const refused =
       intent === "create-challenge-form"
-        ? await addDomainChallenge(params.id, formData.get("domainId") as string, auth.user.sub)
+        ? await addDomainChallenge(
+            params.id,
+            formData.get("domainId") as string,
+            auth.user.sub,
+            (formData.get("formId") as string) || null,
+          )
         : await removeDomainChallenge(formData.get("cdfId") as string, params.id);
     if (refused === "not-draft") {
       return Response.json({ error: "Challenges lock once the cycle opens." }, { status: 409 });
@@ -835,20 +860,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     const notice =
       added > 0 ? "mentors-added" : (await domainMentorIds(domainId, request)).length ? "mentors-already" : "mentors-none";
     return cycleRedirect(request, params.id!, { notice, added });
-  }
-
-  if (intent === "save-hiring-email") {
-    // One email per slot, shared by every cycle. Saving it empty turns it off.
-    const slot = formData.get("slot") as string;
-    if (!(slot in TEMPLATE_VARIABLES)) {
-      return Response.json({ error: "Unknown email" }, { status: 400 });
-    }
-    await saveHiringEmail(
-      slot as TemplateSlot,
-      { subject: (formData.get("subject") as string) ?? "", body: (formData.get("body") as string) ?? "" },
-      auth.user.sub,
-    );
-    return { ok: true };
   }
 
 
@@ -1210,17 +1221,19 @@ export default function HiringLeadCycleDetails() {
   const cycle = loaderData?.cycle
   const memberSetup = loaderData?.memberSetup ?? null
   const isMemberCycle = memberSetup !== null
+  const startTermsEnabled = useFeatureFlag('start-terms')
   const domainsTitle =
     cycle?.applicants === 'LabMembers' ? 'Applicant pool' : isMemberCycle ? 'Target domains' : 'Domains'
   // A domain's challenges, shown on its row only when the cycle has them.
   const challengeFor = (domainId: string): DomainChallenge | null => {
     if (!cycle?.hasChallenges) return null
-    const lead = (loaderData?.domainLeadsByDomain?.[domainId] ?? [])[0]
+    const forms = (cycle?.domainChallengeForms ?? [])
+      .filter((f: any) => f.domainId === domainId)
+      .map((f: any) => ({ id: f.id, formId: f.formId, name: f.form.name, ...f.form.versions?.[0] }))
+    const linked = new Set(forms.map((f: any) => f.formId))
     return {
-      forms: (cycle?.domainChallengeForms ?? [])
-        .filter((f: any) => f.domainId === domainId)
-        .map((f: any) => ({ id: f.id, formId: f.formId, name: f.form.name })),
-      lead: lead ? `${lead.firstName ?? ''} ${lead.lastName ?? ''}`.trim() || null : null,
+      forms,
+      pickable: (loaderData?.allForms ?? []).filter((f: any) => !linked.has(f.id)),
     }
   }
 
@@ -1969,6 +1982,9 @@ export default function HiringLeadCycleDetails() {
             openDate={cycle?.openDate ?? null}
             closeDate={cycle?.originalCloseDate ?? cycle?.closeDate ?? null}
             cycleStatus={cycleStatus}
+            startTermIds={cycle?.startTermIds ?? []}
+            startTermCandidates={loaderData?.startTermCandidates ?? []}
+            showStartTerms={startTermsEnabled && cycle?.applicants === "Students"}
           />
           </NavSection>
 
@@ -2093,9 +2109,14 @@ export default function HiringLeadCycleDetails() {
 
           {/* Decision-release email bindings */}
           <NavSection id="decision-emails" title="Decision emails">
-          <DecisionEmailsSection
+          <EmailStatusSection
+            title="Decision emails"
+            description="The email each released decision sends."
             hiringEmails={loaderData?.hiringEmails ?? {}}
-            hasInterviews={hasInterviews}
+            canEdit={!!loaderData?.viewerIsCore}
+            slots={DECISION_EMAIL_SLOTS.filter(
+              (slot) => hasInterviews || slot.type !== "InvitedToInterview",
+            ).map((slot) => ({ ...slot, templateSlot: decisionSlot(slot.type) }))}
           />
           </NavSection>
 
@@ -2103,11 +2124,14 @@ export default function HiringLeadCycleDetails() {
               from the student portal; interview slots only with interviews. */}
           {(!isMemberCycle || hasInterviews) && (
             <NavSection id="notification-emails" title="Notification emails">
-            <NotificationEmailsSection
+            <EmailStatusSection
+              title="Notification emails"
+              description="The email each notification sends."
               hiringEmails={loaderData?.hiringEmails ?? {}}
+              canEdit={!!loaderData?.viewerIsCore}
               slots={NOTIFICATION_EMAIL_SLOTS.filter((slot) =>
                 slot.type.startsWith('Interview') ? hasInterviews : !isMemberCycle,
-              )}
+              ).map((slot) => ({ ...slot, templateSlot: notificationSlot(slot.type) }))}
             />
             </NavSection>
           )}
@@ -3097,8 +3121,8 @@ function ExtensionSection({
   const [unit, setUnit] = useState<"hours" | "days">(initial.unit);
   const [showConfirm, setShowConfirm] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
-  const removeFormRef = useRef<HTMLFormElement>(null);
   const headingId = `extend-confirm-heading-${cycleId}`;
+  const confirmSubmit = useConfirmSubmit();
 
   const ms = unit === "hours" ? amount * 3_600_000 : amount * 86_400_000;
   const nextClose = new Date(anchor.getTime() + ms);
@@ -3174,8 +3198,14 @@ function ExtensionSection({
           <Form
             method="post"
             preventScrollReset
-            ref={removeFormRef}
             aria-label="Remove deadline extension"
+            onSubmit={confirmSubmit({
+              title: "Remove the deadline extension?",
+              description:
+                "The cycle goes back to its original close time. If that time has passed, applications close immediately.",
+              confirmLabel: "Remove extension",
+              tone: "destructive",
+            })}
           >
             <input type="hidden" name="intent" value="remove-extension" />
             <button type="submit" className={buttonClasses("ghost", "sm", "text-red-700")}>
@@ -3294,15 +3324,13 @@ function GeneralApplicationSection({
   // "Rubric" / "No rubric" twice.
   const [editingRubric, setEditingRubric] = useState(false);
 
-  const versionLabel = (rv: any, fallback: string) =>
-    formatVersionLabel({
-      name: rv.rubric?.name ?? fallback,
-      versionNumber: rv.versionNumber,
-      createdAt: rv.createdAt,
-      createdBy: rv.createdBy,
-    });
+  const rubricVersion = (rv: any) => ({
+    name: rv.rubric?.name ?? "Rubric",
+    versionNumber: rv.versionNumber,
+    createdAt: rv.createdAt,
+    createdBy: rv.createdBy,
+  });
   const currentRubric = rubricVersionOptions.find((rv: any) => rv.id === currentRubricVersionId);
-  const currentRubricLabel = currentRubric ? versionLabel(currentRubric, "Rubric") : null;
   const small = buttonClasses("secondary", "sm");
 
   return (
@@ -3369,10 +3397,8 @@ function GeneralApplicationSection({
         <DomainSubRow
           label="Rubric"
           value={
-            currentRubricLabel ? (
-              <span className="min-w-0 max-w-full truncate" title={currentRubricLabel}>
-                {currentRubricLabel}
-              </span>
+            currentRubric ? (
+              <SubRowVersion version={rubricVersion(currentRubric)} />
             ) : (
               <SubRowEmpty>None yet</SubRowEmpty>
             )
@@ -3406,7 +3432,7 @@ function GeneralApplicationSection({
                     placeholder="Pick a rubric"
                     options={[
                       { value: "", label: "No rubric" },
-                      ...rubricVersionOptions.map((rv: any): SelectOption => ({ value: rv.id, label: versionLabel(rv, "Rubric") })),
+                      ...rubricVersionOptions.map((rv: any): SelectOption => ({ value: rv.id, label: formatVersionLabel(rubricVersion(rv)) })),
                     ]}
                     buttonClassName={rowTrigger(os.formTrigger)}
                   />
@@ -3443,16 +3469,10 @@ function DomainOverridePanel({
   rubricOptions: any[];
   rubricLocked: boolean;
 }) {
-  const [showReadyModal, setShowReadyModal] = useState(false);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showRubricPreview, setShowRubricPreview] = useState(false);
 
   const readyLocked = cycleStatus !== 'Draft';
   const isReady: boolean = !!domain.isReady;
-
-  // Close the ready modal when isReady flips — same-URL redirects don't remount
-  // the component so the modal state survives the round-trip without this.
-  useEffect(() => { setShowReadyModal(false); }, [isReady]);
 
   const [selectedRubricId, setSelectedRubricId] = useState(domain.rubricVersionId ?? '');
   // Like the Challenge line, the rubric shows what's set and opens a picker on demand.
@@ -3460,16 +3480,15 @@ function DomainOverridePanel({
   useEffect(() => { setSelectedRubricId(domain.rubricVersionId ?? ''); }, [domain.rubricVersionId]);
 
   const currentRubric = rubricOptions.find((rv: any) => rv.id === selectedRubricId);
-  const currentRubricLabel = currentRubric
-    ? formatVersionLabel({
-        name: currentRubric.rubric?.name ?? 'Rubric',
-        versionNumber: currentRubric.versionNumber,
-        createdAt: currentRubric.createdAt,
-        createdBy: currentRubric.createdBy,
-      })
-    : null;
+  const rubricVersion = (rv: any) => ({
+    name: rv.rubric?.name ?? 'Rubric',
+    versionNumber: rv.versionNumber,
+    createdAt: rv.createdAt,
+    createdBy: rv.createdBy,
+  });
 
   const os = useOsChrome();
+  const confirmSubmit = useConfirmSubmit();
   const domainName = domain.domain?.name ?? domain.domainId;
   const previewButton = (
     <Tooltip content="Preview">
@@ -3493,25 +3512,63 @@ function DomainOverridePanel({
         </div>
         <div className="flex items-center gap-1">
           {!readyLocked && (
-            <button
-              type="button"
-              onClick={() => setShowReadyModal(true)}
-              className={buttonClasses(isReady ? 'ghost' : 'secondary', 'sm')}
+            <Form
+              method="post"
+              preventScrollReset
+              className="inline"
+              onSubmit={confirmSubmit(
+                isReady
+                  ? {
+                      title: `Unmark ${domainName} as ready?`,
+                      description:
+                        'It goes back to "not ready" until the domain lead (or a hiring lead) marks it ready again.',
+                      confirmLabel: 'Unmark ready',
+                    }
+                  : {
+                      title: `Mark ${domainName} ready on the domain lead's behalf?`,
+                      description:
+                        'Use this when the domain lead is unavailable and the cycle needs to advance.',
+                      confirmLabel: 'Force ready',
+                    },
+              )}
             >
-              {isReady ? 'Unmark ready' : 'Force ready'}
-            </button>
+              <input
+                type="hidden"
+                name="intent"
+                value={isReady ? 'hl-force-unmark-ready' : 'hl-force-mark-ready'}
+              />
+              <input type="hidden" name="domainId" value={domain.domainId} />
+              <input type="hidden" name="confirm" value="true" />
+              <button type="submit" className={buttonClasses(isReady ? 'ghost' : 'secondary', 'sm')}>
+                {isReady ? 'Unmark ready' : 'Force ready'}
+              </button>
+            </Form>
           )}
           {cycleStatus === 'Draft' && (
-            <Tooltip content="Remove domain">
-              <button
-                type="button"
-                onClick={() => setShowDeleteModal(true)}
-                className={os.iconBtn}
-                aria-label={`Remove ${domainName}`}
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </Tooltip>
+            <Form
+              method="post"
+              preventScrollReset
+              className="inline"
+              onSubmit={confirmSubmit({
+                title: `Remove ${domainName} from this cycle?`,
+                description:
+                  "Any challenge version linked for this domain is unlinked. Applicants can no longer target it.",
+                confirmLabel: 'Remove',
+                tone: 'destructive',
+              })}
+            >
+              <input type="hidden" name="intent" value="remove-domain" />
+              <input type="hidden" name="domainId" value={domain.domainId} />
+              <Tooltip content="Remove domain">
+                <button
+                  type="submit"
+                  className={os.iconBtn}
+                  aria-label={`Remove ${domainName}`}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </Tooltip>
+            </Form>
           )}
         </div>
       </div>
@@ -3524,7 +3581,7 @@ function DomainOverridePanel({
         <DomainSubRow
           label="Rubric"
           value={
-            currentRubricLabel ? currentRubricLabel : <SubRowEmpty>None yet</SubRowEmpty>
+            currentRubric ? <SubRowVersion version={rubricVersion(currentRubric)} /> : <SubRowEmpty>None yet</SubRowEmpty>
           }
           action={
             <>
@@ -3532,7 +3589,7 @@ function DomainOverridePanel({
               {currentRubric && !editingRubric && previewButton}
               {!rubricLocked && !editingRubric && rubricOptions.length > 0 && (
                 <button type="button" onClick={() => setEditingRubric(true)} className={buttonClasses('secondary', 'sm')}>
-                  {currentRubricLabel ? 'Change' : 'Set rubric'}
+                  {currentRubric ? 'Change' : 'Set rubric'}
                 </button>
               )}
             </>
@@ -3560,12 +3617,7 @@ function DomainOverridePanel({
                       { value: "", label: "No rubric" },
                       ...rubricOptions.map((rv: any): SelectOption => ({
                         value: rv.id,
-                        label: formatVersionLabel({
-                          name: rv.rubric?.name ?? 'Rubric',
-                          versionNumber: rv.versionNumber,
-                          createdAt: rv.createdAt,
-                          createdBy: rv.createdBy,
-                        }),
+                        label: formatVersionLabel(rubricVersion(rv)),
                       })),
                     ]}
                     buttonClassName={rowTrigger(os.formTrigger)}
@@ -3591,21 +3643,6 @@ function DomainOverridePanel({
         />
       )}
 
-      {showDeleteModal && (
-        <DeleteDomainModal
-          domain={domain}
-          onClose={() => setShowDeleteModal(false)}
-        />
-      )}
-
-      {showReadyModal && (
-        <ForceReadyModal
-          domain={domain}
-          isReady={isReady}
-          onClose={() => setShowReadyModal(false)}
-        />
-      )}
-
       {showRubricPreview && currentRubric && (
         <RubricPreviewModal
           rv={currentRubric}
@@ -3613,87 +3650,6 @@ function DomainOverridePanel({
         />
       )}
     </div>
-  );
-}
-
-function ForceReadyModal({
-  domain,
-  isReady,
-  onClose,
-}: {
-  domain: any;
-  isReady: boolean;
-  onClose: () => void;
-}) {
-  const intent = isReady ? 'hl-force-unmark-ready' : 'hl-force-mark-ready';
-  const headingId = `force-ready-heading-${domain.domainId}`;
-  return (
-    <Modal open onClose={onClose} labelledBy={headingId} containerClassName="bg-card rounded-2xl shadow-xl max-w-md w-full mx-4 p-6">
-      <div className="space-y-4">
-        <h2 id={headingId} className="text-lg font-bold text-foreground">
-          {isReady ? 'Unmark domain as ready?' : 'Override domain lead?'}
-        </h2>
-        <div className="text-sm text-muted-foreground space-y-2">
-          <p>
-            Domain: <span className="font-semibold text-foreground">{domain.domain?.name ?? domain.domainId}</span>
-          </p>
-          {isReady ? (
-            <p>This will revert the domain back to "not ready" until the domain lead (or a hiring lead) marks it ready again.</p>
-          ) : (
-            <p>This will mark the domain as ready on behalf of the domain lead. Use this when the domain lead is unavailable and the cycle needs to advance.</p>
-          )}
-        </div>
-        <Form method="post" preventScrollReset className="flex justify-end gap-2 pt-2">
-          <input type="hidden" name="intent" value={intent} />
-          <input type="hidden" name="domainId" value={domain.domainId} />
-          <input type="hidden" name="confirm" value="true" />
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-border rounded-md hover:bg-muted/50"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            className={`px-3 py-2 text-sm font-medium rounded-md text-white ${isReady ? 'bg-red-600 hover:bg-red-700' : 'bg-amber-600 hover:bg-amber-700'}`}
-          >
-            {isReady ? 'Yes, unmark ready' : 'Yes, override domain lead'}
-          </button>
-        </Form>
-      </div>
-    </Modal>
-  );
-}
-
-function DeleteDomainModal({ domain, onClose }: { domain: any; onClose: () => void }) {
-  const headingId = `delete-domain-heading-${domain.domainId}`;
-  return (
-    <Modal open onClose={onClose} labelledBy={headingId} containerClassName="bg-card rounded-2xl shadow-xl max-w-sm w-full mx-4 p-6">
-      <div className="space-y-4">
-        <h2 id={headingId} className="text-lg font-bold text-foreground">Remove domain from cycle?</h2>
-        <p className="text-sm text-muted-foreground">
-          Remove <span className="font-semibold text-foreground">{domain.domain?.name ?? domain.domainId}</span> from this cycle? Any linked challenge version for this domain will be unlinked.
-        </p>
-        <Form method="post" preventScrollReset className="flex justify-end gap-2 pt-2">
-          <input type="hidden" name="intent" value="remove-domain" />
-          <input type="hidden" name="domainId" value={domain.domainId} />
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-border rounded-md hover:bg-muted/50"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            className="px-3 py-2 text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700"
-          >
-            Remove
-          </button>
-        </Form>
-      </div>
-    </Modal>
   );
 }
 
@@ -3740,21 +3696,71 @@ const DECISION_EMAIL_SLOTS: ReadonlyArray<{ type: DecisionSlotType; label: strin
   { type: "Accepted", label: "Accepted", description: "Sent when an offer is released." },
 ];
 
-function DecisionEmailsSection({ hiringEmails, hasInterviews }: {
+function EmailStatusSection({
+  title,
+  description,
+  slots,
+  hiringEmails,
+  canEdit,
+}: {
+  title: string;
+  description: string;
+  slots: ReadonlyArray<{ label: string; description: string; templateSlot: TemplateSlot }>;
   hiringEmails: Record<string, { subject: string; body: string }>;
-  hasInterviews: boolean;
+  /** The viewer is Core, so a row opens Core's editor on that email. */
+  canEdit: boolean;
 }) {
+  // No editor of its own, on purpose. These emails are shared by every cycle, so
+  // editing them belongs to Core in Core -> Communications -> Email, not to
+  // whoever happens to administer this cycle. A Core viewer's rows deep-link
+  // into that editor; for everyone else the Setup tab still answers "is it
+  // written?", because releasing a decision with no email written fails.
   return (
-    <SetupCard title="Decision emails" description="The email each released decision sends. Shared by every cycle.">
+    <SetupCard title={title} description={description}>
       <div className="flex flex-col gap-2">
-        {DECISION_EMAIL_SLOTS.filter((slot) => hasInterviews || slot.type !== "InvitedToInterview").map((slot) => (
-          <HiringEmailEditor
-            key={slot.type}
-            slot={slot}
-            templateSlot={decisionSlot(slot.type)}
-            email={hiringEmails[decisionSlot(slot.type)] ?? null}
-          />
-        ))}
+        {slots.map((slot) => {
+          const email = hiringEmails[slot.templateSlot] ?? null;
+          const rowClass = "flex items-start gap-3 rounded-lg border border-border p-3";
+          const body = (
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">{slot.label}</span>
+                {email ? null : (
+                  <span className="text-xs text-amber-600 dark:text-amber-500">
+                    No email yet
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">{slot.description}</p>
+              {email ? (
+                <p className="text-xs text-muted-foreground mt-1 truncate">
+                  Subject: {email.subject}
+                </p>
+              ) : null}
+            </div>
+          );
+          return canEdit ? (
+            <Link
+              key={slot.templateSlot}
+              to={`/core/communications/email?key=${encodeURIComponent(hiringKey(slot.templateSlot))}`}
+              aria-label={`Edit ${slot.label} email`}
+              className={cn(rowClass, "transition-colors hover:bg-muted")}
+            >
+              {body}
+            </Link>
+          ) : (
+            <div key={slot.templateSlot} className={rowClass}>
+              {body}
+            </div>
+          );
+        })}
+        <p className="text-xs text-muted-foreground">
+          Shared by every cycle.{" "}
+          <Link to="/core/communications/email" className="underline">
+            Edit in Core &rarr; Communications &rarr; Email
+          </Link>
+          .
+        </p>
       </div>
     </SetupCard>
   );
@@ -3772,118 +3778,3 @@ const NOTIFICATION_EMAIL_SLOTS: ReadonlyArray<{ type: NotificationSlotType; labe
   { type: "InterviewReminderApplicant", label: "Interview reminder (applicant)", description: "Sent 24 hours and 1 hour before the interview." },
   { type: "InterviewReminderInterviewer", label: "Interview reminder (interviewer)", description: "Sent 24 hours and 1 hour before the interview." },
 ];
-
-function NotificationEmailsSection({ hiringEmails, slots }: {
-  hiringEmails: Record<string, { subject: string; body: string }>;
-  slots: typeof NOTIFICATION_EMAIL_SLOTS;
-}) {
-  return (
-    <SetupCard title="Notification emails" description="The email each notification sends. Shared by every cycle.">
-      <div className="flex flex-col gap-2">
-        {slots.map((slot) => (
-          <HiringEmailEditor
-            key={slot.type}
-            slot={slot}
-            templateSlot={notificationSlot(slot.type)}
-            email={hiringEmails[notificationSlot(slot.type)] ?? null}
-          />
-        ))}
-      </div>
-    </SetupCard>
-  );
-}
-
-// One email slot as a well row: what it's for (flagged when no email is
-// written yet), with Edit/Write opening the shared subject and body in a modal.
-function HiringEmailEditor({ slot, templateSlot, email }: {
-  slot: { label: string; description: string };
-  templateSlot: TemplateSlot;
-  email: { subject: string; body: string } | null;
-}) {
-  const os = useOsChrome();
-  const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
-  const [editing, setEditing] = useState(false);
-  const [subject, setSubject] = useState(email?.subject ?? "");
-  const [body, setBody] = useState(email?.body ?? "");
-  const busy = fetcher.state !== "idle";
-  // Close once a save lands; the loader brings the new email back.
-  useEffect(() => {
-    if (fetcher.state === "idle" && fetcher.data?.ok) setEditing(false);
-  }, [fetcher.state, fetcher.data]);
-  const open = () => {
-    setSubject(email?.subject ?? "");
-    setBody(email?.body ?? "");
-    setEditing(true);
-  };
-  const save = () =>
-    fetcher.submit({ intent: "save-hiring-email", slot: templateSlot, subject, body }, { method: "post" });
-  // Soft warnings only: an unknown or never-filled variable still saves.
-  const subjLint = lintTemplate(subject, templateSlot);
-  const bodyLint = lintTemplate(body, templateSlot);
-  const unknown = Array.from(new Set([...subjLint.unknown, ...bodyLint.unknown]));
-  const unfilled = Array.from(new Set([...subjLint.unfilled, ...bodyLint.unfilled]));
-  const titleId = `hiring-email-${templateSlot.replace(/[^a-z0-9]/gi, "-")}`;
-
-  return (
-    <div className="flex items-start justify-between gap-3 rounded-os-item bg-os-well px-4 py-3">
-      <div className="flex min-w-0 flex-col gap-0.5">
-        <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
-          {!email && <AlertIcon label="No email yet" />}
-          {slot.label}
-        </span>
-        <span className="text-sm text-os-grey">{slot.description}</span>
-      </div>
-      <button type="button" onClick={open} className={cn(buttonClasses("secondary", "sm"), "shrink-0")}>
-        {email ? "Edit" : "Write"}
-      </button>
-      <Modal
-        open={editing}
-        onClose={busy ? () => {} : () => setEditing(false)}
-        disableEscape={busy}
-        labelledBy={titleId}
-        containerClassName="w-full max-w-4xl my-auto os-modal-card os-form"
-      >
-        <ModalHeader titleId={titleId} title={`${slot.label} email`} subtitle={slot.description} onClose={() => setEditing(false)} />
-        <div className={cn(os.formClass, "flex flex-col gap-4")}>
-          <label className={os.fieldLabel}>
-            Subject
-            <input value={subject} onChange={(e) => setSubject(e.target.value)} aria-label={`${slot.label} subject`} />
-          </label>
-          <label className={os.fieldLabel}>
-            Body
-            <textarea
-              rows={18}
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              aria-label={`${slot.label} body`}
-            />
-          </label>
-          <SlotVariableHint slot={templateSlot} />
-          {(unknown.length > 0 || unfilled.length > 0) && <PreviewLintWarning unknown={unknown} unfilled={unfilled} />}
-          {fetcher.data?.error && <p className="text-sm text-red-700">{fetcher.data.error}</p>}
-        </div>
-        <ModalFooter onCancel={() => setEditing(false)}>
-          <button type="button" disabled={busy} onClick={save} className={buttonClasses("primary", "md")}>
-            {busy ? "Saving…" : "Save"}
-          </button>
-        </ModalFooter>
-      </Modal>
-    </div>
-  );
-}
-
-function SlotVariableHint({ slot }: { slot: TemplateSlot }) {
-  const vars = TEMPLATE_VARIABLES[slot];
-  return (
-    <p className="text-xs text-os-grey">
-      Supports{' '}
-      {vars.map((v, i) => (
-        <span key={v}>
-          {i > 0 && ', '}
-          <code className="font-mono rounded bg-os-container px-1">{`{{${v}}}`}</code>
-        </span>
-      ))}
-      .
-    </p>
-  );
-}

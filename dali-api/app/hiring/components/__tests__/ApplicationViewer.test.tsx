@@ -2,7 +2,14 @@ import { describe, it, expect } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ApplicationViewer } from "../ApplicationViewer";
+import { DialogProvider } from "~/components/ui/dialog";
 import type { Question } from "~/types";
+
+// AnnotatableField confirms before removing a highlight, so the viewer needs
+// the DialogProvider the app mounts in root.tsx.
+function Viewer(props: Parameters<typeof ApplicationViewer>[0]) {
+  return createElement(DialogProvider, null, createElement(ApplicationViewer, props));
+}
 
 const fileQ: Question = {
   key: "resume",
@@ -35,7 +42,7 @@ describe("ApplicationViewer file/url rendering", () => {
     };
 
     const html = renderToStaticMarkup(
-      createElement(ApplicationViewer, {
+      createElement(Viewer, {
         application,
         questionLabels: { resume: "Resume", essay: "Why DALI?" },
       }),
@@ -70,7 +77,7 @@ describe("ApplicationViewer file/url rendering", () => {
     };
 
     const html = renderToStaticMarkup(
-      createElement(ApplicationViewer, {
+      createElement(Viewer, {
         application,
         questionLabels: { resume: "Resume" },
       }),
@@ -88,7 +95,7 @@ describe("ApplicationViewer file/url rendering", () => {
     };
 
     const html = renderToStaticMarkup(
-      createElement(ApplicationViewer, {
+      createElement(Viewer, {
         application,
         questionLabels: { gh: "GitHub" },
       }),
@@ -107,7 +114,7 @@ describe("ApplicationViewer file/url rendering", () => {
     };
 
     const html = renderToStaticMarkup(
-      createElement(ApplicationViewer, {
+      createElement(Viewer, {
         application,
         questionLabels: { stray: "Stray" },
       }),
@@ -126,7 +133,7 @@ describe("ApplicationViewer file/url rendering", () => {
     };
 
     const html = renderToStaticMarkup(
-      createElement(ApplicationViewer, { application, questionLabels: {} }),
+      createElement(Viewer, { application, questionLabels: {} }),
     );
 
     expect(html.indexOf("Why DALI?")).toBeGreaterThan(-1);

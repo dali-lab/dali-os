@@ -99,13 +99,13 @@ export default function PortalApplyToOffering() {
           <TypeBadge type={offering.type} />
           <MyStatusChip status={myStatus} />
         </div>
-        <h1 className="mt-1 font-heading text-2xl font-bold text-dark-blue">
+        <h1 className="mt-1 font-heading text-4xl font-medium text-foreground">
           {offering.requiresReview ? "Apply to" : "RSVP for"} {offering.title}
         </h1>
       </header>
 
       {open ? (
-        <div className="bg-card border border-border rounded-lg p-5">
+        <div className="bg-os-card rounded-os-card p-5">
           <OfferingApplyForm
             questions={questions}
             description={description}
@@ -121,8 +121,8 @@ export default function PortalApplyToOffering() {
           />
         </div>
       ) : (
-        <div className="bg-card border border-border rounded-lg p-8 text-center">
-          <p className="font-heading font-semibold text-dark-blue">
+        <div className="bg-os-card rounded-os-card p-8 text-center">
+          <p className="font-heading font-semibold text-foreground">
             {myStatus ? "Your application is in" : "Registration isn't open"}
           </p>
           <p className="text-sm text-muted-foreground mt-1">

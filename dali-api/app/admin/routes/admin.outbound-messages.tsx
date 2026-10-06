@@ -18,6 +18,7 @@ import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isAdmin } from "~/lib/roles";
 import { fullName } from "~/lib/display";
 import { buttonClasses } from "~/components/ui/Button";
+import { useConfirmSubmit } from "~/components/ui/dialog";
 
 export const handle = adminHandle("outbound-messages");
 
@@ -214,6 +215,7 @@ function ChannelIcon({ channel }: { channel: string }) {
 
 function Row({ msg }: { msg: MessageRow }) {
   const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
+  const confirmSubmit = useConfirmSubmit();
   const busy = fetcher.state !== "idle";
 
   return (
@@ -291,7 +293,17 @@ function Row({ msg }: { msg: MessageRow }) {
           </fetcher.Form>
         )}
         {msg.status === "Pending" && (
-          <fetcher.Form method="post">
+          <fetcher.Form
+            method="post"
+            onSubmit={confirmSubmit({
+              title: "Cancel this queued message?",
+              description:
+                "It won't be delivered, and the queue won't retry it. Whatever triggered it would have to run again.",
+              confirmLabel: "Cancel message",
+              cancelLabel: "Leave it queued",
+              tone: "destructive",
+            })}
+          >
             <input type="hidden" name="intent" value="cancel" />
             <input type="hidden" name="id" value={msg.id} />
             <button

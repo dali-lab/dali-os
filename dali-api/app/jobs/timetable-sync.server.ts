@@ -62,8 +62,7 @@ async function notifyClassChanges(
     await notify({
       eventType: "class.schedule_changed",
       message: {
-        title: `${cls.title} schedule changed`,
-        body: `${parts.join("; ")}. Open your calendar to update it.`,
+        vars: { itemTitle: cls.title, itemDetail: parts.join("; ") },
         link: "/calendar",
         dedupKey: `class-change:${cls.id}:${fresh.periodCode ?? ""}:${newLoc}`,
       },

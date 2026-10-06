@@ -44,6 +44,7 @@ import {
   type RoleDef,
 } from "~/projects/lib/slot-roles";
 import type { Slot } from "~/projects/lib/form-slots";
+import { placeholder } from "~/lib/template-variables";
 
 type FormQuestion = {
   key: string;
@@ -173,10 +174,13 @@ export function SlotColumnMapper({
   function patch(uid: string, p: Partial<DraftCol>) {
     setCols((cs) => cs.map((c) => (c.uid === uid ? { ...c, ...p } : c)));
   }
-  function addRoleColumn(def: RoleDef, termId?: string) {
+  // `labelTermCode` labels a column whose term isn't fixed: the cycle-term
+  // column stores no termId and takes the {{term}} token in its label, which
+  // the board resolves to whichever cycle the form is bound to.
+  function addRoleColumn(def: RoleDef, termId?: string, labelTermCode?: string) {
     setCols((cs) => {
       const positionAmongRole = cs.filter((c) => c.role === def.role).length;
-      const termCode = termId ? termById.get(termId) : undefined;
+      const termCode = termId ? termById.get(termId) : labelTermCode;
       return [
         ...cs,
         {
@@ -313,7 +317,9 @@ export function SlotColumnMapper({
   // and builtin add buttons are rendered separately.
   type RoleAddOption =
     | { kind: "role"; def: RoleDef }
-    | { kind: "role-perterm"; def: RoleDef; termId: string; termCode: string };
+    | { kind: "role-perterm"; def: RoleDef; termId: string; termCode: string }
+    // Same role, no fixed term: fills whichever term the bound cycle is for.
+    | { kind: "role-cycleterm"; def: RoleDef };
   const roleAddOptions: RoleAddOption[] = useMemo(() => {
     const out: RoleAddOption[] = [];
     for (const def of slotRoles) {
@@ -324,6 +330,11 @@ export function SlotColumnMapper({
             .filter((c) => c.role === def.role && c.termId)
             .map((c) => c.termId as string),
         );
+        // One cycle-term column at a time: a second would map the same term
+        // twice and validateMapping rejects it.
+        if (!cols.some((c) => c.role === def.role && !c.termId)) {
+          out.push({ kind: "role-cycleterm", def });
+        }
         for (const t of cycleTerms) {
           if (placedTermIds.has(t.id)) continue;
           out.push({
@@ -528,7 +539,20 @@ export function SlotColumnMapper({
       {canManage && (
         <div className="flex flex-wrap items-center gap-2">
           {roleAddOptions.map((opt, idx) =>
-            opt.kind === "role-perterm" ? (
+            opt.kind === "role-cycleterm" ? (
+              <button
+                key={`${opt.def.role}@cycle-term`}
+                type="button"
+                onClick={() =>
+                  addRoleColumn(opt.def, undefined, placeholder("term"))
+                }
+                disabled={saving}
+                title="Fills whichever term this cycle is for, so the same form can be re-bound each round without re-mapping."
+                className="px-3 py-1.5 text-sm font-medium rounded-md border border-border text-foreground hover:bg-muted disabled:opacity-60"
+              >
+                + {opt.def.defaultLabel} (this cycle's term)
+              </button>
+            ) : opt.kind === "role-perterm" ? (
               <button
                 key={`${opt.def.role}@${opt.termId}`}
                 type="button"

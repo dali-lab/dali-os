@@ -155,7 +155,7 @@ export default function Portal() {
   if (!cycleId) {
     return (
       <div className="max-w-2xl mx-auto py-16 text-center px-6">
-        <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">No Active Cycle</h2>
+        <h2 className="font-heading text-2xl font-bold text-foreground mb-3">No Active Cycle</h2>
         <p className="text-muted-foreground">There is no active application cycle right now. Check back later!</p>
       </div>
     );
@@ -185,9 +185,9 @@ export default function Portal() {
     <div>
       <Confetti trigger={justSubmitted} onFire={handleConfettiFire} />
       {/* Header */}
-      <div className="bg-brand-tint px-6 md:px-16 lg:px-24 py-10">
-        <div className="max-w-3xl mx-auto">
-          <h1 className="font-heading text-xl font-bold text-dark-blue">
+      <div className="bg-os-card px-6 py-10">
+        <div>
+          <h1 className="font-heading text-4xl font-medium text-foreground">
             {cycleName} Application Portal
           </h1>
           {cycleStatus === "Open" && closeDate && <DeadlineLine closeDate={closeDate} originalCloseDate={originalCloseDate} timeZone={viewerTimeZone} />}
@@ -200,8 +200,8 @@ export default function Portal() {
                   aria-current={c.id === cycleId ? "page" : undefined}
                   className={`px-3 py-1 rounded-full text-xs font-medium transition ${
                     c.id === cycleId
-                      ? "bg-dark-blue text-white"
-                      : "bg-card text-dark-blue border border-border hover:border-dark-blue/40"
+                      ? "bg-os-accent text-os-bg"
+                      : "bg-card text-foreground border border-border hover:border-os-container-hi"
                   }`}
                 >
                   {c.name}
@@ -213,7 +213,7 @@ export default function Portal() {
       </div>
 
       {/* Content */}
-      <div className="px-6 md:px-16 lg:px-24 py-10">
+      <div className="px-6 py-10">
         {topLevelStage === "ApplicationsClosed" && (
           <div className="max-w-2xl mx-auto text-center py-16">
             <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-muted flex items-center justify-center">
@@ -221,7 +221,7 @@ export default function Portal() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </div>
-            <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Applications Closed</h2>
+            <h2 className="font-heading text-2xl font-bold text-foreground mb-3">Applications Closed</h2>
             <p className="text-muted-foreground leading-relaxed">
               The application window for {cycleName} has closed. Check back for future application cycles!
             </p>
@@ -232,13 +232,13 @@ export default function Portal() {
           <>
             <PendingView cycleName={cycleName} />
             {cycleStatus === "Open" && (
-              <div className="max-w-2xl mx-auto mt-4 rounded-xl border border-blue-200 bg-blue-50 px-5 py-4 flex items-center justify-between gap-4">
-                <p className="text-sm text-blue-800">
+              <div className="max-w-2xl mx-auto mt-4 rounded-os-item border border-os-accent/35 bg-os-accent/15 px-5 py-4 flex items-center justify-between gap-4">
+                <p className="text-sm text-os-accent">
                   The cycle is still open — you can still update your application.
                 </p>
                 <Link
                   to={applyHref}
-                  className="shrink-0 px-4 py-2 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition"
+                  className="shrink-0 px-4 py-2 rounded-full bg-os-accent text-os-bg text-sm font-semibold hover:bg-os-accent-hover transition"
                 >
                   Edit Application
                 </Link>
@@ -250,22 +250,22 @@ export default function Portal() {
         {topLevelStage === "Withdrawn" && <WithdrawnView cycleName={cycleName} submissionHref="/portal/application" />}
 
         {das.length > 0 && applicationStatus !== "Draft" && applicationStatus !== "Withdrawn" && (
-          <div className="max-w-3xl mx-auto space-y-8">
+          <div className="space-y-8">
             {cycleStatus === "Open" && applicationStatus === "Submitted" && (
-              <div className="rounded-xl border border-blue-200 bg-blue-50 px-5 py-4 flex items-center justify-between gap-4">
-                <p className="text-sm text-blue-800">
+              <div className="rounded-os-item border border-os-accent/35 bg-os-accent/15 px-5 py-4 flex items-center justify-between gap-4">
+                <p className="text-sm text-os-accent">
                   The cycle is still open — you can still update your application.
                 </p>
                 <Link
                   to={applyHref}
-                  className="shrink-0 px-4 py-2 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition"
+                  className="shrink-0 px-4 py-2 rounded-full bg-os-accent text-os-bg text-sm font-semibold hover:bg-os-accent-hover transition"
                 >
                   Edit Application
                 </Link>
               </div>
             )}
             <div className="flex justify-end">
-              <Link to={`/portal/application?cycle=${cycleId}`} className="text-sm text-accent-coral hover:underline">
+              <Link to={`/portal/application?cycle=${cycleId}`} className="text-sm text-os-accent hover:underline">
                 View your submission →
               </Link>
             </div>
@@ -284,9 +284,6 @@ export default function Portal() {
             ))}
           </div>
         )}
-      </div>
-      <div className="px-6 md:px-16 lg:px-24 py-6 text-center text-xs text-muted-foreground/70">
-        Made with ❤️ at the DALI Lab.
       </div>
     </div>
   );

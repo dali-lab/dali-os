@@ -28,7 +28,7 @@ export function userInitials(user: {
 export const UNKNOWN_LABEL = "Unknown";
 export const EMPTY_DISPLAY = "—";
 
-const SEASON_NAMES: Record<string, string> = {
+export const SEASON_NAMES: Record<string, string> = {
   W: "Winter",
   S: "Spring",
   X: "Summer",

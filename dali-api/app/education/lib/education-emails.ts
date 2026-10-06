@@ -8,7 +8,10 @@ import type { EduApplicationStatus } from "~/generated/prisma/enums";
 // Every status a decision email can fire for. "Submitted" isn't a decision.
 export type DecisionSlotStatus = Exclude<EduApplicationStatus, "Submitted">;
 
-export type EducationEmailSlot = `decision:${DecisionSlotStatus}`;
+// "Promoted" is not an EduApplicationStatus — a promotion off the waitlist is an
+// Approved decision reached a different way, and it gets its own slot so the
+// letter can say so. It falls back to decision:Approved when left unwritten.
+export type EducationEmailSlot = `decision:${DecisionSlotStatus}` | "decision:Promoted";
 
 export const decisionSlot = (s: DecisionSlotStatus): EducationEmailSlot => `decision:${s}`;
 

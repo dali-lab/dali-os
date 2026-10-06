@@ -76,7 +76,6 @@ import {
 } from "~/lib/meeting-occurrences";
 import { getZonedYMD, resolveUserTimeZone, zonedDayStartUtc } from "~/lib/timezone";
 import { bookRoomsForEvent, releaseRoomBookings } from "~/lib/rooms.server";
-import { isRoomBookingEnabled } from "~/rooms/lib/access.server";
 import { fetchWindow, parseAnchor, parseView, viewWindow, weekWindow } from "~/calendar/lib/view-window";
 import type {
   WhSegment,
@@ -949,9 +948,7 @@ async function handleEventAction(
       // Rooms picked in the Location field. A plain event has no
       // ScheduledMeeting to claim them, so it takes a RoomBooking per room —
       // before the Google write, so a room that's taken rejects the save.
-      const roomIds = (await isRoomBookingEnabled(userId, request))
-        ? [...new Set(get("roomIds").split(",").filter(Boolean))]
-        : [];
+      const roomIds = [...new Set(get("roomIds").split(",").filter(Boolean))];
       let bookingIds: string[] = [];
       if (roomIds.length) {
         if (allDay || recurrenceRule) {
@@ -1602,15 +1599,15 @@ export async function loadCalendarData(
     links: externalLinks(e.meetingUrl, e.htmlLink),
     rsvp: e.responseStatus ? GOOGLE_RSVP_LABEL[e.responseStatus] : undefined,
     meeting: e.eventId ? eventMeetings.get(e.eventId) : undefined,
-    // "Track in DALI" is offered only on the lab's own general calendar. Any
-    // external event *could* be given a meeting, but offering it on someone's
-    // dentist appointment is noise — the general calendar is where the lab's
-    // untracked events actually are.
+    // "Track in DALI" gives an event the meeting it never had, which is the
+    // only way a plain event gets a note, a whiteboard or attendance after the
+    // fact. Core can do it for the lab's general calendar; a member can do it
+    // for any event they organize or are a guest on. The server re-checks.
     canTrackAsMeeting:
-      canMarkCoreMeeting &&
-      isGeneralCalendarEvent(e.calendarId) &&
       Boolean(e.eventId) &&
-      !eventMeetings.has(e.eventId),
+      !eventMeetings.has(e.eventId) &&
+      ((canMarkCoreMeeting && isGeneralCalendarEvent(e.calendarId)) ||
+        (roles.isLabMember && (e.organizerSelf === true || e.responseStatus !== undefined))),
   }));
 
   // Classes: load all current+upcoming terms for the modal picker.
@@ -1658,6 +1655,7 @@ export async function loadCalendarData(
       id: t.id,
       source: t.source,
       scheduledMeetingId: t.scheduledMeetingId,
+      occurrenceStart: t.occurrenceStart ? t.occurrenceStart.toISOString() : null,
       sourceEventId: t.sourceEventId,
       manualBlockId: null,
       meetingNotePageId:
@@ -2170,8 +2168,8 @@ export async function submitCalendarAction(request: Request) {
     }
 
     case "track-event-as-meeting": {
-      // Core-only, re-checked inside — the popover only offers the button to
-      // Core, but the form is a hint and the server decides.
+      // Core or someone on the event, re-checked inside — the popover's button
+      // is a hint and the server decides.
       const result = await trackExternalEventAsMeeting({
         actorId: userId,
         eventId: input.eventId,

@@ -12,15 +12,24 @@ import { getPageAccess } from "~/lib/pageAccess.server";
 //                             out of the hub / workspace list by default).
 //
 // Documents are FreeForm Pages. Project-scoped pages use the project-edit gate
-// (isCore === Admin || Core, or a project assignee); Lab-scoped pages (the
-// lab-wide Documents area) use the lab-member gate — the lab's members are the
-// Lab workspace's members, mirroring project membership. Member-scoped pages
-// (personal notes in My Drive) resolve through getPageAccess, which is the only
-// gate that knows the note's owner and its share list — the doc editor's title
-// box posts here for every workspace, so without this branch renaming a note
-// from the document itself failed. Archiving one still belongs to /api/notes,
-// so DELETE stays owner-only. EducationOffering pages are not handled here
-// (they keep their existing behavior); parity is a follow-up.
+// (isCore === Admin || Core, or a project assignee). Lab, EducationOffering and
+// Member pages resolve through getPageAccess, which is the only gate that
+// understands a folder scope, a note's owner, or a share list.
+//
+// Lab used to take the bare lab-member gate, on the reasoning that the lab's
+// members are the Lab workspace's members. But the Lab workspace also holds the
+// Core-scoped folders, so that let any member rename or delete Core's
+// Agreements folder through this endpoint — the Drive hides those folders, the
+// API didn't. getPageAccess reads the folder scope and closes it.
+//
+// EducationOffering is handled here now rather than 404ing: the Drive's
+// Education space routes rename and delete through this same endpoint, so
+// without it neither worked anywhere in that space.
+//
+// Member pages (personal notes in My Drive): the doc editor's title box posts
+// here for every workspace, so this branch is what makes renaming a note from
+// the document itself work. Archiving one still belongs to /api/notes, so
+// DELETE stays owner-only.
 
 type Body = { title?: string; iconEmoji?: string | null; coverImageUrl?: string | null };
 
@@ -55,16 +64,24 @@ export async function action({ request, params }: Route.ActionArgs) {
     !page ||
     (page.workspaceType !== "Project" &&
       page.workspaceType !== "Lab" &&
+      page.workspaceType !== "EducationOffering" &&
       page.workspaceType !== "Member") ||
     (page.workspaceType !== "Lab" && !page.workspaceId)
   ) {
     return withCors(request, Response.json({ error: "Document not found" }, { status: 404 }));
   }
   let auth: AuthSuccess;
-  if (page.workspaceType === "Lab") {
+  if (page.workspaceType === "Lab" || page.workspaceType === "EducationOffering") {
     const gate = await requireMemberSession(request);
     if (!gate.ok) return withCors(request, gate.response);
     auth = gate.auth;
+    // getPageAccess, not a bare role check: it is the only gate that walks the
+    // folder scope, so a Core-scoped Lab folder stays Core's. 404 rather than
+    // 403 so the endpoint doesn't confirm a page the caller can't see.
+    const access = await getPageAccess(auth.user.sub, pageId, request);
+    if (!access.canEdit) {
+      return withCors(request, Response.json({ error: "Document not found" }, { status: 404 }));
+    }
   } else if (page.workspaceType === "Member") {
     const gate = await requireMemberSession(request);
     if (!gate.ok) return withCors(request, gate.response);
@@ -87,13 +104,28 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   if (request.method === "DELETE") {
     if (page.kind === "Folder") {
-      const childCount = await prisma.page.count({
-        where: { parentPageId: pageId, archivedAt: null },
-      });
-      if (childCount > 0) {
+      // "Empty" has to mean empty of everything a folder can hold, not just of
+      // sub-pages. Files, forms, agreements and rubrics are filed by
+      // folderPageId, and archiving the folder out from under them leaves rows
+      // pointing at a dead parent — which only forms have a safety net for
+      // (loadOrphanForms). Everything else would be silently unreachable.
+      const [pages, files, forms, agreements, rubrics] = await Promise.all([
+        prisma.page.count({ where: { parentPageId: pageId, archivedAt: null } }),
+        prisma.projectFile.count({ where: { folderPageId: pageId, archivedAt: null } }),
+        prisma.form.count({ where: { folderPageId: pageId, archivedAt: null } }),
+        prisma.signingDocument.count({ where: { folderPageId: pageId, archivedAt: null } }),
+        prisma.rubric.count({ where: { folderPageId: pageId } }),
+      ]);
+      const total = pages + files + forms + agreements + rubrics;
+      if (total > 0) {
         return withCors(
           request,
-          Response.json({ error: "Move or archive the documents inside this folder first" }, { status: 400 }),
+          Response.json(
+            {
+              error: `This folder still holds ${total} ${total === 1 ? "item" : "items"}. Move or delete them first.`,
+            },
+            { status: 400 },
+          ),
         );
       }
     }

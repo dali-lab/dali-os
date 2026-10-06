@@ -15,8 +15,8 @@ export function renderSkillsRating(value: string): React.ReactNode {
     <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1.5">
       {ratings.map(({ skill, rating }) => (
         <div key={skill} className="flex items-center justify-between gap-2">
-          <span className="text-sm text-dark-blue truncate">{skill}</span>
-          <span className="shrink-0 w-8 text-center text-sm font-semibold text-dark-blue bg-card rounded border border-border py-0.5">
+          <span className="text-sm text-foreground truncate">{skill}</span>
+          <span className="shrink-0 w-8 text-center text-sm font-semibold text-foreground bg-card rounded border border-border py-0.5">
             {rating}
           </span>
         </div>
@@ -51,7 +51,7 @@ export function AnswerDisplay({ question, answer, presigned = true }: AnswerDisp
         href={answer}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-sm text-accent-coral underline underline-offset-2 hover:text-accent-coral/80 break-all"
+        className="text-sm text-os-accent underline underline-offset-2 hover:text-os-accent/80 break-all"
       >
         {answer}
       </a>
@@ -64,8 +64,8 @@ export function AnswerDisplay({ question, answer, presigned = true }: AnswerDisp
       : answer.split("/").pop();
     if (!presigned) {
       return (
-        <span className="inline-flex items-center gap-1.5 text-sm text-dark-blue">
-          <svg className="w-4 h-4 shrink-0 text-accent-coral" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <span className="inline-flex items-center gap-1.5 text-sm text-foreground">
+          <svg className="w-4 h-4 shrink-0 text-os-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
           </svg>
           {filename ?? "Uploaded file"}
@@ -77,7 +77,7 @@ export function AnswerDisplay({ question, answer, presigned = true }: AnswerDisp
         href={answer}
         target="_blank"
         rel="noopener noreferrer"
-        className="inline-flex items-center gap-1.5 text-sm text-accent-coral underline underline-offset-2 hover:text-accent-coral/80"
+        className="inline-flex items-center gap-1.5 text-sm text-os-accent underline underline-offset-2 hover:text-os-accent/80"
       >
         <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
@@ -91,7 +91,7 @@ export function AnswerDisplay({ question, answer, presigned = true }: AnswerDisp
     return <>{renderSkillsRating(answer)}</>;
   }
 
-  return <p className="text-sm text-dark-blue whitespace-pre-wrap">{answer}</p>;
+  return <p className="text-sm text-foreground whitespace-pre-wrap">{answer}</p>;
 }
 
 export interface QuestionListProps {

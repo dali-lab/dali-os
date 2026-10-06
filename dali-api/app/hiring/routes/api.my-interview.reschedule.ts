@@ -2,6 +2,7 @@ import type { Route } from "./+types/api.my-interview.reschedule";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { logAuditEvent } from "~/lib/audit";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson, idSchema } from "~/lib/validate";
 import { assignInterviewers } from "~/hiring/lib/scheduling";
@@ -121,6 +122,20 @@ export async function action({ request }: Route.ActionArgs) {
     // re-reads the row. Best-effort. Zoom S2S (app/lib/zoom.ts) stays dormant.
     await deprovisionInterviewMeet({ id: oldInterviewId, calendarEventId: oldCalendarEventId });
     await provisionInterviewMeet(newInterview.id);
+
+    await logAuditEvent({
+      action: "interview.reschedule",
+      userId: auth.user.sub,
+      targetId: newInterview.id,
+      metadata: {
+        cycleId: newInterview.applicationCycleId,
+        domainApplicationId,
+        previousInterviewId: oldInterviewId,
+        startTime: newStart,
+        mode: interviewMode,
+      },
+      request,
+    });
 
     // Best-effort: cancel old calendar event + send new invite
     sendInterviewCancelEmails(oldInterviewId, domainApplicationId).catch(() => {});

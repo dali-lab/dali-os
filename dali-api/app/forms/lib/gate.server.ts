@@ -1,16 +1,16 @@
 // App-lock for bound staffing forms — the forms analog of the signing app-gate
 // (app/signing/lib/state.server.ts). When a staffing manager sets a bound
 // form's gateAudience, members in that audience who haven't filled it are
-// hard-gated into the fill page before they can use the rest of the app,
-// behind the `bound-form-lock` flag. Reuses the signing audience resolvers so
+// hard-gated into the fill page before they can use the rest of the app.
+// Reuses the signing audience resolvers so
 // "who owes this" is defined in exactly one place.
 import { prisma } from "~/lib/db";
-import { currentTerm, type UserRoles } from "~/lib/roles";
+import { currentTerm } from "~/lib/roles";
 import { resolveGroupMembers } from "~/lib/groups";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { getSignerCohorts } from "~/signing/lib/state.server";
 import { AUDIENCE_RESOLVERS } from "~/signing/lib/audiences";
 import { existingBoundSubmission, formFillAccess } from "~/forms/lib/public-form";
+import { boundSlotCycleIds } from "~/projects/lib/form-slots";
 
 export interface OutstandingBoundForm {
   token: string;
@@ -19,16 +19,12 @@ export interface OutstandingBoundForm {
 }
 
 // The first bound form the member owes for the current staffing cycle, or null.
-// Returns null cheaply when the flag is off or nothing is gated, before any
+// Returns null cheaply when nothing is gated, before any
 // cohort/group resolution.
 export async function getBoundFormGateOutstanding(
   userId: string,
-  roles: UserRoles,
   request?: Request,
 ): Promise<OutstandingBoundForm | null> {
-  if (!(await isFeatureEnabled("bound-form-lock", userId, roles, request))) {
-    return null;
-  }
   const term = await currentTerm(request);
   if (!term) return null;
   const cycle = await prisma.staffingCycle.findUnique({
@@ -48,6 +44,7 @@ export async function getBoundFormGateOutstanding(
     orderBy: { slot: "asc" },
     select: {
       slot: true,
+      formId: true,
       gateAudience: true,
       gateAudienceGroupId: true,
       form: {
@@ -95,8 +92,17 @@ export async function getBoundFormGateOutstanding(
       userId,
     );
     if (access !== "ok") continue;
-    // Filled already (one-and-done) ⇒ nothing owed.
-    if (await existingBoundSubmission(userId, cycle.id, b.slot)) continue;
+    // Filled already (one-and-done) ⇒ nothing owed. Spans every cycle the form
+    // is bound to, not just this term's, so a re-bind doesn't gate a member
+    // back into a form they've filled.
+    if (
+      await existingBoundSubmission(
+        userId,
+        await boundSlotCycleIds(b.formId, b.slot),
+        b.slot,
+      )
+    )
+      continue;
     return {
       token: b.form.publicToken as string,
       slot: b.slot,

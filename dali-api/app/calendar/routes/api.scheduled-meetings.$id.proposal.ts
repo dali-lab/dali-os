@@ -121,7 +121,8 @@ export async function action({ request, params }: Route.ActionArgs) {
       eventType: "meeting.invite",
       createdByUserId: actorId,
       message: {
-        title: `Your proposed time was accepted for ${meeting.title}`,
+        copyKey: "meeting.proposal_accepted",
+      vars: { itemTitle: meeting.title },
         link: "/calendar",
         scheduledMeetingId: meetingId,
       },

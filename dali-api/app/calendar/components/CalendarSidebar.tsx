@@ -4,12 +4,19 @@ import { useRevalidator } from "react-router";
 import { CalendarDays, Check, ChevronDown, ChevronRight, X } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { SearchInput } from "~/components/ui/SearchInput";
+import { useDialog } from "~/components/ui/dialog";
 import { MiniMonth } from "~/calendar/components/MiniMonth";
 import { roleColor } from "~/calendar/lib/event-block";
 import { CustomHiresManager, archiveCustomHire } from "~/calendar/components/CustomHiresManager";
 import { userLabel } from "~/calendar/components/scheduling";
 import { GeneralCalendarPrompt } from "~/calendar/components/settings-cards";
-import type { CalendarLinkDTO, CalendarView, LoaderData } from "~/calendar/lib/types";
+import { SegmentedTabButtons } from "~/components/AreaPillNav";
+import type {
+  CalendarLinkDTO,
+  CalendarView,
+  LoaderData,
+  TimesheetHoursScope,
+} from "~/calendar/lib/types";
 import type { LayerVisibility } from "~/calendar/lib/layers";
 import type { RoleInstance } from "~/lib/roles";
 
@@ -171,8 +178,8 @@ const ROLE_SWATCHES = [
   "#fd9999", "#9fe0a8", "#e08ac0", "#8a8a94",
 ];
 
-/** One role: a swatch that opens the palette, the role's name, its hours this
- *  pay period, and — for a self-added job only — a remove button. */
+/** One role: a swatch that opens the palette, the role's name, its hours over
+ *  the chosen scope, and — for a self-added job only — a remove button. */
 function RoleRow({
   label,
   color,
@@ -284,8 +291,12 @@ type CalendarSidebarProps = {
   onChangeView: (v: CalendarView) => void;
   myRoles: RoleInstance[];
   roleColors: Record<string, string>;
-  /** Hours logged against each role this pay period, keyed like the colours. */
+  /** Hours logged against each role over `hoursScope`, keyed like the colours. */
   roleHours: Record<string, number>;
+  hoursScope: TimesheetHoursScope;
+  onChangeHoursScope: (scope: TimesheetHoursScope) => void;
+  /** "Sep 27 – Oct 3" — the days `roleHours` covers, so the totals say which. */
+  hoursRangeLabel: string;
   setRoleColor: (roleKey: string, hex: string) => void;
   /** Opens the create modal with this person already invited, on the current
    *  week, so their availability is on screen immediately. */
@@ -305,10 +316,14 @@ function CalendarSidebarContent({
   myRoles,
   roleColors,
   roleHours,
+  hoursScope,
+  onChangeHoursScope,
+  hoursRangeLabel,
   setRoleColor,
   onMeetWith,
 }: CalendarSidebarProps) {
   const revalidator = useRevalidator();
+  const dialog = useDialog();
   const links = data.calendarLinks.filter((l) => l.enabled);
 
   return (
@@ -369,9 +384,28 @@ function CalendarSidebarContent({
           here is what the mode needs: the roles being logged against. */}
       {layers.logged && (
         <div className="flex flex-col gap-2">
-          <h2 className="px-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-            Roles this pay period
-          </h2>
+          <div className="flex flex-col gap-1.5">
+            <h2 className="px-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              Roles
+            </h2>
+            {/* Payroll approves by period; a member paces by week. The totals
+                below answer whichever one is selected, and the range underneath
+                spells out the days so neither reading is a guess. */}
+            <SegmentedTabButtons
+              size="sm"
+              stretch
+              label="Hours totalled over"
+              items={[
+                { label: "Week", active: hoursScope === "week", onClick: () => onChangeHoursScope("week") },
+                {
+                  label: "Pay period",
+                  active: hoursScope === "period",
+                  onClick: () => onChangeHoursScope("period"),
+                },
+              ]}
+            />
+            <p className="px-1 text-xs text-muted-foreground">{hoursRangeLabel}</p>
+          </div>
           <ul className="flex flex-col gap-0.5">
             {myRoles.map((r) => {
               const key = `${r.assignmentType}:${r.roleRefId}`;
@@ -387,6 +421,14 @@ function CalendarSidebarContent({
                     onDelete={
                       r.assignmentType === "Custom"
                         ? async () => {
+                            const ok = await dialog.confirm({
+                              title: `Remove ${r.label}?`,
+                              description:
+                                "It stops showing up as a job you can log hours against. Hours you already logged against it stay on your timesheet.",
+                              confirmLabel: "Remove",
+                              tone: "destructive",
+                            });
+                            if (!ok) return;
                             await archiveCustomHire(r.roleRefId);
                             revalidator.revalidate();
                           }
@@ -397,6 +439,20 @@ function CalendarSidebarContent({
               );
             })}
           </ul>
+          {/* Sums the rows above it, not every entry in range: a total that
+              didn't match the column it closes would read as a bug. Same
+              trailing widths as RoleRow so the two numbers share an edge. */}
+          {myRoles.length > 0 && (
+            <div className="flex items-center gap-2.5 border-t border-border px-2 pt-2">
+              <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">Total</span>
+              <span className="w-12 shrink-0 text-right text-xs font-semibold tabular-nums text-foreground">
+                {`${myRoles
+                  .reduce((sum, r) => sum + (roleHours[`${r.assignmentType}:${r.roleRefId}`] ?? 0), 0)
+                  .toFixed(1)}h`}
+              </span>
+              <span className="w-4 shrink-0" />
+            </div>
+          )}
           <CustomHiresManager
             hires={myRoles
               .filter((r) => r.assignmentType === "Custom")

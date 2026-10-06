@@ -78,6 +78,8 @@ export const prisma = {
     findMany: vi.fn().mockResolvedValue([]),
     update: vi.fn(),
     upsert: vi.fn(),
+    delete: vi.fn(),
+    deleteMany: vi.fn(),
   },
   partnerApplicationFormBinding: {
     findFirst: vi.fn(),
@@ -317,8 +319,10 @@ export const prisma = {
     findUnique: vi.fn(),
     findFirst: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
+    groupBy: vi.fn().mockResolvedValue([]),
     create: vi.fn(),
     update: vi.fn(),
+    updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     delete: vi.fn(),
     count: vi.fn().mockResolvedValue(0),
   },
@@ -336,8 +340,12 @@ export const prisma = {
   projectFile: {
     findUnique: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
+    groupBy: vi.fn().mockResolvedValue([]),
     create: vi.fn(),
     update: vi.fn(),
+    updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+    delete: vi.fn(),
+    count: vi.fn().mockResolvedValue(0),
   },
   projectFileVersion: {
     findFirst: vi.fn(),
@@ -416,6 +424,7 @@ export const prisma = {
     update: vi.fn(),
     updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     delete: vi.fn(),
+    count: vi.fn().mockResolvedValue(0),
   },
   formVersion: {
     findUnique: vi.fn(),
@@ -672,13 +681,6 @@ export const prisma = {
     delete: vi.fn(),
     deleteMany: vi.fn(),
   },
-  educationEmail: {
-    findUnique: vi.fn().mockResolvedValue(null),
-    findMany: vi.fn().mockResolvedValue([]),
-    upsert: vi.fn(),
-    delete: vi.fn(),
-    deleteMany: vi.fn(),
-  },
   educationFormBinding: {
     findUnique: vi.fn(),
     findFirst: vi.fn(),
@@ -705,11 +707,18 @@ export const prisma = {
     count: vi.fn().mockResolvedValue(0),
   },
   emailTemplate: {
+    findUnique: vi.fn().mockResolvedValue(null),
     findMany: vi.fn().mockResolvedValue([]),
+    upsert: vi.fn(),
+    delete: vi.fn(),
+    deleteMany: vi.fn(),
   },
   emailTemplateVersion: {
     findUnique: vi.fn(),
-    findFirst: vi.fn(),
+    findFirst: vi.fn().mockResolvedValue(null),
+    findMany: vi.fn().mockResolvedValue([]),
+    create: vi.fn(),
+    groupBy: vi.fn().mockResolvedValue([]),
   },
   payPeriod: {
     findUnique: vi.fn(),

@@ -15,10 +15,12 @@ vi.mock("~/lib/auth", () => ({
   redirectApplicantToPortal: vi.fn(() => null),
 }));
 vi.mock("~/lib/roles");
+vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn().mockResolvedValue(undefined) }));
 
 import { prisma } from "~/lib/db";
 import { requireAuth, requireCoreOrDomainLead } from "~/lib/auth";
 import { isCore, isDomainLead } from "~/lib/roles";
+import { logAuditEvent } from "~/lib/audit";
 import { action } from "~/hiring/routes/api.cycles.$cycleId.interviewers";
 
 const mockPrisma = prisma as unknown as {
@@ -49,7 +51,7 @@ beforeEach(() => {
     deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   };
   (mockPrisma as any).cycleInterviewer = {
-    delete: vi.fn().mockResolvedValue({ id: INTERVIEWER_ID }),
+    delete: vi.fn().mockResolvedValue({ userId: "interviewer-user", domainId: "domain-1" }),
   };
   (mockPrisma as any).$transaction = vi.fn(async (cb: any) => cb(mockPrisma));
   vi.mocked(requireAuth).mockResolvedValue({
@@ -104,7 +106,16 @@ describe("DELETE /api/hiring/cycles/:cycleId/interviewers", () => {
     });
     expect(mockPrisma.cycleInterviewer.delete).toHaveBeenCalledWith({
       where: { id: INTERVIEWER_ID },
+      select: { userId: true, domainId: true },
     });
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "interviewer.remove",
+        userId: USER_ID,
+        targetId: INTERVIEWER_ID,
+        metadata: { cycleId: CYCLE_ID, interviewerUserId: "interviewer-user", domainId: "domain-1" },
+      }),
+    );
   });
 
   it("returns 409 when interviewer has scheduled+active assignments", async () => {
@@ -119,6 +130,7 @@ describe("DELETE /api/hiring/cycles/:cycleId/interviewers", () => {
     expect(json.error).toMatch(/2 scheduled interviews/);
     expect(mockPrisma.interviewAssignment.deleteMany).not.toHaveBeenCalled();
     expect(mockPrisma.cycleInterviewer.delete).not.toHaveBeenCalled();
+    expect(logAuditEvent).not.toHaveBeenCalled();
   });
 
   it("uses singular wording when there is exactly one scheduled interview", async () => {
@@ -148,6 +160,7 @@ describe("DELETE /api/hiring/cycles/:cycleId/interviewers", () => {
     });
     expect(mockPrisma.cycleInterviewer.delete).toHaveBeenCalledWith({
       where: { id: INTERVIEWER_ID },
+      select: { userId: true, domainId: true },
     });
   });
 
@@ -159,5 +172,6 @@ describe("DELETE /api/hiring/cycles/:cycleId/interviewers", () => {
       context: {},
     } as any);
     expect(res.status).toBe(404);
+    expect(logAuditEvent).not.toHaveBeenCalled();
   });
 });

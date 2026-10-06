@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "~/lib/cn";
+import { isInFloatingLayer } from "~/components/ui/floating";
 
 /** A floating card anchored next to an on-screen rect (a clicked event, a
  *  dragged slot, or the New button), Google-Calendar style — prefers the
@@ -70,10 +71,9 @@ export function AnchoredPopover({
       if (excludeRef?.current && path.includes(excludeRef.current)) return;
       // The card's own dropdowns render into a portal at <body>, so they're not
       // inside cardRef — a click there isn't an outside click. Covers the Select
-      // / RepeatField floating layers and the DateField / TimeField calendar
-      // popovers (both role="dialog").
+      // / RepeatField floating layers and the DateField / TimeField pickers.
       const el = path.find((n): n is Element => n instanceof Element);
-      if (el?.closest("[data-floating-ui-portal],[data-calendar-popover],[role='dialog']")) return;
+      if (isInFloatingLayer(el ?? null)) return;
       onClose();
     };
     window.addEventListener("keydown", onKey);

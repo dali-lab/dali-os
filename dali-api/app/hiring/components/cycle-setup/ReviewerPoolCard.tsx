@@ -1,7 +1,8 @@
 import { useFetcher } from "react-router";
 import { X } from "lucide-react";
 import { buttonClasses } from "~/components/ui/Button";
-import { Select, Tooltip } from "~/components/ui/floating";
+import { Combobox, Tooltip } from "~/components/ui/floating";
+import { useDialog } from "~/components/ui/dialog";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { Pill, SetupCard, rowTrigger } from "./SetupCard";
@@ -24,9 +25,34 @@ export function ReviewerPoolCard({
 }) {
   const { bodyText, formTrigger } = useOsChrome();
   const fetcher = useFetcher<{ error?: string }>();
+  const dialog = useDialog();
   const assignedIds = new Set(reviewers.map((r) => r.userId));
   const candidates = members.filter((m) => !assignedIds.has(m.userId));
   const meetsMin = reviewers.length >= MIN_POOL_SIZE;
+
+  async function removeReviewer(userId: string, displayName: string) {
+    const ok = await dialog.confirm({
+      title: `Remove ${displayName} from the reviewer pool?`,
+      description:
+        "They stop reading this cycle's applications. Reviews they've already written have to be removed from the domain lead page first. You can add them back any time.",
+      confirmLabel: "Remove",
+      tone: "destructive",
+    });
+    if (!ok) return;
+    fetcher.submit({ intent: "remove-reviewer-pool", userId }, { method: "post" });
+  }
+
+  async function resetToDefault() {
+    const ok = await dialog.confirm({
+      title: "Reset the pool to the graduating Core seniors?",
+      description:
+        "This replaces everyone currently in the pool with the graduating Core seniors. Anyone dropped stops reading this cycle's applications.",
+      confirmLabel: "Reset pool",
+      tone: "destructive",
+    });
+    if (!ok) return;
+    fetcher.submit({ intent: "reset-default-reviewers" }, { method: "post" });
+  }
 
   return (
     <SetupCard
@@ -51,7 +77,7 @@ export function ReviewerPoolCard({
                     type="button"
                     aria-label={`Remove ${r.displayName}`}
                     onClick={() =>
-                      fetcher.submit({ intent: "remove-reviewer-pool", userId: r.userId }, { method: "post" })
+                      void removeReviewer(r.userId, r.displayName)
                     }
                     className="rounded-os-item p-1.5 text-os-grey transition-colors hover:bg-os-container hover:text-foreground"
                   >
@@ -64,21 +90,22 @@ export function ReviewerPoolCard({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="w-full max-w-xs">
-              <Select
+              <Combobox
                 ariaLabel="Add reviewer"
                 value=""
                 placeholder="Add person"
+                emptyLabel={candidates.length === 0 ? "Everyone is in the pool" : "No matches"}
                 onChange={(userId) => {
                   if (userId) fetcher.submit({ intent: "add-reviewer-pool", userId }, { method: "post" });
                 }}
                 options={candidates.map((m) => ({ value: m.userId, label: m.displayName }))}
-                buttonClassName={rowTrigger(formTrigger)}
+                className={rowTrigger(formTrigger)}
               />
             </div>
             {canResetToDefault && (
               <button
                 type="button"
-                onClick={() => fetcher.submit({ intent: "reset-default-reviewers" }, { method: "post" })}
+                onClick={() => void resetToDefault()}
                 className={buttonClasses("secondary", "sm")}
               >
                 Reset to graduating Core seniors

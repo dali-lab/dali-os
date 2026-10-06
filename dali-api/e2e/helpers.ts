@@ -119,3 +119,19 @@ export async function resetEducationApplications(offeringId: string) {
     await client.end();
   }
 }
+
+/**
+ * Confirm the canonical `useDialog()` / `useConfirmSubmit()` dialog.
+ *
+ * Every destructive action in the app routes through one dialog
+ * (`app/components/ui/dialog.tsx`), so specs assert on it the same way instead
+ * of each one re-deriving a selector for a per-feature confirm button.
+ *
+ * @param page - Playwright Page instance
+ * @param confirmLabel - The dialog's `confirmLabel` (the verb alone, e.g. 'Delete')
+ */
+export async function confirmDialog(page: Page, confirmLabel: string) {
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: confirmLabel, exact: true }).click();
+}

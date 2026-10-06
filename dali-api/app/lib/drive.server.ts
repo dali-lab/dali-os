@@ -167,28 +167,30 @@ export type DriveItem =
        * Wave 2 — e.g. "Hiring 26F", "Confidentiality"). Unpopulated in Wave 0.
        */
       linkedProcess?: { label: string; href: string } | null;
-    }
-  | {
-      type: "emailTemplate";
-      id: string;
-      title: string;
-      /** `folderPageId` — null when unplaced. */
-      parentFolderId: string | null;
-      iconEmoji: null; // email templates have no emoji; callers use a fixed icon
-      updatedAt: Date;
-      href: string;
-      /** File size in bytes (files only; null elsewhere). Drives the Size column. */
-      sizeBytes?: number | null;
-      /** Whether the viewer has favorited this item (pages only). */
-      favorited?: boolean;
-      /**
-       * Signal ②: process that owns or binds this item (derived at load time in
-       * Wave 2 — e.g. "Hiring 26F", "Confidentiality"). Unpopulated in Wave 0.
-       */
-      linkedProcess?: { label: string; href: string } | null;
     };
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
+
+/**
+ * Drop the rows a scoped folder hides from this viewer.
+ *
+ * Project and offering drives inherit access from their workspace, so the
+ * expensive per-page walk is pointless unless somebody has actually scoped a
+ * folder inside one (the "Folder access" control in the Share dialog). When
+ * nothing is scoped — the overwhelmingly common case — this returns the rows
+ * untouched without a single extra query, which is what keeps these loaders as
+ * cheap as they were. When something IS scoped, every row goes through
+ * getPageAccessBulk, because the scope cascades to everything beneath it.
+ */
+async function filterScoped<T extends { id: string; scopeKind?: unknown }>(
+  rows: T[],
+  userSub: string,
+  request?: Request,
+): Promise<T[]> {
+  if (!rows.some((r) => r.scopeKind != null)) return rows;
+  const access = await getPageAccessBulk(userSub, rows as unknown as Parameters<typeof getPageAccessBulk>[1], request);
+  return rows.filter((r) => access.get(r.id)?.canView);
+}
 
 /** Load pages (folders + docs) for a Lab-scope drive, filtering each through
  *  getPageAccess so the caller gets exactly what the viewer may view. */
@@ -261,10 +263,19 @@ async function loadLabPages(userSub: string, request?: Request): Promise<DriveIt
 }
 
 /** Load pages for a project-scope drive. Project membership (Core or staffed)
- *  already gates the project query upstream; every page in a visible project is
- *  viewable by project members, so we skip per-page getPageAccess here for
- *  performance. This matches what the docs hub does for project pages. */
-async function loadProjectPages(projectId: string): Promise<DriveItem[]> {
+ *  already gates the project query upstream, and every page in a visible
+ *  project is viewable by project members — so the per-page getPageAccess walk
+ *  is skipped unless the workspace actually contains an explicitly scoped
+ *  folder. Someone can scope a project folder to "Only people you add" from
+ *  the Share dialog, and without the check the Drive kept listing its contents
+ *  to the whole team even though the folder itself denies them. A workspace
+ *  with no scoped folder (the common case) pays one cheap existence query and
+ *  behaves exactly as before. */
+async function loadProjectPages(
+  projectId: string,
+  userSub: string,
+  request?: Request,
+): Promise<DriveItem[]> {
   const rows = await prisma.page.findMany({
     where: {
       workspaceType: "Project",
@@ -281,10 +292,25 @@ async function loadProjectPages(projectId: string): Promise<DriveItem[]> {
       iconEmoji: true,
       updatedAt: true,
       partnerVisible: true,
+      // Only read by the scoped branch below; cheap to carry either way, and it
+      // saves getPageAccessBulk re-fetching every row.
+      workspaceType: true,
+      workspaceId: true,
+      archivedAt: true,
+      createdById: true,
+      profileVisible: true,
+      labListing: true,
+      linkAccess: true,
+      linkPermission: true,
+      scopeKind: true,
+      scopeGroupId: true,
+      scopePermission: true,
     },
   });
 
-  return rows.map((row) =>
+  const visible = await filterScoped(rows, userSub, request);
+
+  return visible.map((row) =>
     row.kind === "Folder"
       ? {
           type: "folder",
@@ -347,7 +373,11 @@ async function loadEducationFiles(offeringId: string): Promise<DriveItem[]> {
   }));
 }
 
-async function loadEducationPages(offeringId: string): Promise<DriveItem[]> {
+async function loadEducationPages(
+  offeringId: string,
+  userSub: string,
+  request?: Request,
+): Promise<DriveItem[]> {
   const rows = await prisma.page.findMany({
     where: {
       workspaceType: "EducationOffering",
@@ -363,10 +393,25 @@ async function loadEducationPages(offeringId: string): Promise<DriveItem[]> {
       parentPageId: true,
       iconEmoji: true,
       updatedAt: true,
+      // See loadProjectPages: only used when the workspace holds a scoped folder.
+      workspaceType: true,
+      workspaceId: true,
+      archivedAt: true,
+      createdById: true,
+      partnerVisible: true,
+      profileVisible: true,
+      labListing: true,
+      linkAccess: true,
+      linkPermission: true,
+      scopeKind: true,
+      scopeGroupId: true,
+      scopePermission: true,
     },
   });
 
-  return rows.map((row) =>
+  const visible = await filterScoped(rows, userSub, request);
+
+  return visible.map((row) =>
     row.kind === "Folder"
       ? {
           type: "folder",
@@ -522,8 +567,16 @@ async function loadLabFiles(userSub: string, request?: Request): Promise<DriveIt
 
 /** Load files for the given project IDs. Access is inherited from the project:
  *  the caller's `projectIds` list must already be scoped to projects the viewer
- *  can see (same query the docs hub uses). */
-async function loadFiles(projectIds: string[]): Promise<DriveItem[]> {
+ *  can see (same query the docs hub uses) — EXCEPT for files sitting inside a
+ *  scoped folder, which follow the folder instead, the same way loadLabFiles
+ *  handles Core files. Without that, scoping a project folder to "Only people
+ *  you add" hid the folder but kept listing the files inside it to the whole
+ *  team. The per-file check only runs for files actually in a scoped folder. */
+async function loadFiles(
+  projectIds: string[],
+  userSub: string,
+  request?: Request,
+): Promise<DriveItem[]> {
   if (projectIds.length === 0) return [];
   const rows = await prisma.projectFile.findMany({
     where: { projectId: { in: projectIds }, archivedAt: null },
@@ -532,12 +585,31 @@ async function loadFiles(projectIds: string[]): Promise<DriveItem[]> {
       id: true,
       title: true,
       folderPageId: true,
+      projectId: true,
       updatedAt: true,
       partnerVisible: true,
       currentVersion: { select: { sizeBytes: true } },
     },
   });
-  return rows.map((f) => ({
+
+  // Memoised per folder: every file in the same folder gets the same answer,
+  // and a file at the project root skips the walk entirely.
+  const folderAccess = new Map<string, Promise<boolean>>();
+  const visible: typeof rows = [];
+  for (const f of rows) {
+    if (!f.folderPageId) {
+      visible.push(f);
+      continue;
+    }
+    let allowed = folderAccess.get(f.folderPageId);
+    if (!allowed) {
+      allowed = canViewFile(userSub, { projectId: f.projectId, folderPageId: f.folderPageId }, request);
+      folderAccess.set(f.folderPageId, allowed);
+    }
+    if (await allowed) visible.push(f);
+  }
+
+  return visible.map((f) => ({
     type: "file" as const,
     id: f.id,
     title: f.title,
@@ -610,34 +682,6 @@ async function loadRubrics(
     updatedAt: r.updatedAt,
     href: `/hiring/rubrics/${r.id}`,
     linkedProcess: linkedProcessMap?.get(r.id) ?? null,
-  }));
-}
-
-/** Load email templates. Only called when the caller passes
- *  `canManageEmailTemplates: true` (= real isCore, NOT the hiring-widened gate)
- *  — email templates are global, Core-only artifacts that live in the Core
- *  "email-templates" bound folder. Templates file into that folder via the
- *  binding; the Core-subtree split routes them into the Core scope.
- *
- *  NO-WIDENING GUARANTEE: email templates → Core only. The caller must pass
- *  `canManageEmailTemplates` only when the viewer isCore (never hasHiringAccess). */
-async function loadEmailTemplates(
-  linkedProcessMap?: Map<string, { label: string; href: string }>,
-): Promise<DriveItem[]> {
-  const rows = await prisma.emailTemplate.findMany({
-    where: { folderPageId: { not: null } },
-    orderBy: { updatedAt: "desc" },
-    select: { id: true, name: true, folderPageId: true, updatedAt: true },
-  });
-  return rows.map((t) => ({
-    type: "emailTemplate" as const,
-    id: t.id,
-    title: t.name,
-    parentFolderId: t.folderPageId,
-    iconEmoji: null,
-    updatedAt: t.updatedAt,
-    href: `/admin/email-templates/${t.id}`,
-    linkedProcess: linkedProcessMap?.get(t.id) ?? null,
   }));
 }
 
@@ -844,15 +888,6 @@ export interface LoadDriveScopeOptions {
    */
   canManageAgreements?: boolean;
   /**
-   * Whether this viewer may manage email templates (= real isCore, un-widened).
-   * Must be computed by the caller. Email templates are global Core-only
-   * artifacts that live under the Core drive; unlike agreements this gate is
-   * NEVER widened for hiring-team members.
-   *
-   * NO-WIDENING: email templates → Core only.
-   */
-  canManageEmailTemplates?: boolean;
-  /**
    * Optional request for per-request role-check caching (isCore/isLabMember).
    * Callers from route loaders should pass their `request` object.
    */
@@ -891,7 +926,6 @@ export async function loadDriveScope({
   scope,
   canViewForms = false,
   canManageAgreements = false,
-  canManageEmailTemplates = false,
   request,
   preloadedForms,
   linkedProcessMap,
@@ -911,27 +945,26 @@ export async function loadDriveScope({
     // to all lab members (except scoped-folder files, filtered in loadLabFiles).
     // Project-owned files are NOT included here — they appear only in their
     // respective project scope.
-    const [pages, files, agreements, rubrics, emailTemplates] = await Promise.all([
+    const [pages, files, agreements, rubrics] = await Promise.all([
       loadLabPages(userSub, request),
       loadLabFiles(userSub, request),
-      // Agreements, rubrics, and email templates are all Core-only artifacts
-      // living under the Core drive (Agreements / Rubrics / Templates). All
-      // gated on real Core, derived upstream — never widened for the hiring team.
+      // Agreements and rubrics are Core-only artifacts living under the Core
+      // drive. Both gated on real Core, derived upstream — never widened for the
+      // hiring team.
       canManageAgreements ? loadAgreements(linkedProcessMap) : Promise.resolve([] as DriveItem[]),
       canManageAgreements ? loadRubrics(linkedProcessMap) : Promise.resolve([] as DriveItem[]),
-      canManageEmailTemplates ? loadEmailTemplates(linkedProcessMap) : Promise.resolve([] as DriveItem[]),
     ]);
     // Use preloaded forms when the caller has already fetched them (avoids a
     // repeated full-table scan when loadDriveScopes pre-fetches all at once).
     const forms = preloadedForms ?? (canViewForms ? await loadForms(undefined, linkedProcessMap) : []);
-    return [...pages, ...files, ...forms, ...agreements, ...rubrics, ...emailTemplates];
+    return [...pages, ...files, ...forms, ...agreements, ...rubrics];
   }
 
   // EducationOffering scope — pages + uploaded files.
   if (scope.kind === "EducationOffering") {
     const { offeringId } = scope;
     const [pages, files] = await Promise.all([
-      loadEducationPages(offeringId),
+      loadEducationPages(offeringId, userSub, request),
       loadEducationFiles(offeringId),
     ]);
     const forms = preloadedForms ?? (canViewForms ? await loadForms(undefined, linkedProcessMap) : []);
@@ -945,8 +978,8 @@ export async function loadDriveScope({
   // on project access — we don't re-check membership here; the route loader
   // must enforce it before calling loadDriveScope).
   const [pages, files] = await Promise.all([
-    loadProjectPages(projectId),
-    loadFiles([projectId]),
+    loadProjectPages(projectId, userSub, request),
+    loadFiles([projectId], userSub, request),
   ]);
   // Use preloaded forms when the caller has already fetched them (avoids a
   // repeated full-table scan when loadDriveScopes pre-fetches all at once).

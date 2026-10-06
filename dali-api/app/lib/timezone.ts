@@ -249,25 +249,62 @@ export function formatDateShortInZone(date: string | Date, timezone: string): st
   });
 }
 
+function zoneNamePart(
+  date: Date,
+  timezone: string,
+  style: Intl.DateTimeFormatOptions["timeZoneName"],
+): string {
+  return (
+    new Intl.DateTimeFormat("en-US", { timeZone: timezone, timeZoneName: style })
+      .formatToParts(date)
+      .find((p) => p.type === "timeZoneName")?.value ?? ""
+  );
+}
+
 /**
- * "Thu, Jul 20, 2:30 PM EDT" — a concise instant with a dynamic zone
- * abbreviation, for per-recipient server copy (reminder notifications) formatted
- * in each recipient's own zone. Distinct from formatApplicationDateTime, which
+ * A zone's reader-facing name: "ET", "PT", "Japan Time", "India Time".
+ *
+ * Deliberately the generic short name, not the DST-precise abbreviation —
+ * en-US only carries abbreviations for US zones and falls back to a raw offset
+ * everywhere else, so the abbreviation style renders "GMT+9" for Tokyo and
+ * "GMT+5:30" for Kolkata. Generic names cover all 418 IANA zones (asserted in
+ * the test), and dropping the daylight/standard distinction is a bonus: nobody
+ * reading a notification needs to know it is EDT rather than EST.
+ *
+ * The one gap is the UTC family (`UTC`, `Etc/UTC`, `GMT`), valid stored zones
+ * that Intl leaves unnamed. Those come back GMT-shaped and fall through to the
+ * abbreviation, which spells them "UTC". A fixed-offset zone like `Etc/GMT+5`
+ * has no name in either style and keeps its offset, which is the honest answer
+ * for it.
+ *
+ * "GMT-shaped" has to include a bare "GMT", not just "GMT+0": which of the two
+ * ICU returns for the UTC family is version-dependent (ICU 76 on Node 22 says
+ * "GMT", ICU 78 says "GMT+0"). Matching only the offset form left the family
+ * reading "GMT" on Node 22 — what CI and the Fly image both run.
+ */
+export function zoneLabel(date: Date, timezone: string): string {
+  const generic = zoneNamePart(date, timezone, "shortGeneric");
+  if (generic && !/^GMT([+-]|$)/.test(generic)) return generic;
+  return zoneNamePart(date, timezone, "short");
+}
+
+/**
+ * "Thu, Jul 20, 2:30 PM ET" — a concise instant with a reader-facing zone
+ * label, for per-recipient server copy (reminder notifications) formatted in
+ * each recipient's own zone. Distinct from formatApplicationDateTime, which
  * always pins ET for applicant/cycle-facing text.
  */
 export function formatInstantWithZoneLabel(date: string | Date, timezone: string): string {
-  const text = formatInTimeZone(date, timezone, {
+  const d = new Date(date);
+  const text = formatInTimeZone(d, timezone, {
     weekday: "short",
     month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
   });
-  const abbrev =
-    new Intl.DateTimeFormat("en-US", { timeZone: timezone, timeZoneName: "short" })
-      .formatToParts(new Date(date))
-      .find((p) => p.type === "timeZoneName")?.value ?? "";
-  return abbrev ? `${text} ${abbrev}` : text;
+  const label = zoneLabel(d, timezone);
+  return label ? `${text} ${label}` : text;
 }
 
 /**
@@ -314,22 +351,20 @@ export function formatZoneLabel(timezone: string | null | undefined): string {
   return offset ? `${left} (${offset})` : left;
 }
 
-function timeWithAbbrev(d: Date, timezone: string): { time: string; abbrev: string } {
-  const time = formatInTimeZone(d, timezone, { hour: "numeric", minute: "2-digit" });
-  const abbrev =
-    new Intl.DateTimeFormat("en-US", { timeZone: timezone, timeZoneName: "short" })
-      .formatToParts(d)
-      .find((p) => p.type === "timeZoneName")?.value ?? "";
-  return { time, abbrev };
+function timeWithZoneLabel(d: Date, timezone: string): { time: string; label: string } {
+  return {
+    time: formatInTimeZone(d, timezone, { hour: "numeric", minute: "2-digit" }),
+    label: zoneLabel(d, timezone),
+  };
 }
 
 /**
  * Dual-time string anchored to `anchorTz` with the viewer's local time appended,
- * e.g. "2:00 PM EDT · 11:00 AM your time (PDT)". Used for applicant-facing
+ * e.g. "2:00 PM ET · 11:00 AM your time (PT)". Used for applicant-facing
  * interview times: the ET anchor is always shown (so an in-person Dartmouth
  * interview can't be misread) while a remote applicant still sees their own
  * clock. Collapses to the anchor alone when the viewer zone is unknown or
- * renders the same wall-clock time as the anchor.
+ * renders the same wall-clock time and zone name as the anchor.
  */
 export function formatDualTime(
   date: string | Date,
@@ -337,10 +372,10 @@ export function formatDualTime(
   anchorTz: string,
 ): string {
   const d = new Date(date);
-  const anchor = timeWithAbbrev(d, anchorTz);
-  const anchorStr = `${anchor.time} ${anchor.abbrev}`.trim();
+  const anchor = timeWithZoneLabel(d, anchorTz);
+  const anchorStr = `${anchor.time} ${anchor.label}`.trim();
   if (!isValidTimezone(viewerTz) || viewerTz === anchorTz) return anchorStr;
-  const viewer = timeWithAbbrev(d, viewerTz);
-  if (viewer.time === anchor.time && viewer.abbrev === anchor.abbrev) return anchorStr;
-  return `${anchorStr} · ${viewer.time} your time (${viewer.abbrev})`;
+  const viewer = timeWithZoneLabel(d, viewerTz);
+  if (viewer.time === anchor.time && viewer.label === anchor.label) return anchorStr;
+  return `${anchorStr} · ${viewer.time} your time (${viewer.label})`;
 }

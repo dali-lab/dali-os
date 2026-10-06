@@ -9,6 +9,7 @@ import {
   X,
 } from "lucide-react";
 import { Modal } from "~/components/Modal";
+import { useDialog } from "~/components/ui/dialog";
 import { Tooltip } from "~/components/ui/floating";
 import { DocEditor } from "~/components/doc";
 import { modalCardClass, useOsChrome } from "~/components/os-chrome";
@@ -279,13 +280,25 @@ function TemplateDetail({
   onDelete: () => void;
 }) {
   const { iconBtn } = useOsChrome();
+  const dialog = useDialog();
   const [name, setName] = useState("");
   const [content, setContent] = useState<unknown>(null);
   const [loaded, setLoaded] = useState(false);
   const [status, setStatus] = useState<SaveStatus>("idle");
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const timer = useRef<number | null>(null);
   const skipNextSave = useRef(true);
+
+  async function confirmDelete() {
+    const ok = await dialog.confirm({
+      title: name.trim() ? `Delete "${name.trim()}"?` : "Delete this template?",
+      description:
+        "Notes already written from it keep their content. New notes can't use it again.",
+      confirmLabel: "Delete",
+      tone: "destructive",
+    });
+    if (!ok) return;
+    onDelete();
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -434,40 +447,20 @@ function TemplateDetail({
           </button>
         )}
 
-        {confirmingDelete ? (
-          <span className="inline-flex items-center gap-2 text-sm">
-            <span className="text-muted-foreground">Delete this template?</span>
-            <button
-              type="button"
-              onClick={onDelete}
-              disabled={busy}
-              className="text-accent-coral hover:underline disabled:opacity-50"
-            >
-              Delete
-            </button>
-            <button
-              type="button"
-              onClick={() => setConfirmingDelete(false)}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              Cancel
-            </button>
-          </span>
-        ) : (
-          <Tooltip content="Delete template">
-            <button
-              type="button"
-              onClick={() => setConfirmingDelete(true)}
-              aria-label="Delete template"
-              className={cn(
-                "inline-flex items-center justify-center",
-                iconBtn,
-              )}
-            >
-              <Trash2 className="w-4 h-4" aria-hidden />
-            </button>
-          </Tooltip>
-        )}
+        <Tooltip content="Delete template">
+          <button
+            type="button"
+            onClick={() => void confirmDelete()}
+            disabled={busy}
+            aria-label="Delete template"
+            className={cn(
+              "inline-flex items-center justify-center disabled:opacity-50",
+              iconBtn,
+            )}
+          >
+            <Trash2 className="w-4 h-4" aria-hidden />
+          </button>
+        </Tooltip>
       </div>
     </div>
   );

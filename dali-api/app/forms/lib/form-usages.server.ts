@@ -1,6 +1,7 @@
 import { prisma } from "~/lib/db";
 import { SLOTS, isSlot } from "~/projects/lib/form-slots";
 import { NEW_MEMBER_PROFILE_FORM_NAME } from "~/members/lib/profile-form-interpreter";
+import { applicantPortalPath } from "~/hiring/lib/applicant-groups";
 
 // Central answer to "where is this form used?". Each surface keeps its own
 // binding (StaffingCycleFormBinding, PartnerApplicationFormBinding,
@@ -22,6 +23,10 @@ export type FormUsage = {
   /** Where this usage is managed — the feature surface that owns the form.
    *  Absent when there's no single meaningful target. */
   href?: string;
+  /** Staffing usages only: the term code of the cycle this form collects for,
+   *  which is what {{term}} in the form's question text resolves to. Lets the
+   *  builder show an author the real value instead of the token. */
+  termCode?: string;
 };
 
 // A form is "managed" by a feature when that feature owns who fills it and
@@ -40,6 +45,13 @@ const MANAGED_KINDS: ReadonlySet<FormUsageKind> = new Set([
 /** The feature managing this form, if any (first managed usage wins). */
 export function managingUsage(usages: FormUsage[]): FormUsage | null {
   return usages.find((u) => MANAGED_KINDS.has(u.kind)) ?? null;
+}
+
+/** The staffing slot binding, if this form drives one. Carries the term code,
+ *  so an author can be told what {{term}} reads as and a reader can be told
+ *  the slot's one-and-done rule. */
+export function staffingUsage(usages: FormUsage[]): FormUsage | null {
+  return usages.find((u) => u.kind === "staffing") ?? null;
 }
 
 export async function formUsages(formId: string): Promise<FormUsage[]> {
@@ -103,6 +115,7 @@ export async function formUsages(formId: string): Promise<FormUsage[]> {
       kind: "staffing",
       label: `${b.staffingCycle.term.code} ${slotName}`,
       href: "/core/staffing",
+      termCode: b.staffingCycle.term.code,
     });
   }
   if (partnerBinding) {
@@ -202,4 +215,34 @@ export async function formDeletionBlockers(formId: string): Promise<string[]> {
     );
   }
   return blockers;
+}
+
+// Hiring application forms and the partner application are filled on their
+// feature's own applicant route, never through the form's `/forms/fill/:token`
+// link. A form published BEFORE it was bound keeps that link alive, and because
+// managed forms can't have their distribution settings edited, its `audience`
+// is stuck at the `Members` default — so an applicant following the stray link
+// hits the generic gate and is told they don't have access to a form that is
+// meant for them. Resolve where they should have landed instead.
+//
+// Staffing, education and onboarding-profile forms are deliberately absent:
+// those ARE filled at `/forms/fill/:token` (bound staffing forms, session
+// feedback, new-member onboarding), so they own that link legitimately.
+export async function applicantFillRedirect(
+  formId: string,
+): Promise<string | null> {
+  // Newest cycle wins when a form is reused across cycles — a stale link
+  // should land on the cycle that's actually taking applications.
+  const cycle = await prisma.applicationCycle.findFirst({
+    where: { applicationFormId: formId },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, applicants: true },
+  });
+  if (cycle) return applicantPortalPath(cycle.applicants, cycle.id);
+
+  const partner = await prisma.partnerApplicationFormBinding.findFirst({
+    where: { formId },
+    select: { id: true },
+  });
+  return partner ? "/partner/apply" : null;
 }

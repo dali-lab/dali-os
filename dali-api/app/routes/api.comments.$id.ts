@@ -135,7 +135,7 @@ export async function action({ request, params }: Route.ActionArgs) {
           recipientUserIds: freshMentionIds,
           actorId: auth.user.sub,
           link,
-          title: "You were mentioned in a comment",
+          copyKey: "mention.comment",
           preview: newBody.data,
         }).catch((err) =>
           console.error(`comment ${comment.id}: edit mention notify failed`, err),

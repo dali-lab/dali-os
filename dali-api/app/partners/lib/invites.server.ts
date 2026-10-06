@@ -7,6 +7,9 @@ import {
   normalizeEmail,
 } from "./magic-link.server";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
+import { escapeHtml } from "~/lib/email";
+import { renderFramedEmail } from "~/email/lib/layout.server";
+import { humanDuration } from "~/email/lib/auth-email";
 import { getFrontendUrl } from "~/lib/app-env";
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -87,23 +90,33 @@ export async function createPartnerInvite(
 
   const url = `${getFrontendUrl()}/partner/invite/${raw}`;
   const invitedBy = inviterName ? `${inviterName} invited you` : "You've been invited";
+  const expiry = humanDuration(INVITE_TTL_MS / 1000);
+  const org = escapeHtml(invite.partnerOrg.name);
+  const mail = await renderFramedEmail(
+    {
+      subject: `You've been invited to join ${invite.partnerOrg.name} on DALI OS`,
+      preheader: `Join ${invite.partnerOrg.name} on the DALI Lab partner portal.`,
+      cta: { href: url, label: "Accept invitation" },
+      bodyHtml: [
+        `<p style="margin:0 0 16px;">${escapeHtml(invitedBy)} to join <strong>${org}</strong> on DALI OS, the DALI Lab partner portal.</p>`,
+        `<p style="margin:0;color:#52525b;font-size:14px;">This invitation expires in ${expiry}.</p>`,
+      ].join("\n"),
+      text: [
+        `${invitedBy} to join ${invite.partnerOrg.name} on DALI OS, the DALI Lab partner portal.`,
+        url,
+        `This invitation expires in ${expiry}.`,
+      ].join("\n\n"),
+    },
+    { footer: "transactional" },
+  );
   const { id: outboundId } = await enqueueOutbound({
     channel: "email",
     purpose: "Partners",
     dedupKey: `partner.invite:${invite.id}`,
     target: email,
-    subject: `You've been invited to join ${invite.partnerOrg.name} on DALI OS`,
-    bodyHtml: `
-  <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; color: #1f2937;">
-    <p>${invitedBy} to join <strong>${invite.partnerOrg.name}</strong> on DALI OS, the DALI Lab partner portal.</p>
-    <p style="margin: 24px 0;">
-      <a href="${url}" style="background: #1e3a8a; color: #fff; padding: 10px 20px; border-radius: 8px; text-decoration: none;">Accept invitation</a>
-    </p>
-    <p style="color: #6b7280; font-size: 13px;">This invitation expires in 7 days.</p>
-    <p style="color: #6b7280; font-size: 12px; margin-top: 32px;">
-      DALI Lab · Dartmouth College
-    </p>
-  </div>`,
+    subject: mail.subject,
+    bodyHtml: mail.html,
+    bodyText: mail.text,
     eventType: "partner.invite",
   });
   await drainNow([outboundId]);

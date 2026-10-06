@@ -47,6 +47,7 @@ function req(method: string) {
 beforeEach(() => {
   vi.clearAllMocks();
   mockFlagForEveryone.mockResolvedValue(true);
+  delete process.env.DALI_APP_ENV;
 });
 
 function impersonated() {
@@ -94,6 +95,28 @@ describe("requireAuth on an impersonated session", () => {
     expect((await requireAuth(request, { allowImpersonatedWrite: true })).ok).toBe(true);
     // Same request object, no opt-out: still refused.
     expect((await requireAuth(request)).ok).toBe(false);
+  });
+});
+
+// Staging is where a flow gets tested end to end as a member, so the gate
+// opens there and only there.
+describe("requireAuth on an impersonated session, per environment", () => {
+  it("allows writes on staging", async () => {
+    process.env.DALI_APP_ENV = "staging";
+    impersonated();
+
+    expect((await requireAuth(req("POST"))).ok).toBe(true);
+  });
+
+  it.each(["prod", "dev"])("still refuses writes on %s", async (env) => {
+    process.env.DALI_APP_ENV = env;
+    impersonated();
+
+    const result = await requireAuth(req("POST"));
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected a refusal");
+    expect(result.reason).toBe("impersonated_write");
   });
 });
 

@@ -140,8 +140,18 @@ type Props = {
   onTaskClick?: (taskId: string) => void;
   // Opens the task board's create form. Provided only where a board is on the
   // same surface (the os Progress tab), so the Add menu offers "Task" exactly
-  // when there is somewhere for it to land.
-  onAddTask?: () => void;
+  // when there is somewhere for it to land. Called bare from the Add menu (no
+  // context); a story row passes its own epic + story so the form opens already
+  // filed under it.
+  onAddTask?: (link?: {
+    epicId: string;
+    storyId: string;
+    reopenEpicId?: string;
+  }) => void;
+  // An epic to put back on screen — set by the caller once a task form this
+  // component closed for has itself closed. A fresh object per request, so
+  // reopening the same epic twice still re-fires.
+  reopenEpic?: { epicId: string } | null;
 };
 
 function dateInputValue(iso: string): string {
@@ -212,6 +222,7 @@ export function EpicSprintManager({
   currentTermId,
   onTaskClick,
   onAddTask,
+  reopenEpic = null,
 }: Props) {
   const revalidator = useRevalidator();
   const navigate = useNavigate();
@@ -315,6 +326,14 @@ export function EpicSprintManager({
   function closeEpic() {
     setOpenEpicId(null);
   }
+
+  // Put the epic back once the task form it stepped aside for is done with —
+  // adding a second task to the same story shouldn't mean finding the epic
+  // again. Only the add that closed this modal asks for it (reopenEpicId); the
+  // outline's own add covered nothing, so nothing reopens there.
+  useEffect(() => {
+    if (reopenEpic) setOpenEpicId(reopenEpic.epicId);
+  }, [reopenEpic]);
 
   function run(fn: () => Promise<void>) {
     setBusy(true);
@@ -609,6 +628,23 @@ export function EpicSprintManager({
               closeEpic();
             }}
             onDeleted={closeEpic}
+            // Close this modal before the task form opens: a modal on a modal
+            // buries the one underneath, and the board is on this same surface
+            // for the new card to land on. reopenEpicId asks for it back once
+            // that form closes, so a story's second task is one click, not a
+            // trip back through the timeline.
+            onAddTask={
+              onAddTask
+                ? (storyId) => {
+                    closeEpic();
+                    onAddTask({
+                      epicId: activeEpic.id,
+                      storyId,
+                      reopenEpicId: activeEpic.id,
+                    });
+                  }
+                : undefined
+            }
           />
         )}
       </Modal>
@@ -655,6 +691,11 @@ export function EpicSprintManager({
           onEpicClick={canManage ? (id) => openEpic(id) : undefined}
           onStoryClick={canManage ? (epicId) => openEpic(epicId) : undefined}
           onTaskClick={onTaskClick}
+          onAddTask={
+            canManage && onAddTask
+              ? (epicId, storyId) => onAddTask({ epicId, storyId })
+              : undefined
+          }
         />
       )}
     </div>
@@ -678,6 +719,7 @@ export function EpicDetail({
   userName,
   onClose,
   onDeleted,
+  onAddTask,
 }: {
   projectId: string;
   epic: EditableEpic;
@@ -706,6 +748,9 @@ export function EpicDetail({
   userName: string;
   onClose: () => void;
   onDeleted: () => void;
+  // Files a task under one of this epic's stories. Omitted where there is no
+  // board to receive it (the partner hub), which hides the affordance.
+  onAddTask?: (storyId: string) => void;
 }) {
   const dialog = useDialog();
   const [newStoryOpen, setNewStoryOpen] = useState(Boolean(autoNewStory));
@@ -1163,6 +1208,19 @@ export function EpicDetail({
                       )}
                     </button>
                   </Tooltip>
+                  {canEditContent && onAddTask && (
+                    <Tooltip content="Add task">
+                      <button
+                        type="button"
+                        disabled={busy}
+                        aria-label={`Add task to ${story.title}`}
+                        className="flex flex-shrink-0 text-os-grey transition-colors hover:text-os-fg"
+                        onClick={() => onAddTask(story.id)}
+                      >
+                        <Plus className="h-3.5 w-3.5" strokeWidth={3} />
+                      </button>
+                    </Tooltip>
+                  )}
                   {canEditContent && (
                     <button
                       type="button"
@@ -1173,6 +1231,8 @@ export function EpicDetail({
                         if (
                           !(await dialog.confirm({
                             title: `Delete story "${story.title}"?`,
+                            description:
+                              "Tasks on this story stay, but lose their story link.",
                             confirmLabel: "Delete",
                             tone: "destructive",
                           }))

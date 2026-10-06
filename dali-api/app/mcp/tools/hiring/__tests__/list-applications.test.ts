@@ -100,9 +100,9 @@ describe("list_applications", () => {
     vi.mocked(getUserRoles).mockResolvedValue(coreRoles);
     mockPrisma.domainApplication.findMany.mockResolvedValue([fakeApp]);
 
-    const result = await runListApplications("u1", { cycleId: "cy1" }) as any[];
-    expect(result).toHaveLength(1);
-    expect(result[0]).toMatchObject({
+    const { applications } = await runListApplications("u1", { cycleId: "cy1" }) as { applications: any[] };
+    expect(applications).toHaveLength(1);
+    expect(applications[0]).toMatchObject({
       domainApplicationId: "da1",
       applicantName: "Alice Smith",
       domain: "Design",
@@ -118,8 +118,8 @@ describe("list_applications", () => {
     mockPrisma.cycleReviewer.findMany.mockResolvedValue([{ domainId: "dom1" }]);
     mockPrisma.domainApplication.findMany.mockResolvedValue([fakeApp]);
 
-    const result = await runListApplications("u2", { cycleId: "cy1" }) as any[];
-    expect(result).toHaveLength(1);
+    const { applications } = await runListApplications("u2", { cycleId: "cy1" }) as { applications: any[] };
+    expect(applications).toHaveLength(1);
     // Confirm domain filter was applied via OR clause.
     expect(mockPrisma.domainApplication.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -135,7 +135,7 @@ describe("list_applications", () => {
     mockPrisma.cycleReviewer.findMany.mockResolvedValue([]);
 
     const result = await runListApplications("u2", { cycleId: "cy1" });
-    expect(result).toEqual([]);
+    expect(result).toEqual({ applications: [] });
     expect(mockPrisma.domainApplication.findMany).not.toHaveBeenCalled();
   });
 
@@ -153,8 +153,8 @@ describe("list_applications", () => {
     };
     mockPrisma.domainApplication.findMany.mockResolvedValue([fakeApp, draftApp]);
 
-    const result = await runListApplications("u1", { cycleId: "cy1", status: "Submitted" }) as any[];
-    expect(result).toHaveLength(1);
-    expect(result[0].status).toBe("Submitted");
+    const { applications } = await runListApplications("u1", { cycleId: "cy1", status: "Submitted" }) as { applications: any[] };
+    expect(applications).toHaveLength(1);
+    expect(applications[0].status).toBe("Submitted");
   });
 });

@@ -15,6 +15,10 @@ import { cn } from "~/lib/cn";
 // `defaultValue`) and a hidden native <input type={mode}> mirrors the value.
 
 const POPOVER_WIDTH = 272;
+// How far the year list reaches when the caller gives no min/max. Back far
+// enough for a birthday, forward enough for a multi-year plan.
+const YEARS_BACK = 100;
+const YEARS_FORWARD = 10;
 
 export type DateFieldMode = "date" | "datetime-local" | "time";
 
@@ -42,6 +46,7 @@ const MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ];
+const MONTHS_SHORT = MONTHS.map((m) => m.slice(0, 3));
 
 function parts(mode: DateFieldMode, v: string | undefined) {
   // Returns {y,m,d,hh,mm} (m is 0-based) or null when unset/malformed.
@@ -84,6 +89,12 @@ const dateKey = (y: number, m: number, d: number) => `${y}-${pad(m + 1)}-${pad(d
 // 24h ↔ 12h + meridiem. Storage stays 24h; the US-style UI shows 1-12 + AM/PM.
 const to12 = (hh24: number) => (hh24 % 12 === 0 ? 12 : hh24 % 12);
 const from12 = (h12: number, pm: boolean) => (h12 % 12) + (pm ? 12 : 0);
+
+/** Step a calendar day by `delta` days, crossing month/year boundaries. */
+function shiftDay(y: number, m: number, d: number, delta: number) {
+  const t = new Date(Date.UTC(y, m, d + delta));
+  return { y: t.getUTCFullYear(), m: t.getUTCMonth(), d: t.getUTCDate() };
+}
 
 // A single time segment (hour or minute) that types like a native time field:
 // focus selects the segment so you overtype, valid digits commit live, arrow
@@ -143,10 +154,14 @@ function TimePart({
           onCommit(value <= min ? max : value - 1);
         }
       }}
-      className="w-12 rounded-md border border-border bg-background px-1.5 py-1 text-center text-sm tabular-nums text-foreground focus:outline-none focus:ring-1 focus:ring-accent-coral/40"
+      className="w-12 min-w-0 rounded-md border border-border bg-background px-1.5 py-1 text-center text-sm tabular-nums text-foreground focus:outline-none focus:ring-1 focus:ring-accent-coral/40"
     />
   );
 }
+
+// The header's month / year chips swap the day grid for a list, so reaching a
+// distant year is one click and a pick instead of scrolling the months there.
+type Pane = "days" | "months" | "years";
 
 export function DateField({
   mode,
@@ -170,16 +185,24 @@ export function DateField({
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const popRef = useRef<HTMLDivElement | null>(null);
+  const yearPaneRef = useRef<HTMLDivElement | null>(null);
   const [pos, setPos] = useState<{ top: number; left: number; minWidth: number } | null>(null);
 
   const cur = parts(mode, current);
   const today = new Date();
   const [viewY, setViewY] = useState(cur?.y ?? today.getFullYear());
   const [viewM, setViewM] = useState(cur?.m ?? today.getMonth());
+  const [pane, setPane] = useState<Pane>("days");
+  // The day the grid's single tab stop sits on, so arrow keys walk the calendar
+  // instead of Tab stepping through 31 buttons.
+  const [focusKey, setFocusKey] = useState<string | null>(null);
 
   useEffect(() => {
-    // Re-centre the visible month on the selected value when the popover opens.
-    if (open && cur) {
+    // Re-centre the visible month on the selected value when the popover opens,
+    // and always open on the day grid.
+    if (!open) return;
+    setPane("days");
+    if (cur) {
       setViewY(cur.y);
       setViewM(cur.m);
     }
@@ -191,13 +214,32 @@ export function DateField({
     onChange?.(next);
   }
 
+  function close() {
+    setOpen(false);
+    setFocusKey(null);
+    triggerRef.current?.focus({ preventScroll: true });
+  }
+
   function pickDay(y: number, m: number, d: number) {
     emit(build(mode, { y, m, d, hh: cur?.hh ?? 0, mm: cur?.mm ?? 0 }));
-    if (mode === "date") setOpen(false);
+    if (mode === "date") close();
   }
   function setTime(hh: number, mm: number) {
     const base = cur ?? { y: today.getFullYear(), m: today.getMonth(), d: today.getDate(), hh: 0, mm: 0 };
     emit(build(mode, { ...base, hh, mm }));
+  }
+  function stepMonth(delta: number) {
+    const total = viewY * 12 + viewM + delta;
+    setViewY(Math.floor(total / 12));
+    setViewM(((total % 12) + 12) % 12);
+  }
+  // Jumping the view leaves the remembered day in a month that is no longer
+  // rendered, which would leave the grid with no tab stop at all.
+  function showMonth(y: number, m: number) {
+    setViewY(y);
+    setViewM(m);
+    setFocusKey(null);
+    setPane("days");
   }
 
   const reposition = useCallback(() => {
@@ -206,21 +248,35 @@ export function DateField({
     // A fixed width, not the trigger's: the day cells are square, so a popover
     // stretched to a full-width field grew into a giant calendar.
     const minWidth = POPOVER_WIDTH;
-    const left = Math.min(r.left, window.innerWidth - minWidth - 8);
-    // Estimate popover height from the DOM element when available, otherwise
-    // use a reasonable fallback (calendar grid ~300px, datetime adds time row).
-    const popoverEl = document.querySelector<HTMLElement>("[data-datefield-popover]");
-    const popoverHeight = popoverEl ? popoverEl.offsetHeight : 320;
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - minWidth - 8));
+    // Measure THIS field's popover (it renders hidden until placed, so the box
+    // is real by now). A shared `document.querySelector` read whichever popover
+    // happened to be in the DOM, and before the rewrite read none at all — so
+    // every popover was placed as if it were 320px tall and a taller one near
+    // the bottom of the window opened off-screen.
+    const popoverHeight = popRef.current?.offsetHeight ?? 320;
     let top = r.bottom + 4;
     if (top + popoverHeight > window.innerHeight) {
-      top = r.top - 4 - popoverHeight;
+      top = Math.max(8, r.top - 4 - popoverHeight);
     }
-    setPos({ top, left, minWidth });
+    setPos((prev) =>
+      prev && prev.top === top && prev.left === left && prev.minWidth === minWidth
+        ? prev
+        : { top, left, minWidth },
+    );
   }, []);
 
   useLayoutEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setPos(null);
+      return;
+    }
     reposition();
+    // Switching to the year pane (or the time row appearing) changes the height,
+    // so re-place on resize rather than trusting the first measurement.
+    const ro = new ResizeObserver(reposition);
+    if (popRef.current) ro.observe(popRef.current);
+    return () => ro.disconnect();
   }, [open, reposition]);
 
   useEffect(() => {
@@ -229,13 +285,14 @@ export function DateField({
       const t = e.target as Node;
       if (triggerRef.current?.contains(t) || popRef.current?.contains(t)) return;
       setOpen(false);
+      setFocusKey(null);
     }
     function onKey(e: KeyboardEvent) {
       // Consume Escape so a picker inside a popover (e.g. the calendar composer)
       // closes just the calendar, not the whole dialog behind it.
       if (e.key === "Escape") {
         e.stopPropagation();
-        setOpen(false);
+        close();
       }
     }
     document.addEventListener("mousedown", onDown);
@@ -256,13 +313,89 @@ export function DateField({
   const maxKey = max && parts(mode, max) ? max.slice(0, 10) : null;
   const outOfRange = (k: string) => (minKey && k < minKey) || (maxKey && k > maxKey);
 
-
   const display = formatDisplay(mode, current);
   const showCalendar = mode !== "time";
   const showTime = mode !== "date";
 
-  const leadingBlanks = showCalendar ? firstWeekday(viewY, viewM) : 0;
-  const dayCount = showCalendar ? daysInMonth(viewY, viewM) : 0;
+  const leadingBlanks = showCalendar && pane === "days" ? firstWeekday(viewY, viewM) : 0;
+  const dayCount = showCalendar && pane === "days" ? daysInMonth(viewY, viewM) : 0;
+
+  // Honour min/max when they bound the years, so a "no past dates" field doesn't
+  // offer 1926 and a birthday field doesn't offer 2036. Always wide enough to
+  // hold the value being edited, however far out of range it already is.
+  const firstYear = Math.min(
+    minKey ? +minKey.slice(0, 4) : today.getFullYear() - YEARS_BACK,
+    viewY,
+    cur?.y ?? viewY,
+  );
+  const lastYear = Math.max(
+    maxKey ? +maxKey.slice(0, 4) : today.getFullYear() + YEARS_FORWARD,
+    viewY,
+    cur?.y ?? viewY,
+  );
+  const years = Array.from({ length: lastYear - firstYear + 1 }, (_, i) => firstYear + i);
+
+  // Keep the chosen year in sight when the list opens — the range can be a
+  // century long, and it is pointless to land on 1926 every time.
+  useLayoutEffect(() => {
+    if (pane !== "years") return;
+    yearPaneRef.current
+      ?.querySelector<HTMLElement>("[data-year-selected]")
+      ?.scrollIntoView({ block: "center" });
+  }, [pane]);
+
+  // The one day cell in the tab order: the selection, else today, else day 1.
+  const tabStopKey =
+    focusKey ??
+    (cur && cur.y === viewY && cur.m === viewM
+      ? dateKey(viewY, viewM, cur.d)
+      : today.getFullYear() === viewY && today.getMonth() === viewM
+        ? dateKey(viewY, viewM, today.getDate())
+        : dateKey(viewY, viewM, 1));
+
+  // Pull focus into the popover once it is placed. Without this the calendar is
+  // unreachable by keyboard: the portal renders at the end of <body>, so Tab
+  // from the trigger walks the rest of the page before ever arriving here.
+  const grabbedFocus = useRef(false);
+  useLayoutEffect(() => {
+    if (!open) {
+      grabbedFocus.current = false;
+      return;
+    }
+    if (!pos || grabbedFocus.current) return;
+    grabbedFocus.current = true;
+    const first = popRef.current?.querySelector<HTMLElement>(
+      showCalendar ? `[data-day='${tabStopKey}']` : "input",
+    );
+    first?.focus({ preventScroll: true });
+  }, [open, pos, showCalendar, tabStopKey]);
+
+  // Move the grid's tab stop with the arrow keys, following it across months.
+  useLayoutEffect(() => {
+    if (!open || pane !== "days" || !focusKey) return;
+    popRef.current
+      ?.querySelector<HTMLElement>(`[data-day='${focusKey}']`)
+      ?.focus({ preventScroll: true });
+  }, [open, pane, focusKey, viewY, viewM]);
+
+  function onGridKeyDown(e: React.KeyboardEvent) {
+    const deltas: Record<string, number> = {
+      ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7, PageUp: -28, PageDown: 28,
+    };
+    const delta = deltas[e.key];
+    if (delta === undefined) return;
+    e.preventDefault();
+    const from = parts("date", focusKey ?? undefined) ?? cur ?? {
+      y: viewY, m: viewM, d: Math.min(today.getDate(), daysInMonth(viewY, viewM)),
+    };
+    const next = shiftDay(from.y, from.m, from.d, delta);
+    setViewY(next.y);
+    setViewM(next.m);
+    setFocusKey(dateKey(next.y, next.m, next.d));
+  }
+
+  const chipClass =
+    "rounded px-1.5 py-0.5 text-sm font-medium text-foreground hover:bg-muted focus:outline-none focus:ring-1 focus:ring-accent-coral/40";
 
   return (
     <span className={cn("inline-block", className)}>
@@ -288,7 +421,7 @@ export function DateField({
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label={ariaLabel}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => (open ? close() : setOpen(true))}
         className={
           buttonClassName
             ? cn("inline-flex w-full items-center justify-between gap-2 disabled:opacity-60", buttonClassName)
@@ -306,13 +439,23 @@ export function DateField({
       </button>
 
       {open &&
-        pos &&
         createPortal(
+          // Rendered (hidden) before it is placed so `reposition` can measure the
+          // real height, and tagged so a host card's outside-click dismissal
+          // knows a click in here belongs to it — see isInFloatingLayer.
           <div
             ref={popRef}
             role="dialog"
             data-datefield-popover
-            style={{ position: "fixed", top: pos.top, left: pos.left, width: pos.minWidth }}
+            data-field-popover
+            aria-label={ariaLabel}
+            style={{
+              position: "fixed",
+              top: pos?.top ?? 0,
+              left: pos?.left ?? 0,
+              width: POPOVER_WIDTH,
+              visibility: pos ? "visible" : "hidden",
+            }}
             className="z-[60] rounded-lg border border-border bg-card p-3 shadow-brand-2"
           >
             {showCalendar && (
@@ -321,72 +464,143 @@ export function DateField({
                   <button
                     type="button"
                     aria-label="Previous month"
-                    onClick={() => {
-                      const m = viewM - 1;
-                      if (m < 0) { setViewM(11); setViewY(viewY - 1); } else setViewM(m);
-                    }}
-                    className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    disabled={pane !== "days"}
+                    onClick={() => stepMonth(-1)}
+                    className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:invisible"
                   >
                     <ChevronLeft className="h-4 w-4" />
                   </button>
-                  <span className="text-sm font-medium text-foreground">
-                    {MONTHS[viewM]} {viewY}
+                  <span className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      aria-expanded={pane === "months"}
+                      onClick={() => setPane((p) => (p === "months" ? "days" : "months"))}
+                      className={cn(chipClass, pane === "months" && "bg-muted")}
+                    >
+                      {MONTHS[viewM]}
+                    </button>
+                    <button
+                      type="button"
+                      aria-expanded={pane === "years"}
+                      onClick={() => setPane((p) => (p === "years" ? "days" : "years"))}
+                      className={cn(chipClass, "tabular-nums", pane === "years" && "bg-muted")}
+                    >
+                      {viewY}
+                    </button>
                   </span>
                   <button
                     type="button"
                     aria-label="Next month"
-                    onClick={() => {
-                      const m = viewM + 1;
-                      if (m > 11) { setViewM(0); setViewY(viewY + 1); } else setViewM(m);
-                    }}
-                    className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    disabled={pane !== "days"}
+                    onClick={() => stepMonth(1)}
+                    className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:invisible"
                   >
                     <ChevronRight className="h-4 w-4" />
                   </button>
                 </div>
-                <div className="grid grid-cols-7 gap-0.5 text-center">
-                  {WEEKDAYS.map((w, i) => (
-                    <span key={i} className="py-1 text-[11px] font-medium text-muted-foreground">
-                      {w}
-                    </span>
-                  ))}
-                  {Array.from({ length: leadingBlanks }, (_, i) => (
-                    <span key={`b${i}`} />
-                  ))}
-                  {Array.from({ length: dayCount }, (_, i) => {
-                    const d = i + 1;
-                    const k = dateKey(viewY, viewM, d);
-                    const selected = cur && cur.y === viewY && cur.m === viewM && cur.d === d;
-                    const isToday =
-                      today.getFullYear() === viewY && today.getMonth() === viewM && today.getDate() === d;
-                    const disabledDay = !!outOfRange(k);
-                    return (
+
+                {pane === "months" && (
+                  <div className="grid grid-cols-3 gap-1" role="group" aria-label="Month">
+                    {MONTHS_SHORT.map((label, m) => (
                       <button
-                        key={d}
+                        key={label}
                         type="button"
-                        disabled={disabledDay}
-                        onClick={() => pickDay(viewY, viewM, d)}
-                        aria-current={isToday ? "date" : undefined}
+                        aria-pressed={m === viewM}
+                        onClick={() => showMonth(viewY, m)}
                         className={cn(
-                          "aspect-square rounded text-sm transition-colors",
-                          selected
+                          "rounded py-1.5 text-sm transition-colors",
+                          m === viewM
                             ? "bg-accent-coral text-white"
-                            : isToday
-                              ? "font-semibold text-accent-coral ring-1 ring-inset ring-accent-coral/60 hover:bg-muted"
-                              : "text-foreground hover:bg-muted",
-                          disabledDay && "cursor-not-allowed opacity-30 hover:bg-transparent",
+                            : "text-foreground hover:bg-muted",
                         )}
                       >
-                        {d}
+                        {label}
                       </button>
-                    );
-                  })}
-                </div>
+                    ))}
+                  </div>
+                )}
+
+                {pane === "years" && (
+                  <div
+                    ref={yearPaneRef}
+                    role="group"
+                    aria-label="Year"
+                    className="grid max-h-56 grid-cols-4 gap-1 overflow-y-auto"
+                  >
+                    {years.map((y) => {
+                      const selected = y === viewY;
+                      return (
+                        <button
+                          key={y}
+                          type="button"
+                          aria-pressed={selected}
+                          data-year-selected={selected ? "" : undefined}
+                          onClick={() => showMonth(y, viewM)}
+                          className={cn(
+                            "rounded py-1.5 text-sm tabular-nums transition-colors",
+                            selected
+                              ? "bg-accent-coral text-white"
+                              : "text-foreground hover:bg-muted",
+                          )}
+                        >
+                          {y}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {pane === "days" && (
+                  <div
+                    className="grid grid-cols-7 gap-0.5 text-center"
+                    onKeyDown={onGridKeyDown}
+                  >
+                    {WEEKDAYS.map((w, i) => (
+                      <span key={i} className="py-1 text-[11px] font-medium text-muted-foreground">
+                        {w}
+                      </span>
+                    ))}
+                    {Array.from({ length: leadingBlanks }, (_, i) => (
+                      <span key={`b${i}`} />
+                    ))}
+                    {Array.from({ length: dayCount }, (_, i) => {
+                      const d = i + 1;
+                      const k = dateKey(viewY, viewM, d);
+                      const selected = cur && cur.y === viewY && cur.m === viewM && cur.d === d;
+                      const isToday =
+                        today.getFullYear() === viewY && today.getMonth() === viewM && today.getDate() === d;
+                      const disabledDay = !!outOfRange(k);
+                      return (
+                        <button
+                          key={d}
+                          type="button"
+                          data-day={k}
+                          disabled={disabledDay}
+                          tabIndex={k === tabStopKey ? 0 : -1}
+                          onFocus={() => setFocusKey(k)}
+                          onClick={() => pickDay(viewY, viewM, d)}
+                          aria-current={isToday ? "date" : undefined}
+                          className={cn(
+                            "aspect-square rounded text-sm transition-colors",
+                            selected
+                              ? "bg-accent-coral text-white"
+                              : isToday
+                                ? "font-semibold text-accent-coral ring-1 ring-inset ring-accent-coral/60 hover:bg-muted"
+                                : "text-foreground hover:bg-muted",
+                            disabledDay && "cursor-not-allowed opacity-30 hover:bg-transparent",
+                          )}
+                        >
+                          {d}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </>
             )}
 
             {showTime && (
-              <div className={cn("flex items-center gap-2", showCalendar && "mt-3 border-t border-border pt-3")}>
+              <div className={cn("flex items-center gap-1.5", showCalendar && "mt-3 border-t border-border pt-3")}>
                 <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />
                 <TimePart
                   value={to12(cur?.hh ?? 0)}
@@ -404,7 +618,7 @@ export function DateField({
                   ariaLabel="Minute"
                   onCommit={(m) => setTime(cur?.hh ?? 0, m)}
                 />
-                <div className="inline-flex overflow-hidden rounded-md border border-border" role="group" aria-label="AM/PM">
+                <div className="inline-flex shrink-0 overflow-hidden rounded-md border border-border" role="group" aria-label="AM/PM">
                   {([["AM", false], ["PM", true]] as const).map(([label, pm]) => {
                     const active = ((cur?.hh ?? 0) >= 12) === pm;
                     return (
@@ -426,8 +640,8 @@ export function DateField({
                 {mode === "datetime-local" && (
                   <button
                     type="button"
-                    onClick={() => setOpen(false)}
-                    className="ml-auto rounded-md bg-accent-coral px-2.5 py-1 text-xs font-medium text-white hover:bg-accent-coral-light"
+                    onClick={close}
+                    className="ml-auto shrink-0 rounded-md bg-accent-coral px-2.5 py-1 text-xs font-medium text-white hover:bg-accent-coral-light"
                   >
                     Done
                   </button>

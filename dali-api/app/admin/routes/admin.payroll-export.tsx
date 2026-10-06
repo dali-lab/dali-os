@@ -17,6 +17,7 @@ import { fullName } from "~/lib/display";
 import { logAuditEvent } from "~/lib/audit";
 import { Download, FileDown, AlertTriangle, Users, X } from "lucide-react";
 import { Checkbox } from "~/components/ui/Checkbox";
+import { useDialog } from "~/components/ui/dialog";
 import { buttonClasses } from "~/components/ui/Button";
 import { Select, Combobox } from "~/components/ui/floating";
 import { filterPillClass } from "~/components/ui/floating/styles";
@@ -537,6 +538,7 @@ function TechnigalaSection({
   setSelected: (s: Set<string>) => void;
 }) {
   const fetcher = useFetcher();
+  const dialog = useDialog();
   const [picked, setPicked] = useState("");
 
   const hiredIds = useMemo(() => new Set(hires.map((h) => h.userId)), [hires]);
@@ -558,7 +560,15 @@ function TechnigalaSection({
     );
   }
 
-  function remove(userId: string) {
+  async function remove(userId: string, name: string) {
+    const ok = await dialog.confirm({
+      title: `Remove ${name} from Technigala?`,
+      description:
+        "Their Technigala hours drop off this payroll export. You can add them back from the picker.",
+      confirmLabel: "Remove",
+      tone: "destructive",
+    });
+    if (!ok) return;
     fetcher.submit(
       { intent: "remove-technigala", userId, termId },
       { method: "post" },
@@ -648,7 +658,9 @@ function TechnigalaSection({
                   <td className="px-3 py-2">
                     <button
                       type="button"
-                      onClick={() => remove(c.userId)}
+                      onClick={() =>
+                        void remove(c.userId, `${c.firstName} ${c.lastName}`.trim())
+                      }
                       aria-label={`Remove ${c.firstName} ${c.lastName} from Technigala`}
                       className="text-muted-foreground hover:text-destructive transition-colors"
                     >

@@ -9,6 +9,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
+    "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "typecheck": "react-router typegen && tsc",
@@ -16,7 +17,8 @@
     "db:reset:local": "PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION=yes DATABASE_URL=postgresql://dali:dali@localhost:5432/dali prisma migrate reset --force && DATABASE_URL=postgresql://dali:dali@localhost:5432/dali prisma db seed",
     "db:fetch:members": "tsx --env-file .env prisma/fetch-members.ts",
     "db:seed:members": "tsx prisma/seed-members.ts",
-    "db:seed:v0-reference": "tsx --env-file .env prisma/seeds/v0-reference.ts"
+    "db:seed:v0-reference": "tsx --env-file .env prisma/seeds/v0-reference.ts",
+    "db:seed:resources-demo": "tsx --env-file .env prisma/seeds/resources-demo.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",
@@ -95,6 +97,7 @@
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "@vitest/coverage-v8": "^4.1.11",
     "@vitest/ui": "^4.1.4",
     "prisma": "^7.9.0",
     "tailwindcss": "^4.2.2",

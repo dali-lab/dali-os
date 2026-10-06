@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useFetcher } from "react-router";
 import { Smartphone, Wallet } from "lucide-react";
+import { useConfirmSubmit } from "~/components/ui/dialog";
 
 export function WalletSettingsBlock({
   wallet,
@@ -10,7 +11,7 @@ export function WalletSettingsBlock({
   const revokeFetcher = useFetcher<{ error?: string } | null>();
   const [googleBusy, setGoogleBusy] = useState(false);
   const [googleError, setGoogleError] = useState<string | null>(null);
-  const [confirmRevoke, setConfirmRevoke] = useState(false);
+  const confirmSubmit = useConfirmSubmit();
   const revoking = revokeFetcher.state !== "idle";
 
   async function addToGoogle() {
@@ -76,41 +77,25 @@ export function WalletSettingsBlock({
       )}
 
       <div className="border-t border-border pt-4">
-        {confirmRevoke ? (
-          <revokeFetcher.Form
-            method="post"
-            onSubmit={() => setConfirmRevoke(false)}
-            className="flex items-center gap-2 flex-wrap"
-          >
-            <input type="hidden" name="intent" value="revoke-wallet-pass" />
-            <span className="text-sm text-foreground">
-              Reset your pass? Your current one stops working until you re-add
-              it.
-            </span>
-            <button
-              type="submit"
-              disabled={revoking}
-              className="px-3 py-1.5 rounded-full bg-destructive text-white text-[13px] font-semibold hover:brightness-95 disabled:opacity-50"
-            >
-              {revoking ? "Resetting…" : "Reset pass"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setConfirmRevoke(false)}
-              className="px-3.5 py-1.5 rounded-full text-[13px] font-semibold text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              Cancel
-            </button>
-          </revokeFetcher.Form>
-        ) : (
+        <revokeFetcher.Form
+          method="post"
+          onSubmit={confirmSubmit({
+            title: "Reset your wallet pass?",
+            description:
+              "Your current pass stops working until you re-add it from this page. Anyone holding a copy of the old one can't check in with it.",
+            confirmLabel: "Reset pass",
+            tone: "destructive",
+          })}
+        >
+          <input type="hidden" name="intent" value="revoke-wallet-pass" />
           <button
-            type="button"
-            onClick={() => setConfirmRevoke(true)}
-            className="text-sm text-destructive hover:underline"
+            type="submit"
+            disabled={revoking}
+            className="text-sm text-destructive hover:underline disabled:opacity-50"
           >
-            Reset my wallet pass
+            {revoking ? "Resetting…" : "Reset my wallet pass"}
           </button>
-        )}
+        </revokeFetcher.Form>
         {revokeFetcher.data?.error && (
           <p className="text-xs text-destructive mt-2">
             {revokeFetcher.data.error}

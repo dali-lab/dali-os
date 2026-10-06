@@ -7,6 +7,22 @@ primary_region = "iad"
   # hard-coded 10s timeout — the first attempt sometimes loses the race.
   # See issue #101.
   release_command = "sh -c 'n=0; until npx prisma migrate deploy; do n=$((n+1)); [ $n -ge 4 ] && exit 1; sleep $n; done; npx prisma db seed'"
+  release_command_timeout = "15m"
+
+  # The release machine does NOT inherit the [[vm]] block below. Fly sizes it
+  # from the largest machine in the app's default process group, falling back to
+  # the shared-cpu-2x preset (2 shared cores / 512MB) when the app has none.
+  # For previews that fallback is permanent, not first-deploy-only: the app is
+  # created fresh per PR and release_command runs *before* the first app machine
+  # exists, so a failing seed means no machine ever gets created, which means
+  # the next attempt is sized off an empty process group again. 512MB can't run
+  # `prisma db seed` (a 4.7k-line seed plus five seed modules, transpiled by tsx
+  # in-process alongside the Prisma client): it died either OOM-killed
+  # (exit 137) or thrashing until the 5m default release_command_timeout.
+  [deploy.release_command_vm]
+    memory = "2gb"
+    cpu_kind = "shared"
+    cpus = 2
 
 [env]
   NODE_ENV = "development"

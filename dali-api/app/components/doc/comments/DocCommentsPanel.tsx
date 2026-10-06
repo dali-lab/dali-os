@@ -16,6 +16,7 @@ import { useEffect, useRef, useState, useSyncExternalStore, useCallback } from "
 import { Trash2 } from "lucide-react";
 
 import { Avatar } from "~/components/ui/Avatar";
+import { useDialog } from "~/components/ui/dialog";
 import { CommentComposer } from "~/components/collab/CommentComposer";
 import { type BodySegment, segmentsToPlainText } from "~/lib/comment-body";
 import { DaliThreadStore, getOrCreateStore } from "./DaliThreadStore";
@@ -100,6 +101,7 @@ export function DocCommentsPanel({
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [replyDraft, setReplyDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  const dialog = useDialog();
   const [fetchErr, setFetchErr] = useState<string | null>(null);
   const [postErr, setPostErr] = useState<string | null>(null);
   const mounted = useRef(false);
@@ -169,6 +171,13 @@ export function DocCommentsPanel({
   }
 
   async function deleteComment(id: string) {
+    const ok = await dialog.confirm({
+      title: "Delete this comment?",
+      description: "Its replies go with it, for everyone. This can't be undone.",
+      confirmLabel: "Delete",
+      tone: "destructive",
+    });
+    if (!ok) return;
     setBusy(true);
     setPostErr(null);
     try {

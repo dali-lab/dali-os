@@ -21,9 +21,13 @@ import { buttonClasses } from "~/components/ui/Button";
  *   if (!(await dialog.confirm({ title: "Delete file?", tone: "destructive" }))) return;
  *   const name = await dialog.prompt({ title: "New folder", label: "Folder name" });
  *
- * The dialog stays "dumb": it resolves and closes immediately. Any async work
- * (fetcher submit, network) stays with the caller and keeps its own pending UI,
- * exactly matching native `confirm()` semantics.
+ * By default the dialog stays "dumb": it resolves and closes immediately. Any
+ * async work (fetcher submit, network) stays with the caller and keeps its own
+ * pending UI, exactly matching native `confirm()` semantics.
+ *
+ * Pass `onConfirm` when the action's failure has nowhere else to surface — the
+ * dialog then holds itself open, disables both buttons, and shows the returned
+ * message inline so the user can retry without reopening it.
  */
 
 export interface ConfirmOptions {
@@ -35,6 +39,16 @@ export interface ConfirmOptions {
   tone?: "default" | "destructive";
   /** Override the leading icon (defaults to a warning triangle for destructive). */
   icon?: ReactNode;
+  /**
+   * Opt into holding the dialog open while the action runs. Both buttons
+   * disable, and a returned string renders as an inline error with the dialog
+   * still up so the user can retry or cancel. Resolve `void` to close and
+   * settle the `confirm()` promise as `true`.
+   *
+   * Omit it for the default fire-and-forget behaviour, where the dialog closes
+   * the moment the user confirms and the caller owns its own pending UI.
+   */
+  onConfirm?: () => Promise<string | void>;
 }
 
 export interface PromptOptions {
@@ -45,6 +59,8 @@ export interface PromptOptions {
   defaultValue?: string;
   confirmLabel?: string;
   cancelLabel?: string;
+  /** `destructive` renders the confirm button in brand red and shows a warning icon. */
+  tone?: "default" | "destructive";
   /** Return an error message to block submission, or null to allow it. */
   validate?: (value: string) => string | null;
 }
@@ -155,6 +171,16 @@ export function DialogProvider({ children }: { children: ReactNode }) {
   );
 }
 
+/** The leading warning triangle every destructive dialog wears. */
+function warningIcon() {
+  return (
+    <AlertTriangle
+      className="w-5 h-5 text-destructive shrink-0 mt-0.5"
+      aria-hidden
+    />
+  );
+}
+
 function ConfirmDialogView({
   opts,
   onCancel,
@@ -170,14 +196,31 @@ function ConfirmDialogView({
   // confirm). Destructive: leave focus on Cancel (first focusable) so an
   // accidental Enter doesn't delete anything.
   const confirmRef = useRef<HTMLButtonElement>(null);
-  const icon =
-    opts.icon ??
-    (destructive ? (
-      <AlertTriangle
-        className="w-5 h-5 text-destructive shrink-0 mt-0.5"
-        aria-hidden
-      />
-    ) : null);
+  const icon = opts.icon ?? (destructive ? warningIcon() : null);
+  // Only set when the caller passed `onConfirm` — see ConfirmOptions.onConfirm.
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleConfirm() {
+    if (!opts.onConfirm) {
+      onConfirm();
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const message = await opts.onConfirm();
+      if (message) {
+        setError(message);
+        setBusy(false);
+        return;
+      }
+      onConfirm();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong.");
+      setBusy(false);
+    }
+  }
 
   return (
     <Modal
@@ -185,6 +228,7 @@ function ConfirmDialogView({
       onClose={onCancel}
       labelledBy={titleId}
       initialFocusRef={destructive ? undefined : confirmRef}
+      disableEscape={busy}
     >
       <div className="flex items-start gap-3">
         {icon}
@@ -202,10 +246,16 @@ function ConfirmDialogView({
           )}
         </div>
       </div>
+      {error && (
+        <p role="alert" className="mt-3 text-sm text-destructive">
+          {error}
+        </p>
+      )}
       <div className="mt-6 flex items-center justify-end gap-2">
         <button
           type="button"
           onClick={onCancel}
+          disabled={busy}
           className={buttonClasses("secondary")}
         >
           {opts.cancelLabel ?? "Cancel"}
@@ -213,7 +263,8 @@ function ConfirmDialogView({
         <button
           ref={confirmRef}
           type="button"
-          onClick={onConfirm}
+          onClick={() => void handleConfirm()}
+          disabled={busy}
           className={buttonClasses(destructive ? "destructive" : "primary")}
         >
           {opts.confirmLabel ?? "Confirm"}
@@ -236,6 +287,10 @@ function PromptDialogView({
   const inputRef = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState(opts.defaultValue ?? "");
   const [error, setError] = useState<string | null>(null);
+  // A type-to-confirm delete is the highest-stakes dialog in the app, so it
+  // wears the same warning triangle and red confirm button as a plain
+  // destructive confirm rather than reading as an ordinary prompt.
+  const destructive = opts.tone === "destructive";
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -250,15 +305,22 @@ function PromptDialogView({
   return (
     <Modal open onClose={onCancel} labelledBy={titleId} initialFocusRef={inputRef}>
       <form onSubmit={submit}>
-        <h2
-          id={titleId}
-          className="font-heading text-lg font-bold text-foreground"
-        >
-          {opts.title}
-        </h2>
-        {opts.description && (
-          <p className="mt-1 text-sm text-muted-foreground">{opts.description}</p>
-        )}
+        <div className="flex items-start gap-3">
+          {destructive && warningIcon()}
+          <div className="min-w-0 flex-1">
+            <h2
+              id={titleId}
+              className="font-heading text-lg font-bold text-foreground"
+            >
+              {opts.title}
+            </h2>
+            {opts.description && (
+              <p className="mt-1 text-sm text-muted-foreground">
+                {opts.description}
+              </p>
+            )}
+          </div>
+        </div>
         <label className="mt-4 block">
           {opts.label && (
             <span className="mb-1 block text-sm font-medium text-foreground">
@@ -286,7 +348,10 @@ function PromptDialogView({
           >
             {opts.cancelLabel ?? "Cancel"}
           </button>
-          <button type="submit" className={buttonClasses("primary")}>
+          <button
+            type="submit"
+            className={buttonClasses(destructive ? "destructive" : "primary")}
+          >
             {opts.confirmLabel ?? "Save"}
           </button>
         </div>
@@ -357,23 +422,44 @@ export function useDialog(): DialogApi {
  * On first submit it blocks and opens the dialog; on confirm it re-submits the
  * same form (armed via a WeakSet so the second pass falls straight through to
  * the fetcher/router submission).
+ *
+ * A form with several submit buttons passes a function instead, and picks the
+ * dialog off the button that was clicked — returning null for the ones that
+ * submit straight through:
+ *
+ *   <Form onSubmit={confirmSubmit((submitter) =>
+ *     submitter?.value === "delete" ? { title: "Delete?", tone: "destructive" } : null,
+ *   )}>
  */
+/** Picks the dialog for whichever submit button was clicked; null submits through. */
+type ConfirmOptionsForSubmitter = (
+  submitter: HTMLButtonElement | HTMLInputElement | null,
+) => ConfirmOptions | null;
+
 export function useConfirmSubmit() {
   const { confirm } = useDialog();
   const armedRef = useRef<WeakSet<HTMLFormElement>>(new WeakSet());
 
   return useCallback(
-    (opts: ConfirmOptions) =>
+    (opts: ConfirmOptions | ConfirmOptionsForSubmitter) =>
       async (e: React.FormEvent<HTMLFormElement>) => {
         const form = e.currentTarget;
         if (armedRef.current.has(form)) {
           armedRef.current.delete(form);
           return; // second pass: let the real submission proceed
         }
+        // The clicked button carries the intent on a multi-submit form, so it
+        // has to survive into the re-submit below or the action loses it.
+        const submitter = (e.nativeEvent as SubmitEvent).submitter as
+          | HTMLButtonElement
+          | HTMLInputElement
+          | null;
+        const resolved = typeof opts === "function" ? opts(submitter) : opts;
+        if (!resolved) return; // no confirm for this button
         e.preventDefault();
-        if (await confirm(opts)) {
+        if (await confirm(resolved)) {
           armedRef.current.add(form);
-          form.requestSubmit();
+          form.requestSubmit(submitter);
         }
       },
     [confirm],

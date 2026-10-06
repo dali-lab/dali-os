@@ -6,7 +6,7 @@ import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { isSessionCheckInOpen } from "~/education/lib/session-checkin.server";
 import { formatSessionWhen } from "~/lib/display";
-import { useUserTimeZone } from "~/hooks/useUserTimeZone";
+import { resolveUserTimeZone } from "~/lib/timezone";
 import { CheckCircle2 } from "lucide-react";
 
 export const meta: Route.MetaFunction = () => [{ title: "Session check-in · DALI OS" }];
@@ -16,6 +16,12 @@ export const meta: Route.MetaFunction = () => [{ title: "Session check-in · DAL
 // scan lands straight here; enrollment is checked in the loader, and marking
 // goes through /api/education/sessions/:id/check-in (which takes the user from
 // their own session).
+//
+// Enrollment is the only gate. Most students in a course are Dartmouth accounts
+// with no DALIMember row, so this route must stay outside the member layout —
+// its non-member gate redirects unrecognized paths to /portal, which swallowed
+// every scan. Being shell-free also means no layout loader supplies the display
+// timezone, so this loader resolves it itself.
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
@@ -35,16 +41,26 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
   if (!session) throw new Response("Not found", { status: 404 });
 
-  const application = await prisma.educationApplication.findFirst({
-    where: {
-      offeringId: session.offering.id,
-      applicantUserId: auth.user.sub,
-      status: "Approved",
-    },
-    select: { id: true, attendances: { where: { sessionId: session.id }, select: { status: true } } },
-  });
+  const [application, viewer] = await Promise.all([
+    prisma.educationApplication.findFirst({
+      where: {
+        offeringId: session.offering.id,
+        applicantUserId: auth.user.sub,
+        status: "Approved",
+      },
+      select: {
+        id: true,
+        attendances: { where: { sessionId: session.id }, select: { status: true } },
+      },
+    }),
+    prisma.user.findUnique({
+      where: { id: auth.user.sub },
+      select: { timeZone: true },
+    }),
+  ]);
 
   return {
+    timeZone: resolveUserTimeZone(viewer),
     sessionId: session.id,
     courseTitle: session.offering.title,
     sessionLabel: session.title
@@ -61,7 +77,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
 export default function EducationSessionCheckIn() {
   const data = useLoaderData<typeof loader>();
-  const tz = useUserTimeZone();
   const [present, setPresent] = useState(data.alreadyPresent);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -95,7 +110,7 @@ export default function EducationSessionCheckIn() {
         </p>
         <h1 className="mt-1 font-heading text-xl font-bold text-foreground">{data.sessionLabel}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          {formatSessionWhen(data.datetime, data.endsAt, tz)}
+          {formatSessionWhen(data.datetime, data.endsAt, data.timeZone)}
           {data.location ? ` · ${data.location}` : ""}
         </p>
 

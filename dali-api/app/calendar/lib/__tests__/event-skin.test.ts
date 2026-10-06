@@ -26,7 +26,7 @@ describe("eventSkin", () => {
     expect(skin.outlined).toBe(true);
     expect(skin.style).toEqual({ borderColor: "#0B8043" });
     // No fill and no coloured ink: the body wears the page surface instead.
-    expect(skin.className).toContain("bg-card");
+    expect(skin.className).toContain("bg-transparent");
     expect(skin.className).toContain("text-foreground");
   });
 

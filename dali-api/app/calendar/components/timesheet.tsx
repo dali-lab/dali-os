@@ -5,9 +5,12 @@ import type { RoleInstance } from "~/lib/roles";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { DateField } from "~/components/ui/DateField";
 import { Select } from "~/components/ui/floating";
+import { useDialog } from "~/components/ui/dialog";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
-import type { TimeEntryDTO } from "~/calendar/lib/types";
+import { formatDateShort, formatTimeOnly } from "~/lib/display";
+import type { ExternalEventDTO, TimeEntryDTO } from "~/calendar/lib/types";
+import { EventDetailBody } from "~/calendar/components/WeekGrid";
 import { roleOptionKey, parseRoleOptionKey } from "~/calendar/components/role-fields";
 
 // Shown wherever time can be logged but the user holds no paid role. Every
@@ -276,18 +279,26 @@ export function LogHoursDialog({
 
 // Opened by clicking any TimeEntry on the Timesheet week grid (Manual, Block,
 // or Meeting). Same shape as TimesheetDragPopover but pre-filled, with Save
-// and Delete instead of Add.
+// and Delete instead of Add. An entry logged against a calendar event shows
+// that event in a read-only panel beside the form.
 export function TimesheetEditPopover({
   entry,
   startLocal,
   endLocal,
   myRoles,
+  linkedEvent,
+  linkedEventCalendar,
+  timezone,
   onClose,
 }: {
   entry: TimeEntryDTO;
   startLocal: string;
   endLocal: string;
   myRoles: RoleInstance[];
+  linkedEvent?: ExternalEventDTO | null;
+  /** Which calendar the linked event lives on ("Account · Primary"). */
+  linkedEventCalendar?: string;
+  timezone: string;
   onClose: () => void;
 }) {
   const { formClass, fieldLabel, formTrigger } = useOsChrome();
@@ -310,6 +321,7 @@ export function TimesheetEditPopover({
   const [note, setNote] = useState(entry.note ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const dialog = useDialog();
   const [error, setError] = useState<string | null>(null);
 
   const startEndValid = !!start && !!end && new Date(end).getTime() > new Date(start).getTime();
@@ -360,6 +372,14 @@ export function TimesheetEditPopover({
   }
 
   async function del() {
+    const ok = await dialog.confirm({
+      title: "Delete this timesheet entry?",
+      description:
+        "The hours come off your timesheet for this pay period. Re-log them if you delete by mistake.",
+      confirmLabel: "Delete",
+      tone: "destructive",
+    });
+    if (!ok) return;
     setDeleting(true);
     setError(null);
     try {
@@ -383,124 +403,148 @@ export function TimesheetEditPopover({
 
   return (
     <div
-      className="cal-surface w-80 max-h-[26rem] overflow-y-auto rounded-lg"
+      className="cal-surface max-h-[26rem] overflow-y-auto rounded-lg sm:flex sm:overflow-hidden"
       role="dialog"
       aria-modal="false"
       aria-label="Edit timesheet entry"
     >
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border sticky top-0 bg-card z-10">
-        <h2 className="font-heading font-semibold text-sm text-foreground">Edit timesheet entry</h2>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close"
-          className="p-1 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted"
-        >
-          <X className="w-4 h-4" />
-        </button>
-      </div>
-
-      <form onSubmit={submit} className={cn("p-3 space-y-3", formClass)}>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label htmlFor="ts-edit-start" className="block text-sm font-medium text-foreground mb-1">
-              Starts
-            </label>
-            <DateField
-              mode="datetime-local"
-              value={start}
-              onChange={(value) => setStart(value)}
-              className="w-full"
-              ariaLabel="Starts"
-            />
-          </div>
-          <div>
-            <label htmlFor="ts-edit-end" className="block text-sm font-medium text-foreground mb-1">
-              Ends
-            </label>
-            <DateField
-              mode="datetime-local"
-              value={end}
-              min={start || undefined}
-              onChange={(value) => setEnd(value)}
-              className="w-full"
-              ariaLabel="Ends"
-            />
-          </div>
-        </div>
-        {!startEndValid ? (
-          <p className="text-xs text-red-600">End must be after start.</p>
-        ) : (
-          <p className="text-xs text-muted-foreground">{hours.toFixed(2)} hrs</p>
-        )}
-
-        <div>
-          <label htmlFor="ts-edit-role" className="block text-sm font-medium text-foreground mb-1">
-            Role
-          </label>
-          <Select
-            value={roleKey}
-            onChange={(v) => setRoleKey(v)}
-            placeholder="Select a role…"
-            options={[
-              ...(roleKey && !myRoles.some((r) => roleOptionKey(r) === roleKey)
-                ? [{ value: roleKey, label: "Current role (no longer active)" }]
-                : []),
-              ...myRoles.map((r) => ({ value: roleOptionKey(r), label: r.label })),
-            ]}
-            buttonClassName={`${formTrigger} ${
-              roleKey ? "border-border" : "border-red-500"
-            }`}
-          />
-          {!roleKey && <p className="mt-1 text-xs text-red-600">Pick a role to save this entry.</p>}
-        </div>
-
-        <div>
-          <label htmlFor="ts-edit-note" className="block text-sm font-medium text-foreground mb-1">
-            Note
-          </label>
-          <textarea
-            id="ts-edit-note"
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            rows={3}
-            placeholder="What did you work on?"
-            className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground resize-y min-h-[4.5rem]"
-          />
-          {note.trim() === "" && (
-            <p className="mt-1 text-xs text-red-600">Add a note describing the work.</p>
-          )}
-        </div>
-
-        {error && <p className="text-sm text-red-700">{error}</p>}
-
-        <div className="flex items-center justify-between gap-2 pt-1">
+      <div className="w-80 shrink-0 sm:overflow-y-auto">
+        <div className="flex items-center justify-between px-3 py-2 border-b border-border sticky top-0 bg-card z-10">
+          <h2 className="font-heading font-semibold text-sm text-foreground">Edit timesheet entry</h2>
           <button
             type="button"
-            onClick={del}
-            disabled={busy}
-            className="px-3 py-2 text-sm font-medium rounded-md text-destructive hover:bg-destructive/10 disabled:opacity-50"
+            onClick={onClose}
+            aria-label="Close"
+            className="p-1 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted"
           >
-            {deleting ? "Deleting…" : "Delete"}
+            <X className="w-4 h-4" />
           </button>
-          <div className="flex items-center gap-2">
+        </div>
+
+        <form onSubmit={submit} className={cn("p-3 space-y-3", formClass)}>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="ts-edit-start" className="block text-sm font-medium text-foreground mb-1">
+                Starts
+              </label>
+              <DateField
+                mode="datetime-local"
+                value={start}
+                onChange={(value) => setStart(value)}
+                className="w-full"
+                ariaLabel="Starts"
+              />
+            </div>
+            <div>
+              <label htmlFor="ts-edit-end" className="block text-sm font-medium text-foreground mb-1">
+                Ends
+              </label>
+              <DateField
+                mode="datetime-local"
+                value={end}
+                min={start || undefined}
+                onChange={(value) => setEnd(value)}
+                className="w-full"
+                ariaLabel="Ends"
+              />
+            </div>
+          </div>
+          {!startEndValid ? (
+            <p className="text-xs text-red-600">End must be after start.</p>
+          ) : (
+            <p className="text-xs text-muted-foreground">{hours.toFixed(2)} hrs</p>
+          )}
+
+          <div>
+            <label htmlFor="ts-edit-role" className="block text-sm font-medium text-foreground mb-1">
+              Role
+            </label>
+            <Select
+              value={roleKey}
+              onChange={(v) => setRoleKey(v)}
+              placeholder="Select a role…"
+              options={[
+                ...(roleKey && !myRoles.some((r) => roleOptionKey(r) === roleKey)
+                  ? [{ value: roleKey, label: "Current role (no longer active)" }]
+                  : []),
+                ...myRoles.map((r) => ({ value: roleOptionKey(r), label: r.label })),
+              ]}
+              buttonClassName={`${formTrigger} ${
+                roleKey ? "border-border" : "border-red-500"
+              }`}
+            />
+            {!roleKey && <p className="mt-1 text-xs text-red-600">Pick a role to save this entry.</p>}
+          </div>
+
+          <div>
+            <label htmlFor="ts-edit-note" className="block text-sm font-medium text-foreground mb-1">
+              Note
+            </label>
+            <textarea
+              id="ts-edit-note"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              rows={3}
+              placeholder="What did you work on?"
+              className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground resize-y min-h-[4.5rem]"
+            />
+            {note.trim() === "" && (
+              <p className="mt-1 text-xs text-red-600">Add a note describing the work.</p>
+            )}
+          </div>
+
+          {error && <p className="text-sm text-red-700">{error}</p>}
+
+          <div className="flex items-center justify-between gap-2 pt-1">
             <button
               type="button"
-              onClick={onClose}
-              className="px-3 py-2 text-sm font-medium rounded-md border border-border hover:bg-muted"
+              onClick={del}
+              disabled={busy}
+              className="px-3 py-2 text-sm font-medium rounded-md text-destructive hover:bg-destructive/10 disabled:opacity-50"
             >
-              Cancel
+              {deleting ? "Deleting…" : "Delete"}
             </button>
-            <button
-              type="submit"
-              disabled={!canSubmit}
-              className="px-4 py-2 rounded-md bg-os-accent text-os-bg text-sm font-medium hover:bg-os-accent/90 transition-colors disabled:opacity-50"
-            >
-              {submitting ? "Saving…" : "Save"}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-3 py-2 text-sm font-medium rounded-md border border-border hover:bg-muted"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={!canSubmit}
+                className="px-4 py-2 rounded-md bg-os-accent text-os-bg text-sm font-medium hover:bg-os-accent/90 transition-colors disabled:opacity-50"
+              >
+                {submitting ? "Saving…" : "Save"}
+              </button>
+            </div>
           </div>
-        </div>
-      </form>
+        </form>
+      </div>
+      {linkedEvent && (
+        <aside
+          aria-label="Calendar event"
+          className="w-80 shrink-0 border-t border-border p-4 text-sm sm:w-72 sm:overflow-y-auto sm:border-l sm:border-t-0"
+        >
+          <EventDetailBody
+            title={linkedEvent.title}
+            timeRange={
+              linkedEvent.allDay
+                ? formatDateShort(linkedEvent.startIso, timezone)
+                : `${formatDateShort(linkedEvent.startIso, timezone)} · ${formatTimeOnly(linkedEvent.startIso, timezone)} – ${formatTimeOnly(linkedEvent.endIso, timezone)}`
+            }
+            sourceLabel={linkedEventCalendar}
+            accentColor={linkedEvent.color}
+            location={linkedEvent.location}
+            description={linkedEvent.description}
+            organizerName={linkedEvent.organizerName}
+            attendees={linkedEvent.attendees}
+            links={linkedEvent.links}
+          />
+        </aside>
+      )}
     </div>
   );
 }

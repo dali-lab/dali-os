@@ -100,7 +100,7 @@ export function OfferingDetailPanel({
       // Full viewport height on desktop: pinned flush under the shell's 64px
       // (h-16) top bar and filling to the bottom edge (100dvh − 4rem), so the
       // pane spans the whole visible column rather than floating with gaps.
-      className="flex min-h-[70dvh] w-full flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-brand-2 motion-safe:animate-detail-panel lg:sticky lg:top-16 lg:h-[calc(100dvh-4rem)] lg:min-h-0 lg:w-[27rem] lg:shrink-0"
+      className="flex min-h-[70dvh] w-full flex-col overflow-hidden rounded-os-card bg-os-card motion-safe:animate-detail-panel lg:sticky lg:top-16 lg:h-[calc(100dvh-4rem)] lg:min-h-0 lg:w-[27rem] lg:shrink-0"
     >
       {/* Title and the facts that identify the offering stay put; only the tab
           panel below them scrolls, so switching tabs never scrolls the heading
@@ -175,7 +175,7 @@ export function OfferingDetailPanel({
             className={cn(
               "whitespace-nowrap px-4 py-2 text-sm font-semibold",
               tab === t.key
-                ? "border-b-2 border-accent-coral text-accent-coral"
+                ? "border-b-2 border-os-accent text-os-accent"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >

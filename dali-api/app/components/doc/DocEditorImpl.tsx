@@ -40,9 +40,7 @@ import {
 import { CommentsExtension } from "@blocknote/core/comments";
 import type { User } from "@blocknote/core";
 import {
-  GridSuggestionMenuController,
   SuggestionMenuController,
-  getDefaultReactEmojiPickerItems,
   useCreateBlockNote,
   FloatingComposerController,
   FloatingThreadController,
@@ -54,11 +52,13 @@ import { AiBar } from "./ai/AiBar";
 import { AiCardHost } from "./ai/AiCardHost";
 import type { AiBarConfig } from "./ai/AiBar";
 import { DocCommentsRail } from "./comments/DocCommentsRail";
+import { CommentComposer } from "./comments/CommentComposer";
+import { CommentEditorProvider, commentEditorSchema } from "./comments/CommentEditor";
 import { BlockNoteView } from "@blocknote/shadcn";
 
 import { WebSocketStatus } from "@hocuspocus/provider";
 
-import { countWords, extractHeadings, normalizeInitialContent } from "./blocks-util";
+import { countWords, extractHeadings, normalizeInitialContent, trimTrailingEmptyBlocks } from "./blocks-util";
 import { acquireCollabDoc, nameToHexColor, releaseCollabDoc, type CollabDocEntry } from "./collab-doc";
 import { DaliThreadStore, getOrCreateStore, resolveDocUsers } from "./comments/DaliThreadStore";
 import { DocEditorFallback } from "./DocEditor";
@@ -78,6 +78,7 @@ import { isAiEnvEnabled } from "./ai/env";
 import { Modal } from "~/components/Modal";
 import { useToast } from "~/components/ui/toast";
 import { useDialog } from "~/components/ui/dialog";
+import { readEmojiSuggestionsPreference } from "~/lib/emoji-suggestions";
 
 export default function DocEditorImpl(props: DocEditorProps) {
   const features = resolveFeatures(props.features);
@@ -97,10 +98,13 @@ function LocalDoc(props: ResolvedProps) {
   const dictionary = useDocDictionary(props.placeholder);
   // Normalized once per (schema, content) pair; the editor is recreated on
   // schema/dictionary change anyway, so this rides the same memo.
-  const initialContent = useMemo(
-    () => normalizeInitialContent<DocPartialBlock>(props.initialContent),
-    [props.initialContent],
-  );
+  // Read-only embeds also drop the trailing blank line an author left; there
+  // is nothing to type into, so it only reads as dead space.
+  const readOnly = props.editable === false;
+  const initialContent = useMemo(() => {
+    const blocks = normalizeInitialContent<DocPartialBlock>(props.initialContent);
+    return blocks && readOnly ? trimTrailingEmptyBlocks(blocks) : blocks;
+  }, [props.initialContent, readOnly]);
 
   const editor = useCreateBlockNote(
     {
@@ -166,6 +170,7 @@ function CollabDocInner(
         ? {
             extensions: [
               CommentsExtension({
+                schema: commentEditorSchema,
                 threadStore,
                 resolveUsers: makeResolveDocUsers(threadStore),
               }),
@@ -534,6 +539,44 @@ function DocView(
     return () => dom.removeEventListener("focus", onFocus, true);
   }, [editor]);
 
+  // Read-only checklists: BlockNote disables every checklist <input> and
+  // ignores its change event once the editor is non-editable. Re-enable the
+  // boxes (the node view is rebuilt on every block update, so the observer
+  // keeps re-enabling them) and apply the toggle ourselves. updateBlock is a
+  // plain ProseMirror transaction, which editable=false doesn't block.
+  const localChecklistToggle = !editable && (props.localChecklistToggle ?? false);
+  useEffect(() => {
+    if (!localChecklistToggle) return;
+    const dom = editor.domElement;
+    if (!dom) return;
+    const selector = '[data-content-type="checkListItem"] input[type="checkbox"]';
+    const enable = () => {
+      dom.querySelectorAll<HTMLInputElement>(selector).forEach((box) => {
+        box.disabled = false;
+      });
+    };
+    enable();
+    const observer = new MutationObserver(enable);
+    observer.observe(dom, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["disabled"],
+    });
+    const onChange = (e: Event) => {
+      const box = e.target;
+      if (!(box instanceof HTMLInputElement) || !box.matches(selector)) return;
+      const id = box.closest<HTMLElement>("[data-id]")?.dataset.id;
+      if (!id) return;
+      editor.updateBlock(id, { props: { checked: box.checked } });
+    };
+    dom.addEventListener("change", onChange);
+    return () => {
+      observer.disconnect();
+      dom.removeEventListener("change", onChange);
+    };
+  }, [editor, localChecklistToggle]);
+
   // Cmd/Ctrl+K opens the link editor for the current selection — Google Docs /
   // Notion muscle memory. BlockNote ships no default binding, so we bind it on
   // the editor DOM: prompt for a URL (prefilled if the selection is already a
@@ -686,6 +729,8 @@ function DocView(
     }
   }, [railVisible, railTargetId]);
 
+  const [emojiSuggestions] = useState(readEmojiSuggestionsPreference);
+
   const menus: ReactNode = (
     <>
       {/* Custom "/" menu: AI items first (when enabled), then the standard set. */}
@@ -701,64 +746,64 @@ function DocView(
           getItems={(query) => getMentionMenuItems(editor, query)}
         />
       )}
-      {/* ":" emoji shortcode picker — GridSuggestionMenuController with 10
-          columns matches BlockNote's default emoji grid width. */}
-      <GridSuggestionMenuController
-        triggerCharacter=":"
-        getItems={(query) => getDefaultReactEmojiPickerItems(editor, query)}
-        columns={10}
-      />
       {/* Custom drag-handle side menu (Notion-ordered: Duplicate / Colors /
-          Comment / Delete). Compact surfaces suppress the side menu entirely
+          Delete). Compact surfaces suppress the side menu entirely
           via sideMenu={false} on BlockNoteView — this controller is a no-op
           there since the SideMenuExtension never shows without the gutter. */}
       {props.density !== "compact" && (
-        <DaliSideMenuController canComment={props.comments?.canComment ?? false} />
+        <DaliSideMenuController />
       )}
       {/* AI-aware floating selection toolbar. Passes a custom component ref
           that renders all default toolbar items + an AI dropdown when AI is
           enabled. The component is memoized in DocView so its identity is stable
           and FormattingToolbarController doesn't remount on every state tick. */}
       <FormattingToolbarController formattingToolbar={aiFormattingToolbar} />
-      {/* Inline comment floating UI — only active when CommentsExtension is
-          wired (i.e. props.comments is set and mode is collab).
-          FloatingComposerController: new-thread composer floating above selection.
-          FloatingThreadController: selected-thread popover anchored to the mark.
-          Both receive portalElement=floatingRootRef.current so they portal into
-          the .dali-doc wrapper — this is what makes clicks inside the composer
-          NOT trigger useDismiss's outside-press detection. */}
-      {hasComments && (
-        <FloatingComposerController portalElement={floatingRootRef.current ?? undefined} />
-      )}
-      {/* FloatingThreadController: mark clicks open an anchored thread popover.
-          Suppressed when the rail is visible — the rail replaces the popover.
-          focusManagerProps.disabled=false enables Floating UI's focus trap so
-          the reply box receives focus when the popover opens. */}
-      {hasComments && !railVisible && (
-        <FloatingThreadController
-          portalElement={floatingRootRef.current ?? undefined}
-          floatingUIOptions={{ focusManagerProps: { disabled: false } }}
-        />
-      )}
-      {/* ThreadsSidebar portaled into the panel when it's open. Stays inside
-          the BlockNoteView context (required for editor/store access). */}
-      {hasComments && panelTarget &&
-        createPortal(
-          // "all": a comment has no resolved state, so every thread is listed.
-          <ThreadsSidebar filter="all" sort="position" />,
-          panelTarget,
-        )
-      }
-      {/* DocCommentsRail portaled into the host-owned rail container when wide. */}
-      {hasComments && railVisible && railTarget && editorContentRef &&
-        createPortal(
-          <DocCommentsRail
-            editorContentRef={editorContentRef}
-            focusCommentId={props.comments?.focusCommentId}
-          />,
-          railTarget,
-        )
-      }
+      {/* Every comment surface below writes and shows comments in our own
+          editor (member @mentions), not BlockNote's paragraph-only one. */}
+      <CommentEditorProvider>
+        {/* Inline comment floating UI — only active when CommentsExtension is
+            wired (i.e. props.comments is set and mode is collab).
+            FloatingComposerController: new-thread composer floating above selection.
+            FloatingThreadController: selected-thread popover anchored to the mark.
+            Both receive portalElement=floatingRootRef.current so they portal into
+            the .dali-doc wrapper — this is what makes clicks inside the composer
+            NOT trigger useDismiss's outside-press detection. */}
+        {hasComments && (
+          <FloatingComposerController
+            floatingComposer={CommentComposer}
+            portalElement={floatingRootRef.current ?? undefined}
+          />
+        )}
+        {/* FloatingThreadController: mark clicks open an anchored thread popover.
+            Suppressed when the rail is visible — the rail replaces the popover.
+            focusManagerProps.disabled=false enables Floating UI's focus trap so
+            the reply box receives focus when the popover opens. */}
+        {hasComments && !railVisible && (
+          <FloatingThreadController
+            portalElement={floatingRootRef.current ?? undefined}
+            floatingUIOptions={{ focusManagerProps: { disabled: false } }}
+          />
+        )}
+        {/* ThreadsSidebar portaled into the panel when it's open. Stays inside
+            the BlockNoteView context (required for editor/store access). */}
+        {hasComments && panelTarget &&
+          createPortal(
+            // "all": a comment has no resolved state, so every thread is listed.
+            <ThreadsSidebar filter="all" sort="position" />,
+            panelTarget,
+          )
+        }
+        {/* DocCommentsRail portaled into the host-owned rail container when wide. */}
+        {hasComments && railVisible && railTarget && editorContentRef &&
+          createPortal(
+            <DocCommentsRail
+              editorContentRef={editorContentRef}
+              focusCommentId={props.comments?.focusCommentId}
+            />,
+            railTarget,
+          )
+        }
+      </CommentEditorProvider>
       {/* AI inline card — anchored to the trigger block via BlockPopover.
           Rendered inside BlockNoteView children so useBlockNoteEditor is in
           scope (BlockPopover requires the editor context). Only mounts when
@@ -806,8 +851,8 @@ function DocView(
           theme={isDark ? "dark" : "light"}
           editable={props.editable ?? true}
           slashMenu={false}
-          // emojiPicker={false} removed — emoji shortcode suggestions are now
-          // handled by the GridSuggestionMenuController child above.
+          // ":" emoji picker is opt-in per device (Settings → Appearance).
+          emojiPicker={emojiSuggestions}
           // Disable BlockNoteDefaultUI's built-in side menu — we mount
           // DaliSideMenuController manually as a child (above) so we can
           // inject the custom Notion-ordered drag-handle menu. Compact surfaces
@@ -899,7 +944,7 @@ function useDocSchema(features: Features) {
     () => buildSchema(features),
     // Individual flags, not the object: hosts typically pass a fresh literal
     // every render and a schema rebuild recreates the whole editor.
-    [features.mentions, features.images, features.files, features.richBlocks, features.columns, features.pageBreak, Boolean(features.signing)],
+    [features.mentions, features.images, features.files, features.richBlocks, features.columns, features.components, features.pageBreak, Boolean(features.signing)],
   );
 }
 

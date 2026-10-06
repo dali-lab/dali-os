@@ -24,3 +24,10 @@ export function publicMediaUrl(value: string | null | undefined): string | null 
 export function isServableMediaKey(key: string): boolean {
   return key.startsWith("uploads/") && !key.includes("..");
 }
+
+// Document bodies store uploads as the session-authed `/api/upload/raw?key=…`
+// redirect, which a public visitor can't follow. Point them at the proxied
+// media path instead. Works on a single URL or on rendered HTML.
+export function publicizeUploadUrls(value: string): string {
+  return value.replaceAll("/api/upload/raw?key=", `${MEDIA_PATH}?key=`);
+}

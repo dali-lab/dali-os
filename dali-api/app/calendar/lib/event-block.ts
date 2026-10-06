@@ -6,8 +6,7 @@ import type { EventAttendeeDTO, EventBlock, TimeEntryDTO } from "~/calendar/lib/
 export const EVENT_TEXT = "text-[hsl(203_38%_18%)]";
 export const EVENT_CORAL = `bg-accent-coral-light ${EVENT_TEXT}`;
 
-// The "Add event" capsule, shared by the Events page and the Core hub so the two
-// calendars open their create flow from the same control. Light mode fills it
+// The "Add event" capsule. Light mode fills it
 // with the shell accent, the same teal as the sidebar's notification count.
 // Dark keeps the mockup's pill, a shade *darker* than the page: a black plate
 // with light ink.
@@ -163,7 +162,7 @@ export function readableTextColor(bg: string): string {
 
 /** How to paint an event's coloured surface, in whichever view is drawing it.
  *  An invitation the viewer hasn't answered draws hollow — the event's colour
- *  moves to the border and the body takes the page surface — instead of as a
+ *  moves to the border and the body goes transparent — instead of as a
  *  solid block. That's Google Calendar's convention, and it's what keeps a pile
  *  of unanswered holds distinguishable at a glance from the meetings you've
  *  actually committed to.
@@ -190,8 +189,8 @@ export function eventSkin(block: EventBlock): {
     outlined: true,
     // Ink comes from the theme rather than the event colour: the light end of
     // the palette (a Google "Banana", our own -light accents) is unreadable as
-    // text on the card surface, and the border carries the colour anyway.
-    className: `bg-card text-foreground ${
+    // text on the page behind it, and the border carries the colour anyway.
+    className: `bg-transparent text-foreground ${
       block.bgColor ? "" : (block.borderClassName ?? "border-border")
     }`,
     style: block.bgColor ? { borderColor: block.bgColor } : {},

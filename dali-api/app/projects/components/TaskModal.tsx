@@ -25,7 +25,12 @@ import {
   type ChecklistItem,
 } from "../lib/task-checklist";
 import type { TaskBoardOptions, TaskCardModel, TaskStatus } from "../lib/task-board";
-import { TASK_STATUSES, TASK_STATUS_LABELS, isTaskFinished } from "../lib/task-board";
+import {
+  TASK_STATUSES,
+  TASK_STATUS_LABELS,
+  isTaskFinished,
+  seedTaskLinks,
+} from "../lib/task-board";
 import { DependencyLinks } from "./DependencyLinks";
 import { PeopleFilter } from "./PeopleFilter";
 import { cn } from "~/lib/cn";
@@ -86,6 +91,7 @@ export function TaskModal({
   onCreate,
   onDelete,
   defaultEpicId,
+  defaultStoryId,
   defaultStatus,
   onArtifactsChanged,
   onCommentCountChange,
@@ -109,6 +115,11 @@ export function TaskModal({
   onDelete?: () => void;
   // Create mode: seeds the epic picker (e.g. from the board's epic filter).
   defaultEpicId?: string | null;
+  // Create mode: seeds the user story picker, so adding a task from a story row
+  // arrives already filed under it. The story pins the epic, so this wins over
+  // defaultEpicId (see seedTaskLinks) — the same precedence the create endpoint
+  // applies server-side. Both pickers stay editable.
+  defaultStoryId?: string | null;
   // Create mode: seeds the status picker, so a column's own Add task lands the
   // new card in that column rather than always in To do.
   defaultStatus?: TaskStatus;
@@ -146,11 +157,20 @@ export function TaskModal({
   const [startDate, setStartDate] = useState<string>(
     task?.startsAt ? dateInputValue(task.startsAt) : "",
   );
-  const [storyId, setStoryId] = useState<string>(task?.storyId ?? "");
+  // Create mode only: the Epic/User story pair the form opens on, reconciled so
+  // a seeded story always brings its own epic. Read once, by the two useStates
+  // below — editing either picker afterwards is unaffected.
+  const seededLinks = seedTaskLinks(options.stories, {
+    epicId: defaultEpicId,
+    storyId: defaultStoryId,
+  });
+  const [storyId, setStoryId] = useState<string>(
+    task ? task.storyId ?? "" : seededLinks.storyId,
+  );
   const [dependsOn, setDependsOn] = useState<string[]>(task?.dependsOn ?? []);
   const [domainId, setDomainId] = useState<string>(task?.domain?.id ?? "");
   const [epicId, setEpicId] = useState<string>(
-    task ? task.epicId ?? "" : defaultEpicId ?? "",
+    task ? task.epicId ?? "" : seededLinks.epicId,
   );
 
   // Dependency choices are every other task on the board. "Blocks" is the
@@ -221,7 +241,6 @@ export function TaskModal({
   const [saveError, setSaveError] = useState<string | null>(null);
   // Inline delete confirm (edit mode) — no browser dialog; the parent
   // removes the card optimistically and closes the modal.
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   // Auto-grow the title textarea so long titles wrap into view instead of
   // scrolling horizontally inside a single-line input.
@@ -389,6 +408,21 @@ export function TaskModal({
       epicId !== (defaultEpicId ?? "") ||
       githubEnabled
     );
+  }
+
+  async function confirmDelete() {
+    if (!onDelete) return;
+    const ok = await dialog.confirm({
+      title: task?.title ? `Delete "${task.title}"?` : "Delete this task?",
+      description:
+        task?.githubIssueNumber != null
+          ? "The task and its checklist go for good. Its GitHub issue stays open."
+          : "The task and its checklist go for good.",
+      confirmLabel: "Delete",
+      tone: "destructive",
+    });
+    if (!ok) return;
+    onDelete();
   }
 
   // Close guard for X / backdrop / Escape: unsaved edits need an explicit
@@ -1371,36 +1405,13 @@ export function TaskModal({
 
         <div className="flex items-center gap-2">
           {!isCreate && canManage && onDelete ? (
-            confirmingDelete ? (
-              <div className="flex items-center gap-2 text-sm">
-                <span className="text-muted-foreground">
-                  Delete this task?
-                  {task?.githubIssueNumber != null && " Its GitHub issue stays open."}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => onDelete()}
-                  className="font-medium text-destructive hover:underline"
-                >
-                  Delete
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmingDelete(false)}
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  Keep
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setConfirmingDelete(true)}
-                className="text-sm font-medium text-destructive hover:underline"
-              >
-                Delete
-              </button>
-            )
+            <button
+              type="button"
+              onClick={() => void confirmDelete()}
+              className="text-sm font-medium text-destructive hover:underline"
+            >
+              Delete
+            </button>
           ) : (
             <span />
           )}

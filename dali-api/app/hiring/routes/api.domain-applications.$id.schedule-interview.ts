@@ -2,6 +2,7 @@ import type { Route } from "./+types/api.domain-applications.$id.schedule-interv
 import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { logAuditEvent } from "~/lib/audit";
 import { assignInterviewers } from "~/hiring/lib/scheduling";
 // import { provisionZoomMeeting } from "~/lib/zoom"; // S2S Zoom not configured yet
 import { provisionInterviewMeet } from "~/hiring/lib/interview-meet";
@@ -98,6 +99,19 @@ export async function action({ request, params }: Route.ActionArgs) {
     // the join link. Best-effort (never blocks booking). The Zoom S2S path
     // (app/lib/zoom.ts) stays dormant until those credentials land.
     await provisionInterviewMeet(interview.id);
+
+    await logAuditEvent({
+      action: "interview.schedule",
+      userId: auth.user.sub,
+      targetId: interview.id,
+      metadata: {
+        cycleId: da.application.applicationCycleId,
+        domainApplicationId: da.id,
+        startTime: slotStart.toISOString(),
+        mode: interviewMode,
+      },
+      request,
+    });
 
     // Best-effort: send calendar invites to applicant + interviewers
     sendInterviewInviteEmails(interview.id, da.id).catch(() => {});

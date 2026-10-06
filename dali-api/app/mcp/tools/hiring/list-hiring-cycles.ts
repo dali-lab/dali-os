@@ -71,17 +71,21 @@ export async function runListHiringCycles(userId: string): Promise<unknown> {
     },
   });
 
-  return cycles.map((c) => ({
-    id: c.id,
-    name: c.name,
-    applicants: c.applicants,
-    stages: {
-      challenges: c.hasChallenges,
-      interviews: c.hasInterviews,
-    },
-    delibRounds: delibRounds(parseTimeline(c.timeline)).map((r) => r.label),
-    status: c.statusUpdates[0]?.newStatus ?? "Draft",
-    closeDate: c.closeDate?.toISOString() ?? null,
-    createdAt: c.createdAt.toISOString(),
-  }));
+  // Wrapped in an object: MCP `structuredContent` must be a JSON object, so a
+  // bare array fails result validation on the client before the caller sees it.
+  return {
+    cycles: cycles.map((c) => ({
+      id: c.id,
+      name: c.name,
+      applicants: c.applicants,
+      stages: {
+        challenges: c.hasChallenges,
+        interviews: c.hasInterviews,
+      },
+      delibRounds: delibRounds(parseTimeline(c.timeline)).map((r) => r.label),
+      status: c.statusUpdates[0]?.newStatus ?? "Draft",
+      closeDate: c.closeDate?.toISOString() ?? null,
+      createdAt: c.createdAt.toISOString(),
+    })),
+  };
 }

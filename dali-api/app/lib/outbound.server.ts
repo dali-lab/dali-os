@@ -289,6 +289,11 @@ async function sendOne(row: {
         to: row.target,
         subject: row.subject ?? "",
         html: row.bodyHtml ?? "",
+        // bodyText has been a column and an enqueue arg since the outbox landed,
+        // but the email path dropped it — only Slack read it. Passing it through
+        // is what lets a template ship a hand-written plain-text part; sendEmail
+        // derives one from the HTML when it's absent.
+        text: row.bodyText ?? undefined,
         ics: row.ics ?? undefined,
         attachments: decodeAttachments(row.attachments),
       });

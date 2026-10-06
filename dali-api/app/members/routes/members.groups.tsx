@@ -889,6 +889,7 @@ function ExpandedMemberCard({
   groupId: string;
 }) {
   const fetcher = useFetcher();
+  const confirmSubmit = useConfirmSubmit();
   const fullName = `${member.firstName} ${member.lastName}`.trim();
   return (
     <div
@@ -916,7 +917,17 @@ function ExpandedMemberCard({
         </div>
       </Link>
       {removable && (
-        <fetcher.Form method="post" className="flex-shrink-0">
+        <fetcher.Form
+          method="post"
+          className="flex-shrink-0"
+          onSubmit={confirmSubmit({
+            title: `Remove ${fullName} from this group?`,
+            description:
+              "They lose anything shared with the group — document shares and scheduling audiences that name it. You can add them back.",
+            confirmLabel: "Remove",
+            tone: "destructive",
+          })}
+        >
           <input type="hidden" name="intent" value="remove-member" />
           <input type="hidden" name="groupId" value={groupId} />
           <input type="hidden" name="userId" value={member.id} />

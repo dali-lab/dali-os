@@ -61,10 +61,9 @@ test.describe('portal home dashboard', () => {
     // Asserted on text, not on a heading role: the redesigned home (the
     // education-redesign-v2 flag) titles its cards with a span.
     await expect(page.getByText('Apply to DALI').first()).toBeVisible();
-    // The education card, whichever home layout is in force, links into the
-    // catalog. The rail's own Education row is a button, so this can only match
-    // a card in the page.
-    await expect(page.locator('a[href="/portal/education"]').first()).toBeVisible();
+    // The education card always links into the catalog. The rail's own
+    // Education row is a button, so this can only match the card.
+    await expect(page.locator('a[href="/portal/education?tab=browse"]')).toBeVisible();
     // The portal wears the dali.os rail: the student's four surfaces as direct
     // rows (no area switcher), and none of the member-only ones.
     for (const row of ['Home', 'Calendar', 'Application', 'Education']) {

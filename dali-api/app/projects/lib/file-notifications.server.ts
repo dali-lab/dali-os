@@ -73,8 +73,7 @@ export async function notifyFileComment(args: {
     eventType: "file.comment",
     createdByUserId: args.authorId,
     message: {
-      title: `New feedback on: ${audience.title}`,
-      body: preview,
+      vars: { itemTitle: audience.title, itemDetail: preview },
       link: fileLink(args.fileId),
     },
     recipients: recipients.map((userId) => ({ userId })),
@@ -96,7 +95,7 @@ export async function notifyFileNewVersion(args: {
     eventType: "file.new_version",
     createdByUserId: args.uploadedById,
     message: {
-      title: `V${audience.versionCount} uploaded: ${audience.title}`,
+      vars: { itemTitle: audience.title, count: String(audience.versionCount) },
       link: fileLink(args.fileId),
     },
     recipients: recipients.map((userId) => ({ userId })),

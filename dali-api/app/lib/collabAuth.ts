@@ -4,7 +4,6 @@ import { confidentialityCleared, getCycleConfidentialityState } from "~/hiring/l
 import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { COLLAB_SOURCES } from "~/collab/sources";
-import { RESOURCES_ROOM } from "~/collab/roomName";
 import { getPageAccess } from "~/lib/pageAccess.server";
 
 /** Hydrate author IDs into `{ id, name, photoUrl }` objects in a single IN
@@ -128,12 +127,17 @@ export async function authorizeCollabDoc(
     return deny;
   }
 
-  // resources:lab:body — the single lab-wide Resources document (/resources).
-  // Core/Admin write it; every other lab member connects read-only so they see
-  // edits land live. Not a Page, so there is no share list to consult — the
-  // role IS the gate, and the room name is fixed.
+  // resources:{bookmarkId}:body — a Resources bookmark page. Core/Admin write
+  // it; every other lab member connects read-only so they see edits land live.
+  // Not a Page, so there is no share list to consult — the role IS the gate.
+  // The bookmark must exist, so a deleted or invented room can't be opened.
   if (entity === "resources") {
-    if (name !== RESOURCES_ROOM) return deny;
+    if (field !== "body") return deny;
+    const bookmark = await prisma.resourceBookmark.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!bookmark) return deny;
     if (await isCore(userSub)) return allow;
     return (await isLabMember(userSub))
       ? { allowed: true, readOnly: true }

@@ -17,6 +17,7 @@ import {
   setSlotGate,
 } from "../lib/form-slots";
 import { SubmissionFilters } from "../components/SubmissionFilters";
+import { ColumnFilters, useColumnFilters } from "../components/ColumnFilters";
 import { SlotAdvancedSettingsModal } from "../components/SlotAdvancedSettingsModal";
 import { SubmissionDatabase } from "../components/SubmissionDatabase";
 import { DomainFilter } from "../components/DomainFilter";
@@ -30,8 +31,6 @@ import {
   type ColumnMapping,
 } from "../lib/slot-roles";
 import { buildSubmissionView } from "../lib/submission-view.server";
-import { deriveSlotStatus, type SlotStatus } from "../lib/slot-status.server";
-import { SlotStatusStrip } from "../components/SlotStatusStrip";
 import type { Question } from "~/types";
 import { regroupRedirect } from "~/core/lib/regroup-redirect.server";
 
@@ -103,7 +102,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const [binding, selectableForms] = await Promise.all([
     singleCycleId ? getSlotBinding(singleCycleId, SLOT) : Promise.resolve(null),
     canManage && singleCycleId
-      ? listSelectableForms()
+      ? listSelectableForms({ slot: SLOT, exceptCycleId: singleCycleId })
       : Promise.resolve([]),
   ]);
 
@@ -165,13 +164,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     select: { id: true, displayName: true },
   });
 
-  // Per-slot guardrail status (bound / mapped / sent-to). Single-cycle view
-  // only — the all-terms aggregate has no one slot to bind, mirroring binding.
-  const slotStatus: SlotStatus | null = singleCycleId
-    ? (await deriveSlotStatus(singleCycleId)).find((s) => s.slot === SLOT) ??
-      null
-    : null;
-
   return {
     gate: "ok" as const,
     cycle: { name: cycleName },
@@ -188,7 +180,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     mappingWarning,
     allTerms,
     domainOptions,
-    slotStatus,
   };
 }
 
@@ -222,10 +213,14 @@ export async function action({ request }: Route.ActionArgs) {
 
   if (intent === "set-slot-form") {
     const formId = String(form.get("formId") ?? "");
-    const result = await setSlotBinding(cycle.id, SLOT, formId, auth.user.sub);
+    // The picker sets allowMove only after the manager confirms taking the
+    // form off the cycle that currently holds it.
+    const result = await setSlotBinding(cycle.id, SLOT, formId, auth.user.sub, {
+      allowMove: form.get("allowMove") === "1",
+    });
     if (!result.ok)
       return Response.json({ error: result.error }, { status: 400 });
-    return Response.json({ ok: true });
+    return Response.json({ ok: true, movedFrom: result.movedFrom ?? null });
   }
 
   if (intent === "set-slot-mapping") {
@@ -300,10 +295,15 @@ function Loaded({
   const [domainId, setDomainId] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
 
+  const columnFilters = useColumnFilters(data.tableColumns);
+
   const { search, setSearch, filtered } = useFilteredList(data.submissions, {
     searchFields: (s) => [s.name, s.email],
-    predicates: [(s) => !domainId || s.domainIds.includes(domainId)],
-    deps: [domainId],
+    predicates: [
+      (s) => !domainId || s.domainIds.includes(domainId),
+      columnFilters.predicate,
+    ],
+    deps: [domainId, columnFilters.active],
   });
 
   const domains = useMemo(
@@ -345,8 +345,6 @@ function Loaded({
         </div>
       )}
 
-      {data.slotStatus && <SlotStatusStrip status={data.slotStatus} />}
-
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="flex-1">
           <SubmissionFilters query={search} onQueryChange={setSearch} />
@@ -358,6 +356,16 @@ function Loaded({
         />
         <TermFilter terms={data.termOptions} selected={data.selectedTerm} />
       </div>
+
+      {!data.noFormConnected && (
+        <ColumnFilters
+          columns={data.tableColumns}
+          rows={data.submissions}
+          filters={columnFilters.filters}
+          onChange={columnFilters.setFilters}
+          shownCount={filtered.length}
+        />
+      )}
 
       <div
         className={cn(

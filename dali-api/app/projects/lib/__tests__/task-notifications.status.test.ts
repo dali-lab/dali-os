@@ -40,8 +40,11 @@ describe("notifyTaskStatusChanged", () => {
     const call = mockNotify.mock.calls[0][0];
     expect(call.eventType).toBe("task.status_changed");
     expect(call.createdByUserId).toBe("u1");
-    expect(call.message.title).toBe("Task moved to In progress: Ship it");
-    expect(call.message.body).toBe("In DALI OS.");
+    expect(call.message.vars).toEqual({
+      itemTitle: "Ship it",
+      contextName: "DALI OS",
+      statusLabel: "In progress",
+    });
     expect(call.message.link).toBe("/projects/p1?tab=board&task=t1");
     expect(call.recipients).toEqual([{ userId: "u2" }]);
   });
@@ -79,8 +82,8 @@ describe("notifyTaskStatusChanged", () => {
 
     await notifyTaskStatusChanged("t1", "u1", "SomethingNew");
 
-    expect(mockNotify.mock.calls[0][0].message.title).toBe(
-      "Task moved to SomethingNew: Ship it",
-    );
+    // An unmapped status passes through as its own label rather than being
+    // dropped, so the template still has something to name.
+    expect(mockNotify.mock.calls[0][0].message.vars.statusLabel).toBe("SomethingNew");
   });
 });

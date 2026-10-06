@@ -100,8 +100,15 @@ export async function runMeetingReminders({ now, settings }: JobContext): Promis
             eventType: "meeting.reminder",
             message: {
               kind: "MeetingReminder",
-              title: `Starting soon: ${meeting.title}`,
-              body: `Starts ${formatInstantWithZoneLabel(occ.start, tzByUser.get(userId) ?? APPLICATION_TZ)}.`,
+              vars: {
+                itemTitle: meeting.title,
+                // The recipient's own zone — the reason formatting stays here
+                // and not in the template.
+                when: formatInstantWithZoneLabel(
+                  occ.start,
+                  tzByUser.get(userId) ?? APPLICATION_TZ,
+                ),
+              },
               link: `/calendar?meeting=${meeting.id}`,
               scheduledMeetingId: meeting.id,
               // Stamp the occurrence start so past reminders drop off Tasks

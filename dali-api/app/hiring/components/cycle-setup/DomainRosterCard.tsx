@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Form } from "react-router";
 import { Users, X } from "lucide-react";
 import { buttonClasses } from "~/components/ui/Button";
-import { Select, Tooltip } from "~/components/ui/floating";
+import { Combobox, Select, Tooltip } from "~/components/ui/floating";
 import { SegmentedTabButtons } from "~/components/AreaPillNav";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
@@ -122,13 +122,14 @@ export function DomainRosterCard({
       </div>
 
       <div>
-        <Select
+        <Combobox
           ariaLabel={`Add a ${role} to ${domainName}`}
           value=""
           placeholder="Add person"
+          emptyLabel={candidates.length === 0 ? `Everyone is on ${domainName}` : "No matches"}
           onChange={(userId) => userId && onAdd(userId, selected)}
           options={candidates.map((m) => ({ value: m.id, label: m.name }))}
-          buttonClassName={rowTrigger(formTrigger)}
+          className={rowTrigger(formTrigger)}
         />
       </div>
     </SetupCard>

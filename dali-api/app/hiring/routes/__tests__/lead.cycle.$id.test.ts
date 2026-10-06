@@ -7,7 +7,7 @@ vi.mock("~/lib/auth", () => ({
 vi.mock("~/lib/roles");
 vi.mock("~/hiring/lib/cycle-applicants.server", () => ({ changeApplicants: vi.fn() }));
 vi.mock("~/hiring/lib/cycle-rosters.server", () => ({ addDomainMentors: vi.fn(), domainMentorIds: vi.fn() }));
-vi.mock("~/hiring/lib/hiring-emails.server", () => ({ saveHiringEmail: vi.fn(), listHiringEmails: vi.fn() }));
+vi.mock("~/hiring/lib/hiring-emails.server", () => ({ listHiringEmails: vi.fn() }));
 vi.mock("~/hiring/lib/application-form.server", () => ({
   addDomainChallenge: vi.fn(),
   removeDomainChallenge: vi.fn(),
@@ -23,7 +23,6 @@ import { requireAuth } from "~/lib/auth";
 import { isAdmin, isCycleAdmin } from "~/lib/roles";
 import { changeApplicants } from "~/hiring/lib/cycle-applicants.server";
 import { addDomainMentors, domainMentorIds } from "~/hiring/lib/cycle-rosters.server";
-import { saveHiringEmail } from "~/hiring/lib/hiring-emails.server";
 import { addDomainChallenge, removeDomainChallenge } from "~/hiring/lib/application-form.server";
 import { saveCycleTimeline } from "~/hiring/lib/cycle-timeline.server";
 import { STANDARD_TIMELINE, defaultTimeline } from "~/hiring/lib/cycle-timeline";
@@ -52,8 +51,24 @@ beforeEach(() => {
   // The action reads the cycle's applicant group before dispatching intents.
   mockPrisma.applicationCycle = {
     update: vi.fn().mockResolvedValue({}),
-    findUnique: vi.fn().mockResolvedValue({ id: CYCLE_ID, applicants: "Students", statusUpdates: [] }),
+    findUnique: vi.fn().mockResolvedValue({
+      id: CYCLE_ID,
+      applicants: "Students",
+      statusUpdates: [],
+      startTermIds: [],
+    }),
   };
+  // Every termId write re-floors the cycle's start terms (applyTerm →
+  // reflowStartTermsForTermChange), so those two reads have to exist even for
+  // the tests that only care about dates.
+  mockPrisma.term = {
+    findUnique: vi.fn().mockResolvedValue({ startDate: new Date("2026-03-30"), sortKey: 20262 }),
+    findMany: vi.fn().mockResolvedValue([
+      { id: "t-26s", code: "26S", sortKey: 20262 },
+      { id: "t-26f", code: "26F", sortKey: 20264 },
+    ]),
+  };
+  mockPrisma.application = { updateMany: vi.fn().mockResolvedValue({ count: 0 }) };
 
   vi.mocked(requireAuth).mockResolvedValue({
     ok: true,
@@ -629,8 +644,14 @@ describe("lead.cycle.$id action — domain challenges", () => {
   it("adds a challenge to the domain in Draft", async () => {
     vi.mocked(addDomainChallenge).mockResolvedValue(null);
     const res = (await callAction({ intent: "create-challenge-form", domainId: DOMAIN_ID })) as Response;
-    expect(addDomainChallenge).toHaveBeenCalledWith(CYCLE_ID, DOMAIN_ID, HIRING_LEAD_ID);
+    expect(addDomainChallenge).toHaveBeenCalledWith(CYCLE_ID, DOMAIN_ID, HIRING_LEAD_ID, null);
     expect(res.status).toBe(302);
+  });
+
+  it("links the form the lead picked", async () => {
+    vi.mocked(addDomainChallenge).mockResolvedValue(null);
+    await callAction({ intent: "create-challenge-form", domainId: DOMAIN_ID, formId: "form-1" });
+    expect(addDomainChallenge).toHaveBeenCalledWith(CYCLE_ID, DOMAIN_ID, HIRING_LEAD_ID, "form-1");
   });
 
   it("refuses once the cycle has opened", async () => {
@@ -684,38 +705,24 @@ describe("lead.cycle.$id action — add-domain-mentors", () => {
   });
 });
 
-describe("lead.cycle.$id action — save-hiring-email", () => {
-  it("saves a slot's shared email", async () => {
-    const res = await callAction({
-      intent: "save-hiring-email",
-      slot: "notification:ApplicationExtensionNotice",
-      subject: "More time",
-      body: "Hi {{firstName}}",
-    });
-    expect(saveHiringEmail).toHaveBeenCalledWith(
-      "notification:ApplicationExtensionNotice",
-      { subject: "More time", body: "Hi {{firstName}}" },
-      HIRING_LEAD_ID,
-    );
-    expect(res).toEqual({ ok: true });
-  });
-
-  it("passes an empty email through, which turns the slot off", async () => {
-    await callAction({ intent: "save-hiring-email", slot: "decision:Rejected", subject: "", body: "" });
-    expect(saveHiringEmail).toHaveBeenCalledWith("decision:Rejected", { subject: "", body: "" }, HIRING_LEAD_ID);
-  });
-
-  it("rejects an unknown slot", async () => {
-    const res = (await callAction({ intent: "save-hiring-email", slot: "decision:Promoted", subject: "x", body: "y" })) as Response;
-    expect(res.status).toBe(400);
-    expect(saveHiringEmail).not.toHaveBeenCalled();
-  });
-});
+// The save-hiring-email action is gone: email copy is edited only in
+// Admin -> Email now. It mattered that it left, not just that it moved — the
+// action here was gated on isCycleAdmin, so a per-cycle role could rewrite copy
+// every cycle shares. The Setup tab shows whether each email is written and links
+// out to edit it.
 
 describe("lead.cycle.$id action — set-term", () => {
   beforeEach(() => {
     // 26F starts Monday 2026-09-14 (a UTC-midnight calendar stamp).
-    mockPrisma.term = { findUnique: vi.fn().mockResolvedValue({ startDate: new Date("2026-09-14T00:00:00Z") }) };
+    mockPrisma.term = {
+      findUnique: vi.fn().mockResolvedValue({ startDate: new Date("2026-09-14T00:00:00Z"), sortKey: 20264 }),
+      // Kept alongside findUnique: applyTerm re-floors start terms on every
+      // termId write and reads the whole calendar to do it.
+      findMany: vi.fn().mockResolvedValue([
+        { id: "t-26s", code: "26S", sortKey: 20262 },
+        { id: "t-26f", code: "26F", sortKey: 20264 },
+      ]),
+    };
   });
 
   it("fills an unset window with Weeks 4 to 5 of the term", async () => {
@@ -772,7 +779,15 @@ describe("lead.cycle.$id action — save-term-dates (one Save for the card)", ()
     statusUpdates: [{ newStatus: status }],
   });
   beforeEach(() => {
-    mockPrisma.term = { findUnique: vi.fn().mockResolvedValue({ startDate: new Date("2026-09-14T00:00:00Z") }) };
+    mockPrisma.term = {
+      findUnique: vi.fn().mockResolvedValue({ startDate: new Date("2026-09-14T00:00:00Z"), sortKey: 20264 }),
+      // Kept alongside findUnique: applyTerm re-floors start terms on every
+      // termId write and reads the whole calendar to do it.
+      findMany: vi.fn().mockResolvedValue([
+        { id: "t-26s", code: "26S", sortKey: 20262 },
+        { id: "t-26f", code: "26F", sortKey: 20264 },
+      ]),
+    };
   });
 
   it("saves only the term when the dates didn't change", async () => {
@@ -794,5 +809,116 @@ describe("lead.cycle.$id action — save-term-dates (one Save for the card)", ()
     await callAction({ intent: "save-term-dates", termId: "term-26f", openDate: "2026-10-07", closeDate: "2026-10-18" });
     const datas = mockPrisma.applicationCycle.update.mock.calls.map((c: any) => c[0].data);
     expect(datas).toEqual([{ termId: "term-26f" }]);
+  });
+});
+
+// The picker posts a JSON array alongside the term and dates, so one Save
+// covers all three. The floor (no start term before the cycle's own term) is
+// re-applied server-side, since the control is only as trustworthy as the body.
+describe("lead.cycle.$id action — save-term-dates start terms", () => {
+  const before = (status: string) => ({
+    termId: "t-26s",
+    openDate: null,
+    closeDate: null,
+    originalCloseDate: null,
+    statusUpdates: [{ newStatus: status }],
+  });
+
+  function startTermWrites() {
+    return mockPrisma.applicationCycle.update.mock.calls
+      .map((c: any) => c[0].data)
+      .filter((d: any) => "startTermIds" in d);
+  }
+
+  beforeEach(() => {
+    mockPrisma.applicationCycle.findUniqueOrThrow = vi.fn().mockResolvedValue(before("Draft"));
+    // The cycle's own term is 26S, so 26S and 26F are offerable and 26W is not.
+    mockPrisma.term.findUnique.mockResolvedValue({
+      startDate: new Date("2026-03-30T00:00:00Z"),
+      sortKey: 20262,
+    });
+    mockPrisma.term.findMany.mockResolvedValue([
+      { id: "t-26w", code: "26W", sortKey: 20261 },
+      { id: "t-26s", code: "26S", sortKey: 20262 },
+      { id: "t-26f", code: "26F", sortKey: 20264 },
+    ]);
+    mockPrisma.applicationCycle.findUnique.mockResolvedValue({
+      id: CYCLE_ID,
+      applicants: "Students",
+      statusUpdates: [],
+      startTermIds: [],
+      term: { sortKey: 20262 },
+    });
+  });
+
+  it("saves the offered terms chronologically, whatever order they arrive in", async () => {
+    await callAction({
+      intent: "save-term-dates",
+      termId: "t-26s",
+      startTermIds: JSON.stringify(["t-26f", "t-26s"]),
+    });
+    expect(startTermWrites()).toEqual([{ startTermIds: ["t-26s", "t-26f"] }]);
+  });
+
+  it("drops a start term earlier than the term the cycle runs in", async () => {
+    await callAction({
+      intent: "save-term-dates",
+      termId: "t-26s",
+      startTermIds: JSON.stringify(["t-26w", "t-26s"]),
+    });
+    expect(startTermWrites()).toEqual([{ startTermIds: ["t-26s"] }]);
+  });
+
+  it("stores nothing for an unknown term id", async () => {
+    await callAction({
+      intent: "save-term-dates",
+      termId: "t-26s",
+      startTermIds: JSON.stringify(["t-nope"]),
+    });
+    expect(startTermWrites()).toEqual([{ startTermIds: [] }]);
+  });
+
+  it("survives a malformed body rather than throwing", async () => {
+    await callAction({
+      intent: "save-term-dates",
+      termId: "t-26s",
+      startTermIds: "not json",
+    });
+    expect(startTermWrites()).toEqual([{ startTermIds: [] }]);
+  });
+
+  it("leaves the stored set alone when the field isn't posted at all", async () => {
+    // A card rendered without the picker: non-Students, or the flag off. Absent
+    // must not read as "clear them".
+    await callAction({ intent: "save-term-dates", termId: "t-26s" });
+    expect(startTermWrites()).toEqual([]);
+  });
+
+  it("clears picks that the cycle no longer offers when its term moves", async () => {
+    mockPrisma.applicationCycle.findUnique.mockResolvedValue({
+      id: CYCLE_ID,
+      applicants: "Students",
+      statusUpdates: [],
+      startTermIds: ["t-26s", "t-26f"],
+      term: { sortKey: 20264 },
+    });
+    mockPrisma.term.findUnique.mockResolvedValue({
+      startDate: new Date("2026-09-14T00:00:00Z"),
+      sortKey: 20264,
+    });
+
+    await callAction({ intent: "save-term-dates", termId: "t-26f" });
+
+    // 26S fell below the new 26F floor, so it is dropped as an option and any
+    // application that had picked it is reset to "no pick".
+    expect(startTermWrites()).toEqual([{ startTermIds: ["t-26f"] }]);
+    expect(mockPrisma.application.updateMany).toHaveBeenCalledWith({
+      where: {
+        applicationCycleId: CYCLE_ID,
+        startTermId: { not: null },
+        NOT: { startTermId: { in: ["t-26f"] } },
+      },
+      data: { startTermId: null },
+    });
   });
 });

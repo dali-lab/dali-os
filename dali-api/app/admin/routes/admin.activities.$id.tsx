@@ -15,6 +15,7 @@ import { isCore } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";
 import { buttonClasses } from "~/components/ui/Button";
+import { useConfirmSubmit } from "~/components/ui/dialog";
 import { Toggle } from "~/components/ui/Toggle";
 import { ROLE_TARGETS, type RoleTarget } from "~/lib/feature-flags";
 import {
@@ -228,6 +229,7 @@ export default function AdminActivityEditor() {
   const error = actionData?.error ?? null;
 
   const mech = mechanicClient(activity.kind);
+  const confirmSubmit = useConfirmSubmit();
 
   const [name, setName] = useState(activity.name);
   const [termId, setTermId] = useState(activity.termId ?? "");
@@ -267,7 +269,42 @@ export default function AdminActivityEditor() {
         </p>
       )}
 
-      <Form method="post" className="flex flex-col gap-6">
+      {/* Save / Publish / Clone submit straight through; the three that take an
+          activity away from its participants confirm first. */}
+      <Form
+        method="post"
+        className="flex flex-col gap-6"
+        onSubmit={confirmSubmit((submitter) => {
+          switch (submitter?.value) {
+            case "unpublish":
+              return {
+                title: `Unpublish ${activity.name}?`,
+                description:
+                  "It returns to Draft and disappears for participants. Any scores already recorded are kept.",
+                confirmLabel: "Unpublish",
+                tone: "destructive",
+              };
+            case "archive":
+              return {
+                title: `Archive ${activity.name}?`,
+                description:
+                  "It closes for participants and moves out of the active list. Scores and teams are kept, and you can clone it for a future term.",
+                confirmLabel: "Archive",
+                tone: "destructive",
+              };
+            case "delete":
+              return {
+                title: `Delete ${activity.name}?`,
+                description:
+                  "This removes the activity and its teams for good. Archive instead if you might want its history.",
+                confirmLabel: "Delete",
+                tone: "destructive",
+              };
+            default:
+              return null;
+          }
+        })}
+      >
         {/* Serialized complex fields */}
         <input type="hidden" name="audienceRoles" value={JSON.stringify(roles)} />
         <input type="hidden" name="config" value={JSON.stringify(config ?? {})} />
