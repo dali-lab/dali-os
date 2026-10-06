@@ -30,6 +30,7 @@ import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { DocEditor } from "~/components/doc";
 import { regroupRedirect } from "~/core/lib/regroup-redirect.server";
+import { orderGroupsForPicker } from "~/lib/group-kind";
 
 export const handle = adminHandle("announcements");
 
@@ -89,7 +90,12 @@ export async function loader({ request }: Route.LoaderArgs) {
       name: fullName(u),
       email: u.daliEmail,
     })),
-    groups: visibleGroups.map((g) => ({ id: g.id, name: g.name })),
+    groups: visibleGroups.map((g) => ({
+      id: g.id,
+      name: g.name,
+      systemKey: g.systemKey,
+      memberCount: g.memberIds.length,
+    })),
     publishedForms: forms,
     scheduled: scheduledRows.map((s) => ({
       id: s.id,
@@ -192,10 +198,11 @@ export default function AnnouncementsPage() {
   }, [publishedForms, formSearch]);
 
   const filteredGroups = useMemo(() => {
+    const ordered = orderGroupsForPicker(groups, pickedGroups);
     const q = groupSearch.trim().toLowerCase();
-    if (!q) return groups;
-    return groups.filter((g) => g.name.toLowerCase().includes(q));
-  }, [groups, groupSearch]);
+    if (!q) return ordered;
+    return ordered.filter((g) => g.name.toLowerCase().includes(q));
+  }, [groups, pickedGroups, groupSearch]);
 
   const selectedForm = publishedForms.find((f) => f.id === formId) ?? null;
 

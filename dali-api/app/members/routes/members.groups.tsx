@@ -24,9 +24,18 @@ import {
   ChevronDown,
   Archive,
   ArchiveRestore,
+  ArrowLeft,
+  ExternalLink,
 } from "lucide-react";
 import { Radio } from "~/components/ui/Radio";
 import { SearchInput } from "~/components/ui/SearchInput";
+import { Toggle } from "~/components/ui/Toggle";
+import {
+  GROUP_KIND_ORDER,
+  GROUP_KIND_LABELS,
+  groupKind,
+  isEmptyAutoGroup,
+} from "~/lib/group-kind";
 
 export const meta: Route.MetaFunction = () => [{ title: "Groups · Members · DALI OS" }];
 
@@ -40,6 +49,10 @@ type GroupRow = {
   // True when archived because someone clicked Archive (vs. term auto-archive).
   manuallyArchived: boolean;
   boundTermCodes: string[];
+  // Directory URL that filters the People list to this group's membership,
+  // for project/domain/term auto groups. Null for custom groups and for
+  // lab-wide/offering system groups, which have no matching directory filter.
+  directoryHref: string | null;
 };
 
 // A member as shown on an expanded group card: enough to render a profile-style
@@ -127,9 +140,24 @@ export async function loader({ request }: Route.LoaderArgs) {
     boundTermCodes: g.boundTermIds
       .map((id) => termCodeById.get(id))
       .filter((c): c is string => !!c),
+    directoryHref: directoryHrefForSystemKey(g.systemKey),
   }));
 
   return { groups, members, terms };
+}
+
+// project:<id> / domain:<id> / term:<id> system groups mirror a People
+// directory filter 1:1, so the card links there instead of duplicating its
+// member list. Lab-wide (core/hiring/alumni) and offering groups have no
+// matching directory filter.
+export function directoryHrefForSystemKey(systemKey: string | null): string | null {
+  if (!systemKey) return null;
+  const [prefix, id] = systemKey.split(":", 2);
+  if (!id) return null;
+  if (prefix === "project") return `/members?project=${id}`;
+  if (prefix === "domain") return `/members?domain=${id}`;
+  if (prefix === "term") return `/members?term=${id}`;
+  return null;
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -255,12 +283,14 @@ export default function AdminConsoleGroups() {
   const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<StatusFilter>("active");
+  const [showEmpty, setShowEmpty] = useState(false);
 
   const q = query.trim().toLowerCase();
   const visibleGroups = groups.filter((g: GroupRow) => {
     if (status === "active" && g.archived) return false;
     if (status === "archived" && !g.archived) return false;
     if (q && !g.name.toLowerCase().includes(q)) return false;
+    if (!showEmpty && isEmptyAutoGroup(g)) return false;
     return true;
   });
 
@@ -268,6 +298,14 @@ export default function AdminConsoleGroups() {
 
   return (
     <div className="space-y-6">
+      <Link
+        to="/members"
+        className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+      >
+        <ArrowLeft className="h-4 w-4" aria-hidden />
+        People
+      </Link>
+
       {/* Same header shape as the People directory this sits beside: title
           left, add control right. The design's title carries the page on its
           own, so the decorative Users glyph goes with the smaller heading. */}
@@ -279,7 +317,7 @@ export default function AdminConsoleGroups() {
               "text-4xl font-medium",
             )}
           >
-            User Groups
+            Groups
           </h1>
           <span
             className={cn(
@@ -313,6 +351,12 @@ export default function AdminConsoleGroups() {
             placeholder="Search groups by name"
             containerClassName="flex-1 min-w-[12rem] max-w-[420px]"
           />
+          <Toggle
+            checked={showEmpty}
+            onChange={(e) => setShowEmpty(e.target.checked)}
+            label="Show empty auto groups"
+            className="flex-shrink-0"
+          />
           <span className="text-xs text-muted-foreground ml-auto">
             {visibleGroups.length} {visibleGroups.length === 1 ? "group" : "groups"}
             {visibleGroups.length !== groups.length ? ` of ${groups.length}` : ""}
@@ -343,9 +387,20 @@ export default function AdminConsoleGroups() {
               : `No ${status} groups.`}
           </div>
         )}
-        {visibleGroups.map((g: GroupRow) => (
-          <GroupCard key={g.id} group={g} members={members} membersById={membersById} />
-        ))}
+        {GROUP_KIND_ORDER.map((kind) => {
+          const kindGroups = visibleGroups.filter((g) => groupKind(g) === kind);
+          if (kindGroups.length === 0) return null;
+          return (
+            <div key={kind} className="space-y-3">
+              <h2 className="text-xs font-semibold uppercase tracking-widest text-os-grey">
+                {GROUP_KIND_LABELS[kind]}
+              </h2>
+              {kindGroups.map((g) => (
+                <GroupCard key={g.id} group={g} members={members} membersById={membersById} />
+              ))}
+            </div>
+          );
+        })}
       </div>
 
       <Modal
@@ -728,52 +783,67 @@ function GroupCard({
             {group.memberIds.length} member{group.memberIds.length === 1 ? "" : "s"}
           </span>
         </button>
-        {!isSystem && (
+        {(!isSystem || group.directoryHref) && (
           <div className="flex items-center gap-1 flex-shrink-0">
-            {/* Term-archived groups can be reactivated by clearing the manual
-                flag too; the Archive/Restore toggle keys off the effective
-                state. A manual archive overrides term state either way. */}
-            <fetcher.Form method="post">
-              <input
-                type="hidden"
-                name="intent"
-                value={group.archived ? "unarchive-group" : "archive-group"}
-              />
-              <input type="hidden" name="groupId" value={group.id} />
-              <Tooltip content={group.archived ? "Restore group" : "Archive group"}>
-                <button
-                  type="submit"
-                  aria-label={group.archived ? "Restore group" : "Archive group"}
+            {isSystem && group.directoryHref && (
+              <Tooltip content="Open in People directory">
+                <Link
+                  to={group.directoryHref}
+                  aria-label="Open in People directory"
                   className="text-muted-foreground hover:text-foreground p-1"
                 >
-                  {group.archived ? (
-                    <ArchiveRestore className="w-4 h-4" />
-                  ) : (
-                    <Archive className="w-4 h-4" />
-                  )}
-                </button>
+                  <ExternalLink className="w-4 h-4" />
+                </Link>
               </Tooltip>
-            </fetcher.Form>
-            <fetcher.Form
-              method="post"
-              onSubmit={confirmSubmit({
-                title: `Delete group "${group.name}"?`,
-                description:
-                  "Any document shares and scheduling audiences that reference this group will stop working. This can't be undone.",
-                confirmLabel: "Delete",
-                tone: "destructive",
-              })}
-            >
-              <input type="hidden" name="intent" value="delete-group" />
-              <input type="hidden" name="groupId" value={group.id} />
-              <button
-                type="submit"
-                aria-label="Delete group"
-                className="text-muted-foreground hover:text-red-600 p-1"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </fetcher.Form>
+            )}
+            {!isSystem && (
+              <>
+                {/* Term-archived groups can be reactivated by clearing the manual
+                    flag too; the Archive/Restore toggle keys off the effective
+                    state. A manual archive overrides term state either way. */}
+                <fetcher.Form method="post">
+                  <input
+                    type="hidden"
+                    name="intent"
+                    value={group.archived ? "unarchive-group" : "archive-group"}
+                  />
+                  <input type="hidden" name="groupId" value={group.id} />
+                  <Tooltip content={group.archived ? "Restore group" : "Archive group"}>
+                    <button
+                      type="submit"
+                      aria-label={group.archived ? "Restore group" : "Archive group"}
+                      className="text-muted-foreground hover:text-foreground p-1"
+                    >
+                      {group.archived ? (
+                        <ArchiveRestore className="w-4 h-4" />
+                      ) : (
+                        <Archive className="w-4 h-4" />
+                      )}
+                    </button>
+                  </Tooltip>
+                </fetcher.Form>
+                <fetcher.Form
+                  method="post"
+                  onSubmit={confirmSubmit({
+                    title: `Delete group "${group.name}"?`,
+                    description:
+                      "Any document shares and scheduling audiences that reference this group will stop working. This can't be undone.",
+                    confirmLabel: "Delete",
+                    tone: "destructive",
+                  })}
+                >
+                  <input type="hidden" name="intent" value="delete-group" />
+                  <input type="hidden" name="groupId" value={group.id} />
+                  <button
+                    type="submit"
+                    aria-label="Delete group"
+                    className="text-muted-foreground hover:text-red-600 p-1"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </fetcher.Form>
+              </>
+            )}
           </div>
         )}
       </div>
