@@ -5915,6 +5915,9 @@ model GmailIntegration {
   // Cached expiration of the access token portion of `oauthTokens`. Drives
   // proactive refresh ahead of expiry.
   tokenExpiresAt DateTime?
+  // OAuth scopes Google actually granted at connect time. The applicant email
+  // index reads the Hiring mailbox only when gmail.readonly is among them.
+  scopes         String[]         @default([])
   // Soft-disable so the admin UI can revoke without deleting.
   enabled        Boolean          @default(true)
   // Last successful Gmail API call against this integration. Drives the
