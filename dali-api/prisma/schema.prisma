@@ -4685,6 +4685,7 @@ model FormSubmission {
 
   partnerApplication   PartnerApplication?
   educationApplication EducationApplication?
+  partnerSurveyFor     ProjectPartner?
 
   // One submission per member per bound staffing slot. Postgres treats NULLs as
   // distinct, so this only constrains rows where all three columns are set (the
@@ -5750,6 +5751,14 @@ model ProjectPartner {
   partnerOrgId String
   startedAt    DateTime?
   endedAt      DateTime?
+  // Post-project survey (specs/partner-crm.md §11). Stamped once by the
+  // partner-survey-send job when endedAt is set; surveySubmissionId is filled
+  // when the partner actually fills the bound PartnerSurveyFormBinding form.
+  // Nullable + SetNull mirrors PartnerApplication.formSubmissionId: deleting
+  // the Form cascades its submissions away, but the partnership row survives.
+  surveySentAt       DateTime?
+  surveySubmissionId String?       @unique
+  surveySubmission   FormSubmission? @relation(fields: [surveySubmissionId], references: [id], onDelete: SetNull)
 
   project    Project    @relation(fields: [projectId], references: [id])
   partnerOrg PartnerOrg @relation(fields: [partnerOrgId], references: [id])

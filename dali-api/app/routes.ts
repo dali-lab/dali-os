@@ -331,6 +331,7 @@ export default [
     route("partner/settings", "partners/routes/partner.settings.tsx"),
     route("partner/projects/:id", "partners/routes/partner.projects.$id.tsx"),
     route("partner/projects/:id/pages/:pageId", "partners/routes/partner.projects.$id.pages.$pageId.tsx"),
+    route("partner/survey/:projectPartnerId", "partners/routes/partner.survey.$projectPartnerId.tsx"),
   ]),
 
   // Partner auth (no layout).

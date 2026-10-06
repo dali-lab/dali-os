@@ -59,6 +59,10 @@ import {
   MANAGE_PARTNER_CONTACT_TOOL,
   runManagePartnerContact,
 } from "./manage-partner-contact";
+import {
+  PARTNER_PIPELINE_REPORT_TOOL,
+  runPartnerPipelineReport,
+} from "./partner-pipeline-report";
 
 export const PARTNERS_TOOLS: McpTool[] = [
   {
@@ -134,5 +138,10 @@ export const PARTNERS_TOOLS: McpTool[] = [
   {
     def: MANAGE_PARTNER_CONTACT_TOOL,
     run: (ctx: McpCtx, args) => runManagePartnerContact(ctx.user.id, args),
+  },
+  {
+    def: PARTNER_PIPELINE_REPORT_TOOL,
+    run: (ctx: McpCtx, args) =>
+      runPartnerPipelineReport(ctx.user.id, args as Parameters<typeof runPartnerPipelineReport>[1]),
   },
 ];

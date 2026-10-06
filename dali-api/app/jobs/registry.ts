@@ -97,6 +97,7 @@ import { runPartnerNextStepReminders } from "~/jobs/partner-next-step-reminders.
 import { runPartnerRenewalSweep } from "~/jobs/partner-renewal-sweep.server";
 import { runPartnerRequestExpiry } from "~/jobs/partner-request-expiry.server";
 import { runPartnerEmailIndex } from "~/jobs/shared-inbox-index.server";
+import { runPartnerSurveySend } from "~/jobs/partner-survey-send.server";
 
 export const JOBS: JobDefinition[] = [
   {
@@ -517,6 +518,13 @@ export const JOBS: JobDefinition[] = [
       },
     ],
     handler: runPartnerEmailIndex,
+  },
+  {
+    name: "partner-survey-send",
+    description:
+      "Emails a partner org the post-project survey once their ProjectPartner link ends, within a 30-day lookback window, sending at most once per partnership (PartnerSurveyFormBinding must be set).",
+    intervalMinutes: 1440,
+    handler: runPartnerSurveySend,
   },
   {
     name: "wallet-restyle-broadcast",

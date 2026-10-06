@@ -6,9 +6,12 @@ import { canViewStaffing } from "~/lib/roles";
 import {
   PARTNER_STAGES,
   isPartnerStage,
+  isStale,
   type PartnerStage,
 } from "~/partners/lib/partner-application";
 import { McpForbiddenError, McpInvalidError } from "../../registry";
+
+const DEFAULT_STALE_DAYS = 14;
 
 export const LIST_PARTNER_APPLICATIONS_TOOL = {
   name: "list_partner_applications",
@@ -52,29 +55,37 @@ export async function runListPartnerApplications(
     }
   }
 
-  const applications = await prisma.partnerApplication.findMany({
-    where: validStages.length > 0 ? { stage: { in: validStages } } : undefined,
-    orderBy: { createdAt: "desc" },
-    select: {
-      id: true,
-      title: true,
-      stage: true,
-      createdAt: true,
-      partnerOrg: { select: { id: true, name: true } },
-      applicantContact: { select: { id: true, name: true, email: true } },
-      targetTerms: {
-        orderBy: { term: { sortKey: "asc" } },
-        select: { term: { select: { code: true } } },
-      },
-      domains: {
-        select: {
-          domainId: true,
-          expectedMembers: true,
-          domain: { select: { displayName: true } },
+  const [applications, settings] = await Promise.all([
+    prisma.partnerApplication.findMany({
+      where: validStages.length > 0 ? { stage: { in: validStages } } : undefined,
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        title: true,
+        stage: true,
+        createdAt: true,
+        nextStep: true,
+        nextStepDueAt: true,
+        lastActivityAt: true,
+        holdUntil: true,
+        partnerOrg: { select: { id: true, name: true } },
+        applicantContact: { select: { id: true, name: true, email: true } },
+        targetTerms: {
+          orderBy: { term: { sortKey: "asc" } },
+          select: { term: { select: { code: true } } },
+        },
+        domains: {
+          select: {
+            domainId: true,
+            expectedMembers: true,
+            domain: { select: { displayName: true } },
+          },
         },
       },
-    },
-  });
+    }),
+    prisma.partnerCrmSettings.findUnique({ where: { id: "default" }, select: { staleDays: true } }),
+  ]);
+  const staleDays = settings?.staleDays ?? DEFAULT_STALE_DAYS;
 
   return {
     applications: applications.map((a) => ({
@@ -94,6 +105,10 @@ export async function runListPartnerApplications(
       })),
       totalExpectedMembers: a.domains.reduce((sum, d) => sum + d.expectedMembers, 0),
       createdAt: a.createdAt,
+      nextStep: a.nextStep,
+      nextStepDueAt: a.nextStepDueAt,
+      lastActivityAt: a.lastActivityAt,
+      isStale: isStale(a, staleDays),
     })),
   };
 }

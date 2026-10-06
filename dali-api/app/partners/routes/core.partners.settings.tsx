@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { Form, Link, redirect, useActionData, useLoaderData, useSubmit } from "react-router";
-import { MultiSelect } from "~/components/ui/floating";
+import { MultiSelect, Select } from "~/components/ui/floating";
 import { Settings as SettingsIcon } from "lucide-react";
 import type { Route } from "./+types/core.partners.settings";
 import { requireAuth } from "~/lib/auth";
@@ -10,6 +10,13 @@ import { isCore, getActiveCoreCycleTermIds } from "~/lib/roles";
 import { coreHandle } from "~/core/coreNav";
 import { EditableSection } from "~/components/EditableSection";
 import { PartnerCrmNav } from "../components/PartnerCrmNav";
+import { listSelectableForms } from "~/projects/lib/form-slots";
+import {
+  clearSurveyFormBinding,
+  getSurveyFormBinding,
+  setSurveyFormBinding,
+} from "../lib/partner-survey.server";
+import { useConfirmSubmit } from "~/components/ui/dialog";
 
 export const handle = { ...coreHandle("partners"), areaSubnav: true };
 
@@ -23,12 +30,14 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (auth.user.type === "applicant") return redirect("/portal");
   if (!(await isCore(auth.user.sub))) return redirect("/");
 
-  const [settings, cycleTermIds] = await Promise.all([
+  const [settings, cycleTermIds, surveyFormBinding, selectableForms] = await Promise.all([
     prisma.partnerCrmSettings.findUnique({
       where: { id: "default" },
       select: { interviewPanelUserIds: true, staleDays: true },
     }),
     getActiveCoreCycleTermIds(request),
+    getSurveyFormBinding(),
+    listSelectableForms(),
   ]);
 
   const coreMembers =
@@ -57,6 +66,8 @@ export async function loader({ request }: Route.LoaderArgs) {
           a.userId,
       }))
       .sort((a, b) => a.name.localeCompare(b.name)),
+    surveyFormBinding,
+    selectableForms,
   };
 }
 
@@ -82,6 +93,17 @@ export async function action({ request }: Route.ActionArgs) {
       create: { id: "default", interviewPanelUserIds, staleDays },
       update: { interviewPanelUserIds, staleDays },
     });
+    return { ok: true };
+  }
+
+  if (intent === "bind-survey-form") {
+    const formId = (form.get("formId") as string | null) ?? "";
+    if (!formId) return { error: "Choose a form to bind." };
+    const result = await setSurveyFormBinding(formId, auth.user.sub);
+    return result.ok ? { ok: true } : { error: result.error };
+  }
+  if (intent === "clear-survey-form") {
+    await clearSurveyFormBinding();
     return { ok: true };
   }
 
@@ -153,10 +175,11 @@ function SettingsFields({
 }
 
 export default function PartnerCrmSettingsPage() {
-  const { settings, coreMembers } = useLoaderData<typeof loader>();
+  const { settings, coreMembers, surveyFormBinding, selectableForms } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const submit = useSubmit();
   const formRef = useRef<HTMLFormElement>(null);
+  const confirmSubmit = useConfirmSubmit();
 
   const error = actionData && "error" in actionData ? actionData.error : null;
 
@@ -196,6 +219,73 @@ export default function PartnerCrmSettingsPage() {
           </Link>
           .
         </p>
+      </section>
+
+      <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-2">
+        <h2 className="text-sm font-semibold text-foreground">Post-project survey</h2>
+        <p className="text-sm text-muted-foreground">
+          The form a partner fills out at <code>/partner/survey</code> once their project ends.
+          {surveyFormBinding && (
+            <>
+              {" "}
+              <Link
+                to={`/forms/edit/${surveyFormBinding.formId}`}
+                className="text-dark-blue hover:underline"
+              >
+                Edit “{surveyFormBinding.formName}” in Forms
+              </Link>
+            </>
+          )}
+        </p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Form method="post" className="flex items-center gap-2">
+            <input type="hidden" name="intent" value="bind-survey-form" />
+            <Select
+              name="formId"
+              defaultValue={surveyFormBinding?.formId ?? ""}
+              placeholder="Choose a form…"
+              options={selectableForms.map((f) => ({
+                value: f.id,
+                label: `${f.name}${f.published ? "" : " (unpublished)"}`,
+              }))}
+              buttonClassName="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+            />
+            <button
+              type="submit"
+              className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors"
+            >
+              {surveyFormBinding ? "Change" : "Bind"}
+            </button>
+          </Form>
+          {surveyFormBinding && (
+            <Form
+              method="post"
+              onSubmit={confirmSubmit({
+                title: "Remove the bound survey form?",
+                description:
+                  "Partners whose project ends will have no survey to fill in until another is bound. Responses already submitted are kept.",
+                confirmLabel: "Remove",
+                tone: "destructive",
+              })}
+            >
+              <input type="hidden" name="intent" value="clear-survey-form" />
+              <button
+                type="submit"
+                className="px-3 py-1.5 text-xs font-medium rounded-md border border-border text-muted-foreground hover:text-destructive hover:border-destructive/40 transition-colors"
+              >
+                Remove
+              </button>
+            </Form>
+          )}
+        </div>
+        {surveyFormBinding && (!surveyFormBinding.published || !surveyFormBinding.hasVersion) && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5">
+            {surveyFormBinding.hasVersion
+              ? "This form isn't published yet"
+              : "This form has no saved version yet"}
+            {" "}— partners won't see a survey until it is.
+          </p>
+        )}
       </section>
 
       <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-2">
