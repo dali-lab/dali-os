@@ -3985,7 +3985,7 @@ function PartnerContactMenu({
             </a>
           )}
           {canManage && (
-            <Link role="menuitem" to={`/partners/${orgId}`} className={itemClass} onClick={() => setOpen(false)}>
+            <Link role="menuitem" to={`/core/partners/orgs/${orgId}`} className={itemClass} onClick={() => setOpen(false)}>
               <ExternalLink className="h-4 w-4 text-os-grey" /> View organization
             </Link>
           )}
@@ -4068,7 +4068,7 @@ function PartnersContactsOs({
               {partners.map((p) => (
                 <div key={p.id} className="flex items-center gap-2 py-2">
                   <Link
-                    to={`/partners/${p.org.id}`}
+                    to={`/core/partners/orgs/${p.org.id}`}
                     className="min-w-0 flex-1 truncate text-sm text-foreground hover:underline"
                   >
                     {p.org.name}

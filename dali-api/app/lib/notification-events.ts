@@ -31,7 +31,8 @@ export type EventDef = {
     | "Mentorship"
     | "Announcements"
     | "Forms"
-    | "Onboarding";
+    | "Onboarding"
+    | "Partners";
   label: string;
   description: string;
   // The in-app row IS the workflow surface (RSVP buttons, form todo,
@@ -48,6 +49,14 @@ export type EventDef = {
   // Only admins ever receive this event, so its settings row is shown only to
   // admins (and the save action ignores it for non-admins).
   adminOnly?: boolean;
+  // Same idea as `adminOnly` but for the Core-wide Partners area: no partner
+  // application has an owner (spec §3 dropped assignedMeeterId), so every
+  // partner event fans out to all of Core and no one outside Core ever
+  // receives one. The settings-page route/component is expected to hide
+  // these rows from non-Core viewers the same way it already does for
+  // `adminOnly`; that gate is out of scope for this change (see the
+  // notify.server-area change notes) and still needs to be wired in.
+  coreOnly?: boolean;
   // Opt-in coalescing window (ms). When set, notify() merges a second
   // notification for the same (recipient, eventType, link) inside the window
   // into the existing in-app row instead of writing a new one — taming a burst
@@ -263,6 +272,64 @@ export const EVENT_TYPES = {
     description: "When a decision on your Core application is released, or you're added to Core.",
     lockedInApp: true,
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
+  },
+  "partner.inquiry_received": {
+    kind: "General",
+    area: "Partners",
+    label: "New partner inquiry",
+    description: "When a new partner application comes in from the portal or an inbound email.",
+    coreOnly: true,
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Daily" },
+  },
+  "partner.meeting_requested": {
+    kind: "General",
+    area: "Partners",
+    label: "Partner asked for a meeting",
+    description: "When a partner requests a meeting through the portal scheduler.",
+    coreOnly: true,
+    timeSensitive: true,
+    defaults: { inApp: true, desktop: true, slackDm: true, email: "Instant" },
+  },
+  "partner.stale": {
+    kind: "General",
+    area: "Partners",
+    label: "Partner card gone quiet",
+    description: "When an open partner card has had no activity past the stale threshold.",
+    coreOnly: true,
+    defaults: { inApp: true, desktop: false, slackDm: false, email: "Daily" },
+  },
+  "partner.next_step_due": {
+    kind: "General",
+    area: "Partners",
+    label: "Partner next step due",
+    description: "When the next step on a partner card is due today or overdue.",
+    coreOnly: true,
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
+  "partner.renewal_due": {
+    kind: "General",
+    area: "Partners",
+    label: "Partner project ending, renewal created",
+    description:
+      "When a partner's project is ending soon and a renewal card is created automatically.",
+    coreOnly: true,
+    defaults: { inApp: true, desktop: false, slackDm: false, email: "Daily" },
+  },
+  "partner.contract_signed": {
+    kind: "General",
+    area: "Partners",
+    label: "Partner signed the contract",
+    description: "When a partner signs their contract.",
+    coreOnly: true,
+    defaults: { inApp: true, desktop: false, slackDm: true, email: "Instant" },
+  },
+  "partner.survey_received": {
+    kind: "General",
+    area: "Partners",
+    label: "Partner feedback received",
+    description: "When a partner submits the post-project feedback survey.",
+    coreOnly: true,
+    defaults: { inApp: true, desktop: false, slackDm: false, email: "Daily" },
   },
   announcement: {
     kind: "SystemAnnouncement",

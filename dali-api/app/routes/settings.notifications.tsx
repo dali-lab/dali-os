@@ -11,7 +11,7 @@ import {
   isPartnerAccount,
 } from "~/lib/auth";
 import { prisma } from "~/lib/db";
-import { isAdmin } from "~/lib/roles";
+import { isAdmin, isCore } from "~/lib/roles";
 import {
   EVENT_TYPES,
   isEventType,
@@ -35,6 +35,7 @@ export async function action({ request }: Route.ActionArgs) {
   if (auth.user.type === "applicant") return forbidden(request);
   if (await isPartnerAccount(auth)) return forbidden(request);
   const viewerIsAdmin = await isAdmin(auth.user.sub);
+  const viewerIsCore = await isCore(auth.user.sub);
 
   const form = await request.formData();
   const rows: {
@@ -50,6 +51,8 @@ export async function action({ request }: Route.ActionArgs) {
     const def: EventDef = EVENT_TYPES[eventType];
     // Admin-only events aren't rendered for non-admins; ignore any forged post.
     if (def.adminOnly && !viewerIsAdmin) continue;
+    // Same idea for Core-only (Partners) events.
+    if (def.coreOnly && !viewerIsCore) continue;
     // Checkboxes submit only when checked; the hidden `${type}:present`
     // field distinguishes "unchecked" from "row not on the form".
     if (form.get(`${eventType}:present`) !== "1") continue;

@@ -3,12 +3,14 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db", () => ({
   prisma: {
     mailMessageIndex: { findMany: vi.fn(), createMany: vi.fn() },
+    partnerContact: { findMany: vi.fn() },
   },
 }));
 vi.mock("~/lib/user-email.server", () => ({ findUserIdsByAddresses: vi.fn() }));
 
 import { prisma } from "~/lib/db";
 import { findUserIdsByAddresses } from "~/lib/user-email.server";
+import { PARTNERS_FROM_EMAIL } from "~/lib/app-env";
 import { parseAddressList } from "~/email/lib/address-list";
 import {
   classifyDirection,
@@ -17,13 +19,17 @@ import {
   type IndexableMessage,
 } from "~/email/lib/mail-index.server";
 
-const db = prisma as unknown as { mailMessageIndex: Record<string, ReturnType<typeof vi.fn>> };
+const db = prisma as unknown as {
+  mailMessageIndex: Record<string, ReturnType<typeof vi.fn>>;
+  partnerContact: Record<string, ReturnType<typeof vi.fn>>;
+};
 const INBOX = "applications@dali.dartmouth.edu";
 
 beforeEach(() => {
   vi.clearAllMocks();
   db.mailMessageIndex.findMany.mockResolvedValue([]);
   db.mailMessageIndex.createMany.mockResolvedValue({ count: 0 });
+  db.partnerContact.findMany.mockResolvedValue([]);
   vi.mocked(findUserIdsByAddresses).mockResolvedValue(new Map());
 });
 
@@ -133,5 +139,64 @@ describe("indexMessages", () => {
     const created = await indexMessages({ accountId: "acc1", inboxAddress: INBOX, metas: [] });
     expect(created).toBe(0);
     expect(db.mailMessageIndex.createMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("indexMessages: partner contact linking", () => {
+  it("does not look up PartnerContact for a non-partners inbox", async () => {
+    await indexMessages({ accountId: "acc1", inboxAddress: INBOX, metas: [meta()] });
+    expect(db.partnerContact.findMany).not.toHaveBeenCalled();
+  });
+
+  it("auto-links the partners@ inbox to a resolved PartnerContact when no User matches", async () => {
+    db.partnerContact.findMany.mockResolvedValue([{ id: "pc1", email: "ada@x.com" }]);
+
+    await indexMessages({ accountId: "acc1", inboxAddress: PARTNERS_FROM_EMAIL, metas: [meta({ to: PARTNERS_FROM_EMAIL })] });
+
+    const data = db.mailMessageIndex.createMany.mock.calls[0][0].data;
+    expect(data[0]).toMatchObject({ linkedUserId: null, linkedPartnerContactId: "pc1", linkSource: "Auto" });
+  });
+
+  it("prefers a User match over a PartnerContact match on the partners@ inbox", async () => {
+    vi.mocked(findUserIdsByAddresses).mockResolvedValue(new Map([["ada@x.com", "u1"]]));
+    db.partnerContact.findMany.mockResolvedValue([{ id: "pc1", email: "ada@x.com" }]);
+
+    await indexMessages({ accountId: "acc1", inboxAddress: PARTNERS_FROM_EMAIL, metas: [meta({ to: PARTNERS_FROM_EMAIL })] });
+
+    const data = db.mailMessageIndex.createMany.mock.calls[0][0].data;
+    expect(data[0]).toMatchObject({ linkedUserId: "u1", linkedPartnerContactId: null, linkSource: "Auto" });
+  });
+
+  it("looks up PartnerContact off a non-partners address when linkPartnerContacts is passed explicitly", async () => {
+    db.partnerContact.findMany.mockResolvedValue([{ id: "pc1", email: "ada@x.com" }]);
+
+    await indexMessages({
+      accountId: "acc1",
+      inboxAddress: INBOX,
+      metas: [meta()],
+      linkPartnerContacts: true,
+    });
+
+    const data = db.mailMessageIndex.createMany.mock.calls[0][0].data;
+    expect(data[0]).toMatchObject({ linkedPartnerContactId: "pc1", linkSource: "Auto" });
+  });
+
+  it("inherits a thread's Manual PartnerContact link for a new message in that thread", async () => {
+    db.mailMessageIndex.findMany.mockResolvedValue([
+      { threadId: "t1", linkedUserId: null, linkedPartnerContactId: "pc-manual" },
+    ]);
+    db.partnerContact.findMany.mockResolvedValue([{ id: "pc-auto", email: "ada@x.com" }]);
+
+    await indexMessages({ accountId: "acc1", inboxAddress: PARTNERS_FROM_EMAIL, metas: [meta({ to: PARTNERS_FROM_EMAIL })] });
+
+    const data = db.mailMessageIndex.createMany.mock.calls[0][0].data;
+    expect(data[0]).toMatchObject({ linkedUserId: null, linkedPartnerContactId: "pc-manual", linkSource: "Manual" });
+  });
+
+  it("links to None on the partners@ inbox when neither a User nor a PartnerContact resolves", async () => {
+    await indexMessages({ accountId: "acc1", inboxAddress: PARTNERS_FROM_EMAIL, metas: [meta({ to: PARTNERS_FROM_EMAIL })] });
+
+    const data = db.mailMessageIndex.createMany.mock.calls[0][0].data;
+    expect(data[0]).toMatchObject({ linkedUserId: null, linkedPartnerContactId: null, linkSource: "None" });
   });
 });

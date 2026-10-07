@@ -1,8 +1,5 @@
 import type { Prisma } from "~/generated/prisma/client";
-import type {
-  PartnerActivityType,
-  PartnerApplicationStatus,
-} from "~/generated/prisma/enums";
+import type { PartnerActivityType, PartnerStage } from "~/generated/prisma/enums";
 
 /**
  * A Prisma client or an interactive-transaction client — both expose the model
@@ -12,41 +9,74 @@ import type {
 export type ActivityDb = Prisma.TransactionClient;
 
 type LogInput = {
-  applicationId: string;
+  /** Omit for org- or contact-level events (project linked, member added). */
+  applicationId?: string | null;
+  /**
+   * Denormalized scope. When only applicationId is given these are copied
+   * from the application so the org and contact timelines see the row.
+   */
+  orgId?: string | null;
+  contactId?: string | null;
   actorUserId?: string | null;
   type: PartnerActivityType;
   body?: string | null;
   metadata?: Prisma.InputJsonValue;
 };
 
-/** Append one row to a partner opportunity's activity timeline. */
-export async function logPartnerActivity(
-  db: ActivityDb,
-  input: LogInput,
-): Promise<void> {
+/**
+ * Append one row to the partner timeline and, for application-scoped rows,
+ * stamp the application's lastActivityAt (board sort, stale sweep).
+ */
+export async function logPartnerActivity(db: ActivityDb, input: LogInput): Promise<void> {
+  let orgId = input.orgId ?? null;
+  let contactId = input.contactId ?? null;
+
+  if (input.applicationId && (orgId === null || contactId === null)) {
+    const app = await db.partnerApplication.findUnique({
+      where: { id: input.applicationId },
+      select: { partnerOrgId: true, applicantContactId: true },
+    });
+    if (app) {
+      orgId ??= app.partnerOrgId;
+      contactId ??= app.applicantContactId;
+    }
+  }
+
   await db.partnerActivity.create({
     data: {
-      applicationId: input.applicationId,
+      applicationId: input.applicationId ?? null,
+      orgId,
+      contactId,
       actorUserId: input.actorUserId ?? null,
       type: input.type,
       body: input.body ?? null,
       ...(input.metadata !== undefined ? { metadata: input.metadata } : {}),
     },
   });
+
+  if (input.applicationId) {
+    await db.partnerApplication.updateMany({
+      where: { id: input.applicationId },
+      data: { lastActivityAt: new Date() },
+    });
+  }
 }
 
 /**
- * Update an application's status (plus any extra fields) and log a
- * `StatusChanged` activity iff the status actually moved. The single chokepoint
- * for status writes so no stage transition goes unrecorded — used by the status
- * dropdown, every triage/decision intent, the promote flow, and the kanban-drag
- * API route. Returns the previous status (null when the application is gone).
+ * Move an application to a stage (plus any extra fields) and log a
+ * `StatusChanged` activity iff the stage actually moved. The single chokepoint
+ * for stage writes so no transition goes unrecorded — used by the modal's stage
+ * select, every decision intent, the promote flow, and the board-drag API.
+ *
+ * A card entering a new column lands at the top (position below the column's
+ * current minimum). The drag API renumbers densely; here a gap is fine.
+ * Returns the previous stage (null when the application is gone).
  */
-export async function setApplicationStatus(
+export async function setApplicationStage(
   db: ActivityDb,
   input: {
     applicationId: string;
-    to: PartnerApplicationStatus;
+    to: PartnerStage;
     actorUserId?: string | null;
     /**
      * Extra fields to write in the same update (e.g. decisionReason, or the
@@ -57,25 +87,39 @@ export async function setApplicationStatus(
     /** Extra keys merged into the StatusChanged metadata (e.g. projectId). */
     meta?: Record<string, string | number | null>;
   },
-): Promise<PartnerApplicationStatus | null> {
+): Promise<PartnerStage | null> {
   const existing = await db.partnerApplication.findUnique({
     where: { id: input.applicationId },
-    select: { status: true },
+    select: { stage: true },
   });
   if (!existing) return null;
 
+  const moved = existing.stage !== input.to;
+  let position: number | undefined;
+  if (moved) {
+    const top = await db.partnerApplication.aggregate({
+      where: { stage: input.to },
+      _min: { position: true },
+    });
+    position = (top._min.position ?? 1) - 1;
+  }
+
   await db.partnerApplication.update({
     where: { id: input.applicationId },
-    data: { status: input.to, ...(input.data ?? {}) },
+    data: {
+      stage: input.to,
+      ...(position !== undefined ? { position } : {}),
+      ...(input.data ?? {}),
+    },
   });
 
-  if (existing.status !== input.to) {
+  if (moved) {
     await logPartnerActivity(db, {
       applicationId: input.applicationId,
       actorUserId: input.actorUserId,
       type: "StatusChanged",
-      metadata: { from: existing.status, to: input.to, ...(input.meta ?? {}) },
+      metadata: { from: existing.stage, to: input.to, ...(input.meta ?? {}) },
     });
   }
-  return existing.status;
+  return existing.stage;
 }

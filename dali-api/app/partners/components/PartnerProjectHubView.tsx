@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router";
-import { ChevronDown, ChevronRight, Download, Eye, Folder, X } from "lucide-react";
+import { Link, useRevalidator } from "react-router";
+import { CalendarPlus, ChevronDown, ChevronRight, Download, Eye, Folder, X } from "lucide-react";
 import { termCodeLabel } from "~/lib/display";
 import { formatBytes } from "~/lib/upload-client";
 import { categorize } from "~/lib/file-type";
@@ -8,6 +8,8 @@ import { Avatar } from "~/components/ui/Avatar";
 import { Markdown } from "~/components/Markdown";
 import { Modal } from "~/components/Modal";
 import { PartnerBackLink } from "~/partners/components/PartnerBackLink";
+import { RequestMeetingModal } from "~/partners/components/RequestMeetingModal";
+import { PartnerMeetingsSection } from "~/partners/components/PartnerMeetingsSection";
 import { ProjectCoverImage } from "~/projects/components/ProjectCoverImage";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { EpicsTimeline } from "~/projects/components/EpicsTimeline";
@@ -237,10 +239,15 @@ export function PartnerProjectHubView({
   data,
   backLink,
   pageHref,
+  requestMeetingScope,
 }: {
   data: PartnerProjectViewData;
   backLink?: { to: string; label: string };
   pageHref: (pageId: string) => string;
+  /** Present only for the real partner portal (not the in-app member
+   *  preview) — scopes the "Request a meeting" button + modal to this
+   *  project's team. */
+  requestMeetingScope?: { projectId: string };
 }) {
   const {
     project,
@@ -251,7 +258,12 @@ export function PartnerProjectHubView({
     timelineTerms,
     editableEpics,
     drive,
+    meetings,
+    pendingMeetingRequests,
+    declinedMeetingRequests,
   } = data;
+  const revalidator = useRevalidator();
+  const [requestingMeeting, setRequestingMeeting] = useState(false);
 
   // Clicking a bar opens the project hub's own epic modal, read-only. A story
   // bar opens its epic, same as the hub — the story's detail lives inside that
@@ -268,11 +280,15 @@ export function PartnerProjectHubView({
     drive.docs.length === 0 &&
     drive.files.length === 0;
 
+  const hasMeetingsContent =
+    meetings.length > 0 || pendingMeetingRequests.length > 0 || declinedMeetingRequests.length > 0;
+
   // Section anchors for the side nav — only the ones actually rendered.
   const sections: NavSection[] = [
     { id: "roadmap", label: "Roadmap" },
     { id: "drive", label: "Drive" },
     ...(team.length > 0 ? [{ id: "team", label: "Team" }] : []),
+    ...(hasMeetingsContent ? [{ id: "meetings", label: "Meetings" }] : []),
   ];
   const activeSection = useActiveSection(sections.map((s) => s.id));
 
@@ -311,6 +327,15 @@ export function PartnerProjectHubView({
               <div className="mt-3">
                 <Markdown>{project.description}</Markdown>
               </div>
+            )}
+            {requestMeetingScope && (
+              <button
+                type="button"
+                onClick={() => setRequestingMeeting(true)}
+                className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-dark-blue px-4 py-2 text-sm font-heading font-semibold text-white transition hover:opacity-90"
+              >
+                <CalendarPlus className="h-4 w-4" /> Request a meeting
+              </button>
             )}
           </div>
         </div>
@@ -401,6 +426,23 @@ export function PartnerProjectHubView({
             ))}
           </div>
         </section>
+      )}
+
+      {hasMeetingsContent && (
+        <PartnerMeetingsSection
+          meetings={meetings}
+          pendingRequests={pendingMeetingRequests}
+          declinedRequests={declinedMeetingRequests}
+          onRequestAnother={requestMeetingScope ? () => setRequestingMeeting(true) : undefined}
+        />
+      )}
+
+      {requestingMeeting && requestMeetingScope && (
+        <RequestMeetingModal
+          scope={requestMeetingScope}
+          onClose={() => setRequestingMeeting(false)}
+          onSent={() => revalidator.revalidate()}
+        />
       )}
 
       {previewFile && (

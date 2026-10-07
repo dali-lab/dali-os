@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   logPartnerActivity,
-  setApplicationStatus,
+  setApplicationStage,
   type ActivityDb,
 } from "../partner-activity.server";
 
@@ -10,6 +10,8 @@ function makeDb() {
     partnerApplication: {
       findUnique: vi.fn(),
       update: vi.fn().mockResolvedValue({}),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      aggregate: vi.fn().mockResolvedValue({ _min: { position: null } }),
     },
     partnerActivity: {
       create: vi.fn().mockResolvedValue({}),
@@ -19,8 +21,12 @@ function makeDb() {
 }
 
 describe("logPartnerActivity", () => {
-  it("omits the metadata key when none is provided", async () => {
+  it("omits the metadata key when none is provided and stamps lastActivityAt", async () => {
     const db = makeDb();
+    db.partnerApplication.findUnique.mockResolvedValue({
+      partnerOrgId: "org1",
+      applicantContactId: "pc1",
+    });
     await logPartnerActivity(db, {
       applicationId: "a1",
       actorUserId: null,
@@ -36,63 +42,108 @@ describe("logPartnerActivity", () => {
       body: "hello",
     });
     expect("metadata" in data).toBe(false);
+    expect(db.partnerApplication.updateMany).toHaveBeenCalledWith({
+      where: { id: "a1" },
+      data: { lastActivityAt: expect.any(Date) },
+    });
+  });
+
+  it("copies the application's org and contact onto the row", async () => {
+    const db = makeDb();
+    db.partnerApplication.findUnique.mockResolvedValue({
+      partnerOrgId: "org1",
+      applicantContactId: "pc1",
+    });
+    await logPartnerActivity(db, { applicationId: "a1", type: "Created" });
+    expect(db.partnerActivity.create.mock.calls[0][0].data).toMatchObject({
+      orgId: "org1",
+      contactId: "pc1",
+    });
+  });
+
+  it("logs org-level events with no application and no lookup", async () => {
+    const db = makeDb();
+    await logPartnerActivity(db, {
+      orgId: "org1",
+      actorUserId: "u1",
+      type: "ProjectLinked",
+      metadata: { projectId: "p1" },
+    });
+    expect(db.partnerApplication.findUnique).not.toHaveBeenCalled();
+    expect(db.partnerApplication.updateMany).not.toHaveBeenCalled();
+    expect(db.partnerActivity.create.mock.calls[0][0].data).toMatchObject({
+      applicationId: null,
+      orgId: "org1",
+      contactId: null,
+      type: "ProjectLinked",
+    });
   });
 });
 
-describe("setApplicationStatus", () => {
+describe("setApplicationStage", () => {
   let db: ReturnType<typeof makeDb>;
   beforeEach(() => {
     db = makeDb();
   });
 
-  it("updates and logs a StatusChanged when the status moves", async () => {
-    db.partnerApplication.findUnique.mockResolvedValue({ status: "Inquiry" });
-    const prev = await setApplicationStatus(db, {
+  it("updates, places the card at the top of the new column, and logs StatusChanged", async () => {
+    db.partnerApplication.findUnique
+      .mockResolvedValueOnce({ stage: "New" })
+      .mockResolvedValue({ partnerOrgId: null, applicantContactId: "pc1" });
+    db.partnerApplication.aggregate.mockResolvedValue({ _min: { position: 0 } });
+    const prev = await setApplicationStage(db, {
       applicationId: "a1",
-      to: "Triaged",
+      to: "Interview",
       actorUserId: "u1",
     });
-    expect(prev).toBe("Inquiry");
+    expect(prev).toBe("New");
     expect(db.partnerApplication.update).toHaveBeenCalledWith({
       where: { id: "a1" },
-      data: { status: "Triaged" },
+      data: { stage: "Interview", position: -1 },
     });
     expect(db.partnerActivity.create).toHaveBeenCalledTimes(1);
     expect(db.partnerActivity.create.mock.calls[0][0].data).toMatchObject({
       applicationId: "a1",
       actorUserId: "u1",
       type: "StatusChanged",
-      metadata: { from: "Inquiry", to: "Triaged" },
+      metadata: { from: "New", to: "Interview" },
     });
   });
 
-  it("still updates but does NOT log when the status is unchanged", async () => {
-    db.partnerApplication.findUnique.mockResolvedValue({ status: "Meeting" });
-    const prev = await setApplicationStatus(db, {
+  it("still updates but does NOT log or reposition when the stage is unchanged", async () => {
+    db.partnerApplication.findUnique.mockResolvedValue({ stage: "Interview" });
+    const prev = await setApplicationStage(db, {
       applicationId: "a1",
-      to: "Meeting",
+      to: "Interview",
       actorUserId: "u1",
     });
-    expect(prev).toBe("Meeting");
-    expect(db.partnerApplication.update).toHaveBeenCalledTimes(1);
+    expect(prev).toBe("Interview");
+    expect(db.partnerApplication.update).toHaveBeenCalledWith({
+      where: { id: "a1" },
+      data: { stage: "Interview" },
+    });
+    expect(db.partnerApplication.aggregate).not.toHaveBeenCalled();
     expect(db.partnerActivity.create).not.toHaveBeenCalled();
   });
 
   it("merges extra data fields and metadata keys", async () => {
-    db.partnerApplication.findUnique.mockResolvedValue({ status: "UnderReview" });
-    await setApplicationStatus(db, {
+    db.partnerApplication.findUnique
+      .mockResolvedValueOnce({ stage: "Interview" })
+      .mockResolvedValue({ partnerOrgId: null, applicantContactId: "pc1" });
+    await setApplicationStage(db, {
       applicationId: "a1",
       to: "Rejected",
       actorUserId: "u1",
-      data: { decisionReason: "not enough scope" },
+      data: { decisionReason: "not enough scope", rejectReason: "NotAFit" },
       meta: { reason: "not enough scope" },
     });
-    expect(db.partnerApplication.update).toHaveBeenCalledWith({
-      where: { id: "a1" },
-      data: { status: "Rejected", decisionReason: "not enough scope" },
+    expect(db.partnerApplication.update.mock.calls[0][0].data).toMatchObject({
+      stage: "Rejected",
+      decisionReason: "not enough scope",
+      rejectReason: "NotAFit",
     });
     expect(db.partnerActivity.create.mock.calls[0][0].data.metadata).toEqual({
-      from: "UnderReview",
+      from: "Interview",
       to: "Rejected",
       reason: "not enough scope",
     });
@@ -100,9 +151,9 @@ describe("setApplicationStatus", () => {
 
   it("returns null and writes nothing when the application is gone", async () => {
     db.partnerApplication.findUnique.mockResolvedValue(null);
-    const prev = await setApplicationStatus(db, {
+    const prev = await setApplicationStage(db, {
       applicationId: "missing",
-      to: "Triaged",
+      to: "Interview",
     });
     expect(prev).toBeNull();
     expect(db.partnerApplication.update).not.toHaveBeenCalled();

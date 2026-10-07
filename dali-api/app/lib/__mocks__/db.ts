@@ -95,9 +95,14 @@ export const prisma = {
     findUnique: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
   },
+  rubric: {
+    findMany: vi.fn().mockResolvedValue([]),
+  },
   collabDocumentVersion: {
     findMany: vi.fn().mockResolvedValue([]),
+    findFirst: vi.fn(),
     create: vi.fn(),
+    update: vi.fn(),
   },
   interviewAssignment: {
     findUnique: vi.fn(),
@@ -129,16 +134,22 @@ export const prisma = {
   signingDocument: {
     findMany: vi.fn().mockResolvedValue([]),
   },
+  signingDocumentVersion: {
+    findFirst: vi.fn(),
+    findUnique: vi.fn(),
+  },
   signingBinding: {
     findFirst: vi.fn().mockResolvedValue({ versionId: "mock-cav-id" }),
     findUnique: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
     create: vi.fn(),
+    upsert: vi.fn(),
   },
   signingSignature: {
     findFirst: vi.fn().mockResolvedValue({ versionId: "mock-cav-id" }),
     findMany: vi.fn().mockResolvedValue([]),
     count: vi.fn().mockResolvedValue(0),
+    upsert: vi.fn(),
   },
   oAuthClient: {
     findUnique: vi.fn(),
@@ -149,10 +160,6 @@ export const prisma = {
     update: vi.fn(),
   },
   dALIMember: {
-    findUnique: vi.fn(),
-    findMany: vi.fn().mockResolvedValue([]),
-  },
-  partnerUser: {
     findUnique: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
   },
@@ -185,6 +192,39 @@ export const prisma = {
     delete: vi.fn(),
     count: vi.fn().mockResolvedValue(0),
   },
+  partnerMeetingRequest: {
+    findUnique: vi.fn(),
+    findFirst: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+    create: vi.fn(),
+    update: vi.fn(),
+    updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+    delete: vi.fn(),
+    count: vi.fn().mockResolvedValue(0),
+  },
+  partnerInvoice: {
+    findUnique: vi.fn(),
+    findFirst: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+    count: vi.fn().mockResolvedValue(0),
+  },
+  partnerCrmSettings: {
+    findUnique: vi.fn(),
+    findFirst: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+    upsert: vi.fn(),
+  },
+  partnerSurveyFormBinding: {
+    findUnique: vi.fn(),
+    findFirst: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+  },
   partnerActivity: {
     findUnique: vi.fn(),
     findFirst: vi.fn(),
@@ -200,9 +240,11 @@ export const prisma = {
     findMany: vi.fn().mockResolvedValue([]),
     create: vi.fn(),
     update: vi.fn(),
+    updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     delete: vi.fn(),
     count: vi.fn().mockResolvedValue(0),
     upsert: vi.fn(),
+    aggregate: vi.fn().mockResolvedValue({ _min: { position: null } }),
   },
   partnerOrg: {
     findUnique: vi.fn(),
@@ -210,6 +252,9 @@ export const prisma = {
   },
   projectPartner: {
     findFirst: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+  },
+  projectChartString: {
     findMany: vi.fn().mockResolvedValue([]),
   },
   partnerInvite: {

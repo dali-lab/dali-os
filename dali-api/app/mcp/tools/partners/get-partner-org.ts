@@ -1,15 +1,16 @@
-// MCP tool: get_partner_org — get full details of one partner organization.
-// Scope: mcp:read. Gated to canViewStaffing (Core / Domain Lead).
+// MCP tool: get_partner_org — get the account-360 view of one partner
+// organization. Scope: mcp:read. Gated to canViewStaffing (Core / Domain Lead).
 
 import { prisma } from "~/lib/db";
 import { canViewStaffing } from "~/lib/roles";
 import { listPendingInvites } from "~/partners/lib/invites.server";
+import { partnerRelationshipStatus } from "~/partners/lib/partner-org";
 import { McpForbiddenError, McpNotFoundError } from "../../registry";
 
 export const GET_PARTNER_ORG_TOOL = {
   name: "get_partner_org",
   description:
-    "Get full details for a partner organization, including members, project links, applications, and pending invites. Requires staffing-view access.",
+    "Get the account-360 view of a partner organization: status (Active/Past/Prospect/Dormant), type, tags, members/contacts, project links, applications with stage, pending invites, and recent activity. Requires staffing-view access.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -40,6 +41,13 @@ export async function runGetPartnerOrg(
       isIndividual: true,
       primaryContactId: true,
       createdAt: true,
+      type: true,
+      address: true,
+      legalEntityName: true,
+      tags: true,
+      notes: true,
+      showcaseConsent: true,
+      referredByContactId: true,
       memberships: {
         where: { endedAt: null },
         orderBy: { createdAt: "asc" },
@@ -47,7 +55,7 @@ export async function runGetPartnerOrg(
           id: true,
           role: true,
           contact: {
-            select: { id: true, name: true, email: true, userId: true },
+            select: { id: true, name: true, email: true, title: true, userId: true },
           },
         },
       },
@@ -62,7 +70,12 @@ export async function runGetPartnerOrg(
       },
       applications: {
         orderBy: { createdAt: "desc" },
-        select: { id: true, title: true, status: true, createdAt: true },
+        select: { id: true, title: true, stage: true, createdAt: true, nextStep: true },
+      },
+      activities: {
+        orderBy: { createdAt: "desc" },
+        take: 20,
+        select: { id: true, createdAt: true, type: true, body: true, metadata: true },
       },
     },
   });
@@ -70,6 +83,12 @@ export async function runGetPartnerOrg(
   if (!org) throw new McpNotFoundError(`Partner organization ${input.orgId} not found`);
 
   const pendingInvites = await listPendingInvites(org.id);
+
+  const status = partnerRelationshipStatus({
+    projectLinks: org.projects.map((p) => ({ endedAt: p.endedAt })),
+    lastActivityAt: org.activities[0]?.createdAt ?? null,
+    now,
+  });
 
   return {
     id: org.id,
@@ -79,12 +98,22 @@ export async function runGetPartnerOrg(
     isIndividual: org.isIndividual,
     primaryContactId: org.primaryContactId,
     createdAt: org.createdAt,
-    users: org.memberships.map((m) => ({
+    type: org.type,
+    address: org.address,
+    legalEntityName: org.legalEntityName,
+    tags: org.tags,
+    notes: org.notes,
+    showcaseConsent: org.showcaseConsent,
+    referredByContactId: org.referredByContactId,
+    status,
+    contacts: org.memberships.map((m) => ({
       id: m.id,
+      contactId: m.contact.id,
       displayRole: m.role,
       userId: m.contact.userId,
       name: m.contact.name,
       email: m.contact.email,
+      title: m.contact.title,
       isPrimaryContact: m.id === org.primaryContactId,
     })),
     projects: org.projects.map((p) => ({
@@ -102,7 +131,8 @@ export async function runGetPartnerOrg(
     applications: org.applications.map((a) => ({
       id: a.id,
       title: a.title,
-      status: a.status,
+      stage: a.stage,
+      nextStep: a.nextStep,
       createdAt: a.createdAt,
     })),
     pendingInvites: pendingInvites.map((i) => ({
@@ -110,6 +140,13 @@ export async function runGetPartnerOrg(
       email: i.email,
       displayRole: i.displayRole,
       expiresAt: i.expiresAt,
+    })),
+    recentActivity: org.activities.map((a) => ({
+      id: a.id,
+      createdAt: a.createdAt,
+      type: a.type,
+      body: a.body,
+      metadata: a.metadata,
     })),
   };
 }

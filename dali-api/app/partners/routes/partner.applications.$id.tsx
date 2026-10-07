@@ -1,11 +1,21 @@
-import { Form, Link, useLoaderData, useNavigation } from "react-router";
+import { useState } from "react";
+import { Form, Link, useLoaderData, useNavigation, useRevalidator } from "react-router";
+import { CalendarPlus, ShieldCheck, Download, FileSignature } from "lucide-react";
 import { PartnerBackLink } from "~/partners/components/PartnerBackLink";
+import { RequestMeetingModal } from "~/partners/components/RequestMeetingModal";
+import { PartnerMeetingsSection } from "~/partners/components/PartnerMeetingsSection";
 import type { Route } from "./+types/partner.applications.$id";
 import { prisma } from "~/lib/db";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { getPresenceUser } from "~/lib/presence-user";
 import { termCodeLabel } from "~/lib/display";
 import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
+import {
+  listPartnerMeetingsForContact,
+  listPartnerMeetingRequests,
+} from "~/partners/lib/partner-meetings.server";
+import { partnerContractStatus } from "~/partners/lib/partner-contract.server";
+import { setSowState } from "~/partners/lib/partner-finance.server";
 import {
   formAnswerRows,
   type FormAnswerRow,
@@ -14,10 +24,12 @@ import type { Question } from "~/types";
 import { DocEditor } from "~/components/doc";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import {
-  PARTNER_APPLICATION_STATUS_LABELS,
-  PARTNER_APPLICATION_STATUS_PILL,
-  PARTNER_EDITABLE_STATUSES,
-  type PartnerApplicationStatus,
+  PARTNER_STAGE_LABELS,
+  PARTNER_STAGE_PILL,
+  PARTNER_EDITABLE_STAGES,
+  PARTNER_TRACK_NODES,
+  partnerTrackIndex,
+  type PartnerStage,
 } from "../lib/partner-application";
 
 export const meta: Route.MetaFunction = ({ data }) => {
@@ -36,9 +48,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     select: {
       id: true,
       title: true,
-      status: true,
+      stage: true,
       createdAt: true,
       resultingProjectId: true,
+      sowState: true,
+      contractBindingId: true,
       targetTerms: {
         orderBy: { term: { sortKey: "asc" } },
         select: { term: { select: { code: true } } },
@@ -72,11 +86,25 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     auth.user.email;
   const presenceUser = await getPresenceUser(auth.user.sub, fallbackName);
 
+  const [meetings, meetingRequests, contractStatus] = await Promise.all([
+    listPartnerMeetingsForContact(ctx.contact.email),
+    listPartnerMeetingRequests({ applicationId: application.id }),
+    partnerContractStatus(application.id),
+  ]);
+
   const { formSubmission: _formSubmission, ...applicationOut } = application;
   return {
     application: applicationOut,
+    contractStatus,
     formAnswers,
-    canEditDetails: PARTNER_EDITABLE_STATUSES.includes(application.status),
+    canEditDetails: PARTNER_EDITABLE_STAGES.includes(application.stage),
+    // Interview stage is the real target (scheduling the meeting the stage is
+    // named for); New is allowed too so a partner isn't stuck waiting for
+    // Core to move the card before they can ask for time.
+    canRequestMeeting: application.stage === "New" || application.stage === "Interview",
+    meetings,
+    pendingMeetingRequests: meetingRequests.pending,
+    declinedMeetingRequests: meetingRequests.declined,
     collabToken: await getCollabToken(request),
     userName: presenceUser?.name ?? fallbackName,
     currentUserId: auth.user.sub,
@@ -87,14 +115,23 @@ export async function action({ request, params }: Route.ActionArgs) {
   const ctx = await requirePartnerAccount(request);
   const application = await prisma.partnerApplication.findFirst({
     where: { id: params.id, applicantContactId: ctx.contact.id },
-    select: { id: true, status: true },
+    select: { id: true, stage: true },
   });
   if (!application) throw new Response("Not found", { status: 404 });
-  if (!PARTNER_EDITABLE_STATUSES.includes(application.status)) {
+
+  const form = await request.formData();
+  const intent = (form.get("intent") as string | null) ?? "title";
+
+  if (intent === "sow-accept") {
+    const result = await setSowState({ applicationId: application.id, to: "Accepted", actorUserId: null });
+    if ("error" in result) return { error: result.error };
+    return { ok: true };
+  }
+
+  if (!PARTNER_EDITABLE_STAGES.includes(application.stage)) {
     return { error: "This application is no longer editable." };
   }
 
-  const form = await request.formData();
   const title = (form.get("title") as string | null)?.trim() ?? "";
   if (!title) return { error: "A title is required." };
 
@@ -105,42 +142,40 @@ export async function action({ request, params }: Route.ActionArgs) {
   return { ok: true };
 }
 
-function StatusTimeline({ status }: { status: PartnerApplicationStatus }) {
-  // The three display stages of a partner-facing application lifecycle,
-  // mapped onto the CRM funnel statuses. "Submitted" is dead code (backfilled
-  // out of the DB); the new submitted status is ApplicationSubmitted.
-  const terminal =
-    status === "Accepted" || status === "Rejected" || status === "Promoted";
-  const atReview =
-    status === "UnderReview" ||
-    status === "LearnMore" ||
-    status === "OnHold";
-  const activeIndex = terminal ? 2 : atReview ? 1 : 0;
+const DECISION_NODE_INDEX = PARTNER_TRACK_NODES.indexOf("Decision");
 
-  const steps: { label: string; pillStatus: PartnerApplicationStatus }[] = [
-    { label: PARTNER_APPLICATION_STATUS_LABELS["ApplicationSubmitted"], pillStatus: "ApplicationSubmitted" },
-    { label: PARTNER_APPLICATION_STATUS_LABELS["UnderReview"], pillStatus: "UnderReview" },
-    {
-      label: terminal ? PARTNER_APPLICATION_STATUS_LABELS[status] : "Decision",
-      pillStatus: terminal ? status : "OnHold",
-    },
-  ];
+function StageTimeline({
+  stage,
+  resultingProjectId,
+}: {
+  stage: PartnerStage;
+  resultingProjectId: string | null;
+}) {
+  const activeIndex = partnerTrackIndex({ stage, resultingProjectId });
+  const declinedHere = stage === "Rejected" && activeIndex === DECISION_NODE_INDEX;
+
   return (
     <ol className="flex items-center gap-2 text-xs">
-      {steps.map((step, i) => (
-        <li key={step.label} className="flex items-center gap-2">
-          {i > 0 && <span className="w-6 h-px bg-border" />}
-          <span
-            className={`rounded-full px-2.5 py-1 ${
-              i <= activeIndex
-                ? PARTNER_APPLICATION_STATUS_PILL[step.pillStatus]
-                : "bg-muted/40 text-muted-foreground"
-            }`}
-          >
-            {step.label}
-          </span>
-        </li>
-      ))}
+      {PARTNER_TRACK_NODES.map((label, i) => {
+        const atDecision = i === DECISION_NODE_INDEX && i === activeIndex;
+        const displayLabel = atDecision ? PARTNER_STAGE_LABELS[stage] : label;
+        return (
+          <li key={label} className="flex items-center gap-2">
+            {i > 0 && <span className="w-6 h-px bg-border" />}
+            <span
+              className={`rounded-full px-2.5 py-1 ${
+                declinedHere && atDecision
+                  ? PARTNER_STAGE_PILL.Rejected
+                  : i <= activeIndex
+                    ? PARTNER_STAGE_PILL.Accepted
+                    : "bg-muted/40 text-muted-foreground"
+              }`}
+            >
+              {displayLabel}
+            </span>
+          </li>
+        );
+      })}
     </ol>
   );
 }
@@ -148,11 +183,25 @@ function StatusTimeline({ status }: { status: PartnerApplicationStatus }) {
 export default function PartnerApplicationDetail({
   actionData,
 }: Route.ComponentProps) {
-  const { application, formAnswers, canEditDetails, collabToken, userName, currentUserId } =
-    useLoaderData<typeof loader>();
+  const {
+    application,
+    contractStatus,
+    formAnswers,
+    canEditDetails,
+    canRequestMeeting,
+    meetings,
+    pendingMeetingRequests,
+    declinedMeetingRequests,
+    collabToken,
+    userName,
+    currentUserId,
+  } = useLoaderData<typeof loader>();
   const navigation = useNavigation();
+  const revalidator = useRevalidator();
+  const acceptingSow = navigation.formData?.get("intent") === "sow-accept";
   const submitting = navigation.state === "submitting";
   const error = actionData && "error" in actionData ? actionData.error : null;
+  const [requestingMeeting, setRequestingMeeting] = useState(false);
 
   const documentName = `partnersow:${application.id}:body`;
   const inputClass =
@@ -166,19 +215,28 @@ export default function PartnerApplicationDetail({
           <h1 className="font-heading text-3xl font-bold text-dark-blue">
             {application.title}
           </h1>
-          <StatusTimeline status={application.status} />
+          <StageTimeline stage={application.stage} resultingProjectId={application.resultingProjectId} />
         </div>
         <p className="text-sm text-muted-foreground mt-1">
           Submitted {new Date(application.createdAt).toLocaleDateString()}
         </p>
+        {canRequestMeeting && (
+          <button
+            type="button"
+            onClick={() => setRequestingMeeting(true)}
+            className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-dark-blue px-4 py-2 text-sm font-heading font-semibold text-white transition hover:opacity-90"
+          >
+            <CalendarPlus className="h-4 w-4" /> Request a meeting
+          </button>
+        )}
       </div>
 
-      {application.status === "Accepted" && application.resultingProjectId && (
+      {application.stage === "Accepted" && application.resultingProjectId && (
         <Link
           to={`/partner/projects/${application.resultingProjectId}`}
           className="bg-accent-teal/10 border border-accent-teal/30 rounded-2xl px-5 py-4 text-sm text-accent-teal font-medium hover:bg-accent-teal/15 transition"
         >
-          🎉 This pitch became a project — see what the team is up to →
+          🎉 This pitch became a project. See what the team is up to →
         </Link>
       )}
 
@@ -261,46 +319,105 @@ export default function PartnerApplicationDetail({
         <h2 className="font-heading font-semibold text-dark-blue">
           Statement of Work
         </h2>
-        {application.status === "UnderReview" && (
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Drafted together with the DALI team — edits sync live.
-          </p>
-        )}
         <div className="mt-3" />
-        {/* The SOW is a co-owned doc: it opens once the lab is actively
-            reviewing (UnderReview+), not the moment a pitch lands. */}
-        {(application.status === "ApplicationSubmitted" ||
-          application.status === "Inquiry" ||
-          application.status === "Triaged" ||
-          application.status === "Meeting") ? (
+        {/* Readable only once Core shares it; a Draft SOW is still being put
+            together on their side. Accepted locks in — no more live editing
+            from the portal, which matches Core's lock on their side. */}
+        {application.sowState === "Draft" ? (
           <p className="text-sm text-muted-foreground bg-muted/30 rounded-lg px-4 py-3">
-            This document opens when the lab starts reviewing your pitch —
-            you'll draft the details here together with the DALI team.
+            The DALI team is still drafting this. You'll be notified when it's ready to review.
           </p>
         ) : collabToken ? (
-          <PresenceProvider
-            pageId={`partnersow:${application.id}`}
-            token={collabToken}
-            userName={userName}
-          >
-            <DocEditor
-              features="notes"
-              placeholder="Draft the statement of work…"
-              className="border border-border rounded-md bg-card py-2"
-              collab={{
-                documentName,
-                token: collabToken,
-                userName,
-                userId: currentUserId,
-              }}
-            />
-          </PresenceProvider>
+          <>
+            <PresenceProvider
+              pageId={`partnersow:${application.id}`}
+              token={collabToken}
+              userName={userName}
+            >
+              <DocEditor
+                features="notes"
+                editable={false}
+                placeholder="No content yet."
+                className="border border-border rounded-md bg-card py-2"
+                collab={{
+                  documentName,
+                  token: collabToken,
+                  userName,
+                  userId: currentUserId,
+                }}
+              />
+            </PresenceProvider>
+            {application.sowState === "Shared" && (
+              <Form method="post" className="mt-3">
+                <input type="hidden" name="intent" value="sow-accept" />
+                <button
+                  type="submit"
+                  disabled={acceptingSow}
+                  className="rounded-xl bg-dark-blue px-4 py-2 text-sm font-heading font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
+                >
+                  {acceptingSow ? "Accepting…" : "Accept statement of work"}
+                </button>
+              </Form>
+            )}
+            {application.sowState === "Accepted" && (
+              <p className="text-xs text-accent-teal mt-3">You accepted this statement of work.</p>
+            )}
+          </>
         ) : (
           <p className="text-xs text-muted-foreground italic">
-            Sign in again to edit the statement of work.
+            Sign in again to view the statement of work.
           </p>
         )}
       </section>
+
+      <section className="bg-card border border-border rounded-2xl p-5">
+        <h2 className="font-heading font-semibold text-dark-blue flex items-center gap-2">
+          <FileSignature className="h-4 w-4" /> Contract
+        </h2>
+        <div className="mt-3" />
+        {contractStatus.state === "NotSent" && (
+          <p className="text-sm text-muted-foreground">No contract has been sent yet.</p>
+        )}
+        {contractStatus.state === "Sent" && (
+          <Link
+            to={`/partner/applications/${application.id}/sign-contract`}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-dark-blue px-4 py-2 text-sm font-heading font-semibold text-white transition hover:opacity-90"
+          >
+            <FileSignature className="h-4 w-4" /> Review and sign your contract
+          </Link>
+        )}
+        {contractStatus.state === "Signed" && (
+          <div className="flex items-center gap-3 text-sm">
+            <span className="inline-flex items-center gap-1.5 text-accent-teal">
+              <ShieldCheck className="h-4 w-4" />
+              Signed{contractStatus.signedAt ? ` ${new Date(contractStatus.signedAt).toLocaleDateString()}` : ""}
+            </span>
+            {contractStatus.pdfUrl && (
+              <a
+                href={contractStatus.pdfUrl}
+                className="inline-flex items-center gap-1 text-accent-coral hover:underline"
+              >
+                <Download className="h-3.5 w-3.5" /> Download PDF
+              </a>
+            )}
+          </div>
+        )}
+      </section>
+
+      <PartnerMeetingsSection
+        meetings={meetings}
+        pendingRequests={pendingMeetingRequests}
+        declinedRequests={declinedMeetingRequests}
+        onRequestAnother={canRequestMeeting ? () => setRequestingMeeting(true) : undefined}
+      />
+
+      {requestingMeeting && (
+        <RequestMeetingModal
+          scope={{ applicationId: application.id }}
+          onClose={() => setRequestingMeeting(false)}
+          onSent={() => revalidator.revalidate()}
+        />
+      )}
     </div>
   );
 }

@@ -8,6 +8,7 @@ import { loadApplicationForm } from "~/partners/lib/application-form.server";
 import { validateAnswers } from "~/forms/lib/public-form";
 import { notifyFormSubmission } from "~/forms/lib/submission-notify.server";
 import { logPartnerActivity } from "~/partners/lib/partner-activity.server";
+import { notifyPartners } from "~/partners/lib/partner-notify.server";
 import { FormFieldList } from "~/forms/components/FormField";
 import {
   useFormPager,
@@ -75,7 +76,7 @@ export async function action({ request }: Route.ActionArgs) {
     loadedFingerprint &&
     loadedFingerprint !== applicationForm.versionUpdatedAt
   ) {
-    return { error: "This form was just updated — reload and re-submit." };
+    return { error: "This form was just updated. Reload and re-submit." };
   }
 
   let formAnswers: Record<string, unknown> = {};
@@ -114,7 +115,7 @@ export async function action({ request }: Route.ActionArgs) {
       data: {
         applicantContactId: ctx.contact.id,
         partnerOrgId: null,
-        status: "ApplicationSubmitted",
+        stage: "New",
         source: "Form",
         title,
         formSubmissionId: submission.id,
@@ -141,6 +142,15 @@ export async function action({ request }: Route.ActionArgs) {
   await notifyFormSubmission({
     formId: applicationForm.formId,
     submitterUserId: auth.user.sub,
+  });
+  // The Core-side board create path fires the same event (see
+  // createPartnerApplication() in partner-application-create.server.ts) —
+  // mirrored here so a portal-submitted application notifies Core too.
+  await notifyPartners({
+    eventType: "partner.inquiry_received",
+    title: `New partner opportunity: ${title}`,
+    body: ctx.contact.name ? `From ${ctx.contact.name} (${ctx.contact.email})` : ctx.contact.email,
+    link: `/core/partners?application=${application.id}`,
   });
   // notifyFormSubmission tells the form's creator. Confirm to the partner too —
   // submitting used to be met with silence until someone triaged them.

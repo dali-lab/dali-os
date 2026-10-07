@@ -1,29 +1,32 @@
-// MCP tool: list_partner_applications — list partner applications with optional status filter.
+// MCP tool: list_partner_applications — list partner applications with optional stage filter.
 // Scope: mcp:read. Gated to canViewStaffing (Core / Domain Lead).
 
 import { prisma } from "~/lib/db";
 import { canViewStaffing } from "~/lib/roles";
 import {
-  PARTNER_APPLICATION_STATUSES,
-  isPartnerApplicationStatus,
-  type PartnerApplicationStatus,
+  PARTNER_STAGES,
+  isPartnerStage,
+  isStale,
+  type PartnerStage,
 } from "~/partners/lib/partner-application";
 import { McpForbiddenError, McpInvalidError } from "../../registry";
+
+const DEFAULT_STALE_DAYS = 14;
 
 export const LIST_PARTNER_APPLICATIONS_TOOL = {
   name: "list_partner_applications",
   description:
-    "List partner applications, optionally filtered by status. Valid statuses: Inquiry, Triaged, Meeting, ApplicationSubmitted, UnderReview, LearnMore, OnHold, Accepted, Rejected, Promoted. Requires staffing-view access.",
+    "List partner applications, optionally filtered by stage. Valid stages: New, Interview, Accepted, Rejected. Requires staffing-view access.",
   inputSchema: {
     type: "object" as const,
     properties: {
-      status: {
+      stage: {
         type: "array",
         items: {
           type: "string",
-          enum: PARTNER_APPLICATION_STATUSES as unknown as string[],
+          enum: PARTNER_STAGES as unknown as string[],
         },
-        description: "Filter to one or more statuses. Omit to return all.",
+        description: "Filter to one or more stages. Omit to return all.",
       },
     },
     required: [],
@@ -34,53 +37,61 @@ export const LIST_PARTNER_APPLICATIONS_TOOL = {
 
 export async function runListPartnerApplications(
   callerId: string,
-  input: { status?: string[] },
+  input: { stage?: string[] },
 ): Promise<{ applications: unknown[] }> {
   if (!(await canViewStaffing(callerId))) {
     throw new McpForbiddenError("Only Core members and domain leads can view partner applications");
   }
 
-  const validStatuses: PartnerApplicationStatus[] = [];
-  if (input.status && input.status.length > 0) {
-    for (const s of input.status) {
-      if (!isPartnerApplicationStatus(s)) {
+  const validStages: PartnerStage[] = [];
+  if (input.stage && input.stage.length > 0) {
+    for (const s of input.stage) {
+      if (!isPartnerStage(s)) {
         throw new McpInvalidError(
-          `Invalid status '${s}'. Valid values: ${PARTNER_APPLICATION_STATUSES.join(", ")}`,
+          `Invalid stage '${s}'. Valid values: ${PARTNER_STAGES.join(", ")}`,
         );
       }
-      validStatuses.push(s);
+      validStages.push(s);
     }
   }
 
-  const applications = await prisma.partnerApplication.findMany({
-    where: validStatuses.length > 0 ? { status: { in: validStatuses } } : undefined,
-    orderBy: { createdAt: "desc" },
-    select: {
-      id: true,
-      title: true,
-      status: true,
-      createdAt: true,
-      partnerOrg: { select: { id: true, name: true } },
-      applicantContact: { select: { id: true, name: true, email: true } },
-      targetTerms: {
-        orderBy: { term: { sortKey: "asc" } },
-        select: { term: { select: { code: true } } },
-      },
-      domains: {
-        select: {
-          domainId: true,
-          expectedMembers: true,
-          domain: { select: { displayName: true } },
+  const [applications, settings] = await Promise.all([
+    prisma.partnerApplication.findMany({
+      where: validStages.length > 0 ? { stage: { in: validStages } } : undefined,
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        title: true,
+        stage: true,
+        createdAt: true,
+        nextStep: true,
+        nextStepDueAt: true,
+        lastActivityAt: true,
+        holdUntil: true,
+        partnerOrg: { select: { id: true, name: true } },
+        applicantContact: { select: { id: true, name: true, email: true } },
+        targetTerms: {
+          orderBy: { term: { sortKey: "asc" } },
+          select: { term: { select: { code: true } } },
+        },
+        domains: {
+          select: {
+            domainId: true,
+            expectedMembers: true,
+            domain: { select: { displayName: true } },
+          },
         },
       },
-    },
-  });
+    }),
+    prisma.partnerCrmSettings.findUnique({ where: { id: "default" }, select: { staleDays: true } }),
+  ]);
+  const staleDays = settings?.staleDays ?? DEFAULT_STALE_DAYS;
 
   return {
     applications: applications.map((a) => ({
       id: a.id,
       title: a.title,
-      status: a.status,
+      stage: a.stage,
       partnerOrgId: a.partnerOrg?.id ?? null,
       partnerOrgName: a.partnerOrg?.name ?? null,
       applicantContact: a.applicantContact
@@ -94,6 +105,10 @@ export async function runListPartnerApplications(
       })),
       totalExpectedMembers: a.domains.reduce((sum, d) => sum + d.expectedMembers, 0),
       createdAt: a.createdAt,
+      nextStep: a.nextStep,
+      nextStepDueAt: a.nextStepDueAt,
+      lastActivityAt: a.lastActivityAt,
+      isStale: isStale(a, staleDays),
     })),
   };
 }

@@ -62,6 +62,7 @@ const STANDALONE_LABELS: Record<string, string> = {
   agreements: "Agreements",
   "drive-folders": "Drive folders",
   rooms: "Rooms",
+  partners: "Partner CRM",
 };
 
 export const CORE_ATTENDANCE_ICON = ClipboardCheck;
@@ -92,13 +93,24 @@ export function coreTrail(active: string, isAdmin: boolean) {
  * alias route modules under app/core/routes/ set this instead of re-exporting
  * the source page's admin handle, which is the whole reason those aliases are
  * files rather than shared route ids.
+ *
+ * `leafLabel`, when given, resolves an extra trailing crumb from the loader
+ * data — e.g. `coreHandle("partners", (data) => data?.trailLabel)` so a
+ * record page's trail reads "Core › Partner CRM › <record name>" instead of
+ * stopping at the standalone label. Existing call sites that omit it are
+ * unchanged.
  */
-export function coreHandle(active: string) {
+export function coreHandle(
+  active: string,
+  leafLabel?: (data: unknown) => string | null | undefined,
+) {
   return {
     roomyBreadcrumb: true,
     breadcrumbTrail: (data: unknown) => {
       const d = data as { isAdmin?: boolean; viewerIsAdmin?: boolean } | null;
-      return coreTrail(active, !!d?.isAdmin || !!d?.viewerIsAdmin);
+      const trail = coreTrail(active, !!d?.isAdmin || !!d?.viewerIsAdmin);
+      const label = leafLabel?.(data);
+      return label ? [...trail, { label }] : trail;
     },
   };
 }

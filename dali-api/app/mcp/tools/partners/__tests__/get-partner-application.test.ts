@@ -1,4 +1,4 @@
-// Tests for get_partner_application (deepened read: eval fields, meetings, source, assignedMeeterId).
+// Tests for get_partner_application (deepened read: eval fields, meetings, source, deal terms).
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
@@ -56,17 +56,26 @@ const mockPrisma = prisma as unknown as {
 const FAKE_APPLICATION = {
   id: "app-1",
   title: "AI Health Tool",
-  status: "UnderReview",
+  stage: "Interview",
   summary: "A useful tool",
   sowDocId: null,
   resultingProjectId: null,
   source: "Manual",
-  assignedMeeterId: "user-42",
   evalRubric: { feasibility: 4, impact: 5, criteriaVersion: 1 },
   interviewRating: 4,
   ambiguityRating: 3,
-  fundingModel: "Magnuson grant",
   decisionReason: null,
+  rejectReason: null,
+  nextStep: null,
+  nextStepDueAt: null,
+  holdUntil: null,
+  meetingRequestedAt: null,
+  fundingType: "DALI_GL",
+  feeCents: null,
+  legalEntityName: null,
+  legalEntityAddress: null,
+  paymentSchedule: null,
+  sowState: "Draft",
   partnerOrg: null,
   applicantContact: { id: "c1", name: "Jane Partner", email: "jane@example.com" },
   targetTerms: [{ termId: "t1", term: { code: "27W" } }],
@@ -104,7 +113,7 @@ describe("get_partner_application metadata", () => {
 });
 
 describe("get_partner_application", () => {
-  it("returns deepened fields: evalRubric, meetings, source, assignedMeeterId", async () => {
+  it("returns deepened fields: evalRubric, meetings, source, deal terms", async () => {
     vi.mocked(canViewStaffing).mockResolvedValue(true);
     mockPrisma.partnerApplication.findUnique.mockResolvedValue(FAKE_APPLICATION);
 
@@ -112,11 +121,11 @@ describe("get_partner_application", () => {
 
     expect(out.id).toBe("app-1");
     expect(out.source).toBe("Manual");
-    expect(out.assignedMeeterId).toBe("user-42");
+    expect(out.stage).toBe("Interview");
     expect(out.evalRubric).toMatchObject({ feasibility: 4, impact: 5 });
     expect(out.interviewRating).toBe(4);
     expect(out.ambiguityRating).toBe(3);
-    expect(out.fundingModel).toBe("Magnuson grant");
+    expect(out.fundingType).toBe("DALI_GL");
     expect(out.decisionReason).toBeNull();
     expect((out.meetings as unknown[]).length).toBe(1);
     expect((out.meetings as Record<string, unknown>[])[0]).toMatchObject({
@@ -139,17 +148,16 @@ describe("get_partner_application", () => {
     vi.mocked(canViewStaffing).mockResolvedValue(true);
     mockPrisma.partnerApplication.findUnique.mockResolvedValue({
       ...FAKE_APPLICATION,
-      assignedMeeterId: null,
       evalRubric: null,
       interviewRating: null,
       ambiguityRating: null,
-      fundingModel: null,
+      fundingType: null,
       meetings: [],
       formSubmission: null,
     });
 
     const out = await runGetPartnerApplication("u1", { applicationId: "app-1" }) as Record<string, unknown>;
-    expect(out.assignedMeeterId).toBeNull();
+    expect(out.fundingType).toBeNull();
     expect(out.evalRubric).toBeNull();
     expect(out.interviewRating).toBeNull();
     expect((out.meetings as unknown[]).length).toBe(0);

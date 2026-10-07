@@ -3,12 +3,11 @@
 //
 // Actions:
 //   create              — create a new PartnerApplication (title + partnerOrgId required).
-//   update_status       — change application status (applicationId + status required).
+//   update_stage        — change application stage (applicationId + stage required).
 //   update_title        — rename the application (applicationId + title required).
 //   update_details      — update summary and/or replace target terms.
-//   assign_meeter       — set the Core member responsible for the discovery meeting.
 //   save_eval           — save the 8-criterion rubric + interviewRating + notes.
-//   save_acceptance     — save ambiguityRating and/or fundingModel post-accept.
+//   save_acceptance     — save ambiguityRating and/or fundingType post-accept.
 //   add_note            — add a free-text Note to the activity timeline.
 //   set_form            — bind a Form as the application form (formId required).
 //   clear_form          — remove the application form binding.
@@ -17,21 +16,22 @@
 //   remove_domain       — remove a domain from an application.
 //
 // NOTE: actions that trigger partner-facing emails (offer-meeting, send-application,
-// reject, learn-more, accept) are intentionally not exposed. Use update_status to
-// move the status silently (logs the change; no email sent).
+// reject, learn-more, accept) are intentionally not exposed. Use update_stage to
+// move the stage silently (logs the change; no email sent). No ownership in this
+// model — there is no meeter to assign.
 
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
 import {
-  PARTNER_APPLICATION_STATUSES,
-  isPartnerApplicationStatus,
+  PARTNER_STAGES,
+  isPartnerStage,
 } from "~/partners/lib/partner-application";
 import {
   setApplicationFormBinding,
   clearApplicationFormBinding,
 } from "~/partners/lib/application-form.server";
 import {
-  setApplicationStatus,
+  setApplicationStage,
   logPartnerActivity,
 } from "~/partners/lib/partner-activity.server";
 import {
@@ -39,6 +39,7 @@ import {
   EVAL_CRITERIA_VERSION,
   type EvalCriterionKey,
 } from "~/partners/lib/discovery-rubric";
+import { PROJECT_FUNDING_TYPES } from "~/lib/chart-string";
 import {
   McpForbiddenError,
   McpNotFoundError,
@@ -51,12 +52,11 @@ export const MANAGE_PARTNER_APPLICATION_TOOL = {
   description:
     "Create and manage partner applications (Core only, no partner-facing emails). " +
     "Actions: create (title required; applicantContactId OR applicantEmail+applicantName; partnerOrgId optional), " +
-    "update_status (applicationId+status; silent move — no email sent to partner), " +
+    "update_stage (applicationId+stage; silent move — no email sent to partner), " +
     "update_title (applicationId+title required), " +
     "update_details (applicationId; updates summary/targetTermIds), " +
-    "assign_meeter (applicationId+assignedMeeterId; pass empty string to clear), " +
     "save_eval (applicationId; evalScores object with any of the 8 criterion keys feasibility/impact/originality/learning/devChallenges/designChallenges/partnerTeam/funding as 1-5 integers; optional interviewRating 1-5; optional evalNotes string), " +
-    "save_acceptance (applicationId; ambiguityRating 1-5 and/or fundingModel string), " +
+    "save_acceptance (applicationId; ambiguityRating 1-5 and/or fundingType enum), " +
     "add_note (applicationId+body; writes a Note-type activity to the timeline), " +
     "set_form (formId), clear_form, " +
     "add_domain (applicationId+domainId), " +
@@ -69,10 +69,9 @@ export const MANAGE_PARTNER_APPLICATION_TOOL = {
         type: "string",
         enum: [
           "create",
-          "update_status",
+          "update_stage",
           "update_title",
           "update_details",
-          "assign_meeter",
           "save_eval",
           "save_acceptance",
           "add_note",
@@ -105,20 +104,16 @@ export const MANAGE_PARTNER_APPLICATION_TOOL = {
         type: "string",
         description: "PartnerOrg id. Optional on create; required if you want to link an org immediately.",
       },
-      status: {
+      stage: {
         type: "string",
-        enum: PARTNER_APPLICATION_STATUSES as unknown as string[],
-        description: "Required for update_status. Move is silent — no partner email sent.",
+        enum: PARTNER_STAGES as unknown as string[],
+        description: "Required for update_stage. Move is silent — no partner email sent.",
       },
       summary: { type: "string" },
       targetTermIds: {
         type: "array",
         items: { type: "string" },
         description: "Replace all target terms (update_details).",
-      },
-      assignedMeeterId: {
-        type: "string",
-        description: "User id of the Core meeter to assign (assign_meeter). Empty string clears the assignment.",
       },
       evalScores: {
         type: "object",
@@ -138,9 +133,10 @@ export const MANAGE_PARTNER_APPLICATION_TOOL = {
         type: "number",
         description: "Ambiguity rating 1–5 (save_acceptance).",
       },
-      fundingModel: {
+      fundingType: {
         type: "string",
-        description: "Funding model description (save_acceptance).",
+        enum: PROJECT_FUNDING_TYPES as unknown as string[],
+        description: "Funding type (save_acceptance).",
       },
       body: {
         type: "string",
@@ -183,10 +179,9 @@ export async function runManagePartnerApplication(
 
   requireForAction(action, input, {
     create: ["title"],
-    update_status: ["applicationId", "status"],
+    update_stage: ["applicationId", "stage"],
     update_title: ["applicationId", "title"],
     update_details: ["applicationId"],
-    assign_meeter: ["applicationId"],
     save_eval: ["applicationId"],
     save_acceptance: ["applicationId"],
     add_note: ["applicationId", "body"],
@@ -246,7 +241,7 @@ export async function runManagePartnerApplication(
         title: (input.title as string).trim(),
         applicantContactId,
         partnerOrgId,
-        status: "Inquiry",
+        stage: "New",
         source: "Manual",
       },
       select: { id: true },
@@ -273,22 +268,22 @@ export async function runManagePartnerApplication(
     return { ok: true };
   }
 
-  // ── update_status ─────────────────────────────────────────────────────────
-  if (action === "update_status") {
-    const status = input.status as string;
-    if (!isPartnerApplicationStatus(status)) {
+  // ── update_stage ──────────────────────────────────────────────────────────
+  if (action === "update_stage") {
+    const stage = input.stage as string;
+    if (!isPartnerStage(stage)) {
       throw new McpInvalidError(
-        `Invalid status '${status}'. Valid values: ${PARTNER_APPLICATION_STATUSES.join(", ")}`,
+        `Invalid stage '${stage}'. Valid values: ${PARTNER_STAGES.join(", ")}`,
       );
     }
-    // Route through setApplicationStatus so a StatusChanged PartnerActivity row
+    // Route through setApplicationStage so a StatusChanged PartnerActivity row
     // is written (mirrors api.partner-applications.$id.status.ts + the web
-    // status intent). A bare prisma.update leaves the application timeline with
-    // no record of who changed the status or when. Note: transactional CRM
+    // stage intent). A bare prisma.update leaves the application timeline with
+    // no record of who changed the stage or when. Note: transactional CRM
     // side effects (partner-facing accept/reject/etc. emails) stay web-only.
-    const prev = await setApplicationStatus(prisma, {
+    const prev = await setApplicationStage(prisma, {
       applicationId: input.applicationId as string,
-      to: status,
+      to: stage,
       actorUserId: callerId,
     });
     if (prev === null) {
@@ -335,28 +330,6 @@ export async function runManagePartnerApplication(
             });
           }
         }
-      });
-    } catch (e) {
-      if ((e as { code?: string })?.code === "P2025") {
-        throw new McpNotFoundError(`Partner application ${applicationId} not found`);
-      }
-      throw e;
-    }
-    return { ok: true };
-  }
-
-  // ── assign_meeter ─────────────────────────────────────────────────────────
-  if (action === "assign_meeter") {
-    const applicationId = input.applicationId as string;
-    // Empty string explicitly clears the assignment; undefined/null also clears.
-    const meeterId =
-      typeof input.assignedMeeterId === "string" && input.assignedMeeterId.trim()
-        ? input.assignedMeeterId.trim()
-        : null;
-    try {
-      await prisma.partnerApplication.update({
-        where: { id: applicationId },
-        data: { assignedMeeterId: meeterId },
       });
     } catch (e) {
       if ((e as { code?: string })?.code === "P2025") {
@@ -432,14 +405,23 @@ export async function runManagePartnerApplication(
       typeof ambiguityRaw === "number"
         ? Math.min(5, Math.max(1, Math.round(ambiguityRaw)))
         : undefined;
-    const fundingModel =
-      typeof input.fundingModel === "string"
-        ? input.fundingModel.trim() || null
-        : undefined;
-
-    if (ambiguityRating === undefined && fundingModel === undefined) {
+    const fundingTypeRaw = input.fundingType;
+    const fundingType =
+      fundingTypeRaw === undefined || fundingTypeRaw === null
+        ? undefined
+        : fundingTypeRaw;
+    if (
+      fundingType !== undefined &&
+      !PROJECT_FUNDING_TYPES.includes(fundingType as (typeof PROJECT_FUNDING_TYPES)[number])
+    ) {
       throw new McpInvalidError(
-        "save_acceptance requires at least one of: ambiguityRating, fundingModel",
+        `Invalid fundingType '${String(fundingType)}'. Valid values: ${PROJECT_FUNDING_TYPES.join(", ")}`,
+      );
+    }
+
+    if (ambiguityRating === undefined && fundingType === undefined) {
+      throw new McpInvalidError(
+        "save_acceptance requires at least one of: ambiguityRating, fundingType",
       );
     }
     try {
@@ -447,7 +429,9 @@ export async function runManagePartnerApplication(
         where: { id: applicationId },
         data: {
           ...(ambiguityRating !== undefined ? { ambiguityRating } : {}),
-          ...(fundingModel !== undefined ? { fundingModel } : {}),
+          ...(fundingType !== undefined
+            ? { fundingType: fundingType as (typeof PROJECT_FUNDING_TYPES)[number] }
+            : {}),
         },
       });
     } catch (e) {

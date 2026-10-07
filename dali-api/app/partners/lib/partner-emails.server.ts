@@ -200,6 +200,77 @@ export async function sendApplicationReceivedEmail(
   );
 }
 
+// Sent when Core declines a partner's self-service meeting request (the real
+// scheduler grid on the portal).
+export async function sendMeetingRequestDeclinedEmail(
+  to: string,
+  contactName: string | null,
+  note?: string | null,
+): Promise<void> {
+  const portalUrl = `${getFrontendUrl()}/partner`;
+  await send(
+    to,
+    {
+      subject: "About your meeting request",
+      preheader: "The DALI team can't make that time work.",
+      bodyHtml: [
+        greeting(contactName),
+        `<p style="margin:0 0 16px;">We're not able to meet at the time you requested.</p>`,
+        note ? typed(note) : "",
+        `<p style="margin:0;"><a href="${escapeHtml(portalUrl)}">Request another time</a> whenever works for you.</p>`,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    },
+    { eventType: "partner.meeting_request_declined" },
+  );
+}
+
+// Sent when Core sends a partner their contract to sign.
+export async function sendContractSentEmail(
+  to: string,
+  contactName: string | null,
+  signUrl: string,
+): Promise<void> {
+  await send(
+    to,
+    {
+      subject: "Your DALI contract is ready to sign",
+      preheader: "Review and sign your contract to move forward.",
+      bodyHtml: [
+        greeting(contactName),
+        `<p style="margin:0 0 16px;">Your contract is ready. Please review and sign it at your convenience:</p>`,
+        `<p style="margin:0 0 16px;"><a href="${escapeHtml(signUrl)}">Review and sign the contract</a></p>`,
+        aside("Reply to this email with any questions."),
+      ].join("\n"),
+    },
+    { eventType: "partner.contract_sent" },
+  );
+}
+
+// Sent when Core shares the statement of work for the partner to review.
+export async function sendSowSharedEmail(
+  to: string,
+  contactName: string | null,
+  applicationId: string,
+): Promise<void> {
+  const sowUrl = `${getFrontendUrl()}/partner/applications/${applicationId}`;
+  await send(
+    to,
+    {
+      subject: "Your statement of work is ready to review",
+      preheader: "Review the statement of work for your DALI project.",
+      bodyHtml: [
+        greeting(contactName),
+        `<p style="margin:0 0 16px;">The statement of work for your project is ready for you to review:</p>`,
+        `<p style="margin:0 0 16px;"><a href="${escapeHtml(sowUrl)}">Review the statement of work</a></p>`,
+        aside("Once it looks right, you can accept it from that page."),
+      ].join("\n"),
+    },
+    { eventType: "partner.sow_shared" },
+  );
+}
+
 export async function sendMemberEmailConflictEmail(to: string): Promise<void> {
   const loginUrl = `${getFrontendUrl()}/login`;
   await send(
@@ -214,5 +285,34 @@ export async function sendMemberEmailConflictEmail(to: string): Promise<void> {
       ].join("\n"),
     },
     { eventType: "partner.member_conflict" },
+  );
+}
+
+// Sent once by the partner-survey-send job when a ProjectPartner's endedAt
+// is set, inviting the org's contact to fill the bound post-project survey.
+export async function sendPartnerSurveyEmail(
+  to: string,
+  contactName: string | null,
+  projectName: string,
+  surveyUrl: string,
+  projectPartnerId: string,
+): Promise<void> {
+  await send(
+    to,
+    {
+      subject: "How did your DALI project go?",
+      preheader: "A few questions now that your project has wrapped.",
+      bodyHtml: [
+        greeting(contactName),
+        `<p style="margin:0 0 16px;">Your project${
+          projectName ? `, <strong>${escapeHtml(projectName)}</strong>,` : ""
+        } has wrapped up with the DALI Lab. We'd love to hear how it went.</p>`,
+        aside(`<a href="${escapeHtml(surveyUrl)}">Share your feedback</a>. It only takes a few minutes.`),
+      ].join("\n"),
+    },
+    {
+      dedupKey: `partner.survey.invite:${projectPartnerId}`,
+      eventType: "partner.survey_invite",
+    },
   );
 }

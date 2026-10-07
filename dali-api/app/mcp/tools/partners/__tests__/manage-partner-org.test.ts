@@ -46,8 +46,12 @@ const mockPrisma = prisma as unknown as {
     update: ReturnType<typeof vi.fn>;
     delete: ReturnType<typeof vi.fn>;
   };
-  partnerMembership: { count: ReturnType<typeof vi.fn>; findFirst: ReturnType<typeof vi.fn> };
-  projectPartner: { count: ReturnType<typeof vi.fn> };
+  partnerMembership: {
+    count?: ReturnType<typeof vi.fn>;
+    findFirst?: ReturnType<typeof vi.fn>;
+    findMany?: ReturnType<typeof vi.fn>;
+  };
+  projectPartner: { count?: ReturnType<typeof vi.fn>; findMany?: ReturnType<typeof vi.fn> };
   partnerApplication: { count: ReturnType<typeof vi.fn> };
   partnerInvite: {
     count: ReturnType<typeof vi.fn>;
@@ -160,5 +164,132 @@ describe("manage_partner_org", () => {
     await expect(
       runManagePartnerOrg("u1", { action: "delete", orgId: "missing" }),
     ).rejects.toMatchObject({ name: "McpNotFoundError" });
+  });
+
+  describe("update", () => {
+    it("writes the CRM fields and logs OrgUpdated", async () => {
+      vi.mocked(isCore).mockResolvedValue(true);
+      mockPrisma.partnerOrg = {
+        create: vi.fn(),
+        findUnique: vi.fn().mockResolvedValue({ id: "org-1" }),
+        update: vi.fn().mockResolvedValue({}),
+        delete: vi.fn(),
+      };
+
+      const out = await runManagePartnerOrg("u1", {
+        action: "update",
+        orgId: "org-1",
+        name: "Acme",
+        type: "Company",
+        tags: ["ai"],
+        showcaseConsent: true,
+      });
+      expect(out).toMatchObject({ ok: true });
+      expect(mockPrisma.partnerOrg.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ type: "Company", tags: ["ai"], showcaseConsent: true }),
+        }),
+      );
+    });
+
+    it("rejects an invalid type", async () => {
+      vi.mocked(isCore).mockResolvedValue(true);
+      mockPrisma.partnerOrg = {
+        create: vi.fn(),
+        findUnique: vi.fn().mockResolvedValue({ id: "org-1" }),
+        update: vi.fn(),
+        delete: vi.fn(),
+      };
+      await expect(
+        runManagePartnerOrg("u1", { action: "update", orgId: "org-1", name: "Acme", type: "NotAType" }),
+      ).rejects.toMatchObject({ name: "McpInvalidError" });
+    });
+  });
+
+  describe("merge_into", () => {
+    it("requires a different survivorOrgId", async () => {
+      vi.mocked(isCore).mockResolvedValue(true);
+      await expect(
+        runManagePartnerOrg("u1", { action: "merge_into", orgId: "org-1", survivorOrgId: "org-1" }),
+      ).rejects.toMatchObject({ name: "McpInvalidError" });
+    });
+
+    it("repoints memberships and project links, dedupes, then deletes the source org", async () => {
+      vi.mocked(isCore).mockResolvedValue(true);
+      mockPrisma.partnerOrg = {
+        create: vi.fn(),
+        findUnique: vi.fn().mockImplementation(({ where }: { where: { id: string } }) =>
+          where.id === "org-1"
+            ? Promise.resolve({ id: "org-1", name: "Duplicate Inc" })
+            : Promise.resolve({ id: "org-2" }),
+        ),
+        update: vi.fn(),
+        delete: vi.fn(),
+      };
+      mockPrisma.partnerMembership = {
+        findMany: vi
+          .fn()
+          .mockResolvedValueOnce([{ id: "m1", contactId: "c1" }, { id: "m2", contactId: "c2" }])
+          .mockResolvedValueOnce([{ contactId: "c2" }]),
+        findFirst: vi.fn(),
+      };
+      mockPrisma.projectPartner = {
+        findMany: vi
+          .fn()
+          .mockResolvedValueOnce([{ id: "pp1", projectId: "proj-1" }, { id: "pp2", projectId: "proj-2" }])
+          .mockResolvedValueOnce([{ projectId: "proj-2" }]),
+        count: vi.fn(),
+      };
+
+      const tx = {
+        partnerMembership: { updateMany: vi.fn() },
+        projectPartner: { updateMany: vi.fn(), deleteMany: vi.fn() },
+        partnerApplication: { updateMany: vi.fn() },
+        partnerActivity: { updateMany: vi.fn(), create: vi.fn() },
+        partnerInvite: { updateMany: vi.fn() },
+        partnerInvoice: { updateMany: vi.fn() },
+        partnerOrg: { delete: vi.fn() },
+      };
+      mockPrisma.$transaction = vi.fn().mockImplementation(async (fn: unknown) => {
+        const cb = fn as (txArg: typeof tx) => Promise<unknown>;
+        return cb(tx);
+      });
+
+      const out = await runManagePartnerOrg("u1", {
+        action: "merge_into",
+        orgId: "org-1",
+        survivorOrgId: "org-2",
+      });
+      expect(out).toMatchObject({ ok: true, survivorOrgId: "org-2" });
+      // m2's contact is already on the survivor — only m1 repoints.
+      expect(tx.partnerMembership.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ["m1"] } },
+        data: { orgId: "org-2" },
+      });
+      // pp2's project is already on the survivor — it's removed, not repointed.
+      expect(tx.projectPartner.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ["pp1"] } },
+        data: { partnerOrgId: "org-2" },
+      });
+      expect(tx.projectPartner.deleteMany).toHaveBeenCalledWith({
+        where: { id: { in: ["pp2"] } },
+      });
+      expect(tx.partnerOrg.delete).toHaveBeenCalledWith({ where: { id: "org-1" } });
+    });
+
+    it("404s when the survivor doesn't exist", async () => {
+      vi.mocked(isCore).mockResolvedValue(true);
+      mockPrisma.partnerOrg = {
+        create: vi.fn(),
+        findUnique: vi.fn().mockImplementation(({ where }: { where: { id: string } }) =>
+          where.id === "org-1" ? Promise.resolve({ id: "org-1", name: "X" }) : Promise.resolve(null),
+        ),
+        update: vi.fn(),
+        delete: vi.fn(),
+      };
+      await expect(
+        runManagePartnerOrg("u1", { action: "merge_into", orgId: "org-1", survivorOrgId: "missing" }),
+      ).rejects.toMatchObject({ name: "McpNotFoundError" });
+    });
   });
 });

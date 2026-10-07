@@ -11,8 +11,10 @@ const NAVBAR_PATHS = new Set([
   "/resources",
   "/members",
   "/members/groups",
-  "/partners",
-  "/partners/applications",
+  "/core/partners",
+  "/core/partners/directory",
+  "/core/partners/reports",
+  "/core/partners/settings",
   "/calendar",
   "/email",
   "/settings",
@@ -25,7 +27,9 @@ export function isNavbarRoute(href: string): boolean {
   if (path.startsWith("/settings/")) return true;
   if (path.startsWith("/help/")) return true;
   if (path.startsWith("/forms/")) return true;
-  if (path.startsWith("/partners/applications/")) return true;
+  if (path.startsWith("/core/partners/applications/")) return true;
+  if (path.startsWith("/core/partners/orgs/")) return true;
+  if (path.startsWith("/core/partners/contacts/")) return true;
   return false;
 }
 

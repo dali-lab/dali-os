@@ -16,40 +16,37 @@ import {
   ClipboardList,
   Info,
   FileText,
+  Mail,
 } from "lucide-react";
 import { UnderlineTabButtons } from "~/components/AreaPillNav";
 import { buttonClasses } from "~/components/ui/Button";
 import { cn } from "~/lib/cn";
-import { Checkbox } from "~/components/ui/Checkbox";
-import { DateField } from "~/components/ui/DateField";
-import { PartnerActivityFeed } from "../components/PartnerActivityFeed";
-import type { Route } from "./+types/partners.applications.$id";
+import type { Route } from "./+types/core.partners.applications.$id";
 import { prisma } from "~/lib/db";
 import { githubTeamSlug } from "~/lib/github-slug";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getCollabToken } from "~/lib/collab-token.server";
-import { canViewStaffing, isCore, getActiveCoreCycleTermIds } from "~/lib/roles";
+import { isCore, getActiveCoreCycleTermIds } from "~/lib/roles";
+import { coreHandle } from "~/core/coreNav";
 import {
-  PARTNER_APPLICATION_STATUSES as STATUSES,
-  PARTNER_APPLICATION_STATUS_LABELS as STATUS_LABEL,
-  isPartnerApplicationStatus,
-  type PartnerApplicationStatus as Status,
+  PARTNER_STAGES as STAGES,
+  PARTNER_STAGE_LABELS as STAGE_LABEL,
+  PARTNER_REJECT_REASONS,
+  PARTNER_REJECT_REASON_LABELS,
+  isPartnerStage,
+  isPartnerRejectReason,
+  type PartnerStage as Status,
 } from "../lib/partner-application";
+import { PROJECT_FUNDING_TYPES, PROJECT_FUNDING_TYPE_LABELS } from "~/lib/chart-string";
 import { formAnswerRows } from "~/forms/lib/answer-rows.server";
 import type { Question } from "~/types";
 import { DocEditor } from "~/components/doc";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { isEmptyBlocks } from "~/lib/blocks";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
-import { useDialog, useConfirmSubmit } from "~/components/ui/dialog";
-import {
-  EVAL_CRITERIA,
-  EVAL_CRITERIA_VERSION,
-  FIRST_MEETING_PROMPTS,
-  parseEvalRubric,
-  type EvalCriterionKey,
-} from "../lib/discovery-rubric";
+import { useDialog } from "~/components/ui/dialog";
+import { EVAL_CRITERIA, EVAL_CRITERIA_VERSION } from "../lib/discovery-rubric";
 import {
   sendTriageNextStepsEmail,
   sendMeetingInviteEmail,
@@ -59,10 +56,26 @@ import {
 } from "../lib/partner-emails.server";
 import {
   logPartnerActivity,
-  setApplicationStatus,
+  setApplicationStage,
 } from "../lib/partner-activity.server";
 import { getFrontendUrl } from "~/lib/app-env";
 import type { PartnerMeetingOutcome } from "~/generated/prisma/enums";
+import { getUserRoles } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { getPartnerContactEmailThreads } from "../lib/partner-email.server";
+import {
+  partnerContractStatus,
+  listPartnerContractDocuments,
+  handleContractIntent,
+} from "../lib/partner-contract.server";
+import { handleSowIntent } from "../lib/partner-finance.server";
+import { PropertyRail } from "../components/application/PropertyRail";
+import { EvaluationTab } from "../components/application/EvaluationTab";
+import { ActivityTab } from "../components/application/ActivityTab";
+import { EmailTab } from "../components/application/EmailTab";
+import { MeetingsTab } from "../components/application/MeetingsTab";
+import { StageActions } from "../components/application/StageActions";
+import { ScheduleInterviewModal } from "../components/ScheduleInterviewModal";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const a = (data as { application?: { title: string } } | undefined)
@@ -76,20 +89,18 @@ export const meta: Route.MetaFunction = ({ data }) => {
   ];
 };
 
-// Resolves the dynamic leaf crumb so the trail reads
-// "Partners › Applications › <title>" instead of a raw id.
+// The trailing crumb reads the application title off `trailLabel`, set below,
+// so the trail is "Core › Partner CRM › <application title>".
 export const handle = {
-  breadcrumb: (data: unknown) =>
-    (data as { application?: { title?: string } } | undefined)?.application
-      ?.title ?? null,
+  ...coreHandle("partners", (data) => (data as { trailLabel?: string } | null)?.trailLabel),
+  favoriteRoute: true,
 };
-
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
   if (auth.user.type === "applicant") return redirect("/portal");
-  if (!(await canViewStaffing(auth.user.sub))) return redirect("/");
+  if (!(await isCore(auth.user.sub))) return redirect("/");
 
   const application = await prisma.partnerApplication.findUnique({
     where: { id: params.id },
@@ -97,16 +108,25 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       id: true,
       title: true,
       summary: true,
-      status: true,
+      stage: true,
       sowDocId: true,
+      sowState: true,
       resultingProjectId: true,
       source: true,
-      assignedMeeterId: true,
       evalRubric: true,
       interviewRating: true,
       ambiguityRating: true,
-      fundingModel: true,
+      nextStep: true,
+      nextStepDueAt: true,
+      holdUntil: true,
+      fundingType: true,
+      feeCents: true,
+      legalEntityName: true,
+      legalEntityAddress: true,
+      paymentSchedule: true,
+      contractBindingId: true,
       decisionReason: true,
+      rejectReason: true,
       partnerOrg: { select: { id: true, name: true, logoUrl: true } },
       applicantContact: { select: { id: true, name: true, email: true } },
       targetTerms: {
@@ -138,6 +158,20 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           notes: true,
           debrief: true,
           outcome: true,
+          scheduledMeeting: { select: { id: true, selectedAt: true, meetingUrl: true } },
+        },
+      },
+      meetingRequests: {
+        where: { status: { in: ["Pending", "Declined"] } },
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          startTime: true,
+          durationMinutes: true,
+          note: true,
+          status: true,
+          responseNote: true,
+          createdAt: true,
         },
       },
     },
@@ -201,6 +235,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   let activities: {
     id: string;
     createdAt: string;
+    applicationId: string | null;
     actorUserId: string | null;
     type: string;
     body: string | null;
@@ -213,6 +248,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     select: {
       id: true,
       createdAt: true,
+      applicationId: true,
       actorUserId: true,
       type: true,
       body: true,
@@ -222,6 +258,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   activities = rows.map((r) => ({
     id: r.id,
     createdAt: r.createdAt.toISOString(),
+    applicationId: r.applicationId,
     actorUserId: r.actorUserId,
     type: r.type,
     body: r.body,
@@ -245,13 +282,23 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     );
   }
 
+  const roles = await getUserRoles(auth.user.sub, request);
+  const partnerEmailOn = await isFeatureEnabled("partner-email", auth.user.sub, roles, request);
+  const financeOn = await isFeatureEnabled("partner-finance", auth.user.sub, roles, request);
+  const emailThreads = partnerEmailOn
+    ? await getPartnerContactEmailThreads(application.applicantContact.id)
+    : [];
+  const contract = await partnerContractStatus(application.id);
+  const contractDocuments = canEdit ? await listPartnerContractDocuments() : [];
+
   return {
     application: {
       id: application.id,
       title: application.title,
       summary: application.summary,
-      status: application.status,
+      stage: application.stage,
       sowDocId: application.sowDocId,
+      sowState: application.sowState,
       resultingProjectId: application.resultingProjectId,
       targetTerms: application.targetTerms.map((t) => ({
         termId: t.termId,
@@ -260,12 +307,20 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       partner: application.partnerOrg,
       applicant: application.applicantContact,
       source: application.source,
-      assignedMeeterId: application.assignedMeeterId,
       evalRubric: application.evalRubric,
       interviewRating: application.interviewRating,
       ambiguityRating: application.ambiguityRating,
-      fundingModel: application.fundingModel,
+      nextStep: application.nextStep,
+      nextStepDueAt: application.nextStepDueAt?.toISOString() ?? null,
+      holdUntil: application.holdUntil?.toISOString() ?? null,
+      fundingType: application.fundingType,
+      feeCents: application.feeCents,
+      legalEntityName: application.legalEntityName,
+      legalEntityAddress: application.legalEntityAddress,
+      paymentSchedule: application.paymentSchedule,
+      contractBindingId: application.contractBindingId,
       decisionReason: application.decisionReason,
+      rejectReason: application.rejectReason,
       domains: application.domains.map((d) => ({
         id: d.id,
         domainId: d.domainId,
@@ -282,6 +337,22 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         notes: m.notes,
         debrief: m.debrief,
         outcome: m.outcome,
+        scheduledMeeting: m.scheduledMeeting
+          ? {
+              id: m.scheduledMeeting.id,
+              startTime: m.scheduledMeeting.selectedAt?.toISOString() ?? null,
+              meetingUrl: m.scheduledMeeting.meetingUrl,
+            }
+          : null,
+      })),
+      meetingRequests: application.meetingRequests.map((r) => ({
+        id: r.id,
+        startTime: r.startTime.toISOString(),
+        durationMinutes: r.durationMinutes,
+        note: r.note,
+        status: r.status,
+        responseNote: r.responseNote,
+        createdAt: r.createdAt.toISOString(),
       })),
     },
     formAnswers,
@@ -293,6 +364,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     coreMembers,
     activities,
     actorNames,
+    emailThreads,
+    partnerEmailOn,
+    financeOn,
+    contract,
+    contractDocuments,
+    trailLabel: application.title,
   };
 }
 
@@ -314,14 +391,14 @@ export async function action({ request, params }: Route.ActionArgs) {
       where: { id: params.id },
       data: { title },
     });
-  } else if (intent === "status") {
-    const status = form.get("status");
-    if (!isPartnerApplicationStatus(status)) {
-      return { error: "Invalid status." };
+  } else if (intent === "stage") {
+    const stage = form.get("stage");
+    if (!isPartnerStage(stage)) {
+      return { error: "Invalid stage." };
     }
-    await setApplicationStatus(prisma, {
+    await setApplicationStage(prisma, {
       applicationId: params.id,
-      to: status,
+      to: stage,
       actorUserId: auth.user.sub,
     });
   } else if (intent === "details") {
@@ -469,9 +546,13 @@ export async function action({ request, params }: Route.ActionArgs) {
         },
         select: { id: true },
       });
-      await setApplicationStatus(tx, {
+      // "Promoted" is derived (stage Accepted + resultingProjectId), not a
+      // stage of its own — the move here is a no-op if already Accepted, but
+      // still worth routing through setApplicationStage for the resultingProjectId
+      // write and so a reject-then-promote edge case can't skip the activity log.
+      await setApplicationStage(tx, {
         applicationId: app.id,
-        to: "Promoted",
+        to: "Accepted",
         actorUserId: auth.user.sub,
         data: { resultingProjectId: created.id, partnerOrgId: orgId },
         meta: { projectId: created.id },
@@ -488,12 +569,17 @@ export async function action({ request, params }: Route.ActionArgs) {
     intent === "reject" ||
     intent === "learn-more" ||
     intent === "accept" ||
-    intent === "assign-meeter" ||
     intent === "eval" ||
     intent === "acceptance" ||
     intent === "meeting-create" ||
     intent === "meeting-debrief" ||
-    intent === "note"
+    intent === "note" ||
+    intent === "next-step" ||
+    intent === "hold" ||
+    intent === "deal-terms" ||
+    intent === "summary" ||
+    intent === "contract-send" ||
+    intent === "sow-state"
   ) {
     if (intent === "offer-meeting") {
       const when = (form.get("when") as string | null)?.trim() ?? "";
@@ -503,9 +589,9 @@ export async function action({ request, params }: Route.ActionArgs) {
         where: { id: params.id },
         select: { applicantContact: { select: { name: true, email: true } } },
       });
-      await setApplicationStatus(prisma, {
+      await setApplicationStage(prisma, {
         applicationId: params.id,
-        to: "Meeting",
+        to: "Interview",
         actorUserId: auth.user.sub,
       });
       if (applicant?.applicantContact?.email) {
@@ -531,11 +617,8 @@ export async function action({ request, params }: Route.ActionArgs) {
         where: { id: params.id },
         select: { applicantContact: { select: { name: true, email: true } } },
       });
-      await setApplicationStatus(prisma, {
-        applicationId: params.id,
-        to: "Triaged",
-        actorUserId: auth.user.sub,
-      });
+      // No stage change — this just nudges the partner toward the application
+      // form. A card can sit in New and get this email more than once.
       if (applicant?.applicantContact?.email) {
         await sendTriageNextStepsEmail(
           applicant.applicantContact.email,
@@ -551,17 +634,21 @@ export async function action({ request, params }: Route.ActionArgs) {
       }
 
     } else if (intent === "reject") {
+      const rejectReason = form.get("rejectReason");
+      if (!isPartnerRejectReason(rejectReason)) {
+        return { error: "Choose a rejection reason." };
+      }
       const reason = (form.get("reason") as string | null)?.trim() || undefined;
       const applicant = await prisma.partnerApplication.findUnique({
         where: { id: params.id },
         select: { applicantContact: { select: { name: true, email: true } } },
       });
-      await setApplicationStatus(prisma, {
+      await setApplicationStage(prisma, {
         applicationId: params.id,
         to: "Rejected",
         actorUserId: auth.user.sub,
-        data: { decisionReason: reason ?? null },
-        ...(reason ? { meta: { reason } } : {}),
+        data: { decisionReason: reason ?? null, rejectReason },
+        meta: { rejectReason, ...(reason ? { reason } : {}) },
       });
       if (applicant?.applicantContact?.email) {
         await sendDecisionRejectedEmail(
@@ -584,12 +671,10 @@ export async function action({ request, params }: Route.ActionArgs) {
         where: { id: params.id },
         select: { applicantContact: { select: { name: true, email: true } } },
       });
-      await setApplicationStatus(prisma, {
-        applicationId: params.id,
-        to: "LearnMore",
-        actorUserId: auth.user.sub,
+      // No stage change — "learn more" is a side-request, not a funnel move.
+      await prisma.partnerApplication.update({
+        where: { id: params.id },
         data: { decisionReason: whatWeNeed },
-        meta: { reason: whatWeNeed },
       });
       if (applicant?.applicantContact?.email) {
         await sendLearnMoreRequestEmail(
@@ -613,7 +698,7 @@ export async function action({ request, params }: Route.ActionArgs) {
           applicantContact: { select: { name: true, email: true } },
         },
       });
-      await setApplicationStatus(prisma, {
+      await setApplicationStage(prisma, {
         applicationId: params.id,
         to: "Accepted",
         actorUserId: auth.user.sub,
@@ -631,13 +716,6 @@ export async function action({ request, params }: Route.ActionArgs) {
           metadata: { kind: "accepted" },
         });
       }
-
-    } else if (intent === "assign-meeter") {
-      const meeterId = (form.get("meeterId") as string | null)?.trim() || null;
-      await prisma.partnerApplication.update({
-        where: { id: params.id },
-        data: { assignedMeeterId: meeterId },
-      });
 
     } else if (intent === "eval") {
       const rubric: Record<string, unknown> = {};
@@ -681,12 +759,17 @@ export async function action({ request, params }: Route.ActionArgs) {
         ambiguityRaw !== null && ambiguityRaw !== ""
           ? Math.min(5, Math.max(1, Math.round(Number(ambiguityRaw))))
           : null;
-      const fundingModel = (form.get("fundingModel") as string | null)?.trim() || null;
+      const fundingTypeRaw = form.get("fundingType");
+      const fundingType =
+        typeof fundingTypeRaw === "string" &&
+        (PROJECT_FUNDING_TYPES as readonly string[]).includes(fundingTypeRaw)
+          ? (fundingTypeRaw as (typeof PROJECT_FUNDING_TYPES)[number])
+          : null;
       await prisma.partnerApplication.update({
         where: { id: params.id },
         data: {
           ...(ambiguityRating !== null ? { ambiguityRating } : {}),
-          fundingModel,
+          fundingType,
         },
       });
 
@@ -776,12 +859,76 @@ export async function action({ request, params }: Route.ActionArgs) {
         type: "Note",
         body,
       });
+
+    } else if (intent === "next-step") {
+      const nextStep = (form.get("nextStep") as string | null)?.trim() ?? "";
+      const nextStepDueAtRaw = (form.get("nextStepDueAt") as string | null)?.trim() ?? "";
+      const nextStepDueAt = nextStepDueAtRaw ? new Date(nextStepDueAtRaw) : null;
+      if (nextStepDueAt && isNaN(nextStepDueAt.getTime())) {
+        return { error: "Invalid due date." };
+      }
+      await prisma.partnerApplication.update({
+        where: { id: params.id },
+        data: { nextStep: nextStep === "" ? null : nextStep, nextStepDueAt },
+      });
+
+    } else if (intent === "hold") {
+      const holdUntilRaw = (form.get("holdUntil") as string | null)?.trim() ?? "";
+      const holdUntil = holdUntilRaw ? new Date(holdUntilRaw) : null;
+      if (holdUntil && isNaN(holdUntil.getTime())) {
+        return { error: "Invalid paused-until date." };
+      }
+      await prisma.partnerApplication.update({
+        where: { id: params.id },
+        data: { holdUntil },
+      });
+
+    } else if (intent === "deal-terms") {
+      const fundingTypeRaw = form.get("fundingType");
+      const fundingType =
+        typeof fundingTypeRaw === "string" &&
+        (PROJECT_FUNDING_TYPES as readonly string[]).includes(fundingTypeRaw)
+          ? (fundingTypeRaw as (typeof PROJECT_FUNDING_TYPES)[number])
+          : null;
+      const feeCentsRaw = (form.get("feeCents") as string | null)?.trim() ?? "";
+      const feeCents = feeCentsRaw ? Math.max(0, Math.round(Number(feeCentsRaw))) : null;
+      if (feeCentsRaw && (feeCents === null || isNaN(feeCents))) {
+        return { error: "Invalid fee." };
+      }
+      const legalEntityName = (form.get("legalEntityName") as string | null)?.trim() || null;
+      const legalEntityAddress = (form.get("legalEntityAddress") as string | null)?.trim() || null;
+      const paymentSchedule = (form.get("paymentSchedule") as string | null)?.trim() || null;
+      await prisma.partnerApplication.update({
+        where: { id: params.id },
+        data: { fundingType, feeCents, legalEntityName, legalEntityAddress, paymentSchedule },
+      });
+
+    } else if (intent === "summary") {
+      const summaryRaw = (form.get("summary") as string | null)?.trim() ?? "";
+      await prisma.partnerApplication.update({
+        where: { id: params.id },
+        data: { summary: summaryRaw === "" ? null : summaryRaw },
+      });
+
+    } else if (intent === "contract-send") {
+      const result = await handleContractIntent(form, {
+        applicationId: params.id,
+        actorUserId: auth.user.sub,
+      });
+      if ("error" in result) return { error: result.error };
+
+    } else if (intent === "sow-state") {
+      const result = await handleSowIntent(form, {
+        applicationId: params.id,
+        actorUserId: auth.user.sub,
+      });
+      if ("error" in result) return { error: result.error };
     }
 
   } else {
     return { error: "Unknown action." };
   }
-  return redirect(`/partners/applications/${params.id}`);
+  return redirect(`/core/partners/applications/${params.id}`);
 }
 
 // loader returns redirect() (a Response) on auth-fail branches; the component
@@ -800,14 +947,22 @@ export default function PartnerApplicationDetail() {
     coreMembers,
     activities,
     actorNames,
+    emailThreads,
+    partnerEmailOn,
+    financeOn,
+    contract,
+    contractDocuments,
   } = useLoaderData() as LoaderData;
   // Always-inline editing (gated only by permission), matching the rest of the
   // site — no view/edit mode toggle.
   const canEdit = canEditPerm;
   const actionData = useActionData<typeof action>();
+  const revalidator = useRevalidator();
+  const refresh = () => revalidator.revalidate();
   const [tab, setTab] = useState<
-    "overview" | "evaluation" | "meetings" | "details" | "sow"
+    "overview" | "evaluation" | "meetings" | "details" | "sow" | "email"
   >("overview");
+  const [showScheduler, setShowScheduler] = useState(false);
 
   const topBar = actionData?.error ? (
     <div className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-md px-3 py-2">
@@ -819,25 +974,38 @@ export default function PartnerApplicationDetail() {
   const details = (
     <DetailsSection application={application} terms={terms} canEdit={canEdit} />
   );
-  // CRM working sections (only meaningful with edit permission).
-  const triageBar = canEdit ? (
-    <TriageBar application={application} coreMembers={coreMembers} />
+  // CRM working sections (only meaningful with edit permission). StageActions
+  // is the same stage-aware footer the modal uses (specs/partner-crm.md §5) —
+  // it also covers the Accepted-stage "Create project" action, so there is no
+  // separate promote block here any more.
+  const stageActions = canEdit ? (
+    <StageActions
+      application={application}
+      canEdit={canEdit}
+      onOpenSchedule={() => setShowScheduler(true)}
+      onChanged={refresh}
+    />
   ) : null;
   const evaluation = canEdit ? (
-    <EvaluationCard application={application} />
+    <EvaluationTab
+      applicationId={application.id}
+      evalRubric={application.evalRubric}
+      interviewRating={application.interviewRating}
+      canEdit={canEdit}
+      onChanged={refresh}
+    />
   ) : null;
   const meetings = canEdit ? (
-    <div id="partner-meetings" className="scroll-mt-4">
-      <MeetingsSection
-        applicationId={application.id}
-        meetings={application.meetings}
-        coreMembers={coreMembers}
-      />
-    </div>
+    <MeetingsTab
+      applicationId={application.id}
+      meetings={application.meetings}
+      meetingRequests={application.meetingRequests}
+      coreMembers={coreMembers}
+      canEdit={canEdit}
+      onScheduleMeeting={() => setShowScheduler(true)}
+      onChanged={refresh}
+    />
   ) : null;
-  const promoteBlock = (
-    <PromoteBlock application={application} canEdit={canEdit} />
-  );
   const answers =
     formAnswers.length > 0 ? (
       <section className="bg-card border border-border rounded-lg p-4">
@@ -879,57 +1047,54 @@ export default function PartnerApplicationDetail() {
   // stepper + advance/triage actions (always visible), and the body is tabbed
   // so each heavy section gets full width. Overview (activity feed + key
   // details) is the default, front-and-center, like every CRM record page.
-  const assignedMeeterName =
-    coreMembers.find((m) => m.userId === application.assignedMeeterId)?.name ??
-    null;
-  const expectedTotal = application.domains.reduce(
-    (s, d) => s + d.expectedMembers,
-    0,
-  );
-
   const activityFeed = (
-    <PartnerActivityFeed
+    <ActivityTab
+      applicationId={application.id}
       activities={activities}
       actorNames={actorNames}
+      emailThreads={partnerEmailOn ? emailThreads : []}
       canEdit={canEdit}
-      headerActions={
-        canEdit ? (
-          <button
-            type="button"
-            onClick={() => setTab("meetings")}
-            className={buttonClasses("ghost", "sm")}
-          >
-            <Calendar className="w-3.5 h-3.5" /> Log meeting
-          </button>
-        ) : undefined
-      }
+      onChanged={refresh}
     />
   );
 
-  const keyFields = (
-    <section className="bg-card border border-border rounded-lg p-4">
-      <h2 className="text-sm font-semibold text-foreground mb-3">Key details</h2>
-      <dl className="flex flex-col gap-2.5">
-        <KeyRow
-          label="Partner"
-          value={application.partner?.name ?? application.applicant?.name ?? "—"}
-        />
-        <KeyRow
-          label="Target terms"
-          value={
-            application.targetTerms.length
-              ? application.targetTerms.map((t) => t.code).join(", ")
-              : "—"
-          }
-        />
-        <KeyRow
-          label="Assigned meeter"
-          value={assignedMeeterName ?? "Unassigned"}
-        />
-        <KeyRow label="Expected members" value={String(expectedTotal)} />
-        <KeyRow label="Source" value={application.source} />
-      </dl>
-    </section>
+  const propertyRail = (
+    <PropertyRail
+      application={{
+        id: application.id,
+        stage: application.stage,
+        applicant: application.applicant,
+        partner: application.partner,
+        resultingProjectId: application.resultingProjectId,
+        source: application.source,
+        nextStep: application.nextStep,
+        nextStepDueAt: application.nextStepDueAt,
+        holdUntil: application.holdUntil,
+        // This file's target terms are {termId, code} (TargetTermsField below
+        // reads `.termId`); the rail's shared type keys them {id, code}.
+        targetTerms: application.targetTerms.map((t) => ({ id: t.termId, code: t.code })),
+        summary: application.summary,
+        domains: application.domains,
+        fundingType: application.fundingType,
+        feeCents: application.feeCents,
+        legalEntityName: application.legalEntityName,
+        legalEntityAddress: application.legalEntityAddress,
+        paymentSchedule: application.paymentSchedule,
+        sowState: application.sowState,
+        contractBindingId: application.contractBindingId,
+      }}
+      canEdit={canEdit}
+      domainOptions={availableDomains.map((d) => ({ id: d.id, name: d.displayName }))}
+      termOptions={terms.map((t) => ({ id: t.id, code: t.code }))}
+      contract={contract}
+      contractDocuments={contractDocuments}
+      financeOn={financeOn}
+      onChanged={refresh}
+    />
+  );
+
+  const emailTab = (
+    <EmailTab contactId={application.applicant?.id ?? ""} threads={emailThreads} partnerEmailOn={partnerEmailOn} />
   );
 
   const TABS = [
@@ -938,9 +1103,11 @@ export default function PartnerApplicationDetail() {
     { key: "meetings", label: "Meetings", icon: Calendar },
     { key: "details", label: "Details", icon: Info },
     { key: "sow", label: "Statement of Work", icon: FileText },
+    { key: "email", label: "Email", icon: Mail },
   ] as const;
 
   return (
+    <>
     <div className="flex flex-col gap-4">
       {topBar}
 
@@ -948,8 +1115,8 @@ export default function PartnerApplicationDetail() {
           always visible above the tabs. */}
       <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
         {header}
-        {triageBar}
-        {application.status === "Accepted" && promoteBlock}
+        <StageStepper stage={application.stage} />
+        {stageActions}
       </div>
 
       <UnderlineTabButtons
@@ -965,7 +1132,7 @@ export default function PartnerApplicationDetail() {
       {tab === "overview" && (
         <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
           <div className="min-w-0">{activityFeed}</div>
-          {keyFields}
+          {propertyRail}
         </div>
       )}
       {tab === "evaluation" &&
@@ -988,58 +1155,41 @@ export default function PartnerApplicationDetail() {
         </div>
       )}
       {tab === "sow" && sow}
+      {tab === "email" && emailTab}
     </div>
+    {showScheduler && (
+      <ScheduleInterviewModal
+        applicationId={application.id}
+        partnerName={application.applicant.name}
+        partnerEmail={application.applicant.email}
+        onClose={() => setShowScheduler(false)}
+        onScheduled={() => {
+          setShowScheduler(false);
+          refresh();
+        }}
+      />
+    )}
+    </>
   );
 }
 
-function KeyRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-baseline justify-between gap-3">
-      <dt className="text-xs text-muted-foreground shrink-0">{label}</dt>
-      <dd className="text-sm text-foreground text-right">{value}</dd>
-    </div>
-  );
-}
 
-// ─── CRM: Triage / decision bar + assign-meeter ───────────────────────────────
+// ─── CRM: Triage / decision bar ────────────────────────────────────────────────
 
 // Happy-path funnel order for the stepper + the sequential "advance" CTA.
-// Branch states (LearnMore, OnHold, Rejected) sit off this main line.
-const FUNNEL_ORDER = [
-  "Inquiry",
-  "Triaged",
-  "Meeting",
-  "ApplicationSubmitted",
-  "UnderReview",
-  "Accepted",
-  "Promoted",
-] as const;
+// Rejected is the off-ramp and sits off this main line.
+const FUNNEL_ORDER = ["New", "Interview", "Accepted"] as const;
 
-const STEP_SHORT: Record<(typeof FUNNEL_ORDER)[number], string> = {
-  Inquiry: "Inquiry",
-  Triaged: "Triaged",
-  Meeting: "Meeting",
-  ApplicationSubmitted: "Applied",
-  UnderReview: "Review",
-  Accepted: "Accepted",
-  Promoted: "Promoted",
-};
+// Rejected can happen from New or Interview; anchor its stepper position at
+// Interview so the chip reads as "got this far, then rejected" rather than
+// resetting to the start.
+const REJECTED_ANCHOR_IDX = FUNNEL_ORDER.indexOf("Interview");
 
-// Branch/legacy states map onto the nearest main-line stage for the stepper.
-const BRANCH_ANCHOR: Record<string, (typeof FUNNEL_ORDER)[number]> = {
-  LearnMore: "UnderReview",
-  OnHold: "UnderReview",
-  Rejected: "UnderReview",
-  Submitted: "ApplicationSubmitted",
-};
-
-function StatusStepper({ status }: { status: Status }) {
-  const onPath = (FUNNEL_ORDER as readonly string[]).includes(status);
-  const currentIdx = FUNNEL_ORDER.indexOf(
-    onPath
-      ? (status as (typeof FUNNEL_ORDER)[number])
-      : (BRANCH_ANCHOR[status] ?? "Inquiry"),
-  );
+function StageStepper({ stage }: { stage: Status }) {
+  const onPath = (FUNNEL_ORDER as readonly string[]).includes(stage);
+  const currentIdx = onPath
+    ? FUNNEL_ORDER.indexOf(stage as (typeof FUNNEL_ORDER)[number])
+    : REJECTED_ANCHOR_IDX;
   return (
     <ol className="flex flex-wrap items-center gap-1">
       {FUNNEL_ORDER.map((s, i) => {
@@ -1057,7 +1207,7 @@ function StatusStepper({ status }: { status: Status }) {
                     : "bg-muted/40 text-muted-foreground border-border",
               )}
             >
-              {STEP_SHORT[s]}
+              {STAGE_LABEL[s]}
             </span>
             {i < FUNNEL_ORDER.length - 1 && (
               <span className="text-muted-foreground/40 text-[10px]">›</span>
@@ -1065,7 +1215,7 @@ function StatusStepper({ status }: { status: Status }) {
           </li>
         );
       })}
-      {status === "Rejected" && (
+      {stage === "Rejected" && (
         <li className="ml-1 text-[11px] px-2 py-0.5 rounded-full border bg-destructive/10 text-destructive border-destructive/20">
           Rejected
         </li>
@@ -1074,671 +1224,11 @@ function StatusStepper({ status }: { status: Status }) {
   );
 }
 
-function TriageBar({
-  application,
-  coreMembers,
-}: {
-  application: LoaderData["application"];
-  coreMembers: LoaderData["coreMembers"];
-}) {
-  const submit = useSubmit();
-  const confirmSubmit = useConfirmSubmit();
-  const [showing, setShowing] = useState<
-    "offer-meeting" | "send-application" | "reject" | "learn-more" | null
-  >(null);
-
-  const submitStatus = (to: Status) => {
-    const fd = new FormData();
-    fd.set("intent", "status");
-    fd.set("status", to);
-    submit(fd, { method: "post" });
-  };
-
-  const SECONDARY =
-    "px-3 py-1.5 text-xs font-medium rounded-md border border-border text-foreground hover:bg-muted transition-colors";
-  const openBtn = (
-    kind: "offer-meeting" | "send-application" | "reject" | "learn-more",
-    label: string,
-    primary = false,
-  ) => (
-    <button
-      type="button"
-      onClick={() => setShowing(showing === kind ? null : kind)}
-      className={primary ? buttonClasses("primary", "sm") : SECONDARY}
-    >
-      {label}
-    </button>
-  );
-
-  // The sequential "advance to next status" primary CTA is status-aware — it
-  // reuses the existing side-effecting forms (offer meeting / send application /
-  // accept) or a direct status move. Off-ramps (reject, learn-more) stay as
-  // secondary actions; the full any→any dropdown lives in the header.
-  const status = application.status;
-  let primary: ReactNode = null;
-  const secondary: ReactNode[] = [];
-  switch (status) {
-    case "Inquiry":
-      primary = openBtn("send-application", "Send application →", true);
-      secondary.push(openBtn("offer-meeting", "Offer meeting"));
-      break;
-    case "Triaged":
-      primary = openBtn("offer-meeting", "Offer meeting →", true);
-      secondary.push(openBtn("send-application", "Resend application"));
-      break;
-    case "Meeting":
-    case "ApplicationSubmitted":
-      primary = (
-        <button
-          type="button"
-          onClick={() => submitStatus("UnderReview")}
-          className={buttonClasses("primary", "sm")}
-        >
-          Start review →
-        </button>
-      );
-      secondary.push(openBtn("offer-meeting", "Offer another meeting"));
-      break;
-    case "UnderReview":
-      primary = (
-        <Form
-          method="post"
-          onSubmit={confirmSubmit({
-            title: "Accept this partner?",
-            description:
-              "This will mark the application as Accepted and notify the partner.",
-            confirmLabel: "Accept",
-          })}
-          className="inline"
-        >
-          <input type="hidden" name="intent" value="accept" />
-          <button type="submit" className={buttonClasses("primary", "sm")}>
-            Accept →
-          </button>
-        </Form>
-      );
-      secondary.push(openBtn("learn-more", "Need more info"));
-      break;
-    case "LearnMore":
-    case "OnHold":
-      primary = (
-        <button
-          type="button"
-          onClick={() => submitStatus("UnderReview")}
-          className={buttonClasses("primary", "sm")}
-        >
-          Resume review →
-        </button>
-      );
-      break;
-    case "Accepted":
-      // Promotion is handled by the PromoteBlock in the top band at this stage.
-      break;
-    case "Rejected":
-      secondary.push(
-        <button
-          key="reopen"
-          type="button"
-          onClick={() => submitStatus("UnderReview")}
-          className={SECONDARY}
-        >
-          Reopen
-        </button>,
-      );
-      break;
-    // Promoted: terminal — no actions.
-  }
-  if (!["Accepted", "Rejected", "Promoted"].includes(status)) {
-    secondary.push(openBtn("reject", "Reject"));
-  }
-
-  return (
-    <div className="mt-3 flex flex-col gap-3">
-      <StatusStepper status={status} />
-      {status === "Promoted" ? (
-        <p className="text-xs text-muted-foreground">
-          Promoted to a project — this opportunity is complete.
-        </p>
-      ) : primary || secondary.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-2">
-          {primary}
-          {secondary.map((node, i) => (
-            <span key={i}>{node}</span>
-          ))}
-        </div>
-      ) : null}
-
-      {/* Inline forms for actions that need extra input */}
-      {showing === "offer-meeting" && (
-        <Form
-          method="post"
-          onSubmit={confirmSubmit({
-            title: "Send meeting invite?",
-            description: "This emails the partner a meeting invitation.",
-            confirmLabel: "Send invite",
-          })}
-          className="flex flex-col gap-2 p-3 bg-muted/30 rounded-md border border-border"
-        >
-          <input type="hidden" name="intent" value="offer-meeting" />
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-muted-foreground font-medium">Meeting time *</span>
-            <input
-              name="when"
-              required
-              placeholder="e.g. Tuesday Jan 14, 2:00 PM ET"
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-muted-foreground font-medium">Details (optional)</span>
-            <textarea
-              name="details"
-              rows={2}
-              placeholder="Link, location, agenda…"
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 resize-none"
-            />
-          </label>
-          <div className="flex gap-2">
-            <button type="submit" className={buttonClasses("primary", "sm")}>
-              Send invite
-            </button>
-            <button type="button" onClick={() => setShowing(null)} className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors">
-              Cancel
-            </button>
-          </div>
-        </Form>
-      )}
-
-      {showing === "send-application" && (
-        <Form
-          method="post"
-          onSubmit={confirmSubmit({
-            title: "Send application link to partner?",
-            description: "This emails the partner your next-steps message with a link to apply.",
-            confirmLabel: "Send email",
-          })}
-          className="flex flex-col gap-2 p-3 bg-muted/30 rounded-md border border-border"
-        >
-          <input type="hidden" name="intent" value="send-application" />
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-muted-foreground font-medium">Next steps message</span>
-            <textarea
-              name="nextSteps"
-              rows={3}
-              placeholder="Tell the partner what comes next. A link to apply will be appended automatically."
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 resize-none"
-            />
-          </label>
-          <div className="flex gap-2">
-            <button type="submit" className={buttonClasses("primary", "sm")}>
-              Send email
-            </button>
-            <button type="button" onClick={() => setShowing(null)} className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors">
-              Cancel
-            </button>
-          </div>
-        </Form>
-      )}
-
-      {showing === "learn-more" && (
-        <Form
-          method="post"
-          onSubmit={confirmSubmit({
-            title: "Send more-info request to partner?",
-            description: "This emails the partner asking for the information you describe.",
-            confirmLabel: "Send request",
-          })}
-          className="flex flex-col gap-2 p-3 bg-muted/30 rounded-md border border-border"
-        >
-          <input type="hidden" name="intent" value="learn-more" />
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-muted-foreground font-medium">What do we need from them? *</span>
-            <textarea
-              name="whatWeNeed"
-              rows={3}
-              required
-              placeholder="Describe the specific information or materials you need…"
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 resize-none"
-            />
-          </label>
-          <div className="flex gap-2">
-            <button type="submit" className="px-3 py-1.5 text-xs font-medium rounded-md bg-amber-500 text-white hover:bg-amber-600 transition-colors">
-              Send request
-            </button>
-            <button type="button" onClick={() => setShowing(null)} className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors">
-              Cancel
-            </button>
-          </div>
-        </Form>
-      )}
-
-      {showing === "reject" && (
-        <Form
-          method="post"
-          onSubmit={confirmSubmit({
-            title: "Reject this partner application?",
-            description: "This emails the partner a rejection notice.",
-            confirmLabel: "Reject",
-            tone: "destructive",
-          })}
-          className="flex flex-col gap-2 p-3 bg-muted/30 rounded-md border border-border"
-        >
-          <input type="hidden" name="intent" value="reject" />
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-muted-foreground font-medium">Reason (shown to partner, optional)</span>
-            <textarea
-              name="reason"
-              rows={2}
-              placeholder="Brief, partner-facing explanation…"
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 resize-none"
-            />
-          </label>
-          <div className="flex gap-2">
-            <button type="submit" className="px-3 py-1.5 text-xs font-medium rounded-md bg-destructive text-white hover:bg-destructive/90 transition-colors">
-              Reject
-            </button>
-            <button type="button" onClick={() => setShowing(null)} className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors">
-              Cancel
-            </button>
-          </div>
-        </Form>
-      )}
-
-      {/* Assign meeter */}
-      <div className="flex items-center gap-2 pt-1">
-        <span className="text-xs text-muted-foreground shrink-0">Assigned meeter</span>
-        <Select
-          name="meeterId"
-          value={application.assignedMeeterId ?? ""}
-          onChange={(value) => {
-            const fd = new FormData();
-            fd.set("intent", "assign-meeter");
-            fd.set("meeterId", value);
-            submit(fd, { method: "post" });
-          }}
-          placeholder="Unassigned"
-          options={[
-            { value: "", label: "Unassigned" },
-            ...coreMembers.map((m) => ({ value: m.userId, label: m.name })),
-          ]}
-          buttonClassName="text-xs px-2 py-1 border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 min-w-[140px] transition-colors hover:bg-muted/40"
-        />
-      </div>
-    </div>
-  );
-}
-
-// ─── CRM: Acceptance fields ───────────────────────────────────────────────────
-
-function AcceptanceFields({ application }: { application: LoaderData["application"] }) {
-  return (
-    <Form method="post" className="flex flex-col gap-3 mt-4 pt-4 border-t border-border">
-      <input type="hidden" name="intent" value="acceptance" />
-      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Acceptance notes</h3>
-      <div className="grid grid-cols-2 gap-3">
-        <label className="flex flex-col gap-1 text-xs">
-          <span className="text-muted-foreground">Ambiguity rating (1–5)</span>
-          <input
-            type="number"
-            name="ambiguityRating"
-            min={1}
-            max={5}
-            step={1}
-            defaultValue={application.ambiguityRating ?? ""}
-            placeholder="1–5"
-            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-xs">
-          <span className="text-muted-foreground">Funding model</span>
-          <input
-            type="text"
-            name="fundingModel"
-            defaultValue={application.fundingModel ?? ""}
-            placeholder="e.g. Magnuson grant, self-funded…"
-            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-          />
-        </label>
-      </div>
-      <div className="flex justify-end">
-        <button
-          type="submit"
-          className={buttonClasses("primary", "sm")}
-        >
-          Save
-        </button>
-      </div>
-    </Form>
-  );
-}
-
-// ─── CRM: Evaluation card ─────────────────────────────────────────────────────
-
-function EvaluationCard({ application }: { application: LoaderData["application"] }) {
-  const rubric = parseEvalRubric(application.evalRubric);
-
-  return (
-    <section className="bg-card border border-border rounded-lg p-4">
-      <h2 className="text-sm font-semibold text-foreground mb-1">Evaluation</h2>
-      <p className="text-xs text-muted-foreground mb-3">
-        Score each criterion 1 (low) – 5 (high) after the discovery meeting.
-      </p>
-
-      {/* First-meeting prompts */}
-      <div className="mb-4 bg-muted/30 rounded-md p-3">
-        <p className="text-xs font-medium text-muted-foreground mb-2">Discovery meeting prompts</p>
-        <ol className="list-decimal list-inside space-y-1">
-          {FIRST_MEETING_PROMPTS.map((p, i) => (
-            <li key={i} className="text-xs text-muted-foreground">{p}</li>
-          ))}
-        </ol>
-      </div>
-
-      <Form method="post" className="flex flex-col gap-3">
-        <input type="hidden" name="intent" value="eval" />
-
-        {EVAL_CRITERIA.map((c) => (
-          <div key={c.key} className="flex items-start gap-3">
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-foreground">{c.label}</p>
-              <p className="text-xs text-muted-foreground">{c.description}</p>
-            </div>
-            <div className="flex items-center gap-0.5">
-              {[1, 2, 3, 4, 5].map((n) => (
-                <label key={n} className="cursor-pointer">
-                  <input
-                    type="radio"
-                    name={`score_${c.key}`}
-                    value={String(n)}
-                    defaultChecked={rubric[c.key as EvalCriterionKey] === n}
-                    className="sr-only peer"
-                  />
-                  <span className="w-7 h-7 flex items-center justify-center text-xs font-medium rounded border border-border text-muted-foreground peer-checked:bg-accent-coral peer-checked:text-white peer-checked:border-accent-coral hover:bg-muted transition-colors">
-                    {n}
-                  </span>
-                </label>
-              ))}
-            </div>
-          </div>
-        ))}
-
-        <div className="flex items-center gap-3 pt-2 border-t border-border">
-          <label className="flex items-center gap-2 text-xs font-medium text-foreground flex-1">
-            <span>Overall interview rating (1–5)</span>
-          </label>
-          <div className="flex items-center gap-0.5">
-            {[1, 2, 3, 4, 5].map((n) => (
-              <label key={n} className="cursor-pointer">
-                <input
-                  type="radio"
-                  name="interviewRating"
-                  value={String(n)}
-                  defaultChecked={application.interviewRating === n}
-                  className="sr-only peer"
-                />
-                <span className="w-7 h-7 flex items-center justify-center text-xs font-medium rounded border border-border text-muted-foreground peer-checked:bg-accent-coral peer-checked:text-white peer-checked:border-accent-coral hover:bg-muted transition-colors">
-                  {n}
-                </span>
-              </label>
-            ))}
-          </div>
-        </div>
-
-        <label className="flex flex-col gap-1 text-xs">
-          <span className="text-muted-foreground">Eval notes</span>
-          <textarea
-            name="evalNotes"
-            rows={3}
-            defaultValue={rubric.notes ?? ""}
-            placeholder="Notes for the team…"
-            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 resize-none"
-          />
-        </label>
-
-        <div className="flex justify-end">
-          <button
-            type="submit"
-            className={buttonClasses("primary", "sm")}
-          >
-            Save evaluation
-          </button>
-        </div>
-      </Form>
-    </section>
-  );
-}
-
-// ─── CRM: Meetings section ────────────────────────────────────────────────────
-
-const OUTCOME_LABELS: Record<string, string> = {
-  Advance: "Advance",
-  Hold: "Hold",
-  Reject: "Reject",
-  MoreInfoNeeded: "Need more info",
-};
-
-const OUTCOME_PILL: Record<string, string> = {
-  Advance: "bg-accent-teal/15 text-accent-teal",
-  Hold: "bg-amber-500/15 text-amber-600",
-  Reject: "bg-destructive/10 text-destructive",
-  MoreInfoNeeded: "bg-muted text-muted-foreground",
-};
-
-function MeetingsSection({
-  applicationId,
-  meetings,
-  coreMembers,
-}: {
-  applicationId: string;
-  meetings: LoaderData["application"]["meetings"];
-  coreMembers: LoaderData["coreMembers"];
-}) {
-  const [showAdd, setShowAdd] = useState(false);
-  const [debriefOpenId, setDebriefOpenId] = useState<string | null>(null);
-  const [notifyPartner, setNotifyPartner] = useState(false);
-  const dialog = useDialog();
-  const submitForm = useSubmit();
-
-  const memberById = new Map(coreMembers.map((m) => [m.userId, m.name]));
-
-  return (
-    <section className="bg-card border border-border rounded-lg p-4">
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-sm font-semibold text-foreground">Meetings</h2>
-        {!showAdd && (
-          <button
-            type="button"
-            onClick={() => setShowAdd(true)}
-            className="text-xs font-medium text-accent-coral hover:underline"
-          >
-            + Add meeting
-          </button>
-        )}
-      </div>
-
-      {showAdd && (
-        <Form
-          method="post"
-          onSubmit={async (e) => {
-            if (notifyPartner) {
-              e.preventDefault();
-              const ok = await dialog.confirm({
-                title: "Email a meeting invite to the partner?",
-                description: "This sends a meeting invitation to the partner's contact email.",
-                confirmLabel: "Send invite",
-              });
-              if (!ok) return;
-              submitForm(e.currentTarget, { method: "post" });
-            }
-            setShowAdd(false);
-            setNotifyPartner(false);
-          }}
-          className="flex flex-col gap-3 mb-4 p-3 bg-muted/30 rounded-md border border-border"
-        >
-          <input type="hidden" name="intent" value="meeting-create" />
-          <div className="grid grid-cols-2 gap-3">
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="text-muted-foreground font-medium">Date & time *</span>
-              <DateField
-                mode="datetime-local"
-                name="meetingDate"
-                required
-                ariaLabel="Meeting date and time"
-              />
-            </label>
-          </div>
-          <fieldset>
-            <legend className="text-xs text-muted-foreground font-medium mb-1">Attendees</legend>
-            <div className="grid grid-cols-2 gap-1 max-h-36 overflow-y-auto">
-              {coreMembers.map((m) => (
-                <Checkbox
-                  key={m.userId}
-                  name="attendeeUserIds"
-                  value={m.userId}
-                  label={m.name}
-                  className="text-xs"
-                />
-              ))}
-            </div>
-          </fieldset>
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-muted-foreground font-medium">Notes</span>
-            <textarea
-              name="meetingNotes"
-              rows={2}
-              placeholder="Pre-meeting notes or agenda…"
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 resize-none"
-            />
-          </label>
-          <Checkbox
-            name="notifyPartner"
-            label="Email partner a meeting invite"
-            className="text-xs"
-            checked={notifyPartner}
-            onChange={(e) => setNotifyPartner(e.target.checked)}
-          />
-          <div className="flex gap-2">
-            <button type="submit" className={buttonClasses("primary", "sm")}>
-              Log meeting
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowAdd(false)}
-              className={buttonClasses("secondary", "sm")}
-            >
-              Cancel
-            </button>
-          </div>
-        </Form>
-      )}
-
-      {meetings.length === 0 ? (
-        <p className="text-sm text-muted-foreground italic">No meetings logged yet.</p>
-      ) : (
-        <div className="flex flex-col divide-y divide-border">
-          {meetings.map((m) => {
-            const date = new Date(m.scheduledAt);
-            const attendeeNames = m.attendeeUserIds
-              .map((uid) => memberById.get(uid) ?? uid)
-              .join(", ");
-            return (
-              <div key={m.id} className="py-3 flex flex-col gap-1.5">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-foreground">
-                      {date.toLocaleDateString("en-US", { dateStyle: "medium" })}{" "}
-                      <span className="text-muted-foreground font-normal">
-                        {date.toLocaleTimeString("en-US", { timeStyle: "short" })}
-                      </span>
-                    </p>
-                    {attendeeNames && (
-                      <p className="text-xs text-muted-foreground">{attendeeNames}</p>
-                    )}
-                    {m.notes && (
-                      <p className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap">{m.notes}</p>
-                    )}
-                    {m.debrief && (
-                      <p className="text-xs text-foreground mt-1 whitespace-pre-wrap">{m.debrief}</p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {m.outcome && (
-                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${OUTCOME_PILL[m.outcome] ?? "bg-muted text-muted-foreground"}`}>
-                        {OUTCOME_LABELS[m.outcome] ?? m.outcome}
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setDebriefOpenId(debriefOpenId === m.id ? null : m.id)}
-                      className="text-xs text-muted-foreground hover:text-foreground"
-                    >
-                      {debriefOpenId === m.id ? "Close" : "Debrief"}
-                    </button>
-                  </div>
-                </div>
-
-                {debriefOpenId === m.id && (
-                  <Form
-                    method="post"
-                    onSubmit={() => setDebriefOpenId(null)}
-                    className="flex flex-col gap-2 mt-1 p-3 bg-muted/30 rounded-md border border-border"
-                  >
-                    <input type="hidden" name="intent" value="meeting-debrief" />
-                    <input type="hidden" name="meetingId" value={m.id} />
-                    <label className="flex flex-col gap-1 text-xs">
-                      <span className="text-muted-foreground font-medium">Debrief notes</span>
-                      <textarea
-                        name="debrief"
-                        rows={3}
-                        defaultValue={m.debrief ?? ""}
-                        placeholder="What happened? Key takeaways…"
-                        className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 resize-none"
-                      />
-                    </label>
-                    <label className="flex flex-col gap-1 text-xs">
-                      <span className="text-muted-foreground font-medium">Outcome</span>
-                      <Select
-                        name="outcome"
-                        defaultValue={m.outcome ?? ""}
-                        ariaLabel="Meeting outcome"
-                        options={[
-                          { value: "", label: "No outcome set" },
-                          { value: "Advance", label: "Advance" },
-                          { value: "Hold", label: "Hold" },
-                          { value: "Reject", label: "Reject" },
-                          { value: "MoreInfoNeeded", label: "Need more info" },
-                        ]}
-                        buttonClassName="w-full text-sm px-2 py-1.5 border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1"
-                      />
-                    </label>
-                    <div className="flex gap-2">
-                      <button type="submit" className={buttonClasses("primary", "sm")}>
-                        Save debrief
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setDebriefOpenId(null)}
-                        className={buttonClasses("secondary", "sm")}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </Form>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </section>
-  );
-}
-
 // ─── Existing components (unchanged below) ────────────────────────────────────
 
-// Decision statuses that silently skip the email pipeline — selecting any of
+// Decision stages that silently skip the email pipeline — selecting either of
 // these via the dropdown should warn that no email is sent.
-const SILENT_DECISION_STATUSES = new Set<Status>(["Accepted", "Rejected", "Promoted"]);
+const SILENT_DECISION_STAGES = new Set<Status>(["Accepted", "Rejected"]);
 
 function Header({
   application,
@@ -1751,20 +1241,20 @@ function Header({
   const submit = useSubmit();
   const dialog = useDialog();
 
-  const handleStatusChange = async (value: string) => {
-    const toStatus = value as Status;
-    if (SILENT_DECISION_STATUSES.has(toStatus)) {
+  const handleStageChange = async (value: string) => {
+    const toStage = value as Status;
+    if (SILENT_DECISION_STAGES.has(toStage)) {
       const ok = await dialog.confirm({
-        title: `Move to "${STATUS_LABEL[toStatus]}"?`,
+        title: `Move to "${STAGE_LABEL[toStage]}"?`,
         description:
-          "This does NOT email the partner — use the Accept/Reject buttons to notify them.",
+          "This does NOT email the partner. Use the Accept/Reject buttons to notify them.",
         confirmLabel: "Move anyway",
       });
       if (!ok) return;
     }
     const fd = new FormData();
-    fd.set("intent", "status");
-    fd.set("status", value);
+    fd.set("intent", "stage");
+    fd.set("stage", value);
     submit(fd, { method: "post" });
   };
 
@@ -1817,16 +1307,16 @@ function Header({
 
         {canEdit ? (
           <Select
-            name="status"
-            defaultValue={application.status}
-            ariaLabel="Application status"
-            onChange={handleStatusChange}
-            options={STATUSES.map((s) => ({ value: s, label: STATUS_LABEL[s] }))}
+            name="stage"
+            defaultValue={application.stage}
+            ariaLabel="Application stage"
+            onChange={handleStageChange}
+            options={STAGES.map((s) => ({ value: s, label: STAGE_LABEL[s] }))}
             buttonClassName="text-xs px-2 py-1 border border-border rounded-full bg-background text-muted-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
           />
         ) : (
           <span className="text-[11px] px-2 py-0.5 rounded-full border border-border text-muted-foreground">
-            {STATUS_LABEL[application.status]}
+            {STAGE_LABEL[application.stage]}
           </span>
         )}
       </div>
@@ -1864,49 +1354,6 @@ function Header({
   );
 }
 
-// The accept/promote decision block — the tail of the funnel. Pulled out of the
-// header so it reads at the end of the record flow (after evaluation), not up
-// top. Anchored (#promote) for the "Promote to project →" advance CTA.
-function PromoteBlock({
-  application,
-  canEdit,
-}: {
-  application: LoaderData["application"];
-  canEdit: boolean;
-}) {
-  const confirmSubmit = useConfirmSubmit();
-  if (!canEdit || application.resultingProjectId) return null;
-  return (
-    <Form
-      id="promote"
-      method="post"
-      onSubmit={confirmSubmit({
-        title: "Create a project from this application?",
-        description:
-          "It will carry over the partner, start term, and per-domain role requests, and the two will be linked.",
-        confirmLabel: "Create project",
-      })}
-      className="scroll-mt-4 bg-card border border-border rounded-lg p-4"
-    >
-      <input type="hidden" name="intent" value="promote" />
-      {!application.partner && (
-        <input
-          type="text"
-          name="orgName"
-          placeholder="Organization name (optional — defaults to the applicant)"
-          className="mb-2 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
-        />
-      )}
-      <AcceptanceFields application={application} />
-      <div className="mt-3">
-        <button type="submit" className={buttonClasses("primary", "sm")}>
-          Promote to project →
-        </button>
-      </div>
-    </Form>
-  );
-}
-
 function DetailsSection({
   application,
   terms,
@@ -1935,7 +1382,7 @@ function DetailsSection({
               name="summary"
               rows={3}
               defaultValue={application.summary ?? ""}
-              placeholder="One-paragraph synopsis for the lab — partners don't see this. The full SOW lives below."
+              placeholder="One-paragraph synopsis for the lab. Partners don't see this. The full SOW lives below."
               className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
             />
           ) : (

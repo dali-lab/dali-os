@@ -130,6 +130,18 @@ export default [
     route("core/communications/email/:id", "admin/routes/admin.email.legacy-redirect.ts", { id: "legacy-email-core-id" }),
     route("core/communications/email-senders", "core/routes/core.communications.email-senders.tsx"),
 
+    // Partner CRM — the internal partner pipeline (board, directory, org and
+    // application records), Core-only. The external portal at /partner/*
+    // (singular) is a separate surface and does not move.
+    route("core/partners", "partners/routes/core.partners.tsx"),
+    route("core/partners/directory", "partners/routes/core.partners.directory.tsx"),
+    route("core/partners/reports", "partners/routes/core.partners.reports.tsx"),
+    route("core/partners/settings", "partners/routes/core.partners.settings.tsx"),
+    // Literal segments above the param routes (repo route-ordering convention).
+    route("core/partners/applications/:id", "partners/routes/core.partners.applications.$id.tsx"),
+    route("core/partners/orgs/:orgId", "partners/routes/core.partners.orgs.$orgId.tsx"),
+    route("core/partners/contacts/:contactId", "partners/routes/core.partners.contacts.$contactId.tsx"),
+
     // Projects. The bare /projects route is the area hub (the project list).
     route("projects", "projects/routes/projects.hub.tsx"),
     route("projects/staffing", "projects/routes/projects.staffing.tsx"),
@@ -200,12 +212,15 @@ export default [
     route("members/groups", "members/routes/members.groups.tsx"),
     route("members/:id", "members/routes/members.$id.tsx"),
 
-    // Partners
-    route("partners", "partners/routes/partners.tsx"),
-    route("partners/applications", "partners/routes/partners.applications.tsx"),
-    route("partners/applications/:id", "partners/routes/partners.applications.$id.tsx"),
+    // Partners — legacy pre-regroup paths. The internal surface moved to
+    // /core/partners (Partner CRM, see the core block above); these redirect,
+    // preserving sub-path and query string. The external portal at /partner/*
+    // (singular) is untouched.
+    route("partners", "partners/routes/partners.legacy-redirect.ts", { id: "legacy-partners-hub" }),
+    route("partners/applications", "partners/routes/partners.legacy-redirect.ts", { id: "legacy-partners-applications" }),
+    route("partners/applications/:id", "partners/routes/partners.legacy-redirect.ts", { id: "legacy-partners-application-id" }),
     // Literal segments above the param route (repo route-ordering convention).
-    route("partners/:orgId", "partners/routes/partners.$orgId.tsx"),
+    route("partners/:orgId", "partners/routes/partners.legacy-redirect.ts", { id: "legacy-partners-org-id" }),
 
     // Education. Literal "manage" segments must precede the :offeringId param
     // so /education/manage/* isn't captured as an offering id.
@@ -313,9 +328,14 @@ export default [
     route("partner", "partners/routes/partner.home.tsx"),
     route("partner/apply", "partners/routes/partner.apply.tsx"),
     route("partner/applications/:id", "partners/routes/partner.applications.$id.tsx"),
+    route(
+      "partner/applications/:id/sign-contract",
+      "partners/routes/partner.applications.$id.sign-contract.tsx",
+    ),
     route("partner/settings", "partners/routes/partner.settings.tsx"),
     route("partner/projects/:id", "partners/routes/partner.projects.$id.tsx"),
     route("partner/projects/:id/pages/:pageId", "partners/routes/partner.projects.$id.pages.$pageId.tsx"),
+    route("partner/survey/:projectPartnerId", "partners/routes/partner.survey.$projectPartnerId.tsx"),
   ]),
 
   // Partner auth (no layout).
@@ -520,6 +540,7 @@ export default [
   route("api/wallet/apple/v1/log", "wallet/routes/api.wallet.apple.v1.log.ts"),
   route("api/calendar/group-availability", "calendar/routes/api.calendar.group-availability.ts"),
   route("api/calendar/search", "calendar/routes/api.calendar.search.ts"),
+  route("api/scheduling-data", "calendar/routes/api.scheduling-data.ts"),
   route("api/timetable/courses", "calendar/routes/api.timetable.courses.ts"),
   // JobX browser extension export — see jobx-extension/README.md.
   route("api/timesheets/export", "routes/api.timesheets.export.ts"),
@@ -667,9 +688,33 @@ export default [
   route("admin/payroll.csv", "admin/routes/admin.payroll.csv.ts"),
 
   // Partner application status (board drag-and-drop) + domain scope
+  // JSON create path for the board modal's create mode (see the form-based
+  // create intent on core.partners.tsx for the list view's twin).
+  route("api/partner-applications", "partners/routes/api.partner-applications.ts"),
+  route("api/partner-applications/:id/move", "partners/routes/api.partner-applications.$id.move.ts"),
   route("api/partner-applications/:id/status", "partners/routes/api.partner-applications.$id.status.ts"),
   route("api/partner-applications/:id/domains", "partners/routes/api.partner-applications.$id.domains.ts"),
+  // PartnerApplicationModal's data load (GET).
+  route("api/partner-applications/:id", "partners/routes/api.partner-applications.$id.ts"),
   route("api/partner-application-domains/:id", "partners/routes/api.partner-application-domains.$id.ts"),
+  route(
+    "api/partner-contacts/:id/email-thread/:indexId",
+    "partners/routes/api.partner-contacts.$id.email-thread.$indexId.ts",
+  ),
+  // Scheduling: Core links a real ScheduledMeeting to an application, and
+  // responds to a partner's self-service meeting request.
+  route(
+    "api/partner-applications/:id/meetings/link",
+    "partners/routes/api.partner-applications.$id.meetings.link.ts",
+  ),
+  route(
+    "api/partner-meeting-requests/:id",
+    "partners/routes/api.partner-meeting-requests.$id.ts",
+  ),
+  // Scheduling: the partner portal's real-availability grid + request submit.
+  route("api/partner/availability", "partners/routes/api.partner.availability.ts"),
+  route("api/partner/meeting-requests", "partners/routes/api.partner.meeting-requests.ts"),
+  route("api/partner-directory.csv", "partners/routes/api.partner-directory.csv.ts"),
 
 
   // Hiring API — cycles, scheduling, applications, reviews, decisions, interviews, delibs

@@ -920,6 +920,17 @@ select:not(:disabled) {
   --os-story-title:      #6fded9;
   --os-task-title:       #f2b94e;
 
+  /* Partner applications are a fourth badge in the same family, but not a
+     fourth record level (no timeline bar, no title-on-card use) — so this
+     gets only the fill/ink pair the badge itself draws from, derived from the
+     brand's own coral accent rather than a new hue: the dark base is the
+     brand coral at the other levels' alpha, and the hover step is the
+     brand's own "soft coral" (`--color-accent-coral-light`) at the same
+     alpha bump. */
+  --os-partner-fill:       rgba(255, 139, 129, 0.8);
+  --os-partner-fill-hover: rgba(255, 169, 145, 0.95);
+  --os-partner-ink:        #2a0c08;
+
   /* A sprint is not a fourth record level, but its chip sits in the same
      modal as the epic and task badges and has to read as their sibling. It
      used to take `--color-os-accent` flat, which is a *ground* colour: on
@@ -1130,6 +1141,12 @@ html.light,
   --os-epic-title:       #5a3fb8;
   --os-story-title:      #04716f;
   --os-task-title:       #8a5a06;
+  /* Light takes the brand's own lighter coral (`--color-accent-coral-light`)
+     as the fill, its hover a touch lighter still, and a deep coral-red ink —
+     the same recipe the three levels above use. */
+  --os-partner-fill:       #ffa991;
+  --os-partner-fill-hover: #ffbfae;
+  --os-partner-ink:        #5c0f08;
   --os-sprint-fill:      #7ccbdc;
   --os-sprint-ink:       #06333d;
 
@@ -1329,6 +1346,10 @@ html.os-shell > body::-webkit-scrollbar-track {
 .os-type-badge--task {
   background: var(--os-task-fill);
   color: var(--os-task-ink);
+}
+.os-type-badge--partner {
+  background: var(--os-partner-fill);
+  color: var(--os-partner-ink);
 }
 
 /* A 32px square icon button — the modal's close and edit affordances. */

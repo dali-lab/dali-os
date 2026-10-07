@@ -59,7 +59,7 @@ test.describe('internal Organizations pages (Core)', () => {
   // ?embed=1 renders member routes standalone instead of inside the
   // TabWorkspace iframe shell (see kanban-drag.spec.ts).
   test('lists partner orgs with counts', async ({ page }) => {
-    await page.goto('/partners?embed=1');
+    await page.goto('/core/partners/directory?embed=1');
     await expect(
       page.getByRole('heading', { name: 'Partners' }),
     ).toBeVisible();
@@ -67,14 +67,17 @@ test.describe('internal Organizations pages (Core)', () => {
   });
 
   test('org detail shows members, pending invites, and projects', async ({ page }) => {
-    await page.goto('/partners/partner-tuck-school?embed=1');
+    // The org page opens on its Timeline tab; members, invites and projects
+    // live on their own tabs, reached by URL (clicking races hydration).
+    await page.goto('/core/partners/orgs/partner-tuck-school?tab=contacts&embed=1');
     await expect(
       page.getByRole('heading', { name: 'Tuck School of Business' }),
     ).toBeVisible();
-    // The seed marks Pat as primary contact, so the name appears in both the
-    // member row and the primary-contact line — assert presence, not oneness.
+    // The seed marks Pat as primary contact, so the name can appear more than
+    // once on the tab. Assert presence, not oneness.
     await expect(page.getByText('Pat Tuck').first()).toBeVisible();
     await expect(page.getByText('invitee.tuck@example.com')).toBeVisible();
+    await page.goto('/core/partners/orgs/partner-tuck-school?tab=projects&embed=1');
     await expect(page.getByText('Tuck Alumni Connect')).toBeVisible();
   });
 
@@ -114,14 +117,24 @@ test.describe('internal Organizations pages (Core)', () => {
       // clicking the dialog's action button.
 
       // Move: Tuck → Hood.
-      await page.goto('/partners/partner-tuck-school?embed=1');
+      await page.goto('/core/partners/orgs/partner-tuck-school?tab=contacts&embed=1');
+      // The first Core org page of a run can take a while to compile on the
+      // dev server; wait for the row itself rather than racing it.
+      await expect(page.getByText('Movey Tester')).toBeVisible({ timeout: 20_000 });
       const row = page.locator('li', { hasText: 'Movey Tester' });
-      await row.getByRole('button', { name: 'Move', exact: true }).click();
-      await row.locator('select[name="targetOrgId"]').selectOption({ label: 'Hood Museum of Art' });
+      // Move is a client-side toggle; a click that lands before hydration is
+      // lost, so retry until the move form (its Select trigger) shows up.
+      await expect(async () => {
+        await row.getByRole('button', { name: 'Move', exact: true }).first().click();
+        await expect(row.getByRole('combobox').last()).toBeVisible({ timeout: 1_500 });
+      }).toPass({ timeout: 15_000 });
+      // Shared Select: open the combobox trigger, then pick from the listbox.
+      await row.getByRole('combobox').last().click();
+      await page.getByRole('option', { name: 'Hood Museum of Art' }).click();
       await row.getByRole('button', { name: 'Move', exact: true }).last().click();
       await page.getByRole('dialog').getByRole('button', { name: 'Move', exact: true }).click();
       await expect(page.getByText('Movey Tester')).not.toBeVisible();
-      await page.goto('/partners/partner-hood-museum?embed=1');
+      await page.goto('/core/partners/orgs/partner-hood-museum?tab=contacts&embed=1');
       await expect(page.getByText('Movey Tester')).toBeVisible();
 
       // Remove from Hood.
@@ -133,7 +146,7 @@ test.describe('internal Organizations pages (Core)', () => {
       await expect(page.getByText('Movey Tester')).not.toBeVisible();
 
       // Delete the empty org — lands back on the org list without it.
-      await page.goto(`/partners/${emptyOrgId}?embed=1`);
+      await page.goto(`/core/partners/orgs/${emptyOrgId}?tab=settings&embed=1`);
       await page.getByRole('button', { name: 'Delete organization' }).click();
       await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click();
       await expect(
@@ -303,6 +316,24 @@ test.describe('partner portal', () => {
     ).toBeVisible();
   });
 
+  test('application page resolves for Pat Tuck and shows the four-node track', async ({ page }) => {
+    // The seed now points papp-tuck-mentor at Pat Tuck's real portal contact
+    // (not a throwaway seed-only one), so the applicant-scoped loader finds it.
+    const res = await page.goto('/partner/applications/papp-tuck-mentor');
+    expect(res?.status()).toBe(200);
+    await expect(
+      page.getByRole('heading', { name: 'Alumni mentorship matching' }),
+    ).toBeVisible();
+    // Four-node track: Submitted / Interview / Decision / Project. Tuck's
+    // application is Accepted but not yet promoted, so the Decision node
+    // reads as the resolved stage label rather than the generic "Decision".
+    const track = page.locator('ol');
+    await expect(track.getByText('Submitted', { exact: true })).toBeVisible();
+    await expect(track.getByText('Interview', { exact: true })).toBeVisible();
+    await expect(track.getByText('Accepted', { exact: true })).toBeVisible();
+    await expect(track.getByText('Project', { exact: true })).toBeVisible();
+  });
+
   test('unshared pages and other orgs’ projects 404', async ({ page }) => {
     const internalPageId = await getPageId('Internal Retro Notes');
     const unshared = await page.goto(
@@ -314,6 +345,30 @@ test.describe('partner portal', () => {
     await page.goto('/dev-login-as?personalEmail=partner.hood%40example.com');
     const crossOrg = await page.goto('/partner/projects/project-tuck-alumni');
     expect(crossOrg?.status()).toBe(404);
+  });
+});
+
+test.describe('partner portal request-a-meeting (Hood)', () => {
+  test.beforeEach(async ({ loginAs }) => {
+    await loginAs({ personalEmail: 'partner.hood@example.com' });
+  });
+
+  test('an open application shows the Request a meeting button and the full track', async ({ page }) => {
+    // papp-hood-kiosk is seeded in Interview stage, owned by Harper Hood's
+    // real portal contact — canRequestMeeting is true for New/Interview.
+    await page.goto('/partner/applications/papp-hood-kiosk');
+    await expect(
+      page.getByRole('heading', { name: 'Interactive gallery kiosk' }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Request a meeting' }),
+    ).toBeVisible();
+
+    const track = page.locator('ol');
+    await expect(track.getByText('Submitted', { exact: true })).toBeVisible();
+    await expect(track.getByText('Interview', { exact: true })).toBeVisible();
+    await expect(track.getByText('Decision', { exact: true })).toBeVisible();
+    await expect(track.getByText('Project', { exact: true })).toBeVisible();
   });
 });
 

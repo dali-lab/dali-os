@@ -9,6 +9,7 @@ export type SearchResultType =
   | "project"
   | "education"
   | "partner"
+  | "partnerContact"
   | "document"
   | "application"
   | "form"
@@ -77,7 +78,8 @@ export const buildUrl: Record<SearchResultType, (id: string) => string> = {
   group: () => `/members/groups`,
   project: (id) => `/projects/${id}`,
   education: (id) => `/education/${id}`,
-  partner: (id) => `/partners/${id}`,
+  partner: (id) => `/core/partners/orgs/${id}`,
+  partnerContact: (id) => `/core/partners/contacts/${id}`,
   document: (id) => `/documents/${id}`,
   application: (id) => `/hiring/applications/${id}`,
   form: (id) => `/forms/edit/${id}`,
@@ -85,7 +87,7 @@ export const buildUrl: Record<SearchResultType, (id: string) => string> = {
   rubric: (id) => `/hiring/rubrics/${id}`,
   // /hiring/emails/:id just redirects here — link straight to the canonical page.
   confidentialityAgreement: (id) => `/hiring/confidentiality-agreements/${id}`,
-  partnerApplication: (id) => `/partners/applications/${id}`,
+  partnerApplication: (id) => `/core/partners/applications/${id}`,
   cycle: (id) => `/hiring/lead/cycle/${id}`,
   // Guides open as a ?doc=1 overlay on their host route (see GUIDE_PAGES); the
   // id is the pageKey. Unknown keys fall back home rather than to a dead URL.

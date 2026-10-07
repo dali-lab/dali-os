@@ -3,13 +3,13 @@
 
 import { prisma } from "~/lib/db";
 import { canViewStaffing } from "~/lib/roles";
-import { OPEN_APPLICATION_STATUSES } from "~/partners/lib/partner-application";
+import { partnerRelationshipStatus } from "~/partners/lib/partner-org";
 import { McpForbiddenError } from "../../registry";
 
 export const LIST_PARTNER_ORGS_TOOL = {
   name: "list_partner_orgs",
   description:
-    "List all partner organizations with summary counts (active members, active projects), plus a lab-wide openInquiryCount (open applications are not org-scoped until promotion). Requires staffing-view access.",
+    "List all partner organizations with summary counts (active members, active projects), type, and derived relationship status (Active/Past/Prospect/Dormant), plus a lab-wide openInquiryCount (open applications are not org-scoped until promotion). Requires staffing-view access.",
   inputSchema: {
     type: "object" as const,
     properties: {},
@@ -36,6 +36,7 @@ export async function runListPartnerOrgs(
         name: true,
         website: true,
         isIndividual: true,
+        type: true,
         // Active members only; account-first `memberships`, not the retired
         // `users`/PartnerUser relation (which no longer gets rows).
         memberships: { where: { endedAt: null }, select: { id: true } },
@@ -46,12 +47,18 @@ export async function runListPartnerOrgs(
             project: { select: { status: true } },
           },
         },
+        activities: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: { createdAt: true },
+        },
       },
     }),
     // Open inquiries are org-independent until promotion, so this is a single
-    // lab-wide number rather than a (dead) per-org count.
+    // lab-wide number rather than a (dead) per-org count. New = not yet
+    // through the interview stage.
     prisma.partnerApplication.count({
-      where: { status: { in: OPEN_APPLICATION_STATUSES } },
+      where: { stage: "New" },
     }),
   ]);
 
@@ -61,6 +68,12 @@ export async function runListPartnerOrgs(
       name: o.name,
       website: o.website,
       isIndividual: o.isIndividual,
+      type: o.type,
+      status: partnerRelationshipStatus({
+        projectLinks: o.projects.map((p) => ({ endedAt: p.endedAt })),
+        lastActivityAt: o.activities?.[0]?.createdAt ?? null,
+        now,
+      }),
       memberCount: o.memberships.length,
       activeProjectCount: o.projects.filter(
         (p) =>

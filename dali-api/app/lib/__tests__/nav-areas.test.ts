@@ -293,12 +293,17 @@ describe("areaForPath", () => {
   });
 
   it("keeps borrowed sub-tabs inside Projects", () => {
-    // /members, /partners and /mentorship are Projects sub-tabs but sit outside
-    // its hubPath, so prefix matching alone would strand them.
+    // /members and /mentorship are Projects sub-tabs but sit outside its
+    // hubPath, so prefix matching alone would strand them.
     expect(areaForPath("/members", REGROUP)?.key).toBe("projects");
     expect(areaForPath("/members/abc", REGROUP)?.key).toBe("projects");
-    expect(areaForPath("/partners/applications", REGROUP)?.key).toBe("projects");
     expect(areaForPath("/mentorship/browse", REGROUP)?.key).toBe("projects");
+  });
+
+  it("Partner CRM is a Core sub-tab, not a Projects one", () => {
+    expect(areaForPath("/core/partners", REGROUP)?.key).toBe("core");
+    expect(areaForPath("/core/partners/directory", REGROUP)?.key).toBe("core");
+    expect(areaForPath("/core/partners/orgs/abc", REGROUP)?.key).toBe("core");
   });
 
   it("still resolves pre-regroup URLs to an area (they redirect at the route layer)", () => {

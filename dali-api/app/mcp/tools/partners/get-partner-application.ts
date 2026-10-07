@@ -2,11 +2,15 @@
 // Scope: mcp:read. Gated to canViewStaffing (Core / Domain Lead).
 //
 // Mirrors the partners.applications.$id.tsx loader: returns evalRubric,
-// interviewRating, ambiguityRating, fundingModel, decisionReason, meetings[],
-// source, and assignedMeeterId in addition to the base fields.
+// interviewRating, ambiguityRating, deal terms (fundingType, feeCents,
+// legalEntityName, legalEntityAddress, paymentSchedule, sowState),
+// rejectReason, decisionReason, nextStep/nextStepDueAt, holdUntil,
+// meetingRequestedAt, meetings[], and source in addition to the base fields.
+// No ownership in this model — there is no assigned meeter.
 
 import { prisma } from "~/lib/db";
 import { canViewStaffing } from "~/lib/roles";
+import { partnerContractStatus } from "~/partners/lib/partner-contract.server";
 import { McpForbiddenError, McpNotFoundError } from "../../registry";
 
 export const GET_PARTNER_APPLICATION_TOOL = {
@@ -14,8 +18,10 @@ export const GET_PARTNER_APPLICATION_TOOL = {
   description:
     "Get full details for a partner application. Returns applicant contact, partner org (if promoted), " +
     "target terms, domain scope, eval rubric (8 criteria + interviewRating + notes), acceptance fields " +
-    "(ambiguityRating, fundingModel, decisionReason), assigned meeter, source, meetings list, and " +
-    "whether a form submission is attached. Requires staffing-view access (Core or Domain Lead).",
+    "(ambiguityRating, decisionReason, rejectReason), deal terms (fundingType, feeCents, legalEntityName, " +
+    "legalEntityAddress, paymentSchedule, sowState), contract status (state: NotSent|Sent|Signed, bindingId, " +
+    "signedAt), next step, source, meetings list, and whether a form submission is attached. Requires " +
+    "staffing-view access (Core or Domain Lead).",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -40,17 +46,26 @@ export async function runGetPartnerApplication(
     select: {
       id: true,
       title: true,
-      status: true,
+      stage: true,
       summary: true,
       sowDocId: true,
       resultingProjectId: true,
       source: true,
-      assignedMeeterId: true,
       evalRubric: true,
       interviewRating: true,
       ambiguityRating: true,
-      fundingModel: true,
       decisionReason: true,
+      rejectReason: true,
+      nextStep: true,
+      nextStepDueAt: true,
+      holdUntil: true,
+      meetingRequestedAt: true,
+      fundingType: true,
+      feeCents: true,
+      legalEntityName: true,
+      legalEntityAddress: true,
+      paymentSchedule: true,
+      sowState: true,
       partnerOrg: { select: { id: true, name: true } },
       applicantContact: { select: { id: true, name: true, email: true } },
       targetTerms: {
@@ -85,20 +100,32 @@ export async function runGetPartnerApplication(
     throw new McpNotFoundError(`Partner application ${input.applicationId} not found`);
   }
 
+  const contract = await partnerContractStatus(input.applicationId);
+
   return {
+    contract,
     id: application.id,
     title: application.title,
-    status: application.status,
+    stage: application.stage,
     summary: application.summary,
     source: application.source,
     sowDocId: application.sowDocId,
     resultingProjectId: application.resultingProjectId,
-    assignedMeeterId: application.assignedMeeterId,
     evalRubric: application.evalRubric ?? null,
     interviewRating: application.interviewRating ?? null,
     ambiguityRating: application.ambiguityRating ?? null,
-    fundingModel: application.fundingModel ?? null,
     decisionReason: application.decisionReason ?? null,
+    rejectReason: application.rejectReason ?? null,
+    nextStep: application.nextStep ?? null,
+    nextStepDueAt: application.nextStepDueAt ?? null,
+    holdUntil: application.holdUntil ?? null,
+    meetingRequestedAt: application.meetingRequestedAt ?? null,
+    fundingType: application.fundingType ?? null,
+    feeCents: application.feeCents ?? null,
+    legalEntityName: application.legalEntityName ?? null,
+    legalEntityAddress: application.legalEntityAddress ?? null,
+    paymentSchedule: application.paymentSchedule ?? null,
+    sowState: application.sowState,
     applicantContact: application.applicantContact
       ? {
           id: application.applicantContact.id,

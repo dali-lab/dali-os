@@ -81,7 +81,7 @@ const SECTIONS: Array<{
   },
   {
     title: "Partners",
-    to: "/partners",
+    to: "/core/partners",
     body: (
       <>
         Outside organizations DALI works with — current partners and partner

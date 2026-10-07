@@ -101,6 +101,12 @@ export function SigningDocumentsPage() {
               buttonClassName="px-3 py-2 border border-border rounded-md inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
             />
           </label>
+          <label className="flex items-center gap-2 text-sm sm:col-span-2">
+            <input type="checkbox" name="kind" value="PartnerContract" className="h-4 w-4" />
+            <span className="font-medium text-foreground/80">
+              Partner contract template — offer this in the Partner CRM's "send contract" picker
+            </span>
+          </label>
           <div className="sm:col-span-2 flex justify-end gap-2">
             <button
               type="button"
