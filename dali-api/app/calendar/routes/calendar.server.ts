@@ -1597,8 +1597,18 @@ export async function loadCalendarData(
     ),
     getUserRoles(userId, request),
     prisma.timeEntry.findMany(timeEntryQuery),
-    // Current+upcoming term ids for the class modal's term selector.
-    resolveTermFilter(request, { default: "upcoming" }),
+    // Current+upcoming term ids for the class modal's term selector, and the
+    // member's classes in those terms.
+    resolveTermFilter(request, { default: "upcoming" }).then(async (tf) => {
+      const termIds = tf.termIds ?? [];
+      const classRows = termIds.length
+        ? await prisma.memberClass.findMany({
+            where: { userId, termId: { in: termIds } },
+            orderBy: { createdAt: "asc" },
+          })
+        : [];
+      return { ...tf, termIds, classRows };
+    }),
   ]);
 
   // Derived from the calendar lists already fetched above — no extra Google
@@ -1652,17 +1662,13 @@ export async function loadCalendarData(
   // Classes: load all current+upcoming terms for the modal picker.
   let memberClasses: MemberClassDTO[] = [];
   let classDestinations: ClassDestinationDTO[] = [];
-  const selectableTermIds = termFilter.termIds ?? [];
+  const selectableTermIds = termFilter.termIds;
   const classTerms = termFilter.terms
     .filter((t) => selectableTermIds.includes(t.id))
     .map((t) => ({ id: t.id, code: t.code }));
 
   if (selectableTermIds.length > 0) {
-    const classRows = await prisma.memberClass.findMany({
-      where: { userId, termId: { in: selectableTermIds } },
-      orderBy: { createdAt: "asc" },
-    });
-    memberClasses = classRows.map((r) => toMemberClassDTO(r, calendarLinks));
+    memberClasses = termFilter.classRows.map((r) => toMemberClassDTO(r, calendarLinks));
     classDestinations = buildClassDestinations(calendarLinks);
   }
 
