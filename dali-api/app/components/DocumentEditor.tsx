@@ -34,6 +34,7 @@ import {
   DEFAULT_TYPOGRAPHY,
   type PageTypography,
 } from "~/lib/page-typography";
+import { OS_SURFACE_CLASS } from "~/components/ui/floating/styles";
 
 // Reusable, abstract document surface: a Notion-style large title, a
 // collaborative rich-text body, lab tags, doc-level comments, and PDF/Word
@@ -737,7 +738,7 @@ export function DocumentEditor({
       {/* Paper card — shrinks to make room for the rail when wide */}
       <div
         ref={paperCardRef}
-        className={`doc-canvas rounded-xl border border-border bg-card shadow-brand-1 ${
+        className={`doc-canvas rounded-xl border border-border bg-card ${
           railVisible
             ? "flex-1 min-w-0"
             : typo.fullWidth
@@ -871,7 +872,7 @@ export function DocumentEditor({
                   {backlinks.length} backlink{backlinks.length === 1 ? "" : "s"}
                 </button>
                 {backlinksOpen && (
-                  <div className="absolute left-0 top-full z-30 mt-1 w-64 rounded-md border border-border bg-card p-1 shadow-brand-2 text-sm">
+                  <div className={cn("absolute left-0 top-full z-30 mt-1 w-64 p-1 text-sm", OS_SURFACE_CLASS)}>
                     {backlinks.map((bl) => (
                       <a
                         key={bl.id}

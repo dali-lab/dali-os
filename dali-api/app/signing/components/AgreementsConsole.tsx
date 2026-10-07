@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Link, useFetcher, useLoaderData } from "react-router";
 import { TermFilter } from "~/components/TermFilter";
 import { IssueTermAgreementsButton } from "~/signing/components/IssueTermAgreementsButton";
+import { Button } from "~/components/ui/Button";
 import {
   FileSignature,
   Zap,
@@ -311,13 +312,9 @@ function NeedsAttentionCard({
                   content="Activates this version: sends a sign request to everyone in the agreement's audience and starts tracking completion."
                   variant="rich"
                 >
-                  <button
-                    type="submit"
-                    disabled={activating}
-                    className="inline-flex items-center gap-1 rounded-md bg-accent-coral px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-coral/90 disabled:opacity-50"
-                  >
+                  <Button type="submit" size="sm" disabled={activating}>
                     <Zap className="w-3.5 h-3.5" /> {activating ? "Activating…" : "Put in force"}
-                  </button>
+                  </Button>
                 </Tooltip>
               </fetcher.Form>
             ) : (

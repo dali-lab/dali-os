@@ -12,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { getZonedHourFraction } from "~/lib/timezone";
+import { OS_SURFACE_CLASS } from "~/components/ui/floating/styles";
 
 // The shared week grid: seven day columns over a fixed 9am–9pm window, a live
 // now-line, prev/next paging driven by the caller's own href, and a detail
@@ -131,7 +132,7 @@ export function WeekCalendarPanel({
   }, [selected]);
 
   return (
-    <section className="bg-card border border-border shadow-brand-1 rounded-lg p-4 flex flex-col overflow-visible">
+    <section className="bg-card border border-border rounded-os-card p-4 flex flex-col overflow-visible">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
         <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
           <CalendarDays className="w-4 h-4 text-accent-coral" />
@@ -318,7 +319,7 @@ function EventDetailPanel({
     <div
       role="dialog"
       aria-label={event.label}
-      className={`absolute z-30 w-64 rounded-lg border border-border bg-card p-3 shadow-brand-2 ${
+      className={`absolute z-30 w-64 p-3 ${OS_SURFACE_CLASS} ${
         flipLeft ? "right-full mr-1.5" : "left-full ml-1.5"
       }`}
       style={{ top: panelTop }}

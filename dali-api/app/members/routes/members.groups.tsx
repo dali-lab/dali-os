@@ -36,6 +36,7 @@ import {
   groupKind,
   isEmptyAutoGroup,
 } from "~/lib/group-kind";
+import { modalCardClass } from "~/components/os-chrome";
 
 export const meta: Route.MetaFunction = () => [{ title: "Groups · Members · DALI OS" }];
 
@@ -407,7 +408,7 @@ export default function AdminConsoleGroups() {
         open={creating}
         onClose={() => setCreating(false)}
         labelledBy="create-group-title"
-        containerClassName="bg-card rounded-2xl shadow-brand-2 max-w-lg w-full p-5 sm:p-6 my-auto"
+        containerClassName={modalCardClass("max-w-lg")}
       >
         <CreateGroupForm
           members={members}

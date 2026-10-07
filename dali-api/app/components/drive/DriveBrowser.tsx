@@ -80,6 +80,7 @@ import { ShareDialog } from "~/components/sharing/ShareDialog";
 import { relativeTime } from "~/lib/relative-time";
 import { cn } from "~/lib/cn";
 import { ProcessLinkPill } from "~/components/drive/ProcessLinkPill";
+import { buttonClasses } from "~/components/ui/Button";
 
 /* Drive's type scale. It was written a step below the rest of the app — rows at
    text-sm, metadata at text-xs, column headers at 11px — which reads as a
@@ -1869,7 +1870,7 @@ function DriveBulkBar({
     <div
       // Pinned to the bottom of the listing it belongs to, clear of the rows
       // it acts on. Its own surface and shadow, since it sits over content.
-      className="absolute inset-x-3 bottom-3 z-20 flex min-h-9 items-center gap-2 rounded-md border border-os-accent/40 bg-os-accent/10 px-3 text-base shadow-brand-2"
+      className="absolute inset-x-3 bottom-3 z-20 flex min-h-9 items-center gap-2 rounded-os-item border border-os-accent/40 bg-os-accent/10 px-3 text-base shadow-[0_16px_40px_var(--color-os-shadow)]"
       data-testid="drive-bulk-bar"
       onClick={(e) => e.stopPropagation()}
     >
@@ -2112,7 +2113,7 @@ function DriveQuickPreview({ item, onClose }: { item: DriveItem; onClose: () => 
               {item.href && (
                 <a
                   href={item.href}
-                  className="inline-flex items-center gap-1.5 rounded-md bg-accent-coral px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-coral/90"
+                  className={buttonClasses("primary", "sm")}
                 >
                   <FolderOpen className="h-3.5 w-3.5" /> Open
                 </a>
