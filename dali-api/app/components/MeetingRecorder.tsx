@@ -12,6 +12,7 @@ import {
   SOURCE_LABEL,
   formatClock,
   meetingNotesMarkdown,
+  transcriptParagraphs,
   transcriptText,
   type TranscriptLine,
 } from "~/lib/meeting-transcript";
@@ -74,8 +75,9 @@ export function MeetingRecorder({
 }: {
   /** The collab room the notes land in. */
   documentName: string;
-  /** Appends Markdown to the document. False when the editor isn't ready. */
-  onInsert: (markdown: string) => boolean;
+  /** Appends the notes Markdown, then the transcript lines under a collapsed
+   *  toggle heading. False when the editor isn't ready. */
+  onInsert: (markdown: string, transcript: string[]) => boolean;
 }) {
   const { actionBtnPrimary, actionIcon } = useOsChrome();
   const [phase, setPhase] = useState<Phase>("idle");
@@ -356,7 +358,7 @@ export function MeetingRecorder({
   }
 
   function insert(notes: string | null) {
-    if (!onInsert(meetingNotesMarkdown(notes, lines))) {
+    if (!onInsert(meetingNotesMarkdown(notes), transcriptParagraphs(lines))) {
       setError("The note is still loading. Try again in a moment.");
       return false;
     }

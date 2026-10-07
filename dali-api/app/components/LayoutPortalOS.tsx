@@ -111,10 +111,10 @@ export function LayoutPortalOS({ user, photoUrl, fitViewport = false, impersonat
 
   const avatar = (size: string) =>
     photoUrl ? (
-      <img src={photoUrl} alt="" className={`${size} rounded-full object-cover`} />
+      <img src={photoUrl} alt="" className={`${size} shrink-0 rounded-full object-cover`} />
     ) : (
       <span
-        className={`${size} flex items-center justify-center rounded-full bg-os-container text-[10px] font-bold text-foreground`}
+        className={`${size} flex shrink-0 items-center justify-center rounded-full bg-os-container text-[10px] font-bold text-foreground`}
       >
         {initials}
       </span>
@@ -229,8 +229,8 @@ export function LayoutPortalOS({ user, photoUrl, fitViewport = false, impersonat
             // menu behind it is the only route to settings and logging out.
             aria-label={`${user.firstName ?? user.email} — account menu`}
             className={cn(
-              'flex w-full items-center gap-3 rounded-os-item px-3 py-2 transition-colors hover:bg-os-hover',
-              collapsed && 'justify-center px-0',
+              'flex w-full items-center gap-3 rounded-os-item py-2 transition-colors hover:bg-os-hover',
+              collapsed ? 'justify-center px-0' : 'px-3',
             )}
           >
             {avatar('h-6 w-6')}
