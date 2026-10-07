@@ -16,6 +16,7 @@ import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { resolveLoginIdentifier } from "~/lib/user-email.server";
 import { auth } from "~/lib/betterauth.server";
 import AuthShell from "~/components/auth/AuthShell";
+import { buttonClasses } from "~/components/ui/Button";
 
 const OAUTH_STATE_COOKIE = "__dali_oauth_state";
 
@@ -306,22 +307,22 @@ function LoginBetterAuth({ next, actionData }: {
     return (
       <div className="flex flex-col gap-4">
         {actionError && (
-          <p className="text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3">{actionError}</p>
+          <p className="text-sm text-destructive bg-destructive/10 rounded-lg px-4 py-3">{actionError}</p>
         )}
         {/* Anti-enumeration: we never confirm whether the account exists, so the
             copy is conditional — a real account gets a code, an unknown or
             mistyped address gets nothing but sees the same screen. Honest
             phrasing keeps the no-account case from waiting on a code that will
             never arrive. */}
-        <div className="rounded-2xl bg-brand-tint p-4">
-          <p className="text-sm text-muted-foreground">
+        <div className="rounded-os-item bg-os-well p-4">
+          <p className="text-sm text-os-grey">
             If there's a DALI OS account for{" "}
-            <span className="font-medium text-dark-blue">{codeSent.email}</span>,
+            <span className="font-medium text-foreground">{codeSent.email}</span>,
             we've emailed a 6-digit code. Enter it below. Codes expire in{" "}
             {humanDuration(EMAIL_OTP_TTL_SECONDS)}.
           </p>
         </div>
-        <Form method="post" className="flex flex-col gap-3">
+        <Form method="post" className="os-form flex flex-col gap-3">
           <input type="hidden" name="provider" value="verify-code" />
           <input type="hidden" name="identifier" value={codeSent.identifier} />
           <input type="hidden" name="displayEmail" value={codeSent.email} />
@@ -336,17 +337,17 @@ function LoginBetterAuth({ next, actionData }: {
             required
             autoFocus
             placeholder="123456"
-            className="w-full rounded-xl border border-border bg-card px-4 py-3 text-center text-lg tracking-[0.4em] focus:outline-none focus:ring-2 focus:ring-accent-coral"
+            className="w-full text-center tracking-[0.4em]"
           />
           <button
             type="submit"
             disabled={submitting}
-            className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
+            className={buttonClasses("primary", "md", "w-full")}
           >
             {submitting ? "Verifying…" : "Verify code"}
           </button>
         </Form>
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <div className="flex items-center justify-between text-xs text-os-grey">
           <Form method="post">
             <input type="hidden" name="provider" value="email-code" />
             <input type="hidden" name="email" value={codeSent.email} />
@@ -361,7 +362,7 @@ function LoginBetterAuth({ next, actionData }: {
         </div>
         {/* Shown unconditionally (to real and no-account visitors alike), so it
             gives the no-account case a way forward without confirming existence. */}
-        <p className="text-center text-xs text-muted-foreground">
+        <p className="text-center text-xs text-os-grey">
           New to DALI OS?{" "}
           <Link
             to={next ? `/signup?next=${encodeURIComponent(next)}` : "/signup"}
@@ -377,7 +378,7 @@ function LoginBetterAuth({ next, actionData }: {
   return (
     <div className="flex flex-col gap-4">
       {(actionError || passkeyError) && (
-        <p className="text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3">
+        <p className="text-sm text-destructive bg-destructive/10 rounded-lg px-4 py-3">
           {actionError ?? passkeyError}
         </p>
       )}
@@ -385,7 +386,7 @@ function LoginBetterAuth({ next, actionData }: {
       {/* Primary path: enter your email, we send a 6-digit sign-in code. The
           `webauthn` autocomplete token lets a saved passkey surface in this
           field's autofill (the conditional-UI effect above). */}
-      <Form method="post" className="flex flex-col gap-3">
+      <Form method="post" className="os-form flex flex-col gap-3">
         <input type="hidden" name="provider" value="email-code" />
         {next && <input type="hidden" name="next" value={next} />}
         <input
@@ -395,12 +396,12 @@ function LoginBetterAuth({ next, actionData }: {
           autoFocus
           autoComplete="username webauthn"
           placeholder="you@email.com"
-          className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral"
+          className="w-full"
         />
         <button
           type="submit"
           disabled={submitting}
-          className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
+          className={buttonClasses("primary", "md", "w-full")}
         >
           {submitting ? "Sending…" : "Email me a 6-digit code"}
         </button>
@@ -408,9 +409,9 @@ function LoginBetterAuth({ next, actionData }: {
 
       {/* or divider */}
       <div className="flex items-center gap-3">
-        <span className="h-px flex-1 bg-border" />
-        <span className="text-xs text-muted-foreground">or</span>
-        <span className="h-px flex-1 bg-border" />
+        <span className="h-px flex-1 bg-os-container" />
+        <span className="text-xs text-os-grey">or</span>
+        <span className="h-px flex-1 bg-os-container" />
       </div>
 
       {/* Passkey — secondary. A discoverable credential needs no email, so a
@@ -419,13 +420,13 @@ function LoginBetterAuth({ next, actionData }: {
         type="button"
         onClick={() => void signInWithPasskey()}
         disabled={submitting || passkeyBusy}
-        className="w-full rounded-xl border border-border bg-card text-dark-blue font-heading font-semibold py-3 hover:border-accent-coral transition disabled:opacity-50"
+        className={buttonClasses("secondary", "md", "w-full")}
       >
         {passkeyBusy ? "Waiting for passkey…" : "Sign in with a passkey"}
       </button>
 
       {/* Crossover to signup */}
-      <p className="text-center text-sm text-muted-foreground mt-2">
+      <p className="text-center text-sm text-os-grey mt-2">
         New to DALI OS?{" "}
         <Link
           to={next ? `/signup?next=${encodeURIComponent(next)}` : "/signup"}
@@ -449,11 +450,11 @@ function LoginLegacy({ next }: { next: string | null }) {
         {next && <input type="hidden" name="next" value={next} />}
         <button
           type="submit"
-          className="w-full flex items-center gap-4 p-5 rounded-2xl border-2 border-transparent bg-brand-tint hover:border-accent-coral transition group text-left"
+          className="w-full flex items-center gap-4 p-5 rounded-os-item border border-os-container bg-os-well hover:border-os-accent transition-colors group text-left"
         >
-          <div className="w-10 h-10 rounded-full bg-accent-coral/10 flex items-center justify-center flex-shrink-0">
+          <div className="w-10 h-10 rounded-full bg-os-container flex items-center justify-center flex-shrink-0">
             <svg
-              className="w-5 h-5 text-accent-coral"
+              className="w-5 h-5 text-os-grey"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -467,15 +468,15 @@ function LoginLegacy({ next }: { next: string | null }) {
             </svg>
           </div>
           <div className="flex-1 min-w-0">
-            <span className="font-heading font-semibold text-dark-blue group-hover:text-accent-coral transition block">
+            <span className="font-heading font-semibold text-foreground group-hover:text-os-accent transition-colors block">
               DALI Member
             </span>
-            <span className="text-xs text-muted-foreground mt-0.5 block">
+            <span className="text-xs text-os-muted mt-0.5 block">
               Current lab members
             </span>
           </div>
           <svg
-            className="w-4 h-4 text-muted-foreground group-hover:text-accent-coral transition flex-shrink-0"
+            className="w-4 h-4 text-os-muted group-hover:text-os-accent transition-colors flex-shrink-0"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -496,11 +497,11 @@ function LoginLegacy({ next }: { next: string | null }) {
         {next && <input type="hidden" name="next" value={next} />}
         <button
           type="submit"
-          className="w-full flex items-center gap-4 p-5 rounded-2xl border-2 border-transparent bg-brand-tint hover:border-accent-coral transition group text-left"
+          className="w-full flex items-center gap-4 p-5 rounded-os-item border border-os-container bg-os-well hover:border-os-accent transition-colors group text-left"
         >
-          <div className="w-10 h-10 rounded-full bg-card flex items-center justify-center flex-shrink-0 shadow-sm">
+          <div className="w-10 h-10 rounded-full bg-os-container flex items-center justify-center flex-shrink-0">
             <svg
-              className="w-5 h-5 text-dark-blue"
+              className="w-5 h-5 text-os-grey"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -520,15 +521,15 @@ function LoginLegacy({ next }: { next: string | null }) {
             </svg>
           </div>
           <div className="flex-1 min-w-0">
-            <span className="font-heading font-semibold text-dark-blue group-hover:text-accent-coral transition block">
+            <span className="font-heading font-semibold text-foreground group-hover:text-os-accent transition-colors block">
               Dartmouth Student
             </span>
-            <span className="text-xs text-muted-foreground mt-0.5 block">
+            <span className="text-xs text-os-muted mt-0.5 block">
               Lab applications, workshops, and more
             </span>
           </div>
           <svg
-            className="w-4 h-4 text-muted-foreground group-hover:text-accent-coral transition flex-shrink-0"
+            className="w-4 h-4 text-os-muted group-hover:text-os-accent transition-colors flex-shrink-0"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -546,11 +547,11 @@ function LoginLegacy({ next }: { next: string | null }) {
       {/* Partner — magic-link auth on its own page, no OAuth */}
       <a
         href="/partner/login"
-        className="w-full flex items-center gap-4 p-5 rounded-2xl border-2 border-transparent bg-brand-tint hover:border-accent-coral transition group text-left"
+        className="w-full flex items-center gap-4 p-5 rounded-os-item border border-os-container bg-os-well hover:border-os-accent transition-colors group text-left"
       >
-        <div className="w-10 h-10 rounded-full bg-card flex items-center justify-center flex-shrink-0 shadow-sm">
+        <div className="w-10 h-10 rounded-full bg-os-container flex items-center justify-center flex-shrink-0">
           <svg
-            className="w-5 h-5 text-dark-blue"
+            className="w-5 h-5 text-os-grey"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -564,15 +565,15 @@ function LoginLegacy({ next }: { next: string | null }) {
           </svg>
         </div>
         <div className="flex-1 min-w-0">
-          <span className="font-heading font-semibold text-dark-blue group-hover:text-accent-coral transition block">
+          <span className="font-heading font-semibold text-foreground group-hover:text-os-accent transition-colors block">
             Partner
           </span>
-          <span className="text-xs text-muted-foreground mt-0.5 block">
+          <span className="text-xs text-os-muted mt-0.5 block">
             Working with the lab on a project
           </span>
         </div>
         <svg
-          className="w-4 h-4 text-muted-foreground group-hover:text-accent-coral transition flex-shrink-0"
+          className="w-4 h-4 text-os-muted group-hover:text-os-accent transition-colors flex-shrink-0"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
