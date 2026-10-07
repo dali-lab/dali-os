@@ -423,6 +423,23 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   useActionErrorToast(eventMoveFetcher.data as { error?: string } | undefined, {
     fallback: "Couldn't update the event. Please try again.",
   });
+  // Detail-popover delete gets its own fetcher so a success can be confirmed
+  // with a toast: the popover has already closed by the time the server answers.
+  const eventDeleteFetcher = useFetcher<{ error?: string } | null>();
+  const prevDeleteState = useRef(eventDeleteFetcher.state);
+  useEffect(() => {
+    if (
+      prevDeleteState.current !== "idle" &&
+      eventDeleteFetcher.state === "idle" &&
+      !eventDeleteFetcher.data?.error
+    ) {
+      toast.success("Event deleted.");
+    }
+    prevDeleteState.current = eventDeleteFetcher.state;
+  }, [eventDeleteFetcher.state, eventDeleteFetcher.data, toast]);
+  useActionErrorToast(eventDeleteFetcher.data ?? undefined, {
+    fallback: "Couldn't delete the event. Please try again.",
+  });
   // The wall-clock Y/M/D a drag lands on: the target day column when the move
   // crossed to another date, else the item's own start day. dayIdx columns are
   // UTC-midnight anchored, so their calendar date reads off the UTC fields.
@@ -486,7 +503,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       setComposer({ mode: "edit", event: e });
       return;
     }
-    eventMoveFetcher.submit(
+    eventDeleteFetcher.submit(
       {
         intent: "event-delete",
         destination: `${e.linkId}:${e.calendarId ?? "primary"}`,

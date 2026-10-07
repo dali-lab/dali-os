@@ -726,7 +726,10 @@ export function WeekGridEvent({
 
   // A recurring instance hands off to the composer, which asks for the scope
   // and confirms there — asking twice would be the worse experience.
+  // The popover steps aside while the confirm is up and comes back on Cancel,
+  // so the two never stack on screen.
   async function requestDelete() {
+    setDetailOpen(false);
     if (!e.recurring) {
       const ok = await dialog.confirm({
         title: e.label ? `Delete "${e.label}"?` : "Delete this event?",
@@ -734,9 +737,11 @@ export function WeekGridEvent({
         confirmLabel: "Delete",
         tone: "destructive",
       });
-      if (!ok) return;
+      if (!ok) {
+        setDetailOpen(true);
+        return;
+      }
     }
-    setDetailOpen(false);
     e.onDelete?.();
   }
   // Horizontal shift (in columns × colWidth px) while a move drag crosses days.

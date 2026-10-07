@@ -38,6 +38,7 @@ import {
 import { getZonedYMD } from "~/lib/timezone";
 import { cn } from "~/lib/cn";
 import { localDayTimeToIso } from "~/calendar/lib/event-block";
+import { eventTitleOrDefault } from "~/calendar/lib/event-title";
 import { DARTMOUTH_PERIODS, getPeriod, periodSummary, periodMeetings } from "~/calendar/lib/dartmouth-periods";
 import {
   destinationValue,
@@ -576,7 +577,6 @@ export function EventComposer({
       ? localDayTimeToIso(endDate, endTime, data.timezone) ?? ""
       : "";
   const canSubmit =
-    title.trim() !== "" &&
     destination !== "" &&
     startIso !== "" &&
     endIso !== "" &&
@@ -702,8 +702,9 @@ export function EventComposer({
             {linkedEntry && !loggingWork && <input type="hidden" name="clearWork" value="1" />}
 
             {/* Title */}
+            <input type="hidden" name="title" value={eventTitleOrDefault(title)} />
             <input
-              name="title"
+              aria-label="Title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Add title"

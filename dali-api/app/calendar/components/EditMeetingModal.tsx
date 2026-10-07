@@ -16,6 +16,7 @@ import {
 import { RoomLocationField } from "~/rooms/components/RoomLocationField";
 import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
 import { weekStartIsoForDay, weekWindow } from "~/calendar/lib/view-window";
+import { eventTitleOrDefault } from "~/calendar/lib/event-title";
 import type { WhDay } from "~/calendar/lib/types";
 
 // Shape of GET /api/scheduled-meetings/:id/edit-context.
@@ -280,7 +281,6 @@ export function EditMeetingModal({
 
   const canSave =
     !!ctx &&
-    title.trim() !== "" &&
     date !== "" &&
     startTime !== "" &&
     endTime !== "" &&
@@ -295,7 +295,7 @@ export function EditMeetingModal({
       // Always sent, blank included: clearing a field has to clear it here and
       // on the linked Google event, which an omitted key would leave untouched.
       const payload: Record<string, unknown> = {
-        title: title.trim(),
+        title: eventTitleOrDefault(title),
         durationMinutes,
         location: location.trim(),
         description: description.trim(),
@@ -383,19 +383,15 @@ export function EditMeetingModal({
           </div>
         )}
         <div className="flex min-w-0 flex-1 flex-col gap-5">
-          <div>
-            <label htmlFor="edit-mtg-title" className={labelClass}>
-              Title <span className="text-red-500">*</span>
-            </label>
-            <input
-              id="edit-mtg-title"
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className={fieldClass}
-              placeholder="e.g. Deserto sync"
-            />
-          </div>
+          <input
+            id="edit-mtg-title"
+            type="text"
+            aria-label="Title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className={fieldClass}
+            placeholder="Add title"
+          />
 
           {/* Guests */}
           <FieldRow icon={UsersRound}>
