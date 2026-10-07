@@ -95,6 +95,7 @@ import { useCalendarView, ymdUtc } from "~/calendar/lib/use-calendar-view";
 import { MonthGrid } from "~/calendar/components/MonthGrid";
 import { AgendaView } from "~/calendar/components/AgendaView";
 import { CreateEventModal } from "~/calendar/components/CreateEventModal";
+import { EditMeetingModal } from "~/calendar/components/EditMeetingModal";
 import { TimesheetEditPopover, TimesheetDragPopover, LogHoursDialog } from "~/calendar/components/timesheet";
 import { CalendarSettingsModal } from "~/calendar/components/CalendarSettingsModal";
 import { CalendarSidebar } from "~/calendar/components/CalendarSidebar";
@@ -392,6 +393,8 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   const [classesOpen, setClassesOpen] = useState(false);
   const [calMgrOpen, setCalMgrOpen] = useState(false);
   const [composer, setComposer] = useState<ComposerState | null>(null);
+  // A DALI meeting handed off from the edit popover to the full editor.
+  const [editMeetingId, setEditMeetingId] = useState<string | null>(null);
   // The tentative block drawn on the grid while a create composer is open, so a
   // dragged-out event stays visible (and tracks the composer's time edits)
   // instead of vanishing the moment the popover appears.
@@ -1030,7 +1033,19 @@ function CalendarScreen({ data }: { data: LoaderData }) {
         <ClassesManagerModal data={data} onClose={() => setClassesOpen(false)} />
       )}
       {composer && (
-        <EventComposer data={data} state={composer} onClose={closeComposer} onDraftChange={syncDraft} />
+        <EventComposer
+          data={data}
+          state={composer}
+          onClose={closeComposer}
+          onDraftChange={syncDraft}
+          onOpenMeetingEditor={(id) => {
+            closeComposer();
+            setEditMeetingId(id);
+          }}
+        />
+      )}
+      {editMeetingId && (
+        <EditMeetingModal meetingId={editMeetingId} onClose={() => setEditMeetingId(null)} />
       )}
       {calMgrOpen && (
         <CalendarManagerModal data={data} onClose={() => setCalMgrOpen(false)} />

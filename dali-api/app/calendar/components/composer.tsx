@@ -376,6 +376,7 @@ export function EventComposer({
   state,
   onClose,
   onDraftChange,
+  onOpenMeetingEditor,
 }: {
   data: LoaderData;
   state: ComposerState;
@@ -383,6 +384,9 @@ export function EventComposer({
   // Reports the draft's current start/end while creating, so the grid can draw
   // a tentative block that tracks the edits.
   onDraftChange?: (startIso: string, endIso: string, allDay: boolean) => void;
+  // Opens the full meeting editor (with the availability grid) for a DALI
+  // meeting the viewer manages.
+  onOpenMeetingEditor?: (meetingId: string) => void;
 }) {
   const fetcher = useFetcher<{ error?: string } | null>();
   const deleteFetcher = useFetcher<{ error?: string } | null>();
@@ -729,6 +733,17 @@ export function EventComposer({
                       <TimeComboField value={endTime} onChange={setEndTime} ariaLabel="End time" className="min-w-0 flex-1" />
                     </div>
                   </div>
+                )}
+                {/* The popover is too narrow for the availability grid; hand
+                    off to the full editor, which draws it beside the form. */}
+                {canManageMeeting && meetingId && onOpenMeetingEditor && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenMeetingEditor(meetingId)}
+                    className="self-start text-xs font-medium text-os-accent hover:underline"
+                  >
+                    Pick a time with everyone's availability
+                  </button>
                 )}
               </div>
             </div>
