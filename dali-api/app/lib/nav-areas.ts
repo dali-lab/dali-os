@@ -212,7 +212,7 @@ const coreClusterSubtabs: SubTab[] = CORE_CLUSTERS.map((c) => ({
 const REGROUPED_AREAS: NavArea[] = [
   {
     key: "projects",
-    label: "General",
+    label: "Lab",
     icon: FolderKanban,
     hubPath: "/projects",
     subtabs: [
@@ -328,7 +328,7 @@ export function pinnedNavItems(flags: Partial<FeatureFlagMap> = {}): SubTab[] {
     : [{ label: "Drive", href: "/drive", icon: HardDrive }];
 }
 
-/** Room booking, carried by the top bar beside Guide and the bell. */
+/** Room booking, carried by the calendar header (and the command palette). */
 export const ROOM_BOOKING_NAV_ITEM: SubTab = { label: "Room booking", href: "/rooms", icon: DoorOpen };
 
 // Both area sets at once. isAreaSubtabPath and the icon map are read from places

@@ -684,7 +684,7 @@ type BlockDragState =
 // Snap + clamp helpers — mirror WeekGrid's `hourFromY` exactly.
 const BLOCK_MIN_HOUR = HOURS[0];
 const BLOCK_MAX_HOUR = HOURS[HOURS.length - 1] + 1;
-const BLOCK_MIN_DURATION = SNAP_HOURS; // one 10-min step minimum
+const BLOCK_MIN_DURATION = SNAP_HOURS; // one snap step minimum
 // Empty strip kept clear on the right of each day column when drag-to-create is
 // on (Google-Calendar style), so a slot covered by events can still be dragged
 // to open the scheduling popover.

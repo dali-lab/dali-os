@@ -450,7 +450,7 @@ function SortableTab({
       onContextMenu={onContextMenu}
       className={`group relative flex-none flex items-center gap-2 ${tab.pinned ? 'px-2.5' : 'px-3'} border-r border-border text-xs font-medium whitespace-nowrap transition-colors cursor-grab active:cursor-grabbing ${
         isActive
-          ? 'bg-card text-foreground'
+          ? 'bg-card text-foreground shadow-[inset_0_2px_0_0_var(--color-os-accent)]'
           : 'text-muted-foreground hover:text-foreground hover:bg-card/50'
       }`}
     >
