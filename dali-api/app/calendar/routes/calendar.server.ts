@@ -361,6 +361,16 @@ export function invalidateExternalCache(userId: string): void {
   }
 }
 
+/**
+ * Cached calendarList read for one Google link, keyed by user so
+ * invalidateExternalCache's `${userId}:` prefix match drops it along with the
+ * events read. Exported for its own unit test — the loader that calls it pulls
+ * in too much (auth, every other calendar table) to drive directly.
+ */
+export async function fetchCachedCalendarList(userId: string, linkId: string, token: string) {
+  return cachedExternalRead(`${userId}:calendar-list:${linkId}`, () => listCalendarsForLink(linkId, token));
+}
+
 /** Read a single cookie value from the request's Cookie header. */
 function readCookie(request: Request, name: string): string | null {
   const header = request.headers.get("Cookie");
@@ -887,7 +897,7 @@ async function handleEventAction(
     await assertLinkOwned(userId, linkId);
 
     if (intent === "event-rsvp") {
-      return handleEventRsvp({
+      return await handleEventRsvp({
         userId,
         linkId,
         calendarId,
@@ -1519,7 +1529,7 @@ export async function loadCalendarData(
       try {
         const token = await getValidAccessTokenForLink(l.id);
         prefetchedTokens.set(l.id, token);
-        const items = await listCalendarsForLink(l.id, token);
+        const items = await fetchCachedCalendarList(userId, l.id, token);
         return { linkId: l.id, items } as const;
       } catch {
         return { linkId: l.id, items: undefined } as const;
@@ -1724,20 +1734,45 @@ const MEMBER_ONLY_CALENDAR_INTENTS = new Set([
   "track-event-as-meeting",
 ]);
 
+// Intents that only ever write to Postgres — never to Google, and never to
+// which calendars/links the loader reads. A DB-only write leaves the cached
+// Google read valid, so the post-write revalidate can still hit the 30s cache
+// instead of re-fetching from Google.
+const DB_ONLY_CALENDAR_INTENTS = new Set([
+  "add-meeting-note",
+  "add-meeting-whiteboard",
+  "set-meeting-core",
+  "set-meeting-project",
+  "set-working-segments",
+  "copy-weekdays",
+  "reset-working-hours",
+  "seed-working-hours",
+  "set-event-buffer",
+]);
+
+/** Exported for tests — the cache itself has no externally observable state. */
+export function shouldInvalidateExternalCache(intent: string): boolean {
+  return !DB_ONLY_CALENDAR_INTENTS.has(intent);
+}
+
 export async function submitCalendarAction(request: Request) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
 
   const userId = auth.user.sub;
-  // Any write here can change what the next read should return, so drop this
-  // user's cached external reads rather than letting the TTL hide the change.
-  invalidateExternalCache(userId);
   const form = await request.formData();
   const raw = Object.fromEntries(form.entries());
 
   // Classes-this-term intents carry their own shape (period/custom + Google
   // destination), so they're handled before the Zod-validated calendar action.
   const rawIntent = typeof raw.intent === "string" ? raw.intent : "";
+
+  // Any write that can change what the next Google read returns must drop this
+  // user's cached external reads rather than letting the TTL hide the change.
+  if (shouldInvalidateExternalCache(rawIntent)) {
+    invalidateExternalCache(userId);
+  }
+
   if (
     MEMBER_ONLY_CALENDAR_INTENTS.has(rawIntent) &&
     !(await isLabMember(userId, request))
