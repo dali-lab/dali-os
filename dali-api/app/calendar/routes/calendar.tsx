@@ -38,6 +38,7 @@ import { RsvpButtons } from "~/components/RsvpButtons";
 import { Select } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
+import { ROOM_BOOKING_NAV_ITEM } from "~/lib/nav-areas";
 import type {
   WhDay,
   CalendarLinkDTO,
@@ -801,8 +802,8 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     "inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-2.5 text-sm font-medium text-foreground hover:bg-muted";
   // Calendars, classes and working hours are all "how this page is set up",
   // so they share one pill and one dialog rather than a row of them.
-  const settingsPill =
-    "inline-flex items-center gap-2 rounded-full border border-os-accent/35 bg-os-accent/10 px-4 py-2 text-[13px] font-bold text-os-accent transition-colors hover:bg-os-accent/20";
+  const iconPill =
+    "inline-flex h-9 w-9 items-center justify-center rounded-full border border-os-accent/35 bg-os-accent/10 text-os-accent transition-colors hover:bg-os-accent/20";
 
   return (
     <div className="flex w-full min-h-0 flex-1 flex-col gap-3">
@@ -860,15 +861,25 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                 ))}
               </div>
 
-              <button
-                type="button"
-                onClick={() => setSettingsOpen(true)}
-                className={settingsPill}
-                title="Calendars, classes and working hours"
-              >
-                <Settings className="h-3.5 w-3.5" />
-                Settings
-              </button>
+              <Tooltip content={ROOM_BOOKING_NAV_ITEM.label}>
+                <Link
+                  to={ROOM_BOOKING_NAV_ITEM.href}
+                  className={iconPill}
+                  aria-label={ROOM_BOOKING_NAV_ITEM.label}
+                >
+                  <ROOM_BOOKING_NAV_ITEM.icon className="h-4 w-4" />
+                </Link>
+              </Tooltip>
+              <Tooltip content="Calendars, classes and working hours">
+                <button
+                  type="button"
+                  onClick={() => setSettingsOpen(true)}
+                  className={iconPill}
+                  aria-label="Calendar settings"
+                >
+                  <Settings className="h-4 w-4" />
+                </button>
+              </Tooltip>
 
               <button type="button" onClick={() => startCreate()} className={ADD_EVENT_BTN}>
                 <Plus className="h-4 w-4 stroke-[3]" />
