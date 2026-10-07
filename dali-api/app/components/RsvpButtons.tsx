@@ -66,7 +66,7 @@ export function RsvpButtons({
       if (json.gcalError) {
         setError(`Recorded in-app, but Google sync failed: ${json.gcalError}`);
       } else {
-        revalidator.revalidate();
+        await revalidator.revalidate();
         notifyTasksChanged();
       }
     } catch (err) {
