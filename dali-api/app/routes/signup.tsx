@@ -16,6 +16,7 @@ import {
 } from "~/partners/lib/magic-link.server";
 import { sendMemberEmailConflictEmail } from "~/partners/lib/partner-emails.server";
 import AuthShell from "~/components/auth/AuthShell";
+import { buttonClasses } from "~/components/ui/Button";
 
 export const meta: Route.MetaFunction = () => [{ title: "DALI OS · Create account" }];
 
@@ -164,8 +165,8 @@ function DoorPicker({ next }: { next: string | null }) {
       label: "DALI Lab member",
       description: "Current lab members",
       icon: (
-        <div className="w-10 h-10 rounded-full bg-accent-coral/10 flex items-center justify-center flex-shrink-0">
-          <svg className="w-5 h-5 text-accent-coral" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="w-10 h-10 rounded-full bg-os-container flex items-center justify-center flex-shrink-0">
+          <svg className="w-5 h-5 text-os-grey" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
           </svg>
         </div>
@@ -176,8 +177,8 @@ function DoorPicker({ next }: { next: string | null }) {
       label: "Dartmouth student",
       description: "Lab applications, workshops, and more",
       icon: (
-        <div className="w-10 h-10 rounded-full bg-card flex items-center justify-center flex-shrink-0 shadow-sm">
-          <svg className="w-5 h-5 text-dark-blue" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="w-10 h-10 rounded-full bg-os-container flex items-center justify-center flex-shrink-0">
+          <svg className="w-5 h-5 text-os-grey" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 14l9-5-9-5-9 5 9 5z" />
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z" />
           </svg>
@@ -189,8 +190,8 @@ function DoorPicker({ next }: { next: string | null }) {
       label: "Partner",
       description: "Working with the lab on a project",
       icon: (
-        <div className="w-10 h-10 rounded-full bg-card flex items-center justify-center flex-shrink-0 shadow-sm">
-          <svg className="w-5 h-5 text-dark-blue" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="w-10 h-10 rounded-full bg-os-container flex items-center justify-center flex-shrink-0">
+          <svg className="w-5 h-5 text-os-grey" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
           </svg>
         </div>
@@ -205,19 +206,19 @@ function DoorPicker({ next }: { next: string | null }) {
           <Link
             key={door}
             to={`/signup?door=${door}${next ? `&next=${encodeURIComponent(next)}` : ""}`}
-            className="w-full flex items-center gap-4 p-5 rounded-2xl border-2 border-transparent bg-brand-tint hover:border-accent-coral transition group text-left"
+            className="w-full flex items-center gap-4 p-5 rounded-os-item border border-os-container bg-os-well hover:border-os-accent transition-colors group text-left"
           >
             {icon}
             <div className="flex-1 min-w-0">
-              <span className="font-heading font-semibold text-dark-blue group-hover:text-accent-coral transition block">
+              <span className="font-heading font-semibold text-foreground group-hover:text-os-accent transition-colors block">
                 {label}
               </span>
-              <span className="text-xs text-muted-foreground mt-0.5 block">
+              <span className="text-xs text-os-muted mt-0.5 block">
                 {description}
               </span>
             </div>
             <svg
-              className="w-4 h-4 text-muted-foreground group-hover:text-accent-coral transition flex-shrink-0"
+              className="w-4 h-4 text-os-muted group-hover:text-os-accent transition-colors flex-shrink-0"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -233,7 +234,7 @@ function DoorPicker({ next }: { next: string | null }) {
         ))}
       </div>
 
-      <p className="mt-6 text-center text-sm text-muted-foreground">
+      <p className="mt-6 text-center text-sm text-os-grey">
         Already have an account?{" "}
         <Link to="/login" className="underline hover:text-foreground">
           Sign in
@@ -258,25 +259,25 @@ function DoorSignup({ door, next, actionData }: {
 
   return (
     <>
-      <p className="text-muted-foreground mb-6 -mt-2">
+      <p className="text-os-grey mb-6 -mt-2">
         {DOOR_BLURBS[door]}
       </p>
 
       {sent ? (
-        <div className="rounded-2xl bg-brand-tint p-6">
-          <p className="font-heading font-semibold text-dark-blue mb-1">
+        <div className="rounded-os-item bg-os-well p-6">
+          <p className="font-heading font-semibold text-foreground mb-1">
             Check your email
           </p>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-os-grey">
             We sent an email to{" "}
-            <span className="font-medium text-dark-blue">{sent.email}</span>.
+            <span className="font-medium text-foreground">{sent.email}</span>.
             Open it and follow the link to continue. Sign-in links expire in{" "}
             {humanDuration(MAGIC_LINK_TTL_SECONDS)}.
           </p>
           <div className="mt-4">
             <Link
               to={`/signup?door=${door}${next ? `&next=${encodeURIComponent(next)}` : ""}`}
-              className="text-sm text-muted-foreground hover:text-foreground"
+              className="text-sm text-os-grey hover:text-foreground"
             >
               Use a different email
             </Link>
@@ -285,7 +286,7 @@ function DoorSignup({ door, next, actionData }: {
       ) : (
         <>
           {formError && (
-            <p className="mb-4 text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3">
+            <p className="mb-4 text-sm text-destructive bg-destructive/10 rounded-lg px-4 py-3">
               {formError}
             </p>
           )}
@@ -293,7 +294,7 @@ function DoorSignup({ door, next, actionData }: {
           {/* Magic-link signup — one method for every door. We email a sign-in
               link to the verified address; the click lands on /welcome to
               finish setup. */}
-          <Form method="post" className="flex flex-col gap-3">
+          <Form method="post" className="os-form flex flex-col gap-3">
             <input type="hidden" name="door" value={door} />
             <input type="hidden" name="provider" value="email-link" />
             {next && <input type="hidden" name="next" value={next} />}
@@ -302,12 +303,12 @@ function DoorSignup({ door, next, actionData }: {
               name="email"
               required
               placeholder={EMAIL_PLACEHOLDERS[door]}
-              className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral"
+              className="w-full"
             />
             <button
               type="submit"
               disabled={submitting}
-              className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
+              className={buttonClasses("primary", "md", "w-full")}
             >
               {submitting ? "Sending…" : "Continue with email"}
             </button>
@@ -315,7 +316,7 @@ function DoorSignup({ door, next, actionData }: {
         </>
       )}
 
-      <div className="mt-6 text-center text-sm text-muted-foreground space-y-1.5">
+      <div className="mt-6 text-center text-sm text-os-grey space-y-1.5">
         <p>
           <Link to="/signup" className="underline hover:text-foreground">
             Choose a different account type
