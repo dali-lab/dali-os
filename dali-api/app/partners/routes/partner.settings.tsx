@@ -17,6 +17,7 @@ import {
   listPendingInvites,
   revokePartnerInvite,
 } from "~/partners/lib/invites.server";
+import { buttonClasses } from "~/components/ui/Button";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Settings · DALI OS" },
@@ -235,23 +236,20 @@ export default function PartnerSettings({ actionData }: Route.ComponentProps) {
   const error = actionData && "error" in actionData ? actionData.error : null;
   const invited = actionData && "invited" in actionData;
 
-  const inputClass =
-    "w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral";
-  const labelClass = "block text-xs font-medium text-muted-foreground mb-1";
-  const saveClass =
-    "self-start rounded-xl bg-dark-blue text-white text-sm font-heading font-semibold px-5 py-2.5 hover:opacity-90 transition disabled:opacity-50";
+  const labelClass = "os-field-label mb-1.5 block";
+  const saveClass = buttonClasses("primary", "md", "self-start");
 
   return (
     <div className="flex flex-col gap-8 max-w-2xl mx-auto">
-      <h1 className="font-heading text-3xl font-bold text-dark-blue">Settings</h1>
+      <h1 className="font-heading text-4xl font-medium text-foreground">Settings</h1>
 
       {error && (
-        <p className="text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3">{error}</p>
+        <p className="text-sm text-destructive bg-destructive/10 rounded-lg px-4 py-3">{error}</p>
       )}
 
-      <section className="bg-card border border-border rounded-2xl p-5">
-        <h2 className="font-heading font-semibold text-dark-blue mb-4">Profile</h2>
-        <Form method="post" className="flex flex-col gap-4">
+      <section className="rounded-os-card bg-os-card p-6">
+        <h2 className="font-heading text-[19px] font-semibold text-foreground mb-4">Profile</h2>
+        <Form method="post" className="os-form flex flex-col gap-4">
           <input type="hidden" name="intent" value="profile" />
           <PhotoUploadField
             userId={me.userId}
@@ -263,17 +261,17 @@ export default function PartnerSettings({ actionData }: Route.ComponentProps) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className={labelClass}>First name</label>
-              <input name="firstName" required defaultValue={me.firstName} className={inputClass} />
+              <input name="firstName" required defaultValue={me.firstName} className="w-full" />
             </div>
             <div>
               <label className={labelClass}>Last name</label>
-              <input name="lastName" required defaultValue={me.lastName} className={inputClass} />
+              <input name="lastName" required defaultValue={me.lastName} className="w-full" />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className={labelClass}>Role</label>
-              <input name="displayRole" defaultValue={me.role ?? ""} className={inputClass} />
+              <input name="displayRole" defaultValue={me.role ?? ""} className="w-full" />
             </div>
             <div>
               <label className={labelClass}>Pronouns</label>
@@ -281,7 +279,7 @@ export default function PartnerSettings({ actionData }: Route.ComponentProps) {
                 name="pronouns"
                 placeholder="e.g. they/them"
                 defaultValue={me.pronouns ?? ""}
-                className={inputClass}
+                className="w-full"
               />
             </div>
           </div>
@@ -290,7 +288,7 @@ export default function PartnerSettings({ actionData }: Route.ComponentProps) {
             <select
               name="timeZone"
               defaultValue={me.timeZone ?? "America/New_York"}
-              className={inputClass}
+              className="w-full"
             >
               {Intl.supportedValuesOf("timeZone").map((tz) => (
                 <option key={tz} value={tz}>
@@ -298,7 +296,7 @@ export default function PartnerSettings({ actionData }: Route.ComponentProps) {
                 </option>
               ))}
             </select>
-            <p className="mt-1 text-xs text-muted-foreground">
+            <p className="mt-1 text-xs text-os-muted">
               Your local time zone, used when scheduling meetings with the lab.
             </p>
           </div>
@@ -308,33 +306,33 @@ export default function PartnerSettings({ actionData }: Route.ComponentProps) {
         </Form>
       </section>
 
-      <section className="bg-card border border-border rounded-2xl p-5">
-        <h2 className="font-heading font-semibold text-dark-blue mb-4">Appearance</h2>
+      <section className="rounded-os-card bg-os-card p-6">
+        <h2 className="font-heading text-[19px] font-semibold text-foreground mb-4">Appearance</h2>
         <AppearanceSettingsBlock />
       </section>
 
       {passkeysEnabled && (
-        <section className="bg-card border border-border rounded-2xl p-5">
-          <h2 className="font-heading font-semibold text-dark-blue mb-4">Passkeys</h2>
+        <section className="rounded-os-card bg-os-card p-6">
+          <h2 className="font-heading text-[19px] font-semibold text-foreground mb-4">Passkeys</h2>
           <PasskeysSettingsBlock />
         </section>
       )}
 
       {hasOrg && org && (
         <>
-          <section className="bg-card border border-border rounded-2xl p-5">
-            <h2 className="font-heading font-semibold text-dark-blue mb-4">
+          <section className="rounded-os-card bg-os-card p-6">
+            <h2 className="font-heading text-[19px] font-semibold text-foreground mb-4">
               Organization
             </h2>
-            <Form method="post" className="flex flex-col gap-4">
+            <Form method="post" className="os-form flex flex-col gap-4">
               <input type="hidden" name="intent" value="org" />
               <div>
                 <label className={labelClass}>Name</label>
-                <input name="name" required defaultValue={org.name} className={inputClass} />
+                <input name="name" required defaultValue={org.name} className="w-full" />
               </div>
               <div>
                 <label className={labelClass}>Website</label>
-                <input name="website" defaultValue={org.website ?? ""} className={inputClass} />
+                <input name="website" defaultValue={org.website ?? ""} className="w-full" />
               </div>
               <PhotoUploadField
                 userId={me.userId}
@@ -352,13 +350,13 @@ export default function PartnerSettings({ actionData }: Route.ComponentProps) {
             </Form>
           </section>
 
-          <section className="bg-card border border-border rounded-2xl p-5">
+          <section className="rounded-os-card bg-os-card p-6">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="font-heading font-semibold text-dark-blue">Team</h2>
+              <h2 className="font-heading text-[19px] font-semibold text-foreground">Team</h2>
               <button
                 type="button"
                 onClick={() => setInviting((v) => !v)}
-                className="text-sm font-medium text-accent-coral hover:underline"
+                className="text-sm font-medium text-os-accent hover:underline"
               >
                 + Invite teammate
               </button>
@@ -378,16 +376,16 @@ export default function PartnerSettings({ actionData }: Route.ComponentProps) {
                   description: "This emails a join link to the address you entered.",
                   confirmLabel: "Send invite",
                 })}
-                className="flex flex-wrap items-end gap-3 bg-muted/20 rounded-xl p-4 mb-4"
+                className="os-form flex flex-wrap items-end gap-3 bg-os-well rounded-os-item p-4 mb-4"
               >
                 <input type="hidden" name="intent" value="invite" />
                 <div className="flex-1 min-w-[200px]">
                   <label className={labelClass}>Email</label>
-                  <input name="email" type="email" required className={inputClass} />
+                  <input name="email" type="email" required className="w-full" />
                 </div>
                 <div className="flex-1 min-w-[140px]">
                   <label className={labelClass}>Role (optional)</label>
-                  <input name="displayRole" className={inputClass} />
+                  <input name="displayRole" className="w-full" />
                 </div>
                 <Tooltip content="Emails a join link to this address">
                   <button type="submit" disabled={submitting} className={saveClass}>

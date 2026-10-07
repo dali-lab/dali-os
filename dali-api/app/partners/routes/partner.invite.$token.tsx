@@ -9,6 +9,8 @@ import {
   acceptPartnerInvite,
   peekPartnerInvite,
 } from "~/partners/lib/invites.server";
+import { useOsShellRoot } from "~/lib/os-shell";
+import { buttonClasses } from "~/components/ui/Button";
 
 export const meta: Route.MetaFunction = () => [
   { title: "DALI OS · Partner invitation" },
@@ -59,20 +61,20 @@ export default function PartnerInvite({ actionData }: Route.ComponentProps) {
   const submitting = navigation.state === "submitting";
   const error = actionData && "error" in actionData ? actionData.error : null;
 
+  useOsShellRoot(true);
+
   return (
-    <div className="min-h-screen bg-page flex items-center justify-center px-6">
-      <div className="w-full max-w-sm text-center">
-        <img
-          src="/logo-blue.svg"
-          alt="DALI Lab"
-          className="h-12 w-auto mx-auto mb-8"
-        />
+    <div className="os-shell flex min-h-screen items-center justify-center bg-os-bg px-6 text-foreground">
+      <div className="w-full max-w-sm rounded-os-card bg-os-card p-8 text-center">
+        <span className="font-os-logo text-2xl font-semibold text-os-accent">
+          dali.os
+        </span>
         {invite && !error ? (
           <>
-            <h1 className="font-heading text-2xl font-bold text-dark-blue mb-2">
+            <h1 className="font-heading text-2xl font-bold text-foreground mt-6 mb-2">
               Join {invite.orgName}
             </h1>
-            <p className="text-muted-foreground mb-8">
+            <p className="text-os-grey mb-8">
               You've been invited to join <strong>{invite.orgName}</strong> on
               the DALI Lab partner portal as {invite.email}.
             </p>
@@ -80,7 +82,7 @@ export default function PartnerInvite({ actionData }: Route.ComponentProps) {
               <button
                 type="submit"
                 disabled={submitting}
-                className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
+                className={buttonClasses("primary", "md", "w-full")}
               >
                 {submitting ? "Joining…" : "Accept invitation"}
               </button>
@@ -88,17 +90,14 @@ export default function PartnerInvite({ actionData }: Route.ComponentProps) {
           </>
         ) : (
           <>
-            <h1 className="font-heading text-2xl font-bold text-dark-blue mb-2">
+            <h1 className="font-heading text-2xl font-bold text-foreground mt-6 mb-2">
               Invitation unavailable
             </h1>
-            <p className="text-muted-foreground mb-8">
+            <p className="text-os-grey mb-8">
               {error ??
                 "This invitation is invalid, expired, or was revoked. Ask your organization to send a new one."}
             </p>
-            <a
-              href="/partner/login"
-              className="inline-block rounded-xl bg-dark-blue text-white font-heading font-semibold px-6 py-3 hover:opacity-90 transition"
-            >
+            <a href="/partner/login" className={buttonClasses("primary", "md", "inline-block")}>
               Go to partner sign in
             </a>
           </>

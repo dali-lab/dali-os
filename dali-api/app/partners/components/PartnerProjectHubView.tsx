@@ -212,7 +212,7 @@ function SectionNav({
               }
               className={`w-full rounded-lg px-3 py-1.5 text-left text-sm transition ${
                 active === s.id
-                  ? "bg-brand-tint font-medium text-dark-blue"
+                  ? "bg-os-accent/15 font-medium text-os-accent"
                   : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
               }`}
             >
@@ -283,7 +283,7 @@ export function PartnerProjectHubView({
           <PartnerBackLink to={backLink.to} label={backLink.label} />
         )}
         <div
-          className={`bg-card border border-border rounded-2xl overflow-hidden ${backLink ? "mt-2" : ""}`}
+          className={`rounded-os-card bg-os-card overflow-hidden ${backLink ? "mt-2" : ""}`}
         >
           <ProjectCoverImage
             name={project.name}
@@ -292,11 +292,11 @@ export function PartnerProjectHubView({
             placeholderClassName="w-full h-40"
           />
           <div className="min-w-0 p-5">
-            <h1 className="flex items-center gap-2 font-heading text-3xl font-bold text-dark-blue">
+            <h1 className="flex items-center gap-2 font-heading text-4xl font-medium text-foreground">
               <ProjectIcon iconEmoji={project.iconEmoji} size="lg" />
               <span className="min-w-0 truncate">{project.name}</span>
             </h1>
-            <p className="text-sm text-muted-foreground mt-1">
+            <p className="text-sm text-os-grey mt-1">
               {[
                 partnerTermsLabel(project.terms),
                 partnerSince ? `Partner since ${fmtDate(partnerSince)}` : null,
@@ -325,17 +325,17 @@ export function PartnerProjectHubView({
           same resolver, with the task level hidden. Partners want the shape of
           the work and when it lands, not the card-by-card breakdown. */}
       <section id="roadmap" className="scroll-mt-24">
-        <h2 className="mb-3 font-heading text-lg font-semibold text-dark-blue">
+        <h2 className="mb-3 font-heading text-[19px] font-semibold text-foreground">
           Roadmap
         </h2>
         {timelineEpics.length === 0 ? (
-          <div className="bg-card border border-border rounded-2xl p-6 text-sm text-muted-foreground">
+          <div className="rounded-os-card bg-os-card p-6 text-sm text-os-grey">
             Nothing on the roadmap yet. Work will appear here once the team
             plans it.
           </div>
         ) : (
           // `compact` because this is a read-only roadmap sitting among the
-          // portal's own rounded-2xl cards, not the planning surface: the grid
+          // portal's own os cards, not the planning surface: the grid
           // sizes to its bars rather than holding the planning floor.
           <EpicsTimeline
             epics={timelineEpics}
@@ -352,15 +352,15 @@ export function PartnerProjectHubView({
           project hub's own Drive block reads. Folders hold whatever inside
           them was shared; everything else sits at the root. */}
       <section id="drive" className="scroll-mt-24">
-        <h2 className="mb-3 flex items-center gap-2 font-heading text-lg font-semibold text-dark-blue">
+        <h2 className="mb-3 flex items-center gap-2 font-heading text-[19px] font-semibold text-foreground">
           <Folder className="h-4 w-4" /> Drive
         </h2>
         {isDriveEmpty ? (
-          <div className="bg-card border border-border rounded-2xl p-6 text-sm text-muted-foreground">
+          <div className="rounded-os-card bg-os-card p-6 text-sm text-os-grey">
             The team hasn't shared any documents or files yet.
           </div>
         ) : (
-          <div className="bg-card border border-border rounded-2xl divide-y divide-border">
+          <div className="rounded-os-card bg-os-card divide-y divide-os-container">
             {drive.folders.map((f) => (
               <DriveFolderRow
                 key={f.id}
@@ -382,15 +382,15 @@ export function PartnerProjectHubView({
       {/* Team */}
       {team.length > 0 && (
         <section id="team" className="scroll-mt-24">
-          <h2 className="font-heading text-lg font-semibold text-dark-blue mb-3">
+          <h2 className="font-heading text-[19px] font-semibold text-foreground mb-3">
             Your DALI team{currentTermCode ? ` · ${termCodeLabel(currentTermCode)}` : ""}
           </h2>
-          <div className="bg-card border border-border rounded-2xl p-5 grid gap-x-6 gap-y-4 sm:grid-cols-2">
+          <div className="rounded-os-card bg-os-card p-6 grid gap-x-6 gap-y-4 sm:grid-cols-2">
             {team.map((m) => (
               <div key={m.name} className="flex items-center gap-3 min-w-0">
                 <Avatar photoUrl={m.photoUrl} name={m.name} size="md" />
                 <div className="min-w-0">
-                  <span className="font-medium text-dark-blue block truncate">
+                  <span className="font-medium text-foreground block truncate">
                     {m.name}
                   </span>
                   <span className="text-xs text-muted-foreground block truncate">
@@ -469,7 +469,7 @@ function SharedFilePreviewModal({
       open
       onClose={onClose}
       labelledBy="shared-file-preview-title"
-      containerClassName="bg-card rounded-2xl shadow-brand-2 max-w-3xl w-full p-5 sm:p-6 my-auto max-h-[85vh] flex flex-col"
+      containerClassName="os-modal-card max-w-3xl w-full my-auto max-h-[85vh] flex flex-col"
     >
       <div className="flex items-start justify-between gap-3 mb-3">
         <h2

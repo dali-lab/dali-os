@@ -30,14 +30,18 @@ export const PORTAL_NAV: PortalNavItem[] = [
 ];
 
 /**
- * Whether `item` is the row the current path belongs to. `/portal` is the home
- * row and matches only itself — every other portal path starts with it, so a
- * prefix test there would light up Home on every page.
+ * Whether `item` is the row the current path belongs to. The home row
+ * (`homeHref`) matches only itself — every other portal path starts with it,
+ * so a prefix test there would light up Home on every page.
  */
-export function isPortalNavActive(path: string, item: PortalNavItem): boolean {
+export function isPortalNavActive(
+  path: string,
+  item: PortalNavItem,
+  homeHref = "/portal",
+): boolean {
   const cut = path.search(/[?#]/);
   const pathname = cut === -1 ? path : path.slice(0, cut);
-  if (item.href === "/portal") return pathname === "/portal";
+  if (item.href === homeHref) return pathname === homeHref;
   const owns = [item.href, ...(item.matches ?? [])];
   return owns.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
