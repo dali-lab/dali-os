@@ -423,7 +423,7 @@ export function CardShell({
   return (
     <article
       className={cn(
-        "flex h-full min-w-0 flex-col rounded-2xl border border-os-container px-[18px] py-4",
+        "flex h-full min-w-0 flex-col rounded-os-card border border-os-container px-[18px] py-4",
         filled && "bg-os-card",
       )}
     >

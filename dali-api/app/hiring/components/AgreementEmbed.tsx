@@ -54,7 +54,7 @@ export function AgreementEmbed({
           {isEmptyBlocks(body) ? (
             <p className="text-sm text-muted-foreground italic">No content yet.</p>
           ) : (
-            <div className="text-dark-blue px-4 py-3 rounded-lg border border-border bg-muted/30">
+            <div className="text-foreground px-4 py-3 rounded-lg border border-border bg-muted/30">
               <DocEditor
                 features="notes"
                 density="compact"

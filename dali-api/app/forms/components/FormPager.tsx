@@ -56,7 +56,7 @@ export function FormPageHeading({ page }: { page: FormPage }) {
   return (
     <div>
       {page.title && (
-        <h2 className="font-heading text-lg font-semibold text-dark-blue">
+        <h2 className="font-heading text-lg font-semibold text-foreground">
           {page.title}
         </h2>
       )}

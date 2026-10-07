@@ -7,6 +7,7 @@ import { paginateQuestions } from "~/lib/form-pages";
 import { formatInstantWithZoneLabel } from "~/lib/timezone";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { useDialog } from "~/components/ui/dialog";
+import { buttonClasses } from "~/components/ui/Button";
 import type { PortalLoaderData, PortalDomain } from "~/hiring/lib/internal-cycle-portal.server";
 import { DomainApplicationCard } from "~/hiring/components/ApplicationTracker";
 
@@ -43,15 +44,15 @@ export function InternalCyclePortalView({
   if (data.reason === "choose-cycle") {
     return (
       <div className="max-w-3xl mx-auto py-10 px-6">
-        <h1 className="font-heading text-2xl font-bold text-dark-blue mb-6">{copy.chooseCycleTitle}</h1>
+        <h1 className="font-heading text-2xl font-bold text-foreground mb-6">{copy.chooseCycleTitle}</h1>
         <ul className="flex flex-col gap-3">
           {data.cycles.map((c) => (
             <li key={c.id}>
               <Link
                 to={c.href}
-                className="flex items-center justify-between gap-4 rounded-2xl border border-border bg-card px-5 py-4 hover:border-accent-coral/50 transition"
+                className="flex items-center justify-between gap-4 rounded-os-card border border-border bg-card px-5 py-4 hover:border-accent-coral/50 transition"
               >
-                <span className="font-medium text-dark-blue">{c.name}</span>
+                <span className="font-medium text-foreground">{c.name}</span>
                 {c.closeDate && (
                   <span className="text-sm text-muted-foreground">
                     Closes {formatInstantWithZoneLabel(c.closeDate, data.viewerTimeZone)}
@@ -72,7 +73,7 @@ export function InternalCyclePortalView({
   return (
     <div className="max-w-3xl mx-auto py-10 px-6">
       <header className="mb-8">
-        <h1 className="font-heading text-2xl font-bold text-dark-blue mb-1">{copy.heading}</h1>
+        <h1 className="font-heading text-2xl font-bold text-foreground mb-1">{copy.heading}</h1>
         <p className="text-sm text-muted-foreground">
           {cycle.name}
           {cycle.closeDate && ` · closes ${formatInstantWithZoneLabel(cycle.closeDate, viewerTimeZone)}`}
@@ -146,9 +147,9 @@ function Tracker({
 function Message({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="max-w-2xl mx-auto py-16 px-6 text-center">
-      <h2 className="font-heading text-xl font-bold text-dark-blue mb-2">{title}</h2>
+      <h2 className="font-heading text-xl font-bold text-foreground mb-2">{title}</h2>
       <p className="text-sm text-muted-foreground">{children}</p>
-      <Link to="/" className="mt-6 inline-block text-sm text-accent-coral hover:underline">
+      <Link to="/" className="mt-6 inline-block text-sm text-os-accent hover:underline">
         Open home
       </Link>
     </div>
@@ -221,7 +222,7 @@ function FormView({
     <div className="space-y-8">
       {showDomainPicker && (
         <section className={pager.index === 0 ? undefined : "hidden"}>
-          <h2 className="font-heading text-sm font-bold uppercase tracking-wider text-dark-blue mb-3">
+          <h2 className="font-heading text-sm font-bold uppercase tracking-wider text-foreground mb-3">
             Target domains
           </h2>
           <p className="text-xs text-muted-foreground mb-3">
@@ -235,7 +236,7 @@ function FormView({
                   key={d.id}
                   checked={checked}
                   onChange={() => toggleDomain(d.id)}
-                  label={<span className="text-sm font-medium text-dark-blue">{d.displayName}</span>}
+                  label={<span className="text-sm font-medium text-foreground">{d.displayName}</span>}
                   className={`px-4 py-3 rounded-lg border transition ${
                     checked
                       ? "border-accent-coral bg-accent-coral/10"
@@ -249,7 +250,7 @@ function FormView({
       )}
 
       <section className={showDomainPicker && pager.index === 0 ? "hidden" : undefined}>
-        <h2 className="font-heading text-sm font-bold uppercase tracking-wider text-dark-blue mb-3">
+        <h2 className="font-heading text-sm font-bold uppercase tracking-wider text-foreground mb-3">
           Questions
         </h2>
         <div className="space-y-5">
@@ -303,7 +304,7 @@ function FormView({
             type="button"
             onClick={() => submitForm("submit")}
             disabled={busy}
-            className="px-6 py-2.5 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
+            className={buttonClasses("primary", "md")}
           >
             {busy && fetcher.formData?.get("intent") === "submit" ? "Submitting…" : "Submit"}
           </button>
@@ -315,7 +316,7 @@ function FormView({
               if (missing) setError(`"${missing.data.label}" is required.`);
               else setError(null);
             }}
-            className="px-6 py-2.5 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition"
+            className={buttonClasses("primary", "md")}
           >
             Next
           </button>
@@ -345,8 +346,8 @@ function SubmittedView({ submittedBody, portalPath }: { submittedBody: string; p
 
   return (
     <div className="space-y-6">
-      <div className="rounded-2xl border border-green-200 bg-green-50/50 px-6 py-8 text-center">
-        <h2 className="font-heading text-xl font-bold text-dark-blue mb-2">Submitted</h2>
+      <div className="rounded-os-card border border-green-200 bg-green-50/50 px-6 py-8 text-center">
+        <h2 className="font-heading text-xl font-bold text-foreground mb-2">Submitted</h2>
         <p className="text-sm text-muted-foreground">{submittedBody}</p>
       </div>
       <div className="flex justify-end">
