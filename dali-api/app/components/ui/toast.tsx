@@ -110,7 +110,7 @@ const VARIANTS: Record<
 > = {
   error: { Icon: AlertTriangle, accent: "text-destructive", role: "alert" },
   success: { Icon: CheckCircle2, accent: "text-accent-teal", role: "status" },
-  info: { Icon: Info, accent: "text-accent-coral", role: "status" },
+  info: { Icon: Info, accent: "text-os-accent", role: "status" },
 };
 
 function ToastItem({
@@ -139,7 +139,7 @@ function ToastItem({
     <div
       role={role}
       className={cn(
-        "pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-2xl border border-border bg-card p-3.5 shadow-brand-2",
+        "cal-surface pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-os-card border border-os-container bg-os-card p-3.5",
         "transition duration-200 ease-out motion-reduce:transition-none",
         shown ? "translate-y-0 opacity-100" : "translate-y-2 opacity-0",
       )}
