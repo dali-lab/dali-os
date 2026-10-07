@@ -361,6 +361,16 @@ export function invalidateExternalCache(userId: string): void {
   }
 }
 
+/**
+ * Cached calendarList read for one Google link, keyed by user so
+ * invalidateExternalCache's `${userId}:` prefix match drops it along with the
+ * events read. Exported for its own unit test — the loader that calls it pulls
+ * in too much (auth, every other calendar table) to drive directly.
+ */
+export async function fetchCachedCalendarList(userId: string, linkId: string, token: string) {
+  return cachedExternalRead(`${userId}:calendar-list:${linkId}`, () => listCalendarsForLink(linkId, token));
+}
+
 /** Read a single cookie value from the request's Cookie header. */
 function readCookie(request: Request, name: string): string | null {
   const header = request.headers.get("Cookie");
@@ -887,7 +897,7 @@ async function handleEventAction(
     await assertLinkOwned(userId, linkId);
 
     if (intent === "event-rsvp") {
-      return handleEventRsvp({
+      return await handleEventRsvp({
         userId,
         linkId,
         calendarId,
@@ -1321,12 +1331,10 @@ export async function loadCalendarData(
   // Keyed on the DALIMember row rather than the auth type, the same way the
   // member shell decides who it is for: a non-member instructor authenticates
   // as a "member" account and still belongs on the portal copy.
-  const labMember = await isLabMember(userId, request);
-  if (opts.portal && labMember) return redirect("/calendar");
-
   // Resolve the current term once and reuse it everywhere in this loader so
   // the per-request cache in roles.ts eliminates redundant DB reads.
-  const term = await currentTerm(request);
+  const [labMember, term] = await Promise.all([isLabMember(userId, request), currentTerm(request)]);
+  if (opts.portal && labMember) return redirect("/calendar");
   const termId = term?.id;
 
   // Members + groups for the participant picker (shared with the meeting
@@ -1469,9 +1477,9 @@ export async function loadCalendarData(
   const timeEntryLowerBound = new Date(weekStart.getTime() - 8 * 7 * 86_400_000);
   const timeEntryUpperBound = new Date(weekEnd.getTime() + 8 * 7 * 86_400_000);
 
-  // timeEntryRows fetched here (not in the earlier Promise.all) because they
-  // need weekStart/weekEnd for the date window.
-  const timeEntryRows = await prisma.timeEntry.findMany({
+  // Needs weekStart/weekEnd for the date window, so it can't join the earlier
+  // Promise.all; it runs alongside the Google read below instead.
+  const timeEntryQuery = {
       where: {
         userId,
         date: { gte: timeEntryLowerBound, lte: timeEntryUpperBound },
@@ -1494,7 +1502,7 @@ export async function loadCalendarData(
         occurrenceStart: true,
         meeting: { select: { notePages: { select: { id: true, meetingOccurrenceStart: true } } } },
       },
-    });
+    } as const;
 
   // Fetch external busy + sub-calendar lists in parallel. Don't fail the page
   // if a single link errors — surface the error on the link card.
@@ -1519,7 +1527,7 @@ export async function loadCalendarData(
       try {
         const token = await getValidAccessTokenForLink(l.id);
         prefetchedTokens.set(l.id, token);
-        const items = await listCalendarsForLink(l.id, token);
+        const items = await fetchCachedCalendarList(userId, l.id, token);
         return { linkId: l.id, items } as const;
       } catch {
         return { linkId: l.id, items: undefined } as const;
@@ -1532,11 +1540,11 @@ export async function loadCalendarData(
     calendarListResults.map(({ linkId, items }) => [linkId, items]),
   );
 
-  const roles = await getUserRoles(userId, request);
-
   let ingestionError: string | null = null;
   const externalCacheKey = `${userId}:${fetchStart.getTime()}:${fetchEnd.getTime()}`;
-  const [externalRaw, calendarLinks] = await Promise.all([
+  // Every Postgres read that doesn't depend on the Google result rides in the
+  // same Promise.all as the Google read, so the slow round-trip hides them.
+  const [externalRaw, calendarLinks, roles, timeEntryRows, termFilter] = await Promise.all([
     // Read every calendar on each account ("all"), not just the ones counting
     // toward availability: the grid's per-calendar Show toggle filters this
     // client-side, so a calendar missing here can never be shown.
@@ -1587,6 +1595,20 @@ export async function loadCalendarData(
         return { ...base, subCalendars };
       }),
     ),
+    getUserRoles(userId, request),
+    prisma.timeEntry.findMany(timeEntryQuery),
+    // Current+upcoming term ids for the class modal's term selector, and the
+    // member's classes in those terms.
+    resolveTermFilter(request, { default: "upcoming" }).then(async (tf) => {
+      const termIds = tf.termIds ?? [];
+      const classRows = termIds.length
+        ? await prisma.memberClass.findMany({
+            where: { userId, termId: { in: termIds } },
+            orderBy: { createdAt: "asc" },
+          })
+        : [];
+      return { ...tf, termIds, classRows };
+    }),
   ]);
 
   // Derived from the calendar lists already fetched above — no extra Google
@@ -1640,19 +1662,13 @@ export async function loadCalendarData(
   // Classes: load all current+upcoming terms for the modal picker.
   let memberClasses: MemberClassDTO[] = [];
   let classDestinations: ClassDestinationDTO[] = [];
-  // Resolve current+upcoming term ids for the modal's term selector.
-  const termFilter = await resolveTermFilter(request, { default: "upcoming" });
-  const selectableTermIds = termFilter.termIds ?? [];
+  const selectableTermIds = termFilter.termIds;
   const classTerms = termFilter.terms
     .filter((t) => selectableTermIds.includes(t.id))
     .map((t) => ({ id: t.id, code: t.code }));
 
   if (selectableTermIds.length > 0) {
-    const classRows = await prisma.memberClass.findMany({
-      where: { userId, termId: { in: selectableTermIds } },
-      orderBy: { createdAt: "asc" },
-    });
-    memberClasses = classRows.map((r) => toMemberClassDTO(r, calendarLinks));
+    memberClasses = termFilter.classRows.map((r) => toMemberClassDTO(r, calendarLinks));
     classDestinations = buildClassDestinations(calendarLinks);
   }
 
@@ -1724,20 +1740,45 @@ const MEMBER_ONLY_CALENDAR_INTENTS = new Set([
   "track-event-as-meeting",
 ]);
 
+// Intents that only ever write to Postgres — never to Google, and never to
+// which calendars/links the loader reads. A DB-only write leaves the cached
+// Google read valid, so the post-write revalidate can still hit the 30s cache
+// instead of re-fetching from Google.
+const DB_ONLY_CALENDAR_INTENTS = new Set([
+  "add-meeting-note",
+  "add-meeting-whiteboard",
+  "set-meeting-core",
+  "set-meeting-project",
+  "set-working-segments",
+  "copy-weekdays",
+  "reset-working-hours",
+  "seed-working-hours",
+  "set-event-buffer",
+]);
+
+/** Exported for tests — the cache itself has no externally observable state. */
+export function shouldInvalidateExternalCache(intent: string): boolean {
+  return !DB_ONLY_CALENDAR_INTENTS.has(intent);
+}
+
 export async function submitCalendarAction(request: Request) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
 
   const userId = auth.user.sub;
-  // Any write here can change what the next read should return, so drop this
-  // user's cached external reads rather than letting the TTL hide the change.
-  invalidateExternalCache(userId);
   const form = await request.formData();
   const raw = Object.fromEntries(form.entries());
 
   // Classes-this-term intents carry their own shape (period/custom + Google
   // destination), so they're handled before the Zod-validated calendar action.
   const rawIntent = typeof raw.intent === "string" ? raw.intent : "";
+
+  // Any write that can change what the next Google read returns must drop this
+  // user's cached external reads rather than letting the TTL hide the change.
+  if (shouldInvalidateExternalCache(rawIntent)) {
+    invalidateExternalCache(userId);
+  }
+
   if (
     MEMBER_ONLY_CALENDAR_INTENTS.has(rawIntent) &&
     !(await isLabMember(userId, request))

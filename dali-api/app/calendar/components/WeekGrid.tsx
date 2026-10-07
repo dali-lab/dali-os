@@ -229,7 +229,7 @@ export function EventRsvpControl({
         setError(`Recorded in DALI, but Google sync failed: ${json.gcalError}`);
         return;
       }
-      revalidator.revalidate();
+      await revalidator.revalidate();
       notifyTasksChanged();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Network error");
