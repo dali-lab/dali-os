@@ -1,5 +1,5 @@
 import { isRouteErrorResponse, Link, useRevalidator } from "react-router";
-import { Button } from "~/components/ui/Button";
+import { Button, buttonClasses } from "~/components/ui/Button";
 import { ErrorScreen } from "~/components/ErrorScreen";
 
 type SecondaryAction =
@@ -49,7 +49,7 @@ export function ApplicantErrorBoundary({
       {secondaryAction.kind === "back-to-portal" && (
         <Link
           to="/portal"
-          className="px-6 py-2.5 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-os-accent hover:text-os-accent transition"
+          className={buttonClasses("secondary", "md")}
         >
           Back to portal
         </Link>
@@ -60,7 +60,7 @@ export function ApplicantErrorBoundary({
           onClick={() => {
             if (typeof window !== "undefined") window.location.reload();
           }}
-          className="px-6 py-2.5 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-os-accent hover:text-os-accent transition"
+          className={buttonClasses("secondary", "md")}
         >
           Reload page
         </button>
