@@ -216,6 +216,52 @@ export async function releaseRoomBookings(bookingIds: string[]) {
 }
 
 /**
+ * Tie the holds bookRoomsForEvent made to the Google event that now exists,
+ * so releaseEventRoomBookings / retimeEventRoomBookings can find them later.
+ */
+export async function claimEventRoomBookings(bookingIds: string[], sourceEventId: string) {
+  if (bookingIds.length === 0) return;
+  await prisma.roomBooking.updateMany({ where: { id: { in: bookingIds } }, data: { sourceEventId } });
+}
+
+/** The event is gone: cancel its holds so the rooms free up. */
+export async function releaseEventRoomBookings(userId: string, sourceEventId: string) {
+  await prisma.roomBooking.updateMany({
+    where: { userId, sourceEventId, cancelledAt: null },
+    data: { cancelledAt: new Date(), cancelledByUserId: userId },
+  });
+}
+
+/**
+ * The event moved: move its holds with it, all or none. A room that's taken
+ * at the new time rejects the move (409) and leaves every hold where it was.
+ */
+export async function retimeEventRoomBookings(input: {
+  userId: string;
+  sourceEventId: string;
+  start: Date;
+  end: Date;
+}): Promise<RoomWriteResult<number>> {
+  const { userId, sourceEventId, start, end } = input;
+  if (!(end.getTime() > start.getTime())) return { ok: false, error: "End must be after start", status: 400 };
+  return prisma.$transaction(async (tx) => {
+    const holds = await tx.roomBooking.findMany({
+      where: { userId, sourceEventId, cancelledAt: null },
+      select: { id: true, roomId: true, room: { select: { name: true } } },
+    });
+    for (const hold of holds) {
+      await lockRoom(tx, hold.roomId);
+      const conflict = (await getRoomSchedule(hold.roomId, start, end, { excludeBookingId: hold.id }, tx))[0];
+      if (conflict) return conflictError(conflict, hold.room.name);
+    }
+    for (const hold of holds) {
+      await tx.roomBooking.update({ where: { id: hold.id }, data: { start, end } });
+    }
+    return { ok: true, value: holds.length };
+  });
+}
+
+/**
  * Cancel a booking, or — if it's already underway — end it now so the rest of
  * the slot frees up. The caller checks who may do this.
  */

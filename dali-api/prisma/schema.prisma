@@ -6604,10 +6604,16 @@ model RoomBooking {
   cancelledByUserId String?
   cancelledBy       User?     @relation("RoomBookingCancelledBy", fields: [cancelledByUserId], references: [id], onDelete: SetNull)
 
+  // The Google calendar event that booked this room from its Location field,
+  // so deleting or retiming that event follows through to the hold. Null for
+  // holds made on /rooms or by a display.
+  sourceEventId String?
+
   createdAt DateTime @default(now())
 
   @@index([roomId, start])
   @@index([userId, start])
+  @@index([userId, sourceEventId])
 }
 
 // A paired door display (the iPad outside a room). It authenticates with its

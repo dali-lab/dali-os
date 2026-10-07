@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db", () => {
   const prisma = {
     room: { findUnique: vi.fn(), findMany: vi.fn() },
-    roomBooking: { findMany: vi.fn(), create: vi.fn(), findUnique: vi.fn(), update: vi.fn(), deleteMany: vi.fn() },
+    roomBooking: { findMany: vi.fn(), create: vi.fn(), findUnique: vi.fn(), update: vi.fn(), deleteMany: vi.fn(), updateMany: vi.fn() },
     scheduledMeeting: { findMany: vi.fn() },
     $executeRaw: vi.fn(),
     $transaction: vi.fn(),
@@ -18,9 +18,12 @@ import {
   assertMeetingRoomsFree,
   bookRoomsForEvent,
   cancelRoomBooking,
+  claimEventRoomBookings,
   createRoomBooking,
   currentEvent,
   getRoomSchedule,
+  releaseEventRoomBookings,
+  retimeEventRoomBookings,
   type RoomScheduleItem,
 } from "~/lib/rooms.server";
 
@@ -32,7 +35,9 @@ const m = prisma as unknown as {
     findUnique: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
     deleteMany: ReturnType<typeof vi.fn>;
+    updateMany: ReturnType<typeof vi.fn>;
   };
+  $transaction: ReturnType<typeof vi.fn>;
   scheduledMeeting: { findMany: ReturnType<typeof vi.fn> };
 };
 
@@ -259,5 +264,57 @@ describe("bookRoomsForEvent", () => {
     expect(res).toMatchObject({ ok: false, status: 409 });
     expect(m.roomBooking.create).toHaveBeenCalledTimes(1);
     expect(m.roomBooking.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ["b-new"] } } });
+  });
+});
+
+describe("event room holds", () => {
+  const start = at("2026-09-21T15:00:00Z");
+  const end = at("2026-09-21T16:00:00Z");
+  const holds = [
+    { id: "b1", roomId: "r1", room: { name: "Studio" } },
+    { id: "b2", roomId: "r2", room: { name: "Lounge" } },
+  ];
+
+  it("claims the holds for the event once it exists", async () => {
+    await claimEventRoomBookings(["b1", "b2"], "evt1");
+    expect(m.roomBooking.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["b1", "b2"] } },
+      data: { sourceEventId: "evt1" },
+    });
+  });
+
+  it("cancels the event's live holds when the event is deleted", async () => {
+    await releaseEventRoomBookings("u1", "evt1");
+    expect(m.roomBooking.updateMany).toHaveBeenCalledWith({
+      where: { userId: "u1", sourceEventId: "evt1", cancelledAt: null },
+      data: expect.objectContaining({ cancelledByUserId: "u1", cancelledAt: expect.any(Date) }),
+    });
+  });
+
+  it("moves every hold with the event when the new slot is free", async () => {
+    // First call lists the event's holds; the schedule checks that follow find nothing.
+    m.roomBooking.findMany.mockResolvedValueOnce(holds).mockResolvedValue([]);
+    const res = await retimeEventRoomBookings({ userId: "u1", sourceEventId: "evt1", start, end });
+    expect(res).toEqual({ ok: true, value: 2 });
+    expect(m.roomBooking.update).toHaveBeenCalledTimes(2);
+    expect(m.roomBooking.update).toHaveBeenCalledWith({ where: { id: "b1" }, data: { start, end } });
+    // The hold being moved is excluded from its own conflict check.
+    expect(m.roomBooking.findMany.mock.calls[1][0].where.id).toEqual({ not: "b1" });
+  });
+
+  it("409s naming the room when the new slot is taken, and moves nothing", async () => {
+    m.roomBooking.findMany
+      .mockResolvedValueOnce(holds)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: "b9", title: "Design crit", start, end, user: ada }]);
+    const res = await retimeEventRoomBookings({ userId: "u1", sourceEventId: "evt1", start, end });
+    expect(res).toMatchObject({ ok: false, status: 409, error: expect.stringContaining("Lounge") });
+    expect(m.roomBooking.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects an end at or before the start", async () => {
+    const res = await retimeEventRoomBookings({ userId: "u1", sourceEventId: "evt1", start: end, end: start });
+    expect(res).toMatchObject({ ok: false, status: 400 });
+    expect(m.$transaction).not.toHaveBeenCalled();
   });
 });

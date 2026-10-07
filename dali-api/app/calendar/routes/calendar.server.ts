@@ -75,7 +75,13 @@ import {
   resolveOccurrence,
 } from "~/lib/meeting-occurrences";
 import { getZonedYMD, resolveUserTimeZone, zonedDayStartUtc } from "~/lib/timezone";
-import { bookRoomsForEvent, releaseRoomBookings } from "~/lib/rooms.server";
+import {
+  bookRoomsForEvent,
+  claimEventRoomBookings,
+  releaseEventRoomBookings,
+  releaseRoomBookings,
+  retimeEventRoomBookings,
+} from "~/lib/rooms.server";
 import { fetchWindow, parseAnchor, parseView, viewWindow, weekWindow } from "~/calendar/lib/view-window";
 import type {
   WhSegment,
@@ -906,7 +912,9 @@ async function handleEventAction(
       }
       // The hours were the event's hours — they go with it rather than being
       // left behind as an entry pointing at an event that no longer exists.
+      // Same for any room it held.
       await prisma.timeEntry.deleteMany({ where: { userId, sourceEventId: eventId } });
+      await releaseEventRoomBookings(userId, eventId);
       return null;
     }
 
@@ -921,6 +929,14 @@ async function handleEventAction(
     if (intent === "event-move") {
       const eventId = get("eventId");
       if (!eventId) return Response.json({ error: "Missing event id" }, { status: 400 });
+      // Rooms first: a taken room rejects the move before Google hears of it.
+      const moved = await retimeEventRoomBookings({
+        userId,
+        sourceEventId: eventId,
+        start: new Date(startIso),
+        end: new Date(endIso),
+      });
+      if (!moved.ok) return Response.json({ error: moved.error }, { status: moved.status });
       await patchGoogleCalendarEvent({ linkId, calendarId, eventId, startIso, endIso, allDay, timeZone });
       await retimeEventWorkLog(userId, eventId, startIso, endIso);
       return null;
@@ -987,6 +1003,7 @@ async function handleEventAction(
         await releaseRoomBookings(bookingIds);
         throw err;
       }
+      await claimEventRoomBookings(bookingIds, created.eventId);
       await writeEventWorkLog({
         userId,
         eventId: created.eventId,
@@ -1037,7 +1054,17 @@ async function handleEventAction(
           attendees: [],
         });
       } else {
-        // This occurrence (or a plain single event).
+        // This occurrence (or a plain single event). Only a plain event can
+        // hold a room, and its hold moves with it or blocks the edit.
+        if (!recurringEventId) {
+          const moved = await retimeEventRoomBookings({
+            userId,
+            sourceEventId: eventId,
+            start: new Date(startIso),
+            end: new Date(endIso),
+          });
+          if (!moved.ok) return Response.json({ error: moved.error }, { status: moved.status });
+        }
         await patchGoogleCalendarEvent({ linkId, calendarId, eventId, startIso, endIso, ...fields });
       }
       if (!recurringEventId) {
