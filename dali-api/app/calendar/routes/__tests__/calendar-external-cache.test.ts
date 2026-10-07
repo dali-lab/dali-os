@@ -5,6 +5,8 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
+// calendar.server pulls in the Prisma client; CI has no generated client.
+vi.mock("~/lib/db");
 vi.mock("~/lib/google-calendar", () => ({
   listCalendarsForLink: vi.fn(),
 }));
