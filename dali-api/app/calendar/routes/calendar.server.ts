@@ -1331,12 +1331,10 @@ export async function loadCalendarData(
   // Keyed on the DALIMember row rather than the auth type, the same way the
   // member shell decides who it is for: a non-member instructor authenticates
   // as a "member" account and still belongs on the portal copy.
-  const labMember = await isLabMember(userId, request);
-  if (opts.portal && labMember) return redirect("/calendar");
-
   // Resolve the current term once and reuse it everywhere in this loader so
   // the per-request cache in roles.ts eliminates redundant DB reads.
-  const term = await currentTerm(request);
+  const [labMember, term] = await Promise.all([isLabMember(userId, request), currentTerm(request)]);
+  if (opts.portal && labMember) return redirect("/calendar");
   const termId = term?.id;
 
   // Members + groups for the participant picker (shared with the meeting
@@ -1479,9 +1477,9 @@ export async function loadCalendarData(
   const timeEntryLowerBound = new Date(weekStart.getTime() - 8 * 7 * 86_400_000);
   const timeEntryUpperBound = new Date(weekEnd.getTime() + 8 * 7 * 86_400_000);
 
-  // timeEntryRows fetched here (not in the earlier Promise.all) because they
-  // need weekStart/weekEnd for the date window.
-  const timeEntryRows = await prisma.timeEntry.findMany({
+  // Needs weekStart/weekEnd for the date window, so it can't join the earlier
+  // Promise.all; it runs alongside the Google read below instead.
+  const timeEntryQuery = {
       where: {
         userId,
         date: { gte: timeEntryLowerBound, lte: timeEntryUpperBound },
@@ -1504,7 +1502,7 @@ export async function loadCalendarData(
         occurrenceStart: true,
         meeting: { select: { notePages: { select: { id: true, meetingOccurrenceStart: true } } } },
       },
-    });
+    } as const;
 
   // Fetch external busy + sub-calendar lists in parallel. Don't fail the page
   // if a single link errors — surface the error on the link card.
@@ -1542,11 +1540,11 @@ export async function loadCalendarData(
     calendarListResults.map(({ linkId, items }) => [linkId, items]),
   );
 
-  const roles = await getUserRoles(userId, request);
-
   let ingestionError: string | null = null;
   const externalCacheKey = `${userId}:${fetchStart.getTime()}:${fetchEnd.getTime()}`;
-  const [externalRaw, calendarLinks] = await Promise.all([
+  // Every Postgres read that doesn't depend on the Google result rides in the
+  // same Promise.all as the Google read, so the slow round-trip hides them.
+  const [externalRaw, calendarLinks, roles, timeEntryRows, termFilter] = await Promise.all([
     // Read every calendar on each account ("all"), not just the ones counting
     // toward availability: the grid's per-calendar Show toggle filters this
     // client-side, so a calendar missing here can never be shown.
@@ -1597,6 +1595,10 @@ export async function loadCalendarData(
         return { ...base, subCalendars };
       }),
     ),
+    getUserRoles(userId, request),
+    prisma.timeEntry.findMany(timeEntryQuery),
+    // Current+upcoming term ids for the class modal's term selector.
+    resolveTermFilter(request, { default: "upcoming" }),
   ]);
 
   // Derived from the calendar lists already fetched above — no extra Google
@@ -1650,8 +1652,6 @@ export async function loadCalendarData(
   // Classes: load all current+upcoming terms for the modal picker.
   let memberClasses: MemberClassDTO[] = [];
   let classDestinations: ClassDestinationDTO[] = [];
-  // Resolve current+upcoming term ids for the modal's term selector.
-  const termFilter = await resolveTermFilter(request, { default: "upcoming" });
   const selectableTermIds = termFilter.termIds ?? [];
   const classTerms = termFilter.terms
     .filter((t) => selectableTermIds.includes(t.id))
