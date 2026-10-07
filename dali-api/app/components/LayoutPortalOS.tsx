@@ -14,7 +14,7 @@ import {
   railRowClass,
   useAccountMenuStyle,
 } from '~/components/os-shell-chrome'
-import { PORTAL_NAV, isPortalNavActive } from '~/lib/portal-nav'
+import { PORTAL_NAV, isPortalNavActive, type PortalNavItem } from '~/lib/portal-nav'
 import { ImpersonationBanner } from '~/components/ImpersonationBanner'
 import { cn } from '~/lib/cn'
 
@@ -40,10 +40,31 @@ interface LayoutPortalOSProps {
    *  never stranded in a non-member shell. */
   impersonating?: boolean
   impersonationAllowsWrites?: boolean
+  /** The rail's rows. Defaults to the applicant portal's four surfaces; the
+   *  partner shell passes its own (Home + one row per project). */
+  nav?: PortalNavItem[]
+  /** Where the wordmark buttons and the home row point. */
+  homeHref?: string
+  /** Where the account menu's Settings row points. */
+  settingsHref?: string
+  /** A second identity line under the user's name in the rail foot — the
+   *  partner's org name. Applicant portal has none. */
+  subtitle?: string | null
   children: React.ReactNode
 }
 
-export function LayoutPortalOS({ user, photoUrl, fitViewport = false, impersonating = false, impersonationAllowsWrites = false, children }: LayoutPortalOSProps) {
+export function LayoutPortalOS({
+  user,
+  photoUrl,
+  fitViewport = false,
+  impersonating = false,
+  impersonationAllowsWrites = false,
+  nav = PORTAL_NAV,
+  homeHref = '/portal',
+  settingsHref = '/portal/settings',
+  subtitle = null,
+  children,
+}: LayoutPortalOSProps) {
   const location = useLocation()
   const path = location.pathname + location.search
   useOsShellRoot(true)
@@ -130,7 +151,7 @@ export function LayoutPortalOS({ user, photoUrl, fitViewport = false, impersonat
           {!collapsed && (
             <button
               type="button"
-              {...tabClickProps({ url: '/portal', label: 'Home' })}
+              {...tabClickProps({ url: homeHref, label: 'Home' })}
               className="font-os-logo text-2xl font-semibold text-os-accent focus:outline-none"
             >
               dali.os
@@ -177,14 +198,14 @@ export function LayoutPortalOS({ user, photoUrl, fitViewport = false, impersonat
 
         {/* The four surfaces, as direct rows. */}
         <div className="flex shrink-0 flex-col gap-3">
-          {PORTAL_NAV.map((item) => {
+          {nav.map((item) => {
             const Icon = item.icon
             return (
               <Tooltip key={item.href} content={collapsed ? item.label : ''} placement="right">
                 <button
                   type="button"
                   {...tabClickProps({ url: item.href, label: item.label })}
-                  className={railRowClass(isPortalNavActive(path, item), collapsed)}
+                  className={railRowClass(isPortalNavActive(path, item, homeHref), collapsed)}
                 >
                   <Icon className="h-5 w-5 flex-shrink-0 opacity-85" />
                   {!collapsed && <span className="truncate">{item.label}</span>}
@@ -207,7 +228,7 @@ export function LayoutPortalOS({ user, photoUrl, fitViewport = false, impersonat
             <button
               type="button"
               role="menuitem"
-              {...tabClickProps({ url: '/portal/settings', label: 'Settings' })}
+              {...tabClickProps({ url: settingsHref, label: 'Settings' })}
               className={osMenuItemClass}
             >
               <Settings className="h-4 w-4 flex-shrink-0 text-os-grey" />
@@ -235,8 +256,13 @@ export function LayoutPortalOS({ user, photoUrl, fitViewport = false, impersonat
           >
             {avatar('h-6 w-6')}
             {!collapsed && (
-              <span className="truncate text-base font-medium text-os-grey">
-                {[user.firstName, user.lastName].filter(Boolean).join(' ') || user.email}
+              <span className="min-w-0 flex-1 text-left">
+                <span className="block truncate text-base font-medium text-os-grey">
+                  {[user.firstName, user.lastName].filter(Boolean).join(' ') || user.email}
+                </span>
+                {subtitle && (
+                  <span className="block truncate text-xs text-os-muted">{subtitle}</span>
+                )}
               </span>
             )}
           </button>
@@ -325,7 +351,7 @@ export function LayoutPortalOS({ user, photoUrl, fitViewport = false, impersonat
           </button>
           <button
             type="button"
-            {...tabClickProps({ url: '/portal', label: 'Home' })}
+            {...tabClickProps({ url: homeHref, label: 'Home' })}
             className="font-os-logo text-xl font-semibold text-os-accent"
           >
             dali.os
@@ -341,7 +367,7 @@ export function LayoutPortalOS({ user, photoUrl, fitViewport = false, impersonat
           >
             <Search className="h-5 w-5" />
           </button>
-          <Link to="/portal/settings" aria-label="Settings" className="flex items-center">
+          <Link to={settingsHref} aria-label="Settings" className="flex items-center">
             {avatar('h-8 w-8')}
           </Link>
         </div>
@@ -397,7 +423,7 @@ export function LayoutPortalOS({ user, photoUrl, fitViewport = false, impersonat
         onClose={() => setPaletteOpen(false)}
         tabless
         focusMode={false}
-        portalNav={PORTAL_NAV}
+        portalNav={nav}
         onOpen={openFromPalette}
       />
     </div>

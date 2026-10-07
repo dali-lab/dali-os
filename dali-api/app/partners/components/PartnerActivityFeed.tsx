@@ -73,7 +73,7 @@ function render(a: PartnerActivity): Rendered {
         detail: projectId ? (
           <Link
             to={`/projects/${projectId}`}
-            className="text-accent-coral hover:underline"
+            className="text-os-accent hover:underline"
           >
             View the project →
           </Link>
@@ -157,7 +157,7 @@ export function PartnerActivityFeed({
   const [note, setNote] = useState("");
 
   return (
-    <section className="bg-card border border-border rounded-2xl">
+    <section className="rounded-os-card bg-os-card">
       <header className="flex items-center justify-between gap-2 px-4 py-3 border-b border-border">
         <h2 className="text-sm font-semibold text-foreground">Activity</h2>
         {canEdit && (
@@ -191,7 +191,7 @@ export function PartnerActivityFeed({
             autoFocus
             rows={3}
             placeholder="Add an internal note…"
-            className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+            className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30"
           />
           <div className="flex justify-end gap-2">
             <button
