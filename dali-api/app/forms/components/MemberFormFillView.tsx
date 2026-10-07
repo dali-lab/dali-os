@@ -102,7 +102,7 @@ export function MemberFormFillView({
       <div className="text-center py-10">
         {doneContent ?? (
           <>
-            <h1 className="font-heading text-xl font-bold text-dark-blue">
+            <h1 className="font-heading text-xl font-bold text-foreground">
               Submitted
             </h1>
             <p className="text-sm text-muted-foreground mt-2">
@@ -123,7 +123,7 @@ export function MemberFormFillView({
 
   return (
     <>
-      <h1 className="font-heading text-2xl font-bold text-dark-blue">
+      <h1 className="font-heading text-2xl font-bold text-foreground">
         {data.name}
       </h1>
       {!isEmptyBlocks(data.description) && (
@@ -231,7 +231,7 @@ export function MemberFormShell({
               D
             </span>
           </div>
-          <span className="font-heading text-sm font-bold text-dark-blue">
+          <span className="font-heading text-sm font-bold text-foreground">
             DALI OS
           </span>
         </div>

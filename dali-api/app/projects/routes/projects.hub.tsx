@@ -796,7 +796,7 @@ function ProjectThumb({
     );
   }
   return (
-    <div className="w-8 h-8 rounded bg-brand-tint text-dark-blue flex items-center justify-center text-xs font-bold flex-shrink-0">
+    <div className="w-8 h-8 rounded bg-os-well text-foreground flex items-center justify-center text-xs font-bold flex-shrink-0">
       {project.name.slice(0, 1)}
     </div>
   );
