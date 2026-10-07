@@ -81,6 +81,7 @@ import {
   releaseEventRoomBookings,
   releaseRoomBookings,
   retimeEventRoomBookings,
+  truncateEventRoomBookings,
 } from "~/lib/rooms.server";
 import { fetchWindow, parseAnchor, parseView, viewWindow, weekWindow } from "~/calendar/lib/view-window";
 import type {
@@ -922,9 +923,16 @@ async function handleEventAction(
       }
       // The hours were the event's hours — they go with it rather than being
       // left behind as an entry pointing at an event that no longer exists.
-      // Same for any room it held.
+      // Same for any room it held. The hold is keyed by the series master for
+      // a recurring event, not the instance id.
       await prisma.timeEntry.deleteMany({ where: { userId, sourceEventId: eventId } });
-      await releaseEventRoomBookings(userId, eventId);
+      const holdKey = recurringEventId ?? eventId;
+      const occurrenceStart =
+        googleInstanceOriginalStart(eventId, recurringEventId) ??
+        (originalStartIso ? new Date(originalStartIso) : undefined);
+      // Google deletion already happened above; there's nothing to roll back
+      // if this fails, so its result is ignored.
+      await releaseEventRoomBookings(userId, holdKey, { scope: recurringEventId ? scope : "all", occurrenceStart });
       return null;
     }
 
@@ -942,9 +950,11 @@ async function handleEventAction(
       // Rooms first: a taken room rejects the move before Google hears of it.
       const moved = await retimeEventRoomBookings({
         userId,
-        sourceEventId: eventId,
+        sourceEventId: recurringEventId ?? eventId,
         start: new Date(startIso),
         end: new Date(endIso),
+        scope: recurringEventId ? "this" : "all",
+        occurrenceStart: googleInstanceOriginalStart(eventId, recurringEventId) ?? undefined,
       });
       if (!moved.ok) return Response.json({ error: moved.error }, { status: moved.status });
       await patchGoogleCalendarEvent({ linkId, calendarId, eventId, startIso, endIso, allDay, timeZone });
@@ -977,9 +987,9 @@ async function handleEventAction(
       const roomIds = [...new Set(get("roomIds").split(",").filter(Boolean))];
       let bookingIds: string[] = [];
       if (roomIds.length) {
-        if (allDay || recurrenceRule) {
+        if (allDay) {
           return Response.json(
-            { error: "A room can only be booked for a one-time event with a start and end time." },
+            { error: "A room can only be booked for an event with a start and end time." },
             { status: 400 },
           );
         }
@@ -989,6 +999,7 @@ async function handleEventAction(
           start: new Date(startIso),
           end: new Date(endIso),
           title,
+          recurrenceRule,
         });
         if (!booked.ok) return Response.json({ error: booked.error }, { status: booked.status });
         bookingIds = booked.value;
@@ -1042,39 +1053,89 @@ async function handleEventAction(
       }
 
       if (recurringEventId && scope === "all") {
+        // Series duration follows the new start/end; rooms first so a taken
+        // room rejects the edit before Google hears of it.
+        const moved = await retimeEventRoomBookings({
+          userId,
+          sourceEventId: recurringEventId,
+          start: new Date(startIso),
+          end: new Date(endIso),
+          scope: "all",
+        });
+        if (!moved.ok) return Response.json({ error: moved.error }, { status: moved.status });
         // Whole series — patch the master (also moves its anchor time).
         await patchGoogleCalendarEvent({ linkId, calendarId, eventId: recurringEventId, startIso, endIso, ...fields });
       } else if (recurringEventId && scope === "following" && originalStartIso) {
         // Split: truncate the master before this occurrence, then start a new
-        // series from the edited fields.
+        // series from the edited fields. Any live holds on the master split
+        // the same way: truncate first, THEN book the new series — booking
+        // first would see the old series' own (not-yet-truncated) occurrences
+        // on the same rooms and reject with a false conflict.
         const master = await getGoogleEvent({ linkId, calendarId, eventId: recurringEventId });
-        const truncated = rruleWithUntil(master.recurrence, new Date(new Date(originalStartIso).getTime() - 1000));
-        if (truncated) await patchGoogleCalendarEvent({ linkId, calendarId, eventId: recurringEventId, recurrenceRule: truncated });
-        await createGoogleCalendarEvent({
-          linkId,
-          calendarId,
-          summary: title,
-          description: description || undefined,
-          location: location || undefined,
-          startIso,
-          endIso,
-          allDay,
-          recurrenceRule: bareRrule(master.recurrence),
-          timeZone,
-          attendees: [],
+        const holds = await prisma.roomBooking.findMany({
+          where: { userId, sourceEventId: recurringEventId, cancelledAt: null },
+          select: { roomId: true, seriesEnd: true },
         });
-      } else {
-        // This occurrence (or a plain single event). Only a plain event can
-        // hold a room, and its hold moves with it or blocks the edit.
-        if (!recurringEventId) {
-          const moved = await retimeEventRoomBookings({
+        const splitAt = googleInstanceOriginalStart(eventId, recurringEventId) ?? new Date(originalStartIso);
+        let newBookingIds: string[] = [];
+        if (holds.length) {
+          const truncatedHolds = await truncateEventRoomBookings(userId, recurringEventId, splitAt);
+          if (!truncatedHolds.ok) return Response.json({ error: truncatedHolds.error }, { status: truncatedHolds.status });
+          // The new hold series keeps the old one's end rather than the
+          // master's rule verbatim: a COUNT would start over and run past the
+          // term the old holds were approved for.
+          const oldSeriesEnd = holds.reduce<Date | null>(
+            (acc, h) => (h.seriesEnd && (!acc || h.seriesEnd > acc) ? h.seriesEnd : acc),
+            null,
+          );
+          const recurrenceRule = oldSeriesEnd ? rruleWithUntil(master.recurrence, oldSeriesEnd) : null;
+          const booked = await bookRoomsForEvent({
+            roomIds: [...new Set(holds.map((h) => h.roomId))],
             userId,
-            sourceEventId: eventId,
             start: new Date(startIso),
             end: new Date(endIso),
+            title,
+            recurrenceRule,
           });
-          if (!moved.ok) return Response.json({ error: moved.error }, { status: moved.status });
+          if (!booked.ok) return Response.json({ error: booked.error }, { status: booked.status });
+          newBookingIds = booked.value;
         }
+        const truncatedRule = rruleWithUntil(master.recurrence, new Date(new Date(originalStartIso).getTime() - 1000));
+        if (truncatedRule) await patchGoogleCalendarEvent({ linkId, calendarId, eventId: recurringEventId, recurrenceRule: truncatedRule });
+        let newEvent: Awaited<ReturnType<typeof createGoogleCalendarEvent>>;
+        try {
+          newEvent = await createGoogleCalendarEvent({
+            linkId,
+            calendarId,
+            summary: title,
+            description: description || undefined,
+            location: location || undefined,
+            startIso,
+            endIso,
+            allDay,
+            recurrenceRule: bareRrule(master.recurrence),
+            timeZone,
+            attendees: [],
+          });
+        } catch (err) {
+          await releaseRoomBookings(newBookingIds);
+          throw err;
+        }
+        await claimEventRoomBookings(newBookingIds, newEvent.eventId);
+      } else {
+        // This occurrence (or a plain single event) — its hold moves with it
+        // or blocks the edit.
+        const moved = await retimeEventRoomBookings({
+          userId,
+          sourceEventId: recurringEventId ?? eventId,
+          start: new Date(startIso),
+          end: new Date(endIso),
+          scope: recurringEventId ? "this" : "all",
+          occurrenceStart: recurringEventId
+            ? googleInstanceOriginalStart(eventId, recurringEventId) ?? new Date(originalStartIso ?? startIso)
+            : undefined,
+        });
+        if (!moved.ok) return Response.json({ error: moved.error }, { status: moved.status });
         await patchGoogleCalendarEvent({ linkId, calendarId, eventId, startIso, endIso, ...fields });
       }
       if (!recurringEventId) {

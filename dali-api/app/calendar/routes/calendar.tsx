@@ -463,6 +463,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
         intent: "event-move",
         destination: `${e.linkId}:${e.calendarId ?? "primary"}`,
         eventId: e.eventId,
+        recurringEventId: e.recurringEventId ?? "",
         startIso,
         endIso,
         timeZone: data.timezone,

@@ -6598,6 +6598,11 @@ model RoomBooking {
   end    DateTime
   source RoomBookingSource @default(Web)
 
+  // RFC 5545 RRULE; `start`/`end` are the first occurrence and give the
+  // duration. Null = a single booking.
+  recurrenceRule String?
+  exceptions     RoomBookingException[]
+
   // Soft-cancel so an early "I'm done" on the display frees the rest of the
   // slot without erasing that the room was used.
   cancelledAt       DateTime?
@@ -6609,11 +6614,32 @@ model RoomBooking {
   // holds made on /rooms or by a display.
   sourceEventId String?
 
+  // When the last occurrence of a repeating booking ends (a series must have
+  // an end), so schedule reads can skip finished series. Null for a single
+  // booking.
+  seriesEnd DateTime?
+
   createdAt DateTime @default(now())
 
   @@index([roomId, start])
   @@index([userId, start])
   @@index([userId, sourceEventId])
+}
+
+// Per-occurrence override/cancellation for a recurring RoomBooking. Mirrors
+// MeetingException field-for-field so expandOccurrences (meeting-occurrences.ts)
+// works unchanged against either.
+model RoomBookingException {
+  id            String      @id @default(cuid())
+  roomBookingId String
+  booking       RoomBooking @relation(fields: [roomBookingId], references: [id], onDelete: Cascade)
+  // The original occurrence start being overridden.
+  originalStart       DateTime
+  overrideStart       DateTime?
+  overrideDurationMin Int?
+  cancelled           Boolean   @default(false)
+
+  @@unique([roomBookingId, originalStart])
 }
 
 // A paired door display (the iPad outside a room). It authenticates with its
