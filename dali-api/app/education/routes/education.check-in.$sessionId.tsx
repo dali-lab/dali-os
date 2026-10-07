@@ -8,6 +8,8 @@ import { isSessionCheckInOpen } from "~/education/lib/session-checkin.server";
 import { formatSessionWhen } from "~/lib/display";
 import { resolveUserTimeZone } from "~/lib/timezone";
 import { CheckCircle2 } from "lucide-react";
+import { Button } from "~/components/ui/Button";
+import { useOsShellRoot } from "~/lib/os-shell";
 
 export const meta: Route.MetaFunction = () => [{ title: "Session check-in · DALI OS" }];
 
@@ -76,6 +78,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 }
 
 export default function EducationSessionCheckIn() {
+  useOsShellRoot(true);
   const data = useLoaderData<typeof loader>();
   const [present, setPresent] = useState(data.alreadyPresent);
   const [submitting, setSubmitting] = useState(false);
@@ -103,8 +106,8 @@ export default function EducationSessionCheckIn() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-muted/40 p-4">
-      <div className="w-full max-w-sm bg-card border border-border rounded-2xl shadow-brand-2 p-6 text-center">
+    <div className="os-shell min-h-screen flex items-center justify-center bg-os-bg text-foreground p-4">
+      <div className="w-full max-w-sm rounded-os-card bg-os-card p-6 text-center">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           {data.courseTitle}
         </p>
@@ -130,14 +133,9 @@ export default function EducationSessionCheckIn() {
             </p>
           ) : (
             <>
-              <button
-                type="button"
-                onClick={checkIn}
-                disabled={submitting}
-                className="w-full px-4 py-3 rounded-md bg-accent-coral text-white text-base font-medium hover:bg-accent-coral/90 transition-colors disabled:opacity-50"
-              >
+              <Button type="button" onClick={checkIn} disabled={submitting} className="w-full">
                 {submitting ? "Checking in…" : "Check in"}
-              </button>
+              </Button>
               {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
             </>
           )}

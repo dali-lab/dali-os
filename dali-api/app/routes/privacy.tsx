@@ -7,6 +7,7 @@
 
 import type { Route } from "./+types/privacy";
 import { APPLICATIONS_FROM_EMAIL } from "~/lib/app-env";
+import { useOsShellRoot } from "~/lib/os-shell";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Privacy Policy · DALI OS" },
@@ -15,10 +16,11 @@ export const meta: Route.MetaFunction = () => [
 const LAST_UPDATED = "May 20, 2026";
 
 export default function PrivacyPolicy() {
+  useOsShellRoot(true);
   return (
-    <main className="mx-auto max-w-3xl px-6 py-12 text-foreground">
+    <main className="os-shell min-h-screen bg-os-bg mx-auto max-w-3xl px-6 py-12 text-foreground">
       <h1 className="font-heading text-3xl font-bold">Privacy Policy</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
+      <p className="mt-1 text-sm text-os-grey">
         Last updated: {LAST_UPDATED}
       </p>
 
