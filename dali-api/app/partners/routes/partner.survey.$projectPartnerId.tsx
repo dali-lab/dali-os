@@ -75,7 +75,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     loadedFingerprint &&
     loadedFingerprint !== surveyForm.versionUpdatedAt
   ) {
-    return { error: "This form was just updated — reload and re-submit." };
+    return { error: "This form was just updated. Reload and re-submit." };
   }
 
   let formAnswers: Record<string, unknown> = {};

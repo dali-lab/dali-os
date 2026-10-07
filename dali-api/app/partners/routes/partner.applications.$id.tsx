@@ -236,7 +236,7 @@ export default function PartnerApplicationDetail({
           to={`/partner/projects/${application.resultingProjectId}`}
           className="bg-accent-teal/10 border border-accent-teal/30 rounded-2xl px-5 py-4 text-sm text-accent-teal font-medium hover:bg-accent-teal/15 transition"
         >
-          🎉 This pitch became a project — see what the team is up to →
+          🎉 This pitch became a project. See what the team is up to →
         </Link>
       )}
 
@@ -325,7 +325,7 @@ export default function PartnerApplicationDetail({
             from the portal, which matches Core's lock on their side. */}
         {application.sowState === "Draft" ? (
           <p className="text-sm text-muted-foreground bg-muted/30 rounded-lg px-4 py-3">
-            The DALI team is still drafting this — you'll be notified when it's ready to review.
+            The DALI team is still drafting this. You'll be notified when it's ready to review.
           </p>
         ) : collabToken ? (
           <>

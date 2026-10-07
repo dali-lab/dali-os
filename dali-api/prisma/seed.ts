@@ -3028,7 +3028,7 @@ async function main() {
       partnerOrgId: "partner-thayer",
       // Kept on its own contact, distinct from Tuck/Hood's real portal logins.
       contactEmail: "partner-thayer@seed.dali",
-      contactName: "Lab sensor dashboard contact",
+      contactName: "Taylor Thayer",
       targetTermIds: [term26X?.id],
       stage: "New" as const,
       summary: "Real-time dashboard for shared lab equipment sensor data.",

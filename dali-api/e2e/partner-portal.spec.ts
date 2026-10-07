@@ -67,14 +67,17 @@ test.describe('internal Organizations pages (Core)', () => {
   });
 
   test('org detail shows members, pending invites, and projects', async ({ page }) => {
-    await page.goto('/core/partners/orgs/partner-tuck-school?embed=1');
+    // The org page opens on its Timeline tab; members, invites and projects
+    // live on their own tabs, reached by URL (clicking races hydration).
+    await page.goto('/core/partners/orgs/partner-tuck-school?tab=contacts&embed=1');
     await expect(
       page.getByRole('heading', { name: 'Tuck School of Business' }),
     ).toBeVisible();
-    // The seed marks Pat as primary contact, so the name appears in both the
-    // member row and the primary-contact line — assert presence, not oneness.
+    // The seed marks Pat as primary contact, so the name can appear more than
+    // once on the tab. Assert presence, not oneness.
     await expect(page.getByText('Pat Tuck').first()).toBeVisible();
     await expect(page.getByText('invitee.tuck@example.com')).toBeVisible();
+    await page.goto('/core/partners/orgs/partner-tuck-school?tab=projects&embed=1');
     await expect(page.getByText('Tuck Alumni Connect')).toBeVisible();
   });
 
@@ -114,14 +117,24 @@ test.describe('internal Organizations pages (Core)', () => {
       // clicking the dialog's action button.
 
       // Move: Tuck → Hood.
-      await page.goto('/core/partners/orgs/partner-tuck-school?embed=1');
+      await page.goto('/core/partners/orgs/partner-tuck-school?tab=contacts&embed=1');
+      // The first Core org page of a run can take a while to compile on the
+      // dev server; wait for the row itself rather than racing it.
+      await expect(page.getByText('Movey Tester')).toBeVisible({ timeout: 20_000 });
       const row = page.locator('li', { hasText: 'Movey Tester' });
-      await row.getByRole('button', { name: 'Move', exact: true }).click();
-      await row.locator('select[name="targetOrgId"]').selectOption({ label: 'Hood Museum of Art' });
+      // Move is a client-side toggle; a click that lands before hydration is
+      // lost, so retry until the move form (its Select trigger) shows up.
+      await expect(async () => {
+        await row.getByRole('button', { name: 'Move', exact: true }).first().click();
+        await expect(row.getByRole('combobox').last()).toBeVisible({ timeout: 1_500 });
+      }).toPass({ timeout: 15_000 });
+      // Shared Select: open the combobox trigger, then pick from the listbox.
+      await row.getByRole('combobox').last().click();
+      await page.getByRole('option', { name: 'Hood Museum of Art' }).click();
       await row.getByRole('button', { name: 'Move', exact: true }).last().click();
       await page.getByRole('dialog').getByRole('button', { name: 'Move', exact: true }).click();
       await expect(page.getByText('Movey Tester')).not.toBeVisible();
-      await page.goto('/core/partners/orgs/partner-hood-museum?embed=1');
+      await page.goto('/core/partners/orgs/partner-hood-museum?tab=contacts&embed=1');
       await expect(page.getByText('Movey Tester')).toBeVisible();
 
       // Remove from Hood.
@@ -133,7 +146,7 @@ test.describe('internal Organizations pages (Core)', () => {
       await expect(page.getByText('Movey Tester')).not.toBeVisible();
 
       // Delete the empty org — lands back on the org list without it.
-      await page.goto(`/core/partners/orgs/${emptyOrgId}?embed=1`);
+      await page.goto(`/core/partners/orgs/${emptyOrgId}?tab=settings&embed=1`);
       await page.getByRole('button', { name: 'Delete organization' }).click();
       await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click();
       await expect(

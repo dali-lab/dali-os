@@ -89,7 +89,7 @@ export function RequestMeetingModal({
       <ModalHeader
         titleId="request-meeting-title"
         title="Request a meeting"
-        subtitle="Pick a time that works for you — the team confirms by email."
+        subtitle="Pick a time that works for you. The team confirms by email."
         onClose={onClose}
       />
 

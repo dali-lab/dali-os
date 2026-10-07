@@ -81,7 +81,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   try {
     fieldValues = JSON.parse((form.get("fieldValues") as string) || "{}");
   } catch {
-    return { error: "Could not read your inputs — please try again." };
+    return { error: "Could not read your inputs. Please try again." };
   }
 
   const status = await partnerContractStatus(application.id);

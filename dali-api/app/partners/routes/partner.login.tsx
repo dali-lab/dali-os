@@ -156,7 +156,7 @@ export default function PartnerLogin() {
         ) : (
           <>
             <p className="text-muted-foreground mb-6">
-              Sign in or create your account — no password needed.
+              Sign in or create your account. No password needed.
             </p>
 
             {actionData && "error" in actionData && (
@@ -185,7 +185,7 @@ export default function PartnerLogin() {
                 an invite genuinely IS a sign-in method. Everything else about
                 organizations lives after sign-in (partner.onboarding). */}
             <p className="mt-6 text-xs text-muted-foreground">
-              Have an invite email? It signs you in directly — nothing needed
+              Have an invite email? It signs you in directly. Nothing needed
               here.
             </p>
           </>

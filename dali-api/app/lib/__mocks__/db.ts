@@ -95,6 +95,9 @@ export const prisma = {
     findUnique: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
   },
+  rubric: {
+    findMany: vi.fn().mockResolvedValue([]),
+  },
   collabDocumentVersion: {
     findMany: vi.fn().mockResolvedValue([]),
     findFirst: vi.fn(),

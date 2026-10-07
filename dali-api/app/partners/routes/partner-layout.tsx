@@ -126,7 +126,7 @@ export default function PartnerLayout() {
         <Link
           to="/partner"
           className="flex items-center min-w-0 focus:outline-none"
-          title="DALI Partner Portal — home"
+          title="DALI Partner Portal home"
         >
           <img src="/logo-blue.svg" alt="DALI Lab" className="h-9 w-auto flex-shrink-0" />
         </Link>

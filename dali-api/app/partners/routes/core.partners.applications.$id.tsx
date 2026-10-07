@@ -63,6 +63,12 @@ import type { PartnerMeetingOutcome } from "~/generated/prisma/enums";
 import { getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { getPartnerContactEmailThreads } from "../lib/partner-email.server";
+import {
+  partnerContractStatus,
+  listPartnerContractDocuments,
+  handleContractIntent,
+} from "../lib/partner-contract.server";
+import { handleSowIntent } from "../lib/partner-finance.server";
 import { PropertyRail } from "../components/application/PropertyRail";
 import { EvaluationTab } from "../components/application/EvaluationTab";
 import { ActivityTab } from "../components/application/ActivityTab";
@@ -278,9 +284,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const roles = await getUserRoles(auth.user.sub, request);
   const partnerEmailOn = await isFeatureEnabled("partner-email", auth.user.sub, roles, request);
+  const financeOn = await isFeatureEnabled("partner-finance", auth.user.sub, roles, request);
   const emailThreads = partnerEmailOn
     ? await getPartnerContactEmailThreads(application.applicantContact.id)
     : [];
+  const contract = await partnerContractStatus(application.id);
+  const contractDocuments = canEdit ? await listPartnerContractDocuments() : [];
 
   return {
     application: {
@@ -357,6 +366,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     actorNames,
     emailThreads,
     partnerEmailOn,
+    financeOn,
+    contract,
+    contractDocuments,
     trailLabel: application.title,
   };
 }
@@ -565,7 +577,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     intent === "next-step" ||
     intent === "hold" ||
     intent === "deal-terms" ||
-    intent === "summary"
+    intent === "summary" ||
+    intent === "contract-send" ||
+    intent === "sow-state"
   ) {
     if (intent === "offer-meeting") {
       const when = (form.get("when") as string | null)?.trim() ?? "";
@@ -895,6 +909,20 @@ export async function action({ request, params }: Route.ActionArgs) {
         where: { id: params.id },
         data: { summary: summaryRaw === "" ? null : summaryRaw },
       });
+
+    } else if (intent === "contract-send") {
+      const result = await handleContractIntent(form, {
+        applicationId: params.id,
+        actorUserId: auth.user.sub,
+      });
+      if ("error" in result) return { error: result.error };
+
+    } else if (intent === "sow-state") {
+      const result = await handleSowIntent(form, {
+        applicationId: params.id,
+        actorUserId: auth.user.sub,
+      });
+      if ("error" in result) return { error: result.error };
     }
 
   } else {
@@ -921,6 +949,9 @@ export default function PartnerApplicationDetail() {
     actorNames,
     emailThreads,
     partnerEmailOn,
+    financeOn,
+    contract,
+    contractDocuments,
   } = useLoaderData() as LoaderData;
   // Always-inline editing (gated only by permission), matching the rest of the
   // site — no view/edit mode toggle.
@@ -1055,6 +1086,9 @@ export default function PartnerApplicationDetail() {
       canEdit={canEdit}
       domainOptions={availableDomains.map((d) => ({ id: d.id, name: d.displayName }))}
       termOptions={terms.map((t) => ({ id: t.id, code: t.code }))}
+      contract={contract}
+      contractDocuments={contractDocuments}
+      financeOn={financeOn}
       onChanged={refresh}
     />
   );
@@ -1213,7 +1247,7 @@ function Header({
       const ok = await dialog.confirm({
         title: `Move to "${STAGE_LABEL[toStage]}"?`,
         description:
-          "This does NOT email the partner — use the Accept/Reject buttons to notify them.",
+          "This does NOT email the partner. Use the Accept/Reject buttons to notify them.",
         confirmLabel: "Move anyway",
       });
       if (!ok) return;
@@ -1348,7 +1382,7 @@ function DetailsSection({
               name="summary"
               rows={3}
               defaultValue={application.summary ?? ""}
-              placeholder="One-paragraph synopsis for the lab — partners don't see this. The full SOW lives below."
+              placeholder="One-paragraph synopsis for the lab. Partners don't see this. The full SOW lives below."
               className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
             />
           ) : (

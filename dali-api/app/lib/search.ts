@@ -9,6 +9,7 @@ export type SearchResultType =
   | "project"
   | "education"
   | "partner"
+  | "partnerContact"
   | "document"
   | "application"
   | "form"
@@ -78,6 +79,7 @@ export const buildUrl: Record<SearchResultType, (id: string) => string> = {
   project: (id) => `/projects/${id}`,
   education: (id) => `/education/${id}`,
   partner: (id) => `/core/partners/orgs/${id}`,
+  partnerContact: (id) => `/core/partners/contacts/${id}`,
   document: (id) => `/documents/${id}`,
   application: (id) => `/hiring/applications/${id}`,
   form: (id) => `/forms/edit/${id}`,

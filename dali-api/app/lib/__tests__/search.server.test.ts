@@ -306,6 +306,39 @@ describe("runSearch — guides", () => {
   });
 });
 
+describe("runSearch — partner orgs and contacts", () => {
+  it("does not query partner tables for a non-Core member", async () => {
+    await runSearch({ userId: "u1", roles: MEMBER, q: "atlas" });
+
+    expect(mockPrisma.partnerOrg.findMany).not.toHaveBeenCalled();
+    expect(mockPrisma.partnerContact.findMany).not.toHaveBeenCalled();
+  });
+
+  it("surfaces matching orgs and contacts to a Core viewer, deep-linked to the org/contact pages", async () => {
+    mockPrisma.partnerOrg.findMany.mockResolvedValue([{ id: "org1", name: "Atlas Robotics" }]);
+    mockPrisma.partnerContact.findMany.mockResolvedValue([
+      { id: "ct1", name: "Atlas Jones", email: "atlas@example.com" },
+    ]);
+
+    const results = await runSearch({ userId: "u1", roles: { ...MEMBER, isCore: true }, q: "atlas" });
+
+    expect(results).toContainEqual({
+      type: "partner",
+      id: "org1",
+      title: "Atlas Robotics",
+      subtitle: "Partner",
+      url: "/core/partners/orgs/org1",
+    });
+    expect(results).toContainEqual({
+      type: "partnerContact",
+      id: "ct1",
+      title: "Atlas Jones",
+      subtitle: "atlas@example.com",
+      url: "/core/partners/contacts/ct1",
+    });
+  });
+});
+
 describe("runSearch — help articles", () => {
   it("surfaces a /help article by title", async () => {
     const help = (await runSearch({ userId: "u1", roles: MEMBER, q: "shortcuts" })).filter(

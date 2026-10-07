@@ -30,6 +30,7 @@ export function ContractPanel({
   documents,
   canSend,
   onChanged,
+  compact = false,
 }: {
   applicationId: string;
   status: PartnerContractStatus;
@@ -37,6 +38,8 @@ export function ContractPanel({
   documents: { id: string; title: string }[];
   canSend: boolean;
   onChanged?: () => void;
+  /** Chip + a document Select/Send or signed date/PDF link, no header — for the property rail. */
+  compact?: boolean;
 }) {
   const [documentId, setDocumentId] = useState(documents[0]?.id ?? "");
   const [sending, setSending] = useState(false);
@@ -56,6 +59,59 @@ export function ContractPanel({
       return;
     }
     onChanged?.();
+  }
+
+  if (compact) {
+    return (
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center gap-2">
+          <span className={`rounded-full px-2 py-0.5 text-xs ${STATE_PILL[status.state]}`}>
+            {STATE_LABEL[status.state]}
+          </span>
+          {status.state === "Signed" && status.pdfUrl && (
+            <a
+              href={status.pdfUrl}
+              className="inline-flex items-center gap-1 text-xs text-accent-coral hover:underline"
+            >
+              <Download className="h-3 w-3" aria-hidden /> PDF
+            </a>
+          )}
+        </div>
+        {status.state === "Signed" && status.signedAt && (
+          <span className="text-xs text-muted-foreground">
+            Signed {new Date(status.signedAt).toLocaleDateString()}
+          </span>
+        )}
+        {status.state === "Sent" && (
+          <span className="text-xs text-muted-foreground">Waiting on the partner's signature.</span>
+        )}
+        {status.state === "NotSent" && canSend && (
+          documents.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No contract templates yet.</p>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              <Select
+                value={documentId}
+                onChange={setDocumentId}
+                options={documents.map((d) => ({ value: d.id, label: d.title }))}
+                placeholder="Choose a template…"
+                buttonClassName="w-full rounded-md border border-border bg-background px-2 py-1 text-xs inline-flex items-center justify-between gap-1"
+              />
+              <Button
+                variant="primary"
+                size="xs"
+                onClick={() => void send()}
+                disabled={sending}
+                className="self-start"
+              >
+                {sending ? "Sending…" : "Send"}
+              </Button>
+            </div>
+          )
+        )}
+        {error && <p className="text-xs text-destructive">{error}</p>}
+      </div>
+    );
   }
 
   return (

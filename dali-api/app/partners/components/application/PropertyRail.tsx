@@ -8,10 +8,9 @@
 
 import { useState } from "react";
 import { Link } from "react-router";
-import { Pencil, Plus, X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { Select, MultiSelect } from "~/components/ui/floating";
 import { DateField } from "~/components/ui/DateField";
-import { Button } from "~/components/ui/Button";
 import { PropRow, PROP_CONTROL } from "~/components/ui/modal-fields";
 import { useToast } from "~/components/ui/toast";
 import {
@@ -19,15 +18,13 @@ import {
   PARTNER_STAGE_LABELS,
   type PartnerStage,
 } from "../../lib/partner-application";
-import { PROJECT_FUNDING_TYPES, PROJECT_FUNDING_TYPE_LABELS } from "~/lib/chart-string";
 import type { ApplicationDetail } from "../../lib/partner-application-detail";
+import type { PartnerContractStatus } from "../../lib/partner-contract.server";
+import type { ProjectFundingType } from "~/lib/chart-string";
 import { postPartnerApplicationIntent } from "../../lib/partner-detail-fetch";
-
-const SOW_STATE_LABEL: Record<string, string> = {
-  Draft: "Draft",
-  Shared: "Shared",
-  Accepted: "Accepted",
-};
+import { SowStatePanel } from "./SowStatePanel";
+import { ContractPanel } from "./ContractPanel";
+import { FinancePanel } from "./FinancePanel";
 
 // Only the fields this panel actually reads — a Pick rather than the full
 // ApplicationDetail so the full detail page (whose loader shapes target
@@ -62,6 +59,9 @@ export function PropertyRail({
   canEdit,
   domainOptions,
   termOptions,
+  contract,
+  contractDocuments,
+  financeOn,
   onChanged,
 }: {
   application: PropertyRailApplication;
@@ -69,6 +69,10 @@ export function PropertyRail({
   /** Domains not yet attached to this application — the "add scope" picker. */
   domainOptions: { id: string; name: string }[];
   termOptions: { id: string; code: string }[];
+  contract: PartnerContractStatus;
+  /** PartnerContract-kind SigningDocuments with a published version — empty when the viewer can't edit. */
+  contractDocuments: { id: string; title: string }[];
+  financeOn: boolean;
   onChanged: () => void;
 }) {
   const [stageBusy, setStageBusy] = useState(false);
@@ -186,27 +190,47 @@ export function PropertyRail({
         onChanged={onChanged}
       />
 
-      <DealTermsFields application={application} canEdit={canEdit} run={run} />
-
       <PropRow label="SOW">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col gap-1.5">
           <Link
             to={`/core/partners/applications/${application.id}?tab=sow`}
-            className="text-sm text-accent-coral hover:underline"
+            className="self-start text-sm text-accent-coral hover:underline"
           >
             Open
           </Link>
-          <span className="text-sm text-foreground">
-            {SOW_STATE_LABEL[application.sowState] ?? application.sowState}
-          </span>
+          <SowStatePanel
+            applicationId={application.id}
+            sowState={application.sowState}
+            canEdit={canEdit}
+            onChanged={onChanged}
+            compact
+          />
         </div>
       </PropRow>
 
       <PropRow label="Contract">
-        <span className="text-sm text-foreground">
-          {application.contractBindingId ? "Sent" : "Not sent"}
-        </span>
+        <ContractPanel
+          applicationId={application.id}
+          status={contract}
+          documents={contractDocuments}
+          canSend={canEdit}
+          onChanged={onChanged}
+          compact
+        />
       </PropRow>
+
+      {financeOn && (
+        <FinancePanel
+          applicationId={application.id}
+          fundingType={application.fundingType as ProjectFundingType | null}
+          feeCents={application.feeCents}
+          legalEntityName={application.legalEntityName}
+          legalEntityAddress={application.legalEntityAddress}
+          paymentSchedule={application.paymentSchedule}
+          canEdit={canEdit}
+          onChanged={onChanged}
+        />
+      )}
 
       {application.resultingProjectId && (
         <PropRow label="Project">
@@ -501,132 +525,6 @@ function DomainsField({
             </button>
           )
         )}
-      </div>
-    </PropRow>
-  );
-}
-
-function DealTermsFields({
-  application,
-  canEdit,
-  run,
-}: {
-  application: PropertyRailApplication;
-  canEdit: boolean;
-  run: RunFn;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [fundingType, setFundingType] = useState(application.fundingType ?? "");
-  const [feeDollars, setFeeDollars] = useState(
-    application.feeCents != null ? String(application.feeCents / 100) : "",
-  );
-  const [legalEntityName, setLegalEntityName] = useState(application.legalEntityName ?? "");
-  const [legalEntityAddress, setLegalEntityAddress] = useState(
-    application.legalEntityAddress ?? "",
-  );
-  const [paymentSchedule, setPaymentSchedule] = useState(application.paymentSchedule ?? "");
-  const [saving, setSaving] = useState(false);
-
-  async function save() {
-    setSaving(true);
-    const ok = await run("deal-terms", {
-      fundingType: fundingType || null,
-      feeCents: feeDollars.trim() ? String(Math.round(Number(feeDollars) * 100)) : null,
-      legalEntityName: legalEntityName.trim() || null,
-      legalEntityAddress: legalEntityAddress.trim() || null,
-      paymentSchedule: paymentSchedule.trim() || null,
-    });
-    setSaving(false);
-    if (ok) setEditing(false);
-  }
-
-  if (!editing) {
-    return (
-      <>
-        <PropRow label="Funding type">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-sm text-foreground">
-              {application.fundingType
-                ? PROJECT_FUNDING_TYPE_LABELS[application.fundingType as keyof typeof PROJECT_FUNDING_TYPE_LABELS]
-                : "—"}
-            </span>
-            {canEdit && (
-              <button
-                type="button"
-                onClick={() => setEditing(true)}
-                aria-label="Edit deal terms"
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <Pencil className="h-3.5 w-3.5" aria-hidden />
-              </button>
-            )}
-          </div>
-        </PropRow>
-        <PropRow label="Fee">
-          <span className="text-sm text-foreground">
-            {application.feeCents != null
-              ? `$${(application.feeCents / 100).toLocaleString(undefined, {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}`
-              : "—"}
-          </span>
-        </PropRow>
-        <PropRow label="Legal entity">
-          <span className="text-sm text-foreground">{application.legalEntityName ?? "—"}</span>
-        </PropRow>
-      </>
-    );
-  }
-
-  return (
-    <PropRow label="Deal terms">
-      <div className="flex flex-col gap-1.5">
-        <Select
-          value={fundingType}
-          onChange={setFundingType}
-          placeholder="Funding type…"
-          options={PROJECT_FUNDING_TYPES.map((t) => ({ value: t, label: PROJECT_FUNDING_TYPE_LABELS[t] }))}
-          buttonClassName="w-full rounded-md border border-border bg-background px-2 py-1 text-sm inline-flex items-center justify-between gap-1"
-        />
-        <input
-          type="number"
-          min={0}
-          step="0.01"
-          value={feeDollars}
-          onChange={(e) => setFeeDollars(e.target.value)}
-          placeholder="Fee (USD)"
-          className={PROP_CONTROL}
-        />
-        <input
-          type="text"
-          value={legalEntityName}
-          onChange={(e) => setLegalEntityName(e.target.value)}
-          placeholder="Legal entity name"
-          className={PROP_CONTROL}
-        />
-        <input
-          type="text"
-          value={legalEntityAddress}
-          onChange={(e) => setLegalEntityAddress(e.target.value)}
-          placeholder="Legal entity address"
-          className={PROP_CONTROL}
-        />
-        <input
-          type="text"
-          value={paymentSchedule}
-          onChange={(e) => setPaymentSchedule(e.target.value)}
-          placeholder="Payment schedule"
-          className={PROP_CONTROL}
-        />
-        <div className="flex justify-end gap-2">
-          <button type="button" onClick={() => setEditing(false)} className="text-xs text-muted-foreground hover:underline">
-            Cancel
-          </button>
-          <Button variant="primary" size="xs" onClick={() => void save()} disabled={saving}>
-            {saving ? "Saving…" : "Save"}
-          </Button>
-        </div>
       </div>
     </PropRow>
   );

@@ -227,7 +227,7 @@ function NewOrgModal({
         </label>
         {duplicate && (
           <p className="text-xs text-muted-foreground">
-            An organization named “{duplicate.name}” already exists —{" "}
+            An organization named “{duplicate.name}” already exists.{" "}
             <Link
               to={`/core/partners/orgs/${duplicate.id}`}
               className="text-dark-blue hover:underline"

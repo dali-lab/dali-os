@@ -394,6 +394,9 @@ export function PartnerApplicationModal({
                   canEdit={canEdit}
                   domainOptions={availableDomains}
                   termOptions={termOptions}
+                  contract={detail.contract}
+                  contractDocuments={detail.contractDocuments}
+                  financeOn={detail.financeOn}
                   onChanged={refresh}
                 />
               </div>

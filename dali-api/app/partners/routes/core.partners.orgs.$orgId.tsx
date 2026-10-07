@@ -662,7 +662,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     ) {
       return {
         error:
-          "Only an empty organization can be deleted — this one still has members, projects, applications, or a pending invite.",
+          "Only an empty organization can be deleted. This one still has members, projects, applications, or a pending invite.",
       };
     }
     await prisma.$transaction(async (tx) => {
@@ -1205,7 +1205,7 @@ function MergeOrgCard({
       <h2 className="text-sm font-semibold text-foreground">Merge into another organization</h2>
       <p className="text-xs text-muted-foreground">
         Members, applications, project links, activity, invites, and invoices move to the
-        organization you pick. This organization is deleted — it can't be undone.
+        organization you pick. This organization is deleted. It can't be undone.
       </p>
       <div className="flex flex-wrap items-center gap-3">
         <Combobox
@@ -1527,7 +1527,7 @@ export default function PartnerOrgDetail() {
 
               {org.memberships.length === 0 && pendingInvites.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  No members yet{canEdit ? " — invite the first contact." : "."}
+                  No members yet{canEdit ? ". Invite the first contact." : "."}
                 </p>
               ) : (
                 <ul className="divide-y divide-border">
@@ -1833,7 +1833,7 @@ export default function PartnerOrgDetail() {
                         onSubmit={confirmSubmit({
                           title: `Unlink ${pp.project.name}?`,
                           description:
-                            "This deletes the partnership record — prefer “End partnership” to keep history.",
+                            "This deletes the partnership record. Prefer “End partnership” to keep history.",
                           confirmLabel: "Unlink",
                           tone: "destructive",
                         })}
@@ -1937,7 +1937,7 @@ export default function PartnerOrgDetail() {
                   Delete organization
                 </h2>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  No members, projects, applications, or pending invites — this
+                  No members, projects, applications, or pending invites. This
                   organization can be removed.
                 </p>
               </div>

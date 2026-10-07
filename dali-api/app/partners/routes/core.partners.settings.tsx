@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { Form, Link, redirect, useActionData, useLoaderData, useSubmit } from "react-router";
 import { MultiSelect, Select } from "~/components/ui/floating";
+import { Button } from "~/components/ui/Button";
 import { Settings as SettingsIcon } from "lucide-react";
 import type { Route } from "./+types/core.partners.settings";
 import { requireAuth } from "~/lib/auth";
@@ -259,12 +260,9 @@ export default function PartnerCrmSettingsPage() {
               }))}
               buttonClassName="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
             />
-            <button
-              type="submit"
-              className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors"
-            >
+            <Button type="submit" variant="secondary" size="sm">
               {applicationFormBinding ? "Change" : "Bind"}
-            </button>
+            </Button>
           </Form>
           {applicationFormBinding && (
             <Form
@@ -278,12 +276,9 @@ export default function PartnerCrmSettingsPage() {
               })}
             >
               <input type="hidden" name="intent" value="clear-form" />
-              <button
-                type="submit"
-                className="px-3 py-1.5 text-xs font-medium rounded-md border border-border text-muted-foreground hover:text-destructive hover:border-destructive/40 transition-colors"
-              >
+              <Button type="submit" variant="secondary" size="sm">
                 Remove
-              </button>
+              </Button>
             </Form>
           )}
         </div>
@@ -326,12 +321,9 @@ export default function PartnerCrmSettingsPage() {
               }))}
               buttonClassName="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
             />
-            <button
-              type="submit"
-              className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors"
-            >
+            <Button type="submit" variant="secondary" size="sm">
               {surveyFormBinding ? "Change" : "Bind"}
-            </button>
+            </Button>
           </Form>
           {surveyFormBinding && (
             <Form
@@ -345,12 +337,9 @@ export default function PartnerCrmSettingsPage() {
               })}
             >
               <input type="hidden" name="intent" value="clear-survey-form" />
-              <button
-                type="submit"
-                className="px-3 py-1.5 text-xs font-medium rounded-md border border-border text-muted-foreground hover:text-destructive hover:border-destructive/40 transition-colors"
-              >
+              <Button type="submit" variant="secondary" size="sm">
                 Remove
-              </button>
+              </Button>
             </Form>
           )}
         </div>

@@ -69,7 +69,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 const DECISION_NODE = PARTNER_TRACK_NODES.indexOf("Decision");
 
 function stageHint(stage: PartnerStage, resultingProjectId: string | null): string {
-  if (resultingProjectId) return "Your project is live — see it under Projects.";
+  if (resultingProjectId) return "Your project is live. See it under Projects.";
   switch (stage) {
     case "New":
       return "We've received your pitch and will be in touch to schedule a meeting.";

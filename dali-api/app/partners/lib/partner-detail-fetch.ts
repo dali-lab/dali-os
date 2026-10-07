@@ -34,7 +34,7 @@ export async function postPartnerApplicationIntent(
       body: fd,
     });
   } catch {
-    return { ok: false, error: "Network error — couldn't reach the server." };
+    return { ok: false, error: "Network error. Couldn't reach the server." };
   }
   const contentType = res.headers.get("content-type") ?? "";
   if (contentType.includes("application/json")) {

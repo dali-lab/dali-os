@@ -21,11 +21,14 @@ export function SowStatePanel({
   sowState,
   canEdit,
   onChanged,
+  compact = false,
 }: {
   applicationId: string;
   sowState: PartnerSowState;
   canEdit: boolean;
   onChanged: () => void;
+  /** Chip + the single next action, no header — for the property rail. */
+  compact?: boolean;
 }) {
   const [moving, setMoving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,6 +43,27 @@ export function SowStatePanel({
       return;
     }
     onChanged();
+  }
+
+  if (compact) {
+    return (
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center gap-2">
+          <span className={`rounded-full px-2 py-0.5 text-xs ${STATE_PILL[sowState]}`}>{sowState}</span>
+          {canEdit && sowState === "Draft" && (
+            <Button variant="primary" size="xs" onClick={() => void move("Shared")} disabled={moving}>
+              {moving ? "Sharing…" : "Share"}
+            </Button>
+          )}
+          {canEdit && sowState === "Shared" && (
+            <Button variant="secondary" size="xs" onClick={() => void move("Accepted")} disabled={moving}>
+              {moving ? "Accepting…" : "Accept"}
+            </Button>
+          )}
+        </div>
+        {error && <p className="text-xs text-destructive">{error}</p>}
+      </div>
+    );
   }
 
   return (

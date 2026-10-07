@@ -62,6 +62,7 @@ describe("buildUrl (route-param gotchas)", () => {
     expect(buildUrl.project("p1")).toBe("/projects/p1");
     expect(buildUrl.education("o1")).toBe("/education/o1");
     expect(buildUrl.partner("g1")).toBe("/core/partners/orgs/g1");
+    expect(buildUrl.partnerContact("ct1")).toBe("/core/partners/contacts/ct1");
     expect(buildUrl.document("d1")).toBe("/documents/d1");
     expect(buildUrl.application("da1")).toBe("/hiring/applications/da1");
     expect(buildUrl.form("f1")).toBe("/forms/edit/f1");

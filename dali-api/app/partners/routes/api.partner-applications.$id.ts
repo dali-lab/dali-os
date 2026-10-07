@@ -7,6 +7,7 @@ import { withCors, handlePreflight } from "~/lib/cors";
 import { formAnswerRows } from "~/forms/lib/answer-rows.server";
 import type { Question } from "~/types";
 import { getPartnerContactEmailThreads } from "../lib/partner-email.server";
+import { partnerContractStatus, listPartnerContractDocuments } from "../lib/partner-contract.server";
 
 // GET /api/partner-applications/:id
 //
@@ -24,7 +25,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
-  if (!(await isCore(auth.user.sub))) {
+  const canEdit = await isCore(auth.user.sub);
+  if (!canEdit) {
     return forbidden(request);
   }
 
@@ -141,9 +143,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const roles = await getUserRoles(auth.user.sub, request);
   const partnerEmailOn = await isFeatureEnabled("partner-email", auth.user.sub, roles, request);
+  const financeOn = await isFeatureEnabled("partner-finance", auth.user.sub, roles, request);
   const emailThreads = partnerEmailOn
     ? await getPartnerContactEmailThreads(application.applicantContact.id)
     : [];
+  const contract = await partnerContractStatus(application.id);
+  const contractDocuments = canEdit ? await listPartnerContractDocuments() : [];
 
   // Attendee picker for the Meetings tab's manual "log a meeting" form —
   // mirrors the full page's loader (core.partners.applications.$id.tsx).
@@ -244,6 +249,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       actorNames,
       emailThreads,
       partnerEmailOn,
+      financeOn,
+      contract,
+      contractDocuments,
       coreMembers,
     }),
   );

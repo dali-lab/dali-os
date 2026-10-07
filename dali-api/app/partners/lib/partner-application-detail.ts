@@ -4,6 +4,7 @@
 // type without pulling in server-only code (prisma, etc.).
 
 import type { PartnerStage, PartnerRejectReason } from "./partner-application";
+import type { PartnerContractStatus } from "./partner-contract.server";
 
 export type ApplicationDetail = {
   id: string;
@@ -84,6 +85,10 @@ export type ApplicationDetailResponse = {
   actorNames: Record<string, string>;
   emailThreads: ApplicationEmailThread[];
   partnerEmailOn: boolean;
+  financeOn: boolean;
+  contract: PartnerContractStatus;
+  /** PartnerContract-kind SigningDocuments with a published version — empty when the viewer can't edit. */
+  contractDocuments: { id: string; title: string }[];
   /** Attendee picker for the Meetings tab's manual "log a meeting" form. */
   coreMembers: { userId: string; name: string }[];
 };
