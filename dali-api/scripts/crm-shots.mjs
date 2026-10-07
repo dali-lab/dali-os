@@ -64,10 +64,10 @@ await shot("/core/partners/directory?view=contacts", "09c-directory-contacts", "
 await shot("/core/partners/settings", "09d-settings", "main");
 
 // Partner portal.
-await page.goto(`${base}/dev-login-as?personalEmail=partner.tuck@example.com&redirect=${encodeURIComponent(base + "/partner")}`, { waitUntil: "domcontentloaded" });
+await page.goto(`${base}/dev-login-as?personalEmail=partner.hood@example.com&redirect=${encodeURIComponent(base + "/partner")}`, { waitUntil: "domcontentloaded" });
 await page.waitForTimeout(2000);
 await shot("/partner", "10-portal-home", "main");
-await shot("/partner/applications/papp-tuck-mentor", "11-portal-application", "main");
+await shot("/partner/applications/papp-hood-kiosk", "11-portal-application", "main");
 
 console.log("errors:", errors.length);
 for (const e of errors.slice(0, 20)) console.log(" ", e);
