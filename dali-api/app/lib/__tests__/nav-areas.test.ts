@@ -386,7 +386,7 @@ describe("pinnedNavItems", () => {
       .not.toContain("/drive");
   });
 
-  it("puts Room booking in the top bar, not the pinned rail", () => {
+  it("puts Room booking in the calendar header, not the pinned rail", () => {
     expect(pinnedNavItems(RESOURCES).map((i) => i.href)).toEqual(["/resources"]);
     expect(ROOM_BOOKING_NAV_ITEM.href).toBe("/rooms");
     // Booking is not a General sub-tab; Core keeps room management.
