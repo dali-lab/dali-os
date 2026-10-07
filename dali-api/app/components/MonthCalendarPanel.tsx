@@ -91,7 +91,7 @@ export function MonthCalendarPanel({
   const rows = Math.ceil(days.length / 7);
 
   return (
-    <section className="bg-card border border-border shadow-brand-1 rounded-lg p-4">
+    <section className="bg-card border border-border rounded-os-card p-4">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
         <div>
           <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, Folder, Search } from "lucide-react";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { buttonClasses } from "~/components/ui/Button";
+import { modalCardClass } from "~/components/os-chrome";
 
 // Shared "Move to…" destination picker — a hybrid of type-to-filter search and
 // drill-in browsing (Google Drive / Notion model), used for both bulk and
@@ -385,7 +386,7 @@ export function DestinationPicker({
       labelledBy="destination-picker-title"
       initialFocusRef={searchRef}
       disableEscape={busy}
-      containerClassName="bg-card rounded-2xl shadow-brand-2 max-w-md w-full p-5 sm:p-6 my-auto flex flex-col max-h-[80vh]"
+      containerClassName={modalCardClass("max-w-md flex flex-col max-h-[80vh]")}
     >
       <ModalHeader titleId="destination-picker-title" title={heading} onClose={onClose} />
 

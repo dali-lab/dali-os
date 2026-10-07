@@ -108,7 +108,7 @@ export default function MemberCourseHub() {
       />
       {previewAsStudent && (
         <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center px-4">
-          <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-accent-teal/40 bg-card/95 px-4 py-2 shadow-brand-2 backdrop-blur">
+          <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-accent-teal/40 bg-card/95 px-4 py-2 shadow-[0_16px_40px_var(--color-os-shadow)] backdrop-blur">
             <span className="text-sm font-medium text-foreground">👁 Viewing as a student</span>
             <Link
               to={`/education/${hub.offering.id}/hub`}

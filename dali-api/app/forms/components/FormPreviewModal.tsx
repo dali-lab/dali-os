@@ -13,6 +13,7 @@ import { paginateQuestions } from "~/lib/form-pages";
 import { DocEditor } from "~/components/doc";
 import { isEmptyBlocks } from "~/lib/blocks";
 import { Button } from "~/components/ui/Button";
+import { modalCardClass } from "~/components/os-chrome";
 
 // Mirrors MemberFormFillView's rendering exactly (down to the file-upload
 // notice) so what's shown here matches /forms/fill/:token once published.
@@ -47,7 +48,7 @@ export function FormPreviewModal({
       open
       onClose={onClose}
       labelledBy={headingId}
-      containerClassName="bg-section-bg rounded-2xl shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto"
+      containerClassName={modalCardClass("max-w-2xl mx-4 max-h-[90vh]")}
     >
       <div className="sticky top-0 z-10 flex items-center justify-between gap-3 bg-dark-blue text-white px-5 py-3 rounded-t-2xl">
         <div className="flex items-center gap-2 text-sm font-medium">
@@ -65,7 +66,7 @@ export function FormPreviewModal({
       </div>
 
       <div className="p-4 sm:p-8">
-        <div className="mx-auto max-w-2xl bg-card border border-border shadow-brand-1 rounded-xl p-6 sm:p-8">
+        <div className="mx-auto max-w-2xl bg-card border border-border rounded-os-card p-6 sm:p-8">
           <div className="flex items-center gap-2 mb-6">
             <div className="w-7 h-7 bg-accent-coral rounded-md flex items-center justify-center">
               <span className="text-white font-bold text-base leading-none font-heading">
