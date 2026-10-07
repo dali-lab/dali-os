@@ -328,9 +328,9 @@ export function CreateEventModal({
   // invisible.
   const eventCanLogWork = !allDay && repeatSpecToRRule(repeat, repeatAnchorLocal) === null;
   const eventLoggingWork = isWork && eventCanLogWork;
-  // A plain event holds a room with a one-off booking, which has the same
-  // shape limits: one timed slot. A series or an all-day hold is a meeting's.
-  const eventCanBookRoom = eventCanLogWork;
+  // A plain event's room hold now repeats with it. Only an all-day event has
+  // no timed slot to hold.
+  const eventCanBookRoom = !allDay;
   // A meeting keeps the toggle when it repeats. The log links to the
   // ScheduledMeeting (one row per meeting per user) and is dated to the series
   // anchor — the first occurrence, the one time being scheduled here.
@@ -725,6 +725,7 @@ export function CreateEventModal({
                   onRoomsChange={setRoomIds}
                   startIso={startIso}
                   endIso={endIso}
+                  recurrenceRule={repeatSpecToRRule(repeat, repeatAnchorLocal)}
                   className={quietFieldClass}
                 />
               </FieldRow>
@@ -911,6 +912,7 @@ export function CreateEventModal({
                   onRoomsChange={setRoomIds}
                   startIso={startIso}
                   endIso={endIso}
+                  recurrenceRule={repeatSpecToRRule(repeat, selectedStartLocal)}
                   className={fieldClass}
                 />
               </div>
