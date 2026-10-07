@@ -132,7 +132,9 @@ export default function PartnerLayout() {
       impersonating={impersonating}
       impersonationAllowsWrites={impersonationWrites}
     >
-      <Outlet />
+      <div className="px-6 py-10">
+        <Outlet />
+      </div>
     </LayoutPortalOS>
   );
 }

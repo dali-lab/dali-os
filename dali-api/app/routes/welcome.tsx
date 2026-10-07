@@ -193,8 +193,7 @@ function SetupStep({
             type="email"
             value={email}
             readOnly
-            className="w-full cursor-not-allowed"
-            style={{ color: "var(--color-os-grey)" }}
+            className="w-full cursor-not-allowed text-os-grey!"
           />
         </div>
 
