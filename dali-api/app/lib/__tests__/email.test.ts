@@ -233,6 +233,17 @@ describe("renderEmail", () => {
     expect(out.html).toBe(bodyToHtml(interpolate(tmpl.body, vars)));
   });
 
+  it("renders when an optional var is present as an explicit undefined key", () => {
+    // The interview senders build vars with `meetingUrl: link ?? undefined`;
+    // this used to throw inside escapeHtml and silently drop the whole email.
+    const out = renderEmail(
+      { subject: "Interview for {{domain}}", body: "See you at {{location}}. {{meetingUrl}}" },
+      { firstName: "Ada", domain: "Engineering", location: "Pod Appa", meetingUrl: undefined },
+    );
+    expect(out.subject).toBe("Interview for Engineering");
+    expect(out.html).toBe("<p>See you at Pod Appa. </p>");
+  });
+
   it("sanitizes XSS payloads end-to-end so the preview render is safe", () => {
     const out = renderEmail(
       {

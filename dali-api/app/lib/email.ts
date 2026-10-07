@@ -30,6 +30,12 @@ function escapeValues(vars: Record<string, string>): Record<string, string> {
   return Object.fromEntries(Object.entries(vars).map(([k, v]) => [k, escapeHtml(v)]));
 }
 
+// Optional vars arrive as explicit `undefined` keys (an interview with no
+// meeting link); render them as "" like `interpolate` does for missing ones.
+function blankUndefined(vars: Record<string, string | undefined>): Record<string, string> {
+  return Object.fromEntries(Object.entries(vars).map(([k, v]) => [k, v ?? ""]));
+}
+
 export function interpolate(text: string, vars: InterpolationVars): string {
   // Delegate to the shared interpolator with the email vocabulary mapped to
   // strings (missing optional vars → "", unknown tokens left as literal text).
@@ -153,8 +159,9 @@ export const NOTIFICATION_BODY_MAX = 2000;
 // live here so the preview never drifts from what actually goes out.
 export function renderEmail(
   template: { subject: string; body: string },
-  vars: Record<string, string>,
+  rawVars: Record<string, string | undefined>,
 ): { subject: string; html: string } {
+  const vars = blankUndefined(rawVars);
   const text = interpolateVars(template.subject, vars);
   return {
     // Plain: this becomes a Subject header.
