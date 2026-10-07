@@ -394,7 +394,7 @@ export function EventComposer({
   const deleteFetcher = useFetcher<{ error?: string } | null>();
   const dialog = useDialog();
   const toast = useToast();
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [steppedAside, setSteppedAside] = useState(false);
   const editing = state.mode === "edit";
   const ev = editing ? state.event : null;
   // Prefill source: the event being edited, or a Duplicate seed in create mode.
@@ -490,7 +490,7 @@ export function EventComposer({
         onClose();
       } else {
         // Come back so the error under the form is readable.
-        setConfirmingDelete(false);
+        setSteppedAside(false);
       }
     }
     prevDel.current = deleteFetcher.state;
@@ -608,7 +608,7 @@ export function EventComposer({
   async function confirmDeleteEvent() {
     if (!ev?.eventId) return;
     const effectiveScope = isRecurring ? scope : "this";
-    setConfirmingDelete(true);
+    setSteppedAside(true);
     const ok = await dialog.confirm({
       title: title.trim() ? `Delete "${title.trim()}"?` : "Delete this event?",
       description: !isRecurring
@@ -624,7 +624,7 @@ export function EventComposer({
       tone: "destructive",
     });
     if (!ok) {
-      setConfirmingDelete(false);
+      setSteppedAside(false);
       return;
     }
     deleteFetcher.submit(
@@ -658,7 +658,7 @@ export function EventComposer({
       className={cn(
         "w-[23rem] max-h-[85vh] overflow-y-auto rounded-xl cal-surface",
         // Steps aside (keeping its state) while the delete confirm is up.
-        confirmingDelete && "invisible",
+        steppedAside && "invisible",
       )}
     >
         {/* Header — doubles as the drag handle (grab anywhere but the close X).
