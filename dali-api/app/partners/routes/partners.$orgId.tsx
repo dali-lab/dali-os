@@ -13,6 +13,7 @@ import { Checkbox } from "~/components/ui/Checkbox";
 import { Tooltip } from "~/components/ui/floating";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { ProjectIcon } from "~/components/ProjectIcon";
+import { buttonClasses } from "~/components/ui/Button";
 import type { Route } from "./+types/partners.$orgId";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -677,7 +678,7 @@ export default function PartnerOrgDetail() {
             className="w-12 h-12 rounded-lg object-contain bg-background border border-border"
           />
         ) : (
-          <div className="w-12 h-12 rounded-lg bg-brand-tint text-dark-blue flex items-center justify-center font-bold text-lg">
+          <div className="w-12 h-12 rounded-lg bg-os-container text-foreground flex items-center justify-center font-bold text-lg">
             {org.name.slice(0, 1)}
           </div>
         )}
@@ -734,7 +735,7 @@ export default function PartnerOrgDetail() {
             <button
               type="button"
               onClick={() => setInviting((v) => !v)}
-              className="text-sm text-dark-blue hover:underline"
+              className="text-sm text-os-accent hover:underline"
             >
               + Invite member
             </button>
@@ -774,7 +775,7 @@ export default function PartnerOrgDetail() {
                   <input type="hidden" name="intent" value="send-signin-link" />
                   <button
                     type="submit"
-                    className="text-xs text-dark-blue hover:underline whitespace-nowrap"
+                    className="text-xs text-os-accent hover:underline whitespace-nowrap"
                   >
                     {soleContact.userId ? "Resend sign-in link" : "Send sign-in link"}
                   </button>
@@ -814,7 +815,7 @@ export default function PartnerOrgDetail() {
             <Tooltip content="Emails a join link to this address">
               <button
                 type="submit"
-                className="rounded-lg bg-dark-blue text-white text-sm font-medium px-4 py-2 hover:opacity-90 transition"
+                className={buttonClasses("primary", "sm")}
               >
                 Send invite
               </button>
@@ -899,7 +900,7 @@ export default function PartnerOrgDetail() {
                     />
                     <button
                       type="submit"
-                      className="px-3 py-1.5 text-xs font-medium rounded-md bg-dark-blue text-white hover:opacity-90 transition"
+                      className={buttonClasses("primary", "sm")}
                     >
                       Move
                     </button>
@@ -965,7 +966,7 @@ export default function PartnerOrgDetail() {
             <button
               type="button"
               onClick={() => setLinking((v) => !v)}
-              className="text-sm text-dark-blue hover:underline"
+              className="text-sm text-os-accent hover:underline"
             >
               + Link project
             </button>
@@ -993,7 +994,7 @@ export default function PartnerOrgDetail() {
             </div>
             <button
               type="submit"
-              className="rounded-lg bg-dark-blue text-white text-sm font-medium px-4 py-2 hover:opacity-90 transition"
+              className={buttonClasses("primary", "sm")}
             >
               Link
             </button>

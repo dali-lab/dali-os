@@ -457,7 +457,7 @@ function TimelineBarHover({
       ref={cardRef}
       role="tooltip"
       className={cn(
-        "pointer-events-none fixed z-50 max-w-[min(19rem,calc(100vw-1rem))] w-[300px] rounded-2xl border border-border bg-card p-4 text-xs shadow-[0_12px_32px_var(--color-os-shadow)]",
+        "pointer-events-none fixed z-50 max-w-[min(19rem,calc(100vw-1rem))] w-[300px] rounded-os-item border border-border bg-card p-4 text-xs shadow-[0_12px_32px_var(--color-os-shadow)]",
         // The design's .task-popover: it rises 4px into place as it fades.
         "os-bar-popover",
         shown && "os-bar-popover--shown",
@@ -1535,7 +1535,7 @@ export function EpicsTimeline({
       <div
         className={cn(
           "overflow-hidden border border-border bg-card",
-          "rounded-2xl",
+          "rounded-os-card",
           fillHeight && "flex min-h-0 flex-1 flex-col",
         )}
       >
@@ -2003,7 +2003,7 @@ function UnscheduledEpics({
   const [open, setOpen] = useState(false);
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-border bg-card">
+    <section className="overflow-hidden rounded-os-card border border-border bg-card">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}

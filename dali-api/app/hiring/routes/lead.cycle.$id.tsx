@@ -3261,7 +3261,7 @@ function ExtensionSection({
           open
           onClose={() => setShowConfirm(false)}
           labelledBy={headingId}
-          containerClassName="bg-card rounded-2xl shadow-xl max-w-md w-full mx-4 p-6"
+          containerClassName="bg-card rounded-os-card shadow-xl max-w-md w-full mx-4 p-6"
         >
           <div className="space-y-4">
             <h2 id={headingId} className="text-lg font-bold text-foreground">
@@ -3731,7 +3731,7 @@ function RubricPreviewModal({ rv, onClose }: { rv: any; onClose: () => void }) {
   const headingId = `rubric-preview-heading-${rv.id}`;
   const criteria: any[] = (rv.criteria as any[]) ?? [];
   return (
-    <Modal open onClose={onClose} labelledBy={headingId} containerClassName="bg-card rounded-2xl shadow-xl max-w-lg w-full mx-4 p-6 max-h-[80vh] overflow-y-auto">
+    <Modal open onClose={onClose} labelledBy={headingId} containerClassName="bg-card rounded-os-card shadow-xl max-w-lg w-full mx-4 p-6 max-h-[80vh] overflow-y-auto">
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 id={headingId} className="text-lg font-bold text-foreground">

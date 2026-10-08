@@ -1051,9 +1051,9 @@ function StatusStepper({ status }: { status: Status }) {
               className={cn(
                 "text-[11px] px-2 py-0.5 rounded-full border whitespace-nowrap",
                 current
-                  ? "bg-accent-coral text-white border-accent-coral"
+                  ? "bg-os-accent text-os-bg border-os-accent"
                   : done
-                    ? "bg-accent-coral/10 text-accent-coral border-accent-coral/20"
+                    ? "bg-os-accent/10 text-os-accent border-os-accent/20"
                     : "bg-muted/40 text-muted-foreground border-border",
               )}
             >
@@ -1226,7 +1226,7 @@ function TriageBar({
               name="when"
               required
               placeholder="e.g. Tuesday Jan 14, 2:00 PM ET"
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30"
             />
           </label>
           <label className="flex flex-col gap-1 text-xs">
@@ -1235,7 +1235,7 @@ function TriageBar({
               name="details"
               rows={2}
               placeholder="Link, location, agenda…"
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 resize-none"
+              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30 resize-none"
             />
           </label>
           <div className="flex gap-2">
@@ -1266,7 +1266,7 @@ function TriageBar({
               name="nextSteps"
               rows={3}
               placeholder="Tell the partner what comes next. A link to apply will be appended automatically."
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 resize-none"
+              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30 resize-none"
             />
           </label>
           <div className="flex gap-2">
@@ -1298,7 +1298,7 @@ function TriageBar({
               rows={3}
               required
               placeholder="Describe the specific information or materials you need…"
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 resize-none"
+              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30 resize-none"
             />
           </label>
           <div className="flex gap-2">
@@ -1330,7 +1330,7 @@ function TriageBar({
               name="reason"
               rows={2}
               placeholder="Brief, partner-facing explanation…"
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 resize-none"
+              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30 resize-none"
             />
           </label>
           <div className="flex gap-2">
@@ -1386,7 +1386,7 @@ function AcceptanceFields({ application }: { application: LoaderData["applicatio
             step={1}
             defaultValue={application.ambiguityRating ?? ""}
             placeholder="1–5"
-            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30"
           />
         </label>
         <label className="flex flex-col gap-1 text-xs">
@@ -1396,7 +1396,7 @@ function AcceptanceFields({ application }: { application: LoaderData["applicatio
             name="fundingModel"
             defaultValue={application.fundingModel ?? ""}
             placeholder="e.g. Magnuson grant, self-funded…"
-            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30"
           />
         </label>
       </div>
@@ -1453,7 +1453,7 @@ function EvaluationCard({ application }: { application: LoaderData["application"
                     defaultChecked={rubric[c.key as EvalCriterionKey] === n}
                     className="sr-only peer"
                   />
-                  <span className="w-7 h-7 flex items-center justify-center text-xs font-medium rounded border border-border text-muted-foreground peer-checked:bg-accent-coral peer-checked:text-white peer-checked:border-accent-coral hover:bg-muted transition-colors">
+                  <span className="w-7 h-7 flex items-center justify-center text-xs font-medium rounded border border-border text-muted-foreground peer-checked:bg-os-accent peer-checked:text-os-bg peer-checked:border-os-accent hover:bg-muted transition-colors">
                     {n}
                   </span>
                 </label>
@@ -1476,7 +1476,7 @@ function EvaluationCard({ application }: { application: LoaderData["application"
                   defaultChecked={application.interviewRating === n}
                   className="sr-only peer"
                 />
-                <span className="w-7 h-7 flex items-center justify-center text-xs font-medium rounded border border-border text-muted-foreground peer-checked:bg-accent-coral peer-checked:text-white peer-checked:border-accent-coral hover:bg-muted transition-colors">
+                <span className="w-7 h-7 flex items-center justify-center text-xs font-medium rounded border border-border text-muted-foreground peer-checked:bg-os-accent peer-checked:text-os-bg peer-checked:border-os-accent hover:bg-muted transition-colors">
                   {n}
                 </span>
               </label>
@@ -1491,7 +1491,7 @@ function EvaluationCard({ application }: { application: LoaderData["application"
             rows={3}
             defaultValue={rubric.notes ?? ""}
             placeholder="Notes for the team…"
-            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 resize-none"
+            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30 resize-none"
           />
         </label>
 
@@ -1549,7 +1549,7 @@ function MeetingsSection({
           <button
             type="button"
             onClick={() => setShowAdd(true)}
-            className="text-xs font-medium text-accent-coral hover:underline"
+            className="text-xs font-medium text-os-accent hover:underline"
           >
             + Add meeting
           </button>
@@ -1607,7 +1607,7 @@ function MeetingsSection({
               name="meetingNotes"
               rows={2}
               placeholder="Pre-meeting notes or agenda…"
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 resize-none"
+              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30 resize-none"
             />
           </label>
           <Checkbox
@@ -1692,7 +1692,7 @@ function MeetingsSection({
                         rows={3}
                         defaultValue={m.debrief ?? ""}
                         placeholder="What happened? Key takeaways…"
-                        className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 resize-none"
+                        className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30 resize-none"
                       />
                     </label>
                     <label className="flex flex-col gap-1 text-xs">
@@ -1783,7 +1783,7 @@ function Header({
               defaultValue={application.title}
               autoFocus
               aria-label="Application title"
-              className="font-heading text-xl font-bold text-foreground px-2 py-1 border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+              className="font-heading text-xl font-bold text-foreground px-2 py-1 border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-os-accent/30"
             />
             <button type="submit" className={buttonClasses("primary", "sm")}>
               Save
@@ -1807,7 +1807,7 @@ function Header({
                 onClick={() => setEditing(true)}
                 aria-label="Edit title"
                 title="Edit title"
-                className="text-muted-foreground hover:text-accent-coral transition-colors"
+                className="text-muted-foreground hover:text-os-accent transition-colors"
               >
                 <Pencil className="w-3.5 h-3.5" />
               </button>
@@ -1835,7 +1835,7 @@ function Header({
         {application.partner ? (
           <Link
             to={`/projects?q=${encodeURIComponent(application.partner.name)}`}
-            className="text-accent-coral hover:underline"
+            className="text-os-accent hover:underline"
           >
             {application.partner.name}
           </Link>
@@ -1853,7 +1853,7 @@ function Header({
             {" · "}
             <Link
               to={`/projects/${application.resultingProjectId}`}
-              className="text-accent-coral hover:underline"
+              className="text-os-accent hover:underline"
             >
               View project
             </Link>
@@ -1936,7 +1936,7 @@ function DetailsSection({
               rows={3}
               defaultValue={application.summary ?? ""}
               placeholder="One-paragraph synopsis for the lab — partners don't see this. The full SOW lives below."
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30"
             />
           ) : (
             <span className="px-2 py-1.5 text-sm text-foreground whitespace-pre-wrap">
@@ -2047,7 +2047,7 @@ function TargetTermsField({
         <button
           type="button"
           onClick={() => setRows((r) => [...r, ""])}
-          className="self-start text-xs font-medium text-accent-coral hover:underline"
+          className="self-start text-xs font-medium text-os-accent hover:underline"
         >
           + Add term
         </button>
@@ -2116,7 +2116,7 @@ function DomainScopeBlock({
           <button
             type="button"
             onClick={() => setAdding(true)}
-            className="text-xs font-medium text-accent-coral hover:underline"
+            className="text-xs font-medium text-os-accent hover:underline"
           >
             + Add domain
           </button>
@@ -2339,7 +2339,7 @@ function DomainScopeEditRow({
           min={0}
           value={members}
           onChange={(e) => setMembers(e.target.value)}
-          className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+          className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30"
         />
       </label>
       <label className="flex flex-col gap-1 text-xs">

@@ -65,7 +65,7 @@ export default function OnboardingPage({ loaderData }: Route.ComponentProps) {
         <MemberFormFillView data={form} />
       ) : (
         <div className="py-10 text-center">
-          <h1 className="font-heading text-xl font-bold text-dark-blue">
+          <h1 className="font-heading text-xl font-bold text-foreground">
             Welcome to DALI!
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">

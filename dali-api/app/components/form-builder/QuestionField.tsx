@@ -93,7 +93,7 @@ function CheckboxField({
           onChange={() => toggle(option)}
           disabled={disabled}
           label={option}
-          className="text-base sm:text-sm text-dark-blue"
+          className="text-base sm:text-sm text-foreground"
         />
       ))}
     </div>
@@ -152,7 +152,7 @@ function ReferenceProjectCard({
                 placeholderClassName="w-16 h-16 rounded-lg flex-shrink-0"
               />
               <div className="min-w-0 flex flex-col gap-1.5">
-                <span className="font-heading text-base font-bold text-dark-blue leading-snug">
+                <span className="font-heading text-base font-bold text-foreground leading-snug">
                   {option.label}
                 </span>
                 {card && card.partners.length > 0 && (
@@ -207,7 +207,7 @@ function ReferenceProjectCard({
                 <dl className="flex flex-col gap-3">
                   {card.challenges.map((c) => (
                     <div key={c.domain} className="text-sm">
-                      <dt className="inline font-medium text-dark-blue">
+                      <dt className="inline font-medium text-foreground">
                         {c.domain}:{" "}
                       </dt>
                       {/* Challenge text is authored as multi-line plain text. */}
@@ -312,7 +312,7 @@ function SkillsRatingField({
         const showUnrated = current === SKILLS_RATING_UNRATED;
         return (
           <div key={skill} className="flex items-center justify-between gap-2 py-1">
-            <span className="text-sm text-dark-blue truncate">{skill}</span>
+            <span className="text-sm text-foreground truncate">{skill}</span>
             <Select
               value={current}
               onChange={(v) => setRating(skill, v)}
@@ -322,7 +322,7 @@ function SkillsRatingField({
                 ...(showUnrated ? [{ value: SKILLS_RATING_UNRATED, label: SKILLS_RATING_UNRATED }] : []),
                 ...["0", "1", "2", "3", "4", "5"].map((n) => ({ value: n, label: n })),
               ]}
-              buttonClassName={`w-14 shrink-0 rounded-md border border-border bg-card text-base sm:text-sm text-center text-dark-blue py-1 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40 ${disabled ? "cursor-not-allowed" : ""}`}
+              buttonClassName={`w-14 shrink-0 rounded-md border border-border bg-card text-base sm:text-sm text-center text-foreground py-1 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40 ${disabled ? "cursor-not-allowed" : ""}`}
             />
           </div>
         );
@@ -431,7 +431,7 @@ function FileUploadField({
         <svg className="w-5 h-5 text-accent-coral shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
         </svg>
-        <span className="text-sm text-dark-blue truncate flex-1">{fileName}</span>
+        <span className="text-sm text-foreground truncate flex-1">{fileName}</span>
         <button
           type="button"
           disabled={disabled}
@@ -505,7 +505,7 @@ export function FormQuestionField({
   disabled = false,
 }: FormQuestionFieldProps) {
   const inputBase =
-    "w-full rounded-lg border border-border bg-card text-base sm:text-sm text-dark-blue placeholder:text-muted-foreground/70 focus:outline-none focus:border-accent-coral px-4 py-2";
+    "w-full rounded-lg border border-border bg-card text-base sm:text-sm text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:border-accent-coral px-4 py-2";
   const disabledClass = disabled ? " opacity-60 cursor-not-allowed" : "";
 
   if (question.type === "textarea") {

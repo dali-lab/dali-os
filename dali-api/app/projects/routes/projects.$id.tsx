@@ -2005,7 +2005,7 @@ export default function ProjectDetail() {
           open={scopeSettingsOpen}
           onClose={() => setScopeSettingsOpen(false)}
           labelledBy="scope-settings-title"
-          containerClassName="bg-card rounded-2xl shadow-xl w-full max-w-4xl p-5 sm:p-6 my-auto max-h-[85vh] overflow-y-auto"
+          containerClassName="bg-card rounded-os-card shadow-xl w-full max-w-4xl p-5 sm:p-6 my-auto max-h-[85vh] overflow-y-auto"
         >
           <ModalHeader
             titleId="scope-settings-title"
@@ -2829,7 +2829,7 @@ function DetailsReadOs({
         {project.calendarEmail ? (
           <a
             href={`mailto:${project.calendarEmail}`}
-            className="text-accent-coral hover:underline break-all"
+            className="text-os-accent hover:underline break-all"
           >
             {project.calendarEmail}
           </a>
@@ -2848,7 +2848,7 @@ function DetailsReadOs({
             href={`https://slack.com/app_redirect?channel=${project.slackChannelId}`}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-1 text-accent-coral hover:underline"
+            className="inline-flex items-center gap-1 text-os-accent hover:underline"
           >
             #{project.slackChannelName}
             <ExternalLink className="h-3.5 w-3.5" />
@@ -2906,7 +2906,7 @@ function DetailsReadOs({
             href={project.deploymentUrl}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-1 text-accent-coral hover:underline break-all"
+            className="inline-flex items-center gap-1 text-os-accent hover:underline break-all"
           >
             {project.deploymentUrl.replace(/^https?:\/\//, "")}
             <ExternalLink className="h-3.5 w-3.5 flex-shrink-0" />
@@ -2936,7 +2936,7 @@ function DetailsReadOs({
               <DetailRow icon={<Users className={ic} />} label="Team email group">
                 <a
                   href={`mailto:${project.teamGroupEmail}`}
-                  className="text-accent-coral hover:underline break-all"
+                  className="text-os-accent hover:underline break-all"
                 >
                   {project.teamGroupEmail}
                 </a>
@@ -4185,7 +4185,7 @@ function PartnersSection({
           />
           <button
             type="submit"
-            className="h-9 rounded-lg bg-dark-blue text-white text-sm font-medium px-4 hover:opacity-90 transition"
+            className="h-9 rounded-lg bg-os-accent text-os-bg text-sm font-medium px-4 hover:opacity-90 transition"
           >
             Link
           </button>

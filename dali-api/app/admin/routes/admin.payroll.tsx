@@ -405,7 +405,7 @@ function SummaryPanel({
 
       <Card className="px-4 py-3 text-sm">
         <span className="font-mono text-xs">
-          <span className="text-dark-blue">DALI {formatUsd(summary.daliPay)}</span>
+          <span className="text-foreground">DALI {formatUsd(summary.daliPay)}</span>
           {" + "}
           <span className="text-muted-foreground">
             External {formatUsd(summary.externalPay)}

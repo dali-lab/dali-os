@@ -3,8 +3,8 @@ import type React from "react";
 // Shared card shell for the hiring detail routes: rounded-xl card with a
 // muted header band (title + optional subtitle + optional right-aligned extra)
 // and an arbitrary body. This is a hiring-local composition — the global
-// ~/components/ui/Card uses a different visual contract (rounded-lg +
-// shadow-brand-1, no header slot) and does not cover this shell.
+// ~/components/ui/Card uses a different visual contract (rounded-os-card,
+// no header slot) and does not cover this shell.
 export function DetailCard({
   title,
   subtitle,

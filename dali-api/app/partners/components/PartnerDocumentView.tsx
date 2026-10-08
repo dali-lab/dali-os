@@ -35,7 +35,7 @@ export function PartnerDocumentView({
   const [historyOpen, setHistoryOpen] = useState(false);
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="font-heading text-3xl font-bold text-dark-blue">{title}</h1>
+      <h1 className="font-heading text-4xl font-medium text-foreground">{title}</h1>
       {collabToken ? (
         <PresenceProvider pageId={pageId} token={collabToken} userName={userName}>
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
