@@ -105,11 +105,11 @@ test.describe('hiring lead workflow', () => {
     const row = frame.getByText('Sent when a rejection is released.').locator('xpath=../..');
     await expect(row).toContainText('Subject:');
 
-    // No editor on this tab. The Setup action was gated on isCycleAdmin, so a
-    // per-cycle role could rewrite copy every cycle shares; lab-wide copy is
-    // Core's, and there is now one place it is edited.
+    // No per-cycle Edit/Write action: lab-wide copy is Core's. A Core viewer
+    // (Jordan) opens Core's editor in place from the row itself.
     await expect(row.getByRole('button', { name: /^(Edit|Write)$/ })).toHaveCount(0);
-    const editLink = frame.getByRole('link', { name: /Edit in Core/ }).first();
+    await expect(frame.getByRole('button', { name: 'Edit Rejected email' })).toBeVisible();
+    const editLink = frame.getByRole('link', { name: /See all in Core/ }).first();
     await expect(editLink).toBeVisible();
     // The link must reach the editor itself, not a redirect chain: Core is the
     // canonical home, so this is the address every link out should carry.
