@@ -6,6 +6,7 @@ import { isCore, hasCycleAccess } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { idSchema, parseJson } from "~/lib/validate";
 import { APPLICATION_TZ, isValidTimezone } from "~/lib/timezone";
+import { applyRoomHolds } from "~/hiring/lib/interview-room-holds.server";
 
 const InterviewConfigSchema = z
   .object({
@@ -19,6 +20,9 @@ const InterviewConfigSchema = z
     rescheduleNoticeHours: z.number().int().min(0).max(168).optional(),
     cancelNoticeHours: z.number().int().min(0).max(168).optional(),
     bookingNoticeHours: z.number().int().min(0).max(168).optional(),
+    roomIds: z.array(idSchema).optional(),
+    holdRooms: z.boolean().optional(),
+    overrideConflicts: z.boolean().optional(),
   })
   .refine(
     (v) =>
@@ -69,32 +73,91 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Invalid timezone" }, { status: 400 }));
   }
 
+  const cycleId = params.cycleId!;
+  const existing = await prisma.interviewConfig.findUnique({
+    where: { applicationCycleId: cycleId },
+    include: { rooms: { select: { id: true, name: true } } },
+  });
+
+  const effective = {
+    interviewStartDate: new Date(body.interviewStartDate),
+    interviewEndDate: new Date(body.interviewEndDate),
+    dayStartHour: body.dayStartHour ?? existing?.dayStartHour ?? 9,
+    dayEndHour: body.dayEndHour ?? existing?.dayEndHour ?? 18,
+    timezone: body.timezone ?? existing?.timezone ?? APPLICATION_TZ,
+    holdRooms: body.holdRooms ?? existing?.holdRooms ?? false,
+  };
+
+  const rooms =
+    body.roomIds !== undefined
+      ? await prisma.room.findMany({
+          where: { id: { in: body.roomIds }, archivedAt: null },
+          select: { id: true, name: true },
+        })
+      : existing?.rooms ?? [];
+
+  const applied = await applyRoomHolds({
+    cycleId,
+    config: { ...effective, rooms },
+    actorUserId: auth.user.sub,
+    override: body.overrideConflicts ?? false,
+  });
+
+  if (!applied.ok) {
+    return withCors(
+      request,
+      Response.json(
+        {
+          error: "Some bookings overlap the hold",
+          conflicts: applied.conflicts.map((c) => ({
+            roomId: c.roomId,
+            roomName: c.roomName,
+            items: c.items.map((i) => ({
+              kind: i.kind,
+              id: i.id,
+              title: i.title,
+              start: i.start.toISOString(),
+              end: i.end.toISOString(),
+              organizer: { firstName: i.organizer.firstName, lastName: i.organizer.lastName },
+              recurring: i.recurring,
+            })),
+          })),
+        },
+        { status: 409 },
+      ),
+    );
+  }
+
   const config = await prisma.interviewConfig.upsert({
-    where: { applicationCycleId: params.cycleId },
+    where: { applicationCycleId: cycleId },
     update: {
       slotDurationMinutes: body.slotDurationMinutes,
       bufferMinutes: body.bufferMinutes,
       dayStartHour: body.dayStartHour,
       dayEndHour: body.dayEndHour,
-      interviewStartDate: new Date(body.interviewStartDate),
-      interviewEndDate: new Date(body.interviewEndDate),
+      interviewStartDate: effective.interviewStartDate,
+      interviewEndDate: effective.interviewEndDate,
       rescheduleNoticeHours: body.rescheduleNoticeHours ?? 12,
       cancelNoticeHours: body.cancelNoticeHours ?? 0,
       bookingNoticeHours: body.bookingNoticeHours ?? 12,
       timezone: body.timezone ?? APPLICATION_TZ,
+      holdRooms: effective.holdRooms,
+      ...(body.roomIds !== undefined ? { rooms: { set: rooms.map((r) => ({ id: r.id })) } } : {}),
     },
     create: {
-      applicationCycleId: params.cycleId,
+      applicationCycleId: cycleId,
       slotDurationMinutes: body.slotDurationMinutes ?? 30,
       bufferMinutes: body.bufferMinutes ?? 15,
       dayStartHour: body.dayStartHour ?? 9,
       dayEndHour: body.dayEndHour ?? 18,
-      interviewStartDate: new Date(body.interviewStartDate),
-      interviewEndDate: new Date(body.interviewEndDate),
+      interviewStartDate: effective.interviewStartDate,
+      interviewEndDate: effective.interviewEndDate,
       rescheduleNoticeHours: body.rescheduleNoticeHours ?? 12,
       cancelNoticeHours: body.cancelNoticeHours ?? 0,
       bookingNoticeHours: body.bookingNoticeHours ?? 12,
       timezone: body.timezone ?? APPLICATION_TZ,
+      holdRooms: effective.holdRooms,
+      ...(body.roomIds !== undefined ? { rooms: { connect: rooms.map((r) => ({ id: r.id })) } } : {}),
     },
   });
 

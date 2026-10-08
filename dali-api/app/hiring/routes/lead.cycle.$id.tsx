@@ -90,6 +90,7 @@ import {
   zonedDayStartUtc,
   zonedDayEndUtc,
   getZonedYMD,
+  formatInTimeZone,
   APPLICATION_TZ,
   APPLICATION_TZ_LABEL,
 } from "~/lib/timezone";
@@ -109,6 +110,24 @@ interface InterviewConfig {
   bookingNoticeHours: number
   timezone: string
   rooms?: { id: string; name: string }[]
+  roomIds: string[]
+  holdRooms: boolean
+}
+
+interface RoomHoldConflictItem {
+  kind: 'booking' | 'meeting'
+  id: string
+  title: string
+  start: string
+  end: string
+  organizer: { firstName: string | null; lastName: string | null }
+  recurring: boolean
+}
+
+interface RoomHoldConflict {
+  roomId: string
+  roomName: string
+  items: RoomHoldConflictItem[]
 }
 
 interface CycleReviewer {
@@ -1272,9 +1291,13 @@ export default function HiringLeadCycleDetails() {
     cancelNoticeHours: 0,
     bookingNoticeHours: 12,
     timezone: APPLICATION_TZ,
+    roomIds: [],
+    holdRooms: false,
   })
   const [configSaved, setConfigSaved] = useState(false)
   const [configSaving, setConfigSaving] = useState(false)
+  const [availableRooms, setAvailableRooms] = useState<{ id: string; name: string }[]>([])
+  const [holdConflicts, setHoldConflicts] = useState<RoomHoldConflict[] | null>(null)
 
   // ── Reviewers state ──
   const [reviewers, setReviewers] = useState<CycleReviewer[]>([])
@@ -1411,10 +1434,21 @@ export default function HiringLeadCycleDetails() {
           ...data,
           interviewStartDate: data.interviewStartDate?.slice(0, 10) ?? '',
           interviewEndDate: data.interviewEndDate?.slice(0, 10) ?? '',
+          roomIds: (data.rooms ?? []).map((room: { id: string }) => room.id),
+          holdRooms: !!data.holdRooms,
         })
       }
     } catch {}
   }, [cycleId])
+
+  const loadRooms = useCallback(async () => {
+    try {
+      const r = await fetch('/api/rooms', { credentials: 'include' })
+      if (!r.ok) return
+      const data = await r.json()
+      setAvailableRooms(data?.rooms ?? [])
+    } catch {}
+  }, [])
 
   const loadReviewers = useCallback(async () => {
     if (!cycleId) return
@@ -1510,11 +1544,12 @@ export default function HiringLeadCycleDetails() {
     }
     if (hasInterviews) {
       loadConfig()
+      loadRooms()
       loadInterviewers()
       loadInterviews()
       loadCoverage()
     }
-  }, [cycleId, isMemberCycle, hasInterviews, loadStatus, loadConfig, loadReviewers, loadMembers, loadInterviewers, loadInterviews, loadCoverage])
+  }, [cycleId, isMemberCycle, hasInterviews, loadStatus, loadConfig, loadRooms, loadReviewers, loadMembers, loadInterviewers, loadInterviews, loadCoverage])
 
   // An action on this page (e.g. adding a domain's mentors) revalidates the
   // loader but not these client-fetched rosters, so refetch them with it.
@@ -1527,7 +1562,7 @@ export default function HiringLeadCycleDetails() {
 
   // ── Handlers ──
 
-  async function saveConfig() {
+  async function saveConfig(overrideConflicts = false) {
     if (!cycleId) return
     setConfigSaving(true)
     try {
@@ -1544,6 +1579,7 @@ export default function HiringLeadCycleDetails() {
         interviewEndDate: config.interviewEndDate
           ? toZonedMidnightIso(config.interviewEndDate)
           : config.interviewEndDate,
+        overrideConflicts,
       }
       const res = await fetch(`/api/hiring/cycles/${cycleId}/interview-config`, {
         method: 'POST',
@@ -1552,12 +1588,27 @@ export default function HiringLeadCycleDetails() {
         body: JSON.stringify(payload),
       })
       if (res.ok) {
+        setHoldConflicts(null)
         setConfigSaved(true)
         setTimeout(() => setConfigSaved(false), 2000)
+        if (overrideConflicts) {
+          const peopleCount = new Set(
+            (holdConflicts ?? []).flatMap(c => c.items.map(i => `${i.organizer.firstName} ${i.organizer.lastName}`)),
+          ).size
+          toast.success(`Rooms held. ${peopleCount} people were told.`)
+        }
+      } else if (res.status === 409) {
+        const data = await res.json().catch(() => null)
+        if (data?.conflicts) setHoldConflicts(data.conflicts)
       }
     } finally {
       setConfigSaving(false)
     }
+  }
+
+  function keepTheirBookings() {
+    setHoldConflicts(null)
+    toast.info('Hold not applied')
   }
 
   async function addReviewer(userId: string, domainId: string) {
@@ -2688,16 +2739,55 @@ export default function HiringLeadCycleDetails() {
               />
             </label>
           </div>
+          <div className={cn(os.formClass, 'mt-4')}>
+            <div className={os.fieldLabel}>
+              Interview rooms
+              <div className="flex flex-wrap gap-4">
+                {availableRooms.map(room => (
+                  <Checkbox
+                    key={room.id}
+                    label={room.name}
+                    checked={config.roomIds.includes(room.id)}
+                    onChange={(e) => {
+                      const checked = e.target.checked
+                      setConfig(c => ({
+                        ...c,
+                        roomIds: checked ? [...c.roomIds, room.id] : c.roomIds.filter(id => id !== room.id),
+                      }))
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">In-person slots are booked into these rooms.</p>
+            <Toggle
+              tone="os"
+              label="Hold these rooms for interviews"
+              description="Blocks other bookings during interview hours across the interview window."
+              checked={config.holdRooms}
+              disabled={config.roomIds.length === 0}
+              onChange={(e) => setConfig(c => ({ ...c, holdRooms: e.target.checked }))}
+            />
+          </div>
           <div>
             <button
               type="button"
-              onClick={saveConfig}
+              onClick={() => saveConfig()}
               disabled={configSaving || !config.interviewStartDate || !config.interviewEndDate}
               className={buttonClasses('primary', 'md')}
             >
               {configSaving ? 'Saving…' : configSaved ? 'Saved' : 'Save'}
             </button>
           </div>
+          {holdConflicts && (
+            <RoomHoldConflictModal
+              conflicts={holdConflicts}
+              timezone={config.timezone}
+              saving={configSaving}
+              onKeep={keepTheirBookings}
+              onOverride={() => saveConfig(true)}
+            />
+          )}
         </SetupCard>
         </NavSection>
       )}
@@ -2903,6 +2993,57 @@ function DecisionEmailPreviewModal({ decision, email, onClose }: {
           </button>
         </div>
       </>
+    </Modal>
+  )
+}
+
+function RoomHoldConflictModal({ conflicts, timezone, saving, onKeep, onOverride }: {
+  conflicts: RoomHoldConflict[];
+  timezone: string;
+  saving: boolean;
+  onKeep: () => void;
+  onOverride: () => void;
+}) {
+  const when = (item: RoomHoldConflictItem) => {
+    const start = formatInTimeZone(item.start, timezone, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+    const end = formatInTimeZone(item.end, timezone, { hour: 'numeric', minute: '2-digit' })
+    return `${start} to ${end}`
+  }
+  const who = (item: RoomHoldConflictItem) =>
+    [item.organizer.firstName, item.organizer.lastName].filter(Boolean).join(' ') || 'Unknown'
+
+  return (
+    <Modal open onClose={onKeep} labelledBy="room-hold-conflict-title">
+      <ModalHeader
+        titleId="room-hold-conflict-title"
+        title="These bookings overlap the hold"
+        onClose={onKeep}
+      />
+      <div className="space-y-4 max-h-[60vh] overflow-y-auto">
+        {conflicts.map(conflict => (
+          <div key={conflict.roomId}>
+            <h3 className="text-sm font-medium text-foreground">{conflict.roomName}</h3>
+            <ul className="mt-1 space-y-1">
+              {conflict.items.map(item => (
+                <li key={`${item.kind}-${item.id}-${item.start}`} className="text-sm text-muted-foreground">
+                  {item.title} · {when(item)} · {who(item)}
+                  {item.recurring && <span className="ml-1 text-xs">(Repeats)</span>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+      <ModalFooter onCancel={onKeep} cancelLabel="Keep their bookings">
+        <button
+          type="button"
+          onClick={onOverride}
+          disabled={saving}
+          className={buttonClasses('destructive', 'md')}
+        >
+          {saving ? 'Releasing…' : 'Release them and hold the rooms'}
+        </button>
+      </ModalFooter>
     </Modal>
   )
 }
