@@ -49,6 +49,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
               domain: true,
             },
           },
+          room: { select: { id: true, name: true } },
           assignments: {
             where: { status: "Active" },
             include: {

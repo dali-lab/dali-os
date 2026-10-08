@@ -90,6 +90,7 @@ import {
   zonedDayStartUtc,
   zonedDayEndUtc,
   getZonedYMD,
+  formatInTimeZone,
   APPLICATION_TZ,
   APPLICATION_TZ_LABEL,
 } from "~/lib/timezone";
@@ -108,6 +109,25 @@ interface InterviewConfig {
   cancelNoticeHours: number
   bookingNoticeHours: number
   timezone: string
+  rooms?: { id: string; name: string }[]
+  roomIds: string[]
+  holdRooms: boolean
+}
+
+interface RoomHoldConflictItem {
+  kind: 'booking' | 'meeting'
+  id: string
+  title: string
+  start: string
+  end: string
+  organizer: { firstName: string | null; lastName: string | null }
+  recurring: boolean
+}
+
+interface RoomHoldConflict {
+  roomId: string
+  roomName: string
+  items: RoomHoldConflictItem[]
 }
 
 interface CycleReviewer {
@@ -126,7 +146,7 @@ interface InterviewRow {
   startTime: string
   endTime: string
   status: string
-  location: string
+  room: { id: string; name: string } | null
   zoomJoinUrl: string | null
   videoUrl: string | null
   domainApplication: {
@@ -1271,9 +1291,13 @@ export default function HiringLeadCycleDetails() {
     cancelNoticeHours: 0,
     bookingNoticeHours: 12,
     timezone: APPLICATION_TZ,
+    roomIds: [],
+    holdRooms: false,
   })
   const [configSaved, setConfigSaved] = useState(false)
   const [configSaving, setConfigSaving] = useState(false)
+  const [availableRooms, setAvailableRooms] = useState<{ id: string; name: string }[]>([])
+  const [holdConflicts, setHoldConflicts] = useState<RoomHoldConflict[] | null>(null)
 
   // ── Reviewers state ──
   const [reviewers, setReviewers] = useState<CycleReviewer[]>([])
@@ -1410,10 +1434,21 @@ export default function HiringLeadCycleDetails() {
           ...data,
           interviewStartDate: data.interviewStartDate?.slice(0, 10) ?? '',
           interviewEndDate: data.interviewEndDate?.slice(0, 10) ?? '',
+          roomIds: (data.rooms ?? []).map((room: { id: string }) => room.id),
+          holdRooms: !!data.holdRooms,
         })
       }
     } catch {}
   }, [cycleId])
+
+  const loadRooms = useCallback(async () => {
+    try {
+      const r = await fetch('/api/rooms', { credentials: 'include' })
+      if (!r.ok) return
+      const data = await r.json()
+      setAvailableRooms(data?.rooms ?? [])
+    } catch {}
+  }, [])
 
   const loadReviewers = useCallback(async () => {
     if (!cycleId) return
@@ -1509,11 +1544,12 @@ export default function HiringLeadCycleDetails() {
     }
     if (hasInterviews) {
       loadConfig()
+      loadRooms()
       loadInterviewers()
       loadInterviews()
       loadCoverage()
     }
-  }, [cycleId, isMemberCycle, hasInterviews, loadStatus, loadConfig, loadReviewers, loadMembers, loadInterviewers, loadInterviews, loadCoverage])
+  }, [cycleId, isMemberCycle, hasInterviews, loadStatus, loadConfig, loadRooms, loadReviewers, loadMembers, loadInterviewers, loadInterviews, loadCoverage])
 
   // An action on this page (e.g. adding a domain's mentors) revalidates the
   // loader but not these client-fetched rosters, so refetch them with it.
@@ -1526,7 +1562,7 @@ export default function HiringLeadCycleDetails() {
 
   // ── Handlers ──
 
-  async function saveConfig() {
+  async function saveConfig(overrideConflicts = false) {
     if (!cycleId) return
     setConfigSaving(true)
     try {
@@ -1543,6 +1579,7 @@ export default function HiringLeadCycleDetails() {
         interviewEndDate: config.interviewEndDate
           ? toZonedMidnightIso(config.interviewEndDate)
           : config.interviewEndDate,
+        overrideConflicts,
       }
       const res = await fetch(`/api/hiring/cycles/${cycleId}/interview-config`, {
         method: 'POST',
@@ -1551,12 +1588,27 @@ export default function HiringLeadCycleDetails() {
         body: JSON.stringify(payload),
       })
       if (res.ok) {
+        setHoldConflicts(null)
         setConfigSaved(true)
         setTimeout(() => setConfigSaved(false), 2000)
+        if (overrideConflicts) {
+          const peopleCount = new Set(
+            (holdConflicts ?? []).flatMap(c => c.items.map(i => `${i.organizer.firstName} ${i.organizer.lastName}`)),
+          ).size
+          toast.success(`Rooms held. ${peopleCount} people were told.`)
+        }
+      } else if (res.status === 409) {
+        const data = await res.json().catch(() => null)
+        if (data?.conflicts) setHoldConflicts(data.conflicts)
       }
     } finally {
       setConfigSaving(false)
     }
+  }
+
+  function keepTheirBookings() {
+    setHoldConflicts(null)
+    toast.info('Hold not applied')
   }
 
   async function addReviewer(userId: string, domainId: string) {
@@ -2255,9 +2307,8 @@ export default function HiringLeadCycleDetails() {
             setResendingInviteId(null)
           }
         }
-        const locationLabel = (loc: string) =>
-          loc === 'PodAppa' ? 'Pod Appa' : loc === 'PodMomo' ? 'Pod Momo' : 'Online'
-        async function changeLocation(interview: any, newLocation: string) {
+        const locationLabel = (room: { name: string } | null) => room?.name ?? 'Online'
+        async function changeLocation(interview: any, newRoomId: string) {
           if (
             !(await dialog.confirm({
               title: 'Change interview location?',
@@ -2271,12 +2322,12 @@ export default function HiringLeadCycleDetails() {
             method: 'PATCH',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ location: newLocation }),
+            body: JSON.stringify({ roomId: newRoomId || null }),
           })
           if (res.ok) {
             const updated = await res.json()
             setInterviews(prev => prev.map(i =>
-              i.id === interview.id ? { ...i, location: newLocation, zoomJoinUrl: updated.zoomJoinUrl ?? null, videoUrl: updated.videoUrl ?? null } : i
+              i.id === interview.id ? { ...i, room: updated.room ?? null, zoomJoinUrl: updated.zoomJoinUrl ?? null, videoUrl: updated.videoUrl ?? null } : i
             ))
           } else {
             const body = await res.json().catch(() => ({}))
@@ -2300,6 +2351,31 @@ export default function HiringLeadCycleDetails() {
             body: JSON.stringify({ assignmentId: a.id, newCycleInterviewerId: value }),
           })
           window.location.reload()
+        }
+        async function cancelInterview(interview: any) {
+          const u = interview.domainApplication.application.user
+          const name = `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || 'this applicant'
+          if (
+            !(await dialog.confirm({
+              title: `Cancel ${name}'s interview?`,
+              description: 'Frees the slot and the room. The applicant keeps their invite and can book a new time. Emails the applicant and both interviewers.',
+              confirmLabel: 'Cancel interview',
+              cancelLabel: 'Keep it',
+              tone: 'destructive',
+            }))
+          )
+            return
+          const res = await fetch(`/api/hiring/interviews/${interview.id}/cancel`, {
+            method: 'POST', credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ notifyApplicant: true }),
+          })
+          if (!res.ok) {
+            const body = await res.json().catch(() => null)
+            toast.error(body?.error ?? 'Could not cancel the interview')
+            return
+          }
+          await loadInterviews()
         }
         const applicantLink = (daId: string, u: { firstName?: string | null; lastName?: string | null }) => (
           <Link
@@ -2393,7 +2469,7 @@ export default function HiringLeadCycleDetails() {
                   const start = new Date(interview.startTime)
                   const end = new Date(interview.endTime)
                   const when = `${start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} to ${end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`
-                  const meetUrl = interview.location === 'Online' ? (interview.videoUrl ?? interview.zoomJoinUrl) : null
+                  const meetUrl = !interview.room ? (interview.videoUrl ?? interview.zoomJoinUrl) : null
                   return (
                     <div key={interview.id} className="flex flex-col gap-3 rounded-os-item bg-os-well px-4 py-3">
                       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -2401,7 +2477,21 @@ export default function HiringLeadCycleDetails() {
                           {applicantLink(interview.domainApplication.id, interview.domainApplication.application.user)}
                           <span className="text-sm text-os-grey">{[domainName, when].filter(Boolean).join(' · ')}</span>
                         </div>
-                        <Pill dot={statusTone(interview.status)}>{interview.status}</Pill>
+                        <span className="inline-flex items-center gap-2">
+                          <Pill dot={statusTone(interview.status)}>{interview.status}</Pill>
+                          {editable && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => cancelInterview(interview)}
+                                className={buttonClasses('ghost', 'sm')}
+                              >
+                                Cancel interview
+                              </button>
+                              <EmailMarker recipients="applicant + both interviewers" label="Cancelling fires cancel emails" />
+                            </>
+                          )}
+                        </span>
                       </div>
                       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
                         <span className="inline-flex items-center gap-2">
@@ -2410,19 +2500,18 @@ export default function HiringLeadCycleDetails() {
                             <>
                               <Select
                                 ariaLabel="Location"
-                                value={interview.location}
+                                value={interview.room?.id ?? ""}
                                 onChange={(value) => changeLocation(interview, value)}
                                 options={[
-                                  { value: "PodAppa", label: "Pod Appa" },
-                                  { value: "PodMomo", label: "Pod Momo" },
-                                  { value: "Online", label: "Online" },
+                                  ...(config.rooms ?? []).map((r) => ({ value: r.id, label: r.name })),
+                                  { value: "", label: "Online" },
                                 ]}
                                 buttonClassName={smallTrigger}
                               />
                               <EmailMarker recipients="applicant + both interviewers" label="Changing fires location-change email" />
                             </>
                           ) : (
-                            <span className="text-foreground">{locationLabel(interview.location)}</span>
+                            <span className="text-foreground">{locationLabel(interview.room)}</span>
                           )}
                           {meetUrl && (
                             <a href={meetUrl} target="_blank" rel="noopener noreferrer" className="text-os-accent hover:underline">
@@ -2689,16 +2778,55 @@ export default function HiringLeadCycleDetails() {
               />
             </label>
           </div>
+          <div className={cn(os.formClass, 'mt-4')}>
+            <div className={os.fieldLabel}>
+              Interview rooms
+              <div className="flex flex-wrap gap-4">
+                {availableRooms.map(room => (
+                  <Checkbox
+                    key={room.id}
+                    label={room.name}
+                    checked={config.roomIds.includes(room.id)}
+                    onChange={(e) => {
+                      const checked = e.target.checked
+                      setConfig(c => ({
+                        ...c,
+                        roomIds: checked ? [...c.roomIds, room.id] : c.roomIds.filter(id => id !== room.id),
+                      }))
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">In-person slots are booked into these rooms.</p>
+            <Toggle
+              tone="os"
+              label="Hold these rooms for interviews"
+              description="Blocks other bookings during interview hours across the interview window."
+              checked={config.holdRooms}
+              disabled={config.roomIds.length === 0}
+              onChange={(e) => setConfig(c => ({ ...c, holdRooms: e.target.checked }))}
+            />
+          </div>
           <div>
             <button
               type="button"
-              onClick={saveConfig}
+              onClick={() => saveConfig()}
               disabled={configSaving || !config.interviewStartDate || !config.interviewEndDate}
               className={buttonClasses('primary', 'md')}
             >
               {configSaving ? 'Saving…' : configSaved ? 'Saved' : 'Save'}
             </button>
           </div>
+          {holdConflicts && (
+            <RoomHoldConflictModal
+              conflicts={holdConflicts}
+              timezone={config.timezone}
+              saving={configSaving}
+              onKeep={keepTheirBookings}
+              onOverride={() => saveConfig(true)}
+            />
+          )}
         </SetupCard>
         </NavSection>
       )}
@@ -2904,6 +3032,57 @@ function DecisionEmailPreviewModal({ decision, email, onClose }: {
           </button>
         </div>
       </>
+    </Modal>
+  )
+}
+
+function RoomHoldConflictModal({ conflicts, timezone, saving, onKeep, onOverride }: {
+  conflicts: RoomHoldConflict[];
+  timezone: string;
+  saving: boolean;
+  onKeep: () => void;
+  onOverride: () => void;
+}) {
+  const when = (item: RoomHoldConflictItem) => {
+    const start = formatInTimeZone(item.start, timezone, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+    const end = formatInTimeZone(item.end, timezone, { hour: 'numeric', minute: '2-digit' })
+    return `${start} to ${end}`
+  }
+  const who = (item: RoomHoldConflictItem) =>
+    [item.organizer.firstName, item.organizer.lastName].filter(Boolean).join(' ') || 'Unknown'
+
+  return (
+    <Modal open onClose={onKeep} labelledBy="room-hold-conflict-title">
+      <ModalHeader
+        titleId="room-hold-conflict-title"
+        title="These bookings overlap the hold"
+        onClose={onKeep}
+      />
+      <div className="space-y-4 max-h-[60vh] overflow-y-auto">
+        {conflicts.map(conflict => (
+          <div key={conflict.roomId}>
+            <h3 className="text-sm font-medium text-foreground">{conflict.roomName}</h3>
+            <ul className="mt-1 space-y-1">
+              {conflict.items.map(item => (
+                <li key={`${item.kind}-${item.id}-${item.start}`} className="text-sm text-muted-foreground">
+                  {item.title} · {when(item)} · {who(item)}
+                  {item.recurring && <span className="ml-1 text-xs">(Repeats)</span>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+      <ModalFooter onCancel={onKeep} cancelLabel="Keep their bookings">
+        <button
+          type="button"
+          onClick={onOverride}
+          disabled={saving}
+          className={buttonClasses('destructive', 'md')}
+        >
+          {saving ? 'Releasing…' : 'Release them and hold the rooms'}
+        </button>
+      </ModalFooter>
     </Modal>
   )
 }
@@ -3858,6 +4037,7 @@ const NOTIFICATION_EMAIL_SLOTS: ReadonlyArray<{ type: NotificationSlotType; labe
   { type: "InterviewInviteReminder", label: "Invite reminder (applicant)", description: "Sent by Resend invite when an applicant hasn't booked." },
   { type: "InterviewConfirmedApplicant", label: "Interview confirmed (applicant)", description: "Sent when the applicant books." },
   { type: "InterviewCancelledApplicant", label: "Interview cancelled (applicant)", description: "Sent when the interview is cancelled." },
+  { type: "InterviewCancelledByTeamApplicant", label: "Interview cancelled by the team (applicant)", description: "Sent when a hiring lead cancels; tells the applicant to book a new time." },
   { type: "InterviewCancelledInterviewer", label: "Interview cancelled (interviewer)", description: "Sent when an interview is cancelled or reassigned away." },
   { type: "InterviewLocationChanged", label: "Interview location changed", description: "Sent to everyone when the location changes." },
   { type: "InterviewReminderApplicant", label: "Interview reminder (applicant)", description: "Sent 24 hours and 1 hour before the interview." },

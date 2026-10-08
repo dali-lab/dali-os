@@ -56,13 +56,37 @@ export type RoomScheduleItem = {
   organizer: { id: string; firstName: string; lastName: string; photoUrl: string | null };
   // A SelfCheckIn meeting: the door display offers pass scanning while it runs.
   isEvent: boolean;
+  // Null for a meeting.
+  source: RoomBookingSource | null;
+  // The hiring cycle behind an Interview / InterviewHold booking.
+  cycleId: string | null;
 };
+
+/** Who is claiming room time, for the conflict rule in `blockedBy`. */
+export type RoomWriter = { source: RoomBookingSource; applicationCycleId?: string | null };
+
+// Hiring books rooms on the lab's behalf: no human-sized duration or lead
+// caps, and the series cap is a flat horizon rather than the current term.
+const SYSTEM_SOURCES: ReadonlySet<RoomBookingSource> = new Set(["Interview", "InterviewHold"]);
 
 type Tx = Prisma.TransactionClient;
 
 function overlaps(a: { start: Date; end: Date }, start: Date, end: Date) {
   return a.start < end && a.end > start;
 }
+
+/**
+ * A schedule item blocks a writer unless one side is a hiring cycle's hold
+ * and the other belongs to the same cycle: interviews sit inside their
+ * cycle's hold, and a hold may be placed over interviews already booked. Two
+ * interviews still collide, as does anything from another cycle.
+ */
+export function blockedBy(item: RoomScheduleItem, writer: RoomWriter) {
+  if (!writer.applicationCycleId || item.cycleId !== writer.applicationCycleId) return true;
+  return !(item.source === "InterviewHold" || writer.source === "InterviewHold");
+}
+
+const WEB_WRITER: RoomWriter = { source: "Web" };
 
 /** Expand one booking row's occurrences that overlap [windowStart, windowEnd). */
 function bookingOccurrences(
@@ -146,6 +170,8 @@ export async function getRoomSchedule(
         recurring: !!b.recurrenceRule,
         organizer: b.user,
         isEvent: false,
+        source: b.source ?? "Web",
+        cycleId: b.applicationCycleId ?? null,
       });
     }
   }
@@ -169,6 +195,8 @@ export async function getRoomSchedule(
         recurring: !!m.recurrenceRule,
         organizer: m.organizer,
         isEvent: m.attendanceMode === "SelfCheckIn",
+        source: null,
+        cycleId: null,
       });
     }
   }
@@ -229,6 +257,8 @@ async function resolveBookingSeries(input: {
   start: Date;
   end: Date;
   recurrenceRule: string;
+  // System holds (a hiring cycle's interview window) may straddle terms.
+  capToTerm?: boolean;
 }): Promise<RoomWriteResult<Occurrence[]>> {
   const rule = buildRule(input.recurrenceRule, input.start);
   if (!rule) return { ok: false, error: "That repeat rule isn't valid", status: 400 };
@@ -236,7 +266,7 @@ async function resolveBookingSeries(input: {
     return { ok: false, error: "A repeating booking needs an end", status: 400 };
   }
 
-  const term = await currentTerm();
+  const term = input.capToTerm === false ? null : await currentTerm();
   // Term.endDate is the last day of term (stored at midnight), so the series
   // may run through the end of that day.
   const limit = term
@@ -266,56 +296,66 @@ async function resolveBookingSeries(input: {
   return { ok: true, value: occurrences };
 }
 
-export async function createRoomBooking(input: {
-  roomId: string;
-  userId: string;
-  start: Date;
-  end: Date;
-  title?: string | null;
-  source: RoomBookingSource;
-  recurrenceRule?: string | null;
-}): Promise<RoomWriteResult<{ id: string; start: Date; end: Date }>> {
+export async function createRoomBooking(
+  input: {
+    roomId: string;
+    userId: string;
+    start: Date;
+    end: Date;
+    title?: string | null;
+    source: RoomBookingSource;
+    recurrenceRule?: string | null;
+    applicationCycleId?: string | null;
+  },
+  // A caller already inside a transaction (interview reschedule cancels the
+  // old interview and books the new slot atomically) passes it here.
+  tx?: Tx,
+): Promise<RoomWriteResult<{ id: string; start: Date; end: Date }>> {
   const { roomId, start, end, recurrenceRule } = input;
+  const system = SYSTEM_SOURCES.has(input.source);
+  const writer: RoomWriter = { source: input.source, applicationCycleId: input.applicationCycleId ?? null };
   const now = Date.now();
   const minutes = (end.getTime() - start.getTime()) / 60_000;
   // These checks apply to the first occurrence only; a series' later
   // occurrences are checked for term fit by resolveBookingSeries below.
   if (!(minutes > 0)) return { ok: false, error: "End must be after start", status: 400 };
-  if (minutes > MAX_BOOKING_MINUTES) {
-    return { ok: false, error: `Bookings can be at most ${MAX_BOOKING_MINUTES / 60} hours`, status: 400 };
-  }
-  if (start.getTime() < now - START_SKEW_MS) {
-    return { ok: false, error: "Can't book a time that has already started", status: 400 };
-  }
-  if (start.getTime() > now + MAX_BOOKING_LEAD_DAYS * 24 * 60 * 60_000) {
-    return { ok: false, error: `Bookings open ${MAX_BOOKING_LEAD_DAYS} days ahead`, status: 400 };
+  if (!system) {
+    if (minutes > MAX_BOOKING_MINUTES) {
+      return { ok: false, error: `Bookings can be at most ${MAX_BOOKING_MINUTES / 60} hours`, status: 400 };
+    }
+    if (start.getTime() < now - START_SKEW_MS) {
+      return { ok: false, error: "Can't book a time that has already started", status: 400 };
+    }
+    if (start.getTime() > now + MAX_BOOKING_LEAD_DAYS * 24 * 60 * 60_000) {
+      return { ok: false, error: `Bookings open ${MAX_BOOKING_LEAD_DAYS} days ahead`, status: 400 };
+    }
   }
 
   let series: Occurrence[] | null = null;
   if (recurrenceRule) {
-    const resolved = await resolveBookingSeries({ start, end, recurrenceRule });
+    const resolved = await resolveBookingSeries({ start, end, recurrenceRule, capToTerm: !system });
     if (!resolved.ok) return resolved;
     series = resolved.value;
   }
 
-  return prisma.$transaction(async (tx) => {
-    const room = await tx.room.findUnique({ where: { id: roomId }, select: { archivedAt: true, name: true } });
+  const run = async (db: Tx): Promise<RoomWriteResult<{ id: string; start: Date; end: Date }>> => {
+    const room = await db.room.findUnique({ where: { id: roomId }, select: { archivedAt: true, name: true } });
     if (!room || room.archivedAt) return { ok: false, error: "Room not found", status: 404 };
 
-    await lockRoom(tx, roomId);
+    await lockRoom(db, roomId);
 
     if (series) {
-      const schedule = await getRoomSchedule(roomId, series[0]!.start, series[series.length - 1]!.end, {}, tx);
+      const schedule = await getRoomSchedule(roomId, series[0]!.start, series[series.length - 1]!.end, {}, db);
       for (const occ of series) {
-        const conflict = schedule.find((s) => overlaps(s, occ.start, occ.end));
+        const conflict = schedule.find((s) => overlaps(s, occ.start, occ.end) && blockedBy(s, writer));
         if (conflict) return conflictError(conflict, room.name, true);
       }
     } else {
-      const conflict = (await getRoomSchedule(roomId, start, end, {}, tx))[0];
+      const conflict = (await getRoomSchedule(roomId, start, end, {}, db)).find((s) => blockedBy(s, writer));
       if (conflict) return conflictError(conflict, room.name);
     }
 
-    const booking = await tx.roomBooking.create({
+    const booking = await db.roomBooking.create({
       data: {
         roomId,
         userId: input.userId,
@@ -325,11 +365,48 @@ export async function createRoomBooking(input: {
         source: input.source,
         recurrenceRule: recurrenceRule ?? null,
         seriesEnd: series ? series[series.length - 1]!.end : null,
+        applicationCycleId: input.applicationCycleId ?? null,
       },
       select: { id: true, start: true, end: true },
     });
     return { ok: true, value: booking };
-  });
+  };
+
+  return tx ? run(tx) : prisma.$transaction(run);
+}
+
+/**
+ * Every schedule item that would block `writer` from holding `roomId` over
+ * `occurrences`, each once. The cycle-setup hold toggle shows these so the
+ * lead can ask people to move (or override).
+ */
+export async function listRoomConflicts(
+  roomId: string,
+  occurrences: { start: Date; end: Date }[],
+  writer: RoomWriter,
+): Promise<RoomScheduleItem[]> {
+  if (occurrences.length === 0) return [];
+  const schedule = await getRoomSchedule(
+    roomId,
+    occurrences[0]!.start,
+    occurrences[occurrences.length - 1]!.end,
+  );
+  const seen = new Set<string>();
+  const out: RoomScheduleItem[] = [];
+  for (const s of schedule) {
+    if (!blockedBy(s, writer)) continue;
+    if (!occurrences.some((occ) => overlaps(s, occ.start, occ.end))) continue;
+    const key = `${s.kind}:${s.id}:${s.occurrenceStart.getTime()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(s);
+  }
+  return out;
+}
+
+/** Expand a repeat rule the way a system hold will be stored, without writing. */
+export async function previewBookingSeries(input: { start: Date; end: Date; recurrenceRule: string }) {
+  return resolveBookingSeries({ ...input, capToTerm: false });
 }
 
 /**
@@ -495,13 +572,27 @@ export async function cancelRoomBooking(
   bookingId: string,
   actorUserId: string,
   opts?: { scope?: "this" | "following" | "all"; occurrenceStart?: Date },
+  db: Tx | typeof prisma = prisma,
 ): Promise<RoomWriteResult<null>> {
-  const booking = await prisma.roomBooking.findUnique({
+  const booking = await db.roomBooking.findUnique({
     where: { id: bookingId },
     include: { exceptions: exceptionSelect },
   });
   if (!booking || booking.cancelledAt) return { ok: true, value: null };
-  return cancelBookingOccurrence(booking, actorUserId, opts ?? {}, prisma);
+  return cancelBookingOccurrence(booking, actorUserId, opts ?? {}, db);
+}
+
+/** Cancel every live booking a hiring cycle holds with `source`. */
+export async function releaseCycleRoomBookings(
+  applicationCycleId: string,
+  source: RoomBookingSource,
+  actorUserId: string,
+  db: Tx | typeof prisma = prisma,
+) {
+  await db.roomBooking.updateMany({
+    where: { applicationCycleId, source, cancelledAt: null },
+    data: { cancelledAt: new Date(), cancelledByUserId: actorUserId },
+  });
 }
 
 /**
@@ -582,7 +673,7 @@ export async function retimeEventRoomBookings(input: {
       const isSeries = !!hold.recurrenceRule;
 
       if (isSeries && scope === "this") {
-        const conflict = (await getRoomSchedule(hold.roomId, start, end, { excludeBookingId: hold.id }, tx))[0];
+        const conflict = (await getRoomSchedule(hold.roomId, start, end, { excludeBookingId: hold.id }, tx)).find((s) => blockedBy(s, WEB_WRITER));
         if (conflict) return conflictError(conflict, hold.room.name);
         plans.push({ holdId: hold.id, kind: "exception", occ: { originalStart: occurrenceStart!, start, end } });
         continue;
@@ -600,7 +691,7 @@ export async function retimeEventRoomBookings(input: {
           tx,
         );
         for (const occ of resolved.value) {
-          const conflict = schedule.find((s) => overlaps(s, occ.start, occ.end));
+          const conflict = schedule.find((s) => overlaps(s, occ.start, occ.end) && blockedBy(s, WEB_WRITER));
           if (conflict) return conflictError(conflict, hold.room.name, true);
         }
         plans.push({ holdId: hold.id, kind: "update", seriesEnd: resolved.value[resolved.value.length - 1]!.end });
@@ -608,7 +699,7 @@ export async function retimeEventRoomBookings(input: {
       }
 
       // A plain (non-repeating) hold, either scope.
-      const conflict = (await getRoomSchedule(hold.roomId, start, end, { excludeBookingId: hold.id }, tx))[0];
+      const conflict = (await getRoomSchedule(hold.roomId, start, end, { excludeBookingId: hold.id }, tx)).find((s) => blockedBy(s, WEB_WRITER));
       if (conflict) return conflictError(conflict, hold.room.name);
       plans.push({ holdId: hold.id, kind: "update" });
     }
@@ -684,7 +775,7 @@ export async function assertMeetingRoomsFree(input: {
       { excludeMeetingId: input.meetingId },
     );
     for (const occ of occurrences) {
-      const conflict = schedule.find((s) => overlaps(s, occ.start, occ.end));
+      const conflict = schedule.find((s) => overlaps(s, occ.start, occ.end) && blockedBy(s, WEB_WRITER));
       if (conflict) return conflictError(conflict, room.name, !!input.recurrenceRule);
     }
   }
@@ -702,6 +793,7 @@ export function serializeScheduleItem(i: RoomScheduleItem) {
     recurring: i.recurring,
     organizer: { id: i.organizer.id, firstName: i.organizer.firstName, lastName: i.organizer.lastName },
     isEvent: i.isEvent,
+    source: i.source,
   };
 }
 

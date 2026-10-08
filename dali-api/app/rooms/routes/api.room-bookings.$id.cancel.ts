@@ -28,11 +28,18 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const booking = await prisma.roomBooking.findUnique({
     where: { id: params.id },
-    select: { userId: true },
+    select: { userId: true, source: true },
   });
   if (!booking) return withCors(request, Response.json({ error: "Not found" }, { status: 404 }));
   if (booking.userId !== access.user.sub && !(await isCore(access.user.sub))) {
     return forbidden(request);
+  }
+  // Interview bookings follow the interview; holds follow the cycle's config.
+  if (booking.source === "Interview" || booking.source === "InterviewHold") {
+    return withCors(
+      request,
+      Response.json({ error: "This booking is managed by hiring. Change it from the cycle page." }, { status: 409 }),
+    );
   }
 
   let scope: "this" | "following" | "all" | undefined;

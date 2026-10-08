@@ -92,4 +92,20 @@ describe("inferDomainApplicationStatus", () => {
     );
     expect(status).toBe("Withdrawn");
   });
+
+  it("an applicant cancel is a withdrawal, but an admin cancel leaves them invited to rebook", () => {
+    const invited = [{ type: "InvitedToInterview", stage: "Released", createdAt: new Date() }];
+    const base = { statusUpdates: [{ newStatus: "Submitted" }], decisions: invited };
+    expect(
+      inferDomainApplicationStatus(
+        makeDa({ ...base, interviews: [{ status: "CancelledByApplicant" }] }),
+        "UnderReview",
+      ),
+    ).toBe("Withdrawn");
+    // The include fragment filters CancelledByAdmin rows out before derivation,
+    // so from the derivation's point of view nothing was ever booked.
+    expect(inferDomainApplicationStatus(makeDa({ ...base, interviews: [] }), "UnderReview")).toBe(
+      "InvitedToInterview",
+    );
+  });
 });

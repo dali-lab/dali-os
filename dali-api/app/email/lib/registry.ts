@@ -242,6 +242,17 @@ export const EMAIL_TEMPLATES = {
     footer: "transactional",
     whenMissing: "skip",
   },
+  "hiring:notification:InterviewCancelledByTeamApplicant": {
+    area: "Hiring",
+    label: "Interview cancelled by the team (applicant)",
+    description:
+      "Sent to the applicant when a hiring lead cancels their interview. They keep their invite and can book a new time. Falls back to the plain cancel email if this one isn't written.",
+    purpose: "Hiring",
+    variables: ["firstName", "domain", "time", "location"],
+    sample: INTERVIEW_SAMPLE,
+    footer: "transactional",
+    whenMissing: "skip",
+  },
   "hiring:notification:InterviewCancelledInterviewer": {
     area: "Hiring",
     label: "Interview cancelled (interviewer)",

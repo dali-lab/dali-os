@@ -715,6 +715,7 @@ export default [
 
   route("api/hiring/interviews/:id/complete", "hiring/routes/api.interviews.$id.complete.ts"),
   route("api/hiring/interviews/:id/reassign", "hiring/routes/api.interviews.$id.reassign.ts"),
+  route("api/hiring/interviews/:id/cancel", "hiring/routes/api.interviews.$id.cancel.ts"),
 
   route("api/hiring/delibs/:id", "hiring/routes/api.delibs.$id.ts"),
   route("api/hiring/delibs/:id/moves", "hiring/routes/api.delibs.$id.moves.ts"),

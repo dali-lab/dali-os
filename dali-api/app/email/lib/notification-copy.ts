@@ -100,6 +100,14 @@ export const NOTIFICATION_COPY = {
     subject: "Removed from meeting: {{itemTitle}}",
     body: "",
   },
+  "room.booking_bumped": {
+    eventType: "room.booking_bumped",
+    label: "Room bumped for interviews",
+    description: "Sent when a hiring cycle's interview hold takes over a room you'd booked.",
+    variables: ["itemTitle", "itemDetail"],
+    subject: "Your room was released for interviews: {{itemTitle}}",
+    body: "{{itemDetail}}",
+  },
   "class.schedule_changed": {
     eventType: "class.schedule_changed",
     label: "Class schedule changed",
@@ -281,6 +289,15 @@ export const NOTIFICATION_COPY = {
     description: "Sent to an interviewer when they're assigned an interview.",
     variables: ["personName", "itemDetail"],
     subject: "Interview assigned: {{personName}}",
+    body: "{{itemDetail}}",
+  },
+  "hiring.interview_cancelled": {
+    purpose: "Hiring",
+    eventType: "hiring.interview_cancelled",
+    label: "Interview cancelled",
+    description: "Sent to an interviewer when a hiring lead cancels an interview they were assigned to.",
+    variables: ["personName", "itemDetail"],
+    subject: "Interview cancelled: {{personName}}",
     body: "{{itemDetail}}",
   },
   "hiring.fellowship_invite": {

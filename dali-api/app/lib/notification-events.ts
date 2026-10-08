@@ -95,6 +95,13 @@ export const EVENT_TYPES = {
     description: "When an invitee proposes a new time for a meeting you organized.",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
+  "room.booking_bumped": {
+    kind: "General",
+    area: "Meetings",
+    label: "Room bumped for interviews",
+    description: "When your room booking or meeting loses its room to a hiring cycle's interview hold.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
+  },
   "class.schedule_changed": {
     kind: "General",
     area: "Meetings",
@@ -240,6 +247,15 @@ export const EVENT_TYPES = {
     label: "Interview assignments",
     description: "When you're assigned to conduct an interview.",
     lockedInApp: true,
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
+  "hiring.interview_cancelled": {
+    kind: "General",
+    area: "Hiring",
+    label: "Interview cancellations",
+    description: "When an interview you were assigned to is cancelled by the hiring lead.",
+    lockedInApp: true,
+    // The ICS cancellation already goes out by email; this is the in-app tile.
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   "hiring.fellowship_invite": {

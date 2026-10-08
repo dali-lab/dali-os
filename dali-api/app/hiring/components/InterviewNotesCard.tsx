@@ -4,12 +4,6 @@ import { Calendar, MapPin, Users } from "lucide-react";
 import { INTERVIEW_STATUS_TONES, INTERVIEW_STATUS_LABELS, RECOMMENDATION_TONES } from "~/hiring/lib/labels";
 import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
 
-const LOCATION_LABELS: Record<string, string> = {
-  PodAppa: "Pod Appa",
-  PodMomo: "Pod Momo",
-  Online: "Online",
-};
-
 export interface InterviewNotesInterviewer {
   id: string;
   name: string;
@@ -24,7 +18,7 @@ export interface InterviewNotesData {
   startTime: string | Date;
   endTime?: string | Date | null;
   status: string; // key into labels.INTERVIEW_STATUS_TONES
-  location?: string | null;
+  room?: { name: string } | null;
   zoomJoinUrl?: string | null;
   videoUrl?: string | null;
   recommendation?: string | null;
@@ -139,11 +133,6 @@ export function InterviewNotesCard({
     );
   }
 
-  const locationLabel =
-    interview.location != null
-      ? LOCATION_LABELS[interview.location] ?? interview.location
-      : null;
-
   return (
     <div className="px-6 py-4 space-y-3">
       <div className="flex flex-wrap items-center gap-3">
@@ -160,22 +149,20 @@ export function InterviewNotesCard({
             </>
           )}
         </span>
-        {locationLabel != null && (
-          <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-            <MapPin className="w-3.5 h-3.5" aria-hidden />
-            {locationLabel}
-            {interview.location === "Online" && (interview.videoUrl ?? interview.zoomJoinUrl) && (
-              <a
-                href={interview.videoUrl ?? interview.zoomJoinUrl ?? ''}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-600 hover:underline ml-1"
-              >
-                Join Google Meet
-              </a>
-            )}
-          </span>
-        )}
+        <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+          <MapPin className="w-3.5 h-3.5" aria-hidden />
+          {interview.room?.name ?? "Online"}
+          {!interview.room && (interview.videoUrl ?? interview.zoomJoinUrl) && (
+            <a
+              href={interview.videoUrl ?? interview.zoomJoinUrl ?? ''}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:underline ml-1"
+            >
+              Join Google Meet
+            </a>
+          )}
+        </span>
         <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
           <Users className="w-3.5 h-3.5" aria-hidden />
           {interviewers.length === 0

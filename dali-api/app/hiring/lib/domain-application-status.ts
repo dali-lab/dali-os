@@ -39,6 +39,7 @@ export const domainApplicationStatusInclude = {
       status: { in: ["Scheduled", "Completed", "CancelledByApplicant"] as const },
     },
     orderBy: { createdAt: "desc" as const },
+    include: { room: { select: { id: true, name: true } } },
   },
 } satisfies DomainApplicationInclude;
 

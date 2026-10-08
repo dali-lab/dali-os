@@ -61,7 +61,7 @@ export async function loadApplicationTracker(
       domainId: da.domainId,
       inferredStatus,
       interview: activeInterview
-        ? { id: activeInterview.id, startTime: activeInterview.startTime, endTime: activeInterview.endTime, status: activeInterview.status, location: activeInterview.location, zoomJoinUrl: activeInterview.zoomJoinUrl }
+        ? { id: activeInterview.id, startTime: activeInterview.startTime, endTime: activeInterview.endTime, status: activeInterview.status, room: activeInterview.room, zoomJoinUrl: activeInterview.zoomJoinUrl }
         : null,
     };
   });

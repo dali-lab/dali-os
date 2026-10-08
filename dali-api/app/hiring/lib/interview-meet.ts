@@ -116,7 +116,7 @@ export async function provisionInterviewMeet(interviewId: string): Promise<void>
     });
     // Online only, and only once — a re-run (idempotent lease recovery, a double
     // click) must not mint a second conference.
-    if (!interview || interview.location !== "Online" || interview.calendarEventId) return;
+    if (!interview || interview.roomId !== null || interview.calendarEventId) return;
 
     const attendees = meetAttendees(interview);
     if (attendees.length === 0) return;

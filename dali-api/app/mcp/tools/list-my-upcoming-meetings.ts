@@ -93,6 +93,7 @@ export async function runListMyUpcomingMeetings(userId: string, input: Input) {
       },
     },
     include: {
+      room: { select: { name: true } },
       assignments: {
         where: { status: "Active" },
         select: { id: true },
@@ -107,7 +108,7 @@ export async function runListMyUpcomingMeetings(userId: string, input: Input) {
       title: "Interview",
       startsAt: iv.startTime.toISOString(),
       endsAt: iv.endTime.toISOString(),
-      location: iv.location,
+      location: iv.room?.name ?? null,
       meetingUrl: iv.videoUrl,
       attendeeCount: iv.assignments.length + 1, // interviewers + applicant
       source: "interview",

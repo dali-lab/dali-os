@@ -67,6 +67,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const interview = await prisma.interview.findUnique({
     where: { id: params.interviewId },
     include: {
+      room: { select: { id: true, name: true } },
       assignments: {
         include: {
           cycleInterviewer: {
@@ -394,17 +395,11 @@ export default function InterviewDetailPage() {
               {domain && (
                 <Pill>{domain}</Pill>
               )}
-              {interview.location && (
-                <span className="flex items-center">
-                  <MapPin className="w-4 h-4 mr-1 text-muted-foreground/70" />
-                  {interview.location === 'PodAppa'
-                    ? 'Pod Appa'
-                    : interview.location === 'PodMomo'
-                      ? 'Pod Momo'
-                      : 'Online'}
-                </span>
-              )}
-              {interview.location === 'Online' && (interview.videoUrl ?? interview.zoomJoinUrl) && (
+              <span className="flex items-center">
+                <MapPin className="w-4 h-4 mr-1 text-muted-foreground/70" />
+                {interview.room?.name ?? 'Online'}
+              </span>
+              {!interview.room && (interview.videoUrl ?? interview.zoomJoinUrl) && (
                 <a href={interview.videoUrl ?? interview.zoomJoinUrl ?? ''} target="_blank" rel="noopener noreferrer"
                    className="flex items-center text-sm text-blue-600 hover:underline">
                   <Video className="w-4 h-4 mr-1" />
