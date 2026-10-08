@@ -12,7 +12,12 @@ vi.mock("~/hiring/lib/interview-emails", () => ({
   sendInterviewCancelEmails: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock("~/hiring/lib/interview-meet", () => ({
+  deprovisionInterviewMeet: vi.fn().mockResolvedValue(undefined),
+}));
+
 import { prisma } from "~/lib/db";
+import { deprovisionInterviewMeet } from "~/hiring/lib/interview-meet";
 import { requireAuth } from "~/lib/auth";
 import { getActiveCycleById } from "~/hiring/lib/cycles";
 import { sendInterviewCancelEmails } from "~/hiring/lib/interview-emails";
@@ -163,8 +168,8 @@ describe("POST /portal/application (withdraw)", () => {
       statusUpdates: [{ newStatus: "Submitted" }],
     });
     mockTx.interview.findMany.mockResolvedValue([
-      { id: "int-1", domainApplicationId: "da-1" },
-      { id: "int-2", domainApplicationId: "da-2" },
+      { id: "int-1", domainApplicationId: "da-1", calendarEventId: "evt-1" },
+      { id: "int-2", domainApplicationId: "da-2", calendarEventId: null },
     ]);
 
     const res = await action({ request: makeRequest(), params: {}, context: {} } as any);
@@ -179,10 +184,14 @@ describe("POST /portal/application (withdraw)", () => {
       select: {
         id: true,
         domainApplicationId: true,
+        calendarEventId: true,
         roomBookingId: true,
         roomBooking: { select: { userId: true } },
       },
     });
+    // Each cancelled interview's hiring-calendar event is dropped too.
+    expect(deprovisionInterviewMeet).toHaveBeenCalledTimes(2);
+    expect(deprovisionInterviewMeet).toHaveBeenCalledWith({ id: "int-1", calendarEventId: "evt-1" });
     expect(mockTx.interview.updateMany).toHaveBeenCalledWith({
       where: { id: { in: ["int-1", "int-2"] } },
       data: { status: "CancelledByApplicant" },

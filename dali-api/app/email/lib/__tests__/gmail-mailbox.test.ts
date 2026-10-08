@@ -8,7 +8,14 @@ vi.mock("~/lib/google-calendar", () => ({
   buildEncryptedTokens: () => "sealed",
 }));
 
-import { decodeEntities, getMailboxToken, getThread, MailboxError, sendMessage } from "~/email/lib/gmail-mailbox.server";
+import {
+  decodeEntities,
+  getMailboxToken,
+  getThread,
+  listThreads,
+  MailboxError,
+  sendMessage,
+} from "~/email/lib/gmail-mailbox.server";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -89,6 +96,22 @@ describe("getThread", () => {
     expect(m.attachments).toEqual([
       { filename: "deck.pdf", mimeType: "application/pdf", size: 2048, attachmentId: "a2" },
     ]);
+  });
+});
+
+describe("listThreads", () => {
+  it("asks Gmail for the page after pageToken and hands back the next token", async () => {
+    const fetchSpy = mockFetch({ threads: [], nextPageToken: "page-3" });
+    const page = await listThreads("token", { query: "in:inbox", max: 20, pageToken: "page-2" });
+    const asked = new URL(String(fetchSpy.mock.calls[0][0]));
+    expect(asked.searchParams.get("pageToken")).toBe("page-2");
+    expect(asked.searchParams.get("maxResults")).toBe("20");
+    expect(page).toEqual({ threads: [], nextPageToken: "page-3" });
+  });
+
+  it("reports no next token on the last page", async () => {
+    mockFetch({ threads: [] });
+    expect((await listThreads("token", { query: "", max: 20 })).nextPageToken).toBeNull();
   });
 });
 

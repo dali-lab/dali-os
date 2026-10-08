@@ -12,6 +12,16 @@ import { renderForSlot, notificationSlot } from "./email-variables";
 import { buildInviteIcs, buildCancelIcs, type IcsAttendee } from "./interview-ics";
 import { getHiringEmail } from "~/hiring/lib/hiring-emails.server";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
+import { ensureInterviewMeetUrl } from "~/hiring/lib/interview-meet";
+
+// The invite and reminders are the two sends an applicant actually joins
+// from, so each picks up a Meet link Google minted after the event insert.
+async function withMeetUrl<T extends { id: string; calendarEventId: string | null; videoUrl: string | null }>(
+  interview: T,
+): Promise<T> {
+  const videoUrl = (await ensureInterviewMeetUrl(interview)) ?? interview.videoUrl;
+  return { ...interview, videoUrl };
+}
 
 const ORGANIZER: IcsAttendee = {
   email: "applications@dali.dartmouth.edu",
@@ -116,7 +126,7 @@ async function renderSlot(
 // the calendar event from the invite. Returns the number of emails enqueued.
 export async function sendInterviewReminderEmails(interviewId: string): Promise<number> {
   try {
-    const interview = await prisma.interview.findUnique({ where: { id: interviewId }, include: { room: { select: { id: true, name: true } } } });
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId }, include: { room: { select: { id: true, name: true } } } }).then((iv) => (iv ? withMeetUrl(iv) : null));
     // Re-check status: the job claims its ledger row first, and the interview
     // may have been cancelled in between.
     if (!interview || interview.status !== "Scheduled") return 0;
@@ -190,7 +200,7 @@ export async function sendInterviewInviteEmails(
   opts: { dedupKey?: null } = {},
 ): Promise<void> {
   try {
-    const interview = await prisma.interview.findUnique({ where: { id: interviewId }, include: { room: { select: { id: true, name: true } } } });
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId }, include: { room: { select: { id: true, name: true } } } }).then((iv) => (iv ? withMeetUrl(iv) : null));
     if (!interview) return;
 
     const da = await prisma.domainApplication.findUnique({

@@ -776,6 +776,7 @@ export default [
   route("api/ai/email", "routes/api.ai.email.ts"),
   route("api/email/contacts", "routes/api.email.contacts.ts"),
   route("api/email/unread", "routes/api.email.unread.ts"),
+  route("api/email/threads", "routes/api.email.threads.ts"),
   route("api/email/attachment", "routes/api.email.attachment.ts"),
   // Core/Admin member search — manual applicant-email link in the Email tab.
   route("api/users/search", "routes/api.users.search.ts"),
