@@ -875,6 +875,18 @@ export async function createGoogleCalendarEvent(
   return { eventId: data.id, iCalUID: data.iCalUID ?? null, htmlLink: data.htmlLink ?? null, meetUrl };
 }
 
+/** The Meet link on an event we created earlier, or null if Google still hasn't
+ *  minted it. For callers that stored the event id while the conference was
+ *  pending and want to pick the link up later. */
+export async function getGoogleEventMeetUrl(opts: {
+  linkId: string;
+  calendarId?: string;
+  eventId: string;
+}): Promise<string | null> {
+  const token = await getValidAccessTokenForLink(opts.linkId);
+  return fetchEventMeetUrl(token, encodeURIComponent(opts.calendarId ?? "primary"), opts.eventId);
+}
+
 /** Re-read a just-created event's Meet link. Called when events.insert returned
  *  before the conference was minted (status "pending"). Best-effort: any failure
  *  resolves to null and the link is picked up later on the calendar read path. */
