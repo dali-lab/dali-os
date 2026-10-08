@@ -75,10 +75,10 @@ async function cohortsForTerm(
   };
 }
 
-export async function getSignerCohorts(userId: string): Promise<SignerCohorts> {
+export async function getSignerCohorts(userId: string, request?: Request): Promise<SignerCohorts> {
   const { exempt, isMember } = await baseMemberFlag(userId);
   if (exempt) return NO_COHORTS;
-  const term = await currentTerm();
+  const term = await currentTerm(request);
   if (!term) return { ...NO_COHORTS, isMember };
   return cohortsForTerm(userId, isMember, term);
 }
