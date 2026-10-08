@@ -16,7 +16,6 @@ import {
   stopUsingWaitlistedApplication,
   type WaitlistedApplicationOption,
 } from "~/hiring/lib/continued-interest.server";
-import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import {
   impliedStartTermId,
   isOfferedStartTerm,
@@ -201,14 +200,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const draftStatus = draft?.statusUpdates[0]?.newStatus ?? null;
 
-  // The start terms this cycle offers. Gated for everyone rather than per-user:
-  // the audience is applicants, who hold no roles, so a partially-targeted flag
-  // must not show some of them a picker.
-  const startTermsEnabled = await isFeatureEnabledForEveryone("start-terms", request);
-  const startTermOptions =
-    startTermsEnabled && offersStartTermChoice(cycle.startTermIds)
-      ? await loadOfferedStartTerms(cycle.startTermIds)
-      : [];
+  const startTermOptions = offersStartTermChoice(cycle.startTermIds)
+    ? await loadOfferedStartTerms(cycle.startTermIds)
+    : [];
 
   return {
       cycleId: active.id,
@@ -386,11 +380,8 @@ export async function action({ request }: Route.ActionArgs) {
     return Response.json({ error: "This cycle isn't open for applications." }, { status: 409 });
   }
 
-  // Start terms, resolved once for every intent below. With the flag off the
-  // offered set reads as empty, so nothing on this route writes startTermId and
-  // the application behaves exactly as it did before the column existed.
-  const startTermsEnabled = await isFeatureEnabledForEveryone("start-terms", request);
-  const offeredStartTermIds = startTermsEnabled ? (cycle.startTermIds ?? []) : [];
+  // Start terms, resolved once for every intent below.
+  const offeredStartTermIds = cycle.startTermIds ?? [];
   const startTermIsAsked = offersStartTermChoice(offeredStartTermIds);
 
   // A posted start term, trusted only if the cycle actually offers it:

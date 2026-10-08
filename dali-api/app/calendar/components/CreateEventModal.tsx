@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { useFetcher, useRevalidator } from "react-router";
 import { AlignLeft, CalendarDays, Clock, MapPin, Repeat, UsersRound, Video, X } from "lucide-react";
 import { cn } from "~/lib/cn";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
 import { TimeField as TimeComboField } from "~/components/ui/TimeField";
@@ -216,7 +215,6 @@ export function CreateEventModal({
   // ── Google Meet ──────────────────────────────────────────────────────────
   // The link is minted on the selected Google calendar, so the option only
   // makes sense with a Google destination and real guests.
-  const optimalTimesEnabled = useFeatureFlag("optimal-times");
   // Ranked "best times" reported up by the availability grid; rendered as
   // clickable pills below it (see OptimalTimePills).
   const [optimalSuggestions, setOptimalSuggestions] = useState<SlotSuggestions | null>(null);
@@ -545,7 +543,7 @@ export function CreateEventModal({
               selectedEndLocal={selectedEndLocal || undefined}
               compact
               hideAvailability={!hasGuests}
-              enableOptimalTimes={optimalTimesEnabled}
+              enableOptimalTimes
               onSuggestionsChange={setOptimalSuggestions}
               weekNav={{ onShift: shiftWeek, onToday: goToThisWeek }}
             />

@@ -39,7 +39,6 @@ import { PriorApplicationsPanel } from "~/hiring/components/PriorApplicationsPan
 import { applicationBlindLabel, blindUser } from "~/hiring/lib/anonymization.server";
 import { getApplicantEmailEngagement } from "~/hiring/lib/email-engagement.server";
 import { ApplicantEmailPanel } from "~/hiring/components/ApplicantEmailPanel";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import type { Question, RubricCriterion } from "~/types";
 import { findRound, parseTimeline } from "~/hiring/lib/cycle-timeline";
 import { Select } from "~/components/ui/floating";
@@ -504,15 +503,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     currentApplicationId: da.application.id,
     hideOutcomes: blinded,
   });
-  const emailEngagementEnabled = await isFeatureEnabled(
-    "applicant-email-engagement",
-    auth.user.sub,
-    roles,
-    request,
-  );
-  const emailEngagement = emailEngagementEnabled
-    ? await getApplicantEmailEngagement(da.application.user.id, { blinded })
-    : null;
+  const emailEngagement = await getApplicantEmailEngagement(da.application.user.id, { blinded });
 
   return {
     applicantName:

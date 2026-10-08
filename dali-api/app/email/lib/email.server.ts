@@ -38,7 +38,6 @@ import {
 } from "~/email/lib/gmail-mailbox.server";
 import { getThreadLink, indexMessages, setThreadLink, type IndexableMessage } from "~/email/lib/mail-index.server";
 
-const APPLICANT_EMAIL_FLAG = "applicant-email-engagement";
 const DALI_EMAIL_SUFFIX = "@dali.dartmouth.edu";
 
 const THREADS_PER_INBOX = 20;
@@ -142,17 +141,12 @@ async function loadLiveEmailPage(request: Request, userId: string, roles: UserRo
   const selectedAccount = selectedRef
     ? connected.find((a) => a.id === selectedRef.accountId) ?? null
     : null;
-  const applicantLinksEnabled =
-    selectedAccount?.kind === "Shared"
-      ? await isFeatureEnabled(APPLICANT_EMAIL_FLAG, userId, roles, request)
-      : false;
-
   const [feed, selected, drafts, categories, myConnections, unread] = await Promise.all([
     view === "inbox"
       ? loadFeed(feedAccounts, folderQuery(folder, search), folder.spamTrash)
       : { threads: [], errors: [] },
     selectedAccount && selectedRef
-      ? loadThread(userId, selectedAccount, selectedRef.threadId, applicantLinksEnabled)
+      ? loadThread(userId, selectedAccount, selectedRef.threadId)
       : null,
     prisma.mailDraft.findMany({
       where: { accountId: { in: connected.map((a) => a.id) }, ...draftVisibleTo(userId) },
@@ -238,7 +232,6 @@ async function loadThread(
   userId: string,
   account: ReadableMailAccount,
   threadId: string,
-  applicantLinksEnabled: boolean,
 ) {
   let messages: MailMessage[];
   try {
@@ -255,7 +248,7 @@ async function loadThread(
     include: { author: { select: { id: true, firstName: true, lastName: true, photoUrl: true } } },
   });
 
-  const linkEnabled = account.kind === "Shared" && applicantLinksEnabled;
+  const linkEnabled = account.kind === "Shared";
   let applicantLink: { userId: string; name: string; photoUrl: string | null; source: "Auto" | "Manual" } | null =
     null;
   if (linkEnabled) {
@@ -401,9 +394,6 @@ export async function submitEmailAction(request: Request) {
   const threadId = field(form, "threadId") || null;
 
   if (intent === "linkApplicant" || intent === "unlinkApplicant") {
-    if (!(await isFeatureEnabled(APPLICANT_EMAIL_FLAG, userId, roles, request))) {
-      return Response.json({ error: "Not available." }, { status: 403 });
-    }
     if (account.kind !== "Shared") {
       return Response.json({ error: "Only shared inboxes support applicant linking." }, { status: 403 });
     }

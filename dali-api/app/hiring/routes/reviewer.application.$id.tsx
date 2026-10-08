@@ -8,8 +8,7 @@ import { prisma } from '~/lib/db'
 import { recordRouteVisit } from '~/lib/user-pages.server'
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from '~/lib/login-next'
-import { getUserRoles, hasCycleAccess } from '~/lib/roles'
-import { isFeatureEnabled } from '~/lib/feature-flags.server'
+import { hasCycleAccess } from '~/lib/roles'
 import { getCollabToken } from "~/lib/collab-token.server";
 import { getPresenceUser } from '~/lib/presence-user'
 import { requirePageSignedOrRedirect } from '~/hiring/lib/confidentiality'
@@ -243,16 +242,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     hideOutcomes: blinded,
   })
 
-  const roles = await getUserRoles(auth.user.sub, request)
-  const emailEngagementEnabled = await isFeatureEnabled(
-    'applicant-email-engagement',
-    auth.user.sub,
-    roles,
-    request,
-  )
-  const emailEngagement = emailEngagementEnabled
-    ? await getApplicantEmailEngagement(applicantUserId, { blinded })
-    : null
+  const emailEngagement = await getApplicantEmailEngagement(applicantUserId, { blinded })
 
   return {
     application,

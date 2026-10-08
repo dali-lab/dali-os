@@ -35,7 +35,7 @@ function fullName(u: GridPerson) {
 // viewer is the mentor, so it labels the section "My mentees" instead).
 // `highlightMissing` flags due-but-unwritten weeks in red — reserved for
 // core/admin oversight; for a plain mentor the gaps read neutrally.
-// Core-only Slack nudge for this mentor (behind the mentorship-nudge flag).
+// Core-only Slack nudge for this mentor.
 // Shown only when the mentor has at least one unfilled note.
 export type MentorGridNudge = {
   count: number;

@@ -42,7 +42,6 @@ import {
   usePairMutations,
   useRoster,
 } from "../components/pair-editing";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { VIBES, VIBE_META } from "../lib/vibe";
 
 export const meta: Route.MetaFunction = () => [
@@ -275,9 +274,7 @@ export default function MentorshipBrowse() {
   const restored = useRef(false);
   const toast = useToast();
 
-  // Core-only Slack nudge (behind the mentorship-nudge flag).
-  const nudgeFlag = useFeatureFlag("mentorship-nudge");
-  const canNudge = data.isCore && nudgeFlag;
+  const canNudge = data.isCore;
   const unfilledById = useMemo(
     () => new Map(data.nudgeRecipients.map((r) => [r.id, r.count])),
     [data.nudgeRecipients],

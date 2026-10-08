@@ -4,7 +4,6 @@ import { useRevalidator } from "react-router";
 import { AlignLeft, Clock, MapPin, UsersRound } from "lucide-react";
 import { Modal, ModalHeader, ModalFooter } from "~/components/Modal";
 import { modalCardClass } from "~/components/os-chrome";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { DateField } from "~/components/ui/DateField";
 import { TimeField } from "~/components/ui/TimeField";
 import {
@@ -138,7 +137,6 @@ export function EditMeetingModal({
   // The week the availability grid shows. Seeded to the meeting's own week once
   // the context loads; the arrows browse from there.
   const [weekStartIso, setWeekStartIso] = useState<string | null>(null);
-  const optimalTimesEnabled = useFeatureFlag("optimal-times");
   const [optimalSuggestions, setOptimalSuggestions] = useState<SlotSuggestions | null>(null);
 
   // Load the edit context once when the modal opens.
@@ -371,7 +369,7 @@ export function EditMeetingModal({
               selectedStartLocal={selectedStartLocal || undefined}
               selectedEndLocal={selectedEndLocal || undefined}
               compact
-              enableOptimalTimes={optimalTimesEnabled}
+              enableOptimalTimes
               onSuggestionsChange={setOptimalSuggestions}
               weekNav={{ onShift: shiftWeek, onToday: goToThisWeek }}
             />

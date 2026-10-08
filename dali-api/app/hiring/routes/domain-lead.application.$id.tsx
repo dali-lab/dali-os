@@ -4,7 +4,7 @@ import type { Route } from "./+types/domain-lead.application.$id";
 import { prisma } from "~/lib/db";
 import { recordRouteVisit } from "~/lib/user-pages.server";
 import { requireAuth } from "~/lib/auth";
-import { getUserRoles, isDomainLeadForCycle } from "~/lib/roles";
+import { isDomainLeadForCycle } from "~/lib/roles";
 import { redirectToLogin } from "~/lib/login-next";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { presignAnswers } from "~/hiring/lib/presign";
@@ -40,7 +40,6 @@ import { PriorApplicationsPanel } from "~/hiring/components/PriorApplicationsPan
 import { applicationBlindLabel, blindUser } from "~/hiring/lib/anonymization.server";
 import { getApplicantEmailEngagement } from "~/hiring/lib/email-engagement.server";
 import { ApplicantEmailPanel } from "~/hiring/components/ApplicantEmailPanel";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
 import type { Question } from "~/types";
 import { RECOMMENDATION_TONES } from "~/hiring/lib/labels";
@@ -314,16 +313,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     currentApplicationId: da.application.id,
     hideOutcomes: blinded,
   });
-  const roles = await getUserRoles(auth.user.sub, request);
-  const emailEngagementEnabled = await isFeatureEnabled(
-    "applicant-email-engagement",
-    auth.user.sub,
-    roles,
-    request,
-  );
-  const emailEngagement = emailEngagementEnabled
-    ? await getApplicantEmailEngagement(da.application.user.id, { blinded })
-    : null;
+  const emailEngagement = await getApplicantEmailEngagement(da.application.user.id, { blinded });
 
   return {
       domainApplication: {

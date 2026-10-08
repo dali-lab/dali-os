@@ -14,7 +14,6 @@ import type { Route } from "./+types/applications";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { prisma } from "~/lib/db";
 import { Popover, Select } from "~/components/ui/floating";
 import { filterPillClass } from "~/components/ui/floating/styles";
@@ -237,12 +236,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Engagement signals for the filter panel: one grouped lookup each, keyed
   // on the applicant's User id, which blinding leaves intact.
   const applicantUserIds = [...new Set(domainApps.map((da) => da.application.user.id))];
-  const emailFilterEnabled = await isFeatureEnabled(
-    "applicant-email-engagement",
-    auth.user.sub,
-    roles,
-    request,
-  );
   const [priorRows, emailRows, educationRows] = applicantUserIds.length
     ? await Promise.all([
         prisma.application.findMany({
@@ -254,13 +247,11 @@ export async function loader({ request }: Route.LoaderArgs) {
           select: { userId: true },
           distinct: ["userId"],
         }),
-        emailFilterEnabled
-          ? prisma.mailMessageIndex.findMany({
-              where: { linkedUserId: { in: applicantUserIds } },
-              select: { linkedUserId: true },
-              distinct: ["linkedUserId"],
-            })
-          : Promise.resolve([]),
+        prisma.mailMessageIndex.findMany({
+          where: { linkedUserId: { in: applicantUserIds } },
+          select: { linkedUserId: true },
+          distinct: ["linkedUserId"],
+        }),
         prisma.educationApplication.findMany({
           where: { applicantUserId: { in: applicantUserIds }, status: "Approved" },
           select: { applicantUserId: true },
@@ -316,7 +307,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     selectedCycleName: selected.name,
     domainOptions,
     showPipeline,
-    emailFilterEnabled,
     rows,
   };
 }
@@ -449,9 +439,7 @@ export default function ApplicationsDatabase() {
   const showDomainFilter = data.domainOptions.length > 1;
   const activeFilterCount =
     activeDomainIds.length + statuses.length + engagement.length + (stage ? 1 : 0);
-  const engagementOptions = ENGAGEMENT_FILTERS.filter(
-    (e) => e.key !== "emailed" || data.emailFilterEnabled,
-  );
+  const engagementOptions = ENGAGEMENT_FILTERS;
 
   return (
     <div className="flex flex-col gap-4">
