@@ -1,14 +1,37 @@
-// Prompts for the Email tab's AI tools. Pure so they can be unit-tested; the
-// model call, rate limits and quota live in /api/ai/email.
+// Prompts for the Email tab's AI tools, and for the same tools on a blog post
+// (surface "post"). Pure so they can be unit-tested; the model call, rate
+// limits and quota live in /api/ai/email.
 
 export const WRITING_TASKS = ["draft", "rephrase", "proofread", "translate"] as const;
 export type WritingTask = (typeof WRITING_TASKS)[number];
 
+export const WRITING_SURFACES = ["email", "post"] as const;
+export type WritingSurface = (typeof WRITING_SURFACES)[number];
+
 export const MAX_CONTEXT_CHARS = 12_000;
 
 const PLAIN = "Return only the email body as plain text: no subject line, no preamble, no markdown.";
+// A post goes through the tools a passage at a time, and comes back as blocks.
+const MARKDOWN =
+  "The text is Markdown and may be one passage of a longer post. Return only the resulting Markdown, keeping its headings, lists, links and emphasis: no preamble, no code fence.";
 
-export function writingSystemPrompt(task: WritingTask, language?: string): string {
+export function writingSystemPrompt(
+  task: WritingTask,
+  language?: string,
+  surface: WritingSurface = "email",
+): string {
+  if (surface === "post") {
+    switch (task) {
+      case "draft":
+        return `You write for The Scoop, the blog of DALI, a student design and development lab at Dartmouth. Write what the user asks as part of their post, in a clear, warm, readable voice. If the post so far is given, continue from it without repeating it or its title. ${MARKDOWN}`;
+      case "rephrase":
+        return `Rewrite the user's blog post text following their instruction if one is given, otherwise make it clearer and more engaging. Keep the meaning, facts, names and language. ${MARKDOWN}`;
+      case "proofread":
+        return `Proofread the user's blog post text: fix spelling, grammar and punctuation, and awkward phrasing. Do not change the meaning, tone or language, and keep changes minimal. ${MARKDOWN}`;
+      case "translate":
+        return `Translate the user's blog post text into ${language || "English"}. Keep the tone and names. ${MARKDOWN}`;
+    }
+  }
   switch (task) {
     case "draft":
       return `You write emails for a member of DALI, a student design and development lab at Dartmouth. Write a clear, friendly, concise email that does what the user asks. If an earlier thread is given, write a reply to its latest message. Sign off without inventing a name unless one is given. ${PLAIN}`;

@@ -6729,6 +6729,9 @@ model BlogPost {
   visibility    BlogVisibility @default(Internal)
   // Null = draft, seen only by its author and Core.
   publishedAt   DateTime?
+  // Set while a draft waits for an Admin to approve it; cleared once it is
+  // published or withdrawn.
+  submittedAt   DateTime?
   // Core's front page arrangement: pinned posts lead in rank order (lowest
   // first); null = unpinned, falling in behind them newest first.
   frontPageRank Int?

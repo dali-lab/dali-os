@@ -1,6 +1,7 @@
-// POST /api/ai/email: the Email tab's AI tools.
+// POST /api/ai/email: the Email tab's AI tools, shared with the blog write page.
 //   { task: "draft" | "rephrase" | "proofread" | "translate", text, instruction?,
-//     language?, accountId?, threadId? }            → { text }
+//     language?, accountId?, threadId?, surface? }  → { text }
+//   surface "post" works on Markdown from a blog post instead of an email body.
 //   { task: "search", text }                         → { query, accounts }
 // Same per-user burst limit and shared AiUsage daily quota as /api/ai/doc.
 //
@@ -14,12 +15,14 @@ import { recordTokenUsage } from "~/lib/ai-usage.server";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { prisma } from "~/lib/db";
 import {
+  WRITING_SURFACES,
   WRITING_TASKS,
   parseSearchResponse,
   searchSystemPrompt,
   threadToContext,
   writingSystemPrompt,
   writingUserPrompt,
+  type WritingSurface,
   type WritingTask,
 } from "~/email/lib/ai-prompts";
 import {
@@ -79,6 +82,10 @@ export async function action({ request }: Route.ActionArgs) {
     return Response.json({ error: "Nothing to work on" }, { status: 400 });
   }
 
+  const surface = (WRITING_SURFACES as readonly string[]).includes(str(b.surface))
+    ? (str(b.surface) as WritingSurface)
+    : "email";
+
   let system: string;
   let prompt: string;
   let accountIds: string[] = [];
@@ -104,7 +111,7 @@ export async function action({ request }: Route.ActionArgs) {
         return Response.json({ error: "Couldn't read this thread from Gmail." }, { status: 502 });
       }
     }
-    system = writingSystemPrompt(task as WritingTask, str(b.language).slice(0, 60));
+    system = writingSystemPrompt(task as WritingTask, str(b.language).slice(0, 60), surface);
     prompt = writingUserPrompt({
       task: task as WritingTask,
       text,
@@ -127,7 +134,12 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   try {
-    const result = await generateShortText({ system, prompt, maxTokens: 1500 });
+    // A post passage comes back whole (see POST_PASSAGE_CHARS), so it gets room.
+    const result = await generateShortText({
+      system,
+      prompt,
+      maxTokens: surface === "post" ? 4000 : 1500,
+    });
     if (!result) return Response.json({ error: "AI is not configured" }, { status: 503 });
     await recordTokenUsage(userId, day, result.inputTokens, result.outputTokens);
 
