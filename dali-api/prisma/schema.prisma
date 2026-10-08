@@ -448,6 +448,7 @@ model ApplicationCycle {
   cycleInterviewers CycleInterviewer[]
   interviews        Interview[]
   delibsSessions    DelibsSession[]
+  roomBookings      RoomBooking[]
 
   signingBindings SigningBinding[]
 }
@@ -748,6 +749,14 @@ model InterviewConfig {
   bookingNoticeHours    Int @default(12) // minimum hours an applicant must book in the future
 
   timezone String @default("America/New_York")
+
+  // The rooms in-person interviews are booked into (one RoomBooking per
+  // interview, source Interview). Empty = no in-person slots.
+  rooms Room[]
+  // Hold every interview room for interview hours across the interview window
+  // (one recurring RoomBooking per room, source InterviewHold) so members
+  // can't book over the cycle. Bookings from this cycle sit inside the hold.
+  holdRooms Boolean @default(false)
 }
 
 // A DALI member assigned as a written reviewer for a domain in a cycle.
@@ -795,12 +804,6 @@ enum InterviewStatus {
   CancelledByAdmin
 }
 
-enum InterviewLocation {
-  PodAppa
-  PodMomo
-  Online
-}
-
 model Interview {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
@@ -819,7 +822,14 @@ model Interview {
   startTime DateTime
   endTime   DateTime
   status    InterviewStatus   @default(Scheduled)
-  location  InterviewLocation @default(Online)
+
+  // In-person interviews sit in one of the cycle's InterviewConfig.rooms and
+  // hold it through roomBooking (source Interview), so /rooms and the door
+  // displays see them. Both null = Online.
+  roomId        String?
+  room          Room?        @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  roomBookingId String?      @unique
+  roomBooking   RoomBooking? @relation(fields: [roomBookingId], references: [id], onDelete: SetNull)
 
   zoomMeetingId String?
   zoomJoinUrl   String?
@@ -6594,9 +6604,11 @@ model Room {
   // their history and still resolve on old meetings.
   archivedAt  DateTime?
 
-  bookings RoomBooking[]
-  displays RoomDisplay[]
-  meetings ScheduledMeeting[]
+  bookings         RoomBooking[]
+  displays         RoomDisplay[]
+  meetings         ScheduledMeeting[]
+  interviews       Interview[]
+  interviewConfigs InterviewConfig[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -6606,6 +6618,10 @@ enum RoomBookingSource {
   Web
   Display
   App
+  // One applicant interview (Interview.roomBooking).
+  Interview
+  // A hiring cycle's standing hold on an interview room (InterviewConfig.holdRooms).
+  InterviewHold
 }
 
 // A lightweight hold on a room with no invitees ("I need the room 2-3pm").
@@ -6644,11 +6660,19 @@ model RoomBooking {
   // booking.
   seriesEnd DateTime?
 
+  // The hiring cycle an Interview / InterviewHold booking belongs to. Bookings
+  // of the same cycle never conflict with each other (interviews sit inside
+  // the cycle's hold); every other writer is blocked by both.
+  applicationCycleId String?
+  applicationCycle   ApplicationCycle? @relation(fields: [applicationCycleId], references: [id], onDelete: Cascade)
+  interview          Interview?
+
   createdAt DateTime @default(now())
 
   @@index([roomId, start])
   @@index([userId, start])
   @@index([userId, sourceEventId])
+  @@index([applicationCycleId, source])
 }
 
 // Per-occurrence override/cancellation for a recurring RoomBooking. Mirrors
