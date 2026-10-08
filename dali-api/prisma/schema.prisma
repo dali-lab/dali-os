@@ -811,9 +811,10 @@ model Interview {
 
   // No @unique: a DomainApplication can accumulate historical Interview rows
   // (Cancelled/Completed) alongside at most one active row. The partial
-  // unique index "Interview_activeDomainApplication_key" (added in raw SQL
-  // in the migration) enforces "at most one Scheduled per DA" at the DB
-  // level. See SCHEDULING.md §Data model.
+  // unique index "Interview_activeDomainApplication_key" (raw SQL in
+  // migration 20261008180000_interview_active_unique_index; Prisma can't
+  // express a partial index) enforces "at most one Scheduled per DA" at
+  // the DB level.
   domainApplicationId String
   domainApplication   DomainApplication @relation(fields: [domainApplicationId], references: [id])
   applicationCycleId  String
