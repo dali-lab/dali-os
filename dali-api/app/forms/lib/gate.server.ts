@@ -62,7 +62,7 @@ export async function getBoundFormGateOutstanding(
   // Cohorts drive the audience match; full-time staff resolve to NO_COHORTS, so
   // they never match and are never gated. Fixed-group membership is precomputed
   // once so includes() stays synchronous (mirrors state.server.ts).
-  const cohorts = await getSignerCohorts(userId);
+  const cohorts = await getSignerCohorts(userId, request);
   const fixedGroupIds = [
     ...new Set(
       bindings

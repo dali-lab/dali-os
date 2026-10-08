@@ -2,6 +2,7 @@
 
 import { redirect } from "react-router";
 import { prisma } from "~/lib/db";
+import { cachedForTtl, clearTtlCache } from "~/lib/ttl-cache";
 import { requireAuth, isImpersonating } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isAiEnabled } from "~/lib/ai.server";
@@ -154,12 +155,24 @@ export async function loadMoreThreads(request: Request): Promise<Awaited<ReturnT
 }
 
 // Unread total across every inbox the user can read, for the sidebar badge.
+// The badge polls this from every open shell (120s, plus every window focus),
+// and each hit was a live Gmail round-trip per inbox. Cached per user for a
+// minute; reading or un-reading a thread here clears it so the badge follows
+// the action, and mail arriving from outside shows within the TTL.
+const UNREAD_TOTAL_TTL_MS = 60_000;
+
+function invalidateUnreadTotal(userId: string): void {
+  clearTtlCache(`email:unread:${userId}`);
+}
+
 export async function loadUnreadTotal(request: Request, userId: string): Promise<number> {
   const auth = await requireAuth(request);
   if (auth.ok && isImpersonating(auth)) return 0;
-  const accounts = (await readableMailAccounts(userId, request)).filter((a) => a.oauthTokens && !a.archived);
-  const counts = await loadUnreadCounts(accounts);
-  return Object.values(counts).reduce((sum, n) => sum + n, 0);
+  return cachedForTtl(`email:unread:${userId}`, UNREAD_TOTAL_TTL_MS, async () => {
+    const accounts = (await readableMailAccounts(userId, request)).filter((a) => a.oauthTokens && !a.archived);
+    const counts = await loadUnreadCounts(accounts);
+    return Object.values(counts).reduce((sum, n) => sum + n, 0);
+  });
 }
 
 export async function loadEmailPage(request: Request): Promise<EmailPageData> {
@@ -285,6 +298,7 @@ async function loadThread(
     const token = await getMailboxToken(account);
     messages = await getThread(token, threadId);
     await modifyThread(token, threadId, { remove: ["UNREAD"] });
+    invalidateUnreadTotal(userId);
   } catch (err) {
     if (err instanceof MailboxError) return { accountId: account.id, threadId, error: true as const };
     throw err;
@@ -599,6 +613,7 @@ export async function submitEmailAction(request: Request) {
         threadId,
         intent === "archive" ? { remove: ["INBOX"] } : { add: ["UNREAD"] },
       );
+      invalidateUnreadTotal(userId);
     } catch (err) {
       if (err instanceof MailboxError) return Response.json({ error: "Gmail didn't respond. Try again." }, { status: 502 });
       throw err;

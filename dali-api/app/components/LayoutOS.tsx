@@ -77,6 +77,7 @@ interface LayoutOSProps {
   hasActiveHiringAccess?: boolean
   isLabMentor?: boolean
   isInstructor?: boolean
+  isAlumni?: boolean
   /** Starred pages/routes, most-recently pinned first — carried by the top bar. */
   favorites?: FavoritePage[]
   /** True when this session is an admin "log in as" — shows the exit banner. */
@@ -116,6 +117,7 @@ export function LayoutOS({
   hasActiveHiringAccess = false,
   isLabMentor = false,
   isInstructor = false,
+  isAlumni = false,
   favorites = [],
   impersonating = false,
   impersonationAllowsWrites = false,
@@ -251,6 +253,7 @@ export function LayoutOS({
     hasActiveHiringAccess,
     isLabMentor,
     isInstructor,
+    isAlumni,
   }
   // The `resources` flag decides the pinned tail (Resources vs Drive) and
   // whether Drive is a General sub-tab, so every nav matcher below has to be
@@ -434,26 +437,28 @@ export function LayoutOS({
               {!collapsed && 'Calendar'}
             </button>
           </Tooltip>
-          <Tooltip
-            content={collapsed ? (emailUnread > 0 ? `Email · ${emailUnread} unread` : 'Email') : ''}
-            placement="right"
-          >
-            <button
-              type="button"
-              {...tabClickProps({ url: '/email', label: 'Email' })}
-              className={cn(railRowClass(path.startsWith('/email'), collapsed), 'relative')}
+          {!isAlumni && (
+            <Tooltip
+              content={collapsed ? (emailUnread > 0 ? `Email · ${emailUnread} unread` : 'Email') : ''}
+              placement="right"
             >
-              <Mail className="h-5 w-5 flex-shrink-0 opacity-85" />
-              {!collapsed && 'Email'}
-              {collapsed ? (
-                emailUnread > 0 && (
-                  <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-accent-yellow" aria-hidden />
-                )
-              ) : (
-                <UnreadBadge count={emailUnread} className="ml-auto" />
-              )}
-            </button>
-          </Tooltip>
+              <button
+                type="button"
+                {...tabClickProps({ url: '/email', label: 'Email' })}
+                className={cn(railRowClass(path.startsWith('/email'), collapsed), 'relative')}
+              >
+                <Mail className="h-5 w-5 flex-shrink-0 opacity-85" />
+                {!collapsed && 'Email'}
+                {collapsed ? (
+                  emailUnread > 0 && (
+                    <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-accent-yellow" aria-hidden />
+                  )
+                ) : (
+                  <UnreadBadge count={emailUnread} className="ml-auto" />
+                )}
+              </button>
+            </Tooltip>
+          )}
           {pinned.map((item) => {
             const Icon = item.icon
             const active = isPinnedActive(path, item.href, navFlags)

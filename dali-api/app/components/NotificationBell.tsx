@@ -3,8 +3,6 @@ import { useRevalidator } from "react-router";
 import type { AttentionNotification } from "~/components/AttentionPanel";
 import type { ProjectWorkItem } from "~/lib/project-work";
 
-const POLL_INTERVAL_MS = 60_000;
-
 // Same-window event that forces an immediate poll, so an action that changes
 // the task list (e.g. confirming a task on Home) updates the sidebar at once
 // instead of waiting up to a full poll interval. The shell relays the
@@ -86,25 +84,28 @@ function usePolledCounts(): Polled {
       }
     };
     refresh();
-    const id = window.setInterval(refresh, POLL_INTERVAL_MS);
     window.addEventListener(TASKS_CHANGED_EVENT, refresh);
 
     // SSE stream for sub-second delivery on the same machine; `sync` every
-    // 60s is the cross-instance backstop when prod runs multiple servers.
+    // 60s is the cross-instance backstop when prod runs multiple servers and
+    // doubles as the poll cadence (no separate client interval). Only a real
+    // `change` revalidates the page's loaders: a `sync` carries no signal, and
+    // re-running every open page's loader once a minute per client was most
+    // of the server's steady-state load.
     // EventSource auto-reconnects, so a dropped connection self-heals.
     const es = new EventSource("/api/notifications/stream", {
       withCredentials: true,
     });
-    const onPush = () => {
+    const onChange = () => {
       void refresh();
       revalidateRef.current();
     };
-    es.addEventListener("change", onPush);
-    es.addEventListener("sync", onPush);
+    const onSync = () => void refresh();
+    es.addEventListener("change", onChange);
+    es.addEventListener("sync", onSync);
 
     return () => {
       cancelled = true;
-      window.clearInterval(id);
       window.removeEventListener(TASKS_CHANGED_EVENT, refresh);
       es.close();
     };

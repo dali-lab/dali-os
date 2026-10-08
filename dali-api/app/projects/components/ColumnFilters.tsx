@@ -16,18 +16,19 @@ import {
   operatorNeedsValue,
   operatorPicksResponse,
   type ColumnFilter,
+  type FilterCells,
   type FilterOperator,
 } from "../lib/submission-filters";
 
 // Filter state for a board plus the row predicate to hand useFilteredList
 // (put `active` in its `deps`).
-export function useColumnFilters(columns: { key: string }[]) {
-  const [filters, setFilters] = useState<ColumnFilter[]>([]);
+export function useColumnFilters(columns: { key: string }[], initial: ColumnFilter[] = []) {
+  const [filters, setFilters] = useState<ColumnFilter[]>(initial);
   const active = useMemo(
     () => applicableFilters(filters, columns.map((c) => c.key)),
     [filters, columns],
   );
-  const predicate = (row: { cells: Record<string, string> }) => matchesFilters(row.cells, active);
+  const predicate = (row: { cells: FilterCells }) => matchesFilters(row.cells, active);
   return { filters, setFilters, active, predicate };
 }
 
@@ -40,14 +41,17 @@ export function ColumnFilters({
   filters,
   onChange,
   shownCount,
+  noun = ["row", "rows"],
 }: {
   columns: { key: string; label: string }[];
   // Unfiltered rows: the value dropdown offers every response in the column.
-  rows: readonly { cells: Record<string, string> }[];
+  rows: readonly { cells: FilterCells }[];
   filters: ColumnFilter[];
   onChange: (next: ColumnFilter[]) => void;
   // Rows left after search and every filter on the board.
   shownCount: number;
+  // What a row is called in the count. Defaults to "row"/"rows".
+  noun?: [singular: string, plural: string];
 }) {
 
   const update = (id: string, patch: Partial<ColumnFilter>) =>
@@ -137,7 +141,7 @@ export function ColumnFilters({
         )}
         <span className="ml-auto text-xs text-muted-foreground">
           {shownCount === rows.length ? rows.length : `${shownCount} of ${rows.length}`}{" "}
-          {rows.length === 1 ? "row" : "rows"}
+          {rows.length === 1 ? noun[0] : noun[1]}
         </span>
       </div>
     </div>

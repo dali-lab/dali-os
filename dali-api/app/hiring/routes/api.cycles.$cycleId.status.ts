@@ -7,7 +7,7 @@ import { parseJson } from "~/lib/validate";
 import { requireAuth } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { isCycleAdmin, hasCycleAccess } from "~/lib/roles";
-import { autoCloseIfExpired } from "~/hiring/lib/cycles";
+import { autoCloseIfExpired, invalidateActiveCycles } from "~/hiring/lib/cycles";
 import { applicantGroup, isMemberApplicants } from "~/hiring/lib/applicant-groups.server";
 import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
 import { APPLICATION_TZ } from "~/lib/timezone";
@@ -185,6 +185,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       });
     }
   });
+  invalidateActiveCycles();
 
   await logAuditEvent({
     action: "cycle.status",
