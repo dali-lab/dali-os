@@ -29,8 +29,8 @@ import { resolveTermFilter } from "~/lib/terms";
 import { deriveCoreTitles } from "~/lib/core-titles";
 import { Plus, UsersRound } from "lucide-react";
 import { SearchInput } from "~/components/ui/SearchInput";
-import { Select, type SelectOption } from "~/components/ui/floating";
-import { filterPillClass } from "~/components/ui/floating/styles";
+import { ColumnFilters, useColumnFilters } from "~/projects/components/ColumnFilters";
+import type { ColumnFilter } from "~/projects/lib/submission-filters";
 import { buttonClasses } from "~/components/ui/Button";
 import { cn } from "~/lib/cn";
 export const meta: Route.MetaFunction = () => [{ title: "Directory · People · DALI OS" }];
@@ -56,7 +56,22 @@ type MemberRow = {
   createdAt: string;
   onboardedAt: string | null;
   birthday: string | null;
+  // What the filter builder matches against, keyed by FILTER_COLUMNS.
+  cells: Record<string, string | string[]>;
 };
+
+// The filter builder's columns. A list-valued cell (domains, projects, roles,
+// companies) matches "is" on any one of its entries.
+const FILTER_COLUMNS = [
+  { key: "domain", label: "Domain" },
+  { key: "project", label: "Project" },
+  { key: "classYear", label: "Class year" },
+  { key: "role", label: "Role" },
+  { key: "major", label: "Major" },
+  { key: "basedIn", label: "Based in" },
+  { key: "company", label: "Company" },
+  { key: "hometown", label: "Hometown" },
+];
 
 type MemberStatus = "active" | "alumni";
 
@@ -91,41 +106,29 @@ export async function loader({ request }: Route.LoaderArgs) {
           ],
         };
 
-  // Domain filter: members are tied to domains via DomainEligibility (same
-  // source as the Intent to Work / Project Bids domain filter). An unknown
-  // or empty ?domain= is ignored so a stale link just shows everyone.
-  const domains = await prisma.domain.findMany({
-    where: { active: true },
-    orderBy: { displayName: "asc" },
-    select: { id: true, displayName: true },
-  });
-  const domainParam = url.searchParams.get("domain") ?? "";
-  const domainId = domains.some((d) => d.id === domainParam)
-    ? domainParam
-    : "";
-  const inDomain = domainId
-    ? { domainEligibilities: { some: { domainId } } }
-    : {};
-
-  // Project filter: members are tied to projects via ProjectAssignment. Only
-  // projects with at least one assignment are offered, so the dropdown isn't
-  // full of empty projects. An unknown or empty ?project= is ignored, same as
-  // ?domain=. When a term is also selected, the project match is scoped to
-  // that term so the two filters compose.
-  const projects = await prisma.project.findMany({
-    where: { assignments: { some: {} } },
-    orderBy: { name: "asc" },
-    select: { id: true, name: true },
-  });
-  const projectParam = url.searchParams.get("project") ?? "";
-  const projectId = projects.some((p) => p.id === projectParam) ? projectParam : "";
-  const inProject = projectId
-    ? {
-        projectAssignments: {
-          some: { projectId, ...(termId && !isAll ? { termId } : {}) },
-        },
-      }
-    : {};
+  // Domain, project and class are filter-builder columns now, matched in the
+  // browser. The old ?domain= / ?project= / ?class= links (the Groups page
+  // still sends the first two) open with that filter already in the builder;
+  // an unknown id is ignored so a stale link just shows everyone.
+  const [domainParam, projectParam] = ["domain", "project"].map(
+    (k) => url.searchParams.get(k) ?? "",
+  );
+  const [linkedDomain, linkedProject] = await Promise.all([
+    domainParam
+      ? prisma.domain.findUnique({ where: { id: domainParam }, select: { displayName: true } })
+      : null,
+    projectParam
+      ? prisma.project.findUnique({ where: { id: projectParam }, select: { name: true } })
+      : null,
+  ]);
+  const classParam = Number(url.searchParams.get("class"));
+  const initialFilters: ColumnFilter[] = [
+    ...(linkedDomain ? [{ id: "link-domain", columnKey: "domain", operator: "is" as const, value: linkedDomain.displayName }] : []),
+    ...(linkedProject ? [{ id: "link-project", columnKey: "project", operator: "is" as const, value: linkedProject.name }] : []),
+    ...(Number.isInteger(classParam) && classParam > 0
+      ? [{ id: "link-class", columnKey: "classYear", operator: "is" as const, value: String(classParam) }]
+      : []),
+  ];
 
   // Lab members are Users with a DALIMember row attached. Roles derive from
   // AdminMembership + CoreAssignment per the Phase 2 identity model — see
@@ -142,28 +145,10 @@ export async function loader({ request }: Route.LoaderArgs) {
       ? { membershipStatus: "Alumni" as const }
       : { membershipStatus: "Active" as const };
 
-  // Class year options come from the whole view (Active or Alumni), not the
-  // filtered list, so picking a term or domain never empties the dropdown. An
-  // unknown ?class= is ignored, same as ?domain=.
-  const classYears = (
-    await prisma.user.findMany({
-      where: { ...LAB_MEMBER_WHERE, ...statusCondition, classYear: { not: null } },
-      distinct: ["classYear"],
-      orderBy: { classYear: "desc" },
-      select: { classYear: true },
-    })
-  ).flatMap((u) => (u.classYear === null ? [] : [u.classYear]));
-  const classParam = Number(url.searchParams.get("class"));
-  const classYear = classYears.includes(classParam) ? classParam : null;
-  const inClass = classYear ? { classYear } : {};
-
   const users = await prisma.user.findMany({
     where: {
       ...LAB_MEMBER_WHERE,
       ...activeInTerm,
-      ...inDomain,
-      ...inProject,
-      ...inClass,
       ...statusCondition,
     },
     orderBy:
@@ -185,6 +170,16 @@ export async function loader({ request }: Route.LoaderArgs) {
       daliMember: { select: { onboardedAt: true } },
       adminMembership: { select: { isStaff: true } },
       coreAssignments: { select: { leadTitle: true } },
+      major: true,
+      hometown: true,
+      currentLocation: true,
+      // Scoped to the selected term so "Project is X" composes with the term
+      // filter; every term for alumni and "All terms".
+      projectAssignments: {
+        where: termId && !isAll && status === "active" ? { termId } : {},
+        select: { project: { select: { name: true } } },
+      },
+      workExperiences: { where: { endDate: null }, select: { company: true } },
       domainEligibilities: {
         select: {
           level: true,
@@ -194,29 +189,43 @@ export async function loader({ request }: Route.LoaderArgs) {
     },
   });
 
-  const rows: MemberRow[] = await Promise.all(users.map(async (u) => ({
-    id: u.id,
-    firstName: u.firstName,
-    lastName: u.lastName,
-    email: primaryEmail(u),
-    pronouns: u.pronouns,
-    classYear: u.classYear,
-    gradProgram: graduateProgramLabel(u.dartmouthDepartmentClass),
-    photoUrl: await resolvePhotoUrl(u.photoUrl),
-    isStaff: u.adminMembership?.isStaff === true,
-    createdAt: u.createdAt.toISOString(),
-    onboardedAt: u.daliMember?.onboardedAt?.toISOString() ?? null,
-    birthday: u.birthday ? u.birthday.toISOString() : null,
-    // Core pills: one per distinct lead title (deduped across terms — a
-    // "Hiring Lead" who held the title for three terms shows one chip). A Core
-    // member with assignments but no title set still gets a plain "Core" pill
-    // so their Core status is visible rather than dropped.
-    coreTitles: deriveCoreTitles(u.coreAssignments),
-    domainRoles: u.domainEligibilities.map((e) => ({
-      domainName: e.domain.displayName,
-      level: e.level,
-    })),
-  })));
+  const rows: MemberRow[] = await Promise.all(users.map(async (u) => {
+    const coreTitles = deriveCoreTitles(u.coreAssignments);
+    const isStaff = u.adminMembership?.isStaff === true;
+    return {
+      id: u.id,
+      firstName: u.firstName,
+      lastName: u.lastName,
+      email: primaryEmail(u),
+      pronouns: u.pronouns,
+      classYear: u.classYear,
+      gradProgram: graduateProgramLabel(u.dartmouthDepartmentClass),
+      photoUrl: await resolvePhotoUrl(u.photoUrl),
+      isStaff,
+      createdAt: u.createdAt.toISOString(),
+      onboardedAt: u.daliMember?.onboardedAt?.toISOString() ?? null,
+      birthday: u.birthday ? u.birthday.toISOString() : null,
+      // Core pills: one per distinct lead title (deduped across terms — a
+      // "Hiring Lead" who held the title for three terms shows one chip). A Core
+      // member with assignments but no title set still gets a plain "Core" pill
+      // so their Core status is visible rather than dropped.
+      coreTitles,
+      domainRoles: u.domainEligibilities.map((e) => ({
+        domainName: e.domain.displayName,
+        level: e.level,
+      })),
+      cells: {
+        domain: u.domainEligibilities.map((e) => e.domain.displayName),
+        project: [...new Set(u.projectAssignments.map((a) => a.project.name))],
+        classYear: u.classYear?.toString() ?? "",
+        role: [...coreTitles, ...(isStaff ? ["Staff"] : [])],
+        major: u.major ?? "",
+        basedIn: u.currentLocation ?? "",
+        company: [...new Set(u.workExperiences.map((w) => w.company))],
+        hometown: u.hometown ?? "",
+      },
+    };
+  }));
 
   const [canEdit, canSeeGroups] = await Promise.all([
     isCore(auth.user.sub),
@@ -227,12 +236,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     rows,
     terms,
     selectedTerm: selected,
-    domains,
-    selectedDomain: domainId,
-    projects,
-    selectedProject: projectId,
-    classYears,
-    selectedClassYear: classYear,
+    initialFilters,
     canEdit,
     canSeeGroups,
     status,
@@ -379,12 +383,7 @@ export default function MembersList() {
     rows,
     terms,
     selectedTerm,
-    domains,
-    selectedDomain,
-    projects,
-    selectedProject,
-    classYears,
-    selectedClassYear,
+    initialFilters,
     canEdit,
     canSeeGroups,
     status,
@@ -393,15 +392,19 @@ export default function MembersList() {
   const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState("");
 
+  const columnFilters = useColumnFilters(FILTER_COLUMNS, initialFilters);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return rows;
     return rows.filter((r) => {
+      if (!columnFilters.predicate(r)) return false;
+      if (!q) return true;
       const name = `${r.firstName} ${r.lastName}`.toLowerCase();
       const email = (r.email ?? "").toLowerCase();
       return name.includes(q) || email.includes(q);
     });
-  }, [rows, query]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, query, columnFilters.active]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -500,7 +503,7 @@ export default function MembersList() {
           control above the toolbar read as a second, competing tab bar, which is
           exactly what the design does away with. Leading the row keeps it first
           in reading order and first in the tab order. */}
-      <div className={cn("flex items-center gap-3 flex-wrap", "gap-4 pt-2 pb-4")}>
+      <div className={cn("flex items-center gap-3 flex-wrap", "gap-4 pt-2")}>
         <StatusTabs status={status} />
         <SearchInput
           value={query}
@@ -509,31 +512,24 @@ export default function MembersList() {
           containerClassName="flex-1 min-w-[200px] max-w-[420px]"
         />
         {status === "active" && <TermFilter terms={terms} selected={selectedTerm} />}
-        <DomainFilter domains={domains} selected={selectedDomain} />
-        <ProjectFilter projects={projects} selected={selectedProject} />
-        <ClassYearFilter classYears={classYears} selected={selectedClassYear} />
-        <span className="text-xs text-muted-foreground ml-auto">
-          {filtered.length}{" "}
-          {status === "alumni"
-            ? filtered.length === 1
-              ? "alum"
-              : "alumni"
-            : filtered.length === 1
-              ? "member"
-              : "members"}
-          {query && filtered.length !== rows.length ? ` of ${rows.length}` : ""}
-        </span>
       </div>
+
+      <ColumnFilters
+        columns={FILTER_COLUMNS}
+        rows={rows}
+        filters={columnFilters.filters}
+        onChange={columnFilters.setFilters}
+        shownCount={filtered.length}
+        noun={status === "alumni" ? ["alum", "alumni"] : ["member", "members"]}
+      />
 
       {filtered.length === 0 ? (
         <div className="px-4 py-8 text-center text-sm text-muted-foreground">
           {status === "alumni"
-            ? query
-              ? "No alumni match this search."
-              : "No alumni yet."
-            : query
-              ? "No members match this search."
-              : "No members match these filters."}
+            ? rows.length === 0
+              ? "No alumni yet."
+              : "No alumni match."
+            : "No members match."}
         </div>
       ) : (
         <MembersTable rows={filtered} status={status} />
@@ -619,97 +615,6 @@ function CreateField({
         className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
       />
     </label>
-  );
-}
-
-// Domain dropdown for the members directory. Like TermFilter, it drives the
-// loader via a search param (`?domain=`) and preserves the other params so it
-// composes with the term filter. "" is the "All domains" choice.
-function DomainFilter({
-  domains,
-  selected,
-}: {
-  domains: { id: string; displayName: string }[];
-  selected: string;
-}) {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const options: SelectOption<string>[] = [
-    { value: "", label: "All domains" },
-    ...domains.map((d) => ({ value: d.id, label: d.displayName })),
-  ];
-  return (
-    <Select
-      value={selected}
-      options={options}
-      ariaLabel="Filter by domain"
-      buttonClassName={cn(filterPillClass(), "w-full sm:w-44")}
-      onChange={(value) => {
-        const next = new URLSearchParams(searchParams);
-        if (value) next.set("domain", value);
-        else next.delete("domain");
-        setSearchParams(next);
-      }}
-    />
-  );
-}
-
-// Project dropdown for the members directory. Like DomainFilter, it drives the
-// loader via a search param (`?project=`) and preserves the other params so it
-// composes with the term filter. "" is the "All projects" choice.
-function ProjectFilter({
-  projects,
-  selected,
-}: {
-  projects: { id: string; name: string }[];
-  selected: string;
-}) {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const options: SelectOption<string>[] = [
-    { value: "", label: "All projects" },
-    ...projects.map((p) => ({ value: p.id, label: p.name })),
-  ];
-  return (
-    <Select
-      value={selected}
-      options={options}
-      ariaLabel="Filter by project"
-      buttonClassName={cn(filterPillClass(), "w-full sm:w-44")}
-      onChange={(value) => {
-        const next = new URLSearchParams(searchParams);
-        if (value) next.set("project", value);
-        else next.delete("project");
-        setSearchParams(next);
-      }}
-    />
-  );
-}
-
-// Class year dropdown, driven by `?class=` like DomainFilter. "" is "All classes".
-function ClassYearFilter({
-  classYears,
-  selected,
-}: {
-  classYears: number[];
-  selected: number | null;
-}) {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const options: SelectOption<string>[] = [
-    { value: "", label: "All classes" },
-    ...classYears.map((y) => ({ value: String(y), label: `Class of ${y}` })),
-  ];
-  return (
-    <Select
-      value={selected ? String(selected) : ""}
-      options={options}
-      ariaLabel="Filter by class year"
-      buttonClassName={cn(filterPillClass(), "w-full sm:w-44")}
-      onChange={(value) => {
-        const next = new URLSearchParams(searchParams);
-        if (value) next.set("class", value);
-        else next.delete("class");
-        setSearchParams(next);
-      }}
-    />
   );
 }
 

@@ -119,6 +119,12 @@ model User {
   bioDocId       String?
   major          String?
   hometown       String?
+  // Where the person lives now ("Based in" on the profile). Free text; the
+  // coordinates are geocoded from it on save (app/lib/geocode.server.ts) and
+  // place the person on the Connect map. Null coordinates = no pin.
+  currentLocation    String?
+  currentLocationLat Float?
+  currentLocationLng Float?
   linkedinUrl    String?
   // Bare GitHub login (e.g. "octocat"). Used to add the member to their
   // project's GitHub team during staffing finalize, and to derive a profile
@@ -172,6 +178,9 @@ model User {
 
   // ─── Relations: existing ──────────────────────────────────────────────────
   daliMember                    DALIMember?
+  workExperiences               WorkExperience[]
+  coffeeChatsSent               CoffeeChatInvite[] @relation("CoffeeChatSender")
+  coffeeChatsReceived           CoffeeChatInvite[] @relation("CoffeeChatRecipient")
   walletPassRegistrations       WalletPassRegistration[]
   applicationCycleStatusUpdates ApplicationCycleStatusUpdate[]
   applications                  Application[]
@@ -341,6 +350,59 @@ model DALIMember {
 
   userId String @unique
   user   User   @relation(fields: [userId], references: [id])
+}
+
+enum WorkMode {
+  OnSite
+  Hybrid
+  Remote
+}
+
+// A job on a person's profile (the Work experience card). Self-reported.
+model WorkExperience {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  company     String
+  position    String
+  description String?
+  location    String?
+  workMode    WorkMode?
+  // First of the month, UTC. A null endDate is a current job.
+  startDate   DateTime
+  endDate     DateTime?
+
+  @@index([userId, startDate])
+}
+
+enum CoffeeChatStatus {
+  Pending
+  Accepted
+  Declined
+}
+
+// An anonymous coffee chat invite sent from someone's profile. The recipient
+// is never shown the sender unless they accept — every read of senderId must
+// go through app/members/lib/coffee-chat.server.ts, which enforces that.
+model CoffeeChatInvite {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  senderId    String
+  sender      User   @relation("CoffeeChatSender", fields: [senderId], references: [id], onDelete: Cascade)
+  recipientId String
+  recipient   User   @relation("CoffeeChatRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+
+  status      CoffeeChatStatus @default(Pending)
+  respondedAt DateTime?
+
+  @@index([senderId, recipientId])
+  @@index([recipientId])
 }
 
 model ApplicationCycle {

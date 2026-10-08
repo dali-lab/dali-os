@@ -31,7 +31,8 @@ export type EventDef = {
     | "Mentorship"
     | "Announcements"
     | "Forms"
-    | "Onboarding";
+    | "Onboarding"
+    | "People";
   label: string;
   description: string;
   // The in-app row IS the workflow surface (RSVP buttons, form todo,
@@ -404,6 +405,21 @@ export const EVENT_TYPES = {
     label: "Blog post approvals",
     description: "When a blog post you submitted is approved and published.",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
+  "coffee_chat.invite": {
+    kind: "General",
+    area: "People",
+    label: "Coffee chat invites",
+    description: "When someone anonymously invites you to a coffee chat.",
+    lockedInApp: true,
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
+  },
+  "coffee_chat.accepted": {
+    kind: "General",
+    area: "People",
+    label: "Coffee chat accepted",
+    description: "When a coffee chat invite is accepted, whether you sent it or accepted it.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
   },
   // Fallback stamped on rows that predate the registry (schema column
   // default). Never emitted by code; hidden from the settings page.

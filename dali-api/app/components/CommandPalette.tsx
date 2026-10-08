@@ -132,6 +132,7 @@ const NO_ROLES: CommandPaletteRoles = {
   hasActiveHiringAccess: false,
   isLabMentor: false,
   isInstructor: false,
+  isAlumni: false,
 };
 
 export function CommandPalette({ open, onClose, tabless, focusMode, roles = NO_ROLES, flags = {}, portalNav, onOpen }: CommandPaletteProps) {
@@ -235,7 +236,7 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles = NO_R
       navItem("Home", "/", Home),
       navItem("My Tasks", "/notifications", ListTodo),
       navItem("Calendar", "/calendar", Calendar),
-      navItem("Email", "/email", Mail),
+      ...(roles.isAlumni ? [] : [navItem("Email", "/email", Mail)]),
       // The pinned tail (Resources) sits outside every area, so it reaches the
       // palette from the same registry the sidebar rail reads.
       ...[...pinnedNavItems(flags), ROOM_BOOKING_NAV_ITEM].map((i) => navItem(i.label, i.href, i.icon)),
