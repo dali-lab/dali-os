@@ -1,30 +1,51 @@
-import { Link, useLoaderData } from "react-router";
-import { ArrowLeft, Pencil } from "lucide-react";
+import { Link, useFetcher, useLoaderData } from "react-router";
+import { ArrowLeft, Check, Pencil, Trash2 } from "lucide-react";
 import type { Route } from "./+types/resources.blog.$postId";
 import { DocEditor } from "~/components/doc";
 import { fullName, formatDateShort } from "~/lib/display";
-import { loadBlogPost } from "~/lib/blog-post.server";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { blogStatus, loadBlogPost } from "~/lib/blog-post.server";
+import { BlogStatusPill } from "~/components/blog/BlogStatusPill";
+import { useOsChrome } from "~/components/os-chrome";
+import { IconButton } from "~/components/ui/IconButton";
+import { Tooltip } from "~/components/ui/floating/Tooltip";
+import { useDialog } from "~/components/ui/dialog";
 
 // The reading page. Editing happens on /resources/write/:postId.
 export async function loader({ request, params }: Route.LoaderArgs) {
-  const { post, canEdit } = await loadBlogPost(request, params.postId!);
+  const { post, canEdit, canApprove } = await loadBlogPost(request, params.postId!);
   return {
     post: {
       id: post.id,
       title: post.title,
       summary: post.summary,
       contentJson: post.contentJson,
-      published: post.publishedAt !== null,
+      status: blogStatus(post),
+      isPublic: post.visibility === "Public",
       date: post.publishedAt ? formatDateShort(post.publishedAt) : null,
       author: fullName(post.author),
     },
     canEdit,
+    canApprove,
   };
 }
 
 export default function BlogPostPage() {
-  const { post, canEdit } = useLoaderData<typeof loader>();
+  const { post, canEdit, canApprove } = useLoaderData<typeof loader>();
+  const fetcher = useFetcher();
+  const chrome = useOsChrome();
+  const dialog = useDialog();
+  const writePath = `/resources/write/${post.id}`;
+
+  async function remove() {
+    const ok = await dialog.confirm({
+      title: "Delete this post?",
+      description:
+        post.isPublic && post.status === "published" ? "It also comes off the DALI website." : undefined,
+      confirmLabel: "Delete",
+      tone: "destructive",
+    });
+    if (ok) fetcher.submit({ intent: "delete" }, { method: "post", action: writePath });
+  }
 
   return (
     <article className="pt-4">
@@ -36,20 +57,40 @@ export default function BlogPostPage() {
           <ArrowLeft className="h-4 w-4" />
           The Scoop
         </Link>
-        {!post.published && <Pill dot="neutral">Draft</Pill>}
+        {post.status !== "published" && <BlogStatusPill status={post.status} />}
         {canEdit && (
-          <Link to={`/resources/write/${post.id}`} className="os-btn-primary os-btn-primary--sm">
-            <Pencil className="h-4 w-4" />
-            Edit
-          </Link>
+          <div className="flex items-center gap-1">
+            <Tooltip content="Edit">
+              <Link to={writePath} aria-label="Edit" className={chrome.iconBtn}>
+                <Pencil className="h-4 w-4" />
+              </Link>
+            </Tooltip>
+            <IconButton label="Delete" icon={Trash2} tone="destructive" onClick={remove} />
+          </div>
+        )}
+        {canApprove && post.status === "review" && (
+          <button
+            type="button"
+            disabled={fetcher.state !== "idle"}
+            onClick={() =>
+              fetcher.submit(
+                { intent: "publish", published: "1" },
+                { method: "post", action: writePath },
+              )
+            }
+            className="os-btn-primary os-btn-primary--sm"
+          >
+            <Check className="h-4 w-4" />
+            Approve
+          </button>
         )}
       </div>
-      <div>
-        <h1 className="font-serif text-5xl font-bold leading-tight text-foreground">{post.title}</h1>
-        {post.summary && <p className="mt-3 font-serif text-xl text-os-grey">{post.summary}</p>}
-        <p className="mt-3 border-b border-border pb-4 text-xs font-semibold uppercase tracking-wider text-os-grey">
+      <div className="border-b border-border pb-4">
+        <h1 className="font-heading text-5xl font-semibold leading-tight text-foreground">{post.title}</h1>
+        {post.summary && <p className="mt-3 text-xl text-os-grey">{post.summary}</p>}
+        <p className="mt-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-os-grey">
           {post.author}
-          {post.date && <span className="font-normal normal-case tracking-normal"> · {post.date}</span>}
+          {post.date && <span className="font-normal normal-case tracking-normal">{post.date}</span>}
         </p>
       </div>
       <DocEditor
@@ -57,7 +98,7 @@ export default function BlogPostPage() {
         features="resource"
         editable={false}
         // No block handles when reading, so no gutter for them either.
-        className="[&_.bn-editor]:!px-0"
+        className="mt-8 [&_.bn-editor]:!px-0"
         initialContent={post.contentJson ?? []}
       />
     </article>
