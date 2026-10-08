@@ -80,7 +80,7 @@ describe("lintTemplate", () => {
 });
 
 describe("TEMPLATE_VARIABLES registry shape", () => {
-  it("covers every decision and notification slot", () => {
+  it("covers every decision, notification and waitlist slot", () => {
     expect(Object.keys(TEMPLATE_VARIABLES).sort()).toEqual(
       [
         "decision:Accepted",
@@ -97,6 +97,7 @@ describe("TEMPLATE_VARIABLES registry shape", () => {
         "notification:InterviewLocationChanged",
         "notification:InterviewReminderApplicant",
         "notification:InterviewReminderInterviewer",
+        "waitlist:ContinuedInterest",
       ].sort(),
     );
   });
