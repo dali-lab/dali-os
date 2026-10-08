@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { cn } from "~/lib/cn";
 import { hiringKey } from "~/email/lib/registry";
+import { EmailEditorModal } from "~/admin/components/EmailTemplatesAdmin";
 import { Form, Link, useParams, useLoaderData, useLocation, useSearchParams, useFetcher, redirect } from 'react-router'
 import { Select, type SelectOption, Tooltip } from "~/components/ui/floating";
 import { useFeatureFlag } from "~/components/FeatureFlags";
@@ -3792,10 +3793,11 @@ function EmailStatusSection({
   canEdit: boolean;
 }) {
   // No editor of its own, on purpose. These emails are shared by every cycle, so
-  // editing them belongs to Core in Core -> Communications -> Email, not to
-  // whoever happens to administer this cycle. A Core viewer's rows deep-link
-  // into that editor; for everyone else the Setup tab still answers "is it
-  // written?", because releasing a decision with no email written fails.
+  // editing them belongs to Core, not to whoever happens to administer this
+  // cycle. A Core viewer's rows open Core's editor here, in place; for everyone
+  // else the Setup tab still answers "is it written?", because releasing a
+  // decision with no email written fails.
+  const [editing, setEditing] = useState<TemplateSlot | null>(null);
   return (
     <SetupCard title={title} description={description}>
       <div className="flex flex-col gap-2">
@@ -3821,14 +3823,15 @@ function EmailStatusSection({
             </div>
           );
           return canEdit ? (
-            <Link
+            <button
               key={slot.templateSlot}
-              to={`/core/communications/email?key=${encodeURIComponent(hiringKey(slot.templateSlot))}`}
+              type="button"
+              onClick={() => setEditing(slot.templateSlot)}
               aria-label={`Edit ${slot.label} email`}
-              className={cn(rowClass, "transition-colors hover:bg-muted")}
+              className={cn(rowClass, "w-full text-left transition-colors hover:bg-muted")}
             >
               {body}
-            </Link>
+            </button>
           ) : (
             <div key={slot.templateSlot} className={rowClass}>
               {body}
@@ -3838,11 +3841,14 @@ function EmailStatusSection({
         <p className="text-xs text-muted-foreground">
           Shared by every cycle.{" "}
           <Link to="/core/communications/email" className="underline">
-            Edit in Core &rarr; Communications &rarr; Email
+            See all in Core &rarr; Communications &rarr; Email
           </Link>
           .
         </p>
       </div>
+      {editing && (
+        <EmailEditorModal templateKey={hiringKey(editing)} onClose={() => setEditing(null)} />
+      )}
     </SetupCard>
   );
 }

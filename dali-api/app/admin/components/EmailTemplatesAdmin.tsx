@@ -6,8 +6,8 @@
 // and what happens when it doesn't, because "no row" is meaningful and differs
 // per key (send nothing / refuse the release / fall back to built-in copy).
 
-import { useMemo, useState } from "react";
-import { Form, useNavigation, useSearchParams } from "react-router";
+import { useEffect, useMemo, useState } from "react";
+import { Form, useFetcher, useNavigation, useSearchParams } from "react-router";
 import { AlertTriangle, Check, Mail, RotateCcw } from "lucide-react";
 
 import { Modal, ModalHeader } from "~/components/Modal";
@@ -198,23 +198,70 @@ function EmailRow({
   );
 }
 
+const EDITOR_ROUTE = "/core/communications/email";
+
+// The same editor, opened over whatever page the email is used on (a hiring
+// cycle's Setup tab) so editing it doesn't mean leaving that page. It reads and
+// writes through the Core email route, so that route's Core-only check and its
+// one save path still govern.
+export function EmailEditorModal({
+  templateKey,
+  onClose,
+}: {
+  templateKey: EmailTemplateKey;
+  onClose: () => void;
+}) {
+  const loader = useFetcher<{ rows: AdminEmailRow[]; versions: AdminEmailVersion[] }>();
+  useEffect(() => {
+    loader.load(`${EDITOR_ROUTE}?key=${encodeURIComponent(templateKey)}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templateKey]);
+  if (!loader.data) return null;
+  const row = loader.data.rows.find((r) => r.key === templateKey) ?? null;
+  return (
+    <EmailEditor
+      // Reseeds the fields when a restore swaps the copy underneath them.
+      key={row?.updatedAt ?? "unedited"}
+      templateKey={templateKey}
+      row={row}
+      versions={loader.data.versions}
+      onClose={onClose}
+    />
+  );
+}
+
 function EmailEditor({
   templateKey,
   row,
   versions,
+  onClose,
 }: {
   templateKey: EmailTemplateKey;
   row: AdminEmailRow | null;
   versions: AdminEmailVersion[];
+  /** Set when opened in place on another page: saves stay on that page. */
+  onClose?: () => void;
 }) {
   const [, setSearchParams] = useSearchParams();
   const def = emailTemplateDef(templateKey);
   const nav = useNavigation();
-  // Closing just drops ?key= — the list is the same route.
-  const close = () => setSearchParams((p) => {
-    p.delete("key");
-    return p;
-  });
+  const fetcher = useFetcher<{ saved?: true }>();
+  const inPlace = !!onClose;
+  const EditorForm = inPlace ? fetcher.Form : Form;
+  const formProps = inPlace ? { action: EDITOR_ROUTE } : {};
+  const busy = inPlace ? fetcher.state !== "idle" : nav.state !== "idle";
+  const saved = fetcher.state === "idle" && !!fetcher.data?.saved;
+  useEffect(() => {
+    if (saved) onClose?.();
+  }, [saved]);
+  // On the list, closing just drops ?key= — the list is the same route.
+  const close =
+    onClose ??
+    (() =>
+      setSearchParams((p) => {
+        p.delete("key");
+        return p;
+      }));
   const [subject, setSubject] = useState(row?.subject ?? "");
   const [body, setBody] = useState(row?.body ?? "");
 
@@ -242,9 +289,10 @@ function EmailEditor({
       />
       <div className="space-y-4">
 
-        <Form method="post" className="space-y-4">
+        <EditorForm method="post" {...formProps} className="space-y-4">
           <input type="hidden" name="intent" value="save" />
           <input type="hidden" name="key" value={templateKey} />
+          {inPlace && <input type="hidden" name="stay" value="1" />}
 
           <label className="block">
             <span className="text-sm font-medium">Subject</span>
@@ -293,7 +341,7 @@ function EmailEditor({
           <div className="flex items-center gap-2">
             <button
               type="submit"
-              disabled={nav.state !== "idle"}
+              disabled={busy}
               className="px-3 py-1.5 text-sm rounded bg-foreground text-background disabled:opacity-50"
             >
               Save changes
@@ -302,13 +350,13 @@ function EmailEditor({
               type="submit"
               name="intent"
               value="send-test"
-              disabled={nav.state !== "idle" || (!subject.trim() && !body.trim())}
+              disabled={busy || (!subject.trim() && !body.trim())}
               className="px-3 py-1.5 text-sm rounded border disabled:opacity-50"
             >
               Send test to me
             </button>
           </div>
-        </Form>
+        </EditorForm>
 
         <div>
           <h3 className="text-sm font-medium mb-1">Preview</h3>
@@ -333,10 +381,11 @@ function EmailEditor({
                   <span className="text-muted-foreground shrink-0">
                     {new Date(v.createdAt).toLocaleDateString()} · {v.author}
                   </span>
-                  <Form method="post" className="shrink-0">
+                  <EditorForm method="post" {...formProps} className="shrink-0">
                     <input type="hidden" name="intent" value="rollback" />
                     <input type="hidden" name="key" value={templateKey} />
                     <input type="hidden" name="versionId" value={v.id} />
+                    {inPlace && <input type="hidden" name="stay" value="1" />}
                     <button
                       type="submit"
                       className="inline-flex items-center gap-1 underline"
@@ -344,7 +393,7 @@ function EmailEditor({
                     >
                       <RotateCcw className="w-3 h-3" /> Restore
                     </button>
-                  </Form>
+                  </EditorForm>
                 </div>
               ))}
             </div>
