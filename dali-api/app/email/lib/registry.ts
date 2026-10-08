@@ -111,6 +111,30 @@ export const EMAIL_TEMPLATES = {
     whenMissing: "error",
   },
 
+  // Not a decision letter: Core removing someone from the waitlist appends a
+  // Rejected decision, but what the applicant hears is an invitation to come
+  // back. Falls back to the copy below so removing never goes out silent.
+  "hiring:waitlist:ContinuedInterest": {
+    area: "Hiring",
+    label: "Removed from waitlist: continued interest",
+    description:
+      "Sent when Core removes a student applicant from the waitlist. Invites them to reapply next cycle with their waitlisted application and the continued interest form.",
+    purpose: "Hiring",
+    variables: ["firstName", "domain"],
+    sample: APPLICANT_SAMPLE,
+    footer: "transactional",
+    whenMissing: "default",
+    defaults: {
+      subject: "Your DALI {{domain}} waitlist spot",
+      body: [
+        "Hi {{firstName}},",
+        "Thank you for your patience while you were on the {{domain}} waitlist. We weren't able to offer you a spot this time, and the waitlist is now closed.",
+        'We would love to hear from you again. When the next hiring cycle opens, start an application and choose "Use waitlisted application". Your previous application carries over, and you only fill out a short continued interest form.',
+        "Best,\nDALI Hiring",
+      ].join("\n\n"),
+    },
+  },
+
   // Appended to the Accepted letter above, so an accepted applicant gets one
   // email rather than two. It exists as its own template because its content and
   // the decision letter's have different owners and different lifetimes: the

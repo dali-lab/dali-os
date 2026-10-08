@@ -709,6 +709,7 @@ export default [
 
   route("api/hiring/waitlist", "hiring/routes/api.waitlist.ts"),
   route("api/hiring/waitlist/reorder", "hiring/routes/api.waitlist.reorder.ts"),
+  route("api/hiring/waitlist/remove-all", "hiring/routes/api.waitlist.remove-all.ts"),
   route("api/hiring/waitlist/:domainApplicationId/accept", "hiring/routes/api.waitlist.$domainApplicationId.accept.ts"),
   route("api/hiring/waitlist/:domainApplicationId/remove", "hiring/routes/api.waitlist.$domainApplicationId.remove.ts"),
 

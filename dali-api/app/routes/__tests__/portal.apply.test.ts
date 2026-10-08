@@ -919,3 +919,88 @@ describe("POST /portal/apply — start term", () => {
     expect(lastUpdateData()).not.toHaveProperty("startTermId");
   });
 });
+
+describe("POST /portal/apply — reused waitlisted application", () => {
+  const continuedInterestQuestions = [
+    { key: "still_interested", type: "textarea", required: true, data: { label: "Why still?" } },
+  ];
+  // A DA reusing a waitlisted application: its challenge answers are a frozen
+  // copy, and the continued interest form is what the applicant fills in.
+  const continuedDa = {
+    id: DA_ID,
+    domainId: DOMAIN_A,
+    selected: true,
+    continuedFromId: "da-waitlisted",
+    challengeFormVersionId: "fv-old-cycle",
+    challengeFormVersion: { questions: domainQuestions },
+    continuedInterestFormVersion: { questions: continuedInterestQuestions },
+  };
+
+  beforeEach(() => {
+    mockPrisma.application.findUnique.mockResolvedValue({
+      applicationCycleId: CYCLE_ID,
+      applicationFormVersion: { questions: generalQuestions },
+    });
+    mockPrisma.domainApplication.findMany.mockResolvedValue([continuedDa]);
+  });
+
+  it("requires the continued interest form, not the frozen application", async () => {
+    const res = await action({
+      request: makeSubmitRequest({
+        domainAnswers: [{ domainApplicationId: DA_ID, answers: {} }],
+        selectedDomainIds: [DOMAIN_A],
+      }),
+      params: {},
+      context: {},
+    } as any);
+
+    expect((res as any).error).toMatch(/\(1 unanswered\)/);
+  });
+
+  it("saves continued interest answers and never overwrites the frozen ones", async () => {
+    mockPrisma.applicationStatusUpdate.findFirst.mockResolvedValue({ id: "already-submitted" });
+
+    await action({
+      request: makeSubmitRequest({
+        answers: { story: "tampered" },
+        domainAnswers: [
+          {
+            domainApplicationId: DA_ID,
+            answers: { domain_essay: "tampered" },
+            continuedInterestAnswers: { still_interested: "Yes" },
+          } as any,
+        ],
+        selectedDomainIds: [DOMAIN_A],
+      }),
+      params: {},
+      context: {},
+    } as any);
+
+    expect(mockPrisma.application.update.mock.calls[0][0].data).not.toHaveProperty("answers");
+    expect(mockPrisma.domainApplication.updateMany).toHaveBeenCalledWith({
+      where: { id: DA_ID, applicationId: APP_ID },
+      data: { continuedInterestAnswers: { still_interested: "Yes" } },
+    });
+  });
+
+  it("keeps the pinned challenge when domains change", async () => {
+    mockPrisma.cycleDomainForm.findMany.mockResolvedValue([
+      { domainId: DOMAIN_A, formId: FORM_A, form: { versions: [{ id: FV_A1 }] } },
+    ]);
+    mockPrisma.application.findUnique.mockResolvedValue({
+      id: APP_ID,
+      answers: {},
+      domainApplications: [],
+    });
+
+    await action({
+      request: makeUpdateDomainsRequest(APP_ID, [
+        { domainId: DOMAIN_A, challengeVersionId: CV_A1 },
+      ]),
+      params: {},
+      context: {},
+    } as any);
+
+    expect(mockPrisma.domainApplication.update).not.toHaveBeenCalled();
+  });
+});

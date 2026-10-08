@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { cn } from "~/lib/cn";
 import { hiringKey } from "~/email/lib/registry";
+import { EmailEditorModal } from "~/admin/components/EmailTemplatesAdmin";
 import { Form, Link, useParams, useLoaderData, useLocation, useSearchParams, useFetcher, redirect } from 'react-router'
 import { Select, type SelectOption, Tooltip } from "~/components/ui/floating";
 import { useFeatureFlag } from "~/components/FeatureFlags";
@@ -38,18 +39,19 @@ import {
   type Timeline,
 } from "~/hiring/lib/cycle-timeline";
 import { addDomainMentors, domainMentorIds } from "~/hiring/lib/cycle-rosters.server";
-import { listHiringEmails } from "~/hiring/lib/hiring-emails.server";
+import { getHiringEmail, listHiringEmails } from "~/hiring/lib/hiring-emails.server";
 import { roundsWithBoards, saveCycleTimeline } from "~/hiring/lib/cycle-timeline.server";
 import { buildPhaseTabs, resolvePhaseTab } from "~/hiring/lib/cycle-phase-tabs";
 import { TargetDomainsCard } from "~/hiring/components/cycle-setup/TargetDomainsCard";
 import { ReviewerPoolCard } from "~/hiring/components/cycle-setup/ReviewerPoolCard";
-import { addDomainChallenge, createCycleApplicationForm, removeDomainChallenge } from "~/hiring/lib/application-form.server";
+import { addDomainChallenge, createCycleApplicationForm, createCycleContinuedInterestForm, removeDomainChallenge } from "~/hiring/lib/application-form.server";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { getPresenceUser } from "~/lib/presence-user";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { PresenceBar } from "~/components/collab/PresenceBar";
 import { renderEmail } from "~/lib/email";
 import {
+  CONTINUED_INTEREST_SLOT,
   TEMPLATE_VARIABLES,
   decisionSlot,
   notificationSlot,
@@ -187,6 +189,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       },
       statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
       applicationForm: { include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } } },
+      continuedInterestForm: { select: { id: true, name: true } },
       domainChallengeForms: {
         select: {
           id: true,
@@ -352,6 +355,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const hiringEmails: Record<string, { subject: string; body: string }> = Object.fromEntries(
     (await listHiringEmails()).map((e) => [e.slot, { subject: e.subject, body: e.body }]),
   );
+  // Unlike the rest, this one sends its default copy until Core writes a row.
+  const continuedInterestEmail = await getHiringEmail(CONTINUED_INTEREST_SLOT);
+  if (continuedInterestEmail) hiringEmails[CONTINUED_INTEREST_SLOT] = continuedInterestEmail;
 
   const memberSetup = isMemberCycle ? await loadMemberCycleSetup(params.id) : null;
   const [progress, termOptions, phaseStatusByDomain, startTermCandidates] = await Promise.all([
@@ -875,6 +881,20 @@ export async function action({ request, params }: Route.ActionArgs) {
     await prisma.applicationCycle.update({
       where: { id: params.id! },
       data: { applicationFormId: formId },
+    });
+    return cycleRedirect(request, params.id!);
+  }
+
+  if (intent === "create-continued-interest-form") {
+    await createCycleContinuedInterestForm(params.id!, auth.user.sub);
+    return cycleRedirect(request, params.id!);
+  }
+
+  if (intent === "set-continued-interest-form") {
+    const formId = (formData.get("formId") as string) || null;
+    await prisma.applicationCycle.update({
+      where: { id: params.id! },
+      data: { continuedInterestFormId: formId },
     });
     return cycleRedirect(request, params.id!);
   }
@@ -2089,6 +2109,27 @@ export default function HiringLeadCycleDetails() {
             />
           </NavSection>
 
+          {/* Reusing a waitlisted application is a student-cycle flow. */}
+          {cycle?.applicants === 'Students' && (
+            <NavSection id="continued-interest" title="Continued interest">
+              <SetupCard
+                title="Continued interest"
+                description="Returning waitlisters can reuse their waitlisted application and fill out this form with it. Without a form, reuse isn't offered."
+              >
+                <div className="flex flex-col gap-3 rounded-os-item bg-os-well p-4">
+                  <CycleFormRow
+                    form={cycle?.continuedInterestForm ?? null}
+                    allForms={loaderData?.allForms ?? []}
+                    swappable={cycleStatus === "Draft"}
+                    createIntent="create-continued-interest-form"
+                    setIntent="set-continued-interest-form"
+                    ariaLabel="Continued interest form"
+                  />
+                </div>
+              </SetupCard>
+            </NavSection>
+          )}
+
 
 
 
@@ -2114,9 +2155,12 @@ export default function HiringLeadCycleDetails() {
             description="The email each released decision sends."
             hiringEmails={loaderData?.hiringEmails ?? {}}
             canEdit={!!loaderData?.viewerIsCore}
-            slots={DECISION_EMAIL_SLOTS.filter(
-              (slot) => hasInterviews || slot.type !== "InvitedToInterview",
-            ).map((slot) => ({ ...slot, templateSlot: decisionSlot(slot.type) }))}
+            slots={[
+              ...DECISION_EMAIL_SLOTS.filter(
+                (slot) => hasInterviews || slot.type !== "InvitedToInterview",
+              ).map((slot) => ({ ...slot, templateSlot: decisionSlot(slot.type) })),
+              ...(cycle?.applicants === 'Students' ? [CONTINUED_INTEREST_EMAIL_SLOT] : []),
+            ]}
           />
           </NavSection>
 
@@ -3296,6 +3340,92 @@ function BlindReviewToggle({ anonymizeReview }: { anonymizeReview: boolean }) {
   );
 }
 
+// A form bound to the cycle itself (the general application, the continued
+// interest form): what's bound, Create when nothing is, and a swap while the
+// cycle allows one.
+function CycleFormRow({
+  form,
+  allForms,
+  swappable,
+  createIntent,
+  setIntent,
+  ariaLabel,
+}: {
+  form: { id: string; name: string } | null;
+  allForms: { id: string; name: string }[];
+  /** The form can only be swapped while the cycle is in Draft. */
+  swappable: boolean;
+  createIntent: string;
+  setIntent: string;
+  ariaLabel: string;
+}) {
+  const os = useOsChrome();
+  const formFetcher = useFetcher();
+  const formBusy = formFetcher.state !== "idle";
+  const [pickingForm, setPickingForm] = useState(false);
+  const small = buttonClasses("secondary", "sm");
+
+  return (
+    <DomainSubRow
+      label="Form"
+      value={
+        form ? (
+          <Link to={`/forms/edit/${form.id}`} className="min-w-0 max-w-full truncate text-os-accent hover:underline" title={form.name}>
+            {form.name}
+          </Link>
+        ) : (
+          <SubRowEmpty>None yet</SubRowEmpty>
+        )
+      }
+      action={
+        !pickingForm && (
+          <>
+            {!form && (
+              <button
+                type="button"
+                disabled={formBusy}
+                onClick={() => formFetcher.submit({ intent: createIntent }, { method: "post" })}
+                className={small}
+              >
+                <Plus className="w-3.5 h-3.5" aria-hidden /> {formBusy ? "Creating…" : "Create form"}
+              </button>
+            )}
+            {swappable && allForms.length > 0 && (
+              <button type="button" onClick={() => setPickingForm(true)} className={small}>
+                Use a different form
+              </button>
+            )}
+          </>
+        )
+      }
+      editor={
+        swappable &&
+        pickingForm && (
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="min-w-[14rem] flex-1">
+              <Select
+                ariaLabel={ariaLabel}
+                defaultValue={form?.id ?? ""}
+                placeholder="Pick a form"
+                onChange={(id) => {
+                  setPickingForm(false);
+                  if (!id || id === form?.id) return;
+                  formFetcher.submit({ intent: setIntent, formId: id }, { method: "post" });
+                }}
+                options={allForms.map((f) => ({ value: f.id, label: f.name }))}
+                buttonClassName={rowTrigger(os.formTrigger)}
+              />
+            </div>
+            <button type="button" onClick={() => setPickingForm(false)} className={small}>
+              Cancel
+            </button>
+          </div>
+        )
+      }
+    />
+  );
+}
+
 // The general application: the form every applicant fills and the rubric
 // every application is scored on, as two rows shaped like a domain row (label,
 // what's bound, then small actions).
@@ -3315,11 +3445,6 @@ function GeneralApplicationSection({
   rubricLocked: boolean;
 }) {
   const os = useOsChrome();
-  const formFetcher = useFetcher();
-  const formBusy = formFetcher.state !== "idle";
-  // The form can only be swapped while the cycle is in Draft.
-  const formEditable = cycleStatus === "Draft";
-  const [pickingForm, setPickingForm] = useState(false);
   // Opens on demand only: an auto-open editor under an empty value repeated
   // "Rubric" / "No rubric" twice.
   const [editingRubric, setEditingRubric] = useState(false);
@@ -3337,62 +3462,13 @@ function GeneralApplicationSection({
     <SetupCard title="General application">
       {/* Same line anatomy as a domain's Challenge and Rubric lines. */}
       <div className="flex flex-col gap-3 rounded-os-item bg-os-well p-4">
-        <DomainSubRow
-          label="Form"
-          value={
-            applicationForm ? (
-              <Link to={`/forms/edit/${applicationForm.id}`} className="min-w-0 max-w-full truncate text-os-accent hover:underline" title={applicationForm.name}>
-                {applicationForm.name}
-              </Link>
-            ) : (
-              <SubRowEmpty>None yet</SubRowEmpty>
-            )
-          }
-          action={
-            !pickingForm && (
-              <>
-                {!applicationForm && (
-                  <button
-                    type="button"
-                    disabled={formBusy}
-                    onClick={() => formFetcher.submit({ intent: "create-application-form" }, { method: "post" })}
-                    className={small}
-                  >
-                    <Plus className="w-3.5 h-3.5" aria-hidden /> {formBusy ? "Creating…" : "Create form"}
-                  </button>
-                )}
-                {formEditable && allForms.length > 0 && (
-                  <button type="button" onClick={() => setPickingForm(true)} className={small}>
-                    Use a different form
-                  </button>
-                )}
-              </>
-            )
-          }
-          editor={
-            formEditable &&
-            pickingForm && (
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="min-w-[14rem] flex-1">
-                  <Select
-                    ariaLabel="Application form"
-                    defaultValue={applicationForm?.id ?? ""}
-                    placeholder="Pick a form"
-                    onChange={(id) => {
-                      setPickingForm(false);
-                      if (!id || id === applicationForm?.id) return;
-                      formFetcher.submit({ intent: "set-application-form", formId: id }, { method: "post" });
-                    }}
-                    options={allForms.map((f) => ({ value: f.id, label: f.name }))}
-                    buttonClassName={rowTrigger(os.formTrigger)}
-                  />
-                </div>
-                <button type="button" onClick={() => setPickingForm(false)} className={small}>
-                  Cancel
-                </button>
-              </div>
-            )
-          }
+        <CycleFormRow
+          form={applicationForm}
+          allForms={allForms}
+          swappable={cycleStatus === "Draft"}
+          createIntent="create-application-form"
+          setIntent="set-application-form"
+          ariaLabel="Application form"
         />
         <DomainSubRow
           label="Rubric"
@@ -3696,6 +3772,12 @@ const DECISION_EMAIL_SLOTS: ReadonlyArray<{ type: DecisionSlotType; label: strin
   { type: "Accepted", label: "Accepted", description: "Sent when an offer is released." },
 ];
 
+const CONTINUED_INTEREST_EMAIL_SLOT = {
+  label: "Removed from waitlist",
+  description: "Sent when Core removes someone from the waitlist. Invites them to reapply with continued interest.",
+  templateSlot: CONTINUED_INTEREST_SLOT,
+} as const;
+
 function EmailStatusSection({
   title,
   description,
@@ -3711,10 +3793,11 @@ function EmailStatusSection({
   canEdit: boolean;
 }) {
   // No editor of its own, on purpose. These emails are shared by every cycle, so
-  // editing them belongs to Core in Core -> Communications -> Email, not to
-  // whoever happens to administer this cycle. A Core viewer's rows deep-link
-  // into that editor; for everyone else the Setup tab still answers "is it
-  // written?", because releasing a decision with no email written fails.
+  // editing them belongs to Core, not to whoever happens to administer this
+  // cycle. A Core viewer's rows open Core's editor here, in place; for everyone
+  // else the Setup tab still answers "is it written?", because releasing a
+  // decision with no email written fails.
+  const [editing, setEditing] = useState<TemplateSlot | null>(null);
   return (
     <SetupCard title={title} description={description}>
       <div className="flex flex-col gap-2">
@@ -3740,14 +3823,15 @@ function EmailStatusSection({
             </div>
           );
           return canEdit ? (
-            <Link
+            <button
               key={slot.templateSlot}
-              to={`/core/communications/email?key=${encodeURIComponent(hiringKey(slot.templateSlot))}`}
+              type="button"
+              onClick={() => setEditing(slot.templateSlot)}
               aria-label={`Edit ${slot.label} email`}
-              className={cn(rowClass, "transition-colors hover:bg-muted")}
+              className={cn(rowClass, "w-full text-left transition-colors hover:bg-muted")}
             >
               {body}
-            </Link>
+            </button>
           ) : (
             <div key={slot.templateSlot} className={rowClass}>
               {body}
@@ -3757,11 +3841,14 @@ function EmailStatusSection({
         <p className="text-xs text-muted-foreground">
           Shared by every cycle.{" "}
           <Link to="/core/communications/email" className="underline">
-            Edit in Core &rarr; Communications &rarr; Email
+            See all in Core &rarr; Communications &rarr; Email
           </Link>
           .
         </p>
       </div>
+      {editing && (
+        <EmailEditorModal templateKey={hiringKey(editing)} onClose={() => setEditing(null)} />
+      )}
     </SetupCard>
   );
 }

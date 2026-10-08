@@ -431,6 +431,13 @@ model ApplicationCycle {
   applicationFormId String?
   applicationForm   Form?   @relation("CycleApplicationForm", fields: [applicationFormId], references: [id])
 
+  // Students cycles only. The short form a returning waitlister fills when they
+  // reuse a waitlisted application instead of applying from scratch
+  // (app/hiring/lib/continued-interest.server.ts). Null = the cycle doesn't
+  // offer reuse.
+  continuedInterestFormId String?
+  continuedInterestForm   Form?   @relation("CycleContinuedInterestForm", fields: [continuedInterestFormId], references: [id])
+
   statusUpdates        ApplicationCycleStatusUpdate[]
   applications         Application[]
   domains              DomainApplicationCycle[]
@@ -576,6 +583,20 @@ model DomainApplication {
   domainId               String
   domain                 Domain       @relation(fields: [domainId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
+  // Continued interest: this DA reuses an earlier cycle's waitlisted DA rather
+  // than a fresh submission. `answers` and `challengeFormVersionId` (and the
+  // parent Application's general answers and form version) are copied from
+  // `continuedFrom` and frozen, so every reader of a normal application works
+  // unchanged; only the continued interest form below is new content.
+  continuedFromId                String?
+  continuedFrom                  DomainApplication?  @relation("DomainApplicationContinuedFrom", fields: [continuedFromId], references: [id])
+  continuedBy                    DomainApplication[] @relation("DomainApplicationContinuedFrom")
+  // The cycle's continued interest form at the version pinned when the
+  // applicant chose to reuse, and their answers (same shape as `answers`).
+  continuedInterestFormVersionId String?
+  continuedInterestFormVersion   FormVersion?        @relation("DomainApplicationContinuedInterestForm", fields: [continuedInterestFormVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  continuedInterestAnswers       Json?
+
   interviews Interview[]
   reviews    ApplicationReview[]
   decisions  Decision[]
@@ -583,6 +604,8 @@ model DomainApplication {
   @@index([applicationId])
   @@index([domainId])
   @@index([challengeFormVersionId])
+  @@index([continuedFromId])
+  @@index([continuedInterestFormVersionId])
 }
 
 // Drive-Form equivalent of ChallengeVersionApplicationCycle for per-domain
@@ -4582,6 +4605,7 @@ model Form {
   educationOfferingsAsApplicationForm EducationOffering[]             @relation("EducationOfferingApplicationForm")
   educationBindings                   EducationFormBinding[]          @relation("EducationFormBindings")
   hiringCyclesAsApplicationForm       ApplicationCycle[]              @relation("CycleApplicationForm")
+  hiringCyclesAsContinuedInterestForm ApplicationCycle[]              @relation("CycleContinuedInterestForm")
   hiringDomainChallenges              CycleDomainForm[]
 
   @@index([folderPageId])
@@ -4622,6 +4646,7 @@ model FormVersion {
   // Internal hiring applications that pinned this version (see Application.applicationFormVersionId).
   hiringApplicationsAsPinnedForm      Application[]       @relation("ApplicationApplicationForm")
   hiringDomainApplicationsAsChallenge DomainApplication[] @relation("DomainApplicationChallengeForm")
+  hiringDomainApplicationsAsContinued DomainApplication[] @relation("DomainApplicationContinuedInterestForm")
 
   @@unique([formId, versionNumber])
   @@index([formId, versionNumber])
@@ -6729,6 +6754,9 @@ model BlogPost {
   visibility    BlogVisibility @default(Internal)
   // Null = draft, seen only by its author and Core.
   publishedAt   DateTime?
+  // Set while a draft waits for an Admin to approve it; cleared once it is
+  // published or withdrawn.
+  submittedAt   DateTime?
   // Core's front page arrangement: pinned posts lead in rank order (lowest
   // first); null = unpinned, falling in behind them newest first.
   frontPageRank Int?

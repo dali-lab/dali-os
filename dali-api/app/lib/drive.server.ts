@@ -779,6 +779,7 @@ export async function loadOrphanForms(
  *
  * Resolved linkages:
  *   • forms → hiring cycle (via `ApplicationCycle.applicationFormId`)
+ *   • forms → hiring cycle (via `ApplicationCycle.continuedInterestFormId`)
  *   • forms → hiring domain challenge (via `CycleDomainForm`)
  *   • forms → education offering (via `EducationOffering.applicationFormId`)
  *   • agreements → a role label (always-on; hiring confidentiality vs. general)
@@ -799,6 +800,20 @@ export async function buildLinkedProcessMap(): Promise<Map<string, { label: stri
   for (const c of cycleAppForms) {
     if (c.applicationFormId && !map.has(c.applicationFormId)) {
       map.set(c.applicationFormId, {
+        label: `Hiring – ${c.name}`,
+        href: `/hiring/lead/cycle/${c.id}`,
+      });
+    }
+  }
+
+  // ── Forms: hiring cycles (continuedInterestFormId) ────────────────────────
+  const cycleContinuedForms = await prisma.applicationCycle.findMany({
+    where: { continuedInterestFormId: { not: null } },
+    select: { id: true, name: true, continuedInterestFormId: true },
+  });
+  for (const c of cycleContinuedForms) {
+    if (c.continuedInterestFormId && !map.has(c.continuedInterestFormId)) {
+      map.set(c.continuedInterestFormId, {
         label: `Hiring – ${c.name}`,
         href: `/hiring/lead/cycle/${c.id}`,
       });
