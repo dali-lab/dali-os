@@ -85,8 +85,6 @@ import {
 } from "~/lib/rooms.server";
 import { fetchWindow, parseAnchor, parseView, viewWindow, weekWindow } from "~/calendar/lib/view-window";
 import type {
-  WhSegment,
-  WhDay,
   SubCalendarDTO,
   CalendarLinkDTO,
   GroupOption,
@@ -108,7 +106,7 @@ import type {
   CalendarView,
 } from "~/calendar/lib/types";
 import {
-  defaultWorkingHours,
+  assembleWorkingHours,
   DEFAULT_BUFFER_MIN,
   EVENT_DURATION_OPTIONS,
   DEFAULT_EVENT_DURATION_MIN,
@@ -1463,34 +1461,7 @@ export async function loadCalendarData(
   const timesheetCalendarId = settings?.timesheetCalendarId ?? null;
 
   // Group persisted rows by day-of-week (multiple segments allowed per day).
-  // Skip rows with enabled=false or invalid bounds; the UI treats them as deleted.
-  const byDow = new Map<number, WhSegment[]>();
-  for (const r of whRows) {
-    if (!r.enabled || r.startMinute >= r.endMinute) continue;
-    const list = byDow.get(r.dayOfWeek);
-    const seg: WhSegment = {
-      id: r.id,
-      startMinute: r.startMinute,
-      endMinute: r.endMinute,
-      location: r.location,
-    };
-    if (list) list.push(seg);
-    else byDow.set(r.dayOfWeek, [seg]);
-  }
-  // Defaults only apply for users who have never persisted working hours. Once
-  // a user has any WorkingHoursDay row (even disabled / mid-edit), we trust the
-  // persisted state — so an explicit "disable Monday" sticks instead of being
-  // overwritten by the Mon–Fri 9–5 default on every reload.
-  const hasAnyPersisted = whRows.length > 0;
-  const workingHours: WhDay[] = defaultWorkingHours().map((d) => {
-    const persisted = byDow.get(d.dayOfWeek);
-    if (persisted && persisted.length > 0) {
-      persisted.sort((a, b) => a.startMinute - b.startMinute);
-      return { dayOfWeek: d.dayOfWeek, segments: persisted };
-    }
-    if (hasAnyPersisted) return { dayOfWeek: d.dayOfWeek, segments: [] };
-    return d;
-  });
+  const { workingHours, hasPersisted: hasAnyPersisted } = assembleWorkingHours(whRows);
 
   // Optional ?weekStart=YYYY-MM-DD URL param lets the user navigate weeks.
   // We use it as an anchor inside weekWindow(), which still snaps to that

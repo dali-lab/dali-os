@@ -28,6 +28,7 @@ import {
   addDaysToDate,
 } from "~/calendar/components/composer";
 import { durationMinutesBetween } from "~/calendar/lib/event-block";
+import { eventTitleOrDefault } from "~/calendar/lib/event-title";
 import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
 import { weekStartIsoForDay, weekWindow } from "~/calendar/lib/view-window";
 import {
@@ -338,7 +339,6 @@ export function CreateEventModal({
 
   // ── canSubmit ────────────────────────────────────────────────────────────
   const canSubmitEvent =
-    title.trim() !== "" &&
     destination !== "" &&
     startIso !== "" &&
     endIso !== "" &&
@@ -347,7 +347,6 @@ export function CreateEventModal({
     (!eventLoggingWork || (roleKey !== "" && workNote.trim() !== ""));
 
   const canSubmitMeeting =
-    title.trim() !== "" &&
     durationMinutes > 0 &&
     startEndValid &&
     meetingNoteValid(note.state) &&
@@ -361,7 +360,7 @@ export function CreateEventModal({
     setMeetingStatus(null);
     try {
       const payload: Record<string, unknown> = {
-        title: title.trim(),
+        title: eventTitleOrDefault(title),
         durationMinutes,
       };
       if (location.trim()) payload.location = location.trim();
@@ -607,14 +606,11 @@ export function CreateEventModal({
               )}
 
               {/* Title — the one field that carries the modal's heading weight */}
-              <label htmlFor="cem-title" className={labelClass}>
-                Title <span className="text-red-500">*</span>
-              </label>
+              <input type="hidden" name="title" value={eventTitleOrDefault(title)} />
               <input
                 id="cem-title"
-                name="title"
                 type="text"
-                required
+                aria-label="Title"
                 placeholder="Add title"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
@@ -784,21 +780,15 @@ export function CreateEventModal({
           ) : (
             /* ── Meeting form ────────────────────────────────────────────── */
             <form onSubmit={submitMeeting} className="flex flex-col gap-5">
-              {/* Title */}
-              <div>
-                <label htmlFor="cem-mtg-title" className={labelClass}>
-                  Title <span className="text-red-500">*</span>
-                </label>
-                <input
-                  id="cem-mtg-title"
-                  type="text"
-                  required
-                  placeholder="e.g. Deserto sync"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  className={fieldClass}
-                />
-              </div>
+              <input
+                id="cem-mtg-title"
+                type="text"
+                aria-label="Title"
+                placeholder="Add title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className={fieldClass}
+              />
 
               {/* Guests */}
               <FieldRow icon={UsersRound}>
