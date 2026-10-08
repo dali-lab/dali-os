@@ -336,6 +336,23 @@ export const NOTIFICATION_COPY = {
     subject: "{{personName}} {{itemDetail}}",
     body: "",
   },
+  "blog.submitted": {
+    eventType: "blog.submitted",
+    label: "Blog post submitted",
+    description: "Sent to admins when a member submits a blog post for approval.",
+    variables: ["personName", "itemTitle"],
+    subject: "{{personName}} submitted a blog post: {{itemTitle}}",
+    body: "Review it and approve to publish.",
+    linkLabel: "Review post",
+  },
+  "blog.approved": {
+    eventType: "blog.approved",
+    label: "Blog post approved",
+    description: "Sent to the author when an admin approves their blog post.",
+    variables: ["itemTitle"],
+    subject: "Your blog post was published: {{itemTitle}}",
+    body: "",
+  },
 
   // ── Onboarding ───────────────────────────────────────────────────────────
   "member.onboarding": {

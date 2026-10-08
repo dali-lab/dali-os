@@ -374,6 +374,21 @@ export const EVENT_TYPES = {
     adminOnly: true,
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
+  "blog.submitted": {
+    kind: "General",
+    area: "Documents",
+    label: "Blog posts to review",
+    description: "When a member submits a blog post for approval.",
+    adminOnly: true,
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
+  "blog.approved": {
+    kind: "General",
+    area: "Documents",
+    label: "Blog post approvals",
+    description: "When a blog post you submitted is approved and published.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
   // Fallback stamped on rows that predate the registry (schema column
   // default). Never emitted by code; hidden from the settings page.
   general: {

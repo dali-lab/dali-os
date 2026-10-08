@@ -7,9 +7,19 @@ vi.mock("~/lib/db", () => ({
   },
 }));
 vi.mock("~/lib/resources.server", () => ({ requireResourcesViewer: vi.fn() }));
+vi.mock("~/lib/roles", () => ({ isAdmin: vi.fn() }));
+vi.mock("~/lib/notify.server", () => ({ notify: vi.fn() }));
+vi.mock("~/lib/promotion-notify.server", () => ({ adminRecipientIds: vi.fn() }));
 
 import { prisma } from "~/lib/db";
-import { moveBlogPostPin, pinBlogPostToTop } from "../blog-post.server";
+import { notify } from "~/lib/notify.server";
+import { adminRecipientIds } from "~/lib/promotion-notify.server";
+import {
+  moveBlogPostPin,
+  pinBlogPostToTop,
+  publishBlogPost,
+  unpublishBlogPost,
+} from "../blog-post.server";
 
 const db = prisma as any;
 
@@ -46,5 +56,73 @@ describe("pinning", () => {
     await moveBlogPostPin("a", -1);
     await moveBlogPostPin("zzz", 1);
     expect(db.$transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("review", () => {
+  const draft = {
+    id: "p1",
+    title: "Demo night",
+    authorId: "author",
+    publishedAt: null,
+    submittedAt: null,
+    author: { firstName: "Ada", lastName: "Lovelace" },
+  };
+
+  it("sends a member's post to the admins instead of publishing it", async () => {
+    vi.mocked(adminRecipientIds).mockResolvedValue(["admin1", "admin2"]);
+    expect(await publishBlogPost(draft, { id: "author", canApprove: false })).toBe("review");
+    expect(db.blogPost.update).toHaveBeenCalledWith({
+      where: { id: "p1" },
+      data: { submittedAt: expect.any(Date) },
+    });
+    expect(notify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "blog.submitted",
+        message: {
+          vars: { personName: "Ada Lovelace", itemTitle: "Demo night" },
+          link: "/resources/blog/p1",
+        },
+        recipients: [{ userId: "admin1" }, { userId: "admin2" }],
+      }),
+    );
+  });
+
+  it("does not notify the admins twice for a post already in review", async () => {
+    const status = await publishBlogPost(
+      { ...draft, submittedAt: new Date() },
+      { id: "author", canApprove: false },
+    );
+    expect(status).toBe("review");
+    expect(db.blogPost.update).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it("publishes on an admin's approval and tells the author", async () => {
+    const status = await publishBlogPost(
+      { ...draft, submittedAt: new Date() },
+      { id: "admin1", canApprove: true },
+    );
+    expect(status).toBe("published");
+    expect(db.blogPost.update).toHaveBeenCalledWith({
+      where: { id: "p1" },
+      data: { publishedAt: expect.any(Date), submittedAt: null },
+    });
+    expect(notify).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: "blog.approved", recipients: [{ userId: "author" }] }),
+    );
+  });
+
+  it("publishes an admin's own post without a notification", async () => {
+    expect(await publishBlogPost(draft, { id: "author", canApprove: true })).toBe("published");
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it("clears the review and the pin when a post goes back to a draft", async () => {
+    await unpublishBlogPost("p1");
+    expect(db.blogPost.update).toHaveBeenCalledWith({
+      where: { id: "p1" },
+      data: { publishedAt: null, submittedAt: null, frontPageRank: null },
+    });
   });
 });

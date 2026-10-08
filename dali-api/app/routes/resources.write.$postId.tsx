@@ -1,24 +1,40 @@
-import { useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Link, redirect, useFetcher, useLoaderData } from "react-router";
-import { ArrowLeft, Eye, ImagePlus, Trash2, X } from "lucide-react";
+import { ArrowLeft, ImagePlus, SlidersHorizontal, Trash2, X } from "lucide-react";
 import type { Route } from "./+types/resources.write.$postId";
-import { DocEditor, IMAGE_UPLOAD_ACCEPT, uploadEditorImage, type DocSyncState } from "~/components/doc";
+import {
+  DocEditor,
+  IMAGE_UPLOAD_ACCEPT,
+  uploadEditorImage,
+  type DocEditorInstance,
+  type DocSyncState,
+} from "~/components/doc";
 import { blogPostRoomName } from "~/collab/roomName";
 import { prisma } from "~/lib/db";
+import { isAiEnabled } from "~/lib/ai.server";
 import { DEFAULT_BLOG_COVER, blogListing } from "~/lib/blog-preview";
-import { loadBlogPost, pinBlogPostToTop, unpinBlogPost } from "~/lib/blog-post.server";
+import {
+  blogStatus,
+  loadBlogPost,
+  pinBlogPostToTop,
+  publishBlogPost,
+  unpinBlogPost,
+  unpublishBlogPost,
+} from "~/lib/blog-post.server";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { useOsChrome } from "~/components/os-chrome";
+import { Modal, ModalHeader } from "~/components/Modal";
+import { BlogAiMenu } from "~/components/blog/BlogAiMenu";
+import { BlogStatusPill } from "~/components/blog/BlogStatusPill";
 import { IconButton } from "~/components/ui/IconButton";
 import { Toggle } from "~/components/ui/Toggle";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
 
 export const meta: Route.MetaFunction = () => [{ title: "Write · DALI OS" }];
 
 export async function loader({ request, params }: Route.LoaderArgs) {
-  const { viewer, post, canEdit } = await loadBlogPost(request, params.postId!);
+  const { viewer, post, canEdit, canApprove } = await loadBlogPost(request, params.postId!);
   if (!canEdit) throw new Response("Not found", { status: 404 });
   return {
     post: {
@@ -29,10 +45,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       customCoverUrl: post.customCoverUrl,
       coverImageUrl: blogListing(post).coverImageUrl,
       isPublic: post.visibility === "Public",
-      published: post.publishedAt !== null,
+      status: blogStatus(post),
       pinned: post.frontPageRank !== null,
     },
     canPin: viewer.core,
+    canApprove,
+    aiEnabled: isAiEnabled(),
     collabToken: await getCollabToken(request),
     currentUserId: viewer.user.sub,
     userName: viewer.userName,
@@ -40,7 +58,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
-  const { viewer, post, canEdit } = await loadBlogPost(request, params.postId!);
+  const { viewer, post, canEdit, canApprove } = await loadBlogPost(request, params.postId!);
   if (!canEdit) throw new Response("Forbidden", { status: 403 });
   const form = await request.formData();
   const where = { id: post.id };
@@ -68,21 +86,22 @@ export async function action({ request, params }: Route.ActionArgs) {
       return { ok: true };
     }
     case "visibility":
+      // An Admin approves a post for an audience; its author can't widen that after.
+      if (!canApprove && blogStatus(post) !== "draft") {
+        return Response.json({ error: "Move it back to a draft first." }, { status: 400 });
+      }
       await prisma.blogPost.update({
         where,
         data: { visibility: form.get("public") === "1" ? "Public" : "Internal" },
       });
       return { ok: true };
     case "publish": {
-      const publish = form.get("published") === "1";
-      await prisma.blogPost.update({
-        where,
-        data: publish
-          ? { publishedAt: post.publishedAt ?? new Date() }
-          : // Only a published post holds a pin.
-            { publishedAt: null, frontPageRank: null },
-      });
-      return { ok: true };
+      if (form.get("published") !== "1") {
+        await unpublishBlogPost(post.id);
+        return { ok: true };
+      }
+      const status = await publishBlogPost(post, { id: viewer.user.sub, canApprove });
+      return { ok: true, submitted: status === "review" };
     }
     case "pin":
       if (!viewer.core) throw new Response("Forbidden", { status: 403 });
@@ -106,17 +125,90 @@ const SYNC_LABEL: Record<DocSyncState, string> = {
   offline: "Offline",
 };
 
+// A long title wraps and the field grows with it, as the headline does on the
+// read page, instead of running off the end of one line.
+function TitleField({ title, onSave }: { title: string; onSave: (title: string) => void }) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const fit = () => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  };
+  useEffect(() => {
+    fit();
+    // The heading face can land after first paint and re-wrap the line.
+    void document.fonts?.ready.then(fit);
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, []);
+
+  return (
+    <textarea
+      ref={ref}
+      rows={1}
+      aria-label="Title"
+      defaultValue={title === "Untitled" ? "" : title}
+      placeholder="Title"
+      onInput={fit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          e.currentTarget.blur();
+        }
+      }}
+      onBlur={(e) => {
+        const next = e.target.value.replace(/\s+/g, " ").trim();
+        if (next && next !== title) onSave(next);
+      }}
+      // Same inline gutter as the editor below (its block-handle column),
+      // so the title sits flush with the body text.
+      className="block w-full resize-none overflow-hidden bg-transparent px-3 sm:px-[54px] font-heading text-5xl font-semibold leading-tight text-foreground outline-none placeholder:text-os-muted"
+    />
+  );
+}
+
+type ActionResult = { ok?: boolean; submitted?: boolean; error?: string };
+
 export default function BlogWritePage() {
-  const { post, canPin, collabToken, currentUserId, userName } = useLoaderData<typeof loader>();
+  const { post, canPin, canApprove, aiEnabled, collabToken, currentUserId, userName } =
+    useLoaderData<typeof loader>();
   const chrome = useOsChrome();
-  const fetcher = useFetcher();
+  const fetcher = useFetcher<ActionResult>();
   const dialog = useDialog();
   const toast = useToast();
+  const detailsTitleId = useId();
   const fileRef = useRef<HTMLInputElement>(null);
   const [sync, setSync] = useState<DocSyncState>("saved");
   const [uploading, setUploading] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [summary, setSummary] = useState(post.summary);
+  const savedSummary = useRef(post.summary);
+  const [editor, setEditor] = useState<DocEditorInstance | null>(null);
+  const handled = useRef<ActionResult | undefined>(undefined);
 
   const submit = (data: Record<string, string>) => fetcher.submit(data, { method: "post" });
+
+  useEffect(() => {
+    const data = fetcher.data;
+    if (fetcher.state !== "idle" || !data || handled.current === data) return;
+    handled.current = data;
+    if (data.error) toast.error(data.error);
+    else if (data.submitted) toast.success("Sent to the admins for review");
+  }, [fetcher.state, fetcher.data, toast]);
+
+  // Escape closes the modal without blurring the field, so closing saves too.
+  function saveSummary() {
+    const next = summary.trim();
+    if (next === savedSummary.current) return;
+    savedSummary.current = next;
+    submit({ intent: "summary", summary: next });
+  }
+
+  function closeDetails() {
+    saveSummary();
+    setDetailsOpen(false);
+  }
 
   async function pickCover(file: File | undefined) {
     if (!file) return;
@@ -133,7 +225,8 @@ export default function BlogWritePage() {
   async function remove() {
     const ok = await dialog.confirm({
       title: "Delete this post?",
-      description: post.isPublic && post.published ? "It also comes off the DALI website." : undefined,
+      description:
+        post.isPublic && post.status === "published" ? "It also comes off the DALI website." : undefined,
       confirmLabel: "Delete",
       tone: "destructive",
     });
@@ -143,6 +236,20 @@ export default function BlogWritePage() {
   if (!collabToken) {
     return <p className="text-sm italic text-muted-foreground">Sign in again to write.</p>;
   }
+
+  const isDraft = post.status === "draft";
+  // Only an Admin publishes; anyone else sends the draft to them.
+  const publishLabel =
+    post.status === "published"
+      ? "Unpublish"
+      : canApprove
+        ? isDraft
+          ? "Publish"
+          : "Approve"
+        : isDraft
+          ? "Submit for review"
+          : "Withdraw";
+  const audienceLocked = !canApprove && !isDraft;
 
   return (
     <div className="flex flex-col gap-6">
@@ -155,55 +262,46 @@ export default function BlogWritePage() {
           The Scoop
         </Link>
         <span className="text-sm text-os-grey">{SYNC_LABEL[sync]}</span>
-        <Pill dot={post.published ? "success" : "neutral"}>
-          {post.published ? "Published" : "Draft"}
-        </Pill>
-        <Link to={`/resources/blog/${post.id}`} aria-label="Preview" className={chrome.iconBtn}>
-          <Eye className="h-4 w-4" />
-        </Link>
+        <BlogStatusPill status={post.status} />
+        {aiEnabled && <BlogAiMenu editor={editor} />}
+        <IconButton label="Post details" icon={SlidersHorizontal} onClick={() => setDetailsOpen(true)} />
         <IconButton label="Delete" icon={Trash2} tone="destructive" onClick={remove} />
         <button
           type="button"
-          onClick={() => submit({ intent: "publish", published: post.published ? "0" : "1" })}
+          disabled={fetcher.state !== "idle"}
+          onClick={() =>
+            submit({
+              intent: "publish",
+              published: post.status === "published" || publishLabel === "Withdraw" ? "0" : "1",
+            })
+          }
           className="os-btn-primary os-btn-primary--sm"
         >
-          {post.published ? "Unpublish" : "Publish"}
+          {publishLabel}
         </button>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div className={`${chrome.panel} ${chrome.panelPad} min-w-0`}>
-          <input
-            type="text"
-            aria-label="Title"
-            defaultValue={post.title === "Untitled" ? "" : post.title}
-            placeholder="Title"
-            onBlur={(e) => {
-              const title = e.target.value.trim();
-              if (title && title !== post.title) submit({ intent: "title", title });
-            }}
-            // Same inline gutter as the editor below (its block-handle column),
-            // so the title sits flush with the body text.
-            className="w-full bg-transparent px-3 sm:px-[54px] font-serif text-5xl font-bold leading-tight text-foreground outline-none placeholder:text-os-muted"
-          />
-          <DocEditor
-            features="resource"
-            aiEnabled
-            collab={{
-              documentName: blogPostRoomName(post.id),
-              token: collabToken,
-              userName,
-              userId: currentUserId,
-            }}
-            onSyncStateChange={setSync}
-            placeholder="Tell your story, or press '/' for blocks"
-            className="mt-4 min-h-[65vh]"
-          />
-        </div>
+      <div className={`${chrome.panel} ${chrome.panelPad} min-w-0`}>
+        <TitleField title={post.title} onSave={(title) => submit({ intent: "title", title })} />
+        <DocEditor
+          features="resource"
+          aiEnabled
+          collab={{
+            documentName: blogPostRoomName(post.id),
+            token: collabToken,
+            userName,
+            userId: currentUserId,
+          }}
+          onSyncStateChange={setSync}
+          onEditorReady={setEditor}
+          placeholder="Tell your story, or press '/' for blocks"
+          className="mt-4 min-h-[65vh]"
+        />
+      </div>
 
-        <aside className={`${chrome.panel} ${chrome.panelPad} ${chrome.formClass} flex h-fit flex-col gap-5`}>
-          <h2 className={chrome.heading}>The Scoop</h2>
-
+      <Modal open={detailsOpen} onClose={closeDetails} labelledBy={detailsTitleId}>
+        <ModalHeader titleId={detailsTitleId} title="Post details" onClose={closeDetails} />
+        <div className={`${chrome.formClass} flex flex-col gap-5`}>
           <div className="flex flex-col gap-1.5">
             <span className="os-field-label">Cover</span>
             <img
@@ -242,20 +340,18 @@ export default function BlogWritePage() {
             <span>Summary</span>
             <textarea
               rows={4}
-              defaultValue={post.summary}
+              value={summary}
               placeholder={post.derivedExcerpt || "Shown under the headline"}
-              onBlur={(e) => {
-                if (e.target.value.trim() !== post.summary) {
-                  submit({ intent: "summary", summary: e.target.value });
-                }
-              }}
+              onChange={(e) => setSummary(e.target.value)}
+              onBlur={saveSummary}
             />
           </label>
 
           <Toggle
             tone="os"
             label="Public"
-            description="Also on the DALI website"
+            description={audienceLocked ? "Move back to a draft to change" : "Also on the DALI website"}
+            disabled={audienceLocked}
             checked={post.isPublic}
             onChange={(e) => submit({ intent: "visibility", public: e.target.checked ? "1" : "0" })}
           />
@@ -263,14 +359,14 @@ export default function BlogWritePage() {
             <Toggle
               tone="os"
               label="Pin to top"
-              description={post.published ? undefined : "Publish first"}
-              disabled={!post.published}
+              description={post.status === "published" ? undefined : "Publish first"}
+              disabled={post.status !== "published"}
               checked={post.pinned}
               onChange={(e) => submit({ intent: "pin", pinned: e.target.checked ? "1" : "0" })}
             />
           )}
-        </aside>
-      </div>
+        </div>
+      </Modal>
     </div>
   );
 }

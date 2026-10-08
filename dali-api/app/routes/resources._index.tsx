@@ -1,7 +1,7 @@
-import { useState } from "react";
-import { Link, useFetcher, useLoaderData } from "react-router";
-import { ArrowDown, ArrowUp, Check, Globe, Pencil, Pin, PinOff } from "lucide-react";
+import { Link, useFetcher, useLoaderData, useOutletContext } from "react-router";
+import { ArrowDown, ArrowUp, Globe, Pin, PinOff } from "lucide-react";
 import type { Route } from "./+types/resources._index";
+import type { ResourcesOutletContext } from "./resources";
 import { prisma } from "~/lib/db";
 import { cn } from "~/lib/cn";
 import { fullName, formatDateShort } from "~/lib/display";
@@ -9,22 +9,30 @@ import { DEFAULT_BLOG_COVER, blogListing } from "~/lib/blog-preview";
 import { requireResourcesViewer } from "~/lib/resources.server";
 import {
   UNTOUCHED_DRAFT,
+  blogStatus,
   moveBlogPostPin,
   pinBlogPostToTop,
   unpinBlogPost,
 } from "~/lib/blog-post.server";
 import { IconButton } from "~/components/ui/IconButton";
 import { Tooltip } from "~/components/ui/floating/Tooltip";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { BlogStatusPill } from "~/components/blog/BlogStatusPill";
+import { isAdmin } from "~/lib/roles";
 
 // The front page: published posts laid out like a newspaper. Core's pinned
 // posts lead in the order Core arranged them, then the rest newest first. The
-// viewer's own drafts sit below.
+// viewer's own drafts sit below, and for an Admin so does everything waiting on
+// their approval.
 export async function loader({ request }: Route.LoaderArgs) {
   const { user, core } = await requireResourcesViewer(request);
+  const canApprove = await isAdmin(user.sub);
   const rows = await prisma.blogPost.findMany({
     where: {
-      OR: [{ publishedAt: { not: null } }, { authorId: user.sub, NOT: UNTOUCHED_DRAFT }],
+      OR: [
+        { publishedAt: { not: null } },
+        { authorId: user.sub, NOT: UNTOUCHED_DRAFT },
+        ...(canApprove ? [{ submittedAt: { not: null } }] : []),
+      ],
     },
     orderBy: [
       { frontPageRank: { sort: "asc", nulls: "last" } },
@@ -40,7 +48,9 @@ export async function loader({ request }: Route.LoaderArgs) {
       customCoverUrl: true,
       visibility: true,
       publishedAt: true,
+      submittedAt: true,
       frontPageRank: true,
+      authorId: true,
       author: { select: { firstName: true, lastName: true } },
     },
   });
@@ -49,14 +59,16 @@ export async function loader({ request }: Route.LoaderArgs) {
     title: r.title,
     ...blogListing(r),
     isPublic: r.visibility === "Public",
-    published: r.publishedAt !== null,
+    status: blogStatus(r),
+    mine: r.authorId === user.sub,
     pinned: r.frontPageRank !== null,
     date: r.publishedAt ? formatDateShort(r.publishedAt) : null,
     author: fullName(r.author),
   }));
   return {
-    published: posts.filter((p) => p.published),
-    drafts: posts.filter((p) => !p.published),
+    published: posts.filter((p) => p.status === "published"),
+    toReview: posts.filter((p) => p.status === "review" && !p.mine),
+    drafts: posts.filter((p) => p.status !== "published" && p.mine),
     canCurate: core,
   };
 }
@@ -88,14 +100,14 @@ type Post = Awaited<ReturnType<typeof loader>>["published"][number];
 
 function Byline({ post, showPin }: { post: Post; showPin: boolean }) {
   return (
-    <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-os-grey">
+    <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-os-grey">
       {showPin && post.pinned && (
         <Tooltip content="Pinned">
           <Pin className="h-3.5 w-3.5 fill-current" aria-label="Pinned" />
         </Tooltip>
       )}
       {post.author}
-      {post.date && <span className="font-normal normal-case tracking-normal">· {post.date}</span>}
+      {post.date && <span className="font-normal normal-case tracking-normal">{post.date}</span>}
       {post.isPublic && (
         <Tooltip content="Also on the DALI website">
           <Globe className="h-3.5 w-3.5" aria-label="Public" />
@@ -174,7 +186,7 @@ function Story({
         >
           <h2
             className={cn(
-              "font-serif font-bold leading-tight text-foreground group-hover:underline",
+              "font-heading font-semibold leading-tight text-foreground group-hover:underline",
               size === "lead" ? "text-3xl xl:text-4xl" : "text-lg",
             )}
           >
@@ -183,7 +195,7 @@ function Story({
           {post.excerpt && size !== "side" && (
             <p
               className={cn(
-                "font-serif text-os-grey",
+                "text-os-grey",
                 size === "lead" ? "line-clamp-5 text-base" : "line-clamp-2 text-sm",
               )}
             >
@@ -207,10 +219,44 @@ function Story({
   );
 }
 
+function UnpublishedList({
+  title,
+  posts,
+  to,
+  showAuthor,
+}: {
+  title: string;
+  posts: Post[];
+  to: "blog" | "write";
+  showAuthor?: boolean;
+}) {
+  return (
+    <section className="border-t border-foreground pt-6">
+      <h2 className="text-xs font-semibold uppercase tracking-widest text-os-grey">{title}</h2>
+      <ul className="mt-2 divide-y divide-border">
+        {posts.map((p) => (
+          <li key={p.id}>
+            <Link
+              to={`/resources/${to}/${p.id}`}
+              className="flex items-center justify-between gap-4 py-3 hover:underline"
+            >
+              <span className="font-heading text-lg font-semibold text-foreground">{p.title}</span>
+              <span className="flex shrink-0 items-center gap-3 text-sm text-os-grey">
+                {showAuthor && p.author}
+                <BlogStatusPill status={p.status} />
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export default function ResourcesFrontPage() {
-  const { published, drafts, canCurate } = useLoaderData<typeof loader>();
+  const { published, toReview, drafts, canCurate } = useLoaderData<typeof loader>();
   const fetcher = useFetcher();
-  const [editing, setEditing] = useState(false);
+  const { editing } = useOutletContext<ResourcesOutletContext>();
   const [lead, ...rest] = published;
   const side = rest.slice(0, 3);
   const more = rest.slice(3);
@@ -227,21 +273,8 @@ export default function ResourcesFrontPage() {
 
   return (
     <div className="flex flex-col gap-8 pt-4">
-      <div className="flex min-h-9 justify-end">
-        {canCurate && lead && (
-          <button
-            type="button"
-            onClick={() => setEditing((on) => !on)}
-            aria-pressed={editing}
-            className="os-btn-primary os-btn-primary--sm"
-          >
-            {editing ? <Check className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
-            {editing ? "Done" : "Edit"}
-          </button>
-        )}
-      </div>
       {!lead && (
-        <p className="py-16 text-center font-serif text-lg text-os-grey">
+        <p className="py-16 text-center text-lg text-os-grey">
           Nothing published yet. Write the first post.
         </p>
       )}
@@ -268,26 +301,10 @@ export default function ResourcesFrontPage() {
           ))}
         </section>
       )}
-      {drafts.length > 0 && (
-        <section className="border-t border-foreground pt-6">
-          <h2 className="text-xs font-semibold uppercase tracking-widest text-os-grey">
-            Your drafts
-          </h2>
-          <ul className="mt-2 divide-y divide-border">
-            {drafts.map((p) => (
-              <li key={p.id}>
-                <Link
-                  to={`/resources/write/${p.id}`}
-                  className="flex items-center justify-between gap-4 py-3 hover:underline"
-                >
-                  <span className="font-serif text-lg font-bold text-foreground">{p.title}</span>
-                  <Pill dot="neutral">Draft</Pill>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
+      {toReview.length > 0 && (
+        <UnpublishedList title="Waiting for approval" posts={toReview} to="blog" showAuthor />
       )}
+      {drafts.length > 0 && <UnpublishedList title="Your drafts" posts={drafts} to="write" />}
     </div>
   );
 }
