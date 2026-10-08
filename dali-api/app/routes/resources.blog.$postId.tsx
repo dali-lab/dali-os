@@ -78,9 +78,9 @@ export default function BlogPostPage() {
       <div className="border-b border-border pb-4">
         <h1 className="font-heading text-5xl font-semibold leading-tight text-foreground">{post.title}</h1>
         {post.summary && <p className="mt-3 text-xl text-os-grey">{post.summary}</p>}
-        <p className="mt-3 text-xs font-semibold uppercase tracking-wider text-os-grey">
+        <p className="mt-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-os-grey">
           {post.author}
-          {post.date && <span className="font-normal normal-case tracking-normal"> · {post.date}</span>}
+          {post.date && <span className="font-normal normal-case tracking-normal">{post.date}</span>}
         </p>
         {canEdit && (
           <div className="-ml-1.5 mt-2 flex items-center gap-1">

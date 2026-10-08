@@ -100,14 +100,14 @@ type Post = Awaited<ReturnType<typeof loader>>["published"][number];
 
 function Byline({ post, showPin }: { post: Post; showPin: boolean }) {
   return (
-    <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-os-grey">
+    <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-os-grey">
       {showPin && post.pinned && (
         <Tooltip content="Pinned">
           <Pin className="h-3.5 w-3.5 fill-current" aria-label="Pinned" />
         </Tooltip>
       )}
       {post.author}
-      {post.date && <span className="font-normal normal-case tracking-normal">· {post.date}</span>}
+      {post.date && <span className="font-normal normal-case tracking-normal">{post.date}</span>}
       {post.isPublic && (
         <Tooltip content="Also on the DALI website">
           <Globe className="h-3.5 w-3.5" aria-label="Public" />
