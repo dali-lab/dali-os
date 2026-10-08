@@ -76,8 +76,8 @@ export default function BlogPostPage() {
         )}
       </div>
       <div className="border-b border-border pb-4">
-        <h1 className="font-serif text-5xl font-bold leading-tight text-foreground">{post.title}</h1>
-        {post.summary && <p className="mt-3 font-serif text-xl text-os-grey">{post.summary}</p>}
+        <h1 className="font-heading text-5xl font-semibold leading-tight text-foreground">{post.title}</h1>
+        {post.summary && <p className="mt-3 text-xl text-os-grey">{post.summary}</p>}
         <p className="mt-3 text-xs font-semibold uppercase tracking-wider text-os-grey">
           {post.author}
           {post.date && <span className="font-normal normal-case tracking-normal"> · {post.date}</span>}

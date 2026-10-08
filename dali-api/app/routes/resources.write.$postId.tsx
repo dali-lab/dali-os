@@ -137,7 +137,7 @@ function TitleField({ title, onSave }: { title: string; onSave: (title: string) 
   };
   useEffect(() => {
     fit();
-    // The serif face can land after first paint and re-wrap the line.
+    // The heading face can land after first paint and re-wrap the line.
     void document.fonts?.ready.then(fit);
     window.addEventListener("resize", fit);
     return () => window.removeEventListener("resize", fit);
@@ -163,7 +163,7 @@ function TitleField({ title, onSave }: { title: string; onSave: (title: string) 
       }}
       // Same inline gutter as the editor below (its block-handle column),
       // so the title sits flush with the body text.
-      className="block w-full resize-none overflow-hidden bg-transparent px-3 sm:px-[54px] font-serif text-5xl font-bold leading-tight text-foreground outline-none placeholder:text-os-muted"
+      className="block w-full resize-none overflow-hidden bg-transparent px-3 sm:px-[54px] font-heading text-5xl font-semibold leading-tight text-foreground outline-none placeholder:text-os-muted"
     />
   );
 }

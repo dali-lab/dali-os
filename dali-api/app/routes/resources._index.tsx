@@ -1,7 +1,7 @@
-import { useState } from "react";
-import { Link, useFetcher, useLoaderData } from "react-router";
-import { ArrowDown, ArrowUp, Check, Globe, Pencil, Pin, PinOff } from "lucide-react";
+import { Link, useFetcher, useLoaderData, useOutletContext } from "react-router";
+import { ArrowDown, ArrowUp, Globe, Pin, PinOff } from "lucide-react";
 import type { Route } from "./+types/resources._index";
+import type { ResourcesOutletContext } from "./resources";
 import { prisma } from "~/lib/db";
 import { cn } from "~/lib/cn";
 import { fullName, formatDateShort } from "~/lib/display";
@@ -186,7 +186,7 @@ function Story({
         >
           <h2
             className={cn(
-              "font-serif font-bold leading-tight text-foreground group-hover:underline",
+              "font-heading font-semibold leading-tight text-foreground group-hover:underline",
               size === "lead" ? "text-3xl xl:text-4xl" : "text-lg",
             )}
           >
@@ -195,7 +195,7 @@ function Story({
           {post.excerpt && size !== "side" && (
             <p
               className={cn(
-                "font-serif text-os-grey",
+                "text-os-grey",
                 size === "lead" ? "line-clamp-5 text-base" : "line-clamp-2 text-sm",
               )}
             >
@@ -240,7 +240,7 @@ function UnpublishedList({
               to={`/resources/${to}/${p.id}`}
               className="flex items-center justify-between gap-4 py-3 hover:underline"
             >
-              <span className="font-serif text-lg font-bold text-foreground">{p.title}</span>
+              <span className="font-heading text-lg font-semibold text-foreground">{p.title}</span>
               <span className="flex shrink-0 items-center gap-3 text-sm text-os-grey">
                 {showAuthor && p.author}
                 <BlogStatusPill status={p.status} />
@@ -256,7 +256,7 @@ function UnpublishedList({
 export default function ResourcesFrontPage() {
   const { published, toReview, drafts, canCurate } = useLoaderData<typeof loader>();
   const fetcher = useFetcher();
-  const [editing, setEditing] = useState(false);
+  const { editing } = useOutletContext<ResourcesOutletContext>();
   const [lead, ...rest] = published;
   const side = rest.slice(0, 3);
   const more = rest.slice(3);
@@ -273,21 +273,8 @@ export default function ResourcesFrontPage() {
 
   return (
     <div className="flex flex-col gap-8 pt-4">
-      <div className="flex min-h-9 justify-end">
-        {canCurate && lead && (
-          <button
-            type="button"
-            onClick={() => setEditing((on) => !on)}
-            aria-pressed={editing}
-            className="os-btn-primary os-btn-primary--sm"
-          >
-            {editing ? <Check className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
-            {editing ? "Done" : "Edit"}
-          </button>
-        )}
-      </div>
       {!lead && (
-        <p className="py-16 text-center font-serif text-lg text-os-grey">
+        <p className="py-16 text-center text-lg text-os-grey">
           Nothing published yet. Write the first post.
         </p>
       )}
