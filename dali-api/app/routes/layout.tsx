@@ -68,7 +68,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   // the launch tour whether to offer the "connect your calendar" step.
   const [partnerRedirect, roles, activeCycles, sidebarPages, me] = await Promise.all([
     timed(request, 'partnerCheck', () => redirectPartnerToPortal(auth)),
-    timed(request, 'roles', () => getUserRoles(auth.user.sub)),
+    timed(request, 'roles', () => getUserRoles(auth.user.sub, request)),
     // Every active cycle, whoever it's for: any number can be live at once.
     timed(request, 'activeCycles', () => getActiveCycles()),
     // Powers the sidebar Favorites + Recent lists (same source as the Home
@@ -112,41 +112,39 @@ export async function loader({ request }: Route.LoaderArgs) {
     if (!instructorPaths) return (await publicDoc()) ?? redirect('/portal')
   }
 
-  // Hard gate: a lab member who owes a signature on an app-enforced agreement
-  // (membership, mentorship) can only reach the signing surface until they
-  // sign. /sign* and /logout are exempt to avoid a redirect loop. Confidentiality
-  // is HiringCycle-scoped and gated inside hiring, so it never triggers here.
+  // Hard gates, resolved together since neither depends on the other:
+  // - Signing: a lab member who owes a signature on an app-enforced agreement
+  //   (membership, mentorship) can only reach the signing surface until they
+  //   sign. /sign* and /logout are exempt to avoid a redirect loop.
+  //   Confidentiality is HiringCycle-scoped and gated inside hiring.
+  // - Bound-form app-lock: the staffing analog. A member in a locked staffing
+  //   form's audience who hasn't filled it is redirected to the fill page.
+  //   Exempt the fill surface, /logout, and /sign (don't fight the signing gate).
+  // The signing gate takes precedence when both are owed.
   {
     const url = new URL(request.url)
     const path = url.pathname
-    const gateExempt =
+    const signExempt =
       path === '/sign' || path.startsWith('/sign/') || path.startsWith('/logout')
-    if (isLabMember && !gateExempt) {
-      const outstanding = await timed(request, 'appGate', () => getAppGateOutstanding(auth.user.sub, request))
-      if (outstanding) {
-        return redirect(
-          `/sign/${outstanding.bindingId}?next=${encodeURIComponent(path + url.search)}`,
-        )
-      }
-    }
-  }
-
-  // Bound-form app-lock: the staffing analog of the signing gate above.
-  // A member in a locked staffing form's audience
-  // who hasn't filled it is redirected to the fill page until they do. Exempt
-  // the fill surface itself, /logout, and /sign (don't fight the signing gate).
-  {
-    const url = new URL(request.url)
-    const path = url.pathname
-    const gateExempt =
+    const formExempt =
       path.startsWith('/forms/fill/') || path.startsWith('/logout') || path.startsWith('/sign')
-    if (isLabMember && !gateExempt) {
-      const owed = await timed(request, 'formGate', () => getBoundFormGateOutstanding(auth.user.sub, request))
-      if (owed) {
-        return redirect(
-          `/forms/fill/${owed.token}?next=${encodeURIComponent(path + url.search)}`,
-        )
-      }
+    const [outstanding, owed] = await Promise.all([
+      isLabMember && !signExempt
+        ? timed(request, 'appGate', () => getAppGateOutstanding(auth.user.sub, request))
+        : Promise.resolve(null),
+      isLabMember && !formExempt
+        ? timed(request, 'formGate', () => getBoundFormGateOutstanding(auth.user.sub, request))
+        : Promise.resolve(null),
+    ])
+    if (outstanding) {
+      return redirect(
+        `/sign/${outstanding.bindingId}?next=${encodeURIComponent(path + url.search)}`,
+      )
+    }
+    if (owed) {
+      return redirect(
+        `/forms/fill/${owed.token}?next=${encodeURIComponent(path + url.search)}`,
+      )
     }
   }
 
@@ -164,7 +162,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   // closes, instead of sticking around forever.
   const liveCycleIds = activeCycles.map((c) => c.id)
 
-  const [activeInterviewer, anyCycleReviewer, liveCycleRole, labMentor, photoUrl, flags] = await Promise.all([
+  const [activeInterviewer, anyCycleReviewer, liveCycleRole, labMentor, photoUrl, flags, activeActivities] = await Promise.all([
     timed(request, 'hiringGate', () =>
       isLabMember && liveCycleIds.length > 0
         ? prisma.cycleInterviewer.findFirst({
@@ -191,10 +189,16 @@ export async function loader({ request }: Route.LoaderArgs) {
     // Mentorship area gate: Core (with admin) + any active lab mentor. Hidden
     // from mentees and non-mentor members entirely.
     timed(request, 'mentorGate', () =>
-      isLabMember && !core ? isLabMentor(auth.user.sub) : Promise.resolve(false)),
+      isLabMember && !core ? isLabMentor(auth.user.sub, undefined, request) : Promise.resolve(false)),
     resolvePhotoUrl(me?.photoUrl),
     // Feature flags resolved once, plumbed to the client via FeatureFlagsProvider.
     timed(request, 'flags', () => resolveFeatureFlags(auth.user.sub, roles)),
+    // Activities (specs/activities.md): the time-boxed "mode" layer. Resolved
+    // with the current path so the overlay payload only carries THIS route's
+    // codes — the answers for other routes never reach the client.
+    timed(request, 'activities', () =>
+      resolveActiveActivitiesForUser(auth.user.sub, roles, new Date(), pathname),
+    ),
   ])
 
   const isInterviewer = !!activeInterviewer
@@ -224,18 +228,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Focus mode: hide the sidebar (navigate via ⌘K + breadcrumbs). Independent
   // of tabless; also cookie-backed so there's no flash of the sidebar.
   const focus = isFocusRequest(request)
-
-  // Activities (specs/activities.md): the time-boxed "mode" layer. Resolved
-  // with the current path so the overlay payload only carries THIS route's
-  // codes — the answers for other routes never reach the client.
-  const activeActivities = await timed(request, 'activities', () =>
-    resolveActiveActivitiesForUser(
-      auth.user.sub,
-      roles,
-      new Date(),
-      new URL(request.url).pathname,
-    ),
-  )
 
   // Per-user display timezone, threaded to every descendant via
   // useUserTimeZone() so client formatting matches the server (hydration-safe).

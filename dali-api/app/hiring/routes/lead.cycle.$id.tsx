@@ -11,6 +11,7 @@ import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isAdmin, isCore, isCycleAdmin } from "~/lib/roles";
 import { changeApplicants } from "~/hiring/lib/cycle-applicants.server";
+import { invalidateActiveCycles } from "~/hiring/lib/cycles";
 import {
   loadStartTermCandidates,
   parseStartTermIds,
@@ -462,6 +463,7 @@ async function reopenIfNeeded(
   await tx.applicationCycleStatusUpdate.create({
     data: { applicationCycleId: cycleId, newStatus: "Open", userId },
   });
+  invalidateActiveCycles();
   return true;
 }
 

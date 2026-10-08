@@ -2,6 +2,7 @@ import { prisma } from "~/lib/db";
 import { isAdminOnlyCycle } from "~/hiring/lib/applicant-groups";
 import { cycleSortKeyRange } from "~/lib/core-cycle";
 import { cachedForRequest } from "~/lib/request-cache";
+import { cachedForTtl } from "~/lib/ttl-cache";
 import type { AssignmentType, OfferingType } from "~/generated/prisma/client";
 import { ACTIVE_LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
 
@@ -633,12 +634,21 @@ export async function requireMember(userId: string) {
  * Returns null only if the Term table is empty (i.e. v0-reference seed
  * hasn't run).
  */
+// Term rows change only at seed time, so the calendar lookups below sit behind
+// a short process-local TTL: a 60s-stale read at the exact term rollover is
+// harmless, and it removes a Postgres round-trip from every navigation.
+const TERM_CACHE_TTL_MS = 60_000;
+
 export async function currentTerm(request?: Request) {
   if (!request) return computeCurrentTerm();
   return cachedForRequest(request, "currentTerm", () => computeCurrentTerm());
 }
 
-async function computeCurrentTerm() {
+function computeCurrentTerm() {
+  return cachedForTtl("term:current", TERM_CACHE_TTL_MS, computeCurrentTermUncached);
+}
+
+async function computeCurrentTermUncached() {
   const now = new Date();
   const active = await prisma.term.findFirst({
     where: { startDate: { lte: now }, endDate: { gte: now } },
@@ -662,7 +672,11 @@ export async function currentTermStrict(request?: Request) {
   return cachedForRequest(request, "currentTermStrict", () => computeCurrentTermStrict());
 }
 
-async function computeCurrentTermStrict() {
+function computeCurrentTermStrict() {
+  return cachedForTtl("term:currentStrict", TERM_CACHE_TTL_MS, computeCurrentTermStrictUncached);
+}
+
+async function computeCurrentTermStrictUncached() {
   const now = new Date();
   return prisma.term.findFirst({
     where: { startDate: { lte: now }, endDate: { gte: now } },
@@ -769,7 +783,13 @@ export async function getActiveCoreCycleTermIds(request?: Request): Promise<stri
   );
 }
 
-async function computeGetActiveCoreCycleTermIds(request?: Request): Promise<string[]> {
+function computeGetActiveCoreCycleTermIds(request?: Request): Promise<string[]> {
+  return cachedForTtl("term:activeCoreCycleIds", TERM_CACHE_TTL_MS, () =>
+    computeGetActiveCoreCycleTermIdsUncached(request),
+  );
+}
+
+async function computeGetActiveCoreCycleTermIdsUncached(request?: Request): Promise<string[]> {
   const term = await currentTerm(request);
   if (!term) return [];
   const currentRange = cycleSortKeyRange(term.sortKey);
