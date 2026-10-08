@@ -1,7 +1,7 @@
 import { type CSSProperties, useEffect, useMemo, useState } from "react";
 import { isAdminOnlyCycle } from "~/hiring/lib/applicant-groups";
 import { Link, redirect, useFetcher, useLoaderData } from "react-router";
-import { Check, GripVertical, X } from "lucide-react";
+import { Check, GripVertical } from "lucide-react";
 import {
   DndContext,
   MouseSensor,
@@ -21,7 +21,6 @@ import { CSS } from "@dnd-kit/utilities";
 import { Tooltip } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
 import { Button } from "~/components/ui/Button";
-import { IconButton } from "~/components/ui/IconButton";
 import { FilterPill } from "~/components/ui/filter-panel";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
@@ -308,8 +307,10 @@ function WaitlistRow({
       !(await dialog.confirm({
         title: `Remove ${fullName(entry)} from the waitlist?`,
         description:
-          "No email will be sent. The applicant's other waitlist entries (if any) are unaffected.",
-        confirmLabel: "Remove",
+          entry.cycle.applicants === "Students"
+            ? "They get the continued interest email, inviting them to reapply next cycle with this application. Their other waitlist entries are unaffected."
+            : "No email will be sent. Their other waitlist entries are unaffected.",
+        confirmLabel: "Remove from waitlist",
         tone: "destructive",
       }))
     )
@@ -365,14 +366,16 @@ function WaitlistRow({
         {error && <div className="mt-1 text-sm text-accent-coral">{error}</div>}
       </div>
 
-      <div className="flex shrink-0 items-center gap-1">
+      <div className="flex shrink-0 items-center gap-2">
         <Tooltip content="Runs the full release: member promotion, account setup, and the acceptance email, even if the cycle is closed.">
           <Button size="sm" onClick={onAccept} disabled={busy}>
             <Check className="h-4 w-4" aria-hidden />
             Accept
           </Button>
         </Tooltip>
-        <IconButton label="Remove" icon={X} tone="destructive" onClick={onRemove} disabled={busy} />
+        <Button variant="secondary" size="sm" onClick={onRemove} disabled={busy}>
+          Remove from waitlist
+        </Button>
       </div>
     </li>
   );

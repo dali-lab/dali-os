@@ -22,6 +22,7 @@ import { ensureBlocks } from '~/collab/legacy/pm-to-blocknote'
 import { safeParseJsonString } from '~/forms/lib/forms-data'
 import type { Route } from './+types/reviewer.application.$id'
 import { ApplicationViewer } from '~/hiring/components/ApplicationViewer'
+import { loadContinuedInterestView } from '~/hiring/lib/continued-interest.server'
 import { SaveStatusIndicator } from '~/hiring/components/SaveStatusIndicator'
 import { DocEditor } from '~/components/doc'
 import { PresenceProvider } from '~/components/collab/PresenceProvider'
@@ -171,6 +172,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         ...da,
         challengeVersion,
         answers: await presignAnswers(questions, da.answers as Record<string, string>),
+        continuedInterest: await loadContinuedInterestView(da),
       }
     }),
   )
