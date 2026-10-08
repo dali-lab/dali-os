@@ -14,13 +14,6 @@ vi.mock("~/lib/outbound.server", () => ({
   enqueueOutbound: vi.fn(),
   drainNow: vi.fn(),
 }));
-// Off by default, matching the registry, so every describe below exercises the
-// pre-feature behavior. The start-term describe turns it on for itself.
-const mockStartTermsFlag = vi.fn().mockResolvedValue(false);
-vi.mock("~/lib/feature-flags.server", () => ({
-  isFeatureEnabledForEveryone: (key: string) =>
-    key === "start-terms" ? mockStartTermsFlag() : Promise.resolve(false),
-}));
 vi.mock("~/hiring/lib/email-variables", async () => {
   const actual = await vi.importActual<typeof import("~/hiring/lib/email-variables")>(
     "~/hiring/lib/email-variables",
@@ -106,8 +99,6 @@ const domainQuestions = [
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // clearAllMocks wipes the resolved value too, so restore the default.
-  mockStartTermsFlag.mockResolvedValue(false);
   (mockPrisma as any).application = {
     // The action's ownership check: the application is the caller's own.
     findFirst: vi.fn().mockResolvedValue({ id: APP_ID, applicationCycleId: CYCLE_ID }),
@@ -827,7 +818,6 @@ describe("POST /portal/apply — start term", () => {
     mockPrisma.application.update.mock.calls.at(-1)?.[0]?.data;
 
   beforeEach(() => {
-    mockStartTermsFlag.mockResolvedValue(true);
     vi.mocked(getActiveCycleById).mockResolvedValue(CHOICE_CYCLE as any);
     // No questions to answer, so the start term is the only submit gate.
     mockPrisma.application.findUnique.mockResolvedValue({
@@ -911,12 +901,6 @@ describe("POST /portal/apply — start term", () => {
     } as any);
 
     expect(mockPrisma.application.upsert.mock.calls[0][0].create.startTermId).toBe(T_26F);
-  });
-
-  it("writes no start term at all while the flag is off", async () => {
-    mockStartTermsFlag.mockResolvedValue(false);
-    await action({ request: submitWith(T_26F), params: {}, context: {} } as any);
-    expect(lastUpdateData()).not.toHaveProperty("startTermId");
   });
 });
 

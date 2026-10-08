@@ -5,6 +5,9 @@ vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
 }));
 vi.mock("~/lib/roles");
+vi.mock("~/hiring/lib/email-engagement.server", () => ({
+  getApplicantEmailEngagement: vi.fn(async () => null),
+}));
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";

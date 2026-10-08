@@ -50,18 +50,6 @@ export type FeatureFlagDef = {
 
 export const FEATURE_FLAGS = [
   {
-    key: "email-layout",
-    label: "Standard email layout",
-    description:
-      "Wraps outbound email in one branded layout instead of the four hand-rolled styles it uses today: a real HTML document with a light/dark-aware single-column 600px body, one greeting, one button style, and one footer. Also gives every email a plain-text alternative, which most currently ship without. Content is unchanged — only the frame around it. Ships off.",
-  },
-  {
-    key: "optimal-times",
-    label: "Find best meeting times",
-    description:
-      "Suggests the best meeting times in the scheduler. Once people are added, the top 3 slots where the most participants (with a linked calendar) are free show as numbered dotted outlines on the availability grid, with a matching button for each above Starts / Ends that fills in the time. Ships off.",
-  },
-  {
     key: "infra-dashboard",
     label: "Infrastructure dashboard",
     description:
@@ -72,12 +60,6 @@ export const FEATURE_FLAGS = [
     label: "Project AI TL;DR",
     description:
       "Adds an AI-written one-or-two-sentence summary of the project's work status beneath the status bar. Only shows when an AI provider is configured. Ships off.",
-  },
-  {
-    key: "mentorship-nudge",
-    label: "Nudge mentors on Slack",
-    description:
-      "Adds Core-only buttons on the Mentorship notes grid to Slack-DM mentors who haven't filled in their notes — a bulk 'Message mentors who haven't filled in' button (with an editable message + recipient preview) and a per-mentor nudge. Each mentor also gets an in-app notification. The Slack DM is force-sent regardless of the mentor's notification preferences, but stays prod-gated (staging/dev report 'not sent' unless NOTIFY_SLACK_DM_OVERRIDE=1). Ships off.",
   },
   {
     key: "education-redesign-v2",
@@ -108,18 +90,6 @@ export const FEATURE_FLAGS = [
     label: "Email: personal DALI inbox",
     description:
       "Lets a member connect their own @dali.dartmouth.edu mailbox to the Email tab, next to project and shared inboxes. Only they can read it. Connecting requires agreeing to a risk notice first, and each agreement is recorded in the audit log. Turning this off hides connected personal inboxes without deleting the sign-in. Ships off.",
-  },
-  {
-    key: "applicant-email-engagement",
-    label: "Applicant email engagement",
-    description:
-      "Indexes the applications@ inbox (headers only) and shows an applicant's email history on hiring review pages, with a thread viewer and manual link/unlink in the Email tab. Ships off.",
-  },
-  {
-    key: "start-terms",
-    label: "Application start terms",
-    description:
-      "Separates the term a hiring cycle runs in from the term its hires start in. A Students cycle's setup gains a list of start terms it offers; applicants pick one on the application, and Core can change it afterward from the hiring onboarding board, which gains a Starts column and filters by cycle, start term, or both at once. A cycle with no start terms set shows no picker and reads as it does today. Ships off.",
   },
 ] as const satisfies readonly FeatureFlagDef[];
 

@@ -1,11 +1,9 @@
 // Composition for the generic member-facing email that notify() sends: a
 // greeting, an optional title heading, a body, an optional call to action, and a
-// footer. Two renderers over the same inputs — the pre-layout fragment and the
-// laid-out document — so the `email-layout` flag can pick between them and the
-// two can be diffed in a test.
+// footer, inside the shared layout.
 //
-// A leaf module: pure, no prisma, no flag lookup. layout.server.ts adds the
-// flag; keeping that out of here is what stops a cycle with notify.server.ts.
+// A leaf module: pure, no prisma. layout.server.ts adds the frontend URL;
+// keeping that out of here is what stops a cycle with notify.server.ts.
 
 import { bodyToHtml, sanitizeRichEmailHtml, htmlToPlainText } from "~/lib/email";
 
@@ -34,31 +32,9 @@ function resolveBody(args: MemberEmailArgs): string {
   return "";
 }
 
-// The shape this email had before the shared layout: a bare sequence of <p>
-// elements with no document around them. Kept byte-for-byte so turning the
-// `email-layout` flag off is a true revert, and so a test can assert the laid-out
-// version carries the same links and the same words.
-export function renderMemberEmailFragment(args: MemberEmailArgs): string {
-  const label = args.linkLabel || DEFAULT_CTA_LABEL;
-  const button = args.link
-    ? `<p><a href="${args.link}" style="display:inline-block;padding:10px 16px;background:#18181b;color:#ffffff;text-decoration:none;border-radius:6px;">${label}</a></p>`
-    : "";
-  return [
-    `<p>Hi ${args.firstName},</p>`,
-    args.titleInBody === false ? "" : `<p><strong>${args.title}</strong></p>`,
-    resolveBody(args),
-    button,
-    `<p style="color:#71717a;font-size:12px;">— DALI OS · <a href="${args.baseUrl}/settings/notifications" style="color:#71717a;">notification settings</a></p>`,
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
-
-// The same email inside the shared layout. Differences from the fragment, all
-// deliberate: the greeting and title are escaped (they were interpolated raw),
-// the CTA is a table-wrapped button that survives Outlook, the footer comes from
-// the layout so every email ends the same way, and a plain-text part is produced
-// alongside rather than being derived downstream.
+// The greeting and title are escaped (they come from the DB), the CTA is a
+// table-wrapped button that survives Outlook, the footer comes from the layout
+// so every email ends the same way, and a plain-text part is produced alongside.
 export function renderMemberEmailDocument(args: MemberEmailArgs): {
   html: string;
   text: string;

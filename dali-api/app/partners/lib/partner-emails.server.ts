@@ -9,8 +9,7 @@ import { renderFramedEmail } from "~/email/lib/layout.server";
 // have a Google account.
 //
 // Every body is composed here and framed by the shared layout. Two things changed
-// when that landed, both correctness rather than style and both applying whether
-// or not the `email-layout` flag is on:
+// when that landed, both correctness rather than style:
 //
 //  * Interpolated values are escaped. Contact names, org names and the free-text
 //    blocks an operator types in the triage/reject/learn-more modals were spliced

@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  renderMemberEmailDocument,
-  renderMemberEmailFragment,
-  type MemberEmailArgs,
-} from "~/email/lib/member-email";
+import { renderMemberEmailDocument, type MemberEmailArgs } from "~/email/lib/member-email";
 
 const BASE = "https://os.dali.dartmouth.edu";
 
@@ -25,18 +21,15 @@ function words(html: string): string {
   return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 }
 
-describe("fragment and document parity", () => {
-  // The guard on the `email-layout` migration: the frame changes, the content
-  // does not. A link or a sentence that exists in one and not the other is a
-  // regression, not a redesign.
-  it("carries the same set of links", () => {
-    const fragment = renderMemberEmailFragment(ARGS);
-    const document = renderMemberEmailDocument(ARGS).html;
-    expect(links(document)).toEqual(links(fragment));
+describe("renderMemberEmailDocument content", () => {
+  it("links the CTA and the notification settings", () => {
+    expect(links(renderMemberEmailDocument(ARGS).html)).toEqual([
+      `${BASE}/projects/1/tasks/2`,
+      `${BASE}/settings/notifications`,
+    ]);
   });
 
-  it("carries the greeting, title and body text in both", () => {
-    const fragment = words(renderMemberEmailFragment(ARGS));
+  it("carries the greeting, title and body text", () => {
     const document = words(renderMemberEmailDocument(ARGS).html);
     for (const phrase of [
       "Hi Ada,",
@@ -45,26 +38,18 @@ describe("fragment and document parity", () => {
       "It is due Friday.",
       "Open the task",
     ]) {
-      expect(fragment).toContain(phrase);
       expect(document).toContain(phrase);
     }
   });
 
-  it("drops the in-body title in both when the caller asks", () => {
-    const args = { ...ARGS, titleInBody: false as const };
-    const fragment = renderMemberEmailFragment(args);
-    const document = renderMemberEmailDocument(args).html;
+  it("drops the in-body title when the caller asks", () => {
+    const document = renderMemberEmailDocument({ ...ARGS, titleInBody: false }).html;
     // Still the subject, just not repeated as a heading.
     expect(document).not.toContain("<h1");
-    expect(fragment).not.toContain("<strong>Task assigned");
   });
 
-  it("omits the CTA in both when there is no link", () => {
-    const args = { ...ARGS, link: null };
-    expect(links(renderMemberEmailFragment(args))).toEqual([
-      `${BASE}/settings/notifications`,
-    ]);
-    expect(links(renderMemberEmailDocument(args).html)).toEqual([
+  it("omits the CTA when there is no link", () => {
+    expect(links(renderMemberEmailDocument({ ...ARGS, link: null }).html)).toEqual([
       `${BASE}/settings/notifications`,
     ]);
   });
