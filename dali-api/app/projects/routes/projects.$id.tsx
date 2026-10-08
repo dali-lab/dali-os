@@ -120,6 +120,7 @@ import { reportMoveBatch, runMoveBatch, itemCount } from "~/components/drive/mov
 import { useDriveFileUpload } from "~/components/drive/useDriveFileUpload";
 import { useToast } from "~/components/ui/toast";
 import { filterPillClass } from "~/components/ui/floating/styles";
+import { Button } from "~/components/ui/Button";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const p = (data as { project?: { name: string } } | undefined)?.project;
@@ -3768,9 +3769,9 @@ function SaveAsTemplateSection({
           <input type="checkbox" name="includeOverviewPage" className="accent-accent-coral" />
           Include Overview page
         </label>
-        <button type="submit" className="rounded-md bg-accent-coral px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-coral/90 transition-colors">
+        <Button type="submit" size="sm">
           Save template
-        </button>
+        </Button>
       </Form>
     </section>
   );

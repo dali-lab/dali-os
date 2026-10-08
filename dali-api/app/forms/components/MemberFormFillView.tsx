@@ -214,7 +214,7 @@ export function MemberFormShell({
 
   return (
     <div className="min-h-screen bg-section-bg p-4 sm:p-8 pt-10 sm:pt-16">
-      <div className="mx-auto max-w-2xl bg-card border border-border shadow-brand-1 rounded-xl p-6 sm:p-8">
+      <div className="mx-auto max-w-2xl bg-card border border-border rounded-os-card p-6 sm:p-8">
         <div className="flex items-center gap-2 mb-6">
           {allowExit && isDesktop && (
             <button

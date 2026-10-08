@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { redirect, useLoaderData, useSearchParams } from "react-router";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Repeat, X } from "lucide-react";
 import type { Route } from "./+types/rooms";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
@@ -19,6 +19,7 @@ import { Select } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 import { cn } from "~/lib/cn";
+import { NO_REPEAT, RepeatField, repeatSpecToRRule, type RepeatSpec } from "~/calendar/components/RepeatField";
 
 export const meta: Route.MetaFunction = () => [{ title: "Rooms · DALI OS" }];
 
@@ -45,6 +46,8 @@ type ScheduleItem = {
   title: string;
   start: string;
   end: string;
+  occurrenceStart: string;
+  recurring: boolean;
   organizer: { id: string; firstName: string; lastName: string };
   isEvent: boolean;
 };
@@ -163,6 +166,36 @@ export default function RoomsPage() {
 
   const cancelBooking = async (item: ScheduleItem) => {
     const underway = new Date(item.start) <= new Date();
+
+    if (item.recurring) {
+      const scope = await dialog.choice({
+        title: "Cancel repeating booking",
+        options: [
+          { value: "this", label: "This time only", description: "The rest of the series stays." },
+          { value: "following", label: "This and following", description: "Earlier times stay." },
+          { value: "all", label: "Whole series" },
+        ],
+        cancelLabel: "Keep it",
+      });
+      if (!scope) return;
+      const res = await fetch(`/api/room-bookings/${item.id}/cancel`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scope, occurrenceStart: item.occurrenceStart }),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        toast.error(json.error ?? "Couldn't cancel the booking.");
+        return;
+      }
+      if (scope === "this") toast.success(underway ? "Booking ended." : "Booking cancelled.");
+      else if (scope === "following") toast.success("Series cancelled from here.");
+      else toast.success("Series cancelled.");
+      void load();
+      return;
+    }
+
     const ok = await dialog.confirm({
       title: underway ? "End this booking now?" : "Cancel this booking?",
       description: underway ? "The rest of the slot frees up for others." : undefined,
@@ -426,7 +459,12 @@ function RoomColumn({
           >
             <div className={cn("flex justify-between gap-2", short ? "h-full items-center" : "items-start")}>
               <div className="min-w-0">
-                <p className="truncate font-medium">{item.title}</p>
+                <div className="flex items-center gap-1">
+                  <p className="min-w-0 truncate font-medium">{item.title}</p>
+                  {item.recurring && (
+                    <Repeat className="h-3 w-3 shrink-0 text-os-grey" aria-label="Repeats" />
+                  )}
+                </div>
                 {height > 36 && (
                   <p className="truncate text-xs text-os-grey">
                     {timeLabel(item.start)} to {timeLabel(item.end)} · {item.organizer.firstName}{" "}
@@ -488,6 +526,7 @@ function BookingModal({
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
   const [title, setTitle] = useState("");
+  const [repeat, setRepeat] = useState<RepeatSpec>(NO_REPEAT);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -496,13 +535,18 @@ function BookingModal({
     setStart(initial.start);
     setEnd(initial.end);
     setTitle("");
+    setRepeat(NO_REPEAT);
   }, [initial]);
 
   const valid = start !== "" && end !== "" && start < end;
+  const rrule = start ? repeatSpecToRRule(repeat, `${dateKey}T${start}`) : null;
+  // The server also rejects a never-ending series; catching it here just
+  // saves the round trip.
+  const repeatNeedsEnd = rrule !== null && repeat.end.type === "never";
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!valid) return;
+    if (!valid || repeatNeedsEnd) return;
     setSaving(true);
     try {
       const res = await fetch(`/api/rooms/${roomId}/bookings`, {
@@ -513,6 +557,7 @@ function BookingModal({
           start: atTime(dateKey, start).toISOString(),
           end: atTime(dateKey, end).toISOString(),
           ...(title.trim() ? { title: title.trim() } : {}),
+          ...(rrule ? { recurrenceRule: rrule } : {}),
         }),
       });
       const json = await res.json().catch(() => ({}));
@@ -520,7 +565,8 @@ function BookingModal({
         toast.error(json.error ?? "Couldn't book the room.");
         return;
       }
-      toast.success(`Booked ${rooms.find((r) => r.id === roomId)?.name ?? "the room"}.`);
+      const roomName = rooms.find((r) => r.id === roomId)?.name ?? "the room";
+      toast.success(rrule ? `Booked ${roomName} for the series.` : `Booked ${roomName}.`);
       onBooked();
     } finally {
       setSaving(false);
@@ -556,6 +602,22 @@ function BookingModal({
             <TimeField value={end} onChange={setEnd} ariaLabel="Ends" className="w-full" />
           </div>
         </div>
+        {start !== "" && (
+          <div className="os-field-group">
+            <RepeatField
+              value={repeat}
+              onChange={setRepeat}
+              anchorLocal={`${dateKey}T${start}`}
+              labelClassName="os-field-label"
+              fieldClassName={chrome.formTrigger}
+            />
+            {repeatNeedsEnd && (
+              <p className="text-xs text-red-600">
+                A repeating booking needs an end date or a number of times.
+              </p>
+            )}
+          </div>
+        )}
         <label className="os-field-group">
           <span>What for</span>
           <input
@@ -567,7 +629,7 @@ function BookingModal({
           />
         </label>
         <ModalFooter onCancel={onClose}>
-          <button type="submit" className="os-btn-primary" disabled={!valid || saving}>
+          <button type="submit" className="os-btn-primary" disabled={!valid || repeatNeedsEnd || saving}>
             Book
           </button>
         </ModalFooter>

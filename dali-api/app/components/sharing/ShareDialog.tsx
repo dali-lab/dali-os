@@ -6,6 +6,7 @@ import { Modal, ModalHeader } from "~/components/Modal";
 import { buttonClasses } from "~/components/ui/Button";
 import { Select, type SelectOption, InfoTip } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
+import { modalCardClass } from "~/components/os-chrome";
 
 // One Share dialog for every document — Project, Lab, EducationOffering and
 // personal notes. Google Docs' shape: add people, a "People with access" list
@@ -238,7 +239,7 @@ export function ShareDialog({
       onClose={onClose}
       labelledBy="share-dialog-title"
       initialFocusRef={searchRef}
-      containerClassName="bg-card rounded-2xl shadow-brand-2 max-w-lg w-full p-5 sm:p-6 my-auto max-h-[85vh] overflow-y-auto"
+      containerClassName={modalCardClass("max-w-lg")}
     >
       <ModalHeader titleId="share-dialog-title" title={`Share “${page.title}”`} onClose={onClose} />
 

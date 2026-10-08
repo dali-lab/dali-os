@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useFetcher, useLoaderData } from "react-router";
 import QRCode from "qrcode";
 import {
@@ -487,8 +487,16 @@ function MeetingProjectModal({
     };
   }, []);
 
+  // Guards against stale fetcher.data from an earlier submit closing a
+  // freshly reopened modal before this one has submitted anything.
+  const submittedRef = useRef(false);
+  // Closes as soon as the action result arrives rather than waiting for the
+  // loader revalidation that follows to finish.
   useEffect(() => {
-    if (fetcher.state === "idle" && fetcher.data?.ok) onClose();
+    if (submittedRef.current && fetcher.state !== "submitting" && fetcher.data?.ok) {
+      submittedRef.current = false;
+      onClose();
+    }
   }, [fetcher.state, fetcher.data, onClose]);
 
   const submitting = fetcher.state !== "idle";
@@ -503,6 +511,7 @@ function MeetingProjectModal({
       meetingType: subtype,
     };
     if (subtype === "Other") fields.meetingTypeLabel = label.trim();
+    submittedRef.current = true;
     fetcher.submit(fields, { method: "post", action: "/calendar" });
   }
 

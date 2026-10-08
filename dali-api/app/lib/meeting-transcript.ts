@@ -34,12 +34,18 @@ export function transcriptText(lines: TranscriptLine[]): string {
     .join("\n");
 }
 
-// What gets appended to the note: the AI write-up when there is one, then the
-// full transcript underneath it.
-export function meetingNotesMarkdown(notes: string | null, lines: TranscriptLine[]): string {
+// The Markdown half of what gets appended to the note: the heading and the AI
+// write-up when there is one. The transcript is appended separately as blocks
+// (see transcriptParagraphs) so it can sit under a collapsed toggle heading,
+// which Markdown can't express.
+export function meetingNotesMarkdown(notes: string | null): string {
   const parts = ["## AI meeting notes"];
   if (notes?.trim()) parts.push(notes.trim());
-  const transcript = transcriptText(lines);
-  if (transcript) parts.push("### Transcript", transcript.split("\n").join("\n\n"));
   return parts.join("\n\n");
+}
+
+// One paragraph per transcript line, in time order.
+export function transcriptParagraphs(lines: TranscriptLine[]): string[] {
+  const text = transcriptText(lines);
+  return text ? text.split("\n") : [];
 }

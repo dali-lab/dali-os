@@ -774,7 +774,7 @@ export function ScheduleWeekGrid({
   // background layer, leaving the Busy blocks out entirely — free vs. busy is
   // already encoded in the cell's saturation.
   const eventsByDay: Record<number, EventBlock[]> = {};
-  const CELL_HOURS = SNAP_HOURS; // 10-minute availability cells
+  const CELL_HOURS = SNAP_HOURS; // 15-minute availability cells
   const GRID_START_H = HOURS[0];
   const GRID_END_H = HOURS[HOURS.length - 1] + 1;
   const CELLS_PER_DAY = Math.round((GRID_END_H - GRID_START_H) / CELL_HOURS);

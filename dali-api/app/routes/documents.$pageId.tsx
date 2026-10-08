@@ -551,10 +551,26 @@ export default function DocumentPage() {
   const onEditorReady = useCallback((ed: DocEditorInstance) => {
     editorRef.current = ed;
   }, []);
-  const insertMarkdown = useCallback((markdown: string) => {
+  const insertMeetingNotes = useCallback((markdown: string, transcript: string[]) => {
     const editor = editorRef.current;
     if (!editor) return false;
-    appendBlocks(editor, editor.tryParseMarkdownToBlocks(markdown));
+    const blocks: Parameters<DocEditorInstance["replaceBlocks"]>[1] = [
+      ...editor.tryParseMarkdownToBlocks(markdown),
+    ];
+    // The transcript is long and rarely read, so it goes under a collapsed
+    // toggle heading; Markdown has no way to say that, hence blocks.
+    if (transcript.length) {
+      blocks.push({
+        type: "heading",
+        props: { level: 3, isToggleable: true },
+        content: [{ type: "text", text: "Transcript", styles: {} }],
+        children: transcript.map((text) => ({
+          type: "paragraph",
+          content: [{ type: "text", text, styles: {} }],
+        })),
+      });
+    }
+    appendBlocks(editor, blocks);
     return true;
   }, []);
 
@@ -590,7 +606,7 @@ export default function DocumentPage() {
         <>
           {attendance && <AttendanceButton attendance={attendance} />}
           {recordingEnabled && canEdit && (
-            <MeetingRecorder documentName={pageDocName(pageId)} onInsert={insertMarkdown} />
+            <MeetingRecorder documentName={pageDocName(pageId)} onInsert={insertMeetingNotes} />
           )}
           {attendance?.whiteboardPageId && (
             // This meeting also has a whiteboard — link across to it (the

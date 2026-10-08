@@ -175,7 +175,7 @@ function HealthTile({
   return (
     <Link
       to={to}
-      className="flex-1 basis-40 rounded-lg border border-border bg-card p-3 shadow-brand-1 transition-all hover:border-accent-coral/60 hover:shadow-brand-2"
+      className="flex-1 basis-40 rounded-os-item border border-border bg-card p-3 transition-colors hover:border-os-container-hi"
     >
       <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
         <StatusDot tone={tone} />
@@ -262,7 +262,7 @@ export default function AdminHub() {
 
       {/* Recent activity + email-sender usage */}
       <div className="grid gap-4 lg:grid-cols-2">
-        <section className="rounded-lg border border-border bg-card p-4 shadow-brand-1">
+        <section className="rounded-os-card border border-border bg-card p-4">
           <div className="mb-2 flex items-center justify-between gap-2">
             <h2 className="font-heading text-sm font-semibold uppercase tracking-wide text-muted-foreground">
               Recent activity
@@ -303,7 +303,7 @@ export default function AdminHub() {
           )}
         </section>
 
-        <section className="rounded-lg border border-border bg-card p-4 shadow-brand-1">
+        <section className="rounded-os-card border border-border bg-card p-4">
           <div className="mb-2 flex items-center justify-between gap-2">
             <h2 className="font-heading text-sm font-semibold uppercase tracking-wide text-muted-foreground">
               Email senders
@@ -365,7 +365,7 @@ export default function AdminHub() {
                 <Link
                   key={s.key}
                   to={s.to}
-                  className="rounded-lg border border-border bg-card p-4 shadow-brand-1 transition-all hover:border-accent-coral/60 hover:shadow-brand-2"
+                  className="rounded-os-item border border-border bg-card p-4 transition-colors hover:border-os-container-hi"
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex min-w-0 items-center gap-2">

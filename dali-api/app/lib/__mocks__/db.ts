@@ -544,7 +544,9 @@ export const prisma = {
   userCalendarLink: {
     findMany: vi.fn().mockResolvedValue([]),
     findUnique: vi.fn(),
+    findFirst: vi.fn(),
     update: vi.fn(),
+    delete: vi.fn(),
   },
   term: {
     findFirst: vi.fn().mockResolvedValue(null),
