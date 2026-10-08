@@ -656,7 +656,7 @@ async function main() {
       closeDate: ts(30 * 24 * 60 * 60 * 1000),
       // Hiring runs in the active term, and offers a start in it or the two
       // after it — a real choice, so /portal/apply shows the start-term picker
-      // (behind the `start-terms` flag) with something to pick.
+      // with something to pick.
       termId: seedTerm.id,
       startTermIds: [seedTerm.id, ...upcomingTerms.map((t) => t.id)],
       generalRubricVersionId: "rv-general-v1",
