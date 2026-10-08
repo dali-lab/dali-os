@@ -44,6 +44,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const config = await prisma.interviewConfig.findUnique({
     where: { applicationCycleId: params.cycleId },
+    include: { rooms: { where: { archivedAt: null }, orderBy: { name: "asc" }, select: { id: true, name: true } } },
   });
 
   return withCors(request, Response.json(config));

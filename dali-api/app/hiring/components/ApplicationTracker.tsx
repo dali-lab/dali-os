@@ -23,7 +23,7 @@ export interface DomainAppData {
   domainName: string;
   domainId: string;
   inferredStatus: DomainApplicationStatus;
-  interview: { id: string; startTime: string; endTime: string; status: string; location?: string; zoomJoinUrl?: string | null } | null;
+  interview: { id: string; startTime: string; endTime: string; status: string; room?: { name: string } | null; zoomJoinUrl?: string | null } | null;
 }
 
 interface TimeSlot {
@@ -60,10 +60,8 @@ function groupSlotsByDate(slots: TimeSlot[]): { date: string; slots: TimeSlot[] 
   return Array.from(map.entries()).map(([date, slots]) => ({ date, slots }));
 }
 
-function formatInterviewLocation(location?: string): string {
-  if (location === "PodAppa") return "Pod Appa, DALI Lab";
-  if (location === "PodMomo") return "Pod Momo, DALI Lab";
-  return "Online";
+function formatInterviewLocation(room?: { name: string } | null): string {
+  return room ? `${room.name}, DALI Lab` : "Online";
 }
 
 function formatDeadline(iso: string, timeZone: string): string {
@@ -489,7 +487,7 @@ export function InterviewScheduledView({
   useEffect(() => {
     if (!rescheduling) return;
     setLoadingRescheduleSlots(true);
-    const mode = interview.location === "Online" ? "online" : "in-person";
+    const mode = interview.room ? "in-person" : "online";
     fetch(`/api/hiring/cycles/${cycleId}/available-slots?domainId=${domainApp.domainId}&mode=${mode}`, { credentials: "include" })
       .then(r => r.ok ? r.json() : [])
       .then((apiSlots: { startTime: string; endTime: string }[]) => {
@@ -541,7 +539,7 @@ export function InterviewScheduledView({
     if (!newSlot) return;
     setConfirmingReschedule(true);
     setRescheduleError(null);
-    const mode = interview.location === "Online" ? "online" : "in-person";
+    const mode = interview.room ? "in-person" : "online";
     try {
       const newEnd = new Date(new Date(newSlot.isoStart).getTime() + slotDurationMinutes * 60_000).toISOString();
       const res = await fetch("/api/hiring/my-interview/reschedule", {
@@ -577,7 +575,7 @@ export function InterviewScheduledView({
       <div className="max-w-2xl mx-auto py-12">
         <h2 className="font-heading text-xl font-bold text-foreground mb-2">Reschedule Interview</h2>
         <p className="text-sm text-muted-foreground mb-6">
-          Currently scheduled: <strong>{slot.date}, {slot.time}</strong> ({formatInterviewLocation(interview.location)}). Choose a format and new time.
+          Currently scheduled: <strong>{slot.date}, {slot.time}</strong> ({formatInterviewLocation(interview.room)}). Choose a format and new time.
         </p>
 
         {rescheduleError && (
@@ -648,9 +646,9 @@ export function InterviewScheduledView({
         </div>
         <div className="pt-4 border-t border-border/60">
           <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Location</span>
-          <p className="text-sm text-foreground mt-1">{formatInterviewLocation(interview.location)}</p>
+          <p className="text-sm text-foreground mt-1">{formatInterviewLocation(interview.room)}</p>
         </div>
-        {interview.location === "Online" && interview.zoomJoinUrl && (
+        {!interview.room && interview.zoomJoinUrl && (
           <div className="pt-4 border-t border-border/60">
             <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Meeting Link</span>
             <a href={interview.zoomJoinUrl} target="_blank" rel="noopener noreferrer"

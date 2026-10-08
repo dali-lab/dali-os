@@ -18,12 +18,6 @@ import { formatInstantWithZoneLabel, resolveUserTimeZone } from "~/lib/timezone"
 // committed scheduling change. Callers should `.catch(() => {})` it.
 // Safe to call with an empty `assignmentIds`.
 
-const LOCATION_LABEL: Record<string, string> = {
-  PodAppa: "Pod Appa",
-  PodMomo: "Pod Momo",
-  Online: "Online",
-};
-
 export async function notifyInterviewAssigned(args: {
   assignmentIds: string[];
   createdByUserId?: string | null;
@@ -41,7 +35,7 @@ export async function notifyInterviewAssigned(args: {
         select: {
           id: true,
           startTime: true,
-          location: true,
+          room: { select: { name: true } },
           domainApplication: {
             select: {
               domain: { select: { name: true } },
@@ -69,7 +63,7 @@ export async function notifyInterviewAssigned(args: {
         .join(" ")
         .trim();
       const domain = a.interview.domainApplication.domain?.name ?? null;
-      const where = LOCATION_LABEL[a.interview.location] ?? a.interview.location;
+      const where = a.interview.room?.name ?? "Online";
       // The interviewer is a logged-in member — show the start in their own zone.
       const when = formatInstantWithZoneLabel(
         a.interview.startTime,

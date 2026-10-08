@@ -2106,6 +2106,20 @@ async function main() {
   interviewEnd.setDate(today.getDate() + 14);
   interviewEnd.setHours(23, 59, 59, 999);
 
+  // The two pods interviews book into — created by the
+  // interview-room-bookings migration, upserted here too in case that data
+  // step is ever skipped.
+  const podAppa = await prisma.room.upsert({
+    where: { id: "room_pod_appa" },
+    update: {},
+    create: { id: "room_pod_appa", name: "Pod Appa", description: "DALI Lab", capacity: 4 },
+  });
+  const podMomo = await prisma.room.upsert({
+    where: { id: "room_pod_momo" },
+    update: {},
+    create: { id: "room_pod_momo", name: "Pod Momo", description: "DALI Lab", capacity: 4 },
+  });
+
   await prisma.interviewConfig.upsert({
     where: { applicationCycleId: cycle.id },
     update: {
@@ -2116,6 +2130,7 @@ async function main() {
       interviewStartDate: interviewStart,
       interviewEndDate: interviewEnd,
       timezone: "America/New_York",
+      rooms: { connect: [{ id: podAppa.id }, { id: podMomo.id }] },
     },
     create: {
       applicationCycleId: cycle.id,
@@ -2126,6 +2141,7 @@ async function main() {
       interviewStartDate: interviewStart,
       interviewEndDate: interviewEnd,
       timezone: "America/New_York",
+      rooms: { connect: [{ id: podAppa.id }, { id: podMomo.id }] },
     },
   });
 
@@ -2726,9 +2742,9 @@ async function main() {
     id: string;
     domainAppId: string;
     window: { startTime: Date; endTime: Date };
-    inDomainCI: { id: string };
+    inDomainCI: { id: string; userId: string };
     crossDomainCI: { id: string };
-    location: "PodAppa" | "PodMomo" | "Online";
+    roomId: string;
   }[] = [];
 
   if (availabilityWindows.length >= 2) {
@@ -2739,7 +2755,7 @@ async function main() {
         window: availabilityWindows[0],
         inDomainCI: rileyCI,
         crossDomainCI: samCI,
-        location: "PodAppa",
+        roomId: podAppa.id,
       },
       {
         id: "interview-diego",
@@ -2747,7 +2763,7 @@ async function main() {
         window: availabilityWindows[1],
         inDomainCI: rileyCI,
         crossDomainCI: patCI,
-        location: "PodMomo",
+        roomId: podMomo.id,
       },
     );
   }
@@ -2756,13 +2772,36 @@ async function main() {
   for (const booking of interviewBookings) {
     const start = new Date(booking.window.startTime);
     const end = new Date(start.getTime() + slotMs);
+    // One RoomBooking per seeded in-person interview, so /rooms and the door
+    // displays show them in demo data too.
+    const roomBooking = await prisma.roomBooking.upsert({
+      where: { id: `${booking.id}-room` },
+      update: {
+        roomId: booking.roomId,
+        userId: booking.inDomainCI.userId,
+        start,
+        end,
+        cancelledAt: null,
+      },
+      create: {
+        id: `${booking.id}-room`,
+        roomId: booking.roomId,
+        userId: booking.inDomainCI.userId,
+        start,
+        end,
+        title: "Interview",
+        source: "Interview",
+        applicationCycleId: cycle.id,
+      },
+    });
     const interview = await prisma.interview.upsert({
       where: { id: booking.id },
       update: {
         startTime: start,
         endTime: end,
         status: "Scheduled",
-        location: booking.location,
+        roomId: booking.roomId,
+        roomBookingId: roomBooking.id,
       },
       create: {
         id: booking.id,
@@ -2771,7 +2810,8 @@ async function main() {
         startTime: start,
         endTime: end,
         status: "Scheduled",
-        location: booking.location,
+        roomId: booking.roomId,
+        roomBookingId: roomBooking.id,
       },
     });
 

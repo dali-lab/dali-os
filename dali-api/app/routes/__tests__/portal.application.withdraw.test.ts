@@ -176,7 +176,12 @@ describe("POST /portal/application (withdraw)", () => {
         applicationCycleId: CYCLE_ID,
         domainApplication: { applicationId: APP_ID },
       },
-      select: { id: true, domainApplicationId: true },
+      select: {
+        id: true,
+        domainApplicationId: true,
+        roomBookingId: true,
+        roomBooking: { select: { userId: true } },
+      },
     });
     expect(mockTx.interview.updateMany).toHaveBeenCalledWith({
       where: { id: { in: ["int-1", "int-2"] } },

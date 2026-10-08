@@ -108,6 +108,7 @@ interface InterviewConfig {
   cancelNoticeHours: number
   bookingNoticeHours: number
   timezone: string
+  rooms?: { id: string; name: string }[]
 }
 
 interface CycleReviewer {
@@ -126,7 +127,7 @@ interface InterviewRow {
   startTime: string
   endTime: string
   status: string
-  location: string
+  room: { id: string; name: string } | null
   zoomJoinUrl: string | null
   videoUrl: string | null
   domainApplication: {
@@ -2255,9 +2256,8 @@ export default function HiringLeadCycleDetails() {
             setResendingInviteId(null)
           }
         }
-        const locationLabel = (loc: string) =>
-          loc === 'PodAppa' ? 'Pod Appa' : loc === 'PodMomo' ? 'Pod Momo' : 'Online'
-        async function changeLocation(interview: any, newLocation: string) {
+        const locationLabel = (room: { name: string } | null) => room?.name ?? 'Online'
+        async function changeLocation(interview: any, newRoomId: string) {
           if (
             !(await dialog.confirm({
               title: 'Change interview location?',
@@ -2271,12 +2271,12 @@ export default function HiringLeadCycleDetails() {
             method: 'PATCH',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ location: newLocation }),
+            body: JSON.stringify({ roomId: newRoomId || null }),
           })
           if (res.ok) {
             const updated = await res.json()
             setInterviews(prev => prev.map(i =>
-              i.id === interview.id ? { ...i, location: newLocation, zoomJoinUrl: updated.zoomJoinUrl ?? null, videoUrl: updated.videoUrl ?? null } : i
+              i.id === interview.id ? { ...i, room: updated.room ?? null, zoomJoinUrl: updated.zoomJoinUrl ?? null, videoUrl: updated.videoUrl ?? null } : i
             ))
           } else {
             const body = await res.json().catch(() => ({}))
@@ -2393,7 +2393,7 @@ export default function HiringLeadCycleDetails() {
                   const start = new Date(interview.startTime)
                   const end = new Date(interview.endTime)
                   const when = `${start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} to ${end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`
-                  const meetUrl = interview.location === 'Online' ? (interview.videoUrl ?? interview.zoomJoinUrl) : null
+                  const meetUrl = !interview.room ? (interview.videoUrl ?? interview.zoomJoinUrl) : null
                   return (
                     <div key={interview.id} className="flex flex-col gap-3 rounded-os-item bg-os-well px-4 py-3">
                       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -2410,19 +2410,18 @@ export default function HiringLeadCycleDetails() {
                             <>
                               <Select
                                 ariaLabel="Location"
-                                value={interview.location}
+                                value={interview.room?.id ?? ""}
                                 onChange={(value) => changeLocation(interview, value)}
                                 options={[
-                                  { value: "PodAppa", label: "Pod Appa" },
-                                  { value: "PodMomo", label: "Pod Momo" },
-                                  { value: "Online", label: "Online" },
+                                  ...(config.rooms ?? []).map((r) => ({ value: r.id, label: r.name })),
+                                  { value: "", label: "Online" },
                                 ]}
                                 buttonClassName={smallTrigger}
                               />
                               <EmailMarker recipients="applicant + both interviewers" label="Changing fires location-change email" />
                             </>
                           ) : (
-                            <span className="text-foreground">{locationLabel(interview.location)}</span>
+                            <span className="text-foreground">{locationLabel(interview.room)}</span>
                           )}
                           {meetUrl && (
                             <a href={meetUrl} target="_blank" rel="noopener noreferrer" className="text-os-accent hover:underline">

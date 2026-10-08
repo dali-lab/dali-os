@@ -16,6 +16,7 @@ import {
   type ContinuedInterestView,
 } from "~/hiring/lib/continued-interest.server";
 import { sendInterviewCancelEmails } from "~/hiring/lib/interview-emails";
+import { releaseInterviewRoom } from "~/hiring/lib/scheduling";
 
 export const meta: Route.MetaFunction = () => [{ title: "My application · DALI OS" }];
 
@@ -137,7 +138,12 @@ export async function action({ request }: Route.ActionArgs) {
         applicationCycleId: active.id,
         domainApplication: { applicationId: application.id },
       },
-      select: { id: true, domainApplicationId: true },
+      select: {
+        id: true,
+        domainApplicationId: true,
+        roomBookingId: true,
+        roomBooking: { select: { userId: true } },
+      },
     });
 
     if (scheduled.length > 0) {
@@ -150,6 +156,9 @@ export async function action({ request }: Route.ActionArgs) {
         where: { interviewId: { in: ids }, status: "Active" },
         data: { status: "Declined" },
       });
+      for (const iv of scheduled) {
+        await releaseInterviewRoom(iv, tx);
+      }
     }
 
     return scheduled;

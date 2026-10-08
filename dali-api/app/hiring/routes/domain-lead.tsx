@@ -201,6 +201,7 @@ export async function loader({ request }: Route.LoaderArgs) {
                   },
                 },
               },
+              room: { select: { id: true, name: true } },
               assignments: {
                 where: { status: "Active" },
                 include: {
@@ -962,12 +963,9 @@ function DomainPanel({ entry, allForms }: { entry: any; allForms: { id: string; 
                       booked: true,
                       status: interview.status as string,
                       time: `${start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} – ${end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`,
-                      location:
-                        interview.location === 'PodAppa' ? 'Pod Appa'
-                        : interview.location === 'PodMomo' ? 'Pod Momo'
-                        : 'Online',
-                      zoomJoinUrl: interview.location === 'Online' ? interview.zoomJoinUrl : null,
-                      videoUrl: interview.location === 'Online' ? interview.videoUrl : null,
+                      location: interview.room?.name ?? 'Online',
+                      zoomJoinUrl: interview.room ? null : interview.zoomJoinUrl,
+                      videoUrl: interview.room ? null : interview.videoUrl,
                       inDomain: interview.assignments
                         .filter((a: any) => a.role === 'InDomain' && a.status === 'Active')
                         .map(fmtAssignment)

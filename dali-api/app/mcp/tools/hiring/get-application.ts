@@ -80,6 +80,7 @@ export async function runGetApplication(userId: string, input: Input): Promise<u
         orderBy: { createdAt: "desc" },
         take: 1,
         include: {
+          room: { select: { id: true, name: true } },
           assignments: {
             where: { status: "Active" },
             include: {
@@ -180,7 +181,7 @@ export async function runGetApplication(userId: string, input: Input): Promise<u
     status: iv.status,
     startTime: iv.startTime.toISOString(),
     endTime: iv.endTime.toISOString(),
-    location: iv.location,
+    location: iv.room?.name ?? "Online",
     jointNotes: latestCollabByName.get(`interview:${iv.id}:notes`)?.trim() || null,
     assignments: iv.assignments.map((a) => ({
       id: a.id,
