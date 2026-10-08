@@ -17,7 +17,6 @@ vi.mock("~/lib/auth", () => ({
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), getUserRoles: vi.fn() }));
 vi.mock("~/lib/notify.server", () => ({
   notify: vi.fn(),
-  renderNotificationEmail: vi.fn(() => "<p>email</p>"),
 }));
 vi.mock("~/lib/gmail", () => ({ sendEmail: vi.fn() }));
 vi.mock("~/lib/outbound.server", () => ({

@@ -83,6 +83,7 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlot, readonly TemplateVariableN
   // meetingUrl, but the registry returns the intersection so leads don't
   // rely on a var that's missing in the cancel path.
   "notification:InterviewCancelledApplicant": ["firstName", "domain", "time", "location"],
+  "notification:InterviewCancelledByTeamApplicant": ["firstName", "domain", "time", "location"],
   "notification:InterviewCancelledInterviewer": ["firstName", "domain", "time", "location"],
 
   // Location change — sendLocationChangeEmails passes full vars.

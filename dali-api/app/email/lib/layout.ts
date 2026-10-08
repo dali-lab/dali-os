@@ -93,30 +93,6 @@ function footerHtml(kind: EmailFooter, baseUrl: string): string {
 </td></tr>`;
 }
 
-// The frame the auth and partner emails used before the layout: a centred 480px
-// div with a navy pill button, reimplemented once here instead of the six inline
-// copies it existed as. Kept so the `email-layout` flag is a true revert — only
-// the frame is gated, never the copy.
-export function renderLegacyCard(args: {
-  bodyHtml: string;
-  cta?: { href: string; label: string } | null;
-  baseUrl: string;
-  footerLine?: string;
-}): string {
-  const cta = args.cta
-    ? `<p style="margin: 24px 0;"><a href="${escapeAttr(args.cta.href)}" style="background: #1e3a8a; color: #fff; padding: 10px 20px; border-radius: 8px; text-decoration: none;">${args.cta.label}</a></p>`
-    : "";
-  const footer = args.footerLine ?? "DALI Lab &middot; Dartmouth College";
-  return `
-  <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; color: #1f2937;">
-${args.bodyHtml}
-${cta}
-    <p style="color: #6b7280; font-size: 12px; margin-top: 32px;">
-      ${footer}
-    </p>
-  </div>`;
-}
-
 export function renderEmailDocument(args: EmailLayoutArgs): string {
   const footer = args.footer ?? "notifications";
   const cta = args.cta ? button(args.cta) : "";

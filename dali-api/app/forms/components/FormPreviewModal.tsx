@@ -50,7 +50,7 @@ export function FormPreviewModal({
       labelledBy={headingId}
       containerClassName={modalCardClass("max-w-2xl mx-4 max-h-[90vh]")}
     >
-      <div className="sticky top-0 z-10 flex items-center justify-between gap-3 bg-dark-blue text-white px-5 py-3 rounded-t-2xl">
+      <div className="sticky top-0 z-10 flex items-center justify-between gap-3 bg-os-accent text-os-bg px-5 py-3 rounded-t-2xl">
         <div className="flex items-center gap-2 text-sm font-medium">
           <Eye className="w-4 h-4 flex-shrink-0" />
           Preview — this is what respondents will see once published
@@ -59,7 +59,7 @@ export function FormPreviewModal({
           type="button"
           onClick={onClose}
           aria-label="Close preview"
-          className="text-white/80 hover:text-white rounded p-1 hover:bg-white/10 flex-shrink-0"
+          className="text-os-bg/80 hover:text-os-bg rounded p-1 hover:bg-os-bg/10 flex-shrink-0"
         >
           <X className="w-4 h-4" />
         </button>
@@ -73,12 +73,12 @@ export function FormPreviewModal({
                 D
               </span>
             </div>
-            <span className="font-heading text-sm font-bold text-dark-blue">
+            <span className="font-heading text-sm font-bold text-foreground">
               DALI OS
             </span>
           </div>
 
-          <h1 id={headingId} className="font-heading text-2xl font-bold text-dark-blue">
+          <h1 id={headingId} className="font-heading text-2xl font-bold text-foreground">
             {formName}
           </h1>
           {!isEmptyBlocks(description) && (

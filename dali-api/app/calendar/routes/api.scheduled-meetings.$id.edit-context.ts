@@ -4,6 +4,8 @@ import { withCors, handlePreflight } from "~/lib/cors";
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
 import { meetingIsUpcoming } from "~/lib/scheduled-meeting";
+import { resolveUserTimeZone } from "~/lib/timezone";
+import { assembleWorkingHours } from "~/calendar/lib/calendar-defaults";
 import { loadParticipantOptions } from "./calendar.server";
 
 // Everything the Edit-meeting and Invite-people modals need, fetched on demand
@@ -44,15 +46,32 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     return forbidden(request);
   }
 
-  const { users, groups } = await loadParticipantOptions(request);
-
   // Per-guest RSVP, from this meeting's invite notifications — shown as a dot on
   // each chip in the editor's guest picker. Latest response per user wins.
-  const rsvpRows = await prisma.notification.findMany({
-    where: { scheduledMeetingId: params.id!, rsvp: { not: null } },
-    select: { recipientUserId: true, rsvp: true },
-    orderBy: { rsvpAt: "desc" },
-  });
+  // The viewer's timezone + working hours feed the availability grid the
+  // editor draws when the meeting has guests (same inputs the calendar loader
+  // gives the create modal).
+  const [{ users, groups }, rsvpRows, viewerRow, whRows] = await Promise.all([
+    loadParticipantOptions(request),
+    prisma.notification.findMany({
+      where: { scheduledMeetingId: params.id!, rsvp: { not: null } },
+      select: { recipientUserId: true, rsvp: true },
+      orderBy: { rsvpAt: "desc" },
+    }),
+    prisma.user.findUnique({ where: { id: auth.user.sub }, select: { timeZone: true } }),
+    prisma.workingHoursDay.findMany({
+      where: { userId: auth.user.sub },
+      select: {
+        id: true,
+        dayOfWeek: true,
+        startMinute: true,
+        endMinute: true,
+        location: true,
+        enabled: true,
+      },
+    }),
+  ]);
+  const { workingHours, hasPersisted } = assembleWorkingHours(whRows);
   const responsesByUserId: Record<string, "Accepted" | "Declined" | "Tentative"> = {};
   for (const r of rsvpRows) {
     if (r.rsvp && !(r.recipientUserId in responsesByUserId)) {
@@ -86,6 +105,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         upcoming: meetingIsUpcoming(meeting, new Date()),
       },
       options: { users, groups },
+      viewer: {
+        userId: auth.user.sub,
+        timezone: resolveUserTimeZone(viewerRow),
+        workingHours,
+        workingHoursEnabled: hasPersisted,
+      },
     }),
   );
 }

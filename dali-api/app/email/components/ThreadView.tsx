@@ -24,6 +24,7 @@ export function ThreadView({
   directory,
   expandButton,
   onClose,
+  onThreadAction,
 }: {
   thread: Loaded;
   accounts: EmailPageData["accounts"];
@@ -32,6 +33,7 @@ export function ThreadView({
   directory: RecipientDirectory;
   expandButton: ReactNode;
   onClose: () => void;
+  onThreadAction: (intent: "archive" | "markUnread") => void;
 }) {
   const actions = useFetcher();
   const commentFetcher = useFetcher();
@@ -53,6 +55,7 @@ export function ThreadView({
 
   const threadAction = (intent: "archive" | "markUnread") => {
     actions.submit({ intent, accountId, threadId }, { method: "post" });
+    onThreadAction(intent);
     onClose();
   };
 

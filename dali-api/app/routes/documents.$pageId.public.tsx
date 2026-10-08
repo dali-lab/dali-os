@@ -7,6 +7,7 @@ import { DocEditor } from "~/components/doc";
 import { PageCover } from "~/components/doc-chrome/PageCover";
 import { PageIconPicker } from "~/components/doc-chrome/PageIconPicker";
 import { useOsChrome } from "~/components/os-chrome";
+import { useOsShellRoot } from "~/lib/os-shell";
 import { readDocAsBlocks } from "~/collab/read";
 import { pageDocName } from "~/collab/roomName";
 
@@ -57,15 +58,16 @@ export async function loader({ params }: Route.LoaderArgs) {
 // os page title, per-page typography) so a shared link reads exactly like the
 // document does in the app, minus the editing chrome.
 export default function PublicDocument() {
+  useOsShellRoot(true);
   const data = useLoaderData<typeof loader>();
   const { pageTitle } = useOsChrome();
   const typo = data.typography;
   return (
-    <div className="doc-surface min-h-screen">
-      <div className="doc-canvas-outer flex justify-center pb-12 pt-4 bg-page">
+    <div className="os-shell doc-surface min-h-screen bg-os-bg text-foreground">
+      <div className="doc-canvas-outer flex justify-center pb-12 pt-4 bg-os-bg">
         <div
           className={cn(
-            "doc-canvas rounded-xl border border-border bg-card shadow-brand-1",
+            "doc-canvas rounded-xl border border-border bg-card",
             typo.fullWidth ? "w-full" : "w-full max-w-[1400px]",
             typo.font !== "default" && `doc-canvas--${typo.font}`,
             typo.smallText && "doc-canvas--small",

@@ -90,6 +90,7 @@ describe("TEMPLATE_VARIABLES registry shape", () => {
         "notification:ApplicationExtensionNotice",
         "notification:ApplicationReceived",
         "notification:InterviewCancelledApplicant",
+        "notification:InterviewCancelledByTeamApplicant",
         "notification:InterviewCancelledInterviewer",
         "notification:InterviewConfirmedApplicant",
         "notification:InterviewInviteMentor",

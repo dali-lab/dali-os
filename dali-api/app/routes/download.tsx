@@ -3,6 +3,8 @@ import { Download } from "lucide-react";
 import type { Route } from "./+types/download";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
+import { buttonClasses } from "~/components/ui/Button";
+import { useOsShellRoot } from "~/lib/os-shell";
 
 const RELEASES_BASE = "https://dali-os-desktop-releases.s3.us-east-1.amazonaws.com";
 // Stable, version-less artifacts published by the release workflow each release —
@@ -55,6 +57,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 export default function DownloadPage({ loaderData }: Route.ComponentProps) {
+  useOsShellRoot(true);
   const { version, dmgUrl, appImageUrl, windowsUrl } = loaderData;
   const [os, setOs] = useState<"mac" | "linux" | "windows" | "other" | null>(null);
 
@@ -71,30 +74,30 @@ export default function DownloadPage({ loaderData }: Route.ComponentProps) {
   const isUnknown = os === "other";
 
   return (
-    <div className="min-h-screen bg-zinc-50 flex items-center justify-center px-4 py-12">
+    <div className="os-shell min-h-screen bg-os-bg text-foreground flex items-center justify-center px-4 py-12">
       <main className="w-full max-w-lg text-center">
-        <img src="/logo-blue.svg" alt="DALI Lab" className="mx-auto h-12 w-auto" />
-        <h1 className="mt-8 text-3xl font-semibold text-zinc-900">
+        <span className="font-os-logo text-2xl font-semibold text-os-accent">dali.os</span>
+        <h1 className="mt-8 font-heading text-3xl font-semibold text-foreground">
         A better experience on DALI OS Desktop.
         </h1>
-        <p className="mt-2 text-zinc-500">Fast, minimal, and browser-free.</p>
+        <p className="mt-2 text-os-grey">Fast, minimal, and browser-free.</p>
 
-        <div className="mt-8 rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm">
+        <div className="mt-8 rounded-os-card bg-os-card p-8">
           {isUnknown ? (
-            <p className="rounded-lg bg-amber-50 px-4 py-2 text-xs text-amber-800">
+            <p className="rounded-os-item bg-os-well px-4 py-2 text-xs text-os-amber">
               DALI OS desktop is available for macOS, Linux, and Windows.
             </p>
           ) : (
             <>
               <a
                 href={isLinux ? appImageUrl : isWindows ? windowsUrl : dmgUrl}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-zinc-900 px-6 py-3.5 text-base font-semibold text-white transition hover:bg-zinc-700"
+                className={buttonClasses("primary", "md", "gap-2")}
               >
                 <Download className="h-5 w-5" />
                 {isLinux ? "Download for Linux" : isWindows ? "Download for Windows" : "Download for macOS"}
               </a>
               {version ? (
-                <p className="mt-3 text-xs text-zinc-500">
+                <p className="mt-3 text-xs text-os-muted">
                   {isLinux
                     ? `Version ${version} · x86_64 AppImage`
                     : isWindows
@@ -103,28 +106,28 @@ export default function DownloadPage({ loaderData }: Route.ComponentProps) {
                 </p>
               ) : null}
 
-              <div className="mt-6 border-t border-zinc-100 pt-5 text-left">
-                <p className="text-xs font-semibold text-zinc-700">Installing</p>
+              <div className="mt-6 border-t border-os-container pt-5 text-left">
+                <p className="text-xs font-semibold text-os-grey">Installing</p>
                 {isLinux ? (
-                  <p className="mt-1 text-xs text-zinc-500">
+                  <p className="mt-1 text-xs text-os-grey">
                     Make the downloaded{" "}
-                    <code className="rounded bg-zinc-100 px-1">.AppImage</code>{" "}
-                    executable (<code className="rounded bg-zinc-100 px-1">chmod +x</code>
+                    <code className="rounded bg-os-well px-1">.AppImage</code>{" "}
+                    executable (<code className="rounded bg-os-well px-1">chmod +x</code>
                     ), then run it directly or move it to{" "}
-                    <code className="rounded bg-zinc-100 px-1">~/.local/bin</code>.
+                    <code className="rounded bg-os-well px-1">~/.local/bin</code>.
                   </p>
                 ) : isWindows ? (
-                  <p className="mt-1 text-xs text-zinc-500">
+                  <p className="mt-1 text-xs text-os-grey">
                     Run the downloaded{" "}
-                    <code className="rounded bg-zinc-100 px-1">.exe</code> and follow
+                    <code className="rounded bg-os-well px-1">.exe</code> and follow
                     the setup wizard. If Windows SmartScreen warns about an unknown
                     publisher, click <strong>More info</strong> then{" "}
                     <strong>Run anyway</strong>.
                   </p>
                 ) : (
-                  <p className="mt-1 text-xs text-zinc-500">
+                  <p className="mt-1 text-xs text-os-grey">
                     Open the downloaded{" "}
-                    <code className="rounded bg-zinc-100 px-1">.dmg</code> and drag DALI
+                    <code className="rounded bg-os-well px-1">.dmg</code> and drag DALI
                     OS to your Applications folder, then open it from there.
                   </p>
                 )}
@@ -133,7 +136,7 @@ export default function DownloadPage({ loaderData }: Route.ComponentProps) {
           )}
         </div>
 
-        <p className="mt-6 text-xs text-zinc-400">
+        <p className="mt-6 text-xs text-os-muted">
           {isLinux
             ? "Requires a Linux desktop with Secret Service support (GNOME Keyring or KWallet)."
             : isWindows

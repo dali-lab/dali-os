@@ -15,6 +15,8 @@ import {
   MemberFormFillView,
   MemberFormShell,
 } from "~/forms/components/MemberFormFillView";
+import { buttonClasses } from "~/components/ui/Button";
+import { useOsShellRoot } from "~/lib/os-shell";
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `${(data as { name?: string })?.name ?? "Form"} · DALI OS` },
@@ -109,64 +111,68 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 }
 
 export default function MemberFormFill() {
+  useOsShellRoot(true);
   const data = useLoaderData<typeof loader>();
   if (data.accessDenied) {
     return (
-      <MemberFormShell allowExit>
-        <div className="text-center py-10">
-          <h1 className="font-heading text-xl font-bold text-dark-blue">
-            You don't have access to this form
-          </h1>
-          <p className="text-sm text-muted-foreground mt-2">
-            "{data.name}" is limited to a specific audience. If you think you
-            should have access, contact whoever sent you this link.
-          </p>
-        </div>
-      </MemberFormShell>
+      <div className="os-shell min-h-screen bg-os-bg text-foreground">
+        <MemberFormShell allowExit>
+          <div className="text-center py-10">
+            <h1 className="font-heading text-xl font-bold text-foreground">
+              You don't have access to this form
+            </h1>
+            <p className="text-sm text-muted-foreground mt-2">
+              "{data.name}" is limited to a specific audience. If you think you
+              should have access, contact whoever sent you this link.
+            </p>
+          </div>
+        </MemberFormShell>
+      </div>
     );
   }
   if (data.alreadySubmitted) {
     return (
-      <MemberFormShell allowExit>
-        <div className="text-center py-10">
-          <h1 className="font-heading text-xl font-bold text-dark-blue">
-            You've already filled out this form
-          </h1>
-          <p className="text-sm text-muted-foreground mt-2">
-            You submitted "{data.name}" on{" "}
-            {new Date(data.alreadySubmitted.at).toLocaleDateString(undefined, {
-              month: "long",
-              day: "numeric",
-              year: "numeric",
-            })}
-            .
-          </p>
-          {data.next && (
-            <Link
-              to={data.next}
-              className="mt-6 inline-block px-4 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90"
-            >
-              Continue
-            </Link>
-          )}
-        </div>
-      </MemberFormShell>
+      <div className="os-shell min-h-screen bg-os-bg text-foreground">
+        <MemberFormShell allowExit>
+          <div className="text-center py-10">
+            <h1 className="font-heading text-xl font-bold text-foreground">
+              You've already filled out this form
+            </h1>
+            <p className="text-sm text-muted-foreground mt-2">
+              You submitted "{data.name}" on{" "}
+              {new Date(data.alreadySubmitted.at).toLocaleDateString(undefined, {
+                month: "long",
+                day: "numeric",
+                year: "numeric",
+              })}
+              .
+            </p>
+            {data.next && (
+              <Link to={data.next} className={buttonClasses("primary", "md", "mt-6")}>
+                Continue
+              </Link>
+            )}
+          </div>
+        </MemberFormShell>
+      </div>
     );
   }
   return (
-    <MemberFormShell allowExit>
-      <MemberFormFillView
-        data={data}
-        next={data.next}
-        extraBody={
-          data.educationSessionId || data.educationOfferingId
-            ? {
-                educationSessionId: data.educationSessionId,
-                educationOfferingId: data.educationOfferingId,
-              }
-            : undefined
-        }
-      />
-    </MemberFormShell>
+    <div className="os-shell min-h-screen bg-os-bg text-foreground">
+      <MemberFormShell allowExit>
+        <MemberFormFillView
+          data={data}
+          next={data.next}
+          extraBody={
+            data.educationSessionId || data.educationOfferingId
+              ? {
+                  educationSessionId: data.educationSessionId,
+                  educationOfferingId: data.educationOfferingId,
+                }
+              : undefined
+          }
+        />
+      </MemberFormShell>
+    </div>
   );
 }

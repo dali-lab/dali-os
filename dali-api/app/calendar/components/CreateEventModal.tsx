@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { useFetcher, useRevalidator } from "react-router";
 import { AlignLeft, CalendarDays, Clock, MapPin, Repeat, UsersRound, Video, X } from "lucide-react";
 import { cn } from "~/lib/cn";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
 import { TimeField as TimeComboField } from "~/components/ui/TimeField";
@@ -28,6 +27,7 @@ import {
   addDaysToDate,
 } from "~/calendar/components/composer";
 import { durationMinutesBetween } from "~/calendar/lib/event-block";
+import { eventTitleOrDefault } from "~/calendar/lib/event-title";
 import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
 import { weekStartIsoForDay, weekWindow } from "~/calendar/lib/view-window";
 import {
@@ -215,7 +215,6 @@ export function CreateEventModal({
   // ── Google Meet ──────────────────────────────────────────────────────────
   // The link is minted on the selected Google calendar, so the option only
   // makes sense with a Google destination and real guests.
-  const optimalTimesEnabled = useFeatureFlag("optimal-times");
   // Ranked "best times" reported up by the availability grid; rendered as
   // clickable pills below it (see OptimalTimePills).
   const [optimalSuggestions, setOptimalSuggestions] = useState<SlotSuggestions | null>(null);
@@ -338,7 +337,6 @@ export function CreateEventModal({
 
   // ── canSubmit ────────────────────────────────────────────────────────────
   const canSubmitEvent =
-    title.trim() !== "" &&
     destination !== "" &&
     startIso !== "" &&
     endIso !== "" &&
@@ -347,7 +345,6 @@ export function CreateEventModal({
     (!eventLoggingWork || (roleKey !== "" && workNote.trim() !== ""));
 
   const canSubmitMeeting =
-    title.trim() !== "" &&
     durationMinutes > 0 &&
     startEndValid &&
     meetingNoteValid(note.state) &&
@@ -361,7 +358,7 @@ export function CreateEventModal({
     setMeetingStatus(null);
     try {
       const payload: Record<string, unknown> = {
-        title: title.trim(),
+        title: eventTitleOrDefault(title),
         durationMinutes,
       };
       if (location.trim()) payload.location = location.trim();
@@ -546,7 +543,7 @@ export function CreateEventModal({
               selectedEndLocal={selectedEndLocal || undefined}
               compact
               hideAvailability={!hasGuests}
-              enableOptimalTimes={optimalTimesEnabled}
+              enableOptimalTimes
               onSuggestionsChange={setOptimalSuggestions}
               weekNav={{ onShift: shiftWeek, onToday: goToThisWeek }}
             />
@@ -607,14 +604,11 @@ export function CreateEventModal({
               )}
 
               {/* Title — the one field that carries the modal's heading weight */}
-              <label htmlFor="cem-title" className={labelClass}>
-                Title <span className="text-red-500">*</span>
-              </label>
+              <input type="hidden" name="title" value={eventTitleOrDefault(title)} />
               <input
                 id="cem-title"
-                name="title"
                 type="text"
-                required
+                aria-label="Title"
                 placeholder="Add title"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
@@ -784,21 +778,15 @@ export function CreateEventModal({
           ) : (
             /* ── Meeting form ────────────────────────────────────────────── */
             <form onSubmit={submitMeeting} className="flex flex-col gap-5">
-              {/* Title */}
-              <div>
-                <label htmlFor="cem-mtg-title" className={labelClass}>
-                  Title <span className="text-red-500">*</span>
-                </label>
-                <input
-                  id="cem-mtg-title"
-                  type="text"
-                  required
-                  placeholder="e.g. Deserto sync"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  className={fieldClass}
-                />
-              </div>
+              <input
+                id="cem-mtg-title"
+                type="text"
+                aria-label="Title"
+                placeholder="Add title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className={fieldClass}
+              />
 
               {/* Guests */}
               <FieldRow icon={UsersRound}>

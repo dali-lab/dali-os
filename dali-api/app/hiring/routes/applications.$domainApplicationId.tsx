@@ -39,7 +39,6 @@ import { PriorApplicationsPanel } from "~/hiring/components/PriorApplicationsPan
 import { applicationBlindLabel, blindUser } from "~/hiring/lib/anonymization.server";
 import { getApplicantEmailEngagement } from "~/hiring/lib/email-engagement.server";
 import { ApplicantEmailPanel } from "~/hiring/components/ApplicantEmailPanel";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import type { Question, RubricCriterion } from "~/types";
 import { findRound, parseTimeline } from "~/hiring/lib/cycle-timeline";
 import { Select } from "~/components/ui/floating";
@@ -232,7 +231,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         startTime: true,
         endTime: true,
         status: true,
-        location: true,
+        room: { select: { id: true, name: true } },
         zoomJoinUrl: true,
         videoUrl: true,
         // Joint outcome — synced from `interview:{id}:recommendation` doc.
@@ -351,7 +350,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       startTime: iv.startTime.toISOString(),
       endTime: iv.endTime.toISOString(),
       status: iv.status,
-      location: iv.location,
+      room: iv.room,
       zoomJoinUrl: iv.zoomJoinUrl,
       videoUrl: iv.videoUrl,
       recommendation: iv.recommendation,
@@ -504,15 +503,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     currentApplicationId: da.application.id,
     hideOutcomes: blinded,
   });
-  const emailEngagementEnabled = await isFeatureEnabled(
-    "applicant-email-engagement",
-    auth.user.sub,
-    roles,
-    request,
-  );
-  const emailEngagement = emailEngagementEnabled
-    ? await getApplicantEmailEngagement(da.application.user.id, { blinded })
-    : null;
+  const emailEngagement = await getApplicantEmailEngagement(da.application.user.id, { blinded });
 
   return {
     applicantName:
@@ -724,7 +715,7 @@ function toInterviewNotesData(iv: InterviewRow): InterviewNotesData {
     startTime: iv.startTime,
     endTime: iv.endTime,
     status: iv.status,
-    location: iv.location,
+    room: iv.room,
     zoomJoinUrl: iv.zoomJoinUrl,
     videoUrl: iv.videoUrl,
     recommendation: iv.recommendation,

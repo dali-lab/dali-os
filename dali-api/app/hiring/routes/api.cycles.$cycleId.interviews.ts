@@ -33,6 +33,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
             challengeFormVersion: { select: { questions: true, intro: true } },
           },
         },
+        room: { select: { id: true, name: true } },
         assignments: {
           include: {
             cycleInterviewer: {

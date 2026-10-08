@@ -9,24 +9,54 @@ import { adminRecipientIds } from "~/lib/promotion-notify.server";
 // One post, as its read page and its write page both load it. A draft is its
 // author's (and Core's) alone; to anyone else it doesn't exist. Only an Admin
 // publishes: anyone else's post waits in review until one approves it.
-export async function loadBlogPost(request: Request, postId: string) {
-  const viewer = await requireResourcesViewer(request);
+export async function findBlogPost(viewer: { id: string; core: boolean }, postId: string) {
   const post = await prisma.blogPost.findUnique({
     where: { id: postId },
     include: { author: { select: { firstName: true, lastName: true } } },
   });
-  const canEdit = !!post && (post.authorId === viewer.user.sub || viewer.core);
-  if (!post || (!post.publishedAt && !canEdit)) {
-    throw new Response("Not found", { status: 404 });
-  }
-  return { viewer, post, canEdit, canApprove: await isAdmin(viewer.user.sub) };
+  const canEdit = !!post && (post.authorId === viewer.id || viewer.core);
+  if (!post || (!post.publishedAt && !canEdit)) return null;
+  return { post, canEdit, canApprove: await isAdmin(viewer.id) };
 }
+
+export async function loadBlogPost(request: Request, postId: string) {
+  const viewer = await requireResourcesViewer(request);
+  const found = await findBlogPost({ id: viewer.user.sub, core: viewer.core }, postId);
+  if (!found) throw new Response("Not found", { status: 404 });
+  return { viewer, ...found };
+}
+
+// What the front page lists for one viewer: everything published, their own
+// drafts, and for an Admin everything waiting on approval.
+export function listedBlogPostsWhere(userId: string, canApprove: boolean): Prisma.BlogPostWhereInput {
+  return {
+    OR: [
+      { publishedAt: { not: null } },
+      { authorId: userId, NOT: UNTOUCHED_DRAFT },
+      ...(canApprove ? [{ submittedAt: { not: null } }] : []),
+    ],
+  };
+}
+
+export const BLOG_LISTING_ORDER: Prisma.BlogPostOrderByWithRelationInput[] = [
+  { frontPageRank: { sort: "asc", nulls: "last" } },
+  { publishedAt: "desc" },
+  { updatedAt: "desc" },
+];
 
 export type BlogStatus = "published" | "review" | "draft";
 
 export function blogStatus(post: { publishedAt: Date | null; submittedAt: Date | null }): BlogStatus {
   if (post.publishedAt) return "published";
   return post.submittedAt ? "review" : "draft";
+}
+
+// An Admin approves a post for an audience; its author can't widen that after.
+export function canChangeBlogAudience(
+  post: { publishedAt: Date | null; submittedAt: Date | null },
+  canApprove: boolean,
+): boolean {
+  return canApprove || blogStatus(post) === "draft";
 }
 
 type ReviewPost = {

@@ -13,6 +13,7 @@ import {
 import type { Question } from "~/types";
 import { DocEditor } from "~/components/doc";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
+import { buttonClasses } from "~/components/ui/Button";
 import {
   PARTNER_APPLICATION_STATUS_LABELS,
   PARTNER_APPLICATION_STATUS_PILL,
@@ -155,20 +156,18 @@ export default function PartnerApplicationDetail({
   const error = actionData && "error" in actionData ? actionData.error : null;
 
   const documentName = `partnersow:${application.id}:body`;
-  const inputClass =
-    "w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral";
 
   return (
     <div className="flex flex-col gap-6">
       <div>
         <PartnerBackLink to="/partner" label="Back to portal" />
         <div className="flex items-start justify-between gap-4 mt-2 flex-wrap">
-          <h1 className="font-heading text-3xl font-bold text-dark-blue">
+          <h1 className="font-heading text-4xl font-medium text-foreground">
             {application.title}
           </h1>
           <StatusTimeline status={application.status} />
         </div>
-        <p className="text-sm text-muted-foreground mt-1">
+        <p className="text-sm text-os-grey mt-1">
           Submitted {new Date(application.createdAt).toLocaleDateString()}
         </p>
       </div>
@@ -176,30 +175,30 @@ export default function PartnerApplicationDetail({
       {application.status === "Accepted" && application.resultingProjectId && (
         <Link
           to={`/partner/projects/${application.resultingProjectId}`}
-          className="bg-accent-teal/10 border border-accent-teal/30 rounded-2xl px-5 py-4 text-sm text-accent-teal font-medium hover:bg-accent-teal/15 transition"
+          className="bg-accent-teal/10 border border-accent-teal/30 rounded-os-card px-5 py-4 text-sm text-accent-teal font-medium hover:bg-accent-teal/15 transition"
         >
           🎉 This pitch became a project — see what the team is up to →
         </Link>
       )}
 
       {error && (
-        <p className="text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3">{error}</p>
+        <p className="text-sm text-destructive bg-destructive/10 rounded-lg px-4 py-3">{error}</p>
       )}
 
-      <section className="bg-card border border-border rounded-2xl p-5">
-        <h2 className="font-heading font-semibold text-dark-blue mb-3">Pitch</h2>
+      <section className="rounded-os-card bg-os-card p-6">
+        <h2 className="font-heading text-[19px] font-semibold text-foreground mb-3">Pitch</h2>
         {canEditDetails && (
-          <Form method="post" className="flex flex-col gap-4">
+          <Form method="post" className="os-form flex flex-col gap-4">
             <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">
+              <label className="os-field-label mb-1.5 block">
                 Title
               </label>
-              <input name="title" defaultValue={application.title} required className={inputClass} />
+              <input name="title" defaultValue={application.title} required className="w-full" />
             </div>
             <button
               type="submit"
               disabled={submitting}
-              className="self-start rounded-xl bg-dark-blue text-white text-sm font-heading font-semibold px-5 py-2.5 hover:opacity-90 transition disabled:opacity-50"
+              className={buttonClasses("primary", "md", "self-start")}
             >
               {submitting ? "Saving…" : "Save changes"}
             </button>
@@ -238,8 +237,8 @@ export default function PartnerApplicationDetail({
       </section>
 
       {formAnswers.length > 0 && (
-        <section className="bg-card border border-border rounded-2xl p-5">
-          <h2 className="font-heading font-semibold text-dark-blue mb-3">
+        <section className="rounded-os-card bg-os-card p-6">
+          <h2 className="font-heading text-[19px] font-semibold text-foreground mb-3">
             Application answers
           </h2>
           <dl className="flex flex-col gap-4">
@@ -257,8 +256,8 @@ export default function PartnerApplicationDetail({
         </section>
       )}
 
-      <section className="bg-card border border-border rounded-2xl p-5">
-        <h2 className="font-heading font-semibold text-dark-blue">
+      <section className="rounded-os-card bg-os-card p-6">
+        <h2 className="font-heading text-[19px] font-semibold text-foreground">
           Statement of Work
         </h2>
         {application.status === "UnderReview" && (

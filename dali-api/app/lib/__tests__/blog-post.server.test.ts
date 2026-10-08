@@ -2,7 +2,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("~/lib/db", () => ({
   prisma: {
-    blogPost: { aggregate: vi.fn(), updateMany: vi.fn(), findMany: vi.fn(), update: vi.fn() },
+    blogPost: {
+      aggregate: vi.fn(),
+      updateMany: vi.fn(),
+      findMany: vi.fn(),
+      findUnique: vi.fn(),
+      update: vi.fn(),
+    },
     $transaction: vi.fn(),
   },
 }));
@@ -15,6 +21,7 @@ import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
 import { adminRecipientIds } from "~/lib/promotion-notify.server";
 import {
+  findBlogPost,
   moveBlogPostPin,
   pinBlogPostToTop,
   publishBlogPost,
@@ -26,6 +33,22 @@ const db = prisma as any;
 beforeEach(() => {
   vi.resetAllMocks();
   db.blogPost.update.mockImplementation((args: unknown) => args);
+});
+
+describe("findBlogPost", () => {
+  const reader = { id: "reader", core: false };
+
+  it("hides a draft from everyone but its author and Core", async () => {
+    db.blogPost.findUnique.mockResolvedValue({ id: "p1", authorId: "author", publishedAt: null });
+    expect(await findBlogPost(reader, "p1")).toBeNull();
+    expect(await findBlogPost({ id: "author", core: false }, "p1")).toMatchObject({ canEdit: true });
+    expect(await findBlogPost({ id: "reader", core: true }, "p1")).toMatchObject({ canEdit: true });
+  });
+
+  it("lets anyone read a published post, but not edit it", async () => {
+    db.blogPost.findUnique.mockResolvedValue({ id: "p1", authorId: "author", publishedAt: new Date() });
+    expect(await findBlogPost(reader, "p1")).toMatchObject({ canEdit: false });
+  });
 });
 
 describe("pinning", () => {

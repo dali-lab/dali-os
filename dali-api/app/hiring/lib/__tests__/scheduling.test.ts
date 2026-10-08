@@ -5,9 +5,16 @@ vi.mock("~/lib/db");
 // interviewer's calendar is free for the whole window (every fixture here is);
 // a test narrows it with setCalendarFree.
 vi.mock("~/hiring/lib/interview-availability.server", () => ({ interviewerCalendars: vi.fn() }));
+vi.mock("~/lib/rooms.server", () => ({
+  createRoomBooking: vi.fn(),
+  cancelRoomBooking: vi.fn(),
+  getRoomSchedule: vi.fn(),
+  blockedBy: vi.fn(),
+}));
 
 import { prisma } from "~/lib/db";
 import { interviewerCalendars } from "~/hiring/lib/interview-availability.server";
+import { createRoomBooking } from "~/lib/rooms.server";
 
 const ALWAYS_FREE = [{ startTime: new Date("2000-01-01T00:00:00Z"), endTime: new Date("2100-01-01T00:00:00Z") }];
 let calendarFree: Map<string, { startTime: Date; endTime: Date }[]> = new Map();
@@ -875,6 +882,165 @@ describe("assignInterviewers", () => {
         new Date("2026-04-13T14:30:00Z"),
       ),
     ).rejects.toThrow("Interview created without expected assignments");
+  });
+
+  // ─── in-person room booking ──────────────────────────────────────────────
+
+  const freeInDomain = {
+    id: "r1",
+    userId: "m1",
+    domainId: "domain1",
+    availabilityBlocks: [
+      { startTime: new Date("2026-04-13T13:00:00Z"), endTime: new Date("2026-04-13T17:00:00Z") },
+    ],
+    interviewAssignments: [],
+  };
+  const freeCrossDomain = {
+    id: "r2",
+    userId: "m2",
+    domainId: "domain-other",
+    availabilityBlocks: [
+      { startTime: new Date("2026-04-13T13:00:00Z"), endTime: new Date("2026-04-13T17:00:00Z") },
+    ],
+    interviewAssignments: [],
+  };
+
+  function inPersonTx(rooms: { id: string; name: string }[], capturedCreate: ReturnType<typeof vi.fn>) {
+    const interviewers = [freeInDomain, freeCrossDomain];
+    return {
+      interviewConfig: {
+        findUnique: vi.fn().mockResolvedValue({ bufferMinutes: 15, rooms }),
+      },
+      cycleInterviewer: {
+        findMany: vi.fn()
+          .mockResolvedValueOnce(interviewers.map((i) => ({ id: i.id })))
+          .mockResolvedValueOnce(interviewers),
+      },
+      interview: { create: capturedCreate },
+      $executeRaw: vi.fn().mockResolvedValue(0),
+    };
+  }
+
+  it("books a room via createRoomBooking with source Interview and the cycle id", async () => {
+    vi.mocked(createRoomBooking).mockResolvedValue({
+      ok: true,
+      value: { id: "booking1", start: new Date(), end: new Date() },
+    });
+    const capturedCreate = vi.fn().mockImplementation((args: any) => ({
+      id: "int1",
+      ...args.data,
+      assignments: args.data.assignments.create.map((a: any, idx: number) => ({ id: `a${idx}`, ...a })),
+    }));
+    const tx = inPersonTx([{ id: "roomA", name: "Pod Appa" }], capturedCreate);
+    mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(tx));
+
+    await assignInterviewers(
+      "cycle1", "app1", ["domain1"],
+      new Date("2026-04-13T14:00:00Z"),
+      new Date("2026-04-13T14:30:00Z"),
+      undefined,
+      "in-person",
+    );
+
+    expect(createRoomBooking).toHaveBeenCalledWith(
+      expect.objectContaining({ roomId: "roomA", source: "Interview", applicationCycleId: "cycle1" }),
+      tx,
+    );
+    const createArgs = capturedCreate.mock.calls[0][0];
+    expect(createArgs.data.roomId).toBe("roomA");
+    expect(createArgs.data.roomBookingId).toBe("booking1");
+  });
+
+  it("falls through to the second room when the first returns ok:false", async () => {
+    vi.mocked(createRoomBooking)
+      .mockResolvedValueOnce({ ok: false, error: "Room is already booked", status: 409 })
+      .mockResolvedValueOnce({ ok: true, value: { id: "booking2", start: new Date(), end: new Date() } });
+    const capturedCreate = vi.fn().mockImplementation((args: any) => ({
+      id: "int1",
+      ...args.data,
+      assignments: args.data.assignments.create.map((a: any, idx: number) => ({ id: `a${idx}`, ...a })),
+    }));
+    const tx = inPersonTx(
+      [{ id: "roomA", name: "Pod Appa" }, { id: "roomB", name: "Pod Momo" }],
+      capturedCreate,
+    );
+    mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(tx));
+
+    await assignInterviewers(
+      "cycle1", "app1", ["domain1"],
+      new Date("2026-04-13T14:00:00Z"),
+      new Date("2026-04-13T14:30:00Z"),
+      undefined,
+      "in-person",
+    );
+
+    expect(createRoomBooking).toHaveBeenCalledTimes(2);
+    const createArgs = capturedCreate.mock.calls[0][0];
+    expect(createArgs.data.roomBookingId).toBe("booking2");
+  });
+
+  it("throws when every room is taken", async () => {
+    vi.mocked(createRoomBooking).mockResolvedValue({
+      ok: false,
+      error: "Room is already booked",
+      status: 409,
+    });
+    const capturedCreate = vi.fn();
+    const tx = inPersonTx(
+      [{ id: "roomA", name: "Pod Appa" }, { id: "roomB", name: "Pod Momo" }],
+      capturedCreate,
+    );
+    mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(tx));
+
+    await expect(
+      assignInterviewers(
+        "cycle1", "app1", ["domain1"],
+        new Date("2026-04-13T14:00:00Z"),
+        new Date("2026-04-13T14:30:00Z"),
+        undefined,
+        "in-person",
+      ),
+    ).rejects.toThrow("No interview room available at this time");
+    expect(capturedCreate).not.toHaveBeenCalled();
+  });
+
+  it("throws when the config has no rooms", async () => {
+    const capturedCreate = vi.fn();
+    const tx = inPersonTx([], capturedCreate);
+    mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(tx));
+
+    await expect(
+      assignInterviewers(
+        "cycle1", "app1", ["domain1"],
+        new Date("2026-04-13T14:00:00Z"),
+        new Date("2026-04-13T14:30:00Z"),
+        undefined,
+        "in-person",
+      ),
+    ).rejects.toThrow("This cycle has no interview rooms set up");
+    expect(createRoomBooking).not.toHaveBeenCalled();
+    expect(capturedCreate).not.toHaveBeenCalled();
+  });
+
+  it("never calls createRoomBooking in online mode", async () => {
+    const capturedCreate = vi.fn().mockImplementation((args: any) => ({
+      id: "int1",
+      ...args.data,
+      assignments: args.data.assignments.create.map((a: any, idx: number) => ({ id: `a${idx}`, ...a })),
+    }));
+    const tx = inPersonTx([{ id: "roomA", name: "Pod Appa" }], capturedCreate);
+    mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(tx));
+
+    await assignInterviewers(
+      "cycle1", "app1", ["domain1"],
+      new Date("2026-04-13T14:00:00Z"),
+      new Date("2026-04-13T14:30:00Z"),
+    );
+
+    expect(createRoomBooking).not.toHaveBeenCalled();
+    const createArgs = capturedCreate.mock.calls[0][0];
+    expect(createArgs.data.roomId).toBeNull();
+    expect(createArgs.data.roomBookingId).toBeNull();
   });
 });
 

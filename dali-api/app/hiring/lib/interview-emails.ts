@@ -12,6 +12,16 @@ import { renderForSlot, notificationSlot } from "./email-variables";
 import { buildInviteIcs, buildCancelIcs, type IcsAttendee } from "./interview-ics";
 import { getHiringEmail } from "~/hiring/lib/hiring-emails.server";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
+import { ensureInterviewMeetUrl } from "~/hiring/lib/interview-meet";
+
+// The invite and reminders are the two sends an applicant actually joins
+// from, so each picks up a Meet link Google minted after the event insert.
+async function withMeetUrl<T extends { id: string; calendarEventId: string | null; videoUrl: string | null }>(
+  interview: T,
+): Promise<T> {
+  const videoUrl = (await ensureInterviewMeetUrl(interview)) ?? interview.videoUrl;
+  return { ...interview, videoUrl };
+}
 
 const ORGANIZER: IcsAttendee = {
   email: "applications@dali.dartmouth.edu",
@@ -25,9 +35,8 @@ function meetingLink(iv: { videoUrl: string | null; zoomJoinUrl: string | null }
   return iv.videoUrl ?? iv.zoomJoinUrl;
 }
 
-function formatLocation(location: string, meetingUrl?: string | null): string {
-  if (location === "PodAppa") return "Pod Appa, DALI Lab";
-  if (location === "PodMomo") return "Pod Momo, DALI Lab";
+function formatLocation(room: { name: string } | null, meetingUrl?: string | null): string {
+  if (room) return `${room.name}, DALI Lab`;
   return meetingUrl ? `Online — ${meetingUrl}` : "Online";
 }
 
@@ -117,7 +126,7 @@ async function renderSlot(
 // the calendar event from the invite. Returns the number of emails enqueued.
 export async function sendInterviewReminderEmails(interviewId: string): Promise<number> {
   try {
-    const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId }, include: { room: { select: { id: true, name: true } } } }).then((iv) => (iv ? withMeetUrl(iv) : null));
     // Re-check status: the job claims its ledger row first, and the interview
     // may have been cancelled in between.
     if (!interview || interview.status !== "Scheduled") return 0;
@@ -129,7 +138,7 @@ export async function sendInterviewReminderEmails(interviewId: string): Promise<
     const baseVars: Omit<InterpolationVars, "firstName"> = {
       domain: da?.domain?.name ?? "DALI Lab",
       time: formatTime(interview.startTime),
-      location: formatLocation(interview.location, meetingLink(interview)),
+      location: formatLocation(interview.room, meetingLink(interview)),
       meetingUrl: meetingLink(interview) ?? undefined,
     };
 
@@ -191,7 +200,7 @@ export async function sendInterviewInviteEmails(
   opts: { dedupKey?: null } = {},
 ): Promise<void> {
   try {
-    const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId }, include: { room: { select: { id: true, name: true } } } }).then((iv) => (iv ? withMeetUrl(iv) : null));
     if (!interview) return;
 
     const da = await prisma.domainApplication.findUnique({
@@ -203,7 +212,7 @@ export async function sendInterviewInviteEmails(
     const baseVars: Omit<InterpolationVars, "firstName"> = {
       domain: domainName,
       time: formatTime(interview.startTime),
-      location: formatLocation(interview.location, meetingLink(interview)),
+      location: formatLocation(interview.room, meetingLink(interview)),
       meetingUrl: meetingLink(interview) ?? undefined,
     };
 
@@ -226,7 +235,7 @@ export async function sendInterviewInviteEmails(
       summary: `DALI Interview — ${domainName}`,
       startTime: interview.startTime,
       endTime: interview.endTime,
-      location: formatLocation(interview.location, meetingLink(interview)),
+      location: formatLocation(interview.room, meetingLink(interview)),
       meetingUrl: meetingLink(interview),
       organizer: ORGANIZER,
       // Initial REQUEST uses the row's current sequence (0 for a fresh
@@ -301,9 +310,12 @@ export async function sendInterviewInviteEmails(
 export async function sendInterviewCancelEmails(
   interviewId: string,
   domainApplicationId: string,
+  // A team-side cancel tells the applicant to rebook; the plain cancel email
+  // is the fallback when that template hasn't been written.
+  opts: { byTeam?: boolean; skipApplicant?: boolean } = {},
 ): Promise<void> {
   try {
-    const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId }, include: { room: { select: { id: true, name: true } } } });
     if (!interview) return;
 
     const da = await prisma.domainApplication.findUnique({
@@ -315,7 +327,7 @@ export async function sendInterviewCancelEmails(
     const baseVars: Omit<InterpolationVars, "firstName"> = {
       domain: domainName,
       time: formatTime(interview.startTime),
-      location: formatLocation(interview.location, meetingLink(interview)),
+      location: formatLocation(interview.room, meetingLink(interview)),
     };
 
     const applicant = await getApplicantRecipient(domainApplicationId);
@@ -352,11 +364,11 @@ export async function sendInterviewCancelEmails(
     // Terminal event → forever dedupKey per recipient (dedups a double-cancel).
     const enqueues: Promise<string | null>[] = [];
 
-    if (applicant) {
-      const rendered = await renderSlot(
-        "InterviewCancelledApplicant",
-        { firstName: applicant.firstName, ...baseVars },
-      );
+    if (applicant && !opts.skipApplicant) {
+      const applicantVars = { firstName: applicant.firstName, ...baseVars };
+      const rendered =
+        (opts.byTeam ? await renderSlot("InterviewCancelledByTeamApplicant", applicantVars) : null) ??
+        (await renderSlot("InterviewCancelledApplicant", applicantVars));
       if (rendered) {
         enqueues.push(enqueueOutbound({
           channel: "email",
@@ -403,7 +415,7 @@ export async function sendReassignmentEmails(
   newCycleInterviewerId: string,
 ): Promise<void> {
   try {
-    const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId }, include: { room: { select: { id: true, name: true } } } });
     if (!interview) return;
 
     const da = await prisma.domainApplication.findUnique({
@@ -415,7 +427,7 @@ export async function sendReassignmentEmails(
     const baseVars: Omit<InterpolationVars, "firstName"> = {
       domain: domainName,
       time: formatTime(interview.startTime),
-      location: formatLocation(interview.location, meetingLink(interview)),
+      location: formatLocation(interview.room, meetingLink(interview)),
       meetingUrl: meetingLink(interview) ?? undefined,
     };
 
@@ -484,7 +496,7 @@ export async function sendReassignmentEmails(
       summary: `DALI Interview — ${domainName}`,
       startTime: interview.startTime,
       endTime: interview.endTime,
-      location: formatLocation(interview.location, meetingLink(interview)),
+      location: formatLocation(interview.room, meetingLink(interview)),
       meetingUrl: meetingLink(interview),
       organizer: ORGANIZER,
       sequence,
@@ -542,7 +554,7 @@ export async function sendLocationChangeEmails(
   domainApplicationId: string,
 ): Promise<void> {
   try {
-    const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId }, include: { room: { select: { id: true, name: true } } } });
     if (!interview) return;
 
     const da = await prisma.domainApplication.findUnique({
@@ -554,7 +566,7 @@ export async function sendLocationChangeEmails(
     const baseVars: Omit<InterpolationVars, "firstName"> = {
       domain: domainName,
       time: formatTime(interview.startTime),
-      location: formatLocation(interview.location, meetingLink(interview)),
+      location: formatLocation(interview.room, meetingLink(interview)),
       meetingUrl: meetingLink(interview) ?? undefined,
     };
 
@@ -580,7 +592,7 @@ export async function sendLocationChangeEmails(
       summary: `DALI Interview — ${domainName}`,
       startTime: interview.startTime,
       endTime: interview.endTime,
-      location: formatLocation(interview.location, meetingLink(interview)),
+      location: formatLocation(interview.room, meetingLink(interview)),
       meetingUrl: meetingLink(interview),
       description: "Updated location",
       organizer: ORGANIZER,

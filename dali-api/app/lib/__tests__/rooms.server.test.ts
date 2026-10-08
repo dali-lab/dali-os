@@ -28,6 +28,8 @@ import {
   releaseEventRoomBookings,
   retimeEventRoomBookings,
   truncateEventRoomBookings,
+  listRoomConflicts,
+  serializeScheduleItem,
   type RoomScheduleItem,
 } from "~/lib/rooms.server";
 
@@ -195,6 +197,8 @@ describe("currentEvent", () => {
     recurring: false,
     organizer: ada,
     isEvent: true,
+    source: null,
+    cycleId: null,
   };
   it("opens 15 minutes early and closes 15 minutes late", () => {
     expect(currentEvent([event], at("2026-09-24T17:46:00Z").getTime())).toBe(event);
@@ -291,6 +295,138 @@ describe("createRoomBooking", () => {
     const res = await createRoomBooking(b);
     expect(res).toMatchObject({ ok: false, status: 409 });
     expect(res.ok === false && res.error).toContain("Studio");
+  });
+});
+
+describe("hiring bookings (Interview / InterviewHold)", () => {
+  const cycle = "cyc1";
+  const hold = () =>
+    booking({
+      id: "hold",
+      title: "Reserved for interviews",
+      start: at("2026-11-02T13:00:00Z"),
+      end: at("2026-11-02T22:00:00Z"),
+      source: "InterviewHold",
+      applicationCycleId: cycle,
+    });
+
+  it("skips the human duration and lead caps for hiring sources", async () => {
+    const start = new Date(Date.now() + 120 * DAY);
+    const res = await createRoomBooking({
+      roomId: "r1",
+      userId: "u1",
+      start,
+      end: new Date(start.getTime() + 9 * H),
+      source: "InterviewHold",
+      applicationCycleId: cycle,
+    });
+    expect(res.ok).toBe(true);
+    expect(m.roomBooking.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ source: "InterviewHold", applicationCycleId: cycle }) }),
+    );
+  });
+
+  it("blocks a member booking inside a cycle's hold, naming the hold", async () => {
+    m.roomBooking.findMany.mockResolvedValue([hold()]);
+    const res = await createRoomBooking({
+      roomId: "r1",
+      userId: "u2",
+      start: at("2026-11-02T15:00:00Z"),
+      end: at("2026-11-02T16:00:00Z"),
+      source: "Web",
+    });
+    expect(res).toMatchObject({ ok: false, status: 409 });
+    expect((res as { error: string }).error).toContain("Reserved for interviews");
+  });
+
+  it("lets the same cycle's interview sit inside its hold but not another cycle's", async () => {
+    m.roomBooking.findMany.mockResolvedValue([hold()]);
+    const slot = {
+      roomId: "r1",
+      userId: "u1",
+      start: at("2026-11-02T15:00:00Z"),
+      end: at("2026-11-02T15:30:00Z"),
+      source: "Interview" as const,
+    };
+    expect((await createRoomBooking({ ...slot, applicationCycleId: cycle })).ok).toBe(true);
+    expect(await createRoomBooking({ ...slot, applicationCycleId: "other" })).toMatchObject({ ok: false, status: 409 });
+  });
+
+  it("still collides two interviews of the same cycle in one room", async () => {
+    m.roomBooking.findMany.mockResolvedValue([
+      booking({
+        id: "iv1",
+        title: "Interview",
+        start: at("2026-11-02T15:00:00Z"),
+        end: at("2026-11-02T15:30:00Z"),
+        source: "Interview",
+        applicationCycleId: cycle,
+      }),
+    ]);
+    const res = await createRoomBooking({
+      roomId: "r1",
+      userId: "u1",
+      start: at("2026-11-02T15:00:00Z"),
+      end: at("2026-11-02T15:30:00Z"),
+      source: "Interview",
+      applicationCycleId: cycle,
+    });
+    expect(res).toMatchObject({ ok: false, status: 409 });
+  });
+
+  it("blocks a meeting's room claim during a hold", async () => {
+    m.roomBooking.findMany.mockResolvedValue([hold()]);
+    const res = await assertMeetingRoomsFree({
+      roomIds: ["r1"],
+      selectedAt: at("2026-11-02T15:00:00Z"),
+      durationMinutes: 30,
+      recurrenceRule: null,
+    });
+    expect(res).toMatchObject({ ok: false, status: 409 });
+  });
+
+  it("books through the caller's transaction when one is passed", async () => {
+    const tx = { ...m, roomBooking: { ...m.roomBooking } };
+    const start = new Date(Date.now() + H);
+    await createRoomBooking(
+      { roomId: "r1", userId: "u1", start, end: new Date(start.getTime() + H), source: "Interview", applicationCycleId: cycle },
+      tx as never,
+    );
+    expect(m.$transaction).not.toHaveBeenCalled();
+    expect(m.roomBooking.create).toHaveBeenCalled();
+  });
+
+  it("listRoomConflicts returns each blocking item once across the occurrences", async () => {
+    m.roomBooking.findMany.mockResolvedValue([
+      booking({ id: "b1", title: "Ada", start: at("2026-11-02T15:00:00Z"), end: at("2026-11-02T16:00:00Z") }),
+      booking({ id: "mine", start: at("2026-11-02T17:00:00Z"), end: at("2026-11-02T17:30:00Z"), source: "Interview", applicationCycleId: cycle }),
+    ]);
+    const items = await listRoomConflicts(
+      "r1",
+      [
+        { start: at("2026-11-02T13:00:00Z"), end: at("2026-11-02T22:00:00Z") },
+        { start: at("2026-11-03T13:00:00Z"), end: at("2026-11-03T22:00:00Z") },
+      ],
+      { source: "InterviewHold", applicationCycleId: cycle },
+    );
+    expect(items.map((i) => i.id)).toEqual(["b1"]);
+  });
+
+  it("serializes the source so clients can tell hiring bookings apart", () => {
+    const [item] = [hold()].map((b) => ({
+      kind: "booking" as const,
+      id: b.id,
+      title: b.title!,
+      start: b.start,
+      end: b.end,
+      occurrenceStart: b.start,
+      recurring: false,
+      organizer: ada,
+      isEvent: false,
+      source: "InterviewHold" as const,
+      cycleId: cycle,
+    }));
+    expect(serializeScheduleItem(item)).toMatchObject({ source: "InterviewHold" });
   });
 });
 

@@ -157,7 +157,7 @@ export function EpicList({
         {actions && <div className="ml-auto flex items-center gap-2">{actions}</div>}
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-border bg-card">
+      <div className="overflow-hidden rounded-os-card border border-border bg-card">
         {shown.length === 0 ? (
           <p className="px-4 py-10 text-center text-sm text-os-muted">
             {epics.length === 0

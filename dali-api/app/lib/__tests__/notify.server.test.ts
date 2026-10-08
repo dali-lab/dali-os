@@ -52,11 +52,6 @@ beforeEach(() => {
   mockGetAppEnv.mockReturnValue("prod");
   mockPrisma.notificationPreference.findMany.mockResolvedValue([]);
   mockPrisma.user.findMany.mockResolvedValue([]);
-  // notify() renders the email through the shared layout, which asks whether the
-  // `email-layout` flag is on. resetAllMocks() above clears the shared db mock's
-  // default, so re-establish it: no rows → every flag resolves to its registry
-  // default, i.e. off, which is the pre-layout body these assertions describe.
-  mockPrisma.featureFlag.findMany.mockResolvedValue([]);
   // notify() resolves its copy from the template store; no rows means every
   // notification keeps the registry's own wording, which is what these assertions
   // describe.
@@ -385,7 +380,7 @@ describe("notify", () => {
     });
     const email = emailCalls()[0];
     expect(email.subject).toBe("Lab news"); // title still carried by the subject
-    expect(email.bodyHtml).not.toContain("<strong>Lab news</strong>");
+    expect(email.bodyHtml).not.toContain("Lab news</h1>");
     expect(email.bodyHtml).toContain("The actual message.");
   });
 
@@ -397,7 +392,7 @@ describe("notify", () => {
       recipients: [{ userId: "u1" }],
     });
     expect(emailCalls()[0].bodyHtml).toContain(
-      "<strong>Lab meeting moved to 5pm</strong>",
+      "Lab meeting moved to 5pm</h1>",
     );
   });
 
@@ -408,7 +403,7 @@ describe("notify", () => {
       message: { title: "Course update", body: "Details here." },
       recipients: [{ userId: "u1" }],
     });
-    expect(emailCalls()[0].bodyHtml).toContain("<strong>Course update</strong>");
+    expect(emailCalls()[0].bodyHtml).toContain("Course update</h1>");
   });
 
   it("renders a rich HTML body and an attached-form CTA button in the email", async () => {
@@ -431,7 +426,7 @@ describe("notify", () => {
     expect(html).toContain("https://os.dali.dartmouth.edu/forms/fill/tok123");
     expect(html).toContain("Open the form");
     // Body present → the duplicate title heading is suppressed.
-    expect(html).not.toContain("<strong>Please sign</strong>");
+    expect(html).not.toContain("Please sign</h1>");
   });
 });
 

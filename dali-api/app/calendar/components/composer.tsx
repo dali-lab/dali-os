@@ -23,6 +23,7 @@ import { DateField } from "~/components/ui/DateField";
 import { TimeField as TimeComboField } from "~/components/ui/TimeField";
 import { Select, Tooltip } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
+import { useToast } from "~/components/ui/toast";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { roleOptionKey, parseRoleOptionKey } from "~/calendar/components/role-fields";
@@ -38,6 +39,7 @@ import {
 import { getZonedYMD } from "~/lib/timezone";
 import { cn } from "~/lib/cn";
 import { localDayTimeToIso } from "~/calendar/lib/event-block";
+import { eventTitleOrDefault } from "~/calendar/lib/event-title";
 import { DARTMOUTH_PERIODS, getPeriod, periodSummary, periodMeetings } from "~/calendar/lib/dartmouth-periods";
 import {
   destinationValue,
@@ -376,6 +378,7 @@ export function EventComposer({
   state,
   onClose,
   onDraftChange,
+  onOpenMeetingEditor,
 }: {
   data: LoaderData;
   state: ComposerState;
@@ -383,10 +386,15 @@ export function EventComposer({
   // Reports the draft's current start/end while creating, so the grid can draw
   // a tentative block that tracks the edits.
   onDraftChange?: (startIso: string, endIso: string, allDay: boolean) => void;
+  // Opens the full meeting editor (with the availability grid) for a DALI
+  // meeting the viewer manages.
+  onOpenMeetingEditor?: (meetingId: string) => void;
 }) {
   const fetcher = useFetcher<{ error?: string } | null>();
   const deleteFetcher = useFetcher<{ error?: string } | null>();
   const dialog = useDialog();
+  const toast = useToast();
+  const [steppedAside, setSteppedAside] = useState(false);
   const editing = state.mode === "edit";
   const ev = editing ? state.event : null;
   // Prefill source: the event being edited, or a Duplicate seed in create mode.
@@ -476,9 +484,17 @@ export function EventComposer({
   }, [fetcher.state, fetcher.data, onClose]);
   const prevDel = useRef(deleteFetcher.state);
   useEffect(() => {
-    if (prevDel.current !== "idle" && deleteFetcher.state === "idle" && !deleteFetcher.data?.error) onClose();
+    if (prevDel.current !== "idle" && deleteFetcher.state === "idle") {
+      if (!deleteFetcher.data?.error) {
+        toast.success(canManageMeeting ? "Meeting cancelled." : "Event deleted.");
+        onClose();
+      } else {
+        // Come back so the error under the form is readable.
+        setSteppedAside(false);
+      }
+    }
     prevDel.current = deleteFetcher.state;
-  }, [deleteFetcher.state, deleteFetcher.data, onClose]);
+  }, [deleteFetcher.state, deleteFetcher.data, onClose, toast, canManageMeeting]);
 
   // Load the meeting's guest list + member/group directory once, then seed the
   // picker. A Group-scoped meeting keeps its group selected and treats anyone
@@ -572,7 +588,6 @@ export function EventComposer({
       ? localDayTimeToIso(endDate, endTime, data.timezone) ?? ""
       : "";
   const canSubmit =
-    title.trim() !== "" &&
     destination !== "" &&
     startIso !== "" &&
     endIso !== "" &&
@@ -593,6 +608,7 @@ export function EventComposer({
   async function confirmDeleteEvent() {
     if (!ev?.eventId) return;
     const effectiveScope = isRecurring ? scope : "this";
+    setSteppedAside(true);
     const ok = await dialog.confirm({
       title: title.trim() ? `Delete "${title.trim()}"?` : "Delete this event?",
       description: !isRecurring
@@ -607,7 +623,10 @@ export function EventComposer({
       confirmLabel: "Delete",
       tone: "destructive",
     });
-    if (!ok) return;
+    if (!ok) {
+      setSteppedAside(false);
+      return;
+    }
     deleteFetcher.submit(
       {
         intent: "event-delete",
@@ -636,7 +655,11 @@ export function EventComposer({
       onClose={onClose}
       draggable
       ariaLabel={editing ? "Edit event" : "New event"}
-      className="w-[23rem] max-h-[85vh] overflow-y-auto rounded-xl cal-surface"
+      className={cn(
+        "w-[23rem] max-h-[85vh] overflow-y-auto rounded-xl cal-surface",
+        // Steps aside (keeping its state) while the delete confirm is up.
+        steppedAside && "invisible",
+      )}
     >
         {/* Header — doubles as the drag handle (grab anywhere but the close X).
             Sticky + opaque so it stays grabbable if the form scrolls. */}
@@ -698,8 +721,9 @@ export function EventComposer({
             {linkedEntry && !loggingWork && <input type="hidden" name="clearWork" value="1" />}
 
             {/* Title */}
+            <input type="hidden" name="title" value={eventTitleOrDefault(title)} />
             <input
-              name="title"
+              aria-label="Title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Add title"
@@ -729,6 +753,17 @@ export function EventComposer({
                       <TimeComboField value={endTime} onChange={setEndTime} ariaLabel="End time" className="min-w-0 flex-1" />
                     </div>
                   </div>
+                )}
+                {/* The popover is too narrow for the availability grid; hand
+                    off to the full editor, which draws it beside the form. */}
+                {canManageMeeting && meetingId && onOpenMeetingEditor && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenMeetingEditor(meetingId)}
+                    className="self-start text-xs font-medium text-os-accent hover:underline"
+                  >
+                    Pick a time with everyone's availability
+                  </button>
                 )}
               </div>
             </div>

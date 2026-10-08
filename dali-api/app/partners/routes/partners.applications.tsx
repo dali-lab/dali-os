@@ -426,7 +426,7 @@ export default function PartnersApplications() {
                 autoFocus
                 required
                 placeholder="What is the partner pitching?"
-                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30"
               />
             </label>
             <label className="flex flex-col gap-1 text-xs">
@@ -436,7 +436,7 @@ export default function PartnersApplications() {
                 type="email"
                 required
                 placeholder="contact@company.com"
-                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30"
               />
             </label>
             <label className="flex flex-col gap-1 text-xs">
@@ -445,7 +445,7 @@ export default function PartnersApplications() {
                 name="applicantName"
                 type="text"
                 placeholder="Jane Smith (optional)"
-                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30"
               />
             </label>
           </div>
@@ -971,7 +971,7 @@ function DomainLegend({
           type="button"
           onClick={() => onFocus(d.id)}
           aria-pressed={focus === d.id}
-          className={`inline-flex items-center gap-1.5 text-xs text-muted-foreground rounded px-1 -mx-1 transition-opacity hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-coral/40 ${
+          className={`inline-flex items-center gap-1.5 text-xs text-muted-foreground rounded px-1 -mx-1 transition-opacity hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/40 ${
             focus === "all" || focus === d.id ? "opacity-100" : "opacity-40"
           }`}
         >

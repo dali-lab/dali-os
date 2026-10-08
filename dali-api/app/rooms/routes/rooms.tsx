@@ -50,6 +50,7 @@ type ScheduleItem = {
   recurring: boolean;
   organizer: { id: string; firstName: string; lastName: string };
   isEvent: boolean;
+  source: "Web" | "Display" | "App" | "Interview" | "InterviewHold" | null;
 };
 
 // The visible day, in local hours. Items outside it are clipped to the edges.
@@ -443,7 +444,8 @@ function RoomColumn({
         if (end <= dayStart || start >= dayEnd) return null;
         const top = yFor(start);
         const height = Math.max(yFor(end) - top, 22);
-        const mine = item.kind === "booking" && item.organizer.id === userId && end > now;
+        const hiring = item.source === "Interview" || item.source === "InterviewHold";
+        const mine = item.kind === "booking" && !hiring && item.organizer.id === userId && end > now;
         const short = height <= 36;
         return (
           <div

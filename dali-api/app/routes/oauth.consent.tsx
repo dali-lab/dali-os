@@ -11,6 +11,8 @@ import { parseSessionId } from "~/lib/cookies";
 import { lookupSession } from "~/lib/session";
 import { displayEmail } from "~/lib/display";
 import { isCore, isAdmin } from "~/lib/roles";
+import { buttonClasses } from "~/components/ui/Button";
+import { useOsShellRoot } from "~/lib/os-shell";
 
 const SCOPE_DESCRIPTIONS: Record<string, string> = {
   "mcp:read": "Read your DALI OS data on your behalf",
@@ -201,21 +203,22 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function ConsentScreen({ loaderData }: Route.ComponentProps) {
+  useOsShellRoot(true);
   if (!loaderData.ok) {
     return (
-      <main className="mx-auto max-w-md p-8 text-foreground">
+      <main className="os-shell min-h-screen bg-os-bg mx-auto max-w-md p-8 text-foreground">
         <h1 className="text-xl font-semibold">Authorization unavailable</h1>
-        <p className="mt-2 text-sm text-muted-foreground">{loaderData.error}</p>
+        <p className="mt-2 text-sm text-os-grey">{loaderData.error}</p>
       </main>
     );
   }
   const { sessionId, clientName, scopes, userEmail } = loaderData;
   return (
-    <main className="mx-auto max-w-md p-8 text-foreground">
+    <main className="os-shell min-h-screen bg-os-bg mx-auto max-w-md p-8 text-foreground">
       <h1 className="text-xl font-semibold">
         Authorize {clientName}?
       </h1>
-      <p className="mt-2 text-sm text-muted-foreground">
+      <p className="mt-2 text-sm text-os-grey">
         Signed in as <strong className="text-foreground">{userEmail}</strong>.
       </p>
       <p className="mt-4 text-sm text-foreground/90">
@@ -223,15 +226,15 @@ export default function ConsentScreen({ loaderData }: Route.ComponentProps) {
       </p>
       <ul className="mt-3 space-y-2">
         {scopes.length === 0 ? (
-          <li className="text-sm text-muted-foreground">Basic profile (no scopes requested)</li>
+          <li className="text-sm text-os-grey">Basic profile (no scopes requested)</li>
         ) : (
           scopes.map((s) => (
             <li
               key={s}
-              className="rounded border border-border bg-card px-3 py-2 text-sm"
+              className="rounded-os-item bg-os-well px-3 py-2 text-sm"
             >
               <code className="font-mono text-xs text-foreground">{s}</code>
-              <div className="text-xs text-muted-foreground">
+              <div className="text-xs text-os-grey">
                 {SCOPE_DESCRIPTIONS[s] ?? "Custom scope"}
               </div>
             </li>
@@ -244,7 +247,7 @@ export default function ConsentScreen({ loaderData }: Route.ComponentProps) {
           type="submit"
           name="decision"
           value="approve"
-          className="flex-1 rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+          className={buttonClasses("primary", "md", "flex-1")}
         >
           Authorize
         </button>
@@ -252,7 +255,7 @@ export default function ConsentScreen({ loaderData }: Route.ComponentProps) {
           type="submit"
           name="decision"
           value="deny"
-          className="flex-1 rounded border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-muted"
+          className={buttonClasses("secondary", "md", "flex-1")}
         >
           Cancel
         </button>

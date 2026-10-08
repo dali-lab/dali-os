@@ -95,7 +95,7 @@ export function PasskeyEnrollmentPrompt() {
           type="button"
           onClick={() => void setUpPasskey()}
           disabled={busy}
-          className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
+          className="w-full rounded-xl bg-os-accent text-os-bg font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
         >
           {busy ? "Waiting for passkey…" : "Set up a passkey"}
         </button>
@@ -103,7 +103,7 @@ export function PasskeyEnrollmentPrompt() {
           type="button"
           onClick={dismiss}
           disabled={busy}
-          className="w-full rounded-xl border border-border bg-card text-dark-blue font-heading font-semibold py-3 hover:border-accent-coral transition disabled:opacity-50"
+          className="w-full rounded-xl border border-border bg-card text-foreground font-heading font-semibold py-3 hover:border-accent-coral transition disabled:opacity-50"
         >
           Not now
         </button>

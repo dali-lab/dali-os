@@ -236,7 +236,7 @@ export default function OfferingDetail() {
           </div>
         </div>
 
-        <dl className="grid gap-4 rounded-2xl border border-border bg-card p-5 sm:grid-cols-2 lg:grid-cols-4">
+        <dl className="grid gap-4 rounded-os-card border border-border bg-card p-5 sm:grid-cols-2 lg:grid-cols-4">
           <Fact label="Runs" value={runsValue(offering, tz)} />
           <Fact label="Registration" value={reg.value} tone={reg.tone} />
           <Fact label="Seats" value={seats.value} tone={seats.tone} />
@@ -283,7 +283,7 @@ export default function OfferingDetail() {
           </section>
         )}
 
-        <section className="rounded-2xl border border-border bg-card p-5">
+        <section className="rounded-os-card border border-border bg-card p-5">
           <h2 className="mb-3 font-heading text-sm font-semibold uppercase tracking-wide text-muted-foreground">
             Schedule
           </h2>
