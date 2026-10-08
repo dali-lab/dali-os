@@ -199,6 +199,10 @@ export default [
     route("members", "members/routes/members.tsx"),
     route("members/groups", "members/routes/members.groups.tsx"),
     route("members/:id", "members/routes/members.$id.tsx"),
+    // Connect: map of where alumni are based (members + alumni).
+    route("connect", "members/routes/connect.tsx"),
+    // Anonymous coffee chat invite: accept / decline (recipient) or status (sender).
+    route("coffee-chats/:id", "members/routes/coffee-chats.$id.tsx"),
 
     // Partners
     route("partners", "partners/routes/partners.tsx"),

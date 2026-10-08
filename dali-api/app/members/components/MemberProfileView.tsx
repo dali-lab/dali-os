@@ -11,8 +11,10 @@ import {
 import { Select, Tooltip, InfoTip } from "~/components/ui/floating";
 import {
   AtSign,
+  Briefcase,
   Cake,
   Clock,
+  Coffee,
   Fingerprint,
   Github,
   Globe,
@@ -23,12 +25,14 @@ import {
   LogOut,
   Mail,
   MapPin,
+  MapPinned,
   MessageSquare,
   Pencil,
   Phone,
   Plus,
   Shield,
   Smartphone,
+  Trash2,
   User as UserIcon,
   UsersRound,
   Utensils,
@@ -55,7 +59,18 @@ import { AchievementsBlock } from "./AchievementsBlock";
 import { ComplianceBlock } from "./ComplianceBlock";
 import { buttonClasses } from "~/components/ui/Button";
 import { DateField } from "~/components/ui/DateField";
-import { useConfirmSubmit } from "~/components/ui/dialog";
+import { useConfirmSubmit, useDialog } from "~/components/ui/dialog";
+import { Button } from "~/components/ui/Button";
+import { Checkbox } from "~/components/ui/Checkbox";
+import { IconButton } from "~/components/ui/IconButton";
+import { Modal, ModalHeader } from "~/components/Modal";
+import { modalCardClass } from "~/components/os-chrome";
+import {
+  WORK_MODES,
+  formatMonthRange,
+  workModeLabel,
+  type WorkExperienceItem,
+} from "~/members/lib/work-experience";
 import type { Level } from "~/admin/lib/eligibility";
 import { APPLICATION_TZ, formatZoneLabel } from "~/lib/timezone";
 import type {
@@ -103,6 +118,7 @@ export function MemberProfileView({
     pendingReviews,
     showReviewsRow,
     isSelf,
+    coffeeChatSent,
     canEdit,
     canManageEligibility,
     allDomains,
@@ -231,6 +247,7 @@ export function MemberProfileView({
         photoUrlResolved={photoUrlResolved}
         canEdit={canEdit}
         isSelf={isSelf}
+        coffeeChatSent={coffeeChatSent}
         isStaff={isStaff}
         isAlumni={isAlumni}
         termCode={termCode}
@@ -272,6 +289,7 @@ export function MemberProfileView({
             />
             {canSeeGroups && <GroupsCard groups={groups} />}
             <AccountCard member={member} canEdit={canEdit} />
+            <WorkExperienceCard experiences={member.workExperiences} canEdit={canEdit} />
             {!isSelf && canRevokeWalletPass && (
               <WalletCard
                 wallet={wallet}
@@ -336,6 +354,7 @@ function MemberHeader({
   photoUrlResolved,
   canEdit,
   isSelf,
+  coffeeChatSent,
   isStaff,
   isAlumni,
   termCode,
@@ -348,6 +367,7 @@ function MemberHeader({
   photoUrlResolved: string | null;
   canEdit: boolean;
   isSelf: boolean;
+  coffeeChatSent: boolean;
   isStaff: boolean;
   isAlumni: boolean;
   termCode: string | null;
@@ -382,6 +402,7 @@ function MemberHeader({
               <span className="text-[13px] text-os-muted">{member.pronouns}</span>
             )}
           </div>
+          {!isSelf && <CoffeeChatButton firstName={member.firstName} sent={coffeeChatSent} />}
           {isSelf && (
             <a
               href="/logout"
@@ -465,6 +486,39 @@ function MemberHeader({
         </div>
       </div>
     </header>
+  );
+}
+
+// Sends an anonymous coffee chat invite. `sent` comes from the loader, so the
+// button stays in its sent state on every later visit.
+function CoffeeChatButton({ firstName, sent }: { firstName: string; sent: boolean }) {
+  const fetcher = useFetcher<{ error?: string } | null>();
+  const { confirm } = useDialog();
+  const busy = fetcher.state !== "idle";
+  const done = sent || busy;
+
+  async function invite() {
+    const ok = await confirm({
+      title: `Invite ${firstName} to a coffee chat?`,
+      description: `${firstName} gets an email and a notification that someone wants to grab coffee. They see your name only if they accept.`,
+      confirmLabel: "Send invite",
+    });
+    if (ok) fetcher.submit({ intent: "coffee-chat" }, { method: "post" });
+  }
+
+  return (
+    <div className="mt-1 flex shrink-0 flex-col items-end gap-1">
+      <button
+        type="button"
+        onClick={() => void invite()}
+        disabled={done}
+        className="inline-flex items-center gap-1.5 rounded-full border border-os-container px-3 py-1 text-[12px] font-semibold text-os-grey transition-colors hover:border-os-container-hi hover:text-foreground disabled:pointer-events-none disabled:opacity-70"
+      >
+        <Coffee className="h-3.5 w-3.5" />
+        {done ? "Coffee chat invite sent" : "Coffee chat"}
+      </button>
+      {fetcher.data?.error && <p className="text-xs text-destructive">{fetcher.data.error}</p>}
+    </div>
   );
 }
 
@@ -561,6 +615,7 @@ function PersonalHiddenFields({
     ["major", member.major ?? ""],
     ["classYear", member.classYear?.toString() ?? ""],
     ["hometown", member.hometown ?? ""],
+    ["currentLocation", member.currentLocation ?? ""],
     ["birthday", birthdayInputValue(member.birthday)],
     ["dietaryRestrictions", member.dietaryRestrictions ?? ""],
     ["phoneNumber", member.phoneNumber ?? ""],
@@ -589,6 +644,7 @@ const ABOUT_FIELDS = new Set([
   "major",
   "classYear",
   "hometown",
+  "currentLocation",
   "birthday",
   "dietaryRestrictions",
 ]);
@@ -669,6 +725,15 @@ function AboutCard({
                   className="w-full"
                 />
               </DetailEditRow>
+              <DetailEditRow icon={<MapPinned className={ic} />} label="Based in">
+                <input
+                  name="currentLocation"
+                  type="text"
+                  placeholder="City, country"
+                  defaultValue={member.currentLocation ?? ""}
+                  className="w-full"
+                />
+              </DetailEditRow>
               <DetailEditRow icon={<Cake className={ic} />} label="Birthday">
                 <DateField
                   mode="date"
@@ -703,6 +768,9 @@ function AboutCard({
               </DetailRow>
               <DetailRow icon={<MapPin className={ic} />} label="Hometown">
                 {member.hometown ?? dash}
+              </DetailRow>
+              <DetailRow icon={<MapPinned className={ic} />} label="Based in">
+                {member.currentLocation ?? dash}
               </DetailRow>
               <DetailRow icon={<Cake className={ic} />} label="Birthday">
                 {formatBirthday(member.birthday) ?? dash}
@@ -1084,6 +1152,271 @@ function DomainsCard({
           )}
       </div>
     </article>
+  );
+}
+
+// ─── Work experience card ────────────────────────────────────────────────────
+
+function WorkExperienceCard({
+  experiences,
+  canEdit,
+}: {
+  experiences: WorkExperienceItem[];
+  canEdit: boolean;
+}) {
+  // null = closed, "new" = adding, an item = editing it.
+  const [editing, setEditing] = useState<WorkExperienceItem | "new" | null>(null);
+  const remove = useFetcher();
+  const { confirm } = useDialog();
+
+  async function onDelete(w: WorkExperienceItem) {
+    const ok = await confirm({
+      title: "Remove this job?",
+      description: `${w.position} at ${w.company}`,
+      confirmLabel: "Remove",
+      tone: "destructive",
+    });
+    if (ok) remove.submit({ intent: "delete-experience", experienceId: w.id }, { method: "post" });
+  }
+
+  return (
+    <article className="rounded-os-card bg-os-card overflow-hidden sm:col-span-2">
+      <CardHeader
+        icon={<Briefcase className="w-[17px] h-[17px]" />}
+        iconBg="rgba(122,184,245,0.14)"
+        iconColor="#7ab8f5"
+        title="Work experience"
+        trailing={
+          canEdit && (
+            <button
+              type="button"
+              onClick={() => setEditing("new")}
+              className="inline-flex items-center gap-1 text-[12px] font-semibold text-os-grey hover:text-foreground border border-os-container hover:border-os-container-hi px-2.5 py-1 rounded-full transition-colors"
+            >
+              <Plus className="w-3 h-3" />
+              Add
+            </button>
+          )
+        }
+      />
+      <div className="px-5 pb-5">
+        {experiences.length === 0 ? (
+          <p className="text-sm text-os-muted italic">No work experience yet.</p>
+        ) : (
+          experiences.map((w) => (
+            <div
+              key={w.id}
+              className="flex items-start gap-4 border-b border-os-container py-3 last:border-0 last:pb-0"
+            >
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-foreground">
+                  {w.position}
+                  <span className="font-normal text-os-grey"> at {w.company}</span>
+                </p>
+                <p className="mt-0.5 text-[13px] text-os-grey">
+                  {[formatMonthRange(w.startMonth, w.endMonth), w.location, workModeLabel(w.workMode)]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
+                {w.description && (
+                  <p className="mt-1.5 whitespace-pre-line text-sm text-foreground">{w.description}</p>
+                )}
+              </div>
+              {canEdit && (
+                <div className="flex shrink-0 items-center">
+                  <IconButton label="Edit" icon={Pencil} onClick={() => setEditing(w)} />
+                  <IconButton
+                    label="Remove"
+                    icon={Trash2}
+                    tone="destructive"
+                    onClick={() => void onDelete(w)}
+                  />
+                </div>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+      {editing && (
+        <WorkExperienceModal
+          experience={editing === "new" ? null : editing}
+          onClose={() => setEditing(null)}
+        />
+      )}
+    </article>
+  );
+}
+
+const MONTH_OPTIONS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+].map((label, i) => ({ value: String(i + 1).padStart(2, "0"), label }));
+
+// Month + year pickers that read and write one "YYYY-MM" value ("" until both
+// are picked).
+function MonthYearField({
+  value,
+  onChange,
+  label,
+  disabled,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  label: string;
+  disabled?: boolean;
+}) {
+  const [year, month] = value ? value.split("-") : ["", ""];
+  const [draft, setDraft] = useState({ year, month });
+  const thisYear = new Date().getFullYear();
+  const years = Array.from({ length: 60 }, (_, i) => String(thisYear - i)).map((y) => ({
+    value: y,
+    label: y,
+  }));
+  const set = (patch: Partial<typeof draft>) => {
+    const next = { ...draft, ...patch };
+    setDraft(next);
+    onChange(next.year && next.month ? `${next.year}-${next.month}` : "");
+  };
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      <Select
+        value={draft.month}
+        options={MONTH_OPTIONS}
+        ariaLabel={`${label} month`}
+        placeholder="Month"
+        disabled={disabled}
+        onChange={(m) => set({ month: m })}
+      />
+      <Select
+        value={draft.year}
+        options={years}
+        ariaLabel={`${label} year`}
+        placeholder="Year"
+        disabled={disabled}
+        onChange={(y) => set({ year: y })}
+      />
+    </div>
+  );
+}
+
+function WorkExperienceModal({
+  experience,
+  onClose,
+}: {
+  experience: WorkExperienceItem | null;
+  onClose: () => void;
+}) {
+  const fetcher = useFetcher<{ error?: string } | null>();
+  const { formClass } = useOsChrome();
+  const [startMonth, setStartMonth] = useState(experience?.startMonth ?? "");
+  const [endMonth, setEndMonth] = useState(experience?.endMonth ?? "");
+  const [current, setCurrent] = useState(experience ? experience.endMonth === null : false);
+  const [workMode, setWorkMode] = useState<string>(experience?.workMode ?? "");
+  const busy = fetcher.state !== "idle";
+
+  // The action answers null on success and { error } otherwise.
+  const submitted = useRef(false);
+  useEffect(() => {
+    if (fetcher.state !== "idle") {
+      submitted.current = true;
+    } else if (submitted.current) {
+      submitted.current = false;
+      if (!fetcher.data?.error) onClose();
+    }
+  }, [fetcher.state, fetcher.data, onClose]);
+
+  const fieldLabel = "flex flex-col gap-1.5 text-xs font-semibold text-os-grey";
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      labelledBy="work-experience-title"
+      disableEscape={busy}
+      containerClassName={modalCardClass("max-w-lg")}
+    >
+      <ModalHeader
+        titleId="work-experience-title"
+        title={experience ? "Edit job" : "Add job"}
+        onClose={onClose}
+      />
+      <fetcher.Form method="post" className={cn("flex flex-col gap-4", formClass)}>
+        <input type="hidden" name="intent" value="save-experience" />
+        {experience && <input type="hidden" name="experienceId" value={experience.id} />}
+        <input type="hidden" name="startMonth" value={startMonth} />
+        <input type="hidden" name="endMonth" value={current ? "" : endMonth} />
+        <input type="hidden" name="workMode" value={workMode} />
+
+        {fetcher.data?.error && (
+          <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {fetcher.data.error}
+          </p>
+        )}
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <label className={fieldLabel}>
+            Position
+            <input name="position" type="text" required defaultValue={experience?.position ?? ""} />
+          </label>
+          <label className={fieldLabel}>
+            Company
+            <input name="company" type="text" required defaultValue={experience?.company ?? ""} />
+          </label>
+          <div className={fieldLabel}>
+            Start
+            <MonthYearField label="Start" value={startMonth} onChange={setStartMonth} />
+          </div>
+          <div className={fieldLabel}>
+            End
+            <MonthYearField label="End" value={endMonth} onChange={setEndMonth} disabled={current} />
+          </div>
+        </div>
+        <Checkbox
+          tone="os"
+          label="I work here now"
+          checked={current}
+          onChange={(e) => setCurrent(e.target.checked)}
+        />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <label className={fieldLabel}>
+            Location
+            <input
+              name="location"
+              type="text"
+              placeholder="City, country"
+              defaultValue={experience?.location ?? ""}
+            />
+          </label>
+          <div className={fieldLabel}>
+            Work mode
+            <Select
+              value={workMode}
+              options={[{ value: "", label: "Not set" }, ...WORK_MODES]}
+              ariaLabel="Work mode"
+              onChange={setWorkMode}
+            />
+          </div>
+        </div>
+        <label className={fieldLabel}>
+          Description
+          <textarea
+            name="description"
+            rows={4}
+            defaultValue={experience?.description ?? ""}
+            className="resize-y"
+          />
+        </label>
+
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={busy}>
+            Save
+          </Button>
+        </div>
+      </fetcher.Form>
+    </Modal>
   );
 }
 

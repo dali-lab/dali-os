@@ -50,6 +50,13 @@ import { pushWalletPassUpdate } from "~/lib/wallet-apns.server";
 import { walletAppleConfigured } from "~/lib/wallet-apple.server";
 import { walletGoogleConfigured } from "~/lib/wallet-google.server";
 import { isValidTimezone } from "~/lib/timezone";
+import { geocodePlace } from "~/lib/geocode.server";
+import { hasOutgoingCoffeeChat, sendCoffeeChatInvite } from "~/members/lib/coffee-chat.server";
+import {
+  dateToMonth,
+  parseWorkExperience,
+  type WorkExperienceItem,
+} from "~/members/lib/work-experience";
 import { getEducationProfile } from "~/education/lib/engagement.server";
 import type { AttendanceSummary } from "~/education/lib/session-time";
 import {
@@ -72,6 +79,9 @@ export type ProfileMember = {
   gradProgram: string | null;
   major: string | null;
   hometown: string | null;
+  /** Where they live now ("Based in"); pins them on the Connect map. */
+  currentLocation: string | null;
+  workExperiences: WorkExperienceItem[];
   linkedinUrl: string | null;
   githubUsername: string | null;
   personalSite: string | null;
@@ -119,6 +129,9 @@ export type ProfilePageData = {
    *  isn't on the reviewer roster this cycle. */
   showReviewsRow: boolean;
   isSelf: boolean;
+  /** The viewer's own anonymous coffee chat invite to this member is out.
+   *  Never reflects invites this member sent. */
+  coffeeChatSent: boolean;
   canEdit: boolean;
   canManageEligibility: boolean;
   /** Personal notes shown in the profile's right-hand rail. On someone else's
@@ -219,6 +232,7 @@ const TEXT_FIELDS = [
   "pronouns",
   "major",
   "hometown",
+  "currentLocation",
   "linkedinUrl",
   "githubUsername",
   "personalSite",
@@ -285,6 +299,21 @@ export async function loadProfilePage({
       dartmouthDepartmentClass: true,
       major: true,
       hometown: true,
+      currentLocation: true,
+      workExperiences: {
+        // Current jobs first, then most recent.
+        orderBy: [{ endDate: { sort: "desc", nulls: "first" } }, { startDate: "desc" }],
+        select: {
+          id: true,
+          company: true,
+          position: true,
+          description: true,
+          location: true,
+          workMode: true,
+          startDate: true,
+          endDate: true,
+        },
+      },
       linkedinUrl: true,
       githubUsername: true,
       personalSite: true,
@@ -589,6 +618,11 @@ export async function loadProfilePage({
     member: {
       ...memberFields,
       gradProgram: graduateProgramLabel(dartmouthDepartmentClass),
+      workExperiences: member.workExperiences.map(({ startDate, endDate, ...w }) => ({
+        ...w,
+        startMonth: dateToMonth(startDate),
+        endMonth: endDate ? dateToMonth(endDate) : null,
+      })),
       birthday: member.birthday ? member.birthday.toISOString() : null,
       createdAt: memberCreatedAt.toISOString(),
       onboardedAt: memberDaliMember?.onboardedAt
@@ -608,6 +642,7 @@ export async function loadProfilePage({
     pendingReviews,
     showReviewsRow: pendingReviews > 0,
     isSelf,
+    coffeeChatSent: isSelf ? false : await hasOutgoingCoffeeChat(auth.user.sub, targetId),
     canEdit,
     canManageEligibility,
     notes,
@@ -667,6 +702,10 @@ export async function runProfileAction({
     return redirect(redirectPathFor(request, targetId));
   }
 
+  if (intent === "coffee-chat") {
+    return sendCoffeeChatInvite(auth.user.sub, targetId);
+  }
+
   if (intent === "add-eligibility" || intent === "set-eligibility-level") {
     if (!(await isCore(auth.user.sub))) {
       return { error: "You don't have permission to assign domains." };
@@ -711,6 +750,29 @@ export async function runProfileAction({
   const admin = await isAdmin(auth.user.sub);
   if (!admin && auth.user.sub !== targetId) {
     return { error: "You don't have permission to edit this member." };
+  }
+
+  if (intent === "save-experience") {
+    const parsed = parseWorkExperience((f) => String(form.get(f) ?? ""));
+    if (!parsed.ok) return { error: parsed.error };
+    const experienceId = String(form.get("experienceId") ?? "");
+    if (experienceId) {
+      // Scoped to the profile's owner so an id from another profile is a no-op.
+      await prisma.workExperience.updateMany({
+        where: { id: experienceId, userId: targetId },
+        data: parsed.value,
+      });
+    } else {
+      await prisma.workExperience.create({ data: { ...parsed.value, userId: targetId } });
+    }
+    return null;
+  }
+
+  if (intent === "delete-experience") {
+    await prisma.workExperience.deleteMany({
+      where: { id: String(form.get("experienceId") ?? ""), userId: targetId },
+    });
+    return null;
   }
 
   const firstName = (form.get("firstName") as string | null)?.trim() ?? "";
@@ -770,6 +832,19 @@ export async function runProfileAction({
       return { error: "Birthday must be a valid date." };
     }
     data.birthday = d;
+  }
+
+  // Re-place the Connect map pin only when the location text actually changed,
+  // so an unrelated save never costs a geocoding lookup.
+  const before = await prisma.user.findUnique({
+    where: { id: targetId },
+    select: { currentLocation: true },
+  });
+  if ((before?.currentLocation ?? null) !== data.currentLocation) {
+    const point =
+      typeof data.currentLocation === "string" ? await geocodePlace(data.currentLocation) : null;
+    data.currentLocationLat = point?.lat ?? null;
+    data.currentLocationLng = point?.lng ?? null;
   }
 
   try {

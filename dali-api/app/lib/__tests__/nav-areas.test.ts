@@ -116,6 +116,7 @@ const NOBODY: RoleFlags = {
   hasActiveHiringAccess: false,
   isLabMentor: false,
   isInstructor: false,
+  isAlumni: false,
 };
 const CORE: RoleFlags = { ...NOBODY, isCore: true, canViewForms: true, canViewStaffing: true };
 
@@ -194,6 +195,18 @@ describe("Core area", () => {
     expect(core().subtabs.map((t) => t.href)).not.toContain("/core/attendance");
     const general = areasFor(REGROUP).find((a) => a.key === "projects")!;
     expect(general.subtabs.map((t) => t.href)).toContain("/attendance");
+  });
+
+  it("hides Mentorship and Attendance from alumni, including alumni who still hold a mentor or Core role", () => {
+    const lab = areasFor(REGROUP).find((a) => a.key === "projects")!;
+    const hrefs = (r: RoleFlags) => visibleSubtabs(lab, r).map((t) => t.href);
+    expect(hrefs({ ...NOBODY, isLabMentor: true })).toEqual(
+      expect.arrayContaining(["/mentorship", "/attendance"]),
+    );
+    const alum = hrefs({ ...CORE, isLabMentor: true, isAlumni: true });
+    expect(alum).not.toContain("/mentorship");
+    expect(alum).not.toContain("/attendance");
+    expect(alum).toEqual(expect.arrayContaining(["/projects", "/members", "/connect", "/partners"]));
   });
 
   it("never offers Forms as a Core sub-tab — forms live in the Drive", () => {

@@ -90,6 +90,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     isInterviewer: isInterviewerAnyCycle,
     canViewForms,
     canViewStaffing,
+    isAlumni,
   } = roles
 
   // Non-member gate: a Dartmouth account with no DALIMember row (e.g. an
@@ -261,7 +262,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const __loaderTotal = performance.now() - __loaderStart
   if (__loaderTotal >= 400) console.log(`[perf-total] layout loader ${__loaderTotal.toFixed(0)}ms`)
 
-  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, instructorChrome, favorites: sidebarPages.favorites, recents: sidebarPages.recents, flags, impersonating, impersonationWrites, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities }
+  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isAlumni, instructorChrome, favorites: sidebarPages.favorites, recents: sidebarPages.recents, flags, impersonating, impersonationWrites, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities }
 }
 
 // Layout data (roles, avatar, hiring access) changes rarely, but default
@@ -295,7 +296,7 @@ export function shouldRevalidate({ formAction, currentUrl, nextUrl, defaultShoul
 }
 
 export default function AppLayoutRoute() {
-  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, instructorChrome, favorites, recents, flags, impersonating, impersonationWrites, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities } = useLoaderData<typeof loader>()
+  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isAlumni, instructorChrome, favorites, recents, flags, impersonating, impersonationWrites, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities } = useLoaderData<typeof loader>()
 
   // Non-member (external instructor) shell: the lightweight, sidebar-free chrome
   // for the education-management routes they're allowed into. Rendered before the
@@ -583,7 +584,7 @@ export default function AppLayoutRoute() {
       {/* Above Layout, not inside pageContent: the tabless desktop nav row
           renders the Guide CTA from the shell, outside the routed page. */}
       <PageDocProvider>
-        <LayoutOS fitViewport={fitViewport} user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} hasActiveHiringAccess={hasActiveHiringAccess} isInstructor={isInstructor} isLabMentor={isLabMentorFlag} favorites={liveFavorites} impersonating={impersonating} impersonationAllowsWrites={impersonationWrites} focusMode={focus}>
+        <LayoutOS fitViewport={fitViewport} user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} hasActiveHiringAccess={hasActiveHiringAccess} isInstructor={isInstructor} isLabMentor={isLabMentorFlag} isAlumni={isAlumni} favorites={liveFavorites} impersonating={impersonating} impersonationAllowsWrites={impersonationWrites} focusMode={focus}>
           {tablessChild}
         </LayoutOS>
       </PageDocProvider>

@@ -19,6 +19,7 @@ const NOBODY: RoleFlags = {
   hasActiveHiringAccess: false,
   isLabMentor: false,
   isInstructor: false,
+  isAlumni: false,
 };
 
 const CORE: RoleFlags = {

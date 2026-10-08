@@ -131,6 +131,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   forms: 'Forms',
   calendar: 'Calendar',
   mentorship: 'Mentorship',
+  connect: 'Connect',
   profile: 'Profile',
   settings: 'Settings',
   help: 'Help',

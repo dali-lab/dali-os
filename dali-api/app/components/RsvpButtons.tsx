@@ -20,7 +20,7 @@ export function notifyTasksChanged() {
 }
 
 /**
- * Accept / Maybe / Decline for a MeetingInvite notification. POSTs to the
+ * Going / Maybe / Can't make it for a MeetingInvite notification. POSTs to the
  * RSVP endpoint (records attendance + marks the notification read), then
  * revalidates so the answered invite drops out of open tasks.
  */
@@ -88,7 +88,7 @@ export function RsvpButtons({
           className={buttonClasses("primary", size, "gap-1")}
         >
           <Check className={iconCls} />
-          {submitting === "accepted" ? "Accepting…" : "Accept"}
+          {submitting === "accepted" ? "…" : "Going"}
         </button>
         <button
           type="button"
@@ -106,7 +106,7 @@ export function RsvpButtons({
           className={buttonClasses("secondary", size, "gap-1")}
         >
           <XIcon className={iconCls} />
-          {submitting === "declined" ? "…" : "Decline"}
+          {submitting === "declined" ? "…" : "Can't make it"}
         </button>
       </div>
       {error && <p className="text-[10px] text-red-700 mt-1">{error}</p>}
