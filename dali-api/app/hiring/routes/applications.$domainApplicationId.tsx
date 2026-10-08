@@ -12,6 +12,7 @@ import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { presignAnswers } from "~/hiring/lib/presign";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { ApplicationViewer } from "~/hiring/components/ApplicationViewer";
+import { loadContinuedInterestView } from "~/hiring/lib/continued-interest.server";
 import { ReviewSummary } from "~/hiring/components/ReviewSummary";
 import { DetailCard } from "~/hiring/components/DetailCard";
 import { ApplicantDetailHeader } from "~/hiring/components/ApplicantDetailHeader";
@@ -70,6 +71,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       id: true,
       domainId: true,
       answers: true,
+      continuedFromId: true,
+      continuedInterestFormVersionId: true,
+      continuedInterestAnswers: true,
       // Free-form note leads write during Initial delibs as interview prep.
       // The collab layer keeps this column in sync with the live Yjs doc, so
       // reading it directly is safe. Lead-only on the UI.
@@ -486,6 +490,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
             }
           : null,
         domain: da.domain,
+        continuedInterest: await loadContinuedInterestView(da),
       },
     ],
   };

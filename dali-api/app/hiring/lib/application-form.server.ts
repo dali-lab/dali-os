@@ -157,6 +157,64 @@ export async function createCycleApplicationForm(
 }
 
 /**
+ * Create a Form for returning waitlisters (in the "Hiring" folder) and bind it
+ * via ApplicationCycle.continuedInterestFormId. No-op if the cycle already has
+ * one. Not cloned from the application template: it sits on top of an
+ * application the applicant has already written. Returns the bound form id.
+ */
+export async function createCycleContinuedInterestForm(
+  cycleId: string,
+  actorId: string,
+): Promise<string | null> {
+  const cycle = await prisma.applicationCycle.findUnique({
+    where: { id: cycleId },
+    select: { id: true, name: true, continuedInterestFormId: true },
+  });
+  if (!cycle) return null;
+  if (cycle.continuedInterestFormId) return cycle.continuedInterestFormId;
+
+  const questions: Question[] = [
+    {
+      key: randomUUID(),
+      type: "textarea",
+      required: true,
+      data: { label: "Why are you still interested in DALI?", maxWords: 200 },
+    },
+    {
+      key: randomUUID(),
+      type: "textarea",
+      required: false,
+      data: {
+        label: "What have you worked on or learned since you last applied? (optional)",
+        maxWords: 200,
+      },
+    },
+  ];
+  const folderPageId = await ensureProcessFolder({
+    processType: "HiringCycle",
+    processId: HIRING_PROCESS_ID,
+    purpose: "hiring-forms",
+    createdById: actorId,
+  });
+  const form = await prisma.form.create({
+    data: {
+      name: `${cycle.name} — Continued interest`,
+      folderPageId,
+      createdById: actorId,
+      versions: {
+        create: { versionNumber: 1, questions: questions as unknown as object, createdById: actorId },
+      },
+    },
+    select: { id: true },
+  });
+  await prisma.applicationCycle.update({
+    where: { id: cycleId },
+    data: { continuedInterestFormId: form.id },
+  });
+  return form.id;
+}
+
+/**
  * Auto-create a per-domain challenge Form (in the "Hiring" folder) and link it
  * to the (cycle, domain) via CycleDomainForm. Returns the new form id. A domain
  * may have several challenge Forms — the applicant picks one.

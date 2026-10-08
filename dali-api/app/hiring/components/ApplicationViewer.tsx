@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { Fragment, useState, useRef, useCallback, useEffect } from 'react'
 import { cn } from '~/lib/cn'
 import { X } from 'lucide-react'
 import type { Question } from '~/types'
@@ -382,6 +382,12 @@ export interface ApplicationViewerProps {
         challenge?: { name: string }
       } | null
       domain?: { name: string; displayName?: string } | null
+      // Set when this DA reuses a waitlisted application (loadContinuedInterestView).
+      continuedInterest?: {
+        fromCycleName: string
+        questions: unknown
+        answers: unknown
+      } | null
     }>
   }
   questionLabels: Record<string, string>
@@ -496,21 +502,56 @@ export function ApplicationViewer({ application, questionLabels, initialAnnotati
         const cv = dapp.challengeVersion
         const directDomain = dapp.domain
         const domainName = cv?.domain.displayName ?? cv?.domain.name ?? directDomain?.displayName ?? directDomain?.name ?? 'Domain'
+        const ci = dapp.continuedInterest
+        const ciQuestions = (ci?.questions as unknown as Question[] | undefined) ?? []
+        const ciQuestionsByKey = buildQuestionMap(ciQuestions)
+        // Below the application it was filed on top of.
+        const continuedInterestCard = ci && (
+          <div key={`${dapp.id}:continued`} className={CARD}>
+            <div className={CARD_HEADER}>
+              <h2 className={CARD_TITLE}>{domainName} continued interest</h2>
+              <p className="text-sm text-os-grey mt-1">
+                Reusing the application waitlisted in {ci.fromCycleName}.
+              </p>
+            </div>
+            <div className="px-6 pb-6 pt-3 space-y-6">
+              {answerEntries(ciQuestions, (ci.answers ?? {}) as Record<string, unknown>).map(([key, value]) => {
+                const question = ciQuestionsByKey[key]
+                return (
+                  <div key={key}>
+                    <h3 className="text-sm font-medium text-os-grey mb-1.5">{question?.data.label ?? key}</h3>
+                    {value == null || value === '' ? (
+                      <span className="text-muted-foreground italic">—</span>
+                    ) : question && NON_ANNOTATABLE_TYPES.includes(question.type) ? (
+                      <AnswerDisplay question={question} answer={String(value ?? '')} />
+                    ) : (
+                      <AnnotatableField fieldKey={`${dapp.id}:continued:${key}`} value={String(value ?? '')} {...fieldProps} />
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )
         if (!cv) {
           // Fellowship domain selection — no challenge content to render.
           return (
-            <div key={dapp.id} className={CARD}>
-              <div className={cn(CARD_HEADER, 'pb-5')}>
-                <h2 className={CARD_TITLE}>{domainName}</h2>
-                <p className="text-sm text-os-grey mt-1">Target domain. This cycle has no challenge.</p>
+            <Fragment key={dapp.id}>
+              <div className={CARD}>
+                <div className={cn(CARD_HEADER, 'pb-5')}>
+                  <h2 className={CARD_TITLE}>{domainName}</h2>
+                  <p className="text-sm text-os-grey mt-1">Target domain. This cycle has no challenge.</p>
+                </div>
               </div>
-            </div>
+              {continuedInterestCard}
+            </Fragment>
           )
         }
         const challengeQuestions = (cv.questions as unknown as Question[] | undefined) ?? []
         const challengeQuestionsByKey = buildQuestionMap(challengeQuestions)
         return (
-          <div key={dapp.id} className={CARD}>
+          <Fragment key={dapp.id}>
+          <div className={CARD}>
             <div className={CARD_HEADER}>
               <h2 className={CARD_TITLE}>{domainName} challenge</h2>
             </div>
@@ -544,6 +585,8 @@ export function ApplicationViewer({ application, questionLabels, initialAnnotati
               })}
             </div>
           </div>
+          {continuedInterestCard}
+          </Fragment>
         )
       })}
     </div>
