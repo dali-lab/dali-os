@@ -144,6 +144,9 @@ export async function action({ request }: Route.ActionArgs) {
       },
       auth.user.sub,
     );
+    // `stay` is the in-place editor on another page (EmailEditorModal), which
+    // closes itself rather than landing on the list here.
+    if (formData.get("stay")) return { saved: true as const };
     return redirect(CANONICAL);
   }
 
@@ -151,6 +154,7 @@ export async function action({ request }: Route.ActionArgs) {
     const versionId = formData.get("versionId");
     if (typeof versionId !== "string") return { error: "No version selected." };
     await rollbackEmailTemplate(key, versionId, auth.user.sub);
+    if (formData.get("stay")) return { rolledBack: true as const };
     return redirect(`${CANONICAL}?key=${encodeURIComponent(key)}`);
   }
 
