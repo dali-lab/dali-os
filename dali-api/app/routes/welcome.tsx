@@ -8,7 +8,6 @@ import { pickSafeLoginNext } from "~/lib/login-next";
 import { shouldOfferPasskey, setPasskeyPromptDismissed } from "~/lib/passkey-prompt.server";
 import { prisma } from "~/lib/db";
 import AuthShell from "~/components/auth/AuthShell";
-import { buttonClasses } from "~/components/ui/Button";
 
 export const meta: Route.MetaFunction = () => [{ title: "DALI OS · Finish setup" }];
 
@@ -176,24 +175,24 @@ function SetupStep({
 
   return (
     <AuthShell heading="One last thing" error={actionError}>
-      <p className="text-os-grey mb-6 -mt-2">
+      <p className="text-muted-foreground mb-6 -mt-2">
         You're signed in as{" "}
-        <span className="font-medium text-foreground">{email}</span>.
+        <span className="font-medium text-dark-blue">{email}</span>.
       </p>
 
-      <Form method="post" className="os-form flex flex-col gap-4">
+      <Form method="post" className="flex flex-col gap-4">
         <input type="hidden" name="door" value={door} />
 
         {/* Verified email — display-only */}
         <div>
-          <label className="os-field-label mb-1.5 block">
+          <label className="block text-sm font-medium text-dark-blue mb-1">
             Email
           </label>
           <input
             type="email"
             value={email}
             readOnly
-            className="w-full cursor-not-allowed text-os-grey!"
+            className="w-full rounded-xl border border-border bg-card/60 px-4 py-3 text-sm text-muted-foreground cursor-not-allowed"
           />
         </div>
 
@@ -201,7 +200,7 @@ function SetupStep({
           <div>
             <label
               htmlFor="fullName"
-              className="os-field-label mb-1.5 block"
+              className="block text-sm font-medium text-dark-blue mb-1"
             >
               Full name
             </label>
@@ -212,7 +211,7 @@ function SetupStep({
               required
               autoComplete="name"
               placeholder="Ada Lovelace"
-              className="w-full"
+              className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral"
             />
           </div>
         )}
@@ -223,7 +222,7 @@ function SetupStep({
           <button
             type="submit"
             disabled={submitting}
-            className={buttonClasses("primary", "md", "w-full")}
+            className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
           >
             {submitting ? "Saving…" : "Continue"}
           </button>
@@ -276,7 +275,7 @@ function PasskeyStep({ destination }: { destination: string }) {
 
   return (
     <AuthShell heading="Sign in faster next time" error={error}>
-      <p className="text-os-grey mb-6 -mt-2">
+      <p className="text-muted-foreground mb-6 -mt-2">
         Set up a passkey and next time you can sign in with Face ID, Touch ID, or
         your device — no code or password to type.
       </p>
@@ -285,7 +284,7 @@ function PasskeyStep({ destination }: { destination: string }) {
           type="button"
           onClick={() => void setUpPasskey()}
           disabled={busy}
-          className={buttonClasses("primary", "md", "w-full")}
+          className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
         >
           {busy ? "Waiting for passkey…" : "Set up a passkey"}
         </button>
@@ -294,7 +293,7 @@ function PasskeyStep({ destination }: { destination: string }) {
           <input type="hidden" name="next" value={destination} />
           <button
             type="submit"
-            className={buttonClasses("secondary", "md", "w-full")}
+            className="w-full rounded-xl border border-border bg-card text-dark-blue font-heading font-semibold py-3 text-center hover:border-accent-coral transition"
           >
             Not now
           </button>
