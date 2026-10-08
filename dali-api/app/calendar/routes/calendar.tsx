@@ -95,6 +95,7 @@ import { useCalendarView, ymdUtc } from "~/calendar/lib/use-calendar-view";
 import { MonthGrid } from "~/calendar/components/MonthGrid";
 import { AgendaView } from "~/calendar/components/AgendaView";
 import { CreateEventModal } from "~/calendar/components/CreateEventModal";
+import { EditMeetingModal } from "~/calendar/components/EditMeetingModal";
 import { TimesheetEditPopover, TimesheetDragPopover, LogHoursDialog } from "~/calendar/components/timesheet";
 import { CalendarSettingsModal } from "~/calendar/components/CalendarSettingsModal";
 import { CalendarSidebar } from "~/calendar/components/CalendarSidebar";
@@ -392,6 +393,8 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   const [classesOpen, setClassesOpen] = useState(false);
   const [calMgrOpen, setCalMgrOpen] = useState(false);
   const [composer, setComposer] = useState<ComposerState | null>(null);
+  // A DALI meeting handed off from the edit popover to the full editor.
+  const [editMeetingId, setEditMeetingId] = useState<string | null>(null);
   // The tentative block drawn on the grid while a create composer is open, so a
   // dragged-out event stays visible (and tracks the composer's time edits)
   // instead of vanishing the moment the popover appears.
@@ -419,6 +422,23 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   // revert is silent (looks like the drag just didn't take).
   useActionErrorToast(eventMoveFetcher.data as { error?: string } | undefined, {
     fallback: "Couldn't update the event. Please try again.",
+  });
+  // Detail-popover delete gets its own fetcher so a success can be confirmed
+  // with a toast: the popover has already closed by the time the server answers.
+  const eventDeleteFetcher = useFetcher<{ error?: string } | null>();
+  const prevDeleteState = useRef(eventDeleteFetcher.state);
+  useEffect(() => {
+    if (
+      prevDeleteState.current !== "idle" &&
+      eventDeleteFetcher.state === "idle" &&
+      !eventDeleteFetcher.data?.error
+    ) {
+      toast.success("Event deleted.");
+    }
+    prevDeleteState.current = eventDeleteFetcher.state;
+  }, [eventDeleteFetcher.state, eventDeleteFetcher.data, toast]);
+  useActionErrorToast(eventDeleteFetcher.data ?? undefined, {
+    fallback: "Couldn't delete the event. Please try again.",
   });
   // The wall-clock Y/M/D a drag lands on: the target day column when the move
   // crossed to another date, else the item's own start day. dayIdx columns are
@@ -483,7 +503,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       setComposer({ mode: "edit", event: e });
       return;
     }
-    eventMoveFetcher.submit(
+    eventDeleteFetcher.submit(
       {
         intent: "event-delete",
         destination: `${e.linkId}:${e.calendarId ?? "primary"}`,
@@ -1030,7 +1050,19 @@ function CalendarScreen({ data }: { data: LoaderData }) {
         <ClassesManagerModal data={data} onClose={() => setClassesOpen(false)} />
       )}
       {composer && (
-        <EventComposer data={data} state={composer} onClose={closeComposer} onDraftChange={syncDraft} />
+        <EventComposer
+          data={data}
+          state={composer}
+          onClose={closeComposer}
+          onDraftChange={syncDraft}
+          onOpenMeetingEditor={(id) => {
+            closeComposer();
+            setEditMeetingId(id);
+          }}
+        />
+      )}
+      {editMeetingId && (
+        <EditMeetingModal meetingId={editMeetingId} onClose={() => setEditMeetingId(null)} />
       )}
       {calMgrOpen && (
         <CalendarManagerModal data={data} onClose={() => setCalMgrOpen(false)} />

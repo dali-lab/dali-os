@@ -4,13 +4,30 @@ import { useRevalidator } from "react-router";
 import { AlignLeft, Clock, MapPin, UsersRound } from "lucide-react";
 import { Modal, ModalHeader, ModalFooter } from "~/components/Modal";
 import { modalCardClass } from "~/components/os-chrome";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import { DateField } from "~/components/ui/DateField";
 import { TimeField } from "~/components/ui/TimeField";
-import { ParticipantPicker } from "~/calendar/components/scheduling";
+import {
+  OptimalTimePills,
+  ParticipantPicker,
+  ScheduleWeekGrid,
+  type SlotSuggestions,
+} from "~/calendar/components/scheduling";
 import { RoomLocationField } from "~/rooms/components/RoomLocationField";
+import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
+import { weekStartIsoForDay, weekWindow } from "~/calendar/lib/view-window";
+import { eventTitleOrDefault } from "~/calendar/lib/event-title";
+import type { WhDay } from "~/calendar/lib/types";
 
 // Shape of GET /api/scheduled-meetings/:id/edit-context.
 export type EditContext = {
+  // The viewer's own schedule inputs for the availability grid.
+  viewer: {
+    userId: string;
+    timezone: string;
+    workingHours: WhDay[];
+    workingHoursEnabled: boolean;
+  };
   // Per-guest RSVP (userId → response), from the meeting's invite notifications.
   responsesByUserId?: Record<string, "Accepted" | "Declined" | "Tentative">;
   meeting: {
@@ -118,6 +135,12 @@ export function EditMeetingModal({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  // The week the availability grid shows. Seeded to the meeting's own week once
+  // the context loads; the arrows browse from there.
+  const [weekStartIso, setWeekStartIso] = useState<string | null>(null);
+  const optimalTimesEnabled = useFeatureFlag("optimal-times");
+  const [optimalSuggestions, setOptimalSuggestions] = useState<SlotSuggestions | null>(null);
+
   // Load the edit context once when the modal opens.
   useEffect(() => {
     let cancelled = false;
@@ -144,6 +167,11 @@ export function EditMeetingModal({
           : "";
         setTitle(data.meeting.title);
         setDate(d);
+        setWeekStartIso(
+          d
+            ? weekStartIsoForDay(data.viewer.timezone, d)
+            : weekWindow(data.viewer.timezone).start.toISOString(),
+        );
         setStartTime(t);
         setEndTime(end);
         setRecurrenceRule(data.meeting.recurrenceRule);
@@ -210,9 +238,49 @@ export function EditMeetingModal({
         }
       : null;
 
+  // ── Availability grid ──────────────────────────────────────────────────
+  // Shown once the meeting has guests (a solo meeting has no availability worth
+  // previewing). Same inputs and behavior as the create modal's left panel, so
+  // rescheduling doesn't mean deleting and recreating to see the week.
+  const timezone = ctx?.viewer.timezone ?? "UTC";
+  const hasGuests =
+    selectedUserIds.length > 0 || selectedGroupIds.length > 0 || guestEmails.length > 0;
+  const gridWeekStartIso = weekStartIso ?? weekWindow(timezone).start.toISOString();
+  const gridWeekEndIso = new Date(new Date(gridWeekStartIso).getTime() + 7 * 86_400_000).toISOString();
+  const shiftWeek = (weeks: number) => {
+    const ymd = getZonedYMD(new Date(gridWeekStartIso), timezone);
+    setWeekStartIso(
+      zonedDayStartUtc(ymd.year, ymd.month, ymd.day + weeks * 7, timezone).toISOString(),
+    );
+  };
+  const goToThisWeek = () => setWeekStartIso(weekWindow(timezone).start.toISOString());
+  // Picking a day moves the preview to that week; the arrows browse freely
+  // without rewriting the date (one-directional, as in the create modal).
+  const pickDate = (day: string) => {
+    setDate(day);
+    if (day) setWeekStartIso(weekStartIsoForDay(timezone, day));
+  };
+  // s / e are "YYYY-MM-DDTHH:mm" local strings from the grid or a pill.
+  const handleSelectRange = (s: string, e: string) => {
+    const [day, start] = s.split("T");
+    pickDate(day ?? "");
+    setStartTime(start?.slice(0, 5) ?? "");
+    setEndTime(e.split("T")[1]?.slice(0, 5) ?? "");
+  };
+  const selectedStartLocal = date && startTime ? `${date}T${startTime}` : "";
+  const selectedEndLocal =
+    !isNaN(startMs) && durationMinutes > 0
+      ? (() => {
+          const end = new Date(startMs + durationMinutes * 60_000);
+          return `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}T${pad(end.getHours())}:${pad(end.getMinutes())}`;
+        })()
+      : "";
+  const gridParticipantIds = ctx
+    ? Array.from(new Set([...resolvedParticipantIds, ctx.viewer.userId]))
+    : resolvedParticipantIds;
+
   const canSave =
     !!ctx &&
-    title.trim() !== "" &&
     date !== "" &&
     startTime !== "" &&
     endTime !== "" &&
@@ -227,7 +295,7 @@ export function EditMeetingModal({
       // Always sent, blank included: clearing a field has to clear it here and
       // on the linked Google event, which an omitted key would leave untouched.
       const payload: Record<string, unknown> = {
-        title: title.trim(),
+        title: eventTitleOrDefault(title),
         durationMinutes,
         location: location.trim(),
         description: description.trim(),
@@ -277,7 +345,7 @@ export function EditMeetingModal({
       open
       onClose={onClose}
       labelledBy="edit-meeting-title"
-      containerClassName={modalCardClass("max-w-lg")}
+      containerClassName={modalCardClass(ctx && hasGuests ? "max-w-[80rem]" : "max-w-lg")}
       disableEscape={saving}
     >
       <ModalHeader titleId="edit-meeting-title" title="Edit event" onClose={onClose} />
@@ -287,20 +355,43 @@ export function EditMeetingModal({
       ) : !ctx ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : (
-        <div className="flex flex-col gap-5">
-          <div>
-            <label htmlFor="edit-mtg-title" className={labelClass}>
-              Title <span className="text-red-500">*</span>
-            </label>
-            <input
-              id="edit-mtg-title"
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className={fieldClass}
-              placeholder="e.g. Deserto sync"
+        <div className="flex flex-col gap-6 sm:flex-row">
+        {hasGuests && (
+          <div className="flex min-w-0 shrink-0 flex-col gap-3 sm:w-[56%]">
+            <ScheduleWeekGrid
+              participantIds={gridParticipantIds}
+              users={ctx.options.users}
+              workingHours={ctx.viewer.workingHours}
+              workingHoursEnabled={ctx.viewer.workingHoursEnabled}
+              durationMinutes={durationMinutes}
+              timezone={timezone}
+              weekStartIso={gridWeekStartIso}
+              weekEndIso={gridWeekEndIso}
+              onSelectRange={handleSelectRange}
+              selectedStartLocal={selectedStartLocal || undefined}
+              selectedEndLocal={selectedEndLocal || undefined}
+              compact
+              enableOptimalTimes={optimalTimesEnabled}
+              onSuggestionsChange={setOptimalSuggestions}
+              weekNav={{ onShift: shiftWeek, onToday: goToThisWeek }}
+            />
+            <OptimalTimePills
+              suggestions={optimalSuggestions}
+              selectedStartLocal={selectedStartLocal || undefined}
+              onPick={handleSelectRange}
             />
           </div>
+        )}
+        <div className="flex min-w-0 flex-1 flex-col gap-5">
+          <input
+            id="edit-mtg-title"
+            type="text"
+            aria-label="Title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className={fieldClass}
+            placeholder="Add title"
+          />
 
           {/* Guests */}
           <FieldRow icon={UsersRound}>
@@ -331,7 +422,7 @@ export function EditMeetingModal({
               <DateField
                 mode="date"
                 value={date}
-                onChange={(v) => setDate(v)}
+                onChange={pickDate}
                 ariaLabel="Date"
                 className="min-w-[130px]"
               />
@@ -399,6 +490,7 @@ export function EditMeetingModal({
           </div>
 
           {saveError && <p className="text-sm text-red-600">{saveError}</p>}
+        </div>
         </div>
       )}
 
