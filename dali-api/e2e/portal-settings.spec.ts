@@ -11,8 +11,14 @@ test('applicant edits settings via the account menu', async ({ page, loginAs }) 
   await expect(page).toHaveURL(/\/portal\/settings/);
 
   await page.getByLabel('Pronouns').fill('they/them');
+  // The page has no "Saved" state to wait on, and the button is only disabled
+  // for the beat the submit is in flight, so anchor on the action's response:
+  // reloading before it lands aborts the save and reads back the old value.
+  const saved = page.waitForResponse(
+    r => r.request().method() === 'POST' && r.url().includes('/portal/settings'),
+  );
   await page.getByRole('button', { name: 'Save profile' }).click();
-  await expect(page.getByRole('button', { name: 'Save profile' })).toBeEnabled();
+  expect((await saved).ok()).toBe(true);
 
   await page.reload();
   await expect(page.getByLabel('Pronouns')).toHaveValue('they/them');

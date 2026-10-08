@@ -92,7 +92,7 @@ test.describe('hiring lead workflow', () => {
     }
   });
 
-  test('decision emails show as status here, editable only in Admin', async ({ page }) => {
+  test('decision emails show as status here, edited through Core', async ({ page }) => {
     await page.goto('/hiring/lead');
     const frame = cyclesFrame(page);
     await frame.getByRole('link', { name: /Fall 2026/ }).click();
@@ -105,15 +105,20 @@ test.describe('hiring lead workflow', () => {
     const row = frame.getByText('Sent when a rejection is released.').locator('xpath=../..');
     await expect(row).toContainText('Subject:');
 
-    // No editor on this tab. The Setup action was gated on isCycleAdmin, so a
-    // per-cycle role could rewrite copy every cycle shares; lab-wide copy is
-    // Core's, and there is now one place it is edited.
+    // No per-cycle editor. The copy is shared by every cycle, so it is Core's:
+    // a Core viewer's row opens Core's own editor in place, and the footer link
+    // reaches that editor's home directly rather than via a redirect chain.
     await expect(row.getByRole('button', { name: /^(Edit|Write)$/ })).toHaveCount(0);
-    const editLink = frame.getByRole('link', { name: /Edit in Core/ }).first();
-    await expect(editLink).toBeVisible();
-    // The link must reach the editor itself, not a redirect chain: Core is the
-    // canonical home, so this is the address every link out should carry.
-    await expect(editLink).toHaveAttribute('href', '/core/communications/email');
+    const coreLink = frame.getByRole('link', { name: /See all in Core/ }).first();
+    await expect(coreLink).toBeVisible();
+    await expect(coreLink).toHaveAttribute('href', '/core/communications/email');
+
+    // Jordan holds a Core assignment, so the row itself is the edit affordance.
+    await frame.getByRole('button', { name: 'Edit Rejected email' }).click();
+    const editor = frame.getByRole('dialog');
+    await expect(editor).toBeVisible();
+    await expect(editor.getByRole('heading', { name: 'Decision: not accepted' })).toBeVisible();
+    await expect(editor.getByRole('button', { name: 'Save changes' })).toBeVisible();
   });
 
   test('review tab holds the reviewer and interviewer rosters', async ({ page }) => {
