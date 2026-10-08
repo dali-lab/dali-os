@@ -170,6 +170,8 @@ export default [
     // The writing page sits outside the Resources layout: no masthead or
     // bookmark tabs, just the post and its settings.
     route("resources/write/:postId", "routes/resources.write.$postId.tsx"),
+    // DALI OS feedback: the feature request feed the shell's feedback button posts to.
+    route("feedback", "routes/feedback.tsx"),
 
     // Drive — the unified documents + files + forms + agreements hub. This is the
     // only browsing surface; the old /documents and /forms hubs have been removed
