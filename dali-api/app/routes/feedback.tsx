@@ -331,10 +331,7 @@ export default function FeedbackFeed() {
   const { pageTitle, bodyText } = useOsChrome();
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1.5">
-        <h1 className={pageTitle}>Feature requests</h1>
-        <p className={bodyText}>What lab members want from DALI OS. React to back a request.</p>
-      </div>
+      <h1 className={pageTitle}>Feature requests</h1>
       {posts.length === 0 ? (
         <p className={cn(bodyText, "flex items-center gap-2")}>
           <MessageCircle className="h-4 w-4" aria-hidden />
