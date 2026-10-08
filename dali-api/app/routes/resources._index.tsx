@@ -8,8 +8,9 @@ import { fullName, formatDateShort } from "~/lib/display";
 import { DEFAULT_BLOG_COVER, blogListing } from "~/lib/blog-preview";
 import { requireResourcesViewer } from "~/lib/resources.server";
 import {
-  UNTOUCHED_DRAFT,
+  BLOG_LISTING_ORDER,
   blogStatus,
+  listedBlogPostsWhere,
   moveBlogPostPin,
   pinBlogPostToTop,
   unpinBlogPost,
@@ -27,18 +28,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   const { user, core } = await requireResourcesViewer(request);
   const canApprove = await isAdmin(user.sub);
   const rows = await prisma.blogPost.findMany({
-    where: {
-      OR: [
-        { publishedAt: { not: null } },
-        { authorId: user.sub, NOT: UNTOUCHED_DRAFT },
-        ...(canApprove ? [{ submittedAt: { not: null } }] : []),
-      ],
-    },
-    orderBy: [
-      { frontPageRank: { sort: "asc", nulls: "last" } },
-      { publishedAt: "desc" },
-      { updatedAt: "desc" },
-    ],
+    where: listedBlogPostsWhere(user.sub, canApprove),
+    orderBy: BLOG_LISTING_ORDER,
     select: {
       id: true,
       title: true,

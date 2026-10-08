@@ -15,6 +15,7 @@ import { isAiEnabled } from "~/lib/ai.server";
 import { DEFAULT_BLOG_COVER, blogListing } from "~/lib/blog-preview";
 import {
   blogStatus,
+  canChangeBlogAudience,
   loadBlogPost,
   pinBlogPostToTop,
   publishBlogPost,
@@ -86,8 +87,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       return { ok: true };
     }
     case "visibility":
-      // An Admin approves a post for an audience; its author can't widen that after.
-      if (!canApprove && blogStatus(post) !== "draft") {
+      if (!canChangeBlogAudience(post, canApprove)) {
         return Response.json({ error: "Move it back to a draft first." }, { status: 400 });
       }
       await prisma.blogPost.update({
