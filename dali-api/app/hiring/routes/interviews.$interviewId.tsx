@@ -26,6 +26,7 @@ import { PresenceProvider } from '~/components/collab/PresenceProvider'
 import { PresenceBar } from '~/components/collab/PresenceBar'
 import { useSharedString } from '~/components/collab/useSharedString'
 import { ApplicationViewer } from '~/hiring/components/ApplicationViewer'
+import { loadContinuedInterestView } from '~/hiring/lib/continued-interest.server'
 import { ReviewSummary } from '~/hiring/components/ReviewSummary'
 import { buildCriteriaLabelMap } from '~/hiring/lib/rubric-criteria'
 import type { Route } from './+types/interviews.$interviewId'
@@ -174,6 +175,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           }
         : interview.domainApplication.challengeFormVersion,
       answers: presignedChallengeAnswers,
+      continuedInterest: await loadContinuedInterestView(interview.domainApplication),
       reviews: reviewsWithPhotos,
       application: {
         ...interview.domainApplication.application,
@@ -273,6 +275,7 @@ export default function InterviewDetailPage() {
             }
           : null,
         domain: interview.domainApplication?.domain ?? null,
+        continuedInterest: interview.domainApplication?.continuedInterest ?? null,
       },
     ],
   }

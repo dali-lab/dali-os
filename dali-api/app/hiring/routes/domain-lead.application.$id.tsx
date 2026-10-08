@@ -15,6 +15,7 @@ import { Tooltip, InfoTip } from "~/components/ui/floating";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { Avatar } from "~/components/ui/Avatar";
 import { ApplicationViewer } from "~/hiring/components/ApplicationViewer";
+import { loadContinuedInterestView } from "~/hiring/lib/continued-interest.server";
 import { ReviewSummary } from "~/hiring/components/ReviewSummary";
 import { DetailCard } from "~/hiring/components/DetailCard";
 import { ApplicantDetailHeader } from "~/hiring/components/ApplicantDetailHeader";
@@ -337,6 +338,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
             }
           : null,
         answers: presignedChallengeAnswers,
+        continuedInterest: await loadContinuedInterestView(da),
         interviews: interviewsWithNotes,
         reviews: reviewsWithPhotos,
       },
@@ -405,6 +407,7 @@ export default function DomainLeadApplicationView() {
             }
           : null,
         domain: da.domain,
+        continuedInterest: da.continuedInterest ?? null,
       },
     ],
   };
