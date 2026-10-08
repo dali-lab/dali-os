@@ -21,6 +21,7 @@ import {
 import { logAuditEvent } from "~/lib/audit";
 import { PERSONAL_MAIL_NOTICE_VERSION } from "~/email/lib/personal-notice";
 import { folderQuery, mailFolder } from "~/email/lib/folders";
+import { parseFeedCursor } from "~/email/lib/feed";
 import { notifyMailCommentMentions } from "~/email/lib/comment-mentions.server";
 import { senderAddress } from "~/email/lib/format";
 import { resolvePhotoUrl } from "~/lib/photo";
@@ -47,6 +48,8 @@ const MAX_ATTACHMENTS_BYTES = 25 * 1024 * 1024;
 const ATTACHMENT_KEY_PREFIX = "uploads/email-attachments/";
 
 export type FeedThread = ThreadSummary & { accountId: string };
+// accountId → that inbox's Gmail page token for its next page of threads.
+export type FeedCursor = Record<string, string>;
 
 async function requireEmailUser(request: Request) {
   const auth = await requireAuth(request);
@@ -83,23 +86,71 @@ async function loadUnreadCounts(accounts: ReadableMailAccount[]): Promise<Record
   return Object.fromEntries(counts.filter((c) => c !== null));
 }
 
-async function loadFeed(accounts: ReadableMailAccount[], query: string, includeSpamTrash: boolean) {
+// Each inbox pages on its own Gmail token, so the cursor is one token per
+// inbox. With a cursor, only the inboxes it names are read (the rest have run
+// out). An inbox that fails keeps its token so the page can be asked for again.
+async function loadFeed(
+  accounts: ReadableMailAccount[],
+  query: string,
+  includeSpamTrash: boolean,
+  cursor?: FeedCursor,
+) {
   const errors: string[] = [];
+  const next: FeedCursor = {};
   const lists = await Promise.all(
-    accounts.map(async (a) => {
-      try {
-        const token = await getMailboxToken(a);
-        const threads = await listThreads(token, { query, max: THREADS_PER_INBOX, includeSpamTrash });
-        return threads.map((t) => ({ ...t, accountId: a.id }));
-      } catch (err) {
-        if (!(err instanceof MailboxError)) throw err;
-        errors.push(a.id);
-        return [];
-      }
-    }),
+    accounts
+      .filter((a) => !cursor || cursor[a.id])
+      .map(async (a) => {
+        try {
+          const token = await getMailboxToken(a);
+          const page = await listThreads(token, {
+            query,
+            max: THREADS_PER_INBOX,
+            includeSpamTrash,
+            pageToken: cursor?.[a.id],
+          });
+          if (page.nextPageToken) next[a.id] = page.nextPageToken;
+          return page.threads.map((t) => ({ ...t, accountId: a.id }));
+        } catch (err) {
+          if (!(err instanceof MailboxError)) throw err;
+          errors.push(a.id);
+          if (cursor?.[a.id]) next[a.id] = cursor[a.id];
+          return [];
+        }
+      }),
   );
   const threads: FeedThread[] = lists.flat().sort((x, y) => y.date.localeCompare(x.date));
-  return { threads, errors };
+  return { threads, errors, next };
+}
+
+// Which mail the URL asks for. Shared by the page and its "Load more" route so
+// both read the same inboxes with the same query.
+function feedScope(url: URL) {
+  const inbox = url.searchParams.get("inbox");
+  const folder = mailFolder(url.searchParams.get("folder"));
+  const search = url.searchParams.get("q")?.trim() ?? "";
+  const searchAccounts = url.searchParams.get("in")?.split(",").filter(Boolean) ?? [];
+  return {
+    inbox,
+    folder,
+    search,
+    includes: (a: ReadableMailAccount) =>
+      inbox ? a.id === inbox : searchAccounts.length === 0 || searchAccounts.includes(a.id),
+  };
+}
+
+// The next page of the feed, for GET /api/email/threads.
+export async function loadMoreThreads(request: Request): Promise<Awaited<ReturnType<typeof loadFeed>>> {
+  const user = await requireEmailUser(request);
+  const url = new URL(request.url);
+  const cursor = parseFeedCursor(url.searchParams.get("cursor"));
+  const auth = await requireAuth(request);
+  if (user.demo || !cursor || (auth.ok && isImpersonating(auth))) return { threads: [], errors: [], next: {} };
+  const scope = feedScope(url);
+  const accounts = (await readableMailAccounts(user.userId, request)).filter(
+    (a) => a.oauthTokens && !a.archived && scope.includes(a),
+  );
+  return loadFeed(accounts, folderQuery(scope.folder, scope.search), scope.folder.spamTrash, cursor);
 }
 
 // Unread total across every inbox the user can read, for the sidebar badge.
@@ -119,11 +170,9 @@ export async function loadEmailPage(request: Request): Promise<EmailPageData> {
 
 async function loadLiveEmailPage(request: Request, userId: string, roles: UserRoles) {
   const url = new URL(request.url);
-  const inbox = url.searchParams.get("inbox");
+  const scope = feedScope(url);
+  const { inbox, folder, search } = scope;
   const view = url.searchParams.get("view") === "drafts" ? "drafts" : "inbox";
-  const folder = mailFolder(url.searchParams.get("folder"));
-  const search = url.searchParams.get("q")?.trim() ?? "";
-  const searchAccounts = url.searchParams.get("in")?.split(",").filter(Boolean) ?? [];
   const selectedRef = parseThreadRef(url.searchParams.get("t"));
 
   const accounts = await readableMailAccounts(userId, request);
@@ -134,9 +183,7 @@ async function loadLiveEmailPage(request: Request, userId: string, roles: UserRo
   const auth = await requireAuth(request);
   const mailHidden = auth.ok && isImpersonating(auth);
   const connected = mailHidden ? [] : accounts.filter((a) => a.oauthTokens && !a.archived);
-  const feedAccounts = connected.filter((a) =>
-    inbox ? a.id === inbox : searchAccounts.length === 0 || searchAccounts.includes(a.id),
-  );
+  const feedAccounts = connected.filter(scope.includes);
 
   const selectedAccount = selectedRef
     ? connected.find((a) => a.id === selectedRef.accountId) ?? null
@@ -144,7 +191,7 @@ async function loadLiveEmailPage(request: Request, userId: string, roles: UserRo
   const [feed, selected, drafts, categories, myConnections, unread] = await Promise.all([
     view === "inbox"
       ? loadFeed(feedAccounts, folderQuery(folder, search), folder.spamTrash)
-      : { threads: [], errors: [] },
+      : { threads: [], errors: [], next: {} },
     selectedAccount && selectedRef
       ? loadThread(userId, selectedAccount, selectedRef.threadId)
       : null,
@@ -188,7 +235,7 @@ async function loadLiveEmailPage(request: Request, userId: string, roles: UserRo
       syncError: a.syncError,
       archived: a.archived,
     })),
-    feed: { threads: feed.threads, errors: feed.errors },
+    feed,
     unread,
     selected,
     drafts: drafts.map((d) => ({

@@ -197,12 +197,13 @@ const SUMMARY_HEADERS = ["From", "To", "Subject"]
 
 export async function listThreads(
   token: string,
-  opts: { query: string; max: number; includeSpamTrash?: boolean },
-): Promise<ThreadSummary[]> {
+  opts: { query: string; max: number; includeSpamTrash?: boolean; pageToken?: string },
+): Promise<{ threads: ThreadSummary[]; nextPageToken: string | null }> {
   const params = new URLSearchParams({ maxResults: String(opts.max) });
   if (opts.query) params.set("q", opts.query);
   if (opts.includeSpamTrash) params.set("includeSpamTrash", "true");
-  const list = await gmail<{ threads?: { id: string }[] }>(token, `/threads?${params}`);
+  if (opts.pageToken) params.set("pageToken", opts.pageToken);
+  const list = await gmail<{ threads?: { id: string }[]; nextPageToken?: string }>(token, `/threads?${params}`);
   const threads = await Promise.all(
     (list.threads ?? []).map((t) =>
       gmail<{ id: string; messages?: GmailMessage[] }>(
@@ -211,7 +212,7 @@ export async function listThreads(
       ),
     ),
   );
-  return threads.flatMap((t) => {
+  const summaries = threads.flatMap((t) => {
     const messages = t.messages ?? [];
     const first = messages[0];
     const last = messages[messages.length - 1];
@@ -229,6 +230,7 @@ export async function listThreads(
       },
     ];
   });
+  return { threads: summaries, nextPageToken: list.nextPageToken ?? null };
 }
 
 // Unread messages in the inbox, straight from Gmail's INBOX label counter.
