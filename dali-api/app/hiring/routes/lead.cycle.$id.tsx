@@ -38,7 +38,7 @@ import {
   type Timeline,
 } from "~/hiring/lib/cycle-timeline";
 import { addDomainMentors, domainMentorIds } from "~/hiring/lib/cycle-rosters.server";
-import { listHiringEmails } from "~/hiring/lib/hiring-emails.server";
+import { getHiringEmail, listHiringEmails } from "~/hiring/lib/hiring-emails.server";
 import { roundsWithBoards, saveCycleTimeline } from "~/hiring/lib/cycle-timeline.server";
 import { buildPhaseTabs, resolvePhaseTab } from "~/hiring/lib/cycle-phase-tabs";
 import { TargetDomainsCard } from "~/hiring/components/cycle-setup/TargetDomainsCard";
@@ -50,6 +50,7 @@ import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { PresenceBar } from "~/components/collab/PresenceBar";
 import { renderEmail } from "~/lib/email";
 import {
+  CONTINUED_INTEREST_SLOT,
   TEMPLATE_VARIABLES,
   decisionSlot,
   notificationSlot,
@@ -353,6 +354,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const hiringEmails: Record<string, { subject: string; body: string }> = Object.fromEntries(
     (await listHiringEmails()).map((e) => [e.slot, { subject: e.subject, body: e.body }]),
   );
+  // Unlike the rest, this one sends its default copy until Core writes a row.
+  const continuedInterestEmail = await getHiringEmail(CONTINUED_INTEREST_SLOT);
+  if (continuedInterestEmail) hiringEmails[CONTINUED_INTEREST_SLOT] = continuedInterestEmail;
 
   const memberSetup = isMemberCycle ? await loadMemberCycleSetup(params.id) : null;
   const [progress, termOptions, phaseStatusByDomain, startTermCandidates] = await Promise.all([
@@ -2150,9 +2154,12 @@ export default function HiringLeadCycleDetails() {
             description="The email each released decision sends."
             hiringEmails={loaderData?.hiringEmails ?? {}}
             canEdit={!!loaderData?.viewerIsCore}
-            slots={DECISION_EMAIL_SLOTS.filter(
-              (slot) => hasInterviews || slot.type !== "InvitedToInterview",
-            ).map((slot) => ({ ...slot, templateSlot: decisionSlot(slot.type) }))}
+            slots={[
+              ...DECISION_EMAIL_SLOTS.filter(
+                (slot) => hasInterviews || slot.type !== "InvitedToInterview",
+              ).map((slot) => ({ ...slot, templateSlot: decisionSlot(slot.type) })),
+              ...(cycle?.applicants === 'Students' ? [CONTINUED_INTEREST_EMAIL_SLOT] : []),
+            ]}
           />
           </NavSection>
 
@@ -3763,6 +3770,12 @@ const DECISION_EMAIL_SLOTS: ReadonlyArray<{ type: DecisionSlotType; label: strin
   { type: "Waitlisted", label: "Waitlisted", description: "Sent when an applicant is waitlisted." },
   { type: "Accepted", label: "Accepted", description: "Sent when an offer is released." },
 ];
+
+const CONTINUED_INTEREST_EMAIL_SLOT = {
+  label: "Removed from waitlist",
+  description: "Sent when Core removes someone from the waitlist. Invites them to reapply with continued interest.",
+  templateSlot: CONTINUED_INTEREST_SLOT,
+} as const;
 
 function EmailStatusSection({
   title,

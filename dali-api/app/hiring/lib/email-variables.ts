@@ -32,9 +32,12 @@ export const TEMPLATE_VARIABLE_DESCRIPTIONS: Record<TemplateVariableName, string
 export type DecisionSlotType = "Rejected" | "InvitedToInterview" | "Accepted" | "Waitlisted";
 export type NotificationSlotType = NotificationType;
 
+export const CONTINUED_INTEREST_SLOT = "waitlist:ContinuedInterest";
+
 export type TemplateSlot =
   | `decision:${DecisionSlotType}`
-  | `notification:${NotificationSlotType}`;
+  | `notification:${NotificationSlotType}`
+  | typeof CONTINUED_INTEREST_SLOT;
 
 export const decisionSlot = (t: DecisionSlotType): TemplateSlot => `decision:${t}`;
 export const notificationSlot = (t: NotificationSlotType): TemplateSlot => `notification:${t}`;
@@ -50,6 +53,9 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlot, readonly TemplateVariableN
   "decision:InvitedToInterview": ["firstName", "domain"],
   "decision:Accepted": ["firstName", "domain"],
   "decision:Waitlisted": ["firstName", "domain"],
+
+  // Waitlist removal — removeFromWaitlist passes firstName + domain.
+  [CONTINUED_INTEREST_SLOT]: ["firstName", "domain"],
 
   // Application confirmation — portal.apply passes firstName only.
   // {{domain}} is intentionally omitted: an applicant may apply to multiple
