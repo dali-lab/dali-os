@@ -1,4 +1,6 @@
 import { Popover, Tooltip } from "~/components/ui/floating";
+import { cn } from "~/lib/cn";
+import { OS_SURFACE_CLASS } from "~/components/ui/floating/styles";
 
 // Notion-style page icon. Surfaces Page.iconEmoji (persisted by the host via
 // onChange). No emoji-picker dependency in the repo, so this is a small curated
@@ -40,7 +42,7 @@ export function PageIconPicker({
   return (
     <Popover
       ariaLabel="Page icon"
-      panelClassName="z-[60] w-max rounded-md border border-border bg-card p-2 shadow-brand-2 focus:outline-none"
+      panelClassName={cn("z-[60] w-max p-2 focus:outline-none", OS_SURFACE_CLASS)}
       trigger={
         <Tooltip content={iconEmoji ? "Change icon" : "Add icon"}>
           <button

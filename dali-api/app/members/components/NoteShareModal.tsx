@@ -7,6 +7,7 @@ import { buttonClasses } from "~/components/ui/Button";
 import { Select } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
 import type { NoteSummary } from "~/members/lib/personal-notes.server";
+import { modalCardClass } from "~/components/os-chrome";
 
 // Everything about a note's audience, in one place: who can see it at all,
 // who it's shared with by name, and whether it's been put forward for the
@@ -98,7 +99,7 @@ export function NoteShareModal({
       onClose={onClose}
       labelledBy="note-share-title"
       initialFocusRef={searchRef}
-      containerClassName="bg-card rounded-2xl shadow-brand-2 max-w-lg w-full p-5 sm:p-6 my-auto max-h-[85vh] overflow-y-auto"
+      containerClassName={modalCardClass("max-w-lg")}
     >
       <ModalHeader
         titleId="note-share-title"

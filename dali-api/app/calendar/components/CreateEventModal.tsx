@@ -328,9 +328,9 @@ export function CreateEventModal({
   // invisible.
   const eventCanLogWork = !allDay && repeatSpecToRRule(repeat, repeatAnchorLocal) === null;
   const eventLoggingWork = isWork && eventCanLogWork;
-  // A plain event holds a room with a one-off booking, which has the same
-  // shape limits: one timed slot. A series or an all-day hold is a meeting's.
-  const eventCanBookRoom = eventCanLogWork;
+  // A plain event's room hold now repeats with it. Only an all-day event has
+  // no timed slot to hold.
+  const eventCanBookRoom = !allDay;
   // A meeting keeps the toggle when it repeats. The log links to the
   // ScheduledMeeting (one row per meeting per user) and is dated to the series
   // anchor — the first occurrence, the one time being scheduled here.
@@ -454,8 +454,11 @@ export function CreateEventModal({
   // underline, and the icon rows use borderless controls that only show their
   // frame on hover/focus — so the form reads as a list of lines, not a stack
   // of boxes.
+  // `bg-transparent!` because app.css paints every <input> with --color-card in
+  // an unlayered rule, which outbids the plain utility and shows as a square
+  // card-coloured block in dark mode.
   const titleClass =
-    "w-full border-0 border-b border-border bg-transparent px-0 pb-2 text-2xl font-medium text-foreground placeholder:text-muted-foreground/70 focus:border-os-accent focus:outline-none focus:ring-0";
+    "w-full rounded-none border-0 border-b border-border bg-transparent! px-0 pb-2 text-2xl font-medium text-foreground placeholder:text-muted-foreground/70 focus:border-os-accent focus:outline-none focus:ring-0";
   const quietFieldClass =
     "w-full rounded-[10px] border border-transparent bg-transparent px-2.5 py-2 text-sm text-foreground placeholder:text-muted-foreground hover:border-border focus:border-os-accent focus:bg-background focus:outline-none";
 
@@ -604,6 +607,9 @@ export function CreateEventModal({
               )}
 
               {/* Title — the one field that carries the modal's heading weight */}
+              <label htmlFor="cem-title" className={labelClass}>
+                Title <span className="text-red-500">*</span>
+              </label>
               <input
                 id="cem-title"
                 name="title"
@@ -719,6 +725,7 @@ export function CreateEventModal({
                   onRoomsChange={setRoomIds}
                   startIso={startIso}
                   endIso={endIso}
+                  recurrenceRule={repeatSpecToRRule(repeat, repeatAnchorLocal)}
                   className={quietFieldClass}
                 />
               </FieldRow>
@@ -905,6 +912,7 @@ export function CreateEventModal({
                   onRoomsChange={setRoomIds}
                   startIso={startIso}
                   endIso={endIso}
+                  recurrenceRule={repeatSpecToRRule(repeat, selectedStartLocal)}
                   className={fieldClass}
                 />
               </div>

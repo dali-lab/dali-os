@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import Cropper, { type Area } from "react-easy-crop";
 import { Modal, ModalHeader } from "./Modal";
+import { modalCardClass } from "~/components/os-chrome";
 
 // Short side of the output. The long side follows `aspect`, so a square avatar
 // and a wide banner come out at comparable resolution.
@@ -109,7 +110,7 @@ export function PhotoCropModal({
       onClose={onCancel}
       labelledBy="photo-crop-title"
       disableEscape={processing}
-      containerClassName="bg-card rounded-2xl shadow-brand-2 max-w-md w-full p-5 sm:p-6 my-auto"
+      containerClassName={modalCardClass("max-w-md")}
     >
       <ModalHeader
         titleId="photo-crop-title"

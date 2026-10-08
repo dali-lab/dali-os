@@ -47,6 +47,7 @@ import { Menu, Select } from "~/components/ui/floating";
 import { Modal } from "~/components/Modal";
 import { cn } from "~/lib/cn";
 import { filterPillClass } from "~/components/ui/floating/styles";
+import { modalCardClass } from "~/components/os-chrome";
 
 export const meta: Route.MetaFunction = () => [{ title: "Drive · DALI OS" }];
 
@@ -2115,7 +2116,7 @@ function TrashPanel({
 
   return (
     <Modal open onClose={onClose} labelledBy={titleId}
-      containerClassName="bg-card rounded-2xl shadow-brand-2 max-w-2xl w-full p-5 sm:p-6 my-auto max-h-[80vh] flex flex-col"
+      containerClassName={modalCardClass("max-w-2xl max-h-[80vh] flex flex-col")}
     >
       <div className="flex items-center justify-between mb-4">
         <h2 id={titleId} className="text-base font-semibold text-foreground flex items-center gap-2">

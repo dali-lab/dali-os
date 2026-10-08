@@ -23,6 +23,9 @@ type Room = {
   capacity: number | null;
   // What already holds the room in the asked-for window (absent without one).
   conflict?: string | null;
+  // The colliding occurrence's date, when `conflict` came from a series check
+  // and it wasn't the first occurrence (absent otherwise).
+  conflictOn?: string | null;
 };
 
 /** The Location text a set of rooms writes, and the text that keeps them held. */
@@ -39,6 +42,9 @@ export function roomsLocation(rooms: { name: string }[]) {
  * `onRoomsChange`, which is what the caller submits to hold the room. The hold
  * lasts only while the text is still the picked rooms' names: typing any other
  * location drops it, so what the field reads is always what gets booked.
+ *
+ * With `recurrenceRule` set, availability covers every occurrence of the
+ * series, not just the one at `startIso`/`endIso`.
  */
 export function RoomLocationField({
   enabled,
@@ -50,6 +56,7 @@ export function RoomLocationField({
   onRoomsChange,
   startIso,
   endIso,
+  recurrenceRule,
   excludeMeetingId,
   placeholder,
   className,
@@ -64,6 +71,8 @@ export function RoomLocationField({
   /** The event's window; availability is only known once both are set. */
   startIso?: string;
   endIso?: string;
+  /** The event's repeat rule, when it has one — checks the whole series. */
+  recurrenceRule?: string | null;
   /** The meeting being edited, so its own hold doesn't read as a conflict. */
   excludeMeetingId?: string;
   placeholder?: string;
@@ -82,6 +91,7 @@ export function RoomLocationField({
     if (startIso && endIso && startIso < endIso) {
       params.set("start", startIso);
       params.set("end", endIso);
+      if (recurrenceRule) params.set("recurrenceRule", recurrenceRule);
       if (excludeMeetingId) params.set("excludeMeetingId", excludeMeetingId);
     }
     fetch(`/api/rooms?${params}`, { credentials: "include" })
@@ -95,7 +105,7 @@ export function RoomLocationField({
     return () => {
       cancelled = true;
     };
-  }, [enabled, startIso, endIso, excludeMeetingId]);
+  }, [enabled, startIso, endIso, recurrenceRule, excludeMeetingId]);
 
   const selected = rooms.filter((r) => roomIds.includes(r.id));
   const selectedText = roomsLocation(selected);
@@ -150,6 +160,7 @@ export function RoomLocationField({
 
   const listId = `${id}-rooms`;
   const unavailable = selected.filter((r) => r.conflict);
+  const unavailableOn = unavailable.find((r) => r.conflictOn)?.conflictOn;
 
   return (
     <div>
@@ -195,7 +206,9 @@ export function RoomLocationField({
       {selected.length > 0 && (
         <p className={cn("mt-1 px-2.5 text-xs", unavailable.length ? "text-red-600" : "text-muted-foreground")}>
           {unavailable.length
-            ? `${roomsLocation(unavailable)} is not available at this time.`
+            ? unavailableOn
+              ? `${roomsLocation(unavailable)} is not available on ${unavailableOn}.`
+              : `${roomsLocation(unavailable)} is not available at this time.`
             : `Books ${selectedText} for this time.`}
         </p>
       )}
@@ -214,7 +227,9 @@ export function RoomLocationField({
               const picked = roomIds.includes(room.id);
               const blocked = !!room.conflict && !picked;
               const detail = room.conflict
-                ? `Unavailable, booked for ${room.conflict}`
+                ? room.conflictOn
+                  ? `Unavailable on ${room.conflictOn}, booked for ${room.conflict}`
+                  : `Unavailable, booked for ${room.conflict}`
                 : [room.description, room.capacity ? `Seats ${room.capacity}` : null]
                     .filter(Boolean)
                     .join(" · ");

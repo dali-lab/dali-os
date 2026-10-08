@@ -8,7 +8,6 @@ import {
   Check,
   ChevronsUpDown,
   HelpCircle,
-  Home,
   LogOut,
   Mail,
   Menu,
@@ -260,7 +259,6 @@ export function LayoutOS({
   const areas = visibleAreas(roleFlags, navFlags)
   const routeArea = areaForPath(path, navFlags)
   const pinned = pinnedNavItems(navFlags)
-  const roomBooking = ROOM_BOOKING_NAV_ITEM
   const activeArea = routeArea ?? areas.find((a) => a.key === lastAreaKey) ?? areas[0]
   const activeSubtabs = activeArea ? visibleSubtabs(activeArea, roleFlags) : []
   const activeHref = activeArea ? activeSubtabHref(activeArea, path) : undefined
@@ -279,7 +277,7 @@ export function LayoutOS({
     tabClickProps({ url: area.hubPath, label: area.label }).onClick(e)
   }
 
-  const pinnedLabel = [...pinned, roomBooking].find((i) => isPinnedActive(path, i.href, navFlags))?.label
+  const pinnedLabel = [...pinned, ROOM_BOOKING_NAV_ITEM].find((i) => isPinnedActive(path, i.href, navFlags))?.label
   const initialTabLabel = path.startsWith('/notifications')
     ? 'My Tasks'
     : path.startsWith('/calendar')
@@ -329,10 +327,10 @@ export function LayoutOS({
 
   const avatar = (size: string) =>
     photoUrl ? (
-      <img src={photoUrl} alt="" className={`${size} rounded-full object-cover`} />
+      <img src={photoUrl} alt="" className={`${size} shrink-0 rounded-full object-cover`} />
     ) : (
       <span
-        className={`${size} flex items-center justify-center rounded-full bg-os-container text-[10px] font-bold text-foreground`}
+        className={`${size} flex shrink-0 items-center justify-center rounded-full bg-os-container text-[10px] font-bold text-foreground`}
       >
         {initials}
       </span>
@@ -363,18 +361,23 @@ export function LayoutOS({
         <div
           className={cn(
             'flex shrink-0 items-center',
-            collapsed ? 'justify-center' : 'justify-between',
+            collapsed ? 'flex-col gap-2' : 'justify-between',
           )}
         >
-          {!collapsed && (
+          {/* The wordmark is the way home; the collapsed rail keeps a mark. */}
+          <Tooltip content={collapsed ? 'Home' : ''} placement="right">
             <button
               type="button"
               {...tabClickProps({ url: '/', label: 'Home' })}
-              className="font-os-logo text-2xl font-semibold text-os-accent focus:outline-none"
+              aria-label="Home"
+              className={cn(
+                'font-os-logo font-semibold text-os-accent focus:outline-none',
+                collapsed ? 'text-xl leading-none' : 'text-2xl',
+              )}
             >
-              dali.os
+              {collapsed ? 'd.' : 'dali.os'}
             </button>
-          )}
+          </Tooltip>
           <Tooltip
             content={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             placement="right"
@@ -419,16 +422,6 @@ export function LayoutOS({
 
         {/* Pinned surfaces */}
         <div className="flex shrink-0 flex-col gap-3">
-          <Tooltip content={collapsed ? 'Home' : ''} placement="right">
-            <button
-              type="button"
-              {...tabClickProps({ url: '/', label: 'Home' })}
-              className={railRowClass(path === '/', collapsed)}
-            >
-              <Home className="h-5 w-5 flex-shrink-0 opacity-85" />
-              {!collapsed && 'Home'}
-            </button>
-          </Tooltip>
           <Tooltip content={collapsed ? 'Calendar' : ''} placement="right">
             <button
               type="button"
@@ -658,8 +651,9 @@ export function LayoutOS({
             aria-haspopup="menu"
             aria-expanded={userMenuOpen}
             className={cn(
-              'flex w-full items-center gap-3 rounded-os-item px-3 py-2 transition-colors hover:bg-os-hover',
-              collapsed && 'justify-center px-0',
+              'flex w-full items-center gap-3 rounded-os-item py-2 transition-colors hover:bg-os-hover',
+              // cn() has no tailwind-merge, so px-3 and px-0 can't both be present.
+              collapsed ? 'justify-center px-0' : 'px-3',
             )}
           >
             {avatar('h-6 w-6')}
@@ -677,25 +671,25 @@ export function LayoutOS({
   /* ---------------- Top bar ---------------- */
 
   const topBar = (
-    <div className="os-nav-edge-b flex items-center justify-between gap-4 border-l-2 border-os-bg bg-os-nav px-6 py-4">
+    <div className="os-nav-edge-b flex items-center justify-between gap-4 border-l-2 border-os-bg bg-os-nav px-6 py-2.5">
       <div className="flex min-w-0 items-center gap-3">
         {/* Back/forward arrows — tabless desktop shell only; renders nothing elsewhere. */}
         <TablessHistoryNav />
         {favorites.length === 0 ? (
-          <div className="flex items-center gap-3 text-base text-os-muted">
-            <Star className="h-5 w-5 flex-shrink-0 opacity-70" />
+          <div className="flex items-center gap-3 text-sm text-os-muted">
+            <Star className="h-4 w-4 flex-shrink-0 opacity-70" />
             Favorited pages will appear here.
           </div>
         ) : (
           <div className="flex min-w-0 items-center gap-3 overflow-x-auto">
-            <Star className="h-5 w-5 flex-shrink-0 text-os-accent" aria-hidden />
+            <Star className="h-4 w-4 flex-shrink-0 text-os-accent" aria-hidden />
             <div className="flex items-center gap-2">
               {favorites.map((p) => (
                 <Tooltip key={p.id} content={p.title || 'Untitled'}>
                   <button
                     type="button"
                     {...tabClickProps({ url: p.href, label: p.title || 'Untitled' })}
-                    className="flex max-w-[180px] flex-shrink-0 items-center gap-2 rounded-full bg-os-card px-3 py-1.5 text-sm text-os-grey transition-colors hover:bg-os-card-hover hover:text-foreground"
+                    className="flex max-w-[180px] flex-shrink-0 items-center gap-1.5 rounded-full bg-os-card px-2.5 py-1 text-xs text-os-grey transition-colors hover:bg-os-card-hover hover:text-foreground"
                   >
                     <FavoriteIcon page={p} glyphClassName="text-os-accent" />
                     <span className="truncate">{p.title || 'Untitled'}</span>
@@ -708,14 +702,6 @@ export function LayoutOS({
       </div>
 
       <div className="flex flex-shrink-0 items-center gap-3">
-        <button
-          type="button"
-          {...tabClickProps({ url: roomBooking.href, label: roomBooking.label })}
-          className="os-topbar-btn shrink-0 text-base font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-os-accent"
-        >
-          <roomBooking.icon className="h-5 w-5 shrink-0" aria-hidden />
-          {roomBooking.label}
-        </button>
         {/* The page's guide, on the same plate as the bell beside it, in both
             shells. Tabless mode shares this document with the page and reads
             the route itself; tab mode takes the focused frame's report and

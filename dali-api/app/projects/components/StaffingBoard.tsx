@@ -8,6 +8,7 @@ import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
 import {
   buildBoard,
   matchesBoardSearch,
+  projectFinalizeState,
   resolveAssignmentDomains,
   UNASSIGNED,
   type MemberCardModel,
@@ -15,7 +16,7 @@ import {
   type Assignment,
   type Preference,
 } from "../lib/staffing-board";
-import { ArrowUpRight, CheckCircle2, Search, X } from "lucide-react";
+import { AlertCircle, ArrowUpRight, CheckCircle2, Search, X } from "lucide-react";
 import { Button } from "~/components/ui/Button";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { useOsChrome } from "~/components/os-chrome";
@@ -174,8 +175,10 @@ export function StaffingBoard({
       const prevAssignments = assignments;
       if (assignments.some((a) => a.userId === userId && a.domainId === domainId && a.level !== level)) {
         setAssignments((list) =>
-          list.map((a) =>
-            a.userId === userId && a.domainId === domainId ? { ...a, level } : a,
+          list.map((a): Assignment =>
+            a.userId === userId && a.domainId === domainId
+              ? { ...a, level, status: "Proposed" }
+              : a,
           ),
         );
       }
@@ -216,7 +219,11 @@ export function StaffingBoard({
           setError("Keep at least one domain, or drag the card to Unassigned.");
           return;
         }
-        next = current.filter((a) => a.domainId !== domainId);
+        // The server rewrites every live row on this project as Proposed when
+        // any domain changes, so all survivors flip too, not just the removed one.
+        next = current
+          .filter((a) => a.domainId !== domainId)
+          .map((a): Assignment => ({ ...a, status: "Proposed" }));
       } else {
         const levels = domainLevelsByUser[userId] ?? members.find((m) => m.userId === userId)?.domainLevels ?? [];
         const dl = levels.find((d) => d.domainId === domainId);
@@ -224,7 +231,10 @@ export function StaffingBoard({
           setError("Add that domain to their eligibility first.");
           return;
         }
-        next = [...current, { userId, projectId, domainId, level: dl.level }];
+        next = [
+          ...current.map((a): Assignment => ({ ...a, status: "Proposed" })),
+          { userId, projectId, domainId, level: dl.level, status: "Proposed" },
+        ];
       }
 
       const prevAssignments = assignments;
@@ -361,6 +371,13 @@ export function StaffingBoard({
     [membersForBoard],
   );
 
+  // Projects that were finalized and then edited since — surfaced as a banner
+  // above the board so a lead notices without checking every column.
+  const driftedProjects = useMemo(
+    () => projects.filter((p) => projectFinalizeState(assignments, p.id).state === "drifted"),
+    [projects, assignments],
+  );
+
   // Synthetic cards for external mentors, grouped by project column. They render
   // like distinct cards but aren't in `board`/`members`, so the drag handler
   // (keyed off memberById) naturally ignores them.
@@ -479,11 +496,12 @@ export function StaffingBoard({
           ? withoutSource
           : [
               ...withoutSource,
-              ...assignmentDomains!.map((d) => ({
+              ...assignmentDomains!.map((d): Assignment => ({
                 userId,
                 projectId: targetProjectId,
                 domainId: d.domainId,
                 level: d.level,
+                status: "Proposed",
               })),
             ],
       );
@@ -559,7 +577,13 @@ export function StaffingBoard({
     const prevAssignments = assignments;
     setAssignments((list) => [
       ...list.filter((a) => !(a.userId === userId && a.projectId === projectId)),
-      ...domains.map((d) => ({ userId, projectId, domainId: d.domainId, level: d.level })),
+      ...domains.map((d): Assignment => ({
+        userId,
+        projectId,
+        domainId: d.domainId,
+        level: d.level,
+        status: "Proposed",
+      })),
     ]);
     setError(null);
     try {
@@ -657,6 +681,53 @@ export function StaffingBoard({
         ...(board[p.id] ?? []),
         ...(externalCardsByProject.get(p.id) ?? []).filter(externalCardVisible),
       ];
+      const assignedCount = board[p.id]?.length ?? 0;
+      const { state: finalizeState, pending } = projectFinalizeState(assignments, p.id);
+      const subtitle =
+        finalizeState === "drifted"
+          ? `${assignedCount} assigned · ${pending} pending`
+          : finalizeState === "finalized"
+            ? `${assignedCount} assigned · finalized`
+            : assignedCount > 0
+              ? `${assignedCount} assigned · not finalized`
+              : `${assignedCount} assigned`;
+      const finalizeTooltip =
+        finalizeState === "finalized"
+          ? "Finalized. Re-run to set up Slack, GitHub, or email again."
+          : finalizeState === "drifted"
+            ? `${pending} change${pending === 1 ? "" : "s"} since finalize. Finalize again to apply them.`
+            : "Lock the roster and set up the project's Slack channel and GitHub team. Run this once all members are placed.";
+      const finalizeIconClass = cn(
+        "w-4 h-4",
+        finalizeState === "finalized" && (os ? "text-os-green" : "text-emerald-500"),
+        finalizeState === "drifted" && (os ? "text-os-amber" : "text-amber-500"),
+      );
+      const finalizeIcon =
+        finalizeState === "drifted" ? (
+          <span className="inline-flex items-center gap-1">
+            <AlertCircle className={finalizeIconClass} aria-hidden />
+            <span
+              className={cn(
+                "rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none",
+                os ? "bg-os-amber/15 text-os-amber" : "bg-amber-500/15 text-amber-600",
+              )}
+            >
+              {pending}
+            </span>
+          </span>
+        ) : (
+          <CheckCircle2 className={finalizeIconClass} />
+        );
+      const finalizeReadOnly =
+        finalizeState === "finalized" || finalizeState === "drifted" ? (
+          <Tooltip variant="rich" content={finalizeTooltip}>
+            <span aria-label={`Finalize ${p.name}`} className="flex-shrink-0 inline-flex">
+              {finalizeIcon}
+            </span>
+          </Tooltip>
+        ) : (
+          <span />
+        );
       return {
         id: p.id,
         title: (
@@ -685,32 +756,31 @@ export function StaffingBoard({
             </Tooltip>
           </span>
         ),
-        subtitle: `${board[p.id]?.length ?? 0} assigned`,
+        subtitle,
         cards,
         className: shell(tone),
         listClassName: listClass,
         renderEmpty: emptyDropTarget,
         headerExtra: canManage ? (
-          <Tooltip
-            variant="rich"
-            content="Lock the roster and set up the project's Slack channel and GitHub team. Run this once all members are placed."
-          >
+          <Tooltip variant="rich" content={finalizeTooltip}>
             <button
               type="button"
               onClick={() => setFinalizeProjectId(p.id)}
               aria-label={`Finalize ${p.name}`}
               className={cn(
                 "flex-shrink-0 transition-colors",
-                os
-                  ? "text-os-muted hover:text-os-accent"
-                  : "text-muted-foreground hover:text-accent-coral",
+                finalizeState === "finalized" || finalizeState === "drifted"
+                  ? undefined
+                  : os
+                    ? "text-os-muted hover:text-os-accent"
+                    : "text-muted-foreground hover:text-accent-coral",
               )}
             >
-              <CheckCircle2 className="w-4 h-4" />
+              {finalizeIcon}
             </button>
           </Tooltip>
         ) : (
-          <span />
+          finalizeReadOnly
         ),
       };
     }),
@@ -804,6 +874,36 @@ export function StaffingBoard({
           </div>
         </div>
       </div>
+
+      {driftedProjects.length > 0 && (
+        <div
+          className={cn(
+            "px-3 py-2 text-sm",
+            os
+              ? "rounded-os-item border border-os-amber/30 bg-os-amber/10 text-os-amber"
+              : "rounded-os-item border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+          )}
+        >
+          {driftedProjects.length} project{driftedProjects.length === 1 ? "" : "s"}{" "}
+          {driftedProjects.length === 1 ? "has" : "have"} changes you haven&apos;t finalized:{" "}
+          {driftedProjects.map((p, i) => (
+            <span key={p.id}>
+              {i > 0 && ", "}
+              {canManage ? (
+                <button
+                  type="button"
+                  onClick={() => setFinalizeProjectId(p.id)}
+                  className="underline underline-offset-2 hover:opacity-80"
+                >
+                  {p.name}
+                </button>
+              ) : (
+                p.name
+              )}
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Stable id: with multiple DndContexts mounting (tabbed workspace
           iframe + other boards) the default useId differs between SSR and

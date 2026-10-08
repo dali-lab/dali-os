@@ -354,6 +354,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     projectId: a.projectId,
     domainId: a.domainId,
     level: a.level as Level,
+    status: a.status as "Proposed" | "Confirmed",
   }));
 
   const domainNames = Object.fromEntries(domains.map((d) => [d.id, d.displayName]));

@@ -13,6 +13,7 @@ import type {
   BudgetRow,
 } from "~/admin/lib/budget.shared";
 import type { BudgetLoaderData } from "~/admin/routes/admin.payroll.budget";
+import { Button } from "~/components/ui/Button";
 
 // Budget tab. Data is fetched lazily on first activation via a GET fetcher to
 // /admin/payroll/budget; mutations post back to the same route through
@@ -359,12 +360,9 @@ function NoteEditor({
         aria-label={`Note for ${row.chartString}`}
         className="flex-1 rounded border border-border bg-card px-2 py-1 text-xs text-foreground focus:border-accent-coral focus:outline-none"
       />
-      <button
-        type="submit"
-        className="rounded bg-accent-coral px-2 py-1 text-xs font-semibold text-white"
-      >
+      <Button type="submit" size="xs">
         Save
-      </button>
+      </Button>
     </fetcher.Form>
   );
 }
