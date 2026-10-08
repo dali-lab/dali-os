@@ -98,7 +98,7 @@ export default function BlogPostPage() {
         features="resource"
         editable={false}
         // No block handles when reading, so no gutter for them either.
-        className="[&_.bn-editor]:!px-0"
+        className="mt-8 [&_.bn-editor]:!px-0"
         initialContent={post.contentJson ?? []}
       />
     </article>
