@@ -23,7 +23,7 @@
 
 import { prisma } from "~/lib/db";
 import type { CycleApplicants } from "~/generated/prisma/enums";
-import { renderForSlot, decisionSlot } from "~/hiring/lib/email-variables";
+import { renderForSlot, decisionSlot, CONTINUED_INTEREST_SLOT } from "~/hiring/lib/email-variables";
 import { logAuditEvent } from "~/lib/audit";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { promoteToMember } from "~/members/lib/membership.server";
@@ -37,7 +37,6 @@ import {
 } from "~/members/lib/provisioning.server";
 import type { Prisma } from "~/generated/prisma/client";
 import { getHiringEmail } from "~/hiring/lib/hiring-emails.server";
-import { renderEmailTemplate } from "~/email/lib/templates.server";
 import { compactRanks } from "~/hiring/lib/waitlist";
 
 // ─── List ────────────────────────────────────────────────────────────────────
@@ -549,11 +548,12 @@ export async function removeFromWaitlist(args: {
     try {
       const user = da.application.user;
       const to = user.dartmouthEmail ?? (user.netId ? `${user.netId}@dartmouth.edu` : null);
-      const rendered = await renderEmailTemplate("hiring:waitlist:ContinuedInterest", {
-        firstName: user.firstName,
-        domain: da.domain.displayName ?? da.domain.name ?? "",
-      });
-      if (to && rendered) {
+      const template = await getHiringEmail(CONTINUED_INTEREST_SLOT);
+      if (to && template) {
+        const rendered = renderForSlot(CONTINUED_INTEREST_SLOT, template, {
+          firstName: user.firstName,
+          domain: da.domain.displayName ?? da.domain.name ?? "",
+        });
         const { id, deduped } = await enqueueOutbound({
           channel: "email",
           purpose: "Hiring",
