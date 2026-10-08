@@ -371,6 +371,36 @@ export const NOTIFICATION_COPY = {
     body: "",
   },
 
+  // ── People ───────────────────────────────────────────────────────────────
+  // Deliberately carries no personName: the invite is anonymous until accepted.
+  "coffee_chat.invite": {
+    eventType: "coffee_chat.invite",
+    label: "Coffee chat invite",
+    description: "Sent to someone who was anonymously invited to a coffee chat.",
+    variables: [],
+    subject: "Someone at DALI wants to grab coffee with you",
+    body: "You'll see who it is only if you accept.",
+    linkLabel: "See invite",
+  },
+  "coffee_chat.accepted": {
+    eventType: "coffee_chat.accepted",
+    label: "Coffee chat accepted",
+    description: "Sent to the sender when their coffee chat invite is accepted.",
+    variables: ["personName"],
+    subject: "{{personName}} accepted your coffee chat",
+    body: "They can see your name now. Reach out to pick a time.",
+    linkLabel: "Open invite",
+  },
+  "coffee_chat.revealed": {
+    eventType: "coffee_chat.accepted",
+    label: "Coffee chat sender revealed",
+    description: "Sent to the person who accepted, naming who invited them.",
+    variables: ["personName"],
+    subject: "Your coffee chat is with {{personName}}",
+    body: "You accepted their invite. Reach out to pick a time.",
+    linkLabel: "Open invite",
+  },
+
   // ── Onboarding ───────────────────────────────────────────────────────────
   "member.onboarding": {
     eventType: "member.onboarding",

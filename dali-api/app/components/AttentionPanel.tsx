@@ -1,5 +1,5 @@
-import { useState, type MouseEvent, type ReactNode } from "react";
-import { useRevalidator } from "react-router";
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { useFetcher, useRevalidator } from "react-router";
 import {
   AlertTriangle,
   ArrowRight,
@@ -692,6 +692,8 @@ function NotificationCard({
           size="md"
           className="gap-2"
         />
+      ) : notification.eventType === "coffee_chat.invite" && notification.link ? (
+        <CoffeeChatAnswer action={notification.link} />
       ) : (
         <>
           {notification.link && (
@@ -729,6 +731,38 @@ function NotificationCard({
         </>
       )}
     </CardShell>
+  );
+}
+
+// Accept / Decline for an anonymous coffee chat invite, posted to the invite's
+// own page action. Accepting swaps this card for one naming the sender.
+function CoffeeChatAnswer({ action }: { action: string }) {
+  const fetcher = useFetcher<{ error?: string } | null>();
+  const busy = fetcher.state !== "idle";
+  const sent = useRef(false);
+  // The shell's task list refreshes on this event, not on a route revalidation,
+  // so fire it once the answer has actually landed.
+  useEffect(() => {
+    if (busy) sent.current = true;
+    else if (sent.current) {
+      sent.current = false;
+      notifyTasksChanged();
+    }
+  }, [busy]);
+  const answer = (value: "accept" | "decline") =>
+    fetcher.submit({ answer: value }, { method: "post", action });
+  return (
+    <>
+      <button type="button" onClick={() => answer("accept")} disabled={busy} className={ctaClass(true)}>
+        <Check className={ctaIcon} aria-hidden />
+        Accept
+      </button>
+      <button type="button" onClick={() => answer("decline")} disabled={busy} className={ctaClass(false)}>
+        <X className={ctaIcon} aria-hidden />
+        Decline
+      </button>
+      {fetcher.data?.error && <p className="text-xs text-destructive">{fetcher.data.error}</p>}
+    </>
   );
 }
 

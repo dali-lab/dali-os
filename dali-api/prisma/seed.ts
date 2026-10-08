@@ -2032,6 +2032,95 @@ async function main() {
     },
   });
 
+  // ── Alumni ────────────────────────────────────────────────────────────────
+  // Graduated members. Inputs agree with the stored status so a recompute
+  // (login, daily sweep) leaves them Alumni. Casey has no personal email or
+  // location yet; Noor is Alumni by an off-cycle graduatedAt rather than
+  // directory signals. Priya and Marcus share a city, so the Connect map shows
+  // one pin holding two people.
+  const alumniData = [
+    {
+      email: "priya.raman@dali.dartmouth.edu", personalEmail: "priya.raman@example.com", first: "Priya", last: "Raman", handle: "priyaraman",
+      classYear: 2024, graduatedAt: null, isAlum: true,
+      place: { name: "New York, NY", lat: 40.7128, lng: -74.006 },
+      jobs: [
+        { id: "work-priya-1", company: "Figma", position: "Product Designer", location: "New York, NY", workMode: "Hybrid" as const, start: "2024-08-01", end: null, description: "Design systems for the editor." },
+        { id: "work-priya-2", company: "Duolingo", position: "Design Intern", location: "Pittsburgh, PA", workMode: "OnSite" as const, start: "2023-06-01", end: "2023-08-01", description: null },
+      ],
+    },
+    {
+      email: "marcus.bell@dali.dartmouth.edu", personalEmail: "marcus.bell@example.com", first: "Marcus", last: "Bell", handle: "marcusbell",
+      classYear: 2025, graduatedAt: null, isAlum: true,
+      place: { name: "New York, NY", lat: 40.7128, lng: -74.006 },
+      jobs: [
+        { id: "work-marcus-1", company: "Ramp", position: "Software Engineer", location: "New York, NY", workMode: "OnSite" as const, start: "2025-07-01", end: null, description: null },
+      ],
+    },
+    {
+      email: "casey.lindqvist@dali.dartmouth.edu", personalEmail: null, first: "Casey", last: "Lindqvist", handle: "caseylindqvist",
+      classYear: 2026, graduatedAt: null, isAlum: true,
+      place: null,
+      jobs: [],
+    },
+    {
+      email: "noor.haddad@dali.dartmouth.edu", personalEmail: "noor.haddad@example.com", first: "Noor", last: "Haddad", handle: "noorhaddad",
+      classYear: 2027, graduatedAt: new Date("2026-03-15T00:00:00.000Z"), isAlum: false,
+      place: { name: "London, UK", lat: 51.5074, lng: -0.1278 },
+      jobs: [
+        { id: "work-noor-1", company: "Monzo", position: "Product Manager", location: "London, UK", workMode: "Remote" as const, start: "2026-04-01", end: null, description: null },
+      ],
+    },
+  ];
+
+  for (const a of alumniData) {
+    const location = {
+      currentLocation: a.place?.name ?? null,
+      currentLocationLat: a.place?.lat ?? null,
+      currentLocationLng: a.place?.lng ?? null,
+    };
+    const alum = await prisma.user.upsert({
+      where: { daliEmail: a.email },
+      update: { firstName: a.first, lastName: a.last, handle: a.handle, ...location },
+      create: {
+        daliEmail: a.email,
+        personalEmail: a.personalEmail,
+        firstName: a.first,
+        lastName: a.last,
+        handle: a.handle,
+        classYear: a.classYear,
+        graduatedAt: a.graduatedAt,
+        membershipStatus: "Alumni",
+        membershipStatusComputedAt: new Date(),
+        dartmouthIsAlum: a.isAlum ? true : null,
+        dartmouthAffiliation: a.isAlum ? "ALUMNI" : null,
+        ...location,
+      },
+    });
+
+    await prisma.dALIMember.upsert({
+      where: { userId: alum.id },
+      update: {},
+      create: { userId: alum.id, onboardedAt: new Date(), tourCompletedAt: new Date() },
+    });
+
+    for (const job of a.jobs) {
+      const data = {
+        company: job.company,
+        position: job.position,
+        location: job.location,
+        workMode: job.workMode,
+        description: job.description,
+        startDate: new Date(job.start),
+        endDate: job.end ? new Date(job.end) : null,
+      };
+      await prisma.workExperience.upsert({
+        where: { id: job.id },
+        update: data,
+        create: { id: job.id, userId: alum.id, ...data },
+      });
+    }
+  }
+
   // ── Confidentiality agreement (Fall 2026) ────────────────────────────────
   // Bind a signed agreement to the active cycle so domain leads and the hiring
   // lead can access confidentiality-gated pages in E2E tests. Confidentiality

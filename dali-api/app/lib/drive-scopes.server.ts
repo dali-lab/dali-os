@@ -134,6 +134,7 @@ export async function loadDriveScopes({
     hasActiveHiringAccess: false,
     isLabMentor: false,
     isInstructor: false,
+    isAlumni: false,
   };
   const spaces = visibleDriveSpaces(roleFlags);
 

@@ -23,6 +23,7 @@ import {
   Kanban,
   LayoutGrid,
   Library,
+  MapPinned,
   RotateCw,
   Megaphone,
   Settings,
@@ -61,6 +62,7 @@ export type RoleFlags = {
   hasActiveHiringAccess: boolean;
   isLabMentor: boolean;
   isInstructor: boolean;
+  isAlumni: boolean;
 };
 
 export type SubTab = {
@@ -218,11 +220,12 @@ const REGROUPED_AREAS: NavArea[] = [
     subtabs: [
       { label: "Projects", href: "/projects", icon: LayoutGrid },
       { label: "People", href: "/members", icon: UsersRound },
+      { label: "Connect", href: "/connect", icon: MapPinned },
       { label: "Partners", href: "/partners", icon: Handshake },
-      { label: "Mentorship", href: "/mentorship", icon: Heart, gate: (r) => r.isLabMentor || r.isCore },
+      { label: "Mentorship", href: "/mentorship", icon: Heart, gate: (r) => !r.isAlumni && (r.isLabMentor || r.isCore) },
       // Lab-wide Attendance: every meeting/event you're invited to, with each
       // event's roster (invited-scoped, see app/routes/attendance.tsx).
-      { label: "Attendance", href: "/attendance", icon: ClipboardCheck },
+      { label: "Attendance", href: "/attendance", icon: ClipboardCheck, gate: (r) => !r.isAlumni },
     ],
   },
   {
