@@ -5,6 +5,7 @@ import {
 } from "./domain-application-status";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
 import type { DomainAppData } from "~/hiring/components/ApplicationTracker";
+import { ensureInterviewMeetUrl } from "~/hiring/lib/interview-meet";
 
 // The applicant's tracker for one cycle: their application's overall status
 // and, per selected domain, its inferred stage and any scheduled interview.
@@ -44,7 +45,7 @@ export async function loadApplicationTracker(
         ? "Draft"
         : null;
 
-  const domainApplications: DomainAppData[] = (application?.domainApplications ?? []).map((da: any) => {
+  const domainApplications: DomainAppData[] = await Promise.all((application?.domainApplications ?? []).map(async (da: any) => {
     const inferredStatus = inferDomainApplicationStatus(
       { ...da, application: { statusUpdates: application!.statusUpdates } } as any,
       cycleStatus,
@@ -61,10 +62,18 @@ export async function loadApplicationTracker(
       domainId: da.domainId,
       inferredStatus,
       interview: activeInterview
-        ? { id: activeInterview.id, startTime: activeInterview.startTime, endTime: activeInterview.endTime, status: activeInterview.status, room: activeInterview.room, zoomJoinUrl: activeInterview.zoomJoinUrl }
+        ? {
+            id: activeInterview.id,
+            startTime: activeInterview.startTime,
+            endTime: activeInterview.endTime,
+            status: activeInterview.status,
+            room: activeInterview.room,
+            zoomJoinUrl: activeInterview.zoomJoinUrl,
+            videoUrl: await ensureInterviewMeetUrl(activeInterview),
+          }
         : null,
     };
-  });
+  }));
 
   return {
     hasApplication: !!application,

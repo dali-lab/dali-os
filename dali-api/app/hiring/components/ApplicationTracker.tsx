@@ -23,7 +23,7 @@ export interface DomainAppData {
   domainName: string;
   domainId: string;
   inferredStatus: DomainApplicationStatus;
-  interview: { id: string; startTime: string; endTime: string; status: string; room?: { name: string } | null; zoomJoinUrl?: string | null } | null;
+  interview: { id: string; startTime: string; endTime: string; status: string; room?: { name: string } | null; zoomJoinUrl?: string | null; videoUrl?: string | null } | null;
 }
 
 interface TimeSlot {
@@ -648,10 +648,10 @@ export function InterviewScheduledView({
           <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Location</span>
           <p className="text-sm text-foreground mt-1">{formatInterviewLocation(interview.room)}</p>
         </div>
-        {!interview.room && interview.zoomJoinUrl && (
+        {!interview.room && (interview.videoUrl || interview.zoomJoinUrl) && (
           <div className="pt-4 border-t border-border/60">
             <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Meeting Link</span>
-            <a href={interview.zoomJoinUrl} target="_blank" rel="noopener noreferrer"
+            <a href={interview.videoUrl ?? interview.zoomJoinUrl ?? undefined} target="_blank" rel="noopener noreferrer"
                className="flex items-center gap-1.5 text-sm text-os-accent hover:underline mt-1">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
