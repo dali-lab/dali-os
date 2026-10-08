@@ -76,12 +76,14 @@ function overlaps(a: { start: Date; end: Date }, start: Date, end: Date) {
 }
 
 /**
- * A schedule item blocks a writer unless both belong to the same hiring
- * cycle: interviews sit inside their cycle's hold, and a hold may be placed
- * over interviews already booked.
+ * A schedule item blocks a writer unless one side is a hiring cycle's hold
+ * and the other belongs to the same cycle: interviews sit inside their
+ * cycle's hold, and a hold may be placed over interviews already booked. Two
+ * interviews still collide, as does anything from another cycle.
  */
 export function blockedBy(item: RoomScheduleItem, writer: RoomWriter) {
-  return !(writer.applicationCycleId && item.cycleId === writer.applicationCycleId);
+  if (!writer.applicationCycleId || item.cycleId !== writer.applicationCycleId) return true;
+  return !(item.source === "InterviewHold" || writer.source === "InterviewHold");
 }
 
 const WEB_WRITER: RoomWriter = { source: "Web" };

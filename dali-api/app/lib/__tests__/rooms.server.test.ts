@@ -352,6 +352,28 @@ describe("hiring bookings (Interview / InterviewHold)", () => {
     expect(await createRoomBooking({ ...slot, applicationCycleId: "other" })).toMatchObject({ ok: false, status: 409 });
   });
 
+  it("still collides two interviews of the same cycle in one room", async () => {
+    m.roomBooking.findMany.mockResolvedValue([
+      booking({
+        id: "iv1",
+        title: "Interview",
+        start: at("2026-11-02T15:00:00Z"),
+        end: at("2026-11-02T15:30:00Z"),
+        source: "Interview",
+        applicationCycleId: cycle,
+      }),
+    ]);
+    const res = await createRoomBooking({
+      roomId: "r1",
+      userId: "u1",
+      start: at("2026-11-02T15:00:00Z"),
+      end: at("2026-11-02T15:30:00Z"),
+      source: "Interview",
+      applicationCycleId: cycle,
+    });
+    expect(res).toMatchObject({ ok: false, status: 409 });
+  });
+
   it("blocks a meeting's room claim during a hold", async () => {
     m.roomBooking.findMany.mockResolvedValue([hold()]);
     const res = await assertMeetingRoomsFree({
