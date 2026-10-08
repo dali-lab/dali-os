@@ -58,6 +58,16 @@ export default function BlogPostPage() {
           The Scoop
         </Link>
         {post.status !== "published" && <BlogStatusPill status={post.status} />}
+        {canEdit && (
+          <div className="flex items-center gap-1">
+            <Tooltip content="Edit">
+              <Link to={writePath} aria-label="Edit" className={chrome.iconBtn}>
+                <Pencil className="h-4 w-4" />
+              </Link>
+            </Tooltip>
+            <IconButton label="Delete" icon={Trash2} tone="destructive" onClick={remove} />
+          </div>
+        )}
         {canApprove && post.status === "review" && (
           <button
             type="button"
@@ -82,16 +92,6 @@ export default function BlogPostPage() {
           {post.author}
           {post.date && <span className="font-normal normal-case tracking-normal">{post.date}</span>}
         </p>
-        {canEdit && (
-          <div className="-ml-1.5 mt-2 flex items-center gap-1">
-            <Tooltip content="Edit">
-              <Link to={writePath} aria-label="Edit" className={chrome.iconBtn}>
-                <Pencil className="h-4 w-4" />
-              </Link>
-            </Tooltip>
-            <IconButton label="Delete" icon={Trash2} tone="destructive" onClick={remove} />
-          </div>
-        )}
       </div>
       <DocEditor
         key={post.id}
