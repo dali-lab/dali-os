@@ -4,7 +4,6 @@ import { hiringKey } from "~/email/lib/registry";
 import { EmailEditorModal } from "~/admin/components/EmailTemplatesAdmin";
 import { Form, Link, useParams, useLoaderData, useLocation, useSearchParams, useFetcher, redirect } from 'react-router'
 import { Select, type SelectOption, Tooltip } from "~/components/ui/floating";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import type { Route } from "./+types/lead.cycle.$id";
 import { prisma } from "~/lib/db";
 import { recordRouteVisit } from "~/lib/user-pages.server";
@@ -1241,7 +1240,6 @@ export default function HiringLeadCycleDetails() {
   const cycle = loaderData?.cycle
   const memberSetup = loaderData?.memberSetup ?? null
   const isMemberCycle = memberSetup !== null
-  const startTermsEnabled = useFeatureFlag('start-terms')
   const domainsTitle =
     cycle?.applicants === 'LabMembers' ? 'Applicant pool' : isMemberCycle ? 'Target domains' : 'Domains'
   // A domain's challenges, shown on its row only when the cycle has them.
@@ -2004,7 +2002,7 @@ export default function HiringLeadCycleDetails() {
             cycleStatus={cycleStatus}
             startTermIds={cycle?.startTermIds ?? []}
             startTermCandidates={loaderData?.startTermCandidates ?? []}
-            showStartTerms={startTermsEnabled && cycle?.applicants === "Students"}
+            showStartTerms={cycle?.applicants === "Students"}
           />
           </NavSection>
 

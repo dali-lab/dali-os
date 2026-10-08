@@ -661,8 +661,8 @@ export function ScheduleWeekGrid({
   weekNav?: { onShift: (weeks: number) => void; onToday: () => void };
   /**
    * Show a "Find best times" control above the grid that ranks the week's slots
-   * by participant availability (gated by the `optimal-times` flag at the call
-   * site). Off by default so the compact CreateEventModal grid is unchanged.
+   * by participant availability. Off by default so the /calendar grid is
+   * unchanged; the create/edit meeting modals turn it on.
    */
   enableOptimalTimes?: boolean;
   /** Receives the ranked suggestions whenever they change (null when none apply). */

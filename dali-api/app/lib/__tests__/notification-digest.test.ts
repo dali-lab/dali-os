@@ -14,7 +14,7 @@ import { enqueueOutbound } from "~/lib/outbound.server";
 import {
   shouldRunDigest,
   runDigest,
-  renderDigestEmail,
+  renderDigestEmailDocument,
 } from "~/lib/notification-digest.server";
 
 const mockPrisma = prisma as unknown as Record<
@@ -82,9 +82,6 @@ describe("runDigest", () => {
 
   beforeEach(() => {
     vi.resetAllMocks();
-    // runDigest asks once per run whether `email-layout` is on. No rows → the
-    // registry default (off), i.e. the pre-layout body these assertions describe.
-    mockPrisma.featureFlag.findMany.mockResolvedValue([]);
     mockPrisma.notificationPreference.findMany.mockResolvedValue([
       { userId: "u1", eventType: "education.discussion" },
     ]);
@@ -178,9 +175,9 @@ describe("runDigest", () => {
   });
 });
 
-describe("renderDigestEmail", () => {
+describe("renderDigestEmailDocument", () => {
   it("groups rows by registry label and absolutizes links", () => {
-    const { subject, html } = renderDigestEmail({
+    const { subject, html } = renderDigestEmailDocument({
       firstName: "Ada",
       now: WED_0901_ET,
       rows: [

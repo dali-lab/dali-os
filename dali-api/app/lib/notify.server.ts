@@ -14,10 +14,6 @@ import { prisma } from "~/lib/db";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { getAppEnv, getFrontendUrl } from "~/lib/app-env";
 import { renderMemberEmail } from "~/email/lib/layout.server";
-import {
-  renderMemberEmailFragment,
-  type MemberEmailArgs,
-} from "~/email/lib/member-email";
 import { slackConfigured } from "~/slack/lib/slack-client";
 import { publishNotificationChange } from "~/lib/notify-stream.server";
 import { EVENT_TYPES, type EventDef, type EventType } from "~/lib/notification-events";
@@ -84,20 +80,6 @@ export function absoluteLink(link: string | null | undefined): string | null {
   if (!link) return null;
   if (/^https?:\/\//.test(link)) return link;
   return `${getFrontendUrl()}${link.startsWith("/") ? "" : "/"}${link}`;
-}
-
-// One generic template for every notify() email. Feature-owned templates
-// (hiring decisions, education decision emails) stay on their own pipelines.
-//
-// The composition moved to app/email/lib/member-email.ts so the shared layout
-// could reuse it without importing this module. This stays as the pre-layout
-// shape for the few callers that still build a body fragment by hand; prefer
-// renderMemberEmail() from ~/email/lib/layout.server, which honours the
-// `email-layout` flag and returns a plain-text part too.
-export function renderNotificationEmail(
-  args: Omit<MemberEmailArgs, "baseUrl">,
-): string {
-  return renderMemberEmailFragment({ ...args, baseUrl: getFrontendUrl() });
 }
 
 function slackDmText(args: { title: string; body?: string | null; link?: string | null }): string {

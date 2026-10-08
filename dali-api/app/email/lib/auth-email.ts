@@ -12,8 +12,8 @@
 //     in an hour, and the magic link said "expires shortly" for a 5-minute window.
 //
 // Each builder returns the body and the parts around it rather than finished
-// HTML, so the `email-layout` flag can pick the frame (see layout.server.ts)
-// without the copy differing between the two paths.
+// HTML, so the shared layout supplies the frame (see layout.server.ts)
+// and the copy stays testable on its own.
 
 import { escapeAttr } from "~/email/lib/layout";
 
