@@ -126,13 +126,13 @@ describe("isEmailTemplateKey", () => {
 });
 
 describe("the collapse covered what the old stores held", () => {
-  it("counts the feature templates: 14 hiring slots, 1 onboarding block, 5 education", () => {
+  it("counts the feature templates: 15 hiring slots, 1 onboarding block, 5 education", () => {
     const hiringSlots = EMAIL_TEMPLATE_KEYS.filter(
       (k) => k.startsWith("hiring:decision:") || k.startsWith("hiring:notification:"),
     );
     const onboarding = EMAIL_TEMPLATE_KEYS.filter((k) => k.startsWith("hiring:onboarding:"));
     const education = EMAIL_TEMPLATE_KEYS.filter((k) => k.startsWith("education:"));
-    expect(hiringSlots).toHaveLength(14);
+    expect(hiringSlots).toHaveLength(15);
     // Not a slot: appended to the Accepted letter, so it has no NotificationType
     // of its own. It exists so the acceptance deadline and sign-off stop living
     // in library code where they went stale silently.

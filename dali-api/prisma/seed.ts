@@ -2864,7 +2864,7 @@ async function main() {
   console.log(`  ${reviewSpecs.length} ApplicationReviews + ${decisionSpecs.length * 3} Decisions + ${interviewBookings.length} booked interviews for Fall 2026`);
 
   // ── Email templates (versioned, keyed by EmailTemplateType) ─────────────────
-  const seedTemplates: { type: 'ApplicationReceived' | 'ApplicationExtensionNotice' | 'Rejected' | 'RejectedPostInterview' | 'InvitedToInterview' | 'InterviewInviteMentor' | 'InterviewConfirmedApplicant' | 'InterviewCancelledApplicant' | 'InterviewCancelledInterviewer' | 'InterviewLocationChanged' | 'Waitlisted' | 'Accepted'; subject: string; body: string }[] = [
+  const seedTemplates: { type: 'ApplicationReceived' | 'ApplicationExtensionNotice' | 'Rejected' | 'RejectedPostInterview' | 'InvitedToInterview' | 'InterviewInviteMentor' | 'InterviewConfirmedApplicant' | 'InterviewCancelledApplicant' | 'InterviewCancelledInterviewer' | 'InterviewCancelledByTeamApplicant' | 'InterviewLocationChanged' | 'Waitlisted' | 'Accepted'; subject: string; body: string }[] = [
     {
       type: 'ApplicationReceived',
       subject: 'We received your DALI application!',
@@ -2904,6 +2904,11 @@ async function main() {
       type: 'InterviewCancelledApplicant',
       subject: 'Your {{domain}} interview has been cancelled',
       body: `Hi {{firstName}},\n\nYour {{domain}} interview scheduled for {{time}} has been cancelled. The calendar event has been removed.\n\n— DALI Lab`,
+    },
+    {
+      type: 'InterviewCancelledByTeamApplicant',
+      subject: 'Your {{domain}} interview needs a new time',
+      body: `Hi {{firstName}},\n\nThe DALI team had to cancel your {{domain}} interview scheduled for {{time}}. The calendar event has been removed.\n\nYou can pick a new time from your application page. If nothing there works for you, reply to this email and we'll sort it out.\n\n— DALI Lab`,
     },
     {
       type: 'InterviewCancelledInterviewer',

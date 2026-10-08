@@ -249,6 +249,15 @@ export const EVENT_TYPES = {
     lockedInApp: true,
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
+  "hiring.interview_cancelled": {
+    kind: "General",
+    area: "Hiring",
+    label: "Interview cancellations",
+    description: "When an interview you were assigned to is cancelled by the hiring lead.",
+    lockedInApp: true,
+    // The ICS cancellation already goes out by email; this is the in-app tile.
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
   "hiring.fellowship_invite": {
     kind: "General",
     area: "Hiring",

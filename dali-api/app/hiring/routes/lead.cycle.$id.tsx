@@ -2352,6 +2352,31 @@ export default function HiringLeadCycleDetails() {
           })
           window.location.reload()
         }
+        async function cancelInterview(interview: any) {
+          const u = interview.domainApplication.application.user
+          const name = `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || 'this applicant'
+          if (
+            !(await dialog.confirm({
+              title: `Cancel ${name}'s interview?`,
+              description: 'Frees the slot and the room. The applicant keeps their invite and can book a new time. Emails the applicant and both interviewers.',
+              confirmLabel: 'Cancel interview',
+              cancelLabel: 'Keep it',
+              tone: 'destructive',
+            }))
+          )
+            return
+          const res = await fetch(`/api/hiring/interviews/${interview.id}/cancel`, {
+            method: 'POST', credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ notifyApplicant: true }),
+          })
+          if (!res.ok) {
+            const body = await res.json().catch(() => null)
+            toast.error(body?.error ?? 'Could not cancel the interview')
+            return
+          }
+          await loadInterviews()
+        }
         const applicantLink = (daId: string, u: { firstName?: string | null; lastName?: string | null }) => (
           <Link
             to={`/hiring/applications/${daId}`}
@@ -2452,7 +2477,21 @@ export default function HiringLeadCycleDetails() {
                           {applicantLink(interview.domainApplication.id, interview.domainApplication.application.user)}
                           <span className="text-sm text-os-grey">{[domainName, when].filter(Boolean).join(' · ')}</span>
                         </div>
-                        <Pill dot={statusTone(interview.status)}>{interview.status}</Pill>
+                        <span className="inline-flex items-center gap-2">
+                          <Pill dot={statusTone(interview.status)}>{interview.status}</Pill>
+                          {editable && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => cancelInterview(interview)}
+                                className={buttonClasses('ghost', 'sm')}
+                              >
+                                Cancel interview
+                              </button>
+                              <EmailMarker recipients="applicant + both interviewers" label="Cancelling fires cancel emails" />
+                            </>
+                          )}
+                        </span>
                       </div>
                       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
                         <span className="inline-flex items-center gap-2">
@@ -3998,6 +4037,7 @@ const NOTIFICATION_EMAIL_SLOTS: ReadonlyArray<{ type: NotificationSlotType; labe
   { type: "InterviewInviteReminder", label: "Invite reminder (applicant)", description: "Sent by Resend invite when an applicant hasn't booked." },
   { type: "InterviewConfirmedApplicant", label: "Interview confirmed (applicant)", description: "Sent when the applicant books." },
   { type: "InterviewCancelledApplicant", label: "Interview cancelled (applicant)", description: "Sent when the interview is cancelled." },
+  { type: "InterviewCancelledByTeamApplicant", label: "Interview cancelled by the team (applicant)", description: "Sent when a hiring lead cancels; tells the applicant to book a new time." },
   { type: "InterviewCancelledInterviewer", label: "Interview cancelled (interviewer)", description: "Sent when an interview is cancelled or reassigned away." },
   { type: "InterviewLocationChanged", label: "Interview location changed", description: "Sent to everyone when the location changes." },
   { type: "InterviewReminderApplicant", label: "Interview reminder (applicant)", description: "Sent 24 hours and 1 hour before the interview." },

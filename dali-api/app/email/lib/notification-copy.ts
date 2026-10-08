@@ -291,6 +291,15 @@ export const NOTIFICATION_COPY = {
     subject: "Interview assigned: {{personName}}",
     body: "{{itemDetail}}",
   },
+  "hiring.interview_cancelled": {
+    purpose: "Hiring",
+    eventType: "hiring.interview_cancelled",
+    label: "Interview cancelled",
+    description: "Sent to an interviewer when a hiring lead cancels an interview they were assigned to.",
+    variables: ["personName", "itemDetail"],
+    subject: "Interview cancelled: {{personName}}",
+    body: "{{itemDetail}}",
+  },
   "hiring.fellowship_invite": {
     purpose: "Hiring",
     eventType: "hiring.fellowship_invite",

@@ -300,6 +300,9 @@ export async function sendInterviewInviteEmails(
 export async function sendInterviewCancelEmails(
   interviewId: string,
   domainApplicationId: string,
+  // A team-side cancel tells the applicant to rebook; the plain cancel email
+  // is the fallback when that template hasn't been written.
+  opts: { byTeam?: boolean; skipApplicant?: boolean } = {},
 ): Promise<void> {
   try {
     const interview = await prisma.interview.findUnique({ where: { id: interviewId }, include: { room: { select: { id: true, name: true } } } });
@@ -351,11 +354,11 @@ export async function sendInterviewCancelEmails(
     // Terminal event → forever dedupKey per recipient (dedups a double-cancel).
     const enqueues: Promise<string | null>[] = [];
 
-    if (applicant) {
-      const rendered = await renderSlot(
-        "InterviewCancelledApplicant",
-        { firstName: applicant.firstName, ...baseVars },
-      );
+    if (applicant && !opts.skipApplicant) {
+      const applicantVars = { firstName: applicant.firstName, ...baseVars };
+      const rendered =
+        (opts.byTeam ? await renderSlot("InterviewCancelledByTeamApplicant", applicantVars) : null) ??
+        (await renderSlot("InterviewCancelledApplicant", applicantVars));
       if (rendered) {
         enqueues.push(enqueueOutbound({
           channel: "email",

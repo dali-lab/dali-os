@@ -1706,6 +1706,8 @@ enum NotificationType {
   InterviewConfirmedApplicant
   InterviewCancelledApplicant
   InterviewCancelledInterviewer
+  // The team cancelled it (not the applicant): tells them they can rebook.
+  InterviewCancelledByTeamApplicant
   InterviewLocationChanged
   // Scheduled 24h/1h reminders fired by the interview-reminders job.
   InterviewReminderApplicant
