@@ -30,6 +30,7 @@ import { DesktopBanner } from '~/components/DesktopBanner'
 import { ImpersonationBanner } from '~/components/ImpersonationBanner'
 import { ActivityLauncher } from '~/components/activities/ActivityLauncher'
 import { CommandPalette } from '~/components/CommandPalette'
+import { FeedbackButton } from '~/components/feedback/FeedbackButton'
 import { PageDocButton, GuideTopbarButton, ShellGuideProvider } from '~/components/page-docs/PageDocButton'
 import type { GuideState } from '~/components/page-docs/guide-bridge'
 import {
@@ -258,6 +259,7 @@ export function LayoutOS({
   // whether Drive is a General sub-tab, so every nav matcher below has to be
   // handed the same map — a pin and an area disagreeing would light both.
   const navFlags = { resources: useFeatureFlag('resources') }
+  const feedbackEnabled = useFeatureFlag('os-feedback')
   const emailUnread = useEmailUnread(path)
   const areas = visibleAreas(roleFlags, navFlags)
   const routeArea = areaForPath(path, navFlags)
@@ -931,6 +933,13 @@ export function LayoutOS({
             </button>
           </Tooltip>
         </div>
+      )}
+
+      {feedbackEnabled && (
+        <FeedbackButton
+          pagePath={path}
+          onOpenFeed={() => openInWorkspace({ url: '/feedback', label: 'Feedback' })}
+        />
       )}
 
       <CommandPalette

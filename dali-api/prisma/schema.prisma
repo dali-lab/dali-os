@@ -309,6 +309,11 @@ model User {
   docComments                 DocComment[]         @relation("DocCommentAuthor")
   docCommentReactions         DocCommentReaction[]
 
+  // ─── DALI OS feedback (feature requests) ──────────────────────────────────
+  feedbackPosts     FeedbackPost[]
+  feedbackReactions FeedbackReaction[]
+  feedbackComments  FeedbackComment[]
+
   // ─── Page documentation (per-page guides) ─────────────────────────────────
   pageDocsMaintained PageDoc[] @relation("PageDocMaintainer")
   blogPosts          BlogPost[]
@@ -1449,6 +1454,54 @@ model DocCommentReaction {
 
   @@unique([commentId, userId, emoji])
   @@index([commentId])
+}
+
+// A feature request or piece of feedback about DALI OS itself, posted from the
+// shell's feedback button and listed on /feedback for every lab member.
+model FeedbackPost {
+  id            String   @id @default(cuid())
+  authorId      String
+  body          String
+  // S3 key (uploads/feedback/...) of the cropped screenshot, when one was taken.
+  screenshotKey String?
+  // The page the author was on when they opened the composer.
+  pagePath      String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  author    User               @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  reactions FeedbackReaction[]
+  comments  FeedbackComment[]
+
+  @@index([createdAt])
+}
+
+// Same toggle semantics as DocCommentReaction: one row per (post, user, emoji).
+model FeedbackReaction {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  emoji     String   @db.VarChar(64)
+  createdAt DateTime @default(now())
+
+  post FeedbackPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId, emoji])
+  @@index([postId])
+}
+
+model FeedbackComment {
+  id        String   @id @default(cuid())
+  postId    String
+  authorId  String
+  body      String
+  createdAt DateTime @default(now())
+
+  post   FeedbackPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([postId, createdAt])
 }
 
 enum DocCommentTarget {
