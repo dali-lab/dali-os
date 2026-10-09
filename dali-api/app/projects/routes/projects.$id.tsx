@@ -38,6 +38,7 @@ import { MoveToDialog } from "~/components/sharing/MoveToDialog";
 import { useDialog, useConfirmSubmit } from "~/components/ui/dialog";
 import { Tooltip } from "~/components/ui/floating";
 import { Checkbox } from "~/components/ui/Checkbox";
+import { Toggle } from "~/components/ui/Toggle";
 import { EditableSection } from "~/components/EditableSection";
 import { PageIcon } from "~/components/PageIcon";
 import { favoritePageIds, recordRouteVisit } from "~/lib/user-pages.server";
@@ -326,6 +327,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       slackChannelName: true,
       slackChannelId: true,
       isPrivate: true,
+      recordingPolicy: true,
       overviewPageId: true,
       prdPageId: true,
       projectTerms: {
@@ -1235,6 +1237,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         slackChannelName: project.slackChannelName,
         slackChannelId: project.slackChannelId,
         isPrivate: project.isPrivate,
+        recordingPolicy: project.recordingPolicy,
         overviewPageId: project.overviewPageId,
         prdPageId: project.prdPageId,
         startTerm,
@@ -1411,7 +1414,15 @@ export async function action({ request, params }: Route.ActionArgs) {
   const form = await request.formData();
   const intent = (form.get("intent") as string | null) ?? "details";
 
-  const SCOPE_INTENTS = ["scopesBulk", "domains", "terms", "visibility", "status", "chart-string"];
+  const SCOPE_INTENTS = [
+    "scopesBulk",
+    "domains",
+    "terms",
+    "visibility",
+    "status",
+    "chart-string",
+    "recordingPolicy",
+  ];
   if (SCOPE_INTENTS.includes(intent) && !core) {
     return { error: "Only Core or Admin can change project settings." };
   }
@@ -1597,6 +1608,17 @@ export async function action({ request, params }: Route.ActionArgs) {
     await prisma.project.update({
       where: { id: params.id },
       data: { isPrivate: form.get("isPrivate") === "on" },
+    });
+    return redirect(`/projects/${params.id}`);
+  }
+
+  // Meeting recording (specs/meeting-transcription.md): Disabled hides the
+  // Record button and all three record-prompt surfaces for this project's
+  // meetings. An unchecked Toggle posts nothing, so absence means Disabled.
+  if (intent === "recordingPolicy") {
+    await prisma.project.update({
+      where: { id: params.id },
+      data: { recordingPolicy: form.get("recordingAllowed") === "on" ? "Allowed" : "Disabled" },
     });
     return redirect(`/projects/${params.id}`);
   }
@@ -2547,6 +2569,54 @@ function VisibilitySegment({
               {isPrivate
                 ? "Not offered as a choice on forms that query projects."
                 : "Selectable on forms that query projects."}
+            </span>
+          </p>
+        )
+      }
+    </EditableSection>
+  );
+}
+
+// Meeting recording toggle (specs/meeting-transcription.md). Core-only
+// (listed in SCOPE_INTENTS); Disabled hides the Record button and all three
+// "record this meeting?" prompts for this project's meetings.
+function RecordingPolicySegment({
+  recordingPolicy,
+  canEdit,
+}: {
+  recordingPolicy: "Allowed" | "Disabled";
+  canEdit: boolean;
+}) {
+  const submit = useSubmit();
+  const formRef = useRef<HTMLFormElement | null>(null);
+  const allowed = recordingPolicy !== "Disabled";
+
+  return (
+    <EditableSection
+      title="Meeting recording"
+      canEdit={canEdit}
+      description="Lets anyone editing a meeting note on this project record it. Audio is transcribed, then deleted."
+      onSave={() => {
+        if (formRef.current) submit(formRef.current);
+      }}
+    >
+      {({ editing, resetKey }) =>
+        editing ? (
+          <Form method="post" ref={formRef} key={resetKey}>
+            <input type="hidden" name="intent" value="recordingPolicy" />
+            <Toggle
+              name="recordingAllowed"
+              defaultChecked={allowed}
+              label="Allow recording this project's meetings"
+            />
+          </Form>
+        ) : (
+          <p className="text-sm text-foreground">
+            {allowed ? "Allowed" : "Disabled"}
+            <span className="block text-xs text-muted-foreground">
+              {allowed
+                ? "The Record button and record prompts are available on this project's meeting notes."
+                : "The Record button and record prompts are hidden for this project's meetings."}
             </span>
           </p>
         )
@@ -3895,6 +3965,8 @@ function ScopeTab({
       <StatusSegment status={project.status} canEdit={canEdit} />
 
       <VisibilitySegment isPrivate={project.isPrivate} canEdit={canEdit} />
+
+      <RecordingPolicySegment recordingPolicy={project.recordingPolicy} canEdit={canEdit} />
 
       {/* Declared domains — editable; if none declared the derived set from
           assignments + bids is shown as a fallback so a freshly-created

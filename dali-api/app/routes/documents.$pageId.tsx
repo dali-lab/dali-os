@@ -17,6 +17,7 @@ import { getCollabToken } from "~/lib/collab-token.server";
 import { fullName, formatDateShort } from "~/lib/display";
 import { getPresenceUser } from "~/lib/presence-user";
 import { getPageAccess, getPageAccessBulk } from "~/lib/pageAccess.server";
+import { getUserRoles } from "~/lib/roles";
 import { isFavorited, recordPageVisit } from "~/lib/user-pages.server";
 import { canManageSharing } from "~/lib/page-share-access.server";
 import { normalizePageTypography } from "~/lib/page-typography";
@@ -26,6 +27,8 @@ import { DocumentEditor } from "~/components/DocumentEditor";
 import { AttendanceChecklist, type AttendanceRow } from "~/components/AttendanceChecklist";
 import { CheckInPanel } from "~/components/CheckInPanel";
 import { MeetingRecorder } from "~/components/MeetingRecorder";
+import { RecordingPresencePill } from "~/components/RecordingPresencePill";
+import { RecordPromptBanner } from "~/components/RecordPromptBanner";
 import { appendBlocks } from "~/components/doc";
 import type { DocEditorInstance } from "~/components/doc/schema/build";
 import { pageDocName } from "~/collab/roomName";
@@ -243,6 +246,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         checkInUrl: string | null;
         checkInQrSvg: string | null;
         walletConfigured: boolean;
+        // Meeting recording (specs/meeting-transcription.md).
+        recordingPolicy: "Allowed" | "Disabled";
+        recordPromptEnabled: boolean;
+        canDontSuggestRecording: boolean;
+        windowEndIso: string;
+        activeRecording: { id: string; userId: string } | null;
       }
     | null = null;
   if (page.meetingNoteId) {
@@ -254,16 +263,26 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         participantUserIds: true,
         selectedAt: true,
         createdAt: true,
+        durationMinutes: true,
         recurrenceRule: true,
         meetingType: true,
         meetingTypeLabel: true,
         attendanceMode: true,
+        recordPrompt: true,
         whiteboardPage: { select: { id: true } },
+        project: { select: { recordingPolicy: true } },
       },
     });
     if (meeting) {
       const occurrenceStart = page.meetingOccurrenceStart ?? meeting.selectedAt ?? meeting.createdAt;
       await ensureOccurrenceRoster(meeting, occurrenceStart);
+      const [activeRecordingRow] = await prisma.meetingRecording.findMany({
+        where: { scheduledMeetingId: meeting.id, occurrenceStart, status: { notIn: ["Failed"] } },
+        select: { id: true, userId: true },
+        orderBy: { createdAt: "desc" },
+        take: 1,
+      });
+      const roles = await getUserRoles(auth.user.sub, request);
       const rows = await prisma.meetingAttendance.findMany({
         where: { scheduledMeetingId: meeting.id, occurrenceStart },
         select: {
@@ -311,6 +330,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         checkInUrl,
         checkInQrSvg,
         walletConfigured: walletTokensConfigured(),
+        recordingPolicy: meeting.project?.recordingPolicy ?? "Allowed",
+        recordPromptEnabled: meeting.recordPrompt,
+        canDontSuggestRecording: auth.user.sub === meeting.organizerId || roles.isCore,
+        windowEndIso: new Date(occurrenceStart.getTime() + meeting.durationMinutes * 60_000).toISOString(),
+        activeRecording: activeRecordingRow ?? null,
       };
     }
   }
@@ -543,7 +567,23 @@ export default function DocumentPage() {
   const focusCommentId = searchParams.get("comment") ?? undefined;
   const focusMentionUserId = searchParams.get("mention") ?? undefined;
   const recordingEnabled = useFeatureFlag("ai-meeting-notes");
+  const recordingAllowed = attendance?.recordingPolicy !== "Disabled";
+  const hasTranscriptParam = Boolean(searchParams.get("transcript"));
+  const [recordAutoOpen, setRecordAutoOpen] = useState(searchParams.get("record") === "1");
+  const toast = useToast();
   const { actionBtnPrimary, actionIcon } = useOsChrome();
+
+  async function dontSuggestRecording() {
+    if (!attendance) return;
+    const fd = new FormData();
+    fd.set("intent", "recordPrompt");
+    const res = await fetch(`/calendar/meeting/${attendance.meetingId}`, {
+      method: "POST",
+      credentials: "include",
+      body: fd,
+    }).catch(() => null);
+    if (!res?.ok) toast.error("Couldn't turn off the record prompt for this meeting.");
+  }
 
   // Meeting recording writes into the doc through the live editor, so
   // collaborators see the notes arrive like any other edit.
@@ -605,8 +645,18 @@ export default function DocumentPage() {
       topBarActions={
         <>
           {attendance && <AttendanceButton attendance={attendance} />}
-          {recordingEnabled && canEdit && (
-            <MeetingRecorder documentName={pageDocName(pageId)} onInsert={insertMeetingNotes} />
+          <RecordingPresencePill documentName={pageDocName(pageId)} collabToken={collabToken} />
+          {recordingEnabled && recordingAllowed && (canEdit || hasTranscriptParam) && (
+            <MeetingRecorder
+              documentName={pageDocName(pageId)}
+              scheduledMeetingId={attendance?.meetingId}
+              occurrenceStart={attendance?.occurrenceStart}
+              roster={attendance?.rows.map((r) => ({ userId: r.userId, name: r.name }))}
+              canEdit={canEdit}
+              onInsert={insertMeetingNotes}
+              autoOpen={recordAutoOpen}
+              collabToken={collabToken}
+            />
           )}
           {attendance?.whiteboardPageId && (
             // This meeting also has a whiteboard — link across to it (the
@@ -628,6 +678,20 @@ export default function DocumentPage() {
   return (
     <div className="flex flex-col gap-4">
       {trashed && <TrashedNoteBanner pageId={pageId} canRestore={canRestore} />}
+      {attendance && recordingEnabled && recordingAllowed && (
+        <RecordPromptBanner
+          meetingId={attendance.meetingId}
+          occurrenceStart={attendance.occurrenceStart}
+          windowEndIso={attendance.windowEndIso}
+          canEdit={canEdit}
+          recordingEnabled={recordingEnabled}
+          recordPromptEnabled={attendance.recordPromptEnabled}
+          hasActiveRecording={attendance.activeRecording !== null}
+          canDontSuggest={attendance.canDontSuggestRecording}
+          onRecord={() => setRecordAutoOpen(true)}
+          onDontSuggest={() => void dontSuggestRecording()}
+        />
+      )}
       {attendance?.selfCheckIn && (
         <CheckInPanel
           meetingId={attendance.meetingId}
