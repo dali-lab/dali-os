@@ -355,7 +355,12 @@ export function MeetingRecorder({
       setRecordedSeconds(data.recordedSeconds);
       if (data.status === "Recording") {
         setAppUnreachable(false);
-        setPhase((p) => (p === "starting" ? "recording" : p));
+        setPhase((p) => {
+          // The app has claimed the recording: the clock starts here, not
+          // when the deep link was opened.
+          if (p === "starting") setStartedAt(Date.now());
+          return p === "starting" ? "recording" : p;
+        });
       } else if (data.status === "Stopped") {
         setPhase("review");
       } else if (data.status === "Processing") {
@@ -628,6 +633,24 @@ export function MeetingRecorder({
     setPhase("processing");
   }
 
+  // Try again after a failed dispatch: the audio is still on the server, so
+  // ask it to process once more and go back to waiting.
+  async function retryProcessing() {
+    if (!recordingId) return;
+    setError(null);
+    const res = await fetch(`/api/meeting-recordings/${recordingId}`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "stop", final: true }),
+    }).catch(() => null);
+    if (!res?.ok) {
+      setError("This recording can't be processed again. Record it again.");
+      return;
+    }
+    setPhase("processing");
+  }
+
   async function resume() {
     if (!recordingId) return;
     setError(null);
@@ -755,8 +778,9 @@ export function MeetingRecorder({
   }
 
   const hasTranscript = lines.length > 0;
-  const elapsed =
-    captureMode === "browser" && phase === "recording" ? recordedSeconds + (now - startedAt) / 1000 : recordedSeconds;
+  // Both capture modes count locally while live; the server's recordedSeconds
+  // only moves when a session finishes.
+  const elapsed = phase === "recording" ? recordedSeconds + (now - startedAt) / 1000 : recordedSeconds;
 
   const micOptions: SelectOption[] = micDevices.map((d, i) => ({
     value: d.deviceId,
@@ -1100,7 +1124,7 @@ export function MeetingRecorder({
           {phase === "failed" && canEdit && (
             <>
               <IconButton label="Discard recording" icon={Trash2} tone="destructive" onClick={() => void discard()} />
-              <button type="button" onClick={() => void resume()} className={buttonClasses("primary", "sm")}>
+              <button type="button" onClick={() => void retryProcessing()} className={buttonClasses("primary", "sm")}>
                 Try again
               </button>
             </>

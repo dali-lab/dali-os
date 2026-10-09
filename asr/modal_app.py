@@ -189,7 +189,9 @@ def _run_pyannote(pcm: bytes, max_speakers: Optional[int]) -> list:
     # pyannote 4 returns a DiarizeOutput wrapper; 3.x returned the Annotation
     # itself. The plain track (not the exclusive one, which fragments turns
     # at every overlap); overlaps resolve at word assignment time.
-    annotation = getattr(output, "speaker_diarization", None) or output
+    # hasattr, not `or`: an Annotation with no speech is falsy, and a silent
+    # channel must yield zero segments rather than fall through to the wrapper.
+    annotation = output.speaker_diarization if hasattr(output, "speaker_diarization") else output
 
     return [
         {"start": turn.start, "end": turn.end, "speaker": speaker_label}
@@ -283,7 +285,13 @@ def run_job(raw_body: dict) -> None:
 async def process(request: fastapi.Request) -> dict:
     import pipeline
 
-    if not pipeline.check_bearer_token(request.headers.get("authorization"), _diarize_secret()):
+    try:
+        secret = _diarize_secret()
+    except KeyError:
+        # The Modal Secret "dali-asr" is missing or lacks the key; say so
+        # rather than 500 with a traceback.
+        raise fastapi.HTTPException(status_code=503, detail="DIARIZE_SECRET is not configured") from None
+    if not pipeline.check_bearer_token(request.headers.get("authorization"), secret):
         raise fastapi.HTTPException(status_code=401, detail="unauthorized")
 
     try:
@@ -296,7 +304,7 @@ async def process(request: fastapi.Request) -> dict:
     except pipeline.ValidationError as exc:
         raise fastapi.HTTPException(status_code=400, detail=str(exc)) from None
 
-    call = run_job.spawn(body)
+    call = await run_job.spawn.aio(body)
     logger.info(
         "dali-asr: job spawned recording_id=%s channels=%s job_id=%s",
         req.recording_id,

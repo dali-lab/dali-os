@@ -119,6 +119,12 @@ export async function action({ request, params }: Route.ActionArgs) {
       return Response.json({ offset: result.offset, segment: result.segment });
     }
     case "stop": {
+      // A failed dispatch leaves the audio in place (finalizedAt null), so
+      // stop { final } doubles as Try again. Once the audio is gone there is
+      // nothing to re-run.
+      if (rec.finalizedAt !== null || rec.status === "Processing" || rec.status === "Done") {
+        return Response.json({ error: "This recording can't be processed again." }, { status: 409 });
+      }
       await requestStop(rec);
       if (body.final === true) {
         if (rec.channels.length > 0) {

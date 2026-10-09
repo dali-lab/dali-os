@@ -50,6 +50,10 @@ pub fn run() {
             commands::get_auth_state,
             commands::sign_out,
             commands::open_external,
+            commands::record_prompt_start,
+            commands::record_prompt_open,
+            commands::record_prompt_dismiss,
+            commands::record_prompt_mute,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

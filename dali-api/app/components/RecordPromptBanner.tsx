@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { MoreHorizontal, Radio as RadioIcon } from "lucide-react";
 import { Menu } from "~/components/ui/floating";
+import { desktopVersion } from "~/lib/desktop";
 import { isRecordPromptWindow } from "./meeting-recorder/record-prompt-window";
 
 const dismissKey = (meetingId: string, occurrenceStart: string) =>
@@ -47,8 +48,13 @@ export function RecordPromptBanner({
 }) {
   const [dismissed, setDismissed] = useState(true);
   const [live, setLive] = useState(false);
+  // Inside the desktop shell the app raises its own floating prompt, so the
+  // page stays quiet there. Resolved in an effect: the shell marker only
+  // exists on the client and reading it during render would mismatch SSR.
+  const [inDesktopShell, setInDesktopShell] = useState(false);
 
   useEffect(() => {
+    setInDesktopShell(desktopVersion() != null);
     try {
       setDismissed(window.localStorage.getItem(dismissKey(meetingId, occurrenceStart)) === "1");
     } catch {
@@ -65,7 +71,17 @@ export function RecordPromptBanner({
     return () => clearInterval(id);
   }, [occurrenceStart, windowEndIso]);
 
-  if (!live || !canEdit || !recordingEnabled || !recordPromptEnabled || hasActiveRecording || dismissed) return null;
+  if (
+    inDesktopShell ||
+    !live ||
+    !canEdit ||
+    !recordingEnabled ||
+    !recordPromptEnabled ||
+    hasActiveRecording ||
+    dismissed
+  ) {
+    return null;
+  }
 
   function notNow() {
     try {

@@ -1,6 +1,6 @@
 [package]
 name = "dali-os-desktop"
-version = "0.1.12"
+version = "0.1.13"
 description = "DALI OS desktop shell"
 authors = ["DALI Lab"]
 edition = "2021"
@@ -25,7 +25,7 @@ tauri-plugin-autostart = "2"
 tauri-plugin-window-state = "2"
 tauri-plugin-opener = "2"
 
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream", "multipart"] }
 tokio = { version = "1", features = ["rt-multi-thread", "time", "macros", "sync"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

@@ -27,17 +27,17 @@ pub struct RecentNotif {
 }
 
 // A record-prompt notification (poller.rs) held back because its meeting has
-// a Zoom/Teams link: raised once the call is actually frontmost or the
-// fallback window elapses, whichever comes first (dropped, unraised, past the
-// 30-minute outer bound). `occurrence_start_unix` is parsed once at enqueue
-// time so the 10s recheck is a cheap integer comparison.
+// a Zoom/Teams link: raised (as the floating record-prompt window, not an OS
+// banner) once the call is actually frontmost or the fallback window elapses,
+// whichever comes first (dropped, unraised, past the 30-minute outer bound).
+// `occurrence_start_unix` is parsed once at enqueue time so the 10s recheck
+// is a cheap integer comparison.
 #[derive(Clone)]
 pub struct PendingRecordPrompt {
     pub id: String,
     pub title: String,
-    pub body: String,
     pub link: Option<String>,
-    pub urgent: bool,
+    pub note_page_id: Option<String>,
     pub scheduled_meeting_id: String,
     pub occurrence_start: String,
     pub occurrence_start_unix: i64,
@@ -70,9 +70,18 @@ pub struct AppState {
     // Id of the MeetingRecording being captured, if any (recording.rs). Also
     // drives the tray's "Stop recording" item.
     pub recording: Mutex<Option<String>>,
-    // Record-prompt banners deferred until their Zoom/Teams call is actually
+    // Record prompts deferred until their Zoom/Teams call is actually
     // frontmost (or the fallback timer elapses). See poller.rs.
     pub pending_record_prompts: Mutex<Vec<PendingRecordPrompt>>,
+    // Notification id of the prompt the floating record-prompt window is
+    // currently showing, if any, paired with its occurrence's start (Unix
+    // seconds) so the 10s watcher (poller.rs) can auto-hide it 30 minutes
+    // past start without re-touching the notify:: stash.
+    pub current_record_prompt: Mutex<Option<(String, i64)>>,
+    // Notification ids the user explicitly closed (the window's X) this
+    // session — a defensive guard against a second raise for the same id;
+    // cleared on sign-out like the other per-session delivery state above.
+    pub dismissed_record_prompts: Mutex<HashSet<String>>,
 }
 
 impl AppState {
@@ -89,6 +98,8 @@ impl AppState {
             main_revealed: AtomicBool::new(false),
             recording: Mutex::new(None),
             pending_record_prompts: Mutex::new(Vec::new()),
+            current_record_prompt: Mutex::new(None),
+            dismissed_record_prompts: Mutex::new(HashSet::new()),
         }
     }
 

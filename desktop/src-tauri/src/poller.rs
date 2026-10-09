@@ -9,13 +9,15 @@
 // (Settings → Notifications → Desktop; urgent items get sound), updates the
 // dock badge, and hands the latest unread items to the tray menu.
 //
-// Record-prompt items (recordPrompt field) are a special case: an item for a
-// Zoom/Teams occurrence (hasVideoLink) is held back in
-// AppState.pending_record_prompts rather than raised immediately, and a
-// second background loop (spawned alongside the main sync loop, below)
+// Record-prompt items (recordPrompt field) are a special case: they raise the
+// floating "Meeting detected" window (notify::raise_record_prompt) instead of
+// an OS banner. An item for a Zoom/Teams occurrence (hasVideoLink) is held
+// back in AppState.pending_record_prompts rather than raised immediately, and
+// a second background loop (spawned alongside the main sync loop, below)
 // rechecks every 10s whether the call is now frontmost or the two-minute
-// fallback has elapsed. Items without a video link (in-person, Meet) raise
-// right away, same as any other banner.
+// fallback has elapsed — and, while it's at it, whether the window's current
+// prompt has aged out (30 minutes past its occurrence start). Items without a
+// video link (in-person, Meet) raise right away, same as any other banner.
 
 use std::time::Duration;
 
@@ -92,9 +94,9 @@ struct RecordPrompt {
     #[serde(rename = "occurrenceStart")]
     occurrence_start: String,
     // The server resolves/creates the note itself (attachMeetingNote); the
-    // desktop banner never needs the page id directly.
+    // window's commands never need this directly, but it rides along in the
+    // payload the task's event contract specifies.
     #[serde(rename = "notePageId", default)]
-    #[allow(dead_code)]
     note_page_id: Option<String>,
     #[serde(rename = "hasVideoLink", default)]
     has_video_link: bool,
@@ -176,6 +178,7 @@ async fn sync_once(app: &AppHandle, http: &reqwest::Client, token: &str) -> Sync
     // Collect new items under the lock, raise after releasing it (never hold
     // a MutexGuard across the badge call/await).
     let mut to_raise: Vec<Banner> = Vec::new();
+    let mut to_raise_prompts: Vec<(String, RecordPromptPayload)> = Vec::new();
     let mut to_defer: Vec<PendingRecordPrompt> = Vec::new();
     {
         let st = app.state::<AppState>();
@@ -193,7 +196,7 @@ async fn sync_once(app: &AppHandle, http: &reqwest::Client, token: &str) -> Sync
                     continue;
                 }
                 match &item.record_prompt {
-                    Some(rp) => queue_record_prompt(item, rp, &mut to_raise, &mut to_defer),
+                    Some(rp) => queue_record_prompt(item, rp, &mut to_raise_prompts, &mut to_defer),
                     None => to_raise.push(Banner {
                         id: item.id.clone(),
                         title: item.title.clone(),
@@ -211,6 +214,9 @@ async fn sync_once(app: &AppHandle, http: &reqwest::Client, token: &str) -> Sync
         if let Ok(mut pending) = app.state::<AppState>().pending_record_prompts.lock() {
             pending.extend(to_defer);
         }
+    }
+    for (id, payload) in to_raise_prompts {
+        notify::raise_record_prompt(app, &id, payload);
     }
     for banner in to_raise {
         notify::raise(app, banner);
@@ -233,6 +239,7 @@ async fn sync_once(app: &AppHandle, http: &reqwest::Client, token: &str) -> Sync
     // A still-deferred record prompt whose notification went read/retired
     // (the web page marks it read once a recording starts there; the server
     // retires stale rows) must never raise later — drop it and its stash.
+    // One already showing in the floating window gets hidden outright.
     if !stale_ids.is_empty() {
         if let Ok(mut pending) = app.state::<AppState>().pending_record_prompts.lock() {
             pending.retain(|p| {
@@ -243,6 +250,17 @@ async fn sync_once(app: &AppHandle, http: &reqwest::Client, token: &str) -> Sync
                     true
                 }
             });
+        }
+        let shown_stale = app
+            .state::<AppState>()
+            .current_record_prompt
+            .lock()
+            .ok()
+            .and_then(|g| g.clone())
+            .filter(|(id, _)| stale_ids.contains(id))
+            .map(|(id, _)| id);
+        if let Some(id) = shown_stale {
+            notify::expire_record_prompt(app, &id);
         }
     }
 
@@ -269,32 +287,22 @@ async fn sync_once(app: &AppHandle, http: &reqwest::Client, token: &str) -> Sync
     SyncOutcome::Ok
 }
 
-/// Route one new record-prompt item: raise now (and stash its payload) when
+/// Route one new record-prompt item: raise the floating window now when
 /// there's no video link to wait on or the timestamp can't be parsed, else
 /// hold it for the 10s recheck loop below.
 fn queue_record_prompt(
     item: &NotifItem,
     rp: &RecordPrompt,
-    to_raise: &mut Vec<Banner>,
+    to_raise: &mut Vec<(String, RecordPromptPayload)>,
     to_defer: &mut Vec<PendingRecordPrompt>,
 ) {
-    let banner = Banner {
-        id: item.id.clone(),
-        title: item.title.clone(),
-        body: item.body.clone().unwrap_or_default(),
-        link: item.link.clone(),
-        urgent: item.urgent,
-        rsvp: false,
-        record: true,
-    };
     if rp.has_video_link {
         if let Some(occurrence_start_unix) = parse_iso8601_unix(&rp.occurrence_start) {
             to_defer.push(PendingRecordPrompt {
-                id: banner.id,
-                title: banner.title,
-                body: banner.body,
-                link: banner.link,
-                urgent: banner.urgent,
+                id: item.id.clone(),
+                title: item.title.clone(),
+                link: item.link.clone(),
+                note_page_id: rp.note_page_id.clone(),
                 scheduled_meeting_id: rp.scheduled_meeting_id.clone(),
                 occurrence_start: rp.occurrence_start.clone(),
                 occurrence_start_unix,
@@ -304,22 +312,27 @@ fn queue_record_prompt(
         // Unparseable timestamp: fall through and raise immediately rather
         // than silently dropping the prompt.
     }
-    notify::stash_record_prompt(
-        &banner.id,
+    to_raise.push((
+        item.id.clone(),
         RecordPromptPayload {
-            link: banner.link.clone(),
+            title: item.title.clone(),
+            // No frontmost detection on the immediate path — there was no
+            // video link to wait on, or the timestamp didn't parse.
+            source: None,
+            note_page_id: rp.note_page_id.clone(),
+            link: item.link.clone(),
             scheduled_meeting_id: rp.scheduled_meeting_id.clone(),
             occurrence_start: rp.occurrence_start.clone(),
         },
-    );
-    to_raise.push(banner);
+    ));
 }
 
 /// Every 10s: raise a deferred record prompt once Zoom/Teams is frontmost or
-/// the two-minute fallback has elapsed (whichever first), and drop anything
-/// nobody's call started within 30 minutes of the occurrence start. Runs for
-/// the life of the session alongside the main sync loop (spawned by `spawn`
-/// above), stopping once signed out.
+/// the two-minute fallback has elapsed (whichever first), drop anything
+/// nobody's call started within 30 minutes of the occurrence start, and hide
+/// the window if the prompt it's currently showing has itself aged past that
+/// same 30-minute bound. Runs for the life of the session alongside the main
+/// sync loop (spawned by `spawn` above), stopping once signed out.
 async fn record_prompt_watcher(app: AppHandle) {
     loop {
         tokio::time::sleep(RECORD_PROMPT_RECHECK).await;
@@ -332,7 +345,8 @@ async fn record_prompt_watcher(app: AppHandle) {
 
 fn check_pending_record_prompts(app: &AppHandle) {
     let now = now_unix();
-    let live = frontmost::is_meeting_app_frontmost();
+    let frontmost = frontmost::meeting_app_frontmost_name();
+    let live = frontmost.is_some();
 
     let mut due: Vec<PendingRecordPrompt> = Vec::new();
     {
@@ -354,26 +368,37 @@ fn check_pending_record_prompts(app: &AppHandle) {
     }
 
     for p in due {
-        notify::stash_record_prompt(
+        notify::raise_record_prompt(
+            app,
             &p.id,
             RecordPromptPayload {
-                link: p.link.clone(),
-                scheduled_meeting_id: p.scheduled_meeting_id.clone(),
-                occurrence_start: p.occurrence_start.clone(),
-            },
-        );
-        notify::raise(
-            app,
-            Banner {
-                id: p.id,
                 title: p.title,
-                body: p.body,
+                source: frontmost.map(str::to_string),
+                note_page_id: p.note_page_id,
                 link: p.link,
-                urgent: p.urgent,
-                rsvp: false,
-                record: true,
+                scheduled_meeting_id: p.scheduled_meeting_id,
+                occurrence_start: p.occurrence_start,
             },
         );
+    }
+
+    expire_shown_record_prompt(app, now);
+}
+
+/// Auto-hide the floating window once its own occurrence is 30 minutes past
+/// start, same outer bound as an unraised pending prompt above.
+fn expire_shown_record_prompt(app: &AppHandle, now: i64) {
+    let Some((id, start_unix)) = app
+        .state::<AppState>()
+        .current_record_prompt
+        .lock()
+        .ok()
+        .and_then(|g| g.clone())
+    else {
+        return;
+    };
+    if now - start_unix > RECORD_PROMPT_DROP_SECS {
+        notify::expire_record_prompt(app, &id);
     }
 }
 
@@ -389,8 +414,9 @@ fn now_unix() -> i64 {
 /// `2026-10-09T14:30:00.000Z`) into Unix seconds. No date/time crate: the
 /// format is fixed-width and always UTC, so a hand-rolled parser covers the
 /// one comparison this needs (minute-scale, so sub-second precision is
-/// irrelevant) without a new dependency.
-fn parse_iso8601_unix(s: &str) -> Option<i64> {
+/// irrelevant) without a new dependency. `pub(crate)`: notify.rs reuses it to
+/// pre-parse a record prompt's occurrence start when raising the window.
+pub(crate) fn parse_iso8601_unix(s: &str) -> Option<i64> {
     if s.len() < 19 {
         return None;
     }

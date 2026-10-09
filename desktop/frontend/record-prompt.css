@@ -1,0 +1,146 @@
+/* Layout for the floating "Meeting detected" window (window.rs ensures a
+   fixed, undecorated 420x132 surface). Color tokens come from pairing.css —
+   same card/accent palette as the rest of the bundled shell. The window
+   itself isn't transparent (macOS only allows that behind the
+   macos-private-api feature, which this app doesn't enable), so the rounding
+   here is a card inset by a couple of px of the body's own background,
+   same trick loading.html/offline.html use. */
+
+html, body {
+  width: 420px;
+  height: 132px;
+  overflow: hidden;
+}
+
+body {
+  display: block;
+  padding: 6px;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.panel {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  text-align: left;
+  padding: 10px 14px 10px 34px;
+  border-radius: 14px;
+  box-shadow: 0 10px 28px var(--shadow);
+  display: flex;
+  flex-direction: column;
+}
+
+.icon-btn {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.icon-btn:hover {
+  background: var(--code-bg);
+  color: var(--ink);
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+}
+
+.eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--os-accent);
+}
+
+.subtitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.actions {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.actions .primary {
+  flex: 1;
+  width: auto;
+  padding: 8px 14px;
+  font-size: 13px;
+}
+
+.chevron {
+  position: static;
+  width: 32px;
+  height: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.chevron:hover {
+  background: var(--code-bg);
+}
+
+.footer {
+  margin: 4px 0 0;
+  font-size: 10.5px;
+  line-height: 1.3;
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.menu {
+  position: absolute;
+  inset: 0;
+  background: var(--card);
+  border-radius: 14px;
+  padding: 10px 14px 10px 34px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  justify-content: center;
+}
+.menu.hidden {
+  display: none;
+}
+
+.menu-item {
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+  padding: 9px 10px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink);
+}
+.menu-item:hover {
+  background: var(--code-bg);
+}

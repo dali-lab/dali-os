@@ -278,16 +278,29 @@ export async function startProcessing(
   try {
     await provider.process(buildProcessRequest(rec));
   } catch (err) {
-    await failRecording(rec, err instanceof Error ? err.message : "Transcription dispatch failed.");
+    // Dispatch failures (Modal down, secret missing) are transient: keep the
+    // audio so Try again can re-dispatch. Only a job that ran and failed, or
+    // the finalizer's timeout, deletes it.
+    await failRecording(rec, err instanceof Error ? err.message : "Transcription dispatch failed.", {
+      keepAudio: true,
+    });
   }
 }
 
-async function failRecording(rec: Pick<MeetingRecording, "id">, message: string): Promise<void> {
+async function failRecording(
+  rec: Pick<MeetingRecording, "id">,
+  message: string,
+  opts: { keepAudio?: boolean } = {},
+): Promise<void> {
   await prisma.meetingRecording.update({
     where: { id: rec.id },
-    data: { status: "Failed", error: message.slice(0, 500), finalizedAt: new Date() },
+    data: {
+      status: "Failed",
+      error: message.slice(0, 500),
+      ...(opts.keepAudio ? {} : { finalizedAt: new Date() }),
+    },
   });
-  await deletePrefix(rec.id);
+  if (!opts.keepAudio) await deletePrefix(rec.id);
 }
 
 /** Stop with zero chunks ever uploaded: nothing to transcribe, nothing to

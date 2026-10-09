@@ -53,6 +53,14 @@ pub fn meeting_recordings_url() -> String {
     format!("{PROD_ORIGIN}/api/meeting-recordings")
 }
 
+/// "Don't suggest recording this meeting" (record-prompt window's overflow
+/// menu) — the same `intent=recordPrompt` POST the web RecordPromptBanner's
+/// overflow item makes, reached here with the keychain Bearer token instead
+/// of a session cookie.
+pub fn calendar_meeting_url(id: &str) -> String {
+    format!("{PROD_ORIGIN}/calendar/meeting/{id}")
+}
+
 pub fn pair_start_url() -> String {
     format!("{PROD_ORIGIN}/auth/pair/start")
 }

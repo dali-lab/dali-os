@@ -35,6 +35,29 @@ pub async fn sign_out(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+// Record-prompt window commands (record-prompt.html/.js) — invokable only
+// from that local window (record-prompt-local.json). Each delegates straight
+// to notify.rs, which owns the id-keyed stash these all key off of.
+#[tauri::command]
+pub fn record_prompt_start(app: AppHandle, id: String) {
+    notify::record_prompt_start(&app, id);
+}
+
+#[tauri::command]
+pub fn record_prompt_open(app: AppHandle, id: String) {
+    notify::record_prompt_open(&app, id);
+}
+
+#[tauri::command]
+pub fn record_prompt_dismiss(app: AppHandle, id: String) {
+    notify::record_prompt_dismiss(&app, id);
+}
+
+#[tauri::command]
+pub fn record_prompt_mute(app: AppHandle, id: String) {
+    notify::record_prompt_mute(&app, id);
+}
+
 #[tauri::command]
 pub fn open_external(app: AppHandle, url: String) -> Result<(), String> {
     // Only http(s) — never file:// or a custom scheme, even from trusted UI.
@@ -81,10 +104,19 @@ pub async fn do_sign_out(app: AppHandle) {
         if let Ok(mut pending) = pending_lock {
             pending.clear();
         }
+        let current_prompt_lock = st.current_record_prompt.lock();
+        if let Ok(mut current) = current_prompt_lock {
+            *current = None;
+        }
+        let dismissed_lock = st.dismissed_record_prompts.lock();
+        if let Ok(mut dismissed) = dismissed_lock {
+            dismissed.clear();
+        }
     }
     tray::refresh(&app, 0);
     notify::clear_all_delivered();
     notify::clear_record_prompts();
+    window::hide_record_prompt(&app);
 
     // Revoke the webview cookie Session too: /logout reads the cookie, revokes
     // it, and clears it. Its redirect to /login is ignored by nav.rs because the
