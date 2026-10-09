@@ -6,11 +6,18 @@
 use std::time::Duration;
 
 use tauri::webview::PageLoadEvent;
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use url::Url;
 
 use crate::config::{self, PROD_ORIGIN};
 use crate::state::AppState;
+
+// Floating record-prompt window (see notify/mod.rs for the payload it's fed
+// and poller.rs for when it's raised). Sized and positioned to match a small
+// "toast" in the mockup's bottom-right corner, never the native title bar.
+const RECORD_PROMPT_WIDTH: f64 = 420.0;
+const RECORD_PROMPT_HEIGHT: f64 = 132.0;
+const RECORD_PROMPT_MARGIN: f64 = 24.0;
 
 pub fn build_pairing(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     if let Some(w) = app.get_webview_window("pairing") {
@@ -221,6 +228,68 @@ pub fn hide_pairing(app: &AppHandle) {
     }
 }
 
+fn build_record_prompt(app: &AppHandle) -> tauri::Result<WebviewWindow> {
+    if let Some(w) = app.get_webview_window("record-prompt") {
+        return Ok(w);
+    }
+    WebviewWindowBuilder::new(app, "record-prompt", WebviewUrl::App("record-prompt.html".into()))
+        .inner_size(RECORD_PROMPT_WIDTH, RECORD_PROMPT_HEIGHT)
+        .resizable(false)
+        .decorations(false)
+        .always_on_top(true)
+        .visible_on_all_workspaces(true)
+        .skip_taskbar(true)
+        // Raised in the background by the poller/frontmost watcher — never
+        // steal focus from whatever (e.g. the meeting app) is frontmost.
+        .focused(false)
+        .shadow(true)
+        .visible(false)
+        .build()
+}
+
+/// Bottom-right of the primary display, inset by `RECORD_PROMPT_MARGIN` and
+/// clear of the Dock/menu bar (`work_area`, not the full display bounds).
+/// Falls back to the display's own bounds if the OS can't report a work
+/// area, and does nothing (keeps whatever position it last had) if there's
+/// no primary monitor at all.
+fn position_record_prompt(app: &AppHandle, window: &WebviewWindow) {
+    let Ok(Some(monitor)) = app.primary_monitor() else {
+        return;
+    };
+    let scale = monitor.scale_factor();
+    let area = monitor.work_area();
+    let x = (area.position.x as f64 / scale) + (area.size.width as f64 / scale)
+        - RECORD_PROMPT_WIDTH
+        - RECORD_PROMPT_MARGIN;
+    let y = (area.position.y as f64 / scale) + (area.size.height as f64 / scale)
+        - RECORD_PROMPT_HEIGHT
+        - RECORD_PROMPT_MARGIN;
+    let _ = window.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(x, y)));
+}
+
+/// Show the floating "Meeting detected" window with `view`'s content
+/// (the JSON shape `record-prompt.js` expects — see notify::raise_record_prompt).
+/// Reuses the one `record-prompt` window for the life of the session: calling
+/// this again while it's already showing a different prompt just replaces its
+/// content, which is the only "one at a time" rule this needs.
+pub fn show_record_prompt(app: &AppHandle, view: serde_json::Value) {
+    let Ok(w) = build_record_prompt(app) else {
+        return;
+    };
+    position_record_prompt(app, &w);
+    let _ = app.emit_to("record-prompt", "record-prompt://show", view);
+    let _ = w.show();
+}
+
+pub fn hide_record_prompt(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window("record-prompt") {
+        let _ = w.hide();
+    }
+    if let Ok(mut current) = app.state::<AppState>().current_record_prompt.lock() {
+        *current = None;
+    }
+}
+
 pub fn set_badge(app: &AppHandle, count: i64) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.set_badge_count(if count > 0 { Some(count) } else { None });
@@ -239,7 +308,7 @@ pub fn apply_zoom(app: &AppHandle, factor: f64) {
 /// is one of open/next/prev.
 pub fn find_action(app: &AppHandle, action: &str) {
     if let Some(w) = app.get_webview_window("main") {
-        let _ = w.eval(&format!(
+        let _ = w.eval(format!(
             "{}\nwindow.__daliFindBar.{}();",
             include_str!("find.js"),
             action

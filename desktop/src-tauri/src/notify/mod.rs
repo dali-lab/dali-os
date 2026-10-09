@@ -18,20 +18,28 @@
 // POSTs :id/read. The server publishes every write to the notification
 // stream, so badge/tray converge through the normal delivery loop.
 //
-// Record-prompt banners (macOS only — see poller.rs for how `recordPrompt`
-// items are raised/deferred) add a `record` action: POST
-// /api/meeting-recordings, then hand the id straight to recording::start.
-// Their payload (link + scheduledMeetingId + occurrenceStart) is too much to
-// round-trip through notification userInfo cleanly, so it's stashed here in a
-// small in-memory map keyed by notification id instead, written at raise
-// time and consumed when the action fires.
+// Record prompts (see poller.rs for how `recordPrompt` items are
+// raised/deferred) no longer go through the banner path above — they raise
+// the floating "Meeting detected" window instead (`raise_record_prompt`,
+// called from poller.rs). The macOS `dali-record-prompt` category and its
+// Record/Open actions below (notify/macos.rs, ACTION_RECORD/ACTION_OPEN) are
+// kept only so a banner already delivered by an older build (sitting in
+// Notification Center, or still pending across an app restart) keeps working
+// when clicked — no new banner is ever raised with `record: true` now.
+//
+// Either path needs more than fits in notification userInfo (link +
+// scheduledMeetingId + occurrenceStart, plus the window's title/source/
+// notePageId), so it's stashed here in a small in-memory map keyed by
+// notification id instead, written at raise time and consumed when the user
+// acts on it.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
 
+use serde_json::json;
 use tauri::{AppHandle, Manager};
 
-use crate::{config, keychain, recording, state::AppState, window};
+use crate::{config, keychain, poller, recording, state::AppState, window};
 
 #[cfg(target_os = "linux")]
 mod linux;
@@ -47,8 +55,10 @@ pub const RSVP_PREFIX: &str = "rsvp:";
 pub const ACTION_RSVP_ACCEPT: &str = "rsvp:accepted";
 pub const ACTION_RSVP_MAYBE: &str = "rsvp:tentative";
 pub const ACTION_RSVP_DECLINE: &str = "rsvp:declined";
-// Record-prompt actions (macOS only — see notify/macos.rs's dedicated
-// category; Windows/Linux get a plain banner and fall back to click-opens).
+// Legacy record-prompt banner actions (macOS only — notify/macos.rs's
+// `dali-record-prompt` category). No longer attached to a newly-raised
+// banner (see the module doc above); kept so one delivered before this
+// build still has working buttons.
 pub const ACTION_RECORD: &str = "record";
 pub const ACTION_OPEN: &str = "open";
 
@@ -63,9 +73,9 @@ pub struct Banner {
     pub urgent: bool,
     // Meeting invite awaiting an RSVP → Accept/Maybe/Decline buttons.
     pub rsvp: bool,
-    // Record-prompt (poller.rs) → Record/Open buttons on macOS. The payload
-    // the Record action needs is stashed separately (see `stash_record_prompt`
-    // below), not carried on the banner itself.
+    // Legacy record-prompt banner (macOS) → Record/Open buttons. Nothing
+    // raised by this build ever sets this true (see the module doc above);
+    // it's only still read for a banner an older build delivered.
     pub record: bool,
 }
 
@@ -75,10 +85,21 @@ impl Banner {
     }
 }
 
-/// Everything the Record action needs once it fires, stashed at raise time
-/// and consumed (removed) when the user acts on the banner.
+/// Everything a record prompt needs once it's acted on — the floating
+/// window's commands (`record_prompt_*` below) and, for an older build's
+/// still-delivered banner, the legacy Record/Open actions. Stashed at raise
+/// time, consumed (removed) when the user acts.
 #[derive(Clone)]
 pub struct RecordPromptPayload {
+    // Meeting title, already resolved server-side onto the notification's
+    // title (see jobs/meeting-record-prompts.server.ts) — shown as-is; the
+    // window has no separate access to the raw meeting name.
+    pub title: String,
+    // "Zoom"/"Teams" when this raised because that app was frontmost
+    // (poller.rs's record_prompt_watcher); `None` for an immediate raise (no
+    // video link) or one that only hit the 2-minute fallback.
+    pub source: Option<String>,
+    pub note_page_id: Option<String>,
     pub link: Option<String>,
     pub scheduled_meeting_id: String,
     pub occurrence_start: String,
@@ -89,8 +110,8 @@ pub struct RecordPromptPayload {
 static RECORD_PROMPTS: Mutex<Option<HashMap<String, RecordPromptPayload>>> = Mutex::new(None);
 
 /// Stash a record-prompt's payload under its notification id, just before
-/// raising the banner (poller.rs, both the immediate and deferred paths).
-pub fn stash_record_prompt(id: &str, payload: RecordPromptPayload) {
+/// showing the floating window for it (`raise_record_prompt`, below).
+fn stash_record_prompt(id: &str, payload: RecordPromptPayload) {
     if let Ok(mut guard) = RECORD_PROMPTS.lock() {
         guard.get_or_insert_with(HashMap::new).insert(id.to_string(), payload);
     }
@@ -109,6 +130,99 @@ pub fn clear_record_prompts() {
     if let Ok(mut guard) = RECORD_PROMPTS.lock() {
         *guard = None;
     }
+}
+
+// ─── The floating "Meeting detected" window ─────────────────────────────────
+//
+// Raised by poller.rs (immediate path in `sync_once`, deferred path in
+// `check_pending_record_prompts`) instead of the Banner/macOS-category path
+// above. Its commands (invoked from record-prompt.js, registered in
+// commands.rs) call back into `record_prompt_start`/`_open`/`_dismiss`/`_mute`
+// below, all keyed by notification id the same way the legacy banner actions
+// were.
+
+/// Raise the window for a newly-due record prompt. A no-op if the user
+/// already closed this exact notification this session (defensive — nothing
+/// in the delivery loop should re-offer an id once it's been shown).
+pub fn raise_record_prompt(app: &AppHandle, id: &str, payload: RecordPromptPayload) {
+    if let Ok(dismissed) = app.state::<AppState>().dismissed_record_prompts.lock() {
+        if dismissed.contains(id) {
+            return;
+        }
+    }
+    let occurrence_start_unix = poller::parse_iso8601_unix(&payload.occurrence_start).unwrap_or(i64::MAX);
+    let view = json!({
+        "id": id,
+        "title": payload.title,
+        "source": payload.source,
+        "notePageId": payload.note_page_id,
+        "scheduledMeetingId": payload.scheduled_meeting_id,
+        "occurrenceStart": payload.occurrence_start,
+        "link": payload.link,
+    });
+    stash_record_prompt(id, payload);
+    if let Ok(mut current) = app.state::<AppState>().current_record_prompt.lock() {
+        *current = Some((id.to_string(), occurrence_start_unix));
+    }
+    window::show_record_prompt(app, view);
+}
+
+/// Hide the window and drop its stash — the item went read/retired elsewhere,
+/// or (poller.rs) its occurrence is 30 minutes past start.
+pub(crate) fn expire_record_prompt(app: &AppHandle, id: &str) {
+    let _ = take_record_prompt(id);
+    window::hide_record_prompt(app);
+}
+
+/// `record_prompt_start` command: "Start recording" tapped on the window.
+pub fn record_prompt_start(app: &AppHandle, id: String) {
+    window::hide_record_prompt(app);
+    let Some(payload) = take_record_prompt(&id) else {
+        return;
+    };
+    start_recording_from_prompt(app, id, payload);
+}
+
+/// `record_prompt_open` command: the chevron menu's "Open the note instead".
+pub fn record_prompt_open(app: &AppHandle, id: String) {
+    window::hide_record_prompt(app);
+    let link = take_record_prompt(&id).and_then(|p| p.link);
+    on_clicked(app, &id, link.as_deref());
+}
+
+/// `record_prompt_dismiss` command: the window's close (x) button. Marks
+/// nothing read — the bell item stays unread — it just stops suggesting
+/// recording for the rest of this session.
+pub fn record_prompt_dismiss(app: &AppHandle, id: String) {
+    window::hide_record_prompt(app);
+    let _ = take_record_prompt(&id);
+    if let Ok(mut dismissed) = app.state::<AppState>().dismissed_record_prompts.lock() {
+        dismissed.insert(id);
+    }
+}
+
+/// `record_prompt_mute` command: the chevron menu's "Don't suggest for this
+/// meeting" — same `intent=recordPrompt` POST the web RecordPromptBanner's
+/// overflow item makes (calendar.meeting.$id.tsx), turning the prompt off for
+/// the whole series.
+pub fn record_prompt_mute(app: &AppHandle, id: String) {
+    window::hide_record_prompt(app);
+    let Some(payload) = take_record_prompt(&id) else {
+        return;
+    };
+    let http = app.state::<AppState>().http.clone();
+    tauri::async_runtime::spawn(async move {
+        let Some(token) = keychain::get_token() else {
+            return;
+        };
+        let form = reqwest::multipart::Form::new().text("intent", "recordPrompt");
+        let _ = http
+            .post(config::calendar_meeting_url(&payload.scheduled_meeting_id))
+            .bearer_auth(token)
+            .multipart(form)
+            .send()
+            .await;
+    });
 }
 
 /// One-time platform setup. On macOS this installs the notification delegate,
@@ -179,9 +293,10 @@ pub(crate) fn on_clicked(app: &AppHandle, id: &str, link: Option<&str>) {
     }
 }
 
-/// Banner action button: `read`, `rsvp:<accepted|tentative|declined>`,
-/// `record` or `open` (record-prompt banners, macOS only). Anything else
-/// (e.g. the macOS dismiss identifier) is a no-op.
+/// Banner action button: `read`, `rsvp:<accepted|tentative|declined>`, or
+/// `record`/`open` (a legacy record-prompt banner, macOS only — see the
+/// module doc above). Anything else (e.g. the macOS dismiss identifier) is a
+/// no-op.
 pub(crate) fn on_action(app: &AppHandle, id: &str, action: &str) {
     if id.is_empty() {
         return;
@@ -214,12 +329,13 @@ struct RecordingErrorBody {
     error: String,
 }
 
-/// "Record" tapped on a record-prompt banner: create the MeetingRecording
-/// and start capturing immediately, no deep link and no page open. On any
-/// refusal (noteRequired / forbidden / recordingDisabled / 503) or network
-/// failure, fall back to opening the item's link — the web page explains why
-/// and offers browser recording instead.
-fn start_recording_from_prompt(app: &AppHandle, id: String, payload: RecordPromptPayload) {
+/// "Record" tapped on a record prompt (the floating window's
+/// `record_prompt_start` command, or a legacy banner's Record action): create
+/// the MeetingRecording and start capturing immediately, no deep link and no
+/// page open. On any refusal (noteRequired / forbidden / recordingDisabled /
+/// 503) or network failure, fall back to opening the item's link — the web
+/// page explains why and offers browser recording instead.
+pub(crate) fn start_recording_from_prompt(app: &AppHandle, id: String, payload: RecordPromptPayload) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let Some(token) = keychain::get_token() else {

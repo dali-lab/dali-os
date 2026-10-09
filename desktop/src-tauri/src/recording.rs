@@ -31,7 +31,7 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 use tokio::sync::{mpsc, watch, Notify};
 
-use crate::{config, keychain, notify, state::AppState, tray};
+use crate::{config, keychain, notify, state::AppState, tray, window};
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 const POLL_EVERY: Duration = Duration::from_secs(5);
@@ -143,6 +143,11 @@ pub fn start(app: &AppHandle, id: String) {
         }
         *current = Some(id.clone());
     }
+    // Every path to a recording actually starting funnels through here
+    // (the floating record-prompt window's own command, a legacy banner's
+    // Record action, or this deep link straight from a meeting-note page) —
+    // one hide covers all of them.
+    window::hide_record_prompt(app);
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let result = record(&app, &id).await;
