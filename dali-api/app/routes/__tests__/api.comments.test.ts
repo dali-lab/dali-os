@@ -176,7 +176,7 @@ describe("doc comments permission model", () => {
     });
     const res = (await post(docComment())) as Response;
     expect(res.status).toBe(201);
-    expect(getPageAccess).toHaveBeenCalledWith(CALLER, PAGE_ID);
+    expect(getPageAccess).toHaveBeenCalledWith(CALLER, PAGE_ID, expect.any(Request));
   });
 
   it("denies a member who cannot canComment on a doc", async () => {

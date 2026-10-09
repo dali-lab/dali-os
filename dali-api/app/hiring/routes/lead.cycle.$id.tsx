@@ -201,81 +201,177 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // original close has just passed.
   await sendExtensionNoticeIfDue(params.id!);
 
-  const cycleBase = await prisma.applicationCycle.findUniqueOrThrow({
-    where: { id: params.id },
-    include: {
-      domains: {
-        include: { domain: true },
-      },
-      statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
-      applicationForm: { include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } } },
-      continuedInterestForm: { select: { id: true, name: true } },
-      domainChallengeForms: {
-        select: {
-          id: true,
-          domainId: true,
-          formId: true,
-          form: {
-            select: {
-              name: true,
-              versions: {
-                orderBy: { versionNumber: "desc" },
-                take: 1,
-                select: { versionNumber: true, createdAt: true, createdBy: { select: { firstName: true, lastName: true } } },
+  // The reads below only need params.id / confidentialityRequired (already
+  // known) — none of them depend on another's result — so they run as one
+  // wave instead of a dozen sequential round-trips. `rubricVersionOptions` is
+  // reused as `domainRubricVersions` afterward rather than querying it twice.
+  const [
+    cycleBase,
+    applications,
+    allDomains,
+    allForms,
+    rubricVersionOptions,
+    confidentialityAgreementOptions,
+    confidentialityBindingRow,
+    confidentialitySignaturesRaw,
+    cycleApplicationReviewCount,
+    reviewsForCycle,
+    pendingDecisions,
+    hiringEmailRows,
+    continuedInterestEmail,
+    roundsWithBoardsSet,
+    viewerIsAdmin,
+  ] = await Promise.all([
+    prisma.applicationCycle.findUniqueOrThrow({
+      where: { id: params.id },
+      include: {
+        domains: {
+          include: { domain: true },
+        },
+        statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
+        applicationForm: { include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } } },
+        continuedInterestForm: { select: { id: true, name: true } },
+        domainChallengeForms: {
+          select: {
+            id: true,
+            domainId: true,
+            formId: true,
+            form: {
+              select: {
+                name: true,
+                versions: {
+                  orderBy: { versionNumber: "desc" },
+                  take: 1,
+                  select: { versionNumber: true, createdAt: true, createdBy: { select: { firstName: true, lastName: true } } },
+                },
               },
             },
           },
         },
       },
-    },
-  });
+    }),
+    confidentialityRequired
+      ? Promise.resolve([] as never[])
+      : prisma.application.findMany({
+          where: { applicationCycleId: params.id },
+          include: {
+            user: true,
+            statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
+            domainApplications: {
+              where: { selected: true },
+              include: { domain: true },
+            },
+          },
+        }),
+    prisma.domain.findMany({ orderBy: { name: "asc" } }),
+    // All Drive Forms — for the application form and challenge pickers in Setup.
+    prisma.form.findMany({
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+    prisma.rubricVersion.findMany({
+      include: { rubric: { select: { name: true } }, createdBy: { select: { firstName: true, lastName: true } } },
+      orderBy: { createdAt: "desc" },
+    }),
+    // Confidentiality agreements are SigningDocuments (kind Confidentiality),
+    // bound to the cycle via a SigningBinding (scopeKey "cycle:<id>") and signed
+    // as SigningSignatures (roleKey "member"). Reshaped to the picker's original
+    // shape so its UI is unchanged.
+    prisma.signingDocument.findMany({
+      where: { gateScope: "HiringCycle", archivedAt: null },
+      include: { versions: { orderBy: { versionNumber: "desc" } } },
+      orderBy: { name: "asc" },
+    }),
+    prisma.signingBinding.findFirst({
+      where: { cycleId: params.id, document: { gateScope: "HiringCycle" } },
+      include: {
+        version: { include: { document: { select: { name: true } } } },
+      },
+    }),
+    prisma.signingSignature.findMany({
+      where: {
+        roleKey: "member",
+        binding: { cycleId: params.id, document: { gateScope: "HiringCycle" } },
+      },
+      include: { signer: { select: { firstName: true, lastName: true } } },
+      orderBy: { signedAt: "asc" },
+    }),
+    // Even the count of reviews on this cycle is sensitive — it tells anyone
+    // pre-signature how far review has progressed. Zero it out when unsigned;
+    // the only reader is the rubric-locking UI, which fail-closed locks edits
+    // when reviews exist (count > 0). With confidentialityRequired set, the
+    // reviewer dashboard is gated anyway, so the rubric lock state is moot.
+    confidentialityRequired
+      ? Promise.resolve(0)
+      : prisma.applicationReview.count({
+          where: {
+            domainApplication: {
+              application: { applicationCycleId: params.id },
+            },
+          },
+        }),
+    confidentialityRequired
+      ? Promise.resolve([] as never[])
+      : prisma.applicationReview.findMany({
+          where: {
+            domainApplication: { application: { applicationCycleId: params.id } },
+          },
+          select: {
+            domainApplication: {
+              select: {
+                domainId: true,
+              },
+            },
+          },
+        }),
+    // Decisions awaiting the hiring lead: Drafts to finalize and Finals to
+    // release, on every kind of cycle. Students cycles used to load Finals only,
+    // on the theory that domain leads finalize on their own page — but a Draft
+    // made outside that flow (moved by hand, or left behind when the cycle
+    // closed) was then invisible here, which is the one place a lead looks.
+    // Exclude rows that already have a Released child — Decision is append-only,
+    // so released rows still match their stage and would otherwise re-appear here
+    // after the optimistic UI update is undone by a loader refetch.
+    confidentialityRequired
+      ? Promise.resolve([] as never[])
+      : prisma.decision.findMany({
+          where: {
+            stage: { in: ["Draft", "Final"] },
+            children: { none: { stage: "Released" } },
+            domainApplication: {
+              application: { applicationCycleId: params.id },
+            },
+          },
+          include: {
+            domainApplication: {
+              include: {
+                application: { include: { user: { select: { firstName: true, lastName: true, dartmouthEmail: true, netId: true } } } },
+                domain: { select: { name: true } },
+              },
+            },
+            madeBy: { select: { firstName: true, lastName: true } },
+          },
+          orderBy: { createdAt: "desc" },
+        }),
+    // Hiring's emails are shared by every cycle, one per slot (decision or
+    // notification). Keyed by slot for the editors, release gating and previews.
+    listHiringEmails(),
+    // Unlike the rest, this one sends its default copy until Core writes a row.
+    getHiringEmail(CONTINUED_INTEREST_SLOT),
+    roundsWithBoards(params.id),
+    isAdmin(auth.user.sub),
+  ]);
 
   // After the Core gate — this cycle lands in the lead's recents.
   recordRouteVisit(auth.user.sub, `/hiring/lead/cycle/${params.id}`, cycleBase.name, request);
 
-  const applications = confidentialityRequired
-    ? []
-    : await prisma.application.findMany({
-        where: { applicationCycleId: params.id },
-        include: {
-          user: true,
-          statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
-          domainApplications: {
-            where: { selected: true },
-            include: { domain: true },
-          },
-        },
-      });
   const cycle = { ...cycleBase, applications };
 
-  const allDomains = await prisma.domain.findMany({ orderBy: { name: "asc" } });
-
-  // All Drive Forms — for the application form and challenge pickers in Setup.
-  const allForms = await prisma.form.findMany({
-    orderBy: { name: "asc" },
-    select: { id: true, name: true },
-  });
-
-  const rubricVersionOptions = await prisma.rubricVersion.findMany({
-    include: { rubric: { select: { name: true } }, createdBy: { select: { firstName: true, lastName: true } } },
-    orderBy: { createdAt: "desc" },
-  });
-
-  // Confidentiality agreements are SigningDocuments (kind Confidentiality),
-  // bound to the cycle via a SigningBinding (scopeKey "cycle:<id>") and signed
-  // as SigningSignatures (roleKey "member"). Reshaped to the picker's original
-  // shape so its UI is unchanged.
-  const confidentialityAgreementOptions = await prisma.signingDocument.findMany({
-    where: { gateScope: "HiringCycle", archivedAt: null },
-    include: { versions: { orderBy: { versionNumber: "desc" } } },
-    orderBy: { name: "asc" },
-  });
-  const confidentialityBindingRow = await prisma.signingBinding.findFirst({
-    where: { cycleId: params.id, document: { gateScope: "HiringCycle" } },
-    include: {
-      version: { include: { document: { select: { name: true } } } },
-    },
-  });
+  // Which domains already have reviews assigned (used to gate rubric edits —
+  // once any domain application has a review, changing the rubric out from
+  // under it would invalidate scoring). Rubrics aren't domain-specific, so
+  // this is the same set of versions as rubricVersionOptions above.
+  const domainRubricVersions = rubricVersionOptions;
   const currentConfidentialityBinding = confidentialityBindingRow
     ? {
         confidentialityAgreementVersion: {
@@ -285,53 +381,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         },
       }
     : null;
-  const confidentialitySignatures = (
-    await prisma.signingSignature.findMany({
-      where: {
-        roleKey: "member",
-        binding: { cycleId: params.id, document: { gateScope: "HiringCycle" } },
-      },
-      include: { signer: { select: { firstName: true, lastName: true } } },
-      orderBy: { signedAt: "asc" },
-    })
-  ).map((s) => ({ user: s.signer }));
+  const confidentialitySignatures = confidentialitySignaturesRaw.map((s) => ({ user: s.signer }));
 
-  // Even the count of reviews on this cycle is sensitive — it tells anyone
-  // pre-signature how far review has progressed. Zero it out when unsigned;
-  // the only reader is the rubric-locking UI, which fail-closed locks edits
-  // when reviews exist (count > 0). With confidentialityRequired set, the
-  // reviewer dashboard is gated anyway, so the rubric lock state is moot.
-  const cycleApplicationReviewCount = confidentialityRequired
-    ? 0
-    : await prisma.applicationReview.count({
-        where: {
-          domainApplication: {
-            application: { applicationCycleId: params.id },
-          },
-        },
-      });
-
-  // Which domains already have reviews assigned (used to gate rubric edits —
-  // once any domain application has a review, changing the rubric out from
-  // under it would invalidate scoring).
-  const domainRubricVersions = await prisma.rubricVersion.findMany({
-    include: { rubric: { select: { name: true } }, createdBy: { select: { firstName: true, lastName: true } } },
-    orderBy: { createdAt: "desc" },
-  });
-  const reviewsForCycle = confidentialityRequired
-    ? []
-    : await prisma.applicationReview.findMany({
-        where: {
-          domainApplication: { application: { applicationCycleId: params.id } },
-        },
-        select: {
-          domainApplication: {
-            select: {
-              domainId: true,
-            },
-          },
-        },
-      });
   const reviewedDomainIdSet = new Set<string>();
   for (const r of reviewsForCycle) {
     const did = r.domainApplication.domainId ?? null;
@@ -339,44 +390,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
   const reviewedDomainIds = Array.from(reviewedDomainIdSet);
 
-  // Decisions awaiting the hiring lead: Drafts to finalize and Finals to
-  // release, on every kind of cycle. Students cycles used to load Finals only,
-  // on the theory that domain leads finalize on their own page — but a Draft
-  // made outside that flow (moved by hand, or left behind when the cycle
-  // closed) was then invisible here, which is the one place a lead looks.
-  // Exclude rows that already have a Released child — Decision is append-only,
-  // so released rows still match their stage and would otherwise re-appear here
-  // after the optimistic UI update is undone by a loader refetch.
   const isMemberCycle = isMemberApplicants(cycleBase.applicants);
-  const pendingDecisions = confidentialityRequired
-    ? []
-    : await prisma.decision.findMany({
-        where: {
-          stage: { in: ["Draft", "Final"] },
-          children: { none: { stage: "Released" } },
-          domainApplication: {
-            application: { applicationCycleId: params.id },
-          },
-        },
-        include: {
-          domainApplication: {
-            include: {
-              application: { include: { user: { select: { firstName: true, lastName: true, dartmouthEmail: true, netId: true } } } },
-              domain: { select: { name: true } },
-            },
-          },
-          madeBy: { select: { firstName: true, lastName: true } },
-        },
-        orderBy: { createdAt: "desc" },
-      });
-
-  // Hiring's emails are shared by every cycle, one per slot (decision or
-  // notification). Keyed by slot for the editors, release gating and previews.
   const hiringEmails: Record<string, { subject: string; body: string }> = Object.fromEntries(
-    (await listHiringEmails()).map((e) => [e.slot, { subject: e.subject, body: e.body }]),
+    hiringEmailRows.map((e) => [e.slot, { subject: e.subject, body: e.body }]),
   );
-  // Unlike the rest, this one sends its default copy until Core writes a row.
-  const continuedInterestEmail = await getHiringEmail(CONTINUED_INTEREST_SLOT);
   if (continuedInterestEmail) hiringEmails[CONTINUED_INTEREST_SLOT] = continuedInterestEmail;
 
   const memberSetup = isMemberCycle ? await loadMemberCycleSetup(params.id) : null;
@@ -394,10 +411,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       cycle,
       memberSetup,
       progress,
-      roundsWithBoards: [...(await roundsWithBoards(params.id))],
+      roundsWithBoards: [...roundsWithBoardsSet],
       termOptions,
       startTermCandidates,
-      viewerIsAdmin: await isAdmin(auth.user.sub),
+      viewerIsAdmin,
       viewerIsCore: !!(await isCore(auth.user.sub, request)),
       phaseStatusByDomain,
       allDomains,
