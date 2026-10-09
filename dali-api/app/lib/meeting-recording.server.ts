@@ -265,10 +265,18 @@ function buildProcessRequest(
  *  cleans up S3) immediately on dispatch failure or a missing provider;
  *  otherwise leaves the row Processing for the callback (or the finalizer's
  *  timeout) to resolve. */
-export async function startProcessing(
-  rec: Pick<MeetingRecording, "id" | "channels" | "segmentStarts" | "chunkIndex">,
-): Promise<void> {
-  await prisma.meetingRecording.update({ where: { id: rec.id }, data: { status: "Processing" } });
+/** Claims the recording for processing and dispatches it. The claim is a
+ *  conditional update so two stop { final } requests (the page and the
+ *  desktop app can both send one) dispatch exactly one job; the job is built
+ *  from a fresh read so chunks that landed just before the claim are in it. */
+export async function startProcessing(rec: Pick<MeetingRecording, "id">): Promise<void> {
+  const claimed = await prisma.meetingRecording.updateMany({
+    where: { id: rec.id, status: { notIn: ["Processing", "Done"] }, finalizedAt: null },
+    data: { status: "Processing" },
+  });
+  if (claimed.count === 0) return;
+  const fresh = await prisma.meetingRecording.findUnique({ where: { id: rec.id } });
+  if (!fresh) return;
 
   const provider = getTranscriptionProvider();
   if (!provider) {
@@ -276,7 +284,7 @@ export async function startProcessing(
     return;
   }
   try {
-    await provider.process(buildProcessRequest(rec));
+    await provider.process(buildProcessRequest(fresh));
   } catch (err) {
     // Dispatch failures (Modal down, secret missing) are transient: keep the
     // audio so Try again can re-dispatch. Only a job that ran and failed, or

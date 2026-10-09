@@ -288,14 +288,26 @@ describe("setSpeakers", () => {
 });
 
 describe("startProcessing / finalizeEmpty", () => {
-  it("dispatches to the provider and leaves the row Processing", async () => {
+  beforeEach(() => {
+    // The claim succeeds and the fresh read returns a row with one mic chunk
+    // pair; tests that need a different row override findUnique.
+    vi.mocked(prisma.meetingRecording.updateMany).mockResolvedValue({ count: 1 });
+    vi.mocked(prisma.meetingRecording.findUnique).mockResolvedValue(
+      rec({ channels: ["mic"], segmentStarts: [0], chunkIndex: { mic: [1] } }),
+    );
+  });
+
+  it("claims the row atomically and dispatches from a fresh read", async () => {
     const process = vi.fn().mockResolvedValue(undefined);
     vi.mocked(getTranscriptionProvider).mockReturnValue({ process });
 
-    await startProcessing(rec({ channels: ["mic"], segmentStarts: [0], chunkIndex: { mic: [1] } }));
+    await startProcessing(rec());
 
-    expect(prisma.meetingRecording.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { status: "Processing" } }),
+    expect(prisma.meetingRecording.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: "r1", status: { notIn: ["Processing", "Done"] }, finalizedAt: null }),
+        data: { status: "Processing" },
+      }),
     );
     expect(process).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -303,6 +315,16 @@ describe("startProcessing / finalizeEmpty", () => {
         channels: [{ channel: "mic", segments: [{ segment: 0, startSeconds: 0, seqCount: 2 }] }],
       }),
     );
+  });
+
+  it("dispatches nothing when another request already claimed the row", async () => {
+    const process = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(getTranscriptionProvider).mockReturnValue({ process });
+    vi.mocked(prisma.meetingRecording.updateMany).mockResolvedValue({ count: 0 });
+
+    await startProcessing(rec());
+
+    expect(process).not.toHaveBeenCalled();
   });
 
   it("fails immediately when no provider is configured", async () => {
