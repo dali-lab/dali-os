@@ -783,6 +783,7 @@ export const prisma = {
   meetingRecording: {
     create: vi.fn(),
     findUnique: vi.fn(),
+    findFirst: vi.fn().mockResolvedValue(null),
     findMany: vi.fn().mockResolvedValue([]),
     count: vi.fn().mockResolvedValue(0),
     update: vi.fn(),

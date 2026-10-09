@@ -11,6 +11,7 @@ import {
 import {
   listMyNotifications,
   annotateDesktopFeed,
+  annotateRecordPromptFeed,
   listRetiredMeetingPingIds,
 } from "~/lib/notifications";
 import { publishNotificationChange } from "~/lib/notify-stream.server";
@@ -85,10 +86,12 @@ export async function loader({ request }: Route.LoaderArgs) {
       listMyProjectTasks(userId),
     ]);
 
+  const withRecordPrompt = await annotateRecordPromptFeed(items);
+
   return withCors(
     request,
     Response.json({
-      items: annotateDesktopFeed(items, desktopPrefs),
+      items: annotateDesktopFeed(withRecordPrompt, desktopPrefs),
       unreadCount,
       taskCount: tasks.length,
       tasks,

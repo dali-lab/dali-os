@@ -2736,6 +2736,13 @@ model Notification {
   rsvp               MeetingRsvp?
   rsvpAt             DateTime?
 
+  // The occurrence (ORIGINAL start, see resolveOccurrence) this notification is
+  // about — set alongside scheduledMeetingId on meeting.record_prompt rows so
+  // the desktop feed can resolve the occurrence's note and video link without
+  // re-deriving it from dueAt (which carries the EFFECTIVE start on
+  // meeting.reminder, a different thing).
+  occurrenceStart DateTime?
+
   // Set on notifications fired for an InterviewAssignment. The tasks loader
   // hides the notification once the assignment is no longer Active or the
   // interview is no longer Scheduled, so reassignments / cancellations clear

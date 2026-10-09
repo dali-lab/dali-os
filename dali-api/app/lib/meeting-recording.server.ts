@@ -13,7 +13,7 @@ import { getApiBaseUrl } from "~/lib/app-env";
 import { deletePrefix } from "~/lib/transcription/chunks.server";
 import { getTranscriptionProvider } from "~/lib/transcription/provider";
 import type { Channel, ProcessRequest, ProcessRequestChannel, ProcessRequestSegment } from "~/lib/transcription/provider";
-import { assignSpeakers, wordsToLines, mergeChannels } from "~/lib/transcription/words";
+import { assignSpeakers, wordsToLines, mergeChannels, dedupeCrossChannel } from "~/lib/transcription/words";
 import type { Word, DiarizationSegment, RawLine } from "~/lib/transcription/words";
 import type { MeetingRecording } from "~/generated/prisma/client";
 import type { TranscriptLine } from "~/lib/meeting-transcript";
@@ -312,7 +312,7 @@ export type ApplyResultBody = {
  * marked Failed still accepts a late success callback and becomes Done.
  */
 export async function applyResult(
-  rec: Pick<MeetingRecording, "id" | "status" | "finalizedAt">,
+  rec: Pick<MeetingRecording, "id" | "status" | "finalizedAt" | "channels">,
   body: ApplyResultBody,
 ): Promise<void> {
   if (rec.status === "Done") return;
@@ -337,7 +337,11 @@ export async function applyResult(
     words[channel] = assigned;
     linesByChannel[channel] = wordsToLines(assigned);
   }
-  const lines = mergeChannels(linesByChannel);
+  const merged = mergeChannels(linesByChannel);
+  const lines =
+    rec.channels.includes("mic") && rec.channels.includes("call")
+      ? dedupeCrossChannel(merged)
+      : merged;
 
   await prisma.meetingRecording.update({
     where: { id: rec.id },

@@ -5,6 +5,7 @@
 import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db";
 import { EVENT_TYPES, isEventType, type EventDef } from "~/lib/notification-events";
+import { noteForOccurrence } from "~/lib/meeting-occurrences";
 
 // Invites for a Cancelled meeting are hidden everywhere — inbox, bell,
 // tasks, and digest emails alike. Combine this with the per-user filter on
@@ -145,6 +146,59 @@ export function annotateDesktopFeed<T extends { eventType: string }>(
       ...item,
       desktop: desktopByType.get(item.eventType) ?? def.defaults.desktop,
       urgent: def.timeSensitive === true,
+    };
+  });
+}
+
+export type RecordPromptFeedFields = {
+  recordPrompt: {
+    scheduledMeetingId: string;
+    occurrenceStart: string;
+    notePageId: string | null;
+    hasVideoLink: boolean;
+  } | null;
+};
+
+/**
+ * Desktop-app annotation for the "Record this meeting?" notification: the
+ * occurrence's note tab (if one exists yet, for the `?record=1` deep link)
+ * and whether the meeting has a video link, so the native banner can decide
+ * what to show without a follow-up fetch. Every other item gets
+ * `recordPrompt: null`.
+ */
+export async function annotateRecordPromptFeed<
+  T extends { eventType: string; scheduledMeetingId: string | null; occurrenceStart: Date | null },
+>(items: T[]): Promise<(T & RecordPromptFeedFields)[]> {
+  const targets = items.filter(
+    (i) => i.eventType === "meeting.record_prompt" && i.scheduledMeetingId && i.occurrenceStart,
+  );
+  const meetingIds = Array.from(new Set(targets.map((i) => i.scheduledMeetingId!)));
+  const meetings = meetingIds.length
+    ? await prisma.scheduledMeeting.findMany({
+        where: { id: { in: meetingIds } },
+        select: {
+          id: true,
+          meetingUrl: true,
+          notePages: { select: { id: true, meetingOccurrenceStart: true } },
+        },
+      })
+    : [];
+  const byId = new Map(meetings.map((m) => [m.id, m]));
+
+  return items.map((item) => {
+    if (item.eventType !== "meeting.record_prompt" || !item.scheduledMeetingId || !item.occurrenceStart) {
+      return { ...item, recordPrompt: null };
+    }
+    const meeting = byId.get(item.scheduledMeetingId);
+    if (!meeting) return { ...item, recordPrompt: null };
+    return {
+      ...item,
+      recordPrompt: {
+        scheduledMeetingId: item.scheduledMeetingId,
+        occurrenceStart: item.occurrenceStart.toISOString(),
+        notePageId: noteForOccurrence(meeting.notePages, item.occurrenceStart)?.id ?? null,
+        hasVideoLink: meeting.meetingUrl != null,
+      },
     };
   });
 }

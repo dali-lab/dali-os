@@ -48,6 +48,11 @@ export type NotifyMessage = {
   dueAt?: Date | null;
   formId?: string | null;
   scheduledMeetingId?: string | null;
+  // The occurrence (ORIGINAL start) scheduledMeetingId refers to — set on
+  // meeting.record_prompt so the desktop feed can resolve the occurrence's
+  // note and video link (see api.notifications.ts). Distinct from dueAt,
+  // which on meeting.reminder carries the EFFECTIVE start instead.
+  occurrenceStart?: Date | null;
   interviewAssignmentId?: string | null;
   sourceGroupId?: string | null;
   kind?: NotificationKind; // rare override of the registry kind
@@ -190,6 +195,7 @@ export async function notify(args: {
     dueAt: r.dueAt ?? args.message.dueAt ?? null,
     formId: r.formId ?? args.message.formId ?? null,
     scheduledMeetingId: r.scheduledMeetingId ?? args.message.scheduledMeetingId ?? null,
+    occurrenceStart: r.occurrenceStart ?? args.message.occurrenceStart ?? null,
     interviewAssignmentId: r.interviewAssignmentId ?? args.message.interviewAssignmentId ?? null,
     sourceGroupId: r.sourceGroupId ?? args.message.sourceGroupId ?? null,
     kind: r.kind ?? args.message.kind ?? def.kind,

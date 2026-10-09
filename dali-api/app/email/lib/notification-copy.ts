@@ -100,6 +100,14 @@ export const NOTIFICATION_COPY = {
     subject: "Removed from meeting: {{itemTitle}}",
     body: "",
   },
+  "meeting.record_prompt": {
+    eventType: "meeting.record_prompt",
+    label: "Record this meeting?",
+    description: "Sent to the organizer shortly before a meeting they organize starts.",
+    variables: ["itemTitle"],
+    subject: "{{itemTitle}} is starting. Record it?",
+    body: "DALI can transcribe it and delete the audio once it's done.",
+  },
   "room.booking_bumped": {
     eventType: "room.booking_bumped",
     label: "Room bumped for interviews",
