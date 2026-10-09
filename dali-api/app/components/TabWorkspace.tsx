@@ -2076,13 +2076,13 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onGuideCh
                     ref={registerIframe(tab.id)}
                     src={addEmbedParam(seedFor(tab))}
                     title={titleFor(tab)}
-                    // Delegate the camera to the tab frame so the attendance
-                    // scanner (AttendeeScanner) can call getUserMedia inside it.
-                    // Tabs are same-origin, and the page policy is camera=(self),
-                    // so this grants nothing the top frame doesn't already have —
-                    // but WebKit (the desktop shell's WKWebView) blocks capture in
-                    // an undelegated subframe, which is why scanning failed there.
-                    allow="camera"
+                    // Delegate capture to the tab frame: the attendance scanner
+                    // (AttendeeScanner) needs the camera, meeting recording
+                    // (MeetingRecorder) the mic and tab audio. Tabs are same-origin
+                    // and the page policy already scopes these to (self), so this
+                    // grants nothing the top frame doesn't have — but a subframe
+                    // gets nothing it isn't explicitly delegated, in every engine.
+                    allow="camera; microphone; display-capture"
                     className="absolute inset-0 w-full h-full border-0"
                     style={{ display: isActive ? 'block' : 'none' }}
                     onLoad={onIframeLoad(tab.id)}
