@@ -283,7 +283,13 @@ def run_job(raw_body: dict) -> None:
 async def process(request: fastapi.Request) -> dict:
     import pipeline
 
-    if not pipeline.check_bearer_token(request.headers.get("authorization"), _diarize_secret()):
+    try:
+        secret = _diarize_secret()
+    except KeyError:
+        # The Modal Secret "dali-asr" is missing or lacks the key; say so
+        # rather than 500 with a traceback.
+        raise fastapi.HTTPException(status_code=503, detail="DIARIZE_SECRET is not configured") from None
+    if not pipeline.check_bearer_token(request.headers.get("authorization"), secret):
         raise fastapi.HTTPException(status_code=401, detail="unauthorized")
 
     try:

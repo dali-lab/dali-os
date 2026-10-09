@@ -355,7 +355,12 @@ export function MeetingRecorder({
       setRecordedSeconds(data.recordedSeconds);
       if (data.status === "Recording") {
         setAppUnreachable(false);
-        setPhase((p) => (p === "starting" ? "recording" : p));
+        setPhase((p) => {
+          // The app has claimed the recording: the clock starts here, not
+          // when the deep link was opened.
+          if (p === "starting") setStartedAt(Date.now());
+          return p === "starting" ? "recording" : p;
+        });
       } else if (data.status === "Stopped") {
         setPhase("review");
       } else if (data.status === "Processing") {
@@ -755,8 +760,9 @@ export function MeetingRecorder({
   }
 
   const hasTranscript = lines.length > 0;
-  const elapsed =
-    captureMode === "browser" && phase === "recording" ? recordedSeconds + (now - startedAt) / 1000 : recordedSeconds;
+  // Both capture modes count locally while live; the server's recordedSeconds
+  // only moves when a session finishes.
+  const elapsed = phase === "recording" ? recordedSeconds + (now - startedAt) / 1000 : recordedSeconds;
 
   const micOptions: SelectOption[] = micDevices.map((d, i) => ({
     value: d.deviceId,
