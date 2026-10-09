@@ -18,23 +18,36 @@ export async function resolveGroupMembers(groupId: string): Promise<string[]> {
   return resolveDynamicQuery(group.dynamicQuery);
 }
 
+// Context threaded through a batch of resolveDynamicQuery calls (e.g. one per
+// group in resolveAllGroups): `request` enables per-request memoization in
+// currentTerm/getActiveCoreCycleTermIds, and `coreMembers` — when supplied —
+// lets "core" and "hiring" (which both resolve Core's current members) share
+// one computed promise instead of each hitting the DB separately.
+type DynamicQueryContext = {
+  request?: Request;
+  coreMembers?: Promise<string[]>;
+};
+
 // Resolve a dynamicQuery string to userIds. Exported for callers that already
 // have the query in hand (e.g. visibility filters that batch-resolve groups).
-export async function resolveDynamicQuery(query: string): Promise<string[]> {
+export async function resolveDynamicQuery(
+  query: string,
+  ctx?: DynamicQueryContext,
+): Promise<string[]> {
   const [kind, id] = query.split(":", 2);
   switch (kind) {
     case "term":
       return id ? resolveTermMembers(id) : [];
     case "project":
-      return id ? resolveProjectMembers(id) : [];
+      return id ? resolveProjectMembers(id, ctx?.request) : [];
     case "domain":
       return id ? resolveDomainMembers(id) : [];
     case "offering":
       return id ? resolveOfferingMembers(id) : [];
     case "core":
-      return resolveCoreMembers();
+      return ctx?.coreMembers ?? resolveCoreMembers(ctx?.request);
     case "hiring":
-      return resolveHiringMembers();
+      return resolveHiringMembers(ctx);
     case "alumni":
       return resolveAlumni();
     default:
@@ -97,8 +110,8 @@ export async function isUserActiveInTerm(userId: string, termId: string): Promis
  * answer term-scoped role resolution gives, and a safer default than
  * broadcasting to everyone who ever touched the project.
  */
-async function resolveProjectMembers(projectId: string): Promise<string[]> {
-  const term = await currentTerm();
+async function resolveProjectMembers(projectId: string, request?: Request): Promise<string[]> {
+  const term = await currentTerm(request);
   if (!term) return [];
   const rows = await prisma.projectAssignment.findMany({
     where: { projectId, termId: term.id },
@@ -154,8 +167,8 @@ async function resolveAlumni(): Promise<string[]> {
   return rows.map((r) => r.id);
 }
 
-async function resolveCoreMembers(): Promise<string[]> {
-  const cycleTermIds = await getActiveCoreCycleTermIds();
+async function resolveCoreMembers(request?: Request): Promise<string[]> {
+  const cycleTermIds = await getActiveCoreCycleTermIds(request);
   if (cycleTermIds.length === 0) return [];
   const rows = await prisma.coreAssignment.findMany({
     where: { termId: { in: cycleTermIds } },
@@ -169,9 +182,9 @@ async function resolveCoreMembers(): Promise<string[]> {
 // leads and cycle reviewers/interviewers. Matches the nav's hasHiringAccess
 // gate (which admits any-cycle reviewers forever), so this group governs who
 // sees the Hiring drive scope and its artifacts.
-async function resolveHiringMembers(): Promise<string[]> {
+async function resolveHiringMembers(ctx?: DynamicQueryContext): Promise<string[]> {
   const [core, leads, reviewers, interviewers] = await Promise.all([
-    resolveCoreMembers(),
+    ctx?.coreMembers ?? resolveCoreMembers(ctx?.request),
     prisma.domainLeadAssignment.findMany({ select: { userId: true }, distinct: ["userId"] }),
     prisma.cycleReviewer.findMany({ select: { userId: true }, distinct: ["userId"] }),
     prisma.cycleInterviewer.findMany({ select: { userId: true }, distinct: ["userId"] }),
@@ -314,7 +327,7 @@ function hasEnded(endDate: Date | undefined, now: Date): boolean {
 // Resolves every group to a VisibleGroup (members + derived archive state),
 // without any per-viewer filtering. Shared by the membership-scoped and
 // management list functions below.
-async function resolveAllGroups(): Promise<VisibleGroup[]> {
+async function resolveAllGroups(request?: Request): Promise<VisibleGroup[]> {
   const [groups, archiveContext] = await Promise.all([
     prisma.groupDefinition.findMany({
       orderBy: { name: "asc" },
@@ -332,13 +345,22 @@ async function resolveAllGroups(): Promise<VisibleGroup[]> {
     loadGroupArchiveContext(),
   ]);
 
+  // "core" and "hiring" both resolve Core's current members — the default
+  // groups include both (see syncDefaultGroups), so every call here would
+  // otherwise run resolveCoreMembers' two round trips twice. Computing the
+  // promise once up front and sharing it via ctx collapses that to one.
+  const needsCoreMembers = groups.some(
+    (g) => g.dynamicQuery === "core" || g.dynamicQuery === "hiring",
+  );
+  const coreMembers = needsCoreMembers ? resolveCoreMembers(request) : undefined;
+
   return Promise.all(
     groups.map(async (g) => {
       const memberIds =
         g.type === "Static"
           ? g.staticMemberIds
           : g.dynamicQuery
-            ? await resolveDynamicQuery(g.dynamicQuery)
+            ? await resolveDynamicQuery(g.dynamicQuery, { request, coreMembers })
             : [];
       return {
         id: g.id,
@@ -628,8 +650,8 @@ export async function listVisibleGroupsForUser(
 // Returns every group, unfiltered. For the Groups management page, where a
 // Core/Admin user manages groups they may not belong to — so a group created
 // without adding yourself still shows up.
-export async function listAllGroups(): Promise<VisibleGroup[]> {
-  return resolveAllGroups();
+export async function listAllGroups(request?: Request): Promise<VisibleGroup[]> {
+  return resolveAllGroups(request);
 }
 
 // Idempotent helpers used at entity-creation sites. Each ensures the matching
