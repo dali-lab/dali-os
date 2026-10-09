@@ -41,6 +41,11 @@ logging.basicConfig(level=logging.INFO)
 APP_NAME = "dali-asr"
 
 ASR_MODEL_NAME = "nemo-parakeet-tdt-0.6b-v3"  # onnx-asr's name for nvidia/parakeet-tdt-0.6b-v3
+PARAKEET_REPO = "istupakov/parakeet-tdt-0.6b-v3-onnx"
+PARAKEET_DIR = "/models/parakeet-tdt-0.6b-v3"
+# CUDA first; TensorRT is deliberately absent (its provider needs libraries
+# the image doesn't carry and ORT logs a wall of errors probing for it).
+ORT_PROVIDERS = ["CUDAExecutionProvider", "CPUExecutionProvider"]
 DIARIZATION_MODEL_NAME = "pyannote/speaker-diarization-community-1"
 
 CALLBACK_TIMEOUT_SECONDS = 30
@@ -52,11 +57,15 @@ def _bake_model_weights():
     fetched at runtime. Reads HF_TOKEN from the Modal Secret named
     "huggingface" — only needed here, never at request time.
     """
-    import onnx_asr
     from pyannote.audio import Pipeline as DiarizationPipeline
 
+    from huggingface_hub import snapshot_download
+
     hf_token = os.environ["HF_TOKEN"]
-    onnx_asr.load_model(ASR_MODEL_NAME)
+    # A plain directory, not the symlinked HF blob cache: ONNX Runtime refuses
+    # external weight files whose resolved path leaves the model directory.
+    snapshot_download(PARAKEET_REPO, local_dir=PARAKEET_DIR)
+    _get_asr_model()
     DiarizationPipeline.from_pretrained(DIARIZATION_MODEL_NAME, token=hf_token)
 
 
@@ -80,7 +89,11 @@ image = (
         extra_index_url="https://download.pytorch.org/whl/cu124",
     )
     .pip_install(
-        "onnx-asr[gpu,hub]",
+        # Pinned to a CUDA 12 build to match torch's cu124 wheels; the current
+        # onnxruntime-gpu release targets CUDA 13 and its CUDA provider fails
+        # to load next to torch's CUDA 12 libraries.
+        "onnxruntime-gpu==1.22.0",
+        "onnx-asr[hub]",
         "pyannote.audio",
         "fastapi[standard]",
         "httpx",
@@ -118,9 +131,12 @@ _diarization_model = None
 def _get_asr_model():
     global _asr_model
     if _asr_model is None:
+        # torch first: its wheels carry the CUDA 12 runtime libraries that
+        # onnxruntime-gpu's CUDA provider dlopens.
+        import torch  # noqa: F401
         import onnx_asr
 
-        _asr_model = onnx_asr.load_model(ASR_MODEL_NAME)
+        _asr_model = onnx_asr.load_model(ASR_MODEL_NAME, PARAKEET_DIR, providers=ORT_PROVIDERS)
     return _asr_model
 
 
