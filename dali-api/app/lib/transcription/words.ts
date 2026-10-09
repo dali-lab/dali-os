@@ -81,6 +81,56 @@ export function wordsToLines(words: Word[], segments: DiarizationSegment[] = [])
   return lines;
 }
 
+const DEDUPE_WINDOW_SECONDS = 1.5;
+const MIN_JACCARD_TOKENS = 3;
+const JACCARD_THRESHOLD = 0.8;
+
+function normalizedTokens(text: string): string[] {
+  return text.toLowerCase().match(/[a-z0-9]+/g) ?? [];
+}
+
+function jaccard(a: string[], b: string[]): number {
+  const setA = new Set(a);
+  const setB = new Set(b);
+  let intersection = 0;
+  for (const t of setA) if (setB.has(t)) intersection += 1;
+  const union = new Set([...setA, ...setB]).size;
+  return union === 0 ? 0 : intersection / union;
+}
+
+/**
+ * Drops a mic line that is an echo of something said on the call channel —
+ * the speakerphone/call audio picking up the mic's own speech a beat later
+ * (or vice versa in timing). Only meaningful once both channels exist; a
+ * single-channel recording is returned unchanged. A mic line is dropped when
+ * a call line starting within ±1.5s matches it: Jaccard token overlap ≥ 0.8
+ * when the mic line has at least 3 tokens, exact normalized-text equality
+ * for anything shorter (too few tokens for Jaccard to mean much).
+ */
+export function dedupeCrossChannel(lines: TranscriptLine[]): TranscriptLine[] {
+  const micLines = lines.filter((l) => l.channel === "mic");
+  const callLines = lines.filter((l) => l.channel === "call");
+  if (micLines.length === 0 || callLines.length === 0) return lines;
+
+  const toDrop = new Set<TranscriptLine>();
+  for (const mic of micLines) {
+    const micTokens = normalizedTokens(mic.text);
+    for (const call of callLines) {
+      if (Math.abs(mic.at - call.at) > DEDUPE_WINDOW_SECONDS) continue;
+      const callTokens = normalizedTokens(call.text);
+      const isEcho =
+        micTokens.length >= MIN_JACCARD_TOKENS
+          ? jaccard(micTokens, callTokens) >= JACCARD_THRESHOLD
+          : micTokens.length > 0 && micTokens.join(" ") === callTokens.join(" ");
+      if (isEcho) {
+        toDrop.add(mic);
+        break;
+      }
+    }
+  }
+  return toDrop.size === 0 ? lines : lines.filter((l) => !toDrop.has(l));
+}
+
 /** Interleaves each channel's lines by start time into one transcript,
  *  stamping `channel` and turning the bare speaker index into "mic:1" etc. */
 export function mergeChannels(linesByChannel: Record<string, RawLine[]>): TranscriptLine[] {

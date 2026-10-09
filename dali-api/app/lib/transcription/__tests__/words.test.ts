@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { assignSpeakers, mergeChannels, wordsToLines } from "~/lib/transcription/words";
+import { assignSpeakers, dedupeCrossChannel, mergeChannels, wordsToLines } from "~/lib/transcription/words";
+import type { TranscriptLine } from "~/lib/meeting-transcript";
 
 describe("assignSpeakers", () => {
   it("tags each word with the segment covering its midpoint", () => {
@@ -98,5 +99,49 @@ describe("mergeChannels", () => {
 
   it("returns nothing for no channels", () => {
     expect(mergeChannels({})).toEqual([]);
+  });
+});
+
+describe("dedupeCrossChannel", () => {
+  it("drops a mic line echoed on the call channel within the window", () => {
+    const lines: TranscriptLine[] = [
+      { at: 10, end: 12, text: "we should ship this friday", channel: "mic" },
+      { at: 10.8, end: 12.9, text: "we should ship this friday", channel: "call" },
+    ];
+    expect(dedupeCrossChannel(lines)).toEqual([lines[1]]);
+  });
+
+  it("keeps both lines when the text doesn't overlap", () => {
+    const lines: TranscriptLine[] = [
+      { at: 10, end: 11, text: "let's grab lunch", channel: "mic" },
+      { at: 10.3, end: 12, text: "the weather is nice today", channel: "call" },
+    ];
+    expect(dedupeCrossChannel(lines)).toEqual(lines);
+  });
+
+  it("keeps a matching mic line outside the 1.5s window", () => {
+    const lines: TranscriptLine[] = [
+      { at: 10, end: 12, text: "we should ship this friday", channel: "mic" },
+      { at: 12.5, end: 14, text: "we should ship this friday", channel: "call" },
+    ];
+    expect(dedupeCrossChannel(lines)).toEqual(lines);
+  });
+
+  it("leaves a single-channel transcript untouched", () => {
+    const lines: TranscriptLine[] = [
+      { at: 0, end: 1, text: "hi there", channel: "mic" },
+      { at: 2, end: 3, text: "how's it going", channel: "mic" },
+    ];
+    expect(dedupeCrossChannel(lines)).toEqual(lines);
+  });
+
+  it("uses exact normalized equality for short (under 3 token) lines", () => {
+    const lines: TranscriptLine[] = [
+      { at: 10, end: 10.4, text: "Yeah", channel: "mic" },
+      { at: 10.2, end: 10.6, text: "Yeah", channel: "call" },
+      { at: 20, end: 20.4, text: "Yeah", channel: "mic" },
+      { at: 20.2, end: 20.6, text: "Yep", channel: "call" },
+    ];
+    expect(dedupeCrossChannel(lines)).toEqual([lines[1], lines[2], lines[3]]);
   });
 });

@@ -377,10 +377,13 @@ meeting begins, where the user already is, in one tap.
    above the editor: "This meeting is starting. Record it?" with Record and
    Not now. Shown to any editor when no recording exists for the occurrence.
    Ships in PR 1; needs no job.
-3. **Desktop one-tap, only for live DALI meetings.** The desktop app polls
-   the user's upcoming occurrences (same shape as `list_my_upcoming_meetings`).
-   Within an occurrence's window it shows a native banner "<title> is live.
-   Record it?" when either Zoom or Teams is frontmost
+3. **Desktop one-tap, only for live DALI meetings.** (Revised in PR 2.) The
+   desktop app does not poll meetings separately: the `meeting.record_prompt`
+   notification from surface 1 already reaches it through the notification
+   feed, and the feed item carries `recordPrompt: { scheduledMeetingId,
+   occurrenceStart, notePageId, hasVideoLink }`. The app renders that item as
+   a native banner with Record and Open buttons. For meetings with a video
+   link it holds the banner and shows it when either Zoom or Teams is frontmost
    (`NSWorkspace.frontmostApplication` bundle id, no permission needed) or two
    minutes have passed since start. Google Meet runs in a browser tab and
    detecting it needs Screen Recording permission, so Meet-linked and
@@ -492,9 +495,10 @@ enhance call is separate and already tracked under Admin → AI Usage.
 
 **PR 2: prompts + tuning.**
 - `meeting-record-prompts` job and `meeting.record_prompt` event.
-- Desktop: upcoming-meetings poll, "<title> is live" banner with one-tap
-  record, Zoom / Teams frontmost detection, `noteRequired` / `forbidden`
-  handling (opens the note page instead).
+- Desktop: Record / Open buttons on the record-prompt banner (one-tap starts
+  native capture via `POST /api/meeting-recordings` with the meeting id),
+  Zoom / Teams frontmost deferral, `noteRequired` / `forbidden` handling
+  (opens the note page instead). No separate meetings poll.
 - Cross-channel echo de-duplication, tuned on real recordings.
 
 **PR 3 (separate design, not this spec): notes model.**

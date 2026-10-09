@@ -609,6 +609,71 @@ describe("createScheduledMeeting — attendance roster", () => {
   });
 });
 
+describe("createScheduledMeeting — recordPrompt default", () => {
+  const p = prisma as unknown as {
+    scheduledMeeting: { create: ReturnType<typeof vi.fn> };
+    meetingAttendance: { createMany: ReturnType<typeof vi.fn> };
+  };
+
+  beforeEach(() => {
+    p.scheduledMeeting.create.mockResolvedValue({
+      id: "m1",
+      ownerCalendarEmail: "org@dali.dartmouth.edu",
+      createdAt: new Date("2026-09-01T12:00:00.000Z"),
+    });
+    p.meetingAttendance.createMany.mockResolvedValue({});
+    mockNotify.mockResolvedValue({ inApp: 0 });
+  });
+
+  function manyIds(n: number): string[] {
+    return Array.from({ length: n }, (_, i) => `u${i}`);
+  }
+
+  it("defaults recordPrompt to false for a SelfCheckIn event with more than 30 participants", async () => {
+    await createScheduledMeeting({
+      organizerId: "org-1",
+      organizerEmail: "org@dali.dartmouth.edu",
+      title: "All-lab kickoff",
+      durationMinutes: 60,
+      scope: { type: "UserList", participantUserIds: manyIds(31) },
+      attendanceMode: "SelfCheckIn",
+    });
+
+    expect(p.scheduledMeeting.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ recordPrompt: false }) }),
+    );
+  });
+
+  it("keeps recordPrompt true for a SelfCheckIn event with 30 or fewer participants", async () => {
+    await createScheduledMeeting({
+      organizerId: "org-1",
+      organizerEmail: "org@dali.dartmouth.edu",
+      title: "Team standup",
+      durationMinutes: 30,
+      scope: { type: "UserList", participantUserIds: manyIds(30) },
+      attendanceMode: "SelfCheckIn",
+    });
+
+    expect(p.scheduledMeeting.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ recordPrompt: true }) }),
+    );
+  });
+
+  it("keeps recordPrompt true for a large Roster meeting (the cap is SelfCheckIn-only)", async () => {
+    await createScheduledMeeting({
+      organizerId: "org-1",
+      organizerEmail: "org@dali.dartmouth.edu",
+      title: "Big roster meeting",
+      durationMinutes: 60,
+      scope: { type: "UserList", participantUserIds: manyIds(40) },
+    });
+
+    expect(p.scheduledMeeting.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ recordPrompt: true }) }),
+    );
+  });
+});
+
 // The regression this covers: the invite form collected a location and a
 // description and the create path dropped both, so they reached neither the
 // meeting, the Google event, nor the invite that went out to guests.

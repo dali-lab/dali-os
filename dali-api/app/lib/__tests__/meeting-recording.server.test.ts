@@ -378,6 +378,61 @@ describe("applyResult", () => {
       expect.objectContaining({ data: expect.objectContaining({ status: "Done" }) }),
     );
   });
+
+  it("drops a mic echo of the call channel when both channels are present", async () => {
+    const twoChannel = {
+      channels: {
+        mic: {
+          words: [
+            { s: 0, e: 0.3, w: "we" },
+            { s: 0.35, e: 0.6, w: "should" },
+            { s: 0.65, e: 0.9, w: "ship" },
+            { s: 0.95, e: 1.1, w: "this" },
+            { s: 1.15, e: 1.4, w: "friday" },
+          ],
+          segments: [],
+        },
+        call: {
+          words: [
+            { s: 0.8, e: 1.1, w: "we" },
+            { s: 1.15, e: 1.4, w: "should" },
+            { s: 1.45, e: 1.7, w: "ship" },
+            { s: 1.75, e: 1.9, w: "this" },
+            { s: 1.95, e: 2.2, w: "friday" },
+          ],
+          segments: [],
+        },
+      },
+      error: null,
+    };
+
+    await applyResult(rec({ status: "Processing", channels: ["mic", "call"] }), twoChannel);
+
+    const data = (prisma.meetingRecording.update as unknown as ReturnType<typeof vi.fn>).mock
+      .calls[0]![0].data;
+    expect(data.lines).toHaveLength(1);
+    expect(data.lines[0]).toMatchObject({ channel: "call", text: "we should ship this friday" });
+  });
+
+  it("does not dedupe when the recording only ever had one channel", async () => {
+    const micOnlyEcho = {
+      channels: {
+        mic: {
+          words: [
+            { s: 0, e: 0.3, w: "we" },
+            { s: 0.35, e: 0.6, w: "should" },
+            { s: 0.65, e: 0.9, w: "ship" },
+          ],
+          segments: [],
+        },
+      },
+      error: null,
+    };
+    await applyResult(rec({ status: "Processing", channels: ["mic"] }), micOnlyEcho);
+    const data = (prisma.meetingRecording.update as unknown as ReturnType<typeof vi.fn>).mock
+      .calls[0]![0].data;
+    expect(data.lines).toHaveLength(1);
+  });
 });
 
 describe("formatRecordingTranscript", () => {

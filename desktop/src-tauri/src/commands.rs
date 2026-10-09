@@ -77,9 +77,14 @@ pub async fn do_sign_out(app: AppHandle) {
         if let Ok(mut recent) = recent_lock {
             recent.clear();
         }
+        let pending_lock = st.pending_record_prompts.lock();
+        if let Ok(mut pending) = pending_lock {
+            pending.clear();
+        }
     }
     tray::refresh(&app, 0);
     notify::clear_all_delivered();
+    notify::clear_record_prompts();
 
     // Revoke the webview cookie Session too: /logout reads the cookie, revokes
     // it, and clears it. Its redirect to /login is ignored by nav.rs because the
