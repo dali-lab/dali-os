@@ -41,6 +41,18 @@ pub fn recording_url(id: &str) -> String {
     format!("{PROD_ORIGIN}/api/meeting-recordings/{id}")
 }
 
+/// Chunk upload endpoint for a recording (recording.rs). Query string
+/// (`channel`, `segment`, `seq`) is added by the caller.
+pub fn recording_chunks_url(id: &str) -> String {
+    format!("{PROD_ORIGIN}/api/meeting-recordings/{id}/chunks")
+}
+
+/// Creates a MeetingRecording for a one-tap record-prompt banner
+/// (notify/mod.rs). Body carries `scheduledMeetingId` / `occurrenceStart`.
+pub fn meeting_recordings_url() -> String {
+    format!("{PROD_ORIGIN}/api/meeting-recordings")
+}
+
 pub fn pair_start_url() -> String {
     format!("{PROD_ORIGIN}/auth/pair/start")
 }

@@ -29,6 +29,7 @@ import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { createRoutesStub } from "react-router";
 import { DialogProvider } from "~/components/ui/dialog";
+import { ToastProvider } from "~/components/ui/toast";
 import CalendarMeetingPage from "../calendar.meeting.$id";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -93,9 +94,13 @@ async function mount() {
   await act(async () => {
     root.render(
       createElement(
-        DialogProvider,
+        ToastProvider,
         null,
-        createElement(Stub, { initialEntries: ["/calendar/meeting/meeting-1"] }),
+        createElement(
+          DialogProvider,
+          null,
+          createElement(Stub, { initialEntries: ["/calendar/meeting/meeting-1"] }),
+        ),
       ),
     );
   });

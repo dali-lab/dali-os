@@ -83,3 +83,16 @@ jobs:
             dali-api/e2e/test-results/
             dali-api/playwright-report/
           retention-days: 7
+
+  test-asr:
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    defaults:
+      run:
+        working-directory: asr
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync
+      - run: uv run pytest

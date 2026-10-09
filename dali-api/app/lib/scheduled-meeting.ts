@@ -558,6 +558,11 @@ export async function createScheduledMeeting(
   }
 
   const attendanceMode = input.attendanceMode ?? "Roster";
+  // A self-check-in event this large (an all-lab Group meeting, a big
+  // workshop) is exactly the "too many people to usefully record" case the
+  // record prompt isn't built for — default its three surfaces off rather
+  // than make the organizer turn it off after the fact.
+  const recordPrompt = !(attendanceMode === "SelfCheckIn" && participantUserIds.length > 30);
 
   // Blank is the same as unset here: an untouched field shouldn't persist as "".
   const location = input.location?.trim() || null;
@@ -587,6 +592,7 @@ export async function createScheduledMeeting(
       projectId: input.meetingType ? (input.projectId ?? null) : null,
       attendanceMode,
       isCoreMeeting: input.isCoreMeeting ?? false,
+      recordPrompt,
     },
   });
 

@@ -8,6 +8,14 @@
 // native banners for new unread items whose event allows desktop banners
 // (Settings → Notifications → Desktop; urgent items get sound), updates the
 // dock badge, and hands the latest unread items to the tray menu.
+//
+// Record-prompt items (recordPrompt field) are a special case: an item for a
+// Zoom/Teams occurrence (hasVideoLink) is held back in
+// AppState.pending_record_prompts rather than raised immediately, and a
+// second background loop (spawned alongside the main sync loop, below)
+// rechecks every 10s whether the call is now frontmost or the two-minute
+// fallback has elapsed. Items without a video link (in-person, Meet) raise
+// right away, same as any other banner.
 
 use std::time::Duration;
 
@@ -16,11 +24,18 @@ use serde::Deserialize;
 use tauri::{AppHandle, Manager};
 
 use crate::{
-    config, keychain,
-    notify::{self, Banner},
-    state::{AppState, AuthState, RecentNotif},
+    config, frontmost, keychain,
+    notify::{self, Banner, RecordPromptPayload},
+    state::{AppState, AuthState, PendingRecordPrompt, RecentNotif},
     tray, window,
 };
+
+// Live-call fallback / outer bound for deferred record prompts (desktop only
+// — Google Meet in a browser tab can't be frontmost-detected without Screen
+// Recording permission, so it always uses the fallback).
+const RECORD_PROMPT_RECHECK: Duration = Duration::from_secs(10);
+const RECORD_PROMPT_FALLBACK_SECS: i64 = 2 * 60;
+const RECORD_PROMPT_DROP_SECS: i64 = 30 * 60;
 
 fn default_true() -> bool {
     true
@@ -64,6 +79,25 @@ struct NotifItem {
     scheduled_meeting_id: Option<String>,
     #[serde(default)]
     rsvp: Option<String>,
+    // Desktop one-tap record prompt. Absent on every item that isn't a
+    // meeting.record_prompt notification.
+    #[serde(rename = "recordPrompt", default)]
+    record_prompt: Option<RecordPrompt>,
+}
+
+#[derive(Deserialize)]
+struct RecordPrompt {
+    #[serde(rename = "scheduledMeetingId")]
+    scheduled_meeting_id: String,
+    #[serde(rename = "occurrenceStart")]
+    occurrence_start: String,
+    // The server resolves/creates the note itself (attachMeetingNote); the
+    // desktop banner never needs the page id directly.
+    #[serde(rename = "notePageId", default)]
+    #[allow(dead_code)]
+    note_page_id: Option<String>,
+    #[serde(rename = "hasVideoLink", default)]
+    has_video_link: bool,
 }
 
 enum SyncOutcome {
@@ -78,6 +112,7 @@ enum StreamEnd {
 }
 
 pub fn spawn(app: AppHandle) {
+    tauri::async_runtime::spawn(record_prompt_watcher(app.clone()));
     tauri::async_runtime::spawn(async move {
         let http = app.state::<AppState>().http.clone();
         let mut interval = config::POLL_INTERVAL_SECS;
@@ -141,6 +176,7 @@ async fn sync_once(app: &AppHandle, http: &reqwest::Client, token: &str) -> Sync
     // Collect new items under the lock, raise after releasing it (never hold
     // a MutexGuard across the badge call/await).
     let mut to_raise: Vec<Banner> = Vec::new();
+    let mut to_defer: Vec<PendingRecordPrompt> = Vec::new();
     {
         let st = app.state::<AppState>();
         // Bind the lock Result to a named local so its temporary doesn't
@@ -150,21 +186,30 @@ async fn sync_once(app: &AppHandle, http: &reqwest::Client, token: &str) -> Sync
             let first_run = seen.is_empty();
             for item in &body.items {
                 let is_new = seen.insert(item.id.clone());
-                if is_new
-                    && !first_run
-                    && item.desktop
-                    && (!item.title.is_empty() || item.link.is_some())
-                {
-                    to_raise.push(Banner {
+                if !is_new || first_run || !item.desktop {
+                    continue;
+                }
+                if item.title.is_empty() && item.link.is_none() {
+                    continue;
+                }
+                match &item.record_prompt {
+                    Some(rp) => queue_record_prompt(item, rp, &mut to_raise, &mut to_defer),
+                    None => to_raise.push(Banner {
                         id: item.id.clone(),
                         title: item.title.clone(),
                         body: item.body.clone().unwrap_or_default(),
                         link: item.link.clone(),
                         urgent: item.urgent,
                         rsvp: item.scheduled_meeting_id.is_some() && item.rsvp.is_none(),
-                    });
+                        record: false,
+                    }),
                 }
             }
+        }
+    }
+    if !to_defer.is_empty() {
+        if let Ok(mut pending) = app.state::<AppState>().pending_record_prompts.lock() {
+            pending.extend(to_defer);
         }
     }
     for banner in to_raise {
@@ -184,6 +229,22 @@ async fn sync_once(app: &AppHandle, http: &reqwest::Client, token: &str) -> Sync
         .chain(body.retired_ids.iter().cloned())
         .collect();
     notify::clear_delivered(&stale_ids);
+
+    // A still-deferred record prompt whose notification went read/retired
+    // (the web page marks it read once a recording starts there; the server
+    // retires stale rows) must never raise later — drop it and its stash.
+    if !stale_ids.is_empty() {
+        if let Ok(mut pending) = app.state::<AppState>().pending_record_prompts.lock() {
+            pending.retain(|p| {
+                if stale_ids.contains(&p.id) {
+                    let _ = notify::take_record_prompt(&p.id);
+                    false
+                } else {
+                    true
+                }
+            });
+        }
+    }
 
     // Tray menu: latest unread, urgent bumped to the top (stable sort keeps
     // feed order within each group).
@@ -206,6 +267,169 @@ async fn sync_once(app: &AppHandle, http: &reqwest::Client, token: &str) -> Sync
     window::set_badge(app, body.unread_count);
     tray::refresh(app, body.unread_count);
     SyncOutcome::Ok
+}
+
+/// Route one new record-prompt item: raise now (and stash its payload) when
+/// there's no video link to wait on or the timestamp can't be parsed, else
+/// hold it for the 10s recheck loop below.
+fn queue_record_prompt(
+    item: &NotifItem,
+    rp: &RecordPrompt,
+    to_raise: &mut Vec<Banner>,
+    to_defer: &mut Vec<PendingRecordPrompt>,
+) {
+    let banner = Banner {
+        id: item.id.clone(),
+        title: item.title.clone(),
+        body: item.body.clone().unwrap_or_default(),
+        link: item.link.clone(),
+        urgent: item.urgent,
+        rsvp: false,
+        record: true,
+    };
+    if rp.has_video_link {
+        if let Some(occurrence_start_unix) = parse_iso8601_unix(&rp.occurrence_start) {
+            to_defer.push(PendingRecordPrompt {
+                id: banner.id,
+                title: banner.title,
+                body: banner.body,
+                link: banner.link,
+                urgent: banner.urgent,
+                scheduled_meeting_id: rp.scheduled_meeting_id.clone(),
+                occurrence_start: rp.occurrence_start.clone(),
+                occurrence_start_unix,
+            });
+            return;
+        }
+        // Unparseable timestamp: fall through and raise immediately rather
+        // than silently dropping the prompt.
+    }
+    notify::stash_record_prompt(
+        &banner.id,
+        RecordPromptPayload {
+            link: banner.link.clone(),
+            scheduled_meeting_id: rp.scheduled_meeting_id.clone(),
+            occurrence_start: rp.occurrence_start.clone(),
+        },
+    );
+    to_raise.push(banner);
+}
+
+/// Every 10s: raise a deferred record prompt once Zoom/Teams is frontmost or
+/// the two-minute fallback has elapsed (whichever first), and drop anything
+/// nobody's call started within 30 minutes of the occurrence start. Runs for
+/// the life of the session alongside the main sync loop (spawned by `spawn`
+/// above), stopping once signed out.
+async fn record_prompt_watcher(app: AppHandle) {
+    loop {
+        tokio::time::sleep(RECORD_PROMPT_RECHECK).await;
+        if app.state::<AppState>().auth() != AuthState::Authenticated {
+            return;
+        }
+        check_pending_record_prompts(&app);
+    }
+}
+
+fn check_pending_record_prompts(app: &AppHandle) {
+    let now = now_unix();
+    let live = frontmost::is_meeting_app_frontmost();
+
+    let mut due: Vec<PendingRecordPrompt> = Vec::new();
+    {
+        let st = app.state::<AppState>();
+        let Ok(mut pending) = st.pending_record_prompts.lock() else {
+            return;
+        };
+        pending.retain(|p| {
+            let age = now - p.occurrence_start_unix;
+            if age > RECORD_PROMPT_DROP_SECS {
+                false // too late — drop unraised
+            } else if live || age >= RECORD_PROMPT_FALLBACK_SECS {
+                due.push(p.clone());
+                false
+            } else {
+                true
+            }
+        });
+    }
+
+    for p in due {
+        notify::stash_record_prompt(
+            &p.id,
+            RecordPromptPayload {
+                link: p.link.clone(),
+                scheduled_meeting_id: p.scheduled_meeting_id.clone(),
+                occurrence_start: p.occurrence_start.clone(),
+            },
+        );
+        notify::raise(
+            app,
+            Banner {
+                id: p.id,
+                title: p.title,
+                body: p.body,
+                link: p.link,
+                urgent: p.urgent,
+                rsvp: false,
+                record: true,
+            },
+        );
+    }
+}
+
+fn now_unix() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// Parses a UTC ISO-8601 timestamp (`Date.toISOString()` output, e.g.
+/// `2026-10-09T14:30:00.000Z`) into Unix seconds. No date/time crate: the
+/// format is fixed-width and always UTC, so a hand-rolled parser covers the
+/// one comparison this needs (minute-scale, so sub-second precision is
+/// irrelevant) without a new dependency.
+fn parse_iso8601_unix(s: &str) -> Option<i64> {
+    if s.len() < 19 {
+        return None;
+    }
+    let year: i64 = s.get(0..4)?.parse().ok()?;
+    let month: i64 = s.get(5..7)?.parse().ok()?;
+    let day: i64 = s.get(8..10)?.parse().ok()?;
+    let hour: i64 = s.get(11..13)?.parse().ok()?;
+    let minute: i64 = s.get(14..16)?.parse().ok()?;
+    let second: i64 = s.get(17..19)?.parse().ok()?;
+
+    // Everything after the whole seconds is optional fractional seconds
+    // and/or a timezone offset; default to UTC if neither is present.
+    let rest = &s[19..];
+    let offset_minutes: i64 = if rest.contains(['Z', 'z']) {
+        0
+    } else if let Some(pos) = rest.find(['+', '-']) {
+        let sign = if rest.as_bytes()[pos] == b'-' { -1 } else { 1 };
+        let off = &rest[pos + 1..];
+        let oh: i64 = off.get(0..2)?.parse().ok()?;
+        let om: i64 = off.get(3..5).and_then(|m| m.parse().ok()).unwrap_or(0);
+        sign * (oh * 60 + om)
+    } else {
+        0
+    };
+
+    let days = days_from_civil(year, month, day);
+    Some(days * 86_400 + hour * 3_600 + minute * 60 + second - offset_minutes * 60)
+}
+
+/// Howard Hinnant's days-from-civil algorithm (proleptic Gregorian days
+/// since the Unix epoch).
+fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400;
+    let mp = (m + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
 }
 
 // Hold the SSE stream, running a sync for each server `change`/`sync` event.

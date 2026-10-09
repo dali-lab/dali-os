@@ -76,8 +76,8 @@ describe("GET /api/notifications", () => {
       // meeting.reminder is timeSensitive in the registry; both banner by
       // default (no preference rows in the mock).
       items: [
-        { id: "i1", eventType: "meeting.reminder", desktop: true, urgent: true },
-        { id: "i2", eventType: "task.comment", desktop: true, urgent: false },
+        { id: "i1", eventType: "meeting.reminder", desktop: true, urgent: true, recordPrompt: null },
+        { id: "i2", eventType: "task.comment", desktop: true, urgent: false, recordPrompt: null },
       ],
       unreadCount: 2,
       taskCount: 1,

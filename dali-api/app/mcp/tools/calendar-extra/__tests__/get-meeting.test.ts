@@ -36,6 +36,7 @@ import { runGetMeeting, GET_MEETING_DEF } from "~/mcp/tools/calendar-extra/get-m
 
 const mockPrisma = prisma as unknown as {
   scheduledMeeting: { findUnique: ReturnType<typeof vi.fn> };
+  meetingRecording: { findMany: ReturnType<typeof vi.fn> };
 };
 
 const MEETING_BASE = {
@@ -180,6 +181,35 @@ describe("get_meeting", () => {
     expect(out.startsAt).toBe("2026-09-22T14:00:00.000Z");
     expect(out.notePageId).toBe("page-wk2");
     expect(out.roster).toEqual([expect.objectContaining({ userId: "u2", present: false })]);
+  });
+
+  it("reports transcriptAvailable and recordingIds for the occurrence", async () => {
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(MEETING_BASE);
+    mockPrisma.meetingRecording.findMany.mockResolvedValue([
+      { id: "rec1", status: "Failed" },
+      { id: "rec2", status: "Done" },
+    ]);
+    vi.mocked(isCore).mockResolvedValue(false);
+    vi.mocked(isProjectMember).mockResolvedValue(false);
+
+    const out = await runGetMeeting("u-org", { meetingId: "m1" });
+    expect(mockPrisma.meetingRecording.findMany).toHaveBeenCalledWith({
+      where: { scheduledMeetingId: "m1", occurrenceStart: MEETING_BASE.selectedAt },
+      select: { id: true, status: true },
+    });
+    expect(out.transcriptAvailable).toBe(true);
+    expect(out.recordingIds).toEqual(["rec1", "rec2"]);
+  });
+
+  it("transcriptAvailable is false with no Done recording", async () => {
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(MEETING_BASE);
+    mockPrisma.meetingRecording.findMany.mockResolvedValue([{ id: "rec1", status: "Processing" }]);
+    vi.mocked(isCore).mockResolvedValue(false);
+    vi.mocked(isProjectMember).mockResolvedValue(false);
+
+    const out = await runGetMeeting("u-org", { meetingId: "m1" });
+    expect(out.transcriptAvailable).toBe(false);
+    expect(out.recordingIds).toEqual(["rec1"]);
   });
 
   it("uses meetingTypeLabel for Other type", async () => {

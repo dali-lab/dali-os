@@ -3,10 +3,17 @@
 export type TranscriptLine = {
   /** Seconds since recording started. */
   at: number;
+  /** Seconds since recording started, line end. Absent on pre-v2 rows. */
+  end?: number;
   text: string;
-  /** "you" is the recorder's microphone, "others" is the Mac's system audio
-   *  (everyone else on a call). */
+  /** Legacy (pre-v2 desktop recordings, on-device recognizer): "you" is the
+   *  recorder's microphone, "others" is the Mac's system audio. */
   source?: "you" | "others";
+  /** v2: which capture channel this line came from. */
+  channel?: "mic" | "call";
+  /** v2: "mic:1", "call:2", … — or a renamed display string once an editor
+   *  picks a roster name or types free text. */
+  speaker?: string;
 };
 
 export const SOURCE_LABEL = { you: "You", others: "Others" } as const;

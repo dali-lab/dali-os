@@ -795,9 +795,12 @@ export default [
   // Meeting-note recording: transcript in, notes Markdown out. Behind the
   // `ai-meeting-notes` flag; same provider gating as api/ai/doc.
   route("api/ai/meeting-notes", "routes/api.ai.meeting-notes.ts"),
-  // Native meeting recording: the page creates a row, the desktop app appends
-  // on-device transcript lines to it, the page polls them. Desktop app depends
-  // on these (see desktop/src-tauri/src/recording.rs).
+  // Meeting recording: the page (or desktop app) creates a row, PCM chunks
+  // land in S3, Stop dispatches the transcription provider, whose callback
+  // lands on /result. Desktop app depends on these (see
+  // desktop/src-tauri/src/recording.rs).
   route("api/meeting-recordings", "routes/api.meeting-recordings.ts"),
   route("api/meeting-recordings/:id", "routes/api.meeting-recordings.$id.ts"),
+  route("api/meeting-recordings/:id/chunks", "routes/api.meeting-recordings.$id.chunks.ts"),
+  route("api/meeting-recordings/:id/result", "routes/api.meeting-recordings.$id.result.ts"),
 ] satisfies RouteConfig;

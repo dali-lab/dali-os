@@ -17,10 +17,21 @@
 // kinds itself); `rsvp:*` actions POST /api/notifications/:id/rsvp; `read`
 // POSTs :id/read. The server publishes every write to the notification
 // stream, so badge/tray converge through the normal delivery loop.
+//
+// Record-prompt banners (macOS only — see poller.rs for how `recordPrompt`
+// items are raised/deferred) add a `record` action: POST
+// /api/meeting-recordings, then hand the id straight to recording::start.
+// Their payload (link + scheduledMeetingId + occurrenceStart) is too much to
+// round-trip through notification userInfo cleanly, so it's stashed here in a
+// small in-memory map keyed by notification id instead, written at raise
+// time and consumed when the action fires.
+
+use std::collections::HashMap;
+use std::sync::Mutex;
 
 use tauri::{AppHandle, Manager};
 
-use crate::{config, keychain, state::AppState, window};
+use crate::{config, keychain, recording, state::AppState, window};
 
 #[cfg(target_os = "linux")]
 mod linux;
@@ -36,6 +47,10 @@ pub const RSVP_PREFIX: &str = "rsvp:";
 pub const ACTION_RSVP_ACCEPT: &str = "rsvp:accepted";
 pub const ACTION_RSVP_MAYBE: &str = "rsvp:tentative";
 pub const ACTION_RSVP_DECLINE: &str = "rsvp:declined";
+// Record-prompt actions (macOS only — see notify/macos.rs's dedicated
+// category; Windows/Linux get a plain banner and fall back to click-opens).
+pub const ACTION_RECORD: &str = "record";
+pub const ACTION_OPEN: &str = "open";
 
 #[derive(Clone)]
 pub struct Banner {
@@ -48,11 +63,51 @@ pub struct Banner {
     pub urgent: bool,
     // Meeting invite awaiting an RSVP → Accept/Maybe/Decline buttons.
     pub rsvp: bool,
+    // Record-prompt (poller.rs) → Record/Open buttons on macOS. The payload
+    // the Record action needs is stashed separately (see `stash_record_prompt`
+    // below), not carried on the banner itself.
+    pub record: bool,
 }
 
 impl Banner {
     fn is_row(&self) -> bool {
         !self.id.is_empty()
+    }
+}
+
+/// Everything the Record action needs once it fires, stashed at raise time
+/// and consumed (removed) when the user acts on the banner.
+#[derive(Clone)]
+pub struct RecordPromptPayload {
+    pub link: Option<String>,
+    pub scheduled_meeting_id: String,
+    pub occurrence_start: String,
+}
+
+// `Mutex<Option<_>>` rather than a const-initialized HashMap, matching the
+// `EVENTS`/`AUDIO` statics in recording.rs (`HashMap::new()` isn't `const`).
+static RECORD_PROMPTS: Mutex<Option<HashMap<String, RecordPromptPayload>>> = Mutex::new(None);
+
+/// Stash a record-prompt's payload under its notification id, just before
+/// raising the banner (poller.rs, both the immediate and deferred paths).
+pub fn stash_record_prompt(id: &str, payload: RecordPromptPayload) {
+    if let Ok(mut guard) = RECORD_PROMPTS.lock() {
+        guard.get_or_insert_with(HashMap::new).insert(id.to_string(), payload);
+    }
+}
+
+pub(crate) fn take_record_prompt(id: &str) -> Option<RecordPromptPayload> {
+    RECORD_PROMPTS
+        .lock()
+        .ok()
+        .and_then(|mut guard| guard.as_mut().and_then(|m| m.remove(id)))
+}
+
+/// Drop any stashed record-prompt payloads — called on sign-out so a new
+/// account on the same machine starts clean.
+pub fn clear_record_prompts() {
+    if let Ok(mut guard) = RECORD_PROMPTS.lock() {
+        *guard = None;
     }
 }
 
@@ -88,6 +143,7 @@ pub fn raise_simple(app: &AppHandle, title: &str, body: &str) {
             link: None,
             urgent: false,
             rsvp: false,
+            record: false,
         },
     );
 }
@@ -123,14 +179,21 @@ pub(crate) fn on_clicked(app: &AppHandle, id: &str, link: Option<&str>) {
     }
 }
 
-/// Banner action button: `read` or `rsvp:<accepted|tentative|declined>`.
-/// Anything else (e.g. the macOS dismiss identifier) is a no-op.
+/// Banner action button: `read`, `rsvp:<accepted|tentative|declined>`,
+/// `record` or `open` (record-prompt banners, macOS only). Anything else
+/// (e.g. the macOS dismiss identifier) is a no-op.
 pub(crate) fn on_action(app: &AppHandle, id: &str, action: &str) {
     if id.is_empty() {
         return;
     }
     if action == ACTION_READ {
         post(app, format!("{}/api/notifications/{id}/read", config::PROD_ORIGIN), None);
+    } else if action == ACTION_OPEN {
+        let link = take_record_prompt(id).and_then(|p| p.link);
+        on_clicked(app, id, link.as_deref());
+    } else if action == ACTION_RECORD {
+        let Some(payload) = take_record_prompt(id) else { return };
+        start_recording_from_prompt(app, id.to_string(), payload);
     } else if let Some(response) = action.strip_prefix(RSVP_PREFIX) {
         post(
             app,
@@ -138,6 +201,61 @@ pub(crate) fn on_action(app: &AppHandle, id: &str, action: &str) {
             Some(serde_json::json!({ "response": response })),
         );
     }
+}
+
+#[derive(serde::Deserialize)]
+struct CreatedRecording {
+    id: String,
+}
+
+#[derive(serde::Deserialize, Default)]
+struct RecordingErrorBody {
+    #[serde(default)]
+    error: String,
+}
+
+/// "Record" tapped on a record-prompt banner: create the MeetingRecording
+/// and start capturing immediately, no deep link and no page open. On any
+/// refusal (noteRequired / forbidden / recordingDisabled / 503) or network
+/// failure, fall back to opening the item's link — the web page explains why
+/// and offers browser recording instead.
+fn start_recording_from_prompt(app: &AppHandle, id: String, payload: RecordPromptPayload) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let Some(token) = keychain::get_token() else {
+            return on_clicked(&app, &id, payload.link.as_deref());
+        };
+        let http = app.state::<AppState>().http.clone();
+        let resp = http
+            .post(config::meeting_recordings_url())
+            .bearer_auth(&token)
+            .json(&serde_json::json!({
+                "scheduledMeetingId": payload.scheduled_meeting_id,
+                "occurrenceStart": payload.occurrence_start,
+            }))
+            .send()
+            .await;
+
+        let resp = match resp {
+            Ok(r) => r,
+            Err(_) => return on_clicked(&app, &id, payload.link.as_deref()),
+        };
+
+        if resp.status() == reqwest::StatusCode::CREATED {
+            if let Ok(created) = resp.json::<CreatedRecording>().await {
+                recording::start(&app, created.id);
+                post(&app, format!("{}/api/notifications/{id}/read", config::PROD_ORIGIN), None);
+                return;
+            }
+            return on_clicked(&app, &id, payload.link.as_deref());
+        }
+
+        let error = resp.json::<RecordingErrorBody>().await.unwrap_or_default().error;
+        on_clicked(&app, &id, payload.link.as_deref());
+        if error == "recordingDisabled" {
+            raise_simple(&app, "DALI OS", "Recording is turned off for this project.");
+        }
+    });
 }
 
 // Fire-and-forget authenticated POST. The server publishes the write to the

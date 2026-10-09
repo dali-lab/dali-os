@@ -27,9 +27,11 @@ import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { getUserRoles, isProjectMember } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { walletTokensConfigured } from "~/lib/wallet-token";
 import { getActiveDisplayScan, startDisplayScan, stopDisplayScan } from "~/lib/display-scan.server";
 import { useDialog } from "~/components/ui/dialog";
+import { useToast } from "~/components/ui/toast";
 import { fullName } from "~/lib/display";
 import { AttendanceChecklist, type AttendanceRow } from "~/components/AttendanceChecklist";
 import { expandOccurrences, noteForOccurrence, resolveOccurrence } from "~/lib/meeting-occurrences";
@@ -44,6 +46,7 @@ import { CheckInPanel } from "~/components/CheckInPanel";
 import { EditMeetingModal } from "~/calendar/components/EditMeetingModal";
 import { AddMeetingNoteButton, OpenMeetingNoteButton } from "~/calendar/components/AddMeetingNoteModal";
 import { AddMeetingWhiteboardButton } from "~/calendar/components/AddMeetingWhiteboardModal";
+import { RecordPromptBanner } from "~/components/RecordPromptBanner";
 import type { Route } from "./+types/calendar.meeting.$id";
 
 export const meta: Route.MetaFunction = () => [{ title: "Meeting · DALI OS" }];
@@ -91,11 +94,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       meetingTypeLabel: true,
       attendanceMode: true,
       projectId: true,
-      project: { select: { name: true } },
+      project: { select: { name: true, recordingPolicy: true } },
       selectedAt: true,
       createdAt: true,
       durationMinutes: true,
       recurrenceRule: true,
+      recordPrompt: true,
       externalEventId: true,
       participantUserIds: true,
       location: true,
@@ -217,6 +221,26 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       ? meeting.meetingTypeLabel || "Meeting"
       : (meeting.meetingType ?? "Meeting");
 
+  // Meeting recording (specs/meeting-transcription.md): the occurrence's
+  // most recent non-Failed row drives both the live "Recording · <name>"
+  // pill and the Transcript link, and suppresses the record-prompt banner.
+  // MeetingRecording.userId has no `user` relation, so the name (only
+  // needed while it's actively Recording) is a separate lookup.
+  const [activeRecordingRow] = await prisma.meetingRecording.findMany({
+    where: { scheduledMeetingId: meeting.id, occurrenceStart: occurrence.originalStart, status: { notIn: ["Failed"] } },
+    select: { id: true, userId: true, status: true },
+    orderBy: { createdAt: "desc" },
+    take: 1,
+  });
+  const liveRecordingUser =
+    activeRecordingRow?.status === "Recording"
+      ? await prisma.user.findUnique({
+          where: { id: activeRecordingRow.userId },
+          select: { firstName: true, lastName: true, daliEmail: true },
+        })
+      : null;
+  const recordingEnabled = await isFeatureEnabled("ai-meeting-notes", auth.user.sub, roles, request);
+
   return {
     meetingId: meeting.id,
     meetingLabel: meeting.title,
@@ -279,6 +303,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       proposedStartIso: p.proposedStart.toISOString(),
       proposerName: fullName(p.proposedBy),
     })),
+    recordingEnabled,
+    recordingPolicy: meeting.project?.recordingPolicy ?? "Allowed",
+    recordPromptEnabled: meeting.recordPrompt,
+    canDontSuggestRecording: auth.user.sub === meeting.organizerId || roles.isCore,
+    windowEndIso: occurrence.end.toISOString(),
+    activeRecording: activeRecordingRow ? { id: activeRecordingRow.id, userId: activeRecordingRow.userId } : null,
+    liveRecordingName: liveRecordingUser ? fullName(liveRecordingUser) || liveRecordingUser.daliEmail || "Someone" : null,
+    doneRecordingId: activeRecordingRow?.status === "Done" ? activeRecordingRow.id : null,
   };
 }
 
@@ -295,6 +327,23 @@ export async function action({ request, params }: Route.ActionArgs) {
   const intent = form.get("intent");
   if (intent === "start-ipad-scan" || intent === "takeover-ipad-scan" || intent === "stop-ipad-scan") {
     return ipadScanAction(request, params.id, auth.user.sub, intent, form);
+  }
+  // "Don't suggest recording this meeting" (RecordPromptBanner's overflow):
+  // organizer or Core silences the prompt for the whole series.
+  if (intent === "recordPrompt") {
+    const meeting = await prisma.scheduledMeeting.findUnique({
+      where: { id: params.id },
+      select: { organizerId: true, status: true },
+    });
+    if (!meeting || meeting.status === "Cancelled") {
+      return Response.json({ error: "Not found" }, { status: 404 });
+    }
+    const roles = await getUserRoles(auth.user.sub);
+    if (auth.user.sub !== meeting.organizerId && !roles.isCore) {
+      return Response.json({ error: "Forbidden" }, { status: 403 });
+    }
+    await prisma.scheduledMeeting.update({ where: { id: params.id }, data: { recordPrompt: false } });
+    return Response.json({ ok: true });
   }
   if (intent !== "enable-self-check-in") {
     return Response.json({ error: "Unknown intent" }, { status: 400 });
@@ -601,6 +650,18 @@ export default function CalendarMeetingPage() {
   const selfCheckInFetcher = useFetcher<{ ok?: boolean; error?: string }>();
   const ipadFetcher = useFetcher<{ ok?: boolean; error?: string }>();
   const dialog = useDialog();
+  const toast = useToast();
+
+  async function dontSuggestRecording() {
+    const fd = new FormData();
+    fd.set("intent", "recordPrompt");
+    const res = await fetch(`/calendar/meeting/${d.meetingId}`, {
+      method: "POST",
+      credentials: "include",
+      body: fd,
+    }).catch(() => null);
+    if (!res?.ok) toast.error("Couldn't turn off the record prompt for this meeting.");
+  }
 
   async function toggleIpadScan() {
     if (!d.ipadScan) return;
@@ -633,12 +694,31 @@ export default function CalendarMeetingPage() {
     // Full-bleed and left-aligned: the app shell already supplies the page
     // gutters, so this surface only owns its vertical rhythm.
     <div className="flex w-full flex-col items-stretch gap-10 pb-10 text-left">
+      {d.notePageId && d.recordingEnabled && d.recordingPolicy !== "Disabled" && (
+        <RecordPromptBanner
+          meetingId={d.meetingId}
+          occurrenceStart={d.occurrenceStart}
+          windowEndIso={d.windowEndIso}
+          canEdit={d.canAddNote}
+          recordingEnabled={d.recordingEnabled}
+          recordPromptEnabled={d.recordPromptEnabled}
+          hasActiveRecording={d.activeRecording !== null}
+          canDontSuggest={d.canDontSuggestRecording}
+          recordHref={`/documents/${d.notePageId}?record=1`}
+          onDontSuggest={() => void dontSuggestRecording()}
+        />
+      )}
       <header className="flex flex-col gap-5">
         <div className="flex flex-wrap items-center gap-2">
           <Pill tone="accent">{d.typeLabel}</Pill>
           {d.isCoreMeeting && (
             <Pill>
               <Shield className="h-3.5 w-3.5" /> Core
+            </Pill>
+          )}
+          {d.liveRecordingName && (
+            <Pill tone="danger" dot="danger">
+              Recording · {d.liveRecordingName}
             </Pill>
           )}
         </div>
@@ -678,6 +758,11 @@ export default function CalendarMeetingPage() {
                 className={actionBtnClass}
               />
             )
+          )}
+          {d.notePageId && d.doneRecordingId && (
+            <Link to={`/documents/${d.notePageId}?transcript=${d.doneRecordingId}`} className={actionBtnClass}>
+              <FileText className="h-4 w-4" /> Transcript
+            </Link>
           )}
           {d.whiteboardPageId ? (
             <Link to={`/whiteboard/${d.whiteboardPageId}`} className={actionBtnClass}>

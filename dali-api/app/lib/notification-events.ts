@@ -96,6 +96,14 @@ export const EVENT_TYPES = {
     description: "When an invitee proposes a new time for a meeting you organized.",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
+  "meeting.record_prompt": {
+    kind: "General",
+    area: "Meetings",
+    label: "Record this meeting?",
+    description: "One minute before a meeting you organize starts, when it can be recorded.",
+    timeSensitive: true,
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
   "room.booking_bumped": {
     kind: "General",
     area: "Meetings",

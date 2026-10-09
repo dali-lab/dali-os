@@ -10,6 +10,7 @@ vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/lib/meeting-recording.server", () => ({
   canRecordInto: vi.fn(),
   documentTitle: vi.fn(),
+  formatRecordingTranscript: vi.fn(),
 }));
 vi.mock("~/lib/ai-usage.server", () => ({ recordTokenUsage: vi.fn() }));
 vi.mock("~/lib/ai.server", () => ({ generateShortText: vi.fn() }));
@@ -17,7 +18,7 @@ vi.mock("~/lib/ai.server", () => ({ generateShortText: vi.fn() }));
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { canRecordInto, documentTitle } from "~/lib/meeting-recording.server";
+import { canRecordInto, documentTitle, formatRecordingTranscript } from "~/lib/meeting-recording.server";
 import { generateShortText } from "~/lib/ai.server";
 import { _resetForTests as resetRateLimits } from "~/lib/rate-limit";
 import { action } from "~/routes/api.ai.meeting-notes";
@@ -90,5 +91,25 @@ describe("POST /api/ai/meeting-notes", () => {
   it("returns 503 when no AI provider is configured", async () => {
     vi.mocked(generateShortText).mockResolvedValue(null);
     expect((await run({ documentName: DOC, transcript: "x" })).status).toBe(503);
+  });
+
+  it("formats notes from a recordingId, resolving speaker names through the recording", async () => {
+    vi.mocked(prisma.meetingRecording.findUnique).mockResolvedValue({
+      id: "rec1",
+      documentName: DOC,
+    } as never);
+    vi.mocked(formatRecordingTranscript).mockResolvedValue("[00:01] You: we shipped it");
+
+    const res = await run({ recordingId: "rec1" });
+    expect(res.status).toBe(200);
+    expect(canRecordInto).toHaveBeenCalledWith("u1", DOC);
+    expect(vi.mocked(generateShortText).mock.calls[0]![0].prompt).toContain("we shipped it");
+  });
+
+  it("404s an unknown recordingId", async () => {
+    vi.mocked(prisma.meetingRecording.findUnique).mockResolvedValue(null);
+    const res = await run({ recordingId: "nope" });
+    expect(res.status).toBe(404);
+    expect(generateShortText).not.toHaveBeenCalled();
   });
 });
