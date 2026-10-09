@@ -7,6 +7,7 @@
 mod commands;
 mod config;
 mod deeplink;
+mod frontmost;
 mod keychain;
 mod menu;
 mod nav;
