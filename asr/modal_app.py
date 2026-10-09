@@ -189,7 +189,9 @@ def _run_pyannote(pcm: bytes, max_speakers: Optional[int]) -> list:
     # pyannote 4 returns a DiarizeOutput wrapper; 3.x returned the Annotation
     # itself. The plain track (not the exclusive one, which fragments turns
     # at every overlap); overlaps resolve at word assignment time.
-    annotation = getattr(output, "speaker_diarization", None) or output
+    # hasattr, not `or`: an Annotation with no speech is falsy, and a silent
+    # channel must yield zero segments rather than fall through to the wrapper.
+    annotation = output.speaker_diarization if hasattr(output, "speaker_diarization") else output
 
     return [
         {"start": turn.start, "end": turn.end, "speaker": speaker_label}
