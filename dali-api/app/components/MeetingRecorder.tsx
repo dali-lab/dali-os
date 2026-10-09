@@ -633,6 +633,24 @@ export function MeetingRecorder({
     setPhase("processing");
   }
 
+  // Try again after a failed dispatch: the audio is still on the server, so
+  // ask it to process once more and go back to waiting.
+  async function retryProcessing() {
+    if (!recordingId) return;
+    setError(null);
+    const res = await fetch(`/api/meeting-recordings/${recordingId}`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "stop", final: true }),
+    }).catch(() => null);
+    if (!res?.ok) {
+      setError("This recording can't be processed again. Record it again.");
+      return;
+    }
+    setPhase("processing");
+  }
+
   async function resume() {
     if (!recordingId) return;
     setError(null);
@@ -1106,7 +1124,7 @@ export function MeetingRecorder({
           {phase === "failed" && canEdit && (
             <>
               <IconButton label="Discard recording" icon={Trash2} tone="destructive" onClick={() => void discard()} />
-              <button type="button" onClick={() => void resume()} className={buttonClasses("primary", "sm")}>
+              <button type="button" onClick={() => void retryProcessing()} className={buttonClasses("primary", "sm")}>
                 Try again
               </button>
             </>

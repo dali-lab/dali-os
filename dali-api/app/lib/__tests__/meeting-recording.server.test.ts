@@ -324,6 +324,11 @@ describe("startProcessing / finalizeEmpty", () => {
     expect(prisma.meetingRecording.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: "Failed", error: "network down" }) }),
     );
+    // Dispatch failures are transient: the audio stays so Try again can re-dispatch.
+    expect(deletePrefix).not.toHaveBeenCalled();
+    expect(prisma.meetingRecording.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ finalizedAt: expect.any(Date) }) }),
+    );
   });
 
   it("finalizeEmpty closes a zero-chunk stop as not resumable", async () => {

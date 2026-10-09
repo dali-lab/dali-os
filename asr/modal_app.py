@@ -302,7 +302,7 @@ async def process(request: fastapi.Request) -> dict:
     except pipeline.ValidationError as exc:
         raise fastapi.HTTPException(status_code=400, detail=str(exc)) from None
 
-    call = run_job.spawn(body)
+    call = await run_job.spawn.aio(body)
     logger.info(
         "dali-asr: job spawned recording_id=%s channels=%s job_id=%s",
         req.recording_id,
