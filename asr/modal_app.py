@@ -149,8 +149,6 @@ def _run_parakeet(pcm: bytes) -> list:
 
     import pipeline
 
-    import pipeline
-
     model = _get_asr_model()
     audio = _pcm_to_float32(pcm)
     result = model.recognize(audio, sample_rate=pipeline.SAMPLE_RATE_HZ, timestamps=True)
@@ -163,6 +161,7 @@ def _run_pyannote(pcm: bytes, max_speakers: Optional[int]) -> list:
     if not pcm:
         return []
 
+    import pipeline
     import torch
 
     diarization_pipeline = _get_diarization_model()
