@@ -31,7 +31,9 @@ from typing import Optional
 import fastapi
 import modal
 
-import pipeline
+# `pipeline` is a local source mounted at container start (see the image
+# definition), so it is imported inside each function that needs it: the
+# weight-baking build step imports this module before the mount exists.
 
 logger = logging.getLogger("dali-asr")
 logging.basicConfig(level=logging.INFO)
@@ -145,6 +147,10 @@ def _run_parakeet(pcm: bytes) -> list:
     if not pcm:
         return []
 
+    import pipeline
+
+    import pipeline
+
     model = _get_asr_model()
     audio = _pcm_to_float32(pcm)
     result = model.recognize(audio, sample_rate=pipeline.SAMPLE_RATE_HZ, timestamps=True)
@@ -187,6 +193,8 @@ def _fetch_chunk(url: str) -> Optional[bytes]:
 def _deliver_callback(callback_url: str, payload: dict) -> None:
     import json
 
+    import pipeline
+
     import httpx
 
     raw_body = json.dumps(payload).encode("utf-8")
@@ -206,6 +214,8 @@ def _deliver_callback(callback_url: str, payload: dict) -> None:
 
 @app.function(gpu="T4", timeout=900, retries=1, secrets=[modal.Secret.from_name("dali-asr")])
 def run_job(raw_body: dict) -> None:
+    import pipeline
+
     req = pipeline.parse_process_request(raw_body)
     job_start = time.monotonic()
 
@@ -250,6 +260,8 @@ def run_job(raw_body: dict) -> None:
 @app.function(secrets=[modal.Secret.from_name("dali-asr")])
 @modal.fastapi_endpoint(method="POST")
 async def process(request: fastapi.Request) -> dict:
+    import pipeline
+
     if not pipeline.check_bearer_token(request.headers.get("authorization"), _diarize_secret()):
         raise fastapi.HTTPException(status_code=401, detail="unauthorized")
 
