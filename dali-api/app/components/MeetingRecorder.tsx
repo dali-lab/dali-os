@@ -341,7 +341,7 @@ export function MeetingRecorder({
   // ─── Desktop deep-link liveness poll (no local capture to time by) ─────
   useEffect(() => {
     if (captureMode !== "desktop" || !recordingId) return;
-    if (phase !== "starting" && phase !== "recording") return;
+    if (phase !== "starting" && phase !== "recording" && phase !== "stopping") return;
     let cancelled = false;
     const createdAt = Date.now();
     async function tick() {
@@ -617,6 +617,10 @@ export function MeetingRecorder({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "stop" }),
     }).catch(() => null);
+    // Desktop capture: the app is still flushing its last chunks. Stay in
+    // "stopping" until the poll sees the app's finish (Stopped), so Transcribe
+    // can't dispatch a job that misses the mic channel.
+    if (captureMode === "desktop") return;
     setPhase(conflictedRef.current ? "processing" : "review");
   }
 

@@ -787,6 +787,7 @@ export const prisma = {
     findMany: vi.fn().mockResolvedValue([]),
     count: vi.fn().mockResolvedValue(0),
     update: vi.fn(),
+    updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     delete: vi.fn(),
     deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   },
