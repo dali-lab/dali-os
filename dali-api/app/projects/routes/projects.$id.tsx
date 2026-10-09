@@ -110,6 +110,7 @@ import { isAiEnabled } from "~/lib/ai.server";
 import { groupFilesByEpic } from "../lib/file-groups";
 import { loadProjectDriveScope } from "~/lib/drive-scopes.server";
 import type { DriveTreeScope } from "~/lib/drive-scopes.server";
+import { PROJECT_PAGE_SELECT, PROJECT_FILE_SELECT } from "~/lib/drive.server";
 import type { DriveItem } from "~/lib/drive.server";
 import { DriveBrowser } from "~/components/drive/DriveBrowser";
 import type { RowActions } from "~/components/drive/DriveBrowser";
@@ -551,15 +552,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         archivedAt: null,
       },
       orderBy: { position: "asc" },
+      // Widened to match `PROJECT_PAGE_SELECT` (drive.server.ts) so these rows
+      // can be reused as `preloadedProjectPages` for the project Drive tab
+      // below, instead of loadDriveScope re-querying the same pages.
       select: {
-        id: true,
-        title: true,
-        kind: true,
-        parentPageId: true,
-        partnerVisible: true,
+        ...PROJECT_PAGE_SELECT,
         publicVisible: true,
         pinnedAt: true,
-        iconEmoji: true,
       },
     }),
     // Project files — standalone uploads with their current version.
@@ -567,13 +566,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     prisma.projectFile.findMany({
       where: { projectId: project.id, archivedAt: null },
       orderBy: { createdAt: "asc" },
+      // Widened to match `PROJECT_FILE_SELECT` (drive.server.ts) so these rows
+      // can be reused as `preloadedProjectFiles` for the project Drive tab
+      // below, instead of loadDriveScope re-querying the same files.
       select: {
-        id: true,
-        title: true,
-        partnerVisible: true,
+        ...PROJECT_FILE_SELECT,
         // Placement in the Drive folder tree — null = tree root, else nested
         // under the Page with this id (must be a Folder-kind Page).
-        folderPageId: true,
         currentVersion: { select: { fileName: true, sizeBytes: true } },
         _count: { select: { versions: true } },
         // Which epics this file's linked tasks belong to — used for the deferred
@@ -1114,7 +1113,20 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // and a meetings query, and every other tab would pay for a grid it never
   // renders. Deadlines reuse `epics`, already built for the timeline.
   const tabParam = new URL(request.url).searchParams.get("tab");
-  const [projectCalendar, projectDriveScope] = await Promise.all([
+  // projectCalendar/projectDriveScope/projectInfra/infraConfigRow/
+  // infraRequests/aiLineEnabled/chartStrings are all independent of each
+  // other and need nothing beyond project/epics/roles from Stage 1 (plus
+  // pageRows/fileRows from Stage 2 for the Drive scope below) — merged into
+  // one wave instead of four separate round trips.
+  const [
+    projectCalendar,
+    projectDriveScope,
+    projectInfra,
+    infraConfigRow,
+    infraRequests,
+    aiLineEnabled,
+    chartStrings,
+  ] = await Promise.all([
     tabParam === "meetings"
       ? buildProjectCalendar({
           request,
@@ -1124,22 +1136,22 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           epics,
         })
       : Promise.resolve(null),
-    // Drive tab scope — loaded always so tab-switching is instant. The two
-    // underlying Prisma queries (pages + files) are comparable in cost to the
-    // Stage 2 pageRows/fileRows already fetched above.
+    // Drive tab scope — loaded always so tab-switching is instant. Reuses the
+    // Stage 2 pageRows/fileRows above as preloaded rows instead of
+    // loadDriveScope re-querying pages/files for the same project.
     loadProjectDriveScope({
       userSub: auth.user.sub,
       projectId: project.id,
       projectName: project.name,
       projectIconEmoji: project.iconEmoji,
       request,
+      preloadedProjectPages: pageRows,
+      preloadedProjectFiles: fileRows,
     }),
-  ]);
-
-  // Per-project infrastructure (Fly + Neon): config presence + cached inventory
-  // + the project's change requests. View is open to anyone who can see the
-  // project; config/requests are gated in the section by canEdit (core||staffed).
-  const [projectInfra, infraConfigRow, infraRequests] = await Promise.all([
+    // Per-project infrastructure (Fly + Neon): config presence + cached
+    // inventory + the project's change requests. View is open to anyone who
+    // can see the project; config/requests are gated in the section by
+    // canEdit (core||staffed).
     loadProjectInfra(params.id),
     prisma.project.findUnique({
       where: { id: params.id },
@@ -1152,6 +1164,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       },
     }),
     canEdit ? listProjectInfraRequests(params.id) : Promise.resolve([]),
+    // Progress tab's AI-line flag — independent of the status facts below.
+    (async () =>
+      isAiEnabled() &&
+      (await isFeatureEnabled("project-tldr-ai", auth.user.sub, roles, request)))(),
+    // Core-only: the project's chart string history, for the Payroll panel.
+    // Everyone else gets an empty list rather than a filtered one — the rows
+    // never reach the payload, the same reasoning as redactCoreOnlyProjectFields.
+    canEditScope ? listProjectChartStrings(params.id) : Promise.resolve([]),
   ]);
   const infra = {
     config: {
@@ -1200,17 +1220,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     })),
     statusNow,
   );
-  const aiLineEnabled =
-    isAiEnabled() &&
-    (await isFeatureEnabled("project-tldr-ai", auth.user.sub, roles, request));
   const aiTldrStale =
     !project.aiTldrInputHash ||
     project.aiTldrInputHash !== factsFingerprint(statusFacts);
-
-  // Core-only: the project's chart string history, for the Payroll panel.
-  // Everyone else gets an empty list rather than a filtered one — the rows
-  // never reach the payload, the same reasoning as redactCoreOnlyProjectFields.
-  const chartStrings = canEditScope ? await listProjectChartStrings(params.id) : [];
 
   return {
     infra,

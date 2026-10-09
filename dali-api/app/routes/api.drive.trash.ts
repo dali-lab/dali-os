@@ -96,8 +96,21 @@ export async function loader({ request }: Route.LoaderArgs) {
     take: SCAN_LIMIT,
   });
 
+  // Memoize canEditFile per distinct folderPageId: a folderPageId pins a file
+  // to one project/workspace, so every file sharing it gets the same
+  // ancestor-walk answer — compute it once instead of once per file. Mirrors
+  // the folderAccess memo pattern in drive.server.ts (loadLabFiles/loadFiles).
+  const folderAccessCache = new Map<string, Promise<boolean>>();
   const fileAccess = await Promise.all(
-    archivedFiles.map((f) => canEditFile(userId, f, request)),
+    archivedFiles.map((f) => {
+      if (!f.folderPageId) return canEditFile(userId, f, request);
+      let access = folderAccessCache.get(f.folderPageId);
+      if (!access) {
+        access = canEditFile(userId, f, request);
+        folderAccessCache.set(f.folderPageId, access);
+      }
+      return access;
+    }),
   );
   const accessibleFiles = archivedFiles
     .filter((_, i) => fileAccess[i])

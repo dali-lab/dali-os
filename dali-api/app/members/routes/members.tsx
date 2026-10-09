@@ -85,10 +85,33 @@ export async function loader({ request }: Route.LoaderArgs) {
   const portalRedirect = redirectApplicantToPortal(auth);
   if (portalRedirect) return portalRedirect;
 
-  const { terms, selected, termId, isAll } = await resolveTermFilter(request);
-
   const url = new URL(request.url);
   const status = parseStatus(url.searchParams.get("status"));
+
+  // Domain, project and class are filter-builder columns now, matched in the
+  // browser. The old ?domain= / ?project= / ?class= links (the Groups page
+  // still sends the first two) open with that filter already in the builder;
+  // an unknown id is ignored so a stale link just shows everyone.
+  const [domainParam, projectParam] = ["domain", "project"].map(
+    (k) => url.searchParams.get(k) ?? "",
+  );
+
+  // None of these five depend on each other's result — resolveTermFilter only
+  // needs `request`, the linked domain/project lookups only need the parsed
+  // url params, and canEdit/canSeeGroups only need the viewer id — so they run
+  // as one wave instead of a chain of sequential round-trips.
+  const [{ terms, selected, termId, isAll }, linkedDomain, linkedProject, canEdit, canSeeGroups] =
+    await Promise.all([
+      resolveTermFilter(request),
+      domainParam
+        ? prisma.domain.findUnique({ where: { id: domainParam }, select: { displayName: true } })
+        : null,
+      projectParam
+        ? prisma.project.findUnique({ where: { id: projectParam }, select: { name: true } })
+        : null,
+      isCore(auth.user.sub, request),
+      canViewForms(auth.user.sub, request),
+    ]);
 
   // "Active in a term" = the member held a Core role OR a project assignment
   // that term. "All terms" drops the constraint and shows every member. The
@@ -106,21 +129,6 @@ export async function loader({ request }: Route.LoaderArgs) {
           ],
         };
 
-  // Domain, project and class are filter-builder columns now, matched in the
-  // browser. The old ?domain= / ?project= / ?class= links (the Groups page
-  // still sends the first two) open with that filter already in the builder;
-  // an unknown id is ignored so a stale link just shows everyone.
-  const [domainParam, projectParam] = ["domain", "project"].map(
-    (k) => url.searchParams.get(k) ?? "",
-  );
-  const [linkedDomain, linkedProject] = await Promise.all([
-    domainParam
-      ? prisma.domain.findUnique({ where: { id: domainParam }, select: { displayName: true } })
-      : null,
-    projectParam
-      ? prisma.project.findUnique({ where: { id: projectParam }, select: { name: true } })
-      : null,
-  ]);
   const classParam = Number(url.searchParams.get("class"));
   const initialFilters: ColumnFilter[] = [
     ...(linkedDomain ? [{ id: "link-domain", columnKey: "domain", operator: "is" as const, value: linkedDomain.displayName }] : []),
@@ -226,11 +234,6 @@ export async function loader({ request }: Route.LoaderArgs) {
       },
     };
   }));
-
-  const [canEdit, canSeeGroups] = await Promise.all([
-    isCore(auth.user.sub),
-    canViewForms(auth.user.sub),
-  ]);
 
   return {
     rows,

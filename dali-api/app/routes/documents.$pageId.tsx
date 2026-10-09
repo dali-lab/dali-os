@@ -119,7 +119,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       linkAccess: page.linkAccess,
       linkPermission: page.linkPermission,
     },
-    undefined,
+    request,
     { includeArchived: trashed },
   );
   if (!access.canView) throw new Response("Not found", { status: 404 });
@@ -205,27 +205,59 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // After the gate, so a 404 never lands in someone's recents. Detached — a
   // failed bookkeeping write must not cost the reader their document.
   recordPageVisit(auth.user.sub, page.id, request);
-  const favorited = await isFavorited(auth.user.sub, page.id);
+  const fallbackName =
+    [auth.user.firstName, auth.user.lastName].filter(Boolean).join(" ") || auth.user.email;
 
-  // Every workspace type now carries a shareable audience (named shares +
-  // General access), so the Share button shows wherever the viewer may manage
-  // it — the creator/Core on a lab doc, project staff, the note owner, an
-  // instructor, or anyone granted Full access.
-  const canManageAccess = await canManageSharing(
-    {
-      id: page.id,
-      workspaceType: page.workspaceType,
-      workspaceId: page.workspaceId,
-      createdById: page.createdById,
-    },
-    auth.user.sub,
-  );
-
-  const allTags = await prisma.docTag.findMany({
-    where: { archivedAt: null },
-    orderBy: { label: "asc" },
-    select: { id: true, label: true, slug: true, color: true },
-  });
+  // Everything below the gate is independent of everything else here, so it
+  // goes to the database in one wave rather than seven.
+  const [favorited, canManageAccess, allTags, meeting, collabToken, presenceUser, backlinkRows] =
+    await Promise.all([
+      isFavorited(auth.user.sub, page.id),
+      // Every workspace type now carries a shareable audience (named shares +
+      // General access), so the Share button shows wherever the viewer may manage
+      // it — the creator/Core on a lab doc, project staff, the note owner, an
+      // instructor, or anyone granted Full access.
+      canManageSharing(
+        {
+          id: page.id,
+          workspaceType: page.workspaceType,
+          workspaceId: page.workspaceId,
+          createdById: page.createdById,
+        },
+        auth.user.sub,
+      ),
+      prisma.docTag.findMany({
+        where: { archivedAt: null },
+        orderBy: { label: "asc" },
+        select: { id: true, label: true, slug: true, color: true },
+      }),
+      page.meetingNoteId
+        ? prisma.scheduledMeeting.findUnique({
+            where: { id: page.meetingNoteId },
+            select: {
+              id: true,
+              organizerId: true,
+              participantUserIds: true,
+              selectedAt: true,
+              createdAt: true,
+              recurrenceRule: true,
+              meetingType: true,
+              meetingTypeLabel: true,
+              attendanceMode: true,
+              whiteboardPage: { select: { id: true } },
+            },
+          })
+        : Promise.resolve(null),
+      getCollabToken(request),
+      getPresenceUser(auth.user.sub, fallbackName),
+      // Backlinks: pages that mention this page via a @pageMention inline node.
+      prisma.pageLink.findMany({
+        where: { toPageId: page.id, fromPage: { archivedAt: null } },
+        select: {
+          fromPage: { select: { id: true, title: true, iconEmoji: true } },
+        },
+      }),
+    ]);
 
   let attendance:
     | {
@@ -245,88 +277,59 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         walletConfigured: boolean;
       }
     | null = null;
-  if (page.meetingNoteId) {
-    const meeting = await prisma.scheduledMeeting.findUnique({
-      where: { id: page.meetingNoteId },
+  if (meeting) {
+    const occurrenceStart = page.meetingOccurrenceStart ?? meeting.selectedAt ?? meeting.createdAt;
+    await ensureOccurrenceRoster(meeting, occurrenceStart);
+    const rows = await prisma.meetingAttendance.findMany({
+      where: { scheduledMeetingId: meeting.id, occurrenceStart },
       select: {
-        id: true,
-        organizerId: true,
-        participantUserIds: true,
-        selectedAt: true,
-        createdAt: true,
-        recurrenceRule: true,
-        meetingType: true,
-        meetingTypeLabel: true,
-        attendanceMode: true,
-        whiteboardPage: { select: { id: true } },
+        userId: true,
+        present: true,
+        user: { select: { firstName: true, lastName: true, daliEmail: true } },
       },
     });
-    if (meeting) {
-      const occurrenceStart = page.meetingOccurrenceStart ?? meeting.selectedAt ?? meeting.createdAt;
-      await ensureOccurrenceRoster(meeting, occurrenceStart);
-      const rows = await prisma.meetingAttendance.findMany({
-        where: { scheduledMeetingId: meeting.id, occurrenceStart },
-        select: {
-          userId: true,
-          present: true,
-          user: { select: { firstName: true, lastName: true, daliEmail: true } },
-        },
-      });
-      const label =
-        meeting.meetingType === "Other"
-          ? meeting.meetingTypeLabel || "Other"
-          : (meeting.meetingType ?? "Meeting");
-      const canMark = canEdit || auth.user.sub === meeting.organizerId;
-      const viewerRow = rows.find((a) => a.userId === auth.user.sub);
-      const selfCheckIn = meeting.attendanceMode === "SelfCheckIn";
+    const label =
+      meeting.meetingType === "Other"
+        ? meeting.meetingTypeLabel || "Other"
+        : (meeting.meetingType ?? "Meeting");
+    const canMark = canEdit || auth.user.sub === meeting.organizerId;
+    const viewerRow = rows.find((a) => a.userId === auth.user.sub);
+    const selfCheckIn = meeting.attendanceMode === "SelfCheckIn";
 
-      // Only the organizer/Core need the QR/link to display at the event —
-      // everyone else just sees the check-in button below if they scanned it.
-      // A recurring meeting's code points at its check-in page instead of this
-      // week's note, since the same printed code is used every week.
-      let checkInUrl: string | null = null;
-      let checkInQrSvg: string | null = null;
-      if (selfCheckIn && canMark) {
-        const origin = new URL(request.url).origin;
-        checkInUrl = meeting.recurrenceRule
-          ? `${origin}/calendar/check-in/${meeting.id}`
-          : `${origin}/documents/${page.id}`;
-        checkInQrSvg = await QRCode.toString(checkInUrl, { type: "svg", margin: 1, width: 180 });
-      }
-
-      attendance = {
-        meetingId: meeting.id,
-        occurrenceStart: occurrenceStart.toISOString(),
-        meetingLabel: label,
-        whiteboardPageId: meeting.whiteboardPage?.id ?? null,
-        canMark,
-        rows: rows.map((a) => ({
-          userId: a.userId,
-          name: fullName(a.user) || a.user.daliEmail || a.userId,
-          present: a.present,
-        })),
-        selfCheckIn,
-        viewerInvited: viewerRow !== undefined,
-        viewerPresent: viewerRow?.present ?? false,
-        checkInUrl,
-        checkInQrSvg,
-        walletConfigured: walletTokensConfigured(),
-      };
+    // Only the organizer/Core need the QR/link to display at the event —
+    // everyone else just sees the check-in button below if they scanned it.
+    // A recurring meeting's code points at its check-in page instead of this
+    // week's note, since the same printed code is used every week.
+    let checkInUrl: string | null = null;
+    let checkInQrSvg: string | null = null;
+    if (selfCheckIn && canMark) {
+      const origin = new URL(request.url).origin;
+      checkInUrl = meeting.recurrenceRule
+        ? `${origin}/calendar/check-in/${meeting.id}`
+        : `${origin}/documents/${page.id}`;
+      checkInQrSvg = await QRCode.toString(checkInUrl, { type: "svg", margin: 1, width: 180 });
     }
+
+    attendance = {
+      meetingId: meeting.id,
+      occurrenceStart: occurrenceStart.toISOString(),
+      meetingLabel: label,
+      whiteboardPageId: meeting.whiteboardPage?.id ?? null,
+      canMark,
+      rows: rows.map((a) => ({
+        userId: a.userId,
+        name: fullName(a.user) || a.user.daliEmail || a.userId,
+        present: a.present,
+      })),
+      selfCheckIn,
+      viewerInvited: viewerRow !== undefined,
+      viewerPresent: viewerRow?.present ?? false,
+      checkInUrl,
+      checkInQrSvg,
+      walletConfigured: walletTokensConfigured(),
+    };
   }
 
-  const collabToken = await getCollabToken(request);
-  const fallbackName =
-    [auth.user.firstName, auth.user.lastName].filter(Boolean).join(" ") || auth.user.email;
-  const presenceUser = await getPresenceUser(auth.user.sub, fallbackName);
-
-  // Backlinks: pages that mention this page via a @pageMention inline node.
-  const backlinkRows = await prisma.pageLink.findMany({
-    where: { toPageId: page.id, fromPage: { archivedAt: null } },
-    select: {
-      fromPage: { select: { id: true, title: true, iconEmoji: true } },
-    },
-  });
   const backlinks = backlinkRows.map((r) => ({
     id: r.fromPage.id,
     title: r.fromPage.title,
