@@ -330,9 +330,9 @@ export function MeetingRecorder({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase === "recording" || phase === "stopping", documentName, collabToken]);
 
-  // ─── Elapsed-time tick while locally timing (browser capture) ──────────
+  // ─── Elapsed-time tick while live (both capture modes) ─────────────────
   useEffect(() => {
-    if (phase !== "recording" || captureMode !== "browser") return;
+    if (phase !== "recording") return;
     setNow(Date.now());
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
