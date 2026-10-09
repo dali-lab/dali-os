@@ -10,3 +10,4 @@ node_modules/
 # Python (asr/)
 __pycache__/
 .pytest_cache/
+.venv/

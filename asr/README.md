@@ -22,9 +22,15 @@ speaker diarization. See `specs/meeting-transcription.md` ("dali-asr
 ## Deploy
 
 ```sh
-modal deploy asr/modal_app.py --env staging
-modal deploy asr/modal_app.py --env prod
+cd asr
+uv sync
+uv run modal deploy modal_app.py --env staging
+uv run modal deploy modal_app.py --env prod
 ```
+
+The project is managed with [uv](https://docs.astral.sh/uv/); `uv sync`
+creates `asr/.venv` from `pyproject.toml` + `uv.lock`. Model dependencies
+(torch, onnx-asr, pyannote) are installed inside the Modal image only.
 
 `deploy-asr.yml` does this automatically on push to `staging`/`prod`
 when `asr/**` changes.
@@ -35,9 +41,8 @@ Pure logic only (PCM assembly, request validation, response shaping,
 HMAC signing) — no GPU, no torch, no Modal SDK needed:
 
 ```sh
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r asr/requirements-dev.txt
-pytest asr/tests -q
+cd asr
+uv run pytest
 ```
 
 ## Benchmark
@@ -46,7 +51,7 @@ Run manually against a real T4, with a local WAV file (never uploads to
 S3):
 
 ```sh
-modal run asr/bench.py --wav-path path/to/meeting.wav
+cd asr && uv run modal run bench.py --wav-path path/to/meeting.wav
 ```
 
 Prints word/segment counts and transcribe/diarize stage timings.

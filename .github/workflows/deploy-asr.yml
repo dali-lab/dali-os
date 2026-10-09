@@ -18,13 +18,16 @@ jobs:
   deploy-asr:
     name: Deploy dali-asr (${{ github.ref_name }})
     runs-on: blacksmith-2vcpu-ubuntu-2404
+    defaults:
+      run:
+        working-directory: asr
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v6
         with:
-          python-version: "3.12"
-      - run: pip install modal
-      - run: modal deploy asr/modal_app.py --env ${{ github.ref_name }}
+          enable-cache: true
+      - run: uv sync --no-dev
+      - run: uv run modal deploy modal_app.py --env ${{ github.ref_name }}
         env:
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}

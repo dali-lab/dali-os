@@ -1,6 +1,6 @@
 """Manual benchmark: run dali-asr's model calls on a local WAV file.
 
-    modal run asr/bench.py --wav-path path/to/meeting.wav
+    cd asr && uv run modal run bench.py --wav-path path/to/meeting.wav
 
 Converts the WAV to 16 kHz mono s16 PCM locally, then runs Parakeet and
 pyannote on a T4 using the same image as modal_app.py, and prints stage
