@@ -41,6 +41,12 @@ pub fn recording_url(id: &str) -> String {
     format!("{PROD_ORIGIN}/api/meeting-recordings/{id}")
 }
 
+/// Chunk upload endpoint for a recording (recording.rs). Query string
+/// (`channel`, `segment`, `seq`) is added by the caller.
+pub fn recording_chunks_url(id: &str) -> String {
+    format!("{PROD_ORIGIN}/api/meeting-recordings/{id}/chunks")
+}
+
 pub fn pair_start_url() -> String {
     format!("{PROD_ORIGIN}/auth/pair/start")
 }
