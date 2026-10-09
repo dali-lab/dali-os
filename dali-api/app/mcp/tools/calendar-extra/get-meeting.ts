@@ -11,7 +11,7 @@ import { McpNotFoundError, McpForbiddenError } from "../../registry";
 export const GET_MEETING_DEF = {
   name: "get_meeting",
   description:
-    "Fetch full detail for a scheduled meeting: time, duration, URL, meeting type, Core flag, note page, and the attendance roster. A recurring meeting keeps a separate note and roster per occurrence; pass occurrenceStart to pick one (default: the first). Accessible to the organizer, Core members, project members, and any invited attendee.",
+    "Fetch full detail for a scheduled meeting: time, duration, URL, meeting type, Core flag, note page, the attendance roster, and whether the occurrence has a finished transcript. A recurring meeting keeps a separate note and roster per occurrence; pass occurrenceStart to pick one (default: the first). Accessible to the organizer, Core members, project members, and any invited attendee.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -87,6 +87,11 @@ export async function runGetMeeting(callerId: string, input: Input) {
   const key = occurrence.originalStart.getTime();
   const roster = meeting.attendance.filter((a) => a.occurrenceStart.getTime() === key);
 
+  const recordings = await prisma.meetingRecording.findMany({
+    where: { scheduledMeetingId: meeting.id, occurrenceStart: occurrence.originalStart },
+    select: { id: true, status: true },
+  });
+
   const typeLabel =
     meeting.meetingType === "Other"
       ? meeting.meetingTypeLabel ?? "Meeting"
@@ -107,6 +112,8 @@ export async function runGetMeeting(callerId: string, input: Input) {
     projectId: meeting.projectId,
     organizerName: fullName(meeting.organizer),
     notePageId: noteForOccurrence(meeting.notePages, occurrence.originalStart)?.id ?? null,
+    transcriptAvailable: recordings.some((r) => r.status === "Done"),
+    recordingIds: recordings.map((r) => r.id),
     canManage,
     roster: roster.map((a) => ({
       userId: a.userId,

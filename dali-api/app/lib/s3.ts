@@ -4,6 +4,8 @@ import {
   HeadObjectCommand,
   PutObjectCommand,
   DeleteObjectCommand,
+  DeleteObjectsCommand,
+  ListObjectsV2Command,
   NotFound,
 } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
@@ -144,6 +146,36 @@ export async function getDownloadUrl(
 export async function deleteObject(key: string): Promise<void> {
   if (!isS3Configured()) return
   await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key }))
+}
+
+// Every key under a prefix (paginated). Used to find a recording's chunks
+// before processing or deleting them. Not configured → no keys, matching
+// deleteObject's best-effort stance rather than throwing.
+export async function listObjectKeys(prefix: string): Promise<string[]> {
+  if (!isS3Configured()) return []
+  const keys: string[] = []
+  let continuationToken: string | undefined
+  do {
+    const res = await s3.send(
+      new ListObjectsV2Command({ Bucket: BUCKET, Prefix: prefix, ContinuationToken: continuationToken }),
+    )
+    for (const obj of res.Contents ?? []) {
+      if (obj.Key) keys.push(obj.Key)
+    }
+    continuationToken = res.IsTruncated ? res.NextContinuationToken : undefined
+  } while (continuationToken)
+  return keys
+}
+
+// Best-effort batch delete (S3 DeleteObjects caps at 1000 keys per call).
+export async function deleteObjects(keys: string[]): Promise<void> {
+  if (!isS3Configured() || keys.length === 0) return
+  for (let i = 0; i < keys.length; i += 1000) {
+    const batch = keys.slice(i, i + 1000)
+    await s3.send(
+      new DeleteObjectsCommand({ Bucket: BUCKET, Delete: { Objects: batch.map((Key) => ({ Key })) } }),
+    )
+  }
 }
 
 // Read a private object's bytes + stored Content-Type directly (server-side).

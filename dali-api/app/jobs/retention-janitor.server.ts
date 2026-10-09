@@ -35,6 +35,14 @@ export async function runRetentionJanitor({
     where: { sentAt: { lt: cutoff } },
   });
 
+  // Finalized meeting transcripts age out on their own, longer-lived window
+  // (default 365 days) — unrelated to the notification/reminder cutoff above.
+  const transcriptCutoff = new Date(now);
+  transcriptCutoff.setDate(transcriptCutoff.getDate() - settings.meetingTranscriptDays);
+  const meetingRecordings = await prisma.meetingRecording.deleteMany({
+    where: { finalizedAt: { not: null, lt: transcriptCutoff } },
+  });
+
   // Outbound queue: strip rendered bodies/attachments off delivered rows (keep
   // the metadata for the Admin → Communications history), then delete terminal
   // rows past the retention window. Dead rows are LEFT for operator attention.
@@ -58,10 +66,15 @@ export async function runRetentionJanitor({
   });
 
   return {
-    items: notifications.count + taskReminders.count + meetingLogs.count + outboundDeleted.count,
+    items:
+      notifications.count +
+      taskReminders.count +
+      meetingLogs.count +
+      meetingRecordings.count +
+      outboundDeleted.count,
     note:
       `notifications=${notifications.count} taskReminders=${taskReminders.count} ` +
-      `meetingLogs=${meetingLogs.count} outboundStripped=${outboundStripped.count} ` +
-      `outboundDeleted=${outboundDeleted.count}`,
+      `meetingLogs=${meetingLogs.count} meetingRecordings=${meetingRecordings.count} ` +
+      `outboundStripped=${outboundStripped.count} outboundDeleted=${outboundDeleted.count}`,
   };
 }

@@ -1,9 +1,10 @@
 // POST /api/ai/meeting-notes — turns a meeting transcript into notes for the
-// collaborative document it was recorded on. The transcript is transcribed
-// on-device by the desktop app (see api.meeting-recordings.$id), so no audio
-// reaches the server. Requires the `ai-meeting-notes` flag, write access to
-// the document's collab room, and a configured AI provider (503 otherwise). Shares the doc
-// assistant's per-user burst limit and daily quota shape.
+// collaborative document it was recorded on. Accepts either `recordingId`
+// (v2: formats the recording's own lines, with speaker names resolved
+// through its rename map) or the legacy `documentName` + `transcript`
+// string. Requires the `ai-meeting-notes` flag, write access to the
+// document's collab room, and a configured AI provider (503 otherwise).
+// Shares the doc assistant's per-user burst limit and daily quota shape.
 //
 // NEVER log the API key, JWT, cookies, or the transcript.
 
@@ -13,7 +14,7 @@ import { requireAuth } from "~/lib/auth";
 import { generateShortText } from "~/lib/ai.server";
 import { recordTokenUsage } from "~/lib/ai-usage.server";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { canRecordInto, documentTitle } from "~/lib/meeting-recording.server";
+import { canRecordInto, documentTitle, formatRecordingTranscript } from "~/lib/meeting-recording.server";
 import { getUserRoles } from "~/lib/roles";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { prisma } from "~/lib/db";
@@ -70,8 +71,18 @@ export async function action({ request }: Route.ActionArgs) {
     return Response.json({ error: "Invalid JSON" }, { status: 400 });
   }
   const b = (body ?? {}) as Record<string, unknown>;
-  const documentName = typeof b.documentName === "string" ? b.documentName : "";
-  const transcript = typeof b.transcript === "string" ? b.transcript.trim().slice(-TRANSCRIPT_MAX) : "";
+  const recordingId = typeof b.recordingId === "string" ? b.recordingId : "";
+
+  let documentName = typeof b.documentName === "string" ? b.documentName : "";
+  let transcript = typeof b.transcript === "string" ? b.transcript.trim().slice(-TRANSCRIPT_MAX) : "";
+
+  if (recordingId) {
+    const rec = await prisma.meetingRecording.findUnique({ where: { id: recordingId } });
+    if (!rec) return Response.json({ error: "Recording not found" }, { status: 404 });
+    documentName = rec.documentName;
+    transcript = (await formatRecordingTranscript(rec)).slice(-TRANSCRIPT_MAX);
+  }
+
   if (!documentName) return Response.json({ error: "documentName is required" }, { status: 400 });
   if (!transcript) return Response.json({ error: "Nothing was transcribed." }, { status: 400 });
 

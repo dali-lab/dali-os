@@ -1,27 +1,31 @@
-// /api/meeting-recordings/:id — one native recording, owner-only (anyone else
-// gets a 404). Used by two clients with different credentials:
-//   - The page (cookie session): GET to poll the transcript, POST
-//     {action:"stop"} for its Stop button and {action:"resume"} for Continue,
-//     DELETE once the notes are written or the recording is discarded.
-//   - The desktop app (desktop Session Bearer): POST {action:"append", lines,
-//     systemAudio} as phrases are recognized (the reply says whether the page
-//     asked to stop, and the offset to stamp lines from), then
-//     {action:"finish", error?, seconds} when the recorder exits.
-// The app's first append doubles as its check that the link it was handed is
-// really this user's recording: it won't open the microphone on a 404.
+// /api/meeting-recordings/:id — one recording. Used by three audiences:
+//   - The owner (page cookie session, or the desktop app's Session Bearer):
+//     GET for the full state, POST actions (claim/stop/resume/speakers/
+//     finish), DELETE to discard.
+//   - Any other viewer of the note (authorizeCollabDoc): GET a read-only
+//     view, POST {action:"speakers"} (any editor, via canRecordInto).
+//   - Core: DELETE even when not the owner.
+// Old (pre-v2) desktop builds call {action:"append"} and get 410 — the page
+// itself detects a stuck Pending row and tells the user to update.
 //
 // NEVER log transcript text.
 
 import type { Route } from "./+types/api.meeting-recordings.$id";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
+import { isCore } from "~/lib/roles";
+import { deletePrefix } from "~/lib/transcription/chunks.server";
 import {
-  appendLines,
-  cleanLines,
+  canReadRecording,
+  canRecordInto,
+  claimRecording,
+  finalizeEmpty,
   finishRecording,
-  ownRecording,
+  parseSpeakerMap,
   requestStop,
   resumeRecording,
+  setSpeakers,
+  startProcessing,
   storedLines,
 } from "~/lib/meeting-recording.server";
 
@@ -30,29 +34,48 @@ const notFound = () => Response.json({ error: "Not found" }, { status: 404 });
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
-  const rec = await ownRecording(params.id, auth.user.sub);
+  const rec = await prisma.meetingRecording.findUnique({ where: { id: params.id } });
   if (!rec) return notFound();
 
-  // `since` lets the page fetch only lines it hasn't seen.
-  const since = Math.max(0, Number(new URL(request.url).searchParams.get("since")) || 0);
+  const access = await canReadRecording(rec, auth.user.sub);
+  if (!access) return notFound();
+
   const lines = storedLines(rec);
+  if (access === "owner") {
+    const since = Math.max(0, Number(new URL(request.url).searchParams.get("since")) || 0);
+    return Response.json({
+      status: rec.status,
+      stopRequested: rec.stopRequested,
+      channels: rec.channels,
+      segmentStarts: rec.segmentStarts,
+      recordedSeconds: rec.recordedSeconds,
+      error: rec.error,
+      speakers: rec.speakers,
+      total: lines.length,
+      lines: lines.slice(since),
+    });
+  }
+
   return Response.json({
     status: rec.status,
-    systemAudio: rec.systemAudio,
+    lines,
+    speakers: rec.speakers,
+    channels: rec.channels,
     recordedSeconds: rec.recordedSeconds,
-    error: rec.error,
-    total: lines.length,
-    lines: lines.slice(since),
   });
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
-  const rec = await ownRecording(params.id, auth.user.sub);
+  const rec = await prisma.meetingRecording.findUnique({ where: { id: params.id } });
   if (!rec) return notFound();
 
   if (request.method === "DELETE") {
+    if (rec.userId !== auth.user.sub && !(await isCore(auth.user.sub))) {
+      return Response.json({ error: "Forbidden" }, { status: 403 });
+    }
+    await deletePrefix(rec.id);
     await prisma.meetingRecording.delete({ where: { id: rec.id } });
     return Response.json({ ok: true });
   }
@@ -61,17 +84,54 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   const body = ((await request.json().catch(() => null)) ?? {}) as Record<string, unknown>;
-  switch (body.action) {
-    case "append": {
-      const systemAudio = typeof body.systemAudio === "boolean" ? body.systemAudio : undefined;
-      return Response.json(await appendLines(rec, cleanLines(body.lines), systemAudio));
+
+  if (body.action === "append") {
+    return Response.json({ error: "Update the DALI OS app to record." }, { status: 410 });
+  }
+
+  // speakers and inserted are the actions any editor of the note may take;
+  // everything else is owner-only.
+  if (body.action === "speakers" || body.action === "inserted") {
+    if (!(await canRecordInto(auth.user.sub, rec.documentName))) {
+      return Response.json({ error: "Forbidden" }, { status: 403 });
     }
-    case "stop":
-      await requestStop(rec);
+    if (body.action === "inserted") {
+      await prisma.meetingRecording.update({
+        where: { id: rec.id },
+        data: { insertedAt: rec.insertedAt ?? new Date() },
+      });
       return Response.json({ ok: true });
+    }
+    const patch = parseSpeakerMap(body.speakers);
+    if (!patch) return Response.json({ error: "Invalid speakers" }, { status: 400 });
+    await setSpeakers(rec, patch);
+    return Response.json({ ok: true });
+  }
+
+  if (rec.userId !== auth.user.sub) return notFound();
+
+  switch (body.action) {
+    case "claim": {
+      const result = await claimRecording(rec);
+      if (!result.ok) {
+        return Response.json({ error: "This recording can't be claimed." }, { status: 409 });
+      }
+      return Response.json({ offset: result.offset, segment: result.segment });
+    }
+    case "stop": {
+      await requestStop(rec);
+      if (body.final === true) {
+        if (rec.channels.length > 0) {
+          await startProcessing(rec);
+        } else {
+          await finalizeEmpty(rec);
+        }
+      }
+      return Response.json({ ok: true });
+    }
     case "resume":
       if (!(await resumeRecording(rec))) {
-        return Response.json({ error: "This recording is still running." }, { status: 409 });
+        return Response.json({ error: "This recording can't be resumed." }, { status: 409 });
       }
       return Response.json({ ok: true });
     case "finish":

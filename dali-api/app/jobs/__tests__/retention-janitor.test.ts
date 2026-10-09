@@ -15,6 +15,7 @@ beforeEach(() => {
   mockPrisma.notification.deleteMany.mockResolvedValue({ count: 3 });
   mockPrisma.taskReminder.deleteMany.mockResolvedValue({ count: 2 });
   mockPrisma.meetingReminderLog.deleteMany.mockResolvedValue({ count: 1 });
+  mockPrisma.meetingRecording.deleteMany.mockResolvedValue({ count: 0 });
 });
 
 describe("retention-janitor", () => {
@@ -24,7 +25,7 @@ describe("retention-janitor", () => {
     const result = await runRetentionJanitor({
       now,
       lastSuccessAt: null,
-      settings: { retentionMonths: 6 },
+      settings: { retentionMonths: 6, meetingTranscriptDays: 365 },
     });
 
     // setMonth works in local wall time, so the UTC hour can shift across a
@@ -36,7 +37,7 @@ describe("retention-janitor", () => {
     });
     expect(result.items).toBe(6);
     expect(result.note).toBe(
-      "notifications=3 taskReminders=2 meetingLogs=1 outboundStripped=0 outboundDeleted=0",
+      "notifications=3 taskReminders=2 meetingLogs=1 meetingRecordings=0 outboundStripped=0 outboundDeleted=0",
     );
   });
 
@@ -46,7 +47,7 @@ describe("retention-janitor", () => {
     await runRetentionJanitor({
       now,
       lastSuccessAt: null,
-      settings: { retentionMonths: 3 },
+      settings: { retentionMonths: 3, meetingTranscriptDays: 365 },
     });
 
     const cutoff = new Date(now);
@@ -62,5 +63,23 @@ describe("retention-janitor", () => {
     expect(mockPrisma.meetingReminderLog.deleteMany).toHaveBeenCalledWith({
       where: { sentAt: { lt: cutoff } },
     });
+  });
+
+  it("deletes finalized meeting recordings past their own retention window", async () => {
+    const now = new Date("2026-07-15T12:00:00Z");
+    mockPrisma.meetingRecording.deleteMany.mockResolvedValue({ count: 4 });
+
+    const result = await runRetentionJanitor({
+      now,
+      lastSuccessAt: null,
+      settings: { retentionMonths: 6, meetingTranscriptDays: 30 },
+    });
+
+    const cutoff = new Date(now);
+    cutoff.setDate(cutoff.getDate() - 30);
+    expect(mockPrisma.meetingRecording.deleteMany).toHaveBeenCalledWith({
+      where: { finalizedAt: { not: null, lt: cutoff } },
+    });
+    expect(result.note).toContain("meetingRecordings=4");
   });
 });

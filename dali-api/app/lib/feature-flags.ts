@@ -83,7 +83,7 @@ export const FEATURE_FLAGS = [
     key: "ai-meeting-notes",
     label: "AI meeting notes",
     description:
-      "A Record button on meeting-note documents, in the browser or the desktop app. Recording always runs in the DALI OS macOS app: it captures system audio (everyone on a call, macOS 14.2+) and the mic, transcribes on-device with Apple's speech recognition, and streams the transcript to the page. On stop, Claude turns it into a summary, decisions, and action items appended to the note with the full transcript. No audio is uploaded or stored. Needs a desktop release newer than 0.1.6. Without an AI provider it adds the transcript only. Ships off.",
+      "Audio is processed by a GPU job DALI runs, then deleted within minutes of the recording ending. Only the transcript is kept, visible to whoever can see the note.",
   },
   {
     key: "email-personal",

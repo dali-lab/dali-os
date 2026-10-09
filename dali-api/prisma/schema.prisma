@@ -1902,40 +1902,65 @@ model AiUsage {
   @@unique([userId, day])
 }
 
-// A native recording in progress for a collaborative document (any DocEditor
-// room the user can write to). The page creates
-// the row and hands its id to the desktop app over a dalios:// link; the app
-// records system audio and the mic, transcribes on-device, and appends lines
-// here with its desktop Session token. The page polls the lines and, once the
-// recording stops, writes notes into the doc and deletes the row. Transcript
-// text only: no audio ever reaches the server. Rows are owner-only, and a
-// user's stale rows are swept whenever they start a new recording.
+// A browser- or desktop-captured recording for a collaborative document (any
+// DocEditor room the user can write to), batch-transcribed and diarized by
+// the self-hosted dali-asr Modal app once the recording stops. The page (or
+// desktop app) creates the row, PCM chunks land in private S3 under
+// `recordings/<id>/`, and `provider.process()` dispatches the job at Stop.
+// The callback writes `words`/`lines`/`speakers` and the audio is deleted.
+// Rows are owner-written, but reads follow the note's audience (see
+// canReadRecording). A user's stale, never-finalized rows are swept whenever
+// they start a new recording.
 model MeetingRecording {
   id              String                 @id @default(cuid())
   // The collab room the notes land in, e.g. "doc:<pageId>:body".
   documentName    String
   userId          String
   status          MeetingRecordingStatus @default(Pending)
-  // Set by the page's Stop button; the app sees it on its next append.
+  // Set by the page's Stop button; checked by the chunks route response.
   stopRequested   Boolean                @default(false)
-  // Whether the app is capturing system audio (macOS 14.2+) or the mic only.
-  systemAudio     Boolean                @default(false)
-  // [{ at: seconds since start, text, source: "you" | "others" }]
-  lines           Json                   @default("[]")
+
+  // The occurrence this recording belongs to, when started from a scheduled
+  // meeting's note. Nullable: ad-hoc recordings on any writable doc have
+  // neither.
+  scheduledMeetingId String?
+  scheduledMeeting   ScheduledMeeting? @relation(fields: [scheduledMeetingId], references: [id], onDelete: SetNull)
+  occurrenceStart    DateTime?
+
+  // Channels with at least one stored chunk: "mic" | "call".
+  channels      String[] @default([])
+  // Segment start offsets in seconds, index = segment. Continue appends one;
+  // segment 0's start is implicitly 0.
+  segmentStarts Float[]  @default([])
+  // Highest seq stored per channel per segment, for the job description.
+  chunkIndex    Json     @default("{}") // { mic: [41, 12], call: [41] }
+  lastChunkAt   DateTime?
+
+  // Per-channel word arrays with absolute timestamps; lines derive from these.
+  words    Json @default("{}") // { mic: [{ s, e, w, sp }], call: [...] }
+  // [{ at, end, text, channel, speaker? }] speaker is "mic:1", "call:2", …
+  lines    Json @default("[]")
+  speakers Json @default("{}") // { "mic:1": "<userId>" | "Alex" }
+
   // Seconds recorded across finished sessions. Continue starts a new session
-  // whose lines are stamped from here, so the transcript reads as one.
-  recordedSeconds Float                  @default(0)
+  // whose timeline is stamped from here, so the transcript reads as one.
+  recordedSeconds Float     @default(0)
   error           String?
-  createdAt       DateTime               @default(now())
-  updatedAt       DateTime               @updatedAt
+  insertedAt      DateTime? // notes or transcript inserted into the doc
+  finalizedAt     DateTime? // audio deleted
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   @@index([userId])
+  @@index([scheduledMeetingId, occurrenceStart])
 }
 
 enum MeetingRecordingStatus {
   Pending
   Recording
   Stopped
+  Processing
+  Done
   Failed
 }
 
@@ -2486,12 +2511,18 @@ model ScheduledMeeting {
   // shows up there next to the meetings scoped to the Core group itself.
   isCoreMeeting Boolean @default(false)
 
+  // Per-series opt-out for the "Record this meeting?" prompt (notification,
+  // in-page banner, desktop one-tap). Set false by the organizer or Core;
+  // silences all three surfaces for everyone on this series.
+  recordPrompt Boolean @default(true)
+
   exceptions    MeetingException[]
   notifications Notification[]
   reminderLogs  MeetingReminderLog[]
   attendance    MeetingAttendance[]
   timeEntries   TimeEntry[]
   timeProposals MeetingTimeProposal[]
+  recordings    MeetingRecording[]
 
   createdAt DateTime @default(now())
 
@@ -2815,15 +2846,27 @@ enum TimeProposalStatus {
 // A dedicated log (rather than deduping on Notification) because per-user
 // preferences can deliver a reminder by email/DM with no in-app row at all.
 model MeetingReminderLog {
-  id                 String   @id @default(cuid())
+  id                 String      @id @default(cuid())
   scheduledMeetingId String
   occurrenceStart    DateTime
   userId             String
-  sentAt             DateTime @default(now())
+  // Reminder = the existing 15-min-lead meeting.reminder; RecordPrompt = the
+  // "record this meeting?" start notification (PR 2). Distinguishes the two
+  // idempotency keys sharing this ledger. Named MeetingReminderKind, not
+  // ReminderKind, because TaskReminder already owns that enum name
+  // (DayBefore/AtDeadline) — a global namespace collision, not a modeling
+  // choice.
+  kind               MeetingReminderKind @default(Reminder)
+  sentAt             DateTime            @default(now())
 
   meeting ScheduledMeeting @relation(fields: [scheduledMeetingId], references: [id], onDelete: Cascade)
 
-  @@unique([scheduledMeetingId, occurrenceStart, userId])
+  @@unique([scheduledMeetingId, occurrenceStart, userId, kind])
+}
+
+enum MeetingReminderKind {
+  Reminder
+  RecordPrompt
 }
 
 // Per-user calendar preferences. Lazily upserted on first write.
@@ -3437,6 +3480,10 @@ model Project {
   termCount      Int           @default(1)
   status         ProjectStatus @default(Active)
 
+  // Core-only opt-out: hides the Record button and all three "Record this
+  // meeting?" prompts for this project's meetings.
+  recordingPolicy RecordingPolicy @default(Allowed)
+
   // AI "TL;DR" of the project's work status, shown under the Progress-tab
   // status bar. Cached here (shared across viewers) and regenerated only when
   // the underlying work changes — aiTldrInputHash fingerprints the facts the
@@ -3712,6 +3759,11 @@ enum ProjectStatus {
   Active
   Paused
   Archived
+}
+
+enum RecordingPolicy {
+  Allowed
+  Disabled
 }
 
 // Continuing-or-not flag per project per term. Both PM and Partner Relations
