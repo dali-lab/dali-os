@@ -1,0 +1,30 @@
+name: Deploy dali-asr
+
+on:
+  push:
+    branches:
+      - staging
+      - prod
+    paths:
+      - "asr/**"
+
+# Serialize deploys per branch/environment, same reasoning as deploy.yml:
+# a cancelled `modal deploy` mid-flight can leave the app half-updated.
+concurrency:
+  group: deploy-asr-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  deploy-asr:
+    name: Deploy dali-asr (${{ github.ref_name }})
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install modal
+      - run: modal deploy asr/modal_app.py --env ${{ github.ref_name }}
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}

@@ -83,3 +83,13 @@ jobs:
             dali-api/e2e/test-results/
             dali-api/playwright-report/
           retention-days: 7
+
+  test-asr:
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r asr/requirements-dev.txt
+      - run: pytest asr/tests -q
