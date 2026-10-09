@@ -162,6 +162,36 @@ def pcm_duration_seconds(pcm: bytes) -> float:
     return len(pcm) / (SAMPLE_RATE_HZ * BYTES_PER_SAMPLE)
 
 
+# onnx-asr's timestamped result is per SentencePiece token (a leading "▁"
+# marks a word start) with one emission time per token and no end times.
+# A word ends where the next word begins; the last word gets this tail.
+WORD_START = "▁"
+LAST_WORD_TAIL_SECONDS = 0.25
+
+
+def tokens_to_words(tokens: list, timestamps: list) -> list:
+    """SentencePiece tokens + per-token times -> [{start, end, text}]."""
+    words: list = []
+    for token, ts in zip(tokens, timestamps):
+        if token in ("<unk>", "<pad>", "<s>", "</s>", "<blk>", ""):
+            continue
+        # SentencePiece marks word starts with "\u2581"; some tokenizers (the
+        # Parakeet v3 export among them) use a plain leading space instead.
+        starts_word = token.startswith(WORD_START) or token.startswith(" ")
+        piece = token[1:] if starts_word else token
+        if not piece:
+            continue
+        if starts_word or not words:
+            words.append({"start": float(ts), "end": float(ts), "text": piece})
+        else:
+            words[-1]["text"] += piece
+            words[-1]["end"] = float(ts)
+    for i, w in enumerate(words):
+        nxt = words[i + 1]["start"] if i + 1 < len(words) else w["end"] + LAST_WORD_TAIL_SECONDS
+        w["end"] = max(w["end"], nxt) if i + 1 < len(words) else nxt
+    return words
+
+
 def shape_words(raw_words: list, offset_seconds: float) -> list:
     """Model word output -> spec shape {s, e, w}, offset to absolute time."""
     return [
@@ -181,9 +211,31 @@ def speaker_label_to_index(label: str) -> int:
     return int(digits) + 1 if digits else 1
 
 
+# Adjacent turns by the same speaker separated by less than this are one
+# turn; pyannote emits them split at every brief pause or overlap.
+SEGMENT_MERGE_GAP_SECONDS = 0.5
+
+
+def merge_adjacent_segments(raw_segments: list) -> list:
+    """Coalesce consecutive same-speaker segments (model output shape)."""
+    merged: list = []
+    for seg in sorted(raw_segments, key=lambda x: float(x["start"])):
+        last = merged[-1] if merged else None
+        if (
+            last is not None
+            and last["speaker"] == seg["speaker"]
+            and float(seg["start"]) - float(last["end"]) <= SEGMENT_MERGE_GAP_SECONDS
+        ):
+            last["end"] = max(float(last["end"]), float(seg["end"]))
+        else:
+            merged.append({"start": float(seg["start"]), "end": float(seg["end"]), "speaker": seg["speaker"]})
+    return merged
+
+
 def shape_segments(raw_segments: list, offset_seconds: float) -> list:
     """Model diarization output -> spec shape {s, e, speaker}, offset to
-    absolute time."""
+    absolute time. Adjacent same-speaker turns are merged first."""
+    raw_segments = merge_adjacent_segments(raw_segments)
     shaped = []
     for seg in raw_segments:
         speaker = seg["speaker"]

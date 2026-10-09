@@ -51,18 +51,20 @@ Run manually against a real T4, with a local WAV file (never uploads to
 S3):
 
 ```sh
-cd asr && uv run modal run bench.py --wav-path path/to/meeting.wav
+cd asr && uv run modal run --env staging bench.py --wav-path path/to/meeting.wav
 ```
 
 Prints word/segment counts and transcribe/diarize stage timings.
 
-## Known gaps to verify before the first real recording
+## Verified model call shapes (2026-10-09, staging T4)
 
-- `_run_parakeet` assumes onnx-asr's `model.recognize(..., timestamps=True)`
-  returns `result.timestamps` as `(word, start, end)` tuples. Confirm
-  against the installed `onnx-asr` version with `bench.py` — this isn't
-  unit-tested since it needs the real model.
-- `_run_pyannote` assumes `pyannote.audio.Pipeline.__call__` accepts a
-  `{"waveform": tensor, "sample_rate": int}` dict and that
-  `Annotation.itertracks(yield_label=True)` yields `(turn, _, label)`.
-  Same caveat — verify with `bench.py`.
+`bench.py` on pyannote's 30 s two-speaker sample: 81 words, 13 speaker
+segments, transcribe 0.3 s and diarize 9.6 s warm, 22 s including cold
+start and round trip.
+
+- onnx-asr: `load_model(...).with_timestamps().recognize(audio, sample_rate=16000)`
+  returns `tokens` (word starts carry a leading space, not `▁`) and one
+  emission time per token; `pipeline.tokens_to_words` folds them into words.
+- pyannote 4: the pipeline returns a `DiarizeOutput`; `speaker_diarization`
+  is the `Annotation` with `itertracks(yield_label=True)`. Adjacent
+  same-speaker turns are merged in `pipeline.merge_adjacent_segments`.

@@ -1,6 +1,6 @@
 """Manual benchmark: run dali-asr's model calls on a local WAV file.
 
-    cd asr && uv run modal run bench.py --wav-path path/to/meeting.wav
+    cd asr && uv run modal run --env staging bench.py --wav-path path/to/meeting.wav
 
 Converts the WAV to 16 kHz mono s16 PCM locally, then runs Parakeet and
 pyannote on a T4 using the same image as modal_app.py, and prints stage
@@ -18,9 +18,11 @@ from typing import Optional
 
 import modal
 
-from modal_app import _run_parakeet, _run_pyannote, image
+from modal_app import _get_asr_model, _pcm_to_float32, _run_parakeet, _run_pyannote, image
 
-app = modal.App("dali-asr-bench", image=image)
+# The weight-baking build step leaves a copy of modal_app.py in the image;
+# mount the current file over it so the bench runs what is on disk.
+app = modal.App("dali-asr-bench", image=image.add_local_python_source("modal_app"))
 
 
 def _read_wav_as_pcm16k_mono(path: Path) -> bytes:
@@ -45,6 +47,9 @@ def _read_wav_as_pcm16k_mono(path: Path) -> bytes:
 def bench_transcribe(pcm: bytes, max_speakers: Optional[int]) -> dict:
     timings = {}
 
+    raw = _get_asr_model().recognize(_pcm_to_float32(pcm), sample_rate=16000)
+    tokens_head = list(zip((raw.tokens or [])[:12], (raw.timestamps or [])[:12]))
+
     t0 = time.monotonic()
     words = _run_parakeet(pcm)
     timings["transcribe_s"] = round(time.monotonic() - t0, 2)
@@ -53,7 +58,14 @@ def bench_transcribe(pcm: bytes, max_speakers: Optional[int]) -> dict:
     segments = _run_pyannote(pcm, max_speakers)
     timings["diarize_s"] = round(time.monotonic() - t0, 2)
 
-    return {"timings": timings, "word_count": len(words), "segment_count": len(segments)}
+    return {
+        "timings": timings,
+        "word_count": len(words),
+        "segment_count": len(segments),
+        "tokens_head": tokens_head,
+        "words_head": words[:8],
+        "segments_head": segments[:4],
+    }
 
 
 @app.local_entrypoint()
@@ -71,3 +83,6 @@ def main(wav_path: str, local: bool = True, max_speakers: int = 0):
     print(f"words: {result['word_count']}, speaker segments: {result['segment_count']}")
     print(f"transcribe: {result['timings']['transcribe_s']}s, diarize: {result['timings']['diarize_s']}s")
     print(f"total (incl. cold start + roundtrip): {total_s}s")
+    print("first tokens:", result["tokens_head"])
+    print("first words:", result["words_head"])
+    print("first segments:", result["segments_head"])

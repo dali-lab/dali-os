@@ -136,7 +136,9 @@ def _get_asr_model():
         import torch  # noqa: F401
         import onnx_asr
 
-        _asr_model = onnx_asr.load_model(ASR_MODEL_NAME, PARAKEET_DIR, providers=ORT_PROVIDERS)
+        # with_timestamps(): results carry per-token emission times, which
+        # pipeline.tokens_to_words folds into word spans.
+        _asr_model = onnx_asr.load_model(ASR_MODEL_NAME, PARAKEET_DIR, providers=ORT_PROVIDERS).with_timestamps()
     return _asr_model
 
 
@@ -167,8 +169,8 @@ def _run_parakeet(pcm: bytes) -> list:
 
     model = _get_asr_model()
     audio = _pcm_to_float32(pcm)
-    result = model.recognize(audio, sample_rate=pipeline.SAMPLE_RATE_HZ, timestamps=True)
-    return [{"start": start, "end": end, "text": word} for word, start, end in result.timestamps]
+    result = model.recognize(audio, sample_rate=pipeline.SAMPLE_RATE_HZ)
+    return pipeline.tokens_to_words(result.tokens or [], result.timestamps or [])
 
 
 def _run_pyannote(pcm: bytes, max_speakers: Optional[int]) -> list:
@@ -183,7 +185,11 @@ def _run_pyannote(pcm: bytes, max_speakers: Optional[int]) -> list:
     diarization_pipeline = _get_diarization_model()
     waveform = torch.from_numpy(_pcm_to_float32(pcm)).unsqueeze(0)
     kwargs = {"max_speakers": max_speakers} if max_speakers else {}
-    annotation = diarization_pipeline({"waveform": waveform, "sample_rate": pipeline.SAMPLE_RATE_HZ}, **kwargs)
+    output = diarization_pipeline({"waveform": waveform, "sample_rate": pipeline.SAMPLE_RATE_HZ}, **kwargs)
+    # pyannote 4 returns a DiarizeOutput wrapper; 3.x returned the Annotation
+    # itself. The plain track (not the exclusive one, which fragments turns
+    # at every overlap); overlaps resolve at word assignment time.
+    annotation = getattr(output, "speaker_diarization", None) or output
 
     return [
         {"start": turn.start, "end": turn.end, "speaker": speaker_label}
