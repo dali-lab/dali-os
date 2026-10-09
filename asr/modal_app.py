@@ -84,12 +84,14 @@ image = (
         "httpx",
         "numpy",
     )
-    .add_local_python_source("pipeline")
     .run_function(
         _bake_model_weights,
         secrets=[modal.Secret.from_name("huggingface")],
         gpu="T4",
     )
+    # Local sources go last: Modal mounts them at container start instead of
+    # rebuilding the (GPU, weight-baking) image on every edit to pipeline.py.
+    .add_local_python_source("pipeline")
 )
 
 app = modal.App(APP_NAME, image=image)
