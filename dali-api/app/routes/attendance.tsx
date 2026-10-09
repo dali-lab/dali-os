@@ -104,7 +104,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   // resolve it here per event rather than letting the roster offer an editor
   // the action would only reject. One membership query covers every event.
   const [core, assignments] = await Promise.all([
-    isCore(userId),
+    isCore(userId, request),
     prisma.projectAssignment.findMany({
       where: { userId },
       select: { projectId: true },

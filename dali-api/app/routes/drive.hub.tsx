@@ -111,12 +111,25 @@ export async function loader({ request }: Route.LoaderArgs) {
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return partnerRedirect;
 
-  const roles = await getUserRoles(auth.user.sub, request);
+  // /hiring/library is this same hub, opened on the hiring folder set. Hiring
+  // is no longer a drive space of its own — its folders are Core-group-scoped,
+  // so they live inside Core — which means the embed needs the folder's id
+  // rather than a scope name. Resolved from the binding, so renaming or
+  // repointing the folder keeps the Library pointing at the right place.
+  // Depends only on the request's pathname, so it joins this first wave
+  // alongside the other two request-scoped, mutually independent lookups.
+  const isHiringLibrary = new URL(request.url).pathname.startsWith("/hiring/library");
+  const [roles, termFilter, hiringLibraryFolderId] = await Promise.all([
+    getUserRoles(auth.user.sub, request),
+    resolveTermFilter(request),
+    isHiringLibrary
+      ? getBoundFolderId("HiringCycle", HIRING_PROCESS_ID, "hiring-forms")
+      : Promise.resolve(null),
+  ]);
   // isCore is the gate for agreement authoring. Passed down as canManageAgreements
   // so drive.server.ts doesn't re-derive it (matches the canViewForms pattern).
   const userCanViewForms = roles.canViewForms;
   const userCanManageAgreements = roles.isCore;
-  const termFilter = await resolveTermFilter(request);
 
   // Load only the project list needed to build Drive scopes — same access
   // filter as documents.hub: Core sees all projects; others see only projects
@@ -125,14 +138,30 @@ export async function loader({ request }: Route.LoaderArgs) {
   // hub; "All terms" drops the gate so older drives stay reachable. My Drive /
   // General / Core are never term-filtered.
   const termId = termFilter.isAll ? null : termFilter.termId;
-  const rawProjects = await prisma.project.findMany({
-    where: {
-      ...(termId ? { projectTerms: { some: { termId } } } : {}),
-      ...(roles.isCore ? {} : { assignments: { some: { userId: auth.user.sub } } }),
-    },
-    orderBy: [{ status: "asc" }, { name: "asc" }],
-    select: { id: true, name: true, iconEmoji: true },
-  });
+  // rawProjects and termWindow don't depend on each other — both only need
+  // termId/roles — so they run as one wave instead of two round-trips.
+  const [rawProjects, termWindow] = await Promise.all([
+    prisma.project.findMany({
+      where: {
+        ...(termId ? { projectTerms: { some: { termId } } } : {}),
+        ...(roles.isCore ? {} : { assignments: { some: { userId: auth.user.sub } } }),
+      },
+      orderBy: [{ status: "asc" }, { name: "asc" }],
+      select: { id: true, name: true, iconEmoji: true },
+    }),
+    // Education workspaces. Access rule mirrors pageAccess.server: Core sees
+    // all offerings; non-Core sees offerings where they are an instructor
+    // (any term) OR have an Approved application. Offerings don't store a
+    // term — one belongs to the selected term when its run starts inside
+    // that term's date window — so the term gate is a date range on
+    // `startsAt`, not the instructor-assignment term.
+    termId
+      ? prisma.term.findUnique({
+          where: { id: termId },
+          select: { startDate: true, endDate: true },
+        })
+      : null,
+  ]);
   const projectWorkspaces = rawProjects.map((p) => ({
     key: p.id,
     label: p.name,
@@ -140,18 +169,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     projectIconEmoji: p.iconEmoji,
   }));
 
-  // Education workspaces. Access rule mirrors pageAccess.server: Core sees all
-  // offerings; non-Core sees offerings where they are an instructor (any term)
-  // OR have an Approved application. Offerings don't store a term — one belongs
-  // to the selected term when its run starts inside that term's date window —
-  // so the term gate is a date range on `startsAt`, not the instructor-
-  // assignment term.
-  const termWindow = termId
-    ? await prisma.term.findUnique({
-        where: { id: termId },
-        select: { startDate: true, endDate: true },
-      })
-    : null;
   const startsInTerm = termWindow
     ? { startsAt: { gte: termWindow.startDate, lte: termWindow.endDate } }
     : {};
@@ -185,15 +202,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     label: o.title,
     kind: "education" as const,
   }));
-
-  // /hiring/library is this same hub, opened on the hiring folder set. Hiring
-  // is no longer a drive space of its own — its folders are Core-group-scoped,
-  // so they live inside Core — which means the embed needs the folder's id
-  // rather than a scope name. Resolved from the binding, so renaming or
-  // repointing the folder keeps the Library pointing at the right place.
-  const hiringLibraryFolderId = new URL(request.url).pathname.startsWith("/hiring/library")
-    ? await getBoundFolderId("HiringCycle", HIRING_PROCESS_ID, "hiring-forms")
-    : null;
 
   const driveScopes = await loadDriveScopes({
     userSub: auth.user.sub,

@@ -26,7 +26,7 @@ const compact = new Intl.NumberFormat("en", {
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  if (!(await isCore(auth.user.sub))) return redirect("/");
+  if (!(await isCore(auth.user.sub, request))) return redirect("/");
 
   const dayUtc = new Date().toISOString().slice(0, 10);
   const now = Date.now();

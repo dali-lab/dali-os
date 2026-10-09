@@ -22,6 +22,7 @@
 import { prisma } from "~/lib/db";
 import { getPageAccess, getPageAccessBulk } from "~/lib/pageAccess.server";
 import { canViewFile } from "~/lib/fileAccess.server";
+import type { Prisma } from "~/generated/prisma/client";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -271,42 +272,55 @@ async function loadLabPages(userSub: string, request?: Request): Promise<DriveIt
  *  to the whole team even though the folder itself denies them. A workspace
  *  with no scoped folder (the common case) pays one cheap existence query and
  *  behaves exactly as before. */
+/**
+ * Select shape for `loadProjectPages`, exported so the project route loader
+ * can widen its own Stage 2 `pageRows` query (by spreading this object) and
+ * pass the result back in as `preloaded` — one query instead of two for the
+ * same project on every project page load.
+ */
+export const PROJECT_PAGE_SELECT = {
+  id: true,
+  title: true,
+  kind: true,
+  parentPageId: true,
+  iconEmoji: true,
+  updatedAt: true,
+  partnerVisible: true,
+  // Only read by the scoped branch below; cheap to carry either way, and it
+  // saves getPageAccessBulk re-fetching every row.
+  workspaceType: true,
+  workspaceId: true,
+  archivedAt: true,
+  createdById: true,
+  profileVisible: true,
+  labListing: true,
+  linkAccess: true,
+  linkPermission: true,
+  scopeKind: true,
+  scopeGroupId: true,
+  scopePermission: true,
+} as const;
+
+export type ProjectPageRow = Prisma.PageGetPayload<{ select: typeof PROJECT_PAGE_SELECT }>;
+
 async function loadProjectPages(
   projectId: string,
   userSub: string,
   request?: Request,
+  preloaded?: ProjectPageRow[],
 ): Promise<DriveItem[]> {
-  const rows = await prisma.page.findMany({
-    where: {
-      workspaceType: "Project",
-      workspaceId: projectId,
-      archivedAt: null,
-      kind: { in: ["Folder", "FreeForm", "Structured", "Whiteboard"] },
-    },
-    orderBy: { position: "asc" },
-    select: {
-      id: true,
-      title: true,
-      kind: true,
-      parentPageId: true,
-      iconEmoji: true,
-      updatedAt: true,
-      partnerVisible: true,
-      // Only read by the scoped branch below; cheap to carry either way, and it
-      // saves getPageAccessBulk re-fetching every row.
-      workspaceType: true,
-      workspaceId: true,
-      archivedAt: true,
-      createdById: true,
-      profileVisible: true,
-      labListing: true,
-      linkAccess: true,
-      linkPermission: true,
-      scopeKind: true,
-      scopeGroupId: true,
-      scopePermission: true,
-    },
-  });
+  const rows =
+    preloaded ??
+    (await prisma.page.findMany({
+      where: {
+        workspaceType: "Project",
+        workspaceId: projectId,
+        archivedAt: null,
+        kind: { in: ["Folder", "FreeForm", "Structured", "Whiteboard"] },
+      },
+      orderBy: { position: "asc" },
+      select: PROJECT_PAGE_SELECT,
+    }));
 
   const visible = await filterScoped(rows, userSub, request);
 
@@ -572,25 +586,37 @@ async function loadLabFiles(userSub: string, request?: Request): Promise<DriveIt
  *  handles Core files. Without that, scoping a project folder to "Only people
  *  you add" hid the folder but kept listing the files inside it to the whole
  *  team. The per-file check only runs for files actually in a scoped folder. */
+/**
+ * Select shape for `loadFiles`, exported so the project route loader can
+ * widen its own Stage 2 `fileRows` query (by spreading this object) and pass
+ * the result back in as `preloaded` — same rationale as `PROJECT_PAGE_SELECT`.
+ */
+export const PROJECT_FILE_SELECT = {
+  id: true,
+  title: true,
+  folderPageId: true,
+  projectId: true,
+  updatedAt: true,
+  partnerVisible: true,
+  currentVersion: { select: { sizeBytes: true } },
+} as const;
+
+export type ProjectFileRow = Prisma.ProjectFileGetPayload<{ select: typeof PROJECT_FILE_SELECT }>;
+
 async function loadFiles(
   projectIds: string[],
   userSub: string,
   request?: Request,
+  preloaded?: ProjectFileRow[],
 ): Promise<DriveItem[]> {
   if (projectIds.length === 0) return [];
-  const rows = await prisma.projectFile.findMany({
-    where: { projectId: { in: projectIds }, archivedAt: null },
-    orderBy: { updatedAt: "desc" },
-    select: {
-      id: true,
-      title: true,
-      folderPageId: true,
-      projectId: true,
-      updatedAt: true,
-      partnerVisible: true,
-      currentVersion: { select: { sizeBytes: true } },
-    },
-  });
+  const rows =
+    preloaded ??
+    (await prisma.projectFile.findMany({
+      where: { projectId: { in: projectIds }, archivedAt: null },
+      orderBy: { updatedAt: "desc" },
+      select: PROJECT_FILE_SELECT,
+    }));
 
   // Memoised per folder: every file in the same folder gets the same answer,
   // and a file at the project root skips the walk entirely.
@@ -916,6 +942,21 @@ export interface LoadDriveScopeOptions {
    */
   preloadedForms?: DriveItem[];
   /**
+   * Pre-fetched Page rows for a Project-scope load, in the exact shape
+   * `loadProjectPages` selects (`PROJECT_PAGE_SELECT`). When provided,
+   * `loadDriveScope` skips its own `prisma.page.findMany` for the Project
+   * branch — callers (e.g. the project route loader) that already fetch
+   * these rows for their own page avoid a second identical query. Ignored
+   * for non-Project scopes.
+   */
+  preloadedProjectPages?: ProjectPageRow[];
+  /**
+   * Pre-fetched ProjectFile rows for a Project-scope load, in the exact
+   * shape `loadFiles` selects (`PROJECT_FILE_SELECT`). Same rationale as
+   * `preloadedProjectPages`. Ignored for non-Project scopes.
+   */
+  preloadedProjectFiles?: ProjectFileRow[];
+  /**
    * Signal ②: pre-built map of item-id → process linkage, built once per Drive
    * load by `buildLinkedProcessMap()`. When omitted (non-managed scopes) no
    * process pills are rendered.
@@ -943,6 +984,8 @@ export async function loadDriveScope({
   canManageAgreements = false,
   request,
   preloadedForms,
+  preloadedProjectPages,
+  preloadedProjectFiles,
   linkedProcessMap,
 }: LoadDriveScopeOptions): Promise<DriveItem[]> {
   if (scope.kind === "Member") {
@@ -993,8 +1036,8 @@ export async function loadDriveScope({
   // on project access — we don't re-check membership here; the route loader
   // must enforce it before calling loadDriveScope).
   const [pages, files] = await Promise.all([
-    loadProjectPages(projectId, userSub, request),
-    loadFiles([projectId], userSub, request),
+    loadProjectPages(projectId, userSub, request, preloadedProjectPages),
+    loadFiles([projectId], userSub, request, preloadedProjectFiles),
   ]);
   // Use preloaded forms when the caller has already fetched them (avoids a
   // repeated full-table scan when loadDriveScopes pre-fetches all at once).

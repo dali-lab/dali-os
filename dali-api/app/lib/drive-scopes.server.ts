@@ -3,7 +3,7 @@
 // the client bundle (*.server.ts convention enforced by client-bundle-leak test).
 
 import { loadDriveScope, loadForms, loadOrphanForms, buildLinkedProcessMap } from "~/lib/drive.server";
-import type { DriveItem } from "~/lib/drive.server";
+import type { DriveItem, ProjectPageRow, ProjectFileRow } from "~/lib/drive.server";
 import { prisma } from "~/lib/db";
 import { requireAuth, isImpersonating } from "~/lib/auth";
 import { favoritePageIds } from "~/lib/user-pages.server";
@@ -468,18 +468,25 @@ export async function loadProjectDriveScope({
   projectName,
   projectIconEmoji,
   request,
+  preloadedProjectPages,
+  preloadedProjectFiles,
 }: {
   userSub: string;
   projectId: string;
   projectName: string;
   projectIconEmoji: string | null;
   request: Request;
+  /** Rows the caller already fetched in `PROJECT_PAGE_SELECT` / `PROJECT_FILE_SELECT` shape. */
+  preloadedProjectPages?: ProjectPageRow[];
+  preloadedProjectFiles?: ProjectFileRow[];
 }): Promise<DriveTreeScope> {
   const items: DriveItem[] = await loadDriveScope({
     userSub,
     scope: { kind: "Project", projectId },
     canViewForms: false,
     request,
+    preloadedProjectPages,
+    preloadedProjectFiles,
   });
 
   return {

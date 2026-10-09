@@ -54,15 +54,17 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return redirectToLogin(request);
   if (auth.user.type === "applicant") return redirect("/portal");
 
-  const roles = await getUserRoles(auth.user.sub);
-  const { isCore, isAdmin, isDomainLead, isInterviewer } = roles;
-
   // Reviewer assignments across all cycles — used both to decide which cycles
-  // a reviewer can see and to scope domains within the selected cycle.
-  const reviewerRows = await prisma.cycleReviewer.findMany({
-    where: { userId: auth.user.sub },
-    select: { applicationCycleId: true, domainId: true },
-  });
+  // a reviewer can see and to scope domains within the selected cycle. Doesn't
+  // depend on `roles`, so it runs alongside it instead of after.
+  const [roles, reviewerRows] = await Promise.all([
+    getUserRoles(auth.user.sub, request),
+    prisma.cycleReviewer.findMany({
+      where: { userId: auth.user.sub },
+      select: { applicationCycleId: true, domainId: true },
+    }),
+  ]);
+  const { isCore, isAdmin, isDomainLead, isInterviewer } = roles;
 
   // Hard gate: a user with no hiring role at all (not Core/Admin/DomainLead and
   // a reviewer/interviewer on no cycle) has no business here — send them home
@@ -147,66 +149,69 @@ export async function loader({ request }: Route.LoaderArgs) {
     ? allCycleDomainIds
     : reviewerDomainIdsThisCycle;
 
-  // Domain filter options — the domains this user can see for the selected
-  // cycle, with display names. Drives the (client-side) domain dropdown,
-  // shown whenever there's more than one domain to choose between.
-  const domainOptions = visibleDomainIds.length
-    ? (
-        await prisma.domain.findMany({
-          where: { id: { in: visibleDomainIds } },
-          orderBy: { displayName: "asc" },
-          select: { id: true, displayName: true },
-        })
-      ).map((d) => ({ id: d.id, name: d.displayName }))
-    : [];
-
   // Core and domain leads get the pipeline pie, so their rows carry the
   // relations stage inference needs.
   const showPipeline = isCore || isDomainLead;
 
-  // DomainApplications for the selected cycle, scoped to visible domains.
-  // Standard cycles link Domain via challengeVersion; Fellowship links
-  // Domain directly — match whichever path is set (mirrors reviewer route).
-  const domainApps = visibleDomainIds.length
-    ? await prisma.domainApplication.findMany({
-        where: {
-          application: { applicationCycleId: selected.id },
-          selected: true,
-          domainId: { in: visibleDomainIds },
-        },
-        select: {
-          id: true,
-          domainId: true,
-          domain: { select: { displayName: true } },
-          application: {
-            select: {
-              id: true,
-              user: {
-                select: { id: true, firstName: true, lastName: true, daliEmail: true, dartmouthEmail: true },
-              },
-              // Status is event-sourced via ApplicationStatusUpdate; the
-              // newest row is the current status. We also grab the most
-              // recent "Submitted" event's timestamp for the Submitted column.
-              statusUpdates: {
-                orderBy: { createdAt: "desc" },
-                select: { newStatus: true, createdAt: true },
-              },
-            },
+  // Domain filter options and the DomainApplications for the selected cycle
+  // both depend only on `visibleDomainIds` (not on each other), so they run
+  // together.
+  const [domainOptionRows, domainApps] = await Promise.all([
+    // Domain filter options — the domains this user can see for the selected
+    // cycle, with display names. Drives the (client-side) domain dropdown,
+    // shown whenever there's more than one domain to choose between.
+    visibleDomainIds.length
+      ? prisma.domain.findMany({
+          where: { id: { in: visibleDomainIds } },
+          orderBy: { displayName: "asc" },
+          select: { id: true, displayName: true },
+        })
+      : [],
+    // DomainApplications for the selected cycle, scoped to visible domains.
+    // Standard cycles link Domain via challengeVersion; Fellowship links
+    // Domain directly — match whichever path is set (mirrors reviewer route).
+    visibleDomainIds.length
+      ? prisma.domainApplication.findMany({
+          where: {
+            application: { applicationCycleId: selected.id },
+            selected: true,
+            domainId: { in: visibleDomainIds },
           },
-          _count: { select: { reviews: true } },
-          ...(showPipeline && {
-            closureReason: true,
-            decisions: { orderBy: { createdAt: "desc" as const } },
-            interviews: {
-              where: {
-                status: { in: ["Scheduled", "Completed", "CancelledByApplicant"] as const },
+          select: {
+            id: true,
+            domainId: true,
+            domain: { select: { displayName: true } },
+            application: {
+              select: {
+                id: true,
+                user: {
+                  select: { id: true, firstName: true, lastName: true, daliEmail: true, dartmouthEmail: true },
+                },
+                // Status is event-sourced via ApplicationStatusUpdate; the
+                // newest row is the current status. We also grab the most
+                // recent "Submitted" event's timestamp for the Submitted column.
+                statusUpdates: {
+                  orderBy: { createdAt: "desc" },
+                  select: { newStatus: true, createdAt: true },
+                },
               },
-              orderBy: { createdAt: "desc" as const },
             },
-          }),
-        },
-      })
-    : [];
+            _count: { select: { reviews: true } },
+            ...(showPipeline && {
+              closureReason: true,
+              decisions: { orderBy: { createdAt: "desc" as const } },
+              interviews: {
+                where: {
+                  status: { in: ["Scheduled", "Completed", "CancelledByApplicant"] as const },
+                },
+                orderBy: { createdAt: "desc" as const },
+              },
+            }),
+          },
+        })
+      : [],
+  ]);
+  const domainOptions = domainOptionRows.map((d) => ({ id: d.id, name: d.displayName }));
 
   // Blind review applies here the same way it does on the applicant-detail
   // pages: everyone (Core, Admin, leads, reviewers) sees "Applicant N" until
@@ -215,50 +220,58 @@ export async function loader({ request }: Route.LoaderArgs) {
   // application's selected DomainApplications is looked up separately from
   // the (possibly domain-filtered) `domainApps` rows above.
   const applicationIds = [...new Set(domainApps.map((da) => da.application.id))];
-  const daIdsByApplication = new Map<string, string[]>();
-  if (applicationIds.length > 0) {
-    const allSelectedDas = await prisma.domainApplication.findMany({
-      where: { applicationId: { in: applicationIds }, selected: true },
-      select: { id: true, applicationId: true },
-    });
-    for (const row of allSelectedDas) {
-      const arr = daIdsByApplication.get(row.applicationId) ?? [];
-      arr.push(row.id);
-      daIdsByApplication.set(row.applicationId, arr);
-    }
-  }
-  const blindLabels = await applicationBlindLabelsForCycle({
-    cycleId: selected.id,
-    anonymizeReview: selected.anonymizeReview,
-    applications: [...daIdsByApplication.entries()].map(([id, daIds]) => ({ id, daIds })),
-  });
 
   // Engagement signals for the filter panel: one grouped lookup each, keyed
   // on the applicant's User id, which blinding leaves intact.
   const applicantUserIds = [...new Set(domainApps.map((da) => da.application.user.id))];
-  const [priorRows, emailRows, educationRows] = applicantUserIds.length
-    ? await Promise.all([
-        prisma.application.findMany({
-          where: {
-            userId: { in: applicantUserIds },
-            applicationCycleId: { not: selected.id },
-            statusUpdates: { some: { newStatus: "Submitted" } },
-          },
-          select: { userId: true },
-          distinct: ["userId"],
-        }),
-        prisma.mailMessageIndex.findMany({
-          where: { linkedUserId: { in: applicantUserIds } },
-          select: { linkedUserId: true },
-          distinct: ["linkedUserId"],
-        }),
-        prisma.educationApplication.findMany({
-          where: { applicantUserId: { in: applicantUserIds }, status: "Approved" },
-          select: { applicantUserId: true },
-          distinct: ["applicantUserId"],
-        }),
-      ])
-    : [[], [], []];
+
+  // Both of these derive only from `domainApps` (not from each other), so the
+  // blind-label lookup and the engagement-signal queries run concurrently
+  // instead of one after the other.
+  const [blindLabels, [priorRows, emailRows, educationRows]] = await Promise.all([
+    (async () => {
+      const daIdsByApplication = new Map<string, string[]>();
+      if (applicationIds.length > 0) {
+        const allSelectedDas = await prisma.domainApplication.findMany({
+          where: { applicationId: { in: applicationIds }, selected: true },
+          select: { id: true, applicationId: true },
+        });
+        for (const row of allSelectedDas) {
+          const arr = daIdsByApplication.get(row.applicationId) ?? [];
+          arr.push(row.id);
+          daIdsByApplication.set(row.applicationId, arr);
+        }
+      }
+      return applicationBlindLabelsForCycle({
+        cycleId: selected.id,
+        anonymizeReview: selected.anonymizeReview,
+        applications: [...daIdsByApplication.entries()].map(([id, daIds]) => ({ id, daIds })),
+      });
+    })(),
+    applicantUserIds.length
+      ? Promise.all([
+          prisma.application.findMany({
+            where: {
+              userId: { in: applicantUserIds },
+              applicationCycleId: { not: selected.id },
+              statusUpdates: { some: { newStatus: "Submitted" } },
+            },
+            select: { userId: true },
+            distinct: ["userId"],
+          }),
+          prisma.mailMessageIndex.findMany({
+            where: { linkedUserId: { in: applicantUserIds } },
+            select: { linkedUserId: true },
+            distinct: ["linkedUserId"],
+          }),
+          prisma.educationApplication.findMany({
+            where: { applicantUserId: { in: applicantUserIds }, status: "Approved" },
+            select: { applicantUserId: true },
+            distinct: ["applicantUserId"],
+          }),
+        ])
+      : Promise.resolve([[], [], []]),
+  ]);
   const returningUserIds = new Set(priorRows.map((r) => r.userId));
   const emailedUserIds = new Set(emailRows.map((r) => r.linkedUserId));
   const educatedUserIds = new Set(educationRows.map((r) => r.applicantUserId));

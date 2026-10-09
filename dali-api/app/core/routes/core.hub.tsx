@@ -80,7 +80,9 @@ export async function loader({ request }: Route.LoaderArgs) {
     return redirect("/");
   }
 
-  const [rows, domains, coreIds, term] = await Promise.all([
+  // isAdmin doesn't depend on anything else here (just the viewer id), so it
+  // joins this wave instead of being awaited inline in the return below.
+  const [rows, domains, coreIds, term, admin] = await Promise.all([
     prisma.coreMilestone.findMany({
       orderBy: [{ position: "asc" }, { createdAt: "asc" }],
       select: {
@@ -102,6 +104,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     }),
     currentCoreIds(request),
     currentTerm(request),
+    isAdmin(auth.user.sub),
   ]);
   const current = term ? { season: term.season, week: termWeek(term.startDate, new Date()) } : null;
 
@@ -112,7 +115,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   });
 
   return {
-    isAdmin: await isAdmin(auth.user.sub),
+    isAdmin: admin,
     current,
     domains: domains.map((d) => ({ id: d.id, name: d.displayName })),
     coreMembers: coreMembers.map((u) => ({ id: u.id, name: fullName(u) })),
