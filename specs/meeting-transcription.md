@@ -137,7 +137,7 @@ Input:
 ```json
 { "recordingId": "…", "callbackUrl": "…",
   "channels": [
-    { "channel": "mic",  "segments": [{ "startSeconds": 0, "chunks": [{ "seq": 0, "url": "…" }, …] }], "maxSpeakers": 1 },
+    { "channel": "mic",  "segments": [{ "startSeconds": 0, "chunks": [{ "seq": 0, "url": "…" }, …] }] },
     { "channel": "call", "segments": [ … ] }
   ] }
 ```
@@ -145,9 +145,10 @@ Input:
 Per channel: fetch chunks in order, concatenate PCM per segment (gaps where a
 `seq` is missing are filled with silence of the right length so timestamps stay
 absolute), run Parakeet for words with timestamps offset by `startSeconds`, run
-pyannote for `[{ s, e, speaker }]`. The mic channel in a call with `call`
-audio present gets `maxSpeakers = 1`; in-person recordings pass the roster size
-as `max_speakers` when known.
+pyannote for `[{ s, e, speaker }]`. Neither channel is capped: in a hybrid
+meeting several people share the recording laptop's mic, so it is diarized the
+same as the call side and the UI shows "You" only when one voice is found.
+`maxSpeakers` stays in the request schema for a future roster-size hint.
 
 Output, via callback:
 
@@ -536,7 +537,8 @@ additive:
 
 1. Language: nothing to configure; Parakeet v3 detects it.
 2. Voice enrollment: later.
-3. Diarize both channels; mic capped to one speaker when call audio exists.
+3. Diarize both channels, no speaker cap on either (the mic cap hid in-person
+   speakers in hybrid meetings; dropped Oct 10).
 4. Transcript retention: 365 days via `retention-janitor`.
 5. Record prompt audience: organizer only for the notification; any editor for
    the in-page banner.
