@@ -61,19 +61,21 @@ async function resolvePageSeed(documentName: string): Promise<{
   pageId: string | null;
   seededFromPageId: string | null;
   seededTemplateHash: string | null;
+  projectId: string | null;
 }> {
   const [entity, pageId] = documentName.split(":");
   if (entity !== "doc" || !pageId) {
-    return { pageId: null, seededFromPageId: null, seededTemplateHash: null };
+    return { pageId: null, seededFromPageId: null, seededTemplateHash: null, projectId: null };
   }
   const page = await prisma.page.findUnique({
     where: { id: pageId },
-    select: { seededFromPageId: true, seededTemplateHash: true },
+    select: { seededFromPageId: true, seededTemplateHash: true, workspaceType: true, workspaceId: true },
   });
   return {
     pageId,
     seededFromPageId: page?.seededFromPageId ?? null,
     seededTemplateHash: page?.seededTemplateHash ?? null,
+    projectId: page?.workspaceType === "Project" ? page.workspaceId : null,
   };
 }
 
@@ -98,7 +100,7 @@ export async function runEnhanceMeetingNotes(ctx: McpCtx, input: Input) {
     throw new McpError("Too many requests. Try again shortly.", 429);
   }
 
-  const { pageId, seededFromPageId, seededTemplateHash } = await resolvePageSeed(rec.documentName);
+  const { pageId, seededFromPageId, seededTemplateHash, projectId } = await resolvePageSeed(rec.documentName);
 
   if (!input.apply) {
     const liveBlocks = await readDocAsBlocks(rec.documentName);
@@ -138,7 +140,12 @@ export async function runEnhanceMeetingNotes(ctx: McpCtx, input: Input) {
     blocksToPlainText(liveBlocks),
   );
   const { ops } = applyEnhancePlan(stored.snapshot, currentTop, stored.plan, { untouchedTemplate });
-  const merged = applyEnhanceOpsToDocBlocks(ops, liveBlocks, { pageId, recordingId: rec.id });
+  const merged = applyEnhanceOpsToDocBlocks(ops, liveBlocks, {
+    pageId,
+    recordingId: rec.id,
+    actionItems: stored.plan.actionItems,
+    projectId,
+  });
 
   const { roster } = await resolveMeetingEnhanceContext(rec);
   // All recordings are v2 (ai-meeting-notes was off before this release), so

@@ -146,3 +146,70 @@ describe("POST /api/ai/meeting-notes/enhance", () => {
     expect(generateShortText).not.toHaveBeenCalled();
   });
 });
+
+// A re-run (Enhance again) stores a fresh plan with no taskIds — Create tasks
+// would otherwise duplicate every task already made for the previous plan
+// (specs/meeting-notes-model.md §5).
+describe("carrying a taskId forward across a re-run", () => {
+  const ACTION_ITEM_JSON = JSON.stringify({
+    blocks: [{ id: "b1", op: "keep" }],
+    actionItems: [{ text: "Send the revised scope", cites: [1] }],
+  });
+
+  // vi.clearAllMocks() (the file's own beforeEach) clears call history but not
+  // a mockResolvedValue set by an earlier test — reset explicitly so these
+  // tests don't leak into each other.
+  beforeEach(() => {
+    vi.mocked(prisma.task.findMany).mockResolvedValue([] as never);
+  });
+
+  it("matches the previous plan's item by normalized text, even with an owner prefix", async () => {
+    vi.mocked(generateShortText).mockResolvedValue({ text: ACTION_ITEM_JSON, inputTokens: 1, outputTokens: 1 });
+    vi.mocked(prisma.meetingRecording.findUnique).mockResolvedValue({
+      id: "rec1",
+      documentName: DOC,
+      userId: "u1",
+      scheduledMeetingId: null,
+      occurrenceStart: null,
+      createdAt: new Date("2026-10-10T00:00:00Z"),
+      notes: {
+        plan: {
+          blocks: [],
+          actionItems: [{ text: "Ada: Send the revised scope", cites: [1], taskId: "task-old" }],
+        },
+        verified: { droppedCites: 0, droppedBlocks: 0, unmatchedOwners: 0 },
+        snapshotAt: "2026-10-09T00:00:00.000Z",
+        snapshot: [],
+      },
+    } as never);
+    vi.mocked(prisma.task.findMany).mockResolvedValue([] as never);
+
+    const res = await run(BODY);
+    const json = await res.json();
+    expect(json.plan.actionItems[0]).toMatchObject({ taskId: "task-old" });
+  });
+
+  it("falls back to an existing Task from this recording whose title matches, when no previous plan item does", async () => {
+    vi.mocked(generateShortText).mockResolvedValue({ text: ACTION_ITEM_JSON, inputTokens: 1, outputTokens: 1 });
+    vi.mocked(prisma.task.findMany).mockResolvedValue([
+      { id: "task-existing", title: "Send the revised scope" },
+    ] as never);
+
+    const res = await run(BODY);
+    const json = await res.json();
+    expect(json.plan.actionItems[0]).toMatchObject({ taskId: "task-existing" });
+    expect(prisma.task.findMany).toHaveBeenCalledWith({
+      where: { sourceRecordingId: "rec1" },
+      select: { id: true, title: true },
+    });
+  });
+
+  it("leaves taskId unset when nothing matches", async () => {
+    vi.mocked(generateShortText).mockResolvedValue({ text: ACTION_ITEM_JSON, inputTokens: 1, outputTokens: 1 });
+    vi.mocked(prisma.task.findMany).mockResolvedValue([] as never);
+
+    const res = await run(BODY);
+    const json = await res.json();
+    expect(json.plan.actionItems[0].taskId).toBeUndefined();
+  });
+});

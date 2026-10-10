@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyEnhancePlan, type EnhancePlan, type SnapshotBlock } from "./enhance-plan";
+import { actionItemMatchesBlock, applyEnhancePlan, type EnhancePlan, type SnapshotBlock } from "./enhance-plan";
 
 const block = (id: string, type: string, text: string): SnapshotBlock => ({ id, type, text });
 
@@ -264,5 +264,40 @@ describe("applyEnhancePlan", () => {
     const result = applyEnhancePlan(snapshot, current, plan);
 
     expect(result.ops).toEqual([]);
+  });
+});
+
+describe("actionItemMatchesBlock", () => {
+  it("matches identical text", () => {
+    expect(actionItemMatchesBlock("Send the revised scope", "Send the revised scope")).toBe(true);
+  });
+
+  it("is case- and punctuation-insensitive", () => {
+    expect(actionItemMatchesBlock("Send the revised scope.", "SEND THE REVISED SCOPE")).toBe(true);
+  });
+
+  it("collapses whitespace differences", () => {
+    expect(actionItemMatchesBlock("Send   the  revised scope", "Send the revised scope")).toBe(true);
+  });
+
+  it("matches when the block text has an owner prefix the item text doesn't", () => {
+    expect(actionItemMatchesBlock("Send the revised scope", "Ada: Send the revised scope")).toBe(true);
+  });
+
+  it("matches when the item text has detail the block text was trimmed of", () => {
+    expect(actionItemMatchesBlock("Send the revised scope by Friday", "Send the revised scope")).toBe(true);
+  });
+
+  it("does not match a short substring (under 12 chars), even though it is literally contained", () => {
+    expect(actionItemMatchesBlock("Ship it", "Let's ship it now")).toBe(false);
+  });
+
+  it("does not match unrelated text", () => {
+    expect(actionItemMatchesBlock("Send the revised scope", "Book the conference room")).toBe(false);
+  });
+
+  it("does not match empty text", () => {
+    expect(actionItemMatchesBlock("", "")).toBe(false);
+    expect(actionItemMatchesBlock("   ", "Send the revised scope")).toBe(false);
   });
 });

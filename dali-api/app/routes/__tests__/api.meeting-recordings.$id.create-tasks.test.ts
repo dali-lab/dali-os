@@ -11,6 +11,7 @@ vi.mock("~/lib/meeting-recording.server", () => ({
   canReadRecording: vi.fn(),
   canRecordInto: vi.fn(),
   claimRecording: vi.fn(),
+  documentTitle: vi.fn().mockResolvedValue("Standup notes"),
   finalizeEmpty: vi.fn(),
   finishRecording: vi.fn(),
   parseSpeakerMap: vi.fn(),
@@ -84,6 +85,7 @@ beforeEach(() => {
     workspaceType: "Project",
     workspaceId: "proj1",
   } as never);
+  vi.mocked(prisma.task.findMany).mockResolvedValue([] as never);
   vi.mocked(runCreateTask).mockResolvedValue({ id: "task1", status: "Todo", position: 0 });
 });
 
@@ -113,7 +115,7 @@ describe('POST /api/meeting-recordings/:id { action: "createTasks" }', () => {
     expect(runCreateTask).toHaveBeenCalledWith("u2", {
       projectId: "proj1",
       title: "Send the revised scope",
-      description: "/documents/p1?transcript=rec1&at=1203",
+      description: 'Action item from "Standup notes" at 20:03.\nhttp://localhost/documents/p1?transcript=rec1&at=1203',
       assigneeUserIds: ["u-ada"],
       dueAt: "2026-10-17T00:00:00.000Z",
       sourceRecordingId: "rec1",
@@ -154,6 +156,28 @@ describe('POST /api/meeting-recordings/:id { action: "createTasks" }', () => {
     expect(json.created).toEqual([]);
     expect(runCreateTask).not.toHaveBeenCalled();
     expect(prisma.meetingRecording.update).not.toHaveBeenCalled();
+  });
+
+  it("dedups against an existing task from this recording whose title matches, even at a different index (a re-run renumbered items)", async () => {
+    vi.mocked(prisma.task.findMany).mockResolvedValue([{ id: "task-old", title: "Send the revised scope" }] as never);
+    const res = await run({ action: "createTasks", items: [{ index: 0, title: "Send the revised scope" }] });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.created).toEqual([{ index: 0, taskId: "task-old" }]);
+    expect(runCreateTask).not.toHaveBeenCalled();
+    expect(prisma.meetingRecording.update).toHaveBeenCalledWith({
+      where: { id: "rec1" },
+      data: {
+        notes: expect.objectContaining({
+          plan: expect.objectContaining({
+            actionItems: [
+              expect.objectContaining({ taskId: "task-old" }),
+              expect.not.objectContaining({ taskId: expect.anything() }),
+            ],
+          }),
+        }),
+      },
+    });
   });
 
   it("maps a CreateTaskError (e.g. no task-create rights on the project) to its status", async () => {

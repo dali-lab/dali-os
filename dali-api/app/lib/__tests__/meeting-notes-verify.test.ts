@@ -121,6 +121,63 @@ describe("verifyEnhancePlan", () => {
     expect(out.actionItems).toEqual([{ text: "Send scope", cites: [200], ownerUserId: null }]);
     expect(verified.droppedCites).toBe(1);
   });
+
+  // Owners were getting matched to the wrong roster member (specs/meeting-
+  // notes-model.md §6): a roster-name match alone is no longer enough.
+  describe("owner evidence (specs/meeting-notes-model.md §6)", () => {
+    it("rejects a roster match with no evidence near the cited line (a substituted name)", () => {
+      const subLines = [{ at: 100, text: "Someone will handle onboarding next week.", channel: "call" as const }];
+      const plan: EnhancePlan = {
+        blocks: [],
+        actionItems: [{ text: "Handle onboarding", ownerName: "Alex", cites: [100] }],
+      };
+      const roster = [{ userId: "u-alex", name: "Alex Kim" }];
+      const { plan: out, verified } = verifyEnhancePlan(plan, subLines, roster, "u-alex");
+      expect(out.actionItems[0]!.ownerUserId).toBeNull();
+      expect(out.actionItems[0]!.ownerName).toBe("Alex");
+      expect(verified.unmatchedOwners).toBe(1);
+    });
+
+    it("accepts a spoken first name whose evidence is on the cited line itself", () => {
+      const spokenLines = [{ at: 100, text: "Sophie will own the partner follow-up.", channel: "call" as const }];
+      const plan: EnhancePlan = {
+        blocks: [],
+        actionItems: [{ text: "Partner follow-up", ownerName: "Sophie", cites: [100] }],
+      };
+      const roster = [
+        { userId: "u-soph", name: "Sophie Chen" },
+        { userId: "u-steph", name: "Stephanie Diaz" },
+      ];
+      const { plan: out, verified } = verifyEnhancePlan(plan, spokenLines, roster, "u-steph");
+      expect(out.actionItems[0]!.ownerUserId).toBe("u-soph");
+      expect(verified.unmatchedOwners).toBe(0);
+    });
+
+    it("accepts a first-person ('I'll ...') item attributed to the recorder via mic-channel evidence", () => {
+      const micLines = [{ at: 50, text: "I'll send the revised scope by Monday.", channel: "mic" as const }];
+      const plan: EnhancePlan = {
+        blocks: [],
+        actionItems: [{ text: "Send the revised scope", ownerName: "Jordan", cites: [50] }],
+      };
+      const roster = [{ userId: "u-rec", name: "Jordan Lee" }];
+      const { plan: out, verified } = verifyEnhancePlan(plan, micLines, roster, "u-rec");
+      expect(out.actionItems[0]!.ownerUserId).toBe("u-rec");
+      expect(verified.unmatchedOwners).toBe(0);
+    });
+
+    it("does not credit mic-channel evidence to anyone but the recorder", () => {
+      const micLines = [{ at: 50, text: "I'll send the revised scope by Monday.", channel: "mic" as const }];
+      const plan: EnhancePlan = {
+        blocks: [],
+        actionItems: [{ text: "Send the revised scope", ownerName: "Jordan", cites: [50] }],
+      };
+      const roster = [{ userId: "u-jordan", name: "Jordan Lee" }];
+      // The recorder is someone else — "I'll" on their mic can't be Jordan.
+      const { plan: out, verified } = verifyEnhancePlan(plan, micLines, roster, "u-someone-else");
+      expect(out.actionItems[0]!.ownerUserId).toBeNull();
+      expect(verified.unmatchedOwners).toBe(1);
+    });
+  });
 });
 
 describe("matchRosterOwner", () => {

@@ -21,6 +21,21 @@ function getFocusable(container: HTMLElement): HTMLElement[] {
 }
 
 /**
+ * How many Modals are currently open, stored on the attribute itself (not a
+ * module variable) so it survives fine across concurrently open Modals from
+ * any instance of this module. theme.css hides BlockNote's side menu while
+ * this is set — it positions by mouse Y against the whole viewport, so
+ * hovering a transcript line inside a Modal that overlays the editor shows
+ * the "+"/drag handle for whatever editor block happens to sit underneath.
+ */
+function bumpModalOpenCount(delta: 1 | -1) {
+  const current = Number(document.body.getAttribute("data-modal-open") ?? "0");
+  const next = Math.max(0, current + delta);
+  if (next === 0) document.body.removeAttribute("data-modal-open");
+  else document.body.setAttribute("data-modal-open", String(next));
+}
+
+/**
  * Pure helper for tab cycling at the boundaries of a focus trap.
  * Returns the element that should receive focus (caller calls .focus() and
  * preventDefault), or `null` to let the browser handle it normally.
@@ -81,8 +96,10 @@ export function Modal({
 
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+    bumpModalOpenCount(1);
 
     return () => {
+      bumpModalOpenCount(-1);
       document.body.style.overflow = previousOverflow;
       const trigger = triggerRef.current;
       if (trigger && document.contains(trigger)) {
