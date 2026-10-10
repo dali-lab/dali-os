@@ -53,6 +53,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       speakers: rec.speakers,
       total: lines.length,
       lines: lines.slice(since),
+      insertedAt: rec.insertedAt?.toISOString() ?? null,
+      finalizedAt: rec.finalizedAt?.toISOString() ?? null,
     });
   }
 
@@ -62,6 +64,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     speakers: rec.speakers,
     channels: rec.channels,
     recordedSeconds: rec.recordedSeconds,
+    insertedAt: rec.insertedAt?.toISOString() ?? null,
   });
 }
 

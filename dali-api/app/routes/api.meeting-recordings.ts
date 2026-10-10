@@ -80,6 +80,19 @@ export async function action({ request }: Route.ActionArgs) {
       { status: 503 },
     );
   }
+  if ("busy" in rec) {
+    return Response.json(
+      {
+        error: "alreadyRecording",
+        recordingId: rec.busy.id,
+        ownerName: rec.busy.ownerName,
+        ownerIsYou: rec.busy.userId === auth.user.sub,
+        status: rec.busy.status,
+        since: rec.busy.createdAt.toISOString(),
+      },
+      { status: 409 },
+    );
+  }
 
   return Response.json(
     {

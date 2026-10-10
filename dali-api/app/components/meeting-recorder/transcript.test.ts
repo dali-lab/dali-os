@@ -81,8 +81,9 @@ describe("transcriptParagraphs", () => {
 });
 
 describe("meetingNotesMarkdown", () => {
-  it("includes the heading alone when there are no notes", () => {
-    expect(meetingNotesMarkdown(null)).toBe("## AI meeting notes");
+  it("inserts nothing when there are no notes, so a plain transcript insert leaves no empty heading", () => {
+    expect(meetingNotesMarkdown(null)).toBe("");
+    expect(meetingNotesMarkdown("   ")).toBe("");
   });
   it("appends trimmed notes under the heading", () => {
     expect(meetingNotesMarkdown("  Summary here.  ")).toBe("## AI meeting notes\n\nSummary here.");

@@ -35,6 +35,7 @@ import {
   transcriptParagraphs,
 } from "./meeting-recorder/transcript";
 import type {
+  ActiveRecording,
   Channel,
   ChunkResponse,
   PollRecordingResponse,
@@ -65,8 +66,10 @@ type CaptureMode = "browser" | "desktop" | null;
 const POLL_MS = 3000;
 const APP_WAIT_MS = 30_000;
 const STOP_DRAIN_MS = 60_000;
+// Desktop stop: how long to wait for the app's finish before offering a way out.
+const STOP_WAIT_MS = 60_000;
 
-type Backup = { id: string; link: string; aiEnabled: boolean };
+type Backup = { id: string; link: string; aiEnabled: boolean; captureMode?: CaptureMode };
 const backupKey = (documentName: string) => `dali:meeting-recording:${documentName}`;
 
 function readBackup(documentName: string): Backup | null {
@@ -93,6 +96,10 @@ function describeStartError(json: unknown): string {
   if (code === "Not available") return "Meeting recording isn't available.";
   if (code === "Forbidden" || code === "forbidden") return "You don't have permission to record this document.";
   if (code === "noteRequired") return "This meeting has no note to record into.";
+  if (code === "alreadyRecording") {
+    const j = json as { ownerName?: string; ownerIsYou?: boolean };
+    return j.ownerIsYou ? "You're already recording this note on another device." : `${j.ownerName ?? "Someone"} is already recording this note.`;
+  }
   return code ?? "Couldn't start recording.";
 }
 
@@ -114,6 +121,8 @@ export function MeetingRecorder({
   occurrenceStart,
   roster = [],
   canEdit,
+  isCore = false,
+  activeElsewhere = null,
   onInsert,
   autoOpen,
   collabToken,
@@ -125,6 +134,11 @@ export function MeetingRecorder({
   /** The occurrence's attendees, for the speaker-rename chips. */
   roster?: RosterUser[];
   canEdit: boolean;
+  /** Core can discard anyone's recording (the DELETE route already allows it). */
+  isCore?: boolean;
+  /** The note's live recording when this viewer didn't start it here: shown
+   *  in place of Record so a second one is never started. */
+  activeElsewhere?: ActiveRecording | null;
   /** Appends the notes Markdown, then the transcript lines under a collapsed
    *  toggle heading. False when the editor isn't ready. */
   onInsert: (markdown: string, transcript: string[]) => boolean;
@@ -169,6 +183,12 @@ export function MeetingRecorder({
   const [speakers, setSpeakers] = useState<Speakers>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Someone else's recording (or this user's from another device) that this
+  // page is following rather than driving.
+  const [remote, setRemote] = useState<{ ownerName: string; ownerIsYou: boolean } | null>(null);
+  const [insertedAt, setInsertedAt] = useState<string | null>(null);
+  const [finalized, setFinalized] = useState(false);
+  const [stoppingSince, setStoppingSince] = useState(0);
 
   // Start-sheet config.
   const [useDesktopApp, setUseDesktopApp] = useState(desktopVer != null);
@@ -217,6 +237,9 @@ export function MeetingRecorder({
     setSpeakers({});
     setError(null);
     setBusy(false);
+    setRemote(null);
+    setInsertedAt(null);
+    setFinalized(false);
     segmentRef.current = 0;
     conflictedRef.current = false;
     setPhase("idle");
@@ -239,11 +262,23 @@ export function MeetingRecorder({
     clearLocalState();
   }
 
+  // The row was deleted under us (the owner discarded it, or the finalizer
+  // swept it): nothing to poll, nothing to keep.
+  function recordingGone() {
+    clearLocalState();
+    toast.info(remote && !remote.ownerIsYou ? `${remote.ownerName} discarded the recording.` : "This recording was deleted.");
+  }
+
   // ─── Pick a left-behind recording back up ──────────────────────────────
   useEffect(() => {
     if (claimed.current) return;
-    const saved = readBackup(documentName) ?? (transcriptParam ? { id: transcriptParam, link: "", aiEnabled: false } : null);
+    const own = readBackup(documentName);
+    const saved: Backup | null =
+      own ??
+      (transcriptParam ? { id: transcriptParam, link: "", aiEnabled: false } : null) ??
+      (activeElsewhere ? { id: activeElsewhere.id, link: "", aiEnabled: false } : null);
     if (!saved) return;
+    const following = !own && !transcriptParam && activeElsewhere ? activeElsewhere : null;
     let cancelled = false;
     void (async () => {
       const res = await fetch(`/api/meeting-recordings/${saved.id}`, { credentials: "include" }).catch(() => null);
@@ -263,18 +298,39 @@ export function MeetingRecorder({
       setRecordedSeconds(data.recordedSeconds);
       setLines(data.lines);
       setSpeakers(data.speakers);
+      setInsertedAt(data.insertedAt ?? null);
+      setFinalized(Boolean(data.finalizedAt));
+      segmentRef.current = Math.max(0, (data.segmentStarts?.length ?? 1) - 1);
       if (data.error) setError(data.error);
-      if (data.status === "Pending" || data.status === "Recording") {
-        setCaptureMode("desktop"); // reconnected after a reload: local capture, if any, is gone
-        setStartedAt(Date.now() - data.recordedSeconds * 1000);
-        setPhase(data.status === "Pending" ? "starting" : "recording");
-        setOpen(true);
-      } else if (data.status === "Stopped") {
+      if (following) {
+        setRemote({ ownerName: following.ownerName, ownerIsYou: following.ownerIsYou });
+        setStartedAt(new Date(following.since).getTime());
+      }
+      if ((data.status === "Pending" || data.status === "Recording") && own?.captureMode === "browser") {
+        // The tab that was capturing reloaded, so its mic is gone. Stop the
+        // session rather than show a clock over nothing; Continue picks it up.
+        setCaptureMode("browser");
+        void fetch(`/api/meeting-recordings/${saved.id}`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "stop" }),
+        }).catch(() => null);
+        setError("Recording stopped when this page reloaded. Continue to pick it up, or transcribe what was recorded.");
         setPhase("review");
         setOpen(true);
+      } else if (data.status === "Pending" || data.status === "Recording") {
+        setCaptureMode("desktop"); // no local capture to drive: follow the row by polling
+        if (!following) setStartedAt(Date.now() - data.recordedSeconds * 1000);
+        setPhase(data.status === "Pending" ? "starting" : "recording");
+        if (!following) setOpen(true);
+      } else if (data.status === "Stopped") {
+        setCaptureMode((m) => m ?? "desktop");
+        setPhase("review");
+        if (!following) setOpen(true);
       } else if (data.status === "Processing") {
         setPhase("processing");
-        setOpen(true);
+        if (!following) setOpen(true);
       } else if (data.status === "Done") {
         setPhase("done");
         if (transcriptParam) setOpen(true);
@@ -332,7 +388,7 @@ export function MeetingRecorder({
 
   // ─── Elapsed-time tick while live (both capture modes) ─────────────────
   useEffect(() => {
-    if (phase !== "recording") return;
+    if (phase !== "recording" && phase !== "stopping") return;
     setNow(Date.now());
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
@@ -348,11 +404,18 @@ export function MeetingRecorder({
       const res = await fetch(`/api/meeting-recordings/${recordingId}`, { credentials: "include" }).catch(
         () => null,
       );
-      if (cancelled || !res?.ok) return;
+      if (cancelled || !res) return;
+      if (res.status === 404) {
+        recordingGone();
+        return;
+      }
+      if (!res.ok) return;
       const data = (await res.json()) as PollRecordingResponse;
       if (cancelled) return;
       setChannelsActive(data.channels as Channel[]);
       setRecordedSeconds(data.recordedSeconds);
+      setInsertedAt(data.insertedAt ?? null);
+      if (data.finalizedAt !== undefined) setFinalized(Boolean(data.finalizedAt));
       if (data.status === "Recording") {
         setAppUnreachable(false);
         setPhase((p) => {
@@ -392,9 +455,16 @@ export function MeetingRecorder({
       const res = await fetch(`/api/meeting-recordings/${recordingId}`, { credentials: "include" }).catch(
         () => null,
       );
-      if (cancelled || !res?.ok) return;
+      if (cancelled || !res) return;
+      if (res.status === 404) {
+        recordingGone();
+        return;
+      }
+      if (!res.ok) return;
       const data = (await res.json()) as PollRecordingResponse;
       if (cancelled) return;
+      setInsertedAt(data.insertedAt ?? null);
+      if (data.finalizedAt !== undefined) setFinalized(Boolean(data.finalizedAt));
       if (data.status === "Done") {
         setLines(data.lines);
         setSpeakers(data.speakers);
@@ -464,6 +534,17 @@ export function MeetingRecorder({
         body: JSON.stringify({ documentName, scheduledMeetingId, occurrenceStart }),
       });
       const json = await res.json().catch(() => null);
+      if (res.status === 409 && json?.error === "alreadyRecording" && typeof json.recordingId === "string") {
+        // Lost the race to someone else (or to this user's other device):
+        // follow their recording instead of failing.
+        claimed.current = true;
+        setRecordingId(json.recordingId);
+        setRemote({ ownerName: String(json.ownerName ?? "Someone"), ownerIsYou: Boolean(json.ownerIsYou) });
+        setStartedAt(typeof json.since === "string" ? new Date(json.since).getTime() : Date.now());
+        setCaptureMode("desktop");
+        setPhase(json.status === "Pending" ? "starting" : json.status === "Processing" ? "processing" : json.status === "Stopped" ? "review" : "recording");
+        return null;
+      }
       if (!res.ok || typeof json?.id !== "string") {
         setError(describeStartError(json));
         return null;
@@ -546,7 +627,7 @@ export function MeetingRecorder({
     setRecordingId(created.id);
     setLink(created.link);
     setAiEnabled(created.aiEnabled);
-    writeBackup(documentName, { id: created.id, link: created.link, aiEnabled: created.aiEnabled });
+    writeBackup(documentName, { id: created.id, link: created.link, aiEnabled: created.aiEnabled, captureMode: "desktop" });
     setCaptureMode("desktop");
     setAppUnreachable(false);
     setStartedAt(Date.now());
@@ -564,7 +645,7 @@ export function MeetingRecorder({
     setRecordingId(created.id);
     setLink(created.link);
     setAiEnabled(created.aiEnabled);
-    writeBackup(documentName, { id: created.id, link: created.link, aiEnabled: created.aiEnabled });
+    writeBackup(documentName, { id: created.id, link: created.link, aiEnabled: created.aiEnabled, captureMode: "browser" });
     setCaptureMode("browser");
     segmentRef.current = 0;
     conflictedRef.current = false;
@@ -602,6 +683,7 @@ export function MeetingRecorder({
 
   async function stop() {
     if (phase === "stopping" || phase === "processing" || phase === "review") return;
+    setStoppingSince(Date.now());
     setPhase("stopping");
     if (captureMode === "browser") {
       const channels = Object.keys(captures.current) as Channel[];
@@ -649,6 +731,7 @@ export function MeetingRecorder({
       body: JSON.stringify({ action: "stop", final: true }),
     }).catch(() => null);
     if (!res?.ok) {
+      setFinalized(true);
       setError("This recording can't be processed again. Record it again.");
       return;
     }
@@ -782,6 +865,11 @@ export function MeetingRecorder({
   }
 
   const hasTranscript = lines.length > 0;
+  // Owner of this recording from this page, the same user following their
+  // other device, or Core: who may stop/discard/transcribe it.
+  const drives = !remote || remote.ownerIsYou;
+  const canDiscard = canEdit && (drives || isCore);
+  const stopStuck = phase === "stopping" && captureMode === "desktop" && stoppingSince > 0 && now - stoppingSince > STOP_WAIT_MS;
   // Both capture modes count locally while live; the server's recordedSeconds
   // only moves when a session finishes.
   const elapsed = phase === "recording" ? recordedSeconds + (now - startedAt) / 1000 : recordedSeconds;
@@ -805,10 +893,13 @@ export function MeetingRecorder({
               <span className="inline-flex items-center gap-1.5">
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-500" />
                 {formatClock(elapsed)}
+                {remote && <span className="text-muted-foreground">· {remote.ownerIsYou ? "another device" : remote.ownerName}</span>}
               </span>
             )
           : phase === "stopping"
-            ? "Stopping…"
+            ? stopStuck
+              ? "The DALI OS app hasn't confirmed the stop."
+              : "Stopping…"
             : phase === "review"
               ? `${formatClock(recordedSeconds)} recorded`
               : phase === "processing"
@@ -840,7 +931,14 @@ export function MeetingRecorder({
   const canShowRecorder = canEdit || Boolean(transcriptParam);
   if (!canShowRecorder) return null;
 
-  const triggerLabel = phase === "idle" ? (canEdit ? "Record" : "Transcript") : "Show recording";
+  const triggerLabel =
+    phase === "idle"
+      ? canEdit
+        ? "Record"
+        : "Transcript"
+      : remote && !remote.ownerIsYou && (phase === "recording" || phase === "starting" || phase === "stopping")
+        ? `Recording · ${remote.ownerName}`
+        : "Show recording";
 
   return (
     <>
@@ -862,6 +960,7 @@ export function MeetingRecorder({
             <>
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" />
               {formatClock(elapsed)}
+              {remote && !remote.ownerIsYou && <span className="hidden sm:inline">· {remote.ownerName}</span>}
             </>
           ) : (
             <span className="hidden sm:inline">{triggerLabel}</span>
@@ -981,6 +1080,18 @@ export function MeetingRecorder({
           </div>
         )}
 
+        {remote && (phase === "starting" || phase === "recording" || phase === "stopping") && (
+          <p className="mb-3 rounded-xl bg-os-well px-3 py-3 text-sm text-foreground">
+            {remote.ownerIsYou
+              ? "You're recording this meeting from another device. The transcript appears here when it's done."
+              : `${remote.ownerName} is recording this meeting. The transcript appears here when it's done.`}
+          </p>
+        )}
+        {stopStuck && drives && (
+          <p className="mb-3 rounded-xl bg-os-well px-3 py-3 text-sm text-foreground">
+            The app may have quit before it finished uploading. Transcribe what reached the server, or discard the recording.
+          </p>
+        )}
         {(phase === "starting" || phase === "recording" || phase === "stopping") && (
           <RecordingLiveBody
             captureMode={captureMode}
@@ -993,7 +1104,11 @@ export function MeetingRecorder({
 
         {phase === "review" && (
           <div className="flex flex-col gap-2 rounded-xl bg-os-well px-3 py-3 text-sm text-foreground">
-            <p>Stopped. Add another session, or finish to transcribe what was recorded.</p>
+            <p>
+              {remote && !remote.ownerIsYou
+                ? `${remote.ownerName} stopped the recording. The transcript appears here once they finish it.`
+                : "Stopped. Add another session, or finish to transcribe what was recorded."}
+            </p>
           </div>
         )}
 
@@ -1009,6 +1124,9 @@ export function MeetingRecorder({
               <p className="text-sm text-red-700">{error ?? "Transcription failed. Try recording again."}</p>
             ) : (
               <>
+                {insertedAt && (
+                  <p className="text-xs text-muted-foreground">Already in this note. Discarding only removes the recording, not what was inserted.</p>
+                )}
                 {hasTranscript && speakerKeys.length > 0 && (
                   <div className="flex flex-wrap gap-1.5">{speakerKeys.map(speakerChip)}</div>
                 )}
@@ -1070,12 +1188,12 @@ export function MeetingRecorder({
               </button>
             </>
           )}
-          {phase === "starting" && !appUnreachable && captureMode === "browser" && (
+          {phase === "starting" && !appUnreachable && drives && (
             <button type="button" onClick={cancelStart} className={buttonClasses("secondary", "sm")}>
               Cancel
             </button>
           )}
-          {(phase === "recording" || phase === "stopping") && (
+          {(phase === "recording" || phase === "stopping") && drives && !stopStuck && (
             <button
               type="button"
               onClick={() => void stop()}
@@ -1085,7 +1203,18 @@ export function MeetingRecorder({
               <Square className="h-3 w-3 fill-current" /> Stop
             </button>
           )}
-          {phase === "review" && canEdit && (
+          {stopStuck && drives && (
+            <>
+              <IconButton label="Discard recording" icon={Trash2} tone="destructive" onClick={() => void discard()} />
+              <button type="button" onClick={() => void finishAndTranscribe()} className={buttonClasses("primary", "sm")}>
+                Transcribe anyway
+              </button>
+            </>
+          )}
+          {phase === "processing" && canDiscard && (
+            <IconButton label="Discard recording" icon={Trash2} tone="destructive" onClick={() => void discard()} />
+          )}
+          {phase === "review" && canEdit && drives && (
             <>
               <IconButton label="Discard recording" icon={Trash2} tone="destructive" onClick={() => void discard()} />
               <button type="button" onClick={() => void resume()} className={buttonClasses("secondary", "sm")}>
@@ -1098,14 +1227,16 @@ export function MeetingRecorder({
           )}
           {phase === "done" && canEdit && (
             <>
-              <IconButton
-                label="Discard recording"
-                icon={Trash2}
-                tone="destructive"
-                onClick={() => void discard()}
-                disabled={busy}
-              />
-              {aiEnabled && hasTranscript && (
+              {canDiscard && (
+                <IconButton
+                  label="Discard recording"
+                  icon={Trash2}
+                  tone="destructive"
+                  onClick={() => void discard()}
+                  disabled={busy}
+                />
+              )}
+              {aiEnabled && hasTranscript && !insertedAt && (
                 <button
                   type="button"
                   onClick={() => insert(null)}
@@ -1115,22 +1246,28 @@ export function MeetingRecorder({
                   Insert transcript
                 </button>
               )}
-              <button
-                type="button"
-                onClick={aiEnabled ? () => void writeNotes() : () => insert(null)}
-                disabled={!hasTranscript || busy}
-                className={buttonClasses("primary", "sm")}
-              >
-                {!aiEnabled ? "Insert transcript" : busy ? "Writing notes…" : "Write notes"}
-              </button>
+              {!insertedAt && (
+                <button
+                  type="button"
+                  onClick={aiEnabled ? () => void writeNotes() : () => insert(null)}
+                  disabled={!hasTranscript || busy}
+                  className={buttonClasses("primary", "sm")}
+                >
+                  {!aiEnabled ? "Insert transcript" : busy ? "Writing notes…" : "Write notes"}
+                </button>
+              )}
             </>
           )}
           {phase === "failed" && canEdit && (
             <>
-              <IconButton label="Discard recording" icon={Trash2} tone="destructive" onClick={() => void discard()} />
-              <button type="button" onClick={() => void retryProcessing()} className={buttonClasses("primary", "sm")}>
-                Try again
-              </button>
+              {canDiscard && (
+                <IconButton label="Discard recording" icon={Trash2} tone="destructive" onClick={() => void discard()} />
+              )}
+              {drives && !finalized && (
+                <button type="button" onClick={() => void retryProcessing()} className={buttonClasses("primary", "sm")}>
+                  Try again
+                </button>
+              )}
             </>
           )}
         </div>

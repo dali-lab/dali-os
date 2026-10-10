@@ -11,6 +11,7 @@ import { cn } from "~/lib/cn";
 import type { Route } from "./+types/documents.$pageId";
 import { prisma } from "~/lib/db";
 import { ensureOccurrenceRoster } from "~/lib/scheduled-meeting";
+import { activeRecordingFor } from "~/lib/meeting-recording.server";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { publicDocRedirectForPath } from "~/lib/public-doc.server";
 import { getCollabToken } from "~/lib/collab-token.server";
@@ -213,7 +214,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   // Everything below the gate is independent of everything else here, so it
   // goes to the database in one wave rather than seven.
-  const [favorited, canManageAccess, allTags, meeting, collabToken, presenceUser, backlinkRows] =
+  const [favorited, canManageAccess, allTags, meeting, collabToken, presenceUser, backlinkRows, activeRecordingRow, roles] =
     await Promise.all([
       isFavorited(auth.user.sub, page.id),
       // Every workspace type now carries a shareable audience (named shares +
@@ -263,6 +264,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           fromPage: { select: { id: true, title: true, iconEmoji: true } },
         },
       }),
+      // The note's live recording, whoever started it: the recorder shows it
+      // in place of Record so nobody starts a second one.
+      activeRecordingFor(pageDocName(page.id)),
+      getUserRoles(auth.user.sub, request),
     ]);
 
   let attendance:
@@ -286,29 +291,19 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         recordPromptEnabled: boolean;
         canDontSuggestRecording: boolean;
         windowEndIso: string;
-        activeRecording: { id: string; userId: string } | null;
       }
     | null = null;
   if (meeting) {
     const occurrenceStart = page.meetingOccurrenceStart ?? meeting.selectedAt ?? meeting.createdAt;
     await ensureOccurrenceRoster(meeting, occurrenceStart);
-    const [rows, [activeRecordingRow], roles] = await Promise.all([
-      prisma.meetingAttendance.findMany({
-        where: { scheduledMeetingId: meeting.id, occurrenceStart },
-        select: {
-          userId: true,
-          present: true,
-          user: { select: { firstName: true, lastName: true, daliEmail: true } },
-        },
-      }),
-      prisma.meetingRecording.findMany({
-        where: { scheduledMeetingId: meeting.id, occurrenceStart, status: { notIn: ["Failed"] } },
-        select: { id: true, userId: true },
-        orderBy: { createdAt: "desc" },
-        take: 1,
-      }),
-      getUserRoles(auth.user.sub, request),
-    ]);
+    const rows = await prisma.meetingAttendance.findMany({
+      where: { scheduledMeetingId: meeting.id, occurrenceStart },
+      select: {
+        userId: true,
+        present: true,
+        user: { select: { firstName: true, lastName: true, daliEmail: true } },
+      },
+    });
     const label =
       meeting.meetingType === "Other"
         ? meeting.meetingTypeLabel || "Other"
@@ -352,7 +347,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       recordPromptEnabled: meeting.recordPrompt,
       canDontSuggestRecording: auth.user.sub === meeting.organizerId || roles.isCore,
       windowEndIso: new Date(occurrenceStart.getTime() + meeting.durationMinutes * 60_000).toISOString(),
-      activeRecording: activeRecordingRow ?? null,
     };
   }
 
@@ -388,6 +382,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     backlinks,
     trashed,
     canRestore,
+    isCore: roles.isCore,
+    activeRecording: activeRecordingRow
+      ? {
+          id: activeRecordingRow.id,
+          ownerName: activeRecordingRow.ownerName,
+          ownerIsYou: activeRecordingRow.userId === auth.user.sub,
+          status: activeRecordingRow.status,
+          since: activeRecordingRow.createdAt.toISOString(),
+        }
+      : null,
   };
 }
 
@@ -562,6 +566,8 @@ export default function DocumentPage() {
     backlinks,
     trashed,
     canRestore,
+    isCore,
+    activeRecording,
   } = useLoaderData() as Exclude<Awaited<ReturnType<typeof loader>>, Response>;
 
   // Arriving from a comment-mention notification (?comment=<id>): open the
@@ -658,6 +664,8 @@ export default function DocumentPage() {
               occurrenceStart={attendance?.occurrenceStart}
               roster={attendance?.rows.map((r) => ({ userId: r.userId, name: r.name }))}
               canEdit={canEdit}
+              isCore={isCore}
+              activeElsewhere={activeRecording}
               onInsert={insertMeetingNotes}
               autoOpen={recordAutoOpen}
               collabToken={collabToken}
@@ -691,7 +699,7 @@ export default function DocumentPage() {
           canEdit={canEdit}
           recordingEnabled={recordingEnabled}
           recordPromptEnabled={attendance.recordPromptEnabled}
-          hasActiveRecording={attendance.activeRecording !== null}
+          hasActiveRecording={activeRecording !== null}
           canDontSuggest={attendance.canDontSuggestRecording}
           onRecord={() => setRecordAutoOpen(true)}
           onDontSuggest={() => void dontSuggestRecording()}

@@ -15,7 +15,7 @@ import { getTranscriptionProvider } from "~/lib/transcription/provider";
 import type { Channel, ProcessRequest, ProcessRequestChannel, ProcessRequestSegment } from "~/lib/transcription/provider";
 import { assignSpeakers, wordsToLines, mergeChannels, dedupeCrossChannel } from "~/lib/transcription/words";
 import type { Word, DiarizationSegment, RawLine } from "~/lib/transcription/words";
-import type { MeetingRecording } from "~/generated/prisma/client";
+import { Prisma, type MeetingRecording, type MeetingRecordingStatus } from "~/generated/prisma/client";
 import type { TranscriptLine } from "~/lib/meeting-transcript";
 
 // Anything older than this, never finalized, is an abandoned recording
@@ -76,11 +76,41 @@ export async function projectRecordingDisabled(scheduledMeetingId: string): Prom
   return meeting?.project?.recordingPolicy === "Disabled";
 }
 
+// Statuses covered by the one-live-recording-per-document index.
+export const ACTIVE_RECORDING_STATUSES = ["Pending", "Recording", "Stopped", "Processing"] as const;
+
+export type ActiveRecordingSummary = {
+  id: string;
+  userId: string;
+  ownerName: string;
+  status: MeetingRecordingStatus;
+  createdAt: Date;
+};
+
+/** The document's live recording (not yet Done/Failed), whoever owns it. */
+export async function activeRecordingFor(documentName: string): Promise<ActiveRecordingSummary | null> {
+  const rec = await prisma.meetingRecording.findFirst({
+    where: { documentName, status: { in: [...ACTIVE_RECORDING_STATUSES] } },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, userId: true, status: true, createdAt: true },
+  });
+  if (!rec) return null;
+  const user = await prisma.user.findUnique({
+    where: { id: rec.userId },
+    select: { firstName: true, lastName: true, daliEmail: true },
+  });
+  const ownerName =
+    [user?.firstName, user?.lastName].filter(Boolean).join(" ") || user?.daliEmail || "Someone";
+  return { ...rec, ownerName };
+}
+
+export type CreateRecordingResult = MeetingRecording | null | { busy: ActiveRecordingSummary };
+
 export async function createRecording(
   userId: string,
   documentName: string,
   meeting: { scheduledMeetingId?: string; occurrenceStart?: Date | null } = {},
-): Promise<MeetingRecording | null> {
+): Promise<CreateRecordingResult> {
   const stale = await prisma.meetingRecording.findMany({
     where: { userId, finalizedAt: null, createdAt: { lt: new Date(Date.now() - STALE_MS) } },
     select: { id: true },
@@ -97,17 +127,30 @@ export async function createRecording(
   });
   if (active >= MAX_ACTIVE_RECORDINGS) return null;
 
-  return prisma.meetingRecording.create({
-    data: {
-      userId,
-      documentName,
-      // Segment 0's start is explicit here so `claim`'s
-      // `segmentStarts[segment]` always has an entry for the current segment.
-      segmentStarts: [0],
-      ...(meeting.scheduledMeetingId ? { scheduledMeetingId: meeting.scheduledMeetingId } : {}),
-      ...(meeting.occurrenceStart ? { occurrenceStart: meeting.occurrenceStart } : {}),
-    },
-  });
+  const existing = await activeRecordingFor(documentName);
+  if (existing) return { busy: existing };
+
+  try {
+    return await prisma.meetingRecording.create({
+      data: {
+        userId,
+        documentName,
+        // Segment 0's start is explicit here so `claim`'s
+        // `segmentStarts[segment]` always has an entry for the current segment.
+        segmentStarts: [0],
+        ...(meeting.scheduledMeetingId ? { scheduledMeetingId: meeting.scheduledMeetingId } : {}),
+        ...(meeting.occurrenceStart ? { occurrenceStart: meeting.occurrenceStart } : {}),
+      },
+    });
+  } catch (err) {
+    // Two Records in the same instant: the partial unique index rejects the
+    // loser, who is then told about the winner like any other late arrival.
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      const winner = await activeRecordingFor(documentName);
+      if (winner) return { busy: winner };
+    }
+    throw err;
+  }
 }
 
 /** The row, or null when it doesn't exist or belongs to someone else. */
