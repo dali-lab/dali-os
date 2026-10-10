@@ -2878,6 +2878,8 @@ model MeetingReminderLog {
 enum MeetingReminderKind {
   Reminder
   RecordPrompt
+  // The post-meeting transcript-ready nudge (specs/meeting-notes-model.md).
+  TranscriptReady
 }
 
 // Per-user calendar preferences. Lazily upserted on first write.

@@ -29,15 +29,18 @@ vi.mock("~/lib/display", () => ({
   fullName: (u: { firstName: string; lastName: string }) =>
     `${u.firstName} ${u.lastName}`.trim(),
 }));
+vi.mock("~/lib/meeting-recording.server", () => ({ canReadRecording: vi.fn() }));
 
 import { prisma } from "~/lib/db";
 import { isCore, isProjectMember } from "~/lib/roles";
+import { canReadRecording } from "~/lib/meeting-recording.server";
 import { runGetMeeting, GET_MEETING_DEF } from "~/mcp/tools/calendar-extra/get-meeting";
 
 const mockPrisma = prisma as unknown as {
   scheduledMeeting: { findUnique: ReturnType<typeof vi.fn> };
   meetingRecording: { findMany: ReturnType<typeof vi.fn> };
 };
+const mockCanReadRecording = canReadRecording as unknown as ReturnType<typeof vi.fn>;
 
 const MEETING_BASE = {
   id: "m1",
@@ -183,33 +186,67 @@ describe("get_meeting", () => {
     expect(out.roster).toEqual([expect.objectContaining({ userId: "u2", present: false })]);
   });
 
-  it("reports transcriptAvailable and recordingIds for the occurrence", async () => {
+  it("reports transcriptAvailable and recordings across every occurrence, newest first", async () => {
     mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(MEETING_BASE);
     mockPrisma.meetingRecording.findMany.mockResolvedValue([
-      { id: "rec1", status: "Failed" },
-      { id: "rec2", status: "Done" },
+      { id: "rec2", status: "Done", recordedSeconds: 900, occurrenceStart: new Date("2026-09-22T14:00:00Z"), userId: "u-org", documentName: "doc:page1:body" },
+      { id: "rec1", status: "Failed", recordedSeconds: 60, occurrenceStart: new Date("2026-09-15T14:00:00Z"), userId: "u-org", documentName: "doc:page1:body" },
     ]);
+    mockCanReadRecording.mockResolvedValue("owner");
     vi.mocked(isCore).mockResolvedValue(false);
     vi.mocked(isProjectMember).mockResolvedValue(false);
 
     const out = await runGetMeeting("u-org", { meetingId: "m1" });
     expect(mockPrisma.meetingRecording.findMany).toHaveBeenCalledWith({
-      where: { scheduledMeetingId: "m1", occurrenceStart: MEETING_BASE.selectedAt },
-      select: { id: true, status: true },
+      where: { scheduledMeetingId: "m1" },
+      orderBy: { occurrenceStart: "desc" },
+      take: 20,
+      select: {
+        id: true,
+        status: true,
+        recordedSeconds: true,
+        occurrenceStart: true,
+        userId: true,
+        documentName: true,
+      },
     });
     expect(out.transcriptAvailable).toBe(true);
-    expect(out.recordingIds).toEqual(["rec1", "rec2"]);
+    expect(out.recordings).toEqual([
+      { id: "rec2", status: "Done", recordedSeconds: 900, occurrenceStart: "2026-09-22T14:00:00.000Z" },
+      { id: "rec1", status: "Failed", recordedSeconds: 60, occurrenceStart: "2026-09-15T14:00:00.000Z" },
+    ]);
   });
 
   it("transcriptAvailable is false with no Done recording", async () => {
     mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(MEETING_BASE);
-    mockPrisma.meetingRecording.findMany.mockResolvedValue([{ id: "rec1", status: "Processing" }]);
+    mockPrisma.meetingRecording.findMany.mockResolvedValue([
+      { id: "rec1", status: "Processing", recordedSeconds: 10, occurrenceStart: MEETING_BASE.selectedAt, userId: "u-org", documentName: "doc:page1:body" },
+    ]);
+    mockCanReadRecording.mockResolvedValue("owner");
     vi.mocked(isCore).mockResolvedValue(false);
     vi.mocked(isProjectMember).mockResolvedValue(false);
 
     const out = await runGetMeeting("u-org", { meetingId: "m1" });
     expect(out.transcriptAvailable).toBe(false);
-    expect(out.recordingIds).toEqual(["rec1"]);
+    expect(out.recordings).toEqual([
+      { id: "rec1", status: "Processing", recordedSeconds: 10, occurrenceStart: MEETING_BASE.selectedAt.toISOString() },
+    ]);
+  });
+
+  it("drops a recording the caller can't read", async () => {
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(MEETING_BASE);
+    mockPrisma.meetingRecording.findMany.mockResolvedValue([
+      { id: "rec1", status: "Done", recordedSeconds: 60, occurrenceStart: MEETING_BASE.selectedAt, userId: "someone-else", documentName: "doc:page1:body" },
+    ]);
+    mockCanReadRecording.mockResolvedValue(null);
+    vi.mocked(isCore).mockResolvedValue(false);
+    vi.mocked(isProjectMember).mockResolvedValue(false);
+
+    // u-org can view the meeting itself (organizer), but the mocked
+    // canReadRecording says they can't read this particular recording's note.
+    const out = await runGetMeeting("u-org", { meetingId: "m1" });
+    expect(out.transcriptAvailable).toBe(false);
+    expect(out.recordings).toEqual([]);
   });
 
   it("uses meetingTypeLabel for Other type", async () => {

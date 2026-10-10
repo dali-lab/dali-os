@@ -40,6 +40,10 @@ import {
   runGetMeeting,
 } from "./get-meeting";
 import {
+  GET_MEETING_TRANSCRIPT_DEF,
+  runGetMeetingTranscript,
+} from "./get-meeting-transcript";
+import {
   SEARCH_CALENDAR_DEF,
   runSearchCalendar,
 } from "./search-calendar";
@@ -104,7 +108,12 @@ export const CALENDAR_TOOLS: McpTool[] = [
   {
     def: GET_MEETING_DEF,
     run: (ctx, args) =>
-      runGetMeeting(ctx.user.id, args as { meetingId: string }),
+      runGetMeeting(ctx.user.id, args as { meetingId: string; occurrenceStart?: string }),
+  },
+  {
+    def: GET_MEETING_TRANSCRIPT_DEF,
+    run: (ctx, args) =>
+      runGetMeetingTranscript(ctx.user.id, args as Parameters<typeof runGetMeetingTranscript>[1]),
   },
   {
     def: SEARCH_CALENDAR_DEF,

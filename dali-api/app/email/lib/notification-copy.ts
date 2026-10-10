@@ -108,6 +108,14 @@ export const NOTIFICATION_COPY = {
     subject: "{{itemTitle}} is starting. Record it?",
     body: "DALI can transcribe it and delete the audio once it's done.",
   },
+  "meeting.transcript_ready": {
+    eventType: "meeting.transcript_ready",
+    label: "Transcript ready",
+    description: "Sent to the recorder once a meeting's transcript is ready and unused.",
+    variables: ["itemTitle"],
+    subject: "Your transcript for {{itemTitle}} is ready",
+    body: "Open the note to see what was said.",
+  },
   "room.booking_bumped": {
     eventType: "room.booking_bumped",
     label: "Room bumped for interviews",
