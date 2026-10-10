@@ -171,15 +171,19 @@ describe("claimRecording", () => {
 });
 
 describe("recordChunk", () => {
+  function lockedRow(row: { channels?: string[]; chunkIndex?: Record<string, number[]>; status?: string }) {
+    vi.mocked(prisma.$transaction).mockImplementation(((fn: (tx: typeof prisma) => unknown) =>
+      fn(prisma)) as never);
+    vi.mocked(prisma.$queryRaw).mockResolvedValue([
+      { channels: row.channels ?? ["mic"], chunkIndex: row.chunkIndex ?? null, status: row.status ?? "Recording" },
+    ] as never);
+  }
+
   it("adds the channel, bumps the high-water seq, and starts a Pending row", async () => {
+    lockedRow({ status: "Pending", channels: [], chunkIndex: { mic: [2] } });
     vi.mocked(prisma.meetingRecording.update).mockResolvedValue({ stopRequested: true } as never);
 
-    const result = await recordChunk(
-      rec({ status: "Pending", channels: [], chunkIndex: { mic: [2] } }),
-      "mic",
-      0,
-      5,
-    );
+    const result = await recordChunk(rec({ status: "Pending", channels: [] }), "mic", 0, 5);
 
     expect(result).toEqual({ stopRequested: true });
     expect(prisma.meetingRecording.update).toHaveBeenCalledWith(
@@ -194,10 +198,32 @@ describe("recordChunk", () => {
   });
 
   it("never lowers the high-water seq on an out-of-order retry", async () => {
-    await recordChunk(rec({ chunkIndex: { mic: [10] } }), "mic", 0, 3);
+    lockedRow({ chunkIndex: { mic: [10] } });
+    await recordChunk(rec(), "mic", 0, 3);
     expect(prisma.meetingRecording.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ chunkIndex: { mic: [10] } }) }),
     );
+  });
+
+  it("merges from the locked row, not the caller's copy, so a simultaneous mic chunk survives", async () => {
+    // The caller read the row before the mic chunk on another machine wrote
+    // to it; the locked read sees that write and the call chunk adds to it.
+    lockedRow({ channels: ["mic"], chunkIndex: { mic: [1] } });
+    await recordChunk(rec({ channels: [], chunkIndex: {} }), "call", 0, 1);
+    expect(prisma.$queryRaw).toHaveBeenCalled();
+    expect(prisma.meetingRecording.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ channels: ["mic", "call"], chunkIndex: { mic: [1], call: [1] } }),
+      }),
+    );
+  });
+
+  it("tells the client to stop when the row is gone", async () => {
+    vi.mocked(prisma.$transaction).mockImplementation(((fn: (tx: typeof prisma) => unknown) =>
+      fn(prisma)) as never);
+    vi.mocked(prisma.$queryRaw).mockResolvedValue([] as never);
+    expect(await recordChunk(rec(), "mic", 0, 0)).toEqual({ stopRequested: true });
+    expect(prisma.meetingRecording.update).not.toHaveBeenCalled();
   });
 });
 
