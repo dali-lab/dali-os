@@ -83,6 +83,17 @@ keep every bullet, expanding it only with what the transcript supports; add
 or numbers; every block that uses transcript content cites the line indexes it
 drew from; owners must be roster names, matched to user ids server-side.
 
+**No typed notes.** A note that is empty or still the untouched template is
+the same flow with the template as the skeleton: each template heading is
+filled from the transcript, and a heading the transcript does not support
+(usually Agenda) is left empty rather than reconstructed, then hidden on
+Replace. Decisions and Action items are the only sections always attempted.
+This covers teams who record and summarise without typing; a "Summary"
+template with three headings reproduces today's flat output. The button reads
+**Write notes** in this state and **Enhance notes** once someone has typed;
+same endpoint, same sheet, and with nothing typed Replace and Append are the
+same so the sheet shows one button.
+
 **Storage.** `MeetingRecording.notes Json?` holds the last enhance result and
 `enhancedAt DateTime?` when it was accepted. Fields on the existing row, no new
 table. A second Enhance overwrites.
