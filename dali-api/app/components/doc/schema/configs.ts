@@ -51,6 +51,24 @@ export const pageMentionConfig = {
   content: "none",
 } as const;
 
+// Task-mention inline node: the "Create tasks" producer's replacement for the
+// plain `/projects/:id?tab=progress&task=:id` link it used to append to a
+// checklist item. `label` is a snapshot of the task title at creation time
+// (same role as pageMention's `label`); `projectId` rides along so the chip
+// and exporters can link without a lookup. Status/assignee/due date are
+// deliberately NOT stored here — they're live task state, fetched through
+// the task-card API and cached client-side (mention.tsx), same reasoning as
+// pageMention's live title resolution.
+export const taskMentionConfig = {
+  type: "taskMention",
+  propSchema: {
+    taskId: { default: "" },
+    label: { default: "" },
+    projectId: { default: "" },
+  },
+  content: "none",
+} as const;
+
 // Callout: colored container with an emoji icon. Representation decision from
 // the spike (Phase 0, item 6): content is INLINE; additional paragraphs live
 // as nested children, painted into the box via CSS on the child blockGroup
@@ -162,6 +180,7 @@ function inlineText(inline: AnyInline): string {
   if (typeof inline.text === "string") return inline.text;
   if (inline.type === "mention") return `@${String(inline.props?.label ?? "")}`;
   if (inline.type === "pageMention") return String(inline.props?.label ?? "");
+  if (inline.type === "taskMention") return String(inline.props?.label ?? "");
   if (inline.type === "link" && Array.isArray(inline.content)) {
     return inline.content.map(inlineText).join("");
   }

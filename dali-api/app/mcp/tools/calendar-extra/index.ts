@@ -44,6 +44,10 @@ import {
   runGetMeetingTranscript,
 } from "./get-meeting-transcript";
 import {
+  ENHANCE_MEETING_NOTES_DEF,
+  runEnhanceMeetingNotes,
+} from "./enhance-meeting-notes";
+import {
   SEARCH_CALENDAR_DEF,
   runSearchCalendar,
 } from "./search-calendar";
@@ -114,6 +118,10 @@ export const CALENDAR_TOOLS: McpTool[] = [
     def: GET_MEETING_TRANSCRIPT_DEF,
     run: (ctx, args) =>
       runGetMeetingTranscript(ctx.user.id, args as Parameters<typeof runGetMeetingTranscript>[1]),
+  },
+  {
+    def: ENHANCE_MEETING_NOTES_DEF,
+    run: (ctx, args) => runEnhanceMeetingNotes(ctx, args as Parameters<typeof runEnhanceMeetingNotes>[1]),
   },
   {
     def: SEARCH_CALENDAR_DEF,

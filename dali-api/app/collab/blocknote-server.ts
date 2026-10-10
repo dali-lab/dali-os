@@ -33,6 +33,7 @@ import {
   mentionConfig,
   pageMentionConfig,
   signingFieldConfigs,
+  taskMentionConfig,
   variableConfig,
 } from "~/components/doc/schema/configs";
 import {
@@ -105,6 +106,29 @@ const pageMentionSpec = createInlineContentSpec(pageMentionConfig, {
     const dom = document.createElement("span");
     dom.setAttribute("data-page-mention-id", ic.props.pageId);
     dom.textContent = ic.props.label || "Untitled";
+    return { dom };
+  },
+});
+
+// Unlike mention/pageMention (plain spans), this renders as a real anchor —
+// HTML export (blocksToHtml/blocksToFullHtml, which feed docx/education/
+// public-site rendering and the Chromium PDF path) carries a working deep
+// link to the task. Markdown export shares this same render (no
+// toExternalHTML override, same convention as embedSpec below), so the
+// anchor becomes a real markdown link; plain-text export bypasses this
+// entirely (blocksToPlainText's own inlineText() renders the label alone —
+// see configs.ts).
+const taskMentionSpec = createInlineContentSpec(taskMentionConfig, {
+  render: (ic) => {
+    const dom = document.createElement("a");
+    dom.setAttribute("data-task-mention-id", ic.props.taskId);
+    if (ic.props.taskId && ic.props.projectId) {
+      dom.setAttribute(
+        "href",
+        `/projects/${ic.props.projectId}?tab=progress&task=${ic.props.taskId}`,
+      );
+    }
+    dom.textContent = ic.props.label || "Untitled task";
     return { dom };
   },
 });
@@ -215,6 +239,7 @@ export const serverSchema = withMultiColumn(BlockNoteSchema.create({
     ...defaultInlineContentSpecs,
     mention: mentionSpec,
     pageMention: pageMentionSpec,
+    taskMention: taskMentionSpec,
     ...signingFieldSpecs,
     variable: variableSpec,
   },

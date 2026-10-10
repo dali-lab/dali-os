@@ -13,8 +13,10 @@ import type { DefaultReactSuggestionItem } from "@blocknote/react";
 // Type-only: erased at runtime, so no module cycle with build.ts (which
 // imports MentionSpec as a value).
 import type { DocEditorInstance } from "./build";
-import { mentionConfig, pageMentionConfig } from "./configs";
+import { mentionConfig, pageMentionConfig, taskMentionConfig } from "./configs";
 import { MentionHoverCard } from "./MentionHoverCard";
+import { Tooltip } from "~/components/ui/floating";
+import { TaskStatusDot, taskMentionHoverContent, useTaskMentionCard } from "./TaskMentionHoverCard";
 import {
   createContext,
   useCallback,
@@ -46,6 +48,12 @@ const MENTION_CLASS =
 // the contenteditable tree in both editable and read-only contexts).
 const PAGE_MENTION_CLASS =
   "rounded bg-primary/10 px-1 py-0.5 font-medium text-primary cursor-pointer hover:bg-primary/20";
+
+// Task mention chip: same shape as the page-mention chip, teal-tinted so it
+// reads as a third distinct mention family (coral @user, blue page, teal
+// task) and carries a small status dot (TaskStatusDot).
+const TASK_MENTION_CLASS =
+  "inline-flex items-center gap-1 rounded bg-accent-teal/10 px-1 py-0.5 font-medium text-accent-teal cursor-pointer hover:bg-accent-teal/20";
 
 // ─── Live page-title resolution ──────────────────────────────────────────────
 //
@@ -198,6 +206,34 @@ export const PageMentionSpec = createReactInlineContentSpec(pageMentionConfig, {
       >
         📄 {label}
       </span>
+    );
+  },
+});
+
+export const TaskMentionSpec = createReactInlineContentSpec(taskMentionConfig, {
+  render: ({ inlineContent }) => {
+    const { taskId, projectId } = inlineContent.props;
+    const label = inlineContent.props.label || "Untitled task";
+    // One fetch per chip (cached per taskId) feeds both the status dot and
+    // the hover card — see TaskMentionHoverCard.tsx.
+    const task = useTaskMentionCard(taskId);
+    const status = task === "loading" || !task ? null : task.status;
+    return (
+      <Tooltip variant="rich" content={taskMentionHoverContent(task, label)}>
+        <span
+          className={TASK_MENTION_CLASS}
+          data-task-mention-id={taskId}
+          onClick={(e) => {
+            e.preventDefault();
+            if (taskId && projectId) {
+              window.location.href = `/projects/${projectId}?tab=progress&task=${taskId}`;
+            }
+          }}
+        >
+          <TaskStatusDot status={status} />
+          {label}
+        </span>
+      </Tooltip>
     );
   },
 });

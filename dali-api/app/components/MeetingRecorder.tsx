@@ -8,6 +8,8 @@ import { useToast } from "~/components/ui/toast";
 import { Select, Tooltip, type SelectOption } from "~/components/ui/floating";
 import { Toggle } from "~/components/ui/Toggle";
 import { Radio } from "~/components/ui/Radio";
+import { Checkbox } from "~/components/ui/Checkbox";
+import { DateField } from "~/components/ui/DateField";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { modalCardClass, useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
@@ -168,6 +170,9 @@ export function MeetingRecorder({
   seededTemplateHash = null,
   getNoteState,
   onApplyEnhance,
+  projectId = null,
+  canCreateTasks = false,
+  onTaskCreated,
 }: {
   /** The collab room the notes land in. */
   documentName: string;
@@ -204,6 +209,15 @@ export function MeetingRecorder({
    *  transcript toggle if it isn't already there. False when the editor
    *  isn't ready. */
   onApplyEnhance?: (ops: EditorOp[], recordingId: string, transcript: string[]) => boolean;
+  /** The meeting note's project, when it's on one (specs/meeting-notes-model.md
+   *  §4) — tasks need a project, so Create tasks is hidden without one. */
+  projectId?: string | null;
+  /** Whether the viewer has task-create rights on `projectId`. Create tasks
+   *  is hidden without it, same as the board's own gate. */
+  canCreateTasks?: boolean;
+  /** Fired once per task created from the sheet, so the note can append a
+   *  link to the task on the matching checklist item. */
+  onTaskCreated?: (itemText: string, taskId: string, projectId: string) => void;
 }) {
   const { actionBtnPrimary, actionIcon } = useOsChrome();
   const dialog = useDialog();
@@ -1028,6 +1042,45 @@ export function MeetingRecorder({
     }
   }
 
+  // Action items into Tasks (specs/meeting-notes-model.md §4). Dedup and the
+  // description link are the server's job; this just posts the checked rows,
+  // folds the returned taskIds back into enhanceNotes so the sheet can mark
+  // them "Task created", and tells the note to link the matching checklist
+  // item (onTaskCreated — the client-side half of the mention/link decision).
+  async function createTasksFromItems(
+    items: { index: number; title: string; assigneeId?: string; dueAt?: string }[],
+  ): Promise<boolean> {
+    if (!recordingId || items.length === 0) return true;
+    const res = await fetch(`/api/meeting-recordings/${recordingId}`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "createTasks", items }),
+    }).catch(() => null);
+    const json = await res?.json().catch(() => null);
+    // A failure part-way through still reports the tasks it did create; mark
+    // those so the rows read "Task created" and a retry sends only the rest.
+    const created = (json?.created ?? []) as { index: number; taskId: string }[];
+    const ok = Boolean(res?.ok);
+    if (!ok) setEnhanceError(json?.error ?? "Couldn't create tasks.");
+    if (created.length === 0) return ok;
+    setEnhanceNotes((prev) => {
+      if (!prev) return prev;
+      const actionItems = prev.plan.actionItems.map((item, i) => {
+        const hit = created.find((c) => c.index === i);
+        return hit ? { ...item, taskId: hit.taskId } : item;
+      });
+      return { ...prev, plan: { ...prev.plan, actionItems } };
+    });
+    if (onTaskCreated && projectId) {
+      for (const c of created) {
+        const src = items.find((it) => it.index === c.index);
+        if (src) onTaskCreated(src.title, c.taskId, projectId);
+      }
+    }
+    return ok;
+  }
+
   async function renameSpeaker(speakerKey: string) {
     const options = [...roster.map((r) => ({ value: r.userId, label: r.name })), { value: "__other__", label: "Someone else…" }];
     const choice = await dialog.choice({
@@ -1512,6 +1565,10 @@ export function MeetingRecorder({
         seededFromPageId={seededFromPageId}
         seededTemplateHash={seededTemplateHash}
         onApply={() => void applyEnhance()}
+        roster={roster}
+        projectId={projectId}
+        canCreateTasks={canCreateTasks}
+        onCreateTasks={createTasksFromItems}
       />
     </>
   );
@@ -1524,6 +1581,8 @@ export function MeetingRecorder({
  * from them is PR 3 of the spec, not this one). Recomputes the merge fresh
  * from the live editor each time it opens, via getNoteState.
  */
+type ActionItemRowState = { checked: boolean; ownerUserId: string; dueAt: string };
+
 function EnhanceSheet({
   open,
   onClose,
@@ -1535,6 +1594,10 @@ function EnhanceSheet({
   seededFromPageId,
   seededTemplateHash,
   onApply,
+  roster = [],
+  projectId = null,
+  canCreateTasks = false,
+  onCreateTasks,
 }: {
   open: boolean;
   onClose: () => void;
@@ -1546,6 +1609,13 @@ function EnhanceSheet({
   seededFromPageId: string | null;
   seededTemplateHash: string | null;
   onApply: () => void;
+  /** The occurrence roster, for the owner picker. */
+  roster?: RosterUser[];
+  projectId?: string | null;
+  canCreateTasks?: boolean;
+  onCreateTasks?: (
+    items: { index: number; title: string; assigneeId?: string; dueAt?: string }[],
+  ) => Promise<boolean>;
 }) {
   const preview = useMemo(() => {
     if (!open || !notes || !getNoteState) return null;
@@ -1557,6 +1627,57 @@ function EnhanceSheet({
 
   const changed = preview?.ops.filter((op) => op.kind === "update") ?? [];
   const added = preview?.ops.filter((op) => op.kind === "insertAfter") ?? [];
+
+  // Action items into Tasks (specs/meeting-notes-model.md §4): one editable
+  // row per item, pre-checked, owner/due pre-filled from the verified plan.
+  // Re-seeded only when a genuinely new plan lands (snapshotAt changes) —
+  // Create tasks writes `taskId` back into `notes` in place, which must not
+  // reset anyone's in-progress owner/due edits.
+  const [itemState, setItemState] = useState<Record<number, ActionItemRowState>>({});
+  const [createTasksBusy, setCreateTasksBusy] = useState(false);
+  const seededSnapshotAt = useRef<string | null>(null);
+  useEffect(() => {
+    if (!notes) {
+      seededSnapshotAt.current = null;
+      setItemState({});
+      return;
+    }
+    if (seededSnapshotAt.current === notes.snapshotAt) return;
+    seededSnapshotAt.current = notes.snapshotAt;
+    const next: Record<number, ActionItemRowState> = {};
+    notes.plan.actionItems.forEach((item, i) => {
+      next[i] = { checked: true, ownerUserId: item.ownerUserId ?? "", dueAt: item.due ?? "" };
+    });
+    setItemState(next);
+  }, [notes]);
+
+  const ownerOptions: SelectOption[] = [
+    { value: "", label: "Unassigned" },
+    ...roster.map((r) => ({ value: r.userId, label: r.name })),
+  ];
+
+  async function handleCreateTasks() {
+    if (!notes || !onCreateTasks) return;
+    const items = notes.plan.actionItems
+      .map((item, index) => ({ item, index, row: itemState[index] }))
+      .filter(({ item, row }) => row?.checked && !item.taskId)
+      .map(({ item, index, row }) => ({
+        index,
+        title: item.text,
+        assigneeId: row!.ownerUserId || undefined,
+        dueAt: row!.dueAt ? new Date(row!.dueAt).toISOString() : undefined,
+      }));
+    if (items.length === 0) return;
+    setCreateTasksBusy(true);
+    try {
+      await onCreateTasks(items);
+    } finally {
+      setCreateTasksBusy(false);
+    }
+  }
+
+  const pendingActionItems = notes?.plan.actionItems.filter((item) => !item.taskId).length ?? 0;
+  const showCreateTasks = Boolean(canCreateTasks && projectId && pendingActionItems > 0);
 
   return (
     <Modal open={open} onClose={onClose} labelledBy="enhance-sheet-title" containerClassName={modalCardClass("max-w-2xl")}>
@@ -1604,21 +1725,110 @@ function EnhanceSheet({
 
           {notes.plan.actionItems.length > 0 && (
             <div className="flex flex-col gap-2">
-              <p className="text-xs font-medium text-muted-foreground">Action items</p>
-              <ul className="flex flex-col gap-1.5">
-                {notes.plan.actionItems.map((item, i) => (
-                  <li key={i} className="rounded-lg bg-os-well px-3 py-2 text-sm text-foreground">
-                    <p>{item.text}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {item.ownerName
-                        ? item.ownerUserId
-                          ? item.ownerName
-                          : `${item.ownerName} (not on the roster)`
-                        : "Unassigned"}
-                      {item.due && ` · ${formatIsoDate(item.due)}${item.dueSource ? ` (${item.dueSource})` : ""}`}
-                    </p>
-                  </li>
-                ))}
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium text-muted-foreground">Action items</p>
+                {showCreateTasks && (
+                  <button
+                    type="button"
+                    onClick={() => void handleCreateTasks()}
+                    disabled={createTasksBusy}
+                    className={buttonClasses("secondary", "sm")}
+                  >
+                    {createTasksBusy ? "Creating…" : "Create tasks"}
+                  </button>
+                )}
+              </div>
+              <ul className="flex flex-col gap-2">
+                {notes.plan.actionItems.map((item, i) => {
+                  const row = itemState[i];
+                  if (item.taskId) {
+                    return (
+                      <li key={i} className="flex flex-col gap-1 rounded-lg bg-os-well px-3 py-2 text-sm text-foreground">
+                        <p>{item.text}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Task created
+                          {projectId && (
+                            <>
+                              {" · "}
+                              <a
+                                href={`/projects/${projectId}?tab=progress&task=${item.taskId}`}
+                                className="text-os-accent underline"
+                              >
+                                View task
+                              </a>
+                            </>
+                          )}
+                        </p>
+                      </li>
+                    );
+                  }
+                  if (!showCreateTasks) {
+                    return (
+                      <li key={i} className="rounded-lg bg-os-well px-3 py-2 text-sm text-foreground">
+                        <p>{item.text}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {item.ownerName
+                            ? item.ownerUserId
+                              ? item.ownerName
+                              : `${item.ownerName} (not on the roster)`
+                            : "Unassigned"}
+                          {item.due && ` · ${formatIsoDate(item.due)}${item.dueSource ? ` (${item.dueSource})` : ""}`}
+                        </p>
+                      </li>
+                    );
+                  }
+                  return (
+                    <li key={i} className="flex flex-col gap-2 rounded-lg bg-os-well px-3 py-2 text-sm text-foreground">
+                      <div className="flex items-start gap-2">
+                        <Checkbox
+                          tone="os"
+                          checked={row?.checked ?? true}
+                          onChange={(e) =>
+                            setItemState((s) => ({
+                              ...s,
+                              [i]: { ...(s[i] ?? { ownerUserId: "", dueAt: "" }), checked: e.target.checked },
+                            }))
+                          }
+                        />
+                        <p className="flex-1">{item.text}</p>
+                      </div>
+                      <div className="flex flex-wrap items-start gap-3 pl-6">
+                        <div className="flex flex-col gap-1">
+                          <Select
+                            value={row?.ownerUserId ?? ""}
+                            onChange={(value) =>
+                              setItemState((s) => ({
+                                ...s,
+                                [i]: { ...(s[i] ?? { checked: true, dueAt: "" }), ownerUserId: value },
+                              }))
+                            }
+                            options={ownerOptions}
+                            ariaLabel="Owner"
+                          />
+                          {item.ownerName && !item.ownerUserId && (
+                            <span className="text-[11px] text-muted-foreground">{item.ownerName} (not on the roster)</span>
+                          )}
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <DateField
+                            mode="date"
+                            value={row?.dueAt ?? ""}
+                            onChange={(value) =>
+                              setItemState((s) => ({
+                                ...s,
+                                [i]: { ...(s[i] ?? { checked: true, ownerUserId: "" }), dueAt: value },
+                              }))
+                            }
+                            ariaLabel="Due date"
+                          />
+                          {item.dueSource && (
+                            <span className="text-[11px] text-muted-foreground">from &quot;{item.dueSource}&quot;</span>
+                          )}
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           )}

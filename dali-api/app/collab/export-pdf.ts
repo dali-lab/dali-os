@@ -42,6 +42,14 @@ function inlineRuns(content: DocInline[] | undefined, inherited: Partial<Run> = 
       case "mention":
         out.push({ ...inherited, text: `@${String(inline.props?.label ?? "")}` } as Run);
         break;
+      case "taskMention": {
+        const taskId = typeof inline.props?.taskId === "string" ? inline.props.taskId : "";
+        const projectId = typeof inline.props?.projectId === "string" ? inline.props.projectId : "";
+        const label = String(inline.props?.label ?? "") || "Untitled task";
+        const link = taskId && projectId ? `/projects/${projectId}?tab=progress&task=${taskId}` : undefined;
+        out.push({ ...inherited, text: label, link });
+        break;
+      }
       case "variable": {
         const name = typeof inline.props?.name === "string" ? inline.props.name : "";
         out.push({ ...inherited, text: variableDisplayText(name, inline.props?.value) } as Run);

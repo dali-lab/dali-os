@@ -75,6 +75,10 @@ type Input = {
   dueAt?: string;
   assigneeUserIds?: string[];
   mirrorToGithubRepo?: string;
+  /** Meeting notes model (specs/meeting-notes-model.md §4): set only by the
+   *  "Create tasks" action item flow, never by the MCP tool's own input
+   *  schema — backlinks Task.sourceRecordingId to the meeting it came from. */
+  sourceRecordingId?: string;
 };
 
 export class CreateTaskError extends Error {
@@ -186,6 +190,7 @@ export async function runCreateTask(callerId: string, input: Input) {
         startsAt,
         dueAt,
         createdById: callerId,
+        sourceRecordingId: input.sourceRecordingId ?? null,
       },
       select: { id: true },
     });

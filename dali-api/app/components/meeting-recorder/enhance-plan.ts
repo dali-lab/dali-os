@@ -35,6 +35,11 @@ export type EnhanceActionItem = {
   due?: string | null;
   dueSource?: string | null;
   cites?: number[];
+  /** Set server-side once Create tasks (specs/meeting-notes-model.md §4) makes
+   *  a Task for this item — never sent by the model, only written back by
+   *  POST /api/meeting-recordings/:id {action:"createTasks"}. Its presence is
+   *  the dedup guard: a re-run never creates a second task for the same item. */
+  taskId?: string | null;
 };
 
 export type EnhancePlan = {
