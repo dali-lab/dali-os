@@ -42,6 +42,30 @@ export function buildInlineContent(
   return content as unknown as DocPartialBlock["content"];
 }
 
+/** Appends a taskMention node (plus a leading space) to a checklist item's
+ *  existing content — the "Create tasks" producer's pure half. Pure/
+ *  editor-free so it's unit-testable without mounting the doc editor;
+ *  documents.$pageId.tsx's onTaskCreated calls this, then editor.updateBlock
+ *  with the result. Replaces the plain `/projects/:id?tab=progress&task=:id`
+ *  link this used to append (see taskMentionConfig in schema/configs.ts). */
+export function appendTaskMentionContent(
+  content: DocPartialBlock["content"],
+  task: { taskId: string; projectId: string; label: string },
+): DocPartialBlock["content"] {
+  const next: Array<
+    | { type: "text"; text: string; styles: object }
+    | { type: "taskMention"; props: { taskId: string; projectId: string; label: string } }
+  > = Array.isArray(content) ? [...(content as unknown as typeof next)] : [];
+  next.push(
+    { type: "text", text: " ", styles: {} },
+    {
+      type: "taskMention",
+      props: { taskId: task.taskId, projectId: task.projectId, label: task.label },
+    },
+  );
+  return next as unknown as DocPartialBlock["content"];
+}
+
 export function toPartialBlock(block: EnhanceOpBlock, pageId: string, recordingId: string): DocPartialBlock {
   const content = buildInlineContent(block.text, block.cites, pageId, recordingId);
   if (block.type === "heading") {

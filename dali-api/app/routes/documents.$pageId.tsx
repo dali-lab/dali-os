@@ -32,7 +32,13 @@ import { MeetingRecorder } from "~/components/MeetingRecorder";
 import { RecordingPresencePill } from "~/components/RecordingPresencePill";
 import { RecordPromptBanner } from "~/components/RecordPromptBanner";
 import { TranscriptChipHoverLayer } from "~/components/meeting-recorder/TranscriptChipHoverLayer";
-import { appendBlocks, blockOwnText, blocksToPlainText, renderEnhanceOps } from "~/components/doc";
+import {
+  appendBlocks,
+  appendTaskMentionContent,
+  blockOwnText,
+  blocksToPlainText,
+  renderEnhanceOps,
+} from "~/components/doc";
 import type { DocEditorInstance, DocPartialBlock } from "~/components/doc/schema/build";
 import type { EditorOp, SnapshotBlock } from "~/components/meeting-recorder/enhance-plan";
 import { pageDocName } from "~/collab/roomName";
@@ -725,12 +731,11 @@ export default function DocumentPage() {
     const trimmed = itemText.trim();
     const match = editor.document.find((b) => b.type === "checkListItem" && blockOwnText(b).trim() === trimmed);
     if (!match) return;
-    const content: Array<{ type: "text"; text: string; styles: object } | { type: "link"; href: string; content: string }> =
-      Array.isArray(match.content) ? [...(match.content as unknown as typeof content)] : [];
-    content.push(
-      { type: "text", text: " ", styles: {} },
-      { type: "link", href: `/projects/${taskProjectId}?tab=progress&task=${taskId}`, content: "Task" },
-    );
+    const content = appendTaskMentionContent(match.content as DocPartialBlock["content"], {
+      taskId,
+      projectId: taskProjectId,
+      label: trimmed,
+    });
     editor.updateBlock(match.id, { content } as unknown as DocPartialBlock);
   }, []);
 
