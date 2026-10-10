@@ -255,14 +255,10 @@ function buildProcessRequest(
         segments.push({ segment, startSeconds: rec.segmentStarts[segment] ?? 0, seqCount: hw + 1 });
       }
     });
-    // The mic channel is capped to one speaker once call audio exists — the
-    // call side is everyone else, so diarizing mic further is just noise.
-    const maxSpeakers = channel === "mic" && rec.channels.includes("call") ? 1 : undefined;
-    return {
-      channel: channel as Channel,
-      segments,
-      ...(maxSpeakers !== undefined ? { maxSpeakers } : {}),
-    };
+    // Both channels are diarized without a speaker cap: a hybrid meeting has
+    // several people around the recording laptop as well as on the call, and
+    // the label falls back to "You" on its own when the mic finds one voice.
+    return { channel: channel as Channel, segments };
   });
 
   return {
