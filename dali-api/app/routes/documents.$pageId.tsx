@@ -18,7 +18,8 @@ import { getCollabToken } from "~/lib/collab-token.server";
 import { fullName, formatDateShort } from "~/lib/display";
 import { getPresenceUser } from "~/lib/presence-user";
 import { getPageAccess, getPageAccessBulk } from "~/lib/pageAccess.server";
-import { getUserRoles } from "~/lib/roles";
+import { getUserRoles, isProjectMember } from "~/lib/roles";
+import type { MeetingType } from "~/generated/prisma/client";
 import { isFavorited, recordPageVisit } from "~/lib/user-pages.server";
 import { canManageSharing } from "~/lib/page-share-access.server";
 import { normalizePageTypography } from "~/lib/page-typography";
@@ -82,6 +83,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       labListing: true,
       linkAccess: true,
       linkPermission: true,
+      defaultMeetingNoteFor: true,
       createdBy: { select: { firstName: true, lastName: true } },
       lastEditedBy: { select: { firstName: true, lastName: true } },
       tags: { select: { tag: { select: { id: true, label: true, slug: true, color: true } } } },
@@ -356,6 +358,33 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     iconEmoji: r.fromPage.iconEmoji,
   }));
 
+  // Meeting-note-template binding action (specs/meeting-notes-model.md §1),
+  // offered on the template page itself: the project's owner (Core or a
+  // staffed member) for a project template, Core for a Lab template.
+  let meetingNoteTemplateAction:
+    | { scope: "project"; projectName: string; active: boolean }
+    | { scope: "lab"; current: MeetingType | null }
+    | null = null;
+  if (page.kind === "FreeForm" && page.isTemplate && page.workspaceType === "Project" && page.workspaceId) {
+    const canEditProjectSettings =
+      roles.isCore || (await isProjectMember(auth.user.sub, page.workspaceId, request));
+    if (canEditProjectSettings) {
+      const owningProject = await prisma.project.findUnique({
+        where: { id: page.workspaceId },
+        select: { name: true, meetingNoteTemplateId: true },
+      });
+      if (owningProject) {
+        meetingNoteTemplateAction = {
+          scope: "project",
+          projectName: owningProject.name,
+          active: owningProject.meetingNoteTemplateId === page.id,
+        };
+      }
+    }
+  } else if (page.kind === "FreeForm" && page.isTemplate && page.workspaceType === "Lab" && roles.isCore) {
+    meetingNoteTemplateAction = { scope: "lab", current: page.defaultMeetingNoteFor };
+  }
+
   return {
     pageId: page.id,
     title: page.title,
@@ -383,6 +412,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     trashed,
     canRestore,
     isCore: roles.isCore,
+    meetingNoteTemplateAction,
     activeRecording: activeRecordingRow
       ? {
           id: activeRecordingRow.id,
@@ -567,6 +597,7 @@ export default function DocumentPage() {
     trashed,
     canRestore,
     isCore,
+    meetingNoteTemplateAction,
     activeRecording,
   } = useLoaderData() as Exclude<Awaited<ReturnType<typeof loader>>, Response>;
 
@@ -651,6 +682,7 @@ export default function DocumentPage() {
       focusCommentId={focusCommentId}
       backlinks={backlinks}
       focusMentionUserId={focusMentionUserId}
+      meetingNoteTemplateAction={meetingNoteTemplateAction}
       aiEnabled
       onEditorReady={onEditorReady}
       topBarActions={

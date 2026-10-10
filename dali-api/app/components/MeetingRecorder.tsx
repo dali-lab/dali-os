@@ -1077,6 +1077,9 @@ export function MeetingRecorder({
               runs. Don't record meetings where patient, student record, or other protected information will be
               discussed.
             </p>
+            <p className="text-xs text-muted-foreground">
+              Type rough notes during the meeting; Enhance fills them in afterwards.
+            </p>
           </div>
         )}
 

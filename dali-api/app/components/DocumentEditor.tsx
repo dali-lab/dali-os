@@ -23,7 +23,7 @@ import { PageIconPicker } from "./doc-chrome/PageIconPicker";
 import { PageCover } from "./doc-chrome/PageCover";
 import { DocToc } from "./doc-chrome/DocToc";
 import { relativeTime } from "~/lib/relative-time";
-import { Menu, Tooltip } from "~/components/ui/floating";
+import { Menu, Select, type SelectOption, Tooltip } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { ShareDialog } from "~/components/sharing/ShareDialog";
@@ -54,6 +54,15 @@ export type BacklinkPage = {
   iconEmoji?: string | null;
 };
 
+export type MeetingNoteType = "Team" | "Partner" | "Other";
+
+const LAB_MEETING_NOTE_DEFAULT_OPTIONS: SelectOption<"none" | MeetingNoteType>[] = [
+  { value: "none", label: "No default" },
+  { value: "Team", label: "Team meetings" },
+  { value: "Partner", label: "Partner meetings" },
+  { value: "Other", label: "General meetings" },
+];
+
 export function DocumentEditor({
   pageId,
   initialTitle,
@@ -81,6 +90,7 @@ export function DocumentEditor({
   workspaceId = null,
   onEditorReady,
   topBarActions,
+  meetingNoteTemplateAction = null,
 }: {
   pageId: string;
   initialTitle: string;
@@ -127,6 +137,13 @@ export function DocumentEditor({
   // Host controls for the top bar's action row (a meeting note's Attendance
   // and Record buttons), placed ahead of Share.
   topBarActions?: ReactNode;
+  // When this page is a template page and the viewer may bind it, the ⋯ menu
+  // offers the matching meeting-note-template action (specs/meeting-notes-model.md
+  // §1). Null/undefined = viewer has neither right, so the action is hidden.
+  meetingNoteTemplateAction?:
+    | { scope: "project"; projectName: string; active: boolean }
+    | { scope: "lab"; current: MeetingNoteType | null }
+    | null;
 }) {
   const revalidator = useRevalidator();
   const navigate = useNavigate();
@@ -150,6 +167,14 @@ export function DocumentEditor({
   const [templateImportOpen, setTemplateImportOpen] = useState(false);
   // Optimistic local reflection of isTemplate — revalidator syncs server truth.
   const [templateMarked, setTemplateMarked] = useState(isTemplate);
+  // Optimistic local reflection of the meeting-note-template binding this
+  // page carries, if any — revalidator syncs server truth.
+  const [projectMeetingNoteActive, setProjectMeetingNoteActive] = useState(
+    meetingNoteTemplateAction?.scope === "project" ? meetingNoteTemplateAction.active : false,
+  );
+  const [labMeetingNoteDefault, setLabMeetingNoteDefaultState] = useState<MeetingNoteType | null>(
+    meetingNoteTemplateAction?.scope === "lab" ? meetingNoteTemplateAction.current : null,
+  );
   const [backlinksOpen, setBacklinksOpen] = useState(false);
   const backlinksRef = useRef<HTMLDivElement | null>(null);
   // Find & replace bar state.
@@ -331,7 +356,33 @@ export function DocumentEditor({
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ isTemplate: next }),
+      body: JSON.stringify({ intent: "setTemplate", isTemplate: next }),
+    });
+    revalidator.revalidate();
+  }
+
+  async function toggleProjectMeetingNoteTemplate() {
+    const next = !projectMeetingNoteActive;
+    setProjectMeetingNoteActive(next);
+    setMoreMenuOpen(false);
+    await fetch(`/api/pages/${pageId}/template`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ intent: "setProjectMeetingNoteTemplate", active: next }),
+    });
+    revalidator.revalidate();
+  }
+
+  async function applyLabMeetingNoteDefault(next: MeetingNoteType | null) {
+    const meetingType = next ?? labMeetingNoteDefault;
+    if (!meetingType) return;
+    setLabMeetingNoteDefaultState(next);
+    await fetch(`/api/pages/${pageId}/template`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ intent: "setLabMeetingNoteDefault", meetingType, active: next !== null }),
     });
     revalidator.revalidate();
   }
@@ -629,6 +680,31 @@ export function DocumentEditor({
                 <LayoutTemplate className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 {templateMarked ? "Unmark as template" : "Mark as template"}
               </button>
+            )}
+            {templateMarked && meetingNoteTemplateAction?.scope === "project" && (
+              <button
+                type="button"
+                onClick={() => void toggleProjectMeetingNoteTemplate()}
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
+              >
+                <LayoutTemplate className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                {projectMeetingNoteActive
+                  ? `In use for ${meetingNoteTemplateAction.projectName}'s meeting notes`
+                  : `Use for ${meetingNoteTemplateAction.projectName}'s meeting notes`}
+              </button>
+            )}
+            {templateMarked && meetingNoteTemplateAction?.scope === "lab" && (
+              <div className="flex flex-col gap-1 px-2 py-1.5">
+                <span className="text-xs text-muted-foreground">Lab default for meeting notes</span>
+                <Select
+                  value={labMeetingNoteDefault ?? "none"}
+                  onChange={(v) =>
+                    void applyLabMeetingNoteDefault(v === "none" ? null : (v as MeetingNoteType))
+                  }
+                  options={LAB_MEETING_NOTE_DEFAULT_OPTIONS}
+                  ariaLabel="Lab default for meeting notes"
+                />
+              </div>
             )}
             <button
               type="button"
