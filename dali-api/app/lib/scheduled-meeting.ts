@@ -35,6 +35,11 @@ import { meetingNotebookIdentity, termForDate } from "~/lib/meeting-notebook";
 import { termWindows } from "~/lib/terms";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { isGeneralCalendarEvent } from "~/lib/general-calendar";
+import { copyPageBody } from "~/lib/page-copy.server";
+import { readDocAsBlocks } from "~/collab/read";
+import { pageDocName } from "~/collab/roomName";
+import { blocksToPlainText } from "~/components/doc/schema/configs";
+import { hashTemplateText, normalizeTemplateText } from "~/lib/meeting-note-template";
 import { normalizeGuestEmails } from "~/calendar/lib/guest-emails";
 import {
   expandOccurrences,
@@ -746,6 +751,36 @@ export type AttachMeetingNoteResult =
   | { ok: false; error: string; status: number };
 
 /**
+ * Which template page (if any) should seed a brand-new meeting note:
+ * `projectId`'s bound template, else the Lab default for `meetingType`, else
+ * none. A bound page that's since been unmarked as a template or archived is
+ * ignored (falls through to the Lab default) rather than erroring — the note
+ * just comes back blank, same as an unset binding.
+ */
+export async function resolveMeetingNoteTemplate(
+  projectId: string | null,
+  meetingType: MeetingType,
+): Promise<{ id: string } | null> {
+  if (projectId) {
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+      select: { meetingNoteTemplateId: true },
+    });
+    if (project?.meetingNoteTemplateId) {
+      const bound = await prisma.page.findUnique({
+        where: { id: project.meetingNoteTemplateId },
+        select: { id: true, isTemplate: true, archivedAt: true },
+      });
+      if (bound && bound.isTemplate && bound.archivedAt === null) return { id: bound.id };
+    }
+  }
+  return prisma.page.findFirst({
+    where: { defaultMeetingNoteFor: meetingType, isTemplate: true, archivedAt: null },
+    select: { id: true },
+  });
+}
+
+/**
  * Give one occurrence of a meeting its notes doc, or return the one it has.
  *
  * A meeting's first note decides what kind of meeting it is (About →
@@ -894,6 +929,23 @@ export async function attachMeetingNote(
   // Backfill the attendance roster the note's checklist reads. Idempotent — a
   // SelfCheckIn meeting may already have rows, so skip the duplicates.
   await seedMeetingRoster(meeting, occurrence.originalStart);
+
+  // Seed the blank note from a bound template, if one resolves (see
+  // resolveMeetingNoteTemplate). The hash is of what was actually written, so
+  // a later "still untouched?" check (isUntouchedTemplate) stays correct even
+  // after the template itself is edited.
+  const template = await resolveMeetingNoteTemplate(projectId, meetingType);
+  if (template) {
+    await copyPageBody(template.id, notePageId);
+    const bodyText = blocksToPlainText(await readDocAsBlocks(pageDocName(notePageId)));
+    await prisma.page.update({
+      where: { id: notePageId },
+      data: {
+        seededFromPageId: template.id,
+        seededTemplateHash: hashTemplateText(normalizeTemplateText(bodyText)),
+      },
+    });
+  }
 
   return { ok: true, notePageId };
 }

@@ -3497,6 +3497,14 @@ model Project {
   // meeting?" prompts for this project's meetings.
   recordingPolicy RecordingPolicy @default(Allowed)
 
+  // Template page (a Page in this project's Drive, isTemplate = true) whose
+  // body seeds a fresh meeting note for this project (see attachMeetingNote
+  // in app/lib/scheduled-meeting.ts). Set from the template page itself
+  // ("Use for this project's meeting notes"). onDelete SetNull: deleting the
+  // template just unbinds it — new notes fall back to the Lab default for the
+  // meeting's type, same as an unset binding.
+  meetingNoteTemplateId String?
+
   // AI "TL;DR" of the project's work status, shown under the Progress-tab
   // status bar. Cached here (shared across viewers) and regenerated only when
   // the underlying work changes — aiTldrInputHash fingerprints the facts the
@@ -3578,9 +3586,10 @@ model Project {
   // Toggled by Core/Admin in the project settings modal.
   isPrivate Boolean @default(false)
 
-  overviewPage      Page? @relation("ProjectOverview", fields: [overviewPageId], references: [id])
-  prdPage           Page? @relation("ProjectPRD", fields: [prdPageId], references: [id])
-  publicWriteupPage Page? @relation("ProjectPublicWriteup", fields: [publicWriteupPageId], references: [id], onDelete: SetNull)
+  overviewPage        Page? @relation("ProjectOverview", fields: [overviewPageId], references: [id])
+  prdPage             Page? @relation("ProjectPRD", fields: [prdPageId], references: [id])
+  publicWriteupPage   Page? @relation("ProjectPublicWriteup", fields: [publicWriteupPageId], references: [id], onDelete: SetNull)
+  meetingNoteTemplate Page? @relation("ProjectMeetingNoteTemplate", fields: [meetingNoteTemplateId], references: [id], onDelete: SetNull)
 
   partners          ProjectPartner[]
   // The project's planned term set — the source of truth for which terms the
@@ -5195,6 +5204,26 @@ model Page {
   // fresh doc id — no structural schema change, just a new row.
   isTemplate Boolean @default(false)
 
+  // Marks this (Lab, isTemplate) page as the lab-wide default meeting-note
+  // template for this meeting type — used by attachMeetingNote when a
+  // meeting's project has no template of its own bound. @@unique below lets
+  // every type have at most one default page; Postgres allows any number of
+  // NULL rows, so most pages are untouched by the constraint. Set Core-only
+  // from the template page's menu or the Drive templates gallery; setting it
+  // on a new page clears it from whichever page held it before.
+  defaultMeetingNoteFor MeetingType?
+
+  // Set by attachMeetingNote when this note was seeded from a template:
+  // seededFromPageId is that template's id (a plain id, not a relation — the
+  // template may later be deleted or unmarked without touching the note),
+  // and seededTemplateHash is the hash of the body text written at seed time.
+  // Together they let a later read answer "is this still the untouched
+  // template?" without re-fetching the template (see isUntouchedTemplate in
+  // app/lib/meeting-note-template.ts). Both null = an unseeded (today:
+  // blank) note, same as before this field existed.
+  seededFromPageId   String?
+  seededTemplateHash String?
+
   parent   Page?  @relation("PageTree", fields: [parentPageId], references: [id])
   children Page[] @relation("PageTree")
 
@@ -5211,6 +5240,12 @@ model Page {
   projectAsOverview      Project? @relation("ProjectOverview")
   projectAsPRD           Project? @relation("ProjectPRD")
   projectAsPublicWriteup Project? @relation("ProjectPublicWriteup")
+  // Reverse of Project.meetingNoteTemplateId. A plain list (not @unique on
+  // that FK), so in principle more than one project could point at the same
+  // template page — the UI only ever sets it from the page itself, one
+  // project at a time, but nothing stops two different pages' owners from
+  // binding the same shared template.
+  projectsUsingAsMeetingNoteTemplate Project[] @relation("ProjectMeetingNoteTemplate")
 
   // Reverse of ProcessFolderBinding.folderPageId — the process folder-binding
   // rows (project meeting-notes folder, offering Forms folder, Core Agreements
@@ -5232,6 +5267,7 @@ model Page {
   searchIndex PageSearchIndex?
 
   @@unique([meetingNoteId, meetingOccurrenceStart])
+  @@unique([defaultMeetingNoteFor])
   @@index([workspaceType, workspaceId, parentPageId])
   @@index([archivedAt])
   // Trigram index behind the typo-tolerant title match in doc-search.server.ts

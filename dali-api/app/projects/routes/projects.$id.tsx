@@ -329,6 +329,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       slackChannelId: true,
       isPrivate: true,
       recordingPolicy: true,
+      meetingNoteTemplate: { select: { id: true, title: true } },
       overviewPageId: true,
       prdPageId: true,
       projectTerms: {
@@ -1250,6 +1251,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         slackChannelId: project.slackChannelId,
         isPrivate: project.isPrivate,
         recordingPolicy: project.recordingPolicy,
+        meetingNoteTemplate: project.meetingNoteTemplate,
         overviewPageId: project.overviewPageId,
         prdPageId: project.prdPageId,
         startTerm,
@@ -2637,6 +2639,35 @@ function RecordingPolicySegment({
   );
 }
 
+// Read-only (specs/meeting-notes-model.md §1): the picker lives on the
+// template page itself, in the Drive templates gallery — this just shows
+// what's bound so Settings isn't the one place that's silent about it.
+function MeetingNoteTemplateSegment({
+  meetingNoteTemplate,
+}: {
+  meetingNoteTemplate: { id: string; title: string } | null;
+}) {
+  return (
+    <EditableSection title="Meeting note template" canEdit={false}>
+      {() => (
+        <p className="text-sm text-foreground">
+          {meetingNoteTemplate ? (
+            <Link to={`/documents/${meetingNoteTemplate.id}`} className="text-os-accent hover:underline">
+              {meetingNoteTemplate.title}
+            </Link>
+          ) : (
+            "None"
+          )}
+          <span className="block text-xs text-muted-foreground">
+            Seeds every new meeting note for this project. Set from a template page's own ⋯ menu
+            ("Use for this project's meeting notes").
+          </span>
+        </p>
+      )}
+    </EditableSection>
+  );
+}
+
 function DomainsSegment({
   declared,
   derived,
@@ -3979,6 +4010,8 @@ function ScopeTab({
       <VisibilitySegment isPrivate={project.isPrivate} canEdit={canEdit} />
 
       <RecordingPolicySegment recordingPolicy={project.recordingPolicy} canEdit={canEdit} />
+
+      <MeetingNoteTemplateSegment meetingNoteTemplate={project.meetingNoteTemplate} />
 
       {/* Declared domains — editable; if none declared the derived set from
           assignments + bids is shown as a fallback so a freshly-created
