@@ -139,28 +139,39 @@ export async function claimRecording(
  *  Pending → Recording on the first chunk. Returns the up-to-date
  *  stopRequested so a chunk in flight when Stop is clicked still learns it. */
 export async function recordChunk(
-  rec: MeetingRecording,
+  rec: Pick<MeetingRecording, "id">,
   channel: Channel,
   segment: number,
   seq: number,
 ): Promise<{ stopRequested: boolean }> {
-  const channels = rec.channels.includes(channel) ? rec.channels : [...rec.channels, channel];
-  const chunkIndex = { ...((rec.chunkIndex as Record<string, number[]> | null) ?? {}) };
-  const highWater = [...(chunkIndex[channel] ?? [])];
-  highWater[segment] = Math.max(highWater[segment] ?? -1, seq);
-  chunkIndex[channel] = highWater;
+  // Mic and call chunks fill at the same rate and land within the same
+  // second, often on different machines. Lock the row and build the new
+  // index from the locked read: a read-modify-write off the caller's copy
+  // lost whichever channel wrote first, so the job was dispatched without it.
+  return prisma.$transaction(async (tx) => {
+    const [fresh] = await tx.$queryRaw<
+      Array<{ channels: string[]; chunkIndex: Record<string, number[]> | null; status: string }>
+    >`SELECT channels, "chunkIndex", status FROM "MeetingRecording" WHERE id = ${rec.id} FOR UPDATE`;
+    if (!fresh) return { stopRequested: true };
 
-  const updated = await prisma.meetingRecording.update({
-    where: { id: rec.id },
-    data: {
-      channels,
-      chunkIndex,
-      lastChunkAt: new Date(),
-      ...(rec.status === "Pending" ? { status: "Recording" as const } : {}),
-    },
-    select: { stopRequested: true },
+    const channels = fresh.channels.includes(channel) ? fresh.channels : [...fresh.channels, channel];
+    const chunkIndex = { ...(fresh.chunkIndex ?? {}) };
+    const highWater = [...(chunkIndex[channel] ?? [])];
+    highWater[segment] = Math.max(highWater[segment] ?? -1, seq);
+    chunkIndex[channel] = highWater;
+
+    const updated = await tx.meetingRecording.update({
+      where: { id: rec.id },
+      data: {
+        channels,
+        chunkIndex,
+        lastChunkAt: new Date(),
+        ...(fresh.status === "Pending" ? { status: "Recording" as const } : {}),
+      },
+      select: { stopRequested: true },
+    });
+    return { stopRequested: updated.stopRequested };
   });
-  return { stopRequested: updated.stopRequested };
 }
 
 /** Page: ask for the recording to stop. A session the app/browser never
