@@ -40,18 +40,30 @@ wired in rather than bolted on.
 ### 1. Templates seeded into new notes
 
 A meeting note starts with structure so there is something to anchor to.
+Templates are the existing kind: ordinary pages flagged `isTemplate`, made
+with "Mark as template" and listed in the Drive gallery (`/drive/templates`).
+No new template model and no new admin surface; the gallery, unused so far,
+gets its first concrete job and is the natural anchor for its makeover.
 
-- Lab defaults per meeting type (Team, Partner, General), editable in Admin ▸
-  Templates as ordinary page templates tagged with a `meetingType`. Reuses the
-  existing page-template system (#1402); no new model.
-- A project may pick its own: `Project.meetingNoteTemplateId` (a field, not a
-  join table). Project ▸ Settings ▸ Meetings.
+- A project binds one: `Project.meetingNoteTemplateId` (a field, not a join
+  table) pointing at a template page in that project's Drive. Set from the
+  template page itself: "Use for this project's meeting notes" in the gallery
+  row and the page menu, for people who can edit project settings.
+- Lab defaults per meeting type (Team, Partner, General) are template pages in
+  the Lab Drive, referenced by three settings keys. Same action, Core only:
+  "Use as the lab default for Team meetings".
+- Resolution: project binding, else the lab default for the meeting's type,
+  else no seed. Nothing is seeded until someone binds a template, so teams
+  that never record keep today's blank note and the defaults ship unbound.
+- `attachMeetingNote` duplicates the bound page into the new note through the
+  same `duplicatePage` path "From template…" uses, and records
+  `Page.seededFromPageId` and `Page.seededTemplateHash` (hash of the body it
+  wrote). "Still the untouched template" is then a deterministic comparison
+  that stays correct after the template is edited. Existing notes are
+  untouched.
 - Suggested Team default: `## Agenda`, `## Notes`, `## Decisions`,
-  `## Action items`. Partner adds `## For the partner`.
-- `attachMeetingNote` copies the template body into the new page and records
-  `Page.seededTemplateHash` (hash of the normalized body it wrote). "Still the
-  untouched template" is then a deterministic comparison, and stays correct
-  after an admin edits the template. Existing notes are untouched.
+  `## Action items`. Partner adds `## For the partner`. Shipped as seed
+  content for the three Lab template pages, not bound.
 - The Record start sheet gains one line so people learn the model on first
   use: "Type rough notes during the meeting; Enhance fills them in afterwards."
 
@@ -226,7 +238,8 @@ carries verbatim speech. Retention is unchanged: `notes` dies with the row.
 Three PRs behind the existing `ai-meeting-notes` flag. No editor schema change
 until PR 3, and that one extends a spec every client already carries.
 
-1. **Templates with the seeded hash, the nudge job, MCP read tools.**
+1. **Template binding (project field, lab settings, gallery action), seeding
+   with the recorded hash, the nudge job, MCP read tools.**
 2. **Enhance: endpoint with verification, auto-preview, the sheet, client-side
    merge with conflict rule, version snapshot, link chips, `&at=` in the
    transcript panel, enhance lock.**
