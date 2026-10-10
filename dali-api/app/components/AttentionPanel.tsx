@@ -15,9 +15,8 @@ import {
 } from "lucide-react";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
-import { IconButton } from "~/components/ui/IconButton";
 import { Tooltip } from "~/components/ui/floating";
-import { Modal } from "~/components/Modal";
+import { Drawer } from "~/components/ui/Drawer";
 import { SegmentedTabButtons } from "~/components/AreaPillNav";
 import { RsvpButtons, notifyTasksChanged } from "~/components/RsvpButtons";
 import { buttonClasses } from "~/components/ui/Button";
@@ -260,20 +259,7 @@ export function TasksDrawer({
   const count = attentionCount(tasks, notifications, projectTasks);
 
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      labelledBy="tasks-drawer-title"
-      className="fixed inset-0 z-50 flex justify-end bg-os-overlay"
-      containerClassName="flex h-full w-full max-w-[480px] flex-col border-l border-os-container bg-os-card shadow-[-24px_0_60px_var(--color-os-shadow)] outline-none motion-safe:animate-detail-panel"
-    >
-      <div className="flex items-center gap-2 px-6 pt-6 pb-4">
-        <h2 id="tasks-drawer-title" className="flex-1 text-lg font-bold text-foreground">
-          Tasks ({count})
-        </h2>
-        {seeAll}
-        <IconButton label="Close" icon={X} onClick={onClose} className="h-9 w-9" iconClassName="h-5 w-5" />
-      </div>
+    <Drawer open={open} onClose={onClose} title={`Tasks (${count})`} headerActions={seeAll} width={480}>
       <div className="px-5 pb-3.5">
         <FeedTabs tab={tab} onChange={setTab} feed={feed} stretch />
       </div>
@@ -284,7 +270,7 @@ export function TasksDrawer({
           onOpen={onOpen}
         />
       </div>
-    </Modal>
+    </Drawer>
   );
 }
 

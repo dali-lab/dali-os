@@ -19,6 +19,7 @@ import {
   canReadRecording,
   canRecordInto,
   claimRecording,
+  documentTitle,
   finalizeEmpty,
   finishRecording,
   parseSpeakerMap,
@@ -29,7 +30,8 @@ import {
   storedLines,
 } from "~/lib/meeting-recording.server";
 import { runCreateTask, CreateTaskError } from "~/mcp/tools/create-task";
-import type { StoredEnhanceNotes } from "~/components/meeting-recorder/enhance-plan";
+import { actionItemMatchesBlock, type StoredEnhanceNotes } from "~/components/meeting-recorder/enhance-plan";
+import { formatClock } from "~/components/meeting-recorder/transcript";
 
 const notFound = () => Response.json({ error: "Not found" }, { status: 404 });
 
@@ -170,14 +172,33 @@ export async function action({ request, params }: Route.ActionArgs) {
         });
       };
 
+      // A re-run (Enhance again) can renumber action items, so an item's
+      // taskId at its OWN index may be missing even though an earlier run
+      // already made a Task for the same text — dedup by matching title
+      // against this recording's existing tasks too (specs/meeting-notes-
+      // model.md §5), not just by index.
+      const existingTasks = await prisma.task.findMany({
+        where: { sourceRecordingId: rec.id },
+        select: { id: true, title: true },
+      });
+      const noteTitle = (entity === "doc" && pageId ? await documentTitle(rec.documentName) : null) || "Untitled";
+      const origin = new URL(request.url).origin;
+
       for (const item of items) {
         const existing = actionItems[item.index];
         if (!existing || existing.taskId) continue; // out of range, or already created — dedup.
 
+        const dupe = existingTasks.find((t) => actionItemMatchesBlock(item.title, t.title));
+        if (dupe) {
+          actionItems[item.index] = { ...existing, taskId: dupe.id };
+          created.push({ index: item.index, taskId: dupe.id });
+          continue;
+        }
+
         const citeAt = existing.cites?.[0];
         const description =
           entity === "doc" && pageId && citeAt !== undefined
-            ? `/documents/${pageId}?transcript=${rec.id}&at=${Math.max(0, Math.round(citeAt))}`
+            ? `Action item from "${noteTitle}" at ${formatClock(citeAt)}.\n${origin}/documents/${pageId}?transcript=${rec.id}&at=${Math.max(0, Math.round(citeAt))}`
             : undefined;
 
         let task: { id: string };

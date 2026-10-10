@@ -1,7 +1,35 @@
-import { describe, it, expect } from "vitest";
-import { createElement } from "react";
+// @vitest-environment jsdom
+import { describe, it, expect, afterEach } from "vitest";
+import { createElement, act, type ReactElement } from "react";
+import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Modal, ModalHeader, ModalFooter, nextTrapTarget } from "../Modal";
+
+// Tell React we drive updates through act() (no setupFile in this repo) —
+// same pattern as app/components/ui/dialog.test.tsx.
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+function mount(ui: ReactElement) {
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  act(() => {
+    root.render(ui);
+  });
+  return {
+    container,
+    rerender: (next: ReactElement) => act(() => root.render(next)),
+    unmount: () => {
+      act(() => root.unmount());
+      container.remove();
+    },
+  };
+}
+
+afterEach(() => {
+  document.body.innerHTML = "";
+  document.body.removeAttribute("data-modal-open");
+});
 
 describe("nextTrapTarget (focus-trap cycling)", () => {
   function makeButtons(n: number): HTMLElement[] {
@@ -77,6 +105,42 @@ describe("Modal render output", () => {
     expect(html).toContain('id="my-title"');
     expect(html).toContain("Hello");
     expect(html).toContain("OK");
+  });
+});
+
+describe("body[data-modal-open] counter (hides BlockNote's side menu under an overlaying Modal)", () => {
+  function modal(id: string, open = true) {
+    return createElement(Modal, {
+      open,
+      onClose: () => {},
+      labelledBy: id,
+      children: createElement("h3", { id }, "Title"),
+    });
+  }
+
+  it("sets the attribute to 1 while a single Modal is open, and removes it on close", () => {
+    const { rerender, unmount } = mount(modal("t1"));
+    expect(document.body.getAttribute("data-modal-open")).toBe("1");
+
+    rerender(modal("t1", false));
+    expect(document.body.hasAttribute("data-modal-open")).toBe(false);
+
+    unmount();
+    expect(document.body.hasAttribute("data-modal-open")).toBe(false);
+  });
+
+  it("stacks the count across two simultaneously open Modals, unwinding one at a time", () => {
+    const first = mount(modal("a"));
+    expect(document.body.getAttribute("data-modal-open")).toBe("1");
+
+    const second = mount(modal("b"));
+    expect(document.body.getAttribute("data-modal-open")).toBe("2");
+
+    first.unmount();
+    expect(document.body.getAttribute("data-modal-open")).toBe("1");
+
+    second.unmount();
+    expect(document.body.hasAttribute("data-modal-open")).toBe(false);
   });
 });
 

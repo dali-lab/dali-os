@@ -35,6 +35,9 @@ import {
   type PageTypography,
 } from "~/lib/page-typography";
 import { OS_SURFACE_CLASS } from "~/components/ui/floating/styles";
+import { Drawer } from "~/components/ui/Drawer";
+import { RECORDING_RAIL_TITLE_ID } from "~/components/meeting-recorder/RecordingRail";
+import { SegmentedTabButtons } from "~/components/AreaPillNav";
 
 // Reusable, abstract document surface: a Notion-style large title, a
 // collaborative rich-text body, lab tags, doc-level comments, and PDF/Word
@@ -91,6 +94,8 @@ export function DocumentEditor({
   onEditorReady,
   topBarActions,
   meetingNoteTemplateAction = null,
+  rail,
+  onContainerWideChange,
 }: {
   pageId: string;
   initialTitle: string;
@@ -144,6 +149,17 @@ export function DocumentEditor({
     | { scope: "project"; projectName: string; active: boolean }
     | { scope: "lab"; current: MeetingNoteType | null }
     | null;
+  // The Recording rail's content (specs/meeting-recording-rail.md): sticky
+  // in the wide comments column, or inside ui/Drawer on a narrow one. Omit
+  // (or pass open: false) when there's nothing to show. `live` suppresses
+  // the Drawer on a narrow canvas — recording/stopping never render in a
+  // blocking surface, since people type notes while they run.
+  rail?: { node: ReactNode; open: boolean; onClose: () => void; live?: boolean };
+  // Reports the ≥ 1150px check back to the host — DocumentEditor is the only
+  // component that measures it, but the route's top-bar Record button needs
+  // to know too (narrow canvases answer a live recording with a Popover
+  // instead of toggling the rail).
+  onContainerWideChange?: (wide: boolean) => void;
 }) {
   const revalidator = useRevalidator();
   const navigate = useNavigate();
@@ -267,6 +283,10 @@ export function DocumentEditor({
     return () => ro.disconnect();
   }, []);
 
+  useEffect(() => {
+    onContainerWideChange?.(containerWide);
+  }, [containerWide, onContainerWideChange]);
+
   // Comments live in the right-hand rail on a wide container and at the foot of
   // the document otherwise. The top-bar toggle hides both surfaces at once, for
   // readers who want the page without the margin chatter.
@@ -276,7 +296,39 @@ export function DocumentEditor({
   // (select → Comment), not from an empty column.
   const hasComments = threadCount > 0;
   const [commentsOpen, setCommentsOpen] = useState(true);
-  const railVisible = commentsOpen && containerWide && hasComments;
+  const commentsWantColumn = commentsOpen && containerWide && hasComments;
+
+  // Recording rail (specs/meeting-recording-rail.md "Wiring"): the column
+  // renders whenever comments want it OR the rail is open. While the rail is
+  // open, a two-tab header switches the column between Comments and
+  // Recording when both exist; Recording wins by default on open (it just
+  // took over the column), and the comments portal is suppressed whichever
+  // tab Recording occupies, so FloatingThreadController takes over for marks.
+  const railOpen = Boolean(rail?.open);
+  const [railTab, setRailTab] = useState<"comments" | "recording">("recording");
+  useEffect(() => {
+    if (railOpen) setRailTab("recording");
+  }, [railOpen]);
+  const showRecordingInColumn = containerWide && railOpen && (!hasComments || railTab === "recording");
+  const commentsInColumn = commentsWantColumn && (!railOpen || railTab === "comments");
+  const railVisible = commentsInColumn;
+  const showColumn = containerWide && (commentsWantColumn || railOpen);
+
+  // The Recording rail is sticky with its own scroll; the comments rail
+  // scrolls with the paper for margin alignment (DocCommentsRail's cards are
+  // absolutely positioned against the paper's scroll position) — so the
+  // sticky top offset has to clear the actual rendered top-bar height, not a
+  // guess, and only applies while Recording occupies the column.
+  const topBarRef = useRef<HTMLDivElement | null>(null);
+  const [topBarHeight, setTopBarHeight] = useState(0);
+  useEffect(() => {
+    const el = topBarRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => setTopBarHeight(entries[0]?.contentRect.height ?? el.offsetHeight));
+    ro.observe(el);
+    setTopBarHeight(el.offsetHeight);
+    return () => ro.disconnect();
+  }, []);
 
   const RAIL_TARGET_ID = "doc-comments-rail";
 
@@ -512,7 +564,7 @@ export function DocumentEditor({
 
   // ── Top bar ───────────────────────────────────────────────────────────────
   const topBar = (
-    <div className={cn("doc-topbar flex items-center gap-2 py-2", bodyText)}>
+    <div ref={topBarRef} className={cn("doc-topbar flex items-center gap-2 py-2", bodyText)}>
       {editedLabel && (
         <span className="shrink-0 hidden sm:inline">{editedLabel}</span>
       )}
@@ -815,7 +867,7 @@ export function DocumentEditor({
       <div
         ref={paperCardRef}
         className={`doc-canvas rounded-xl border border-border bg-card ${
-          railVisible
+          showColumn
             ? "flex-1 min-w-0"
             : typo.fullWidth
               ? "w-full"
@@ -1045,14 +1097,39 @@ export function DocumentEditor({
         </div>
       </div>
 
-      {/* Right-hand comments rail — only rendered when the container is wide */}
-      {railVisible && (
-        <div
-          id={RAIL_TARGET_ID}
-          className="dali-doc-rail-container bn-root bn-shadcn"
-          aria-label="Comments rail"
-        />
-      )}
+      {/* Right-hand rail — comments, Recording, or both behind a tab switch
+          when both exist (specs/meeting-recording-rail.md "Wiring"). Only
+          rendered when the container is wide; a narrow canvas renders the
+          Recording rail in a Drawer instead, below. */}
+      {showColumn &&
+        (showRecordingInColumn || (hasComments && commentsOpen && railOpen) ? (
+          <div
+            className={cn(
+              "dali-doc-rail-container",
+              showRecordingInColumn && "dali-recording-rail-sticky dali-recording-rail-width",
+            )}
+            style={showRecordingInColumn ? { top: topBarHeight, height: `calc(100vh - ${topBarHeight}px)` } : undefined}
+          >
+            {hasComments && commentsOpen && railOpen && (
+              <div className="p-2">
+                <SegmentedTabButtons
+                  label="Rail"
+                  size="sm"
+                  items={[
+                    { label: "Comments", active: railTab === "comments", onClick: () => setRailTab("comments") },
+                    { label: "Recording", active: railTab === "recording", onClick: () => setRailTab("recording") },
+                  ]}
+                />
+              </div>
+            )}
+            {showRecordingInColumn && <div className="flex min-h-0 flex-1 flex-col">{rail!.node}</div>}
+            {commentsInColumn && (
+              <div id={RAIL_TARGET_ID} className="bn-root bn-shadcn flex min-h-0 flex-1 flex-col" aria-label="Comments rail" />
+            )}
+          </div>
+        ) : (
+          <div id={RAIL_TARGET_ID} className="dali-doc-rail-container bn-root bn-shadcn" aria-label="Comments rail" />
+        ))}
     </div>
   );
 
@@ -1082,11 +1159,22 @@ export function DocumentEditor({
     </div>
   );
 
+  // Narrow canvas: the Recording rail opens in a Drawer instead of the sticky
+  // column — DocumentEditor is the only component that knows containerWide.
+  // Live states (recording/stopping) never render here; the top-bar Popover
+  // carries those (specs/meeting-recording-rail.md "Wiring").
+  const recordingDrawer = rail && !containerWide && !rail.live && (
+    <Drawer open={rail.open} onClose={rail.onClose} labelledBy={RECORDING_RAIL_TITLE_ID} width={360}>
+      {rail.node}
+    </Drawer>
+  );
+
   const body = (
     <div ref={docSurfaceRef} className="doc-surface flex flex-col min-h-screen">
       {topBar}
       {canvas}
       {inlineComments}
+      {recordingDrawer}
       {versionHistory}
       {canManageAccess && (
         <ShareDialog
