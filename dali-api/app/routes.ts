@@ -795,6 +795,10 @@ export default [
   // Meeting-note recording: transcript in, notes Markdown out. Behind the
   // `ai-meeting-notes` flag; same provider gating as api/ai/doc.
   route("api/ai/meeting-notes", "routes/api.ai.meeting-notes.ts"),
+  // Enhance (specs/meeting-notes-model.md §2): same flag/permission/budget as
+  // Write notes above, merges the model's plan against the note's typed
+  // blocks instead of appending a fixed summary.
+  route("api/ai/meeting-notes/enhance", "routes/api.ai.meeting-notes.enhance.ts"),
   // Meeting recording: the page (or desktop app) creates a row, PCM chunks
   // land in S3, Stop dispatches the transcription provider, whose callback
   // lands on /result. Desktop app depends on these (see

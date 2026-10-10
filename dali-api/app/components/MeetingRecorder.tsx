@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useBlocker, useSearchParams } from "react-router";
 import { Download, Mic, Monitor, Square, Trash2 } from "lucide-react";
 import { buttonClasses } from "~/components/ui/Button";
@@ -34,6 +34,8 @@ import {
   speakerLabelFor,
   transcriptParagraphs,
 } from "./meeting-recorder/transcript";
+import { applyEnhancePlan, type EditorOp, type SnapshotBlock, type StoredEnhanceNotes } from "./meeting-recorder/enhance-plan";
+import { isUntouchedTemplate } from "~/lib/meeting-note-template";
 import type {
   ActiveRecording,
   Channel,
@@ -45,6 +47,42 @@ import type {
   StartRecordingResponse,
   TranscriptLine,
 } from "./meeting-recorder/types";
+
+const ENHANCE_CONFIRM_KEY = "dali:meeting-recording:enhance-confirmed";
+
+function hasConfirmedEnhance(): boolean {
+  try {
+    return window.localStorage.getItem(ENHANCE_CONFIRM_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function rememberEnhanceConfirmed() {
+  try {
+    window.localStorage.setItem(ENHANCE_CONFIRM_KEY, "1");
+  } catch {
+    // Private window — the confirm just shows again next time, no worse.
+  }
+}
+
+/** "Oct 10, 2:14 PM" in the viewer's own locale/timezone — the "Enhanced …"
+ *  banner doesn't need the year since it's always recent. */
+function formatDateTime(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  } catch {
+    return iso;
+  }
+}
+
+function formatIsoDate(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (!m) return iso;
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const monthIndex = Number(m[2]) - 1;
+  return `${months[monthIndex] ?? m[2]} ${Number(m[3])}, ${m[1]}`;
+}
 
 type Phase =
   | "idle"
@@ -126,6 +164,10 @@ export function MeetingRecorder({
   onInsert,
   autoOpen,
   collabToken,
+  seededFromPageId = null,
+  seededTemplateHash = null,
+  getNoteState,
+  onApplyEnhance,
 }: {
   /** The collab room the notes land in. */
   documentName: string;
@@ -149,6 +191,19 @@ export function MeetingRecorder({
    *  room). Omit to skip that — e.g. a read-only transcript view that never
    *  starts a recording of its own. */
   collabToken?: string | null;
+  /** The page's seeded-template fields (specs/meeting-notes-model.md §1) —
+   *  drives the Write notes / Enhance notes label and whether empty template
+   *  headings get hidden on apply. */
+  seededFromPageId?: string | null;
+  seededTemplateHash?: string | null;
+  /** A snapshot of the live editor's top-level blocks plus whole-body plain
+   *  text, read fresh whenever Enhance needs it. Null while the editor isn't
+   *  ready yet. */
+  getNoteState?: () => { blocks: SnapshotBlock[]; bodyText: string } | null;
+  /** Replays Enhance's merge ops against the live editor and inserts the
+   *  transcript toggle if it isn't already there. False when the editor
+   *  isn't ready. */
+  onApplyEnhance?: (ops: EditorOp[], recordingId: string, transcript: string[]) => boolean;
 }) {
   const { actionBtnPrimary, actionIcon } = useOsChrome();
   const dialog = useDialog();
@@ -165,6 +220,11 @@ export function MeetingRecorder({
   // anyone who can view the note (the GET route widens for them), even a
   // viewer this component otherwise wouldn't render anything for.
   const transcriptParam = searchParams.get("transcript");
+  // `&at=<seconds>` (citation chips, specs/meeting-notes-model.md §3) scrolls
+  // to and highlights the transcript line closest to that moment.
+  const atParam = searchParams.get("at");
+  const atSeconds = atParam !== null && atParam !== "" && Number.isFinite(Number(atParam)) ? Number(atParam) : null;
+  const highlightLineRef = useRef<HTMLParagraphElement | null>(null);
 
   const [recordingId, setRecordingId] = useState<string | null>(null);
   const [link, setLink] = useState<string | null>(null);
@@ -189,6 +249,16 @@ export function MeetingRecorder({
   const [insertedAt, setInsertedAt] = useState<string | null>(null);
   const [finalized, setFinalized] = useState(false);
   const [stoppingSince, setStoppingSince] = useState(0);
+
+  // Enhance (specs/meeting-notes-model.md §2).
+  const [enhanceNotes, setEnhanceNotes] = useState<StoredEnhanceNotes | null>(null);
+  const [enhancedAt, setEnhancedAt] = useState<string | null>(null);
+  const [enhancedByName, setEnhancedByName] = useState<string | null>(null);
+  const [enhanceSheetOpen, setEnhanceSheetOpen] = useState(false);
+  const [enhanceBusy, setEnhanceBusy] = useState(false);
+  const [enhanceError, setEnhanceError] = useState<string | null>(null);
+  const [applyBusy, setApplyBusy] = useState(false);
+  const autoEnhanceTried = useRef(false);
 
   // Start-sheet config.
   const [useDesktopApp, setUseDesktopApp] = useState(desktopVer != null);
@@ -240,6 +310,12 @@ export function MeetingRecorder({
     setRemote(null);
     setInsertedAt(null);
     setFinalized(false);
+    setEnhanceNotes(null);
+    setEnhancedAt(null);
+    setEnhancedByName(null);
+    setEnhanceSheetOpen(false);
+    setEnhanceError(null);
+    autoEnhanceTried.current = false;
     segmentRef.current = 0;
     conflictedRef.current = false;
     setPhase("idle");
@@ -300,6 +376,9 @@ export function MeetingRecorder({
       setSpeakers(data.speakers);
       setInsertedAt(data.insertedAt ?? null);
       setFinalized(Boolean(data.finalizedAt));
+      setEnhanceNotes(data.notes ?? null);
+      setEnhancedAt(data.enhancedAt ?? null);
+      setEnhancedByName(data.enhancedBy ?? null);
       segmentRef.current = Math.max(0, (data.segmentStarts?.length ?? 1) - 1);
       if (data.error) setError(data.error);
       if (following) {
@@ -416,6 +495,9 @@ export function MeetingRecorder({
       setRecordedSeconds(data.recordedSeconds);
       setInsertedAt(data.insertedAt ?? null);
       if (data.finalizedAt !== undefined) setFinalized(Boolean(data.finalizedAt));
+      if (data.notes !== undefined) setEnhanceNotes(data.notes ?? null);
+      if (data.enhancedAt !== undefined) setEnhancedAt(data.enhancedAt ?? null);
+      if (data.enhancedBy !== undefined) setEnhancedByName(data.enhancedBy ?? null);
       if (data.status === "Recording") {
         setAppUnreachable(false);
         setPhase((p) => {
@@ -465,6 +547,9 @@ export function MeetingRecorder({
       if (cancelled) return;
       setInsertedAt(data.insertedAt ?? null);
       if (data.finalizedAt !== undefined) setFinalized(Boolean(data.finalizedAt));
+      if (data.notes !== undefined) setEnhanceNotes(data.notes ?? null);
+      if (data.enhancedAt !== undefined) setEnhancedAt(data.enhancedAt ?? null);
+      if (data.enhancedBy !== undefined) setEnhancedByName(data.enhancedBy ?? null);
       if (data.status === "Done") {
         setLines(data.lines);
         setSpeakers(data.speakers);
@@ -516,6 +601,23 @@ export function MeetingRecorder({
   useEffect(() => {
     if (phase === "done" || phase === "failed") setOpen(true);
   }, [phase]);
+
+  useEffect(() => {
+    if (phase !== "done" || atSeconds === null) return;
+    highlightLineRef.current?.scrollIntoView({ block: "center" });
+  }, [phase, atSeconds, lines.length]);
+
+  // Enhance auto-preview (specs/meeting-notes-model.md §2): runs once, for
+  // the owner, the moment the transcript lands with no plan yet — the sheet
+  // is then ready the instant someone opens it, no 10-20s wait. Never applies.
+  useEffect(() => {
+    if (autoEnhanceTried.current) return;
+    if (phase !== "done" || lines.length === 0 || enhanceNotes) return;
+    if (!canEdit || (remote && !remote.ownerIsYou)) return;
+    autoEnhanceTried.current = true;
+    void generateEnhance();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, lines.length, enhanceNotes, canEdit, remote]);
 
   function openInApp(href: string) {
     try {
@@ -807,27 +909,122 @@ export function MeetingRecorder({
     return true;
   }
 
-  async function writeNotes() {
-    if (!recordingId) return;
-    setBusy(true);
-    setError(null);
+  // Whether the note still reads exactly as its seeded template did — drives
+  // the Done panel's Write notes / Enhance notes label and the request's
+  // untouchedTemplate flag (specs/meeting-notes-model.md §1, §2).
+  function currentlyUntouched(): boolean {
+    const state = getNoteState?.();
+    if (!state) return false;
+    return isUntouchedTemplate({ seededFromPageId, seededTemplateHash }, state.bodyText);
+  }
+
+  async function generateEnhance(): Promise<boolean> {
+    if (!recordingId) return false;
+    const state = getNoteState?.();
+    if (!state) {
+      setEnhanceError("The note is still loading. Try again in a moment.");
+      return false;
+    }
+    setEnhanceBusy(true);
+    setEnhanceError(null);
     try {
-      const res = await fetch("/api/ai/meeting-notes", {
+      const res = await fetch("/api/ai/meeting-notes/enhance", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ documentName, recordingId }),
+        body: JSON.stringify({
+          recordingId,
+          blocks: state.blocks,
+          untouchedTemplate: isUntouchedTemplate({ seededFromPageId, seededTemplateHash }, state.bodyText),
+        }),
       });
       const json = await res.json().catch(() => null);
-      if (!res.ok || typeof json?.markdown !== "string") {
-        setError(json?.error ?? "Couldn't write notes. You can still add the transcript.");
-        setBusy(false);
+      if (!res.ok || !json?.plan) {
+        setEnhanceError(json?.error ?? "Couldn't generate notes.");
+        return false;
+      }
+      setEnhanceNotes(json as StoredEnhanceNotes);
+      return true;
+    } catch {
+      setEnhanceError("Couldn't generate notes.");
+      return false;
+    } finally {
+      setEnhanceBusy(false);
+    }
+  }
+
+  /** Opens the sheet; generates (or regenerates, with forceRegenerate) only
+   *  if nothing's already in flight, so auto-preview and a click racing each
+   *  other don't fire two requests. */
+  async function onEnhanceClick(forceRegenerate = false) {
+    if (!hasConfirmedEnhance()) {
+      const ok = await dialog.confirm({
+        title: "Enhance this note?",
+        description: "Enhance sends your typed notes and the transcript to the AI provider.",
+        confirmLabel: "Enhance",
+      });
+      if (!ok) return;
+      rememberEnhanceConfirmed();
+    }
+    setEnhanceSheetOpen(true);
+    if (enhanceBusy) return;
+    if (forceRegenerate) setEnhanceNotes(null);
+    if (forceRegenerate || !enhanceNotes) void generateEnhance();
+  }
+
+  async function applyEnhance() {
+    if (!recordingId || !enhanceNotes || !onApplyEnhance) return;
+    setApplyBusy(true);
+    setEnhanceError(null);
+    try {
+      const state = getNoteState?.();
+      if (!state) {
+        setEnhanceError("The note is still loading. Try again in a moment.");
         return;
       }
-      if (!insert(json.markdown)) setBusy(false);
-    } catch {
-      setError("Couldn't write notes. You can still add the transcript.");
-      setBusy(false);
+      await fetch("/api/collab/versions", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: documentName, label: "Before enhance" }),
+      }).catch(() => null);
+
+      const lockRes = await fetch(`/api/meeting-recordings/${recordingId}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "enhanced", snapshotAt: enhanceNotes.snapshotAt }),
+      });
+      if (lockRes.status === 409) {
+        const reload = await dialog.confirm({
+          title: "Enhance notes again?",
+          description: "Someone enhanced this note after your preview. Reload the preview?",
+          confirmLabel: "Reload",
+        });
+        if (reload) void onEnhanceClick(true);
+        return;
+      }
+      const lockJson = await lockRes.json().catch(() => null);
+      if (!lockRes.ok) {
+        setEnhanceError(lockJson?.error ?? "Couldn't save.");
+        return;
+      }
+
+      const untouched = isUntouchedTemplate({ seededFromPageId, seededTemplateHash }, state.bodyText);
+      const { ops } = applyEnhancePlan(enhanceNotes.snapshot, state.blocks, enhanceNotes.plan, {
+        untouchedTemplate: untouched,
+      });
+      const paragraphs = transcriptParagraphs(lines, speakers, roster);
+      if (!onApplyEnhance(ops, recordingId, paragraphs)) {
+        setEnhanceError("The note is still loading. Try again in a moment.");
+        return;
+      }
+
+      setEnhancedAt(typeof lockJson?.enhancedAt === "string" ? lockJson.enhancedAt : new Date().toISOString());
+      setEnhancedByName(typeof lockJson?.enhancedBy === "string" ? lockJson.enhancedBy : null);
+      setEnhanceSheetOpen(false);
+    } finally {
+      setApplyBusy(false);
     }
   }
 
@@ -911,6 +1108,14 @@ export function MeetingRecorder({
   // ─── Done panel's speaker chips ─────────────────────────────────────────
   const speakerCounts = countSpeakersByChannel(lines);
   const speakerKeys = [...new Set(lines.filter((l) => l.speaker).map((l) => l.speaker!))];
+  const sortedLines = [...lines].sort((a, b) => a.at - b.at);
+  const highlightLineIndex =
+    atSeconds !== null && sortedLines.length > 0
+      ? sortedLines.reduce(
+          (best, l, i) => (best === -1 || Math.abs(l.at - atSeconds) < Math.abs(sortedLines[best]!.at - atSeconds) ? i : best),
+          -1,
+        )
+      : -1;
 
   function speakerChip(key: string) {
     const line = lines.find((l) => l.speaker === key);
@@ -1130,6 +1335,11 @@ export function MeetingRecorder({
                 {insertedAt && (
                   <p className="text-xs text-muted-foreground">Already in this note. Discarding only removes the recording, not what was inserted.</p>
                 )}
+                {enhancedAt && (
+                  <p className="text-xs text-muted-foreground">
+                    Enhanced {formatDateTime(enhancedAt)}{enhancedByName ? ` by ${enhancedByName}` : ""}.
+                  </p>
+                )}
                 {hasTranscript && speakerKeys.length > 0 && (
                   <div className="flex flex-wrap gap-1.5">{speakerKeys.map(speakerChip)}</div>
                 )}
@@ -1137,17 +1347,22 @@ export function MeetingRecorder({
                   {!hasTranscript ? (
                     <p className="text-muted-foreground">Nothing was transcribed.</p>
                   ) : (
-                    [...lines]
-                      .sort((a, b) => a.at - b.at)
-                      .map((l, i) => (
-                        <p key={i} className="text-foreground">
-                          <span className="mr-2 font-mono text-[11px] text-muted-foreground">{formatClock(l.at)}</span>
-                          <span className="mr-1 font-medium text-muted-foreground">
-                            {speakerLabelFor(l, speakerCounts, speakers, roster)}:
-                          </span>
-                          {l.text}
-                        </p>
-                      ))
+                    sortedLines.map((l, i) => (
+                      <p
+                        key={i}
+                        ref={i === highlightLineIndex ? highlightLineRef : undefined}
+                        className={cn(
+                          "scroll-mt-2 rounded px-1 -mx-1",
+                          i === highlightLineIndex ? "bg-os-accent/15 text-foreground" : "text-foreground",
+                        )}
+                      >
+                        <span className="mr-2 font-mono text-[11px] text-muted-foreground">{formatClock(l.at)}</span>
+                        <span className="mr-1 font-medium text-muted-foreground">
+                          {speakerLabelFor(l, speakerCounts, speakers, roster)}:
+                        </span>
+                        {l.text}
+                      </p>
+                    ))
                   )}
                 </div>
               </>
@@ -1252,11 +1467,21 @@ export function MeetingRecorder({
               {!insertedAt && (
                 <button
                   type="button"
-                  onClick={aiEnabled ? () => void writeNotes() : () => insert(null)}
+                  onClick={
+                    !aiEnabled
+                      ? () => insert(null)
+                      : () => void onEnhanceClick(Boolean(enhancedAt))
+                  }
                   disabled={!hasTranscript || busy}
                   className={buttonClasses("primary", "sm")}
                 >
-                  {!aiEnabled ? "Insert transcript" : busy ? "Writing notes…" : "Write notes"}
+                  {!aiEnabled
+                    ? "Insert transcript"
+                    : enhancedAt
+                      ? "Re-run"
+                      : currentlyUntouched()
+                        ? "Write notes"
+                        : "Enhance notes"}
                 </button>
               )}
             </>
@@ -1275,7 +1500,170 @@ export function MeetingRecorder({
           )}
         </div>
       </Modal>
+
+      <EnhanceSheet
+        open={enhanceSheetOpen}
+        onClose={() => setEnhanceSheetOpen(false)}
+        notes={enhanceNotes}
+        busy={enhanceBusy}
+        applyBusy={applyBusy}
+        error={enhanceError}
+        getNoteState={getNoteState}
+        seededFromPageId={seededFromPageId}
+        seededTemplateHash={seededTemplateHash}
+        onApply={() => void applyEnhance()}
+      />
     </>
+  );
+}
+
+/**
+ * Read-only preview of Enhance's merge (specs/meeting-notes-model.md §2):
+ * changed and added blocks, the skipped-conflicts and dropped-citation
+ * counts, and the action items list (owner + due, read-only — creating tasks
+ * from them is PR 3 of the spec, not this one). Recomputes the merge fresh
+ * from the live editor each time it opens, via getNoteState.
+ */
+function EnhanceSheet({
+  open,
+  onClose,
+  notes,
+  busy,
+  applyBusy,
+  error,
+  getNoteState,
+  seededFromPageId,
+  seededTemplateHash,
+  onApply,
+}: {
+  open: boolean;
+  onClose: () => void;
+  notes: StoredEnhanceNotes | null;
+  busy: boolean;
+  applyBusy: boolean;
+  error: string | null;
+  getNoteState?: () => { blocks: SnapshotBlock[]; bodyText: string } | null;
+  seededFromPageId: string | null;
+  seededTemplateHash: string | null;
+  onApply: () => void;
+}) {
+  const preview = useMemo(() => {
+    if (!open || !notes || !getNoteState) return null;
+    const state = getNoteState();
+    if (!state) return null;
+    const untouchedTemplate = isUntouchedTemplate({ seededFromPageId, seededTemplateHash }, state.bodyText);
+    return applyEnhancePlan(notes.snapshot, state.blocks, notes.plan, { untouchedTemplate });
+  }, [open, notes, getNoteState, seededFromPageId, seededTemplateHash]);
+
+  const changed = preview?.ops.filter((op) => op.kind === "update") ?? [];
+  const added = preview?.ops.filter((op) => op.kind === "insertAfter") ?? [];
+
+  return (
+    <Modal open={open} onClose={onClose} labelledBy="enhance-sheet-title" containerClassName={modalCardClass("max-w-2xl")}>
+      <ModalHeader titleId="enhance-sheet-title" title="Enhance preview" onClose={onClose} className="mb-4" />
+
+      {busy && !notes && <p className="text-sm text-muted-foreground">Generating…</p>}
+      {error && !notes && <p className="text-sm text-red-700">{error}</p>}
+
+      {notes && (
+        <div className="flex flex-col gap-4">
+          {(preview?.skipped ?? 0) > 0 && (
+            <p className="text-xs text-muted-foreground">
+              {preview!.skipped} block{preview!.skipped === 1 ? "" : "s"} changed while this ran and were left as
+              typed.
+            </p>
+          )}
+          {(notes.verified.droppedBlocks > 0 || notes.verified.droppedCites > 0) && (
+            <p className="text-xs text-muted-foreground">
+              {notes.verified.droppedBlocks > 0 &&
+                `${notes.verified.droppedBlocks} addition${notes.verified.droppedBlocks === 1 ? "" : "s"} couldn't be verified against the transcript and were left out. `}
+              {notes.verified.droppedCites > 0 &&
+                `${notes.verified.droppedCites} citation${notes.verified.droppedCites === 1 ? "" : "s"} didn't match the transcript and were dropped.`}
+            </p>
+          )}
+
+          <div className="flex max-h-[45vh] flex-col gap-2 overflow-y-auto rounded-xl bg-os-well px-3 py-3">
+            {changed.length === 0 && added.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Nothing to change.</p>
+            ) : (
+              <>
+                {changed.map(
+                  (op) =>
+                    op.kind === "update" && <EnhanceOpRow key={op.id} label="Changed" text={op.text} cites={op.cites} />,
+                )}
+                {added.map(
+                  (op, i) =>
+                    op.kind === "insertAfter" &&
+                    op.blocks.map((b, j) => (
+                      <EnhanceOpRow key={`${i}-${j}`} label="Added" text={b.text} cites={b.cites} />
+                    )),
+                )}
+              </>
+            )}
+          </div>
+
+          {notes.plan.actionItems.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <p className="text-xs font-medium text-muted-foreground">Action items</p>
+              <ul className="flex flex-col gap-1.5">
+                {notes.plan.actionItems.map((item, i) => (
+                  <li key={i} className="rounded-lg bg-os-well px-3 py-2 text-sm text-foreground">
+                    <p>{item.text}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {item.ownerName
+                        ? item.ownerUserId
+                          ? item.ownerName
+                          : `${item.ownerName} (not on the roster)`
+                        : "Unassigned"}
+                      {item.due && ` · ${formatIsoDate(item.due)}${item.dueSource ? ` (${item.dueSource})` : ""}`}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {error && <p className="text-xs text-red-700">{error}</p>}
+        </div>
+      )}
+
+      <div className="mt-5 flex items-center justify-end gap-1.5">
+        <button type="button" onClick={onClose} className={buttonClasses("secondary", "sm")}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={onApply}
+          disabled={!notes || busy || applyBusy}
+          className={buttonClasses("primary", "sm")}
+        >
+          {applyBusy ? "Applying…" : "Apply"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function EnhanceOpRow({ label, text, cites }: { label: "Changed" | "Added"; text: string; cites: number[] }) {
+  return (
+    <div className="flex flex-col gap-1 rounded-lg border border-os-container bg-background px-3 py-2">
+      <span
+        className={cn(
+          "self-start rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+          label === "Added" ? "bg-os-accent/15 text-os-accent" : "bg-os-container text-muted-foreground",
+        )}
+      >
+        {label}
+      </span>
+      <p className="text-sm text-foreground">
+        {text}
+        {cites.map((c) => (
+          <span key={c} className="ml-1.5 rounded-full bg-os-accent/10 px-1.5 py-0.5 font-mono text-[11px] text-os-accent">
+            {formatClock(c)}
+          </span>
+        ))}
+      </p>
+    </div>
   );
 }
 

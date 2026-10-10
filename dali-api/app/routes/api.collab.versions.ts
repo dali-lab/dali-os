@@ -1,9 +1,18 @@
 import type { Route } from "./+types/api.collab.versions";
+import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { authorizeCollabDoc, hydrateAuthors } from "~/lib/collabAuth";
+import { getCollabServer } from "~/collab/server";
+import { forceSnapshot } from "~/collab/persistence";
+import { parseJson } from "~/lib/validate";
 
 const PREVIEW_CHARS = 200;
+
+const SnapshotSchema = z.object({
+  name: z.string().min(1),
+  label: z.string().min(1).max(200),
+});
 
 // GET /api/collab/versions?name=review:abc123:feedback
 // Returns all snapshots for the given doc, newest first, with truncated
@@ -48,4 +57,30 @@ export async function loader({ request }: Route.LoaderArgs) {
           .filter(Boolean),
       })),
     );
+}
+
+// POST /api/collab/versions  { name, label }
+// Forces an immediate, labeled snapshot of the live doc — used by Enhance's
+// "Before enhance" save (specs/meeting-notes-model.md §2), which needs a
+// snapshot of this instant rather than waiting for the next autosave tick.
+export async function action({ request }: Route.ActionArgs) {
+  if (request.method !== "POST") {
+    return Response.json({ error: "Method not allowed" }, { status: 405 });
+  }
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+
+  const body = await parseJson(request, SnapshotSchema);
+  if (body instanceof Response) return body;
+
+  const { allowed, readOnly } = await authorizeCollabDoc(auth.user.sub, body.name);
+  if (!allowed || readOnly) return forbidden(request);
+
+  const server = getCollabServer();
+  if (!server) {
+    return Response.json({ error: "Collab server not running" }, { status: 503 });
+  }
+
+  await forceSnapshot(server, body.name, body.label, [auth.user.sub]);
+  return Response.json({ ok: true });
 }

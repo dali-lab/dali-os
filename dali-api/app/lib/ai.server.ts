@@ -23,6 +23,10 @@ export interface AiProvider {
   name: AiProviderName;
   client: Anthropic;
   model: string;
+  /** The Sonnet-class model for heavier generations (meeting notes Enhance)
+   * that want more headroom than the doc assistant's default. Same provider,
+   * no separate key or Admin toggle (specs/meeting-notes-model.md §2). */
+  sonnetModel: string;
   /** First-party Claude supports adaptive thinking. The Dartmouth gateway
    * serves Bedrock-style model ids (anthropic.claude-…) that may predate or
    * reject the thinking param — skip it there. */
@@ -31,6 +35,7 @@ export interface AiProvider {
 
 const DARTMOUTH_DEFAULT_BASE_URL = "https://chat.dartmouth.edu/api";
 const DARTMOUTH_DEFAULT_MODEL = "anthropic.claude-haiku-4-5-20251001";
+const ANTHROPIC_SONNET_MODEL = "claude-sonnet-5";
 
 export function resolveAiProvider(): AiProvider | null {
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
@@ -51,6 +56,9 @@ export function resolveAiProvider(): AiProvider | null {
         authToken: dartmouthKey, // sent as Authorization: Bearer <key>
       }),
       model: process.env.DARTMOUTH_CHAT_MODEL ?? DARTMOUTH_DEFAULT_MODEL,
+      // No Dartmouth-hosted Sonnet 5 id is known yet — fall back to whatever
+      // chat model is configured rather than guessing a catalog id.
+      sonnetModel: process.env.DARTMOUTH_CHAT_SONNET_MODEL ?? process.env.DARTMOUTH_CHAT_MODEL ?? DARTMOUTH_DEFAULT_MODEL,
       adaptiveThinking: false,
     };
   }
@@ -60,6 +68,7 @@ export function resolveAiProvider(): AiProvider | null {
       name: "anthropic",
       client: new Anthropic(),
       model: "claude-opus-4-8",
+      sonnetModel: ANTHROPIC_SONNET_MODEL,
       adaptiveThinking: true,
     };
   }
@@ -88,12 +97,15 @@ export async function generateShortText(opts: {
   system: string;
   prompt: string;
   maxTokens?: number;
+  /** Override the provider's default model (e.g. provider.sonnetModel for a
+   *  heavier generation). Defaults to provider.model. */
+  model?: string;
 }): Promise<{ text: string; inputTokens: number; outputTokens: number } | null> {
   const provider = resolveAiProvider();
   if (!provider) return null;
 
   const message = await provider.client.messages.create({
-    model: provider.model,
+    model: opts.model ?? provider.model,
     max_tokens: opts.maxTokens ?? 512,
     system: opts.system,
     messages: [{ role: "user", content: opts.prompt }],

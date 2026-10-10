@@ -23,9 +23,12 @@ export interface MeetingNotesResponse {
   markdown: string;
 }
 
-const AI_BURST_MAX = 10;
-const AI_BURST_WINDOW_MS = 60_000;
-const AI_DAILY_MAX = 200;
+// Shared with api.ai.meeting-notes.enhance.ts — Enhance draws on the same
+// per-user burst/daily budget as Write notes (specs/meeting-notes-model.md
+// §2: "Same per-user burst and daily caps as api/ai/meeting-notes").
+export const AI_BURST_MAX = 10;
+export const AI_BURST_WINDOW_MS = 60_000;
+export const AI_DAILY_MAX = 200;
 
 // Roughly two hours of speech. Longer recordings keep their most recent part.
 export const TRANSCRIPT_MAX = 120_000;
@@ -37,7 +40,7 @@ Write "None noted." under a section with nothing in it. \
 Only include what the transcript supports. Don't invent names, dates, or numbers, and fix obvious transcription errors only when the meaning is clear. \
 No preamble, no title, no closing remarks.`;
 
-function secondsToUtcMidnight(): number {
+export function secondsToUtcMidnight(): number {
   const now = new Date();
   const next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
   return Math.max(1, Math.ceil((next - now.getTime()) / 1000));
