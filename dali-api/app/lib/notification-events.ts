@@ -104,6 +104,14 @@ export const EVENT_TYPES = {
     timeSensitive: true,
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
+  "meeting.transcript_ready": {
+    kind: "General",
+    area: "Meetings",
+    label: "Transcript ready",
+    description:
+      "After a meeting you recorded, when its transcript is ready and hasn't been added to the note.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
   "room.booking_bumped": {
     kind: "General",
     area: "Meetings",

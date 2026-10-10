@@ -6,12 +6,13 @@ import { isCore, isProjectMember } from "~/lib/roles";
 import { fullName } from "~/lib/display";
 import { noteForOccurrence } from "~/lib/meeting-occurrences";
 import { parseOccurrenceParam, resolveMeetingOccurrence } from "~/lib/scheduled-meeting";
+import { canReadRecording } from "~/lib/meeting-recording.server";
 import { McpNotFoundError, McpForbiddenError } from "../../registry";
 
 export const GET_MEETING_DEF = {
   name: "get_meeting",
   description:
-    "Fetch full detail for a scheduled meeting: time, duration, URL, meeting type, Core flag, note page, the attendance roster, and whether the occurrence has a finished transcript. A recurring meeting keeps a separate note and roster per occurrence; pass occurrenceStart to pick one (default: the first). Accessible to the organizer, Core members, project members, and any invited attendee.",
+    "Fetch full detail for a scheduled meeting: time, duration, URL, meeting type, Core flag, note page, the attendance roster, and the readable recordings across every occurrence (newest first) with their transcript status. A recurring meeting keeps a separate note and roster per occurrence; pass occurrenceStart to pick one (default: the first). Accessible to the organizer, Core members, project members, and any invited attendee.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -87,10 +88,28 @@ export async function runGetMeeting(callerId: string, input: Input) {
   const key = occurrence.originalStart.getTime();
   const roster = meeting.attendance.filter((a) => a.occurrenceStart.getTime() === key);
 
-  const recordings = await prisma.meetingRecording.findMany({
-    where: { scheduledMeetingId: meeting.id, occurrenceStart: occurrence.originalStart },
-    select: { id: true, status: true },
+  // Across every occurrence, newest first — not just the resolved one — so an
+  // agent can see a meeting's transcript history in one call. Filtered to
+  // rows this caller may actually read (owner, or anyone who can view the
+  // note), the same gate the recording's own GET route applies.
+  const allRecordings = await prisma.meetingRecording.findMany({
+    where: { scheduledMeetingId: meeting.id },
+    orderBy: { occurrenceStart: "desc" },
+    take: 20,
+    select: {
+      id: true,
+      status: true,
+      recordedSeconds: true,
+      occurrenceStart: true,
+      userId: true,
+      documentName: true,
+    },
   });
+  const readableRecordings = (
+    await Promise.all(
+      allRecordings.map(async (r) => ((await canReadRecording(r, callerId)) ? r : null)),
+    )
+  ).filter((r): r is (typeof allRecordings)[number] => r !== null);
 
   const typeLabel =
     meeting.meetingType === "Other"
@@ -112,8 +131,13 @@ export async function runGetMeeting(callerId: string, input: Input) {
     projectId: meeting.projectId,
     organizerName: fullName(meeting.organizer),
     notePageId: noteForOccurrence(meeting.notePages, occurrence.originalStart)?.id ?? null,
-    transcriptAvailable: recordings.some((r) => r.status === "Done"),
-    recordingIds: recordings.map((r) => r.id),
+    transcriptAvailable: readableRecordings.some((r) => r.status === "Done"),
+    recordings: readableRecordings.map((r) => ({
+      id: r.id,
+      status: r.status,
+      recordedSeconds: r.recordedSeconds,
+      occurrenceStart: r.occurrenceStart ? r.occurrenceStart.toISOString() : null,
+    })),
     canManage,
     roster: roster.map((a) => ({
       userId: a.userId,

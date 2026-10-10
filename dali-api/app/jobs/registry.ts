@@ -94,6 +94,7 @@ import { runWalletRestyleBroadcastJob } from "~/jobs/wallet-restyle-broadcast.se
 import { runApplicantEmailIndex } from "~/jobs/applicant-email-index.server";
 import { runRecordingFinalizer } from "~/jobs/recording-finalizer.server";
 import { runMeetingRecordPrompts } from "~/jobs/meeting-record-prompts.server";
+import { runMeetingNotesNudge } from "~/jobs/meeting-notes-nudge.server";
 
 export const JOBS: JobDefinition[] = [
   {
@@ -493,6 +494,23 @@ export const JOBS: JobDefinition[] = [
       },
     ],
     handler: runMeetingRecordPrompts,
+  },
+  {
+    name: "meeting-notes-nudge",
+    description:
+      "Nudges a meeting recording's owner once its transcript is ready, when it hasn't been inserted into the note. Skips recordings with no scheduled meeting, before the configured delay past the occurrence's end, or for a recorder without the ai-meeting-notes flag.",
+    intervalMinutes: 5,
+    settings: [
+      {
+        key: "delayMinutes",
+        label: "Delay after occurrence ends",
+        unit: "min",
+        min: 5,
+        max: 120,
+        default: 15,
+      },
+    ],
+    handler: runMeetingNotesNudge,
   },
 ];
 
