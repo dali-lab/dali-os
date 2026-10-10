@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+from array import array
 from dataclasses import dataclass
 from typing import Callable, Optional
 
@@ -162,6 +163,49 @@ def pcm_duration_seconds(pcm: bytes) -> float:
     return len(pcm) / (SAMPLE_RATE_HZ * BYTES_PER_SAMPLE)
 
 
+# The Parakeet ONNX export's relative positional table covers about 5,000
+# encoder frames (80 ms each, ~400 s of audio); a longer input fails inside
+# the encoder. ASR therefore runs on windows of at most ASR_WINDOW_SECONDS.
+# Each cut lands on the quietest 20 ms frame in the ASR_CUT_SEARCH_SECONDS
+# before the target so a word is not split across two windows. Diarization
+# is unaffected and still sees the whole segment.
+ASR_WINDOW_SECONDS = 300
+ASR_CUT_SEARCH_SECONDS = 10
+_CUT_FRAME_BYTES = int(SAMPLE_RATE_HZ * BYTES_PER_SAMPLE * 0.02)
+
+
+def _frame_energy(pcm: bytes, offset: int) -> int:
+    samples = array("h", pcm[offset : offset + _CUT_FRAME_BYTES])
+    return sum(abs(x) for x in samples)
+
+
+def split_pcm_windows(
+    pcm: bytes,
+    max_seconds: float = ASR_WINDOW_SECONDS,
+    search_seconds: float = ASR_CUT_SEARCH_SECONDS,
+) -> list:
+    """-> [(offset_seconds, pcm_bytes), ...] covering `pcm` exactly, in
+    order, each at most `max_seconds` long and cut on a 20 ms frame edge."""
+    max_bytes = int(SAMPLE_RATE_HZ * BYTES_PER_SAMPLE * max_seconds) // _CUT_FRAME_BYTES * _CUT_FRAME_BYTES
+    search_bytes = int(SAMPLE_RATE_HZ * BYTES_PER_SAMPLE * search_seconds) // _CUT_FRAME_BYTES * _CUT_FRAME_BYTES
+    windows: list = []
+    start = 0
+    while len(pcm) - start > max_bytes:
+        target = start + max_bytes
+        cut = target
+        quietest = None
+        for offset in range(target - search_bytes, target, _CUT_FRAME_BYTES):
+            if offset <= start:
+                continue
+            energy = _frame_energy(pcm, offset)
+            if quietest is None or energy < quietest:
+                quietest, cut = energy, offset
+        windows.append((start / (SAMPLE_RATE_HZ * BYTES_PER_SAMPLE), pcm[start:cut]))
+        start = cut
+    windows.append((start / (SAMPLE_RATE_HZ * BYTES_PER_SAMPLE), pcm[start:]))
+    return windows
+
+
 # onnx-asr's timestamped result is per SentencePiece token (a leading "▁"
 # marks a word start) with one emission time per token and no end times.
 # A word ends where the next word begins; the last word gets this tail.
@@ -189,6 +233,22 @@ def tokens_to_words(tokens: list, timestamps: list) -> list:
     for i, w in enumerate(words):
         nxt = words[i + 1]["start"] if i + 1 < len(words) else w["end"] + LAST_WORD_TAIL_SECONDS
         w["end"] = max(w["end"], nxt) if i + 1 < len(words) else nxt
+    return words
+
+
+def transcribe_windowed(pcm: bytes, transcribe: Callable[[bytes], list]) -> list:
+    """Run `transcribe` per ASR window and return model-shaped words
+    ({start, end, text}) relative to the start of `pcm`."""
+    words: list = []
+    for window_start, window in split_pcm_windows(pcm):
+        for w in transcribe(window):
+            words.append(
+                {
+                    "start": float(w["start"]) + window_start,
+                    "end": float(w["end"]) + window_start,
+                    "text": w["text"],
+                }
+            )
     return words
 
 
@@ -275,7 +335,7 @@ def process_channel(
         chunk_bytes_by_seq = {chunk.seq: fetch_chunk(chunk.url) for chunk in segment.chunks}
         pcm = assemble_segment_pcm(chunk_bytes_by_seq)
 
-        words.extend(shape_words(transcribe(pcm), segment.start_seconds))
+        words.extend(shape_words(transcribe_windowed(pcm, transcribe), segment.start_seconds))
         segments.extend(shape_segments(diarize(pcm, channel.max_speakers), segment.start_seconds))
 
     words.sort(key=lambda w: w["s"])
