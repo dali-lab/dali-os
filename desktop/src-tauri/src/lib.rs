@@ -54,6 +54,7 @@ pub fn run() {
             commands::record_prompt_open,
             commands::record_prompt_dismiss,
             commands::record_prompt_mute,
+            commands::record_prompt_set_expanded,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

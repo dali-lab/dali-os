@@ -36,8 +36,9 @@ pub async fn sign_out(app: AppHandle) -> Result<(), String> {
 }
 
 // Record-prompt window commands (record-prompt.html/.js) — invokable only
-// from that local window (record-prompt-local.json). Each delegates straight
-// to notify.rs, which owns the id-keyed stash these all key off of.
+// from that local window (record-prompt-local.json). The id-keyed ones
+// delegate straight to notify.rs, which owns the stash they key off of;
+// `record_prompt_set_expanded` only resizes the frame for the chevron menu.
 #[tauri::command]
 pub fn record_prompt_start(app: AppHandle, id: String) {
     notify::record_prompt_start(&app, id);
@@ -56,6 +57,11 @@ pub fn record_prompt_dismiss(app: AppHandle, id: String) {
 #[tauri::command]
 pub fn record_prompt_mute(app: AppHandle, id: String) {
     notify::record_prompt_mute(&app, id);
+}
+
+#[tauri::command]
+pub fn record_prompt_set_expanded(app: AppHandle, expanded: bool) {
+    window::set_record_prompt_expanded(&app, expanded);
 }
 
 #[tauri::command]
