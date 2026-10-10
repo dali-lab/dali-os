@@ -1,21 +1,22 @@
 # Meeting notes model (PR 3 of meeting transcription)
 
-Status: design for review, Oct 10 2026. Builds on `meeting-transcription.md`
-(recording, Modal transcription, transcript in the note). This spec covers what
-happens to the words once they exist: how they become notes people actually use.
+Status: design rev 2, Oct 10 2026, after review. Builds on
+`meeting-transcription.md` (recording, Modal transcription, transcript in the
+note). This spec covers what happens to the words once they exist: how they
+become notes people actually use.
 
 ## The idea, in one paragraph
 
 The note page is where attendees type during the meeting, as today. When the
-transcript lands, **Enhance** rewrites the note using the typed notes as the
+transcript lands, **Enhance** fills the note in using the typed notes as the
 skeleton: every heading and bullet the author wrote stays, in their words and
-order, and gets filled in from what was said. Decisions and action items the
-author missed are added under their own headings. Every added or expanded
-sentence carries a small citation chip that opens the transcript at that
-moment. Action items become Tasks on the meeting's project with one click. If
-nobody opens the note after the meeting, the recorder gets a nudge. This is the
-Granola model, inside DALI OS, with the lab's roster, projects and tasks wired
-in rather than bolted on.
+order, and gets expanded from what was said. Decisions and action items the
+author missed are added under their own headings and marked as added. Every
+added or expanded sentence carries a small timestamp chip that opens the
+transcript at that moment. Action items become Tasks on the meeting's project
+with one click. If the transcript sits unused, the recorder gets one nudge. This
+is the Granola model inside DALI OS, with the lab's roster, projects and tasks
+wired in rather than bolted on.
 
 ## What exists today
 
@@ -23,14 +24,16 @@ in rather than bolted on.
   Decisions / Action items markdown block, appended to the note along with the
   transcript under a toggle. Nothing is stored; the author's own notes are
   ignored.
-- The transcript lives on `MeetingRecording.lines` with `[mm:ss] Speaker: text`
-  lines and roster-renamed speakers. A read-only view exists at
+- The transcript lives on `MeetingRecording.lines` with `at`/`end` seconds per
+  line and roster-renamed speakers. A read-only view exists at
   `?transcript=<id>`.
 - Meeting notes are created empty by `attachMeetingNote`. No template.
 - Tasks exist per project with assignee, due date, checklist, description doc.
 - Jobs: `meeting-reminders` (before), `meeting-record-prompts` (at start).
   Nothing after a meeting.
 - MCP: `get_meeting` has no transcript or recording fields.
+- The only server-side doc write, `replaceCollabDocContent`, rewrites the whole
+  fragment. Named versions exist (`CollabDocumentVersion.label`).
 
 ## Design
 
@@ -41,163 +44,213 @@ A meeting note starts with structure so there is something to anchor to.
 - Lab defaults per meeting type (Team, Partner, General), editable in Admin ▸
   Templates as ordinary page templates tagged with a `meetingType`. Reuses the
   existing page-template system (#1402); no new model.
-- A project may pick its own template: `Project.meetingNoteTemplateId` (a
-  field, not a join table). Project ▸ Settings ▸ Meetings.
+- A project may pick its own: `Project.meetingNoteTemplateId` (a field, not a
+  join table). Project ▸ Settings ▸ Meetings.
 - Suggested Team default: `## Agenda`, `## Notes`, `## Decisions`,
   `## Action items`. Partner adds `## For the partner`.
-- `attachMeetingNote` copies the template body into the new page. Existing
-  notes are untouched.
+- `attachMeetingNote` copies the template body into the new page and records
+  `Page.seededTemplateHash` (hash of the normalized body it wrote). "Still the
+  untouched template" is then a deterministic comparison, and stays correct
+  after an admin edits the template. Existing notes are untouched.
+- The Record start sheet gains one line so people learn the model on first
+  use: "Type rough notes during the meeting; Enhance fills them in afterwards."
 
 ### 2. Enhance: typed notes as anchors
 
-Replaces the current "Write notes" button once a recording is Done.
+Replaces the current Write notes button once a recording is Done.
 
-**Input.** The note body as markdown (current doc, via `app/collab/read.ts`),
-the transcript with a stable index per line, the roster, the meeting type.
+**Input.** The note's blocks as markdown with each top-level block's id (from
+the enhancer's own editor, not a server read), the transcript with `at`
+seconds per line, the roster (attendance rows plus organizer), the meeting
+type, the occurrence date.
 
-**Model.** Claude Sonnet 5 by default (a 1 hour meeting is ~16k input tokens;
-Opus is not needed for this), through `resolveAiProvider()` as today. Same
-per-user burst and daily caps as `api/ai/meeting-notes`.
+**Model.** Claude Sonnet 5, through `resolveAiProvider()` as today. Same
+per-user burst and daily caps as `api/ai/meeting-notes`. No model toggle.
 
-**Output.** Structured JSON, not markdown, so it can be rendered into blocks
-with citations:
+**Output.** Structured JSON keyed to the existing blocks, so it can be merged
+rather than pasted:
 
 ```json
 {
-  "sections": [
-    { "heading": "Agenda", "kept": true, "blocks": [
-      { "type": "paragraph", "text": "...", "cites": [12, 13] },
-      { "type": "bullet", "text": "...", "cites": [40] }
-    ]},
-    { "heading": "Decisions", "added": true, "blocks": [...] }
+  "blocks": [
+    { "id": "b1", "op": "keep" },
+    { "id": "b2", "op": "expand", "text": "Scope change: drop the admin dashboard from v1; partner agreed; revisit in January.", "cites": [812.4, 840.0] },
+    { "op": "insert", "after": "b2", "type": "bullet", "text": "...", "cites": [901.2] },
+    { "op": "insert", "after": "b9", "type": "heading", "text": "Decisions", "added": true }
   ],
   "actionItems": [
-    { "text": "Send the partner the revised scope", "ownerUserId": "u_…", "ownerName": "Ada L", "due": null, "cites": [88, 89] }
+    { "text": "Send the partner the revised scope", "ownerName": "Ada L", "due": "2026-10-17", "dueSource": "by Friday", "cites": [1203.0] }
   ]
 }
 ```
 
-Prompt rules: keep every heading the author wrote, in order, in their wording;
-keep every bullet, expanding it only with what the transcript supports; add
-`Decisions` and `Action items` sections if missing; never invent names, dates
-or numbers; every block that uses transcript content cites the line indexes it
-drew from; owners must be roster names, matched to user ids server-side.
+Prompt rules: keep every existing block, in order, in the author's wording;
+expand a block only with what the transcript supports; add `Decisions` and
+`Action items` sections if missing; never invent names, dates or numbers;
+every expanded or inserted block that uses transcript content cites the
+transcript times it drew from; owners are roster names only, never ids;
+relative dates ("by Friday") are resolved against the occurrence date and
+returned with the phrase they came from.
 
-**No typed notes.** A note that is empty or still the untouched template is
-the same flow with the template as the skeleton: each template heading is
-filled from the transcript, and a heading the transcript does not support
-(usually Agenda) is left empty rather than reconstructed, then hidden on
-Replace. Decisions and Action items are the only sections always attempted.
-This covers teams who record and summarise without typing; a "Summary"
-template with three headings reproduces today's flat output. The button reads
-**Write notes** in this state and **Enhance notes** once someone has typed;
-same endpoint, same sheet, and with nothing typed Replace and Append are the
-same so the sheet shows one button.
+**Server verification before anything reaches the sheet.** Every cite must
+match a transcript line within 2 s or the cite is dropped; an inserted block
+with no surviving cite, or whose text shares no content words with its cited
+lines, is dropped and counted. Owner names are matched to roster user ids on
+the server; unmatched names stay as text and the sheet says "not on the
+roster". Prompt rules alone are not a guard.
 
-**Storage.** `MeetingRecording.notes Json?` holds the last enhance result and
-`enhancedAt DateTime?` when it was accepted. Fields on the existing row, no new
-table. A second Enhance overwrites.
+**No typed notes.** A note that is empty or still the seeded template is the
+same flow with the template headings as the skeleton. A heading the transcript
+does not support (usually Agenda) is left empty and hidden on apply; Decisions
+and Action items are always attempted. This covers teams who record and
+summarise without typing; a "Summary" template with three headings reproduces
+today's flat output. The button reads **Write notes** in this state and
+**Enhance notes** once someone has typed. Same endpoint, same sheet.
+
+**Storage.** `MeetingRecording.notes Json?` holds the last verified result,
+with `enhancedAt` and `enhancedBy` set when applied. Fields on the existing
+row; the result is a function of (recording, note at time T) and dies with the
+recording under the janitor. The row is never cleared locally after apply any
+more; the Done panel reads "Enhanced Oct 10, 2:14 PM by Ada" with Re-run.
+
+**Applying, in a shared doc.** Whole-body Replace is out: several people type
+in these notes, generation takes 10 to 20 s, and the sheet may sit open for
+minutes. The enhancer's editor applies the result block by block:
+
+- `keep` leaves the block alone.
+- `expand` replaces the block's text only if the block's current text still
+  equals the snapshot; otherwise the block is left as the live text and the
+  expansion is skipped. The sheet shows "3 blocks changed while this ran and
+  were left as typed."
+- `insert` adds after the named block, or at the end of its section if that
+  block is gone.
+- The `### Transcript` toggle is found by its heading and reused, never
+  appended twice.
+
+A named version "Before enhance" is saved first (existing versions system),
+so the whole thing is one click to undo. Because the change goes through the
+editor, Yjs attributes it to the person who clicked. A re-run treats the
+current text, including earlier enhancements and any hand edits since, as the
+new anchors; nothing is overwritten from a stored copy.
+
+Two editors can click Enhance at once. The server refuses the second apply
+when `notes` was written after that client's snapshot, and the sheet offers to
+reload the preview.
 
 **UX.**
-1. The recorder's Done panel gets **Enhance notes** as primary (Insert
-   transcript stays secondary). While it runs: "Reading your notes and the
-   transcript…", 10 to 20 s.
-2. A side sheet shows the enhanced note rendered read-only, with added
-   sections marked "Added" and citation chips live. Buttons: **Replace note**,
-   **Append below**, Cancel.
-3. Replace first saves a named collab version "Before enhance" (the existing
-   versions system), then replaces the body. Append adds the enhanced sections
-   under a `---` divider. Either way the transcript goes under the collapsed
-   `### Transcript` toggle as today.
-4. The Done panel then reads "Enhanced on Oct 10, 2:14 PM" and offers Re-run.
+1. When the transcript lands, Enhance runs once automatically into preview
+   (no apply), so the sheet is ready the moment someone opens the note or the
+   nudge.
+2. The Done panel's primary is **Write notes** or **Enhance notes** (see
+   above). Insert transcript stays secondary for people who want only that.
+3. The sheet shows the merged note read-only with changed and added blocks
+   highlighted, citation chips live, the skipped-conflicts count, and the
+   action items with owner and due date editable inline. Buttons: **Apply**,
+   Cancel.
+4. Apply saves the version, merges, and inserts the transcript toggle if it is
+   not already there.
 
-### 3. Cited transcript spans
+### 3. Citation chips
 
-A new BlockNote inline content type `transcriptCite` with props
-`{ recordingId, at, end }`, rendered as a small chip showing `mm:ss`. Hover
-shows the transcript line; click opens the transcript panel scrolled to it
-(the existing `?transcript=` view, extended to accept `&at=`). Modeled on
-`schema/mention.tsx`. Cites survive copy/paste within DALI and degrade to plain
-`[12:34]` text on export.
+Chips are ordinary BlockNote links, not a new inline node: text `12:34`,
+href `/documents/<pageId>?transcript=<recordingId>&at=<seconds>`. The
+transcript panel accepts `&at=` and scrolls to the line. Internal
+`?transcript=` links render as a compact chip with a hover card showing the
+line, through the existing link renderer, so no schema change is needed.
 
-This is a collab schema addition. Older clients ignore unknown inline content
-rather than deleting it, but it still needs the usual flag in the PR and a
-check against `persistence.ts`'s clone rule.
+A new inline node was considered and rejected: y-prosemirror deletes content
+it cannot decode and Hocuspocus broadcasts the deletion, so one stale client
+opening an enhanced note would strip every citation for everyone. Links export
+correctly to PDF and Markdown and survive paste.
 
 ### 4. Action items into Tasks
 
 Only for project meetings (tasks need a project).
 
-- The enhanced note renders action items as checklist items. Each shows a
-  **→ Task** hover action; the Enhance sheet also has **Create tasks** with
-  the whole list pre-checked, owners pre-filled from roster matches, due dates
-  blank.
-- Created through the existing task service (`create-task` path used by the
-  board and MCP): title = item text, assignee = owner, description = one line
-  linking back to the note with the citation time, status Todo, no sprint.
-- The checklist item gets a `taskMention` inline (extend the mention spec with
-  a task kind) so the note shows the task's live status, and the Task's
-  description links the note. `MeetingRecording.notes.actionItems[i].taskId`
-  records the link so a re-run does not create duplicates.
+- The sheet lists action items pre-checked with owner (roster match or "not
+  on the roster") and due date (resolved relative date shown with its source
+  phrase, editable). **Create tasks** creates the checked ones; nothing is
+  created silently.
+- Created through the existing task service: title = item text, assignee =
+  owner, due = date, status Todo, no sprint, description = one line linking the
+  note at the cited time. `Task.sourceRecordingId` (nullable field) backlinks
+  the recording so "tasks from this meeting" is a query and a re-run never
+  creates a duplicate.
+- The checklist item in the note gets a `taskMention` inline (extend the
+  existing mention spec with a task kind, which is already a schema the clients
+  carry) so the note shows live task status. Falls back to a plain link to the
+  task if the mention spec change has not reached all clients yet.
 
 ### 5. Post-meeting nudge
 
-New job `meeting-notes-nudge`, 5 min interval, idempotent through
-`MeetingReminderLog` with a new `kind`. Rules, evaluated 15 min after the
-occurrence's end:
+One event. New job `meeting-notes-nudge`, 5 min interval, idempotent through
+`MeetingReminderLog` with a new `kind`.
 
-- Recording Done and neither inserted nor enhanced → notify the recorder:
-  "Your transcript for {meeting} is ready. Enhance the notes?" linking to
-  `?transcript=<id>`. Registry event `meeting.transcript_ready`, in-app and
-  desktop banner on by default, email off.
-- No recording and the note body is still the untouched template → notify the
-  organizer once: "No notes yet for {meeting}." Event `meeting.notes_empty`,
-  in-app only by default. Honors the per-series `recordPrompt` opt-out as a
-  proxy for "leave this meeting alone".
+- Recording Done, not applied, and the note not opened by the recorder since
+  Done → notify the recorder once: "Your transcript for {meeting} is ready."
+  linking to `?transcript=<id>`. Registry event `meeting.transcript_ready`,
+  in-app and desktop banner on by default, email off.
+
+A "no notes yet" nudge to organizers was considered and dropped: with weekly
+standups across every project team, most legitimately noteless, it would fire
+after nearly every meeting and get the Meetings area muted.
 
 ### 6. MCP
 
-- `get_meeting` gains `transcriptAvailable: boolean` and `recordings: [{ id,
-  status, recordedSeconds, enhancedAt }]`.
+- `get_meeting` gains `transcriptAvailable` and `recordings: [{ id, status,
+  recordedSeconds, enhancedAt }]`.
 - New `get_meeting_transcript({ meetingId | recordingId, occurrenceStart?,
-  from?, to? })` returning lines with resolved speaker names, bounded to 2,000
-  lines per call with paging. Same audience as the note.
-- New `enhance_meeting_notes({ recordingId, apply: "replace" | "append" |
-  "preview" })` so an agent can do the whole flow; preview returns the JSON.
+  from?, to? })` returning lines with resolved speaker names, paged at 2,000
+  lines. Same audience as the note.
+- New `enhance_meeting_notes({ recordingId, apply: boolean })`: preview returns
+  the verified JSON; apply runs the same block merge server-side through a
+  direct connection, with the same snapshot check.
 
 ## Permissions
 
-Enhance, Create tasks and Replace require edit access to the note (same as
-Insert today). Citation chips and the transcript panel follow the note's read
-audience. Task creation additionally requires the actor be allowed to create
-tasks on that project; the sheet hides the option otherwise.
+Enhance, Apply and Create tasks require edit access to the note (same as
+Insert today). Chips and the transcript panel follow the note's read audience.
+Create tasks additionally requires task-create rights on the project; the
+sheet hides it otherwise.
 
 ## Privacy
 
-Enhance sends the note body and transcript to the configured AI provider,
-which Write notes already does for the transcript. The confirmation copy on
-the Enhance button says so the first time per user. Nothing else changes in
-retention: `notes` on the row is deleted with the row by the janitor.
+Enhance sends the typed notes and the transcript to the configured AI
+provider; today only the transcript goes. The first Enhance per user confirms
+that in plain words. Partner-visible exports and the partner portal exclude
+the transcript toggle and the citation chips, since a Partner note now
+carries verbatim speech. Retention is unchanged: `notes` dies with the row.
 
 ## Delivery
 
-Three PRs, each shippable behind the existing `ai-meeting-notes` flag.
+Three PRs behind the existing `ai-meeting-notes` flag. No editor schema change
+until PR 3, and that one extends a spec every client already carries.
 
-1. **Templates, nudge, MCP read tools.** No editor schema change. Smallest
-   risk, immediately useful.
-2. **Enhance with preview, Replace/Append, version snapshot, citation chips.**
-   The schema addition is flagged in the PR per the collab caveat.
-3. **Action items into Tasks, task mention, enhance MCP tool.**
+1. **Templates with the seeded hash, the nudge job, MCP read tools.**
+2. **Enhance: endpoint with verification, auto-preview, the sheet, client-side
+   merge with conflict rule, version snapshot, link chips, `&at=` in the
+   transcript panel, enhance lock.**
+3. **Action items into Tasks, `Task.sourceRecordingId`, task mention, the
+   enhance MCP tool.**
 
-Rough size: PR 1 two days, PR 2 three to four days, PR 3 two days.
+Rough size: PR 1 two days, PR 2 four days, PR 3 two days.
 
-## Open questions
+## Decisions (were open questions in rev 1)
 
-1. Replace by default, or Append? Granola replaces. Replace plus the saved
-   version is the proposal.
-2. Template ownership: lab defaults per type with a project override, as
-   above, or project only?
-3. Should Create tasks be one click with no confirmation when owners are all
-   matched? Proposal: the sheet always shows the list once, pre-checked.
-4. Nudge to the recorder only, or to the organizer too when they differ?
-5. Model: Sonnet 5 for Enhance by default, Opus 5 as an Admin ▸ AI toggle?
+1. Apply is an in-place block merge with a saved version, not Replace or
+   Append. Append doubles every note; Replace clobbers concurrent typing.
+2. Templates: lab defaults per meeting type with a project override.
+3. Create tasks always shows the list once, with owner and due editable; no
+   silent creation.
+4. Nudge the recorder only. The organizer learns through the note.
+5. One Sonnet-class model, no Admin toggle. If quality falls short, change the
+   constant.
+
+## Compared with the field
+
+Adopts Granola's anchor model and no-notes fallback, Notion's timestamped
+sources and "detected" prompt (shipped earlier), and the Notion/Asana
+one-click task pattern, and improves on them with verified citations, live
+task status in the note, and roster-matched owners. Deliberately skips
+transcript chat (MCP covers agent users) and auto-apply (preview is
+auto-run, apply stays a human click).
