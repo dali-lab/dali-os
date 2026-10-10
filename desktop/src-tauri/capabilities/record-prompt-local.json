@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "record-prompt-local",
-  "description": "The bundled, local, trusted \"Meeting detected\" window. App-defined commands (record_prompt_start, record_prompt_open, record_prompt_dismiss, record_prompt_mute) are invokable from this local window; it additionally needs the event permission to listen for `record-prompt://show` updates pushed from Rust.",
+  "description": "The bundled, local, trusted record-prompt pill. App-defined commands (record_prompt_start, record_prompt_open, record_prompt_dismiss, record_prompt_mute, record_prompt_set_expanded) are invokable from this local window; it additionally needs the event permission to listen for `record-prompt://show` updates pushed from Rust.",
   "windows": ["record-prompt"],
   "permissions": ["core:event:default"]
 }

@@ -13,11 +13,15 @@ use crate::config::{self, PROD_ORIGIN};
 use crate::state::AppState;
 
 // Floating record-prompt window (see notify/mod.rs for the payload it's fed
-// and poller.rs for when it's raised). Sized and positioned to match a small
-// "toast" in the mockup's bottom-right corner, never the native title bar.
-const RECORD_PROMPT_WIDTH: f64 = 420.0;
-const RECORD_PROMPT_HEIGHT: f64 = 132.0;
-const RECORD_PROMPT_MARGIN: f64 = 24.0;
+// and poller.rs for when it's raised): a single-row pill at the top centre of
+// the primary display. The window is transparent (macOSPrivateApi) so only the
+// pill itself paints; the page draws its own shadow inside the frame. The
+// chevron menu can't overflow the frame, so the window grows to
+// `RECORD_PROMPT_EXPANDED_HEIGHT` while it's open (`set_record_prompt_expanded`).
+const RECORD_PROMPT_WIDTH: f64 = 560.0;
+const RECORD_PROMPT_HEIGHT: f64 = 76.0;
+const RECORD_PROMPT_EXPANDED_HEIGHT: f64 = 212.0;
+const RECORD_PROMPT_TOP_MARGIN: f64 = 12.0;
 
 pub fn build_pairing(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     if let Some(w) = app.get_webview_window("pairing") {
@@ -236,38 +240,46 @@ fn build_record_prompt(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         .inner_size(RECORD_PROMPT_WIDTH, RECORD_PROMPT_HEIGHT)
         .resizable(false)
         .decorations(false)
+        .transparent(true)
         .always_on_top(true)
         .visible_on_all_workspaces(true)
         .skip_taskbar(true)
         // Raised in the background by the poller/frontmost watcher — never
         // steal focus from whatever (e.g. the meeting app) is frontmost.
         .focused(false)
-        .shadow(true)
+        // The native shadow would outline the rectangular frame, not the
+        // pill; record-prompt.css draws one that hugs the rounded edge.
+        .shadow(false)
         .visible(false)
         .build()
 }
 
-/// Bottom-right of the primary display, inset by `RECORD_PROMPT_MARGIN` and
-/// clear of the Dock/menu bar (`work_area`, not the full display bounds).
-/// Falls back to the display's own bounds if the OS can't report a work
-/// area, and does nothing (keeps whatever position it last had) if there's
-/// no primary monitor at all.
+/// Top centre of the primary display, `RECORD_PROMPT_TOP_MARGIN` below the
+/// menu bar (`work_area`, not the full display bounds). Does nothing (keeps
+/// whatever position it last had) if there's no primary monitor at all.
 fn position_record_prompt(app: &AppHandle, window: &WebviewWindow) {
     let Ok(Some(monitor)) = app.primary_monitor() else {
         return;
     };
     let scale = monitor.scale_factor();
     let area = monitor.work_area();
-    let x = (area.position.x as f64 / scale) + (area.size.width as f64 / scale)
-        - RECORD_PROMPT_WIDTH
-        - RECORD_PROMPT_MARGIN;
-    let y = (area.position.y as f64 / scale) + (area.size.height as f64 / scale)
-        - RECORD_PROMPT_HEIGHT
-        - RECORD_PROMPT_MARGIN;
+    let x = (area.position.x as f64 / scale)
+        + ((area.size.width as f64 / scale) - RECORD_PROMPT_WIDTH) / 2.0;
+    let y = (area.position.y as f64 / scale) + RECORD_PROMPT_TOP_MARGIN;
     let _ = window.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(x, y)));
 }
 
-/// Show the floating "Meeting detected" window with `view`'s content
+/// Grow the frame while the pill's chevron menu is open (it hangs below the
+/// pill, inside the window), shrink it back when the menu closes. The window
+/// is anchored at its top-left, so only the bottom edge moves.
+pub fn set_record_prompt_expanded(app: &AppHandle, expanded: bool) {
+    if let Some(w) = app.get_webview_window("record-prompt") {
+        let height = if expanded { RECORD_PROMPT_EXPANDED_HEIGHT } else { RECORD_PROMPT_HEIGHT };
+        let _ = w.set_size(tauri::Size::Logical(tauri::LogicalSize::new(RECORD_PROMPT_WIDTH, height)));
+    }
+}
+
+/// Show the floating record-prompt pill with `view`'s content
 /// (the JSON shape `record-prompt.js` expects — see notify::raise_record_prompt).
 /// Reuses the one `record-prompt` window for the life of the session: calling
 /// this again while it's already showing a different prompt just replaces its
@@ -276,6 +288,7 @@ pub fn show_record_prompt(app: &AppHandle, view: serde_json::Value) {
     let Ok(w) = build_record_prompt(app) else {
         return;
     };
+    set_record_prompt_expanded(app, false);
     position_record_prompt(app, &w);
     let _ = app.emit_to("record-prompt", "record-prompt://show", view);
     let _ = w.show();
@@ -285,6 +298,7 @@ pub fn hide_record_prompt(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("record-prompt") {
         let _ = w.hide();
     }
+    set_record_prompt_expanded(app, false);
     if let Ok(mut current) = app.state::<AppState>().current_record_prompt.lock() {
         *current = None;
     }
