@@ -143,6 +143,11 @@ function TemplateCard({
         {item.description && (
           <span className="block text-xs text-muted-foreground truncate">{item.description}</span>
         )}
+        {item.meetingNoteBadge && (
+          <span className="mt-0.5 inline-flex items-center rounded-full bg-os-accent/10 px-1.5 py-0.5 text-[11px] font-medium text-os-accent">
+            {item.meetingNoteBadge}
+          </span>
+        )}
       </span>
     </span>
   );

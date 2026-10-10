@@ -22,6 +22,9 @@ vi.mock("~/lib/google-calendar", () => ({
   getGoogleEvent: vi.fn(),
   deleteGoogleCalendarEvent: vi.fn(),
 }));
+vi.mock("~/lib/page-copy.server", () => ({ copyPageBody: vi.fn() }));
+vi.mock("~/collab/read", () => ({ readDocAsBlocks: vi.fn(async () => []) }));
+vi.mock("~/components/doc/schema/configs", () => ({ blocksToPlainText: vi.fn(() => "") }));
 
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
@@ -43,6 +46,10 @@ import {
   getGoogleEvent,
   deleteGoogleCalendarEvent,
 } from "~/lib/google-calendar";
+import { copyPageBody } from "~/lib/page-copy.server";
+import { readDocAsBlocks } from "~/collab/read";
+import { blocksToPlainText } from "~/components/doc/schema/configs";
+import { hashTemplateText, normalizeTemplateText } from "~/lib/meeting-note-template";
 import {
   attachMeetingNote,
   cancelScheduledMeeting,
@@ -50,6 +57,7 @@ import {
   isWithinCheckInWindow,
   markMeetingAttendance,
   meetingIsUpcoming,
+  resolveMeetingNoteTemplate,
   setMeetingProject,
   trackExternalEventAsMeeting,
   updateScheduledMeeting,
@@ -1217,6 +1225,7 @@ describe("attachMeetingNote", () => {
     scheduledMeeting: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
     project: { findFirst: ReturnType<typeof vi.fn>; findUnique: ReturnType<typeof vi.fn> };
     meetingAttendance: { createMany: ReturnType<typeof vi.fn> };
+    page: { update: ReturnType<typeof vi.fn> };
   };
   const mockIsCore = isCore as unknown as ReturnType<typeof vi.fn>;
 
@@ -1430,6 +1439,107 @@ describe("attachMeetingNote", () => {
       where: { id: "m1" },
       data: { meetingType: "Team", meetingTypeLabel: null, projectId: "proj-9" },
     });
+  });
+
+  it("seeds the new note from the project's bound template and records the hash", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(meetingRow({ participantUserIds: ["org-1"] }));
+    p.project.findFirst.mockResolvedValue({ id: "proj-9" });
+    p.project.findUnique.mockResolvedValue({ name: "Deserto", meetingNoteTemplateId: "tpl-1" });
+    vi.mocked(prisma.page.findUnique).mockResolvedValue({
+      id: "tpl-1",
+      isTemplate: true,
+      archivedAt: null,
+    } as never);
+    vi.mocked(blocksToPlainText).mockReturnValue("## Agenda\n\n## Notes");
+
+    const res = await attachMeetingNote({
+      meetingId: "m1",
+      actorId: "org-1",
+      meetingType: "Team",
+      projectId: "proj-9",
+    });
+
+    expect(res).toEqual({ ok: true, notePageId: "page-tab" });
+    expect(copyPageBody).toHaveBeenCalledWith("tpl-1", "page-tab");
+    expect(p.page.update).toHaveBeenCalledWith({
+      where: { id: "page-tab" },
+      data: {
+        seededFromPageId: "tpl-1",
+        seededTemplateHash: hashTemplateText(normalizeTemplateText("## Agenda\n\n## Notes")),
+      },
+    });
+  });
+
+  it("leaves a new note unseeded when no template resolves", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(meetingRow());
+    vi.mocked(prisma.page.findFirst).mockResolvedValue(null);
+
+    const res = await attachMeetingNote({
+      meetingId: "m1",
+      actorId: "org-1",
+      meetingType: "Other",
+      meetingTypeLabel: "Standup",
+    });
+
+    expect(res).toEqual({ ok: true, notePageId: "page-tab" });
+    expect(copyPageBody).not.toHaveBeenCalled();
+    expect(p.page.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("resolveMeetingNoteTemplate", () => {
+  const pr = prisma as unknown as {
+    project: { findUnique: ReturnType<typeof vi.fn> };
+    page: { findUnique: ReturnType<typeof vi.fn>; findFirst: ReturnType<typeof vi.fn> };
+  };
+
+  it("prefers the project's bound template over the lab default", async () => {
+    pr.project.findUnique.mockResolvedValue({ meetingNoteTemplateId: "tpl-project" });
+    pr.page.findUnique.mockResolvedValue({ id: "tpl-project", isTemplate: true, archivedAt: null });
+    pr.page.findFirst.mockResolvedValue({ id: "tpl-lab-default" });
+
+    const result = await resolveMeetingNoteTemplate("proj-1", "Team");
+
+    expect(result).toEqual({ id: "tpl-project" });
+    expect(pr.page.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the lab default when the project has no binding", async () => {
+    pr.project.findUnique.mockResolvedValue({ meetingNoteTemplateId: null });
+    pr.page.findFirst.mockResolvedValue({ id: "tpl-lab-default" });
+
+    const result = await resolveMeetingNoteTemplate("proj-1", "Team");
+
+    expect(result).toEqual({ id: "tpl-lab-default" });
+  });
+
+  it("ignores a bound page that is no longer marked as a template", async () => {
+    pr.project.findUnique.mockResolvedValue({ meetingNoteTemplateId: "tpl-project" });
+    pr.page.findUnique.mockResolvedValue({ id: "tpl-project", isTemplate: false, archivedAt: null });
+    pr.page.findFirst.mockResolvedValue({ id: "tpl-lab-default" });
+
+    const result = await resolveMeetingNoteTemplate("proj-1", "Team");
+
+    expect(result).toEqual({ id: "tpl-lab-default" });
+  });
+
+  it("ignores a bound page that has been archived", async () => {
+    pr.project.findUnique.mockResolvedValue({ meetingNoteTemplateId: "tpl-project" });
+    pr.page.findUnique.mockResolvedValue({ id: "tpl-project", isTemplate: true, archivedAt: new Date() });
+    pr.page.findFirst.mockResolvedValue({ id: "tpl-lab-default" });
+
+    const result = await resolveMeetingNoteTemplate("proj-1", "Team");
+
+    expect(result).toEqual({ id: "tpl-lab-default" });
+  });
+
+  it("returns none and skips the project lookup for a project-less meeting", async () => {
+    pr.page.findFirst.mockResolvedValue(null);
+
+    const result = await resolveMeetingNoteTemplate(null, "Other");
+
+    expect(result).toBeNull();
+    expect(pr.project.findUnique).not.toHaveBeenCalled();
   });
 });
 
