@@ -60,8 +60,9 @@ export function transcriptParagraphs(lines: TranscriptLine[], speakers: Speakers
     .map((l) => `[${formatClock(l.at)}] ${speakerLabelFor(l, counts, speakers, roster)}: ${l.text.trim()}`);
 }
 
+/** The notes section to insert, or nothing: a plain transcript insert
+ *  shouldn't leave an empty "AI meeting notes" heading behind. */
 export function meetingNotesMarkdown(notes: string | null): string {
-  const parts = ["## AI meeting notes"];
-  if (notes?.trim()) parts.push(notes.trim());
-  return parts.join("\n\n");
+  const body = notes?.trim();
+  return body ? `## AI meeting notes\n\n${body}` : "";
 }
