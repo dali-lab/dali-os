@@ -19,8 +19,12 @@ function formatChipLabel(atSeconds: number): string {
   return `${m}:${String(s % 60).padStart(2, "0")}`;
 }
 
-/** The block's own text, plus one link chip per cited transcript second. */
-function buildInlineContent(
+/** The block's own text, plus one link chip per cited transcript second.
+ *  Exported for the MCP `enhance_meeting_notes` apply path (meeting-notes-
+ *  apply.server.ts), which replays the same ops server-side against DocBlock
+ *  JSON instead of a live editor — pure function, no editor/React runtime
+ *  dependency, safe on the server. */
+export function buildInlineContent(
   text: string,
   cites: number[],
   pageId: string,
@@ -38,13 +42,18 @@ function buildInlineContent(
   return content as unknown as DocPartialBlock["content"];
 }
 
-function toPartialBlock(block: EnhanceOpBlock, pageId: string, recordingId: string): DocPartialBlock {
+export function toPartialBlock(block: EnhanceOpBlock, pageId: string, recordingId: string): DocPartialBlock {
   const content = buildInlineContent(block.text, block.cites, pageId, recordingId);
   if (block.type === "heading") {
     return { type: "heading", props: { level: 2 }, content } as DocPartialBlock;
   }
   if (block.type === "bulletListItem" || block.type === "bullet") {
     return { type: "bulletListItem", content } as DocPartialBlock;
+  }
+  // Action item bullets (specs/meeting-notes-model.md §4) — a real checkbox,
+  // so Create tasks can find the matching block by text once a task exists.
+  if (block.type === "checkListItem") {
+    return { type: "checkListItem", props: { checked: false }, content } as DocPartialBlock;
   }
   return { type: "paragraph", content } as DocPartialBlock;
 }

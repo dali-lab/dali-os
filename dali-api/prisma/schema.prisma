@@ -1958,6 +1958,9 @@ model MeetingRecording {
   enhancedAt  DateTime? // set only when a client successfully applied `notes`
   enhancedBy  String?   // display name at apply time, not a User relation
 
+  // Tasks created from this recording's action items (specs/meeting-notes-model.md §4).
+  tasks Task[]
+
   @@index([userId])
   @@index([scheduledMeetingId, occurrenceStart])
   // Plus a partial unique index, MeetingRecording_activeDocument_key, on
@@ -4001,6 +4004,13 @@ model Task {
   // label survives reassignment.
   domainId String?
 
+  // Backlinks the meeting recording whose action item created this task
+  // (specs/meeting-notes-model.md §4) — "tasks from this meeting" is a query,
+  // and a re-run never creates a duplicate (MeetingRecording.notes.actionItems
+  // carries the taskId back). Nullable: most tasks aren't meeting-sourced.
+  // onDelete SetNull so discarding the recording doesn't take the task with it.
+  sourceRecordingId String?
+
   // Subtasks: simple checklist field rather than hierarchical Task→Task
   // children (Linear/Notion style).
   // JSON shape: [{ "text": "...", "done": false }]
@@ -4028,10 +4038,11 @@ model Task {
   githubIssueNumber Int?
   githubIssueUrl    String?
 
-  project   Project        @relation(fields: [projectId], references: [id])
-  epic      Epic?          @relation(fields: [epicId], references: [id])
-  story     UserStory?     @relation(fields: [storyId], references: [id])
-  domain    Domain?        @relation(fields: [domainId], references: [id])
+  project         Project           @relation(fields: [projectId], references: [id])
+  epic            Epic?             @relation(fields: [epicId], references: [id])
+  story           UserStory?        @relation(fields: [storyId], references: [id])
+  domain          Domain?           @relation(fields: [domainId], references: [id])
+  sourceRecording MeetingRecording? @relation(fields: [sourceRecordingId], references: [id], onDelete: SetNull)
   assignees TaskAssignee[]
   comments  TaskComment[]
   reminders TaskReminder[]
@@ -4052,6 +4063,7 @@ model Task {
   @@unique([githubRepo, githubIssueNumber], name: "task_github_issue_unique")
   @@index([projectId])
   @@index([storyId])
+  @@index([sourceRecordingId])
 }
 
 // Directed edge: `task` waits on `dependsOnTask`. Both sides belong to the

@@ -410,6 +410,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     meetingNoteTemplateAction = { scope: "lab", current: page.defaultMeetingNoteFor };
   }
 
+  // Action items into Tasks (specs/meeting-notes-model.md §4): tasks need a
+  // project, and the caller needs task-create rights on it — the same gate
+  // requireProjectEditAccess applies to POST /api/projects/:id/tasks.
+  const projectId = page.workspaceType === "Project" ? page.workspaceId : null;
+  const canCreateTasks =
+    projectId !== null && (roles.isCore || (await isProjectMember(auth.user.sub, projectId, request)));
+
   return {
     pageId: page.id,
     title: page.title,
@@ -440,6 +447,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     meetingNoteTemplateAction,
     seededFromPageId: page.seededFromPageId,
     seededTemplateHash: page.seededTemplateHash,
+    projectId,
+    canCreateTasks,
     activeRecording: activeRecordingRow
       ? {
           id: activeRecordingRow.id,
@@ -628,6 +637,8 @@ export default function DocumentPage() {
     seededFromPageId,
     seededTemplateHash,
     activeRecording,
+    projectId: meetingProjectId,
+    canCreateTasks,
   } = useLoaderData() as Exclude<Awaited<ReturnType<typeof loader>>, Response>;
 
   // Arriving from a comment-mention notification (?comment=<id>): open the
@@ -701,6 +712,28 @@ export default function DocumentPage() {
     return true;
   }, [pageId]);
 
+  // Action items into Tasks (specs/meeting-notes-model.md §4): once a task
+  // exists, link it from the note. The mention spec (app/components/doc/
+  // schema/mention.tsx) has no `kind` prop to grow into without a schema
+  // change — adding one would be a new prop, which y-prosemirror treats like
+  // any other schema change for a stale client. So this appends a plain link
+  // (the same kind of node citation chips already use, §3) to the matching
+  // checklist item instead of a task mention chip; see the PR description.
+  const onTaskCreated = useCallback((itemText: string, taskId: string, taskProjectId: string) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const trimmed = itemText.trim();
+    const match = editor.document.find((b) => b.type === "checkListItem" && blockOwnText(b).trim() === trimmed);
+    if (!match) return;
+    const content: Array<{ type: "text"; text: string; styles: object } | { type: "link"; href: string; content: string }> =
+      Array.isArray(match.content) ? [...(match.content as unknown as typeof content)] : [];
+    content.push(
+      { type: "text", text: " ", styles: {} },
+      { type: "link", href: `/projects/${taskProjectId}?tab=progress&task=${taskId}`, content: "Task" },
+    );
+    editor.updateBlock(match.id, { content } as unknown as DocPartialBlock);
+  }, []);
+
   const editor = (
     <DocumentEditor
       key={pageId}
@@ -750,6 +783,9 @@ export default function DocumentPage() {
               seededTemplateHash={seededTemplateHash}
               getNoteState={getNoteState}
               onApplyEnhance={onApplyEnhance}
+              projectId={meetingProjectId}
+              canCreateTasks={canCreateTasks}
+              onTaskCreated={onTaskCreated}
             />
           )}
           {attendance?.whiteboardPageId && (

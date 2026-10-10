@@ -28,8 +28,46 @@ import {
   startProcessing,
   storedLines,
 } from "~/lib/meeting-recording.server";
+import { runCreateTask, CreateTaskError } from "~/mcp/tools/create-task";
+import type { StoredEnhanceNotes } from "~/components/meeting-recorder/enhance-plan";
 
 const notFound = () => Response.json({ error: "Not found" }, { status: 404 });
+
+// POST {action:"createTasks"} body (specs/meeting-notes-model.md §4).
+type CreateTasksItem = { index: number; title: string; assigneeId?: string; dueAt?: string };
+
+function parseCreateTasksItems(raw: unknown): CreateTasksItem[] | null {
+  if (!Array.isArray(raw)) return null;
+  const items: CreateTasksItem[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") return null;
+    const e = entry as Record<string, unknown>;
+    if (typeof e.index !== "number" || !Number.isInteger(e.index) || e.index < 0) return null;
+    if (typeof e.title !== "string" || !e.title.trim()) return null;
+    if (e.assigneeId !== undefined && typeof e.assigneeId !== "string") return null;
+    if (e.dueAt !== undefined && typeof e.dueAt !== "string") return null;
+    items.push({
+      index: e.index,
+      title: e.title.trim(),
+      assigneeId: typeof e.assigneeId === "string" && e.assigneeId ? e.assigneeId : undefined,
+      dueAt: typeof e.dueAt === "string" && e.dueAt ? e.dueAt : undefined,
+    });
+  }
+  return items;
+}
+
+/** The note's project, from its documentName ("doc:<pageId>:body") — null
+ *  when the note isn't a Drive page on a project (ad-hoc docs, other rooms). */
+async function projectForRecording(documentName: string): Promise<string | null> {
+  const [entity, pageId] = documentName.split(":");
+  if (entity !== "doc" || !pageId) return null;
+  const page = await prisma.page.findUnique({
+    where: { id: pageId },
+    select: { workspaceType: true, workspaceId: true },
+  });
+  if (!page || page.workspaceType !== "Project" || !page.workspaceId) return null;
+  return page.workspaceId;
+}
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -98,11 +136,70 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "Update the DALI OS app to record." }, { status: 410 });
   }
 
-  // speakers, inserted, and enhanced are the actions any editor of the note
-  // may take; everything else is owner-only.
-  if (body.action === "speakers" || body.action === "inserted" || body.action === "enhanced") {
+  // speakers, inserted, enhanced, and createTasks are the actions any editor
+  // of the note may take; everything else is owner-only.
+  if (
+    body.action === "speakers" ||
+    body.action === "inserted" ||
+    body.action === "enhanced" ||
+    body.action === "createTasks"
+  ) {
     if (!(await canRecordInto(auth.user.sub, rec.documentName))) {
       return Response.json({ error: "Forbidden" }, { status: 403 });
+    }
+    if (body.action === "createTasks") {
+      const items = parseCreateTasksItems(body.items);
+      if (!items) return Response.json({ error: "Invalid items" }, { status: 400 });
+
+      const projectId = await projectForRecording(rec.documentName);
+      if (!projectId) {
+        return Response.json({ error: "This meeting has no project." }, { status: 400 });
+      }
+
+      const [entity, pageId] = rec.documentName.split(":");
+      const notes = (rec.notes ?? null) as StoredEnhanceNotes | null;
+      const actionItems = notes ? [...notes.plan.actionItems] : [];
+      const created: { index: number; taskId: string }[] = [];
+
+      for (const item of items) {
+        const existing = actionItems[item.index];
+        if (!existing || existing.taskId) continue; // out of range, or already created — dedup.
+
+        const citeAt = existing.cites?.[0];
+        const description =
+          entity === "doc" && pageId && citeAt !== undefined
+            ? `/documents/${pageId}?transcript=${rec.id}&at=${Math.max(0, Math.round(citeAt))}`
+            : undefined;
+
+        let task: { id: string };
+        try {
+          task = await runCreateTask(auth.user.sub, {
+            projectId,
+            title: item.title,
+            description,
+            assigneeUserIds: item.assigneeId ? [item.assigneeId] : undefined,
+            dueAt: item.dueAt,
+            sourceRecordingId: rec.id,
+          });
+        } catch (err) {
+          if (err instanceof CreateTaskError) {
+            return Response.json({ error: err.message }, { status: err.status });
+          }
+          throw err;
+        }
+
+        actionItems[item.index] = { ...existing, taskId: task.id };
+        created.push({ index: item.index, taskId: task.id });
+      }
+
+      if (created.length > 0 && notes) {
+        await prisma.meetingRecording.update({
+          where: { id: rec.id },
+          data: { notes: { ...notes, plan: { ...notes.plan, actionItems } } },
+        });
+      }
+
+      return Response.json({ created });
     }
     if (body.action === "inserted") {
       await prisma.meetingRecording.update({
