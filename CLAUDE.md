@@ -10,10 +10,11 @@ Project conventions for Claude when running inside `anthropics/claude-code-actio
 - **AI (docs)**: BlockNote writing assistant at `POST /api/ai/doc` — provider from `ANTHROPIC_API_KEY` (first-party) or `DARTMOUTH_CHAT_API_KEY` (Dartmouth Chat gateway, same Anthropic SDK via `resolveAiProvider()` in `app/lib/ai.server.ts`); per-user rate limits (in-memory burst + Postgres `AiUsage` daily quota) with token usage on the same table (Admin → AI Usage). Surfaces opt in per-mount via the `aiEnabled` prop on `DocEditor`.
 - **Background jobs**: in-process 60s runner (`dali-api/app/jobs/`), cross-machine dedup via a Postgres CAS lease on `ScheduledJob` rows (no Redis). Per-job toggles/intervals/settings live in Admin → Jobs.
 - **Notifications**: three channels (in-app, email/digest, Slack DM) dispatched by `notify()` per user preference — see "Background jobs & notifications" below. The desktop app layers native banners on the in-app feed: gated per event by the `desktop` sub-preference and flagged urgent via registry `timeSensitive`, resolved at feed-read time (`/api/notifications`), with `/api/notifications/stream` (SSE) for live delivery.
-- **Auth**: Google OAuth, Dartmouth CAS, JWT via `jose`.
+- **Auth**: Google OAuth, Dartmouth CAS. Opaque session ids in the `__dali_sid` cookie or a Bearer header (`app/lib/session.ts`); `jose` only for Dartmouth JWTs. BetterAuth sits behind the `betterauth` flag.
 - **Styling**: Tailwind CSS 4.
 - **Deploy**: Fly.io. Branches: `staging` → `prod`. Migrations require `DIRECT_URL` (non-pooled Neon endpoint) in addition to pooled `DATABASE_URL` — see `dali-api/prisma/MIGRATIONS.md`.
 - **Package manager**: npm. Node 22.
+- **Other packages**: `asr/` (Modal transcription service, Python + uv, deployed by `deploy-asr.yml`), `ios/` (SwiftUI iPad room display), `jobx-extension/` (Chrome timesheet extension). Each has its own README.
 
 ## Commands (run from `dali-api/`)
 
@@ -83,9 +84,9 @@ These live in `.github/workflows/` — treat their failures as blocking:
 
 ## Desktop app (`desktop/`)
 
-The `desktop/` directory is a Tauri v2 macOS shell — a thin native wrapper around the hosted web app. Keep in mind:
+The `desktop/` directory is a Tauri v2 shell (macOS, Linux, Windows) — a thin native wrapper around the hosted web app. Keep in mind:
 
-- **Separate build pipeline.** Desktop is built and released by `desktop-release.yml` on `desktop-v*` tags, not by the main `deploy.yml`. Don't conflate them.
+- **Separate build pipeline.** Desktop is built and released by `desktop-release.yml` when the `version` in `src-tauri/tauri.conf.json` changes on `prod` (or on a `desktop-v*` tag / manual dispatch), not by the main `deploy.yml`. Don't conflate them.
 - **Two signing layers.** Apple Developer ID (Gatekeeper) + a Tauri updater minisign keypair. The private minisign key lives in CI secrets (`TAURI_SIGNING_PRIVATE_KEY`). Never hardcode or log it.
 - **IPC security boundary.** The main WKWebView window loads a remote origin and has zero IPC access (no capability grants it). All native escalation happens in Rust directly or from the local bundled pairing windows. Don't add `remote.urls` entries to any capability file for the prod origin.
 - **Additive server routes only.** The desktop shell depends on `/auth/pair/*`, `/auth/handoff`, `/link`, `/api/notifications`, `/api/notifications/stream`, and the `/api/notifications/:id/read` + `/:id/rsvp` actions (banner buttons post to them) in `dali-api`. Changes to those routes affect the native app — note that in the PR description.
@@ -96,7 +97,7 @@ The `desktop/` directory is a Tauri v2 macOS shell — a thin native wrapper aro
 
 - Don't add features, refactors, or abstractions beyond what the issue asks for.
 - Don't add comments explaining what well-named code does. Only comment the non-obvious *why*.
-- Prefer encoding a behavior in a test over describing it in a verbose comment. If code must behave a specific way, write a test that asserts it — the test documents and enforces the behavior; a long comment does neither.
+- **Tests over comments.** If code must behave a specific way, write a test that asserts it. Do not write a comment explaining the behavior instead. Tests prevent regressions; comments do not. The codebase currently has too many comments and too many testing gaps. When you touch a file, remove comments that describe behavior and replace them with exhaustive tests for that behavior. Keep only comments that explain a non-obvious *why* that a test cannot capture.
 - Don't introduce new dependencies to solve something the existing stack already handles.
 - Adhere to DRY principles, add what is needed for the issue and not more
 - **Reuse existing components before building a new one.** Search `app/components/` (and `app/components/ui/`) for what you need first — the app already ships shared primitives: `SearchInput` (search/filter boxes), `Select` / `Combobox` / `Menu` / `ContextMenu` (`ui/floating`), `Checkbox` / `Radio` / `Toggle`, `DateField`, `Modal`, and `useDialog()` / `useToast()` / `useConfirmSubmit()` for confirm/alert/prompt. Extend the shared component (e.g. add a size or variant prop) rather than hand-rolling a one-off — one-offs drift from the design system and are exactly what causes visual inconsistency. Native form controls (`<input>`, `<select>`, `window.confirm`) are not the convention for new UI.

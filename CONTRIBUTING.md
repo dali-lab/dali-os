@@ -1,23 +1,21 @@
 # Contributing to DALI OS
 
-This guide covers how to contribute to the project. If you're curious about *what* to contribute check out our project task board (maintained in DALI OS) or ask in Slack!
+This guide covers how to contribute. For *what* to contribute, check the project task board (maintained in DALI OS) or ask in Slack.
 
 ## Getting set up
 
-See the [README](README.md) for the full local dev setup, commands, and environment details.
-
-**PR-deploys** — each PR spins up an ephemeral Neon branch + Fly app, torn down on close or merge.
+See the [README](README.md) for local dev setup, commands, and environments. Each PR gets an ephemeral Neon branch + Fly app, torn down on close or merge.
 
 ## Branching & PRs
 
 - All PRs target `staging`, not `prod`.
-- Branch names: `feature/<short-description>` or `fix/<short-description>`.
-- Write a clear PR description. If the PR touches the DB schema, call out any data-losing operations (drops, non-null columns without a default) explicitly.
+- Branch names: `feat/<short-description>` or `fix/<short-description>`. Claude's branches use `claude/issue-<N>`.
+- Write a clear PR description. Call out data-losing migrations, collab schema changes, and changes to the routes the desktop app depends on (`/auth/pair/*`, `/auth/handoff`, `/link`, `/api/notifications*`).
 
 **Promotion to prod**
 
 - Code reaches `prod` via a `staging` → `prod` PR: comment `/push` (write access required) to fast-forward `prod`.
-- This is the only way to promote code to `prod`.
+- This is the only way to promote code.
 
 ## Database migrations
 
@@ -25,19 +23,29 @@ See the [README](README.md) for the full local dev setup, commands, and environm
 2. Run `npx prisma migrate dev --name <descriptive-name>` from `dali-api/`.
 3. Commit the schema and migration together in the same PR.
 
-**Never modify an applied migration file** — if something needs fixing, add a new migration. `migration-check` enforces this.
-
-If your change touches collaboratively edited documents (Tiptap/Yjs), flag it in the PR description — schema changes there can pass tests locally and still break sync in production.
+Never modify or delete an applied migration file. Add a new one instead. `migration-check` enforces this.
 
 ## Testing
 
-Run these before pushing:
+Run these from `dali-api/` before pushing:
 
-- `npm test` — unit tests (Vitest). `npm run test:coverage` for the same run with a V8 coverage report in `coverage/index.html`.
-- `npm run typecheck` — always run this; it also regenerates React Router type stubs.
-- `npm run test:e2e` — Playwright against a real seeded Postgres. You don't need it for every change, but run it when touching routes, auth, or data flows.
+- `npm test`: unit tests (Vitest). `npm run test:coverage` adds a V8 report in `coverage/index.html`.
+- `npm run typecheck`: always run this; it also regenerates React Router type stubs.
+- `npm run test:e2e`: Playwright against a seeded Postgres and a production build (`npm run build` first). Run it when touching routes, auth, or data flows.
 
-CI runs all three against a real Postgres service container. If `test.yml`, `build-check.yml`, `migration-check.yml`, or `codeql.yml` fail, the PR is blocked.
+`asr/` changes: `cd asr && uv run pytest`.
+
+CI runs all of these. If `test.yml`, `build-check.yml`, `migration-check.yml`, or `codeql.yml` fail, the PR is blocked.
+
+## Conventions
+
+- Reuse shared components from `app/components/` and `app/components/ui/` before building a new one. Native `<select>`, `<input type="checkbox">`, and `window.confirm` are not the convention; use `Select`, `Checkbox`, `Toggle`, `DateField`, `Modal`, and `useDialog()` / `useToast()` / `useConfirmSubmit()`.
+- Follow `STYLE_GUIDE.md` for tokens, spacing, and page chrome.
+- Feature flags: add one entry to `dali-api/app/lib/feature-flags.ts`, then check `useFeatureFlag("key")` on the client or `isFeatureEnabled(...)` on the server. Targeting (everyone, role, specific users) is set in **Admin → System & Insights → Feature Flags**. Flags default off.
+- Background jobs: write a handler and add an entry to `app/jobs/registry.ts`. Handlers must be idempotent and finish well under the 5-minute lease.
+- Notifications: add an entry to `app/lib/notification-events.ts` and dispatch through `notify()`. Never write `prisma.notification` directly.
+- Outbound email goes through `enqueueOutbound()` in `app/lib/outbound.server.ts`, not raw `sendEmail`.
+- Collab docs: never decode a live Y.Doc server-side without cloning it first. Don't use `@tiptap/*` for new editor work; it exists only to decode legacy content.
 
 ## Security ground rules
 
@@ -45,10 +53,8 @@ CI runs all three against a real Postgres service container. If `test.yml`, `bui
 - Never commit `.env` values or secrets.
 - Never add routes that return the full user table or bypass role checks.
 
-## Feature flags
+## Native clients
 
-Gate new or in-progress features behind a flag rather than an ad-hoc boolean. Add one entry to `dali-api/app/lib/feature-flags.ts`, then check it: `useFeatureFlag("your-key")` on the client, `isFeatureEnabled(...)` on the server. Targeting (everyone / role / specific users) is configured from **Admin → System & Insights → Feature Flags** (Core), so who sees a feature is a runtime decision, not a code change. Flags default off until enabled there.
-
-## Desktop app (`desktop/`)
-
-The Tauri application has its own development flow — see `desktop/README.md`. Releases are cut by tagging `desktop-v*`; CI handles signing. Avoid touching `desktop-release.yml` or the signing configuration.
+- `desktop/` has its own flow; see `desktop/README.md`. Releases cut from a version bump in `src-tauri/tauri.conf.json` once promoted to `prod`. Don't touch `desktop-release.yml` or the signing config (`plugins.updater.pubkey`, `src-tauri/capabilities/`) without flagging it.
+- `ios/` builds in Xcode; see `ios/README.md`. Bump `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in every PR that changes it.
+- `asr/` deploys to Modal on push to `staging` or `prod`; see `asr/README.md`.
