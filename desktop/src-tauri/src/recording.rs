@@ -43,6 +43,10 @@ const MAX_BACKOFF: Duration = Duration::from_secs(30);
 // stopped, so an unreachable server doesn't hang the finish/stop calls
 // forever. The uploader task itself is aborted past this point.
 const FINAL_DRAIN_TIMEOUT: Duration = Duration::from_secs(30);
+// Silence from the mic still arrives as buffers, so no bytes at all this far
+// into a recording means the input device is not delivering; say so while
+// there is still time to fix it rather than after the transcript comes back.
+const MIC_SILENT_WARNING_AFTER: Duration = Duration::from_secs(15);
 
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
@@ -239,6 +243,8 @@ async fn record(app: &AppHandle, id: &str) -> Result<(), String> {
 
     let mut capture_error: Option<String> = None;
     let mut stop_sent = false;
+    let mut mic_bytes: usize = 0;
+    let mut mic_warned = false;
     let mut poll_tick = tokio::time::interval(POLL_EVERY);
     poll_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
@@ -271,6 +277,7 @@ async fn record(app: &AppHandle, id: &str) -> Result<(), String> {
             audio = rx_audio.recv() => {
                 if let Some((channel, bytes)) = audio {
                     if channel == 0 {
+                        mic_bytes += bytes.len();
                         mic_acc.push(bytes);
                     } else {
                         call_acc.push(bytes);
@@ -278,6 +285,14 @@ async fn record(app: &AppHandle, id: &str) -> Result<(), String> {
                 }
             }
             _ = poll_tick.tick() => {
+                if mic_bytes == 0 && !mic_warned && session_started.elapsed() >= MIC_SILENT_WARNING_AFTER {
+                    mic_warned = true;
+                    notify::raise_simple(
+                        app,
+                        "Nothing from the microphone yet",
+                        "Check the input device in System Settings > Sound.",
+                    );
+                }
                 if poll_stop_requested(&http, &url, &token).await {
                     let _ = stop_tx.send(true);
                 }

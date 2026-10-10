@@ -18,6 +18,7 @@ from typing import Optional
 
 import modal
 
+import pipeline
 from modal_app import _get_asr_model, _pcm_to_float32, _run_parakeet, _run_pyannote, image
 
 # The weight-baking build step leaves a copy of modal_app.py in the image;
@@ -47,11 +48,13 @@ def _read_wav_as_pcm16k_mono(path: Path) -> bytes:
 def bench_transcribe(pcm: bytes, max_speakers: Optional[int]) -> dict:
     timings = {}
 
-    raw = _get_asr_model().recognize(_pcm_to_float32(pcm), sample_rate=16000)
+    # Peek at the raw token stream on the first 30 s only; the full file goes
+    # through _run_parakeet, which windows it the way the deployed job does.
+    raw = _get_asr_model().recognize(_pcm_to_float32(pcm[: 30 * 32000]), sample_rate=16000)
     tokens_head = list(zip((raw.tokens or [])[:12], (raw.timestamps or [])[:12]))
 
     t0 = time.monotonic()
-    words = _run_parakeet(pcm)
+    words = pipeline.transcribe_windowed(pcm, _run_parakeet)
     timings["transcribe_s"] = round(time.monotonic() - t0, 2)
 
     t0 = time.monotonic()

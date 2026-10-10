@@ -251,11 +251,31 @@ private final class AutoGain {
 private final class MicCapture {
     private let engine = AVAudioEngine()
     private let gain = AutoGain()
+    private let onBuffer: (AVAudioPCMBuffer) -> Void
+    private var observer: NSObjectProtocol?
 
     init(onBuffer: @escaping (AVAudioPCMBuffer) -> Void) throws {
+        self.onBuffer = onBuffer
+        try attach()
+        // A device change (AirPods connecting, a display's mic, the system
+        // tap's aggregate device appearing) stops the engine and posts this.
+        // Without a restart the tap never fires again and the mic channel
+        // is silent for the rest of the recording.
+        observer = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
+        ) { [weak self] _ in
+            recorderQueue.async { self?.restart() }
+        }
+    }
+
+    private func attach() throws {
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
+        guard format.sampleRate > 0, format.channelCount > 0 else {
+            throw TapError.status(kAudioHardwareBadDeviceError)
+        }
         let gain = self.gain
+        let onBuffer = self.onBuffer
         input.installTap(onBus: 0, bufferSize: 4096, format: format) { buffer, _ in
             gain.apply(buffer)
             onBuffer(buffer)
@@ -264,7 +284,20 @@ private final class MicCapture {
         try engine.start()
     }
 
+    private func restart() {
+        guard observer != nil else { return }
+        engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
+        do {
+            try attach()
+        } catch {
+            fputs("dali-recorder: microphone restart failed: \(error)\n", stderr)
+        }
+    }
+
     func stop() {
+        if let observer { NotificationCenter.default.removeObserver(observer) }
+        observer = nil
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
     }
