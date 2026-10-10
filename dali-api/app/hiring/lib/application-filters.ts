@@ -44,3 +44,49 @@ export function isApplicationFilters(v: unknown): v is ApplicationFilters {
     typeof f.query === "string"
   );
 }
+
+export const APPLICATION_SORT_COLUMNS = [
+  { key: "name", label: "Applicant" },
+  { key: "domain", label: "Domain" },
+  { key: "status", label: "Status" },
+  { key: "submittedAt", label: "Submitted" },
+  { key: "reviewCount", label: "Reviews" },
+] as const;
+export type ApplicationSortKey = (typeof APPLICATION_SORT_COLUMNS)[number]["key"];
+export type ApplicationSort = { key: ApplicationSortKey; dir: "asc" | "desc" };
+
+export const DEFAULT_SORT: ApplicationSort = { key: "name", dir: "asc" };
+
+export function isApplicationSort(v: unknown): v is ApplicationSort {
+  if (!v || typeof v !== "object") return false;
+  const s = v as Record<string, unknown>;
+  return (
+    APPLICATION_SORT_COLUMNS.some((c) => c.key === s.key) &&
+    (s.dir === "asc" || s.dir === "desc")
+  );
+}
+
+type SortableApplication = {
+  name: string;
+  domain: string;
+  status: string;
+  submittedAt: string | null;
+  reviewCount: number;
+};
+
+// The sort is stable, so ties keep the order the rows arrived in (name, then
+// domain). Rows with no value sort last in both directions.
+export function sortApplications<T extends SortableApplication>(
+  rows: T[],
+  { key, dir }: ApplicationSort,
+): T[] {
+  const sign = dir === "asc" ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const x = a[key];
+    const y = b[key];
+    if (x === y) return 0;
+    if (x === null) return 1;
+    if (y === null) return -1;
+    return sign * (typeof x === "number" ? x - (y as number) : x.localeCompare(y as string));
+  });
+}
