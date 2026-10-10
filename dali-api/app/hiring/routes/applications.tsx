@@ -1,14 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePersistedState } from "~/hooks/usePersistedState";
 import {
+  APPLICATION_SORT_COLUMNS,
+  DEFAULT_SORT,
   EMPTY_FILTERS,
   ENGAGEMENT_FILTERS,
   isApplicationFilters,
+  isApplicationSort,
+  sortApplications,
   type ApplicationFilters,
+  type ApplicationSort,
 } from "~/hiring/lib/application-filters";
 import { isAdminOnlyCycle } from "~/hiring/lib/applicant-groups";
 import { redirect, useLoaderData, useNavigate, useSearchParams } from "react-router";
-import { SlidersHorizontal } from "lucide-react";
+import { ChevronDown, ChevronUp, SlidersHorizontal } from "lucide-react";
 import { SearchInput } from "~/components/ui/SearchInput";
 import type { Route } from "./+types/applications";
 import { requireAuth } from "~/lib/auth";
@@ -340,6 +345,11 @@ const STATUS_TONE: Record<string, string> = {
   Withdrawn: "bg-os-amber/15 text-os-amber",
 };
 
+const SORT_DIRECTIONS = [
+  { dir: "asc", Icon: ChevronUp, label: "ascending" },
+  { dir: "desc", Icon: ChevronDown, label: "descending" },
+] as const;
+
 // Toggle one value in a multi-select filter.
 function toggle<T extends string>(list: T[], value: T): T[] {
   return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
@@ -408,9 +418,14 @@ export default function ApplicationsDatabase() {
       return true;
     });
   }, [rows, activeDomainIds, statuses, engagement, query]);
+  const [sort, setSort] = usePersistedState<ApplicationSort>(
+    "dali:applications:sort",
+    DEFAULT_SORT,
+    isApplicationSort,
+  );
   const filteredRows = useMemo(
-    () => (stage ? pieRows.filter((r) => r.stage === stage) : pieRows),
-    [pieRows, stage],
+    () => sortApplications(stage ? pieRows.filter((r) => r.stage === stage) : pieRows, sort),
+    [pieRows, stage, sort],
   );
   // One applicant can hold several domain applications, so the row count
   // overstates how many people are in the cycle.
@@ -603,11 +618,44 @@ export default function ApplicationsDatabase() {
             <table className="w-full text-sm min-w-[640px]">
               <thead className="text-os-grey text-xs uppercase tracking-wide">
                 <tr>
-                  <th className="text-left font-medium px-6 py-4">Applicant</th>
-                  <th className="text-left font-medium px-6 py-4">Domain</th>
-                  <th className="text-left font-medium px-6 py-4">Status</th>
-                  <th className="text-left font-medium px-6 py-4">Submitted</th>
-                  <th className="text-left font-medium px-6 py-4">Reviews</th>
+                  {APPLICATION_SORT_COLUMNS.map((col) => (
+                    <th
+                      key={col.key}
+                      aria-sort={
+                        sort.key !== col.key
+                          ? undefined
+                          : sort.dir === "asc"
+                            ? "ascending"
+                            : "descending"
+                      }
+                      className="text-left font-medium px-6 py-4"
+                    >
+                      <span className="inline-flex items-center gap-1.5">
+                        {col.label}
+                        <span className="inline-flex flex-col">
+                          {SORT_DIRECTIONS.map(({ dir, Icon, label }) => {
+                            const active = sort.key === col.key && sort.dir === dir;
+                            return (
+                              <button
+                                key={dir}
+                                type="button"
+                                title={`Sort ${label}`}
+                                aria-label={`Sort by ${col.label}, ${label}`}
+                                aria-pressed={active}
+                                onClick={() => setSort({ key: col.key, dir })}
+                                className={cn(
+                                  "-my-0.5 rounded transition-colors hover:text-foreground",
+                                  active ? "text-os-accent" : "text-os-grey/50",
+                                )}
+                              >
+                                <Icon className="h-3 w-3" strokeWidth={3} aria-hidden />
+                              </button>
+                            );
+                          })}
+                        </span>
+                      </span>
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
