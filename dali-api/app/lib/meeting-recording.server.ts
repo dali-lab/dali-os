@@ -15,7 +15,7 @@ import { getTranscriptionProvider } from "~/lib/transcription/provider";
 import type { Channel, ProcessRequest, ProcessRequestChannel, ProcessRequestSegment } from "~/lib/transcription/provider";
 import { assignSpeakers, wordsToLines, mergeChannels, dedupeCrossChannel } from "~/lib/transcription/words";
 import type { Word, DiarizationSegment, RawLine } from "~/lib/transcription/words";
-import { Prisma, type MeetingRecording, type MeetingRecordingStatus } from "~/generated/prisma/client";
+import type { MeetingRecording, MeetingRecordingStatus } from "~/generated/prisma/client";
 import type { TranscriptLine } from "~/lib/meeting-transcript";
 
 // Anything older than this, never finalized, is an abandoned recording
@@ -145,7 +145,7 @@ export async function createRecording(
   } catch (err) {
     // Two Records in the same instant: the partial unique index rejects the
     // loser, who is then told about the winner like any other late arrival.
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+    if ((err as { code?: string })?.code === "P2002") {
       const winner = await activeRecordingFor(documentName);
       if (winner) return { busy: winner };
     }
