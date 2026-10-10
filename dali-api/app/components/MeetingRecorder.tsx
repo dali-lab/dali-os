@@ -1058,12 +1058,12 @@ export function MeetingRecorder({
       body: JSON.stringify({ action: "createTasks", items }),
     }).catch(() => null);
     const json = await res?.json().catch(() => null);
-    if (!res?.ok) {
-      setEnhanceError(json?.error ?? "Couldn't create tasks.");
-      return false;
-    }
+    // A failure part-way through still reports the tasks it did create; mark
+    // those so the rows read "Task created" and a retry sends only the rest.
     const created = (json?.created ?? []) as { index: number; taskId: string }[];
-    if (created.length === 0) return true;
+    const ok = Boolean(res?.ok);
+    if (!ok) setEnhanceError(json?.error ?? "Couldn't create tasks.");
+    if (created.length === 0) return ok;
     setEnhanceNotes((prev) => {
       if (!prev) return prev;
       const actionItems = prev.plan.actionItems.map((item, i) => {
@@ -1078,7 +1078,7 @@ export function MeetingRecorder({
         if (src) onTaskCreated(src.title, c.taskId, projectId);
       }
     }
-    return true;
+    return ok;
   }
 
   async function renameSpeaker(speakerKey: string) {

@@ -160,6 +160,15 @@ export async function action({ request, params }: Route.ActionArgs) {
       const notes = (rec.notes ?? null) as StoredEnhanceNotes | null;
       const actionItems = notes ? [...notes.plan.actionItems] : [];
       const created: { index: number; taskId: string }[] = [];
+      // Persist task ids as soon as any exist, including on a mid-loop
+      // failure, so a retry can't create the same task twice.
+      const saveTaskIds = async () => {
+        if (created.length === 0 || !notes) return;
+        await prisma.meetingRecording.update({
+          where: { id: rec.id },
+          data: { notes: { ...notes, plan: { ...notes.plan, actionItems } } },
+        });
+      };
 
       for (const item of items) {
         const existing = actionItems[item.index];
@@ -182,8 +191,9 @@ export async function action({ request, params }: Route.ActionArgs) {
             sourceRecordingId: rec.id,
           });
         } catch (err) {
+          await saveTaskIds();
           if (err instanceof CreateTaskError) {
-            return Response.json({ error: err.message }, { status: err.status });
+            return Response.json({ error: err.message, created }, { status: err.status });
           }
           throw err;
         }
@@ -192,13 +202,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         created.push({ index: item.index, taskId: task.id });
       }
 
-      if (created.length > 0 && notes) {
-        await prisma.meetingRecording.update({
-          where: { id: rec.id },
-          data: { notes: { ...notes, plan: { ...notes.plan, actionItems } } },
-        });
-      }
-
+      await saveTaskIds();
       return Response.json({ created });
     }
     if (body.action === "inserted") {

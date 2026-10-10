@@ -162,6 +162,34 @@ describe('POST /api/meeting-recordings/:id { action: "createTasks" }', () => {
     expect(res.status).toBe(403);
   });
 
+  it("keeps the task ids already created when a later item fails, so a retry can't duplicate them", async () => {
+    vi.mocked(runCreateTask)
+      .mockResolvedValueOnce({ id: "task1" } as never)
+      .mockRejectedValueOnce(new CreateTaskError("Invalid dueAt", 400));
+    const res = await run({
+      action: "createTasks",
+      items: [
+        { index: 0, title: "Send the revised scope" },
+        { index: 1, title: "Follow up with partner", dueAt: "not-a-date" },
+      ],
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "Invalid dueAt", created: [{ index: 0, taskId: "task1" }] });
+    expect(prisma.meetingRecording.update).toHaveBeenCalledWith({
+      where: { id: "rec1" },
+      data: {
+        notes: expect.objectContaining({
+          plan: expect.objectContaining({
+            actionItems: [
+              expect.objectContaining({ taskId: "task1" }),
+              expect.not.objectContaining({ taskId: expect.anything() }),
+            ],
+          }),
+        }),
+      },
+    });
+  });
+
   it("skips an out-of-range index without creating anything", async () => {
     const res = await run({ action: "createTasks", items: [{ index: 9, title: "Ghost item" }] });
     expect(res.status).toBe(200);
