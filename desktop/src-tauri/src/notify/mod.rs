@@ -20,7 +20,7 @@
 //
 // Record prompts (see poller.rs for how `recordPrompt` items are
 // raised/deferred) no longer go through the banner path above — they raise
-// the floating "Meeting detected" window instead (`raise_record_prompt`,
+// the floating record-prompt pill instead (`raise_record_prompt`,
 // called from poller.rs). The macOS `dali-record-prompt` category and its
 // Record/Open actions below (notify/macos.rs, ACTION_RECORD/ACTION_OPEN) are
 // kept only so a banner already delivered by an older build (sitting in
@@ -132,7 +132,7 @@ pub fn clear_record_prompts() {
     }
 }
 
-// ─── The floating "Meeting detected" window ─────────────────────────────────
+// ─── The floating record-prompt pill ────────────────────────────────────────
 //
 // Raised by poller.rs (immediate path in `sync_once`, deferred path in
 // `check_pending_record_prompts`) instead of the Banner/macOS-category path

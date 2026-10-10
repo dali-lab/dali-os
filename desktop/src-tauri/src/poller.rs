@@ -10,7 +10,7 @@
 // dock badge, and hands the latest unread items to the tray menu.
 //
 // Record-prompt items (recordPrompt field) are a special case: they raise the
-// floating "Meeting detected" window (notify::raise_record_prompt) instead of
+// floating record-prompt pill (notify::raise_record_prompt) instead of
 // an OS banner. An item for a Zoom/Teams occurrence (hasVideoLink) is held
 // back in AppState.pending_record_prompts rather than raised immediately, and
 // a second background loop (spawned alongside the main sync loop, below)
