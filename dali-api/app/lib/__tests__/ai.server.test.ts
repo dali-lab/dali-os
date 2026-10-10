@@ -8,6 +8,7 @@ const ENV_KEYS = [
   "DARTMOUTH_CHAT_API_KEY",
   "DARTMOUTH_CHAT_BASE_URL",
   "DARTMOUTH_CHAT_MODEL",
+  "DARTMOUTH_CHAT_SONNET_MODEL",
   "AI_PROVIDER",
 ] as const;
 
@@ -38,6 +39,7 @@ describe("resolveAiProvider", () => {
     const p = resolveAiProvider();
     expect(p?.name).toBe("anthropic");
     expect(p?.model).toBe("claude-opus-4-8");
+    expect(p?.sonnetModel).toBe("claude-sonnet-5");
     expect(p?.adaptiveThinking).toBe(true);
     expect(isAiEnabled()).toBe(true);
   });
@@ -47,9 +49,19 @@ describe("resolveAiProvider", () => {
     const p = resolveAiProvider();
     expect(p?.name).toBe("dartmouth");
     expect(p?.model).toBe("anthropic.claude-haiku-4-5-20251001");
+    expect(p?.sonnetModel).toBe("anthropic.claude-haiku-4-5-20251001");
     expect(p?.adaptiveThinking).toBe(false);
     expect(p?.client.baseURL).toBe("https://chat.dartmouth.edu/api");
     expect(isAiEnabled()).toBe(true);
+  });
+
+  it("honors DARTMOUTH_CHAT_SONNET_MODEL independently of the default chat model", () => {
+    process.env.DARTMOUTH_CHAT_API_KEY = "dartmouth-test";
+    process.env.DARTMOUTH_CHAT_MODEL = "anthropic.claude-haiku-4-5";
+    process.env.DARTMOUTH_CHAT_SONNET_MODEL = "anthropic.claude-sonnet-5";
+    const p = resolveAiProvider();
+    expect(p?.model).toBe("anthropic.claude-haiku-4-5");
+    expect(p?.sonnetModel).toBe("anthropic.claude-sonnet-5");
   });
 
   it("prefers first-party Anthropic when both keys are set", () => {

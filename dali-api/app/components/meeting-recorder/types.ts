@@ -3,6 +3,7 @@
 // server and client PRs type-check against the same shape.
 
 import type { TranscriptLine as ServerTranscriptLine } from "~/lib/meeting-transcript";
+import type { StoredEnhanceNotes } from "./enhance-plan";
 
 export type Channel = "mic" | "call";
 
@@ -57,6 +58,10 @@ export type PollRecordingResponse = {
   insertedAt?: string | null;
   /** Owner only. Set once the audio is deleted; Try again is pointless after. */
   finalizedAt?: string | null;
+  /** The last server-verified Enhance plan, if one has been generated. */
+  notes?: StoredEnhanceNotes | null;
+  enhancedAt?: string | null;
+  enhancedBy?: string | null;
 };
 
 /** The note's live recording as the page loader saw it, for a viewer who

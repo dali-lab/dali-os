@@ -1022,3 +1022,25 @@ a.dali-cmp-piece:hover .dali-cmp-row__title { text-decoration: underline; }
 .bn-editor[contenteditable="true"] .dali-cmp-spacer { border: 1px dashed var(--cmp-border); border-radius: 8px; }
 
 .dali-cmp-code { display: block; width: 100%; border: 0; border-radius: 14px; background: transparent; }
+
+/* ── Enhance citation chips (specs/meeting-notes-model.md §3) ────────────────
+ * Ordinary BlockNote links whose href carries `?transcript=` — styled as a
+ * compact pill instead of the default underlined link. The hover card itself
+ * is TranscriptChipHoverLayer (app/components/meeting-recorder/), which reads
+ * this same href pattern via event delegation. */
+.bn-root a[href*="?transcript="] {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0 6px;
+  margin-inline: 1px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.75em;
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--color-os-accent, #3b6cf6);
+  background: color-mix(in srgb, var(--color-os-accent, #3b6cf6) 12%, transparent);
+}
+.bn-root a[href*="?transcript="]:hover {
+  background: color-mix(in srgb, var(--color-os-accent, #3b6cf6) 20%, transparent);
+}

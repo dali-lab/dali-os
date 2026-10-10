@@ -55,6 +55,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       lines: lines.slice(since),
       insertedAt: rec.insertedAt?.toISOString() ?? null,
       finalizedAt: rec.finalizedAt?.toISOString() ?? null,
+      notes: rec.notes ?? null,
+      enhancedAt: rec.enhancedAt?.toISOString() ?? null,
+      enhancedBy: rec.enhancedBy ?? null,
     });
   }
 
@@ -65,6 +68,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     channels: rec.channels,
     recordedSeconds: rec.recordedSeconds,
     insertedAt: rec.insertedAt?.toISOString() ?? null,
+    notes: rec.notes ?? null,
+    enhancedAt: rec.enhancedAt?.toISOString() ?? null,
+    enhancedBy: rec.enhancedBy ?? null,
   });
 }
 
@@ -92,9 +98,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "Update the DALI OS app to record." }, { status: 410 });
   }
 
-  // speakers and inserted are the actions any editor of the note may take;
-  // everything else is owner-only.
-  if (body.action === "speakers" || body.action === "inserted") {
+  // speakers, inserted, and enhanced are the actions any editor of the note
+  // may take; everything else is owner-only.
+  if (body.action === "speakers" || body.action === "inserted" || body.action === "enhanced") {
     if (!(await canRecordInto(auth.user.sub, rec.documentName))) {
       return Response.json({ error: "Forbidden" }, { status: 403 });
     }
@@ -104,6 +110,29 @@ export async function action({ request, params }: Route.ActionArgs) {
         data: { insertedAt: rec.insertedAt ?? new Date() },
       });
       return Response.json({ ok: true });
+    }
+    if (body.action === "enhanced") {
+      const snapshotAt = typeof body.snapshotAt === "string" ? body.snapshotAt : null;
+      if (!snapshotAt) return Response.json({ error: "snapshotAt is required" }, { status: 400 });
+      // The enhance lock (specs/meeting-notes-model.md §2): refuse the apply
+      // when someone else's `notes` write landed after this client's preview
+      // snapshot — the two-editors-at-once case. Older/equal snapshots are
+      // fine: this is the editor that generated (or re-generated) `notes`.
+      const stored = rec.notes as { snapshotAt?: string } | null;
+      if (
+        stored &&
+        typeof stored.snapshotAt === "string" &&
+        new Date(stored.snapshotAt).getTime() > new Date(snapshotAt).getTime()
+      ) {
+        return Response.json({ error: "stale" }, { status: 409 });
+      }
+      const enhancedBy = [auth.user.firstName, auth.user.lastName].filter(Boolean).join(" ") || auth.user.email;
+      const enhancedAt = new Date();
+      await prisma.meetingRecording.update({
+        where: { id: rec.id },
+        data: { enhancedAt, enhancedBy },
+      });
+      return Response.json({ ok: true, enhancedAt: enhancedAt.toISOString(), enhancedBy });
     }
     const patch = parseSpeakerMap(body.speakers);
     if (!patch) return Response.json({ error: "Invalid speakers" }, { status: 400 });

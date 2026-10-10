@@ -31,11 +31,34 @@ import { CheckInPanel } from "~/components/CheckInPanel";
 import { MeetingRecorder } from "~/components/MeetingRecorder";
 import { RecordingPresencePill } from "~/components/RecordingPresencePill";
 import { RecordPromptBanner } from "~/components/RecordPromptBanner";
-import { appendBlocks } from "~/components/doc";
-import type { DocEditorInstance } from "~/components/doc/schema/build";
+import { TranscriptChipHoverLayer } from "~/components/meeting-recorder/TranscriptChipHoverLayer";
+import { appendBlocks, blockOwnText, blocksToPlainText, renderEnhanceOps } from "~/components/doc";
+import type { DocEditorInstance, DocPartialBlock } from "~/components/doc/schema/build";
+import type { EditorOp, SnapshotBlock } from "~/components/meeting-recorder/enhance-plan";
 import { pageDocName } from "~/collab/roomName";
 import { redirectToLogin } from "~/lib/login-next";
 import { walletTokensConfigured } from "~/lib/wallet-token";
+
+// The collapsed "### Transcript" toggle both Insert transcript and Enhance
+// apply append — a shared shape so de-duplication (hasTranscriptToggle) can
+// recognize either one's output.
+function transcriptToggleBlock(paragraphs: string[]): DocPartialBlock {
+  return {
+    type: "heading",
+    props: { level: 3, isToggleable: true },
+    content: [{ type: "text", text: "Transcript", styles: {} }],
+    children: paragraphs.map((text) => ({
+      type: "paragraph",
+      content: [{ type: "text", text, styles: {} }],
+    })),
+  } as DocPartialBlock;
+}
+
+function hasTranscriptToggle(editor: DocEditorInstance): boolean {
+  return editor.document.some(
+    (b) => b.type === "heading" && Boolean((b.props as { isToggleable?: boolean }).isToggleable) && blockOwnText(b) === "Transcript",
+  );
+}
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const t = (data as { title?: string } | undefined)?.title;
@@ -70,6 +93,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       archivedAt: true,
       meetingNoteId: true,
       meetingOccurrenceStart: true,
+      seededFromPageId: true,
+      seededTemplateHash: true,
       notebookKey: true,
       parent: { select: { id: true, title: true, notebookKey: true } },
       iconEmoji: true,
@@ -413,6 +438,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     canRestore,
     isCore: roles.isCore,
     meetingNoteTemplateAction,
+    seededFromPageId: page.seededFromPageId,
+    seededTemplateHash: page.seededTemplateHash,
     activeRecording: activeRecordingRow
       ? {
           id: activeRecordingRow.id,
@@ -598,6 +625,8 @@ export default function DocumentPage() {
     canRestore,
     isCore,
     meetingNoteTemplateAction,
+    seededFromPageId,
+    seededTemplateHash,
     activeRecording,
   } = useLoaderData() as Exclude<Awaited<ReturnType<typeof loader>>, Response>;
 
@@ -641,20 +670,36 @@ export default function DocumentPage() {
     ];
     // The transcript is long and rarely read, so it goes under a collapsed
     // toggle heading; Markdown has no way to say that, hence blocks.
-    if (transcript.length) {
-      blocks.push({
-        type: "heading",
-        props: { level: 3, isToggleable: true },
-        content: [{ type: "text", text: "Transcript", styles: {} }],
-        children: transcript.map((text) => ({
-          type: "paragraph",
-          content: [{ type: "text", text, styles: {} }],
-        })),
-      });
-    }
+    if (transcript.length) blocks.push(transcriptToggleBlock(transcript));
     appendBlocks(editor, blocks);
     return true;
   }, []);
+
+  // Enhance (specs/meeting-notes-model.md §2): a snapshot of the live
+  // editor's top-level blocks (id/type/text), plus the whole-body text
+  // isUntouchedTemplate compares against the seeded template hash.
+  const getNoteState = useCallback((): { blocks: SnapshotBlock[]; bodyText: string } | null => {
+    const editor = editorRef.current;
+    if (!editor) return null;
+    const doc = editor.document;
+    return {
+      blocks: doc.map((b) => ({ id: b.id, type: b.type, text: blockOwnText(b) })),
+      bodyText: blocksToPlainText(doc),
+    };
+  }, []);
+
+  // Replays Enhance's merge ops against the live editor, then inserts the
+  // transcript toggle if Apply didn't already find one — same toggle
+  // insertMeetingNotes uses, de-duplicated by heading text.
+  const onApplyEnhance = useCallback((ops: EditorOp[], recordingId: string, transcript: string[]): boolean => {
+    const editor = editorRef.current;
+    if (!editor) return false;
+    renderEnhanceOps(editor, ops, { pageId, recordingId });
+    if (transcript.length && !hasTranscriptToggle(editor)) {
+      appendBlocks(editor, [transcriptToggleBlock(transcript)]);
+    }
+    return true;
+  }, [pageId]);
 
   const editor = (
     <DocumentEditor
@@ -701,6 +746,10 @@ export default function DocumentPage() {
               onInsert={insertMeetingNotes}
               autoOpen={recordAutoOpen}
               collabToken={collabToken}
+              seededFromPageId={seededFromPageId}
+              seededTemplateHash={seededTemplateHash}
+              getNoteState={getNoteState}
+              onApplyEnhance={onApplyEnhance}
             />
           )}
           {attendance?.whiteboardPageId && (
@@ -750,7 +799,9 @@ export default function DocumentPage() {
       {notebook ? (
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
           <NotebookTabs notebook={notebook} currentId={pageId} />
-          <div className="min-w-0 flex-1">{editor}</div>
+          <div className="min-w-0 flex-1">
+            <TranscriptChipHoverLayer>{editor}</TranscriptChipHoverLayer>
+          </div>
         </div>
       ) : (
         editor

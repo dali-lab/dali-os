@@ -1951,6 +1951,13 @@ model MeetingRecording {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
+  // Enhance (specs/meeting-notes-model.md §2): the last server-verified merge
+  // plan, keyed to the editor snapshot it was computed from. A function of
+  // (recording, note at time T); dies with the row under the janitor.
+  notes       Json?     // EnhancePlan, server-verified, plus snapshotAt
+  enhancedAt  DateTime? // set only when a client successfully applied `notes`
+  enhancedBy  String?   // display name at apply time, not a User relation
+
   @@index([userId])
   @@index([scheduledMeetingId, occurrenceStart])
   // Plus a partial unique index, MeetingRecording_activeDocument_key, on
