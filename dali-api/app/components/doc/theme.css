@@ -1044,3 +1044,12 @@ a.dali-cmp-piece:hover .dali-cmp-row__title { text-decoration: underline; }
 .bn-root a[href*="?transcript="]:hover {
   background: color-mix(in srgb, var(--color-os-accent, #3b6cf6) 20%, transparent);
 }
+
+/* ── BlockNote side menu vs. an overlaying Modal ─────────────────────────────
+ * BlockNote's side menu positions by mouse Y against the editor, not by DOM
+ * containment — a Modal overlaying the editor (e.g. the recorder's Transcript
+ * modal) still shows the "+"/drag handle for whatever block sits underneath
+ * the cursor. Modal.tsx keeps a body counter while any Modal is open. */
+body[data-modal-open] .bn-side-menu {
+  display: none;
+}

@@ -80,6 +80,12 @@ export type StoredEnhanceNotes = {
    *  baseline for "did this block change since the plan was generated",
    *  round-tripped through storage so a page reload doesn't lose it. */
   snapshot: SnapshotBlock[];
+  /** The roster resolveMeetingEnhanceContext used for this plan (occurrence
+   *  attendance + the note's project current-term members, specs/meeting-
+   *  notes-model.md §6) — the EnhanceSheet's owner picker prefers this over
+   *  the page's own occurrence-only roster prop. Optional: absent on plans
+   *  stored before this field existed. */
+  roster?: { userId: string; name: string }[];
 };
 
 export type ApplyEnhancePlanResult = {
@@ -208,4 +214,30 @@ export function applyEnhancePlan(
   }
 
   return { ops, skipped, hiddenHeadings };
+}
+
+function normalizeActionItemText(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Whether an action item's text and a checklist block's rendered text are
+ * "the same item" (fix for action items into Tasks never finding their
+ * checklist block, specs/meeting-notes-model.md §4): normalized equal, or one
+ * normalized string contains the other and the shorter side is long enough
+ * (12+ chars) that a short common fragment can't false-positive. Used both to
+ * find a checklist block to link a created task to, and — on a re-run — to
+ * carry a `taskId` forward onto the matching item in the new plan.
+ */
+export function actionItemMatchesBlock(itemText: string, blockText: string): boolean {
+  const a = normalizeActionItemText(itemText);
+  const b = normalizeActionItemText(blockText);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
+  return shorter.length >= 12 && longer.includes(shorter);
 }

@@ -11,7 +11,7 @@ import { randomUUID } from "node:crypto";
 import type { DocBlock, DocInline } from "~/collab/blocknote-server";
 import { buildInlineContent, toPartialBlock } from "~/components/doc/enhance-render";
 import { blockOwnText } from "~/components/doc/schema/configs";
-import type { EditorOp } from "~/components/meeting-recorder/enhance-plan";
+import type { EditorOp, EnhanceActionItem } from "~/components/meeting-recorder/enhance-plan";
 
 /** Applies applyEnhancePlan's ops to a full DocBlock[] tree (top-level array;
  *  each block's own children carry through untouched), returning the new
@@ -19,7 +19,7 @@ import type { EditorOp } from "~/components/meeting-recorder/enhance-plan";
 export function applyEnhanceOpsToDocBlocks(
   ops: EditorOp[],
   blocks: DocBlock[],
-  ctx: { pageId: string; recordingId: string },
+  ctx: { pageId: string; recordingId: string; actionItems?: EnhanceActionItem[]; projectId?: string | null },
 ): DocBlock[] {
   let result = blocks;
 
@@ -37,7 +37,7 @@ export function applyEnhanceOpsToDocBlocks(
     }
     // op.kind === "insertAfter"
     const newBlocks: DocBlock[] = op.blocks.map((b) => {
-      const partial = toPartialBlock(b, ctx.pageId, ctx.recordingId) as unknown as Partial<DocBlock>;
+      const partial = toPartialBlock(b, ctx.pageId, ctx.recordingId, ctx) as unknown as Partial<DocBlock>;
       return {
         id: randomUUID(),
         type: partial.type ?? "paragraph",

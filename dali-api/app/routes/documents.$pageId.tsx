@@ -40,7 +40,7 @@ import {
   renderEnhanceOps,
 } from "~/components/doc";
 import type { DocEditorInstance, DocPartialBlock } from "~/components/doc/schema/build";
-import type { EditorOp, SnapshotBlock } from "~/components/meeting-recorder/enhance-plan";
+import { actionItemMatchesBlock, type EditorOp, type EnhanceActionItem, type SnapshotBlock } from "~/components/meeting-recorder/enhance-plan";
 import { pageDocName } from "~/collab/roomName";
 import { redirectToLogin } from "~/lib/login-next";
 import { walletTokensConfigured } from "~/lib/wallet-token";
@@ -708,15 +708,18 @@ export default function DocumentPage() {
   // Replays Enhance's merge ops against the live editor, then inserts the
   // transcript toggle if Apply didn't already find one — same toggle
   // insertMeetingNotes uses, de-duplicated by heading text.
-  const onApplyEnhance = useCallback((ops: EditorOp[], recordingId: string, transcript: string[]): boolean => {
-    const editor = editorRef.current;
-    if (!editor) return false;
-    renderEnhanceOps(editor, ops, { pageId, recordingId });
-    if (transcript.length && !hasTranscriptToggle(editor)) {
-      appendBlocks(editor, [transcriptToggleBlock(transcript)]);
-    }
-    return true;
-  }, [pageId]);
+  const onApplyEnhance = useCallback(
+    (ops: EditorOp[], recordingId: string, transcript: string[], actionItems: EnhanceActionItem[]): boolean => {
+      const editor = editorRef.current;
+      if (!editor) return false;
+      renderEnhanceOps(editor, ops, { pageId, recordingId, actionItems, projectId: meetingProjectId });
+      if (transcript.length && !hasTranscriptToggle(editor)) {
+        appendBlocks(editor, [transcriptToggleBlock(transcript)]);
+      }
+      return true;
+    },
+    [pageId, meetingProjectId],
+  );
 
   // Action items into Tasks (specs/meeting-notes-model.md §4): once a task
   // exists, link it from the note. The mention spec (app/components/doc/
@@ -725,18 +728,27 @@ export default function DocumentPage() {
   // any other schema change for a stale client. So this appends a plain link
   // (the same kind of node citation chips already use, §3) to the matching
   // checklist item instead of a task mention chip; see the PR description.
+  //
+  // The checklist block's rendered text can differ from the action item's
+  // own text (case, punctuation, an owner prefix the editor's rendering
+  // added) — actionItemMatchesBlock finds the best match instead of an exact
+  // trimmed-text comparison (fix for created tasks never linking back).
   const onTaskCreated = useCallback((itemText: string, taskId: string, taskProjectId: string) => {
     const editor = editorRef.current;
     if (!editor) return;
-    const trimmed = itemText.trim();
-    const match = editor.document.find((b) => b.type === "checkListItem" && blockOwnText(b).trim() === trimmed);
-    if (!match) return;
-    const content = appendTaskMentionContent(match.content as DocPartialBlock["content"], {
+    const candidates = editor.document
+      .filter((b) => b.type === "checkListItem")
+      .map((b) => ({ block: b, text: blockOwnText(b) }))
+      .filter(({ text }) => actionItemMatchesBlock(itemText, text));
+    if (candidates.length === 0) return;
+    const exact = candidates.find(({ text }) => text.trim().toLowerCase() === itemText.trim().toLowerCase());
+    const match = exact ?? candidates[0]!;
+    const content = appendTaskMentionContent(match.block.content as DocPartialBlock["content"], {
       taskId,
       projectId: taskProjectId,
-      label: trimmed,
+      label: itemText.trim(),
     });
-    editor.updateBlock(match.id, { content } as unknown as DocPartialBlock);
+    editor.updateBlock(match.block.id, { content } as unknown as DocPartialBlock);
   }, []);
 
   const editor = (

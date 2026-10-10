@@ -70,6 +70,24 @@ describe("applyEnhanceOpsToDocBlocks", () => {
     expect(result[1]!.props).toEqual({ checked: false });
   });
 
+  it("links a checkListItem insert to an already-created task (Create tasks ran before Apply, §4)", () => {
+    const blocks = [paragraph("b1", "a")];
+    const ops: EditorOp[] = [
+      {
+        kind: "insertAfter",
+        afterId: "b1",
+        blocks: [{ type: "checkListItem", text: "Send the revised scope", cites: [], added: true }],
+      },
+    ];
+    const result = applyEnhanceOpsToDocBlocks(ops, blocks, {
+      ...CTX,
+      actionItems: [{ text: "Send the revised scope", taskId: "task1" }],
+      projectId: "proj1",
+    });
+    expect(JSON.stringify(result[1]!.content)).toContain("taskMention");
+    expect(JSON.stringify(result[1]!.content)).toContain("task1");
+  });
+
   it("inserts at the start when afterId is null", () => {
     const blocks = [paragraph("b1", "a")];
     const ops: EditorOp[] = [

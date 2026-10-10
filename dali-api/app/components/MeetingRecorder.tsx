@@ -36,7 +36,13 @@ import {
   speakerLabelFor,
   transcriptParagraphs,
 } from "./meeting-recorder/transcript";
-import { applyEnhancePlan, type EditorOp, type SnapshotBlock, type StoredEnhanceNotes } from "./meeting-recorder/enhance-plan";
+import {
+  applyEnhancePlan,
+  type EditorOp,
+  type EnhanceActionItem,
+  type SnapshotBlock,
+  type StoredEnhanceNotes,
+} from "./meeting-recorder/enhance-plan";
 import { isUntouchedTemplate } from "~/lib/meeting-note-template";
 import type {
   ActiveRecording,
@@ -208,7 +214,7 @@ export function MeetingRecorder({
   /** Replays Enhance's merge ops against the live editor and inserts the
    *  transcript toggle if it isn't already there. False when the editor
    *  isn't ready. */
-  onApplyEnhance?: (ops: EditorOp[], recordingId: string, transcript: string[]) => boolean;
+  onApplyEnhance?: (ops: EditorOp[], recordingId: string, transcript: string[], actionItems: EnhanceActionItem[]) => boolean;
   /** The meeting note's project, when it's on one (specs/meeting-notes-model.md
    *  §4) — tasks need a project, so Create tasks is hidden without one. */
   projectId?: string | null;
@@ -1029,7 +1035,7 @@ export function MeetingRecorder({
         untouchedTemplate: untouched,
       });
       const paragraphs = transcriptParagraphs(lines, speakers, roster);
-      if (!onApplyEnhance(ops, recordingId, paragraphs)) {
+      if (!onApplyEnhance(ops, recordingId, paragraphs, enhanceNotes.plan.actionItems)) {
         setEnhanceError("The note is still loading. Try again in a moment.");
         return;
       }
@@ -1390,7 +1396,8 @@ export function MeetingRecorder({
                 )}
                 {enhancedAt && (
                   <p className="text-xs text-muted-foreground">
-                    Enhanced {formatDateTime(enhancedAt)}{enhancedByName ? ` by ${enhancedByName}` : ""}.
+                    Enhanced {formatDateTime(enhancedAt)}{enhancedByName ? ` by ${enhancedByName}` : ""}. Enhance
+                    again rebuilds the notes from the current text and the transcript.
                   </p>
                 )}
                 {hasTranscript && speakerKeys.length > 0 && (
@@ -1531,7 +1538,7 @@ export function MeetingRecorder({
                   {!aiEnabled
                     ? "Insert transcript"
                     : enhancedAt
-                      ? "Re-run"
+                      ? "Enhance again"
                       : currentlyUntouched()
                         ? "Write notes"
                         : "Enhance notes"}
@@ -1651,9 +1658,14 @@ function EnhanceSheet({
     setItemState(next);
   }, [notes]);
 
+  // The plan's own roster (occurrence attendance + the note's project
+  // current-term members, specs/meeting-notes-model.md §6) is more complete
+  // than the page's occurrence-only roster prop — fall back to the prop only
+  // for a plan stored before that field existed.
+  const rosterForOwners = notes?.roster?.length ? notes.roster : roster;
   const ownerOptions: SelectOption[] = [
     { value: "", label: "Unassigned" },
-    ...roster.map((r) => ({ value: r.userId, label: r.name })),
+    ...rosterForOwners.map((r) => ({ value: r.userId, label: r.name })),
   ];
 
   async function handleCreateTasks() {
@@ -1770,7 +1782,7 @@ function EnhanceSheet({
                           {item.ownerName
                             ? item.ownerUserId
                               ? item.ownerName
-                              : `${item.ownerName} (not on the roster)`
+                              : `${item.ownerName}: no match on the roster`
                             : "Unassigned"}
                           {item.due && ` · ${formatIsoDate(item.due)}${item.dueSource ? ` (${item.dueSource})` : ""}`}
                         </p>
@@ -1806,7 +1818,7 @@ function EnhanceSheet({
                             ariaLabel="Owner"
                           />
                           {item.ownerName && !item.ownerUserId && (
-                            <span className="text-[11px] text-muted-foreground">{item.ownerName} (not on the roster)</span>
+                            <span className="text-[11px] text-muted-foreground">{item.ownerName}: no match on the roster</span>
                           )}
                         </div>
                         <div className="flex flex-col gap-1">
