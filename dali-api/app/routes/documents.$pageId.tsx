@@ -840,7 +840,7 @@ export default function DocumentPage() {
           </div>
         </div>
       ) : (
-        editor
+        <TranscriptChipHoverLayer>{editor}</TranscriptChipHoverLayer>
       )}
     </div>
   );

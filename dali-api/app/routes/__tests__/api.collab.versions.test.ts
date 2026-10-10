@@ -3,6 +3,7 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
+vi.mock("~/lib/db");
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn(), forbidden: vi.fn(() => Response.json({ error: "Forbidden" }, { status: 403 })) }));
 vi.mock("~/lib/collabAuth", () => ({ authorizeCollabDoc: vi.fn(), hydrateAuthors: vi.fn() }));
 vi.mock("~/collab/server", () => ({ getCollabServer: vi.fn() }));
