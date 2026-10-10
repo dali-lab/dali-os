@@ -463,6 +463,20 @@ html.dark .dali-doc .bn-thread-mark[data-orphan="true"] {
   position: relative;
 }
 
+/* Recording rail (specs/meeting-recording-rail.md): unlike the comments
+ * rail above, it's sticky with its own scroll and 400px wide (the action
+ * rows need the extra 80px). top/height are set inline by DocumentEditor,
+ * measured off the actual .doc-topbar height rather than guessed here.
+ * Declared after .dali-doc-rail-container so these two classes together
+ * override its width/position on the same element. */
+.dali-recording-rail-width {
+  width: 400px;
+}
+.dali-recording-rail-sticky {
+  position: sticky;
+  overflow-y: auto;
+}
+
 .dali-doc-rail {
   position: relative;
   height: 100%;

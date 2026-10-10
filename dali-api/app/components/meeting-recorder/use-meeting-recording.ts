@@ -39,24 +39,6 @@ import type {
   TranscriptLine,
 } from "./types";
 
-const ENHANCE_CONFIRM_KEY = "dali:meeting-recording:enhance-confirmed";
-
-function hasConfirmedEnhance(): boolean {
-  try {
-    return window.localStorage.getItem(ENHANCE_CONFIRM_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-function rememberEnhanceConfirmed() {
-  try {
-    window.localStorage.setItem(ENHANCE_CONFIRM_KEY, "1");
-  } catch {
-    // Private window — the confirm just shows again next time, no worse.
-  }
-}
-
 /** "Oct 10, 2:14 PM" in the viewer's own locale/timezone — the "Enhanced …"
  *  banner doesn't need the year since it's always recent. */
 export function formatDateTime(iso: string): string {
@@ -254,6 +236,14 @@ export function useMeetingRecording({
   const [enhanceError, setEnhanceError] = useState<string | null>(null);
   const [applyBusy, setApplyBusy] = useState(false);
   const autoEnhanceTried = useRef(false);
+  // "Someone enhanced this note after your preview." — the 409 case
+  // (specs/meeting-recording-rail.md's "stale preview" state, replacing the
+  // old reload confirm dialog).
+  const [stalePreview, setStalePreview] = useState(false);
+  // Citation-chip click target (specs/meeting-recording-rail.md "Citation
+  // chips"): scrolls/highlights a transcript line without relying on the
+  // `?at=` URL param, which only matters on first mount.
+  const [scrollTarget, setScrollTarget] = useState<number | null>(null);
 
   // Start-sheet config.
   const [useDesktopApp, setUseDesktopApp] = useState(desktopVer != null);
@@ -310,6 +300,7 @@ export function useMeetingRecording({
     setEnhancedByName(null);
     setEnhanceSheetOpen(false);
     setEnhanceError(null);
+    setStalePreview(false);
     autoEnhanceTried.current = false;
     segmentRef.current = 0;
     conflictedRef.current = false;
@@ -390,7 +381,7 @@ export function useMeetingRecording({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "stop" }),
         }).catch(() => null);
-        setError("Recording stopped when this page reloaded. Continue to pick it up, or transcribe what was recorded.");
+        setError("Recording stopped when this page reloaded. Continue to pick it up.");
         setPhase("review");
         setOpen(true);
       } else if (data.status === "Pending" || data.status === "Recording") {
@@ -593,14 +584,23 @@ export function useMeetingRecording({
     };
   }, [open, phase, useDesktopApp, micDeviceId]);
 
+  // Processing finishing never auto-opens the rail (specs/meeting-recording-
+  // rail.md "When the rail opens on its own") — the top-bar button already
+  // shows "Transcript"; a toast covers the case where nobody's watching.
+  const notifiedDoneRef = useRef<string | null>(null);
   useEffect(() => {
-    if (phase === "done" || phase === "failed") setOpen(true);
-  }, [phase]);
+    if (phase !== "done" || !recordingId) return;
+    if (notifiedDoneRef.current === recordingId) return;
+    notifiedDoneRef.current = recordingId;
+    if (!open) toast.info("Transcript ready.");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, recordingId]);
 
+  const highlightAt = scrollTarget ?? atSeconds;
   useEffect(() => {
-    if (phase !== "done" || atSeconds === null) return;
+    if (phase !== "done" || highlightAt === null) return;
     highlightLineRef.current?.scrollIntoView({ block: "center" });
-  }, [phase, atSeconds, lines.length]);
+  }, [phase, highlightAt, lines.length]);
 
   // Enhance auto-preview (specs/meeting-notes-model.md §2): runs once, for
   // the owner, the moment the transcript lands with no plan yet — the sheet
@@ -886,6 +886,9 @@ export function useMeetingRecording({
     reset();
   }
 
+  /** Inserts the markdown + transcript into the note. Unlike before the
+   *  rail, this does NOT clear local state — the recording stays visible in
+   *  the "inserted" state (specs/meeting-recording-rail.md) until Discard. */
   function insert(notes: string | null) {
     const paragraphs = transcriptParagraphs(lines, speakers, roster);
     if (!onInsert(meetingNotesMarkdown(notes), paragraphs)) {
@@ -900,7 +903,7 @@ export function useMeetingRecording({
         body: JSON.stringify({ action: "inserted" }),
       }).catch(() => null);
     }
-    clearLocalState();
+    setInsertedAt(new Date().toISOString());
     return true;
   }
 
@@ -948,23 +951,29 @@ export function useMeetingRecording({
     }
   }
 
-  /** Opens the sheet; generates (or regenerates, with forceRegenerate) only
+  /** Opens the preview; generates (or regenerates, with forceRegenerate) only
    *  if nothing's already in flight, so auto-preview and a click racing each
-   *  other don't fire two requests. */
+   *  other don't fire two requests. The per-user consent confirm that used to
+   *  gate this moved to a static sentence on the start sheet. */
   async function onEnhanceClick(forceRegenerate = false) {
-    if (!hasConfirmedEnhance()) {
-      const ok = await dialog.confirm({
-        title: "Enhance this note?",
-        description: "Enhance sends your typed notes and the transcript to the AI provider.",
-        confirmLabel: "Enhance",
-      });
-      if (!ok) return;
-      rememberEnhanceConfirmed();
-    }
     setEnhanceSheetOpen(true);
+    setStalePreview(false);
     if (enhanceBusy) return;
     if (forceRegenerate) setEnhanceNotes(null);
     if (forceRegenerate || !enhanceNotes) void generateEnhance();
+  }
+
+  /** "Reload preview" on the stale-preview state: regenerates from the
+   *  current text and the transcript, same as Enhance again. */
+  function reloadStalePreview() {
+    void onEnhanceClick(true);
+  }
+
+  /** Closes the preview (Cancel, in the "generating"/"preview" states) or the
+   *  stale-preview notice (Cancel there too) without discarding anything. */
+  function closeEnhancePreview() {
+    setStalePreview(false);
+    setEnhanceSheetOpen(false);
   }
 
   async function applyEnhance() {
@@ -991,12 +1000,7 @@ export function useMeetingRecording({
         body: JSON.stringify({ action: "enhanced", snapshotAt: enhanceNotes.snapshotAt }),
       });
       if (lockRes.status === 409) {
-        const reload = await dialog.confirm({
-          title: "Enhance notes again?",
-          description: "Someone enhanced this note after your preview. Reload the preview?",
-          confirmLabel: "Reload",
-        });
-        if (reload) void onEnhanceClick(true);
+        setStalePreview(true);
         return;
       }
       const lockJson = await lockRes.json().catch(() => null);
@@ -1062,19 +1066,13 @@ export function useMeetingRecording({
     return ok;
   }
 
-  async function renameSpeaker(speakerKey: string) {
-    const options = [...roster.map((r) => ({ value: r.userId, label: r.name })), { value: "__other__", label: "Someone else…" }];
-    const choice = await dialog.choice({
-      title: "Who is this?",
-      options,
-    });
-    if (!choice) return;
-    let value = choice;
-    if (choice === "__other__") {
-      const text = await dialog.prompt({ title: "Speaker's name", label: "Name", placeholder: "e.g. a guest" });
-      if (!text?.trim()) return;
-      value = text.trim();
-    }
+  /** Renames a diarized speaker — to a roster member (`value` is their
+   *  userId) or free text ("Someone else…"). Replaces the old
+   *  dialog.choice/dialog.prompt pair: the rail's speaker chip (a Select
+   *  over the roster plus an inline text field) resolves the value before
+   *  calling this (specs/meeting-recording-rail.md). */
+  async function setSpeaker(speakerKey: string, value: string) {
+    if (!value.trim()) return;
     const next = { ...speakers, [speakerKey]: value };
     setSpeakers(next);
     if (!recordingId) return;
@@ -1088,6 +1086,13 @@ export function useMeetingRecording({
       setSpeakers(speakers);
       toast.error("Couldn't rename that speaker.");
     }
+  }
+
+  /** A citation chip's plain click (TranscriptChipHoverLayer): opens the rail
+   *  and scrolls the transcript to `at`, highlighting the nearest line. */
+  function jumpToTranscript(at: number) {
+    setOpen(true);
+    setScrollTarget(at);
   }
 
   // Backing out before anything was captured — nothing worth keeping.
@@ -1128,9 +1133,9 @@ export function useMeetingRecording({
   const speakerKeys = useMemo(() => [...new Set(lines.filter((l) => l.speaker).map((l) => l.speaker!))], [lines]);
   const sortedLines = useMemo(() => [...lines].sort((a, b) => a.at - b.at), [lines]);
   const highlightLineIndex =
-    atSeconds !== null && sortedLines.length > 0
+    highlightAt !== null && sortedLines.length > 0
       ? sortedLines.reduce(
-          (best, l, i) => (best === -1 || Math.abs(l.at - atSeconds) < Math.abs(sortedLines[best]!.at - atSeconds) ? i : best),
+          (best, l, i) => (best === -1 || Math.abs(l.at - highlightAt) < Math.abs(sortedLines[best]!.at - highlightAt) ? i : best),
           -1,
         )
       : -1;
@@ -1181,6 +1186,7 @@ export function useMeetingRecording({
     enhanceBusy,
     enhanceError,
     applyBusy,
+    stalePreview,
 
     // Start-sheet config.
     useDesktopApp,
@@ -1210,6 +1216,7 @@ export function useMeetingRecording({
     canShowRecorder,
     transcriptParam,
     atSeconds,
+    highlightAt,
 
     // Actions.
     startDesktop,
@@ -1223,9 +1230,12 @@ export function useMeetingRecording({
     currentlyUntouched,
     generateEnhance,
     onEnhanceClick,
+    reloadStalePreview,
+    closeEnhancePreview,
     applyEnhance,
     createTasksFromItems,
-    renameSpeaker,
+    setSpeaker,
+    jumpToTranscript,
     cancelStart,
     switchToBrowserAfterUnreachable,
   };

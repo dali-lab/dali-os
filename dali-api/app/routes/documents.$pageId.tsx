@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, type ReactNode } from "react";
 import { Link, redirect, useLoaderData, useRevalidator, useSearchParams } from "react-router";
 import QRCode from "qrcode";
 import { Shapes, Trash2, UserCheck } from "lucide-react";
@@ -32,6 +32,8 @@ import { MeetingRecorder } from "~/components/MeetingRecorder";
 import { RecordingPresencePill } from "~/components/RecordingPresencePill";
 import { RecordPromptBanner } from "~/components/RecordPromptBanner";
 import { TranscriptChipHoverLayer } from "~/components/meeting-recorder/TranscriptChipHoverLayer";
+import { RecordingRail } from "~/components/meeting-recorder/RecordingRail";
+import { useMeetingRecording, type UseMeetingRecording, type UseMeetingRecordingProps } from "~/components/meeting-recorder/use-meeting-recording";
 import {
   appendBlocks,
   appendTaskMentionContent,
@@ -611,6 +613,29 @@ function AttendanceButton({
   );
 }
 
+// Mounts useMeetingRecording() only while `enabled` is true — recordingEnabled
+// (feature flag), recordingAllowed (project policy) or canShowRecorder could
+// each flip false mid-session (e.g. a followed `?transcript=` recording gets
+// discarded, dropping the URL param), so the hook can't be called
+// conditionally inside one stable component; mounting/unmounting this one
+// instead keeps every call to the rules of hooks.
+function RecordingMount({
+  enabled,
+  children,
+  ...hookProps
+}: UseMeetingRecordingProps & { enabled: boolean; children: (rec: UseMeetingRecording | null) => ReactNode }) {
+  if (!enabled) return <>{children(null)}</>;
+  return <RecordingMountInner {...hookProps}>{children}</RecordingMountInner>;
+}
+
+function RecordingMountInner({
+  children,
+  ...hookProps
+}: UseMeetingRecordingProps & { children: (rec: UseMeetingRecording) => ReactNode }) {
+  const rec = useMeetingRecording(hookProps);
+  return <>{children(rec)}</>;
+}
+
 export default function DocumentPage() {
   const {
     pageId,
@@ -658,6 +683,12 @@ export default function DocumentPage() {
   const recordingAllowed = attendance?.recordingPolicy !== "Disabled";
   const hasTranscriptParam = Boolean(searchParams.get("transcript"));
   const [recordAutoOpen, setRecordAutoOpen] = useState(searchParams.get("record") === "1");
+  const recordingMountEnabled = recordingEnabled && recordingAllowed && (canEdit || hasTranscriptParam);
+  // DocumentEditor is the only component that measures the ≥ 1150px check;
+  // the top-bar Record button needs it too, to answer a live recording with
+  // a Popover instead of toggling the rail on a narrow canvas
+  // (specs/meeting-recording-rail.md "Wiring").
+  const [containerWide, setContainerWide] = useState(false);
   const toast = useToast();
   const { actionBtnPrimary, actionIcon } = useOsChrome();
 
@@ -751,114 +782,142 @@ export default function DocumentPage() {
     editor.updateBlock(match.block.id, { content } as unknown as DocPartialBlock);
   }, []);
 
-  const editor = (
-    <DocumentEditor
-      key={pageId}
-      pageId={pageId}
-      initialTitle={title}
-      collabToken={collabToken}
-      userName={userName}
-      currentUserId={currentUserId}
-      photoUrl={photoUrl}
-      subtitle={subtitle}
-      canEdit={canEdit}
-      canComment={canComment}
-      canManageAccess={canManageAccess}
-      favorited={favorited}
-      workspaceType={workspaceType}
-      workspaceId={workspaceId}
-      tags={tags}
-      allTags={allTags}
-      iconEmoji={iconEmoji}
-      coverImageUrl={coverImageUrl}
-      isTemplate={isTemplate}
-      typography={typography}
-      updatedAt={updatedAt}
-      focusCommentId={focusCommentId}
-      backlinks={backlinks}
-      focusMentionUserId={focusMentionUserId}
-      meetingNoteTemplateAction={meetingNoteTemplateAction}
-      aiEnabled
-      onEditorReady={onEditorReady}
-      topBarActions={
-        <>
-          {attendance && <AttendanceButton attendance={attendance} />}
-          <RecordingPresencePill documentName={pageDocName(pageId)} collabToken={collabToken} />
-          {recordingEnabled && recordingAllowed && (canEdit || hasTranscriptParam) && (
-            <MeetingRecorder
-              documentName={pageDocName(pageId)}
-              scheduledMeetingId={attendance?.meetingId}
-              occurrenceStart={attendance?.occurrenceStart}
-              roster={attendance?.rows.map((r) => ({ userId: r.userId, name: r.name }))}
-              canEdit={canEdit}
-              isCore={isCore}
-              activeElsewhere={activeRecording}
-              onInsert={insertMeetingNotes}
-              autoOpen={recordAutoOpen}
-              collabToken={collabToken}
-              seededFromPageId={seededFromPageId}
-              seededTemplateHash={seededTemplateHash}
-              getNoteState={getNoteState}
-              onApplyEnhance={onApplyEnhance}
-              projectId={meetingProjectId}
-              canCreateTasks={canCreateTasks}
-              onTaskCreated={onTaskCreated}
-            />
-          )}
-          {attendance?.whiteboardPageId && (
-            // This meeting also has a whiteboard — link across to it (the
-            // board carries the matching link back).
-            <Link
-              to={`/whiteboard/${attendance.whiteboardPageId}`}
-              aria-label="Whiteboard"
-              className={actionBtnPrimary}
-            >
-              <Shapes className={actionIcon} />
-              <span className="hidden sm:inline">Whiteboard</span>
-            </Link>
-          )}
-        </>
-      }
-    />
-  );
-
   return (
-    <div className="flex flex-col gap-4">
-      {trashed && <TrashedNoteBanner pageId={pageId} canRestore={canRestore} />}
-      {attendance && recordingEnabled && recordingAllowed && (
-        <RecordPromptBanner
-          meetingId={attendance.meetingId}
-          occurrenceStart={attendance.occurrenceStart}
-          windowEndIso={attendance.windowEndIso}
-          canEdit={canEdit}
-          recordingEnabled={recordingEnabled}
-          recordPromptEnabled={attendance.recordPromptEnabled}
-          hasActiveRecording={activeRecording !== null}
-          canDontSuggest={attendance.canDontSuggestRecording}
-          onRecord={() => setRecordAutoOpen(true)}
-          onDontSuggest={() => void dontSuggestRecording()}
-        />
-      )}
-      {attendance?.selfCheckIn && (
-        <CheckInPanel
-          meetingId={attendance.meetingId}
-          meetingLabel={attendance.meetingLabel}
-          viewerInvited={attendance.viewerInvited}
-          initialPresent={attendance.viewerPresent}
-          checkInUrl={attendance.checkInUrl}
-          checkInQrSvg={attendance.checkInQrSvg}
-        />
-      )}
-      {notebook ? (
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
-          <NotebookTabs notebook={notebook} currentId={pageId} />
-          <div className="min-w-0 flex-1">
-            <TranscriptChipHoverLayer>{editor}</TranscriptChipHoverLayer>
+    <RecordingMount
+      enabled={recordingMountEnabled}
+      documentName={pageDocName(pageId)}
+      scheduledMeetingId={attendance?.meetingId}
+      occurrenceStart={attendance?.occurrenceStart}
+      roster={attendance?.rows.map((r) => ({ userId: r.userId, name: r.name }))}
+      canEdit={canEdit}
+      isCore={isCore}
+      activeElsewhere={activeRecording}
+      onInsert={insertMeetingNotes}
+      autoOpen={recordAutoOpen}
+      collabToken={collabToken}
+      seededFromPageId={seededFromPageId}
+      seededTemplateHash={seededTemplateHash}
+      getNoteState={getNoteState}
+      onApplyEnhance={onApplyEnhance}
+      projectId={meetingProjectId}
+      canCreateTasks={canCreateTasks}
+      onTaskCreated={onTaskCreated}
+    >
+      {(rec) => {
+        const recordingLive = rec ? rec.phase === "recording" || rec.phase === "starting" || rec.phase === "stopping" : false;
+
+        function onChipClick(recordingId: string, at: number): boolean {
+          if (!rec || rec.recordingId !== recordingId) return false;
+          rec.jumpToTranscript(at);
+          return true;
+        }
+
+        const editor = (
+          <DocumentEditor
+            key={pageId}
+            pageId={pageId}
+            initialTitle={title}
+            collabToken={collabToken}
+            userName={userName}
+            currentUserId={currentUserId}
+            photoUrl={photoUrl}
+            subtitle={subtitle}
+            canEdit={canEdit}
+            canComment={canComment}
+            canManageAccess={canManageAccess}
+            favorited={favorited}
+            workspaceType={workspaceType}
+            workspaceId={workspaceId}
+            tags={tags}
+            allTags={allTags}
+            iconEmoji={iconEmoji}
+            coverImageUrl={coverImageUrl}
+            isTemplate={isTemplate}
+            typography={typography}
+            updatedAt={updatedAt}
+            focusCommentId={focusCommentId}
+            backlinks={backlinks}
+            focusMentionUserId={focusMentionUserId}
+            meetingNoteTemplateAction={meetingNoteTemplateAction}
+            aiEnabled
+            onEditorReady={onEditorReady}
+            onContainerWideChange={setContainerWide}
+            rail={
+              rec
+                ? {
+                    node: <RecordingRail rec={rec} />,
+                    open: rec.open && rec.phase !== "idle",
+                    onClose: () => rec.setOpen(false),
+                    live: recordingLive,
+                  }
+                : undefined
+            }
+            topBarActions={
+              <>
+                {attendance && <AttendanceButton attendance={attendance} />}
+                <RecordingPresencePill documentName={pageDocName(pageId)} collabToken={collabToken} />
+                {rec && <MeetingRecorder rec={rec} containerWide={containerWide} />}
+                {attendance?.whiteboardPageId && (
+                  // This meeting also has a whiteboard — link across to it (the
+                  // board carries the matching link back).
+                  <Link
+                    to={`/whiteboard/${attendance.whiteboardPageId}`}
+                    aria-label="Whiteboard"
+                    className={actionBtnPrimary}
+                  >
+                    <Shapes className={actionIcon} />
+                    <span className="hidden sm:inline">Whiteboard</span>
+                  </Link>
+                )}
+              </>
+            }
+          />
+        );
+
+        return (
+          <div className="flex flex-col gap-4">
+            {trashed && <TrashedNoteBanner pageId={pageId} canRestore={canRestore} />}
+            {attendance && recordingEnabled && recordingAllowed && (
+              <RecordPromptBanner
+                meetingId={attendance.meetingId}
+                occurrenceStart={attendance.occurrenceStart}
+                windowEndIso={attendance.windowEndIso}
+                canEdit={canEdit}
+                recordingEnabled={recordingEnabled}
+                recordPromptEnabled={attendance.recordPromptEnabled}
+                hasActiveRecording={activeRecording !== null}
+                canDontSuggest={attendance.canDontSuggestRecording}
+                onRecord={() => setRecordAutoOpen(true)}
+                onDontSuggest={() => void dontSuggestRecording()}
+              />
+            )}
+            {attendance?.selfCheckIn && (
+              <CheckInPanel
+                meetingId={attendance.meetingId}
+                meetingLabel={attendance.meetingLabel}
+                viewerInvited={attendance.viewerInvited}
+                initialPresent={attendance.viewerPresent}
+                checkInUrl={attendance.checkInUrl}
+                checkInQrSvg={attendance.checkInQrSvg}
+              />
+            )}
+            {notebook ? (
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+                <NotebookTabs notebook={notebook} currentId={pageId} />
+                <div className="min-w-0 flex-1">
+                  <TranscriptChipHoverLayer onChipClick={onChipClick} railOpen={Boolean(rec?.open)}>
+                    {editor}
+                  </TranscriptChipHoverLayer>
+                </div>
+              </div>
+            ) : (
+              <TranscriptChipHoverLayer onChipClick={onChipClick} railOpen={Boolean(rec?.open)}>
+                {editor}
+              </TranscriptChipHoverLayer>
+            )}
           </div>
-        </div>
-      ) : (
-        <TranscriptChipHoverLayer>{editor}</TranscriptChipHoverLayer>
-      )}
-    </div>
+        );
+      }}
+    </RecordingMount>
   );
 }
