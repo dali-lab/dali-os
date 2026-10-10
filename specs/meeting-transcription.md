@@ -539,6 +539,11 @@ additive:
 2. Voice enrollment: later.
 3. Diarize both channels, no speaker cap on either (the mic cap hid in-person
    speakers in hybrid meetings; dropped Oct 10).
+3a. One live recording per document (partial unique index
+   `MeetingRecording_activeDocument_key`, Oct 10). A second Record returns 409
+   with the live recording, and the page follows it ("Recording · Name") so the
+   transcript lands in the note once. Later: a second device in the same room
+   joins as another channel instead.
 4. Transcript retention: 365 days via `retention-janitor`.
 5. Record prompt audience: organizer only for the notification; any editor for
    the in-page banner.

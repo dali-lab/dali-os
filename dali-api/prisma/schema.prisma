@@ -1953,6 +1953,10 @@ model MeetingRecording {
 
   @@index([userId])
   @@index([scheduledMeetingId, occurrenceStart])
+  // Plus a partial unique index, MeetingRecording_activeDocument_key, on
+  // (documentName) WHERE status IN (Pending, Recording, Stopped, Processing):
+  // one live recording per document. Raw SQL in migration
+  // 20261010140000_recording_active_per_document; Prisma can't express it.
 }
 
 enum MeetingRecordingStatus {

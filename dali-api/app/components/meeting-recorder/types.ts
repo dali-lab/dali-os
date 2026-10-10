@@ -51,4 +51,20 @@ export type PollRecordingResponse = {
   error?: string | null;
   stopRequested?: boolean;
   total?: number;
+  /** Owner only. One entry per session; the last is the current segment. */
+  segmentStarts?: number[];
+  /** Set once notes or the transcript went into the note. */
+  insertedAt?: string | null;
+  /** Owner only. Set once the audio is deleted; Try again is pointless after. */
+  finalizedAt?: string | null;
+};
+
+/** The note's live recording as the page loader saw it, for a viewer who
+ *  didn't start it (another person, or the same person on another device). */
+export type ActiveRecording = {
+  id: string;
+  ownerName: string;
+  ownerIsYou: boolean;
+  status: RecordingStatus;
+  since: string;
 };

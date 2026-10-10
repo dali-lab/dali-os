@@ -128,6 +128,23 @@ describe("createRecording", () => {
     });
   });
 
+  it("reports the note's live recording instead of starting a second one", async () => {
+    vi.mocked(prisma.meetingRecording.findFirst).mockResolvedValueOnce({
+      id: "live1",
+      userId: "u2",
+      status: "Recording",
+      createdAt: new Date("2026-10-10T12:00:00Z"),
+    } as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({ firstName: "Ada", lastName: "L", daliEmail: null } as never);
+
+    const result = await createRecording("u1", "doc:p1:body");
+
+    expect(result).toEqual({
+      busy: expect.objectContaining({ id: "live1", userId: "u2", ownerName: "Ada L", status: "Recording" }),
+    });
+    expect(prisma.meetingRecording.create).not.toHaveBeenCalled();
+  });
+
   it("seeds segment 0 and carries the meeting link", async () => {
     const start = new Date("2026-10-09T15:00:00Z");
     await createRecording("u1", "doc:p1:body", { scheduledMeetingId: "m1", occurrenceStart: start });

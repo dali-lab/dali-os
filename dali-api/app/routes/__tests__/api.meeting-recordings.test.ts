@@ -107,6 +107,22 @@ describe("POST /api/meeting-recordings", () => {
     expect(await res.json()).toEqual({ error: "forbidden" });
   });
 
+  it("409s with the live recording when someone is already recording the note", async () => {
+    vi.mocked(createRecording).mockResolvedValue({
+      busy: { id: "live1", userId: "u2", ownerName: "Ada L", status: "Recording", createdAt: new Date("2026-10-10T12:00:00Z") },
+    } as never);
+    const res = await run({ documentName: "doc:p1:body" });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      error: "alreadyRecording",
+      recordingId: "live1",
+      ownerName: "Ada L",
+      ownerIsYou: false,
+      status: "Recording",
+      since: "2026-10-10T12:00:00.000Z",
+    });
+  });
+
   it("503s with a friendly message at the lab-wide cap", async () => {
     vi.mocked(createRecording).mockResolvedValue(null);
     const res = await run({ documentName: "doc:p1:body" });
