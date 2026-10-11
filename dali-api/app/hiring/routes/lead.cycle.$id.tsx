@@ -2189,7 +2189,9 @@ export default function HiringLeadCycleDetails() {
                   <CycleFormRow
                     form={cycle?.continuedInterestForm ?? null}
                     allForms={loaderData?.allForms ?? []}
-                    swappable={cycleStatus === "Draft"}
+                    // Each reused application pins the form version it
+                    // answered, so a swap only affects reuses started after it.
+                    swappable
                     createIntent="create-continued-interest-form"
                     setIntent="set-continued-interest-form"
                     ariaLabel="Continued interest form"
@@ -3549,7 +3551,6 @@ function CycleFormRow({
 }: {
   form: { id: string; name: string } | null;
   allForms: { id: string; name: string }[];
-  /** The form can only be swapped while the cycle is in Draft. */
   swappable: boolean;
   createIntent: string;
   setIntent: string;
