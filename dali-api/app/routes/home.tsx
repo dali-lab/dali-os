@@ -1,21 +1,18 @@
 import { useEffect, useRef, useState } from "react";
-import { redirect, useLoaderData, useRevalidator } from "react-router";
+import { redirect, useLoaderData } from "react-router";
+import { Bell, SquareCheck } from "lucide-react";
 import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { listFavoritesAndRecents, type FavoritePage } from "~/lib/user-pages.server";
+import { listMyProjectTasks, listOpenTasks } from "~/lib/tasks";
 import { loadShellUser } from "~/lib/shell-user.server";
 import { isBirthdayToday } from "~/members/lib/warmth";
 import { timed } from "~/lib/server-timing";
-import { FavoriteIcon } from "~/components/FavoriteIcon";
-import { FavoriteStar } from "~/components/FavoriteStar";
-import { FavoriteRouteButton } from "~/components/FavoriteRouteButton";
 import MilestoneHero from "~/components/home/MilestoneHero";
 import SearchIcon from "~/components/home/landing/SearchIcon";
 import {
   isLandingBackgroundId,
   scheduledLandingWeek,
 } from "~/components/home/landing/backgrounds/schedule";
-import { isNavbarRoute } from "~/lib/navbar-routes";
 import { currentTermStrict } from "~/lib/roles";
 import { termWeekNumber } from "~/lib/terms.shared";
 import { TYPE_META } from "~/components/CommandPalette";
@@ -39,16 +36,10 @@ export async function loader({ request }: Route.LoaderArgs) {
   const me = await loadShellUser(auth.user.sub, request);
   const tz = resolveUserTimeZone(me);
 
-  // The attention stack (open tasks, unanswered invites) lives in the shell's
-  // bell panel, not here — home is the front door, not an inbox. It polls
-  // /api/notifications for itself, so this loader owns only the greeting and
-  // the page cards.
-  const [pages, week] = await Promise.all([
-    timed(request, 'home.favorites', () =>
-      // `request` reuses the read the shell's sidebar already kicked off for the
-      // same navigation instead of re-running the per-row access checks.
-      listFavoritesAndRecents(auth.user.sub, request),
-    ),
+  // Home shows the first few of the viewer's tasks; the full list, with its
+  // actions and unread notifications, lives on My Tasks and in the bell panel.
+  const [tasks, week] = await Promise.all([
+    timed(request, 'home.tasks', () => loadHomeTasks(auth.user.sub, request)),
     loadCurrentWeek(tz, request),
   ]);
 
@@ -80,12 +71,38 @@ export async function loader({ request }: Route.LoaderArgs) {
     background: isLandingBackgroundId(preview) ? preview : landing.id,
     week,
     user: auth.user,
-    pages: {
-      favorites: pages.favorites.slice(0, HOME_PAGE_LIMIT),
-      recents: pages.recents.slice(0, HOME_PAGE_LIMIT),
-    },
+    tasks,
   };
 }
+
+type HomeTask = { id: string; title: string; detail: string | null; href: string; project: boolean };
+
+/* Project work first, in My Tasks' order (soonest due), then everything else
+   waiting on the viewer. */
+async function loadHomeTasks(userId: string, request: Request): Promise<HomeTask[]> {
+  const [projectTasks, openTasks] = await Promise.all([
+    listMyProjectTasks(userId),
+    listOpenTasks(userId, request),
+  ]);
+  return [
+    ...projectTasks.map((t) => ({
+      id: `project:${t.id}`,
+      title: t.title,
+      detail: t.projectName,
+      href: t.link,
+      project: true,
+    })),
+    ...openTasks.map((t) => ({
+      id: t.id,
+      title: t.title,
+      detail: null,
+      href: t.link ?? MY_TASKS_PATH,
+      project: false,
+    })),
+  ].slice(0, HOME_TASK_LIMIT);
+}
+
+const MY_TASKS_PATH = "/notifications";
 
 /* The term week "now" falls in, for the hero's badge: week 1 starts on the
    current term's start date (days counted in the viewer's zone) and each week
@@ -113,21 +130,17 @@ async function loadCurrentWeek(tz: string, request: Request) {
 
 const DAY_MS = 86_400_000;
 
-/* How many starred and how many recently-opened pages home shows. The lists
-   themselves are longer (the sidebar shows more) — home is a landing page, not
-   an index, and an unbounded pin list pushed everything else off the screen. */
-const HOME_PAGE_LIMIT = 6;
+/* How many tasks home shows. My Tasks has the rest: home is a landing page,
+   not an index, and an unbounded list pushed everything else off the screen. */
+const HOME_TASK_LIMIT = 6;
 
 // The hero fills the shell's main column edge to edge: the column hands it a
 // height (fitViewport) and drops its gutter (bleedPane).
 export const handle = { fitViewport: true, bleedPane: true };
 
 export default function Home() {
-  const { user, greeting, week, milestoneTitle, background, pages } = useLoaderData<typeof loader>();
-  const revalidator = useRevalidator();
-  const onChanged = () => revalidator.revalidate();
+  const { user, greeting, week, milestoneTitle, background, tasks } = useLoaderData<typeof loader>();
   const firstName = user.firstName || user.email.split("@")[0];
-  const shortcuts = [...pages.favorites, ...pages.recents].slice(0, HOME_PAGE_LIMIT);
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
@@ -138,42 +151,26 @@ export default function Home() {
         userName={firstName}
         search={<HomeSearch />}
         background={background}
-        recentsHeading="Favorites + Recently Visited"
-        // A brand-new account (nothing starred, nothing opened) gets no card
-        // row at all — the search field is the only thing to do.
-        recents={shortcuts.map((page) => ({
-          id: page.id,
-          title: page.title || "Untitled",
-          href: page.href,
-          media: <RecentCardMedia page={page} />,
-          // Recents show a hollow star on hover — a way to keep the page
-          // without hunting for it — while a favorite always shows its filled one.
-          action:
-            page.favorited || !page.isRoute || !isNavbarRoute(page.href) ? (
-              page.isRoute ? (
-                <FavoriteRouteButton
-                  href={page.href}
-                  label={page.title}
-                  favorited={page.favorited}
-                  onToggled={onChanged}
-                  compact
-                />
-              ) : (
-                <FavoriteStar pageId={page.id} favorited={page.favorited} onToggled={onChanged} />
-              )
-            ) : undefined,
-          actionPinned: page.favorited,
+        recentsHeading="My Tasks"
+        // With nothing to do there is no card row at all, just the search field.
+        recents={tasks.map((task) => ({
+          id: task.id,
+          title: task.title,
+          href: task.href,
+          media: <TaskCardMedia task={task} />,
         }))}
       />
     </div>
   );
 }
 
-function RecentCardMedia({ page }: { page: FavoritePage }) {
+function TaskCardMedia({ task }: { task: HomeTask }) {
+  const Icon = task.project ? SquareCheck : Bell;
   return (
     <span className="relative z-[2] flex size-full flex-col items-center justify-center gap-2 p-3 text-center">
-      <FavoriteIcon page={page} size="lg" glyphClassName="text-white/80" />
-      <span className="w-full truncate text-sm text-white">{page.title || "Untitled"}</span>
+      <Icon className="h-6 w-6 text-white/80" aria-hidden />
+      <span className="line-clamp-2 w-full text-sm text-white">{task.title}</span>
+      {task.detail && <span className="w-full truncate text-xs text-white/60">{task.detail}</span>}
     </span>
   );
 }
