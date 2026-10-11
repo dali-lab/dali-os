@@ -347,6 +347,59 @@ describe("RecordingRail per state (specs/meeting-recording-rail.md state table)"
     expect(html).not.toContain(">Stop<");
   });
 
+  it("recording (following): shows 'last audio N min ago' once lastChunkAt is a few minutes old", () => {
+    const html = render(
+      makeRec({
+        phase: "recording",
+        remote: { ownerName: "Priya", ownerIsYou: false },
+        drives: false,
+        elapsed: 60,
+        lastChunkAt: new Date(Date.now() - 4 * 60_000).toISOString(),
+      }),
+    );
+    expect(html).toContain("· last audio 4 min ago");
+  });
+
+  it("recording (following): shows 'last audio just now' under 60 seconds", () => {
+    const html = render(
+      makeRec({
+        phase: "recording",
+        remote: { ownerName: "Priya", ownerIsYou: false },
+        drives: false,
+        elapsed: 60,
+        lastChunkAt: new Date(Date.now() - 10_000).toISOString(),
+      }),
+    );
+    expect(html).toContain("· last audio just now");
+  });
+
+  it("recording (following): shows 'no audio yet' when lastChunkAt is null", () => {
+    const html = render(
+      makeRec({
+        phase: "recording",
+        remote: { ownerName: "Priya", ownerIsYou: false },
+        drives: false,
+        elapsed: 60,
+        lastChunkAt: null,
+      }),
+    );
+    expect(html).toContain("· no audio yet");
+  });
+
+  it("recording (following): the owner's own other-device view never shows a last-audio suffix", () => {
+    const html = render(
+      makeRec({
+        phase: "recording",
+        remote: { ownerName: "You", ownerIsYou: true },
+        drives: true,
+        elapsed: 60,
+        lastChunkAt: null,
+      }),
+    );
+    expect(html).toContain("· another device");
+    expect(html).not.toContain("audio");
+  });
+
   it("recording: a follower with canStopOthers sees a Stop button", () => {
     const html = render(
       makeRec({

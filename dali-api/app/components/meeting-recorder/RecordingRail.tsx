@@ -113,16 +113,32 @@ export function RecordingRail({ rec }: { rec: UseMeetingRecording }) {
   );
 }
 
+/** "last audio 4 min ago" / "last audio just now" / "no audio yet" — a
+ *  follower's cue for whether the owner's device is still actually
+ *  uploading, not just that the row says Recording. */
+function lastAudioLabel(lastChunkAt: string | null | undefined): string {
+  if (!lastChunkAt) return "no audio yet";
+  const seconds = Math.floor((Date.now() - new Date(lastChunkAt).getTime()) / 1000);
+  if (seconds < 60) return "last audio just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `last audio ${minutes} min ago`;
+  return `last audio ${Math.floor(minutes / 60)} hr ago`;
+}
+
 /** Exported for the top-bar narrow-canvas live Popover, which shows the same
  *  status line text beside its own meters + Stop. */
 export function statusLineFor(rec: UseMeetingRecording, state: RailState): ReactNode {
   if (state === "recording") {
+    const following = Boolean(rec.remote && !rec.remote.ownerIsYou);
     return (
       <span className="inline-flex items-center gap-1.5">
         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-500" />
         {formatClock(rec.elapsed)}
         {rec.remote && (
-          <span className="text-muted-foreground">· {rec.remote.ownerIsYou ? "another device" : rec.remote.ownerName}</span>
+          <span className="text-muted-foreground">
+            · {rec.remote.ownerIsYou ? "another device" : rec.remote.ownerName}
+            {following && ` · ${lastAudioLabel(rec.lastChunkAt)}`}
+          </span>
         )}
       </span>
     );
