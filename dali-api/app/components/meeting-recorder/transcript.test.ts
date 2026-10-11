@@ -60,6 +60,21 @@ describe("speakerLabelFor", () => {
       "Guest speaker",
     );
   });
+
+  it("prefers a resolved speakerNames entry over a roster lookup or the raw assigned value", () => {
+    const speakers: Speakers = { "mic:2": "u2" };
+    const speakerNames = { "mic:2": "Priya Shah" };
+    expect(
+      speakerLabelFor({ channel: "mic", speaker: "mic:2" }, { mic: 2, call: 0 }, speakers, roster, speakerNames),
+    ).toBe("Priya Shah");
+  });
+
+  it("falls back to the roster/raw value when speakerNames has no entry for this key", () => {
+    const speakers: Speakers = { "mic:2": "u1" };
+    expect(
+      speakerLabelFor({ channel: "mic", speaker: "mic:2" }, { mic: 2, call: 0 }, speakers, roster, {}),
+    ).toBe("Alex Kim");
+  });
 });
 
 describe("transcriptParagraphs", () => {
@@ -77,6 +92,13 @@ describe("transcriptParagraphs", () => {
   it("drops blank lines", () => {
     const lines: TranscriptLine[] = [{ at: 0, end: 1, text: "   ", channel: "mic" }];
     expect(transcriptParagraphs(lines, {}, [])).toEqual([]);
+  });
+
+  it("uses a resolved speakerNames entry for a speaker assigned outside the roster", () => {
+    const lines: TranscriptLine[] = [{ at: 0, end: 1, text: "hi", channel: "mic", speaker: "mic:1" }];
+    const speakers: Speakers = { "mic:1": "u9" };
+    const speakerNames = { "mic:1": "Priya Shah" };
+    expect(transcriptParagraphs(lines, speakers, [], speakerNames)).toEqual(["[00:00] Priya Shah: hi"]);
   });
 });
 

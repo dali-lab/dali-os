@@ -6,12 +6,13 @@
 // mirrors app/components/board/useOptimisticBoardMove.test.tsx's hook-harness
 // pattern, since @testing-library isn't a dependency here.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { createElement, act, type ReactElement } from "react";
+import { createElement, useState, act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { createRoutesStub } from "react-router";
 import { ToastProvider } from "~/components/ui/toast";
 import { DialogProvider } from "~/components/ui/dialog";
 import { useMeetingRecording, type UseMeetingRecording } from "./use-meeting-recording";
+import type { LatestRecording } from "./types";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -43,8 +44,25 @@ let container: HTMLDivElement;
 let root: Root;
 const box: { current: UseMeetingRecording | null } = { current: null };
 
-function Harness({ documentName }: { documentName: string }) {
-  box.current = useMeetingRecording({ documentName, canEdit: true, onInsert: () => true });
+function Harness({
+  documentName,
+  latestRecording,
+  onSpeakersChanged,
+  getNoteState,
+}: {
+  documentName: string;
+  latestRecording?: LatestRecording | null;
+  onSpeakersChanged?: (paragraphs: string[]) => boolean;
+  getNoteState?: () => { blocks: never[]; bodyText: string } | null;
+}) {
+  box.current = useMeetingRecording({
+    documentName,
+    canEdit: true,
+    onInsert: () => true,
+    latestRecording,
+    onSpeakersChanged,
+    getNoteState,
+  });
   return null;
 }
 
@@ -62,6 +80,89 @@ async function mount(documentName: string) {
       ),
     );
     // Lets the claim-backup effect's fetch (and its state updates) settle.
+    await new Promise((r) => setTimeout(r, 0));
+  });
+}
+
+async function mountWithLatest(
+  documentName: string,
+  latestRecording: LatestRecording,
+  getNoteState?: () => { blocks: never[]; bodyText: string } | null,
+) {
+  const Stub = createRoutesStub([
+    { path: "/test", Component: () => createElement(Harness, { documentName, latestRecording, getNoteState }) },
+  ]);
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  await act(async () => {
+    root.render(
+      createElement(
+        ToastProvider,
+        null,
+        createElement(DialogProvider, null, createElement(Stub, { initialEntries: ["/test"] })),
+      ),
+    );
+    await new Promise((r) => setTimeout(r, 0));
+  });
+}
+
+async function mountWithOnSpeakersChanged(documentName: string, onSpeakersChanged: (paragraphs: string[]) => boolean) {
+  const Stub = createRoutesStub([
+    { path: "/test", Component: () => createElement(Harness, { documentName, onSpeakersChanged }) },
+  ]);
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  await act(async () => {
+    root.render(
+      createElement(
+        ToastProvider,
+        null,
+        createElement(DialogProvider, null, createElement(Stub, { initialEntries: ["/test"] })),
+      ),
+    );
+    await new Promise((r) => setTimeout(r, 0));
+  });
+}
+
+// Mirrors documents.$pageId.tsx's RecordingMount: a parent holds documentName
+// in state (standing in for a notebook-tab switch, which re-renders the SAME
+// route component with a new documentName prop) and renders Harness keyed by
+// it, the way RecordingMountInner is now keyed. `keyed=false` reproduces the
+// bug the key fixes.
+let driverSetDocumentName: (next: string) => void = () => {
+  throw new Error("mountDriver was not called");
+};
+
+function Driver({ initial, keyed }: { initial: string; keyed: boolean }) {
+  const [documentName, setDocumentName] = useState(initial);
+  driverSetDocumentName = setDocumentName;
+  return keyed
+    ? createElement(Harness, { key: documentName, documentName })
+    : createElement(Harness, { documentName });
+}
+
+async function mountDriver(initial: string, keyed: boolean) {
+  const Stub = createRoutesStub([{ path: "/test", Component: () => createElement(Driver, { initial, keyed }) }]);
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  await act(async () => {
+    root.render(
+      createElement(
+        ToastProvider,
+        null,
+        createElement(DialogProvider, null, createElement(Stub, { initialEntries: ["/test"] })),
+      ),
+    );
+    await new Promise((r) => setTimeout(r, 0));
+  });
+}
+
+async function switchDocument(next: string) {
+  await act(async () => {
+    driverSetDocumentName(next);
     await new Promise((r) => setTimeout(r, 0));
   });
 }
@@ -163,5 +264,255 @@ describe("useMeetingRecording phase transitions (mocked fetch, no browser captur
     expect(box.current!.phase).toBe("done");
     expect(box.current!.lines).toHaveLength(1);
     expect(box.current!.hasTranscript).toBe(true);
+  });
+});
+
+describe("notebook tab switch: remounting by key resets state (Fix 1A)", () => {
+  it("without a key, a documentName change on the same instance keeps the old tab's state (the bug)", async () => {
+    window.localStorage.setItem(
+      backupKey("doc-tab-a"),
+      JSON.stringify({ id: "rA", link: "l", aiEnabled: true, captureMode: "desktop" }),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonRes({ status: "Recording", channels: ["mic"], recordedSeconds: 5, lines: [], speakers: {} })),
+    );
+
+    await mountDriver("doc-tab-a", false);
+    expect(box.current!.phase).toBe("recording");
+    expect(box.current!.recordingId).toBe("rA");
+
+    await switchDocument("doc-tab-b");
+    // doc-tab-b has no backup of its own; a fresh mount would be idle with no
+    // recording id. Unkeyed, the pickup effect's `claimed.current` guard
+    // bails out instead of re-claiming, so doc-tab-a's state leaks through.
+    expect(box.current!.phase).toBe("recording");
+    expect(box.current!.recordingId).toBe("rA");
+  });
+
+  it("keyed by documentName, a tab switch remounts clean: idle, no recording id", async () => {
+    window.localStorage.setItem(
+      backupKey("doc-tab-c"),
+      JSON.stringify({ id: "rC", link: "l", aiEnabled: true, captureMode: "desktop" }),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonRes({ status: "Recording", channels: ["mic"], recordedSeconds: 5, lines: [], speakers: {} })),
+    );
+
+    await mountDriver("doc-tab-c", true);
+    expect(box.current!.phase).toBe("recording");
+    expect(box.current!.recordingId).toBe("rC");
+
+    await switchDocument("doc-tab-d");
+    expect(box.current!.phase).toBe("idle");
+    expect(box.current!.recordingId).toBeNull();
+    expect(box.current!.lines).toHaveLength(0);
+  });
+});
+
+describe("latestRecording pickup (Fix 1B: a finished recording reaches any viewer)", () => {
+  it("adopts a Done latestRecording as this viewer's own done phase, without following read-only", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonRes({
+          status: "Done",
+          channels: [],
+          recordedSeconds: 42,
+          lines: [{ at: 1, end: 2, text: "hi", speaker: "mic:1", channel: "mic" }],
+          speakers: {},
+        }),
+      ),
+    );
+
+    await mountWithLatest("doc-done-fallback", {
+      id: "rDone",
+      ownerName: "Priya",
+      ownerIsYou: false,
+      status: "Done",
+      since: new Date().toISOString(),
+    });
+
+    expect(box.current!.phase).toBe("done");
+    expect(box.current!.recordingId).toBe("rDone");
+    expect(box.current!.remote).toBeNull();
+    // Never auto-opens on its own (specs/meeting-recording-rail.md).
+    expect(box.current!.open).toBe(false);
+  });
+
+  it("does not start the Enhance auto-preview for someone else's finished recording (one AI call per note, not per viewer)", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes("/api/ai/meeting-notes/enhance")) return jsonRes({ error: "unexpected" }, 500);
+      return jsonRes({
+        status: "Done",
+        channels: [],
+        recordedSeconds: 42,
+        lines: [{ at: 1, end: 2, text: "hi", speaker: "mic:1", channel: "mic" }],
+        speakers: {},
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await mountWithLatest("doc-done-other", {
+      id: "rDone",
+      ownerName: "Priya",
+      ownerIsYou: false,
+      status: "Done",
+      since: new Date().toISOString(),
+    }, () => ({ blocks: [], bodyText: "typed notes" }));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    expect(box.current!.phase).toBe("done");
+    expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("/api/ai/meeting-notes/enhance"))).toBe(false);
+  });
+
+  it("starts the Enhance auto-preview when the finished recording is the viewer's own", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes("/api/ai/meeting-notes/enhance")) return jsonRes({ error: "stub" }, 500);
+      return jsonRes({
+        status: "Done",
+        channels: [],
+        recordedSeconds: 42,
+        lines: [{ at: 1, end: 2, text: "hi", speaker: "mic:1", channel: "mic" }],
+        speakers: {},
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await mountWithLatest("doc-done-mine", {
+      id: "rMine",
+      ownerName: "You",
+      ownerIsYou: true,
+      status: "Done",
+      since: new Date().toISOString(),
+    }, () => ({ blocks: [], bodyText: "typed notes" }));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("/api/ai/meeting-notes/enhance"))).toBe(true);
+  });
+
+  it("follows a live latestRecording read-only, same as before this fix", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonRes({ status: "Recording", channels: ["mic"], recordedSeconds: 10, lines: [], speakers: {} })),
+    );
+
+    await mountWithLatest("doc-live-fallback", {
+      id: "rLive",
+      ownerName: "Priya",
+      ownerIsYou: false,
+      status: "Recording",
+      since: new Date().toISOString(),
+    });
+
+    expect(box.current!.phase).toBe("recording");
+    expect(box.current!.remote).toEqual({ ownerName: "Priya", ownerIsYou: false });
+    expect(box.current!.open).toBe(false);
+  });
+});
+
+describe("setSpeaker: onSpeakersChanged + speakersChangedAt (Fix 4: stale names after Insert/Enhance)", () => {
+  function stubDoneWithInsertedAt(documentName: string) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        if ((init?.method ?? "GET") === "GET") {
+          return jsonRes({
+            status: "Done",
+            channels: [],
+            recordedSeconds: 5,
+            lines: [{ at: 0, end: 1, text: "hi", speaker: "mic:1", channel: "mic" }],
+            speakers: {},
+            insertedAt: "2026-10-10T18:00:00Z",
+          });
+        }
+        return jsonRes({ ok: true });
+      }),
+    );
+    window.localStorage.setItem(backupKey(documentName), JSON.stringify({ id: "rSpk", link: "l", aiEnabled: true }));
+  }
+
+  it("calls onSpeakersChanged with the rewritten paragraphs once the transcript is already in the note", async () => {
+    const documentName = "doc-speakers-inserted";
+    stubDoneWithInsertedAt(documentName);
+    const onSpeakersChanged = vi.fn(() => true);
+
+    await mountWithOnSpeakersChanged(documentName, onSpeakersChanged);
+    expect(box.current!.phase).toBe("done");
+    expect(box.current!.insertedAt).not.toBeNull();
+
+    await act(async () => {
+      await box.current!.setSpeaker("mic:1", "u1", "Alex Kim");
+    });
+
+    expect(onSpeakersChanged).toHaveBeenCalledWith(["[00:00] Alex Kim: hi"]);
+    expect(box.current!.speakersChangedAt).not.toBeNull();
+  });
+
+  it("does not call onSpeakersChanged when the transcript was never inserted or enhanced", async () => {
+    const documentName = "doc-speakers-not-inserted";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        if ((init?.method ?? "GET") === "GET") {
+          return jsonRes({
+            status: "Done",
+            channels: [],
+            recordedSeconds: 5,
+            lines: [{ at: 0, end: 1, text: "hi", speaker: "mic:1", channel: "mic" }],
+            speakers: {},
+          });
+        }
+        return jsonRes({ ok: true });
+      }),
+    );
+    window.localStorage.setItem(backupKey(documentName), JSON.stringify({ id: "rSpk2", link: "l", aiEnabled: true }));
+    const onSpeakersChanged = vi.fn(() => true);
+
+    await mountWithOnSpeakersChanged(documentName, onSpeakersChanged);
+    expect(box.current!.insertedAt).toBeNull();
+
+    await act(async () => {
+      await box.current!.setSpeaker("mic:1", "u1", "Alex Kim");
+    });
+
+    expect(onSpeakersChanged).not.toHaveBeenCalled();
+    // speakersChangedAt still tracks the rename itself, independent of
+    // whether the toggle needed rewriting — the "enhanced" rail copy and
+    // the "ready" unnamed-speakers line both read it this way.
+    expect(box.current!.speakersChangedAt).not.toBeNull();
+  });
+
+  it("rolls back speakersChangedAt along with speakers/speakerNames when the server rejects the rename", async () => {
+    const documentName = "doc-speakers-rollback";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        if ((init?.method ?? "GET") === "GET") {
+          return jsonRes({
+            status: "Done",
+            channels: [],
+            recordedSeconds: 5,
+            lines: [{ at: 0, end: 1, text: "hi", speaker: "mic:1", channel: "mic" }],
+            speakers: {},
+          });
+        }
+        return jsonRes({ error: "nope" }, 500);
+      }),
+    );
+    window.localStorage.setItem(backupKey(documentName), JSON.stringify({ id: "rSpk3", link: "l", aiEnabled: true }));
+
+    await mountWithOnSpeakersChanged(documentName, () => true);
+    await act(async () => {
+      await box.current!.setSpeaker("mic:1", "u1", "Alex Kim");
+    });
+
+    expect(box.current!.speakersChangedAt).toBeNull();
+    expect(box.current!.speakers["mic:1"]).toBeUndefined();
   });
 });

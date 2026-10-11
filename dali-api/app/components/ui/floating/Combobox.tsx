@@ -49,6 +49,12 @@ export function Combobox<T extends string = string>({
    * `options` so the trigger can render its label once selected.
    */
   allowCustom,
+  /** Fires on every keystroke in the input (the typed query, trimmed of
+   *  nothing — the caller trims/debounces). For a caller whose `options`
+   *  come from an async search (not a fixed, already-loaded list): fetch on
+   *  this and merge the results into `options`, which this component then
+   *  filters/displays like any other row. */
+  onQueryChange,
 }: {
   value: T;
   options: SelectOption<T>[];
@@ -61,6 +67,7 @@ export function Combobox<T extends string = string>({
   icon?: ReactNode;
   emptyLabel?: string;
   allowCustom?: (query: string) => SelectOption<T> | null;
+  onQueryChange?: (query: string) => void;
 }) {
   const panelClass = usePanelClass();
   const [open, setOpen] = useState(false);
@@ -171,9 +178,11 @@ export function Combobox<T extends string = string>({
             onFocus: () => setOpen(true),
             onClick: () => setOpen(true),
             onChange: (e) => {
-              setQuery((e.target as HTMLInputElement).value);
+              const next = (e.target as HTMLInputElement).value;
+              setQuery(next);
               setOpen(true);
               setActiveIndex(0);
+              onQueryChange?.(next);
             },
             onKeyDown: (e) => {
               if (e.key === "Enter") {

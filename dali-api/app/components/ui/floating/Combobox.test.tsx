@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { Combobox } from "./Combobox";
@@ -94,5 +94,34 @@ describe("Combobox", () => {
     open();
     type(input(), "15");
     expect(options().filter((o) => o.textContent === "15 min")).toHaveLength(1);
+  });
+
+  it("calls onQueryChange with every typed value, for a caller that loads options asynchronously", () => {
+    const onQueryChange = vi.fn();
+    mount(createElement(Combobox, { value: "", options: [], onChange: () => {}, ariaLabel: "Member", onQueryChange }));
+    open();
+    type(input(), "al");
+    expect(onQueryChange).toHaveBeenCalledWith("al");
+    type(input(), "ale");
+    expect(onQueryChange).toHaveBeenCalledWith("ale");
+  });
+
+  it("displays options added to the list after onQueryChange triggered an async search", () => {
+    let currentOptions: SelectOption[] = [];
+    const onQueryChange = vi.fn((q: string) => {
+      currentOptions = q === "al" ? [{ value: "u1", label: "Alex Kim" }] : [];
+      rerender();
+    });
+    function rerender() {
+      act(() =>
+        root.render(
+          createElement(Combobox, { value: "", options: currentOptions, onChange: () => {}, ariaLabel: "Member", onQueryChange }),
+        ),
+      );
+    }
+    mount(createElement(Combobox, { value: "", options: currentOptions, onChange: () => {}, ariaLabel: "Member", onQueryChange }));
+    open();
+    type(input(), "al");
+    expect(options().map((o) => o.textContent)).toContain("Alex Kim");
   });
 });
