@@ -14,7 +14,7 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Emitter, Manager, Wry};
 
 use crate::state::{self, AppState};
-use crate::tray_model::{self, TitleMode, TraySnapshot, TrayView};
+use crate::tray_model::{self, TraySnapshot, TrayView};
 use crate::{notify, recording, window};
 
 const TRAY_ID: &str = "main-tray";
@@ -36,7 +36,6 @@ fn snapshot(app: &AppHandle) -> TraySnapshot {
     });
 
     let next = state.agenda.lock().ok().and_then(|g| g.clone());
-    let title_mode = state.title_mode.lock().map(|g| *g).unwrap_or_default();
     let tasks = state.tasks.lock().map(|g| g.clone()).unwrap_or_default();
     let task_count = state.task_count.load(Ordering::SeqCst);
 
@@ -54,44 +53,10 @@ fn snapshot(app: &AppHandle) -> TraySnapshot {
         version: app.package_info().version.to_string(),
         next,
         now_unix: now_unix(),
-        title_mode,
         tasks,
         task_count,
         connection,
         last_sync_secs,
-    }
-}
-
-#[derive(serde::Serialize, serde::Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-struct Settings {
-    #[serde(default)]
-    title_mode: Option<TitleMode>,
-}
-
-fn settings_path(app: &AppHandle) -> Option<std::path::PathBuf> {
-    app.path().app_config_dir().ok().map(|dir| dir.join("settings.json"))
-}
-
-/// Read once at startup (lib.rs's setup, before `install`). A missing or
-/// corrupt file is just defaults — never a hard error.
-pub fn load_title_mode(app: &AppHandle) -> TitleMode {
-    settings_path(app)
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .and_then(|s| serde_json::from_str::<Settings>(&s).ok())
-        .and_then(|s| s.title_mode)
-        .unwrap_or_default()
-}
-
-pub fn save_title_mode(app: &AppHandle, mode: TitleMode) {
-    let Some(path) = settings_path(app) else {
-        return;
-    };
-    if let Some(dir) = path.parent() {
-        let _ = std::fs::create_dir_all(dir);
-    }
-    if let Ok(json) = serde_json::to_string_pretty(&Settings { title_mode: Some(mode) }) {
-        let _ = std::fs::write(path, json);
     }
 }
 
