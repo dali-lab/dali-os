@@ -261,6 +261,10 @@ export function useMeetingRecording({
   const [enhanceError, setEnhanceError] = useState<string | null>(null);
   const [applyBusy, setApplyBusy] = useState(false);
   const autoEnhanceTried = useRef(false);
+  // True when this page adopted someone else's recording from the loader (not
+  // a backup or a ?transcript= link): the auto-preview is the owner's job, or
+  // every viewer who opens the note would start an AI call.
+  const adoptedFromOthers = useRef(false);
   // "Someone enhanced this note after your preview." — the 409 case
   // (specs/meeting-recording-rail.md's "stale preview" state, replacing the
   // old reload confirm dialog).
@@ -367,6 +371,7 @@ export function useMeetingRecording({
       (transcriptParam ? { id: transcriptParam, link: "", aiEnabled: false } : null) ??
       (latestRecording ? { id: latestRecording.id, link: "", aiEnabled: false } : null);
     if (!saved) return;
+    adoptedFromOthers.current = !own && !transcriptParam && Boolean(latestRecording && !latestRecording.ownerIsYou);
     const following =
       !own && !transcriptParam && latestRecording && LIVE_STATUSES.has(latestRecording.status)
         ? latestRecording
@@ -641,7 +646,7 @@ export function useMeetingRecording({
   useEffect(() => {
     if (autoEnhanceTried.current) return;
     if (phase !== "done" || lines.length === 0 || enhanceNotes) return;
-    if (!canEdit || (remote && !remote.ownerIsYou)) return;
+    if (!canEdit || (remote && !remote.ownerIsYou) || adoptedFromOthers.current) return;
     autoEnhanceTried.current = true;
     void generateEnhance();
     // eslint-disable-next-line react-hooks/exhaustive-deps

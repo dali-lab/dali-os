@@ -48,10 +48,12 @@ function Harness({
   documentName,
   latestRecording,
   onSpeakersChanged,
+  getNoteState,
 }: {
   documentName: string;
   latestRecording?: LatestRecording | null;
   onSpeakersChanged?: (paragraphs: string[]) => boolean;
+  getNoteState?: () => { blocks: never[]; bodyText: string } | null;
 }) {
   box.current = useMeetingRecording({
     documentName,
@@ -59,6 +61,7 @@ function Harness({
     onInsert: () => true,
     latestRecording,
     onSpeakersChanged,
+    getNoteState,
   });
   return null;
 }
@@ -81,9 +84,13 @@ async function mount(documentName: string) {
   });
 }
 
-async function mountWithLatest(documentName: string, latestRecording: LatestRecording) {
+async function mountWithLatest(
+  documentName: string,
+  latestRecording: LatestRecording,
+  getNoteState?: () => { blocks: never[]; bodyText: string } | null,
+) {
   const Stub = createRoutesStub([
-    { path: "/test", Component: () => createElement(Harness, { documentName, latestRecording }) },
+    { path: "/test", Component: () => createElement(Harness, { documentName, latestRecording, getNoteState }) },
   ]);
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -332,6 +339,61 @@ describe("latestRecording pickup (Fix 1B: a finished recording reaches any viewe
     expect(box.current!.remote).toBeNull();
     // Never auto-opens on its own (specs/meeting-recording-rail.md).
     expect(box.current!.open).toBe(false);
+  });
+
+  it("does not start the Enhance auto-preview for someone else's finished recording (one AI call per note, not per viewer)", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes("/api/ai/meeting-notes/enhance")) return jsonRes({ error: "unexpected" }, 500);
+      return jsonRes({
+        status: "Done",
+        channels: [],
+        recordedSeconds: 42,
+        lines: [{ at: 1, end: 2, text: "hi", speaker: "mic:1", channel: "mic" }],
+        speakers: {},
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await mountWithLatest("doc-done-other", {
+      id: "rDone",
+      ownerName: "Priya",
+      ownerIsYou: false,
+      status: "Done",
+      since: new Date().toISOString(),
+    }, () => ({ blocks: [], bodyText: "typed notes" }));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    expect(box.current!.phase).toBe("done");
+    expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("/api/ai/meeting-notes/enhance"))).toBe(false);
+  });
+
+  it("starts the Enhance auto-preview when the finished recording is the viewer's own", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes("/api/ai/meeting-notes/enhance")) return jsonRes({ error: "stub" }, 500);
+      return jsonRes({
+        status: "Done",
+        channels: [],
+        recordedSeconds: 42,
+        lines: [{ at: 1, end: 2, text: "hi", speaker: "mic:1", channel: "mic" }],
+        speakers: {},
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await mountWithLatest("doc-done-mine", {
+      id: "rMine",
+      ownerName: "You",
+      ownerIsYou: true,
+      status: "Done",
+      since: new Date().toISOString(),
+    }, () => ({ blocks: [], bodyText: "typed notes" }));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("/api/ai/meeting-notes/enhance"))).toBe(true);
   });
 
   it("follows a live latestRecording read-only, same as before this fix", async () => {
