@@ -4053,6 +4053,7 @@ function EmailStatusSection({
 const NOTIFICATION_EMAIL_SLOTS: ReadonlyArray<{ type: NotificationSlotType; label: string; description: string }> = [
   { type: "ApplicationReceived", label: "Application received", description: "Sent when an applicant first submits." },
   { type: "ApplicationExtensionNotice", label: "Deadline extension notice", description: "Sent once to unsubmitted applicants after the original close." },
+  { type: "ApplicationEventAnnouncement", label: "Application event announcement", description: "Sent by hand from an event card to everyone who started an application." },
   { type: "InterviewInviteMentor", label: "Interview invite (interviewer)", description: "Sent when an interview is booked or reassigned." },
   { type: "InterviewInviteReminder", label: "Invite reminder (applicant)", description: "Sent by Resend invite when an applicant hasn't booked." },
   { type: "InterviewConfirmedApplicant", label: "Interview confirmed (applicant)", description: "Sent when the applicant books." },

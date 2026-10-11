@@ -55,9 +55,9 @@ model User {
   // lastName (the create hook in betterauth.server.ts splits it back into the
   // two source-of-truth columns). BetterAuth's `image` is NOT a new column —
   // it maps onto the existing `photoUrl` column via `fields` in the config.
-  email         String?  @unique
-  emailVerified Boolean  @default(false)
-  name          String   @default("")
+  email         String? @unique
+  emailVerified Boolean @default(false)
+  name          String  @default("")
 
   // ─── BetterAuth admin plugin (Phase 3 — impersonation) ────────────────────
   // `role` exists only to satisfy the admin plugin's impersonate gate — the
@@ -65,10 +65,10 @@ model User {
   // authorization otherwise stays in the role tables (AdminMembership et al.).
   // The ban* columns are unused (we don't use the ban feature) but the plugin's
   // session hook references user.banned, so they must exist.
-  role        String?
-  banned      Boolean?  @default(false)
-  banReason   String?
-  banExpires  DateTime?
+  role       String?
+  banned     Boolean?  @default(false)
+  banReason  String?
+  banExpires DateTime?
 
   // IANA zone, e.g. "America/New_York". Used by calendar/scheduling.
   timeZone String?
@@ -113,30 +113,30 @@ model User {
   dartmouthDepartmentClass String?
   dartmouthPeopleSyncedAt  DateTime?
 
-  pronouns       String?
-  photoUrl       String?
+  pronouns           String?
+  photoUrl           String?
   // Bio stored as a collab doc reference for rich formatting + @mentions.
-  bioDocId       String?
-  major          String?
-  hometown       String?
+  bioDocId           String?
+  major              String?
+  hometown           String?
   // Where the person lives now ("Based in" on the profile). Free text; the
   // coordinates are geocoded from it on save (app/lib/geocode.server.ts) and
   // place the person on the Connect map. Null coordinates = no pin.
   currentLocation    String?
   currentLocationLat Float?
   currentLocationLng Float?
-  linkedinUrl    String?
+  linkedinUrl        String?
   // Bare GitHub login (e.g. "octocat"). Used to add the member to their
   // project's GitHub team during staffing finalize, and to derive a profile
   // link in the UI. Editable in member details; nullable — a member with no
   // username is silently skipped (and reported) by that automation.
-  githubUsername String?
-  personalSite   String?
+  githubUsername     String?
+  personalSite       String?
   // Short public handle for @-mentions (e.g. "spark" for Sophie Park). Seeded
   // from first-initial + last-name (lowercased), auto-suffixed on collision,
   // and editable in profile. Nullable + unique like the other identity handles;
   // a user with no handle simply can't be @-mentioned until they set one.
-  handle         String? @unique
+  handle             String? @unique
 
   // Per-member secret mixed into the signed barcode carried by the member's
   // Apple/Google Wallet membership pass (see app/lib/wallet-token.ts). Set
@@ -179,8 +179,8 @@ model User {
   // ─── Relations: existing ──────────────────────────────────────────────────
   daliMember                    DALIMember?
   workExperiences               WorkExperience[]
-  coffeeChatsSent               CoffeeChatInvite[] @relation("CoffeeChatSender")
-  coffeeChatsReceived           CoffeeChatInvite[] @relation("CoffeeChatRecipient")
+  coffeeChatsSent               CoffeeChatInvite[]             @relation("CoffeeChatSender")
+  coffeeChatsReceived           CoffeeChatInvite[]             @relation("CoffeeChatRecipient")
   walletPassRegistrations       WalletPassRegistration[]
   applicationCycleStatusUpdates ApplicationCycleStatusUpdate[]
   applications                  Application[]
@@ -203,8 +203,8 @@ model User {
   mailSubscriptions    MailSubscription[]
   mailConnections      MailAccountConnection[]
   mailInboxArchives    MailInboxArchive[]
-  linkedMailMessages   MailMessageIndex[]      @relation("MailMessageIndexLinkedUser")
-  mailLinksMade        MailMessageIndex[]      @relation("MailMessageIndexLinkedBy")
+  linkedMailMessages   MailMessageIndex[]        @relation("MailMessageIndexLinkedUser")
+  mailLinksMade        MailMessageIndex[]        @relation("MailMessageIndexLinkedBy")
   scheduledMeetings    ScheduledMeeting[]
   meetingTimeProposals MeetingTimeProposal[]
   availabilitySettings UserAvailabilitySettings?
@@ -298,11 +298,12 @@ model User {
   cycleReviewers               CycleReviewer[]
   cycleInterviewers            CycleInterviewer[]
   domainLeadAssignmentsAsUser  DomainLeadAssignment[]
-  decisionsMade                Decision[]             @relation("DecisionMadeBy")
-  applicationReviewsSubmitted  ApplicationReview[]    @relation("ApplicationReviewSubmittedBy")
+  decisionsMade                Decision[]              @relation("DecisionMadeBy")
+  applicationReviewsSubmitted  ApplicationReview[]     @relation("ApplicationReviewSubmittedBy")
   delibsSessionsOpened         DelibsSession[]
   emailTemplateVersionsCreated EmailTemplateVersion[]
-  emailTemplatesEdited         EmailTemplate[]        @relation("EmailTemplateEditor")
+  emailTemplatesEdited         EmailTemplate[]         @relation("EmailTemplateEditor")
+  hiringEventAttendances       HiringEventAttendance[]
 
   // ─── Documents & files ───────────────────────────────────────────────────
   projectFileVersionsUploaded ProjectFileVersion[] @relation("ProjectFileVersionUploader")
@@ -315,10 +316,10 @@ model User {
   feedbackComments  FeedbackComment[]
 
   // ─── Page documentation (per-page guides) ─────────────────────────────────
-  pageDocsMaintained PageDoc[] @relation("PageDocMaintainer")
+  pageDocsMaintained PageDoc[]  @relation("PageDocMaintainer")
   blogPosts          BlogPost[]
-  pageDocsCreated    PageDoc[] @relation("PageDocCreatedBy")
-  pageDocsLastEdited PageDoc[] @relation("PageDocLastEditedBy")
+  pageDocsCreated    PageDoc[]  @relation("PageDocCreatedBy")
+  pageDocsLastEdited PageDoc[]  @relation("PageDocLastEditedBy")
 
   // ─── Payroll: Reconcile back-relation ─────────────────────────────────────
   timesheetImports     TimesheetImport[]
@@ -518,6 +519,55 @@ model ApplicationCycle {
   roomBookings      RoomBooking[]
 
   signingBindings SigningBinding[]
+
+  hiringEvents HiringEvent[]
+}
+
+// Application events (help hours, socials, info sessions) Core runs during a
+// cycle. Two parts: a manual announcement email to everyone who started an
+// application, and attendance (QR self check-in or hand-marked), kept as an
+// engagement signal next to returning/emailed/educated.
+// See app/hiring/lib/hiring-events.server.ts.
+model HiringEvent {
+  id                 String           @id @default(cuid())
+  applicationCycleId String
+  applicationCycle   ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
+  kind               HiringEventKind  @default(HelpHour)
+  title              String
+  startsAt           DateTime
+  endsAt             DateTime
+  location           String?
+  // Stamped when Core opens self check-in (applicants scan the projected QR).
+  // Null = closed. Read with the event's time window in app/hiring/lib/hiring-events.server.ts.
+  checkInOpenAt      DateTime?
+  announcementSentAt DateTime?
+  createdByUserId    String
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  attendances HiringEventAttendance[]
+
+  @@index([applicationCycleId, startsAt])
+}
+
+enum HiringEventKind {
+  HelpHour
+  Social
+  InfoSession
+  Other
+}
+
+model HiringEventAttendance {
+  id             String      @id @default(cuid())
+  eventId        String
+  event          HiringEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User        @relation(fields: [userId], references: [id])
+  markedByUserId String?
+  markedAt       DateTime    @default(now())
+
+  @@unique([eventId, userId])
+  @@index([userId])
 }
 
 // Applicant-initiated status changes only. DALI-initiated outcomes (interview,
@@ -819,7 +869,7 @@ model InterviewConfig {
 
   // The rooms in-person interviews are booked into (one RoomBooking per
   // interview, source Interview). Empty = no in-person slots.
-  rooms Room[]
+  rooms     Room[]
   // Hold every interview room for interview hours across the interview window
   // (one recurring RoomBooking per room, source InterviewHold) so members
   // can't book over the cycle. Bookings from this cycle sit inside the hold.
@@ -889,7 +939,7 @@ model Interview {
 
   startTime DateTime
   endTime   DateTime
-  status    InterviewStatus   @default(Scheduled)
+  status    InterviewStatus @default(Scheduled)
 
   // In-person interviews sit in one of the cycle's InterviewConfig.rooms and
   // hold it through roomBooking (source Interview), so /rooms and the door
@@ -1649,13 +1699,13 @@ model Session {
 // `Session` above so both run side by side until the legacy one is dropped at
 // cleanup. The auth instance sets session.modelName = "AuthSession".
 model AuthSession {
-  id        String   @id @default(cuid())
-  expiresAt DateTime
-  token     String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  ipAddress String?
-  userAgent String?
+  id             String   @id @default(cuid())
+  expiresAt      DateTime
+  token          String   @unique
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  ipAddress      String?
+  userAgent      String?
   // BetterAuth admin plugin: set to the impersonating admin's userId while an
   // impersonation session is active (null for normal sessions).
   impersonatedBy String?
@@ -1664,9 +1714,9 @@ model AuthSession {
   // authorized the session. No FK relation — looked up via prisma.oAuthGrant in
   // authenticateMcpRequest to keep the same downstream logic as the bespoke
   // Session path.
-  grantId   String?
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  grantId        String?
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([grantId])
@@ -1729,7 +1779,7 @@ model Verification {
 // superset that RESOLVES. The four address columns on User stay as the
 // one-per-category values we display and search.
 model UserEmail {
-  id     String @id @default(cuid())
+  id String @id @default(cuid())
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1828,6 +1878,9 @@ enum NotificationType {
   // Scheduled 24h/1h reminders fired by the interview-reminders job.
   InterviewReminderApplicant
   InterviewReminderInterviewer
+  // Manual "Send announcement" blast from a hiring-cycle application event
+  // to everyone who started an application in that cycle.
+  ApplicationEventAnnouncement
 }
 
 // One row per (cycle, notificationType, applicant). Enforces single-send
@@ -1912,13 +1965,13 @@ model AiUsage {
 // canReadRecording). A user's stale, never-finalized rows are swept whenever
 // they start a new recording.
 model MeetingRecording {
-  id              String                 @id @default(cuid())
+  id            String                 @id @default(cuid())
   // The collab room the notes land in, e.g. "doc:<pageId>:body".
-  documentName    String
-  userId          String
-  status          MeetingRecordingStatus @default(Pending)
+  documentName  String
+  userId        String
+  status        MeetingRecordingStatus @default(Pending)
   // Set by the page's Stop button; checked by the chunks route response.
-  stopRequested   Boolean                @default(false)
+  stopRequested Boolean                @default(false)
 
   // The occurrence this recording belongs to, when started from a scheduled
   // meeting's note. Nullable: ad-hoc recordings on any writable doc have
@@ -1928,12 +1981,12 @@ model MeetingRecording {
   occurrenceStart    DateTime?
 
   // Channels with at least one stored chunk: "mic" | "call".
-  channels      String[] @default([])
+  channels      String[]  @default([])
   // Segment start offsets in seconds, index = segment. Continue appends one;
   // segment 0's start is implicitly 0.
-  segmentStarts Float[]  @default([])
+  segmentStarts Float[]   @default([])
   // Highest seq stored per channel per segment, for the job description.
-  chunkIndex    Json     @default("{}") // { mic: [41, 12], call: [41] }
+  chunkIndex    Json      @default("{}") // { mic: [41, 12], call: [41] }
   lastChunkAt   DateTime?
 
   // Per-channel word arrays with absolute timestamps; lines derive from these.
@@ -1954,19 +2007,19 @@ model MeetingRecording {
   // Enhance (specs/meeting-notes-model.md §2): the last server-verified merge
   // plan, keyed to the editor snapshot it was computed from. A function of
   // (recording, note at time T); dies with the row under the janitor.
-  notes       Json?     // EnhancePlan, server-verified, plus snapshotAt
-  enhancedAt  DateTime? // set only when a client successfully applied `notes`
-  enhancedBy  String?   // display name at apply time, not a User relation
+  notes      Json? // EnhancePlan, server-verified, plus snapshotAt
+  enhancedAt DateTime? // set only when a client successfully applied `notes`
+  enhancedBy String? // display name at apply time, not a User relation
 
   // Tasks created from this recording's action items (specs/meeting-notes-model.md §4).
   tasks Task[]
-
-  @@index([userId])
-  @@index([scheduledMeetingId, occurrenceStart])
   // Plus a partial unique index, MeetingRecording_activeDocument_key, on
   // (documentName) WHERE status IN (Pending, Recording, Stopped, Processing):
   // one live recording per document. Raw SQL in migration
   // 20261010140000_recording_active_per_document; Prisma can't express it.
+
+  @@index([userId])
+  @@index([scheduledMeetingId, occurrenceStart])
 }
 
 enum MeetingRecordingStatus {
@@ -2228,13 +2281,13 @@ model MailAccount {
   // backfill window; null means still backfilling (or never started).
   indexBackfilledAt DateTime?
 
-  user     User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  project  Project?      @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  drafts      MailDraft[]
-  comments    MailComment[]
-  categories  MailCategoryAccount[]
-  connections MailAccountConnection[]
-  archives    MailInboxArchive[]
+  user            User?                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project         Project?                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  drafts          MailDraft[]
+  comments        MailComment[]
+  categories      MailCategoryAccount[]
+  connections     MailAccountConnection[]
+  archives        MailInboxArchive[]
   indexedMessages MailMessageIndex[]
 
   @@unique([scopeKey, address])
@@ -2466,7 +2519,7 @@ model ScheduledMeeting {
   // Google event back to this meeting even when Google drops recurringEventId on
   // a detached instance. Primary join key on the calendar read path; backfilled
   // for pre-existing rows. Null = never pushed to Google / not yet backfilled.
-  iCalUID            String?
+  iCalUID String?
 
   // Optional video conference for the meeting. meetingUrl is the join link
   // (surfaced as a "Join" button and carried in notifications); it's minted on
@@ -2581,7 +2634,7 @@ model MeetingAttendance {
   // start (pre-exception), resolved by resolveOccurrence in
   // app/lib/meeting-occurrences.ts. A one-off meeting has a single key, its
   // selectedAt (createdAt while unscheduled).
-  occurrenceStart    DateTime
+  occurrenceStart DateTime
 
   meeting ScheduledMeeting @relation(fields: [scheduledMeetingId], references: [id])
   user    User             @relation(fields: [userId], references: [id])
@@ -2640,12 +2693,12 @@ model TimeEntry {
   // picked) — those still show in the ledger list, just not on the grid.
   // Set automatically for Meeting-sourced rows from the meeting's start time
   // + duration, and for grid drag-created Manual rows from the dragged range.
-  startTime          DateTime?
-  endTime            DateTime?
+  startTime              DateTime?
+  endTime                DateTime?
   // Meeting-sourced rows: which occurrence of scheduledMeetingId these hours
   // are for (same key as MeetingAttendance.occurrenceStart), so each week of a
   // recurring meeting logs its own hours. Null when scheduledMeetingId is.
-  occurrenceStart    DateTime?
+  occurrenceStart        DateTime?
   // Google Timesheet mirror (Phase 3). Soft pointers — no FK — same pattern as
   // MemberClass.linkId/calendarId. Null until the user enables the sync and the
   // entry is first pushed to Google. Set to null when the mirror event is deleted.
@@ -2867,7 +2920,7 @@ enum TimeProposalStatus {
 // A dedicated log (rather than deduping on Notification) because per-user
 // preferences can deliver a reminder by email/DM with no in-app row at all.
 model MeetingReminderLog {
-  id                 String      @id @default(cuid())
+  id                 String              @id @default(cuid())
   scheduledMeetingId String
   occurrenceStart    DateTime
   userId             String
@@ -4043,11 +4096,11 @@ model Task {
   story           UserStory?        @relation(fields: [storyId], references: [id])
   domain          Domain?           @relation(fields: [domainId], references: [id])
   sourceRecording MeetingRecording? @relation(fields: [sourceRecordingId], references: [id], onDelete: SetNull)
-  assignees TaskAssignee[]
-  comments  TaskComment[]
-  reminders TaskReminder[]
-  files     TaskFileLink[]
-  views     TaskView[]
+  assignees       TaskAssignee[]
+  comments        TaskComment[]
+  reminders       TaskReminder[]
+  files           TaskFileLink[]
+  views           TaskView[]
 
   // Dependency edges, the same two-sided shape epics and stories carry.
   // `dependencies` are rows where this task waits on another; `blocking` are
@@ -5256,9 +5309,9 @@ model Page {
   // dispatches to the right table at the app layer (see expansion_plan
   // §"Page Tree"). Two FK constraints on one column would conflict at the
   // DB level.
-  projectAsOverview      Project? @relation("ProjectOverview")
-  projectAsPRD           Project? @relation("ProjectPRD")
-  projectAsPublicWriteup Project? @relation("ProjectPublicWriteup")
+  projectAsOverview                  Project?  @relation("ProjectOverview")
+  projectAsPRD                       Project?  @relation("ProjectPRD")
+  projectAsPublicWriteup             Project?  @relation("ProjectPublicWriteup")
   // Reverse of Project.meetingNoteTemplateId. A plain list (not @unique on
   // that FK), so in principle more than one project could point at the same
   // template page — the UI only ever sets it from the page itself, one
@@ -6791,7 +6844,7 @@ model ProjectChartString {
   term         Term                @relation(fields: [termId], references: [id])
   supersedes   ProjectChartString? @relation("ChartStringSupersession", fields: [supersedesId], references: [id], onDelete: Restrict)
   supersededBy ProjectChartString? @relation("ChartStringSupersession")
-  createdBy  User?               @relation("ChartStringCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  createdBy    User?               @relation("ChartStringCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
 
   @@index([projectId, termId])
   @@index([projectCode])
@@ -6917,14 +6970,14 @@ model RoomBooking {
 // MeetingException field-for-field so expandOccurrences (meeting-occurrences.ts)
 // works unchanged against either.
 model RoomBookingException {
-  id            String      @id @default(cuid())
-  roomBookingId String
-  booking       RoomBooking @relation(fields: [roomBookingId], references: [id], onDelete: Cascade)
+  id                  String      @id @default(cuid())
+  roomBookingId       String
+  booking             RoomBooking @relation(fields: [roomBookingId], references: [id], onDelete: Cascade)
   // The original occurrence start being overridden.
   originalStart       DateTime
   overrideStart       DateTime?
   overrideDurationMin Int?
-  cancelled           Boolean   @default(false)
+  cancelled           Boolean     @default(false)
 
   @@unique([roomBookingId, originalStart])
 }
@@ -7004,24 +7057,24 @@ enum BlogVisibility {
 // The body is the collab room `blogPost:{id}:body`, synced back to contentJson
 // (see COLLAB_SOURCES) along with the excerpt and cover derived from it.
 model BlogPost {
-  id            String         @id @default(cuid())
-  title         String
-  contentJson   Json?
-  excerpt       String         @default("")
-  coverImageUrl String?
+  id             String         @id @default(cuid())
+  title          String
+  contentJson    Json?
+  excerpt        String         @default("")
+  coverImageUrl  String?
   // The author's own picks on the write page. Each wins over the value derived
   // from the body (excerpt / coverImageUrl) wherever the post is listed.
   summary        String?
   customCoverUrl String?
-  visibility    BlogVisibility @default(Internal)
+  visibility     BlogVisibility @default(Internal)
   // Null = draft, seen only by its author and Core.
-  publishedAt   DateTime?
+  publishedAt    DateTime?
   // Set while a draft waits for an Admin to approve it; cleared once it is
   // published or withdrawn.
-  submittedAt   DateTime?
+  submittedAt    DateTime?
   // Core's front page arrangement: pinned posts lead in rank order (lowest
   // first); null = unpinned, falling in behind them newest first.
-  frontPageRank Int?
+  frontPageRank  Int?
 
   authorId String
   author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
