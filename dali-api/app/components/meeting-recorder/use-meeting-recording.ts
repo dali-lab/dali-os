@@ -28,9 +28,9 @@ import { countSpeakersByChannel, formatClock, meetingNotesMarkdown, transcriptPa
 import { applyEnhancePlan, type EditorOp, type EnhanceActionItem, type SnapshotBlock, type StoredEnhanceNotes } from "./enhance-plan";
 import { isUntouchedTemplate } from "~/lib/meeting-note-template";
 import type {
-  ActiveRecording,
   Channel,
   ChunkResponse,
+  LatestRecording,
   PollRecordingResponse,
   RecordingStatus,
   RosterUser,
@@ -38,6 +38,12 @@ import type {
   StartRecordingResponse,
   TranscriptLine,
 } from "./types";
+
+// Statuses the pickup effect treats as "still happening" — a LatestRecording
+// in one of these gets the "follow read-only" treatment (remote set, no
+// auto-open); Done/Failed just load in as this viewer's own done/failed
+// phase, same as a `?transcript=` deep link.
+const LIVE_STATUSES: ReadonlySet<RecordingStatus> = new Set(["Pending", "Recording", "Stopped", "Processing"]);
 
 /** "Oct 10, 2:14 PM" in the viewer's own locale/timezone — the "Enhanced …"
  *  banner doesn't need the year since it's always recent. */
@@ -127,9 +133,11 @@ export type UseMeetingRecordingProps = {
   canEdit: boolean;
   /** Core can discard anyone's recording (the DELETE route already allows it). */
   isCore?: boolean;
-  /** The note's live recording when this viewer didn't start it here: shown
-   *  in place of Record so a second one is never started. */
-  activeElsewhere?: ActiveRecording | null;
+  /** The note's newest recording when this viewer didn't start it here, any
+   *  status: a live one shown in place of Record so a second one is never
+   *  started, a Done/Failed one picked up the same way a `?transcript=`
+   *  link would be (no other device or local backup required). */
+  latestRecording?: LatestRecording | null;
   /** Appends the notes Markdown, then the transcript lines under a collapsed
    *  toggle heading. False when the editor isn't ready. */
   onInsert: (markdown: string, transcript: string[]) => boolean;
@@ -162,6 +170,12 @@ export type UseMeetingRecordingProps = {
   /** Fired once per task created from the sheet, so the note can append a
    *  link to the task on the matching checklist item. */
   onTaskCreated?: (itemText: string, taskId: string, projectId: string) => void;
+  /** Rewrites the Transcript toggle's children with the current paragraphs
+   *  after a successful speaker rename, once the transcript is already in
+   *  the note (insertedAt or enhancedAt set) — otherwise the names baked
+   *  into it at Insert/Enhance time go stale. False/no-op when there's no
+   *  toggle to rewrite (nothing inserted yet) or the editor isn't ready. */
+  onSpeakersChanged?: (paragraphs: string[]) => boolean;
 };
 
 export function useMeetingRecording({
@@ -171,7 +185,7 @@ export function useMeetingRecording({
   roster = [],
   canEdit,
   isCore = false,
-  activeElsewhere = null,
+  latestRecording = null,
   onInsert,
   autoOpen,
   collabToken,
@@ -182,6 +196,7 @@ export function useMeetingRecording({
   projectId = null,
   canCreateTasks = false,
   onTaskCreated,
+  onSpeakersChanged,
 }: UseMeetingRecordingProps) {
   const dialog = useDialog();
   const toast = useToast();
@@ -218,6 +233,11 @@ export function useMeetingRecording({
 
   const [lines, setLines] = useState<TranscriptLine[]>([]);
   const [speakers, setSpeakers] = useState<Speakers>({});
+  // Server-resolved display name per assigned speaker key (resolveSpeakerNames
+  // on the server) — covers a speaker renamed to a lab member outside
+  // `roster` (picked from the chip's member search), merged with an
+  // optimistic update in setSpeaker so the chip doesn't wait on the next poll.
+  const [speakerNames, setSpeakerNames] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   // Someone else's recording (or this user's from another device) that this
@@ -226,6 +246,11 @@ export function useMeetingRecording({
   const [insertedAt, setInsertedAt] = useState<string | null>(null);
   const [finalized, setFinalized] = useState(false);
   const [stoppingSince, setStoppingSince] = useState(0);
+  // Set on a successful setSpeaker, compared to enhancedAt so the rail can
+  // tell "these enhanced notes still have the names they were written with"
+  // from "a speaker was renamed after Enhance ran" (specs/meeting-notes-
+  // model.md §2 follow-up: renaming after Insert/Enhance left stale names).
+  const [speakersChangedAt, setSpeakersChangedAt] = useState<string | null>(null);
 
   // Enhance (specs/meeting-notes-model.md §2).
   const [enhanceNotes, setEnhanceNotes] = useState<StoredEnhanceNotes | null>(null);
@@ -236,6 +261,10 @@ export function useMeetingRecording({
   const [enhanceError, setEnhanceError] = useState<string | null>(null);
   const [applyBusy, setApplyBusy] = useState(false);
   const autoEnhanceTried = useRef(false);
+  // True when this page adopted someone else's recording from the loader (not
+  // a backup or a ?transcript= link): the auto-preview is the owner's job, or
+  // every viewer who opens the note would start an AI call.
+  const adoptedFromOthers = useRef(false);
   // "Someone enhanced this note after your preview." — the 409 case
   // (specs/meeting-recording-rail.md's "stale preview" state, replacing the
   // old reload confirm dialog).
@@ -290,11 +319,13 @@ export function useMeetingRecording({
     setRecordedSeconds(0);
     setLines([]);
     setSpeakers({});
+    setSpeakerNames({});
     setError(null);
     setBusy(false);
     setRemote(null);
     setInsertedAt(null);
     setFinalized(false);
+    setSpeakersChangedAt(null);
     setEnhanceNotes(null);
     setEnhancedAt(null);
     setEnhancedByName(null);
@@ -338,9 +369,13 @@ export function useMeetingRecording({
     const saved: Backup | null =
       own ??
       (transcriptParam ? { id: transcriptParam, link: "", aiEnabled: false } : null) ??
-      (activeElsewhere ? { id: activeElsewhere.id, link: "", aiEnabled: false } : null);
+      (latestRecording ? { id: latestRecording.id, link: "", aiEnabled: false } : null);
     if (!saved) return;
-    const following = !own && !transcriptParam && activeElsewhere ? activeElsewhere : null;
+    adoptedFromOthers.current = !own && !transcriptParam && Boolean(latestRecording && !latestRecording.ownerIsYou);
+    const following =
+      !own && !transcriptParam && latestRecording && LIVE_STATUSES.has(latestRecording.status)
+        ? latestRecording
+        : null;
     let cancelled = false;
     void (async () => {
       const res = await fetch(`/api/meeting-recordings/${saved.id}`, { credentials: "include" }).catch(() => null);
@@ -360,6 +395,7 @@ export function useMeetingRecording({
       setRecordedSeconds(data.recordedSeconds);
       setLines(data.lines);
       setSpeakers(data.speakers);
+      setSpeakerNames(data.speakerNames ?? {});
       setInsertedAt(data.insertedAt ?? null);
       setFinalized(Boolean(data.finalizedAt));
       setEnhanceNotes(data.notes ?? null);
@@ -499,6 +535,7 @@ export function useMeetingRecording({
       } else if (data.status === "Done") {
         setLines(data.lines);
         setSpeakers(data.speakers);
+        setSpeakerNames(data.speakerNames ?? {});
         setPhase("done");
       } else if (data.status === "Failed") {
         if (data.error) setError(data.error);
@@ -539,6 +576,7 @@ export function useMeetingRecording({
       if (data.status === "Done") {
         setLines(data.lines);
         setSpeakers(data.speakers);
+        setSpeakerNames(data.speakerNames ?? {});
         setPhase("done");
       } else if (data.status === "Failed") {
         if (data.error) setError(data.error);
@@ -608,7 +646,7 @@ export function useMeetingRecording({
   useEffect(() => {
     if (autoEnhanceTried.current) return;
     if (phase !== "done" || lines.length === 0 || enhanceNotes) return;
-    if (!canEdit || (remote && !remote.ownerIsYou)) return;
+    if (!canEdit || (remote && !remote.ownerIsYou) || adoptedFromOthers.current) return;
     autoEnhanceTried.current = true;
     void generateEnhance();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1066,15 +1104,22 @@ export function useMeetingRecording({
     return ok;
   }
 
-  /** Renames a diarized speaker — to a roster member (`value` is their
-   *  userId) or free text ("Someone else…"). Replaces the old
-   *  dialog.choice/dialog.prompt pair: the rail's speaker chip (a Select
-   *  over the roster plus an inline text field) resolves the value before
-   *  calling this (specs/meeting-recording-rail.md). */
-  async function setSpeaker(speakerKey: string, value: string) {
+  /** Renames a diarized speaker — to a roster member or a member found via
+   *  the chip's search (`value` is their userId either way), to another
+   *  speaker's own current assignment ("Same as …"), or to free text
+   *  ("Someone else…"). `displayName` is the label to show immediately,
+   *  before the next poll's server-resolved `speakerNames` lands; omit it
+   *  only when `value` already IS the display text (free text, or a roster
+   *  member whose name `roster` already resolves). The rail's speaker chip
+   *  (RecordingTranscript.tsx) resolves both before calling this. */
+  async function setSpeaker(speakerKey: string, value: string, displayName?: string) {
     if (!value.trim()) return;
-    const next = { ...speakers, [speakerKey]: value };
-    setSpeakers(next);
+    const previousSpeakers = speakers;
+    const previousNames = speakerNames;
+    const nextSpeakers = { ...speakers, [speakerKey]: value };
+    const nextNames = { ...speakerNames, [speakerKey]: displayName ?? value };
+    setSpeakers(nextSpeakers);
+    setSpeakerNames(nextNames);
     if (!recordingId) return;
     const res = await fetch(`/api/meeting-recordings/${recordingId}`, {
       method: "POST",
@@ -1083,8 +1128,16 @@ export function useMeetingRecording({
       body: JSON.stringify({ action: "speakers", speakers: { [speakerKey]: value } }),
     }).catch(() => null);
     if (!res?.ok) {
-      setSpeakers(speakers);
+      setSpeakers(previousSpeakers);
+      setSpeakerNames(previousNames);
       toast.error("Couldn't rename that speaker.");
+      return;
+    }
+    setSpeakersChangedAt(new Date().toISOString());
+    // The transcript's names are already baked into the note (Insert or
+    // Enhance ran) — rewrite the Transcript toggle so it doesn't go stale.
+    if (insertedAt || enhancedAt) {
+      onSpeakersChanged?.(transcriptParagraphs(lines, nextSpeakers, roster, nextNames));
     }
   }
 
@@ -1170,12 +1223,14 @@ export function useMeetingRecording({
     now,
     lines,
     speakers,
+    speakerNames,
     error,
     busy,
     remote,
     insertedAt,
     finalized,
     stoppingSince,
+    speakersChangedAt,
 
     // Enhance state.
     enhanceNotes,

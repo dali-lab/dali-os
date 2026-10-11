@@ -44,6 +44,18 @@ export function deriveRailState(
   return "ready";
 }
 
+/** Whether a speaker was renamed after Enhance ran, so the enhanced notes'
+ *  names (baked in at Enhance time) may no longer match the chips. */
+function namesChangedSinceEnhance(rec: Pick<UseMeetingRecording, "speakersChangedAt" | "enhancedAt">): boolean {
+  if (!rec.speakersChangedAt || !rec.enhancedAt) return false;
+  return new Date(rec.speakersChangedAt).getTime() > new Date(rec.enhancedAt).getTime();
+}
+
+/** How many diarized speakers in this transcript have no name yet. */
+function unassignedSpeakerCount(rec: Pick<UseMeetingRecording, "speakerKeys" | "speakers">): number {
+  return rec.speakerKeys.filter((key) => !rec.speakers[key]).length;
+}
+
 /**
  * The Recording rail (specs/meeting-recording-rail.md): one surface for
  * every state after Start. Wide canvas renders this sticky beside the
@@ -155,6 +167,9 @@ export function statusLineFor(rec: UseMeetingRecording, state: RailState): React
     }
     case "enhanced":
       text = `Enhanced ${rec.enhancedAt ? formatDateTime(rec.enhancedAt) : ""}${rec.enhancedByName ? ` by ${rec.enhancedByName}` : ""}. Enhance again rebuilds the notes from the current text and the transcript.`;
+      if (namesChangedSinceEnhance(rec)) {
+        text += " Names changed since these notes were written. Enhance again to update them.";
+      }
       break;
     case "inserted":
       text = "Already in this note. Discarding only removes the recording, not what was inserted.";
@@ -355,6 +370,15 @@ function RailBody({ rec, state }: { rec: UseMeetingRecording; state: RailState }
 
     case "review":
       return rec.error ? <p className="rounded-xl bg-os-well px-3 py-3 text-sm text-foreground">{rec.error}</p> : null;
+
+    case "ready": {
+      const unnamed = unassignedSpeakerCount(rec);
+      return unnamed > 0 ? (
+        <p className="text-xs text-muted-foreground">
+          {unnamed} speaker{unnamed === 1 ? "" : "s"} unnamed. Name them first so the notes use real names.
+        </p>
+      ) : null;
+    }
 
     case "preview":
       return <EnhancePreview rec={rec} mode="preview" />;
