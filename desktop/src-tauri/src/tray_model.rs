@@ -4,13 +4,15 @@
 // tray.rs makes the ordering/truncation/filtering rules unit-testable
 // directly, without a running app.
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use crate::config;
 use crate::state::{AgendaNext, RecentNotif, TaskItem};
 
 const TITLE_MAX_CHARS: usize = 44;
-const NEXT_TITLE_MAX_CHARS: usize = 24;
+// Menubar real estate is scarce (MeetingBar and Notion Calendar cap around
+// here too): short title, terse countdown.
+const NEXT_TITLE_MAX_CHARS: usize = 18;
 const TASKS_MAX: usize = 3;
 
 pub struct TraySnapshot {
@@ -20,7 +22,6 @@ pub struct TraySnapshot {
     pub version: String,
     pub next: Option<AgendaNext>,
     pub now_unix: i64,
-    pub title_mode: TitleMode,
     pub tasks: Vec<TaskItem>,
     pub task_count: i64,
     pub connection: Connection,
@@ -30,26 +31,6 @@ pub struct TraySnapshot {
 pub struct RecordingSnap {
     pub title: String,
     pub elapsed_secs: u64,
-}
-
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Debug, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum TitleMode {
-    #[default]
-    Meeting,
-    Unread,
-    Off,
-}
-
-impl TitleMode {
-    pub fn parse(s: &str) -> Option<Self> {
-        match s {
-            "meeting" => Some(Self::Meeting),
-            "unread" => Some(Self::Unread),
-            "off" => Some(Self::Off),
-            _ => None,
-        }
-    }
 }
 
 #[derive(Serialize, Clone, Copy, PartialEq, Debug)]
@@ -68,7 +49,6 @@ pub struct TrayView {
     pub recording: Option<RecordingView>,
     pub version: String,
     pub next: Option<NextView>,
-    pub title_mode: TitleMode,
     pub tasks: Vec<TaskRow>,
     pub task_count: i64,
     pub connection: Connection,
@@ -137,14 +117,14 @@ fn countdown_suffix(minutes_until: i64) -> String {
     if minutes_until <= 0 {
         "now".to_string()
     } else if minutes_until < 60 {
-        format!("in {minutes_until}m")
+        format!("{minutes_until}m")
     } else {
-        format!("in {}h", minutes_until / 60)
+        format!("{}h", minutes_until / 60)
     }
 }
 
 fn next_title_text(n: &NextView) -> String {
-    format!("{} {}", truncated(&n.title, NEXT_TITLE_MAX_CHARS), countdown_suffix(n.minutes_until))
+    format!("{} · {}", truncated(&n.title, NEXT_TITLE_MAX_CHARS), countdown_suffix(n.minutes_until))
 }
 
 fn build_next(next: &AgendaNext, now_unix: i64) -> Option<NextView> {
@@ -197,7 +177,6 @@ pub fn build(s: &TraySnapshot) -> TrayView {
         }),
         version: s.version.clone(),
         next: s.next.as_ref().and_then(|n| build_next(n, s.now_unix)),
-        title_mode: s.title_mode,
         tasks,
         task_count: s.task_count,
         connection: s.connection,
@@ -205,18 +184,13 @@ pub fn build(s: &TraySnapshot) -> TrayView {
     }
 }
 
-/// A live recording overrides every other mode; otherwise the configured
-/// `title_mode` decides, and `Meeting` falls back to nothing (not the unread
-/// count) when there's no next meeting.
+/// Text beside the menubar icon: a live recording's clock, else the next
+/// meeting, else nothing. Never the unread count — that's the panel's job.
 pub fn title(v: &TrayView) -> Option<String> {
     if let Some(rec) = &v.recording {
         return Some(format!("● {}", format_duration(rec.elapsed_secs)));
     }
-    match v.title_mode {
-        TitleMode::Off => None,
-        TitleMode::Unread => (v.unread_count > 0).then(|| v.unread_count.to_string()),
-        TitleMode::Meeting => v.next.as_ref().map(next_title_text),
-    }
+    v.next.as_ref().map(next_title_text)
 }
 
 pub fn tooltip(v: &TrayView) -> String {
@@ -298,7 +272,6 @@ mod tests {
             version: "1.2.3".to_string(),
             next: None,
             now_unix: 0,
-            title_mode: TitleMode::Unread,
             tasks: Vec::new(),
             task_count: 0,
             connection: Connection::Live,
@@ -400,38 +373,14 @@ mod tests {
     // ── Title / tooltip ──────────────────────────────────────────────────
 
     #[test]
-    fn title_is_none_at_zero_unread_in_unread_mode() {
-        let v = build(&empty_snapshot());
-        assert_eq!(title(&v), None);
+    fn title_is_none_with_nothing_upcoming_even_with_unread() {
+        let s = snapshot(vec![notif("1", "a", false), notif("2", "b", false)]);
+        assert_eq!(title(&build(&s)), None);
     }
 
     #[test]
-    fn title_is_count_string_at_three_unread_in_unread_mode() {
-        let s = snapshot(vec![notif("1", "a", false), notif("2", "b", false), notif("3", "c", false)]);
-        let v = build(&s);
-        assert_eq!(title(&v), Some("3".to_string()));
-    }
-
-    #[test]
-    fn title_off_mode_is_always_none() {
-        let mut s = snapshot(vec![notif("1", "a", false)]);
-        s.title_mode = TitleMode::Off;
-        let v = build(&s);
-        assert_eq!(title(&v), None);
-    }
-
-    #[test]
-    fn title_meeting_mode_with_no_next_is_none_not_unread_count() {
-        let mut s = snapshot(vec![notif("1", "a", false)]);
-        s.title_mode = TitleMode::Meeting;
-        let v = build(&s);
-        assert_eq!(title(&v), None);
-    }
-
-    #[test]
-    fn title_meeting_mode_with_next_shows_countdown() {
+    fn title_with_next_shows_compact_countdown() {
         let mut s = empty_snapshot();
-        s.title_mode = TitleMode::Meeting;
         s.now_unix = 1_000_000_000;
         s.next = Some(agenda("2026-10-10T14:00:00.000Z"));
         // 1_000_000_000 is itself a valid unix timestamp; pick a starts_at
@@ -439,18 +388,29 @@ mod tests {
         let starts_unix = parse_iso8601_unix("2026-10-10T14:00:00.000Z").unwrap();
         s.now_unix = starts_unix - 12 * 60;
         let v = build(&s);
-        assert_eq!(title(&v), Some("Standup in 12m".to_string()));
+        assert_eq!(title(&v), Some("Standup · 12m".to_string()));
+        s.now_unix = starts_unix - 125 * 60;
+        assert_eq!(title(&build(&s)), Some("Standup · 2h".to_string()));
+        s.now_unix = starts_unix + 60;
+        assert_eq!(title(&build(&s)), Some("Standup · now".to_string()));
     }
 
     #[test]
-    fn recording_title_overrides_every_mode() {
-        for mode in [TitleMode::Meeting, TitleMode::Unread, TitleMode::Off] {
-            let mut s = snapshot(vec![notif("1", "a", false)]);
-            s.title_mode = mode;
-            s.recording = Some(RecordingSnap { title: "Standup".to_string(), elapsed_secs: 5 });
-            let v = build(&s);
-            assert_eq!(title(&v), Some("● 0:05".to_string()));
-        }
+    fn title_caps_long_meeting_names_at_18_chars() {
+        let mut s = empty_snapshot();
+        let mut a = agenda("2026-10-10T14:00:00.000Z");
+        a.title = "Application Help Hours with Partners".to_string();
+        s.next = Some(a);
+        s.now_unix = parse_iso8601_unix("2026-10-10T14:00:00.000Z").unwrap() - 5 * 60;
+        assert_eq!(title(&build(&s)), Some("Application Help … · 5m".to_string()));
+    }
+
+    #[test]
+    fn recording_title_overrides_next_meeting() {
+        let mut s = snapshot(vec![notif("1", "a", false)]);
+        s.next = Some(agenda("2026-10-10T14:00:00.000Z"));
+        s.recording = Some(RecordingSnap { title: "Standup".to_string(), elapsed_secs: 5 });
+        assert_eq!(title(&build(&s)), Some("● 0:05".to_string()));
     }
 
     #[test]
@@ -516,38 +476,35 @@ mod tests {
     #[test]
     fn next_countdown_at_2_hours_rounds_down_to_whole_hours_in_title() {
         let mut s = empty_snapshot();
-        s.title_mode = TitleMode::Meeting;
         let starts_unix = parse_iso8601_unix("2026-10-10T14:00:00.000Z").unwrap();
         s.next = Some(agenda("2026-10-10T14:00:00.000Z"));
         s.now_unix = starts_unix - 125 * 60;
         let v = build(&s);
         assert_eq!(v.next.as_ref().unwrap().minutes_until, 125);
-        assert_eq!(title(&v), Some("Standup in 2h".to_string()));
+        assert_eq!(title(&v), Some("Standup · 2h".to_string()));
     }
 
     #[test]
     fn next_countdown_started_is_now() {
         let mut s = empty_snapshot();
-        s.title_mode = TitleMode::Meeting;
         let starts_unix = parse_iso8601_unix("2026-10-10T14:00:00.000Z").unwrap();
         s.next = Some(agenda("2026-10-10T14:00:00.000Z"));
         s.now_unix = starts_unix + 5 * 60;
         let v = build(&s);
         assert_eq!(v.next.as_ref().unwrap().minutes_until, -5);
-        assert_eq!(title(&v), Some("Standup now".to_string()));
+        assert_eq!(title(&v), Some("Standup · now".to_string()));
     }
 
     #[test]
-    fn next_title_truncated_at_24_chars() {
+    fn next_title_truncated_at_18_chars() {
         let mut s = empty_snapshot();
-        s.title_mode = TitleMode::Meeting;
         let mut a = agenda("2026-10-10T14:00:00.000Z");
         a.title = "a".repeat(30);
         s.next = Some(a);
         let starts_unix = parse_iso8601_unix("2026-10-10T14:00:00.000Z").unwrap();
         s.now_unix = starts_unix - 5 * 60;
         let v = build(&s);
-        let expected = format!("{}… in 5m", "a".repeat(23));
+        let expected = format!("{} · 5m", format!("{}…", "a".repeat(17)));
         assert_eq!(title(&v), Some(expected));
     }
 
@@ -603,33 +560,6 @@ mod tests {
         let v = build(&s);
         assert_eq!(v.connection, Connection::Offline);
         assert_eq!(v.last_sync_secs, Some(42));
-    }
-
-    // ── Title mode ───────────────────────────────────────────────────────
-
-    #[test]
-    fn title_mode_parses_valid_strings() {
-        assert_eq!(TitleMode::parse("meeting"), Some(TitleMode::Meeting));
-        assert_eq!(TitleMode::parse("unread"), Some(TitleMode::Unread));
-        assert_eq!(TitleMode::parse("off"), Some(TitleMode::Off));
-    }
-
-    #[test]
-    fn title_mode_parse_rejects_unknown_strings() {
-        assert_eq!(TitleMode::parse("Meeting"), None);
-        assert_eq!(TitleMode::parse(""), None);
-        assert_eq!(TitleMode::parse("bogus"), None);
-    }
-
-    #[test]
-    fn title_mode_serializes_lowercase() {
-        assert_eq!(serde_json::to_string(&TitleMode::Meeting).unwrap(), "\"meeting\"");
-        assert_eq!(serde_json::to_string(&TitleMode::Off).unwrap(), "\"off\"");
-    }
-
-    #[test]
-    fn title_mode_defaults_to_meeting() {
-        assert_eq!(TitleMode::default(), TitleMode::Meeting);
     }
 
     // ── ISO-8601 parsing ─────────────────────────────────────────────────
