@@ -36,6 +36,7 @@ function makeRec(overrides: Partial<UseMeetingRecording> = {}): UseMeetingRecord
     error: null,
     busy: false,
     remote: null,
+    lastChunkAt: null,
     insertedAt: null,
     finalized: false,
     stoppingSince: 0,
@@ -67,6 +68,7 @@ function makeRec(overrides: Partial<UseMeetingRecording> = {}): UseMeetingRecord
     hasTranscript: false,
     drives: true,
     canDiscard: true,
+    canStopOthers: false,
     stopStuck: false,
     elapsed: 724,
     speakerCounts: { mic: 0, call: 0 },
@@ -343,5 +345,96 @@ describe("RecordingRail per state (specs/meeting-recording-rail.md state table)"
     expect(html).toContain("Recording · Priya");
     expect(html).toContain("· Priya");
     expect(html).not.toContain(">Stop<");
+  });
+
+  it("recording: a follower with canStopOthers sees a Stop button", () => {
+    const html = render(
+      makeRec({
+        phase: "recording",
+        remote: { ownerName: "Priya", ownerIsYou: false },
+        drives: false,
+        canEdit: true,
+        canStopOthers: true,
+        canDiscard: false,
+        isCore: false,
+      }),
+    );
+    expect(html).toContain("Stop</button>");
+  });
+
+  it("recording: a follower without edit access sees no actions", () => {
+    const html = render(
+      makeRec({
+        phase: "recording",
+        remote: { ownerName: "Priya", ownerIsYou: false },
+        drives: false,
+        canEdit: false,
+        canStopOthers: false,
+        canDiscard: false,
+        isCore: false,
+      }),
+    );
+    expect(html).not.toContain(">Stop<");
+    expect(html).not.toContain("Discard recording");
+  });
+
+  it("recording: a Core follower sees Discard", () => {
+    const html = render(
+      makeRec({
+        phase: "recording",
+        remote: { ownerName: "Priya", ownerIsYou: false },
+        drives: false,
+        canEdit: true,
+        isCore: true,
+        canStopOthers: true,
+        canDiscard: true,
+      }),
+    );
+    expect(html).toContain('aria-label="Discard recording"');
+  });
+
+  it("stopping (stuck, following): an editor sees Transcribe anyway", () => {
+    const html = render(
+      makeRec({
+        phase: "stopping",
+        remote: { ownerName: "Priya", ownerIsYou: false },
+        drives: false,
+        stopStuck: true,
+        canStopOthers: true,
+        canDiscard: false,
+      }),
+    );
+    expect(html).toContain("Transcribe anyway");
+    expect(html).not.toContain("Discard recording");
+  });
+
+  it("stopping (stuck, following): a Core editor sees Discard alongside Transcribe anyway", () => {
+    const html = render(
+      makeRec({
+        phase: "stopping",
+        remote: { ownerName: "Priya", ownerIsYou: false },
+        drives: false,
+        stopStuck: true,
+        canStopOthers: true,
+        canDiscard: true,
+      }),
+    );
+    expect(html).toContain("Transcribe anyway");
+    expect(html).toContain('aria-label="Discard recording"');
+  });
+
+  it("stopping (stuck, following): a non-editor sees nothing", () => {
+    const html = render(
+      makeRec({
+        phase: "stopping",
+        remote: { ownerName: "Priya", ownerIsYou: false },
+        drives: false,
+        stopStuck: true,
+        canStopOthers: false,
+        canDiscard: false,
+      }),
+    );
+    expect(html).not.toContain("Transcribe anyway");
+    expect(html).not.toContain("Discard recording");
   });
 });

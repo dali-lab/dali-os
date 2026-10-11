@@ -66,6 +66,9 @@ export type PollRecordingResponse = {
   notes?: StoredEnhanceNotes | null;
   enhancedAt?: string | null;
   enhancedBy?: string | null;
+  /** When the most recent chunk landed, for the "last audio …" status-line
+   *  suffix a follower sees while the owner's device is uploading. */
+  lastChunkAt?: string | null;
 };
 
 /** The note's newest recording (any status) as the page loader saw it, for a

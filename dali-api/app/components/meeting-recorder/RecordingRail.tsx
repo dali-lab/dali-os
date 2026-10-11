@@ -187,6 +187,25 @@ export function statusLineFor(rec: UseMeetingRecording, state: RailState): React
   return text;
 }
 
+/** "starting"/"recording" for a follower (not the owner's own device): Stop
+ *  for any editor, Discard for Core — the owner's buttons are plain Cancel/
+ *  Stop above since they always drive their own recording. */
+function FollowerLiveActions({ rec }: { rec: UseMeetingRecording }) {
+  if (!rec.canStopOthers && !rec.canDiscard) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {rec.canStopOthers && (
+        <button type="button" onClick={() => void rec.stop()} className={buttonClasses("secondary", "sm")}>
+          <Square className="h-3 w-3 fill-current" /> Stop
+        </button>
+      )}
+      {rec.canDiscard && (
+        <IconButton label="Discard recording" icon={Trash2} tone="destructive" onClick={() => void rec.discard()} />
+      )}
+    </div>
+  );
+}
+
 function RailActions({ rec, state }: { rec: UseMeetingRecording; state: RailState }) {
   switch (state) {
     case "starting":
@@ -203,24 +222,43 @@ function RailActions({ rec, state }: { rec: UseMeetingRecording; state: RailStat
           </div>
         );
       }
-      return rec.drives ? (
-        <button type="button" onClick={rec.cancelStart} className={buttonClasses("secondary", "sm")}>
-          Cancel
-        </button>
-      ) : null;
+      if (rec.drives) {
+        return (
+          <button type="button" onClick={rec.cancelStart} className={buttonClasses("secondary", "sm")}>
+            Cancel
+          </button>
+        );
+      }
+      return <FollowerLiveActions rec={rec} />;
 
     case "recording":
-      return rec.drives ? (
-        <button type="button" onClick={() => void rec.stop()} className={buttonClasses("secondary", "sm")}>
-          <Square className="h-3 w-3 fill-current" /> Stop
-        </button>
-      ) : null;
+      if (rec.drives) {
+        return (
+          <button type="button" onClick={() => void rec.stop()} className={buttonClasses("secondary", "sm")}>
+            <Square className="h-3 w-3 fill-current" /> Stop
+          </button>
+        );
+      }
+      return <FollowerLiveActions rec={rec} />;
 
     case "stopping":
-      if (!rec.drives || !rec.stopStuck) return null;
+      if (!rec.stopStuck) return null;
+      if (rec.drives) {
+        return (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <IconButton label="Discard recording" icon={Trash2} tone="destructive" onClick={() => void rec.discard()} />
+            <button type="button" onClick={() => void rec.finishAndTranscribe()} className={buttonClasses("primary", "sm")}>
+              Transcribe anyway
+            </button>
+          </div>
+        );
+      }
+      if (!rec.canStopOthers) return null;
       return (
         <div className="flex flex-wrap items-center gap-1.5">
-          <IconButton label="Discard recording" icon={Trash2} tone="destructive" onClick={() => void rec.discard()} />
+          {rec.canDiscard && (
+            <IconButton label="Discard recording" icon={Trash2} tone="destructive" onClick={() => void rec.discard()} />
+          )}
           <button type="button" onClick={() => void rec.finishAndTranscribe()} className={buttonClasses("primary", "sm")}>
             Transcribe anyway
           </button>
