@@ -12,6 +12,7 @@ import { getTranscriptionProvider } from "~/lib/transcription/provider";
 import {
   MAX_ACTIVE_RECORDINGS,
   RETRY_PENDING_MARKER,
+  activeRecordingFor,
   applyResult,
   canReadRecording,
   canRecordInto,
@@ -20,11 +21,13 @@ import {
   finalizeEmpty,
   finishRecording,
   formatRecordingTranscript,
+  latestRecordingFor,
   ownRecording,
   parseSpeakerMap,
   recordChunk,
   recordingDeepLink,
   requestStop,
+  resolveSpeakerNames,
   resumeRecording,
   setSpeakers,
   startProcessing,
@@ -102,6 +105,72 @@ describe("canReadRecording", () => {
   it("is neither when the note is closed to them", async () => {
     vi.mocked(authorizeCollabDoc).mockResolvedValue({ allowed: false, readOnly: false });
     expect(await canReadRecording(rec({ userId: "u2" }), "u1")).toBeNull();
+  });
+});
+
+describe("activeRecordingFor / latestRecordingFor", () => {
+  it("activeRecordingFor only looks at the live statuses", async () => {
+    vi.mocked(prisma.meetingRecording.findFirst).mockResolvedValueOnce(null);
+    await activeRecordingFor("doc:p1:body");
+    expect(prisma.meetingRecording.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { documentName: "doc:p1:body", status: { in: ["Pending", "Recording", "Stopped", "Processing"] } },
+      }),
+    );
+  });
+
+  it("latestRecordingFor looks at every status, newest first", async () => {
+    vi.mocked(prisma.meetingRecording.findFirst).mockResolvedValueOnce(null);
+    await latestRecordingFor("doc:p1:body");
+    expect(prisma.meetingRecording.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { documentName: "doc:p1:body" },
+        orderBy: { createdAt: "desc" },
+      }),
+    );
+  });
+
+  it("latestRecordingFor finds a Done row activeRecordingFor would miss", async () => {
+    vi.mocked(prisma.meetingRecording.findFirst).mockResolvedValueOnce({
+      id: "done1",
+      userId: "u2",
+      status: "Done",
+      createdAt: new Date("2026-10-10T12:00:00Z"),
+    } as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({ firstName: "Ada", lastName: "L", daliEmail: null } as never);
+
+    expect(await latestRecordingFor("doc:p1:body")).toEqual(
+      expect.objectContaining({ id: "done1", userId: "u2", status: "Done", ownerName: "Ada L" }),
+    );
+  });
+
+  it("returns null when the document has never had a recording", async () => {
+    vi.mocked(prisma.meetingRecording.findFirst).mockResolvedValueOnce(null);
+    expect(await latestRecordingFor("doc:p1:body")).toBeNull();
+  });
+});
+
+describe("resolveSpeakerNames", () => {
+  it("resolves a cuid-shaped value to the user's name", async () => {
+    const userId = "c" + "x".repeat(24);
+    vi.mocked(prisma.user.findMany).mockResolvedValue([{ id: userId, firstName: "Alex", lastName: "Kim" }] as never);
+    expect(await resolveSpeakerNames({ "mic:1": userId })).toEqual({ "mic:1": "Alex Kim" });
+  });
+
+  it("passes free text through unchanged", async () => {
+    expect(await resolveSpeakerNames({ "mic:1": "A guest" })).toEqual({ "mic:1": "A guest" });
+    expect(prisma.user.findMany).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the raw id when the user no longer exists", async () => {
+    const userId = "c" + "y".repeat(24);
+    vi.mocked(prisma.user.findMany).mockResolvedValue([]);
+    expect(await resolveSpeakerNames({ "mic:1": userId })).toEqual({ "mic:1": userId });
+  });
+
+  it("returns an empty map for no assignments", async () => {
+    expect(await resolveSpeakerNames({})).toEqual({});
+    expect(prisma.user.findMany).not.toHaveBeenCalled();
   });
 });
 

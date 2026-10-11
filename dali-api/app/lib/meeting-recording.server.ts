@@ -87,10 +87,12 @@ export type ActiveRecordingSummary = {
   createdAt: Date;
 };
 
-/** The document's live recording (not yet Done/Failed), whoever owns it. */
-export async function activeRecordingFor(documentName: string): Promise<ActiveRecordingSummary | null> {
+async function recordingSummaryFor(
+  documentName: string,
+  statusFilter?: readonly MeetingRecordingStatus[],
+): Promise<ActiveRecordingSummary | null> {
   const rec = await prisma.meetingRecording.findFirst({
-    where: { documentName, status: { in: [...ACTIVE_RECORDING_STATUSES] } },
+    where: { documentName, ...(statusFilter ? { status: { in: [...statusFilter] } } : {}) },
     orderBy: { createdAt: "desc" },
     select: { id: true, userId: true, status: true, createdAt: true },
   });
@@ -102,6 +104,20 @@ export async function activeRecordingFor(documentName: string): Promise<ActiveRe
   const ownerName =
     [user?.firstName, user?.lastName].filter(Boolean).join(" ") || user?.daliEmail || "Someone";
   return { ...rec, ownerName };
+}
+
+/** The document's live recording (not yet Done/Failed), whoever owns it. */
+export async function activeRecordingFor(documentName: string): Promise<ActiveRecordingSummary | null> {
+  return recordingSummaryFor(documentName, ACTIVE_RECORDING_STATUSES);
+}
+
+/** The document's newest recording regardless of status — unlike
+ *  activeRecordingFor, this also surfaces a Done (or Failed) row, so a
+ *  viewer who never watched it live (another device, a teammate opening the
+ *  note later) still finds it instead of relying on a per-device localStorage
+ *  backup or a shared `?transcript=` link. */
+export async function latestRecordingFor(documentName: string): Promise<ActiveRecordingSummary | null> {
+  return recordingSummaryFor(documentName);
 }
 
 export type CreateRecordingResult = MeetingRecording | null | { busy: ActiveRecordingSummary };
@@ -429,18 +445,46 @@ export async function applyResult(
 
 const DEFAULT_SPEAKER_LABEL: Record<Channel, string> = { mic: "You", call: "Others" };
 
+const USER_ID_PATTERN = /^c[a-z0-9]{20,}$/i;
+
+/**
+ * Resolves a `{ "mic:1": userId | text }` rename map to display names: a
+ * cuid-shaped value becomes that user's name (falling back to the id itself
+ * if the user no longer exists); free text passes through unchanged. Shared
+ * by the AI notes prompt (formatRecordingTranscript, below) and
+ * `GET /api/meeting-recordings/:id`'s `speakerNames`, so the speaker-rename
+ * chip (RecordingTranscript.tsx) can show a real name for a speaker someone
+ * else assigned to a lab member outside the occurrence roster.
+ */
+export async function resolveSpeakerNames(speakers: Record<string, string>): Promise<Record<string, string>> {
+  const userIds = [...new Set(Object.values(speakers).filter((v) => USER_ID_PATTERN.test(v)))];
+  const users = userIds.length
+    ? await prisma.user.findMany({
+        where: { id: { in: userIds } },
+        select: { id: true, firstName: true, lastName: true },
+      })
+    : [];
+  const usersById = new Map(
+    users.map((u) => [u.id, [u.firstName, u.lastName].filter(Boolean).join(" ") || u.id]),
+  );
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(speakers)) {
+    out[key] = usersById.get(value) ?? value;
+  }
+  return out;
+}
+
 /** Display name for a "mic:1"-style speaker key, for the AI notes prompt:
- *  a renamed speaker (userId resolved to a display name, or free text) wins;
- *  otherwise the first/only speaker on a channel reads as You/Others and any
- *  further diarized speaker on that channel reads as "Speaker N". */
+ *  a renamed speaker (already resolved to a display name, or free text)
+ *  wins; otherwise the first/only speaker on a channel reads as You/Others
+ *  and any further diarized speaker on that channel reads as "Speaker N". */
 function speakerLabel(
   key: string,
-  speakers: Record<string, string>,
-  usersById: Map<string, string>,
+  resolvedNames: Record<string, string>,
   singlePerChannel: Set<string>,
 ): string {
-  const rename = speakers[key];
-  if (rename) return usersById.get(rename) ?? rename;
+  const resolved = resolvedNames[key];
+  if (resolved) return resolved;
 
   const [channel, indexRaw] = key.split(":");
   const index = Number(indexRaw);
@@ -458,17 +502,7 @@ export async function formatRecordingTranscript(
 ): Promise<string> {
   const lines = storedLines(rec);
   const speakers = (rec.speakers as Record<string, string> | null) ?? {};
-
-  const userIds = Object.values(speakers).filter((v) => /^c[a-z0-9]{20,}$/i.test(v));
-  const users = userIds.length
-    ? await prisma.user.findMany({
-        where: { id: { in: userIds } },
-        select: { id: true, firstName: true, lastName: true },
-      })
-    : [];
-  const usersById = new Map(
-    users.map((u) => [u.id, [u.firstName, u.lastName].filter(Boolean).join(" ") || u.id]),
-  );
+  const resolvedNames = await resolveSpeakerNames(speakers);
 
   const singlePerChannel = new Set<string>();
   for (const channel of ["mic", "call"] as const) {
@@ -491,7 +525,7 @@ export async function formatRecordingTranscript(
     .sort((a, b) => a.at - b.at)
     .map((l) => {
       const who = l.speaker
-        ? speakerLabel(l.speaker, speakers, usersById, singlePerChannel)
+        ? speakerLabel(l.speaker, resolvedNames, singlePerChannel)
         : l.source
           ? DEFAULT_SPEAKER_LABEL[l.source === "you" ? "mic" : "call"]
           : "Speaker";

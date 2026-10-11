@@ -64,9 +64,11 @@ export type PollRecordingResponse = {
   enhancedBy?: string | null;
 };
 
-/** The note's live recording as the page loader saw it, for a viewer who
- *  didn't start it (another person, or the same person on another device). */
-export type ActiveRecording = {
+/** The note's newest recording (any status) as the page loader saw it, for a
+ *  viewer who didn't start it here (another person, or the same person on
+ *  another device) — the pickup effect's fallback once the viewer's own
+ *  backup and `?transcript=` are ruled out. */
+export type LatestRecording = {
   id: string;
   ownerName: string;
   ownerIsYou: boolean;

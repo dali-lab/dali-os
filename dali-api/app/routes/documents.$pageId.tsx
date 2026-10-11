@@ -11,7 +11,7 @@ import { cn } from "~/lib/cn";
 import type { Route } from "./+types/documents.$pageId";
 import { prisma } from "~/lib/db";
 import { ensureOccurrenceRoster } from "~/lib/scheduled-meeting";
-import { activeRecordingFor } from "~/lib/meeting-recording.server";
+import { ACTIVE_RECORDING_STATUSES, latestRecordingFor } from "~/lib/meeting-recording.server";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { publicDocRedirectForPath } from "~/lib/public-doc.server";
 import { getCollabToken } from "~/lib/collab-token.server";
@@ -249,7 +249,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   // Everything below the gate is independent of everything else here, so it
   // goes to the database in one wave rather than seven.
-  const [favorited, canManageAccess, allTags, meeting, collabToken, presenceUser, backlinkRows, activeRecordingRow, roles] =
+  const [favorited, canManageAccess, allTags, meeting, collabToken, presenceUser, backlinkRows, latestRecordingRow, roles] =
     await Promise.all([
       isFavorited(auth.user.sub, page.id),
       // Every workspace type now carries a shareable audience (named shares +
@@ -299,9 +299,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           fromPage: { select: { id: true, title: true, iconEmoji: true } },
         },
       }),
-      // The note's live recording, whoever started it: the recorder shows it
-      // in place of Record so nobody starts a second one.
-      activeRecordingFor(pageDocName(page.id)),
+      // The note's newest recording, whoever started it and whatever its
+      // status: the recorder shows a live one in place of Record so nobody
+      // starts a second one, and picks up a Done one for a viewer who never
+      // watched it live (specs/meeting-transcription.md; fix for a finished
+      // recording being invisible to anyone without the local backup).
+      latestRecordingFor(pageDocName(page.id)),
       getUserRoles(auth.user.sub, request),
     ]);
 
@@ -457,15 +460,20 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     seededTemplateHash: page.seededTemplateHash,
     projectId,
     canCreateTasks,
-    activeRecording: activeRecordingRow
+    latestRecording: latestRecordingRow
       ? {
-          id: activeRecordingRow.id,
-          ownerName: activeRecordingRow.ownerName,
-          ownerIsYou: activeRecordingRow.userId === auth.user.sub,
-          status: activeRecordingRow.status,
-          since: activeRecordingRow.createdAt.toISOString(),
+          id: latestRecordingRow.id,
+          ownerName: latestRecordingRow.ownerName,
+          ownerIsYou: latestRecordingRow.userId === auth.user.sub,
+          status: latestRecordingRow.status,
+          since: latestRecordingRow.createdAt.toISOString(),
         }
       : null,
+    // RecordPromptBanner only cares whether a LIVE recording already exists
+    // for this occurrence (a Done/Failed one shouldn't suppress "Record it?").
+    hasActiveRecording:
+      latestRecordingRow !== null &&
+      (ACTIVE_RECORDING_STATUSES as readonly string[]).includes(latestRecordingRow.status),
   };
 }
 
@@ -625,7 +633,16 @@ function RecordingMount({
   ...hookProps
 }: UseMeetingRecordingProps & { enabled: boolean; children: (rec: UseMeetingRecording | null) => ReactNode }) {
   if (!enabled) return <>{children(null)}</>;
-  return <RecordingMountInner {...hookProps}>{children}</RecordingMountInner>;
+  // Keyed by documentName: notebook tabs are sibling pages rendered by this
+  // same route component, so switching tabs changes `documentName` on an
+  // otherwise-still-mounted tree. Without the key, this instance (and the
+  // useMeetingRecording state inside it) would carry over from the old tab
+  // instead of resetting to idle for the new one.
+  return (
+    <RecordingMountInner key={hookProps.documentName} {...hookProps}>
+      {children}
+    </RecordingMountInner>
+  );
 }
 
 function RecordingMountInner({
@@ -667,7 +684,8 @@ export default function DocumentPage() {
     meetingNoteTemplateAction,
     seededFromPageId,
     seededTemplateHash,
-    activeRecording,
+    latestRecording,
+    hasActiveRecording,
     projectId: meetingProjectId,
     canCreateTasks,
   } = useLoaderData() as Exclude<Awaited<ReturnType<typeof loader>>, Response>;
@@ -791,7 +809,7 @@ export default function DocumentPage() {
       roster={attendance?.rows.map((r) => ({ userId: r.userId, name: r.name }))}
       canEdit={canEdit}
       isCore={isCore}
-      activeElsewhere={activeRecording}
+      latestRecording={latestRecording}
       onInsert={insertMeetingNotes}
       autoOpen={recordAutoOpen}
       collabToken={collabToken}
@@ -885,7 +903,7 @@ export default function DocumentPage() {
                 canEdit={canEdit}
                 recordingEnabled={recordingEnabled}
                 recordPromptEnabled={attendance.recordPromptEnabled}
-                hasActiveRecording={activeRecording !== null}
+                hasActiveRecording={hasActiveRecording}
                 canDontSuggest={attendance.canDontSuggestRecording}
                 onRecord={() => setRecordAutoOpen(true)}
                 onDontSuggest={() => void dontSuggestRecording()}

@@ -28,9 +28,9 @@ import { countSpeakersByChannel, formatClock, meetingNotesMarkdown, transcriptPa
 import { applyEnhancePlan, type EditorOp, type EnhanceActionItem, type SnapshotBlock, type StoredEnhanceNotes } from "./enhance-plan";
 import { isUntouchedTemplate } from "~/lib/meeting-note-template";
 import type {
-  ActiveRecording,
   Channel,
   ChunkResponse,
+  LatestRecording,
   PollRecordingResponse,
   RecordingStatus,
   RosterUser,
@@ -38,6 +38,12 @@ import type {
   StartRecordingResponse,
   TranscriptLine,
 } from "./types";
+
+// Statuses the pickup effect treats as "still happening" — a LatestRecording
+// in one of these gets the "follow read-only" treatment (remote set, no
+// auto-open); Done/Failed just load in as this viewer's own done/failed
+// phase, same as a `?transcript=` deep link.
+const LIVE_STATUSES: ReadonlySet<RecordingStatus> = new Set(["Pending", "Recording", "Stopped", "Processing"]);
 
 /** "Oct 10, 2:14 PM" in the viewer's own locale/timezone — the "Enhanced …"
  *  banner doesn't need the year since it's always recent. */
@@ -127,9 +133,11 @@ export type UseMeetingRecordingProps = {
   canEdit: boolean;
   /** Core can discard anyone's recording (the DELETE route already allows it). */
   isCore?: boolean;
-  /** The note's live recording when this viewer didn't start it here: shown
-   *  in place of Record so a second one is never started. */
-  activeElsewhere?: ActiveRecording | null;
+  /** The note's newest recording when this viewer didn't start it here, any
+   *  status: a live one shown in place of Record so a second one is never
+   *  started, a Done/Failed one picked up the same way a `?transcript=`
+   *  link would be (no other device or local backup required). */
+  latestRecording?: LatestRecording | null;
   /** Appends the notes Markdown, then the transcript lines under a collapsed
    *  toggle heading. False when the editor isn't ready. */
   onInsert: (markdown: string, transcript: string[]) => boolean;
@@ -171,7 +179,7 @@ export function useMeetingRecording({
   roster = [],
   canEdit,
   isCore = false,
-  activeElsewhere = null,
+  latestRecording = null,
   onInsert,
   autoOpen,
   collabToken,
@@ -338,9 +346,12 @@ export function useMeetingRecording({
     const saved: Backup | null =
       own ??
       (transcriptParam ? { id: transcriptParam, link: "", aiEnabled: false } : null) ??
-      (activeElsewhere ? { id: activeElsewhere.id, link: "", aiEnabled: false } : null);
+      (latestRecording ? { id: latestRecording.id, link: "", aiEnabled: false } : null);
     if (!saved) return;
-    const following = !own && !transcriptParam && activeElsewhere ? activeElsewhere : null;
+    const following =
+      !own && !transcriptParam && latestRecording && LIVE_STATUSES.has(latestRecording.status)
+        ? latestRecording
+        : null;
     let cancelled = false;
     void (async () => {
       const res = await fetch(`/api/meeting-recordings/${saved.id}`, { credentials: "include" }).catch(() => null);
