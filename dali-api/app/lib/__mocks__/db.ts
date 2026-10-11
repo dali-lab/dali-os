@@ -121,6 +121,22 @@ export const prisma = {
   applicationCycleStatusUpdate: {
     findFirst: vi.fn(),
   },
+  hiringEvent: {
+    findUnique: vi.fn(),
+    findFirst: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+    create: vi.fn(),
+    update: vi.fn(),
+    updateMany: vi.fn(),
+    delete: vi.fn(),
+  },
+  hiringEventAttendance: {
+    findUnique: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+    upsert: vi.fn(),
+    delete: vi.fn(),
+    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+  },
   auditLog: {
     create: vi.fn(),
   },

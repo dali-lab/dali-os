@@ -200,6 +200,22 @@ export const EMAIL_TEMPLATES = {
     footer: "transactional",
     whenMissing: "skip",
   },
+  "hiring:notification:ApplicationEventAnnouncement": {
+    area: "Hiring",
+    label: "Application event announcement",
+    description:
+      "Sent by hand from the cycle page to everyone who started an application, announcing a help hour, social or info session. Attaches a calendar invite.",
+    purpose: "Hiring",
+    variables: ["firstName", "eventTitle", "time", "location"],
+    sample: {
+      firstName: "Alex",
+      eventTitle: "Application help hour",
+      time: "Tuesday, October 14, 4:00 PM ET",
+      location: "DALI Lab, Sudikoff",
+    },
+    footer: "transactional",
+    whenMissing: "skip",
+  },
 
   // ── Hiring: interviews ───────────────────────────────────────────────────
   "hiring:notification:InterviewInviteReminder": {

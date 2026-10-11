@@ -6,6 +6,7 @@ export const ENGAGEMENT_FILTERS = [
   { key: "returning", label: "Returning applicant" },
   { key: "emailed", label: "Emailed applications@" },
   { key: "educated", label: "Past DALI education" },
+  { key: "attendedEvent", label: "Attended an event" },
 ] as const;
 export type EngagementFilter = (typeof ENGAGEMENT_FILTERS)[number]["key"];
 

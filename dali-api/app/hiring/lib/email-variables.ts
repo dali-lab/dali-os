@@ -93,6 +93,11 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlot, readonly TemplateVariableN
   // to both audiences.
   "notification:InterviewReminderApplicant": ["firstName", "domain", "time", "location", "meetingUrl"],
   "notification:InterviewReminderInterviewer": ["firstName", "domain", "time", "location", "meetingUrl"],
+
+  // Application event announcement — manual "Send announcement" from a
+  // cycle's event card (hiring-event-notice.ts), to everyone who started an
+  // application in the cycle.
+  "notification:ApplicationEventAnnouncement": ["firstName", "eventTitle", "time", "location"],
 };
 
 export interface LintResult {

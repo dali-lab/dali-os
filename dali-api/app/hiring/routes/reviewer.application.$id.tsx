@@ -8,7 +8,8 @@ import { prisma } from '~/lib/db'
 import { recordRouteVisit } from '~/lib/user-pages.server'
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from '~/lib/login-next'
-import { hasCycleAccess } from '~/lib/roles'
+import { hasCycleAccess, getUserRoles } from '~/lib/roles'
+import { isFeatureEnabled } from '~/lib/feature-flags.server'
 import { getCollabToken } from "~/lib/collab-token.server";
 import { getPresenceUser } from '~/lib/presence-user'
 import { requirePageSignedOrRedirect } from '~/hiring/lib/confidentiality'
@@ -28,6 +29,8 @@ import { PresenceProvider } from '~/components/collab/PresenceProvider'
 import { PresenceBar } from '~/components/collab/PresenceBar'
 import { getEducationEngagement } from '~/education/lib/engagement.server'
 import { EducationEngagementPanel } from '~/education/components/EducationEngagementPanel'
+import { getHiringEventEngagement } from '~/hiring/lib/hiring-events.server'
+import { ApplicationEventsPanel } from '~/hiring/components/ApplicationEventsPanel'
 import { PriorApplicationsPanel } from '~/hiring/components/PriorApplicationsPanel'
 import { Radio } from '~/components/ui/Radio'
 import { Tooltip, InfoTip } from "~/components/ui/floating";
@@ -234,6 +237,17 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // instructor notes; this page is behind cycle access + confidentiality.
   const educationEngagement = await getEducationEngagement(applicantUserId)
 
+  const roles = await getUserRoles(auth.user.sub, request)
+  const applicationEventsEnabled = await isFeatureEnabled(
+    'application-events',
+    auth.user.sub,
+    roles,
+    request,
+  )
+  const hiringEventEngagement = applicationEventsEnabled
+    ? await getHiringEventEngagement(applicantUserId)
+    : []
+
   // This applicant's other submitted cycles. Outcomes are nulled server-side
   // while this reviewer is still blinded to them.
   const priorApplications = await listPriorApplications({
@@ -249,6 +263,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     reviewer,
     existingReview: review,
     educationEngagement,
+    hiringEventEngagement,
     priorApplications,
     emailEngagement,
     blinded,
@@ -333,6 +348,7 @@ export default function ReviewerApplicationReview() {
     reviewer,
     existingReview,
     educationEngagement,
+    hiringEventEngagement,
     priorApplications,
     emailEngagement,
     blinded,
@@ -399,7 +415,7 @@ export default function ReviewerApplicationReview() {
     formData.set('scores', JSON.stringify(data.scores))
     formData.set('overallRecommendation', data.overallRecommendation ?? '')
     formData.set('annotations', JSON.stringify(data.annotations))
-    submit(formData, { method: 'post' })
+    return submit(formData, { method: 'post' })
   }
 
   const isSubmitted = !!existingReview?.submittedAt
@@ -426,9 +442,10 @@ export default function ReviewerApplicationReview() {
       clearTimeout(debounceRef.current)
       debounceRef.current = null
     }
-    submitReview({ scores, overallRecommendation, annotations })
+    const saved = submitReview({ scores, overallRecommendation, annotations })
     setIsSaving(false)
     setLastSaved(new Date())
+    return saved
   }
 
   // Build question label lookup from form + challenge versions
@@ -467,6 +484,7 @@ export default function ReviewerApplicationReview() {
         {/* Left: Application Content */}
         <div className="lg:col-span-2 space-y-6">
           <EducationEngagementPanel entries={educationEngagement} />
+          <ApplicationEventsPanel entries={hiringEventEngagement} currentCycleId={cycle.id} />
           <PriorApplicationsPanel
             entries={priorApplications}
             outcomesHidden={blinded}
@@ -637,7 +655,9 @@ export default function ReviewerApplicationReview() {
                     {existingReview && (
                       <button
                         onClick={async () => {
-                          flushSave()
+                          // Reloading while the save is in flight aborts it: the
+                          // last edits are lost and the error page flashes.
+                          await flushSave()
                           const res = await fetch(`/api/hiring/reviews/${existingReview.id}/submit`, {
                             method: 'POST', credentials: 'include',
                           })
