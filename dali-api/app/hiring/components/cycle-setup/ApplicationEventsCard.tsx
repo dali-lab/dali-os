@@ -213,7 +213,6 @@ function EventRow({
     );
   }
 
-  function sendAnnouncement() {
   async function sendAnnouncement() {
     const resend = event.announcementSentAt != null;
     const ok = await dialog.confirm({
