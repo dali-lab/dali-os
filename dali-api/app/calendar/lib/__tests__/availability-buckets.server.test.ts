@@ -1,4 +1,5 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+vi.mock("~/lib/db", () => ({ prisma: {} }));
 import { buildAvailabilityDays, unionIntervals } from "../availability-buckets.server";
 
 const TZ = "America/New_York";

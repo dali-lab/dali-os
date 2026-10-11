@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+vi.mock("~/lib/db", () => ({ prisma: {} }));
 
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),

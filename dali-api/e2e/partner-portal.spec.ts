@@ -439,7 +439,7 @@ test.describe('partner self-signup', () => {
     await expect(
       page.getByRole('heading', { name: 'Warehouse robot dashboard' }),
     ).toBeVisible();
-    await expect(page.getByText('Application submitted').first()).toBeVisible();
+    await expect(page.getByText('Submitted', { exact: true })).toBeVisible();
   });
 });
 
