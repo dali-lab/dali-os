@@ -324,39 +324,6 @@ button:focus-visible {
   border: 1.5px solid var(--border);
 }
 
-/* Menu bar preference */
-
-.mode {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 14px;
-  border-top: 1px solid var(--border);
-}
-.seg {
-  display: inline-flex;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  overflow: hidden;
-}
-.seg button {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--muted);
-  background: transparent;
-  border: none;
-  border-radius: 0;
-  padding: 4px 8px;
-}
-.seg button + button {
-  border-left: 1px solid var(--border);
-}
-.seg button[aria-pressed="true"] {
-  color: #ffffff;
-  background: var(--os-accent);
-}
-
 /* Footer status + New menu */
 
 .footer-status {

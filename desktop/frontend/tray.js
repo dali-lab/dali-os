@@ -137,12 +137,6 @@ function renderTasks(view) {
   }
 }
 
-function renderMode(view) {
-  for (const b of document.querySelectorAll(".seg button")) {
-    b.setAttribute("aria-pressed", String(b.dataset.mode === view.titleMode));
-  }
-}
-
 function renderStatus() {
   if (!lastView) return;
   const drift = Math.floor((Date.now() - lastViewAt) / 1000);
@@ -170,7 +164,6 @@ function render(view) {
   renderHeader(view);
   renderRows(view);
   renderTasks(view);
-  renderMode(view);
   renderFooter(view);
   resizeToContent();
 }
@@ -199,10 +192,6 @@ el("btn-notes").addEventListener("click", () => {
   if (lastView?.next?.notePageId) invoke("tray_open_path", { path: `/documents/${lastView.next.notePageId}` });
 });
 el("btn-record").addEventListener("click", () => invoke("tray_record_next"));
-
-for (const b of document.querySelectorAll(".seg button")) {
-  b.addEventListener("click", () => invoke("tray_set_title_mode", { mode: b.dataset.mode }));
-}
 
 const newMenu = el("new-menu");
 const btnNew = el("btn-new");
