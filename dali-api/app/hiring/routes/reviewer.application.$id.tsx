@@ -415,7 +415,7 @@ export default function ReviewerApplicationReview() {
     formData.set('scores', JSON.stringify(data.scores))
     formData.set('overallRecommendation', data.overallRecommendation ?? '')
     formData.set('annotations', JSON.stringify(data.annotations))
-    submit(formData, { method: 'post' })
+    return submit(formData, { method: 'post' })
   }
 
   const isSubmitted = !!existingReview?.submittedAt
@@ -442,9 +442,10 @@ export default function ReviewerApplicationReview() {
       clearTimeout(debounceRef.current)
       debounceRef.current = null
     }
-    submitReview({ scores, overallRecommendation, annotations })
+    const saved = submitReview({ scores, overallRecommendation, annotations })
     setIsSaving(false)
     setLastSaved(new Date())
+    return saved
   }
 
   // Build question label lookup from form + challenge versions
@@ -654,7 +655,9 @@ export default function ReviewerApplicationReview() {
                     {existingReview && (
                       <button
                         onClick={async () => {
-                          flushSave()
+                          // Reloading while the save is in flight aborts it: the
+                          // last edits are lost and the error page flashes.
+                          await flushSave()
                           const res = await fetch(`/api/hiring/reviews/${existingReview.id}/submit`, {
                             method: 'POST', credentials: 'include',
                           })
