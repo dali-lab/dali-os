@@ -351,6 +351,12 @@ export default [
   // no shell.
   route("education/check-in/:sessionId", "education/routes/education.check-in.$sessionId.tsx"),
 
+  // Application-event self-check-in (the projected QR target). Outside the
+  // member layout for the same reason as education/check-in above: an
+  // applicant has a Dartmouth login but no DALIMember row. No enrollment
+  // gate here either — any authenticated user can check in.
+  route("hiring/events/check-in/:eventId", "hiring/routes/events.check-in.$eventId.tsx"),
+
   // Public policy pages (no auth, no layout) — linked from the Google OAuth
   // consent screen, so they must load for an unauthenticated reviewer.
   route("privacy", "routes/privacy.tsx"),
@@ -694,6 +700,12 @@ export default [
   route("api/hiring/cycles/:cycleId/delibs", "hiring/routes/api.cycles.$cycleId.delibs.ts"),
   route("api/hiring/cycles/:cycleId/domains/:domainId/auto-assign", "hiring/routes/api.cycles.$cycleId.domains.$domainId.auto-assign.ts"),
   route("api/hiring/cycles/:cycleId/confidentiality/sign", "hiring/routes/api.cycles.$cycleId.confidentiality.sign.ts"),
+
+  // Application events (help hours, socials, info sessions).
+  route("api/hiring/cycles/:cycleId/events", "hiring/routes/api.cycles.$cycleId.events.ts"),
+  route("api/hiring/events/:eventId", "hiring/routes/api.events.$eventId.ts"),
+  route("api/hiring/events/:eventId/check-in", "hiring/routes/api.events.$eventId.check-in.ts"),
+  route("api/hiring/events/:eventId/check-in-qr.pdf", "hiring/routes/api.events.$eventId.check-in-qr.pdf.ts"),
 
   route("api/hiring/my-interview", "hiring/routes/api.my-interview.ts"),
   route("api/hiring/my-interview/cancel", "hiring/routes/api.my-interview.cancel.ts"),

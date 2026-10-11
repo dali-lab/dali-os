@@ -8,6 +8,7 @@ vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn().mockRes
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { getUserRoles } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { loader } from "~/hiring/routes/applications";
 
 const mockPrisma = prisma as unknown as Record<string, any>;
@@ -79,6 +80,7 @@ beforeEach(() => {
   mockPrisma.application = { findMany: vi.fn().mockResolvedValue([{ id: APPLICATION_ID }]) };
   mockPrisma.mailMessageIndex = { findMany: vi.fn().mockResolvedValue([]) };
   mockPrisma.educationApplication = { findMany: vi.fn().mockResolvedValue([]) };
+  mockPrisma.hiringEventAttendance = { findMany: vi.fn().mockResolvedValue([]) };
 
   // domainApplication.findMany is called twice with different `where` shapes:
   // once scoped to visible domains (builds the rows), once unscoped per
@@ -119,5 +121,60 @@ describe("applications.tsx loader — blind review", () => {
     ]);
     const result: any = await callLoader();
     expect(result.rows[0].name).toBe("Ada Lovelace");
+  });
+});
+
+describe("applications.tsx loader — attendedEvent engagement signal", () => {
+  function mockDomainAppsWithUserId(userId: string) {
+    mockPrisma.domainApplication.findMany.mockImplementation(({ where }: any) => {
+      if (where.domainId) {
+        return Promise.resolve([
+          baseDomainApp({
+            user: {
+              id: userId,
+              firstName: "Ada",
+              lastName: "Lovelace",
+              daliEmail: "ada@dali.dartmouth.edu",
+              dartmouthEmail: "ada@dartmouth.edu",
+            },
+          }),
+        ]);
+      }
+      return Promise.resolve([{ id: DA_ID, applicationId: APPLICATION_ID }]);
+    });
+  }
+
+  it("skips the attendance lookup and marks every row unattended when the flag is off", async () => {
+    mockDomainAppsWithUserId("ada-user");
+
+    const result: any = await callLoader();
+
+    expect(mockPrisma.hiringEventAttendance.findMany).not.toHaveBeenCalled();
+    expect(result.rows[0].attendedEvent).toBe(false);
+  });
+
+  it("queries attendance scoped to the selected cycle and marks matching rows when the flag is on", async () => {
+    vi.mocked(isFeatureEnabled).mockResolvedValue(true);
+    mockPrisma.hiringEventAttendance.findMany.mockResolvedValue([{ userId: "ada-user" }]);
+    mockDomainAppsWithUserId("ada-user");
+
+    const result: any = await callLoader();
+
+    expect(mockPrisma.hiringEventAttendance.findMany).toHaveBeenCalledWith({
+      where: { userId: { in: ["ada-user"] }, event: { applicationCycleId: CYCLE_ID } },
+      select: { userId: true },
+      distinct: ["userId"],
+    });
+    expect(result.rows[0].attendedEvent).toBe(true);
+  });
+
+  it("does not mark a row attended when its userId isn't in the attendance result", async () => {
+    vi.mocked(isFeatureEnabled).mockResolvedValue(true);
+    mockPrisma.hiringEventAttendance.findMany.mockResolvedValue([{ userId: "someone-else" }]);
+    mockDomainAppsWithUserId("ada-user");
+
+    const result: any = await callLoader();
+
+    expect(result.rows[0].attendedEvent).toBe(false);
   });
 });
