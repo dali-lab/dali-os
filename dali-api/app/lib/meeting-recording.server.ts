@@ -1,18 +1,38 @@
-// Server side of native meeting recording (see the MeetingRecording model).
-// The page and the desktop app both talk to the same owner-only row: the page
-// with its cookie session, the app with its desktop Session Bearer token.
+// Server side of meeting recording (see the MeetingRecording model and
+// specs/meeting-transcription.md). The page and the desktop app both talk to
+// the same row: the page with its cookie session, the app with its desktop
+// Session Bearer token. PCM chunks land in S3; at Stop the row is handed to
+// the transcription provider, whose callback fills in words/lines/speakers.
+//
+// NEVER log transcript text, chunk bytes, or a presigned chunk URL.
 
 import { prisma } from "~/lib/db";
 import { authorizeCollabDoc } from "~/lib/collabAuth";
 import { isPresenceRoom } from "~/collab/roomName";
-import type { MeetingRecording } from "~/generated/prisma/client";
+import { getApiBaseUrl } from "~/lib/app-env";
+import { deletePrefix } from "~/lib/transcription/chunks.server";
+import { getTranscriptionProvider } from "~/lib/transcription/provider";
+import type { Channel, ProcessRequest, ProcessRequestChannel, ProcessRequestSegment } from "~/lib/transcription/provider";
+import { assignSpeakers, wordsToLines, mergeChannels, dedupeCrossChannel } from "~/lib/transcription/words";
+import type { Word, DiarizationSegment, RawLine } from "~/lib/transcription/words";
+import type { MeetingRecording, MeetingRecordingStatus } from "~/generated/prisma/client";
 import type { TranscriptLine } from "~/lib/meeting-transcript";
 
-const MAX_LINES_PER_APPEND = 200;
-const MAX_LINES = 20_000;
-const MAX_LINE_CHARS = 2_000;
-// Anything older than this is an abandoned recording (closed tab, crashed app).
+// Anything older than this, never finalized, is an abandoned recording
+// (closed tab, crashed app, crashed browser) — not merely stopped.
 const STALE_MS = 24 * 60 * 60 * 1000;
+
+// Lab-wide cap on simultaneously live recordings (Pending or Recording).
+export const MAX_ACTIVE_RECORDINGS = 12;
+
+// Internal sentinel: recording-finalizer stashes this in `error` while a
+// retried Processing row is still in flight, so a second timeout can tell
+// "never retried" from "already retried once" without a schema change. Never
+// surfaced — `error` is only read by clients once `status` is Failed.
+export const RETRY_PENDING_MARKER = "__retry_pending__";
+
+const SPEAKER_KEY = /^(mic|call):\d+$/;
+const MAX_SPEAKER_NAME = 80;
 
 export function recordingDeepLink(id: string): string {
   return `dalios://record?id=${encodeURIComponent(id)}`;
@@ -26,6 +46,18 @@ export async function canRecordInto(userId: string, documentName: string): Promi
   return access.allowed && !access.readOnly;
 }
 
+/** Owner gets everything; anyone who can view the note gets a read-only
+ *  view; everyone else gets nothing. Mirrors authorizeCollabDoc so a
+ *  transcript's audience always matches the note's. */
+export async function canReadRecording(
+  rec: Pick<MeetingRecording, "userId" | "documentName">,
+  userId: string,
+): Promise<"owner" | "viewer" | null> {
+  if (rec.userId === userId) return "owner";
+  const access = await authorizeCollabDoc(userId, rec.documentName);
+  return access.allowed ? "viewer" : null;
+}
+
 /** The document's title for the notes prompt, when it's a Drive page. */
 export async function documentTitle(documentName: string): Promise<string | null> {
   const [entity, id] = documentName.split(":");
@@ -34,11 +66,107 @@ export async function documentTitle(documentName: string): Promise<string | null
   return page?.title ?? null;
 }
 
-export async function createRecording(userId: string, documentName: string): Promise<MeetingRecording> {
-  await prisma.meetingRecording.deleteMany({
-    where: { userId, createdAt: { lt: new Date(Date.now() - STALE_MS) } },
+/** Whether the project behind a scheduled meeting has recording turned off.
+ *  A meeting with no project (or no meeting at all) is never disabled. */
+export async function projectRecordingDisabled(scheduledMeetingId: string): Promise<boolean> {
+  const meeting = await prisma.scheduledMeeting.findUnique({
+    where: { id: scheduledMeetingId },
+    select: { project: { select: { recordingPolicy: true } } },
   });
-  return prisma.meetingRecording.create({ data: { userId, documentName } });
+  return meeting?.project?.recordingPolicy === "Disabled";
+}
+
+// Statuses covered by the one-live-recording-per-document index.
+export const ACTIVE_RECORDING_STATUSES = ["Pending", "Recording", "Stopped", "Processing"] as const;
+
+export type ActiveRecordingSummary = {
+  id: string;
+  userId: string;
+  ownerName: string;
+  status: MeetingRecordingStatus;
+  createdAt: Date;
+};
+
+async function recordingSummaryFor(
+  documentName: string,
+  statusFilter?: readonly MeetingRecordingStatus[],
+): Promise<ActiveRecordingSummary | null> {
+  const rec = await prisma.meetingRecording.findFirst({
+    where: { documentName, ...(statusFilter ? { status: { in: [...statusFilter] } } : {}) },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, userId: true, status: true, createdAt: true },
+  });
+  if (!rec) return null;
+  const user = await prisma.user.findUnique({
+    where: { id: rec.userId },
+    select: { firstName: true, lastName: true, daliEmail: true },
+  });
+  const ownerName =
+    [user?.firstName, user?.lastName].filter(Boolean).join(" ") || user?.daliEmail || "Someone";
+  return { ...rec, ownerName };
+}
+
+/** The document's live recording (not yet Done/Failed), whoever owns it. */
+export async function activeRecordingFor(documentName: string): Promise<ActiveRecordingSummary | null> {
+  return recordingSummaryFor(documentName, ACTIVE_RECORDING_STATUSES);
+}
+
+/** The document's newest recording regardless of status — unlike
+ *  activeRecordingFor, this also surfaces a Done (or Failed) row, so a
+ *  viewer who never watched it live (another device, a teammate opening the
+ *  note later) still finds it instead of relying on a per-device localStorage
+ *  backup or a shared `?transcript=` link. */
+export async function latestRecordingFor(documentName: string): Promise<ActiveRecordingSummary | null> {
+  return recordingSummaryFor(documentName);
+}
+
+export type CreateRecordingResult = MeetingRecording | null | { busy: ActiveRecordingSummary };
+
+export async function createRecording(
+  userId: string,
+  documentName: string,
+  meeting: { scheduledMeetingId?: string; occurrenceStart?: Date | null } = {},
+): Promise<CreateRecordingResult> {
+  const stale = await prisma.meetingRecording.findMany({
+    where: { userId, finalizedAt: null, createdAt: { lt: new Date(Date.now() - STALE_MS) } },
+    select: { id: true },
+  });
+  for (const row of stale) {
+    await deletePrefix(row.id);
+  }
+  if (stale.length > 0) {
+    await prisma.meetingRecording.deleteMany({ where: { id: { in: stale.map((r) => r.id) } } });
+  }
+
+  const active = await prisma.meetingRecording.count({
+    where: { status: { in: ["Pending", "Recording"] } },
+  });
+  if (active >= MAX_ACTIVE_RECORDINGS) return null;
+
+  const existing = await activeRecordingFor(documentName);
+  if (existing) return { busy: existing };
+
+  try {
+    return await prisma.meetingRecording.create({
+      data: {
+        userId,
+        documentName,
+        // Segment 0's start is explicit here so `claim`'s
+        // `segmentStarts[segment]` always has an entry for the current segment.
+        segmentStarts: [0],
+        ...(meeting.scheduledMeetingId ? { scheduledMeetingId: meeting.scheduledMeetingId } : {}),
+        ...(meeting.occurrenceStart ? { occurrenceStart: meeting.occurrenceStart } : {}),
+      },
+    });
+  } catch (err) {
+    // Two Records in the same instant: the partial unique index rejects the
+    // loser, who is then told about the winner like any other late arrival.
+    if ((err as { code?: string })?.code === "P2002") {
+      const winner = await activeRecordingFor(documentName);
+      if (winner) return { busy: winner };
+    }
+    throw err;
+  }
 }
 
 /** The row, or null when it doesn't exist or belongs to someone else. */
@@ -51,78 +179,91 @@ export function storedLines(rec: Pick<MeetingRecording, "lines">): TranscriptLin
   return Array.isArray(rec.lines) ? (rec.lines as TranscriptLine[]) : [];
 }
 
-// Drops anything malformed rather than failing the batch: one bad line from
-// the recognizer shouldn't lose the rest of the meeting.
-export function cleanLines(raw: unknown): TranscriptLine[] {
-  if (!Array.isArray(raw)) return [];
-  const out: TranscriptLine[] = [];
-  for (const l of raw.slice(0, MAX_LINES_PER_APPEND)) {
-    if (!l || typeof l !== "object") continue;
-    const { at, text, source } = l as Record<string, unknown>;
-    if (typeof at !== "number" || !Number.isFinite(at) || at < 0) continue;
-    if (typeof text !== "string" || !text.trim()) continue;
-    out.push({
-      at,
-      text: text.trim().slice(0, MAX_LINE_CHARS),
-      ...(source === "you" || source === "others" ? { source } : {}),
-    });
-  }
-  return out;
-}
-
-/** Desktop app: add transcribed lines. Returns whether the page asked to stop,
- *  and the offset this session's timestamps start from. */
-export async function appendLines(
+/** Desktop owner probe before the mic opens (replaces the old `append`
+ *  probe). Returns the current segment and its start offset so a
+ *  newly-claimed session (first claim, or after Continue) stamps its chunks
+ *  from the right place. */
+export async function claimRecording(
   rec: MeetingRecording,
-  lines: TranscriptLine[],
-  systemAudio: boolean | undefined,
-): Promise<{ stopRequested: boolean; offset: number }> {
-  const offset = rec.recordedSeconds;
-  // The app appends every couple of seconds even when nobody spoke, as its way
-  // of hearing a Stop. Answer those without rewriting the transcript.
-  const unchanged =
-    lines.length === 0 &&
-    rec.status !== "Pending" &&
-    (systemAudio === undefined || systemAudio === rec.systemAudio);
-  if (unchanged) return { stopRequested: rec.stopRequested, offset };
-
-  const merged = [...storedLines(rec), ...lines].slice(-MAX_LINES);
-  const updated = await prisma.meetingRecording.update({
-    where: { id: rec.id },
-    data: {
-      lines: merged,
-      // An append after Stop (the app flushing its last phrases) keeps it stopped.
-      ...(rec.status === "Pending" ? { status: "Recording" as const } : {}),
-      ...(systemAudio !== undefined ? { systemAudio } : {}),
-    },
-    select: { stopRequested: true },
-  });
-  return { stopRequested: updated.stopRequested, offset };
+): Promise<{ ok: true; offset: number; segment: number } | { ok: false }> {
+  if (rec.status !== "Pending" && rec.status !== "Recording") return { ok: false };
+  if (rec.status === "Pending") {
+    await prisma.meetingRecording.update({ where: { id: rec.id }, data: { status: "Recording" } });
+  }
+  const segment = Math.max(0, rec.segmentStarts.length - 1);
+  return { ok: true, offset: rec.segmentStarts[segment] ?? 0, segment };
 }
 
-/** Page: Continue a stopped recording into the same transcript. The app is
- *  handed the same id again and picks up where the last session ended. */
-export async function resumeRecording(rec: MeetingRecording): Promise<boolean> {
-  if (rec.status !== "Stopped" && rec.status !== "Failed") return false;
-  await prisma.meetingRecording.update({
-    where: { id: rec.id },
-    data: { status: "Pending", stopRequested: false, error: null },
+/** Browser/desktop chunk upload: stores the high-water seq and flips
+ *  Pending → Recording on the first chunk. Returns the up-to-date
+ *  stopRequested so a chunk in flight when Stop is clicked still learns it. */
+export async function recordChunk(
+  rec: Pick<MeetingRecording, "id">,
+  channel: Channel,
+  segment: number,
+  seq: number,
+): Promise<{ stopRequested: boolean }> {
+  // Mic and call chunks fill at the same rate and land within the same
+  // second, often on different machines. Lock the row and build the new
+  // index from the locked read: a read-modify-write off the caller's copy
+  // lost whichever channel wrote first, so the job was dispatched without it.
+  return prisma.$transaction(async (tx) => {
+    const [fresh] = await tx.$queryRaw<
+      Array<{ channels: string[]; chunkIndex: Record<string, number[]> | null; status: string }>
+    >`SELECT channels, "chunkIndex", status FROM "MeetingRecording" WHERE id = ${rec.id} FOR UPDATE`;
+    if (!fresh) return { stopRequested: true };
+
+    const channels = fresh.channels.includes(channel) ? fresh.channels : [...fresh.channels, channel];
+    const chunkIndex = { ...(fresh.chunkIndex ?? {}) };
+    const highWater = [...(chunkIndex[channel] ?? [])];
+    highWater[segment] = Math.max(highWater[segment] ?? -1, seq);
+    chunkIndex[channel] = highWater;
+
+    const updated = await tx.meetingRecording.update({
+      where: { id: rec.id },
+      data: {
+        channels,
+        chunkIndex,
+        lastChunkAt: new Date(),
+        ...(fresh.status === "Pending" ? { status: "Recording" as const } : {}),
+      },
+      select: { stopRequested: true },
+    });
+    return { stopRequested: updated.stopRequested };
   });
-  return true;
 }
 
-/** Page: ask the app to stop. A recording the app never picked up just ends. */
-export async function requestStop(rec: MeetingRecording): Promise<void> {
+/** Page: ask for the recording to stop. A session the app/browser never
+ *  claimed (still Pending) just ends outright. */
+export async function requestStop(rec: Pick<MeetingRecording, "id" | "status">): Promise<void> {
   await prisma.meetingRecording.update({
     where: { id: rec.id },
     data: rec.status === "Pending" ? { status: "Stopped", stopRequested: true } : { stopRequested: true },
   });
 }
 
+/** Page: Continue a stopped, not-yet-processed recording. Pushes a new
+ *  segment starting where the transcript left off. */
+export async function resumeRecording(
+  rec: Pick<MeetingRecording, "id" | "status" | "finalizedAt" | "recordedSeconds">,
+): Promise<boolean> {
+  if (rec.status !== "Stopped" || rec.finalizedAt !== null) return false;
+  await prisma.meetingRecording.update({
+    where: { id: rec.id },
+    data: {
+      segmentStarts: { push: rec.recordedSeconds },
+      status: "Pending",
+      stopRequested: false,
+      error: null,
+    },
+  });
+  return true;
+}
+
 /** Desktop app: the recorder has exited, cleanly or not, after recording
  *  `seconds` in this session. */
 export async function finishRecording(
-  rec: MeetingRecording,
+  rec: Pick<MeetingRecording, "id">,
   error: string | null,
   seconds: number,
 ): Promise<void> {
@@ -133,4 +274,262 @@ export async function finishRecording(
       ? { status: "Failed", error: error.slice(0, 500), recordedSeconds }
       : { status: "Stopped", recordedSeconds },
   });
+}
+
+/** Validates a `{ "mic:1": userId | text }` rename payload. Null on any
+ *  malformed key/value — the caller rejects the whole request rather than
+ *  partially applying it. */
+export function parseSpeakerMap(raw: unknown): Record<string, string> | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!SPEAKER_KEY.test(key)) return null;
+    if (typeof value !== "string" || !value.trim() || value.length > MAX_SPEAKER_NAME) return null;
+    out[key] = value.trim();
+  }
+  return out;
+}
+
+/** Merges a validated rename map into the recording's speakers. */
+export async function setSpeakers(
+  rec: Pick<MeetingRecording, "id" | "speakers">,
+  patch: Record<string, string>,
+): Promise<void> {
+  const existing = (rec.speakers as Record<string, string> | null) ?? {};
+  await prisma.meetingRecording.update({
+    where: { id: rec.id },
+    data: { speakers: { ...existing, ...patch } },
+  });
+}
+
+function buildProcessRequest(
+  rec: Pick<MeetingRecording, "id" | "channels" | "segmentStarts" | "chunkIndex">,
+): ProcessRequest {
+  const chunkIndex = (rec.chunkIndex as Record<string, number[]> | null) ?? {};
+  const channels: ProcessRequestChannel[] = rec.channels.map((channel) => {
+    const highWater = chunkIndex[channel] ?? [];
+    const segments: ProcessRequestSegment[] = [];
+    highWater.forEach((hw, segment) => {
+      if (typeof hw === "number" && hw >= 0) {
+        segments.push({ segment, startSeconds: rec.segmentStarts[segment] ?? 0, seqCount: hw + 1 });
+      }
+    });
+    // Both channels are diarized without a speaker cap: a hybrid meeting has
+    // several people around the recording laptop as well as on the call, and
+    // the label falls back to "You" on its own when the mic finds one voice.
+    return { channel: channel as Channel, segments };
+  });
+
+  return {
+    recordingId: rec.id,
+    callbackUrl: `${getApiBaseUrl()}/api/meeting-recordings/${rec.id}/result`,
+    channels,
+  };
+}
+
+/** Dispatches the recording to the transcription provider. Sets Failed (and
+ *  cleans up S3) immediately on dispatch failure or a missing provider;
+ *  otherwise leaves the row Processing for the callback (or the finalizer's
+ *  timeout) to resolve. */
+/** Claims the recording for processing and dispatches it. The claim is a
+ *  conditional update so two stop { final } requests (the page and the
+ *  desktop app can both send one) dispatch exactly one job; the job is built
+ *  from a fresh read so chunks that landed just before the claim are in it. */
+export async function startProcessing(rec: Pick<MeetingRecording, "id">): Promise<void> {
+  const claimed = await prisma.meetingRecording.updateMany({
+    where: { id: rec.id, status: { notIn: ["Processing", "Done"] }, finalizedAt: null },
+    data: { status: "Processing" },
+  });
+  if (claimed.count === 0) return;
+  const fresh = await prisma.meetingRecording.findUnique({ where: { id: rec.id } });
+  if (!fresh) return;
+
+  const provider = getTranscriptionProvider();
+  if (!provider) {
+    await failRecording(rec, "Transcription is not configured.");
+    return;
+  }
+  try {
+    await provider.process(buildProcessRequest(fresh));
+  } catch (err) {
+    // Dispatch failures (Modal down, secret missing) are transient: keep the
+    // audio so Try again can re-dispatch. Only a job that ran and failed, or
+    // the finalizer's timeout, deletes it.
+    await failRecording(rec, err instanceof Error ? err.message : "Transcription dispatch failed.", {
+      keepAudio: true,
+    });
+  }
+}
+
+async function failRecording(
+  rec: Pick<MeetingRecording, "id">,
+  message: string,
+  opts: { keepAudio?: boolean } = {},
+): Promise<void> {
+  await prisma.meetingRecording.update({
+    where: { id: rec.id },
+    data: {
+      status: "Failed",
+      error: message.slice(0, 500),
+      ...(opts.keepAudio ? {} : { finalizedAt: new Date() }),
+    },
+  });
+  if (!opts.keepAudio) await deletePrefix(rec.id);
+}
+
+/** Stop with zero chunks ever uploaded: nothing to transcribe, nothing to
+ *  delete, but still a terminal state (not resumable). */
+export async function finalizeEmpty(rec: Pick<MeetingRecording, "id">): Promise<void> {
+  await prisma.meetingRecording.update({
+    where: { id: rec.id },
+    data: { status: "Stopped", finalizedAt: new Date() },
+  });
+  await deletePrefix(rec.id);
+}
+
+export type ApplyResultBody = {
+  channels: Record<string, { words: Word[]; segments: DiarizationSegment[] }>;
+  error: string | null;
+};
+
+/**
+ * Applies the transcription callback. Idempotent: once a row is Done,
+ * further callbacks (success or error) are no-ops, so repeat delivery never
+ * re-does the work or regresses the state. A row the finalizer already
+ * marked Failed still accepts a late success callback and becomes Done.
+ */
+export async function applyResult(
+  rec: Pick<MeetingRecording, "id" | "status" | "finalizedAt" | "channels">,
+  body: ApplyResultBody,
+): Promise<void> {
+  if (rec.status === "Done") return;
+
+  if (body.error) {
+    await prisma.meetingRecording.update({
+      where: { id: rec.id },
+      data: {
+        status: "Failed",
+        error: body.error.slice(0, 500),
+        finalizedAt: rec.finalizedAt ?? new Date(),
+      },
+    });
+    await deletePrefix(rec.id);
+    return;
+  }
+
+  const words: Record<string, Word[]> = {};
+  const linesByChannel: Record<string, RawLine[]> = {};
+  for (const [channel, data] of Object.entries(body.channels)) {
+    const assigned = assignSpeakers(data.words, data.segments);
+    words[channel] = assigned;
+    linesByChannel[channel] = wordsToLines(assigned);
+  }
+  const merged = mergeChannels(linesByChannel);
+  const lines =
+    rec.channels.includes("mic") && rec.channels.includes("call")
+      ? dedupeCrossChannel(merged)
+      : merged;
+
+  await prisma.meetingRecording.update({
+    where: { id: rec.id },
+    data: {
+      status: "Done",
+      error: null,
+      words,
+      lines,
+      finalizedAt: rec.finalizedAt ?? new Date(),
+    },
+  });
+  await deletePrefix(rec.id);
+}
+
+const DEFAULT_SPEAKER_LABEL: Record<Channel, string> = { mic: "You", call: "Others" };
+
+const USER_ID_PATTERN = /^c[a-z0-9]{20,}$/i;
+
+/**
+ * Resolves a `{ "mic:1": userId | text }` rename map to display names: a
+ * cuid-shaped value becomes that user's name (falling back to the id itself
+ * if the user no longer exists); free text passes through unchanged. Shared
+ * by the AI notes prompt (formatRecordingTranscript, below) and
+ * `GET /api/meeting-recordings/:id`'s `speakerNames`, so the speaker-rename
+ * chip (RecordingTranscript.tsx) can show a real name for a speaker someone
+ * else assigned to a lab member outside the occurrence roster.
+ */
+export async function resolveSpeakerNames(speakers: Record<string, string>): Promise<Record<string, string>> {
+  const userIds = [...new Set(Object.values(speakers).filter((v) => USER_ID_PATTERN.test(v)))];
+  const users = userIds.length
+    ? await prisma.user.findMany({
+        where: { id: { in: userIds } },
+        select: { id: true, firstName: true, lastName: true },
+      })
+    : [];
+  const usersById = new Map(
+    users.map((u) => [u.id, [u.firstName, u.lastName].filter(Boolean).join(" ") || u.id]),
+  );
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(speakers)) {
+    out[key] = usersById.get(value) ?? value;
+  }
+  return out;
+}
+
+/** Display name for a "mic:1"-style speaker key, for the AI notes prompt:
+ *  a renamed speaker (already resolved to a display name, or free text)
+ *  wins; otherwise the first/only speaker on a channel reads as You/Others
+ *  and any further diarized speaker on that channel reads as "Speaker N". */
+function speakerLabel(
+  key: string,
+  resolvedNames: Record<string, string>,
+  singlePerChannel: Set<string>,
+): string {
+  const resolved = resolvedNames[key];
+  if (resolved) return resolved;
+
+  const [channel, indexRaw] = key.split(":");
+  const index = Number(indexRaw);
+  if ((channel === "mic" || channel === "call") && singlePerChannel.has(channel)) {
+    return DEFAULT_SPEAKER_LABEL[channel];
+  }
+  return Number.isFinite(index) ? `Speaker ${index}` : "Speaker";
+}
+
+/** Formats a recording's lines as "[mm:ss] <Speaker>: text" for the AI notes
+ *  prompt, resolving speaker keys through the recording's rename map (a
+ *  userId resolves to a display name; free text passes through). */
+export async function formatRecordingTranscript(
+  rec: Pick<MeetingRecording, "lines" | "speakers">,
+): Promise<string> {
+  const lines = storedLines(rec);
+  const speakers = (rec.speakers as Record<string, string> | null) ?? {};
+  const resolvedNames = await resolveSpeakerNames(speakers);
+
+  const singlePerChannel = new Set<string>();
+  for (const channel of ["mic", "call"] as const) {
+    const indices = new Set(
+      lines
+        .filter((l) => l.channel === channel && l.speaker)
+        .map((l) => l.speaker!.split(":")[1]),
+    );
+    if (indices.size <= 1) singlePerChannel.add(channel);
+  }
+
+  const formatClock = (totalSeconds: number) => {
+    const s = Math.max(0, Math.floor(totalSeconds));
+    const m = Math.floor(s / 60);
+    return `${String(m).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+  };
+
+  return [...lines]
+    .filter((l) => l.text.trim())
+    .sort((a, b) => a.at - b.at)
+    .map((l) => {
+      const who = l.speaker
+        ? speakerLabel(l.speaker, resolvedNames, singlePerChannel)
+        : l.source
+          ? DEFAULT_SPEAKER_LABEL[l.source === "you" ? "mic" : "call"]
+          : "Speaker";
+      return `[${formatClock(l.at)}] ${who}: ${l.text.trim()}`;
+    })
+    .join("\n");
 }

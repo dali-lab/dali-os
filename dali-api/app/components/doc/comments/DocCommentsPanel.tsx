@@ -21,6 +21,7 @@ import { CommentComposer } from "~/components/collab/CommentComposer";
 import { type BodySegment, segmentsToPlainText } from "~/lib/comment-body";
 import { DaliThreadStore, getOrCreateStore } from "./DaliThreadStore";
 import { RichCommentBody } from "./RichCommentBody";
+import { OS_SURFACE_CLASS } from "~/components/ui/floating/styles";
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
@@ -203,7 +204,7 @@ export function DocCommentsPanel({
       className={
         inline
           ? "w-full flex flex-col p-4"
-          : "absolute right-0 top-full z-30 mt-1 w-[min(380px,calc(100vw-1rem))] rounded-md border border-border bg-card shadow-brand-2 flex flex-col"
+          : `absolute right-0 top-full z-30 mt-1 w-[min(380px,calc(100vw-1rem))] ${OS_SURFACE_CLASS} flex flex-col`
       }
       style={inline ? undefined : { maxHeight: "60vh" }}
       aria-label="Comments panel"

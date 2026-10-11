@@ -62,7 +62,7 @@ fn build_recorder() {
     let sdk = String::from_utf8_lossy(&sdk.stdout).trim().to_string();
     println!("cargo:rustc-link-search=native={sdk}/usr/lib/swift");
     println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift");
-    for fw in ["AVFoundation", "Speech", "CoreAudio", "AudioToolbox"] {
+    for fw in ["AVFoundation", "CoreAudio", "AudioToolbox"] {
         println!("cargo:rustc-link-lib=framework={fw}");
     }
 }

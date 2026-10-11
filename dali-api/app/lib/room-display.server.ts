@@ -10,6 +10,9 @@ export const SETUP_CODE_TTL_MS = 10 * 60 * 1000;
 // lastSeenAt is informational (Core's "last check-in" column); don't write it
 // on every 30s poll.
 const LAST_SEEN_THROTTLE_MS = 5 * 60 * 1000;
+// The iPad app's "0.2.0 (2)", so Core can tell which displays are behind.
+export const APP_VERSION_HEADER = "X-DaliOS-App-Version";
+const APP_VERSION_MAX_LEN = 40;
 
 export type AuthedDisplay = {
   id: string;
@@ -71,14 +74,22 @@ export async function requireRoomDisplay(request: Request): Promise<AuthedDispla
       label: true,
       revokedAt: true,
       lastSeenAt: true,
+      appVersion: true,
       room: { select: { id: true, name: true, description: true, capacity: true, archivedAt: true } },
     },
   });
   if (!display || display.revokedAt || display.room.archivedAt) return null;
 
-  if (!display.lastSeenAt || Date.now() - display.lastSeenAt.getTime() > LAST_SEEN_THROTTLE_MS) {
+  const appVersion = request.headers.get(APP_VERSION_HEADER)?.trim().slice(0, APP_VERSION_MAX_LEN) || null;
+  const stale = !display.lastSeenAt || Date.now() - display.lastSeenAt.getTime() > LAST_SEEN_THROTTLE_MS;
+  // A version change (a rebuilt iPad) is written at once; it is what Core is
+  // looking at. Builds before 0.2.0 send no header and keep whatever is stored.
+  if (stale || (appVersion && appVersion !== display.appVersion)) {
     prisma.roomDisplay
-      .update({ where: { id: display.id }, data: { lastSeenAt: new Date() } })
+      .update({
+        where: { id: display.id },
+        data: { lastSeenAt: new Date(), ...(appVersion ? { appVersion } : {}) },
+      })
       .catch(() => {});
   }
   const { archivedAt: _archived, ...room } = display.room;

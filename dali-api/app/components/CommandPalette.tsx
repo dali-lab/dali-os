@@ -133,6 +133,7 @@ const NO_ROLES: CommandPaletteRoles = {
   hasActiveHiringAccess: false,
   isLabMentor: false,
   isInstructor: false,
+  isAlumni: false,
 };
 
 export function CommandPalette({ open, onClose, tabless, focusMode, roles = NO_ROLES, flags = {}, portalNav, onOpen }: CommandPaletteProps) {
@@ -236,7 +237,7 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles = NO_R
       navItem("Home", "/", Home),
       navItem("My Tasks", "/notifications", ListTodo),
       navItem("Calendar", "/calendar", Calendar),
-      navItem("Email", "/email", Mail),
+      ...(roles.isAlumni ? [] : [navItem("Email", "/email", Mail)]),
       // The pinned tail (Resources) sits outside every area, so it reaches the
       // palette from the same registry the sidebar rail reads.
       ...[...pinnedNavItems(flags), ROOM_BOOKING_NAV_ITEM].map((i) => navItem(i.label, i.href, i.icon)),
@@ -396,7 +397,7 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles = NO_R
       labelledBy="command-palette-title"
       initialFocusRef={inputRef}
       className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 pb-4 pt-[12vh] px-[max(1rem,env(safe-area-inset-left))] overflow-y-auto"
-      containerClassName="bg-card rounded-2xl shadow-brand-2 max-w-xl w-full overflow-hidden"
+      containerClassName="rounded-os-card border border-os-container bg-os-card shadow-[0_24px_64px_var(--color-os-shadow)] max-w-xl w-full overflow-hidden"
     >
       <h2 id="command-palette-title" className="sr-only">
         Search and commands

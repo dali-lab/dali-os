@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
+  isNonMember: vi.fn(async () => false),
   forbidden: vi.fn(() => new Response("Forbidden", { status: 403 })),
 }));
 vi.mock("~/lib/db", () => ({
@@ -27,7 +28,7 @@ vi.mock("~/lib/wallet-token", () => ({
   classifyWalletScanFailure: vi.fn(() => "signature-mismatch"),
 }));
 
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, isNonMember } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
@@ -213,11 +214,12 @@ describe("scan-attendee action", () => {
     expect(markMeetingAttendance).not.toHaveBeenCalled();
   });
 
-  it("forbids applicants", async () => {
+  it("forbids non-members", async () => {
     vi.mocked(requireAuth).mockResolvedValue({
       ok: true,
-      user: { sub: "a1", type: "applicant" },
+      user: { sub: "a1", type: "dartmouth" },
     } as never);
+    vi.mocked(isNonMember).mockResolvedValueOnce(true);
     const res = await callAction();
     expect(res.status).toBe(403);
   });

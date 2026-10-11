@@ -1,6 +1,6 @@
 import { redirect } from "react-router";
 import { prisma } from "~/lib/db";
-import { requireAuth, forbidden, redirectApplicantToPortal, isImpersonating } from "~/lib/auth";
+import { requireAuth, forbidden, redirectNonMemberToPortal, isImpersonating } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { listAllGroups } from "~/lib/groups";
 import {
@@ -75,11 +75,16 @@ import {
   resolveOccurrence,
 } from "~/lib/meeting-occurrences";
 import { getZonedYMD, resolveUserTimeZone, zonedDayStartUtc } from "~/lib/timezone";
-import { bookRoomsForEvent, releaseRoomBookings } from "~/lib/rooms.server";
+import {
+  bookRoomsForEvent,
+  claimEventRoomBookings,
+  releaseEventRoomBookings,
+  releaseRoomBookings,
+  retimeEventRoomBookings,
+  truncateEventRoomBookings,
+} from "~/lib/rooms.server";
 import { fetchWindow, parseAnchor, parseView, viewWindow, weekWindow } from "~/calendar/lib/view-window";
 import type {
-  WhSegment,
-  WhDay,
   SubCalendarDTO,
   CalendarLinkDTO,
   GroupOption,
@@ -101,7 +106,7 @@ import type {
   CalendarView,
 } from "~/calendar/lib/types";
 import {
-  defaultWorkingHours,
+  assembleWorkingHours,
   DEFAULT_BUFFER_MIN,
   EVENT_DURATION_OPTIONS,
   DEFAULT_EVENT_DURATION_MIN,
@@ -353,6 +358,16 @@ export function invalidateExternalCache(userId: string): void {
   for (const key of externalCache.keys()) {
     if (key.startsWith(`${userId}:`)) externalCache.delete(key);
   }
+}
+
+/**
+ * Cached calendarList read for one Google link, keyed by user so
+ * invalidateExternalCache's `${userId}:` prefix match drops it along with the
+ * events read. Exported for its own unit test — the loader that calls it pulls
+ * in too much (auth, every other calendar table) to drive directly.
+ */
+export async function fetchCachedCalendarList(userId: string, linkId: string, token: string) {
+  return cachedExternalRead(`${userId}:calendar-list:${linkId}`, () => listCalendarsForLink(linkId, token));
 }
 
 /** Read a single cookie value from the request's Cookie header. */
@@ -881,7 +896,7 @@ async function handleEventAction(
     await assertLinkOwned(userId, linkId);
 
     if (intent === "event-rsvp") {
-      return handleEventRsvp({
+      return await handleEventRsvp({
         userId,
         linkId,
         calendarId,
@@ -906,7 +921,16 @@ async function handleEventAction(
       }
       // The hours were the event's hours — they go with it rather than being
       // left behind as an entry pointing at an event that no longer exists.
+      // Same for any room it held. The hold is keyed by the series master for
+      // a recurring event, not the instance id.
       await prisma.timeEntry.deleteMany({ where: { userId, sourceEventId: eventId } });
+      const holdKey = recurringEventId ?? eventId;
+      const occurrenceStart =
+        googleInstanceOriginalStart(eventId, recurringEventId) ??
+        (originalStartIso ? new Date(originalStartIso) : undefined);
+      // Google deletion already happened above; there's nothing to roll back
+      // if this fails, so its result is ignored.
+      await releaseEventRoomBookings(userId, holdKey, { scope: recurringEventId ? scope : "all", occurrenceStart });
       return null;
     }
 
@@ -921,6 +945,16 @@ async function handleEventAction(
     if (intent === "event-move") {
       const eventId = get("eventId");
       if (!eventId) return Response.json({ error: "Missing event id" }, { status: 400 });
+      // Rooms first: a taken room rejects the move before Google hears of it.
+      const moved = await retimeEventRoomBookings({
+        userId,
+        sourceEventId: recurringEventId ?? eventId,
+        start: new Date(startIso),
+        end: new Date(endIso),
+        scope: recurringEventId ? "this" : "all",
+        occurrenceStart: googleInstanceOriginalStart(eventId, recurringEventId) ?? undefined,
+      });
+      if (!moved.ok) return Response.json({ error: moved.error }, { status: moved.status });
       await patchGoogleCalendarEvent({ linkId, calendarId, eventId, startIso, endIso, allDay, timeZone });
       await retimeEventWorkLog(userId, eventId, startIso, endIso);
       return null;
@@ -951,9 +985,9 @@ async function handleEventAction(
       const roomIds = [...new Set(get("roomIds").split(",").filter(Boolean))];
       let bookingIds: string[] = [];
       if (roomIds.length) {
-        if (allDay || recurrenceRule) {
+        if (allDay) {
           return Response.json(
-            { error: "A room can only be booked for a one-time event with a start and end time." },
+            { error: "A room can only be booked for an event with a start and end time." },
             { status: 400 },
           );
         }
@@ -963,6 +997,7 @@ async function handleEventAction(
           start: new Date(startIso),
           end: new Date(endIso),
           title,
+          recurrenceRule,
         });
         if (!booked.ok) return Response.json({ error: booked.error }, { status: booked.status });
         bookingIds = booked.value;
@@ -987,6 +1022,7 @@ async function handleEventAction(
         await releaseRoomBookings(bookingIds);
         throw err;
       }
+      await claimEventRoomBookings(bookingIds, created.eventId);
       await writeEventWorkLog({
         userId,
         eventId: created.eventId,
@@ -1015,29 +1051,89 @@ async function handleEventAction(
       }
 
       if (recurringEventId && scope === "all") {
+        // Series duration follows the new start/end; rooms first so a taken
+        // room rejects the edit before Google hears of it.
+        const moved = await retimeEventRoomBookings({
+          userId,
+          sourceEventId: recurringEventId,
+          start: new Date(startIso),
+          end: new Date(endIso),
+          scope: "all",
+        });
+        if (!moved.ok) return Response.json({ error: moved.error }, { status: moved.status });
         // Whole series — patch the master (also moves its anchor time).
         await patchGoogleCalendarEvent({ linkId, calendarId, eventId: recurringEventId, startIso, endIso, ...fields });
       } else if (recurringEventId && scope === "following" && originalStartIso) {
         // Split: truncate the master before this occurrence, then start a new
-        // series from the edited fields.
+        // series from the edited fields. Any live holds on the master split
+        // the same way: truncate first, THEN book the new series — booking
+        // first would see the old series' own (not-yet-truncated) occurrences
+        // on the same rooms and reject with a false conflict.
         const master = await getGoogleEvent({ linkId, calendarId, eventId: recurringEventId });
-        const truncated = rruleWithUntil(master.recurrence, new Date(new Date(originalStartIso).getTime() - 1000));
-        if (truncated) await patchGoogleCalendarEvent({ linkId, calendarId, eventId: recurringEventId, recurrenceRule: truncated });
-        await createGoogleCalendarEvent({
-          linkId,
-          calendarId,
-          summary: title,
-          description: description || undefined,
-          location: location || undefined,
-          startIso,
-          endIso,
-          allDay,
-          recurrenceRule: bareRrule(master.recurrence),
-          timeZone,
-          attendees: [],
+        const holds = await prisma.roomBooking.findMany({
+          where: { userId, sourceEventId: recurringEventId, cancelledAt: null },
+          select: { roomId: true, seriesEnd: true },
         });
+        const splitAt = googleInstanceOriginalStart(eventId, recurringEventId) ?? new Date(originalStartIso);
+        let newBookingIds: string[] = [];
+        if (holds.length) {
+          const truncatedHolds = await truncateEventRoomBookings(userId, recurringEventId, splitAt);
+          if (!truncatedHolds.ok) return Response.json({ error: truncatedHolds.error }, { status: truncatedHolds.status });
+          // The new hold series keeps the old one's end rather than the
+          // master's rule verbatim: a COUNT would start over and run past the
+          // term the old holds were approved for.
+          const oldSeriesEnd = holds.reduce<Date | null>(
+            (acc, h) => (h.seriesEnd && (!acc || h.seriesEnd > acc) ? h.seriesEnd : acc),
+            null,
+          );
+          const recurrenceRule = oldSeriesEnd ? rruleWithUntil(master.recurrence, oldSeriesEnd) : null;
+          const booked = await bookRoomsForEvent({
+            roomIds: [...new Set(holds.map((h) => h.roomId))],
+            userId,
+            start: new Date(startIso),
+            end: new Date(endIso),
+            title,
+            recurrenceRule,
+          });
+          if (!booked.ok) return Response.json({ error: booked.error }, { status: booked.status });
+          newBookingIds = booked.value;
+        }
+        const truncatedRule = rruleWithUntil(master.recurrence, new Date(new Date(originalStartIso).getTime() - 1000));
+        if (truncatedRule) await patchGoogleCalendarEvent({ linkId, calendarId, eventId: recurringEventId, recurrenceRule: truncatedRule });
+        let newEvent: Awaited<ReturnType<typeof createGoogleCalendarEvent>>;
+        try {
+          newEvent = await createGoogleCalendarEvent({
+            linkId,
+            calendarId,
+            summary: title,
+            description: description || undefined,
+            location: location || undefined,
+            startIso,
+            endIso,
+            allDay,
+            recurrenceRule: bareRrule(master.recurrence),
+            timeZone,
+            attendees: [],
+          });
+        } catch (err) {
+          await releaseRoomBookings(newBookingIds);
+          throw err;
+        }
+        await claimEventRoomBookings(newBookingIds, newEvent.eventId);
       } else {
-        // This occurrence (or a plain single event).
+        // This occurrence (or a plain single event) — its hold moves with it
+        // or blocks the edit.
+        const moved = await retimeEventRoomBookings({
+          userId,
+          sourceEventId: recurringEventId ?? eventId,
+          start: new Date(startIso),
+          end: new Date(endIso),
+          scope: recurringEventId ? "this" : "all",
+          occurrenceStart: recurringEventId
+            ? googleInstanceOriginalStart(eventId, recurringEventId) ?? new Date(originalStartIso ?? startIso)
+            : undefined,
+        });
+        if (!moved.ok) return Response.json({ error: moved.error }, { status: moved.status });
         await patchGoogleCalendarEvent({ linkId, calendarId, eventId, startIso, endIso, ...fields });
       }
       if (!recurringEventId) {
@@ -1341,7 +1437,7 @@ export async function loadCalendarData(
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
   if (!opts.portal) {
-    const portalRedirect = redirectApplicantToPortal(auth);
+    const portalRedirect = await redirectNonMemberToPortal(auth, request);
     if (portalRedirect) return portalRedirect;
   }
 
@@ -1350,12 +1446,10 @@ export async function loadCalendarData(
   // Keyed on the DALIMember row rather than the auth type, the same way the
   // member shell decides who it is for: a non-member instructor authenticates
   // as a "member" account and still belongs on the portal copy.
-  const labMember = await isLabMember(userId, request);
-  if (opts.portal && labMember) return redirect("/calendar");
-
   // Resolve the current term once and reuse it everywhere in this loader so
   // the per-request cache in roles.ts eliminates redundant DB reads.
-  const term = await currentTerm(request);
+  const [labMember, term] = await Promise.all([isLabMember(userId, request), currentTerm(request)]);
+  if (opts.portal && labMember) return redirect("/calendar");
   const termId = term?.id;
 
   // Members + groups for the participant picker (shared with the meeting
@@ -1423,34 +1517,7 @@ export async function loadCalendarData(
   const timesheetCalendarId = settings?.timesheetCalendarId ?? null;
 
   // Group persisted rows by day-of-week (multiple segments allowed per day).
-  // Skip rows with enabled=false or invalid bounds; the UI treats them as deleted.
-  const byDow = new Map<number, WhSegment[]>();
-  for (const r of whRows) {
-    if (!r.enabled || r.startMinute >= r.endMinute) continue;
-    const list = byDow.get(r.dayOfWeek);
-    const seg: WhSegment = {
-      id: r.id,
-      startMinute: r.startMinute,
-      endMinute: r.endMinute,
-      location: r.location,
-    };
-    if (list) list.push(seg);
-    else byDow.set(r.dayOfWeek, [seg]);
-  }
-  // Defaults only apply for users who have never persisted working hours. Once
-  // a user has any WorkingHoursDay row (even disabled / mid-edit), we trust the
-  // persisted state — so an explicit "disable Monday" sticks instead of being
-  // overwritten by the Mon–Fri 9–5 default on every reload.
-  const hasAnyPersisted = whRows.length > 0;
-  const workingHours: WhDay[] = defaultWorkingHours().map((d) => {
-    const persisted = byDow.get(d.dayOfWeek);
-    if (persisted && persisted.length > 0) {
-      persisted.sort((a, b) => a.startMinute - b.startMinute);
-      return { dayOfWeek: d.dayOfWeek, segments: persisted };
-    }
-    if (hasAnyPersisted) return { dayOfWeek: d.dayOfWeek, segments: [] };
-    return d;
-  });
+  const { workingHours, hasPersisted: hasAnyPersisted } = assembleWorkingHours(whRows);
 
   // Optional ?weekStart=YYYY-MM-DD URL param lets the user navigate weeks.
   // We use it as an anchor inside weekWindow(), which still snaps to that
@@ -1498,9 +1565,9 @@ export async function loadCalendarData(
   const timeEntryLowerBound = new Date(weekStart.getTime() - 8 * 7 * 86_400_000);
   const timeEntryUpperBound = new Date(weekEnd.getTime() + 8 * 7 * 86_400_000);
 
-  // timeEntryRows fetched here (not in the earlier Promise.all) because they
-  // need weekStart/weekEnd for the date window.
-  const timeEntryRows = await prisma.timeEntry.findMany({
+  // Needs weekStart/weekEnd for the date window, so it can't join the earlier
+  // Promise.all; it runs alongside the Google read below instead.
+  const timeEntryQuery = {
       where: {
         userId,
         date: { gte: timeEntryLowerBound, lte: timeEntryUpperBound },
@@ -1523,7 +1590,7 @@ export async function loadCalendarData(
         occurrenceStart: true,
         meeting: { select: { notePages: { select: { id: true, meetingOccurrenceStart: true } } } },
       },
-    });
+    } as const;
 
   // Fetch external busy + sub-calendar lists in parallel. Don't fail the page
   // if a single link errors — surface the error on the link card.
@@ -1548,7 +1615,7 @@ export async function loadCalendarData(
       try {
         const token = await getValidAccessTokenForLink(l.id);
         prefetchedTokens.set(l.id, token);
-        const items = await listCalendarsForLink(l.id, token);
+        const items = await fetchCachedCalendarList(userId, l.id, token);
         return { linkId: l.id, items } as const;
       } catch {
         return { linkId: l.id, items: undefined } as const;
@@ -1561,11 +1628,11 @@ export async function loadCalendarData(
     calendarListResults.map(({ linkId, items }) => [linkId, items]),
   );
 
-  const roles = await getUserRoles(userId, request);
-
   let ingestionError: string | null = null;
   const externalCacheKey = `${userId}:${fetchStart.getTime()}:${fetchEnd.getTime()}`;
-  const [externalRaw, calendarLinks] = await Promise.all([
+  // Every Postgres read that doesn't depend on the Google result rides in the
+  // same Promise.all as the Google read, so the slow round-trip hides them.
+  const [externalRaw, calendarLinks, roles, timeEntryRows, termFilter] = await Promise.all([
     // Read every calendar on each account ("all"), not just the ones counting
     // toward availability: the grid's per-calendar Show toggle filters this
     // client-side, so a calendar missing here can never be shown.
@@ -1580,6 +1647,20 @@ export async function loadCalendarData(
     Promise.all(
       links.map((l) => buildCalendarLinkDTO(l, prefetchedCalendarLists, timesheetCalendarId)),
     ),
+    getUserRoles(userId, request),
+    prisma.timeEntry.findMany(timeEntryQuery),
+    // Current+upcoming term ids for the class modal's term selector, and the
+    // member's classes in those terms.
+    resolveTermFilter(request, { default: "upcoming" }).then(async (tf) => {
+      const termIds = tf.termIds ?? [];
+      const classRows = termIds.length
+        ? await prisma.memberClass.findMany({
+            where: { userId, termId: { in: termIds } },
+            orderBy: { createdAt: "asc" },
+          })
+        : [];
+      return { ...tf, termIds, classRows };
+    }),
   ]);
 
   // Derived from the calendar lists already fetched above — no extra Google
@@ -1633,19 +1714,13 @@ export async function loadCalendarData(
   // Classes: load all current+upcoming terms for the modal picker.
   let memberClasses: MemberClassDTO[] = [];
   let classDestinations: ClassDestinationDTO[] = [];
-  // Resolve current+upcoming term ids for the modal's term selector.
-  const termFilter = await resolveTermFilter(request, { default: "upcoming" });
-  const selectableTermIds = termFilter.termIds ?? [];
+  const selectableTermIds = termFilter.termIds;
   const classTerms = termFilter.terms
     .filter((t) => selectableTermIds.includes(t.id))
     .map((t) => ({ id: t.id, code: t.code }));
 
   if (selectableTermIds.length > 0) {
-    const classRows = await prisma.memberClass.findMany({
-      where: { userId, termId: { in: selectableTermIds } },
-      orderBy: { createdAt: "asc" },
-    });
-    memberClasses = classRows.map((r) => toMemberClassDTO(r, calendarLinks));
+    memberClasses = termFilter.classRows.map((r) => toMemberClassDTO(r, calendarLinks));
     classDestinations = buildClassDestinations(calendarLinks);
   }
 
@@ -1717,20 +1792,45 @@ const MEMBER_ONLY_CALENDAR_INTENTS = new Set([
   "track-event-as-meeting",
 ]);
 
+// Intents that only ever write to Postgres — never to Google, and never to
+// which calendars/links the loader reads. A DB-only write leaves the cached
+// Google read valid, so the post-write revalidate can still hit the 30s cache
+// instead of re-fetching from Google.
+const DB_ONLY_CALENDAR_INTENTS = new Set([
+  "add-meeting-note",
+  "add-meeting-whiteboard",
+  "set-meeting-core",
+  "set-meeting-project",
+  "set-working-segments",
+  "copy-weekdays",
+  "reset-working-hours",
+  "seed-working-hours",
+  "set-event-buffer",
+]);
+
+/** Exported for tests — the cache itself has no externally observable state. */
+export function shouldInvalidateExternalCache(intent: string): boolean {
+  return !DB_ONLY_CALENDAR_INTENTS.has(intent);
+}
+
 export async function submitCalendarAction(request: Request) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
 
   const userId = auth.user.sub;
-  // Any write here can change what the next read should return, so drop this
-  // user's cached external reads rather than letting the TTL hide the change.
-  invalidateExternalCache(userId);
   const form = await request.formData();
   const raw = Object.fromEntries(form.entries());
 
   // Classes-this-term intents carry their own shape (period/custom + Google
   // destination), so they're handled before the Zod-validated calendar action.
   const rawIntent = typeof raw.intent === "string" ? raw.intent : "";
+
+  // Any write that can change what the next Google read returns must drop this
+  // user's cached external reads rather than letting the TTL hide the change.
+  if (shouldInvalidateExternalCache(rawIntent)) {
+    invalidateExternalCache(userId);
+  }
+
   if (
     MEMBER_ONLY_CALENDAR_INTENTS.has(rawIntent) &&
     !(await isLabMember(userId, request))

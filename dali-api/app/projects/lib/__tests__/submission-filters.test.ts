@@ -53,6 +53,23 @@ describe("submission-filters", () => {
     expect(applicableFilters(filters, ["status", "why"]).map((x) => x.id)).toEqual(["3", "4"]);
   });
 
+  it("matches a list cell on any one of its entries", () => {
+    const people = [
+      { cells: { domain: ["Design", "Engineering"] } },
+      { cells: { domain: ["Engineering"] } },
+      { cells: { domain: [] } },
+    ];
+    const count = (operator: ColumnFilter["operator"], value = "") =>
+      people.filter((p) =>
+        matchesFilters(p.cells, [{ id: "1", columnKey: "domain", operator, value }]),
+      ).length;
+    expect(count("is", "Design")).toBe(1);
+    expect(count("isNot", "Design")).toBe(2);
+    expect(count("contains", "eng")).toBe(2);
+    expect(count("isEmpty")).toBe(1);
+    expect(columnResponses(people, "domain")).toEqual(["Design", "Engineering"]);
+  });
+
   it("lists a column's distinct non-empty responses, sorted", () => {
     expect(columnResponses(rows, "status")).toEqual(["Maybe", "No", "Yes"]);
     expect(columnResponses(rows, "why")).toEqual(["Love design work", "Want to mentor"]);

@@ -98,15 +98,16 @@ async function canReadTarget(
   auth: AuthSuccess,
   targetType: CommentTarget,
   targetId: string,
+  request?: Request,
 ): Promise<boolean> {
-  if (targetType === "pagedoc") return isLabMember(auth.user.sub);
+  if (targetType === "pagedoc") return isLabMember(auth.user.sub, request);
   if (targetType === "doc") {
-    const access = await getPageAccess(auth.user.sub, targetId);
+    const access = await getPageAccess(auth.user.sub, targetId, request);
     return access.canComment;
   }
   // file: Core or project member
   const { isCore } = await import("~/lib/roles");
-  if (await isCore(auth.user.sub)) return true;
+  if (await isCore(auth.user.sub, request)) return true;
   const file = await prisma.projectFile.findUnique({
     where: { id: targetId },
     select: { projectId: true },
@@ -131,29 +132,31 @@ export async function loader({ request }: Route.LoaderArgs) {
   ) {
     return withCors(request, Response.json({ error: "Invalid target" }, { status: 400 }));
   }
-  if (!(await canReadTarget(auth, targetType, targetId))) {
-    return forbidden(request);
-  }
-
-  const rows = await prisma.docComment.findMany({
-    where: { targetType, targetId },
-    orderBy: { createdAt: "asc" },
-    select: {
-      id: true,
-      parentId: true,
-      authorId: true,
-      body: true,
-      bodyJson: true,
-      anchor: true,
-      createdAt: true,
-      versionId: true,
-      updatedAt: true,
-      reactions: {
-        select: { userId: true, emoji: true, createdAt: true },
-        orderBy: { createdAt: "asc" },
+  // The access walk and the comment read are independent; the rows are only
+  // returned once access is confirmed.
+  const [allowed, rows] = await Promise.all([
+    canReadTarget(auth, targetType, targetId, request),
+    prisma.docComment.findMany({
+      where: { targetType, targetId },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        parentId: true,
+        authorId: true,
+        body: true,
+        bodyJson: true,
+        anchor: true,
+        createdAt: true,
+        versionId: true,
+        updatedAt: true,
+        reactions: {
+          select: { userId: true, emoji: true, createdAt: true },
+          orderBy: { createdAt: "asc" },
+        },
       },
-    },
-  });
+    }),
+  ]);
+  if (!allowed) return forbidden(request);
 
   const authors = await hydrateAuthors([...new Set(rows.map((r) => r.authorId))]);
   const nameById = new Map(authors.map((a) => [a.id, a.name]));
@@ -190,7 +193,7 @@ export async function action({ request }: Route.ActionArgs) {
   const body = await parseJson(request, CreateSchema);
   if (body instanceof Response) return withCors(request, body);
 
-  if (!(await canReadTarget(auth, body.targetType, body.targetId))) {
+  if (!(await canReadTarget(auth, body.targetType, body.targetId, request))) {
     return forbidden(request);
   }
 

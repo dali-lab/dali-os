@@ -79,6 +79,7 @@ import { Modal } from "~/components/Modal";
 import { useToast } from "~/components/ui/toast";
 import { useDialog } from "~/components/ui/dialog";
 import { readEmojiSuggestionsPreference } from "~/lib/emoji-suggestions";
+import { modalCardClass } from "~/components/os-chrome";
 
 export default function DocEditorImpl(props: DocEditorProps) {
   const features = resolveFeatures(props.features);
@@ -881,7 +882,7 @@ function DocView(
           open
           onClose={() => setAiSession(null)}
           labelledBy={aiPanelTitleId}
-          containerClassName="bg-card rounded-2xl shadow-brand-2 max-w-2xl w-full p-5 sm:p-6 my-auto"
+          containerClassName={modalCardClass("max-w-2xl")}
         >
           <AiBar
             key={aiSession.cursorBlockId ?? "toolbar"}

@@ -49,7 +49,7 @@ export function OpenApplicationsConfirmModal({
       onClose={submitting ? () => {} : onClose}
       disableEscape={submitting}
       labelledBy={headingId}
-      containerClassName="bg-card rounded-2xl shadow-xl max-w-md w-full mx-4 p-6"
+      containerClassName="bg-card rounded-os-card shadow-xl max-w-md w-full mx-4 p-6"
     >
       <div className="space-y-4">
         <h2 id={headingId} className="text-lg font-bold text-foreground">

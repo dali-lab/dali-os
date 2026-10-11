@@ -14,13 +14,6 @@ vi.mock("~/lib/outbound.server", () => ({
   enqueueOutbound: vi.fn(),
   drainNow: vi.fn(),
 }));
-// Off by default, matching the registry, so every describe below exercises the
-// pre-feature behavior. The start-term describe turns it on for itself.
-const mockStartTermsFlag = vi.fn().mockResolvedValue(false);
-vi.mock("~/lib/feature-flags.server", () => ({
-  isFeatureEnabledForEveryone: (key: string) =>
-    key === "start-terms" ? mockStartTermsFlag() : Promise.resolve(false),
-}));
 vi.mock("~/hiring/lib/email-variables", async () => {
   const actual = await vi.importActual<typeof import("~/hiring/lib/email-variables")>(
     "~/hiring/lib/email-variables",
@@ -106,8 +99,6 @@ const domainQuestions = [
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // clearAllMocks wipes the resolved value too, so restore the default.
-  mockStartTermsFlag.mockResolvedValue(false);
   (mockPrisma as any).application = {
     // The action's ownership check: the application is the caller's own.
     findFirst: vi.fn().mockResolvedValue({ id: APP_ID, applicationCycleId: CYCLE_ID }),
@@ -138,7 +129,7 @@ beforeEach(() => {
   };
   vi.mocked(requireAuth).mockResolvedValue({
     ok: true,
-    user: { sub: USER_ID, email: "u@x.com", type: "applicant" },
+    user: { sub: USER_ID, email: "u@x.com", type: "dartmouth" },
   } as any);
   vi.mocked(getActiveCycleById).mockResolvedValue(OPEN_STUDENTS_CYCLE as any);
 });
@@ -827,7 +818,6 @@ describe("POST /portal/apply — start term", () => {
     mockPrisma.application.update.mock.calls.at(-1)?.[0]?.data;
 
   beforeEach(() => {
-    mockStartTermsFlag.mockResolvedValue(true);
     vi.mocked(getActiveCycleById).mockResolvedValue(CHOICE_CYCLE as any);
     // No questions to answer, so the start term is the only submit gate.
     mockPrisma.application.findUnique.mockResolvedValue({
@@ -912,10 +902,89 @@ describe("POST /portal/apply — start term", () => {
 
     expect(mockPrisma.application.upsert.mock.calls[0][0].create.startTermId).toBe(T_26F);
   });
+});
 
-  it("writes no start term at all while the flag is off", async () => {
-    mockStartTermsFlag.mockResolvedValue(false);
-    await action({ request: submitWith(T_26F), params: {}, context: {} } as any);
-    expect(lastUpdateData()).not.toHaveProperty("startTermId");
+describe("POST /portal/apply — reused waitlisted application", () => {
+  const continuedInterestQuestions = [
+    { key: "still_interested", type: "textarea", required: true, data: { label: "Why still?" } },
+  ];
+  // A DA reusing a waitlisted application: its challenge answers are a frozen
+  // copy, and the continued interest form is what the applicant fills in.
+  const continuedDa = {
+    id: DA_ID,
+    domainId: DOMAIN_A,
+    selected: true,
+    continuedFromId: "da-waitlisted",
+    challengeFormVersionId: "fv-old-cycle",
+    challengeFormVersion: { questions: domainQuestions },
+    continuedInterestFormVersion: { questions: continuedInterestQuestions },
+  };
+
+  beforeEach(() => {
+    mockPrisma.application.findUnique.mockResolvedValue({
+      applicationCycleId: CYCLE_ID,
+      applicationFormVersion: { questions: generalQuestions },
+    });
+    mockPrisma.domainApplication.findMany.mockResolvedValue([continuedDa]);
+  });
+
+  it("requires the continued interest form, not the frozen application", async () => {
+    const res = await action({
+      request: makeSubmitRequest({
+        domainAnswers: [{ domainApplicationId: DA_ID, answers: {} }],
+        selectedDomainIds: [DOMAIN_A],
+      }),
+      params: {},
+      context: {},
+    } as any);
+
+    expect((res as any).error).toMatch(/\(1 unanswered\)/);
+  });
+
+  it("saves continued interest answers and never overwrites the frozen ones", async () => {
+    mockPrisma.applicationStatusUpdate.findFirst.mockResolvedValue({ id: "already-submitted" });
+
+    await action({
+      request: makeSubmitRequest({
+        answers: { story: "tampered" },
+        domainAnswers: [
+          {
+            domainApplicationId: DA_ID,
+            answers: { domain_essay: "tampered" },
+            continuedInterestAnswers: { still_interested: "Yes" },
+          } as any,
+        ],
+        selectedDomainIds: [DOMAIN_A],
+      }),
+      params: {},
+      context: {},
+    } as any);
+
+    expect(mockPrisma.application.update.mock.calls[0][0].data).not.toHaveProperty("answers");
+    expect(mockPrisma.domainApplication.updateMany).toHaveBeenCalledWith({
+      where: { id: DA_ID, applicationId: APP_ID },
+      data: { continuedInterestAnswers: { still_interested: "Yes" } },
+    });
+  });
+
+  it("keeps the pinned challenge when domains change", async () => {
+    mockPrisma.cycleDomainForm.findMany.mockResolvedValue([
+      { domainId: DOMAIN_A, formId: FORM_A, form: { versions: [{ id: FV_A1 }] } },
+    ]);
+    mockPrisma.application.findUnique.mockResolvedValue({
+      id: APP_ID,
+      answers: {},
+      domainApplications: [],
+    });
+
+    await action({
+      request: makeUpdateDomainsRequest(APP_ID, [
+        { domainId: DOMAIN_A, challengeVersionId: CV_A1 },
+      ]),
+      params: {},
+      context: {},
+    } as any);
+
+    expect(mockPrisma.domainApplication.update).not.toHaveBeenCalled();
   });
 });

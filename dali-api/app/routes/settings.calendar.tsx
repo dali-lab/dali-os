@@ -2,7 +2,7 @@
 // settings page. Forms from /settings post back to this route.
 
 import { redirect } from "react-router";
-import { requireAuth, forbidden, unauthorized, isPartnerAccount } from "~/lib/auth";
+import { requireAuth, forbidden, unauthorized, isPartnerAccount, isNonMember } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { CalendarActionSchema } from "~/lib/calendar-schemas";
 import type { Route } from "./+types/settings.calendar";
@@ -16,7 +16,7 @@ export async function loader() {
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return unauthorized(request);
-  if (auth.user.type === "applicant") return forbidden(request);
+  if (await isNonMember(auth, request)) return forbidden(request);
   if (await isPartnerAccount(auth)) return forbidden(request);
 
   const userId = auth.user.sub;

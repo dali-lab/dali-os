@@ -5,8 +5,9 @@
 // buildCalendarLinkDTO and loadParticipantOptions so the two loaders can never
 // drift; loadCalendarData itself is untouched.
 
+import { redirect } from "react-router";
 import { prisma } from "~/lib/db";
-import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
+import { requireAuth, isNonMember } from "~/lib/auth";
 import { canViewForms, isCore, currentTerm } from "~/lib/roles";
 import { resolveUserTimeZone } from "~/lib/timezone";
 import { DEFAULT_BUFFER_MIN, defaultWorkingHours } from "~/calendar/lib/calendar-defaults";
@@ -20,8 +21,7 @@ export async function loadSchedulingData(
 ): Promise<{ ok: true; data: SchedulingData } | { ok: false; response: Response }> {
   const auth = await requireAuth(request);
   if (!auth.ok) return { ok: false, response: auth.response };
-  const portalRedirect = redirectApplicantToPortal(auth);
-  if (portalRedirect) return { ok: false, response: portalRedirect };
+  if (await isNonMember(auth, request)) return { ok: false, response: redirect("/portal") };
 
   const userId = auth.user.sub;
   await currentTerm(request); // warms the per-request term cache roles.ts relies on

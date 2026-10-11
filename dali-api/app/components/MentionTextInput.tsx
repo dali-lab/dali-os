@@ -7,6 +7,8 @@ import {
   type KeyboardEvent,
   type Ref,
 } from "react";
+import { cn } from "~/lib/cn";
+import { OS_SURFACE_CLASS } from "~/components/ui/floating/styles";
 
 export type MentionUser = {
   id: string;
@@ -248,7 +250,7 @@ export function MentionTextInput({
     <div className={wrapperClassName}>
       {multiline ? <textarea rows={rows} {...shared} /> : <input {...shared} />}
       {open && items.length > 0 && (
-        <div className="absolute left-0 top-full z-50 mt-1 w-56 overflow-hidden rounded-lg border border-border bg-card py-1 text-sm shadow-brand-2">
+        <div className={cn("absolute left-0 top-full z-50 mt-1 w-56 overflow-hidden py-1 text-sm", OS_SURFACE_CLASS)}>
           {items.map((u, i) => (
             <button
               key={u.id}

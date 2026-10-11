@@ -40,7 +40,7 @@ import { recordTokenUsage } from "~/lib/ai-usage.server";
 
 const AUTH_OK = {
   ok: true as const,
-  user: { sub: "u1", email: "u@dali.edu", type: "member" },
+  user: { sub: "u1", email: "u@dali.edu", type: "member" as const },
   sessionId: "s1",
 };
 

@@ -11,7 +11,7 @@ import { Popover } from "~/components/ui/floating";
 import { resolveTermFilter } from "~/lib/terms";
 import { UPCOMING, termFilterOrder } from "~/lib/terms.shared";
 import type { Route } from "./+types/core.partners";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { prisma } from "~/lib/db";
@@ -84,7 +84,7 @@ type ApplicationRow = {
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  if (auth.user.type === "applicant") return redirect("/portal");
+  if (await isNonMember(auth, request)) return redirect("/portal");
   if (!(await isCore(auth.user.sub))) return redirect("/");
 
   const [applications, canEdit, termFilter, crmSettings, allDomains, allTerms, currentTermRow] =
@@ -214,7 +214,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  if (auth.user.type === "applicant") return redirect("/portal");
+  if (await isNonMember(auth, request)) return redirect("/portal");
   if (!(await isCore(auth.user.sub))) {
     return { error: "You don't have permission to create applications." };
   }

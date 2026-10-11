@@ -121,6 +121,11 @@ export async function action({ request, params }: Route.ActionArgs) {
 
     return Response.json(interview, { status: 201 });
   } catch (err: any) {
+    // Two bookings racing past the app-side check above: the partial unique
+    // index Interview_activeDomainApplication_key stops the second one.
+    if (err?.code === "P2002") {
+      return Response.json({ error: "Interview already scheduled" }, { status: 409 });
+    }
     return Response.json({ error: err.message }, { status: 409 });
   }
 }

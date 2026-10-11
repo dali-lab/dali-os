@@ -25,7 +25,7 @@ import { UnderlineTabButtons } from "~/components/AreaPillNav";
 import { useConfirmSubmit, useDialog } from "~/components/ui/dialog";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import type { Route } from "./+types/core.partners.orgs.$orgId";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { recordRouteVisit } from "~/lib/user-pages.server";
 import { prisma } from "~/lib/db";
@@ -89,7 +89,7 @@ export const handle = {
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  if (auth.user.type === "applicant") return redirect("/portal");
+  if (await isNonMember(auth, request)) return redirect("/portal");
   const canEdit = await isCore(auth.user.sub);
   if (!canEdit) return redirect("/");
 

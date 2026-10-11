@@ -1,6 +1,15 @@
-import { NavLink, Outlet, redirect, useFetcher, useLoaderData } from "react-router";
-import { PenLine, Plus } from "lucide-react";
+import { useState } from "react";
+import {
+  NavLink,
+  Outlet,
+  redirect,
+  useFetcher,
+  useLoaderData,
+  useRouteLoaderData,
+} from "react-router";
+import { Check, PenLine, Pencil, Plus } from "lucide-react";
 import type { Route } from "./+types/resources";
+import type { loader as frontPageLoader } from "./resources._index";
 import { prisma } from "~/lib/db";
 import { blogPostRoomName } from "~/collab/roomName";
 import { cn } from "~/lib/cn";
@@ -70,10 +79,18 @@ export async function action({ request }: Route.ActionArgs) {
 const TAB =
   "whitespace-nowrap border-b-2 px-1 py-2.5 text-sm font-semibold uppercase tracking-wider transition-colors";
 
+export type ResourcesOutletContext = { editing: boolean };
+
 export default function ResourcesLayout() {
   const { bookmarks, canManage } = useLoaderData<typeof loader>();
   const fetcher = useFetcher();
   const dialog = useDialog();
+  // Core arranges the front page from here, beside Write. Only The Scoop has
+  // anything to arrange, and only once something is published.
+  const front = useRouteLoaderData<typeof frontPageLoader>("routes/resources._index");
+  const canCurate = !!front?.canCurate && front.published.length > 0;
+  const [editingFront, setEditing] = useState(false);
+  const editing = editingFront && canCurate;
 
   const tabClass = ({ isActive }: { isActive: boolean }) =>
     cn(
@@ -106,20 +123,33 @@ export default function ResourcesLayout() {
             timeZone: "America/New_York",
           })}
         </p>
-        <h1 className="mt-1 font-serif text-5xl font-bold tracking-tight text-foreground">
+        <h1 className="mt-1 font-heading text-5xl font-semibold tracking-tight text-foreground">
           Everything DALI
         </h1>
-        <button
-          type="button"
-          onClick={() =>
-            fetcher.submit({ intent: "createPost" }, { method: "post", action: "/resources" })
-          }
-          disabled={fetcher.state !== "idle"}
-          className="os-btn-primary os-btn-primary--sm absolute bottom-4 right-0"
-        >
-          <PenLine className="h-4 w-4" />
-          Write
-        </button>
+        <div className="absolute bottom-4 right-0 flex items-center gap-2">
+          {canCurate && (
+            <button
+              type="button"
+              onClick={() => setEditing((on) => !on)}
+              aria-pressed={editing}
+              className="os-btn-primary os-btn-primary--sm"
+            >
+              {editing ? <Check className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
+              {editing ? "Done" : "Edit"}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() =>
+              fetcher.submit({ intent: "createPost" }, { method: "post", action: "/resources" })
+            }
+            disabled={fetcher.state !== "idle"}
+            className="os-btn-primary os-btn-primary--sm"
+          >
+            <PenLine className="h-4 w-4" />
+            Write
+          </button>
+        </div>
       </header>
       <nav
         aria-label="Bookmarks"
@@ -135,7 +165,7 @@ export default function ResourcesLayout() {
         ))}
         {canManage && <IconButton label="New bookmark" icon={Plus} onClick={addBookmark} />}
       </nav>
-      <Outlet />
+      <Outlet context={{ editing } satisfies ResourcesOutletContext} />
     </div>
   );
 }

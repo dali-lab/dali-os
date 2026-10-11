@@ -38,6 +38,7 @@ import { MoveToDialog } from "~/components/sharing/MoveToDialog";
 import { useDialog, useConfirmSubmit } from "~/components/ui/dialog";
 import { Tooltip } from "~/components/ui/floating";
 import { Checkbox } from "~/components/ui/Checkbox";
+import { Toggle } from "~/components/ui/Toggle";
 import { EditableSection } from "~/components/EditableSection";
 import { PageIcon } from "~/components/PageIcon";
 import { favoritePageIds, recordRouteVisit } from "~/lib/user-pages.server";
@@ -55,7 +56,7 @@ import { listProjectInfraRequests } from "~/lib/infra/requests.server";
 import { ProjectInfraSection } from "~/projects/components/ProjectInfraSection";
 import { ensureProjectGroup } from "~/lib/groups";
 import { ensureMeetingNotesFolder } from "~/lib/pages";
-import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
+import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { formatDateShort, formatDateTime, fullName, UNKNOWN_LABEL } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
@@ -110,6 +111,7 @@ import { isAiEnabled } from "~/lib/ai.server";
 import { groupFilesByEpic } from "../lib/file-groups";
 import { loadProjectDriveScope } from "~/lib/drive-scopes.server";
 import type { DriveTreeScope } from "~/lib/drive-scopes.server";
+import { PROJECT_PAGE_SELECT, PROJECT_FILE_SELECT } from "~/lib/drive.server";
 import type { DriveItem } from "~/lib/drive.server";
 import { DriveBrowser } from "~/components/drive/DriveBrowser";
 import type { RowActions } from "~/components/drive/DriveBrowser";
@@ -120,6 +122,7 @@ import { reportMoveBatch, runMoveBatch, itemCount } from "~/components/drive/mov
 import { useDriveFileUpload } from "~/components/drive/useDriveFileUpload";
 import { useToast } from "~/components/ui/toast";
 import { filterPillClass } from "~/components/ui/floating/styles";
+import { Button } from "~/components/ui/Button";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const p = (data as { project?: { name: string } } | undefined)?.project;
@@ -297,7 +300,7 @@ function relativeTime(iso: string): string {
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  const portalRedirect = redirectApplicantToPortal(auth);
+  const portalRedirect = await redirectNonMemberToPortal(auth, request);
   if (portalRedirect) return portalRedirect;
 
   // ── Stage 1: project row + project-independent queries in parallel ──────────
@@ -325,6 +328,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       slackChannelName: true,
       slackChannelId: true,
       isPrivate: true,
+      recordingPolicy: true,
+      meetingNoteTemplate: { select: { id: true, title: true } },
       overviewPageId: true,
       prdPageId: true,
       projectTerms: {
@@ -550,15 +555,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         archivedAt: null,
       },
       orderBy: { position: "asc" },
+      // Widened to match `PROJECT_PAGE_SELECT` (drive.server.ts) so these rows
+      // can be reused as `preloadedProjectPages` for the project Drive tab
+      // below, instead of loadDriveScope re-querying the same pages.
       select: {
-        id: true,
-        title: true,
-        kind: true,
-        parentPageId: true,
-        partnerVisible: true,
+        ...PROJECT_PAGE_SELECT,
         publicVisible: true,
         pinnedAt: true,
-        iconEmoji: true,
       },
     }),
     // Project files — standalone uploads with their current version.
@@ -566,13 +569,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     prisma.projectFile.findMany({
       where: { projectId: project.id, archivedAt: null },
       orderBy: { createdAt: "asc" },
+      // Widened to match `PROJECT_FILE_SELECT` (drive.server.ts) so these rows
+      // can be reused as `preloadedProjectFiles` for the project Drive tab
+      // below, instead of loadDriveScope re-querying the same files.
       select: {
-        id: true,
-        title: true,
-        partnerVisible: true,
+        ...PROJECT_FILE_SELECT,
         // Placement in the Drive folder tree — null = tree root, else nested
         // under the Page with this id (must be a Folder-kind Page).
-        folderPageId: true,
         currentVersion: { select: { fileName: true, sizeBytes: true } },
         _count: { select: { versions: true } },
         // Which epics this file's linked tasks belong to — used for the deferred
@@ -1113,7 +1116,20 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // and a meetings query, and every other tab would pay for a grid it never
   // renders. Deadlines reuse `epics`, already built for the timeline.
   const tabParam = new URL(request.url).searchParams.get("tab");
-  const [projectCalendar, projectDriveScope] = await Promise.all([
+  // projectCalendar/projectDriveScope/projectInfra/infraConfigRow/
+  // infraRequests/aiLineEnabled/chartStrings are all independent of each
+  // other and need nothing beyond project/epics/roles from Stage 1 (plus
+  // pageRows/fileRows from Stage 2 for the Drive scope below) — merged into
+  // one wave instead of four separate round trips.
+  const [
+    projectCalendar,
+    projectDriveScope,
+    projectInfra,
+    infraConfigRow,
+    infraRequests,
+    aiLineEnabled,
+    chartStrings,
+  ] = await Promise.all([
     tabParam === "meetings"
       ? buildProjectCalendar({
           request,
@@ -1123,22 +1139,22 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           epics,
         })
       : Promise.resolve(null),
-    // Drive tab scope — loaded always so tab-switching is instant. The two
-    // underlying Prisma queries (pages + files) are comparable in cost to the
-    // Stage 2 pageRows/fileRows already fetched above.
+    // Drive tab scope — loaded always so tab-switching is instant. Reuses the
+    // Stage 2 pageRows/fileRows above as preloaded rows instead of
+    // loadDriveScope re-querying pages/files for the same project.
     loadProjectDriveScope({
       userSub: auth.user.sub,
       projectId: project.id,
       projectName: project.name,
       projectIconEmoji: project.iconEmoji,
       request,
+      preloadedProjectPages: pageRows,
+      preloadedProjectFiles: fileRows,
     }),
-  ]);
-
-  // Per-project infrastructure (Fly + Neon): config presence + cached inventory
-  // + the project's change requests. View is open to anyone who can see the
-  // project; config/requests are gated in the section by canEdit (core||staffed).
-  const [projectInfra, infraConfigRow, infraRequests] = await Promise.all([
+    // Per-project infrastructure (Fly + Neon): config presence + cached
+    // inventory + the project's change requests. View is open to anyone who
+    // can see the project; config/requests are gated in the section by
+    // canEdit (core||staffed).
     loadProjectInfra(params.id),
     prisma.project.findUnique({
       where: { id: params.id },
@@ -1151,6 +1167,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       },
     }),
     canEdit ? listProjectInfraRequests(params.id) : Promise.resolve([]),
+    // Progress tab's AI-line flag — independent of the status facts below.
+    (async () =>
+      isAiEnabled() &&
+      (await isFeatureEnabled("project-tldr-ai", auth.user.sub, roles, request)))(),
+    // Core-only: the project's chart string history, for the Payroll panel.
+    // Everyone else gets an empty list rather than a filtered one — the rows
+    // never reach the payload, the same reasoning as redactCoreOnlyProjectFields.
+    canEditScope ? listProjectChartStrings(params.id) : Promise.resolve([]),
   ]);
   const infra = {
     config: {
@@ -1199,17 +1223,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     })),
     statusNow,
   );
-  const aiLineEnabled =
-    isAiEnabled() &&
-    (await isFeatureEnabled("project-tldr-ai", auth.user.sub, roles, request));
   const aiTldrStale =
     !project.aiTldrInputHash ||
     project.aiTldrInputHash !== factsFingerprint(statusFacts);
-
-  // Core-only: the project's chart string history, for the Payroll panel.
-  // Everyone else gets an empty list rather than a filtered one — the rows
-  // never reach the payload, the same reasoning as redactCoreOnlyProjectFields.
-  const chartStrings = canEditScope ? await listProjectChartStrings(params.id) : [];
 
   return {
     infra,
@@ -1234,6 +1250,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         slackChannelName: project.slackChannelName,
         slackChannelId: project.slackChannelId,
         isPrivate: project.isPrivate,
+        recordingPolicy: project.recordingPolicy,
+        meetingNoteTemplate: project.meetingNoteTemplate,
         overviewPageId: project.overviewPageId,
         prdPageId: project.prdPageId,
         startTerm,
@@ -1397,7 +1415,7 @@ async function replaceProjectTerms(projectId: string, incoming: string[]) {
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  const portalRedirect = redirectApplicantToPortal(auth);
+  const portalRedirect = await redirectNonMemberToPortal(auth, request);
   if (portalRedirect) return portalRedirect;
 
   // Content edits are open to Core/Admin or anyone staffed on the project;
@@ -1410,7 +1428,15 @@ export async function action({ request, params }: Route.ActionArgs) {
   const form = await request.formData();
   const intent = (form.get("intent") as string | null) ?? "details";
 
-  const SCOPE_INTENTS = ["scopesBulk", "domains", "terms", "visibility", "status", "chart-string"];
+  const SCOPE_INTENTS = [
+    "scopesBulk",
+    "domains",
+    "terms",
+    "visibility",
+    "status",
+    "chart-string",
+    "recordingPolicy",
+  ];
   if (SCOPE_INTENTS.includes(intent) && !core) {
     return { error: "Only Core or Admin can change project settings." };
   }
@@ -1596,6 +1622,17 @@ export async function action({ request, params }: Route.ActionArgs) {
     await prisma.project.update({
       where: { id: params.id },
       data: { isPrivate: form.get("isPrivate") === "on" },
+    });
+    return redirect(`/projects/${params.id}`);
+  }
+
+  // Meeting recording (specs/meeting-transcription.md): Disabled hides the
+  // Record button and all three record-prompt surfaces for this project's
+  // meetings. An unchecked Toggle posts nothing, so absence means Disabled.
+  if (intent === "recordingPolicy") {
+    await prisma.project.update({
+      where: { id: params.id },
+      data: { recordingPolicy: form.get("recordingAllowed") === "on" ? "Allowed" : "Disabled" },
     });
     return redirect(`/projects/${params.id}`);
   }
@@ -2004,7 +2041,7 @@ export default function ProjectDetail() {
           open={scopeSettingsOpen}
           onClose={() => setScopeSettingsOpen(false)}
           labelledBy="scope-settings-title"
-          containerClassName="bg-card rounded-2xl shadow-xl w-full max-w-4xl p-5 sm:p-6 my-auto max-h-[85vh] overflow-y-auto"
+          containerClassName="bg-card rounded-os-card shadow-xl w-full max-w-4xl p-5 sm:p-6 my-auto max-h-[85vh] overflow-y-auto"
         >
           <ModalHeader
             titleId="scope-settings-title"
@@ -2554,6 +2591,83 @@ function VisibilitySegment({
   );
 }
 
+// Meeting recording toggle (specs/meeting-transcription.md). Core-only
+// (listed in SCOPE_INTENTS); Disabled hides the Record button and all three
+// "record this meeting?" prompts for this project's meetings.
+function RecordingPolicySegment({
+  recordingPolicy,
+  canEdit,
+}: {
+  recordingPolicy: "Allowed" | "Disabled";
+  canEdit: boolean;
+}) {
+  const submit = useSubmit();
+  const formRef = useRef<HTMLFormElement | null>(null);
+  const allowed = recordingPolicy !== "Disabled";
+
+  return (
+    <EditableSection
+      title="Meeting recording"
+      canEdit={canEdit}
+      description="Lets anyone editing a meeting note on this project record it. Audio is transcribed, then deleted."
+      onSave={() => {
+        if (formRef.current) submit(formRef.current);
+      }}
+    >
+      {({ editing, resetKey }) =>
+        editing ? (
+          <Form method="post" ref={formRef} key={resetKey}>
+            <input type="hidden" name="intent" value="recordingPolicy" />
+            <Toggle
+              name="recordingAllowed"
+              defaultChecked={allowed}
+              label="Allow recording this project's meetings"
+            />
+          </Form>
+        ) : (
+          <p className="text-sm text-foreground">
+            {allowed ? "Allowed" : "Disabled"}
+            <span className="block text-xs text-muted-foreground">
+              {allowed
+                ? "The Record button and record prompts are available on this project's meeting notes."
+                : "The Record button and record prompts are hidden for this project's meetings."}
+            </span>
+          </p>
+        )
+      }
+    </EditableSection>
+  );
+}
+
+// Read-only (specs/meeting-notes-model.md §1): the picker lives on the
+// template page itself, in the Drive templates gallery — this just shows
+// what's bound so Settings isn't the one place that's silent about it.
+function MeetingNoteTemplateSegment({
+  meetingNoteTemplate,
+}: {
+  meetingNoteTemplate: { id: string; title: string } | null;
+}) {
+  return (
+    <EditableSection title="Meeting note template" canEdit={false}>
+      {() => (
+        <p className="text-sm text-foreground">
+          {meetingNoteTemplate ? (
+            <Link to={`/documents/${meetingNoteTemplate.id}`} className="text-os-accent hover:underline">
+              {meetingNoteTemplate.title}
+            </Link>
+          ) : (
+            "None"
+          )}
+          <span className="block text-xs text-muted-foreground">
+            Seeds every new meeting note for this project. Set from a template page's own ⋯ menu
+            ("Use for this project's meeting notes").
+          </span>
+        </p>
+      )}
+    </EditableSection>
+  );
+}
+
 function DomainsSegment({
   declared,
   derived,
@@ -2828,7 +2942,7 @@ function DetailsReadOs({
         {project.calendarEmail ? (
           <a
             href={`mailto:${project.calendarEmail}`}
-            className="text-accent-coral hover:underline break-all"
+            className="text-os-accent hover:underline break-all"
           >
             {project.calendarEmail}
           </a>
@@ -2847,7 +2961,7 @@ function DetailsReadOs({
             href={`https://slack.com/app_redirect?channel=${project.slackChannelId}`}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-1 text-accent-coral hover:underline"
+            className="inline-flex items-center gap-1 text-os-accent hover:underline"
           >
             #{project.slackChannelName}
             <ExternalLink className="h-3.5 w-3.5" />
@@ -2905,7 +3019,7 @@ function DetailsReadOs({
             href={project.deploymentUrl}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-1 text-accent-coral hover:underline break-all"
+            className="inline-flex items-center gap-1 text-os-accent hover:underline break-all"
           >
             {project.deploymentUrl.replace(/^https?:\/\//, "")}
             <ExternalLink className="h-3.5 w-3.5 flex-shrink-0" />
@@ -2935,7 +3049,7 @@ function DetailsReadOs({
               <DetailRow icon={<Users className={ic} />} label="Team email group">
                 <a
                   href={`mailto:${project.teamGroupEmail}`}
-                  className="text-accent-coral hover:underline break-all"
+                  className="text-os-accent hover:underline break-all"
                 >
                   {project.teamGroupEmail}
                 </a>
@@ -3768,9 +3882,9 @@ function SaveAsTemplateSection({
           <input type="checkbox" name="includeOverviewPage" className="accent-accent-coral" />
           Include Overview page
         </label>
-        <button type="submit" className="rounded-md bg-accent-coral px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-coral/90 transition-colors">
+        <Button type="submit" size="sm">
           Save template
-        </button>
+        </Button>
       </Form>
     </section>
   );
@@ -3894,6 +4008,10 @@ function ScopeTab({
       <StatusSegment status={project.status} canEdit={canEdit} />
 
       <VisibilitySegment isPrivate={project.isPrivate} canEdit={canEdit} />
+
+      <RecordingPolicySegment recordingPolicy={project.recordingPolicy} canEdit={canEdit} />
+
+      <MeetingNoteTemplateSegment meetingNoteTemplate={project.meetingNoteTemplate} />
 
       {/* Declared domains — editable; if none declared the derived set from
           assignments + bids is shown as a fallback so a freshly-created
@@ -4184,7 +4302,7 @@ function PartnersSection({
           />
           <button
             type="submit"
-            className="h-9 rounded-lg bg-dark-blue text-white text-sm font-medium px-4 hover:opacity-90 transition"
+            className="h-9 rounded-lg bg-os-accent text-os-bg text-sm font-medium px-4 hover:opacity-90 transition"
           >
             Link
           </button>

@@ -48,11 +48,39 @@ struct AttendanceScan: Codable, Hashable {
     }
 }
 
+/// A hiring event (help hour, social, info session) whose check-in QR Core has
+/// put on every door display. Applicants scan it with their own phone, so the
+/// iPad shows a code rather than reading passes. Outranks the room's own event,
+/// but not a lab-wide attendance scan.
+struct ApplicationEventBroadcast: Codable, Hashable {
+    let id: String
+    let title: String
+    let kind: String
+    let start: Date
+    let end: Date
+    let location: String?
+    let checkInUrl: String
+
+    var kindLabel: String {
+        switch kind {
+        case "HelpHour": "Application help hour"
+        case "Social": "Applicant social"
+        case "InfoSession": "Info session"
+        default: "Application event"
+        }
+    }
+
+    var timeRange: String {
+        "\(start.formatted(date: .omitted, time: .shortened)) – \(end.formatted(date: .omitted, time: .shortened))"
+    }
+}
+
 struct ScheduleResponse: Decodable {
     let room: DisplayRoom
     let items: [ScheduleItem]
     let currentEvent: ScheduleItem?
     let attendanceScan: AttendanceScan?
+    var applicationEvent: ApplicationEventBroadcast? = nil
 }
 
 struct ActivateResponse: Decodable {

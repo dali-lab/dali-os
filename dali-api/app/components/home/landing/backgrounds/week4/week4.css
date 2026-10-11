@@ -1,0 +1,225 @@
+/*
+ * Week 4 demo-expo scene.
+ *
+ * Each background here brings its own frame, scrim and load-in (library.css only loads with the
+ * library chunk), so the first section below supplies them, scoped to `.landing-week4` like
+ * delta.css. The rest is the scene's own colour, framing and motion.
+ */
+
+/* ---------- Frame, scrim and load-in ---------- */
+
+.landing[data-background='demo-expo'] {
+  --content-start: 900ms;
+  background: #ffffff;
+}
+
+html:has(.landing[data-background='demo-expo']),
+body:has(.landing[data-background='demo-expo']) {
+  background: #ffffff;
+}
+
+.landing-week4 {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  --scrim-rgb: 11 18 32;
+  transform-origin: center;
+  animation:
+    week4-pan-in 2600ms var(--ease-launch) both,
+    week4-fade-in 900ms var(--ease-gentle) both;
+}
+
+@keyframes week4-pan-in {
+  from {
+    translate: 6% 0;
+    scale: 1.14;
+  }
+}
+
+@keyframes week4-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.landing-week4 .landing-scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    0deg,
+    rgb(var(--scrim-rgb) / 0.8) 0%,
+    rgb(var(--scrim-rgb) / 0.45) 50%,
+    rgb(var(--scrim-rgb) / 0.8) 100%
+  );
+  animation: week4-fade-in 1400ms var(--ease-gentle) 600ms both;
+}
+
+@container landing (min-width: 900px) and (min-aspect-ratio: 11/10) {
+  /* Pulls the booths left, clear of the content column, while leaving the arcade cabinet a margin
+     of floor. The box is widened rather than moved, so the drop-in and pan stay as they are. */
+  .landing .landing-background.landing-week4 {
+    left: -11cqw;
+  }
+
+  .landing-week4 .landing-scrim {
+    background:
+      linear-gradient(
+        90deg,
+        rgb(var(--scrim-rgb) / 0) 30%,
+        rgb(var(--scrim-rgb) / 0.5) 55%,
+        rgb(var(--scrim-rgb) / 0.82) 78%,
+        rgb(var(--scrim-rgb) / 0.88) 100%
+      ),
+      linear-gradient(0deg, rgb(var(--scrim-rgb) / 0.45) 0%, rgb(var(--scrim-rgb) / 0.1) 60%);
+  }
+}
+
+/* ---------- The scene ---------- */
+
+.landing-week4 {
+  /* The floor runs to white at every edge of the frame, so the ground behind it is simply white. */
+  background-color: #ffffff;
+}
+
+/*
+ * The art is drawn the full height of the window, top edge to bottom edge, so nothing is clipped
+ * off the top or bottom of the scene and no band of ground shows.
+ *
+ * At 2.64:1 the frame is wider than any normal window, so filling the height leaves width over.
+ * That overhang is taken off the right, not split between both sides: every booth sits in the
+ * left 55% of the frame and the rest is empty floor, so cropping from the right loses nothing,
+ * while centring would cut the arcade cabinet off the left edge.
+ */
+.landing-week4 .landing-layer {
+  object-position: left center;
+}
+
+/*
+ * landing.css shifts the background left on desktop to keep the library's lit tables clear of the
+ * text column. This scene is anchored to its own left edge instead, so that shift would push the
+ * arcade cabinet off-screen.
+ */
+.landing-background.landing-week4 {
+  left: 0;
+}
+
+
+/* ---------- The room assembling itself ---------- */
+
+/*
+ * Each layer is a sprite cropped to what it draws, placed at its box in the 4075x1545 frame
+ * (--x, --y, --w, --h in frame units, from week4Sprites.ts). The frame covers the box the way a
+ * cover-fit image would, anchored left and centred vertically, so the sprites stack back into the
+ * export. Keeping each animated layer the size of its object, not the window, is what keeps 13
+ * endless drifts cheap to composite.
+ *
+ * The outer element carries the fall, the image inside it carries the drift: one property each,
+ * so neither has to be composed with the other.
+ */
+.landing-week4 {
+  container-type: size;
+}
+
+.w4-layer {
+  --s: max(100cqw / 4075, 100cqh / 1545);
+  position: absolute;
+  left: calc(var(--x) * var(--s));
+  top: calc(50cqh + (var(--y) - 772.5) * var(--s));
+  width: calc(var(--w) * var(--s));
+  height: calc(var(--h) * var(--s));
+  animation: w4-fall var(--fall-dur, 820ms) var(--ease-land) var(--delay) both;
+}
+
+.w4-art {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.landing-week4 {
+  /* Overshoots and settles back, so a piece lands with some weight behind it. */
+  --ease-land: cubic-bezier(0.22, 1.4, 0.36, 1);
+}
+
+@keyframes w4-fall {
+  from {
+    translate: 0 calc(0px - var(--fall-from));
+    opacity: 0;
+  }
+  35% { opacity: 1; }
+  to {
+    translate: 0 0;
+    opacity: 1;
+  }
+}
+
+/* The floor is already where it belongs; it just arrives. */
+.w4-grid {
+  animation: w4-settle var(--fall-dur, 900ms) var(--ease-gentle) var(--delay) both;
+}
+
+@keyframes w4-settle {
+  from {
+    opacity: 0;
+    scale: 1.04;
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+/*
+ * The drift, once a piece has landed. It starts and ends where the piece sits, so the delay that
+ * holds it until then holds it in exactly the right place.
+ */
+.w4-object .w4-art,
+.w4-base .w4-art,
+.w4-top .w4-art,
+.w4-sign .w4-art {
+  animation: w4-drift var(--float-dur) ease-in-out var(--float-delay) infinite;
+}
+
+@keyframes w4-drift {
+  0%,
+  100% { translate: 0 0; }
+  50% { translate: 0 calc(0px - var(--float)); }
+}
+
+/*
+ * landing.css pauses everything inside .landing-animated while the scene is offscreen, the tab is
+ * hidden, or the device is constrained -- and the constrained pause never lifts. Paused at its
+ * first frame a fall is invisible, so the load-in is let run; only the drift waits.
+ */
+.landing-motion-paused .landing-week4 .w4-layer,
+.landing-motion-paused .landing-week4 .landing-scrim {
+  animation-play-state: running !important;
+}
+
+/* ---------- Reduced motion ---------- */
+
+/*
+ * The room is simply already built: nothing falls and nothing drifts. landing.css pauses loops
+ * inside .landing-animated, which would strand a piece mid-fall, so the animations are dropped
+ * outright rather than paused.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .landing-week4,
+  .landing-week4 .landing-scrim {
+    animation: none !important;
+  }
+
+  .w4-layer,
+  .w4-grid,
+  .w4-object .w4-art,
+  .w4-base .w4-art,
+  .w4-top .w4-art,
+  .w4-sign .w4-art {
+    animation: none !important;
+    translate: 0 0 !important;
+    scale: 1 !important;
+    opacity: 1 !important;
+  }
+}

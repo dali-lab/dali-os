@@ -18,12 +18,6 @@ import { formatInstantWithZoneLabel, resolveUserTimeZone } from "~/lib/timezone"
 // committed scheduling change. Callers should `.catch(() => {})` it.
 // Safe to call with an empty `assignmentIds`.
 
-const LOCATION_LABEL: Record<string, string> = {
-  PodAppa: "Pod Appa",
-  PodMomo: "Pod Momo",
-  Online: "Online",
-};
-
 export async function notifyInterviewAssigned(args: {
   assignmentIds: string[];
   createdByUserId?: string | null;
@@ -41,7 +35,7 @@ export async function notifyInterviewAssigned(args: {
         select: {
           id: true,
           startTime: true,
-          location: true,
+          room: { select: { name: true } },
           domainApplication: {
             select: {
               domain: { select: { name: true } },
@@ -69,7 +63,7 @@ export async function notifyInterviewAssigned(args: {
         .join(" ")
         .trim();
       const domain = a.interview.domainApplication.domain?.name ?? null;
-      const where = LOCATION_LABEL[a.interview.location] ?? a.interview.location;
+      const where = a.interview.room?.name ?? "Online";
       // The interviewer is a logged-in member — show the start in their own zone.
       const when = formatInstantWithZoneLabel(
         a.interview.startTime,
@@ -86,6 +80,60 @@ export async function notifyInterviewAssigned(args: {
         link: `/hiring/interviews/${a.interview.id}`,
         dueAt: a.interview.startTime,
         interviewAssignmentId: a.id,
+      };
+    }),
+  });
+}
+
+// A hiring lead cancelled the interview. The assigned-interview tiles clear
+// on their own (the tasks loader hides them once the interview isn't
+// Scheduled); this tells the two interviewers why. Best-effort, outside the
+// cancel transaction; pass the interviewer userIds captured before the
+// assignments flipped to Declined.
+export async function notifyInterviewCancelled(args: {
+  interviewId: string;
+  interviewerUserIds: string[];
+  createdByUserId?: string | null;
+}): Promise<void> {
+  if (args.interviewerUserIds.length === 0) return;
+
+  const interview = await prisma.interview.findUnique({
+    where: { id: args.interviewId },
+    select: {
+      startTime: true,
+      room: { select: { name: true } },
+      domainApplication: {
+        select: {
+          domain: { select: { name: true } },
+          application: { select: { user: { select: { firstName: true, lastName: true } } } },
+        },
+      },
+    },
+  });
+  if (!interview) return;
+  const users = await prisma.user.findMany({
+    where: { id: { in: args.interviewerUserIds } },
+    select: { id: true, timeZone: true },
+  });
+
+  const applicant = interview.domainApplication.application.user;
+  const personName = [applicant.firstName, applicant.lastName].filter(Boolean).join(" ").trim();
+  const domain = interview.domainApplication.domain?.name ?? null;
+  const where = interview.room?.name ?? "Online";
+
+  await notify({
+    eventType: "hiring.interview_cancelled",
+    createdByUserId: args.createdByUserId ?? null,
+    message: {},
+    recipients: users.map((u) => {
+      const when = formatInstantWithZoneLabel(interview.startTime, resolveUserTimeZone(u));
+      return {
+        userId: u.id,
+        vars: {
+          personName,
+          itemDetail: `${domain ? `${domain} • ` : ""}${when} • ${where} • cancelled by the hiring lead`,
+        },
+        link: `/hiring/interviews/${args.interviewId}`,
       };
     }),
   });

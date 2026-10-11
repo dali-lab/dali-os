@@ -1,17 +1,23 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePersistedState } from "~/hooks/usePersistedState";
 import {
+  APPLICATION_SORT_COLUMNS,
+  DEFAULT_SORT,
   EMPTY_FILTERS,
   ENGAGEMENT_FILTERS,
+  withFilterDefaults,
   isApplicationFilters,
+  isApplicationSort,
+  sortApplications,
   type ApplicationFilters,
+  type ApplicationSort,
 } from "~/hiring/lib/application-filters";
 import { isAdminOnlyCycle } from "~/hiring/lib/applicant-groups";
 import { redirect, useLoaderData, useNavigate, useSearchParams } from "react-router";
-import { SlidersHorizontal } from "lucide-react";
+import { ChevronDown, ChevronUp, SlidersHorizontal } from "lucide-react";
 import { SearchInput } from "~/components/ui/SearchInput";
 import type { Route } from "./+types/applications";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
@@ -29,6 +35,7 @@ import {
 } from "~/components/ui/filter-panel";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
+import { formatDateShort } from "~/lib/display";
 import { StatusPie, type StatusSlice } from "~/hiring/components/analytics/StatusPie";
 import { Toggle } from "~/components/ui/Toggle";
 import {
@@ -53,17 +60,20 @@ export const meta: Route.MetaFunction = () => [
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  if (auth.user.type === "applicant") return redirect("/portal");
-
-  const roles = await getUserRoles(auth.user.sub);
-  const { isCore, isAdmin, isDomainLead, isInterviewer } = roles;
+  if (await isNonMember(auth, request)) return redirect("/portal");
 
   // Reviewer assignments across all cycles — used both to decide which cycles
-  // a reviewer can see and to scope domains within the selected cycle.
-  const reviewerRows = await prisma.cycleReviewer.findMany({
-    where: { userId: auth.user.sub },
-    select: { applicationCycleId: true, domainId: true },
-  });
+  // a reviewer can see and to scope domains within the selected cycle. Doesn't
+  // depend on `roles`, so it runs alongside it instead of after.
+  const [roles, reviewerRows] = await Promise.all([
+    getUserRoles(auth.user.sub, request),
+    prisma.cycleReviewer.findMany({
+      where: { userId: auth.user.sub },
+      select: { applicationCycleId: true, domainId: true },
+    }),
+  ]);
+  const { isCore, isAdmin, isDomainLead, isInterviewer } = roles;
+  const applicationEventsEnabled = await isFeatureEnabled("application-events", auth.user.sub, roles, request);
 
   // Hard gate: a user with no hiring role at all (not Core/Admin/DomainLead and
   // a reviewer/interviewer on no cycle) has no business here — send them home
@@ -148,66 +158,69 @@ export async function loader({ request }: Route.LoaderArgs) {
     ? allCycleDomainIds
     : reviewerDomainIdsThisCycle;
 
-  // Domain filter options — the domains this user can see for the selected
-  // cycle, with display names. Drives the (client-side) domain dropdown,
-  // shown whenever there's more than one domain to choose between.
-  const domainOptions = visibleDomainIds.length
-    ? (
-        await prisma.domain.findMany({
-          where: { id: { in: visibleDomainIds } },
-          orderBy: { displayName: "asc" },
-          select: { id: true, displayName: true },
-        })
-      ).map((d) => ({ id: d.id, name: d.displayName }))
-    : [];
-
   // Core and domain leads get the pipeline pie, so their rows carry the
   // relations stage inference needs.
   const showPipeline = isCore || isDomainLead;
 
-  // DomainApplications for the selected cycle, scoped to visible domains.
-  // Standard cycles link Domain via challengeVersion; Fellowship links
-  // Domain directly — match whichever path is set (mirrors reviewer route).
-  const domainApps = visibleDomainIds.length
-    ? await prisma.domainApplication.findMany({
-        where: {
-          application: { applicationCycleId: selected.id },
-          selected: true,
-          domainId: { in: visibleDomainIds },
-        },
-        select: {
-          id: true,
-          domainId: true,
-          domain: { select: { displayName: true } },
-          application: {
-            select: {
-              id: true,
-              user: {
-                select: { id: true, firstName: true, lastName: true, daliEmail: true, dartmouthEmail: true },
-              },
-              // Status is event-sourced via ApplicationStatusUpdate; the
-              // newest row is the current status. We also grab the most
-              // recent "Submitted" event's timestamp for the Submitted column.
-              statusUpdates: {
-                orderBy: { createdAt: "desc" },
-                select: { newStatus: true, createdAt: true },
-              },
-            },
+  // Domain filter options and the DomainApplications for the selected cycle
+  // both depend only on `visibleDomainIds` (not on each other), so they run
+  // together.
+  const [domainOptionRows, domainApps] = await Promise.all([
+    // Domain filter options — the domains this user can see for the selected
+    // cycle, with display names. Drives the (client-side) domain dropdown,
+    // shown whenever there's more than one domain to choose between.
+    visibleDomainIds.length
+      ? prisma.domain.findMany({
+          where: { id: { in: visibleDomainIds } },
+          orderBy: { displayName: "asc" },
+          select: { id: true, displayName: true },
+        })
+      : [],
+    // DomainApplications for the selected cycle, scoped to visible domains.
+    // Standard cycles link Domain via challengeVersion; Fellowship links
+    // Domain directly — match whichever path is set (mirrors reviewer route).
+    visibleDomainIds.length
+      ? prisma.domainApplication.findMany({
+          where: {
+            application: { applicationCycleId: selected.id },
+            selected: true,
+            domainId: { in: visibleDomainIds },
           },
-          _count: { select: { reviews: true } },
-          ...(showPipeline && {
-            closureReason: true,
-            decisions: { orderBy: { createdAt: "desc" as const } },
-            interviews: {
-              where: {
-                status: { in: ["Scheduled", "Completed", "CancelledByApplicant"] as const },
+          select: {
+            id: true,
+            domainId: true,
+            domain: { select: { displayName: true } },
+            application: {
+              select: {
+                id: true,
+                user: {
+                  select: { id: true, firstName: true, lastName: true, daliEmail: true, dartmouthEmail: true },
+                },
+                // Status is event-sourced via ApplicationStatusUpdate; the
+                // newest row is the current status. We also grab the most
+                // recent "Submitted" event's timestamp for the Submitted column.
+                statusUpdates: {
+                  orderBy: { createdAt: "desc" },
+                  select: { newStatus: true, createdAt: true },
+                },
               },
-              orderBy: { createdAt: "desc" as const },
             },
-          }),
-        },
-      })
-    : [];
+            _count: { select: { reviews: true } },
+            ...(showPipeline && {
+              closureReason: true,
+              decisions: { orderBy: { createdAt: "desc" as const } },
+              interviews: {
+                where: {
+                  status: { in: ["Scheduled", "Completed", "CancelledByApplicant"] as const },
+                },
+                orderBy: { createdAt: "desc" as const },
+              },
+            }),
+          },
+        })
+      : [],
+  ]);
+  const domainOptions = domainOptionRows.map((d) => ({ id: d.id, name: d.displayName }));
 
   // Blind review applies here the same way it does on the applicant-detail
   // pages: everyone (Core, Admin, leads, reviewers) sees "Applicant N" until
@@ -216,61 +229,82 @@ export async function loader({ request }: Route.LoaderArgs) {
   // application's selected DomainApplications is looked up separately from
   // the (possibly domain-filtered) `domainApps` rows above.
   const applicationIds = [...new Set(domainApps.map((da) => da.application.id))];
-  const daIdsByApplication = new Map<string, string[]>();
-  if (applicationIds.length > 0) {
-    const allSelectedDas = await prisma.domainApplication.findMany({
-      where: { applicationId: { in: applicationIds }, selected: true },
-      select: { id: true, applicationId: true },
-    });
-    for (const row of allSelectedDas) {
-      const arr = daIdsByApplication.get(row.applicationId) ?? [];
-      arr.push(row.id);
-      daIdsByApplication.set(row.applicationId, arr);
-    }
-  }
-  const blindLabels = await applicationBlindLabelsForCycle({
-    cycleId: selected.id,
-    anonymizeReview: selected.anonymizeReview,
-    applications: [...daIdsByApplication.entries()].map(([id, daIds]) => ({ id, daIds })),
-  });
 
   // Engagement signals for the filter panel: one grouped lookup each, keyed
   // on the applicant's User id, which blinding leaves intact.
   const applicantUserIds = [...new Set(domainApps.map((da) => da.application.user.id))];
-  const emailFilterEnabled = await isFeatureEnabled(
-    "applicant-email-engagement",
-    auth.user.sub,
-    roles,
-    request,
-  );
-  const [priorRows, emailRows, educationRows] = applicantUserIds.length
-    ? await Promise.all([
-        prisma.application.findMany({
-          where: {
-            userId: { in: applicantUserIds },
-            applicationCycleId: { not: selected.id },
-            statusUpdates: { some: { newStatus: "Submitted" } },
-          },
-          select: { userId: true },
-          distinct: ["userId"],
-        }),
-        emailFilterEnabled
-          ? prisma.mailMessageIndex.findMany({
-              where: { linkedUserId: { in: applicantUserIds } },
-              select: { linkedUserId: true },
-              distinct: ["linkedUserId"],
-            })
-          : Promise.resolve([]),
-        prisma.educationApplication.findMany({
-          where: { applicantUserId: { in: applicantUserIds }, status: "Approved" },
-          select: { applicantUserId: true },
-          distinct: ["applicantUserId"],
-        }),
-      ])
-    : [[], [], []];
+
+  // Both of these derive only from `domainApps` (not from each other), so the
+  // blind-label lookup and the engagement-signal queries run concurrently
+  // instead of one after the other.
+  const [blindLabels, [priorRows, emailRows, educationRows, eventRows]] = await Promise.all([
+    (async () => {
+      const daIdsByApplication = new Map<string, string[]>();
+      if (applicationIds.length > 0) {
+        const allSelectedDas = await prisma.domainApplication.findMany({
+          where: { applicationId: { in: applicationIds }, selected: true },
+          select: { id: true, applicationId: true },
+        });
+        for (const row of allSelectedDas) {
+          const arr = daIdsByApplication.get(row.applicationId) ?? [];
+          arr.push(row.id);
+          daIdsByApplication.set(row.applicationId, arr);
+        }
+      }
+      return applicationBlindLabelsForCycle({
+        cycleId: selected.id,
+        anonymizeReview: selected.anonymizeReview,
+        applications: [...daIdsByApplication.entries()].map(([id, daIds]) => ({ id, daIds })),
+      });
+    })(),
+    applicantUserIds.length
+      ? Promise.all([
+          prisma.application.findMany({
+            where: {
+              userId: { in: applicantUserIds },
+              applicationCycleId: { not: selected.id },
+              statusUpdates: { some: { newStatus: "Submitted" } },
+            },
+            select: { userId: true },
+            distinct: ["userId"],
+          }),
+          prisma.mailMessageIndex.findMany({
+            where: { linkedUserId: { in: applicantUserIds } },
+            select: { linkedUserId: true },
+            distinct: ["linkedUserId"],
+          }),
+          prisma.educationApplication.findMany({
+            where: { applicantUserId: { in: applicantUserIds }, status: "Approved" },
+            select: { applicantUserId: true },
+            distinct: ["applicantUserId"],
+          }),
+          applicationEventsEnabled
+            ? prisma.hiringEventAttendance.findMany({
+                where: { userId: { in: applicantUserIds }, event: { applicationCycleId: selected.id } },
+                select: { userId: true, eventId: true },
+              })
+            : Promise.resolve([]),
+        ])
+      : Promise.resolve([[], [], [], []]),
+  ]);
+  const eventOptions = applicationEventsEnabled
+    ? (
+        await prisma.hiringEvent.findMany({
+          where: { applicationCycleId: selected.id },
+          orderBy: { startsAt: "asc" },
+          select: { id: true, title: true, startsAt: true },
+        })
+      ).map((e) => ({ id: e.id, title: e.title, startsAt: e.startsAt.toISOString() }))
+    : [];
   const returningUserIds = new Set(priorRows.map((r) => r.userId));
   const emailedUserIds = new Set(emailRows.map((r) => r.linkedUserId));
   const educatedUserIds = new Set(educationRows.map((r) => r.applicantUserId));
+  const attendedEventIdsByUser = new Map<string, string[]>();
+  for (const r of eventRows) {
+    const arr = attendedEventIdsByUser.get(r.userId) ?? [];
+    arr.push(r.eventId);
+    attendedEventIdsByUser.set(r.userId, arr);
+  }
 
   const rows = domainApps
     .map((da) => {
@@ -293,6 +327,8 @@ export async function loader({ request }: Route.LoaderArgs) {
         returning: returningUserIds.has(da.application.user.id),
         emailed: emailedUserIds.has(da.application.user.id),
         educated: educatedUserIds.has(da.application.user.id),
+        attendedEvent: attendedEventIdsByUser.has(da.application.user.id),
+        attendedEventIds: attendedEventIdsByUser.get(da.application.user.id) ?? [],
         stage: showPipeline
           ? pipelineStage(da as any, selected.currentStatus as ApplicationCycleStatus)
           : null,
@@ -315,8 +351,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     selectedCycleId: selected.id,
     selectedCycleName: selected.name,
     domainOptions,
+    eventOptions,
     showPipeline,
-    emailFilterEnabled,
     rows,
   };
 }
@@ -337,6 +373,11 @@ const STATUS_TONE: Record<string, string> = {
   Withdrawn: "bg-os-amber/15 text-os-amber",
 };
 
+const SORT_DIRECTIONS = [
+  { dir: "asc", Icon: ChevronUp, label: "ascending" },
+  { dir: "desc", Icon: ChevronDown, label: "descending" },
+] as const;
+
 // Toggle one value in a multi-select filter.
 function toggle<T extends string>(list: T[], value: T): T[] {
   return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
@@ -356,7 +397,8 @@ export default function ApplicationsDatabase() {
     EMPTY_FILTERS,
     isApplicationFilters,
   );
-  const { domainIds, statuses, stage, engagement, pieIncludesInProgress, query } = filters;
+  const { domainIds, statuses, stage, engagement, eventIds, pieIncludesInProgress, query } =
+    withFilterDefaults(filters);
   const patch = (next: Partial<ApplicationFilters>) => setFilters((prev) => ({ ...prev, ...next }));
   const setDomainIds = (f: (prev: string[]) => string[]) => patch({ domainIds: f(domainIds) });
   const setStatuses = (f: (prev: string[]) => string[]) => patch({ statuses: f(statuses) });
@@ -392,6 +434,11 @@ export default function ApplicationsDatabase() {
   // domain dropped from the cycle) must not silently empty the table.
   const knownDomainIds = new Set(data.gate === "ok" ? data.domainOptions.map((d) => d.id) : []);
   const activeDomainIds = domainIds.filter((id) => knownDomainIds.has(id));
+  const eventOptions = data.gate === "ok" ? data.eventOptions : [];
+  // Same guard for a remembered event that was deleted, or belongs to the
+  // cycle viewed last time.
+  const knownEventIds = new Set(eventOptions.map((e) => e.id));
+  const activeEventIds = eventIds.filter((id) => knownEventIds.has(id));
   // The pie counts every filter but its own, so picking a slice doesn't
   // collapse the chart to that one slice.
   const pieRows = useMemo(() => {
@@ -400,14 +447,21 @@ export default function ApplicationsDatabase() {
       if (activeDomainIds.length && !activeDomainIds.includes(r.domainId)) return false;
       if (statuses.length && !statuses.includes(r.status)) return false;
       if (engagement.some((k) => !r[k])) return false;
+      if (activeEventIds.length && !activeEventIds.some((id) => r.attendedEventIds.includes(id)))
+        return false;
       if (q && !`${r.name} ${r.email ?? ""}`.toLowerCase().includes(q))
         return false;
       return true;
     });
-  }, [rows, activeDomainIds, statuses, engagement, query]);
+  }, [rows, activeDomainIds, statuses, engagement, activeEventIds, query]);
+  const [sort, setSort] = usePersistedState<ApplicationSort>(
+    "dali:applications:sort",
+    DEFAULT_SORT,
+    isApplicationSort,
+  );
   const filteredRows = useMemo(
-    () => (stage ? pieRows.filter((r) => r.stage === stage) : pieRows),
-    [pieRows, stage],
+    () => sortApplications(stage ? pieRows.filter((r) => r.stage === stage) : pieRows, sort),
+    [pieRows, stage, sort],
   );
   // One applicant can hold several domain applications, so the row count
   // overstates how many people are in the cycle.
@@ -448,10 +502,12 @@ export default function ApplicationsDatabase() {
   // to choose between (Core/Admin, or a reviewer covering multiple domains).
   const showDomainFilter = data.domainOptions.length > 1;
   const activeFilterCount =
-    activeDomainIds.length + statuses.length + engagement.length + (stage ? 1 : 0);
-  const engagementOptions = ENGAGEMENT_FILTERS.filter(
-    (e) => e.key !== "emailed" || data.emailFilterEnabled,
-  );
+    activeDomainIds.length +
+    statuses.length +
+    engagement.length +
+    activeEventIds.length +
+    (stage ? 1 : 0);
+  const engagementOptions = ENGAGEMENT_FILTERS;
 
   return (
     <div className="flex flex-col gap-4">
@@ -499,7 +555,9 @@ export default function ApplicationsDatabase() {
               {activeFilterCount > 0 && (
                 <FilterResetButton
                   os={true}
-                  onClick={() => patch({ domainIds: [], statuses: [], stage: null, engagement: [] })}
+                  onClick={() =>
+                    patch({ domainIds: [], statuses: [], stage: null, engagement: [], eventIds: [] })
+                  }
                 />
               )}
             </div>
@@ -541,6 +599,20 @@ export default function ApplicationsDatabase() {
                 </FilterPill>
               ))}
             </FilterGroup>
+            {eventOptions.length > 0 && (
+              <FilterGroup label="Attended event" os={true}>
+                {eventOptions.map((e) => (
+                  <FilterPill
+                    key={e.id}
+                    os={true}
+                    selected={eventIds.includes(e.id)}
+                    onClick={() => patch({ eventIds: toggle(eventIds, e.id) })}
+                  >
+                    {e.title} · {formatDateShort(e.startsAt)}
+                  </FilterPill>
+                ))}
+              </FilterGroup>
+            )}
             {showDomainFilter && (
               <FilterGroup label="Domain" os={true}>
                 {data.domainOptions.map((d) => (
@@ -602,11 +674,44 @@ export default function ApplicationsDatabase() {
             <table className="w-full text-sm min-w-[640px]">
               <thead className="text-os-grey text-xs uppercase tracking-wide">
                 <tr>
-                  <th className="text-left font-medium px-6 py-4">Applicant</th>
-                  <th className="text-left font-medium px-6 py-4">Domain</th>
-                  <th className="text-left font-medium px-6 py-4">Status</th>
-                  <th className="text-left font-medium px-6 py-4">Submitted</th>
-                  <th className="text-left font-medium px-6 py-4">Reviews</th>
+                  {APPLICATION_SORT_COLUMNS.map((col) => (
+                    <th
+                      key={col.key}
+                      aria-sort={
+                        sort.key !== col.key
+                          ? undefined
+                          : sort.dir === "asc"
+                            ? "ascending"
+                            : "descending"
+                      }
+                      className="text-left font-medium px-6 py-4"
+                    >
+                      <span className="inline-flex items-center gap-1.5">
+                        {col.label}
+                        <span className="inline-flex flex-col">
+                          {SORT_DIRECTIONS.map(({ dir, Icon, label }) => {
+                            const active = sort.key === col.key && sort.dir === dir;
+                            return (
+                              <button
+                                key={dir}
+                                type="button"
+                                title={`Sort ${label}`}
+                                aria-label={`Sort by ${col.label}, ${label}`}
+                                aria-pressed={active}
+                                onClick={() => setSort({ key: col.key, dir })}
+                                className={cn(
+                                  "-my-0.5 rounded transition-colors hover:text-foreground",
+                                  active ? "text-os-accent" : "text-os-grey/50",
+                                )}
+                              >
+                                <Icon className="h-3 w-3" strokeWidth={3} aria-hidden />
+                              </button>
+                            );
+                          })}
+                        </span>
+                      </span>
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>

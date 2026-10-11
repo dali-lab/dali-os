@@ -1,13 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
-vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
+vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn(), isNonMember: vi.fn(async () => false) }));
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn().mockResolvedValue(false) }));
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { getUserRoles } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { loader } from "~/hiring/routes/applications";
 
 const mockPrisma = prisma as unknown as Record<string, any>;
@@ -79,6 +80,8 @@ beforeEach(() => {
   mockPrisma.application = { findMany: vi.fn().mockResolvedValue([{ id: APPLICATION_ID }]) };
   mockPrisma.mailMessageIndex = { findMany: vi.fn().mockResolvedValue([]) };
   mockPrisma.educationApplication = { findMany: vi.fn().mockResolvedValue([]) };
+  mockPrisma.hiringEventAttendance = { findMany: vi.fn().mockResolvedValue([]) };
+  mockPrisma.hiringEvent = { findMany: vi.fn().mockResolvedValue([]) };
 
   // domainApplication.findMany is called twice with different `where` shapes:
   // once scoped to visible domains (builds the rows), once unscoped per
@@ -119,5 +122,79 @@ describe("applications.tsx loader — blind review", () => {
     ]);
     const result: any = await callLoader();
     expect(result.rows[0].name).toBe("Ada Lovelace");
+  });
+});
+
+describe("applications.tsx loader — attendedEvent engagement signal", () => {
+  function mockDomainAppsWithUserId(userId: string) {
+    mockPrisma.domainApplication.findMany.mockImplementation(({ where }: any) => {
+      if (where.domainId) {
+        return Promise.resolve([
+          baseDomainApp({
+            user: {
+              id: userId,
+              firstName: "Ada",
+              lastName: "Lovelace",
+              daliEmail: "ada@dali.dartmouth.edu",
+              dartmouthEmail: "ada@dartmouth.edu",
+            },
+          }),
+        ]);
+      }
+      return Promise.resolve([{ id: DA_ID, applicationId: APPLICATION_ID }]);
+    });
+  }
+
+  it("skips the attendance lookup and marks every row unattended when the flag is off", async () => {
+    mockDomainAppsWithUserId("ada-user");
+
+    const result: any = await callLoader();
+
+    expect(mockPrisma.hiringEventAttendance.findMany).not.toHaveBeenCalled();
+    expect(mockPrisma.hiringEvent.findMany).not.toHaveBeenCalled();
+    expect(result.rows[0].attendedEvent).toBe(false);
+    expect(result.eventOptions).toEqual([]);
+  });
+
+  it("queries attendance scoped to the selected cycle and marks matching rows when the flag is on", async () => {
+    vi.mocked(isFeatureEnabled).mockResolvedValue(true);
+    mockPrisma.hiringEventAttendance.findMany.mockResolvedValue([
+      { userId: "ada-user", eventId: "ev-1" },
+      { userId: "ada-user", eventId: "ev-2" },
+    ]);
+    mockPrisma.hiringEvent.findMany.mockResolvedValue([
+      { id: "ev-1", title: "Help hour", startsAt: new Date("2026-10-14T20:00:00Z") },
+      { id: "ev-2", title: "Social", startsAt: new Date("2026-10-16T22:00:00Z") },
+    ]);
+    mockDomainAppsWithUserId("ada-user");
+
+    const result: any = await callLoader();
+
+    expect(mockPrisma.hiringEventAttendance.findMany).toHaveBeenCalledWith({
+      where: { userId: { in: ["ada-user"] }, event: { applicationCycleId: CYCLE_ID } },
+      select: { userId: true, eventId: true },
+    });
+    expect(mockPrisma.hiringEvent.findMany).toHaveBeenCalledWith({
+      where: { applicationCycleId: CYCLE_ID },
+      orderBy: { startsAt: "asc" },
+      select: { id: true, title: true, startsAt: true },
+    });
+    expect(result.rows[0].attendedEvent).toBe(true);
+    expect(result.rows[0].attendedEventIds).toEqual(["ev-1", "ev-2"]);
+    expect(result.eventOptions).toEqual([
+      { id: "ev-1", title: "Help hour", startsAt: "2026-10-14T20:00:00.000Z" },
+      { id: "ev-2", title: "Social", startsAt: "2026-10-16T22:00:00.000Z" },
+    ]);
+  });
+
+  it("does not mark a row attended when its userId isn't in the attendance result", async () => {
+    vi.mocked(isFeatureEnabled).mockResolvedValue(true);
+    mockPrisma.hiringEventAttendance.findMany.mockResolvedValue([{ userId: "someone-else", eventId: "ev-1" }]);
+    mockDomainAppsWithUserId("ada-user");
+
+    const result: any = await callLoader();
+
+    expect(result.rows[0].attendedEvent).toBe(false);
+    expect(result.rows[0].attendedEventIds).toEqual([]);
   });
 });

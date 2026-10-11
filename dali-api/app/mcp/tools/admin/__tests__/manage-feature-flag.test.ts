@@ -19,8 +19,8 @@ import {
 import type { McpCtx } from "~/mcp/registry";
 
 const CURRENT = {
-  key: "optimal-times",
-  label: "Find best meeting times",
+  key: "infra-dashboard",
+  label: "Infrastructure dashboard",
   description: "…",
   enabled: false,
   everyone: false,
@@ -73,11 +73,11 @@ describe("manage_feature_flag", () => {
     it("patches only the provided fields, preserving the rest", async () => {
       const out = await runManageFeatureFlag(makeCtx(), {
         action: "set_config",
-        key: "optimal-times",
+        key: "infra-dashboard",
         enabled: true,
       });
       expect(out).toEqual({ ok: true });
-      expect(updateFlag).toHaveBeenCalledWith("optimal-times", {
+      expect(updateFlag).toHaveBeenCalledWith("infra-dashboard", {
         enabled: true,
         everyone: false,
         roles: ["isCore"],
@@ -85,18 +85,18 @@ describe("manage_feature_flag", () => {
         note: "old note",
       });
       expect(logAuditEvent).toHaveBeenCalledWith(
-        expect.objectContaining({ action: "feature-flags.update", targetId: "optimal-times" }),
+        expect.objectContaining({ action: "feature-flags.update", targetId: "infra-dashboard" }),
       );
     });
 
     it("clears the note with an empty string", async () => {
       await runManageFeatureFlag(makeCtx(), {
         action: "set_config",
-        key: "optimal-times",
+        key: "infra-dashboard",
         note: "",
       });
       expect(updateFlag).toHaveBeenCalledWith(
-        "optimal-times",
+        "infra-dashboard",
         expect.objectContaining({ note: null }),
       );
     });
@@ -116,7 +116,7 @@ describe("manage_feature_flag", () => {
       await expect(
         runManageFeatureFlag(makeCtx(), {
           action: "set_config",
-          key: "optimal-times",
+          key: "infra-dashboard",
           roles: ["isWizard"],
         }),
       ).rejects.toMatchObject({ name: "McpInvalidError", status: 400 });
@@ -131,7 +131,7 @@ describe("manage_feature_flag", () => {
 
     it("throws McpInvalidError when nothing to update", async () => {
       await expect(
-        runManageFeatureFlag(makeCtx(), { action: "set_config", key: "optimal-times" }),
+        runManageFeatureFlag(makeCtx(), { action: "set_config", key: "infra-dashboard" }),
       ).rejects.toMatchObject({ name: "McpInvalidError", status: 400 });
     });
   });

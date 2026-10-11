@@ -674,8 +674,8 @@ export function ScheduleWeekGrid({
   weekNav?: { onShift: (weeks: number) => void; onToday: () => void };
   /**
    * Show a "Find best times" control above the grid that ranks the week's slots
-   * by participant availability (gated by the `optimal-times` flag at the call
-   * site). Off by default so the compact CreateEventModal grid is unchanged.
+   * by participant availability. Off by default so the /calendar grid is
+   * unchanged; the create/edit meeting modals turn it on.
    */
   enableOptimalTimes?: boolean;
   /** Receives the ranked suggestions whenever they change (null when none apply). */
@@ -806,7 +806,7 @@ export function ScheduleWeekGrid({
   // background layer, leaving the Busy blocks out entirely — free vs. busy is
   // already encoded in the cell's saturation.
   const eventsByDay: Record<number, EventBlock[]> = {};
-  const CELL_HOURS = SNAP_HOURS; // 10-minute availability cells
+  const CELL_HOURS = SNAP_HOURS; // 15-minute availability cells
   const GRID_START_H = HOURS[0];
   const GRID_END_H = HOURS[HOURS.length - 1] + 1;
   const CELLS_PER_DAY = Math.round((GRID_END_H - GRID_START_H) / CELL_HOURS);

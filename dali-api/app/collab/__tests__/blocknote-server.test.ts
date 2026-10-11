@@ -89,6 +89,49 @@ const x = 1;
   });
 });
 
+describe("taskMention", () => {
+  const TASK_CONTENT: DocBlock["content"] = [
+    { type: "text", text: "Ship it ", styles: {} },
+    { type: "taskMention", props: { taskId: "t1", projectId: "proj1", label: "Ship it" } },
+  ];
+
+  it("round-trips through a Yjs encode/decode cycle without loss", () => {
+    const ydoc = new Y.Doc();
+    blocksToFragment([para(TASK_CONTENT)], ydoc.getXmlFragment("blocknote"));
+
+    const update = Y.encodeStateAsUpdate(ydoc);
+    const ydoc2 = new Y.Doc();
+    Y.applyUpdate(ydoc2, update);
+
+    const out = fragmentToBlocks(ydoc2.getXmlFragment("blocknote"));
+    expect(out).toHaveLength(1);
+    const content = out[0]!.content as { type: string; props?: Record<string, unknown> }[];
+    const node = content.find((c) => c.type === "taskMention");
+    expect(node?.props).toEqual({ taskId: "t1", projectId: "proj1", label: "Ship it" });
+  });
+
+  it("plain text renders the label only", () => {
+    expect(blocksToPlainText([para(TASK_CONTENT)])).toBe("Ship it Ship it");
+  });
+
+  it("markdown export renders the label (as a deep link to the task)", async () => {
+    const markdown = await blocksToMarkdown([para(TASK_CONTENT)]);
+    expect(markdown).toContain("Ship it");
+    expect(markdown).toContain("/projects/proj1?tab=progress&task=t1");
+  });
+
+  it("HTML export renders the label as a link to the task", async () => {
+    const html = await blocksToHtml([para(TASK_CONTENT)]);
+    expect(html).toContain('href="/projects/proj1?tab=progress&amp;task=t1"');
+    expect(html).toContain("Ship it");
+  });
+
+  it("falls back to 'Untitled task' when the label is empty", async () => {
+    const blocks = [para([{ type: "taskMention", props: { taskId: "t2", projectId: "proj1", label: "" } }])];
+    expect(await blocksToHtml(blocks)).toContain("Untitled task");
+  });
+});
+
 describe("blocksToHtml", () => {
   it("renders semantic HTML with custom nodes as text-bearing spans", async () => {
     const blocks: DocBlock[] = [

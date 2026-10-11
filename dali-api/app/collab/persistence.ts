@@ -443,6 +443,36 @@ export async function maybeSnapshot(
 }
 
 /**
+ * Forces an immediate, labeled CollabDocumentVersion snapshot of the live
+ * doc, bypassing maybeSnapshot's 30s throttle — for "Before enhance" (specs/
+ * meeting-notes-model.md §2), where the snapshot has to be of *this instant*,
+ * not whenever the next autosave tick happens to land.
+ */
+export async function forceSnapshot(
+  server: HocuspocusServer,
+  name: string,
+  label: string,
+  authorIds: string[],
+): Promise<void> {
+  if (isPresenceRoom(name)) {
+    throw new Error("Cannot snapshot a presence room");
+  }
+
+  const conn = await server.hocuspocus.openDirectConnection(name);
+  try {
+    const doc = conn.document;
+    if (!doc) throw new Error("Document not found for this name");
+    const state = Y.encodeStateAsUpdate(doc) as Uint8Array<ArrayBuffer>;
+    const plainText = getPlainText(doc);
+    await prisma.collabDocumentVersion.create({
+      data: { name, state, plainText, authorIds, label },
+    });
+  } finally {
+    await conn.disconnect();
+  }
+}
+
+/**
  * Replace the live Y.Doc content with the content of a previous snapshot.
  * Opens a server-side direct connection to the doc so the change is applied
  * inside Hocuspocus's normal sync pipeline — connected clients receive the

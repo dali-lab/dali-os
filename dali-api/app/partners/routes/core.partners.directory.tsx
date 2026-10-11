@@ -9,7 +9,7 @@ import {
   useSearchParams,
 } from "react-router";
 import type { Route } from "./+types/core.partners.directory";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
@@ -52,7 +52,7 @@ export const meta: Route.MetaFunction = () => [{ title: "Partners · DALI OS" }]
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  if (auth.user.type === "applicant") return redirect("/portal");
+  if (await isNonMember(auth, request)) return redirect("/portal");
   if (!(await isCore(auth.user.sub))) return redirect("/");
 
   const [orgs, contacts] = await Promise.all([listPartnerOrgRows(), listPartnerContactRows()]);

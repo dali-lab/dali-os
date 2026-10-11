@@ -68,6 +68,13 @@ export async function action({ request, params }: Route.ActionArgs) {
   // Form todo: clears when the form is submitted, never by opening its link.
   const isFormTodo = isSelfClearingFormTodo(existing);
 
+  // A coffee chat invite clears only when it's answered (respondToCoffeeChat):
+  // opening or dismissing it must not drop it, or the recipient loses the only
+  // place they can accept and learn who sent it.
+  if (existing.eventType === "coffee_chat.invite") {
+    return withCors(request, Response.json({ ok: true, skipped: "coffee-chat-invite" }));
+  }
+
   // Re-open path: flip readAt back to null so the row returns to Open in
   // History + the Tasks list. Self-clearing rows (meeting invites, onboarding,
   // form todos) own their own read state, so re-opening them is a no-op echo —

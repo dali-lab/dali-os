@@ -1,0 +1,223 @@
+// POST /api/meeting-recordings/:id — the enhance lock (specs/meeting-notes-
+// model.md §2: refuses the apply when someone else's `notes` write landed
+// after this client's own preview snapshot) and the { action: "stop" }
+// permission rules (an editor, not just the owner, may stop or end a
+// recording whose owner went silent).
+
+import { describe, it, expect, beforeEach, vi } from "vitest";
+
+vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
+vi.mock("~/lib/db");
+vi.mock("~/lib/roles", () => ({ isCore: vi.fn().mockResolvedValue(false) }));
+vi.mock("~/lib/transcription/chunks.server", () => ({ deletePrefix: vi.fn() }));
+vi.mock("~/lib/meeting-recording.server", () => ({
+  canReadRecording: vi.fn(),
+  canRecordInto: vi.fn(),
+  claimRecording: vi.fn(),
+  finalizeEmpty: vi.fn(),
+  finishRecording: vi.fn(),
+  parseSpeakerMap: vi.fn(),
+  requestStop: vi.fn(),
+  resumeRecording: vi.fn(),
+  setSpeakers: vi.fn(),
+  startProcessing: vi.fn(),
+  storedLines: vi.fn().mockReturnValue([]),
+}));
+
+import { requireAuth } from "~/lib/auth";
+import { prisma } from "~/lib/db";
+import { canRecordInto, finalizeEmpty, requestStop, startProcessing } from "~/lib/meeting-recording.server";
+import { action } from "~/routes/api.meeting-recordings.$id";
+
+function post(body: unknown): Request {
+  return new Request("http://localhost/api/meeting-recordings/rec1", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+const run = (body: unknown) =>
+  action({ request: post(body), params: { id: "rec1" }, context: {} } as never) as Promise<Response>;
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(requireAuth).mockResolvedValue({
+    ok: true,
+    user: { sub: "u2", email: "u2@dali.edu", firstName: "Ada", lastName: "Lovelace", type: "member" },
+    sessionId: "s1",
+  } as never);
+  vi.mocked(canRecordInto).mockResolvedValue(true);
+  vi.mocked(prisma.meetingRecording.findUnique).mockResolvedValue({
+    id: "rec1",
+    userId: "u1",
+    documentName: "doc:p1:body",
+    notes: null,
+  } as never);
+  vi.mocked(prisma.meetingRecording.update).mockResolvedValue({} as never);
+});
+
+describe('POST /api/meeting-recordings/:id { action: "enhanced" }', () => {
+  it("requires snapshotAt", async () => {
+    const res = await run({ action: "enhanced" });
+    expect(res.status).toBe(400);
+  });
+
+  it("requires edit access to the note", async () => {
+    vi.mocked(canRecordInto).mockResolvedValue(false);
+    const res = await run({ action: "enhanced", snapshotAt: "2026-10-10T00:00:00.000Z" });
+    expect(res.status).toBe(403);
+  });
+
+  it("sets enhancedAt/enhancedBy when no later notes write exists", async () => {
+    const res = await run({ action: "enhanced", snapshotAt: "2026-10-10T00:00:00.000Z" });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.enhancedBy).toBe("Ada Lovelace");
+    expect(prisma.meetingRecording.update).toHaveBeenCalledWith({
+      where: { id: "rec1" },
+      data: { enhancedAt: expect.any(Date), enhancedBy: "Ada Lovelace" },
+    });
+  });
+
+  it("accepts a snapshotAt equal to the stored notes snapshot", async () => {
+    vi.mocked(prisma.meetingRecording.findUnique).mockResolvedValue({
+      id: "rec1",
+      userId: "u1",
+      documentName: "doc:p1:body",
+      notes: { snapshotAt: "2026-10-10T00:00:00.000Z" },
+    } as never);
+    const res = await run({ action: "enhanced", snapshotAt: "2026-10-10T00:00:00.000Z" });
+    expect(res.status).toBe(200);
+  });
+
+  it("409s when someone else's notes write landed after this client's snapshot", async () => {
+    vi.mocked(prisma.meetingRecording.findUnique).mockResolvedValue({
+      id: "rec1",
+      userId: "u1",
+      documentName: "doc:p1:body",
+      notes: { snapshotAt: "2026-10-10T00:05:00.000Z" },
+    } as never);
+    const res = await run({ action: "enhanced", snapshotAt: "2026-10-10T00:00:00.000Z" });
+    expect(res.status).toBe(409);
+    expect(prisma.meetingRecording.update).not.toHaveBeenCalled();
+  });
+});
+
+// POST /api/meeting-recordings/:id { action: "stop" } — the incident fix: a
+// note editor (not just the owner) can stop a recording whose owner went
+// silent, and can transcribe it once the owner's device looks done uploading.
+describe('POST /api/meeting-recordings/:id { action: "stop" }', () => {
+  function recording(overrides: Partial<Record<string, unknown>> = {}) {
+    return {
+      id: "rec1",
+      userId: "u1",
+      documentName: "doc:p1:body",
+      notes: null,
+      status: "Recording",
+      channels: ["mic"],
+      stopRequested: false,
+      finalizedAt: null,
+      lastChunkAt: new Date("2026-10-10T00:00:00.000Z"),
+      ...overrides,
+    };
+  }
+
+  it("lets the owner stop (non-final) without checking canRecordInto", async () => {
+    vi.mocked(requireAuth).mockResolvedValue({
+      ok: true,
+      user: { sub: "u1", email: "u1@dali.edu", firstName: "Owner", lastName: "User", type: "member" },
+      sessionId: "s1",
+    } as never);
+    vi.mocked(prisma.meetingRecording.findUnique).mockResolvedValue(recording() as never);
+    const res = await run({ action: "stop" });
+    expect(res.status).toBe(200);
+    expect(canRecordInto).not.toHaveBeenCalled();
+    expect(requestStop).toHaveBeenCalled();
+  });
+
+  it("lets an editor who isn't the owner stop (non-final)", async () => {
+    vi.mocked(canRecordInto).mockResolvedValue(true);
+    vi.mocked(prisma.meetingRecording.findUnique).mockResolvedValue(recording() as never);
+    const res = await run({ action: "stop" });
+    expect(res.status).toBe(200);
+    expect(canRecordInto).toHaveBeenCalledWith("u2", "doc:p1:body");
+    expect(requestStop).toHaveBeenCalled();
+  });
+
+  it("refuses a non-editor, non-owner stop", async () => {
+    vi.mocked(canRecordInto).mockResolvedValue(false);
+    vi.mocked(prisma.meetingRecording.findUnique).mockResolvedValue(recording() as never);
+    const res = await run({ action: "stop" });
+    expect(res.status).toBe(403);
+    expect(requestStop).not.toHaveBeenCalled();
+  });
+
+  it("refuses an editor's final stop while the owner's device looks live (recent chunk, no stopRequested)", async () => {
+    vi.mocked(canRecordInto).mockResolvedValue(true);
+    vi.mocked(prisma.meetingRecording.findUnique).mockResolvedValue(
+      recording({ lastChunkAt: new Date(Date.now() - 30_000) }) as never,
+    );
+    const res = await run({ action: "stop", final: true });
+    expect(res.status).toBe(403);
+    const json = await res.json();
+    expect(json.error).toBe("ownerOnly");
+    expect(requestStop).not.toHaveBeenCalled();
+    expect(startProcessing).not.toHaveBeenCalled();
+    expect(finalizeEmpty).not.toHaveBeenCalled();
+  });
+
+  it("allows an editor's final stop once the owner's last chunk is stale", async () => {
+    vi.mocked(canRecordInto).mockResolvedValue(true);
+    vi.mocked(prisma.meetingRecording.findUnique).mockResolvedValue(
+      recording({ lastChunkAt: new Date(Date.now() - 3 * 60_000) }) as never,
+    );
+    const res = await run({ action: "stop", final: true });
+    expect(res.status).toBe(200);
+    expect(requestStop).toHaveBeenCalled();
+    expect(startProcessing).toHaveBeenCalled();
+  });
+
+  it("allows an editor's final stop when the owner never uploaded a chunk", async () => {
+    vi.mocked(canRecordInto).mockResolvedValue(true);
+    vi.mocked(prisma.meetingRecording.findUnique).mockResolvedValue(
+      recording({ lastChunkAt: null, channels: [] }) as never,
+    );
+    const res = await run({ action: "stop", final: true });
+    expect(res.status).toBe(200);
+    expect(finalizeEmpty).toHaveBeenCalled();
+  });
+
+  it("allows an editor's final stop once stopRequested is already set, even with a fresh chunk", async () => {
+    vi.mocked(canRecordInto).mockResolvedValue(true);
+    vi.mocked(prisma.meetingRecording.findUnique).mockResolvedValue(
+      recording({ stopRequested: true, lastChunkAt: new Date() }) as never,
+    );
+    const res = await run({ action: "stop", final: true });
+    expect(res.status).toBe(200);
+    expect(startProcessing).toHaveBeenCalled();
+  });
+
+  it("lets the owner's own final stop through regardless of staleness", async () => {
+    vi.mocked(requireAuth).mockResolvedValue({
+      ok: true,
+      user: { sub: "u1", email: "u1@dali.edu", firstName: "Owner", lastName: "User", type: "member" },
+      sessionId: "s1",
+    } as never);
+    vi.mocked(prisma.meetingRecording.findUnique).mockResolvedValue(
+      recording({ lastChunkAt: new Date() }) as never,
+    );
+    const res = await run({ action: "stop", final: true });
+    expect(res.status).toBe(200);
+    expect(startProcessing).toHaveBeenCalled();
+  });
+
+  it("409s when the recording can't be processed again (already finalized)", async () => {
+    vi.mocked(canRecordInto).mockResolvedValue(true);
+    vi.mocked(prisma.meetingRecording.findUnique).mockResolvedValue(
+      recording({ finalizedAt: new Date() }) as never,
+    );
+    const res = await run({ action: "stop" });
+    expect(res.status).toBe(409);
+  });
+});

@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.scheduled-meetings";
 import { z } from "zod";
-import { requireAuth, forbidden } from "~/lib/auth";
+import { requireAuth, forbidden, isNonMember } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { canViewForms, isCore } from "~/lib/roles";
 import { isCoreGroup } from "~/lib/groups";
@@ -102,7 +102,7 @@ export async function action({ request }: Route.ActionArgs) {
 
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
-  if (auth.user.type === "applicant")
+  if (await isNonMember(auth, request))
     return forbidden(request);
 
   if (request.method !== "POST") {

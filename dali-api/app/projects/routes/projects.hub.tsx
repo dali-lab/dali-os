@@ -10,7 +10,7 @@ import {
 } from "react-router";
 import { Select } from "~/components/ui/floating";
 import type { Route } from "./+types/projects.hub";
-import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
+import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
 import {
@@ -93,7 +93,7 @@ type ProjectRow = {
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  const portalRedirect = redirectApplicantToPortal(auth);
+  const portalRedirect = await redirectNonMemberToPortal(auth, request);
   if (portalRedirect) return portalRedirect;
 
   const { terms, selected, termId, isAll } = await timed(request, 'hub.terms', () =>
@@ -194,7 +194,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  const portalRedirect = redirectApplicantToPortal(auth);
+  const portalRedirect = await redirectNonMemberToPortal(auth, request);
   if (portalRedirect) return portalRedirect;
   const actionRoles = await getUserRoles(auth.user.sub, request);
   if (!actionRoles.isCore) {
@@ -796,7 +796,7 @@ function ProjectThumb({
     );
   }
   return (
-    <div className="w-8 h-8 rounded bg-brand-tint text-dark-blue flex items-center justify-center text-xs font-bold flex-shrink-0">
+    <div className="w-8 h-8 rounded bg-os-well text-foreground flex items-center justify-center text-xs font-bold flex-shrink-0">
       {project.name.slice(0, 1)}
     </div>
   );

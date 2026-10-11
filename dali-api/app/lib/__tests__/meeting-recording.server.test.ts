@@ -2,18 +2,35 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
 vi.mock("~/lib/collabAuth", () => ({ authorizeCollabDoc: vi.fn() }));
+vi.mock("~/lib/transcription/chunks.server", () => ({ deletePrefix: vi.fn() }));
+vi.mock("~/lib/transcription/provider", () => ({ getTranscriptionProvider: vi.fn() }));
 
 import { prisma } from "~/lib/db";
 import { authorizeCollabDoc } from "~/lib/collabAuth";
+import { deletePrefix } from "~/lib/transcription/chunks.server";
+import { getTranscriptionProvider } from "~/lib/transcription/provider";
 import {
-  appendLines,
+  MAX_ACTIVE_RECORDINGS,
+  RETRY_PENDING_MARKER,
+  activeRecordingFor,
+  applyResult,
+  canReadRecording,
   canRecordInto,
-  cleanLines,
+  claimRecording,
+  createRecording,
+  finalizeEmpty,
   finishRecording,
+  formatRecordingTranscript,
+  latestRecordingFor,
   ownRecording,
+  parseSpeakerMap,
+  recordChunk,
   recordingDeepLink,
   requestStop,
+  resolveSpeakerNames,
   resumeRecording,
+  setSpeakers,
+  startProcessing,
 } from "~/lib/meeting-recording.server";
 
 const rec = (over: Record<string, unknown> = {}) =>
@@ -23,10 +40,19 @@ const rec = (over: Record<string, unknown> = {}) =>
     userId: "u1",
     status: "Recording",
     stopRequested: false,
-    systemAudio: true,
+    scheduledMeetingId: null,
+    occurrenceStart: null,
+    channels: ["mic"],
+    segmentStarts: [0],
+    chunkIndex: {},
+    lastChunkAt: null,
+    words: {},
     lines: [{ at: 1, text: "hi", source: "you" }],
+    speakers: {},
     recordedSeconds: 0,
     error: null,
+    insertedAt: null,
+    finalizedAt: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...over,
@@ -35,6 +61,11 @@ const rec = (over: Record<string, unknown> = {}) =>
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(prisma.meetingRecording.update).mockResolvedValue({ stopRequested: false } as never);
+  vi.mocked(prisma.meetingRecording.findMany).mockResolvedValue([]);
+  vi.mocked(prisma.meetingRecording.count).mockResolvedValue(0);
+  vi.mocked(prisma.meetingRecording.deleteMany).mockResolvedValue({ count: 0 } as never);
+  vi.mocked(prisma.meetingRecording.create).mockResolvedValue(rec());
+  vi.mocked(deletePrefix).mockResolvedValue(undefined);
 });
 
 describe("recordingDeepLink", () => {
@@ -60,6 +91,89 @@ describe("canRecordInto", () => {
   });
 });
 
+describe("canReadRecording", () => {
+  it("is the owner", async () => {
+    expect(await canReadRecording(rec({ userId: "u1" }), "u1")).toBe("owner");
+    expect(authorizeCollabDoc).not.toHaveBeenCalled();
+  });
+
+  it("is a viewer when they can see the note", async () => {
+    vi.mocked(authorizeCollabDoc).mockResolvedValue({ allowed: true, readOnly: true });
+    expect(await canReadRecording(rec({ userId: "u2" }), "u1")).toBe("viewer");
+  });
+
+  it("is neither when the note is closed to them", async () => {
+    vi.mocked(authorizeCollabDoc).mockResolvedValue({ allowed: false, readOnly: false });
+    expect(await canReadRecording(rec({ userId: "u2" }), "u1")).toBeNull();
+  });
+});
+
+describe("activeRecordingFor / latestRecordingFor", () => {
+  it("activeRecordingFor only looks at the live statuses", async () => {
+    vi.mocked(prisma.meetingRecording.findFirst).mockResolvedValueOnce(null);
+    await activeRecordingFor("doc:p1:body");
+    expect(prisma.meetingRecording.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { documentName: "doc:p1:body", status: { in: ["Pending", "Recording", "Stopped", "Processing"] } },
+      }),
+    );
+  });
+
+  it("latestRecordingFor looks at every status, newest first", async () => {
+    vi.mocked(prisma.meetingRecording.findFirst).mockResolvedValueOnce(null);
+    await latestRecordingFor("doc:p1:body");
+    expect(prisma.meetingRecording.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { documentName: "doc:p1:body" },
+        orderBy: { createdAt: "desc" },
+      }),
+    );
+  });
+
+  it("latestRecordingFor finds a Done row activeRecordingFor would miss", async () => {
+    vi.mocked(prisma.meetingRecording.findFirst).mockResolvedValueOnce({
+      id: "done1",
+      userId: "u2",
+      status: "Done",
+      createdAt: new Date("2026-10-10T12:00:00Z"),
+    } as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({ firstName: "Ada", lastName: "L", daliEmail: null } as never);
+
+    expect(await latestRecordingFor("doc:p1:body")).toEqual(
+      expect.objectContaining({ id: "done1", userId: "u2", status: "Done", ownerName: "Ada L" }),
+    );
+  });
+
+  it("returns null when the document has never had a recording", async () => {
+    vi.mocked(prisma.meetingRecording.findFirst).mockResolvedValueOnce(null);
+    expect(await latestRecordingFor("doc:p1:body")).toBeNull();
+  });
+});
+
+describe("resolveSpeakerNames", () => {
+  it("resolves a cuid-shaped value to the user's name", async () => {
+    const userId = "c" + "x".repeat(24);
+    vi.mocked(prisma.user.findMany).mockResolvedValue([{ id: userId, firstName: "Alex", lastName: "Kim" }] as never);
+    expect(await resolveSpeakerNames({ "mic:1": userId })).toEqual({ "mic:1": "Alex Kim" });
+  });
+
+  it("passes free text through unchanged", async () => {
+    expect(await resolveSpeakerNames({ "mic:1": "A guest" })).toEqual({ "mic:1": "A guest" });
+    expect(prisma.user.findMany).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the raw id when the user no longer exists", async () => {
+    const userId = "c" + "y".repeat(24);
+    vi.mocked(prisma.user.findMany).mockResolvedValue([]);
+    expect(await resolveSpeakerNames({ "mic:1": userId })).toEqual({ "mic:1": userId });
+  });
+
+  it("returns an empty map for no assignments", async () => {
+    expect(await resolveSpeakerNames({})).toEqual({});
+    expect(prisma.user.findMany).not.toHaveBeenCalled();
+  });
+});
+
 describe("ownRecording", () => {
   it("hides someone else's recording", async () => {
     vi.mocked(prisma.meetingRecording.findUnique).mockResolvedValue(rec({ userId: "u2" }));
@@ -67,60 +181,147 @@ describe("ownRecording", () => {
   });
 });
 
-describe("cleanLines", () => {
-  it("keeps well-formed lines and drops the rest", () => {
-    expect(
-      cleanLines([
-        { at: 2, text: "  hello ", source: "others" },
-        { at: -1, text: "negative" },
-        { at: 3, text: "   " },
-        { at: 4, text: "no source", source: "robot" },
-        "junk",
-      ]),
-    ).toEqual([
-      { at: 2, text: "hello", source: "others" },
-      { at: 4, text: "no source" },
-    ]);
+describe("createRecording", () => {
+  it("sweeps a user's stale, never-finalized rows and their S3 prefixes", async () => {
+    vi.mocked(prisma.meetingRecording.findMany).mockResolvedValue([{ id: "old1" }, { id: "old2" }] as never);
+
+    await createRecording("u1", "doc:p1:body");
+
+    expect(prisma.meetingRecording.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ userId: "u1", finalizedAt: null }) }),
+    );
+    expect(deletePrefix).toHaveBeenCalledWith("old1");
+    expect(deletePrefix).toHaveBeenCalledWith("old2");
+    expect(prisma.meetingRecording.deleteMany).toHaveBeenCalledWith({
+      where: { id: { in: ["old1", "old2"] } },
+    });
   });
 
-  it("ignores a non-array", () => {
-    expect(cleanLines({ at: 1 })).toEqual([]);
+  it("reports the note's live recording instead of starting a second one", async () => {
+    vi.mocked(prisma.meetingRecording.findFirst).mockResolvedValueOnce({
+      id: "live1",
+      userId: "u2",
+      status: "Recording",
+      createdAt: new Date("2026-10-10T12:00:00Z"),
+    } as never);
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({ firstName: "Ada", lastName: "L", daliEmail: null } as never);
+
+    const result = await createRecording("u1", "doc:p1:body");
+
+    expect(result).toEqual({
+      busy: expect.objectContaining({ id: "live1", userId: "u2", ownerName: "Ada L", status: "Recording" }),
+    });
+    expect(prisma.meetingRecording.create).not.toHaveBeenCalled();
+  });
+
+  it("seeds segment 0 and carries the meeting link", async () => {
+    const start = new Date("2026-10-09T15:00:00Z");
+    await createRecording("u1", "doc:p1:body", { scheduledMeetingId: "m1", occurrenceStart: start });
+
+    expect(prisma.meetingRecording.create).toHaveBeenCalledWith({
+      data: {
+        userId: "u1",
+        documentName: "doc:p1:body",
+        segmentStarts: [0],
+        scheduledMeetingId: "m1",
+        occurrenceStart: start,
+      },
+    });
+  });
+
+  it("refuses at the lab-wide active-recording cap", async () => {
+    vi.mocked(prisma.meetingRecording.count).mockResolvedValue(MAX_ACTIVE_RECORDINGS);
+    expect(await createRecording("u1", "doc:p1:body")).toBeNull();
+    expect(prisma.meetingRecording.create).not.toHaveBeenCalled();
   });
 });
 
-describe("appendLines", () => {
-  it("adds lines and marks a pending recording as started", async () => {
-    await appendLines(rec({ status: "Pending" }), [{ at: 2, text: "yo" }], false);
+describe("claimRecording", () => {
+  it("claims a Pending recording and flips it to Recording", async () => {
+    const result = await claimRecording(rec({ status: "Pending", segmentStarts: [0] }));
+    expect(result).toEqual({ ok: true, offset: 0, segment: 0 });
+    expect(prisma.meetingRecording.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: "Recording" } }),
+    );
+  });
+
+  it("re-claims a Recording session without changing status", async () => {
+    const result = await claimRecording(rec({ status: "Recording", segmentStarts: [0, 42] }));
+    expect(result).toEqual({ ok: true, offset: 42, segment: 1 });
+    expect(prisma.meetingRecording.update).not.toHaveBeenCalled();
+  });
+
+  it("refuses once the recording isn't live anymore", async () => {
+    expect(await claimRecording(rec({ status: "Stopped" }))).toEqual({ ok: false });
+  });
+});
+
+describe("recordChunk", () => {
+  function lockedRow(row: { channels?: string[]; chunkIndex?: Record<string, number[]>; status?: string }) {
+    vi.mocked(prisma.$transaction).mockImplementation(((fn: (tx: typeof prisma) => unknown) =>
+      fn(prisma)) as never);
+    vi.mocked(prisma.$queryRaw).mockResolvedValue([
+      { channels: row.channels ?? ["mic"], chunkIndex: row.chunkIndex ?? null, status: row.status ?? "Recording" },
+    ] as never);
+  }
+
+  it("adds the channel, bumps the high-water seq, and starts a Pending row", async () => {
+    lockedRow({ status: "Pending", channels: [], chunkIndex: { mic: [2] } });
+    vi.mocked(prisma.meetingRecording.update).mockResolvedValue({ stopRequested: true } as never);
+
+    const result = await recordChunk(rec({ status: "Pending", channels: [] }), "mic", 0, 5);
+
+    expect(result).toEqual({ stopRequested: true });
     expect(prisma.meetingRecording.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: {
-          lines: [
-            { at: 1, text: "hi", source: "you" },
-            { at: 2, text: "yo" },
-          ],
+        data: expect.objectContaining({
+          channels: ["mic"],
+          chunkIndex: { mic: [5] },
           status: "Recording",
-          systemAudio: false,
-        },
+        }),
       }),
     );
   });
 
-  it("answers an empty heartbeat without writing", async () => {
-    const res = await appendLines(rec({ stopRequested: true, recordedSeconds: 90 }), [], true);
-    expect(res).toEqual({ stopRequested: true, offset: 90 });
+  it("never lowers the high-water seq on an out-of-order retry", async () => {
+    lockedRow({ chunkIndex: { mic: [10] } });
+    await recordChunk(rec(), "mic", 0, 3);
+    expect(prisma.meetingRecording.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ chunkIndex: { mic: [10] } }) }),
+    );
+  });
+
+  it("merges from the locked row, not the caller's copy, so a simultaneous mic chunk survives", async () => {
+    // The caller read the row before the mic chunk on another machine wrote
+    // to it; the locked read sees that write and the call chunk adds to it.
+    lockedRow({ channels: ["mic"], chunkIndex: { mic: [1] } });
+    await recordChunk(rec({ channels: [], chunkIndex: {} }), "call", 0, 1);
+    expect(prisma.$queryRaw).toHaveBeenCalled();
+    expect(prisma.meetingRecording.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ channels: ["mic", "call"], chunkIndex: { mic: [1], call: [1] } }),
+      }),
+    );
+  });
+
+  it("tells the client to stop when the row is gone", async () => {
+    vi.mocked(prisma.$transaction).mockImplementation(((fn: (tx: typeof prisma) => unknown) =>
+      fn(prisma)) as never);
+    vi.mocked(prisma.$queryRaw).mockResolvedValue([] as never);
+    expect(await recordChunk(rec(), "mic", 0, 0)).toEqual({ stopRequested: true });
     expect(prisma.meetingRecording.update).not.toHaveBeenCalled();
   });
 });
 
 describe("requestStop", () => {
-  it("ends a recording the app never picked up", async () => {
+  it("ends a recording the client never claimed", async () => {
     await requestStop(rec({ status: "Pending" }));
     expect(prisma.meetingRecording.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: { status: "Stopped", stopRequested: true } }),
     );
   });
 
-  it("only flags a live recording, so the app flushes before it stops", async () => {
+  it("only flags a live recording, so the client flushes before it stops", async () => {
     await requestStop(rec());
     expect(prisma.meetingRecording.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: { stopRequested: true } }),
@@ -128,8 +329,30 @@ describe("requestStop", () => {
   });
 });
 
+describe("resumeRecording", () => {
+  it("re-arms a stopped, not-yet-finalized recording", async () => {
+    expect(await resumeRecording(rec({ status: "Stopped", finalizedAt: null, recordedSeconds: 90 }))).toBe(
+      true,
+    );
+    expect(prisma.meetingRecording.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { segmentStarts: { push: 90 }, status: "Pending", stopRequested: false, error: null },
+      }),
+    );
+  });
+
+  it("refuses a finalized (zero-chunk) stop", async () => {
+    expect(await resumeRecording(rec({ status: "Stopped", finalizedAt: new Date() }))).toBe(false);
+    expect(prisma.meetingRecording.update).not.toHaveBeenCalled();
+  });
+
+  it("refuses once processing has started", async () => {
+    expect(await resumeRecording(rec({ status: "Processing" }))).toBe(false);
+  });
+});
+
 describe("finishRecording", () => {
-  it("records why the app failed", async () => {
+  it("records why the client failed", async () => {
     await finishRecording(rec(), "Mic blocked", 12);
     expect(prisma.meetingRecording.update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -146,16 +369,246 @@ describe("finishRecording", () => {
   });
 });
 
-describe("resumeRecording", () => {
-  it("re-arms a stopped recording for the app", async () => {
-    expect(await resumeRecording(rec({ status: "Stopped", stopRequested: true }))).toBe(true);
-    expect(prisma.meetingRecording.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { status: "Pending", stopRequested: false, error: null } }),
+describe("parseSpeakerMap", () => {
+  it("accepts well-formed keys and values", () => {
+    expect(parseSpeakerMap({ "mic:1": "Alex", "call:2": "u2" })).toEqual({ "mic:1": "Alex", "call:2": "u2" });
+  });
+
+  it("rejects a malformed key", () => {
+    expect(parseSpeakerMap({ "mic1": "Alex" })).toBeNull();
+  });
+
+  it("rejects an empty or too-long value", () => {
+    expect(parseSpeakerMap({ "mic:1": "" })).toBeNull();
+    expect(parseSpeakerMap({ "mic:1": "x".repeat(81) })).toBeNull();
+  });
+
+  it("rejects a non-object", () => {
+    expect(parseSpeakerMap(["mic:1"])).toBeNull();
+    expect(parseSpeakerMap(null)).toBeNull();
+  });
+});
+
+describe("setSpeakers", () => {
+  it("merges into the existing map rather than replacing it", async () => {
+    await setSpeakers(rec({ speakers: { "mic:1": "Alex" } }), { "call:1": "u2" });
+    expect(prisma.meetingRecording.update).toHaveBeenCalledWith({
+      where: { id: "r1" },
+      data: { speakers: { "mic:1": "Alex", "call:1": "u2" } },
+    });
+  });
+});
+
+describe("startProcessing / finalizeEmpty", () => {
+  beforeEach(() => {
+    // The claim succeeds and the fresh read returns a row with one mic chunk
+    // pair; tests that need a different row override findUnique.
+    vi.mocked(prisma.meetingRecording.updateMany).mockResolvedValue({ count: 1 });
+    vi.mocked(prisma.meetingRecording.findUnique).mockResolvedValue(
+      rec({ channels: ["mic"], segmentStarts: [0], chunkIndex: { mic: [1] } }),
     );
   });
 
-  it("refuses while the app is still recording", async () => {
-    expect(await resumeRecording(rec({ status: "Recording" }))).toBe(false);
+  it("claims the row atomically and dispatches from a fresh read", async () => {
+    const process = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(getTranscriptionProvider).mockReturnValue({ process });
+
+    await startProcessing(rec());
+
+    expect(prisma.meetingRecording.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: "r1", status: { notIn: ["Processing", "Done"] }, finalizedAt: null }),
+        data: { status: "Processing" },
+      }),
+    );
+    expect(process).toHaveBeenCalledWith(
+      expect.objectContaining({
+        recordingId: "r1",
+        channels: [{ channel: "mic", segments: [{ segment: 0, startSeconds: 0, seqCount: 2 }] }],
+      }),
+    );
+  });
+
+  it("dispatches nothing when another request already claimed the row", async () => {
+    const process = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(getTranscriptionProvider).mockReturnValue({ process });
+    vi.mocked(prisma.meetingRecording.updateMany).mockResolvedValue({ count: 0 });
+
+    await startProcessing(rec());
+
+    expect(process).not.toHaveBeenCalled();
+  });
+
+  it("fails immediately when no provider is configured", async () => {
+    vi.mocked(getTranscriptionProvider).mockReturnValue(null);
+    await startProcessing(rec());
+    expect(prisma.meetingRecording.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: "Failed", error: "Transcription is not configured." }),
+      }),
+    );
+    expect(deletePrefix).toHaveBeenCalledWith("r1");
+  });
+
+  it("fails when dispatch throws", async () => {
+    vi.mocked(getTranscriptionProvider).mockReturnValue({
+      process: vi.fn().mockRejectedValue(new Error("network down")),
+    });
+    await startProcessing(rec());
+    expect(prisma.meetingRecording.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "Failed", error: "network down" }) }),
+    );
+    // Dispatch failures are transient: the audio stays so Try again can re-dispatch.
+    expect(deletePrefix).not.toHaveBeenCalled();
+    expect(prisma.meetingRecording.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ finalizedAt: expect.any(Date) }) }),
+    );
+  });
+
+  it("finalizeEmpty closes a zero-chunk stop as not resumable", async () => {
+    await finalizeEmpty(rec());
+    expect(prisma.meetingRecording.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "Stopped" }) }),
+    );
+    expect(deletePrefix).toHaveBeenCalledWith("r1");
+  });
+});
+
+describe("applyResult", () => {
+  const success = {
+    channels: {
+      mic: {
+        words: [
+          { s: 0, e: 0.3, w: "hi" },
+          { s: 0.4, e: 0.6, w: "there" },
+        ],
+        segments: [{ s: 0, e: 1, speaker: 1 }],
+      },
+    },
+    error: null,
+  };
+
+  it("builds words and lines and marks the row Done", async () => {
+    await applyResult(rec({ status: "Processing" }), success);
+    expect(prisma.meetingRecording.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: "Done", error: null, finalizedAt: expect.any(Date) }),
+      }),
+    );
+    expect(deletePrefix).toHaveBeenCalledWith("r1");
+  });
+
+  it("is idempotent once Done", async () => {
+    await applyResult(rec({ status: "Done" }), success);
     expect(prisma.meetingRecording.update).not.toHaveBeenCalled();
+    expect(deletePrefix).not.toHaveBeenCalled();
+  });
+
+  it("sets Failed on an error callback", async () => {
+    await applyResult(rec({ status: "Processing" }), { channels: {}, error: "ASR crashed" });
+    expect(prisma.meetingRecording.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "Failed", error: "ASR crashed" }) }),
+    );
+  });
+
+  it("a late success after the finalizer marked it Failed still sets Done", async () => {
+    await applyResult(rec({ status: "Failed", error: RETRY_PENDING_MARKER }), success);
+    expect(prisma.meetingRecording.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "Done" }) }),
+    );
+  });
+
+  it("drops a mic echo of the call channel when both channels are present", async () => {
+    const twoChannel = {
+      channels: {
+        mic: {
+          words: [
+            { s: 0, e: 0.3, w: "we" },
+            { s: 0.35, e: 0.6, w: "should" },
+            { s: 0.65, e: 0.9, w: "ship" },
+            { s: 0.95, e: 1.1, w: "this" },
+            { s: 1.15, e: 1.4, w: "friday" },
+          ],
+          segments: [],
+        },
+        call: {
+          words: [
+            { s: 0.8, e: 1.1, w: "we" },
+            { s: 1.15, e: 1.4, w: "should" },
+            { s: 1.45, e: 1.7, w: "ship" },
+            { s: 1.75, e: 1.9, w: "this" },
+            { s: 1.95, e: 2.2, w: "friday" },
+          ],
+          segments: [],
+        },
+      },
+      error: null,
+    };
+
+    await applyResult(rec({ status: "Processing", channels: ["mic", "call"] }), twoChannel);
+
+    const data = (prisma.meetingRecording.update as unknown as ReturnType<typeof vi.fn>).mock
+      .calls[0]![0].data;
+    expect(data.lines).toHaveLength(1);
+    expect(data.lines[0]).toMatchObject({ channel: "call", text: "we should ship this friday" });
+  });
+
+  it("does not dedupe when the recording only ever had one channel", async () => {
+    const micOnlyEcho = {
+      channels: {
+        mic: {
+          words: [
+            { s: 0, e: 0.3, w: "we" },
+            { s: 0.35, e: 0.6, w: "should" },
+            { s: 0.65, e: 0.9, w: "ship" },
+          ],
+          segments: [],
+        },
+      },
+      error: null,
+    };
+    await applyResult(rec({ status: "Processing", channels: ["mic"] }), micOnlyEcho);
+    const data = (prisma.meetingRecording.update as unknown as ReturnType<typeof vi.fn>).mock
+      .calls[0]![0].data;
+    expect(data.lines).toHaveLength(1);
+  });
+});
+
+describe("formatRecordingTranscript", () => {
+  it("labels an unrenamed single mic speaker as You", async () => {
+    const text = await formatRecordingTranscript(
+      rec({
+        lines: [{ at: 1, end: 2, text: "hi", channel: "mic", speaker: "mic:1" }],
+        speakers: {},
+      }),
+    );
+    expect(text).toBe("[00:01] You: hi");
+  });
+
+  it("resolves a renamed speaker through a user lookup", async () => {
+    const userId = "c" + "x".repeat(24); // cuid-shaped, matches the userId heuristic
+    vi.mocked(prisma.user.findMany).mockResolvedValue([
+      { id: userId, firstName: "Alex", lastName: "Kim" },
+    ] as never);
+    const text = await formatRecordingTranscript(
+      rec({
+        lines: [{ at: 1, end: 2, text: "hi", channel: "call", speaker: "call:1" }],
+        speakers: { "call:1": userId },
+      }),
+    );
+    expect(text).toBe("[00:01] Alex Kim: hi");
+  });
+
+  it("falls back to Speaker N for a second diarized voice on a channel", async () => {
+    const text = await formatRecordingTranscript(
+      rec({
+        lines: [
+          { at: 1, end: 2, text: "hi", channel: "mic", speaker: "mic:1" },
+          { at: 3, end: 4, text: "yo", channel: "mic", speaker: "mic:2" },
+        ],
+        speakers: {},
+      }),
+    );
+    expect(text).toBe("[00:01] Speaker 1: hi\n[00:03] Speaker 2: yo");
   });
 });

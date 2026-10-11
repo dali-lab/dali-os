@@ -50,18 +50,6 @@ export type FeatureFlagDef = {
 
 export const FEATURE_FLAGS = [
   {
-    key: "email-layout",
-    label: "Standard email layout",
-    description:
-      "Wraps outbound email in one branded layout instead of the four hand-rolled styles it uses today: a real HTML document with a light/dark-aware single-column 600px body, one greeting, one button style, and one footer. Also gives every email a plain-text alternative, which most currently ship without. Content is unchanged — only the frame around it. Ships off.",
-  },
-  {
-    key: "optimal-times",
-    label: "Find best meeting times",
-    description:
-      "Suggests the best meeting times in the scheduler. Once people are added, the top 3 slots where the most participants (with a linked calendar) are free show as numbered dotted outlines on the availability grid, with a matching button for each above Starts / Ends that fills in the time. Ships off.",
-  },
-  {
     key: "infra-dashboard",
     label: "Infrastructure dashboard",
     description:
@@ -72,12 +60,6 @@ export const FEATURE_FLAGS = [
     label: "Project AI TL;DR",
     description:
       "Adds an AI-written one-or-two-sentence summary of the project's work status beneath the status bar. Only shows when an AI provider is configured. Ships off.",
-  },
-  {
-    key: "mentorship-nudge",
-    label: "Nudge mentors on Slack",
-    description:
-      "Adds Core-only buttons on the Mentorship notes grid to Slack-DM mentors who haven't filled in their notes — a bulk 'Message mentors who haven't filled in' button (with an editable message + recipient preview) and a per-mentor nudge. Each mentor also gets an in-app notification. The Slack DM is force-sent regardless of the mentor's notification preferences, but stays prod-gated (staging/dev report 'not sent' unless NOTIFY_SLACK_DM_OVERRIDE=1). Ships off.",
   },
   {
     key: "education-redesign-v2",
@@ -101,7 +83,7 @@ export const FEATURE_FLAGS = [
     key: "ai-meeting-notes",
     label: "AI meeting notes",
     description:
-      "A Record button on meeting-note documents, in the browser or the desktop app. Recording always runs in the DALI OS macOS app: it captures system audio (everyone on a call, macOS 14.2+) and the mic, transcribes on-device with Apple's speech recognition, and streams the transcript to the page. On stop, Claude turns it into a summary, decisions, and action items appended to the note with the full transcript. No audio is uploaded or stored. Needs a desktop release newer than 0.1.6. Without an AI provider it adds the transcript only. Ships off.",
+      "Audio is processed by a GPU job DALI runs, then deleted within minutes of the recording ending. Only the transcript is kept, visible to whoever can see the note.",
   },
   {
     key: "email-personal",
@@ -110,10 +92,10 @@ export const FEATURE_FLAGS = [
       "Lets a member connect their own @dali.dartmouth.edu mailbox to the Email tab, next to project and shared inboxes. Only they can read it. Connecting requires agreeing to a risk notice first, and each agreement is recorded in the audit log. Turning this off hides connected personal inboxes without deleting the sign-in. Ships off.",
   },
   {
-    key: "applicant-email-engagement",
-    label: "Applicant email engagement",
+    key: "os-feedback",
+    label: "DALI OS feedback",
     description:
-      "Indexes the applications@ inbox (headers only) and shows an applicant's email history on hiring review pages, with a thread viewer and manual link/unlink in the Email tab. Ships off.",
+      "A feedback button in the bottom right corner of the shell. It opens the feature request feed at /feedback, where lab members react and comment, or starts a new request: drag to select an area of the page as a screenshot (or skip it), then write it up. Screenshots use the browser's tab sharing prompt, so the desktop app and phones post text only. Ships off.",
   },
   {
     key: "partner-email",
@@ -128,10 +110,10 @@ export const FEATURE_FLAGS = [
       "Finance tab, invoices and deal terms on partner records. Ships off.",
   },
   {
-    key: "start-terms",
-    label: "Application start terms",
+    key: "application-events",
+    label: "Application events",
     description:
-      "Separates the term a hiring cycle runs in from the term its hires start in. A Students cycle's setup gains a list of start terms it offers; applicants pick one on the application, and Core can change it afterward from the hiring onboarding board, which gains a Starts column and filters by cycle, start term, or both at once. A cycle with no start terms set shows no picker and reads as it does today. Ships off.",
+      "Help hours, socials and info sessions on a hiring cycle. Core creates events on the cycle page, emails everyone who started an application, and takes attendance by QR self check-in or by hand. Attendance shows on application reviews as an engagement signal. Ships off.",
   },
 ] as const satisfies readonly FeatureFlagDef[];
 

@@ -7,6 +7,7 @@ import {
   htmlToText,
   parseSearchResponse,
   threadToContext,
+  writingSystemPrompt,
   writingUserPrompt,
   MAX_CONTEXT_CHARS,
 } from "~/email/lib/ai-prompts";
@@ -28,6 +29,16 @@ describe("parseSearchResponse", () => {
     expect(parseSearchResponse("from:ada", ["a1"])).toBeNull();
     expect(parseSearchResponse('{"accounts": []}', ["a1"])).toBeNull();
     expect(parseSearchResponse("{not json}", ["a1"])).toBeNull();
+  });
+});
+
+describe("writingSystemPrompt", () => {
+  it("asks for plain text on an email and Markdown on a blog post", () => {
+    expect(writingSystemPrompt("proofread")).toContain("plain text");
+    const post = writingSystemPrompt("translate", "Spanish", "post");
+    expect(post).toContain("Spanish");
+    expect(post).toContain("Markdown");
+    expect(post).not.toContain("email");
   });
 });
 

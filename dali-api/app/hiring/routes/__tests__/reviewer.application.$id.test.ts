@@ -5,10 +5,19 @@ vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
 }));
 vi.mock("~/lib/roles");
+vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn(async () => false) }));
+vi.mock("~/hiring/lib/email-engagement.server", () => ({
+  getApplicantEmailEngagement: vi.fn(async () => null),
+}));
+vi.mock("~/hiring/lib/hiring-events.server", () => ({
+  getHiringEventEngagement: vi.fn(async () => []),
+}));
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { hasCycleAccess } from "~/lib/roles";
+import { hasCycleAccess, getUserRoles } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { getHiringEventEngagement } from "~/hiring/lib/hiring-events.server";
 import { loader } from "~/hiring/routes/reviewer.application.$id";
 
 const mockPrisma = prisma as unknown as Record<string, any>;
@@ -98,6 +107,12 @@ beforeEach(() => {
     user: { sub: USER_ID, email: "rev@x.com", type: "user" },
   } as any);
   vi.mocked(hasCycleAccess).mockResolvedValue(true);
+  vi.mocked(getUserRoles).mockResolvedValue({
+    isCore: false,
+    isAdmin: false,
+    isDomainLead: false,
+    isInterviewer: false,
+  } as any);
 });
 
 describe("reviewer.application.$id loader — domain scoping", () => {
@@ -370,5 +385,43 @@ describe("reviewer.application.$id loader — prior applications", () => {
     expect(result.blinded).toBe(false);
     expect(result.priorApplications).toHaveLength(1);
     expect(result.priorApplications[0].domains[0].status).toBe("Accepted");
+  });
+});
+
+describe("reviewer.application.$id loader — application events engagement", () => {
+  beforeEach(() => {
+    mockPrisma.cycleReviewer.findMany.mockResolvedValue([
+      { id: DESIGN_REVIEWER_ID, domainId: DESIGN_DOMAIN_ID },
+    ]);
+    mockPrisma.domainApplication.findMany.mockResolvedValue([
+      makeDA(DESIGN_DA_ID, DESIGN_DOMAIN_ID),
+    ]);
+  });
+
+  it("defaults to an empty list and skips the lookup when the flag is off", async () => {
+    const result: any = await callLoader();
+
+    expect(getHiringEventEngagement).not.toHaveBeenCalled();
+    expect(result.hiringEventEngagement).toEqual([]);
+  });
+
+  it("fetches the applicant's event attendance when the flag is on", async () => {
+    vi.mocked(isFeatureEnabled).mockResolvedValue(true);
+    vi.mocked(getHiringEventEngagement).mockResolvedValue([
+      {
+        eventId: "evt-1",
+        title: "Help hour",
+        kind: "HelpHour",
+        startsAt: new Date("2026-10-14T20:00:00.000Z"),
+        endsAt: new Date("2026-10-14T21:00:00.000Z"),
+        cycleId: CYCLE_ID,
+        cycleName: "Test Cycle",
+      },
+    ] as never);
+
+    const result: any = await callLoader();
+
+    expect(getHiringEventEngagement).toHaveBeenCalledWith("u-1");
+    expect(result.hiringEventEngagement).toHaveLength(1);
   });
 });

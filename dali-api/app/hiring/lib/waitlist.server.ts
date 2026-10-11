@@ -23,7 +23,7 @@
 
 import { prisma } from "~/lib/db";
 import type { CycleApplicants } from "~/generated/prisma/enums";
-import { renderForSlot, decisionSlot } from "~/hiring/lib/email-variables";
+import { renderForSlot, decisionSlot, CONTINUED_INTEREST_SLOT } from "~/hiring/lib/email-variables";
 import { logAuditEvent } from "~/lib/audit";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { promoteToMember } from "~/members/lib/membership.server";
@@ -465,7 +465,7 @@ export async function acceptFromWaitlist(args: {
 // ─── Remove from waitlist ────────────────────────────────────────────────────
 
 export type RemoveResult =
-  | { ok: true; releasedDecisionId: string }
+  | { ok: true; releasedDecisionId: string; emailSent: boolean }
   | {
       ok: false;
       reason: "not-found" | "not-waitlisted" | "no-domain";
@@ -478,7 +478,9 @@ export type RemoveResult =
  * identical to "rejected during cycle" in pure-history views — but the prior
  * Waitlisted Released row remains in the lineage if anyone needs to dig).
  *
- * No email goes out: Core has already handled the human conversation.
+ * A Students-cycle applicant gets the continued interest email, inviting them
+ * to reapply with this application (continued-interest.server.ts). Member
+ * cycles stay silent: there is nothing to reapply to that way.
  */
 export async function removeFromWaitlist(args: {
   domainApplicationId: string;
@@ -490,8 +492,15 @@ export async function removeFromWaitlist(args: {
   const da = await prisma.domainApplication.findUnique({
     where: { id: domainApplicationId },
     include: {
-      domain: { select: { id: true } },
-      application: { select: { applicationCycleId: true } },
+      domain: { select: { id: true, name: true, displayName: true } },
+      application: {
+        select: {
+          applicationCycleId: true,
+          userId: true,
+          applicationCycle: { select: { applicants: true } },
+          user: { select: { firstName: true, dartmouthEmail: true, netId: true } },
+        },
+      },
       decisions: {
         where: { stage: "Released" },
         orderBy: { createdAt: "desc" },
@@ -531,6 +540,38 @@ export async function removeFromWaitlist(args: {
     return rel;
   });
 
+  // Best-effort, after the transaction: a mail blip must not put them back on
+  // the waitlist.
+  let emailId: string | null = null;
+  let emailSent = false;
+  if (da.application.applicationCycle.applicants === "Students") {
+    try {
+      const user = da.application.user;
+      const to = user.dartmouthEmail ?? (user.netId ? `${user.netId}@dartmouth.edu` : null);
+      const template = await getHiringEmail(CONTINUED_INTEREST_SLOT);
+      if (to && template) {
+        const rendered = renderForSlot(CONTINUED_INTEREST_SLOT, template, {
+          firstName: user.firstName,
+          domain: da.domain.displayName ?? da.domain.name ?? "",
+        });
+        const { id, deduped } = await enqueueOutbound({
+          channel: "email",
+          purpose: "Hiring",
+          dedupKey: `hiring.waitlist.remove:${released.id}`,
+          target: to,
+          recipientUserId: da.application.userId,
+          subject: rendered.subject,
+          bodyHtml: rendered.html,
+          eventType: "hiring.waitlist.remove",
+        });
+        emailId = id;
+        emailSent = !deduped;
+      }
+    } catch (err) {
+      console.error("waitlist remove: email send failed:", err);
+    }
+  }
+
   await logAuditEvent({
     action: "waitlist.remove",
     userId: actorId,
@@ -542,11 +583,14 @@ export async function removeFromWaitlist(args: {
       cycleId,
       domainId: da.domain.id,
       removedFromRank: latest.waitlistRank,
+      emailSent,
     },
     request,
   });
 
-  return { ok: true, releasedDecisionId: released.id };
+  await drainNow([emailId]);
+
+  return { ok: true, releasedDecisionId: released.id, emailSent };
 }
 
 // ─── Reorder ─────────────────────────────────────────────────────────────────

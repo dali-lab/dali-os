@@ -58,6 +58,16 @@ export const AUDIT_ACTIONS = [
   "interview.decline",
   "review.submit",
   "review.unsubmit",
+  // Application events (help hours, socials, info sessions) on a cycle.
+  "hiring.event.create",
+  "hiring.event.update",
+  "hiring.event.delete",
+  "hiring.event.checkin.open",
+  "hiring.event.checkin.close",
+  "hiring.event.checkin.self",
+  "hiring.event.broadcast.on",
+  "hiring.event.broadcast.off",
+  "hiring.event.attendance.mark",
   "domain.create",
   "domain.delete",
   "domain.lead.add",
@@ -104,6 +114,7 @@ export const AUDIT_ACTIONS = [
   "doctag.create",
   "email.send",
   "email.extension_notice",
+  "email.event_announcement",
   // A member agreeing to the risk notice before connecting their personal
   // DALI mailbox. targetId is the notice version they agreed to.
   "email.personal_consent",

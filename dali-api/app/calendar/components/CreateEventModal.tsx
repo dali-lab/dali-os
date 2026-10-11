@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { useFetcher, useRevalidator } from "react-router";
 import { AlignLeft, CalendarDays, Clock, MapPin, Repeat, UsersRound, Video, X } from "lucide-react";
 import { cn } from "~/lib/cn";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
 import { TimeField as TimeComboField } from "~/components/ui/TimeField";
@@ -28,6 +27,7 @@ import {
   addDaysToDate,
 } from "~/calendar/components/composer";
 import { durationMinutesBetween } from "~/calendar/lib/event-block";
+import { eventTitleOrDefault } from "~/calendar/lib/event-title";
 import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
 import { weekStartIsoForDay, weekWindow } from "~/calendar/lib/view-window";
 import {
@@ -253,7 +253,6 @@ export function CreateEventModal({
   // ── Google Meet ──────────────────────────────────────────────────────────
   // The link is minted on the selected Google calendar, so the option only
   // makes sense with a Google destination and real guests.
-  const optimalTimesEnabled = useFeatureFlag("optimal-times");
   // Ranked "best times" reported up by the availability grid; rendered as
   // clickable pills below it (see OptimalTimePills).
   const [optimalSuggestions, setOptimalSuggestions] = useState<SlotSuggestions | null>(null);
@@ -372,9 +371,9 @@ export function CreateEventModal({
   // invisible.
   const eventCanLogWork = !allDay && repeatSpecToRRule(repeat, repeatAnchorLocal) === null;
   const eventLoggingWork = isWork && eventCanLogWork;
-  // A plain event holds a room with a one-off booking, which has the same
-  // shape limits: one timed slot. A series or an all-day hold is a meeting's.
-  const eventCanBookRoom = eventCanLogWork;
+  // A plain event's room hold now repeats with it. Only an all-day event has
+  // no timed slot to hold.
+  const eventCanBookRoom = !allDay;
   // A meeting keeps the toggle when it repeats. The log links to the
   // ScheduledMeeting (one row per meeting per user) and is dated to the series
   // anchor — the first occurrence, the one time being scheduled here.
@@ -382,7 +381,6 @@ export function CreateEventModal({
 
   // ── canSubmit ────────────────────────────────────────────────────────────
   const canSubmitEvent =
-    title.trim() !== "" &&
     destination !== "" &&
     startIso !== "" &&
     endIso !== "" &&
@@ -391,7 +389,6 @@ export function CreateEventModal({
     (!eventLoggingWork || (roleKey !== "" && workNote.trim() !== ""));
 
   const canSubmitMeeting =
-    title.trim() !== "" &&
     durationMinutes > 0 &&
     startEndValid &&
     meetingNoteValid(note.state) &&
@@ -405,7 +402,7 @@ export function CreateEventModal({
     setMeetingStatus(null);
     try {
       const payload: Record<string, unknown> = {
-        title: title.trim(),
+        title: eventTitleOrDefault(title),
         durationMinutes,
       };
       if (location.trim()) payload.location = location.trim();
@@ -500,8 +497,11 @@ export function CreateEventModal({
   // underline, and the icon rows use borderless controls that only show their
   // frame on hover/focus — so the form reads as a list of lines, not a stack
   // of boxes.
+  // `bg-transparent!` because app.css paints every <input> with --color-card in
+  // an unlayered rule, which outbids the plain utility and shows as a square
+  // card-coloured block in dark mode.
   const titleClass =
-    "w-full border-0 border-b border-border bg-transparent px-0 pb-2 text-2xl font-medium text-foreground placeholder:text-muted-foreground/70 focus:border-os-accent focus:outline-none focus:ring-0";
+    "w-full rounded-none border-0 border-b border-border bg-transparent! px-0 pb-2 text-2xl font-medium text-foreground placeholder:text-muted-foreground/70 focus:border-os-accent focus:outline-none focus:ring-0";
   const quietFieldClass =
     "w-full rounded-[10px] border border-transparent bg-transparent px-2.5 py-2 text-sm text-foreground placeholder:text-muted-foreground hover:border-border focus:border-os-accent focus:bg-background focus:outline-none";
 
@@ -589,7 +589,7 @@ export function CreateEventModal({
               selectedEndLocal={selectedEndLocal || undefined}
               compact
               hideAvailability={!hasGuests}
-              enableOptimalTimes={optimalTimesEnabled}
+              enableOptimalTimes
               onSuggestionsChange={setOptimalSuggestions}
               weekNav={{ onShift: shiftWeek, onToday: goToThisWeek }}
             />
@@ -650,11 +650,11 @@ export function CreateEventModal({
               )}
 
               {/* Title — the one field that carries the modal's heading weight */}
+              <input type="hidden" name="title" value={eventTitleOrDefault(title)} />
               <input
                 id="cem-title"
-                name="title"
                 type="text"
-                required
+                aria-label="Title"
                 placeholder="Add title"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
@@ -765,6 +765,7 @@ export function CreateEventModal({
                   onRoomsChange={setRoomIds}
                   startIso={startIso}
                   endIso={endIso}
+                  recurrenceRule={repeatSpecToRRule(repeat, repeatAnchorLocal)}
                   className={quietFieldClass}
                 />
               </FieldRow>
@@ -823,21 +824,15 @@ export function CreateEventModal({
           ) : (
             /* ── Meeting form ────────────────────────────────────────────── */
             <form onSubmit={submitMeeting} className="flex flex-col gap-5">
-              {/* Title */}
-              <div>
-                <label htmlFor="cem-mtg-title" className={labelClass}>
-                  Title <span className="text-red-500">*</span>
-                </label>
-                <input
-                  id="cem-mtg-title"
-                  type="text"
-                  required
-                  placeholder="e.g. Deserto sync"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  className={fieldClass}
-                />
-              </div>
+              <input
+                id="cem-mtg-title"
+                type="text"
+                aria-label="Title"
+                placeholder="Add title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className={fieldClass}
+              />
 
               {/* Guests */}
               <FieldRow icon={UsersRound}>
@@ -961,6 +956,7 @@ export function CreateEventModal({
                   onRoomsChange={setRoomIds}
                   startIso={startIso}
                   endIso={endIso}
+                  recurrenceRule={repeatSpecToRRule(repeat, selectedStartLocal)}
                   className={fieldClass}
                 />
               </div>

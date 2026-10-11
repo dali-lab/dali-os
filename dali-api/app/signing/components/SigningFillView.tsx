@@ -3,6 +3,7 @@ import { Form as RRForm } from "react-router";
 import { ArrowDown } from "lucide-react";
 import { DocEditor } from "~/components/doc";
 import { isCheckboxChecked, type SigningFieldRef } from "~/lib/signing-fields";
+import { Button } from "~/components/ui/Button";
 
 interface SigningFillViewProps {
   /** BlockNote block JSON — the loader normalizes legacy bodies on read. */
@@ -152,14 +153,10 @@ export function SigningFillView({
                 {filledCount}/{totalRequired}
               </span>
             </div>
-            <button
-              type="button"
-              onClick={jumpToNext}
-              className="inline-flex items-center gap-1.5 rounded-full bg-accent-coral px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-coral/90"
-            >
+            <Button size="sm" onClick={jumpToNext}>
               <ArrowDown className="h-3.5 w-3.5" />
               {filledCount === 0 ? "Start signing" : "Next field"}
-            </button>
+            </Button>
           </div>
         </div>
       )}

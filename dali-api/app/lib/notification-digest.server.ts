@@ -18,7 +18,6 @@ import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { getFrontendUrl } from "~/lib/app-env";
 import { escapeHtml } from "~/lib/email";
 import { renderEmailDocument } from "~/email/lib/layout";
-import { emailLayoutEnabled } from "~/email/lib/layout.server";
 import { getZonedParts, zonedWallTimeUtc, APPLICATION_TZ } from "~/lib/timezone";
 import { NOT_CANCELLED_MEETING } from "~/lib/notifications";
 import { EVENT_TYPES, type EventDef } from "~/lib/notification-events";
@@ -159,22 +158,6 @@ function digestText(args: DigestArgs, base: string): string {
   return parts.join("\n\n");
 }
 
-// The pre-layout shape. Kept so turning the `email-layout` flag off is a true
-// revert; the escaping fixes above apply to both paths on purpose, since they
-// are a correctness fix rather than part of the redesign.
-export function renderDigestEmail(args: DigestArgs): { subject: string; html: string } {
-  const base = getFrontendUrl();
-  return {
-    subject: digestSubject(args.rows.length),
-    html: [
-      `<p>Hi ${escapeHtml(args.firstName)},</p>`,
-      `<p>Here's what you haven't read on DALI OS:</p>`,
-      sectionsHtml(args, base),
-      `<p style="margin-top:16px;"><a href="${base}" style="color:#1d4ed8;">Open DALI OS</a> · <a href="${base}/settings/notifications" style="color:#52525b;">notification settings</a></p>`,
-    ].join("\n"),
-  };
-}
-
 export function renderDigestEmailDocument(args: DigestArgs): {
   subject: string;
   html: string;
@@ -251,10 +234,6 @@ export async function runDigest(freq: DigestFrequency, now: Date): Promise<JobRe
   const day = now.toISOString().slice(0, 10);
   const enqueuedIds: Array<string | null> = [];
   let sent = 0;
-  // Resolved once per run, not per recipient: a digest batch can be hundreds of
-  // users, and the flag is evaluated for everyone so the answer can't differ
-  // between them.
-  const layoutOn = await emailLayoutEnabled();
   for (const [userId, wanted] of wantedByUser) {
     const user = userById.get(userId);
     if (!user) continue;
@@ -266,9 +245,7 @@ export async function runDigest(freq: DigestFrequency, now: Date): Promise<JobRe
     if (userRows.length === 0) continue; // no empty digests
 
     const digestArgs = { firstName: user.firstName, now, rows: userRows };
-    const { subject, html, text } = layoutOn
-      ? renderDigestEmailDocument(digestArgs)
-      : { ...renderDigestEmail(digestArgs), text: digestText(digestArgs, getFrontendUrl()) };
+    const { subject, html, text } = renderDigestEmailDocument(digestArgs);
     try {
       // Mark-and-enqueue atomically: rows can't be marked without the digest
       // being queued, nor queued without the rows being marked.

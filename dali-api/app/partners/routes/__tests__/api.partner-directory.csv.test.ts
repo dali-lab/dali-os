@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
+vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn(), isNonMember: vi.fn().mockResolvedValue(false) }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
 vi.mock("../../lib/partner-directory", async (orig) => ({
   ...(await orig<typeof import("../../lib/partner-directory")>()),

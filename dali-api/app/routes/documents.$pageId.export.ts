@@ -1,6 +1,6 @@
 import type { Route } from "./+types/documents.$pageId.export";
 import { prisma } from "~/lib/db";
-import { requireAuth, isPartnerAccount } from "~/lib/auth";
+import { requireAuth, isPartnerAccount, isNonMember } from "~/lib/auth";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { buildExportHtml } from "~/collab/export";
 import { readDocAsBlocks } from "~/collab/read";
@@ -23,7 +23,7 @@ function safeFilename(title: string): string {
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return new Response("Unauthorized", { status: 401 });
-  if (auth.user.type === "applicant") return new Response("Forbidden", { status: 403 });
+  if (await isNonMember(auth, request)) return new Response("Forbidden", { status: 403 });
   if (await isPartnerAccount(auth)) return new Response("Forbidden", { status: 403 });
 
   const url = new URL(request.url);

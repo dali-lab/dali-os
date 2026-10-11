@@ -39,6 +39,19 @@ describe("export-pdf renderer robustness", () => {
     expect(isPdf(pdf)).toBe(true);
   });
 
+  it("renders a taskMention node as a linked label without throwing", async () => {
+    const pdf = await renderBlocksToPdf("Test", [
+      {
+        id: "p",
+        type: "paragraph",
+        props: {},
+        content: [{ type: "taskMention", props: { taskId: "t1", projectId: "proj1", label: "Ship it" } }],
+        children: [],
+      },
+    ] as never);
+    expect(isPdf(pdf)).toBe(true);
+  });
+
   it("renders a table (cells as tableCell objects or bare inline arrays)", async () => {
     const pdf = await renderBlocksToPdf("Doc", [
       {

@@ -11,6 +11,7 @@ final class DisplayStore {
     private(set) var items: [ScheduleItem] = []
     private(set) var currentEvent: ScheduleItem?
     private(set) var attendanceScan: AttendanceScan?
+    private(set) var applicationEvent: ApplicationEventBroadcast?
     private(set) var isPaired: Bool
     /// Set when the last refresh failed; the display keeps showing stale data.
     private(set) var isOffline = false
@@ -36,7 +37,7 @@ final class DisplayStore {
         #if DEBUG
         let normalized = code.uppercased().filter { $0.isLetter || $0.isNumber }
         if let event = Self.demoCodes[normalized] {
-            startDemo(event: event)
+            startDemo(event: event, applicants: normalized == "DEMOAPPLICANTS")
             return
         }
         #endif
@@ -64,6 +65,7 @@ final class DisplayStore {
             items = response.items
             currentEvent = response.currentEvent
             attendanceScan = response.attendanceScan
+            applicationEvent = response.applicationEvent
             isOffline = false
         } catch let error as APIClient.APIError where error.status == 401 {
             // Revoked from Core ▸ Rooms (or the room was archived).
@@ -109,9 +111,9 @@ final class DisplayStore {
     /// Sample room and schedule, no server. Entered with the setup code
     /// DEMO-ROOM (or DEMO-EVENT for event check-in mode), or by launching with
     /// `-demoDisplay [event|busy|scan]`. Unpair (long-press the date) to leave.
-    static let demoCodes = ["DEMOROOM": false, "DEMOEVENT": true]
+    static let demoCodes = ["DEMOROOM": false, "DEMOEVENT": true, "DEMOAPPLICANTS": false]
 
-    func startDemo(event: Bool, busy: Bool = false, scan: Bool = false) {
+    func startDemo(event: Bool, busy: Bool = false, scan: Bool = false, applicants: Bool = false) {
         let now = Date.now
         func at(_ minutes: Double) -> Date { now.addingTimeInterval(minutes * 60) }
         func org(_ first: String, _ last: String) -> ScheduleItem.Organizer {
@@ -132,6 +134,12 @@ final class DisplayStore {
         currentEvent = event ? items.last : nil
         attendanceScan = scan
             ? AttendanceScan(meetingId: "demo", title: "Project sync", start: at(-5), end: at(55))
+            : nil
+        applicationEvent = applicants
+            ? ApplicationEventBroadcast(
+                id: "demo", title: "Application help hour", kind: "HelpHour", start: at(-15), end: at(105),
+                location: "Sudikoff Studio", checkInUrl: "https://os.dali.dartmouth.edu/hiring/events/check-in/demo"
+            )
             : nil
         isDemo = true
         isPaired = true
@@ -157,6 +165,7 @@ final class DisplayStore {
         items = []
         currentEvent = nil
         attendanceScan = nil
+        applicationEvent = nil
         isPaired = false
     }
 }

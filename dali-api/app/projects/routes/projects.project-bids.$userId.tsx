@@ -1,6 +1,6 @@
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/projects.project-bids.$userId";
-import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
+import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { canViewStaffing, currentTerm } from "~/lib/roles";
 import { prisma } from "~/lib/db";
@@ -33,7 +33,7 @@ export const handle = {
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  const portalRedirect = redirectApplicantToPortal(auth);
+  const portalRedirect = await redirectNonMemberToPortal(auth, request);
   if (portalRedirect) return portalRedirect;
   const regrouped = await regroupRedirect(
     request,

@@ -22,7 +22,7 @@ import type { PortalProfileData } from "~/lib/portal-profile.server";
 // in the page hero) and /portal/settings (`alwaysEditing`, with the photo field
 // inline since that page has no hero).
 
-const CARD = "rounded-2xl border border-border bg-card px-5 shadow-brand-1";
+const CARD = "rounded-os-card border border-border bg-card px-5";
 const FIELD =
   "w-full rounded-xl border border-border bg-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral";
 
@@ -215,7 +215,7 @@ export function PortalProfileCard({
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="font-heading text-[19px] font-semibold text-dark-blue">
+        <h2 className="font-heading text-[19px] font-semibold text-foreground">
           Profile
         </h2>
         <div className="flex items-center gap-3">

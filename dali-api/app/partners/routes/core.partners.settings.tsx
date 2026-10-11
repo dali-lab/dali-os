@@ -4,7 +4,7 @@ import { MultiSelect, Select } from "~/components/ui/floating";
 import { Button } from "~/components/ui/Button";
 import { Settings as SettingsIcon } from "lucide-react";
 import type { Route } from "./+types/core.partners.settings";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { isCore, getActiveCoreCycleTermIds } from "~/lib/roles";
@@ -33,7 +33,7 @@ const DEFAULT_STALE_DAYS = 14;
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  if (auth.user.type === "applicant") return redirect("/portal");
+  if (await isNonMember(auth, request)) return redirect("/portal");
   if (!(await isCore(auth.user.sub))) return redirect("/");
 
   const [settings, cycleTermIds, applicationFormBinding, surveyFormBinding, selectableForms] =

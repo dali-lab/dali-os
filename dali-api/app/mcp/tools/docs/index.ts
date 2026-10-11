@@ -46,6 +46,14 @@ import { LIST_DRIVE_TRASH_TOOL, runListDriveTrash } from "./list-drive-trash";
 import { MANAGE_DRIVE_TRASH_TOOL_DEF, runManageDriveTrash } from "./manage-drive-trash";
 import { MOVE_DRIVE_ITEM_TOOL, runMoveDriveItem } from "./move-drive-item";
 import { UPLOAD_DRIVE_FILE_TOOL, runUploadDriveFile } from "./upload-drive-file";
+import {
+  LIST_BLOG_POSTS_TOOL,
+  runListBlogPosts,
+  READ_BLOG_POST_TOOL,
+  runReadBlogPost,
+  MANAGE_BLOG_POST_TOOL,
+  runManageBlogPost,
+} from "./blog-posts";
 
 export const DOCS_TOOLS: McpTool[] = [
   {
@@ -156,5 +164,20 @@ export const DOCS_TOOLS: McpTool[] = [
     def: UPLOAD_DRIVE_FILE_TOOL,
     run: (ctx: McpCtx, args) =>
       runUploadDriveFile(ctx.user.id, args as Parameters<typeof runUploadDriveFile>[1]),
+  },
+  {
+    def: LIST_BLOG_POSTS_TOOL,
+    run: (ctx: McpCtx, args) =>
+      runListBlogPosts(ctx.user.id, args as Parameters<typeof runListBlogPosts>[1]),
+  },
+  {
+    def: READ_BLOG_POST_TOOL,
+    run: (ctx: McpCtx, args) =>
+      runReadBlogPost(ctx.user.id, args as Parameters<typeof runReadBlogPost>[1]),
+  },
+  {
+    def: MANAGE_BLOG_POST_TOOL,
+    run: (ctx: McpCtx, args) =>
+      runManageBlogPost(ctx.user.id, args as Parameters<typeof runManageBlogPost>[1]),
   },
 ];

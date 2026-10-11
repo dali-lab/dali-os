@@ -13,6 +13,7 @@ import { prisma } from "~/lib/db";
 import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { formatUserCode, normalizeUserCode } from "~/lib/pairing";
 import { buttonClasses } from "~/components/ui/Button";
+import { useOsShellRoot } from "~/lib/os-shell";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Link a device · DALI OS" },
@@ -77,13 +78,15 @@ const SSO_BUTTON =
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center px-4 py-10">
+    <div className="os-shell min-h-screen bg-os-bg text-foreground flex items-center justify-center px-4 py-10">
       <div className="w-full max-w-md">
-        <img src="/logo-blue.svg" alt="DALI Lab" className="mx-auto h-12 w-auto" />
-        <div className="mt-6 rounded-2xl border border-border bg-card p-8 shadow-brand-1">
+        <div className="text-center">
+          <span className="font-os-logo text-2xl font-semibold text-os-accent">dali.os</span>
+        </div>
+        <div className="mt-6 rounded-os-card bg-os-card p-8">
           {children}
         </div>
-        <p className="mt-6 text-center text-xs text-muted-foreground">
+        <p className="mt-6 text-center text-xs text-os-grey">
           Manage paired devices under Settings → Your devices.
         </p>
       </div>
@@ -100,6 +103,7 @@ function CodeChip({ code }: { code: string }) {
 }
 
 export default function LinkPage({ loaderData }: Route.ComponentProps) {
+  useOsShellRoot(true);
   const data = loaderData;
 
   if (data.view === "approved") {
@@ -294,7 +298,7 @@ export default function LinkPage({ loaderData }: Route.ComponentProps) {
           type="submit"
           name="intent"
           value="cancel"
-          className="rounded-lg border border-border px-4 py-2.5 text-sm font-semibold text-foreground hover:bg-muted transition-colors"
+          className={buttonClasses("secondary", "md")}
         >
           Cancel
         </button>

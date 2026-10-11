@@ -92,6 +92,7 @@ describe("POST /api/hiring/my-interview/cancel", () => {
         domainApplication: { application: { userId: USER_ID } },
         status: "Scheduled",
       },
+      include: { roomBooking: { select: { userId: true } } },
     });
   });
 

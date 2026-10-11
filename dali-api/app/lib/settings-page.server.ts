@@ -1,5 +1,5 @@
 import { redirect } from "react-router";
-import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
+import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { listCalendarsForLink } from "~/lib/google-calendar";
@@ -82,7 +82,7 @@ function describeUserAgent(ua: string | null): string {
 export async function loadSettingsPageData(request: Request) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  if (auth.user.type === "applicant") return redirect("/portal");
+  if (await isNonMember(auth, request)) return redirect("/portal");
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return partnerRedirect;
 

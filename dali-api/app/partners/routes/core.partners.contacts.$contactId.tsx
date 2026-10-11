@@ -18,7 +18,7 @@ import {
   User,
 } from "lucide-react";
 import type { Route } from "./+types/core.partners.contacts.$contactId";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { isCore, getUserRoles } from "~/lib/roles";
@@ -58,7 +58,7 @@ const detailInputClass =
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  if (auth.user.type === "applicant") return redirect("/portal");
+  if (await isNonMember(auth, request)) return redirect("/portal");
   const canEdit = await isCore(auth.user.sub);
   if (!canEdit) return redirect("/");
 

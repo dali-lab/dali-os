@@ -26,6 +26,7 @@ import { PresenceProvider } from '~/components/collab/PresenceProvider'
 import { PresenceBar } from '~/components/collab/PresenceBar'
 import { useSharedString } from '~/components/collab/useSharedString'
 import { ApplicationViewer } from '~/hiring/components/ApplicationViewer'
+import { loadContinuedInterestView } from '~/hiring/lib/continued-interest.server'
 import { ReviewSummary } from '~/hiring/components/ReviewSummary'
 import { buildCriteriaLabelMap } from '~/hiring/lib/rubric-criteria'
 import type { Route } from './+types/interviews.$interviewId'
@@ -66,6 +67,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const interview = await prisma.interview.findUnique({
     where: { id: params.interviewId },
     include: {
+      room: { select: { id: true, name: true } },
       assignments: {
         include: {
           cycleInterviewer: {
@@ -174,6 +176,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           }
         : interview.domainApplication.challengeFormVersion,
       answers: presignedChallengeAnswers,
+      continuedInterest: await loadContinuedInterestView(interview.domainApplication),
       reviews: reviewsWithPhotos,
       application: {
         ...interview.domainApplication.application,
@@ -273,6 +276,7 @@ export default function InterviewDetailPage() {
             }
           : null,
         domain: interview.domainApplication?.domain ?? null,
+        continuedInterest: interview.domainApplication?.continuedInterest ?? null,
       },
     ],
   }
@@ -391,17 +395,11 @@ export default function InterviewDetailPage() {
               {domain && (
                 <Pill>{domain}</Pill>
               )}
-              {interview.location && (
-                <span className="flex items-center">
-                  <MapPin className="w-4 h-4 mr-1 text-muted-foreground/70" />
-                  {interview.location === 'PodAppa'
-                    ? 'Pod Appa'
-                    : interview.location === 'PodMomo'
-                      ? 'Pod Momo'
-                      : 'Online'}
-                </span>
-              )}
-              {interview.location === 'Online' && (interview.videoUrl ?? interview.zoomJoinUrl) && (
+              <span className="flex items-center">
+                <MapPin className="w-4 h-4 mr-1 text-muted-foreground/70" />
+                {interview.room?.name ?? 'Online'}
+              </span>
+              {!interview.room && (interview.videoUrl ?? interview.zoomJoinUrl) && (
                 <a href={interview.videoUrl ?? interview.zoomJoinUrl ?? ''} target="_blank" rel="noopener noreferrer"
                    className="flex items-center text-sm text-blue-600 hover:underline">
                   <Video className="w-4 h-4 mr-1" />

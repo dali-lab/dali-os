@@ -63,6 +63,7 @@ export async function formUsages(formId: string): Promise<FormUsage[]> {
     partnerBinding,
     partnerSurveyBinding,
     hiringCycles,
+    hiringContinuedInterestCycles,
     hiringChallenges,
     educationOfferings,
     educationBindings,
@@ -91,6 +92,10 @@ export async function formUsages(formId: string): Promise<FormUsage[]> {
     // Hiring: cycle general/internal application form + per-domain challenges.
     prisma.applicationCycle.findMany({
       where: { applicationFormId: formId },
+      select: { id: true, name: true },
+    }),
+    prisma.applicationCycle.findMany({
+      where: { continuedInterestFormId: formId },
       select: { id: true, name: true },
     }),
     prisma.cycleDomainForm.findMany({
@@ -143,6 +148,13 @@ export async function formUsages(formId: string): Promise<FormUsage[]> {
     usages.push({
       kind: "hiring",
       label: `${c.name} — application form`,
+      href: `/hiring/lead/cycle/${c.id}`,
+    });
+  }
+  for (const c of hiringContinuedInterestCycles) {
+    usages.push({
+      kind: "hiring",
+      label: `${c.name} — continued interest form`,
       href: `/hiring/lead/cycle/${c.id}`,
     });
   }

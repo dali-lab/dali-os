@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, type ReactNode } from "react";
 import { Link, redirect, useLoaderData, useRevalidator, useSearchParams } from "react-router";
 import QRCode from "qrcode";
 import { Shapes, Trash2, UserCheck } from "lucide-react";
@@ -7,15 +7,19 @@ import { Button } from "~/components/ui/Button";
 import { useToast } from "~/components/ui/toast";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { modalCardClass, useOsChrome } from "~/components/os-chrome";
+import { cn } from "~/lib/cn";
 import type { Route } from "./+types/documents.$pageId";
 import { prisma } from "~/lib/db";
 import { ensureOccurrenceRoster } from "~/lib/scheduled-meeting";
-import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
+import { ACTIVE_RECORDING_STATUSES, latestRecordingFor } from "~/lib/meeting-recording.server";
+import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { publicDocRedirectForPath } from "~/lib/public-doc.server";
 import { getCollabToken } from "~/lib/collab-token.server";
-import { fullName } from "~/lib/display";
+import { fullName, formatDateShort } from "~/lib/display";
 import { getPresenceUser } from "~/lib/presence-user";
-import { getPageAccess } from "~/lib/pageAccess.server";
+import { getPageAccess, getPageAccessBulk } from "~/lib/pageAccess.server";
+import { getUserRoles, isProjectMember } from "~/lib/roles";
+import type { MeetingType } from "~/generated/prisma/client";
 import { isFavorited, recordPageVisit } from "~/lib/user-pages.server";
 import { canManageSharing } from "~/lib/page-share-access.server";
 import { normalizePageTypography } from "~/lib/page-typography";
@@ -25,8 +29,23 @@ import { DocumentEditor } from "~/components/DocumentEditor";
 import { AttendanceChecklist, type AttendanceRow } from "~/components/AttendanceChecklist";
 import { CheckInPanel } from "~/components/CheckInPanel";
 import { MeetingRecorder } from "~/components/MeetingRecorder";
-import { appendBlocks } from "~/components/doc";
-import type { DocEditorInstance } from "~/components/doc/schema/build";
+import { RecordingPresencePill } from "~/components/RecordingPresencePill";
+import { RecordPromptBanner } from "~/components/RecordPromptBanner";
+import { TranscriptChipHoverLayer } from "~/components/meeting-recorder/TranscriptChipHoverLayer";
+import { RecordingRail } from "~/components/meeting-recorder/RecordingRail";
+import { useMeetingRecording, type UseMeetingRecording, type UseMeetingRecordingProps } from "~/components/meeting-recorder/use-meeting-recording";
+import {
+  appendBlocks,
+  appendTaskMentionContent,
+  blockOwnText,
+  blocksToPlainText,
+  findTranscriptToggle,
+  hasTranscriptToggle,
+  renderEnhanceOps,
+  transcriptToggleBlock,
+} from "~/components/doc";
+import type { DocEditorInstance, DocPartialBlock } from "~/components/doc/schema/build";
+import { actionItemMatchesBlock, type EditorOp, type EnhanceActionItem, type SnapshotBlock } from "~/components/meeting-recorder/enhance-plan";
 import { pageDocName } from "~/collab/roomName";
 import { redirectToLogin } from "~/lib/login-next";
 import { walletTokensConfigured } from "~/lib/wallet-token";
@@ -48,7 +67,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // the public-doc fallback has to be mirrored here for the shell gate to hold.
   const publicDoc = () => publicDocRedirectForPath(new URL(request.url).pathname);
   if (!auth.ok) return (await publicDoc()) ?? redirectToLogin(request);
-  if (auth.user.type === "applicant") return (await publicDoc()) ?? redirect("/portal");
+  if (await isNonMember(auth, request)) return (await publicDoc()) ?? redirect("/portal");
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return (await publicDoc()) ?? partnerRedirect;
 
@@ -64,6 +83,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       archivedAt: true,
       meetingNoteId: true,
       meetingOccurrenceStart: true,
+      seededFromPageId: true,
+      seededTemplateHash: true,
+      notebookKey: true,
+      parent: { select: { id: true, title: true, notebookKey: true } },
       iconEmoji: true,
       coverImageUrl: true,
       isTemplate: true,
@@ -75,6 +98,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       labListing: true,
       linkAccess: true,
       linkPermission: true,
+      defaultMeetingNoteFor: true,
       createdBy: { select: { firstName: true, lastName: true } },
       lastEditedBy: { select: { firstName: true, lastName: true } },
       tags: { select: { tag: { select: { id: true, label: true, slug: true, color: true } } } },
@@ -116,7 +140,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       linkAccess: page.linkAccess,
       linkPermission: page.linkPermission,
     },
-    undefined,
+    request,
     { includeArchived: trashed },
   );
   if (!access.canView) throw new Response("Not found", { status: 404 });
@@ -144,30 +168,127 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     return redirect(`/whiteboard/${page.id}`);
   }
 
+  // A meeting notebook has no body of its own: it opens on the note for the
+  // latest meeting that has started, or the first one coming up.
+  if (page.notebookKey) {
+    const tabs = await prisma.page.findMany({
+      where: { parentPageId: page.id, archivedAt: null },
+      orderBy: { meetingOccurrenceStart: "desc" },
+      select: { id: true, meetingOccurrenceStart: true },
+    });
+    const now = new Date();
+    const tab = tabs.find((t) => (t.meetingOccurrenceStart ?? now) <= now) ?? tabs.at(-1);
+    if (tab) return redirect(`/documents/${tab.id}${new URL(request.url).search}`);
+  }
+
+  // The other notes in this one's notebook, newest first, for the side tabs.
+  let notebook: {
+    title: string;
+    tabs: { id: string; label: string; meeting: string | null }[];
+  } | null = null;
+  if (page.parent?.notebookKey) {
+    const tabRows = await prisma.page.findMany({
+      where: { parentPageId: page.parent.id, OR: [{ archivedAt: null }, { id: page.id }] },
+      orderBy: { meetingOccurrenceStart: "desc" },
+      select: {
+        id: true,
+        title: true,
+        meetingOccurrenceStart: true,
+        meetingNote: { select: { title: true } },
+        // The same access shape the page itself was judged on above.
+        workspaceType: true,
+        workspaceId: true,
+        archivedAt: true,
+        createdById: true,
+        partnerVisible: true,
+        profileVisible: true,
+        labListing: true,
+        linkAccess: true,
+        linkPermission: true,
+      },
+    });
+    const tabAccess = await getPageAccessBulk(auth.user.sub, tabRows, request, {
+      includeArchived: trashed,
+    });
+    const visible = tabRows.filter((t) => tabAccess.get(t.id)?.canView);
+    // Naming the meeting only helps when the notebook holds more than one.
+    const mixed = new Set(visible.map((t) => t.meetingNote?.title)).size > 1;
+    notebook = {
+      title: page.parent.title,
+      tabs: visible.map((t) => ({
+        id: t.id,
+        label: t.meetingOccurrenceStart ? formatDateShort(t.meetingOccurrenceStart) : t.title,
+        meeting: mixed ? (t.meetingNote?.title ?? null) : null,
+      })),
+    };
+  }
+
   // After the gate, so a 404 never lands in someone's recents. Detached — a
   // failed bookkeeping write must not cost the reader their document.
   recordPageVisit(auth.user.sub, page.id, request);
-  const favorited = await isFavorited(auth.user.sub, page.id);
+  const fallbackName =
+    [auth.user.firstName, auth.user.lastName].filter(Boolean).join(" ") || auth.user.email;
 
-  // Every workspace type now carries a shareable audience (named shares +
-  // General access), so the Share button shows wherever the viewer may manage
-  // it — the creator/Core on a lab doc, project staff, the note owner, an
-  // instructor, or anyone granted Full access.
-  const canManageAccess = await canManageSharing(
-    {
-      id: page.id,
-      workspaceType: page.workspaceType,
-      workspaceId: page.workspaceId,
-      createdById: page.createdById,
-    },
-    auth.user.sub,
-  );
-
-  const allTags = await prisma.docTag.findMany({
-    where: { archivedAt: null },
-    orderBy: { label: "asc" },
-    select: { id: true, label: true, slug: true, color: true },
-  });
+  // Everything below the gate is independent of everything else here, so it
+  // goes to the database in one wave rather than seven.
+  const [favorited, canManageAccess, allTags, meeting, collabToken, presenceUser, backlinkRows, latestRecordingRow, roles] =
+    await Promise.all([
+      isFavorited(auth.user.sub, page.id),
+      // Every workspace type now carries a shareable audience (named shares +
+      // General access), so the Share button shows wherever the viewer may manage
+      // it — the creator/Core on a lab doc, project staff, the note owner, an
+      // instructor, or anyone granted Full access.
+      canManageSharing(
+        {
+          id: page.id,
+          workspaceType: page.workspaceType,
+          workspaceId: page.workspaceId,
+          createdById: page.createdById,
+        },
+        auth.user.sub,
+      ),
+      prisma.docTag.findMany({
+        where: { archivedAt: null },
+        orderBy: { label: "asc" },
+        select: { id: true, label: true, slug: true, color: true },
+      }),
+      page.meetingNoteId
+        ? prisma.scheduledMeeting.findUnique({
+            where: { id: page.meetingNoteId },
+            select: {
+              id: true,
+              organizerId: true,
+              participantUserIds: true,
+              selectedAt: true,
+              createdAt: true,
+              recurrenceRule: true,
+              meetingType: true,
+              meetingTypeLabel: true,
+              attendanceMode: true,
+              durationMinutes: true,
+              recordPrompt: true,
+              whiteboardPage: { select: { id: true } },
+              project: { select: { recordingPolicy: true } },
+            },
+          })
+        : Promise.resolve(null),
+      getCollabToken(request),
+      getPresenceUser(auth.user.sub, fallbackName),
+      // Backlinks: pages that mention this page via a @pageMention inline node.
+      prisma.pageLink.findMany({
+        where: { toPageId: page.id, fromPage: { archivedAt: null } },
+        select: {
+          fromPage: { select: { id: true, title: true, iconEmoji: true } },
+        },
+      }),
+      // The note's newest recording, whoever started it and whatever its
+      // status: the recorder shows a live one in place of Record so nobody
+      // starts a second one, and picks up a Done one for a viewer who never
+      // watched it live (specs/meeting-transcription.md; fix for a finished
+      // recording being invisible to anyone without the local backup).
+      latestRecordingFor(pageDocName(page.id)),
+      getUserRoles(auth.user.sub, request),
+    ]);
 
   let attendance:
     | {
@@ -185,95 +306,109 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         checkInUrl: string | null;
         checkInQrSvg: string | null;
         walletConfigured: boolean;
+        // Meeting recording (specs/meeting-transcription.md).
+        recordingPolicy: "Allowed" | "Disabled";
+        recordPromptEnabled: boolean;
+        canDontSuggestRecording: boolean;
+        windowEndIso: string;
       }
     | null = null;
-  if (page.meetingNoteId) {
-    const meeting = await prisma.scheduledMeeting.findUnique({
-      where: { id: page.meetingNoteId },
+  if (meeting) {
+    const occurrenceStart = page.meetingOccurrenceStart ?? meeting.selectedAt ?? meeting.createdAt;
+    await ensureOccurrenceRoster(meeting, occurrenceStart);
+    const rows = await prisma.meetingAttendance.findMany({
+      where: { scheduledMeetingId: meeting.id, occurrenceStart },
       select: {
-        id: true,
-        organizerId: true,
-        participantUserIds: true,
-        selectedAt: true,
-        createdAt: true,
-        recurrenceRule: true,
-        meetingType: true,
-        meetingTypeLabel: true,
-        attendanceMode: true,
-        whiteboardPage: { select: { id: true } },
+        userId: true,
+        present: true,
+        user: { select: { firstName: true, lastName: true, daliEmail: true } },
       },
     });
-    if (meeting) {
-      const occurrenceStart = page.meetingOccurrenceStart ?? meeting.selectedAt ?? meeting.createdAt;
-      await ensureOccurrenceRoster(meeting, occurrenceStart);
-      const rows = await prisma.meetingAttendance.findMany({
-        where: { scheduledMeetingId: meeting.id, occurrenceStart },
-        select: {
-          userId: true,
-          present: true,
-          user: { select: { firstName: true, lastName: true, daliEmail: true } },
-        },
-      });
-      const label =
-        meeting.meetingType === "Other"
-          ? meeting.meetingTypeLabel || "Other"
-          : (meeting.meetingType ?? "Meeting");
-      const canMark = canEdit || auth.user.sub === meeting.organizerId;
-      const viewerRow = rows.find((a) => a.userId === auth.user.sub);
-      const selfCheckIn = meeting.attendanceMode === "SelfCheckIn";
+    const label =
+      meeting.meetingType === "Other"
+        ? meeting.meetingTypeLabel || "Other"
+        : (meeting.meetingType ?? "Meeting");
+    const canMark = canEdit || auth.user.sub === meeting.organizerId;
+    const viewerRow = rows.find((a) => a.userId === auth.user.sub);
+    const selfCheckIn = meeting.attendanceMode === "SelfCheckIn";
 
-      // Only the organizer/Core need the QR/link to display at the event —
-      // everyone else just sees the check-in button below if they scanned it.
-      // A recurring meeting's code points at its check-in page instead of this
-      // week's note, since the same printed code is used every week.
-      let checkInUrl: string | null = null;
-      let checkInQrSvg: string | null = null;
-      if (selfCheckIn && canMark) {
-        const origin = new URL(request.url).origin;
-        checkInUrl = meeting.recurrenceRule
-          ? `${origin}/calendar/check-in/${meeting.id}`
-          : `${origin}/documents/${page.id}`;
-        checkInQrSvg = await QRCode.toString(checkInUrl, { type: "svg", margin: 1, width: 180 });
-      }
-
-      attendance = {
-        meetingId: meeting.id,
-        occurrenceStart: occurrenceStart.toISOString(),
-        meetingLabel: label,
-        whiteboardPageId: meeting.whiteboardPage?.id ?? null,
-        canMark,
-        rows: rows.map((a) => ({
-          userId: a.userId,
-          name: fullName(a.user) || a.user.daliEmail || a.userId,
-          present: a.present,
-        })),
-        selfCheckIn,
-        viewerInvited: viewerRow !== undefined,
-        viewerPresent: viewerRow?.present ?? false,
-        checkInUrl,
-        checkInQrSvg,
-        walletConfigured: walletTokensConfigured(),
-      };
+    // Only the organizer/Core need the QR/link to display at the event —
+    // everyone else just sees the check-in button below if they scanned it.
+    // A recurring meeting's code points at its check-in page instead of this
+    // week's note, since the same printed code is used every week.
+    let checkInUrl: string | null = null;
+    let checkInQrSvg: string | null = null;
+    if (selfCheckIn && canMark) {
+      const origin = new URL(request.url).origin;
+      checkInUrl = meeting.recurrenceRule
+        ? `${origin}/calendar/check-in/${meeting.id}`
+        : `${origin}/documents/${page.id}`;
+      checkInQrSvg = await QRCode.toString(checkInUrl, { type: "svg", margin: 1, width: 180 });
     }
+
+    attendance = {
+      meetingId: meeting.id,
+      occurrenceStart: occurrenceStart.toISOString(),
+      meetingLabel: label,
+      whiteboardPageId: meeting.whiteboardPage?.id ?? null,
+      canMark,
+      rows: rows.map((a) => ({
+        userId: a.userId,
+        name: fullName(a.user) || a.user.daliEmail || a.userId,
+        present: a.present,
+      })),
+      selfCheckIn,
+      viewerInvited: viewerRow !== undefined,
+      viewerPresent: viewerRow?.present ?? false,
+      checkInUrl,
+      checkInQrSvg,
+      walletConfigured: walletTokensConfigured(),
+      recordingPolicy: meeting.project?.recordingPolicy ?? "Allowed",
+      recordPromptEnabled: meeting.recordPrompt,
+      canDontSuggestRecording: auth.user.sub === meeting.organizerId || roles.isCore,
+      windowEndIso: new Date(occurrenceStart.getTime() + meeting.durationMinutes * 60_000).toISOString(),
+    };
   }
 
-  const collabToken = await getCollabToken(request);
-  const fallbackName =
-    [auth.user.firstName, auth.user.lastName].filter(Boolean).join(" ") || auth.user.email;
-  const presenceUser = await getPresenceUser(auth.user.sub, fallbackName);
-
-  // Backlinks: pages that mention this page via a @pageMention inline node.
-  const backlinkRows = await prisma.pageLink.findMany({
-    where: { toPageId: page.id, fromPage: { archivedAt: null } },
-    select: {
-      fromPage: { select: { id: true, title: true, iconEmoji: true } },
-    },
-  });
   const backlinks = backlinkRows.map((r) => ({
     id: r.fromPage.id,
     title: r.fromPage.title,
     iconEmoji: r.fromPage.iconEmoji,
   }));
+
+  // Meeting-note-template binding action (specs/meeting-notes-model.md §1),
+  // offered on the template page itself: the project's owner (Core or a
+  // staffed member) for a project template, Core for a Lab template.
+  let meetingNoteTemplateAction:
+    | { scope: "project"; projectName: string; active: boolean }
+    | { scope: "lab"; current: MeetingType | null }
+    | null = null;
+  if (page.kind === "FreeForm" && page.isTemplate && page.workspaceType === "Project" && page.workspaceId) {
+    const canEditProjectSettings =
+      roles.isCore || (await isProjectMember(auth.user.sub, page.workspaceId, request));
+    if (canEditProjectSettings) {
+      const owningProject = await prisma.project.findUnique({
+        where: { id: page.workspaceId },
+        select: { name: true, meetingNoteTemplateId: true },
+      });
+      if (owningProject) {
+        meetingNoteTemplateAction = {
+          scope: "project",
+          projectName: owningProject.name,
+          active: owningProject.meetingNoteTemplateId === page.id,
+        };
+      }
+    }
+  } else if (page.kind === "FreeForm" && page.isTemplate && page.workspaceType === "Lab" && roles.isCore) {
+    meetingNoteTemplateAction = { scope: "lab", current: page.defaultMeetingNoteFor };
+  }
+
+  // Action items into Tasks (specs/meeting-notes-model.md §4): tasks need a
+  // project, and the caller needs task-create rights on it — the same gate
+  // requireProjectEditAccess applies to POST /api/projects/:id/tasks.
+  const projectId = page.workspaceType === "Project" ? page.workspaceId : null;
+  const canCreateTasks =
+    projectId !== null && (roles.isCore || (await isProjectMember(auth.user.sub, projectId, request)));
 
   return {
     pageId: page.id,
@@ -297,10 +432,73 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     photoUrl: presenceUser?.photoUrl ?? null,
     subtitle: presenceUser?.subtitle ?? null,
     attendance,
+    notebook,
     backlinks,
     trashed,
     canRestore,
+    isCore: roles.isCore,
+    meetingNoteTemplateAction,
+    seededFromPageId: page.seededFromPageId,
+    seededTemplateHash: page.seededTemplateHash,
+    projectId,
+    canCreateTasks,
+    latestRecording: latestRecordingRow
+      ? {
+          id: latestRecordingRow.id,
+          ownerName: latestRecordingRow.ownerName,
+          ownerIsYou: latestRecordingRow.userId === auth.user.sub,
+          status: latestRecordingRow.status,
+          since: latestRecordingRow.createdAt.toISOString(),
+        }
+      : null,
+    // RecordPromptBanner only cares whether a LIVE recording already exists
+    // for this occurrence (a Done/Failed one shouldn't suppress "Record it?").
+    hasActiveRecording:
+      latestRecordingRow !== null &&
+      (ACTIVE_RECORDING_STATUSES as readonly string[]).includes(latestRecordingRow.status),
   };
+}
+
+// A notebook's notes as side tabs, the way a Google Doc lists its tabs: one
+// document in the Drive, one tab per meeting.
+function NotebookTabs({
+  notebook,
+  currentId,
+}: {
+  notebook: { title: string; tabs: { id: string; label: string; meeting: string | null }[] };
+  currentId: string;
+}) {
+  const { card } = useOsChrome();
+  return (
+    <nav
+      aria-label={notebook.title}
+      className={cn(card, "flex min-w-0 shrink-0 flex-col gap-2 p-3 lg:sticky lg:top-4 lg:w-56")}
+    >
+      <p className="truncate px-2 text-sm font-semibold text-foreground">{notebook.title}</p>
+      <ul className="flex gap-1 overflow-x-auto lg:max-h-[70vh] lg:flex-col lg:overflow-y-auto">
+        {notebook.tabs.map((tab) => {
+          const current = tab.id === currentId;
+          return (
+            <li key={tab.id} className="shrink-0">
+              <Link
+                to={`/documents/${tab.id}`}
+                aria-current={current ? "page" : undefined}
+                className={cn(
+                  "block rounded-os-item px-2 py-1.5 text-sm transition-colors",
+                  current
+                    ? "bg-os-accent/15 text-os-accent"
+                    : "text-os-grey hover:bg-os-container hover:text-foreground",
+                )}
+              >
+                <span className="block truncate">{tab.label}</span>
+                {tab.meeting && <span className="block truncate text-xs">{tab.meeting}</span>}
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </nav>
+  );
 }
 
 // A trashed meeting note still opens (read-only) so check-in and the meeting's
@@ -405,6 +603,38 @@ function AttendanceButton({
   );
 }
 
+// Mounts useMeetingRecording() only while `enabled` is true — recordingEnabled
+// (feature flag), recordingAllowed (project policy) or canShowRecorder could
+// each flip false mid-session (e.g. a followed `?transcript=` recording gets
+// discarded, dropping the URL param), so the hook can't be called
+// conditionally inside one stable component; mounting/unmounting this one
+// instead keeps every call to the rules of hooks.
+function RecordingMount({
+  enabled,
+  children,
+  ...hookProps
+}: UseMeetingRecordingProps & { enabled: boolean; children: (rec: UseMeetingRecording | null) => ReactNode }) {
+  if (!enabled) return <>{children(null)}</>;
+  // Keyed by documentName: notebook tabs are sibling pages rendered by this
+  // same route component, so switching tabs changes `documentName` on an
+  // otherwise-still-mounted tree. Without the key, this instance (and the
+  // useMeetingRecording state inside it) would carry over from the old tab
+  // instead of resetting to idle for the new one.
+  return (
+    <RecordingMountInner key={hookProps.documentName} {...hookProps}>
+      {children}
+    </RecordingMountInner>
+  );
+}
+
+function RecordingMountInner({
+  children,
+  ...hookProps
+}: UseMeetingRecordingProps & { children: (rec: UseMeetingRecording) => ReactNode }) {
+  const rec = useMeetingRecording(hookProps);
+  return <>{children(rec)}</>;
+}
+
 export default function DocumentPage() {
   const {
     pageId,
@@ -428,9 +658,18 @@ export default function DocumentPage() {
     typography,
     updatedAt,
     attendance,
+    notebook,
     backlinks,
     trashed,
     canRestore,
+    isCore,
+    meetingNoteTemplateAction,
+    seededFromPageId,
+    seededTemplateHash,
+    latestRecording,
+    hasActiveRecording,
+    projectId: meetingProjectId,
+    canCreateTasks,
   } = useLoaderData() as Exclude<Awaited<ReturnType<typeof loader>>, Response>;
 
   // Arriving from a comment-mention notification (?comment=<id>): open the
@@ -441,7 +680,29 @@ export default function DocumentPage() {
   const focusCommentId = searchParams.get("comment") ?? undefined;
   const focusMentionUserId = searchParams.get("mention") ?? undefined;
   const recordingEnabled = useFeatureFlag("ai-meeting-notes");
+  const recordingAllowed = attendance?.recordingPolicy !== "Disabled";
+  const hasTranscriptParam = Boolean(searchParams.get("transcript"));
+  const [recordAutoOpen, setRecordAutoOpen] = useState(searchParams.get("record") === "1");
+  const recordingMountEnabled = recordingEnabled && recordingAllowed && (canEdit || hasTranscriptParam);
+  // DocumentEditor is the only component that measures the ≥ 1150px check;
+  // the top-bar Record button needs it too, to answer a live recording with
+  // a Popover instead of toggling the rail on a narrow canvas
+  // (specs/meeting-recording-rail.md "Wiring").
+  const [containerWide, setContainerWide] = useState(false);
+  const toast = useToast();
   const { actionBtnPrimary, actionIcon } = useOsChrome();
+
+  async function dontSuggestRecording() {
+    if (!attendance) return;
+    const fd = new FormData();
+    fd.set("intent", "recordPrompt");
+    const res = await fetch(`/calendar/meeting/${attendance.meetingId}`, {
+      method: "POST",
+      credentials: "include",
+      body: fd,
+    }).catch(() => null);
+    if (!res?.ok) toast.error("Couldn't turn off the record prompt for this meeting.");
+  }
 
   // Meeting recording writes into the doc through the live editor, so
   // collaborators see the notes arrive like any other edit.
@@ -449,73 +710,233 @@ export default function DocumentPage() {
   const onEditorReady = useCallback((ed: DocEditorInstance) => {
     editorRef.current = ed;
   }, []);
-  const insertMarkdown = useCallback((markdown: string) => {
+  const insertMeetingNotes = useCallback((markdown: string, transcript: string[]) => {
     const editor = editorRef.current;
     if (!editor) return false;
-    appendBlocks(editor, editor.tryParseMarkdownToBlocks(markdown));
+    const blocks: Parameters<DocEditorInstance["replaceBlocks"]>[1] = [
+      ...editor.tryParseMarkdownToBlocks(markdown),
+    ];
+    // The transcript is long and rarely read, so it goes under a collapsed
+    // toggle heading; Markdown has no way to say that, hence blocks.
+    if (transcript.length) blocks.push(transcriptToggleBlock(transcript));
+    appendBlocks(editor, blocks);
     return true;
   }, []);
 
+  // Enhance (specs/meeting-notes-model.md §2): a snapshot of the live
+  // editor's top-level blocks (id/type/text), plus the whole-body text
+  // isUntouchedTemplate compares against the seeded template hash.
+  const getNoteState = useCallback((): { blocks: SnapshotBlock[]; bodyText: string } | null => {
+    const editor = editorRef.current;
+    if (!editor) return null;
+    const doc = editor.document;
+    return {
+      blocks: doc.map((b) => ({ id: b.id, type: b.type, text: blockOwnText(b) })),
+      bodyText: blocksToPlainText(doc),
+    };
+  }, []);
+
+  // Replays Enhance's merge ops against the live editor, then inserts the
+  // transcript toggle if Apply didn't already find one — same toggle
+  // insertMeetingNotes uses, de-duplicated by heading text.
+  const onApplyEnhance = useCallback(
+    (ops: EditorOp[], recordingId: string, transcript: string[], actionItems: EnhanceActionItem[]): boolean => {
+      const editor = editorRef.current;
+      if (!editor) return false;
+      renderEnhanceOps(editor, ops, { pageId, recordingId, actionItems, projectId: meetingProjectId });
+      if (transcript.length && !hasTranscriptToggle(editor)) {
+        appendBlocks(editor, [transcriptToggleBlock(transcript)]);
+      }
+      return true;
+    },
+    [pageId, meetingProjectId],
+  );
+
+  // A speaker rename after Insert/Enhance leaves the names baked into the
+  // Transcript toggle stale — rewrite its children from the current
+  // paragraphs (names included) via the live editor. No-op (false) when the
+  // note has no Transcript toggle yet, same lookup Insert/Apply use to avoid
+  // a duplicate one.
+  const onSpeakersChanged = useCallback((paragraphs: string[]): boolean => {
+    const editor = editorRef.current;
+    if (!editor) return false;
+    const toggle = findTranscriptToggle(editor.document);
+    if (!toggle || toggle.children.length === 0) return false;
+    const newChildren = paragraphs.map((text) => ({
+      type: "paragraph",
+      content: [{ type: "text", text, styles: {} }],
+    })) as DocPartialBlock[];
+    editor.replaceBlocks(toggle.children, newChildren);
+    return true;
+  }, []);
+
+  // Action items into Tasks (specs/meeting-notes-model.md §4): once a task
+  // exists, link it from the note. The mention spec (app/components/doc/
+  // schema/mention.tsx) has no `kind` prop to grow into without a schema
+  // change — adding one would be a new prop, which y-prosemirror treats like
+  // any other schema change for a stale client. So this appends a plain link
+  // (the same kind of node citation chips already use, §3) to the matching
+  // checklist item instead of a task mention chip; see the PR description.
+  //
+  // The checklist block's rendered text can differ from the action item's
+  // own text (case, punctuation, an owner prefix the editor's rendering
+  // added) — actionItemMatchesBlock finds the best match instead of an exact
+  // trimmed-text comparison (fix for created tasks never linking back).
+  const onTaskCreated = useCallback((itemText: string, taskId: string, taskProjectId: string) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const candidates = editor.document
+      .filter((b) => b.type === "checkListItem")
+      .map((b) => ({ block: b, text: blockOwnText(b) }))
+      .filter(({ text }) => actionItemMatchesBlock(itemText, text));
+    if (candidates.length === 0) return;
+    const exact = candidates.find(({ text }) => text.trim().toLowerCase() === itemText.trim().toLowerCase());
+    const match = exact ?? candidates[0]!;
+    const content = appendTaskMentionContent(match.block.content as DocPartialBlock["content"], {
+      taskId,
+      projectId: taskProjectId,
+      label: itemText.trim(),
+    });
+    editor.updateBlock(match.block.id, { content } as unknown as DocPartialBlock);
+  }, []);
+
   return (
-    <div className="flex flex-col gap-4">
-      {trashed && <TrashedNoteBanner pageId={pageId} canRestore={canRestore} />}
-      {attendance?.selfCheckIn && (
-        <CheckInPanel
-          meetingId={attendance.meetingId}
-          meetingLabel={attendance.meetingLabel}
-          viewerInvited={attendance.viewerInvited}
-          initialPresent={attendance.viewerPresent}
-          checkInUrl={attendance.checkInUrl}
-          checkInQrSvg={attendance.checkInQrSvg}
-        />
-      )}
-      <DocumentEditor
-        pageId={pageId}
-        initialTitle={title}
-        collabToken={collabToken}
-        userName={userName}
-        currentUserId={currentUserId}
-        photoUrl={photoUrl}
-        subtitle={subtitle}
-        canEdit={canEdit}
-        canComment={canComment}
-        canManageAccess={canManageAccess}
-        favorited={favorited}
-        workspaceType={workspaceType}
-        workspaceId={workspaceId}
-        tags={tags}
-        allTags={allTags}
-        iconEmoji={iconEmoji}
-        coverImageUrl={coverImageUrl}
-        isTemplate={isTemplate}
-        typography={typography}
-        updatedAt={updatedAt}
-        focusCommentId={focusCommentId}
-        backlinks={backlinks}
-        focusMentionUserId={focusMentionUserId}
-        aiEnabled
-        onEditorReady={onEditorReady}
-        topBarActions={
-          <>
-            {attendance && <AttendanceButton attendance={attendance} />}
-            {recordingEnabled && canEdit && (
-              <MeetingRecorder documentName={pageDocName(pageId)} onInsert={insertMarkdown} />
-            )}
-            {attendance?.whiteboardPageId && (
-              // This meeting also has a whiteboard — link across to it (the
-              // board carries the matching link back).
-              <Link
-                to={`/whiteboard/${attendance.whiteboardPageId}`}
-                aria-label="Whiteboard"
-                className={actionBtnPrimary}
-              >
-                <Shapes className={actionIcon} />
-                <span className="hidden sm:inline">Whiteboard</span>
-              </Link>
-            )}
-          </>
+    <RecordingMount
+      enabled={recordingMountEnabled}
+      documentName={pageDocName(pageId)}
+      scheduledMeetingId={attendance?.meetingId}
+      occurrenceStart={attendance?.occurrenceStart}
+      roster={attendance?.rows.map((r) => ({ userId: r.userId, name: r.name }))}
+      canEdit={canEdit}
+      isCore={isCore}
+      latestRecording={latestRecording}
+      onInsert={insertMeetingNotes}
+      autoOpen={recordAutoOpen}
+      collabToken={collabToken}
+      seededFromPageId={seededFromPageId}
+      seededTemplateHash={seededTemplateHash}
+      getNoteState={getNoteState}
+      onApplyEnhance={onApplyEnhance}
+      onSpeakersChanged={onSpeakersChanged}
+      projectId={meetingProjectId}
+      canCreateTasks={canCreateTasks}
+      onTaskCreated={onTaskCreated}
+    >
+      {(rec) => {
+        const recordingLive = rec ? rec.phase === "recording" || rec.phase === "starting" || rec.phase === "stopping" : false;
+
+        function onChipClick(recordingId: string, at: number): boolean {
+          if (!rec || rec.recordingId !== recordingId) return false;
+          rec.jumpToTranscript(at);
+          return true;
         }
-      />
-    </div>
+
+        const editor = (
+          <DocumentEditor
+            key={pageId}
+            pageId={pageId}
+            initialTitle={title}
+            collabToken={collabToken}
+            userName={userName}
+            currentUserId={currentUserId}
+            photoUrl={photoUrl}
+            subtitle={subtitle}
+            canEdit={canEdit}
+            canComment={canComment}
+            canManageAccess={canManageAccess}
+            favorited={favorited}
+            workspaceType={workspaceType}
+            workspaceId={workspaceId}
+            tags={tags}
+            allTags={allTags}
+            iconEmoji={iconEmoji}
+            coverImageUrl={coverImageUrl}
+            isTemplate={isTemplate}
+            typography={typography}
+            updatedAt={updatedAt}
+            focusCommentId={focusCommentId}
+            backlinks={backlinks}
+            focusMentionUserId={focusMentionUserId}
+            meetingNoteTemplateAction={meetingNoteTemplateAction}
+            aiEnabled
+            onEditorReady={onEditorReady}
+            onContainerWideChange={setContainerWide}
+            rail={
+              rec
+                ? {
+                    node: <RecordingRail rec={rec} />,
+                    open: rec.open && rec.phase !== "idle",
+                    onClose: () => rec.setOpen(false),
+                    live: recordingLive,
+                  }
+                : undefined
+            }
+            topBarActions={
+              <>
+                {attendance && <AttendanceButton attendance={attendance} />}
+                <RecordingPresencePill documentName={pageDocName(pageId)} collabToken={collabToken} />
+                {rec && <MeetingRecorder rec={rec} containerWide={containerWide} />}
+                {attendance?.whiteboardPageId && (
+                  // This meeting also has a whiteboard — link across to it (the
+                  // board carries the matching link back).
+                  <Link
+                    to={`/whiteboard/${attendance.whiteboardPageId}`}
+                    aria-label="Whiteboard"
+                    className={actionBtnPrimary}
+                  >
+                    <Shapes className={actionIcon} />
+                    <span className="hidden sm:inline">Whiteboard</span>
+                  </Link>
+                )}
+              </>
+            }
+          />
+        );
+
+        return (
+          <div className="flex flex-col gap-4">
+            {trashed && <TrashedNoteBanner pageId={pageId} canRestore={canRestore} />}
+            {attendance && recordingEnabled && recordingAllowed && (
+              <RecordPromptBanner
+                meetingId={attendance.meetingId}
+                occurrenceStart={attendance.occurrenceStart}
+                windowEndIso={attendance.windowEndIso}
+                canEdit={canEdit}
+                recordingEnabled={recordingEnabled}
+                recordPromptEnabled={attendance.recordPromptEnabled}
+                hasActiveRecording={hasActiveRecording}
+                canDontSuggest={attendance.canDontSuggestRecording}
+                onRecord={() => setRecordAutoOpen(true)}
+                onDontSuggest={() => void dontSuggestRecording()}
+              />
+            )}
+            {attendance?.selfCheckIn && (
+              <CheckInPanel
+                meetingId={attendance.meetingId}
+                meetingLabel={attendance.meetingLabel}
+                viewerInvited={attendance.viewerInvited}
+                initialPresent={attendance.viewerPresent}
+                checkInUrl={attendance.checkInUrl}
+                checkInQrSvg={attendance.checkInQrSvg}
+              />
+            )}
+            {notebook ? (
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+                <NotebookTabs notebook={notebook} currentId={pageId} />
+                <div className="min-w-0 flex-1">
+                  <TranscriptChipHoverLayer onChipClick={onChipClick} railOpen={Boolean(rec?.open)}>
+                    {editor}
+                  </TranscriptChipHoverLayer>
+                </div>
+              </div>
+            ) : (
+              <TranscriptChipHoverLayer onChipClick={onChipClick} railOpen={Boolean(rec?.open)}>
+                {editor}
+              </TranscriptChipHoverLayer>
+            )}
+          </div>
+        );
+      }}
+    </RecordingMount>
   );
 }

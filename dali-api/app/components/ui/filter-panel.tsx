@@ -25,10 +25,10 @@ export function customizeButtonClass(os: boolean, active: boolean) {
 }
 
 /** Pass to <Popover panelClassName>. */
-export function filterPanelClass(os: boolean) {
+export function filterPanelClass(_os?: boolean) {
   return cn(
     "z-[60] w-72 overflow-y-auto p-3 focus:outline-none",
-    os ? OS_SURFACE_CLASS : "rounded-md border border-border bg-card shadow-brand-2",
+    OS_SURFACE_CLASS,
   );
 }
 

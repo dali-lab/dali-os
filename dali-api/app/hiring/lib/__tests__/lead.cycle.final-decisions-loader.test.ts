@@ -6,7 +6,10 @@ vi.mock("~/lib/auth", () => ({
 }));
 vi.mock("~/lib/roles");
 // Phase progress and the term picker have their own tests; stub them here.
-vi.mock("~/hiring/lib/hiring-emails.server", () => ({ listHiringEmails: vi.fn().mockResolvedValue([]) }));
+vi.mock("~/hiring/lib/hiring-emails.server", () => ({
+  listHiringEmails: vi.fn().mockResolvedValue([]),
+  getHiringEmail: vi.fn().mockResolvedValue(null),
+}));
 vi.mock("~/hiring/lib/cycle-phases.server", () => ({
   getCycleProgress: vi.fn().mockResolvedValue({ term: null, done: {} }),
 }));

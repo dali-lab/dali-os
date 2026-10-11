@@ -1,16 +1,21 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { cn } from "~/lib/cn";
 import { hiringKey } from "~/email/lib/registry";
+import { EmailEditorModal } from "~/admin/components/EmailTemplatesAdmin";
 import { Form, Link, useParams, useLoaderData, useLocation, useSearchParams, useFetcher, redirect } from 'react-router'
 import { Select, type SelectOption, Tooltip } from "~/components/ui/floating";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import type { Route } from "./+types/lead.cycle.$id";
 import { prisma } from "~/lib/db";
 import { recordRouteVisit } from "~/lib/user-pages.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { isAdmin, isCore, isCycleAdmin } from "~/lib/roles";
+import { getUserRoles, isAdmin, isCore, isCycleAdmin } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { listHiringEvents, isEventCheckInOpen } from "~/hiring/lib/hiring-events.server";
+import { countAnnouncementRecipients } from "~/hiring/lib/hiring-event-notice";
+import QRCode from "qrcode";
 import { changeApplicants } from "~/hiring/lib/cycle-applicants.server";
+import { invalidateActiveCycles } from "~/hiring/lib/cycles";
 import {
   loadStartTermCandidates,
   parseStartTermIds,
@@ -38,18 +43,19 @@ import {
   type Timeline,
 } from "~/hiring/lib/cycle-timeline";
 import { addDomainMentors, domainMentorIds } from "~/hiring/lib/cycle-rosters.server";
-import { listHiringEmails } from "~/hiring/lib/hiring-emails.server";
+import { getHiringEmail, listHiringEmails } from "~/hiring/lib/hiring-emails.server";
 import { roundsWithBoards, saveCycleTimeline } from "~/hiring/lib/cycle-timeline.server";
 import { buildPhaseTabs, resolvePhaseTab } from "~/hiring/lib/cycle-phase-tabs";
 import { TargetDomainsCard } from "~/hiring/components/cycle-setup/TargetDomainsCard";
 import { ReviewerPoolCard } from "~/hiring/components/cycle-setup/ReviewerPoolCard";
-import { addDomainChallenge, createCycleApplicationForm, removeDomainChallenge } from "~/hiring/lib/application-form.server";
+import { addDomainChallenge, createCycleApplicationForm, createCycleContinuedInterestForm, removeDomainChallenge } from "~/hiring/lib/application-form.server";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { getPresenceUser } from "~/lib/presence-user";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { PresenceBar } from "~/components/collab/PresenceBar";
 import { renderEmail } from "~/lib/email";
 import {
+  CONTINUED_INTEREST_SLOT,
   TEMPLATE_VARIABLES,
   decisionSlot,
   notificationSlot,
@@ -71,6 +77,7 @@ import { SegmentedTabButtons } from "~/components/AreaPillNav";
 import { buttonClasses } from "~/components/ui/Button";
 import { OpenApplicationsConfirmModal } from "~/hiring/components/cycle-setup/OpenApplicationsConfirmModal";
 import { TermDatesCard } from "~/hiring/components/cycle-setup/TermDatesCard";
+import { ApplicationEventsCard, type HiringEventRow, type EventCheckIn } from "~/hiring/components/cycle-setup/ApplicationEventsCard";
 import { AudienceCard } from "~/hiring/components/cycle-setup/AudienceCard";
 import { NavSection, SectionNavLayout } from "~/hiring/components/cycle-setup/SectionNav";
 import { DomainSubRow, SubRowEmpty, SubRowVersion } from "~/hiring/components/cycle-setup/DomainSubRow";
@@ -89,6 +96,7 @@ import {
   zonedDayStartUtc,
   zonedDayEndUtc,
   getZonedYMD,
+  formatInTimeZone,
   APPLICATION_TZ,
   APPLICATION_TZ_LABEL,
 } from "~/lib/timezone";
@@ -107,6 +115,25 @@ interface InterviewConfig {
   cancelNoticeHours: number
   bookingNoticeHours: number
   timezone: string
+  rooms?: { id: string; name: string }[]
+  roomIds: string[]
+  holdRooms: boolean
+}
+
+interface RoomHoldConflictItem {
+  kind: 'booking' | 'meeting'
+  id: string
+  title: string
+  start: string
+  end: string
+  organizer: { firstName: string | null; lastName: string | null }
+  recurring: boolean
+}
+
+interface RoomHoldConflict {
+  roomId: string
+  roomName: string
+  items: RoomHoldConflictItem[]
 }
 
 interface CycleReviewer {
@@ -125,7 +152,7 @@ interface InterviewRow {
   startTime: string
   endTime: string
   status: string
-  location: string
+  room: { id: string; name: string } | null
   zoomJoinUrl: string | null
   videoUrl: string | null
   domainApplication: {
@@ -179,80 +206,177 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // original close has just passed.
   await sendExtensionNoticeIfDue(params.id!);
 
-  const cycleBase = await prisma.applicationCycle.findUniqueOrThrow({
-    where: { id: params.id },
-    include: {
-      domains: {
-        include: { domain: true },
-      },
-      statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
-      applicationForm: { include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } } },
-      domainChallengeForms: {
-        select: {
-          id: true,
-          domainId: true,
-          formId: true,
-          form: {
-            select: {
-              name: true,
-              versions: {
-                orderBy: { versionNumber: "desc" },
-                take: 1,
-                select: { versionNumber: true, createdAt: true, createdBy: { select: { firstName: true, lastName: true } } },
+  // The reads below only need params.id / confidentialityRequired (already
+  // known) — none of them depend on another's result — so they run as one
+  // wave instead of a dozen sequential round-trips. `rubricVersionOptions` is
+  // reused as `domainRubricVersions` afterward rather than querying it twice.
+  const [
+    cycleBase,
+    applications,
+    allDomains,
+    allForms,
+    rubricVersionOptions,
+    confidentialityAgreementOptions,
+    confidentialityBindingRow,
+    confidentialitySignaturesRaw,
+    cycleApplicationReviewCount,
+    reviewsForCycle,
+    pendingDecisions,
+    hiringEmailRows,
+    continuedInterestEmail,
+    roundsWithBoardsSet,
+    viewerIsAdmin,
+  ] = await Promise.all([
+    prisma.applicationCycle.findUniqueOrThrow({
+      where: { id: params.id },
+      include: {
+        domains: {
+          include: { domain: true },
+        },
+        statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
+        applicationForm: { include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } } },
+        continuedInterestForm: { select: { id: true, name: true } },
+        domainChallengeForms: {
+          select: {
+            id: true,
+            domainId: true,
+            formId: true,
+            form: {
+              select: {
+                name: true,
+                versions: {
+                  orderBy: { versionNumber: "desc" },
+                  take: 1,
+                  select: { versionNumber: true, createdAt: true, createdBy: { select: { firstName: true, lastName: true } } },
+                },
               },
             },
           },
         },
       },
-    },
-  });
+    }),
+    confidentialityRequired
+      ? Promise.resolve([] as never[])
+      : prisma.application.findMany({
+          where: { applicationCycleId: params.id },
+          include: {
+            user: true,
+            statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
+            domainApplications: {
+              where: { selected: true },
+              include: { domain: true },
+            },
+          },
+        }),
+    prisma.domain.findMany({ orderBy: { name: "asc" } }),
+    // All Drive Forms — for the application form and challenge pickers in Setup.
+    prisma.form.findMany({
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+    prisma.rubricVersion.findMany({
+      include: { rubric: { select: { name: true } }, createdBy: { select: { firstName: true, lastName: true } } },
+      orderBy: { createdAt: "desc" },
+    }),
+    // Confidentiality agreements are SigningDocuments (kind Confidentiality),
+    // bound to the cycle via a SigningBinding (scopeKey "cycle:<id>") and signed
+    // as SigningSignatures (roleKey "member"). Reshaped to the picker's original
+    // shape so its UI is unchanged.
+    prisma.signingDocument.findMany({
+      where: { gateScope: "HiringCycle", archivedAt: null },
+      include: { versions: { orderBy: { versionNumber: "desc" } } },
+      orderBy: { name: "asc" },
+    }),
+    prisma.signingBinding.findFirst({
+      where: { cycleId: params.id, document: { gateScope: "HiringCycle" } },
+      include: {
+        version: { include: { document: { select: { name: true } } } },
+      },
+    }),
+    prisma.signingSignature.findMany({
+      where: {
+        roleKey: "member",
+        binding: { cycleId: params.id, document: { gateScope: "HiringCycle" } },
+      },
+      include: { signer: { select: { firstName: true, lastName: true } } },
+      orderBy: { signedAt: "asc" },
+    }),
+    // Even the count of reviews on this cycle is sensitive — it tells anyone
+    // pre-signature how far review has progressed. Zero it out when unsigned;
+    // the only reader is the rubric-locking UI, which fail-closed locks edits
+    // when reviews exist (count > 0). With confidentialityRequired set, the
+    // reviewer dashboard is gated anyway, so the rubric lock state is moot.
+    confidentialityRequired
+      ? Promise.resolve(0)
+      : prisma.applicationReview.count({
+          where: {
+            domainApplication: {
+              application: { applicationCycleId: params.id },
+            },
+          },
+        }),
+    confidentialityRequired
+      ? Promise.resolve([] as never[])
+      : prisma.applicationReview.findMany({
+          where: {
+            domainApplication: { application: { applicationCycleId: params.id } },
+          },
+          select: {
+            domainApplication: {
+              select: {
+                domainId: true,
+              },
+            },
+          },
+        }),
+    // Decisions awaiting the hiring lead: Drafts to finalize and Finals to
+    // release, on every kind of cycle. Students cycles used to load Finals only,
+    // on the theory that domain leads finalize on their own page — but a Draft
+    // made outside that flow (moved by hand, or left behind when the cycle
+    // closed) was then invisible here, which is the one place a lead looks.
+    // Exclude rows that already have a Released child — Decision is append-only,
+    // so released rows still match their stage and would otherwise re-appear here
+    // after the optimistic UI update is undone by a loader refetch.
+    confidentialityRequired
+      ? Promise.resolve([] as never[])
+      : prisma.decision.findMany({
+          where: {
+            stage: { in: ["Draft", "Final"] },
+            children: { none: { stage: "Released" } },
+            domainApplication: {
+              application: { applicationCycleId: params.id },
+            },
+          },
+          include: {
+            domainApplication: {
+              include: {
+                application: { include: { user: { select: { firstName: true, lastName: true, dartmouthEmail: true, netId: true } } } },
+                domain: { select: { name: true } },
+              },
+            },
+            madeBy: { select: { firstName: true, lastName: true } },
+          },
+          orderBy: { createdAt: "desc" },
+        }),
+    // Hiring's emails are shared by every cycle, one per slot (decision or
+    // notification). Keyed by slot for the editors, release gating and previews.
+    listHiringEmails(),
+    // Unlike the rest, this one sends its default copy until Core writes a row.
+    getHiringEmail(CONTINUED_INTEREST_SLOT),
+    roundsWithBoards(params.id),
+    isAdmin(auth.user.sub),
+  ]);
 
   // After the Core gate — this cycle lands in the lead's recents.
   recordRouteVisit(auth.user.sub, `/hiring/lead/cycle/${params.id}`, cycleBase.name, request);
 
-  const applications = confidentialityRequired
-    ? []
-    : await prisma.application.findMany({
-        where: { applicationCycleId: params.id },
-        include: {
-          user: true,
-          statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
-          domainApplications: {
-            where: { selected: true },
-            include: { domain: true },
-          },
-        },
-      });
   const cycle = { ...cycleBase, applications };
 
-  const allDomains = await prisma.domain.findMany({ orderBy: { name: "asc" } });
-
-  // All Drive Forms — for the application form and challenge pickers in Setup.
-  const allForms = await prisma.form.findMany({
-    orderBy: { name: "asc" },
-    select: { id: true, name: true },
-  });
-
-  const rubricVersionOptions = await prisma.rubricVersion.findMany({
-    include: { rubric: { select: { name: true } }, createdBy: { select: { firstName: true, lastName: true } } },
-    orderBy: { createdAt: "desc" },
-  });
-
-  // Confidentiality agreements are SigningDocuments (kind Confidentiality),
-  // bound to the cycle via a SigningBinding (scopeKey "cycle:<id>") and signed
-  // as SigningSignatures (roleKey "member"). Reshaped to the picker's original
-  // shape so its UI is unchanged.
-  const confidentialityAgreementOptions = await prisma.signingDocument.findMany({
-    where: { gateScope: "HiringCycle", archivedAt: null },
-    include: { versions: { orderBy: { versionNumber: "desc" } } },
-    orderBy: { name: "asc" },
-  });
-  const confidentialityBindingRow = await prisma.signingBinding.findFirst({
-    where: { cycleId: params.id, document: { gateScope: "HiringCycle" } },
-    include: {
-      version: { include: { document: { select: { name: true } } } },
-    },
-  });
+  // Which domains already have reviews assigned (used to gate rubric edits —
+  // once any domain application has a review, changing the rubric out from
+  // under it would invalidate scoring). Rubrics aren't domain-specific, so
+  // this is the same set of versions as rubricVersionOptions above.
+  const domainRubricVersions = rubricVersionOptions;
   const currentConfidentialityBinding = confidentialityBindingRow
     ? {
         confidentialityAgreementVersion: {
@@ -262,53 +386,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         },
       }
     : null;
-  const confidentialitySignatures = (
-    await prisma.signingSignature.findMany({
-      where: {
-        roleKey: "member",
-        binding: { cycleId: params.id, document: { gateScope: "HiringCycle" } },
-      },
-      include: { signer: { select: { firstName: true, lastName: true } } },
-      orderBy: { signedAt: "asc" },
-    })
-  ).map((s) => ({ user: s.signer }));
+  const confidentialitySignatures = confidentialitySignaturesRaw.map((s) => ({ user: s.signer }));
 
-  // Even the count of reviews on this cycle is sensitive — it tells anyone
-  // pre-signature how far review has progressed. Zero it out when unsigned;
-  // the only reader is the rubric-locking UI, which fail-closed locks edits
-  // when reviews exist (count > 0). With confidentialityRequired set, the
-  // reviewer dashboard is gated anyway, so the rubric lock state is moot.
-  const cycleApplicationReviewCount = confidentialityRequired
-    ? 0
-    : await prisma.applicationReview.count({
-        where: {
-          domainApplication: {
-            application: { applicationCycleId: params.id },
-          },
-        },
-      });
-
-  // Which domains already have reviews assigned (used to gate rubric edits —
-  // once any domain application has a review, changing the rubric out from
-  // under it would invalidate scoring).
-  const domainRubricVersions = await prisma.rubricVersion.findMany({
-    include: { rubric: { select: { name: true } }, createdBy: { select: { firstName: true, lastName: true } } },
-    orderBy: { createdAt: "desc" },
-  });
-  const reviewsForCycle = confidentialityRequired
-    ? []
-    : await prisma.applicationReview.findMany({
-        where: {
-          domainApplication: { application: { applicationCycleId: params.id } },
-        },
-        select: {
-          domainApplication: {
-            select: {
-              domainId: true,
-            },
-          },
-        },
-      });
   const reviewedDomainIdSet = new Set<string>();
   for (const r of reviewsForCycle) {
     const did = r.domainApplication.domainId ?? null;
@@ -316,50 +395,51 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
   const reviewedDomainIds = Array.from(reviewedDomainIdSet);
 
-  // Decisions awaiting the hiring lead: Drafts to finalize and Finals to
-  // release, on every kind of cycle. Students cycles used to load Finals only,
-  // on the theory that domain leads finalize on their own page — but a Draft
-  // made outside that flow (moved by hand, or left behind when the cycle
-  // closed) was then invisible here, which is the one place a lead looks.
-  // Exclude rows that already have a Released child — Decision is append-only,
-  // so released rows still match their stage and would otherwise re-appear here
-  // after the optimistic UI update is undone by a loader refetch.
   const isMemberCycle = isMemberApplicants(cycleBase.applicants);
-  const pendingDecisions = confidentialityRequired
-    ? []
-    : await prisma.decision.findMany({
-        where: {
-          stage: { in: ["Draft", "Final"] },
-          children: { none: { stage: "Released" } },
-          domainApplication: {
-            application: { applicationCycleId: params.id },
-          },
-        },
-        include: {
-          domainApplication: {
-            include: {
-              application: { include: { user: { select: { firstName: true, lastName: true, dartmouthEmail: true, netId: true } } } },
-              domain: { select: { name: true } },
-            },
-          },
-          madeBy: { select: { firstName: true, lastName: true } },
-        },
-        orderBy: { createdAt: "desc" },
-      });
-
-  // Hiring's emails are shared by every cycle, one per slot (decision or
-  // notification). Keyed by slot for the editors, release gating and previews.
   const hiringEmails: Record<string, { subject: string; body: string }> = Object.fromEntries(
-    (await listHiringEmails()).map((e) => [e.slot, { subject: e.subject, body: e.body }]),
+    hiringEmailRows.map((e) => [e.slot, { subject: e.subject, body: e.body }]),
   );
+  if (continuedInterestEmail) hiringEmails[CONTINUED_INTEREST_SLOT] = continuedInterestEmail;
 
   const memberSetup = isMemberCycle ? await loadMemberCycleSetup(params.id) : null;
-  const [progress, termOptions, phaseStatusByDomain, startTermCandidates] = await Promise.all([
+  const [progress, termOptions, phaseStatusByDomain, startTermCandidates, viewerRoles] = await Promise.all([
     getCycleProgress(params.id),
     loadTermOptions(request),
     confidentialityRequired ? null : loadPhaseStatusByDomain(params.id),
     loadStartTermCandidates(),
+    getUserRoles(auth.user.sub, request),
   ]);
+
+  // Application events (help hours, socials, info sessions): flag-gated, so
+  // the event list itself is fetched only once the flag resolves. QR SVGs are
+  // built only for events whose check-in is currently open, to keep this
+  // loader cheap on cycles with a long event history.
+  const applicationEventsEnabled = await isFeatureEnabled("application-events", auth.user.sub, viewerRoles, request);
+  const [hiringEventRows, announcementRecipientCount] = applicationEventsEnabled
+    ? await Promise.all([listHiringEvents(params.id!), countAnnouncementRecipients(params.id!)])
+    : [[], 0];
+  const hiringEvents: HiringEventRow[] = hiringEventRows.map((e) => ({
+    id: e.id,
+    kind: e.kind,
+    title: e.title,
+    startsAt: e.startsAt.toISOString(),
+    endsAt: e.endsAt.toISOString(),
+    location: e.location,
+    checkInOpenAt: e.checkInOpenAt ? e.checkInOpenAt.toISOString() : null,
+    broadcastAt: e.broadcastAt ? e.broadcastAt.toISOString() : null,
+    announcementSentAt: e.announcementSentAt ? e.announcementSentAt.toISOString() : null,
+    attendeeCount: e._count.attendances,
+  }));
+  const origin = new URL(request.url).origin;
+  const hiringEventCheckIns: Record<string, EventCheckIn> = {};
+  for (const e of hiringEventRows) {
+    if (!isEventCheckInOpen(e)) continue;
+    const checkInUrl = `${origin}/hiring/events/check-in/${e.id}`;
+    hiringEventCheckIns[e.id] = {
+      checkInUrl,
+      checkInQrSvg: await QRCode.toString(checkInUrl, { type: "svg", margin: 1, width: 200 }),
+    };
+  }
 
   const collabToken = await getCollabToken(request);
   const presenceUser = await getPresenceUser(auth.user.sub);
@@ -368,10 +448,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       cycle,
       memberSetup,
       progress,
-      roundsWithBoards: [...(await roundsWithBoards(params.id))],
+      roundsWithBoards: [...roundsWithBoardsSet],
       termOptions,
       startTermCandidates,
-      viewerIsAdmin: await isAdmin(auth.user.sub),
+      viewerIsAdmin,
       viewerIsCore: !!(await isCore(auth.user.sub, request)),
       phaseStatusByDomain,
       allDomains,
@@ -386,6 +466,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       currentConfidentialityBinding,
       confidentialitySignatures,
       confidentialityRequired,
+      applicationEventsEnabled,
+      hiringEvents,
+      hiringEventCheckIns,
+      announcementRecipientCount,
       collabToken,
       currentUserId: auth.user.sub,
       presenceUserName: presenceUser?.name ?? auth.user.email,
@@ -437,6 +521,7 @@ async function reopenIfNeeded(
   await tx.applicationCycleStatusUpdate.create({
     data: { applicationCycleId: cycleId, newStatus: "Open", userId },
   });
+  invalidateActiveCycles();
   return true;
 }
 
@@ -879,6 +964,20 @@ export async function action({ request, params }: Route.ActionArgs) {
     return cycleRedirect(request, params.id!);
   }
 
+  if (intent === "create-continued-interest-form") {
+    await createCycleContinuedInterestForm(params.id!, auth.user.sub);
+    return cycleRedirect(request, params.id!);
+  }
+
+  if (intent === "set-continued-interest-form") {
+    const formId = (formData.get("formId") as string) || null;
+    await prisma.applicationCycle.update({
+      where: { id: params.id! },
+      data: { continuedInterestFormId: formId },
+    });
+    return cycleRedirect(request, params.id!);
+  }
+
   if (intent === "hl-set-domain-rubric") {
     const domainId = formData.get("domainId") as string;
     const rubricVersionId = (formData.get("rubricVersionId") as string) || null;
@@ -1221,7 +1320,6 @@ export default function HiringLeadCycleDetails() {
   const cycle = loaderData?.cycle
   const memberSetup = loaderData?.memberSetup ?? null
   const isMemberCycle = memberSetup !== null
-  const startTermsEnabled = useFeatureFlag('start-terms')
   const domainsTitle =
     cycle?.applicants === 'LabMembers' ? 'Applicant pool' : isMemberCycle ? 'Target domains' : 'Domains'
   // A domain's challenges, shown on its row only when the cycle has them.
@@ -1253,9 +1351,13 @@ export default function HiringLeadCycleDetails() {
     cancelNoticeHours: 0,
     bookingNoticeHours: 12,
     timezone: APPLICATION_TZ,
+    roomIds: [],
+    holdRooms: false,
   })
   const [configSaved, setConfigSaved] = useState(false)
   const [configSaving, setConfigSaving] = useState(false)
+  const [availableRooms, setAvailableRooms] = useState<{ id: string; name: string }[]>([])
+  const [holdConflicts, setHoldConflicts] = useState<RoomHoldConflict[] | null>(null)
 
   // ── Reviewers state ──
   const [reviewers, setReviewers] = useState<CycleReviewer[]>([])
@@ -1392,10 +1494,21 @@ export default function HiringLeadCycleDetails() {
           ...data,
           interviewStartDate: data.interviewStartDate?.slice(0, 10) ?? '',
           interviewEndDate: data.interviewEndDate?.slice(0, 10) ?? '',
+          roomIds: (data.rooms ?? []).map((room: { id: string }) => room.id),
+          holdRooms: !!data.holdRooms,
         })
       }
     } catch {}
   }, [cycleId])
+
+  const loadRooms = useCallback(async () => {
+    try {
+      const r = await fetch('/api/rooms', { credentials: 'include' })
+      if (!r.ok) return
+      const data = await r.json()
+      setAvailableRooms(data?.rooms ?? [])
+    } catch {}
+  }, [])
 
   const loadReviewers = useCallback(async () => {
     if (!cycleId) return
@@ -1491,11 +1604,12 @@ export default function HiringLeadCycleDetails() {
     }
     if (hasInterviews) {
       loadConfig()
+      loadRooms()
       loadInterviewers()
       loadInterviews()
       loadCoverage()
     }
-  }, [cycleId, isMemberCycle, hasInterviews, loadStatus, loadConfig, loadReviewers, loadMembers, loadInterviewers, loadInterviews, loadCoverage])
+  }, [cycleId, isMemberCycle, hasInterviews, loadStatus, loadConfig, loadRooms, loadReviewers, loadMembers, loadInterviewers, loadInterviews, loadCoverage])
 
   // An action on this page (e.g. adding a domain's mentors) revalidates the
   // loader but not these client-fetched rosters, so refetch them with it.
@@ -1508,7 +1622,7 @@ export default function HiringLeadCycleDetails() {
 
   // ── Handlers ──
 
-  async function saveConfig() {
+  async function saveConfig(overrideConflicts = false) {
     if (!cycleId) return
     setConfigSaving(true)
     try {
@@ -1525,6 +1639,7 @@ export default function HiringLeadCycleDetails() {
         interviewEndDate: config.interviewEndDate
           ? toZonedMidnightIso(config.interviewEndDate)
           : config.interviewEndDate,
+        overrideConflicts,
       }
       const res = await fetch(`/api/hiring/cycles/${cycleId}/interview-config`, {
         method: 'POST',
@@ -1533,12 +1648,27 @@ export default function HiringLeadCycleDetails() {
         body: JSON.stringify(payload),
       })
       if (res.ok) {
+        setHoldConflicts(null)
         setConfigSaved(true)
         setTimeout(() => setConfigSaved(false), 2000)
+        if (overrideConflicts) {
+          const peopleCount = new Set(
+            (holdConflicts ?? []).flatMap(c => c.items.map(i => `${i.organizer.firstName} ${i.organizer.lastName}`)),
+          ).size
+          toast.success(`Rooms held. ${peopleCount} people were told.`)
+        }
+      } else if (res.status === 409) {
+        const data = await res.json().catch(() => null)
+        if (data?.conflicts) setHoldConflicts(data.conflicts)
       }
     } finally {
       setConfigSaving(false)
     }
+  }
+
+  function keepTheirBookings() {
+    setHoldConflicts(null)
+    toast.info('Hold not applied')
   }
 
   async function addReviewer(userId: string, domainId: string) {
@@ -1984,7 +2114,7 @@ export default function HiringLeadCycleDetails() {
             cycleStatus={cycleStatus}
             startTermIds={cycle?.startTermIds ?? []}
             startTermCandidates={loaderData?.startTermCandidates ?? []}
-            showStartTerms={startTermsEnabled && cycle?.applicants === "Students"}
+            showStartTerms={cycle?.applicants === "Students"}
           />
           </NavSection>
 
@@ -2003,6 +2133,18 @@ export default function HiringLeadCycleDetails() {
             <CloseDateCard
               cycle={cycle}
               cycleStatus={cycleStatus}
+            />
+            </NavSection>
+          )}
+
+          {loaderData?.applicationEventsEnabled && (
+            <NavSection id="events" title="Application events">
+            <ApplicationEventsCard
+              cycleId={cycle.id}
+              events={loaderData.hiringEvents ?? []}
+              announcementTemplateBound={!!loaderData?.hiringEmails?.["notification:ApplicationEventAnnouncement"]}
+              recipientCount={loaderData.announcementRecipientCount ?? 0}
+              checkIns={loaderData.hiringEventCheckIns ?? {}}
             />
             </NavSection>
           )}
@@ -2089,6 +2231,29 @@ export default function HiringLeadCycleDetails() {
             />
           </NavSection>
 
+          {/* Reusing a waitlisted application is a student-cycle flow. */}
+          {cycle?.applicants === 'Students' && (
+            <NavSection id="continued-interest" title="Continued interest">
+              <SetupCard
+                title="Continued interest"
+                description="Returning waitlisters can reuse their waitlisted application and fill out this form with it. Without a form, reuse isn't offered."
+              >
+                <div className="flex flex-col gap-3 rounded-os-item bg-os-well p-4">
+                  <CycleFormRow
+                    form={cycle?.continuedInterestForm ?? null}
+                    allForms={loaderData?.allForms ?? []}
+                    // Each reused application pins the form version it
+                    // answered, so a swap only affects reuses started after it.
+                    swappable
+                    createIntent="create-continued-interest-form"
+                    setIntent="set-continued-interest-form"
+                    ariaLabel="Continued interest form"
+                  />
+                </div>
+              </SetupCard>
+            </NavSection>
+          )}
+
 
 
 
@@ -2114,9 +2279,12 @@ export default function HiringLeadCycleDetails() {
             description="The email each released decision sends."
             hiringEmails={loaderData?.hiringEmails ?? {}}
             canEdit={!!loaderData?.viewerIsCore}
-            slots={DECISION_EMAIL_SLOTS.filter(
-              (slot) => hasInterviews || slot.type !== "InvitedToInterview",
-            ).map((slot) => ({ ...slot, templateSlot: decisionSlot(slot.type) }))}
+            slots={[
+              ...DECISION_EMAIL_SLOTS.filter(
+                (slot) => hasInterviews || slot.type !== "InvitedToInterview",
+              ).map((slot) => ({ ...slot, templateSlot: decisionSlot(slot.type) })),
+              ...(cycle?.applicants === 'Students' ? [CONTINUED_INTEREST_EMAIL_SLOT] : []),
+            ]}
           />
           </NavSection>
 
@@ -2213,9 +2381,8 @@ export default function HiringLeadCycleDetails() {
             setResendingInviteId(null)
           }
         }
-        const locationLabel = (loc: string) =>
-          loc === 'PodAppa' ? 'Pod Appa' : loc === 'PodMomo' ? 'Pod Momo' : 'Online'
-        async function changeLocation(interview: any, newLocation: string) {
+        const locationLabel = (room: { name: string } | null) => room?.name ?? 'Online'
+        async function changeLocation(interview: any, newRoomId: string) {
           if (
             !(await dialog.confirm({
               title: 'Change interview location?',
@@ -2229,12 +2396,12 @@ export default function HiringLeadCycleDetails() {
             method: 'PATCH',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ location: newLocation }),
+            body: JSON.stringify({ roomId: newRoomId || null }),
           })
           if (res.ok) {
             const updated = await res.json()
             setInterviews(prev => prev.map(i =>
-              i.id === interview.id ? { ...i, location: newLocation, zoomJoinUrl: updated.zoomJoinUrl ?? null, videoUrl: updated.videoUrl ?? null } : i
+              i.id === interview.id ? { ...i, room: updated.room ?? null, zoomJoinUrl: updated.zoomJoinUrl ?? null, videoUrl: updated.videoUrl ?? null } : i
             ))
           } else {
             const body = await res.json().catch(() => ({}))
@@ -2258,6 +2425,31 @@ export default function HiringLeadCycleDetails() {
             body: JSON.stringify({ assignmentId: a.id, newCycleInterviewerId: value }),
           })
           window.location.reload()
+        }
+        async function cancelInterview(interview: any) {
+          const u = interview.domainApplication.application.user
+          const name = `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || 'this applicant'
+          if (
+            !(await dialog.confirm({
+              title: `Cancel ${name}'s interview?`,
+              description: 'Frees the slot and the room. The applicant keeps their invite and can book a new time. Emails the applicant and both interviewers.',
+              confirmLabel: 'Cancel interview',
+              cancelLabel: 'Keep it',
+              tone: 'destructive',
+            }))
+          )
+            return
+          const res = await fetch(`/api/hiring/interviews/${interview.id}/cancel`, {
+            method: 'POST', credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ notifyApplicant: true }),
+          })
+          if (!res.ok) {
+            const body = await res.json().catch(() => null)
+            toast.error(body?.error ?? 'Could not cancel the interview')
+            return
+          }
+          await loadInterviews()
         }
         const applicantLink = (daId: string, u: { firstName?: string | null; lastName?: string | null }) => (
           <Link
@@ -2351,7 +2543,7 @@ export default function HiringLeadCycleDetails() {
                   const start = new Date(interview.startTime)
                   const end = new Date(interview.endTime)
                   const when = `${start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} to ${end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`
-                  const meetUrl = interview.location === 'Online' ? (interview.videoUrl ?? interview.zoomJoinUrl) : null
+                  const meetUrl = !interview.room ? (interview.videoUrl ?? interview.zoomJoinUrl) : null
                   return (
                     <div key={interview.id} className="flex flex-col gap-3 rounded-os-item bg-os-well px-4 py-3">
                       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -2359,7 +2551,21 @@ export default function HiringLeadCycleDetails() {
                           {applicantLink(interview.domainApplication.id, interview.domainApplication.application.user)}
                           <span className="text-sm text-os-grey">{[domainName, when].filter(Boolean).join(' · ')}</span>
                         </div>
-                        <Pill dot={statusTone(interview.status)}>{interview.status}</Pill>
+                        <span className="inline-flex items-center gap-2">
+                          <Pill dot={statusTone(interview.status)}>{interview.status}</Pill>
+                          {editable && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => cancelInterview(interview)}
+                                className={buttonClasses('ghost', 'sm')}
+                              >
+                                Cancel interview
+                              </button>
+                              <EmailMarker recipients="applicant + both interviewers" label="Cancelling fires cancel emails" />
+                            </>
+                          )}
+                        </span>
                       </div>
                       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
                         <span className="inline-flex items-center gap-2">
@@ -2368,19 +2574,18 @@ export default function HiringLeadCycleDetails() {
                             <>
                               <Select
                                 ariaLabel="Location"
-                                value={interview.location}
+                                value={interview.room?.id ?? ""}
                                 onChange={(value) => changeLocation(interview, value)}
                                 options={[
-                                  { value: "PodAppa", label: "Pod Appa" },
-                                  { value: "PodMomo", label: "Pod Momo" },
-                                  { value: "Online", label: "Online" },
+                                  ...(config.rooms ?? []).map((r) => ({ value: r.id, label: r.name })),
+                                  { value: "", label: "Online" },
                                 ]}
                                 buttonClassName={smallTrigger}
                               />
                               <EmailMarker recipients="applicant + both interviewers" label="Changing fires location-change email" />
                             </>
                           ) : (
-                            <span className="text-foreground">{locationLabel(interview.location)}</span>
+                            <span className="text-foreground">{locationLabel(interview.room)}</span>
                           )}
                           {meetUrl && (
                             <a href={meetUrl} target="_blank" rel="noopener noreferrer" className="text-os-accent hover:underline">
@@ -2647,16 +2852,55 @@ export default function HiringLeadCycleDetails() {
               />
             </label>
           </div>
+          <div className={cn(os.formClass, 'mt-4')}>
+            <div className={os.fieldLabel}>
+              Interview rooms
+              <div className="flex flex-wrap gap-4">
+                {availableRooms.map(room => (
+                  <Checkbox
+                    key={room.id}
+                    label={room.name}
+                    checked={config.roomIds.includes(room.id)}
+                    onChange={(e) => {
+                      const checked = e.target.checked
+                      setConfig(c => ({
+                        ...c,
+                        roomIds: checked ? [...c.roomIds, room.id] : c.roomIds.filter(id => id !== room.id),
+                      }))
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">In-person slots are booked into these rooms.</p>
+            <Toggle
+              tone="os"
+              label="Hold these rooms for interviews"
+              description="Blocks other bookings during interview hours across the interview window."
+              checked={config.holdRooms}
+              disabled={config.roomIds.length === 0}
+              onChange={(e) => setConfig(c => ({ ...c, holdRooms: e.target.checked }))}
+            />
+          </div>
           <div>
             <button
               type="button"
-              onClick={saveConfig}
+              onClick={() => saveConfig()}
               disabled={configSaving || !config.interviewStartDate || !config.interviewEndDate}
               className={buttonClasses('primary', 'md')}
             >
               {configSaving ? 'Saving…' : configSaved ? 'Saved' : 'Save'}
             </button>
           </div>
+          {holdConflicts && (
+            <RoomHoldConflictModal
+              conflicts={holdConflicts}
+              timezone={config.timezone}
+              saving={configSaving}
+              onKeep={keepTheirBookings}
+              onOverride={() => saveConfig(true)}
+            />
+          )}
         </SetupCard>
         </NavSection>
       )}
@@ -2862,6 +3106,57 @@ function DecisionEmailPreviewModal({ decision, email, onClose }: {
           </button>
         </div>
       </>
+    </Modal>
+  )
+}
+
+function RoomHoldConflictModal({ conflicts, timezone, saving, onKeep, onOverride }: {
+  conflicts: RoomHoldConflict[];
+  timezone: string;
+  saving: boolean;
+  onKeep: () => void;
+  onOverride: () => void;
+}) {
+  const when = (item: RoomHoldConflictItem) => {
+    const start = formatInTimeZone(item.start, timezone, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+    const end = formatInTimeZone(item.end, timezone, { hour: 'numeric', minute: '2-digit' })
+    return `${start} to ${end}`
+  }
+  const who = (item: RoomHoldConflictItem) =>
+    [item.organizer.firstName, item.organizer.lastName].filter(Boolean).join(' ') || 'Unknown'
+
+  return (
+    <Modal open onClose={onKeep} labelledBy="room-hold-conflict-title">
+      <ModalHeader
+        titleId="room-hold-conflict-title"
+        title="These bookings overlap the hold"
+        onClose={onKeep}
+      />
+      <div className="space-y-4 max-h-[60vh] overflow-y-auto">
+        {conflicts.map(conflict => (
+          <div key={conflict.roomId}>
+            <h3 className="text-sm font-medium text-foreground">{conflict.roomName}</h3>
+            <ul className="mt-1 space-y-1">
+              {conflict.items.map(item => (
+                <li key={`${item.kind}-${item.id}-${item.start}`} className="text-sm text-muted-foreground">
+                  {item.title} · {when(item)} · {who(item)}
+                  {item.recurring && <span className="ml-1 text-xs">(Repeats)</span>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+      <ModalFooter onCancel={onKeep} cancelLabel="Keep their bookings">
+        <button
+          type="button"
+          onClick={onOverride}
+          disabled={saving}
+          className={buttonClasses('destructive', 'md')}
+        >
+          {saving ? 'Releasing…' : 'Release them and hold the rooms'}
+        </button>
+      </ModalFooter>
     </Modal>
   )
 }
@@ -3219,7 +3514,7 @@ function ExtensionSection({
           open
           onClose={() => setShowConfirm(false)}
           labelledBy={headingId}
-          containerClassName="bg-card rounded-2xl shadow-xl max-w-md w-full mx-4 p-6"
+          containerClassName="bg-card rounded-os-card shadow-xl max-w-md w-full mx-4 p-6"
         >
           <div className="space-y-4">
             <h2 id={headingId} className="text-lg font-bold text-foreground">
@@ -3296,6 +3591,91 @@ function BlindReviewToggle({ anonymizeReview }: { anonymizeReview: boolean }) {
   );
 }
 
+// A form bound to the cycle itself (the general application, the continued
+// interest form): what's bound, Create when nothing is, and a swap while the
+// cycle allows one.
+function CycleFormRow({
+  form,
+  allForms,
+  swappable,
+  createIntent,
+  setIntent,
+  ariaLabel,
+}: {
+  form: { id: string; name: string } | null;
+  allForms: { id: string; name: string }[];
+  swappable: boolean;
+  createIntent: string;
+  setIntent: string;
+  ariaLabel: string;
+}) {
+  const os = useOsChrome();
+  const formFetcher = useFetcher();
+  const formBusy = formFetcher.state !== "idle";
+  const [pickingForm, setPickingForm] = useState(false);
+  const small = buttonClasses("secondary", "sm");
+
+  return (
+    <DomainSubRow
+      label="Form"
+      value={
+        form ? (
+          <Link to={`/forms/edit/${form.id}`} className="min-w-0 max-w-full truncate text-os-accent hover:underline" title={form.name}>
+            {form.name}
+          </Link>
+        ) : (
+          <SubRowEmpty>None yet</SubRowEmpty>
+        )
+      }
+      action={
+        !pickingForm && (
+          <>
+            {!form && (
+              <button
+                type="button"
+                disabled={formBusy}
+                onClick={() => formFetcher.submit({ intent: createIntent }, { method: "post" })}
+                className={small}
+              >
+                <Plus className="w-3.5 h-3.5" aria-hidden /> {formBusy ? "Creating…" : "Create form"}
+              </button>
+            )}
+            {swappable && allForms.length > 0 && (
+              <button type="button" onClick={() => setPickingForm(true)} className={small}>
+                Use a different form
+              </button>
+            )}
+          </>
+        )
+      }
+      editor={
+        swappable &&
+        pickingForm && (
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="min-w-[14rem] flex-1">
+              <Select
+                ariaLabel={ariaLabel}
+                defaultValue={form?.id ?? ""}
+                placeholder="Pick a form"
+                onChange={(id) => {
+                  setPickingForm(false);
+                  if (!id || id === form?.id) return;
+                  formFetcher.submit({ intent: setIntent, formId: id }, { method: "post" });
+                }}
+                options={allForms.map((f) => ({ value: f.id, label: f.name }))}
+                buttonClassName={rowTrigger(os.formTrigger)}
+              />
+            </div>
+            <button type="button" onClick={() => setPickingForm(false)} className={small}>
+              Cancel
+            </button>
+          </div>
+        )
+      }
+    />
+  );
+}
+
 // The general application: the form every applicant fills and the rubric
 // every application is scored on, as two rows shaped like a domain row (label,
 // what's bound, then small actions).
@@ -3315,11 +3695,6 @@ function GeneralApplicationSection({
   rubricLocked: boolean;
 }) {
   const os = useOsChrome();
-  const formFetcher = useFetcher();
-  const formBusy = formFetcher.state !== "idle";
-  // The form can only be swapped while the cycle is in Draft.
-  const formEditable = cycleStatus === "Draft";
-  const [pickingForm, setPickingForm] = useState(false);
   // Opens on demand only: an auto-open editor under an empty value repeated
   // "Rubric" / "No rubric" twice.
   const [editingRubric, setEditingRubric] = useState(false);
@@ -3337,62 +3712,13 @@ function GeneralApplicationSection({
     <SetupCard title="General application">
       {/* Same line anatomy as a domain's Challenge and Rubric lines. */}
       <div className="flex flex-col gap-3 rounded-os-item bg-os-well p-4">
-        <DomainSubRow
-          label="Form"
-          value={
-            applicationForm ? (
-              <Link to={`/forms/edit/${applicationForm.id}`} className="min-w-0 max-w-full truncate text-os-accent hover:underline" title={applicationForm.name}>
-                {applicationForm.name}
-              </Link>
-            ) : (
-              <SubRowEmpty>None yet</SubRowEmpty>
-            )
-          }
-          action={
-            !pickingForm && (
-              <>
-                {!applicationForm && (
-                  <button
-                    type="button"
-                    disabled={formBusy}
-                    onClick={() => formFetcher.submit({ intent: "create-application-form" }, { method: "post" })}
-                    className={small}
-                  >
-                    <Plus className="w-3.5 h-3.5" aria-hidden /> {formBusy ? "Creating…" : "Create form"}
-                  </button>
-                )}
-                {formEditable && allForms.length > 0 && (
-                  <button type="button" onClick={() => setPickingForm(true)} className={small}>
-                    Use a different form
-                  </button>
-                )}
-              </>
-            )
-          }
-          editor={
-            formEditable &&
-            pickingForm && (
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="min-w-[14rem] flex-1">
-                  <Select
-                    ariaLabel="Application form"
-                    defaultValue={applicationForm?.id ?? ""}
-                    placeholder="Pick a form"
-                    onChange={(id) => {
-                      setPickingForm(false);
-                      if (!id || id === applicationForm?.id) return;
-                      formFetcher.submit({ intent: "set-application-form", formId: id }, { method: "post" });
-                    }}
-                    options={allForms.map((f) => ({ value: f.id, label: f.name }))}
-                    buttonClassName={rowTrigger(os.formTrigger)}
-                  />
-                </div>
-                <button type="button" onClick={() => setPickingForm(false)} className={small}>
-                  Cancel
-                </button>
-              </div>
-            )
-          }
+        <CycleFormRow
+          form={applicationForm}
+          allForms={allForms}
+          swappable={cycleStatus === "Draft"}
+          createIntent="create-application-form"
+          setIntent="set-application-form"
+          ariaLabel="Application form"
         />
         <DomainSubRow
           label="Rubric"
@@ -3657,7 +3983,7 @@ function RubricPreviewModal({ rv, onClose }: { rv: any; onClose: () => void }) {
   const headingId = `rubric-preview-heading-${rv.id}`;
   const criteria: any[] = (rv.criteria as any[]) ?? [];
   return (
-    <Modal open onClose={onClose} labelledBy={headingId} containerClassName="bg-card rounded-2xl shadow-xl max-w-lg w-full mx-4 p-6 max-h-[80vh] overflow-y-auto">
+    <Modal open onClose={onClose} labelledBy={headingId} containerClassName="bg-card rounded-os-card shadow-xl max-w-lg w-full mx-4 p-6 max-h-[80vh] overflow-y-auto">
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 id={headingId} className="text-lg font-bold text-foreground">
@@ -3696,6 +4022,12 @@ const DECISION_EMAIL_SLOTS: ReadonlyArray<{ type: DecisionSlotType; label: strin
   { type: "Accepted", label: "Accepted", description: "Sent when an offer is released." },
 ];
 
+const CONTINUED_INTEREST_EMAIL_SLOT = {
+  label: "Removed from waitlist",
+  description: "Sent when Core removes someone from the waitlist. Invites them to reapply with continued interest.",
+  templateSlot: CONTINUED_INTEREST_SLOT,
+} as const;
+
 function EmailStatusSection({
   title,
   description,
@@ -3711,10 +4043,11 @@ function EmailStatusSection({
   canEdit: boolean;
 }) {
   // No editor of its own, on purpose. These emails are shared by every cycle, so
-  // editing them belongs to Core in Core -> Communications -> Email, not to
-  // whoever happens to administer this cycle. A Core viewer's rows deep-link
-  // into that editor; for everyone else the Setup tab still answers "is it
-  // written?", because releasing a decision with no email written fails.
+  // editing them belongs to Core, not to whoever happens to administer this
+  // cycle. A Core viewer's rows open Core's editor here, in place; for everyone
+  // else the Setup tab still answers "is it written?", because releasing a
+  // decision with no email written fails.
+  const [editing, setEditing] = useState<TemplateSlot | null>(null);
   return (
     <SetupCard title={title} description={description}>
       <div className="flex flex-col gap-2">
@@ -3740,14 +4073,15 @@ function EmailStatusSection({
             </div>
           );
           return canEdit ? (
-            <Link
+            <button
               key={slot.templateSlot}
-              to={`/core/communications/email?key=${encodeURIComponent(hiringKey(slot.templateSlot))}`}
+              type="button"
+              onClick={() => setEditing(slot.templateSlot)}
               aria-label={`Edit ${slot.label} email`}
-              className={cn(rowClass, "transition-colors hover:bg-muted")}
+              className={cn(rowClass, "w-full text-left transition-colors hover:bg-muted")}
             >
               {body}
-            </Link>
+            </button>
           ) : (
             <div key={slot.templateSlot} className={rowClass}>
               {body}
@@ -3757,11 +4091,14 @@ function EmailStatusSection({
         <p className="text-xs text-muted-foreground">
           Shared by every cycle.{" "}
           <Link to="/core/communications/email" className="underline">
-            Edit in Core &rarr; Communications &rarr; Email
+            See all in Core &rarr; Communications &rarr; Email
           </Link>
           .
         </p>
       </div>
+      {editing && (
+        <EmailEditorModal templateKey={hiringKey(editing)} onClose={() => setEditing(null)} />
+      )}
     </SetupCard>
   );
 }
@@ -3769,10 +4106,12 @@ function EmailStatusSection({
 const NOTIFICATION_EMAIL_SLOTS: ReadonlyArray<{ type: NotificationSlotType; label: string; description: string }> = [
   { type: "ApplicationReceived", label: "Application received", description: "Sent when an applicant first submits." },
   { type: "ApplicationExtensionNotice", label: "Deadline extension notice", description: "Sent once to unsubmitted applicants after the original close." },
+  { type: "ApplicationEventAnnouncement", label: "Application event announcement", description: "Sent by hand from an event card to everyone who started an application." },
   { type: "InterviewInviteMentor", label: "Interview invite (interviewer)", description: "Sent when an interview is booked or reassigned." },
   { type: "InterviewInviteReminder", label: "Invite reminder (applicant)", description: "Sent by Resend invite when an applicant hasn't booked." },
   { type: "InterviewConfirmedApplicant", label: "Interview confirmed (applicant)", description: "Sent when the applicant books." },
   { type: "InterviewCancelledApplicant", label: "Interview cancelled (applicant)", description: "Sent when the interview is cancelled." },
+  { type: "InterviewCancelledByTeamApplicant", label: "Interview cancelled by the team (applicant)", description: "Sent when a hiring lead cancels; tells the applicant to book a new time." },
   { type: "InterviewCancelledInterviewer", label: "Interview cancelled (interviewer)", description: "Sent when an interview is cancelled or reassigned away." },
   { type: "InterviewLocationChanged", label: "Interview location changed", description: "Sent to everyone when the location changes." },
   { type: "InterviewReminderApplicant", label: "Interview reminder (applicant)", description: "Sent 24 hours and 1 hour before the interview." },

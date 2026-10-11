@@ -6,8 +6,8 @@ pub const DEEP_LINK_SCHEME: &str = "dalios";
 
 // Bundled frontend assets (frontendDist) are served from the Tauri custom
 // protocol. On macOS/Linux that origin is `tauri://localhost`; this app ships
-// macOS only. The offline fallback page lives here so a failed remote load can
-// swap the main window to it without a network round-trip.
+// macOS, Linux, and Windows. The offline fallback page lives here so a failed
+// remote load can swap the main window to it without a network round-trip.
 pub const APP_ASSET_ORIGIN: &str = "tauri://localhost";
 
 // Cold-start reveal fallback: the page load normally reveals the window; if the
@@ -32,13 +32,33 @@ pub const POLL_BACKOFF_MAX_SECS: u64 = 300;
 // The stream sends a keepalive every 25s; treat a longer silence as a dead
 // connection and reconnect.
 pub const STREAM_STALL_SECS: u64 = 90;
-// Unread notifications listed in the tray menu.
-pub const TRAY_RECENT_MAX: usize = 5;
+// Unread notifications shown in the tray panel/menu.
+pub const TRAY_RECENT_MAX: usize = 8;
 
 /// One native meeting recording (recording.rs). `id` is validated as
 /// alphanumeric by the caller.
 pub fn recording_url(id: &str) -> String {
     format!("{PROD_ORIGIN}/api/meeting-recordings/{id}")
+}
+
+/// Chunk upload endpoint for a recording (recording.rs). Query string
+/// (`channel`, `segment`, `seq`) is added by the caller.
+pub fn recording_chunks_url(id: &str) -> String {
+    format!("{PROD_ORIGIN}/api/meeting-recordings/{id}/chunks")
+}
+
+/// Creates a MeetingRecording for a one-tap record-prompt banner
+/// (notify/mod.rs). Body carries `scheduledMeetingId` / `occurrenceStart`.
+pub fn meeting_recordings_url() -> String {
+    format!("{PROD_ORIGIN}/api/meeting-recordings")
+}
+
+/// "Don't suggest recording this meeting" (record-prompt window's overflow
+/// menu) — the same `intent=recordPrompt` POST the web RecordPromptBanner's
+/// overflow item makes, reached here with the keychain Bearer token instead
+/// of a session cookie.
+pub fn calendar_meeting_url(id: &str) -> String {
+    format!("{PROD_ORIGIN}/calendar/meeting/{id}")
 }
 
 pub fn pair_start_url() -> String {
@@ -52,6 +72,9 @@ pub fn notifications_url() -> String {
 }
 pub fn notifications_stream_url() -> String {
     format!("{PROD_ORIGIN}/api/notifications/stream")
+}
+pub fn agenda_url() -> String {
+    format!("{PROD_ORIGIN}/api/desktop/agenda")
 }
 pub fn desktop_updated_url() -> String {
     format!("{PROD_ORIGIN}/api/desktop/updated")

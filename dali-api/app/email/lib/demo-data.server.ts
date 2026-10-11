@@ -268,7 +268,7 @@ export function demoEmailPage(request: Request): EmailPageData {
     aiEnabled: isAiEnabled(),
     isAdmin: true,
     accounts: ACCOUNTS,
-    feed: { threads, errors: inbox && inbox !== "hiring" ? [] : ["hiring"] },
+    feed: { threads, errors: inbox && inbox !== "hiring" ? [] : ["hiring"], next: {} },
     unread,
     selected,
     drafts: DRAFTS,

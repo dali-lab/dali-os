@@ -3,7 +3,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 vi.mock("~/lib/db");
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
-  redirectApplicantToPortal: vi.fn().mockReturnValue(null),
+  redirectNonMemberToPortal: vi.fn(async () => null),
+  isNonMember: vi.fn(async () => false),
 }));
 vi.mock("~/lib/roles", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/lib/roles")>()),

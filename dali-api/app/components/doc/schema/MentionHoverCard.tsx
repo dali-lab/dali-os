@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { cn } from "~/lib/cn";
+import { OS_SURFACE_CLASS } from "~/components/ui/floating/styles";
 
 // Hover card for an @handle chip. A handle alone often doesn't identify anyone
 // — this puts the face and full name behind it without leaving the document.
@@ -93,7 +95,7 @@ export function MentionHoverCard({
           // content — without it the editor treats this markup as text and the
           // caret can land inside the popup.
           contentEditable={false}
-          className="absolute left-0 top-full z-40 mt-1 flex w-max max-w-[260px] items-center gap-2.5 rounded-lg border border-border bg-card p-2.5 shadow-brand-2"
+          className={cn("absolute left-0 top-full z-40 mt-1 flex w-max max-w-[260px] items-center gap-2.5 p-2.5", OS_SURFACE_CLASS)}
         >
           {member?.photoUrl ? (
             <img

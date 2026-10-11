@@ -24,7 +24,7 @@ import { cn } from "~/lib/cn";
 import type { Route } from "./+types/core.partners.applications.$id";
 import { prisma } from "~/lib/db";
 import { githubTeamSlug } from "~/lib/github-slug";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { isCore, getActiveCoreCycleTermIds } from "~/lib/roles";
@@ -99,7 +99,7 @@ export const handle = {
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  if (auth.user.type === "applicant") return redirect("/portal");
+  if (await isNonMember(auth, request)) return redirect("/portal");
   if (!(await isCore(auth.user.sub))) return redirect("/");
 
   const application = await prisma.partnerApplication.findUnique({
@@ -376,7 +376,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  if (auth.user.type === "applicant") return redirect("/portal");
+  if (await isNonMember(auth, request)) return redirect("/portal");
   if (!(await isCore(auth.user.sub))) {
     return { error: "You don't have permission to edit this application." };
   }
@@ -1201,9 +1201,9 @@ function StageStepper({ stage }: { stage: Status }) {
               className={cn(
                 "text-[11px] px-2 py-0.5 rounded-full border whitespace-nowrap",
                 current
-                  ? "bg-accent-coral text-white border-accent-coral"
+                  ? "bg-os-accent text-os-bg border-os-accent"
                   : done
-                    ? "bg-accent-coral/10 text-accent-coral border-accent-coral/20"
+                    ? "bg-os-accent/10 text-os-accent border-os-accent/20"
                     : "bg-muted/40 text-muted-foreground border-border",
               )}
             >
@@ -1273,7 +1273,7 @@ function Header({
               defaultValue={application.title}
               autoFocus
               aria-label="Application title"
-              className="font-heading text-xl font-bold text-foreground px-2 py-1 border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+              className="font-heading text-xl font-bold text-foreground px-2 py-1 border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-os-accent/30"
             />
             <button type="submit" className={buttonClasses("primary", "sm")}>
               Save
@@ -1297,7 +1297,7 @@ function Header({
                 onClick={() => setEditing(true)}
                 aria-label="Edit title"
                 title="Edit title"
-                className="text-muted-foreground hover:text-accent-coral transition-colors"
+                className="text-muted-foreground hover:text-os-accent transition-colors"
               >
                 <Pencil className="w-3.5 h-3.5" />
               </button>
@@ -1325,7 +1325,7 @@ function Header({
         {application.partner ? (
           <Link
             to={`/projects?q=${encodeURIComponent(application.partner.name)}`}
-            className="text-accent-coral hover:underline"
+            className="text-os-accent hover:underline"
           >
             {application.partner.name}
           </Link>
@@ -1343,7 +1343,7 @@ function Header({
             {" · "}
             <Link
               to={`/projects/${application.resultingProjectId}`}
-              className="text-accent-coral hover:underline"
+              className="text-os-accent hover:underline"
             >
               View project
             </Link>
@@ -1383,7 +1383,7 @@ function DetailsSection({
               rows={3}
               defaultValue={application.summary ?? ""}
               placeholder="One-paragraph synopsis for the lab. Partners don't see this. The full SOW lives below."
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30"
             />
           ) : (
             <span className="px-2 py-1.5 text-sm text-foreground whitespace-pre-wrap">
@@ -1494,7 +1494,7 @@ function TargetTermsField({
         <button
           type="button"
           onClick={() => setRows((r) => [...r, ""])}
-          className="self-start text-xs font-medium text-accent-coral hover:underline"
+          className="self-start text-xs font-medium text-os-accent hover:underline"
         >
           + Add term
         </button>
@@ -1563,7 +1563,7 @@ function DomainScopeBlock({
           <button
             type="button"
             onClick={() => setAdding(true)}
-            className="text-xs font-medium text-accent-coral hover:underline"
+            className="text-xs font-medium text-os-accent hover:underline"
           >
             + Add domain
           </button>
@@ -1786,7 +1786,7 @@ function DomainScopeEditRow({
           min={0}
           value={members}
           onChange={(e) => setMembers(e.target.value)}
-          className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+          className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30"
         />
       </label>
       <label className="flex flex-col gap-1 text-xs">

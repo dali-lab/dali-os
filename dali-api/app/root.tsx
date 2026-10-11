@@ -172,24 +172,27 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
 
   if (recovering) return null;
 
+  // No layout route rendered, so nothing else supplies the os shell here.
   return (
-    <ErrorScreen heading={heading} description={description} stack={stack}>
-      {/* Plain anchors, not <Link>: a full-document load is the robust way out
-          even when a render crash has wedged the client router. */}
-      <a href="/" className={buttonClasses("primary", "md")}>
-        Go to home
-      </a>
-      {!notFound && (
-        <button
-          type="button"
-          onClick={() => {
-            if (typeof window !== "undefined") window.location.reload();
-          }}
-          className={buttonClasses("secondary", "md")}
-        >
-          Reload page
-        </button>
-      )}
-    </ErrorScreen>
+    <div className="os-shell min-h-screen bg-os-bg text-foreground">
+      <ErrorScreen heading={heading} description={description} stack={stack}>
+        {/* Plain anchors, not <Link>: a full-document load is the robust way out
+            even when a render crash has wedged the client router. */}
+        <a href="/" className={buttonClasses("primary", "md")}>
+          Go to home
+        </a>
+        {!notFound && (
+          <button
+            type="button"
+            onClick={() => {
+              if (typeof window !== "undefined") window.location.reload();
+            }}
+            className={buttonClasses("secondary", "md")}
+          >
+            Reload page
+          </button>
+        )}
+      </ErrorScreen>
+    </div>
   );
 }

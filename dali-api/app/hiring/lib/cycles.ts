@@ -1,4 +1,5 @@
 import { prisma } from "~/lib/db";
+import { cachedForTtl, clearTtlCache } from "~/lib/ttl-cache";
 import type { ApplicationCycleStatus, CycleApplicants } from "~/generated/prisma/enums";
 
 // A cycle is "active" when its latest status is Open or UnderReview — those are
@@ -30,17 +31,30 @@ function withCurrentStatus<C extends { closeDate: Date | null; statusUpdates: { 
  * `currentStatus` UnderReview; the DB row is materialized separately via
  * `autoCloseIfExpired`.
  */
+// The layout loader reads this on every navigation. Status changes go through
+// `invalidateActiveCycles()`, so the only staleness is cross-machine (≤ TTL).
+const ACTIVE_CYCLES_TTL_MS = 30_000;
+
+export function invalidateActiveCycles(): void {
+  clearTtlCache("hiring:activeCycles");
+}
+
 export async function getActiveCycles(filter: { applicants?: CycleApplicants } = {}) {
-  const cycles = await prisma.applicationCycle.findMany({
-    where: {
-      ...(filter.applicants && { applicants: filter.applicants }),
-      statusUpdates: {
-        some: { newStatus: { in: ACTIVE_STATUSES as unknown as ApplicationCycleStatus[] } },
-      },
-    },
-    include: withLatestStatus,
-    orderBy: { createdAt: "desc" },
-  });
+  const cycles = await cachedForTtl(
+    `hiring:activeCycles:${filter.applicants ?? ""}`,
+    ACTIVE_CYCLES_TTL_MS,
+    () =>
+      prisma.applicationCycle.findMany({
+        where: {
+          ...(filter.applicants && { applicants: filter.applicants }),
+          statusUpdates: {
+            some: { newStatus: { in: ACTIVE_STATUSES as unknown as ApplicationCycleStatus[] } },
+          },
+        },
+        include: withLatestStatus,
+        orderBy: { createdAt: "desc" },
+      }),
+  );
   return cycles.map(withCurrentStatus).filter((c) => c !== null);
 }
 
@@ -86,4 +100,5 @@ export async function autoCloseIfExpired(cycleId: string): Promise<void> {
       });
     }
   });
+  invalidateActiveCycles();
 }

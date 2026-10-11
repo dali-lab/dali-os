@@ -44,9 +44,9 @@ export const HOUR_PX = 54;
 // and midday in the middle of it keeps morning and evening equally close. The
 // rest of the 24h day stays reachable by scrolling up/down.
 export const INITIAL_SCROLL_CENTER_HOUR = 12;
-// Grid is snapped/subdivided into 10-minute cells.
-export const SUBDIVISIONS_PER_HOUR = 6; // 60 / 10
-export const SNAP_HOURS = 1 / SUBDIVISIONS_PER_HOUR; // 10 minutes as a fraction of an hour
+// Grid is snapped/subdivided into 15-minute cells.
+export const SUBDIVISIONS_PER_HOUR = 4; // 60 / 15
+export const SNAP_HOURS = 1 / SUBDIVISIONS_PER_HOUR; // 15 minutes as a fraction of an hour
 
 export const DAY_KEYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 

@@ -182,6 +182,8 @@ export default [
     // The writing page sits outside the Resources layout: no masthead or
     // bookmark tabs, just the post and its settings.
     route("resources/write/:postId", "routes/resources.write.$postId.tsx"),
+    // DALI OS feedback: the feature request feed the shell's feedback button posts to.
+    route("feedback", "routes/feedback.tsx"),
 
     // Drive — the unified documents + files + forms + agreements hub. This is the
     // only browsing surface; the old /documents and /forms hubs have been removed
@@ -211,6 +213,10 @@ export default [
     route("members", "members/routes/members.tsx"),
     route("members/groups", "members/routes/members.groups.tsx"),
     route("members/:id", "members/routes/members.$id.tsx"),
+    // Connect: map of where alumni are based (members + alumni).
+    route("connect", "members/routes/connect.tsx"),
+    // Anonymous coffee chat invite: accept / decline (recipient) or status (sender).
+    route("coffee-chats/:id", "members/routes/coffee-chats.$id.tsx"),
 
     // Partners — legacy pre-regroup paths. The internal surface moved to
     // /core/partners (Partner CRM, see the core block above); these redirect,
@@ -365,6 +371,12 @@ export default [
   // no shell.
   route("education/check-in/:sessionId", "education/routes/education.check-in.$sessionId.tsx"),
 
+  // Application-event self-check-in (the projected QR target). Outside the
+  // member layout for the same reason as education/check-in above: an
+  // applicant has a Dartmouth login but no DALIMember row. No enrollment
+  // gate here either — any authenticated user can check in.
+  route("hiring/events/check-in/:eventId", "hiring/routes/events.check-in.$eventId.tsx"),
+
   // Public policy pages (no auth, no layout) — linked from the Google OAuth
   // consent screen, so they must load for an unauthenticated reviewer.
   route("privacy", "routes/privacy.tsx"),
@@ -395,6 +407,7 @@ export default [
   route("link", "routes/link.tsx"),
   route("api/desktop/version", "routes/api.desktop.version.ts"),
   route("api/desktop/updated", "routes/api.desktop.updated.ts"),
+  route("api/desktop/agenda", "routes/api.desktop.agenda.ts"),
 
   // OAuth endpoints (no layout)
   route("oauth/authorize", "routes/oauth.authorize.ts"),
@@ -733,6 +746,12 @@ export default [
   route("api/hiring/cycles/:cycleId/domains/:domainId/auto-assign", "hiring/routes/api.cycles.$cycleId.domains.$domainId.auto-assign.ts"),
   route("api/hiring/cycles/:cycleId/confidentiality/sign", "hiring/routes/api.cycles.$cycleId.confidentiality.sign.ts"),
 
+  // Application events (help hours, socials, info sessions).
+  route("api/hiring/cycles/:cycleId/events", "hiring/routes/api.cycles.$cycleId.events.ts"),
+  route("api/hiring/events/:eventId", "hiring/routes/api.events.$eventId.ts"),
+  route("api/hiring/events/:eventId/check-in", "hiring/routes/api.events.$eventId.check-in.ts"),
+  route("api/hiring/events/:eventId/check-in-qr.pdf", "hiring/routes/api.events.$eventId.check-in-qr.pdf.ts"),
+
   route("api/hiring/my-interview", "hiring/routes/api.my-interview.ts"),
   route("api/hiring/my-interview/cancel", "hiring/routes/api.my-interview.cancel.ts"),
   route("api/hiring/my-interview/reschedule", "hiring/routes/api.my-interview.reschedule.ts"),
@@ -754,11 +773,13 @@ export default [
 
   route("api/hiring/waitlist", "hiring/routes/api.waitlist.ts"),
   route("api/hiring/waitlist/reorder", "hiring/routes/api.waitlist.reorder.ts"),
+  route("api/hiring/waitlist/remove-all", "hiring/routes/api.waitlist.remove-all.ts"),
   route("api/hiring/waitlist/:domainApplicationId/accept", "hiring/routes/api.waitlist.$domainApplicationId.accept.ts"),
   route("api/hiring/waitlist/:domainApplicationId/remove", "hiring/routes/api.waitlist.$domainApplicationId.remove.ts"),
 
   route("api/hiring/interviews/:id/complete", "hiring/routes/api.interviews.$id.complete.ts"),
   route("api/hiring/interviews/:id/reassign", "hiring/routes/api.interviews.$id.reassign.ts"),
+  route("api/hiring/interviews/:id/cancel", "hiring/routes/api.interviews.$id.cancel.ts"),
 
   route("api/hiring/delibs/:id", "hiring/routes/api.delibs.$id.ts"),
   route("api/hiring/delibs/:id/moves", "hiring/routes/api.delibs.$id.moves.ts"),
@@ -819,6 +840,7 @@ export default [
   route("api/ai/email", "routes/api.ai.email.ts"),
   route("api/email/contacts", "routes/api.email.contacts.ts"),
   route("api/email/unread", "routes/api.email.unread.ts"),
+  route("api/email/threads", "routes/api.email.threads.ts"),
   route("api/email/attachment", "routes/api.email.attachment.ts"),
   // Core/Admin member search — manual applicant-email link in the Email tab.
   route("api/users/search", "routes/api.users.search.ts"),
@@ -831,9 +853,16 @@ export default [
   // Meeting-note recording: transcript in, notes Markdown out. Behind the
   // `ai-meeting-notes` flag; same provider gating as api/ai/doc.
   route("api/ai/meeting-notes", "routes/api.ai.meeting-notes.ts"),
-  // Native meeting recording: the page creates a row, the desktop app appends
-  // on-device transcript lines to it, the page polls them. Desktop app depends
-  // on these (see desktop/src-tauri/src/recording.rs).
+  // Enhance (specs/meeting-notes-model.md §2): same flag/permission/budget as
+  // Write notes above, merges the model's plan against the note's typed
+  // blocks instead of appending a fixed summary.
+  route("api/ai/meeting-notes/enhance", "routes/api.ai.meeting-notes.enhance.ts"),
+  // Meeting recording: the page (or desktop app) creates a row, PCM chunks
+  // land in S3, Stop dispatches the transcription provider, whose callback
+  // lands on /result. Desktop app depends on these (see
+  // desktop/src-tauri/src/recording.rs).
   route("api/meeting-recordings", "routes/api.meeting-recordings.ts"),
   route("api/meeting-recordings/:id", "routes/api.meeting-recordings.$id.ts"),
+  route("api/meeting-recordings/:id/chunks", "routes/api.meeting-recordings.$id.chunks.ts"),
+  route("api/meeting-recordings/:id/result", "routes/api.meeting-recordings.$id.result.ts"),
 ] satisfies RouteConfig;

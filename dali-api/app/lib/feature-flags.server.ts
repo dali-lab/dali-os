@@ -1,5 +1,6 @@
 import { prisma } from "~/lib/db";
 import { cachedForRequest } from "~/lib/request-cache";
+import { cachedForTtl, clearTtlCache } from "~/lib/ttl-cache";
 import type { UserRoles } from "~/lib/roles";
 import {
   FEATURE_FLAGS,
@@ -57,11 +58,16 @@ function defaultConfig(def: FeatureFlagDef): FlagConfig {
  * navigation. Without a request (or when caching isn't available), computes
  * directly.
  */
+// Admin → Feature Flags expects a toggle to land fast, so the TTL is short and
+// the writer below clears it; another machine sees the change within 15s.
+const FLAG_ROWS_TTL_MS = 15_000;
+
 export async function getFeatureFlagRows(request?: Request) {
-  const compute = async () => {
-    const rows = await prisma.featureFlag.findMany();
-    return new Map(rows.map((r) => [r.key, r]));
-  };
+  const compute = () =>
+    cachedForTtl("featureFlag:rows", FLAG_ROWS_TTL_MS, async () => {
+      const rows = await prisma.featureFlag.findMany();
+      return new Map(rows.map((r) => [r.key, r]));
+    });
   if (!request) return compute();
   return cachedForRequest(request, "featureFlagRows", compute);
 }
@@ -253,4 +259,5 @@ export async function updateFlag(
     create: { key, ...data },
     update: data,
   });
+  clearTtlCache("featureFlag:");
 }

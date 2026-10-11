@@ -13,7 +13,7 @@ import { replaceCollabDocContent } from "~/collab/write";
 import { pageDocName } from "~/collab/roomName";
 
 // Generous but bounded — a huge page body is ~100 KB of markdown.
-const MAX_MARKDOWN_LENGTH = 300_000;
+export const MAX_MARKDOWN_LENGTH = 300_000;
 
 export const SET_PAGE_CONTENT_TOOL = {
   name: "set_page_content",

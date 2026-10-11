@@ -5,7 +5,7 @@ import { requireAuth } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson, idSchema } from "~/lib/validate";
-import { assignInterviewers } from "~/hiring/lib/scheduling";
+import { assignInterviewers, releaseInterviewRoom } from "~/hiring/lib/scheduling";
 // import { provisionZoomMeeting, deprovisionZoomMeeting } from "~/lib/zoom"; // S2S Zoom not configured yet
 import { provisionInterviewMeet, deprovisionInterviewMeet } from "~/hiring/lib/interview-meet";
 import { sendInterviewCancelEmails, sendInterviewInviteEmails } from "~/hiring/lib/interview-emails";
@@ -58,6 +58,7 @@ export async function action({ request }: Route.ActionArgs) {
                 },
               },
             },
+            roomBooking: { select: { userId: true } },
           },
         });
 
@@ -97,6 +98,7 @@ export async function action({ request }: Route.ActionArgs) {
           where: { interviewId: current.id, status: "Active" },
           data: { status: "Declined" },
         });
+        await releaseInterviewRoom(current, tx);
 
         const created = await assignInterviewers(
           current.applicationCycleId,

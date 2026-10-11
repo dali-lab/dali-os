@@ -48,7 +48,7 @@ export function InterviewSlotPicker({
               className={`text-sm font-bold mb-2 sticky top-0 z-10 py-1 ${
                 variant === "schedule"
                   ? "text-foreground/80 uppercase tracking-wider mb-3 bg-background"
-                  : "text-dark-blue bg-background"
+                  : "text-foreground bg-background"
               }`}
             >
               {date}
@@ -84,7 +84,7 @@ export function InterviewSlotPicker({
                     className={`px-4 py-3 rounded-xl text-sm font-medium border-2 transition-all text-left ${
                       isSelected
                         ? "border-accent-coral bg-accent-coral/5 text-accent-coral"
-                        : "border-border text-dark-blue hover:border-accent-coral/50"
+                        : "border-border text-foreground hover:border-accent-coral/50"
                     }`}
                   >
                     {slot.time}

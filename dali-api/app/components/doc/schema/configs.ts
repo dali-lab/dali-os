@@ -51,6 +51,24 @@ export const pageMentionConfig = {
   content: "none",
 } as const;
 
+// Task-mention inline node: the "Create tasks" producer's replacement for the
+// plain `/projects/:id?tab=progress&task=:id` link it used to append to a
+// checklist item. `label` is a snapshot of the task title at creation time
+// (same role as pageMention's `label`); `projectId` rides along so the chip
+// and exporters can link without a lookup. Status/assignee/due date are
+// deliberately NOT stored here — they're live task state, fetched through
+// the task-card API and cached client-side (mention.tsx), same reasoning as
+// pageMention's live title resolution.
+export const taskMentionConfig = {
+  type: "taskMention",
+  propSchema: {
+    taskId: { default: "" },
+    label: { default: "" },
+    projectId: { default: "" },
+  },
+  content: "none",
+} as const;
+
 // Callout: colored container with an emoji icon. Representation decision from
 // the spike (Phase 0, item 6): content is INLINE; additional paragraphs live
 // as nested children, painted into the box via CSS on the child blockGroup
@@ -162,8 +180,45 @@ function inlineText(inline: AnyInline): string {
   if (typeof inline.text === "string") return inline.text;
   if (inline.type === "mention") return `@${String(inline.props?.label ?? "")}`;
   if (inline.type === "pageMention") return String(inline.props?.label ?? "");
+  if (inline.type === "taskMention") return String(inline.props?.label ?? "");
   if (inline.type === "link" && Array.isArray(inline.content)) {
     return inline.content.map(inlineText).join("");
+  }
+  return "";
+}
+
+/** A single block's own text (not its children) — the shared line-extraction
+ *  logic blocksToPlainText walks with, and what the meeting-notes Enhance
+ *  snapshot (app/components/meeting-recorder/enhance-plan.ts) uses to capture
+ *  one top-level block's text without recursing into nested content. */
+export function blockOwnText(block: AnyBlock): string {
+  const content = block.content;
+  if (Array.isArray(content)) {
+    return content.map(inlineText).join("");
+  }
+  if (content && typeof content === "object" && Array.isArray(content.rows)) {
+    // table content: rows of cells
+    return content.rows
+      .map((row) =>
+        (row.cells ?? [])
+          .map((cell) =>
+            Array.isArray(cell)
+              ? cell.map(inlineText).join("")
+              : ((cell as { content?: AnyInline[] }).content ?? []).map(inlineText).join(""),
+          )
+          .join(" "),
+      )
+      .join("\n");
+  }
+  if (block.type === "file" || block.type === "video") {
+    // File and video blocks carry their display name + URL in props, not
+    // inline content. Emit "name (url)" matching the image caption convention
+    // so search indexers and notification previews surface meaningful text.
+    const name = typeof block.props?.name === "string" ? block.props.name : "";
+    const url = typeof block.props?.url === "string" ? block.props.url : "";
+    const caption = typeof block.props?.caption === "string" ? block.props.caption : "";
+    const label = caption || name;
+    return label && url ? `${label} (${url})` : label || url;
   }
   return "";
 }
@@ -175,33 +230,7 @@ export function blocksToPlainText(blocks: readonly unknown[] | undefined | null)
   if (!Array.isArray(blocks)) return "";
   const lines: string[] = [];
   const walk = (block: AnyBlock) => {
-    let line = "";
-    const content = block.content;
-    if (Array.isArray(content)) {
-      line = content.map(inlineText).join("");
-    } else if (content && typeof content === "object" && Array.isArray(content.rows)) {
-      // table content: rows of cells
-      line = content.rows
-        .map((row) =>
-          (row.cells ?? [])
-            .map((cell) =>
-              Array.isArray(cell)
-                ? cell.map(inlineText).join("")
-                : ((cell as { content?: AnyInline[] }).content ?? []).map(inlineText).join(""),
-            )
-            .join(" "),
-        )
-        .join("\n");
-    } else if (block.type === "file" || block.type === "video") {
-      // File and video blocks carry their display name + URL in props, not
-      // inline content. Emit "name (url)" matching the image caption convention
-      // so search indexers and notification previews surface meaningful text.
-      const name = typeof block.props?.name === "string" ? block.props.name : "";
-      const url = typeof block.props?.url === "string" ? block.props.url : "";
-      const caption = typeof block.props?.caption === "string" ? block.props.caption : "";
-      const label = caption || name;
-      line = label && url ? `${label} (${url})` : label || url;
-    }
+    const line = blockOwnText(block);
     if (line.trim()) lines.push(line);
     for (const child of block.children ?? []) walk(child);
   };

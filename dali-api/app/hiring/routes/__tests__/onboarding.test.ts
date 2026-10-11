@@ -12,12 +12,11 @@ vi.mock("~/lib/auth", () => ({
   unauthorized: vi.fn((_req: Request) =>
     Response.json({ error: "Unauthorized" }, { status: 401 }),
   ),
-  redirectApplicantToPortal: vi.fn(() => null),
+  redirectNonMemberToPortal: vi.fn(async () => null),
 }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), getUserRoles: vi.fn() }));
 vi.mock("~/lib/notify.server", () => ({
   notify: vi.fn(),
-  renderNotificationEmail: vi.fn(() => "<p>email</p>"),
 }));
 vi.mock("~/lib/gmail", () => ({ sendEmail: vi.fn() }));
 vi.mock("~/lib/outbound.server", () => ({

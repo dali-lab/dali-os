@@ -8,12 +8,16 @@ import {
   listRetiredMeetingPingIds,
   liveMeetingPingClauses,
   NOT_CANCELLED_MEETING,
+  annotateRecordPromptFeed,
 } from "~/lib/notifications";
 
 const mockPrisma = prisma as unknown as {
   notification: {
     findMany: ReturnType<typeof vi.fn>;
     count: ReturnType<typeof vi.fn>;
+  };
+  scheduledMeeting: {
+    findMany: ReturnType<typeof vi.fn>;
   };
 };
 
@@ -165,5 +169,51 @@ describe("listRetiredMeetingPingIds", () => {
       .mockResolvedValueOnce([{ id: "a" }, { id: "b" }])
       .mockResolvedValueOnce([{ id: "a" }, { id: "b" }]);
     expect(await listRetiredMeetingPingIds("user-1")).toEqual([]);
+  });
+});
+
+describe("annotateRecordPromptFeed", () => {
+  const OCCURRENCE = new Date("2026-09-04T13:00:00.000Z");
+
+  it("attaches the occurrence's note and video-link state for a record_prompt row", async () => {
+    mockPrisma.scheduledMeeting.findMany.mockResolvedValue([
+      {
+        id: "m1",
+        meetingUrl: "https://meet.example/x",
+        notePages: [{ id: "note1", meetingOccurrenceStart: OCCURRENCE }],
+      },
+    ]);
+    const [item] = await annotateRecordPromptFeed([
+      { eventType: "meeting.record_prompt", scheduledMeetingId: "m1", occurrenceStart: OCCURRENCE },
+    ]);
+    expect(item.recordPrompt).toEqual({
+      scheduledMeetingId: "m1",
+      occurrenceStart: OCCURRENCE.toISOString(),
+      notePageId: "note1",
+      hasVideoLink: true,
+    });
+  });
+
+  it("returns notePageId: null when the occurrence has no note tab yet", async () => {
+    mockPrisma.scheduledMeeting.findMany.mockResolvedValue([
+      { id: "m1", meetingUrl: null, notePages: [] },
+    ]);
+    const [item] = await annotateRecordPromptFeed([
+      { eventType: "meeting.record_prompt", scheduledMeetingId: "m1", occurrenceStart: OCCURRENCE },
+    ]);
+    expect(item.recordPrompt).toEqual({
+      scheduledMeetingId: "m1",
+      occurrenceStart: OCCURRENCE.toISOString(),
+      notePageId: null,
+      hasVideoLink: false,
+    });
+  });
+
+  it("leaves every other event type's recordPrompt null and skips the query entirely", async () => {
+    const [item] = await annotateRecordPromptFeed([
+      { eventType: "meeting.reminder", scheduledMeetingId: "m1", occurrenceStart: OCCURRENCE },
+    ]);
+    expect(item.recordPrompt).toBeNull();
+    expect(mockPrisma.scheduledMeeting.findMany).not.toHaveBeenCalled();
   });
 });

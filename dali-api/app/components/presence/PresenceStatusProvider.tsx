@@ -57,9 +57,18 @@ export function PresenceStatusProvider({
   }, [currentUserId]);
 
   useEffect(() => {
-    // Initial fetch then every 60s.
+    // Initial fetch then every 60s. This provider is mounted in root.tsx, so
+    // every workspace iframe tab is its own copy: a background tab's document
+    // reports "visible" (visibility follows the top window) and never has
+    // focus, so only the top window and the focused frame keep polling.
     void fetch60s();
-    const timer = setInterval(fetch60s, POLL_INTERVAL_MS);
+    const tick = () => {
+      const topWindow = window.self === window.top;
+      if (document.visibilityState !== "visible") return;
+      if (!topWindow && !document.hasFocus()) return;
+      void fetch60s();
+    };
+    const timer = setInterval(tick, POLL_INTERVAL_MS);
     return () => clearInterval(timer);
   }, [fetch60s]);
 

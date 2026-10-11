@@ -46,11 +46,17 @@ async function withClient<T>(fn: (c: pg.Client) => Promise<T>): Promise<T> {
   }
 }
 
-async function setCarolAnswers(general: object, eng: object) {
+// The seeded cycle offers a choice of start terms, and the review gate refuses
+// to open until one is picked. The active term is always offered, so the SQL
+// setup picks it the way the applicant would; cleanup clears it again.
+async function setCarolAnswers(general: object, eng: object, startTerm: 'active' | null = 'active') {
   await withClient(async client => {
     await client.query(
-      `UPDATE "Application" SET answers = $1::jsonb WHERE id = $2`,
-      [JSON.stringify(general), CAROL_APP_ID],
+      `UPDATE "Application"
+       SET answers = $1::jsonb,
+           "startTermId" = CASE WHEN $3::boolean THEN (SELECT id FROM "Term" WHERE code = '26S') END
+       WHERE id = $2`,
+      [JSON.stringify(general), CAROL_APP_ID, startTerm === 'active'],
     );
     await client.query(
       `UPDATE "DomainApplication" SET answers = $1::jsonb WHERE "applicationId" = $2`,
@@ -68,7 +74,7 @@ async function resetCarolToDraft() {
       [CAROL_APP_ID],
     );
   });
-  await setCarolAnswers(CAROL_SEED_GENERAL_ANSWERS, {});
+  await setCarolAnswers(CAROL_SEED_GENERAL_ANSWERS, {}, null);
 }
 
 test.describe('portal: pre-submit review modal', () => {

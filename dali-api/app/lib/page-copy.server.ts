@@ -14,7 +14,27 @@
 
 import { prisma } from "~/lib/db";
 import { getPageAccess } from "~/lib/pageAccess.server";
+import { pageDocName } from "~/collab/roomName";
 import type { WorkspaceType, PageKind } from "~/generated/prisma/client";
+
+/**
+ * Byte-copy `sourcePageId`'s collab body into `destPageId`'s room. Shared by
+ * duplicatePage (brand-new destination page) and template seeding
+ * (attachMeetingNote, into a note page just created) — both call this right
+ * after creating destPageId, so there is never an existing body to overwrite.
+ * A source with no CollabDocument yet (never opened) leaves the destination
+ * empty, same as any brand-new page.
+ */
+export async function copyPageBody(sourcePageId: string, destPageId: string): Promise<void> {
+  const srcDoc = await prisma.collabDocument.findUnique({
+    where: { name: pageDocName(sourcePageId) },
+    select: { state: true },
+  });
+  if (!srcDoc) return;
+  await prisma.collabDocument.create({
+    data: { name: pageDocName(destPageId), state: srcDoc.state },
+  });
+}
 
 export interface DuplicatePageInput {
   sourcePageId: string;
@@ -117,22 +137,7 @@ export async function duplicatePage(
     select: { id: true },
   });
 
-  // Copy the Y.Doc state blob from the source room to the new room.
-  // Room name convention: `doc:{pageId}:body` (see app/collab/roomName.ts).
-  const srcName = `doc:${source.id}:body`;
-  const dstName = `doc:${newPage.id}:body`;
-
-  const srcDoc = await prisma.collabDocument.findUnique({
-    where: { name: srcName },
-    select: { state: true },
-  });
-  if (srcDoc) {
-    await prisma.collabDocument.create({
-      data: { name: dstName, state: srcDoc.state },
-    });
-  }
-  // If no CollabDocument exists for the source yet (it's never been opened),
-  // the new page just starts empty — same as any brand-new page.
+  await copyPageBody(source.id, newPage.id);
 
   return { id: newPage.id };
 }
