@@ -8,9 +8,18 @@ import { formatClock, speakerLabelFor } from "./transcript";
 import type { UseMeetingRecording } from "./use-meeting-recording";
 
 const SOMEONE_ELSE = "__other__";
+const SAME_AS_PREFIX = "__same_as__:";
 const SEARCH_MIN_CHARS = 2;
 const SEARCH_DEBOUNCE_MS = 200;
 const SEARCH_LIMIT = 8;
+
+function lineCountFor(lines: UseMeetingRecording["lines"], speakerKey: string): number {
+  return lines.filter((l) => l.speaker === speakerKey).length;
+}
+
+function lineCountLabel(count: number): string {
+  return `${count} line${count === 1 ? "" : "s"}`;
+}
 
 type SearchMember = { id: string; name: string; handle: string };
 
@@ -96,6 +105,7 @@ function SpeakerChip({ speakerKey, rec }: { speakerKey: string; rec: UseMeetingR
   const triggerClass = useSelectTriggerClass();
   const line = rec.lines.find((l) => l.speaker === speakerKey);
   const label = line ? speakerLabelFor(line, rec.speakerCounts, rec.speakers, rec.roster, rec.speakerNames) : speakerKey;
+  const lineCount = lineCountFor(rec.lines, speakerKey);
   const [editingOther, setEditingOther] = useState(false);
   const [otherText, setOtherText] = useState("");
   const [query, setQuery] = useState("");
@@ -118,7 +128,11 @@ function SpeakerChip({ speakerKey, rec }: { speakerKey: string; rec: UseMeetingR
   }, [query]);
 
   if (!rec.canEdit) {
-    return <span className="rounded-full bg-os-container px-2 py-0.5 text-xs">{label}</span>;
+    return (
+      <span className="rounded-full bg-os-container px-2 py-0.5 text-xs">
+        {label} · {lineCountLabel(lineCount)}
+      </span>
+    );
   }
 
   const assigned = rec.speakers[speakerKey];
@@ -130,9 +144,22 @@ function SpeakerChip({ speakerKey, rec }: { speakerKey: string; rec: UseMeetingR
   const searchOptions: SelectOption[] = results
     .filter((m) => !rec.roster.some((r) => r.userId === m.id))
     .map((m) => ({ value: m.id, label: m.name }));
+  // Merging two speakers (Fix 3): every OTHER speaker in this recording that
+  // already has an assignment, so a mis-split voice can be folded into the
+  // one it belongs to instead of renamed separately.
+  const sameAsOptions: SelectOption[] = rec.speakerKeys
+    .filter((k) => k !== speakerKey && rec.speakers[k])
+    .map((k) => {
+      const otherLine = rec.lines.find((l) => l.speaker === k);
+      const otherLabel = otherLine
+        ? speakerLabelFor(otherLine, rec.speakerCounts, rec.speakers, rec.roster, rec.speakerNames)
+        : k;
+      return { value: `${SAME_AS_PREFIX}${k}`, label: `Same as ${otherLabel}` };
+    });
   const options: SelectOption[] = [
     ...rosterOptions,
     ...searchOptions,
+    ...sameAsOptions,
     { value: SOMEONE_ELSE, label: "Someone else…" },
   ];
   const value = options.some((o) => o.value === assigned) ? assigned! : "";
@@ -143,22 +170,36 @@ function SpeakerChip({ speakerKey, rec }: { speakerKey: string; rec: UseMeetingR
       return;
     }
     setEditingOther(false);
+    if (next.startsWith(SAME_AS_PREFIX)) {
+      const otherKey = next.slice(SAME_AS_PREFIX.length);
+      const otherValue = rec.speakers[otherKey];
+      if (!otherValue) return;
+      const otherLine = rec.lines.find((l) => l.speaker === otherKey);
+      const otherLabel = otherLine
+        ? speakerLabelFor(otherLine, rec.speakerCounts, rec.speakers, rec.roster, rec.speakerNames)
+        : otherValue;
+      void rec.setSpeaker(speakerKey, otherValue, otherLabel);
+      return;
+    }
     const picked = rec.roster.find((r) => r.userId === next) ?? results.find((m) => m.id === next);
     void rec.setSpeaker(speakerKey, next, picked?.name);
   }
 
   return (
     <div className="flex flex-col gap-1">
-      <Combobox
-        value={value}
-        onChange={handleChange}
-        onQueryChange={setQuery}
-        options={options}
-        placeholder={label}
-        ariaLabel={`Rename ${label}`}
-        emptyLabel={query.trim().length >= SEARCH_MIN_CHARS ? "No matches" : "Type to search lab members"}
-        className={triggerClass}
-      />
+      <div className="flex items-center gap-1.5">
+        <Combobox
+          value={value}
+          onChange={handleChange}
+          onQueryChange={setQuery}
+          options={options}
+          placeholder={label}
+          ariaLabel={`Rename ${label}`}
+          emptyLabel={query.trim().length >= SEARCH_MIN_CHARS ? "No matches" : "Type to search lab members"}
+          className={triggerClass}
+        />
+        <span className="text-[11px] text-muted-foreground">{lineCountLabel(lineCount)}</span>
+      </div>
       {editingOther && (
         <div className="flex items-center gap-1">
           <input

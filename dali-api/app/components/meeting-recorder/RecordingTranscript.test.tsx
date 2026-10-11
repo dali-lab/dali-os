@@ -133,8 +133,12 @@ function chipInput(): HTMLInputElement {
   return container.querySelector("input[role='combobox']") as HTMLInputElement;
 }
 
-function openChip() {
-  act(() => chipInput().dispatchEvent(new MouseEvent("click", { bubbles: true })));
+function chipInputs(): HTMLInputElement[] {
+  return Array.from(container.querySelectorAll("input[role='combobox']"));
+}
+
+function openChip(input: HTMLInputElement = chipInput()) {
+  act(() => input.dispatchEvent(new MouseEvent("click", { bubbles: true })));
 }
 
 function typeInChip(value: string) {
@@ -248,6 +252,87 @@ describe("SpeakerChip (Fix 2: pick any lab member, not just the roster)", () => 
       }),
     );
     expect(container.textContent).toContain("Priya Shah");
+  });
+});
+
+describe("SpeakerChip merge (Fix 3: 'Same as <speaker>')", () => {
+  it("shows a 'Same as' option only for a speaker that already has an assignment", () => {
+    const lines: TranscriptLine[] = [
+      { at: 0, end: 1, text: "a", channel: "mic", speaker: "mic:1" } as TranscriptLine,
+      { at: 1, end: 2, text: "b", channel: "mic", speaker: "mic:2" } as TranscriptLine,
+    ];
+    mount(
+      makeRec({
+        lines,
+        roster: [{ userId: "u1", name: "Alex Kim" }],
+        speakers: { "mic:1": "u1" },
+      }),
+    );
+
+    const inputs = chipInputs();
+    expect(inputs).toHaveLength(2);
+    openChip(inputs[1]); // mic:2, unassigned
+    const labels = chipOptions().map((o) => o.textContent ?? "");
+    expect(labels.some((t) => t.includes("Same as Alex Kim"))).toBe(true);
+  });
+
+  it("does not offer 'Same as' for a speaker with no assignment yet", () => {
+    const lines: TranscriptLine[] = [
+      { at: 0, end: 1, text: "a", channel: "mic", speaker: "mic:1" } as TranscriptLine,
+      { at: 1, end: 2, text: "b", channel: "mic", speaker: "mic:2" } as TranscriptLine,
+    ];
+    mount(makeRec({ lines, roster: [] }));
+
+    openChip(chipInputs()[1]);
+    const labels = chipOptions().map((o) => o.textContent ?? "");
+    expect(labels.some((t) => t.includes("Same as"))).toBe(false);
+  });
+
+  it("picking 'Same as X' copies that speaker's current assignment and label onto this one", () => {
+    const lines: TranscriptLine[] = [
+      { at: 0, end: 1, text: "a", channel: "mic", speaker: "mic:1" } as TranscriptLine,
+      { at: 1, end: 2, text: "b", channel: "mic", speaker: "mic:2" } as TranscriptLine,
+    ];
+    const rec = makeRec({
+      lines,
+      roster: [{ userId: "u1", name: "Alex Kim" }],
+      speakers: { "mic:1": "u1" },
+    });
+    mount(rec);
+
+    openChip(chipInputs()[1]);
+    const sameAs = chipOptions().find((o) => (o.textContent ?? "").includes("Same as Alex Kim"))!;
+    act(() => sameAs.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+
+    expect(rec.setSpeaker).toHaveBeenCalledWith("mic:2", "u1", "Alex Kim");
+  });
+
+  it("does not offer merging a speaker with itself", () => {
+    const lines: TranscriptLine[] = [{ at: 0, end: 1, text: "a", channel: "mic", speaker: "mic:1" } as TranscriptLine];
+    mount(makeRec({ lines, roster: [], speakers: { "mic:1": "u1" } }));
+
+    openChip();
+    const labels = chipOptions().map((o) => o.textContent ?? "");
+    expect(labels.some((t) => t.includes("Same as"))).toBe(false);
+  });
+});
+
+describe("SpeakerChip line counts (Fix 3: judge which to merge)", () => {
+  it("shows the per-speaker line count next to a read-only chip", () => {
+    const lines: TranscriptLine[] = [
+      { at: 0, end: 1, text: "a", channel: "mic", speaker: "mic:1" } as TranscriptLine,
+      { at: 1, end: 2, text: "b", channel: "mic", speaker: "mic:1" } as TranscriptLine,
+      { at: 2, end: 3, text: "c", channel: "mic", speaker: "mic:1" } as TranscriptLine,
+    ];
+    mount(makeRec({ canEdit: false, lines, roster: [] }));
+    expect(container.textContent).toContain("3 lines");
+  });
+
+  it("shows the per-speaker line count next to an editable chip", () => {
+    const lines: TranscriptLine[] = [{ at: 0, end: 1, text: "a", channel: "mic", speaker: "mic:1" } as TranscriptLine];
+    mount(makeRec({ lines, roster: [] }));
+    expect(container.textContent).toContain("1 line");
+    expect(container.textContent).not.toContain("1 lines");
   });
 });
 
