@@ -47,6 +47,7 @@ function makeRec(overrides: Partial<UseMeetingRecording> = {}): UseMeetingRecord
     insertedAt: null,
     finalized: false,
     stoppingSince: 0,
+    speakersChangedAt: null,
 
     enhanceNotes: null,
     enhancedAt: null,

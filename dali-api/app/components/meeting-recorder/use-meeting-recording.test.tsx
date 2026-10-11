@@ -47,11 +47,19 @@ const box: { current: UseMeetingRecording | null } = { current: null };
 function Harness({
   documentName,
   latestRecording,
+  onSpeakersChanged,
 }: {
   documentName: string;
   latestRecording?: LatestRecording | null;
+  onSpeakersChanged?: (paragraphs: string[]) => boolean;
 }) {
-  box.current = useMeetingRecording({ documentName, canEdit: true, onInsert: () => true, latestRecording });
+  box.current = useMeetingRecording({
+    documentName,
+    canEdit: true,
+    onInsert: () => true,
+    latestRecording,
+    onSpeakersChanged,
+  });
   return null;
 }
 
@@ -76,6 +84,25 @@ async function mount(documentName: string) {
 async function mountWithLatest(documentName: string, latestRecording: LatestRecording) {
   const Stub = createRoutesStub([
     { path: "/test", Component: () => createElement(Harness, { documentName, latestRecording }) },
+  ]);
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  await act(async () => {
+    root.render(
+      createElement(
+        ToastProvider,
+        null,
+        createElement(DialogProvider, null, createElement(Stub, { initialEntries: ["/test"] })),
+      ),
+    );
+    await new Promise((r) => setTimeout(r, 0));
+  });
+}
+
+async function mountWithOnSpeakersChanged(documentName: string, onSpeakersChanged: (paragraphs: string[]) => boolean) {
+  const Stub = createRoutesStub([
+    { path: "/test", Component: () => createElement(Harness, { documentName, onSpeakersChanged }) },
   ]);
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -324,5 +351,106 @@ describe("latestRecording pickup (Fix 1B: a finished recording reaches any viewe
     expect(box.current!.phase).toBe("recording");
     expect(box.current!.remote).toEqual({ ownerName: "Priya", ownerIsYou: false });
     expect(box.current!.open).toBe(false);
+  });
+});
+
+describe("setSpeaker: onSpeakersChanged + speakersChangedAt (Fix 4: stale names after Insert/Enhance)", () => {
+  function stubDoneWithInsertedAt(documentName: string) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        if ((init?.method ?? "GET") === "GET") {
+          return jsonRes({
+            status: "Done",
+            channels: [],
+            recordedSeconds: 5,
+            lines: [{ at: 0, end: 1, text: "hi", speaker: "mic:1", channel: "mic" }],
+            speakers: {},
+            insertedAt: "2026-10-10T18:00:00Z",
+          });
+        }
+        return jsonRes({ ok: true });
+      }),
+    );
+    window.localStorage.setItem(backupKey(documentName), JSON.stringify({ id: "rSpk", link: "l", aiEnabled: true }));
+  }
+
+  it("calls onSpeakersChanged with the rewritten paragraphs once the transcript is already in the note", async () => {
+    const documentName = "doc-speakers-inserted";
+    stubDoneWithInsertedAt(documentName);
+    const onSpeakersChanged = vi.fn(() => true);
+
+    await mountWithOnSpeakersChanged(documentName, onSpeakersChanged);
+    expect(box.current!.phase).toBe("done");
+    expect(box.current!.insertedAt).not.toBeNull();
+
+    await act(async () => {
+      await box.current!.setSpeaker("mic:1", "u1", "Alex Kim");
+    });
+
+    expect(onSpeakersChanged).toHaveBeenCalledWith(["[00:00] Alex Kim: hi"]);
+    expect(box.current!.speakersChangedAt).not.toBeNull();
+  });
+
+  it("does not call onSpeakersChanged when the transcript was never inserted or enhanced", async () => {
+    const documentName = "doc-speakers-not-inserted";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        if ((init?.method ?? "GET") === "GET") {
+          return jsonRes({
+            status: "Done",
+            channels: [],
+            recordedSeconds: 5,
+            lines: [{ at: 0, end: 1, text: "hi", speaker: "mic:1", channel: "mic" }],
+            speakers: {},
+          });
+        }
+        return jsonRes({ ok: true });
+      }),
+    );
+    window.localStorage.setItem(backupKey(documentName), JSON.stringify({ id: "rSpk2", link: "l", aiEnabled: true }));
+    const onSpeakersChanged = vi.fn(() => true);
+
+    await mountWithOnSpeakersChanged(documentName, onSpeakersChanged);
+    expect(box.current!.insertedAt).toBeNull();
+
+    await act(async () => {
+      await box.current!.setSpeaker("mic:1", "u1", "Alex Kim");
+    });
+
+    expect(onSpeakersChanged).not.toHaveBeenCalled();
+    // speakersChangedAt still tracks the rename itself, independent of
+    // whether the toggle needed rewriting — the "enhanced" rail copy and
+    // the "ready" unnamed-speakers line both read it this way.
+    expect(box.current!.speakersChangedAt).not.toBeNull();
+  });
+
+  it("rolls back speakersChangedAt along with speakers/speakerNames when the server rejects the rename", async () => {
+    const documentName = "doc-speakers-rollback";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        if ((init?.method ?? "GET") === "GET") {
+          return jsonRes({
+            status: "Done",
+            channels: [],
+            recordedSeconds: 5,
+            lines: [{ at: 0, end: 1, text: "hi", speaker: "mic:1", channel: "mic" }],
+            speakers: {},
+          });
+        }
+        return jsonRes({ error: "nope" }, 500);
+      }),
+    );
+    window.localStorage.setItem(backupKey(documentName), JSON.stringify({ id: "rSpk3", link: "l", aiEnabled: true }));
+
+    await mountWithOnSpeakersChanged(documentName, () => true);
+    await act(async () => {
+      await box.current!.setSpeaker("mic:1", "u1", "Alex Kim");
+    });
+
+    expect(box.current!.speakersChangedAt).toBeNull();
+    expect(box.current!.speakers["mic:1"]).toBeUndefined();
   });
 });

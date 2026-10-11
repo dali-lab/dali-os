@@ -5,12 +5,44 @@
 // shape, kept out of meeting-recorder since it's BlockNote-specific.
 
 import { actionItemMatchesBlock, type EditorOp, type EnhanceActionItem, type EnhanceOpBlock } from "~/components/meeting-recorder/enhance-plan";
-import type { DocEditorInstance, DocPartialBlock } from "./schema/build";
+import { blockOwnText } from "./schema/configs";
+import type { DocBlock, DocEditorInstance, DocPartialBlock } from "./schema/build";
 
 /** Citation chip href: an ordinary link, not a new inline node (spec §3) —
  *  the transcript panel reads `&at=` to scroll to and highlight the line. */
 export function citationHref(pageId: string, recordingId: string, atSeconds: number): string {
   return `/documents/${pageId}?transcript=${encodeURIComponent(recordingId)}&at=${Math.max(0, Math.round(atSeconds))}`;
+}
+
+/** The collapsed "### Transcript" toggle both Insert transcript and Enhance
+ *  apply append — a shared shape so de-duplication (findTranscriptToggle)
+ *  can recognize either one's output. */
+export function transcriptToggleBlock(paragraphs: string[]): DocPartialBlock {
+  return {
+    type: "heading",
+    props: { level: 3, isToggleable: true },
+    content: [{ type: "text", text: "Transcript", styles: {} }],
+    children: paragraphs.map((text) => ({
+      type: "paragraph",
+      content: [{ type: "text", text, styles: {} }],
+    })),
+  } as DocPartialBlock;
+}
+
+/** The document's "Transcript" toggle heading, if it has one — pure (reads
+ *  plain block data, no editor) so both `hasTranscriptToggle` (below) and a
+ *  speaker rename's "rewrite the toggle's children" path (documents.$pageId.tsx's
+ *  onSpeakersChanged) share one lookup instead of two copies drifting apart. */
+export function findTranscriptToggle(blocks: readonly DocBlock[]): DocBlock | null {
+  return (
+    blocks.find(
+      (b) => b.type === "heading" && Boolean((b.props as { isToggleable?: boolean }).isToggleable) && blockOwnText(b) === "Transcript",
+    ) ?? null
+  );
+}
+
+export function hasTranscriptToggle(editor: DocEditorInstance): boolean {
+  return findTranscriptToggle(editor.document) !== null;
 }
 
 function formatChipLabel(atSeconds: number): string {

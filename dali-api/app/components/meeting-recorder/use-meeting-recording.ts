@@ -170,6 +170,12 @@ export type UseMeetingRecordingProps = {
   /** Fired once per task created from the sheet, so the note can append a
    *  link to the task on the matching checklist item. */
   onTaskCreated?: (itemText: string, taskId: string, projectId: string) => void;
+  /** Rewrites the Transcript toggle's children with the current paragraphs
+   *  after a successful speaker rename, once the transcript is already in
+   *  the note (insertedAt or enhancedAt set) — otherwise the names baked
+   *  into it at Insert/Enhance time go stale. False/no-op when there's no
+   *  toggle to rewrite (nothing inserted yet) or the editor isn't ready. */
+  onSpeakersChanged?: (paragraphs: string[]) => boolean;
 };
 
 export function useMeetingRecording({
@@ -190,6 +196,7 @@ export function useMeetingRecording({
   projectId = null,
   canCreateTasks = false,
   onTaskCreated,
+  onSpeakersChanged,
 }: UseMeetingRecordingProps) {
   const dialog = useDialog();
   const toast = useToast();
@@ -239,6 +246,11 @@ export function useMeetingRecording({
   const [insertedAt, setInsertedAt] = useState<string | null>(null);
   const [finalized, setFinalized] = useState(false);
   const [stoppingSince, setStoppingSince] = useState(0);
+  // Set on a successful setSpeaker, compared to enhancedAt so the rail can
+  // tell "these enhanced notes still have the names they were written with"
+  // from "a speaker was renamed after Enhance ran" (specs/meeting-notes-
+  // model.md §2 follow-up: renaming after Insert/Enhance left stale names).
+  const [speakersChangedAt, setSpeakersChangedAt] = useState<string | null>(null);
 
   // Enhance (specs/meeting-notes-model.md §2).
   const [enhanceNotes, setEnhanceNotes] = useState<StoredEnhanceNotes | null>(null);
@@ -309,6 +321,7 @@ export function useMeetingRecording({
     setRemote(null);
     setInsertedAt(null);
     setFinalized(false);
+    setSpeakersChangedAt(null);
     setEnhanceNotes(null);
     setEnhancedAt(null);
     setEnhancedByName(null);
@@ -1113,6 +1126,13 @@ export function useMeetingRecording({
       setSpeakers(previousSpeakers);
       setSpeakerNames(previousNames);
       toast.error("Couldn't rename that speaker.");
+      return;
+    }
+    setSpeakersChangedAt(new Date().toISOString());
+    // The transcript's names are already baked into the note (Insert or
+    // Enhance ran) — rewrite the Transcript toggle so it doesn't go stale.
+    if (insertedAt || enhancedAt) {
+      onSpeakersChanged?.(transcriptParagraphs(lines, nextSpeakers, roster, nextNames));
     }
   }
 
@@ -1205,6 +1225,7 @@ export function useMeetingRecording({
     insertedAt,
     finalized,
     stoppingSince,
+    speakersChangedAt,
 
     // Enhance state.
     enhanceNotes,

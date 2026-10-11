@@ -39,6 +39,7 @@ function makeRec(overrides: Partial<UseMeetingRecording> = {}): UseMeetingRecord
     insertedAt: null,
     finalized: false,
     stoppingSince: 0,
+    speakersChangedAt: null,
 
     enhanceNotes: null,
     enhancedAt: null,
@@ -223,6 +224,36 @@ describe("RecordingRail per state (specs/meeting-recording-rail.md state table)"
     expect(matches.length).toBe(1);
   });
 
+  it("ready: shows an unnamed-speakers line under the buttons without blocking Enhance", () => {
+    const html = render(
+      makeRec({
+        phase: "done",
+        lines: [
+          { at: 0, end: 1, text: "hi", speaker: "mic:1", channel: "mic" } as never,
+          { at: 1, end: 2, text: "yo", speaker: "mic:2", channel: "mic" } as never,
+        ],
+        speakerKeys: ["mic:1", "mic:2"],
+        speakers: { "mic:1": "u1" },
+        aiEnabled: true,
+      }),
+    );
+    expect(html).toContain("1 speaker unnamed. Name them first so the notes use real names.");
+    expect(html).toContain("Enhance notes");
+  });
+
+  it("ready: no unnamed-speakers line once every speaker has a name", () => {
+    const html = render(
+      makeRec({
+        phase: "done",
+        lines: [{ at: 0, end: 1, text: "hi", speaker: "mic:1", channel: "mic" } as never],
+        speakerKeys: ["mic:1"],
+        speakers: { "mic:1": "u1" },
+        aiEnabled: true,
+      }),
+    );
+    expect(html).not.toContain("unnamed");
+  });
+
   it("generating: reading-notes status, Cancel secondary, no primary", () => {
     const html = render(makeRec({ phase: "done", enhanceSheetOpen: true, enhanceNotes: null }));
     expect(html).toContain("Reading your notes and the transcript…");
@@ -255,6 +286,39 @@ describe("RecordingRail per state (specs/meeting-recording-rail.md state table)"
     expect(html).toContain("Enhance again rebuilds the notes from the current text and the transcript.");
     expect(html).toContain("Enhance again");
     expect(html).toContain('aria-label="Discard recording"');
+  });
+
+  it("enhanced: appends a names-changed notice once a speaker is renamed after Enhance ran", () => {
+    const html = render(
+      makeRec({
+        phase: "done",
+        enhancedAt: "2026-10-10T18:14:00Z",
+        enhancedByName: "Ada",
+        speakersChangedAt: "2026-10-10T18:20:00Z",
+        hasTranscript: true,
+      }),
+    );
+    expect(html).toContain("Names changed since these notes were written. Enhance again to update them.");
+  });
+
+  it("enhanced: no names-changed notice when the rename happened before Enhance ran", () => {
+    const html = render(
+      makeRec({
+        phase: "done",
+        enhancedAt: "2026-10-10T18:14:00Z",
+        enhancedByName: "Ada",
+        speakersChangedAt: "2026-10-10T18:00:00Z",
+        hasTranscript: true,
+      }),
+    );
+    expect(html).not.toContain("Names changed");
+  });
+
+  it("enhanced: no names-changed notice when no speaker was ever renamed", () => {
+    const html = render(
+      makeRec({ phase: "done", enhancedAt: "2026-10-10T18:14:00Z", enhancedByName: "Ada", hasTranscript: true }),
+    );
+    expect(html).not.toContain("Names changed");
   });
 
   it("inserted: already-inserted status, no primary, Discard secondary only", () => {

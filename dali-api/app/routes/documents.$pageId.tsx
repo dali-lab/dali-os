@@ -39,34 +39,16 @@ import {
   appendTaskMentionContent,
   blockOwnText,
   blocksToPlainText,
+  findTranscriptToggle,
+  hasTranscriptToggle,
   renderEnhanceOps,
+  transcriptToggleBlock,
 } from "~/components/doc";
 import type { DocEditorInstance, DocPartialBlock } from "~/components/doc/schema/build";
 import { actionItemMatchesBlock, type EditorOp, type EnhanceActionItem, type SnapshotBlock } from "~/components/meeting-recorder/enhance-plan";
 import { pageDocName } from "~/collab/roomName";
 import { redirectToLogin } from "~/lib/login-next";
 import { walletTokensConfigured } from "~/lib/wallet-token";
-
-// The collapsed "### Transcript" toggle both Insert transcript and Enhance
-// apply append — a shared shape so de-duplication (hasTranscriptToggle) can
-// recognize either one's output.
-function transcriptToggleBlock(paragraphs: string[]): DocPartialBlock {
-  return {
-    type: "heading",
-    props: { level: 3, isToggleable: true },
-    content: [{ type: "text", text: "Transcript", styles: {} }],
-    children: paragraphs.map((text) => ({
-      type: "paragraph",
-      content: [{ type: "text", text, styles: {} }],
-    })),
-  } as DocPartialBlock;
-}
-
-function hasTranscriptToggle(editor: DocEditorInstance): boolean {
-  return editor.document.some(
-    (b) => b.type === "heading" && Boolean((b.props as { isToggleable?: boolean }).isToggleable) && blockOwnText(b) === "Transcript",
-  );
-}
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const t = (data as { title?: string } | undefined)?.title;
@@ -770,6 +752,24 @@ export default function DocumentPage() {
     [pageId, meetingProjectId],
   );
 
+  // A speaker rename after Insert/Enhance leaves the names baked into the
+  // Transcript toggle stale — rewrite its children from the current
+  // paragraphs (names included) via the live editor. No-op (false) when the
+  // note has no Transcript toggle yet, same lookup Insert/Apply use to avoid
+  // a duplicate one.
+  const onSpeakersChanged = useCallback((paragraphs: string[]): boolean => {
+    const editor = editorRef.current;
+    if (!editor) return false;
+    const toggle = findTranscriptToggle(editor.document);
+    if (!toggle || toggle.children.length === 0) return false;
+    const newChildren = paragraphs.map((text) => ({
+      type: "paragraph",
+      content: [{ type: "text", text, styles: {} }],
+    })) as DocPartialBlock[];
+    editor.replaceBlocks(toggle.children, newChildren);
+    return true;
+  }, []);
+
   // Action items into Tasks (specs/meeting-notes-model.md §4): once a task
   // exists, link it from the note. The mention spec (app/components/doc/
   // schema/mention.tsx) has no `kind` prop to grow into without a schema
@@ -817,6 +817,7 @@ export default function DocumentPage() {
       seededTemplateHash={seededTemplateHash}
       getNoteState={getNoteState}
       onApplyEnhance={onApplyEnhance}
+      onSpeakersChanged={onSpeakersChanged}
       projectId={meetingProjectId}
       canCreateTasks={canCreateTasks}
       onTaskCreated={onTaskCreated}

@@ -3,7 +3,8 @@
 
 import { describe, expect, it } from "vitest";
 import type { EnhanceActionItem, EnhanceOpBlock } from "~/components/meeting-recorder/enhance-plan";
-import { appendTaskMentionContent, toPartialBlock } from "../enhance-render";
+import { appendTaskMentionContent, findTranscriptToggle, toPartialBlock, transcriptToggleBlock } from "../enhance-render";
+import type { DocBlock } from "../schema/build";
 
 describe("appendTaskMentionContent", () => {
   it("appends a space + taskMention node to existing content", () => {
@@ -82,5 +83,48 @@ describe("toPartialBlock — linking a checklist insert to an already-created ta
     const result = toPartialBlock(checklistBlock("Send the revised scope"), "p1", "rec1");
     expect(result.type).toBe("checkListItem");
     expect(result.props).toEqual({ checked: false });
+  });
+});
+
+describe("transcriptToggleBlock / findTranscriptToggle", () => {
+  it("builds a toggleable heading named Transcript with one paragraph per line", () => {
+    const block = transcriptToggleBlock(["[00:00] You: hi", "[00:05] Others: hey"]);
+    expect(block.type).toBe("heading");
+    expect((block.props as { isToggleable?: boolean }).isToggleable).toBe(true);
+    expect(block.children).toHaveLength(2);
+  });
+
+  it("finds the Transcript toggle among a document's top-level blocks", () => {
+    const toggle = transcriptToggleBlock(["[00:00] You: hi"]) as unknown as DocBlock;
+    const other = { id: "b1", type: "paragraph", props: {}, content: [{ type: "text", text: "notes", styles: {} }], children: [] } as unknown as DocBlock;
+    const found = findTranscriptToggle([other, { ...toggle, id: "t1" }]);
+    expect(found?.id).toBe("t1");
+  });
+
+  it("returns null when the document has no Transcript toggle", () => {
+    const other = { id: "b1", type: "paragraph", props: {}, content: [{ type: "text", text: "notes", styles: {} }], children: [] } as unknown as DocBlock;
+    expect(findTranscriptToggle([other])).toBeNull();
+  });
+
+  it("does not match a toggleable heading with a different title", () => {
+    const decoy = {
+      id: "h1",
+      type: "heading",
+      props: { level: 3, isToggleable: true },
+      content: [{ type: "text", text: "Summary", styles: {} }],
+      children: [],
+    } as unknown as DocBlock;
+    expect(findTranscriptToggle([decoy])).toBeNull();
+  });
+
+  it("does not match a non-toggleable heading titled Transcript", () => {
+    const plainHeading = {
+      id: "h1",
+      type: "heading",
+      props: { level: 3 },
+      content: [{ type: "text", text: "Transcript", styles: {} }],
+      children: [],
+    } as unknown as DocBlock;
+    expect(findTranscriptToggle([plainHeading])).toBeNull();
   });
 });
