@@ -2,7 +2,10 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { Download, Mic, Square, Trash2, X } from "lucide-react";
 import { buttonClasses } from "~/components/ui/Button";
 import { IconButton } from "~/components/ui/IconButton";
+import { Tooltip } from "~/components/ui/floating/Tooltip";
 import { formatClock } from "./transcript";
+
+const ENHANCE_AGAIN_TIP = "Rebuilds the notes from the current text and the transcript.";
 import { formatDateTime } from "./use-meeting-recording";
 import type { UseMeetingRecording } from "./use-meeting-recording";
 import type { Channel } from "./types";
@@ -166,7 +169,7 @@ export function statusLineFor(rec: UseMeetingRecording, state: RailState): React
       break;
     }
     case "enhanced":
-      text = `Enhanced ${rec.enhancedAt ? formatDateTime(rec.enhancedAt) : ""}${rec.enhancedByName ? ` by ${rec.enhancedByName}` : ""}. Enhance again rebuilds the notes from the current text and the transcript.`;
+      text = `Enhanced ${rec.enhancedAt ? formatDateTime(rec.enhancedAt) : ""}${rec.enhancedByName ? ` by ${rec.enhancedByName}` : ""}.`;
       if (namesChangedSinceEnhance(rec)) {
         text += " Names changed since these notes were written. Enhance again to update them.";
       }
@@ -280,14 +283,16 @@ function RailActions({ rec, state }: { rec: UseMeetingRecording; state: RailStat
               Insert transcript
             </button>
           )}
-          <button
-            type="button"
-            onClick={!rec.aiEnabled ? () => rec.insert(null) : () => void rec.onEnhanceClick(Boolean(rec.enhancedAt))}
-            disabled={!rec.hasTranscript || rec.busy}
-            className={buttonClasses("primary", "sm")}
-          >
-            {label}
-          </button>
+          <Tooltip content={label === "Enhance again" ? ENHANCE_AGAIN_TIP : null} variant="rich">
+            <button
+              type="button"
+              onClick={!rec.aiEnabled ? () => rec.insert(null) : () => void rec.onEnhanceClick(Boolean(rec.enhancedAt))}
+              disabled={!rec.hasTranscript || rec.busy}
+              className={buttonClasses("primary", "sm")}
+            >
+              {label}
+            </button>
+          </Tooltip>
         </div>
       );
     }
@@ -321,9 +326,11 @@ function RailActions({ rec, state }: { rec: UseMeetingRecording; state: RailStat
       return (
         <div className="flex flex-wrap items-center gap-1.5">
           {rec.canDiscard && <IconButton label="Discard recording" icon={Trash2} tone="destructive" onClick={() => void rec.discard()} />}
-          <button type="button" onClick={() => void rec.onEnhanceClick(true)} className={buttonClasses("primary", "sm")}>
-            Enhance again
-          </button>
+          <Tooltip content={ENHANCE_AGAIN_TIP} variant="rich">
+            <button type="button" onClick={() => void rec.onEnhanceClick(true)} className={buttonClasses("primary", "sm")}>
+              Enhance again
+            </button>
+          </Tooltip>
         </div>
       );
 

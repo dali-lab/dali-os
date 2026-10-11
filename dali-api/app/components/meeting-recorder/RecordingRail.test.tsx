@@ -283,7 +283,8 @@ describe("RecordingRail per state (specs/meeting-recording-rail.md state table)"
     const html = render(makeRec({ phase: "done", enhancedAt: "2026-10-10T18:14:00Z", enhancedByName: "Ada", hasTranscript: true }));
     expect(html).toContain("Enhanced");
     expect(html).toContain("by Ada");
-    expect(html).toContain("Enhance again rebuilds the notes from the current text and the transcript.");
+    // The explanation lives on the button's tooltip, not in the status line.
+    expect(html).not.toContain("rebuilds the notes");
     expect(html).toContain("Enhance again");
     expect(html).toContain('aria-label="Discard recording"');
   });
