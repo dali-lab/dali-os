@@ -39,6 +39,7 @@ import {
   appendTaskMentionContent,
   blockOwnText,
   blocksToPlainText,
+  enhanceSnapshotBlocks,
   findTranscriptToggle,
   hasTranscriptToggle,
   renderEnhanceOps,
@@ -731,7 +732,7 @@ export default function DocumentPage() {
     if (!editor) return null;
     const doc = editor.document;
     return {
-      blocks: doc.map((b) => ({ id: b.id, type: b.type, text: blockOwnText(b) })),
+      blocks: enhanceSnapshotBlocks(doc),
       bodyText: blocksToPlainText(doc),
     };
   }, []);

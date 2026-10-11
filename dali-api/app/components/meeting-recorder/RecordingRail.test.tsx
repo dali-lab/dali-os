@@ -127,8 +127,10 @@ describe("deriveRailState", () => {
     ).toBe("preview");
     expect(deriveRailState(makeRec({ ...done, insertedAt: "2026-10-10T00:00:00Z" }))).toBe("inserted");
     expect(deriveRailState(makeRec({ ...done, stalePreview: true }))).toBe("stalePreview");
-    // insertedAt wins even once enhanced/stale — "inserted" is terminal.
-    expect(deriveRailState(makeRec({ ...done, insertedAt: "x", enhancedAt: "y", stalePreview: true }))).toBe("inserted");
+    // Insert is not terminal: Enhance after Insert still flows through generating/preview/enhanced.
+    expect(deriveRailState(makeRec({ ...done, insertedAt: "x", enhanceSheetOpen: true }))).toBe("generating");
+    expect(deriveRailState(makeRec({ ...done, insertedAt: "x", enhancedAt: "y" }))).toBe("enhanced");
+    expect(deriveRailState(makeRec({ ...done, insertedAt: "x", stalePreview: true }))).toBe("stalePreview");
   });
 });
 
@@ -324,11 +326,17 @@ describe("RecordingRail per state (specs/meeting-recording-rail.md state table)"
     expect(html).not.toContain("Names changed");
   });
 
-  it("inserted: already-inserted status, no primary, Discard secondary only", () => {
+  it("inserted: transcript-inserted status, Enhance notes primary, Discard secondary", () => {
     const html = render(makeRec({ phase: "done", insertedAt: "2026-10-10T18:14:00Z", hasTranscript: true }));
-    expect(html).toContain("Already in this note. Discarding only removes the recording, not what was inserted.");
-    expect(html).not.toContain("Enhance");
+    expect(html).toContain("Transcript inserted. Enhance can still write notes from it. Discarding only removes the recording, not what was inserted.");
+    expect(html).toContain("Enhance notes");
     expect(html).toContain('aria-label="Discard recording"');
+  });
+
+  it("inserted with AI off: no Enhance button or mention", () => {
+    const html = render(makeRec({ phase: "done", insertedAt: "2026-10-10T18:14:00Z", hasTranscript: true, aiEnabled: false }));
+    expect(html).toContain("Transcript inserted. Discarding only removes the recording, not what was inserted.");
+    expect(html).not.toContain("Enhance");
   });
 
   it("stale preview: someone-else-enhanced status, Reload preview primary, Cancel secondary", () => {
