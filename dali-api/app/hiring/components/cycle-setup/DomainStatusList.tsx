@@ -4,20 +4,22 @@ import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { SetupCard } from "./SetupCard";
 
-// A read-only per-domain status list (challenges, review progress, delibs
+// A per-domain status list (challenges, review progress, delibs
 // rounds): one row per cycle domain with its state.
 export function DomainStatusList({
   title,
   description,
+  action,
   rows,
 }: {
   title: string;
   description?: string;
+  action?: ReactNode;
   rows: { domainId: string; name: string; done: boolean; detail: ReactNode }[];
 }) {
   const { bodyText } = useOsChrome();
   return (
-    <SetupCard title={title} description={description}>
+    <SetupCard title={title} description={description} action={action}>
       {rows.length === 0 ? (
         <p className={cn(bodyText, "py-4 text-center")}>No domains in this cycle yet.</p>
       ) : (

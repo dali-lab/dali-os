@@ -34,6 +34,7 @@ beforeEach(() => {
     findUniqueOrThrow: vi.fn().mockResolvedValue({
       id: CYCLE_ID,
       generalRubricVersionId: "rubric-general",
+      applicants: "Students",
     }),
   };
   mockPrisma.domainApplicationCycle = {
@@ -127,5 +128,42 @@ describe("auto-assign action without challenges", () => {
 
     const where = mockPrisma.domainApplication.findMany.mock.calls[0][0].where;
     expect(where.domainId).toBe(DOMAIN_ID);
+  });
+});
+
+describe("auto-assign action target count", () => {
+  const reviewers = [
+    { id: "rev-1", reviews: [] },
+    { id: "rev-2", reviews: [] },
+    { id: "rev-3", reviews: [] },
+  ];
+
+  beforeEach(() => {
+    mockPrisma.cycleReviewer.findMany.mockResolvedValue(reviewers);
+    mockPrisma.domainApplication.findMany.mockResolvedValue([{ id: "da-1", reviews: [] }]);
+  });
+
+  it("assigns reviewersPerApplication reviewers on a Students cycle", async () => {
+    mockPrisma.applicationCycle.findUniqueOrThrow.mockResolvedValueOnce({
+      id: CYCLE_ID,
+      generalRubricVersionId: "rubric-general",
+      applicants: "Students",
+    });
+
+    const res = await callAction();
+
+    expect(await (res as Response).json()).toEqual({ assigned: 2 });
+  });
+
+  it("assigns the whole pool on a member cycle", async () => {
+    mockPrisma.applicationCycle.findUniqueOrThrow.mockResolvedValueOnce({
+      id: CYCLE_ID,
+      generalRubricVersionId: "rubric-general",
+      applicants: "Interns",
+    });
+
+    const res = await callAction();
+
+    expect(await (res as Response).json()).toEqual({ assigned: 3 });
   });
 });
