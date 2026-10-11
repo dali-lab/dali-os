@@ -61,6 +61,11 @@ async function getAnnouncementRecipients(cycleId: string): Promise<AnnouncementR
   return out;
 }
 
+/** How many applicants a send would reach right now, for the confirm dialog. */
+export async function countAnnouncementRecipients(cycleId: string): Promise<number> {
+  return (await getAnnouncementRecipients(cycleId)).length;
+}
+
 export interface EventAnnouncementSendResult {
   attempted: number;
   succeeded: number;

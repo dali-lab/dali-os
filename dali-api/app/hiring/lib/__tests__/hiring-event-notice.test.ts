@@ -20,7 +20,7 @@ import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
 import { getHiringEmail } from "~/hiring/lib/hiring-emails.server";
 import { logAuditEvent } from "~/lib/audit";
-import { sendEventAnnouncement } from "~/hiring/lib/hiring-event-notice";
+import { countAnnouncementRecipients, sendEventAnnouncement } from "~/hiring/lib/hiring-event-notice";
 
 const mockPrisma = prisma as unknown as {
   hiringEvent: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
@@ -67,6 +67,21 @@ beforeEach(() => {
   mockPrisma.application.findMany.mockResolvedValue([]);
   vi.mocked(getApplicationsGmailRefreshToken).mockResolvedValue("refresh-token");
   vi.mocked(getHiringEmail).mockResolvedValue(BINDING);
+});
+
+describe("countAnnouncementRecipients", () => {
+  it("counts the same recipients a send would reach", async () => {
+    vi.mocked(prisma.application.findMany).mockResolvedValue([
+      { id: "a1", user: { firstName: "Ada", dartmouthEmail: "ada@dartmouth.edu", netId: null } },
+      { id: "a2", user: { firstName: "Bob", dartmouthEmail: null, netId: "f00" } },
+      { id: "a3", user: { firstName: "Cy", dartmouthEmail: null, netId: null } },
+    ] as never);
+    expect(await countAnnouncementRecipients("cycle-1")).toBe(2);
+    expect(vi.mocked(prisma.application.findMany).mock.calls[0][0]?.where).toMatchObject({
+      applicationCycleId: "cycle-1",
+      statusUpdates: { none: { newStatus: "Withdrawn" } },
+    });
+  });
 });
 
 describe("sendEventAnnouncement — not_configured", () => {

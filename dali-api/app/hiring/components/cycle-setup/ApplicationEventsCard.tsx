@@ -87,11 +87,14 @@ export function ApplicationEventsCard({
   cycleId,
   events,
   announcementTemplateBound,
+  recipientCount,
   checkIns,
 }: {
   cycleId: string;
   events: HiringEventRow[];
   announcementTemplateBound: boolean;
+  /** Applicants a send reaches right now; the confirm dialog quotes it. */
+  recipientCount: number;
   checkIns: Record<string, EventCheckIn>;
 }) {
   const [creating, setCreating] = useState(false);
@@ -125,6 +128,7 @@ export function ApplicationEventsCard({
               cycleId={cycleId}
               event={event}
               announcementTemplateBound={announcementTemplateBound}
+              recipientCount={recipientCount}
               checkIn={checkIns[event.id] ?? null}
             />
           ))}
@@ -138,11 +142,13 @@ function EventRow({
   cycleId,
   event,
   announcementTemplateBound,
+  recipientCount,
   checkIn,
 }: {
   cycleId: string;
   event: HiringEventRow;
   announcementTemplateBound: boolean;
+  recipientCount: number;
   checkIn: EventCheckIn | null;
 }) {
   const tz = useUserTimeZone();
@@ -197,7 +203,19 @@ function EventRow({
     );
   }
 
-  function sendAnnouncement() {
+  async function sendAnnouncement() {
+    const resend = event.announcementSentAt != null;
+    const ok = await dialog.confirm({
+      title: resend
+        ? `Resend the announcement for "${event.title}"?`
+        : `Email ${recipientCount} applicant${recipientCount === 1 ? "" : "s"} about "${event.title}"?`,
+      description: resend
+        ? "Only applicants who started since the last send receive it. Everyone already emailed about this event is skipped."
+        : "Everyone who started an application in this cycle and hasn't withdrawn gets the announcement with a calendar invite. This can't be unsent.",
+      confirmLabel: resend ? "Resend" : "Send",
+      tone: "destructive",
+    });
+    if (!ok) return;
     announceFetcher.submit(
       { intent: "send-announcement" },
       { method: "post", action: eventsUrl, encType: "application/json" },
@@ -261,7 +279,7 @@ function EventRow({
           <Tooltip content={announcementTemplateBound ? null : "Bind the Application event announcement template first"}>
             <button
               type="button"
-              onClick={sendAnnouncement}
+              onClick={() => void sendAnnouncement()}
               disabled={!announcementTemplateBound || announceFetcher.state !== "idle"}
               className={buttonClasses("secondary", "sm")}
             >
