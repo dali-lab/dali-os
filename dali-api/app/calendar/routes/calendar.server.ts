@@ -1,6 +1,6 @@
 import { redirect } from "react-router";
 import { prisma } from "~/lib/db";
-import { requireAuth, forbidden, redirectApplicantToPortal, isImpersonating } from "~/lib/auth";
+import { requireAuth, forbidden, redirectNonMemberToPortal, isImpersonating } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { listAllGroups } from "~/lib/groups";
 import {
@@ -1381,7 +1381,7 @@ export async function loadCalendarData(
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
   if (!opts.portal) {
-    const portalRedirect = redirectApplicantToPortal(auth);
+    const portalRedirect = await redirectNonMemberToPortal(auth, request);
     if (portalRedirect) return portalRedirect;
   }
 

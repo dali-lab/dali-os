@@ -5,7 +5,7 @@ import { Select } from "~/components/ui/floating";
 import { Calendar, Globe, Plus, Users, X } from "lucide-react";
 import type { Route } from "./+types/projects.$id.public-view";
 import { prisma } from "~/lib/db";
-import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
+import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
@@ -83,7 +83,7 @@ const CONTENT_INTENTS = [
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  const portalRedirect = redirectApplicantToPortal(auth);
+  const portalRedirect = await redirectNonMemberToPortal(auth, request);
   if (portalRedirect) return portalRedirect;
 
   const data = await loadPublicProjectView(params.id!);
@@ -146,7 +146,7 @@ function mediaItems(
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  const portalRedirect = redirectApplicantToPortal(auth);
+  const portalRedirect = await redirectNonMemberToPortal(auth, request);
   if (portalRedirect) return portalRedirect;
 
   const projectId = params.id!;

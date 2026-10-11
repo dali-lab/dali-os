@@ -1,7 +1,7 @@
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/whiteboard.$pageId";
 import { prisma } from "~/lib/db";
-import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
+import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { getPresenceUser } from "~/lib/presence-user";
@@ -98,7 +98,7 @@ export const handle = {
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  if (auth.user.type === "applicant") return redirect("/portal");
+  if (await isNonMember(auth, request)) return redirect("/portal");
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return partnerRedirect;
 

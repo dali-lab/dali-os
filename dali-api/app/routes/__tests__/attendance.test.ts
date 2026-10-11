@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db");
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
+  isNonMember: vi.fn(async () => false),
 }));
 vi.mock("~/lib/roles", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/lib/roles")>()),
@@ -11,7 +12,7 @@ vi.mock("~/lib/roles", async (importOriginal) => ({
 }));
 
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, isNonMember } from "~/lib/auth";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { action } from "~/routes/attendance";
 
@@ -111,8 +112,9 @@ describe("POST /attendance — set-absence-note", () => {
     expect(mockPrisma.meetingAttendance.updateMany).not.toHaveBeenCalled();
   });
 
-  it("rejects applicants outright", async () => {
-    mockAuth.mockResolvedValue({ ok: true, user: { sub: "app-1", type: "applicant" } });
+  it("rejects non-members outright", async () => {
+    mockAuth.mockResolvedValue({ ok: true, user: { sub: "app-1", type: "dartmouth" } });
+    vi.mocked(isNonMember).mockResolvedValueOnce(true);
 
     expect((await saveNote("Excused")).status).toBe(403);
   });

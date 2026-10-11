@@ -1,6 +1,6 @@
 import { useLoaderData } from "react-router";
 import QRCode from "qrcode";
-import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
+import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
 import { resolveMeetingOccurrence } from "~/lib/scheduled-meeting";
@@ -26,7 +26,7 @@ export const handle = {
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  const portalRedirect = redirectApplicantToPortal(auth);
+  const portalRedirect = await redirectNonMemberToPortal(auth, request);
   if (portalRedirect) return portalRedirect;
 
   const meeting = await prisma.scheduledMeeting.findUnique({

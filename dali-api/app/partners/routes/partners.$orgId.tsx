@@ -15,7 +15,7 @@ import { useConfirmSubmit } from "~/components/ui/dialog";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { buttonClasses } from "~/components/ui/Button";
 import type { Route } from "./+types/partners.$orgId";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { recordRouteVisit } from "~/lib/user-pages.server";
 import { prisma } from "~/lib/db";
@@ -59,7 +59,7 @@ export const handle = {
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  if (auth.user.type === "applicant") return redirect("/portal");
+  if (await isNonMember(auth, request)) return redirect("/portal");
   // Org pages are lab-wide; editing and the org's applications stay Core/Admin.
   const [labMember, canViewApplications] = await Promise.all([
     isLabMember(auth.user.sub, request),

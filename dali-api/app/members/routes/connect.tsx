@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Link, useLoaderData, useNavigate } from "react-router";
 import { MapPin, Trophy, X } from "lucide-react";
 import type { Route } from "./+types/connect";
-import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
+import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { LAB_MEMBER_WHERE, MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
@@ -34,7 +34,7 @@ export const handle = {
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  const portalRedirect = redirectApplicantToPortal(auth);
+  const portalRedirect = await redirectNonMemberToPortal(auth, request);
   if (portalRedirect) return portalRedirect;
 
   const alumniWhere = { ...LAB_MEMBER_WHERE, membershipStatus: "Alumni" as const };

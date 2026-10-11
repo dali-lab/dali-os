@@ -9,7 +9,7 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { HELP_ARTICLES } from "~/lib/help-articles";
 import type { Route } from "./+types/help._index";
@@ -19,7 +19,7 @@ export const meta: Route.MetaFunction = () => [{ title: "Help · DALI OS" }];
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  if (auth.user.type === "applicant") return redirect("/portal");
+  if (await isNonMember(auth, request)) return redirect("/portal");
   return null;
 }
 

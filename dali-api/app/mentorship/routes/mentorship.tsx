@@ -6,7 +6,7 @@ import {
   FileText,
 } from "lucide-react";
 import type { Route } from "./+types/mentorship";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { isCore, currentTermPhase } from "~/lib/roles";
@@ -53,7 +53,7 @@ type LoaderData = {
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  if (auth.user.type === "applicant") return redirect("/portal");
+  if (await isNonMember(auth, request)) return redirect("/portal");
   if (!(await canViewMentorship(auth.user.sub))) {
     throw new Response("Forbidden", { status: 403 });
   }

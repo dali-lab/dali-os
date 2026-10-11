@@ -13,7 +13,7 @@ import {
   Trash2,
 } from "lucide-react";
 import type { Route } from "./+types/attendance";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, isNonMember } from "~/lib/auth";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
@@ -56,7 +56,7 @@ export const handle = {
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  if (auth.user.type === "applicant") return redirect("/portal");
+  if (await isNonMember(auth, request)) return redirect("/portal");
   const userId = auth.user.sub;
 
   const meetings = await prisma.scheduledMeeting.findMany({
@@ -184,7 +184,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  if (auth.user.type === "applicant") {
+  if (await isNonMember(auth, request)) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 

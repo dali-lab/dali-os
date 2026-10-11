@@ -1,7 +1,7 @@
 import { Form, Link, useActionData, useLoaderData, useNavigation } from "react-router";
 import { Coffee } from "lucide-react";
 import type { Route } from "./+types/coffee-chats.$id";
-import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
+import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { Button, buttonClasses } from "~/components/ui/Button";
 import { loadCoffeeChat, respondToCoffeeChat } from "~/members/lib/coffee-chat.server";
@@ -15,7 +15,7 @@ export const handle = {
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  const portalRedirect = redirectApplicantToPortal(auth);
+  const portalRedirect = await redirectNonMemberToPortal(auth, request);
   if (portalRedirect) return portalRedirect;
   const chat = await loadCoffeeChat(params.id, auth.user.sub);
   if (!chat) throw new Response("Not found", { status: 404 });

@@ -129,7 +129,7 @@ beforeEach(() => {
   };
   vi.mocked(requireAuth).mockResolvedValue({
     ok: true,
-    user: { sub: USER_ID, email: "u@x.com", type: "applicant" },
+    user: { sub: USER_ID, email: "u@x.com", type: "dartmouth" },
   } as any);
   vi.mocked(getActiveCycleById).mockResolvedValue(OPEN_STUDENTS_CYCLE as any);
 });

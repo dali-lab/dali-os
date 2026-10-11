@@ -12,7 +12,7 @@ import type { Route } from "./+types/documents.$pageId";
 import { prisma } from "~/lib/db";
 import { ensureOccurrenceRoster } from "~/lib/scheduled-meeting";
 import { ACTIVE_RECORDING_STATUSES, latestRecordingFor } from "~/lib/meeting-recording.server";
-import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
+import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { publicDocRedirectForPath } from "~/lib/public-doc.server";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { fullName, formatDateShort } from "~/lib/display";
@@ -67,7 +67,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // the public-doc fallback has to be mirrored here for the shell gate to hold.
   const publicDoc = () => publicDocRedirectForPath(new URL(request.url).pathname);
   if (!auth.ok) return (await publicDoc()) ?? redirectToLogin(request);
-  if (auth.user.type === "applicant") return (await publicDoc()) ?? redirect("/portal");
+  if (await isNonMember(auth, request)) return (await publicDoc()) ?? redirect("/portal");
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return (await publicDoc()) ?? partnerRedirect;
 

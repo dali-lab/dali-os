@@ -8,7 +8,7 @@ import { redirect, useLoaderData, useSearchParams } from "react-router";
 import { ChevronLeft, ChevronRight, Repeat, X } from "lucide-react";
 import type { Route } from "./+types/rooms";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { useOsChrome } from "~/components/os-chrome";
 import { Modal, ModalFooter, ModalHeader } from "~/components/Modal";
@@ -30,7 +30,7 @@ export const handle = {
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) throw redirectToLogin(request);
-  if (auth.user.type === "applicant") throw redirect("/portal");
+  if (await isNonMember(auth, request)) throw redirect("/portal");
 
   const rooms = await prisma.room.findMany({
     where: { archivedAt: null },

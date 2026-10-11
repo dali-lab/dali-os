@@ -8,7 +8,7 @@ import {
   useNavigate,
 } from "react-router";
 import type { Route } from "./+types/partners";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { canViewStaffing, isCore, isLabMember } from "~/lib/roles";
@@ -44,7 +44,7 @@ type OrgRow = {
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  if (auth.user.type === "applicant") return redirect("/portal");
+  if (await isNonMember(auth, request)) return redirect("/portal");
   // The org directory is lab-wide; editing and the applications pipeline stay
   // Core/Admin (canViewStaffing).
   const [labMember, canViewApplications] = await Promise.all([

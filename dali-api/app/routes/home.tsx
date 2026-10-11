@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { redirect, useLoaderData, useRevalidator } from "react-router";
-import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
+import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { listFavoritesAndRecents, type FavoritePage } from "~/lib/user-pages.server";
 import { loadShellUser } from "~/lib/shell-user.server";
@@ -32,7 +32,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const __loaderStart = performance.now();
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  if (auth.user.type === "applicant") return redirect("/portal");
+  if (await isNonMember(auth, request)) return redirect("/portal");
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return partnerRedirect;
 

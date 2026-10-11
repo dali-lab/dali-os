@@ -7,7 +7,7 @@ import {
 import { logAuditEvent } from "~/lib/audit";
 import { lookupSession, rollSession, hashSessionId } from "~/lib/session";
 import { withCors } from "~/lib/cors";
-import { isCore, isDomainLead, isProjectMember } from "~/lib/roles";
+import { isCore, isDomainLead, isLabMember, isProjectMember } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { displayEmail } from "~/lib/display";
 import { cachedForRequest } from "~/lib/request-cache";
@@ -18,10 +18,16 @@ import { getAppEnv } from "~/lib/app-env";
 // callers (`auth.user.sub` is used across calendar/, collab/, etc.) keep
 // working without per-file edits.
 
+// Derived from the User row, never stored: a DALI Workspace address types
+// "member", a NetID without one "dartmouth", neither "partner". It is a hint
+// about how the person signed in, not a role — lab membership is the
+// DALIMember row (isLabMember), and a NetID-native member types "dartmouth".
+export type AuthType = "member" | "dartmouth" | "partner";
+
 export type AuthUser = {
   sub: string;
   email: string;
-  type: string;
+  type: AuthType;
   firstName?: string;
   lastName?: string;
 };
@@ -74,7 +80,7 @@ function unauthorizedClearingCookies(): Response {
 function deriveAuthType(user: {
   daliEmail: string | null;
   netId: string | null;
-}): string {
+}): AuthType {
   if (user.daliEmail) return "member";
   if (user.netId) return "dartmouth";
   return "partner";
@@ -400,9 +406,29 @@ export async function requireProjectEditAccess(
   return { ok: true, auth };
 }
 
-export function redirectApplicantToPortal(auth: AuthSuccess): Response | null {
-  if (auth.user.type === "applicant") return redirect("/portal");
-  return null;
+// Non-members (applicants, Dartmouth students, external instructors, partner
+// contacts) belong on /portal, not the member shell. Keyed on the DALIMember
+// row rather than `type`, the same way the shell's layout gate decides: a
+// NetID-native member types "dartmouth" and must not be misfiled. The lookup
+// is memoized per request, so pages already behind the layout gate pay
+// nothing extra. Actions and API routes call this themselves because the
+// layout loader does not run for them.
+export async function isNonMember(auth: AuthSuccess, request: Request): Promise<boolean> {
+  return !(await isLabMember(auth.user.sub, request));
+}
+
+export async function redirectNonMemberToPortal(
+  auth: AuthSuccess,
+  request: Request,
+): Promise<Response | null> {
+  return (await isNonMember(auth, request)) ? redirect("/portal") : null;
+}
+
+export async function forbidNonMember(
+  auth: AuthSuccess,
+  request: Request,
+): Promise<Response | null> {
+  return (await isNonMember(auth, request)) ? forbidden(request) : null;
 }
 
 // Partner accounts belong in /partner, not the member shell or applicant

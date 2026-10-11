@@ -4,7 +4,7 @@
 // separately with the Google OAuth client and handles the calendar-link flow
 // in isolation from login.
 
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, isNonMember } from "~/lib/auth";
 import { getApiBaseUrl } from "~/lib/app-env";
 import { buildGoogleAuthUrl } from "~/lib/google-oauth";
 import { randomBytes } from "node:crypto";
@@ -25,7 +25,7 @@ export async function loader({ request }: { request: Request }) {
   if (!auth.ok) {
     return new Response(null, { status: 302, headers: { Location: "/login" } });
   }
-  if (auth.user.type === "applicant") {
+  if (await isNonMember(auth, request)) {
     return new Response(null, { status: 302, headers: { Location: "/portal" } });
   }
 

@@ -10,10 +10,12 @@
 import { auth } from "~/lib/betterauth.server";
 import { isCore } from "~/lib/roles";
 
+import type { AuthType } from "~/lib/auth";
+
 export type AuthUser = {
   sub: string;
   email: string;
-  type: string;
+  type: AuthType;
   firstName?: string;
   lastName?: string;
 };
@@ -29,7 +31,7 @@ function deriveType(
   daliEmail: string | null | undefined,
   netId: string | null | undefined,
   dartmouthEmail: string | null | undefined,
-): string {
+): AuthType {
   if (daliEmail) return "member";
   if (netId || dartmouthEmail) return "dartmouth";
   return "partner";

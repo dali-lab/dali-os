@@ -16,7 +16,7 @@ import { redirect, useLoaderData, useNavigate, useSearchParams } from "react-rou
 import { ChevronDown, ChevronUp, SlidersHorizontal } from "lucide-react";
 import { SearchInput } from "~/components/ui/SearchInput";
 import type { Route } from "./+types/applications";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
 import { prisma } from "~/lib/db";
@@ -57,7 +57,7 @@ export const meta: Route.MetaFunction = () => [
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  if (auth.user.type === "applicant") return redirect("/portal");
+  if (await isNonMember(auth, request)) return redirect("/portal");
 
   // Reviewer assignments across all cycles — used both to decide which cycles
   // a reviewer can see and to scope domains within the selected cycle. Doesn't

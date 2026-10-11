@@ -1,7 +1,7 @@
 import { regroupRedirect } from "~/core/lib/regroup-redirect.server";
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/projects.staffing";
-import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
+import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { STAFFING_MEMBER_SELECT } from "~/lib/prisma-shapes";
 import { primaryEmail } from "~/lib/display";
@@ -37,7 +37,7 @@ export const meta: Route.MetaFunction = () => [{ title: "Staffing · DALI OS" }]
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  const portalRedirect = redirectApplicantToPortal(auth);
+  const portalRedirect = await redirectNonMemberToPortal(auth, request);
   if (portalRedirect) return portalRedirect;
   const regrouped = await regroupRedirect(
     request,

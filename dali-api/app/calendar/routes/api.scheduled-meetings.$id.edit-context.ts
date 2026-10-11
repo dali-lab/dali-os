@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.scheduled-meetings.$id.edit-context";
-import { requireAuth, forbidden } from "~/lib/auth";
+import { requireAuth, forbidden, isNonMember } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
@@ -17,7 +17,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
-  if (auth.user.type === "applicant") return forbidden(request);
+  if (await isNonMember(auth, request)) return forbidden(request);
 
   const meeting = await prisma.scheduledMeeting.findUnique({
     where: { id: params.id! },
