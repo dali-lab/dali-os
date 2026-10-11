@@ -4,13 +4,13 @@ import { buttonClasses } from "~/components/ui/Button";
 import { IconButton } from "~/components/ui/IconButton";
 import { Tooltip } from "~/components/ui/floating/Tooltip";
 import { formatClock } from "./transcript";
-
-const ENHANCE_AGAIN_TIP = "Rebuilds the notes from the current text and the transcript.";
 import { formatDateTime } from "./use-meeting-recording";
 import type { UseMeetingRecording } from "./use-meeting-recording";
 import type { Channel } from "./types";
 import { computeEnhancePreview, EnhancePreview } from "./EnhancePreview";
 import { RecordingTranscript } from "./RecordingTranscript";
+
+const ENHANCE_AGAIN_TIP = "Rebuilds the notes from the current text and the transcript.";
 
 /** Stable id for the rail's own `<h2>` — ui/Drawer's narrow-canvas
  *  rendering passes this as `labelledBy` instead of rendering a second
