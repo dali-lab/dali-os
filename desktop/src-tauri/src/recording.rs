@@ -63,9 +63,9 @@ enum Event {
 
 #[derive(Deserialize, Default)]
 struct ClaimResp {
-    // Seconds recorded by earlier sessions of this recording (Continue).
+    // Seconds recorded by earlier sessions of this recording (Continue) —
+    // folded into the tray clock's elapsed total (see CLOCK below).
     #[serde(default)]
-    #[allow(dead_code)]
     offset: f64,
     #[serde(default)]
     segment: u32,
@@ -90,6 +90,33 @@ type AudioChunk = (u8, Vec<u8>);
 // recording task.
 static EVENTS: Mutex<Option<mpsc::UnboundedSender<String>>> = Mutex::new(None);
 static AUDIO: Mutex<Option<mpsc::UnboundedSender<AudioChunk>>> = Mutex::new(None);
+
+// Tray-clock source of truth for the active recording: (session start,
+// seconds already recorded in earlier segments). Read by `elapsed_secs`
+// (tray.rs's snapshot) once a second via the ticker spawned in `start`.
+static CLOCK: Mutex<Option<(Instant, f64)>> = Mutex::new(None);
+
+fn set_clock(started: Instant, prior_secs: f64) {
+    if let Ok(mut g) = CLOCK.lock() {
+        *g = Some((started, prior_secs));
+    }
+}
+
+fn clear_clock() {
+    if let Ok(mut g) = CLOCK.lock() {
+        *g = None;
+    }
+}
+
+/// Total elapsed seconds for the active recording (prior segments + this
+/// session), or `None` if nothing is recording yet.
+pub fn elapsed_secs() -> Option<u64> {
+    CLOCK
+        .lock()
+        .ok()
+        .and_then(|g| *g)
+        .map(|(started, prior)| (prior + started.elapsed().as_secs_f64()) as u64)
+}
 
 #[cfg(target_os = "macos")]
 extern "C" {
@@ -152,15 +179,39 @@ pub fn start(app: &AppHandle, id: String) {
     // Record action, or this deep link straight from a meeting-note page) —
     // one hide covers all of them.
     window::hide_record_prompt(app);
+    spawn_clock_ticker(app);
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let result = record(&app, &id).await;
         if let Ok(mut current) = app.state::<AppState>().recording.lock() {
             *current = None;
         }
+        if let Ok(mut title) = app.state::<AppState>().recording_title.lock() {
+            *title = None;
+        }
+        clear_clock();
         tray::rebuild_menu(&app);
         if let Err(message) = result {
             notify::raise_simple(&app, "Recording stopped", &message);
+        }
+    });
+}
+
+/// 1 s tray-clock ticker, alive only while a recording is active (checked
+/// every tick against `AppState.recording`, not `CLOCK` — the clock itself
+/// only starts once the claim round-trip in `record()` completes).
+fn spawn_clock_ticker(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(1));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            interval.tick().await;
+            let live = app.state::<AppState>().recording.lock().map(|g| g.is_some()).unwrap_or(false);
+            if !live {
+                break;
+            }
+            tray::refresh(&app);
         }
     });
 }
@@ -171,6 +222,87 @@ pub fn stop() {
     unsafe {
         dali_recorder_stop()
     };
+}
+
+#[derive(Deserialize)]
+struct CreatedRecording {
+    id: String,
+}
+
+#[derive(Deserialize, Default)]
+struct RecordingErrorBody {
+    #[serde(default)]
+    error: String,
+}
+
+pub enum StartOutcome {
+    Started,
+    /// Server refused (e.g. `recordingDisabled`) — `String` is the error code.
+    Refused(String),
+    Failed,
+}
+
+/// POST /api/meeting-recordings to create a MeetingRecording for a scheduled
+/// occurrence, then start capturing it. Shared by the record-prompt's
+/// one-tap "Record" (notify::start_recording_from_prompt) and the tray
+/// panel's "Record" button on the next meeting (commands::tray_record_next).
+pub async fn create_and_start(
+    app: &AppHandle,
+    scheduled_meeting_id: &str,
+    occurrence_start: &str,
+    title: String,
+) -> StartOutcome {
+    let Some(token) = keychain::get_token() else {
+        return StartOutcome::Failed;
+    };
+    let http = app.state::<AppState>().http.clone();
+    let resp = http
+        .post(config::meeting_recordings_url())
+        .bearer_auth(&token)
+        .json(&json!({
+            "scheduledMeetingId": scheduled_meeting_id,
+            "occurrenceStart": occurrence_start,
+        }))
+        .send()
+        .await;
+
+    let resp = match resp {
+        Ok(r) => r,
+        Err(_) => return StartOutcome::Failed,
+    };
+
+    if resp.status() == reqwest::StatusCode::CREATED {
+        return match resp.json::<CreatedRecording>().await {
+            Ok(created) => {
+                if let Ok(mut t) = app.state::<AppState>().recording_title.lock() {
+                    *t = Some(title);
+                }
+                start(app, created.id);
+                StartOutcome::Started
+            }
+            Err(_) => StartOutcome::Failed,
+        };
+    }
+
+    let error = resp.json::<RecordingErrorBody>().await.unwrap_or_default().error;
+    StartOutcome::Refused(error)
+}
+
+/// Fire-and-forget wrapper around `create_and_start` for callers with no
+/// per-id fallback to run on failure (the tray panel's "Record" button —
+/// `notify::start_recording_from_prompt` calls `create_and_start` directly
+/// so it can fall back to opening the prompt's link).
+pub fn start_for_occurrence(app: &AppHandle, scheduled_meeting_id: String, occurrence_start: String, title: String) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let StartOutcome::Refused(error) =
+            create_and_start(&app, &scheduled_meeting_id, &occurrence_start, title).await
+        {
+            if error == "recordingDisabled" {
+                notify::raise_simple(&app, "DALI OS", "Recording is turned off for this project.");
+            }
+        }
+    });
 }
 
 async fn record(app: &AppHandle, id: &str) -> Result<(), String> {
@@ -213,6 +345,7 @@ async fn record(app: &AppHandle, id: &str) -> Result<(), String> {
         dali_recorder_start(on_event);
     }
     let session_started = Instant::now();
+    set_clock(session_started, claim.offset);
     tray::rebuild_menu(app);
 
     let (stop_tx, mut stop_rx) = watch::channel(false);

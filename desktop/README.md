@@ -8,7 +8,7 @@ Native desktop app for DALI OS. A thin Tauri v2 shell that wraps the live hosted
   - Linux uses XDG/D-Bus actions (button support depends on the notification daemon; GNOME/KDE work).
   - Windows uses WinRT toasts; clicks and buttons are handled while the app runs (it's tray-resident, so effectively always).
 - **Auto-update** — checks for new releases on launch and prompts the user to install.
-- **Tray + dock presence** — persistent menubar/tray icon showing the unread count (macOS) and the latest unread notifications with click-through, plus quick actions.
+- **Tray + dock presence** — persistent menubar/tray icon showing the unread count. Left-click opens a DALI OS panel with unread notifications, recording status, and quick actions (Open, Settings, Quit); right-click shows a minimal native menu. Linux always shows the native menu instead, with the unread rows folded in, since AppIndicator never reports tray clicks.
 
 ## Platform support
 

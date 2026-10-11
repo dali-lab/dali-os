@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "tray-local",
+  "description": "The bundled, local, trusted tray panel. App-defined commands (tray_get_view, tray_open_link, tray_mark_all_read, tray_open_app, tray_open_settings, tray_stop_recording, tray_quit, tray_panel_hide, tray_panel_set_height, tray_open_external, tray_open_path, tray_record_next, tray_set_title_mode) are invokable from this local window; it additionally needs the event permission to listen for `tray://state` updates pushed from Rust.",
+  "windows": ["tray"],
+  "permissions": ["core:event:default"]
+}

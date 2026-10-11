@@ -17,6 +17,8 @@ mod poller;
 mod recording;
 mod state;
 mod tray;
+mod tray_badge;
+mod tray_model;
 mod updater;
 mod window;
 
@@ -55,9 +57,31 @@ pub fn run() {
             commands::record_prompt_dismiss,
             commands::record_prompt_mute,
             commands::record_prompt_set_expanded,
+            commands::tray_get_view,
+            commands::tray_open_link,
+            commands::tray_mark_all_read,
+            commands::tray_open_app,
+            commands::tray_open_settings,
+            commands::tray_stop_recording,
+            commands::tray_quit,
+            commands::tray_panel_hide,
+            commands::tray_panel_set_height,
+            commands::tray_open_external,
+            commands::tray_open_path,
+            commands::tray_record_next,
+            commands::tray_set_title_mode,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
+
+            // Persisted title-mode preference, read once before the tray is
+            // built so its first title reflects it immediately.
+            {
+                let mode = tray::load_title_mode(&handle);
+                if let Ok(mut g) = handle.state::<AppState>().title_mode.lock() {
+                    *g = mode;
+                }
+            }
 
             // Native menu (Edit → clipboard) + tray.
             app.set_menu(menu::build(&handle)?)?;
@@ -105,6 +129,12 @@ pub fn run() {
                 if let WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
                     let _ = window.hide();
+                }
+            } else if window.label() == "tray" {
+                // Clicking anywhere outside the panel defocuses it — same
+                // dismissal as a native menu.
+                if let WindowEvent::Focused(false) = event {
+                    window::hide_tray_panel(window.app_handle());
                 }
             }
         })
