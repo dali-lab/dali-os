@@ -24,6 +24,7 @@ import {
   finishRecording,
   parseSpeakerMap,
   requestStop,
+  resolveSpeakerNames,
   resumeRecording,
   setSpeakers,
   startProcessing,
@@ -81,6 +82,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!access) return notFound();
 
   const lines = storedLines(rec);
+  const speakerNames = await resolveSpeakerNames((rec.speakers as Record<string, string> | null) ?? {});
   if (access === "owner") {
     const since = Math.max(0, Number(new URL(request.url).searchParams.get("since")) || 0);
     return Response.json({
@@ -91,6 +93,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       recordedSeconds: rec.recordedSeconds,
       error: rec.error,
       speakers: rec.speakers,
+      speakerNames,
       total: lines.length,
       lines: lines.slice(since),
       insertedAt: rec.insertedAt?.toISOString() ?? null,
@@ -105,6 +108,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     status: rec.status,
     lines,
     speakers: rec.speakers,
+    speakerNames,
     channels: rec.channels,
     recordedSeconds: rec.recordedSeconds,
     insertedAt: rec.insertedAt?.toISOString() ?? null,

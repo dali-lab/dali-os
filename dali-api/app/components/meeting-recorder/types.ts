@@ -49,6 +49,10 @@ export type PollRecordingResponse = {
   recordedSeconds: number;
   lines: TranscriptLine[];
   speakers: Speakers;
+  /** Server-resolved display name per assigned speaker key (a renamed
+   *  speaker's userId resolved through the user table; free text passes
+   *  through) — covers a speaker renamed to someone outside `roster`. */
+  speakerNames?: Record<SpeakerKey, string>;
   error?: string | null;
   stopRequested?: boolean;
   total?: number;

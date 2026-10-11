@@ -26,8 +26,10 @@ export function countSpeakersByChannel(lines: TranscriptLine[]): Record<Channel,
 }
 
 /**
- * A line's display label: the roster/free-text name once a speaker is
- * renamed, else "Speaker N" once a channel has more than one diarized
+ * A line's display label: a server-resolved name for the assigned speaker
+ * once there is one (covers a speaker renamed to a lab member outside the
+ * roster — see `resolveSpeakerNames` on the server), else the roster/free-text
+ * value itself, else "Speaker N" once a channel has more than one diarized
  * speaker, else the plain channel label (You / Others) — the common case of
  * one person per channel never shows a speaker number at all.
  */
@@ -36,10 +38,12 @@ export function speakerLabelFor(
   speakerCountByChannel: Record<Channel, number>,
   speakers: Speakers,
   roster: RosterUser[],
+  speakerNames: Record<SpeakerKey, string> = {},
 ): string {
   if (line.speaker) {
     const assigned = speakers[line.speaker];
     if (assigned) {
+      if (speakerNames[line.speaker]) return speakerNames[line.speaker]!;
       const match = roster.find((r) => r.userId === assigned);
       return match ? match.name : assigned;
     }
@@ -52,12 +56,17 @@ export function speakerLabelFor(
 }
 
 /** One "[mm:ss] Label: text" paragraph per line, in time order. */
-export function transcriptParagraphs(lines: TranscriptLine[], speakers: Speakers, roster: RosterUser[]): string[] {
+export function transcriptParagraphs(
+  lines: TranscriptLine[],
+  speakers: Speakers,
+  roster: RosterUser[],
+  speakerNames: Record<SpeakerKey, string> = {},
+): string[] {
   const counts = countSpeakersByChannel(lines);
   return [...lines]
     .filter((l) => l.text.trim())
     .sort((a, b) => a.at - b.at)
-    .map((l) => `[${formatClock(l.at)}] ${speakerLabelFor(l, counts, speakers, roster)}: ${l.text.trim()}`);
+    .map((l) => `[${formatClock(l.at)}] ${speakerLabelFor(l, counts, speakers, roster, speakerNames)}: ${l.text.trim()}`);
 }
 
 /** The notes section to insert, or nothing: a plain transcript insert

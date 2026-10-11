@@ -32,6 +32,7 @@ function makeRec(overrides: Partial<UseMeetingRecording> = {}): UseMeetingRecord
     now: 0,
     lines: [],
     speakers: {},
+    speakerNames: {},
     error: null,
     busy: false,
     remote: null,
