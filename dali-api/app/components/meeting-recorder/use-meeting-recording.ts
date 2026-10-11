@@ -243,6 +243,9 @@ export function useMeetingRecording({
   // Someone else's recording (or this user's from another device) that this
   // page is following rather than driving.
   const [remote, setRemote] = useState<{ ownerName: string; ownerIsYou: boolean } | null>(null);
+  // Server-reported time of the most recent uploaded chunk, for a follower's
+  // "last audio …" status-line suffix (statusLineFor).
+  const [lastChunkAt, setLastChunkAt] = useState<string | null>(null);
   const [insertedAt, setInsertedAt] = useState<string | null>(null);
   const [finalized, setFinalized] = useState(false);
   const [stoppingSince, setStoppingSince] = useState(0);
@@ -323,6 +326,7 @@ export function useMeetingRecording({
     setError(null);
     setBusy(false);
     setRemote(null);
+    setLastChunkAt(null);
     setInsertedAt(null);
     setFinalized(false);
     setSpeakersChangedAt(null);
@@ -396,6 +400,7 @@ export function useMeetingRecording({
       setLines(data.lines);
       setSpeakers(data.speakers);
       setSpeakerNames(data.speakerNames ?? {});
+      setLastChunkAt(data.lastChunkAt ?? null);
       setInsertedAt(data.insertedAt ?? null);
       setFinalized(Boolean(data.finalizedAt));
       setEnhanceNotes(data.notes ?? null);
@@ -515,6 +520,7 @@ export function useMeetingRecording({
       if (cancelled) return;
       setChannelsActive(data.channels as Channel[]);
       setRecordedSeconds(data.recordedSeconds);
+      setLastChunkAt(data.lastChunkAt ?? null);
       setInsertedAt(data.insertedAt ?? null);
       if (data.finalizedAt !== undefined) setFinalized(Boolean(data.finalizedAt));
       if (data.notes !== undefined) setEnhanceNotes(data.notes ?? null);
@@ -834,6 +840,13 @@ export function useMeetingRecording({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "stop" }),
     }).catch(() => null);
+    // A follower has no local capture to drain — stay in "stopping" until
+    // the poll sees the owner's device finish (Stopped/Processing) or the
+    // row disappear (404), same as the owner's own desktop capture below.
+    if (!drives) {
+      toast.info("Stop requested. The recorder's device finishes uploading first.");
+      return;
+    }
     // Desktop capture: the app is still flushing its last chunks. Stay in
     // "stopping" until the poll sees the app's finish (Stopped), so Transcribe
     // can't dispatch a job that misses the mic channel.
@@ -844,13 +857,20 @@ export function useMeetingRecording({
   async function finishAndTranscribe() {
     if (!recordingId) return;
     setBusy(true);
-    await fetch(`/api/meeting-recordings/${recordingId}`, {
+    const res = await fetch(`/api/meeting-recordings/${recordingId}`, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "stop", final: true }),
     }).catch(() => null);
     setBusy(false);
+    if (res && res.status === 403) {
+      const json = (await res.json().catch(() => null)) as { error?: string } | null;
+      if (json?.error === "ownerOnly") {
+        toast.error("Only the recorder can transcribe while their device is still uploading.");
+        return;
+      }
+    }
     setPhase("processing");
   }
 
@@ -1172,7 +1192,11 @@ export function useMeetingRecording({
   // other device, or Core: who may stop/discard/transcribe it.
   const drives = !remote || remote.ownerIsYou;
   const canDiscard = canEdit && (drives || isCore);
-  const stopStuck = phase === "stopping" && captureMode === "desktop" && stoppingSince > 0 && now - stoppingSince > STOP_WAIT_MS;
+  // Any editor of the note may stop someone else's recording — the owner's
+  // device going silent otherwise leaves nobody but the owner with an exit.
+  const canStopOthers = canEdit;
+  const stopStuck =
+    phase === "stopping" && (captureMode === "desktop" || !drives) && stoppingSince > 0 && now - stoppingSince > STOP_WAIT_MS;
   // Both capture modes count locally while live; the server's recordedSeconds
   // only moves when a session finishes.
   const elapsed = phase === "recording" ? recordedSeconds + (now - startedAt) / 1000 : recordedSeconds;
@@ -1227,6 +1251,7 @@ export function useMeetingRecording({
     error,
     busy,
     remote,
+    lastChunkAt,
     insertedAt,
     finalized,
     stoppingSince,
@@ -1261,6 +1286,7 @@ export function useMeetingRecording({
     hasTranscript,
     drives,
     canDiscard,
+    canStopOthers,
     stopStuck,
     elapsed,
     speakerCounts,
