@@ -55,6 +55,34 @@ describe("recording-finalizer", () => {
     expect(startProcessing).not.toHaveBeenCalled();
   });
 
+  it("(a) finalizes empty a Recording row that never got a chunk, once updatedAt is stale", async () => {
+    const rec = { id: "r1b", status: "Recording", channels: [], lastChunkAt: null };
+    mockPrisma.meetingRecording.findMany
+      .mockResolvedValueOnce([rec])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+
+    const result = await runRecordingFinalizer({ now: NOW, lastSuccessAt: null, settings: {} });
+
+    expect(finalizeEmpty).toHaveBeenCalledWith(rec);
+    expect(result.note).toContain("abandoned=1");
+  });
+
+  it("(a) the abandoned query's OR clause would exclude a row whose updatedAt is still fresh", async () => {
+    await runRecordingFinalizer({ now: NOW, lastSuccessAt: null, settings: {} });
+
+    expect(mockPrisma.meetingRecording.findMany).toHaveBeenNthCalledWith(1, {
+      where: {
+        status: "Recording",
+        OR: [
+          { lastChunkAt: { lt: new Date(NOW.getTime() - 10 * 60_000) } },
+          { lastChunkAt: null, updatedAt: { lt: new Date(NOW.getTime() - 10 * 60_000) } },
+        ],
+      },
+      take: 50,
+    });
+  });
+
   it("(b) retries a Processing row stuck for the first time", async () => {
     const rec = { id: "r2", status: "Processing", error: null };
     mockPrisma.meetingRecording.findMany
@@ -100,6 +128,44 @@ describe("recording-finalizer", () => {
     expect(deletePrefix).toHaveBeenCalledWith("r4");
     expect(mockPrisma.meetingRecording.delete).toHaveBeenCalledWith({ where: { id: "r4" } });
     expect(result.note).toContain("unclaimed=1");
+  });
+
+  it("(d) sends a Stopped row that's had channels sitting unfinished for 30+ min to processing", async () => {
+    const rec = { id: "r5", status: "Stopped", channels: ["mic"] };
+    mockPrisma.meetingRecording.findMany
+      .mockResolvedValueOnce([]) // abandoned
+      .mockResolvedValueOnce([]) // stuck
+      .mockResolvedValueOnce([]) // unclaimed
+      .mockResolvedValueOnce([rec]); // stoppedUnfinished
+
+    const result = await runRecordingFinalizer({ now: NOW, lastSuccessAt: null, settings: {} });
+
+    expect(startProcessing).toHaveBeenCalledWith(rec);
+    expect(finalizeEmpty).not.toHaveBeenCalled();
+    expect(result.note).toContain("stoppedUnfinished=1");
+  });
+
+  it("(d) finalizes empty a Stopped row with zero channels sitting unfinished for 30+ min", async () => {
+    const rec = { id: "r6", status: "Stopped", channels: [] };
+    mockPrisma.meetingRecording.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([rec]);
+
+    await runRecordingFinalizer({ now: NOW, lastSuccessAt: null, settings: {} });
+
+    expect(finalizeEmpty).toHaveBeenCalledWith(rec);
+    expect(startProcessing).not.toHaveBeenCalled();
+  });
+
+  it("(d) the stoppedUnfinished query would exclude a recently-Stopped row", async () => {
+    await runRecordingFinalizer({ now: NOW, lastSuccessAt: null, settings: {} });
+
+    expect(mockPrisma.meetingRecording.findMany).toHaveBeenNthCalledWith(4, {
+      where: { status: "Stopped", updatedAt: { lt: new Date(NOW.getTime() - 30 * 60_000) } },
+      take: 50,
+    });
   });
 
   it("is a no-op tick when nothing matches any branch", async () => {

@@ -4,13 +4,13 @@ import { buttonClasses } from "~/components/ui/Button";
 import { IconButton } from "~/components/ui/IconButton";
 import { Tooltip } from "~/components/ui/floating/Tooltip";
 import { formatClock } from "./transcript";
-
-const ENHANCE_AGAIN_TIP = "Rebuilds the notes from the current text and the transcript.";
 import { formatDateTime } from "./use-meeting-recording";
 import type { UseMeetingRecording } from "./use-meeting-recording";
 import type { Channel } from "./types";
 import { computeEnhancePreview, EnhancePreview } from "./EnhancePreview";
 import { RecordingTranscript } from "./RecordingTranscript";
+
+const ENHANCE_AGAIN_TIP = "Rebuilds the notes from the current text and the transcript.";
 
 /** Stable id for the rail's own `<h2>` — ui/Drawer's narrow-canvas
  *  rendering passes this as `labelledBy` instead of rendering a second
@@ -113,16 +113,32 @@ export function RecordingRail({ rec }: { rec: UseMeetingRecording }) {
   );
 }
 
+/** "last audio 4 min ago" / "last audio just now" / "no audio yet" — a
+ *  follower's cue for whether the owner's device is still actually
+ *  uploading, not just that the row says Recording. */
+function lastAudioLabel(lastChunkAt: string | null | undefined): string {
+  if (!lastChunkAt) return "no audio yet";
+  const seconds = Math.floor((Date.now() - new Date(lastChunkAt).getTime()) / 1000);
+  if (seconds < 60) return "last audio just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `last audio ${minutes} min ago`;
+  return `last audio ${Math.floor(minutes / 60)} hr ago`;
+}
+
 /** Exported for the top-bar narrow-canvas live Popover, which shows the same
  *  status line text beside its own meters + Stop. */
 export function statusLineFor(rec: UseMeetingRecording, state: RailState): ReactNode {
   if (state === "recording") {
+    const following = Boolean(rec.remote && !rec.remote.ownerIsYou);
     return (
       <span className="inline-flex items-center gap-1.5">
         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-500" />
         {formatClock(rec.elapsed)}
         {rec.remote && (
-          <span className="text-muted-foreground">· {rec.remote.ownerIsYou ? "another device" : rec.remote.ownerName}</span>
+          <span className="text-muted-foreground">
+            · {rec.remote.ownerIsYou ? "another device" : rec.remote.ownerName}
+            {following && ` · ${lastAudioLabel(rec.lastChunkAt)}`}
+          </span>
         )}
       </span>
     );
@@ -187,6 +203,25 @@ export function statusLineFor(rec: UseMeetingRecording, state: RailState): React
   return text;
 }
 
+/** "starting"/"recording" for a follower (not the owner's own device): Stop
+ *  for any editor, Discard for Core — the owner's buttons are plain Cancel/
+ *  Stop above since they always drive their own recording. */
+function FollowerLiveActions({ rec }: { rec: UseMeetingRecording }) {
+  if (!rec.canStopOthers && !rec.canDiscard) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {rec.canStopOthers && (
+        <button type="button" onClick={() => void rec.stop()} className={buttonClasses("secondary", "sm")}>
+          <Square className="h-3 w-3 fill-current" /> Stop
+        </button>
+      )}
+      {rec.canDiscard && (
+        <IconButton label="Discard recording" icon={Trash2} tone="destructive" onClick={() => void rec.discard()} />
+      )}
+    </div>
+  );
+}
+
 function RailActions({ rec, state }: { rec: UseMeetingRecording; state: RailState }) {
   switch (state) {
     case "starting":
@@ -203,24 +238,43 @@ function RailActions({ rec, state }: { rec: UseMeetingRecording; state: RailStat
           </div>
         );
       }
-      return rec.drives ? (
-        <button type="button" onClick={rec.cancelStart} className={buttonClasses("secondary", "sm")}>
-          Cancel
-        </button>
-      ) : null;
+      if (rec.drives) {
+        return (
+          <button type="button" onClick={rec.cancelStart} className={buttonClasses("secondary", "sm")}>
+            Cancel
+          </button>
+        );
+      }
+      return <FollowerLiveActions rec={rec} />;
 
     case "recording":
-      return rec.drives ? (
-        <button type="button" onClick={() => void rec.stop()} className={buttonClasses("secondary", "sm")}>
-          <Square className="h-3 w-3 fill-current" /> Stop
-        </button>
-      ) : null;
+      if (rec.drives) {
+        return (
+          <button type="button" onClick={() => void rec.stop()} className={buttonClasses("secondary", "sm")}>
+            <Square className="h-3 w-3 fill-current" /> Stop
+          </button>
+        );
+      }
+      return <FollowerLiveActions rec={rec} />;
 
     case "stopping":
-      if (!rec.drives || !rec.stopStuck) return null;
+      if (!rec.stopStuck) return null;
+      if (rec.drives) {
+        return (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <IconButton label="Discard recording" icon={Trash2} tone="destructive" onClick={() => void rec.discard()} />
+            <button type="button" onClick={() => void rec.finishAndTranscribe()} className={buttonClasses("primary", "sm")}>
+              Transcribe anyway
+            </button>
+          </div>
+        );
+      }
+      if (!rec.canStopOthers) return null;
       return (
         <div className="flex flex-wrap items-center gap-1.5">
-          <IconButton label="Discard recording" icon={Trash2} tone="destructive" onClick={() => void rec.discard()} />
+          {rec.canDiscard && (
+            <IconButton label="Discard recording" icon={Trash2} tone="destructive" onClick={() => void rec.discard()} />
+          )}
           <button type="button" onClick={() => void rec.finishAndTranscribe()} className={buttonClasses("primary", "sm")}>
             Transcribe anyway
           </button>

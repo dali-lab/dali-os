@@ -3,7 +3,11 @@
 //     GET for the full state, POST actions (claim/stop/resume/speakers/
 //     finish), DELETE to discard.
 //   - Any other viewer of the note (authorizeCollabDoc): GET a read-only
-//     view, POST {action:"speakers"} (any editor, via canRecordInto).
+//     view, POST {action:"speakers"} (any editor, via canRecordInto). An
+//     editor (not just the owner) may also POST {action:"stop"} — someone
+//     has to be able to stop a recording whose owner went silent — and the
+//     final stop once the owner's device looks done uploading
+//     (EDITOR_FINAL_STOP_STALE_MS).
 //   - Core: DELETE even when not the owner.
 // Old (pre-v2) desktop builds call {action:"append"} and get 410 — the page
 // itself detects a stuck Pending row and tells the user to update.
@@ -35,6 +39,11 @@ import { actionItemMatchesBlock, type StoredEnhanceNotes } from "~/components/me
 import { formatClock } from "~/components/meeting-recorder/transcript";
 
 const notFound = () => Response.json({ error: "Not found" }, { status: 404 });
+
+// An editor's final stop (Transcribe anyway) is refused while the owner's
+// device still looks live: stopRequested not yet set and a chunk within
+// this window. Older than this (or no chunk ever) reads as abandoned.
+const EDITOR_FINAL_STOP_STALE_MS = 2 * 60_000;
 
 // POST {action:"createTasks"} body (specs/meeting-notes-model.md §4).
 type CreateTasksItem = { index: number; title: string; assigneeId?: string; dueAt?: string };
@@ -101,6 +110,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       notes: rec.notes ?? null,
       enhancedAt: rec.enhancedAt?.toISOString() ?? null,
       enhancedBy: rec.enhancedBy ?? null,
+      lastChunkAt: rec.lastChunkAt?.toISOString() ?? null,
     });
   }
 
@@ -115,6 +125,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     notes: rec.notes ?? null,
     enhancedAt: rec.enhancedAt?.toISOString() ?? null,
     enhancedBy: rec.enhancedBy ?? null,
+    lastChunkAt: rec.lastChunkAt?.toISOString() ?? null,
   });
 }
 
@@ -266,6 +277,42 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ ok: true });
   }
 
+  // stop (unlike claim/resume/finish) isn't owner-only: the owner's device
+  // can go silent mid-recording, and an editor needs a way to end it without
+  // waiting on the finalizer. A non-final stop just raises stopRequested, so
+  // any editor may send one; a final stop (Transcribe anyway) additionally
+  // requires the owner's device to look done uploading.
+  if (body.action === "stop") {
+    const isOwner = rec.userId === auth.user.sub;
+    if (!isOwner && !(await canRecordInto(auth.user.sub, rec.documentName))) {
+      return Response.json({ error: "Forbidden" }, { status: 403 });
+    }
+    // A failed dispatch leaves the audio in place (finalizedAt null), so
+    // stop { final } doubles as Try again. Once the audio is gone there is
+    // nothing to re-run.
+    if (rec.finalizedAt !== null || rec.status === "Processing" || rec.status === "Done") {
+      return Response.json({ error: "This recording can't be processed again." }, { status: 409 });
+    }
+    if (body.final === true && !isOwner) {
+      const ownerDeviceDone =
+        rec.stopRequested ||
+        rec.lastChunkAt === null ||
+        rec.lastChunkAt.getTime() < Date.now() - EDITOR_FINAL_STOP_STALE_MS;
+      if (!ownerDeviceDone) {
+        return Response.json({ error: "ownerOnly" }, { status: 403 });
+      }
+    }
+    await requestStop(rec);
+    if (body.final === true) {
+      if (rec.channels.length > 0) {
+        await startProcessing(rec);
+      } else {
+        await finalizeEmpty(rec);
+      }
+    }
+    return Response.json({ ok: true });
+  }
+
   if (rec.userId !== auth.user.sub) return notFound();
 
   switch (body.action) {
@@ -275,23 +322,6 @@ export async function action({ request, params }: Route.ActionArgs) {
         return Response.json({ error: "This recording can't be claimed." }, { status: 409 });
       }
       return Response.json({ offset: result.offset, segment: result.segment });
-    }
-    case "stop": {
-      // A failed dispatch leaves the audio in place (finalizedAt null), so
-      // stop { final } doubles as Try again. Once the audio is gone there is
-      // nothing to re-run.
-      if (rec.finalizedAt !== null || rec.status === "Processing" || rec.status === "Done") {
-        return Response.json({ error: "This recording can't be processed again." }, { status: 409 });
-      }
-      await requestStop(rec);
-      if (body.final === true) {
-        if (rec.channels.length > 0) {
-          await startProcessing(rec);
-        } else {
-          await finalizeEmpty(rec);
-        }
-      }
-      return Response.json({ ok: true });
     }
     case "resume":
       if (!(await resumeRecording(rec))) {
