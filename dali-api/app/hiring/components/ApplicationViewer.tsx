@@ -132,7 +132,8 @@ function AnnotationMark({
     <span className="inline">
       <mark
         ref={ref}
-        className={`cursor-pointer rounded-sm ${COLOR_CLASSES[ann.color]}`}
+        // <mark> defaults to black text, which vanishes on dark mode's dark fills.
+        className={`cursor-pointer rounded-sm text-inherit ${COLOR_CLASSES[ann.color]}`}
         onMouseEnter={showTooltip}
         onMouseLeave={() => setTooltip(null)}
         onClick={(e) => {
