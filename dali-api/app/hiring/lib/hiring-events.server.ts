@@ -178,6 +178,61 @@ export async function setEventCheckInOpen(args: {
   return { ok: true };
 }
 
+export async function setEventBroadcast(args: {
+  eventId: string;
+  on: boolean;
+  actorId: string;
+}): Promise<{ ok: true } | { error: string; status: number }> {
+  const event = await prisma.hiringEvent.findUnique({
+    where: { id: args.eventId },
+    select: { applicationCycleId: true, checkInOpenAt: true },
+  });
+  if (!event) return { error: "Event not found", status: 404 };
+  if (!(await isCycleAdmin(args.actorId, event.applicationCycleId))) {
+    return { error: "Forbidden", status: 403 };
+  }
+  if (args.on && event.checkInOpenAt == null) {
+    return { error: "Open check-in before showing it on the displays", status: 400 };
+  }
+  await prisma.hiringEvent.update({
+    where: { id: args.eventId },
+    data: { broadcastAt: args.on ? new Date() : null },
+  });
+  await logAuditEvent({
+    action: args.on ? "hiring.event.broadcast.on" : "hiring.event.broadcast.off",
+    userId: args.actorId,
+    targetId: args.eventId,
+    metadata: { cycleId: event.applicationCycleId },
+  });
+  return { ok: true };
+}
+
+export type BroadcastEvent = {
+  id: string;
+  title: string;
+  kind: HiringEventKind;
+  startsAt: Date;
+  endsAt: Date;
+  location: string | null;
+};
+
+/**
+ * The event every paired door display should show a check-in QR for right
+ * now: broadcast switched on and check-in still open. With several on at
+ * once, the one starting soonest wins.
+ */
+export async function getBroadcastEvent(now: Date = new Date()): Promise<BroadcastEvent | null> {
+  const candidates = await prisma.hiringEvent.findMany({
+    where: { broadcastAt: { not: null }, checkInOpenAt: { not: null } },
+    orderBy: { startsAt: "asc" },
+    select: { id: true, title: true, kind: true, startsAt: true, endsAt: true, location: true, checkInOpenAt: true },
+  });
+  const live = candidates.find((e) => isEventCheckInOpen(e, now));
+  if (!live) return null;
+  const { checkInOpenAt: _open, ...event } = live;
+  return event;
+}
+
 export type SelfCheckInResult =
   | { ok: true; alreadyPresent: boolean }
   | { error: string; status: number };
