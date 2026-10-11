@@ -5,7 +5,7 @@ use std::time::Instant;
 
 use serde::Serialize;
 
-use crate::tray_model::{TitleMode, TrayView};
+use crate::tray_model::TrayView;
 
 // `AppState.connection` values (tray.rs/poller.rs set these; tray.rs reads
 // them into tray_model::Connection for the view).
@@ -140,9 +140,6 @@ pub struct AppState {
     // Latest value from /api/desktop/agenda (poller.rs), or None if there's
     // no upcoming meeting.
     pub agenda: Mutex<Option<AgendaNext>>,
-    // What the tray icon's title shows (persisted — see tray::load_title_mode
-    // / save_title_mode).
-    pub title_mode: Mutex<TitleMode>,
     // Latest open to-dos from the notifications payload's `tasks` field.
     pub tasks: Mutex<Vec<TaskItem>>,
     pub task_count: AtomicI64,
@@ -173,7 +170,6 @@ impl AppState {
             dismissed_record_prompts: Mutex::new(HashSet::new()),
             recording_title: Mutex::new(None),
             agenda: Mutex::new(None),
-            title_mode: Mutex::new(TitleMode::default()),
             tasks: Mutex::new(Vec::new()),
             task_count: AtomicI64::new(0),
             connection: AtomicU8::new(CONNECTION_POLLING),

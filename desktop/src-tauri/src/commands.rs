@@ -8,7 +8,7 @@ use crate::{
     config, keychain, notify, pairing, recording,
     state::{AppState, AuthState},
     tray,
-    tray_model::{TitleMode, TrayView},
+    tray_model::TrayView,
     window,
 };
 
@@ -162,18 +162,6 @@ pub fn tray_record_next(app: AppHandle) {
     }
 }
 
-/// The panel's "Menu bar shows" segmented control.
-#[tauri::command]
-pub fn tray_set_title_mode(app: AppHandle, mode: String) {
-    let Some(mode) = TitleMode::parse(&mode) else {
-        return;
-    };
-    if let Ok(mut g) = app.state::<AppState>().title_mode.lock() {
-        *g = mode;
-    }
-    tray::save_title_mode(&app, mode);
-    tray::refresh(&app);
-}
 
 #[tauri::command]
 pub fn open_external(app: AppHandle, url: String) -> Result<(), String> {
