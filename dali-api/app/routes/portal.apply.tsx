@@ -90,11 +90,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
   const active = resolved.cycle;
 
-  // Load cycle with its hiring domains + per-domain challenge Forms.
+  // Load cycle with its hiring domains + per-domain challenge Forms. A domain
+  // staged into an Open cycle (not yet ready) is invisible until its lead
+  // marks it ready.
   const cycle = await prisma.applicationCycle.findUnique({
     where: { id: active.id },
     include: {
       domains: {
+        where: { isReady: true },
         include: { domain: true },
       },
       domainChallengeForms: {
@@ -324,19 +327,19 @@ async function resolveChallengeSelections(
   cycle: ActiveCycle,
   selections: { domainId: string; challengeVersionId: string }[],
 ): Promise<ResolvedPin[]> {
+  const cycleDomains = await prisma.domainApplicationCycle.findMany({
+    where: { applicationCycleId: cycle.id, isReady: true },
+    select: { domainId: true },
+  });
+  const allowed = new Set(cycleDomains.map(d => d.domainId));
   if (!cycle.hasChallenges) {
-    const cycleDomains = await prisma.domainApplicationCycle.findMany({
-      where: { applicationCycleId: cycle.id },
-      select: { domainId: true },
-    });
-    const allowed = new Set(cycleDomains.map(d => d.domainId));
     return [...new Set(selections.map(s => s.domainId))]
       .filter(id => allowed.has(id))
       .map(domainId => ({ domainId, challengeFormVersionId: null }));
   }
   const cycleId = cycle.id;
   const cdfs = await prisma.cycleDomainForm.findMany({
-    where: { applicationCycleId: cycleId },
+    where: { applicationCycleId: cycleId, domainId: { in: [...allowed] } },
     include: { form: { include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } } } },
   });
   const formVersionByPair = new Map(

@@ -146,8 +146,40 @@ describe("lead.cycle.$id action — hiring lead overrides", () => {
       });
     });
 
-    it("is a no-op when cycle is past Draft", async () => {
+    it("publishes a staged domain in an Open cycle once its challenge is linked", async () => {
       mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue({ newStatus: "Open" });
+      mockPrisma.applicationCycle.findUnique.mockResolvedValue({ id: CYCLE_ID, applicants: "Students", hasChallenges: true, statusUpdates: [], startTermIds: [] });
+      mockPrisma.cycleDomainForm = { count: vi.fn().mockResolvedValue(1) };
+
+      await callAction({ intent: "hl-force-mark-ready", domainId: DOMAIN_ID, confirm: "true" });
+
+      expect(mockPrisma.domainApplicationCycle.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({ update: { isReady: true } }),
+      );
+    });
+
+    it("refuses to publish a staged domain with no challenge form", async () => {
+      mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue({ newStatus: "Open" });
+      mockPrisma.applicationCycle.findUnique.mockResolvedValue({ id: CYCLE_ID, applicants: "Students", hasChallenges: true, statusUpdates: [], startTermIds: [] });
+      mockPrisma.cycleDomainForm = { count: vi.fn().mockResolvedValue(0) };
+
+      const res = (await callAction({ intent: "hl-force-mark-ready", domainId: DOMAIN_ID, confirm: "true" })) as Response;
+
+      expect(res.status).toBe(409);
+      expect(mockPrisma.domainApplicationCycle.upsert).not.toHaveBeenCalled();
+    });
+
+    it("never unmarks ready once the cycle is open", async () => {
+      mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue({ newStatus: "Open" });
+
+      const res = (await callAction({ intent: "hl-force-unmark-ready", domainId: DOMAIN_ID, confirm: "true" })) as Response;
+
+      expect(res.status).toBe(409);
+      expect(mockPrisma.domainApplicationCycle.upsert).not.toHaveBeenCalled();
+    });
+
+    it("is a no-op once review has started", async () => {
+      mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue({ newStatus: "UnderReview" });
 
       await callAction({ intent: "hl-force-mark-ready", domainId: DOMAIN_ID, confirm: "true" });
 
@@ -919,6 +951,52 @@ describe("lead.cycle.$id action — save-term-dates start terms", () => {
         NOT: { startTermId: { in: ["t-26f"] } },
       },
       data: { startTermId: null },
+    });
+  });
+});
+
+describe("lead.cycle.$id action — add-domain / remove-domain", () => {
+  const status = (newStatus: string) =>
+    mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue({ newStatus });
+  beforeEach(() => {
+    mockPrisma.domainApplicationCycle = {
+      create: vi.fn().mockResolvedValue({}),
+      delete: vi.fn().mockResolvedValue({}),
+      findUnique: vi.fn().mockResolvedValue({ isReady: true }),
+      upsert: vi.fn(),
+    };
+  });
+
+  it("adds a domain in Draft and, staged, in Open", async () => {
+    for (const s of ["Draft", "Open"]) {
+      status(s);
+      const res = (await callAction({ intent: "add-domain", domainId: DOMAIN_ID })) as Response;
+      expect(res.status).toBe(302);
+    }
+    expect(mockPrisma.domainApplicationCycle.create).toHaveBeenCalledTimes(2);
+    expect(mockPrisma.domainApplicationCycle.create).toHaveBeenLastCalledWith({
+      data: { domainId: DOMAIN_ID, applicationCycleId: CYCLE_ID },
+    });
+  });
+
+  it("refuses to add a domain once review has started", async () => {
+    status("UnderReview");
+    const res = (await callAction({ intent: "add-domain", domainId: DOMAIN_ID })) as Response;
+    expect(res.status).toBe(409);
+    expect(mockPrisma.domainApplicationCycle.create).not.toHaveBeenCalled();
+  });
+
+  it("removes a live domain in Draft only, a staged one while Open too", async () => {
+    status("Open");
+    let res = (await callAction({ intent: "remove-domain", domainId: DOMAIN_ID })) as Response;
+    expect(res.status).toBe(409);
+    expect(mockPrisma.domainApplicationCycle.delete).not.toHaveBeenCalled();
+
+    mockPrisma.domainApplicationCycle.findUnique.mockResolvedValue({ isReady: false });
+    res = (await callAction({ intent: "remove-domain", domainId: DOMAIN_ID })) as Response;
+    expect(res.status).toBe(302);
+    expect(mockPrisma.domainApplicationCycle.delete).toHaveBeenCalledWith({
+      where: { domainId_applicationCycleId: { domainId: DOMAIN_ID, applicationCycleId: CYCLE_ID } },
     });
   });
 });

@@ -693,6 +693,11 @@ model DomainApplication {
   closedAt      DateTime?
   closureReason DomainApplicationClosureReason?
 
+  // When the applicant last submitted with this domain selected. Submission
+  // is recorded once per Application; a domain added afterwards stays null
+  // (and reads "Not submitted") until the applicant submits again.
+  submittedAt DateTime?
+
   applicationId          String
   application            Application  @relation(fields: [applicationId], references: [id])
   // The FormVersion of the picked per-domain challenge Form the applicant
@@ -836,6 +841,12 @@ model DomainApplicationCycle {
 
   // True once the domain lead has explicitly confirmed their challenge config is ready
   isReady Boolean @default(false)
+
+  // Per-domain application close. Null inherits the cycle's closeDate. Set
+  // when a domain joins a cycle after it opened and needs its own window
+  // (app/hiring/lib/domain-windows.ts). Students cycles only; never drives
+  // the cycle's own Open→UnderReview transition.
+  closeDate DateTime?
 
   // Rubric assigned for this domain in this cycle (shared across all challenge versions for the domain)
   rubricVersionId         String?

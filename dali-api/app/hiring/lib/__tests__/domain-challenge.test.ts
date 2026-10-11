@@ -20,7 +20,10 @@ beforeEach(() => {
     delete: vi.fn(),
   };
   mockPrisma.domainApplication = { count: vi.fn().mockResolvedValue(0) };
+  // The domain is live (ready) unless a test stages it.
+  mockPrisma.domainApplicationCycle = { findUnique: vi.fn().mockResolvedValue({ isReady: true }) };
 });
+const staged = () => mockPrisma.domainApplicationCycle.findUnique.mockResolvedValue({ isReady: false });
 
 describe("addDomainChallenge", () => {
   it("creates the challenge in Draft", async () => {
@@ -46,10 +49,23 @@ describe("addDomainChallenge", () => {
     expect(await addDomainChallenge("c1", "d1", "u1", "gone")).toBe("not-found");
   });
 
-  it("refuses once the cycle has opened", async () => {
+  it("refuses once the cycle has opened and the domain is live", async () => {
     status("Open");
     expect(await addDomainChallenge("c1", "d1", "u1")).toBe("not-draft");
     expect(mockPrisma.applicationCycle.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("still edits a domain staged into an Open cycle", async () => {
+    status("Open");
+    staged();
+    expect(await addDomainChallenge("c1", "d1", "u1")).toBeNull();
+    expect(mockPrisma.applicationCycle.findUnique).toHaveBeenCalled();
+  });
+
+  it("refuses a staged domain once review has started", async () => {
+    status("UnderReview");
+    staged();
+    expect(await addDomainChallenge("c1", "d1", "u1")).toBe("not-draft");
   });
 });
 
@@ -67,9 +83,17 @@ describe("removeDomainChallenge", () => {
     expect(mockPrisma.cycleDomainForm.delete).not.toHaveBeenCalled();
   });
 
-  it("won't touch another cycle's link, or any link after opening", async () => {
+  it("won't touch another cycle's link, or a live domain's link after opening", async () => {
     expect(await removeDomainChallenge("cdf-1", "other-cycle")).toBe("not-found");
     status("Open");
     expect(await removeDomainChallenge("cdf-1", "c1")).toBe("not-draft");
+    expect(mockPrisma.cycleDomainForm.delete).not.toHaveBeenCalled();
+  });
+
+  it("unlinks a staged domain's form in an Open cycle", async () => {
+    status("Open");
+    staged();
+    expect(await removeDomainChallenge("cdf-1", "c1")).toBeNull();
+    expect(mockPrisma.cycleDomainForm.delete).toHaveBeenCalledWith({ where: { id: "cdf-1" } });
   });
 });

@@ -16,6 +16,7 @@ import { countAnnouncementRecipients } from "~/hiring/lib/hiring-event-notice";
 import QRCode from "qrcode";
 import { changeApplicants } from "~/hiring/lib/cycle-applicants.server";
 import { invalidateActiveCycles } from "~/hiring/lib/cycles";
+import { canEditDomainSetup, setDomainReady } from "~/hiring/lib/domain-windows.server";
 import {
   loadStartTermCandidates,
   parseStartTermIds,
@@ -1019,31 +1020,29 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (!domainId || confirm !== "true") {
       return cycleRedirect(request, params.id!);
     }
-    const latestUpdate = await prisma.applicationCycleStatusUpdate.findFirst({
-      where: { applicationCycleId: params.id },
-      orderBy: { createdAt: "desc" },
-    });
-    if ((latestUpdate?.newStatus ?? "Draft") !== "Draft") {
-      return cycleRedirect(request, params.id!);
+    const refused = await setDomainReady(params.id!, domainId, intent === "hl-force-mark-ready");
+    if (refused) {
+      return new Response(JSON.stringify({ error: refused }), { status: 409, headers: { "Content-Type": "application/json" } });
     }
-    const isReady = intent === "hl-force-mark-ready";
-    await prisma.domainApplicationCycle.upsert({
-      where: { domainId_applicationCycleId: { domainId, applicationCycleId: params.id } },
-      update: { isReady },
-      create: { domainId, applicationCycleId: params.id, isReady },
-    });
     return cycleRedirect(request, params.id!);
   }
 
   if (intent === "remove-domain" || intent === "add-domain") {
+    const domainId = formData.get("domainId") as string;
     const latestUpdate = await prisma.applicationCycleStatusUpdate.findFirst({
       where: { applicationCycleId: params.id },
       orderBy: { createdAt: "desc" },
     });
-    if ((latestUpdate?.newStatus ?? "Draft") !== "Draft") {
-      return new Response(JSON.stringify({ error: "Domains can only be modified in Draft" }), { status: 409, headers: { "Content-Type": "application/json" } });
+    const status = latestUpdate?.newStatus ?? "Draft";
+    // A domain joins an Open cycle staged (not ready), invisible to applicants
+    // until its lead marks it ready. Removal after Open is only for a staged one.
+    const allowed =
+      intent === "add-domain"
+        ? status === "Draft" || status === "Open"
+        : await canEditDomainSetup(params.id!, domainId);
+    if (!allowed) {
+      return new Response(JSON.stringify({ error: "Domains can only be modified in Draft, or staged while Open" }), { status: 409, headers: { "Content-Type": "application/json" } });
     }
-    const domainId = formData.get("domainId") as string;
     if (intent === "remove-domain") {
       await prisma.domainApplicationCycle.delete({
         where: { domainId_applicationCycleId: { domainId, applicationCycleId: params.id } },
@@ -2196,7 +2195,7 @@ export default function HiringLeadCycleDetails() {
               ) : (
                 <p className={cn(os.bodyText, 'py-4 text-center')}>No domains added yet.</p>
               )}
-              {cycleStatus === 'Draft' && (
+              {(cycleStatus === 'Draft' || cycleStatus === 'Open') && (
                 <Form method="post" preventScrollReset className="flex flex-wrap items-end gap-3">
                   <input type="hidden" name="intent" value="add-domain" />
                   <div className={cn(os.fieldLabel, 'min-w-[14rem] flex-1')}>
@@ -3797,8 +3796,12 @@ function DomainOverridePanel({
 }) {
   const [showRubricPreview, setShowRubricPreview] = useState(false);
 
-  const readyLocked = cycleStatus !== 'Draft';
   const isReady: boolean = !!domain.isReady;
+  // A domain staged into an Open cycle stays editable until it's marked ready,
+  // which is what publishes it to applicants (canEditDomainSetup).
+  const staged = cycleStatus === 'Open' && !isReady;
+  const setupEditable = cycleStatus === 'Draft' || staged;
+  const readyLocked = !setupEditable;
 
   const [selectedRubricId, setSelectedRubricId] = useState(domain.rubricVersionId ?? '');
   // Like the Challenge line, the rubric shows what's set and opens a picker on demand.
@@ -3835,6 +3838,7 @@ function DomainOverridePanel({
         <div className="flex flex-wrap items-center gap-2">
           {!isReady && <NotReadyIcon />}
           <span className="text-sm font-semibold text-foreground">{domainName}</span>
+          {staged && <Pill tone="warning">Not visible to applicants yet</Pill>}
         </div>
         <div className="flex items-center gap-1">
           {!readyLocked && (
@@ -3850,12 +3854,19 @@ function DomainOverridePanel({
                         'It goes back to "not ready" until the domain lead (or a hiring lead) marks it ready again.',
                       confirmLabel: 'Unmark ready',
                     }
-                  : {
-                      title: `Mark ${domainName} ready on the domain lead's behalf?`,
-                      description:
-                        'Use this when the domain lead is unavailable and the cycle needs to advance.',
-                      confirmLabel: 'Force ready',
-                    },
+                  : staged
+                    ? {
+                        title: `Open ${domainName} to applicants?`,
+                        description:
+                          'The cycle is already open. Marking this domain ready publishes it: applicants can pick it from now until its close date.',
+                        confirmLabel: 'Open domain',
+                      }
+                    : {
+                        title: `Mark ${domainName} ready on the domain lead's behalf?`,
+                        description:
+                          'Use this when the domain lead is unavailable and the cycle needs to advance.',
+                        confirmLabel: 'Force ready',
+                      },
               )}
             >
               <input
@@ -3870,7 +3881,7 @@ function DomainOverridePanel({
               </button>
             </Form>
           )}
-          {cycleStatus === 'Draft' && (
+          {setupEditable && (
             <Form
               method="post"
               preventScrollReset
@@ -3900,7 +3911,7 @@ function DomainOverridePanel({
       </div>
 
       {challenge && (
-        <ChallengeLine domainId={domain.domainId} challenge={challenge} editable={cycleStatus === 'Draft'} />
+        <ChallengeLine domainId={domain.domainId} challenge={challenge} editable={setupEditable} />
       )}
 
       {showRubric && (
