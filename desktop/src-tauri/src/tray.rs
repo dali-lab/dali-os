@@ -175,7 +175,13 @@ pub fn refresh(app: &AppHandle) {
     {
         static BASE_ICON: std::sync::OnceLock<Option<tauri::image::Image<'static>>> =
             std::sync::OnceLock::new();
-        let base = BASE_ICON.get_or_init(|| app.default_window_icon().cloned());
+        // `cloned()` keeps the icon borrowed from `app`; copy the pixels so
+        // the cached base is truly 'static.
+        let base = BASE_ICON.get_or_init(|| {
+            app.default_window_icon().map(|i| {
+                tauri::image::Image::new_owned(i.rgba().to_vec(), i.width(), i.height())
+            })
+        });
         if let Some(base) = base {
             let icon = crate::tray_badge::with_count(base, view.unread_count);
             let _ = tray.set_icon(Some(icon));
