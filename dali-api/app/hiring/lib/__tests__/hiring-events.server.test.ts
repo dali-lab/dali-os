@@ -11,6 +11,8 @@ import { isCycleAdmin } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import {
   isEventCheckInOpen,
+  setEventBroadcast,
+  getBroadcastEvent,
   setEventCheckInOpen,
   selfCheckInToEvent,
   markEventAttendance,
@@ -73,6 +75,78 @@ describe("isEventCheckInOpen", () => {
         new Date("2026-10-14T20:31:00Z"),
       ),
     ).toBe(false);
+  });
+});
+
+describe("setEventBroadcast", () => {
+  it("404s when the event doesn't exist", async () => {
+    mockPrisma.hiringEvent.findUnique.mockResolvedValue(null);
+    expect(await setEventBroadcast({ eventId: EVENT_ID, on: true, actorId: ACTOR_ID })).toEqual({
+      error: "Event not found",
+      status: 404,
+    });
+  });
+
+  it("403s when the actor isn't the cycle admin", async () => {
+    mockPrisma.hiringEvent.findUnique.mockResolvedValue({ applicationCycleId: CYCLE_ID, checkInOpenAt: new Date() });
+    vi.mocked(isCycleAdmin).mockResolvedValue(false);
+    expect(await setEventBroadcast({ eventId: EVENT_ID, on: true, actorId: ACTOR_ID })).toEqual({
+      error: "Forbidden",
+      status: 403,
+    });
+  });
+
+  it("refuses to broadcast while check-in is closed", async () => {
+    mockPrisma.hiringEvent.findUnique.mockResolvedValue({ applicationCycleId: CYCLE_ID, checkInOpenAt: null });
+    const result = await setEventBroadcast({ eventId: EVENT_ID, on: true, actorId: ACTOR_ID });
+    expect(result).toEqual({ error: "Open check-in before showing it on the displays", status: 400 });
+    expect(mockPrisma.hiringEvent.update).not.toHaveBeenCalled();
+  });
+
+  it("stamps broadcastAt when switching on and audits", async () => {
+    mockPrisma.hiringEvent.findUnique.mockResolvedValue({ applicationCycleId: CYCLE_ID, checkInOpenAt: new Date() });
+    mockPrisma.hiringEvent.update.mockResolvedValue({});
+    expect(await setEventBroadcast({ eventId: EVENT_ID, on: true, actorId: ACTOR_ID })).toEqual({ ok: true });
+    expect(mockPrisma.hiringEvent.update).toHaveBeenCalledWith({
+      where: { id: EVENT_ID },
+      data: { broadcastAt: expect.any(Date) },
+    });
+    expect(logAuditEvent).toHaveBeenCalledWith(expect.objectContaining({ action: "hiring.event.broadcast.on" }));
+  });
+
+  it("clears broadcastAt when switching off, even with check-in closed", async () => {
+    mockPrisma.hiringEvent.findUnique.mockResolvedValue({ applicationCycleId: CYCLE_ID, checkInOpenAt: null });
+    mockPrisma.hiringEvent.update.mockResolvedValue({});
+    expect(await setEventBroadcast({ eventId: EVENT_ID, on: false, actorId: ACTOR_ID })).toEqual({ ok: true });
+    expect(mockPrisma.hiringEvent.update).toHaveBeenCalledWith({
+      where: { id: EVENT_ID },
+      data: { broadcastAt: null },
+    });
+    expect(logAuditEvent).toHaveBeenCalledWith(expect.objectContaining({ action: "hiring.event.broadcast.off" }));
+  });
+});
+
+describe("getBroadcastEvent", () => {
+  const now = new Date("2026-10-14T20:30:00Z");
+  const base = { title: "Help hour", kind: "HelpHour", location: null, checkInOpenAt: new Date("2026-10-14T19:00:00Z") };
+
+  it("returns null when nothing is broadcasting", async () => {
+    mockPrisma.hiringEvent.findMany.mockResolvedValue([]);
+    expect(await getBroadcastEvent(now)).toBeNull();
+    expect(mockPrisma.hiringEvent.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { broadcastAt: { not: null }, checkInOpenAt: { not: null } } }),
+    );
+  });
+
+  it("skips an event whose check-in window has lapsed and picks the soonest live one", async () => {
+    mockPrisma.hiringEvent.findMany.mockResolvedValue([
+      { ...base, id: "stale", startsAt: new Date("2026-10-14T15:00:00Z"), endsAt: new Date("2026-10-14T16:00:00Z") },
+      { ...base, id: "live", startsAt: new Date("2026-10-14T20:00:00Z"), endsAt: new Date("2026-10-14T22:00:00Z") },
+      { ...base, id: "later", startsAt: new Date("2026-10-14T23:00:00Z"), endsAt: new Date("2026-10-15T00:00:00Z") },
+    ]);
+    const result = await getBroadcastEvent(now);
+    expect(result?.id).toBe("live");
+    expect(result).not.toHaveProperty("checkInOpenAt");
   });
 });
 
