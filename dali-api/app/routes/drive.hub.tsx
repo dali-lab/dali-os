@@ -1747,6 +1747,23 @@ export default function DriveHub() {
 
   const currentActions = effectiveScopeId ? scopeActionsMap.get(effectiveScopeId) : undefined;
 
+  // Deep link from the desktop tray's "New document" quick action:
+  // /drive?create=doc opens the New document flow in the current scope, then
+  // strips the param so a refresh or Back doesn't reopen it. Waits for
+  // currentActions (requires a resolved scope) rather than firing mount-only,
+  // since a tray link with no scope yet selected has nothing to create into.
+  const createDocHandledRef = useRef(false);
+  useEffect(() => {
+    if (createDocHandledRef.current) return;
+    if (searchParams.get("create") !== "doc" || !currentActions) return;
+    createDocHandledRef.current = true;
+    void currentActions.createDoc();
+    patchParams((p) => {
+      p.delete("create");
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, currentActions]);
+
   // "From template" lands in the scope currently being browsed (project → that
   // project; Lab/Core → the Lab workspace, into the scoped root folder).
   // For the synthetic group scopes, resolve to the project being browsed.

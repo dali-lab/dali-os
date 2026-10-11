@@ -29,8 +29,11 @@ use tauri::{AppHandle, Manager};
 use crate::{
     config, frontmost, keychain,
     notify::{self, Banner, RecordPromptPayload},
-    state::{AppState, AuthState, PendingRecordPrompt, RecentNotif},
-    tray, window,
+    state::{
+        AgendaNext, AppState, AuthState, PendingRecordPrompt, RecentNotif, TaskItem, CONNECTION_LIVE,
+        CONNECTION_OFFLINE, CONNECTION_POLLING,
+    },
+    tray, tray_model, window,
 };
 
 // Live-call fallback / outer bound for deferred record prompts (desktop only
@@ -56,6 +59,21 @@ struct NotifResp {
     // Absent on older servers → nothing extra to retire.
     #[serde(rename = "retiredIds", default)]
     retired_ids: Vec<String>,
+    // The member's open to-dos (forms to fill, agreements to sign, …),
+    // surfaced in the tray panel's "To do" section.
+    #[serde(rename = "taskCount", default)]
+    task_count: i64,
+    #[serde(default)]
+    tasks: Vec<TaskItemResp>,
+}
+
+#[derive(Deserialize)]
+struct TaskItemResp {
+    id: String,
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    link: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -116,6 +134,7 @@ enum StreamEnd {
 
 pub fn spawn(app: AppHandle) {
     tauri::async_runtime::spawn(record_prompt_watcher(app.clone()));
+    tauri::async_runtime::spawn(agenda_ticker(app.clone()));
     tauri::async_runtime::spawn(async move {
         let http = app.state::<AppState>().http.clone();
         let mut interval = config::POLL_INTERVAL_SECS;
@@ -131,9 +150,15 @@ pub fn spawn(app: AppHandle) {
 
             match sync_once(&app, &http, &token).await {
                 SyncOutcome::Unauthorized => return expire(&app),
-                SyncOutcome::Ok => interval = config::POLL_INTERVAL_SECS,
+                SyncOutcome::Ok => {
+                    interval = config::POLL_INTERVAL_SECS;
+                    mark_synced(&app);
+                }
                 // Network error / 5xx → exponential backoff, capped.
-                SyncOutcome::Err => interval = (interval * 2).min(config::POLL_BACKOFF_MAX_SECS),
+                SyncOutcome::Err => {
+                    interval = (interval * 2).min(config::POLL_BACKOFF_MAX_SECS);
+                    set_connection(&app, CONNECTION_OFFLINE);
+                }
             }
 
             // Hold the stream as long as it lives; each change/sync event runs
@@ -147,6 +172,20 @@ pub fn spawn(app: AppHandle) {
             tokio::time::sleep(Duration::from_secs(interval)).await;
         }
     });
+}
+
+/// Keeps the "Up next" countdown (minutesUntil) current between agenda
+/// fetches — a plain tick, no network call of its own.
+async fn agenda_ticker(app: AppHandle) {
+    let mut interval = tokio::time::interval(Duration::from_secs(60));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        interval.tick().await;
+        if app.state::<AppState>().auth() != AuthState::Authenticated {
+            return;
+        }
+        tray::refresh(&app);
+    }
 }
 
 // Keychain Session expired/revoked → stop; surface re-pair.
@@ -283,9 +322,88 @@ async fn sync_once(app: &AppHandle, http: &reqwest::Client, token: &str) -> Sync
     }
     app.state::<AppState>().unread_count.store(body.unread_count, Ordering::SeqCst);
 
+    let tasks: Vec<TaskItem> = body
+        .tasks
+        .iter()
+        .map(|t| TaskItem { id: t.id.clone(), title: t.title.clone(), link: t.link.clone() })
+        .collect();
+    if let Ok(mut g) = app.state::<AppState>().tasks.lock() {
+        *g = tasks;
+    }
+    app.state::<AppState>().task_count.store(body.task_count, Ordering::SeqCst);
+
+    fetch_agenda(app, http, token).await;
+
     window::set_badge(app, body.unread_count);
     tray::refresh(app);
     SyncOutcome::Ok
+}
+
+#[derive(Deserialize, Default)]
+struct AgendaResp {
+    #[serde(default)]
+    next: Option<AgendaItem>,
+}
+
+#[derive(Deserialize)]
+struct AgendaItem {
+    id: String,
+    #[serde(default)]
+    title: String,
+    #[serde(rename = "startsAt")]
+    starts_at: String,
+    #[serde(rename = "endsAt", default)]
+    ends_at: String,
+    #[serde(rename = "joinUrl", default)]
+    join_url: Option<String>,
+    #[serde(default)]
+    link: Option<String>,
+    #[serde(rename = "notePageId", default)]
+    note_page_id: Option<String>,
+    #[serde(rename = "canRecord", default)]
+    can_record: bool,
+}
+
+/// GET /api/desktop/agenda for the next upcoming meeting/interview. Errors
+/// (network, non-2xx, bad JSON) are ignored — the previous value is kept
+/// rather than flickering the "Up next" section on a transient failure.
+async fn fetch_agenda(app: &AppHandle, http: &reqwest::Client, token: &str) {
+    let resp = match http.get(config::agenda_url()).bearer_auth(token).send().await {
+        Ok(r) if r.status().is_success() => r,
+        _ => return,
+    };
+    let Ok(body) = resp.json::<AgendaResp>().await else {
+        return;
+    };
+    let next = body.next.map(|i| AgendaNext {
+        id: i.id,
+        title: i.title,
+        starts_at: i.starts_at,
+        ends_at: i.ends_at,
+        join_url: i.join_url,
+        link: i.link,
+        note_page_id: i.note_page_id,
+        can_record: i.can_record,
+    });
+    if let Ok(mut g) = app.state::<AppState>().agenda.lock() {
+        *g = next;
+    }
+}
+
+/// Records a successful sync: timestamps it, and restores the connection
+/// indicator to Polling unless the SSE stream already has it at Live.
+fn mark_synced(app: &AppHandle) {
+    if let Ok(mut g) = app.state::<AppState>().last_sync.lock() {
+        *g = Some(std::time::Instant::now());
+    }
+    let state = app.state::<AppState>();
+    if state.connection.load(Ordering::SeqCst) != CONNECTION_LIVE {
+        state.connection.store(CONNECTION_POLLING, Ordering::SeqCst);
+    }
+}
+
+fn set_connection(app: &AppHandle, value: u8) {
+    app.state::<AppState>().connection.store(value, Ordering::SeqCst);
 }
 
 /// Route one new record-prompt item: raise the floating window now when
@@ -298,7 +416,7 @@ fn queue_record_prompt(
     to_defer: &mut Vec<PendingRecordPrompt>,
 ) {
     if rp.has_video_link {
-        if let Some(occurrence_start_unix) = parse_iso8601_unix(&rp.occurrence_start) {
+        if let Some(occurrence_start_unix) = tray_model::parse_iso8601_unix(&rp.occurrence_start) {
             to_defer.push(PendingRecordPrompt {
                 id: item.id.clone(),
                 title: item.title.clone(),
@@ -411,54 +529,6 @@ fn now_unix() -> i64 {
         .unwrap_or(0)
 }
 
-/// Parses a UTC ISO-8601 timestamp (`Date.toISOString()` output, e.g.
-/// `2026-10-09T14:30:00.000Z`) into Unix seconds. No date/time crate: the
-/// format is fixed-width and always UTC, so a hand-rolled parser covers the
-/// one comparison this needs (minute-scale, so sub-second precision is
-/// irrelevant) without a new dependency. `pub(crate)`: notify.rs reuses it to
-/// pre-parse a record prompt's occurrence start when raising the window.
-pub(crate) fn parse_iso8601_unix(s: &str) -> Option<i64> {
-    if s.len() < 19 {
-        return None;
-    }
-    let year: i64 = s.get(0..4)?.parse().ok()?;
-    let month: i64 = s.get(5..7)?.parse().ok()?;
-    let day: i64 = s.get(8..10)?.parse().ok()?;
-    let hour: i64 = s.get(11..13)?.parse().ok()?;
-    let minute: i64 = s.get(14..16)?.parse().ok()?;
-    let second: i64 = s.get(17..19)?.parse().ok()?;
-
-    // Everything after the whole seconds is optional fractional seconds
-    // and/or a timezone offset; default to UTC if neither is present.
-    let rest = &s[19..];
-    let offset_minutes: i64 = if rest.contains(['Z', 'z']) {
-        0
-    } else if let Some(pos) = rest.find(['+', '-']) {
-        let sign = if rest.as_bytes()[pos] == b'-' { -1 } else { 1 };
-        let off = &rest[pos + 1..];
-        let oh: i64 = off.get(0..2)?.parse().ok()?;
-        let om: i64 = off.get(3..5).and_then(|m| m.parse().ok()).unwrap_or(0);
-        sign * (oh * 60 + om)
-    } else {
-        0
-    };
-
-    let days = days_from_civil(year, month, day);
-    Some(days * 86_400 + hour * 3_600 + minute * 60 + second - offset_minutes * 60)
-}
-
-/// Howard Hinnant's days-from-civil algorithm (proleptic Gregorian days
-/// since the Unix epoch).
-fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
-    let y = if m <= 2 { y - 1 } else { y };
-    let era = if y >= 0 { y } else { y - 399 } / 400;
-    let yoe = y - era * 400;
-    let mp = (m + 9) % 12;
-    let doy = (153 * mp + 2) / 5 + d - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    era * 146_097 + doe - 719_468
-}
-
 // Hold the SSE stream, running a sync for each server `change`/`sync` event.
 // Every failure path returns Disconnected and the caller falls back to
 // polling; only a 401 (revoked/expired Session) is surfaced distinctly.
@@ -480,6 +550,8 @@ async fn hold_stream(app: &AppHandle, http: &reqwest::Client, token: &str) -> St
         return StreamEnd::Disconnected;
     }
 
+    set_connection(app, CONNECTION_LIVE);
+
     let mut stream = resp.bytes_stream();
     let mut buf: Vec<u8> = Vec::new();
     let mut event_name = String::new();
@@ -494,7 +566,10 @@ async fn hold_stream(app: &AppHandle, http: &reqwest::Client, token: &str) -> St
         {
             Ok(Some(Ok(bytes))) => bytes,
             // Timeout, server close, or transport error → reconnect via caller.
-            _ => return StreamEnd::Disconnected,
+            _ => {
+                set_connection(app, CONNECTION_POLLING);
+                return StreamEnd::Disconnected;
+            }
         };
         buf.extend_from_slice(&bytes);
 
@@ -510,8 +585,10 @@ async fn hold_stream(app: &AppHandle, http: &reqwest::Client, token: &str) -> St
                     if app.state::<AppState>().auth() == AuthState::LoggedOut {
                         return StreamEnd::Disconnected;
                     }
-                    if let SyncOutcome::Unauthorized = sync_once(app, http, token).await {
-                        return StreamEnd::Unauthorized;
+                    match sync_once(app, http, token).await {
+                        SyncOutcome::Unauthorized => return StreamEnd::Unauthorized,
+                        SyncOutcome::Ok => mark_synced(app),
+                        SyncOutcome::Err => {}
                     }
                 }
             } else if let Some(rest) = line.strip_prefix("event:") {

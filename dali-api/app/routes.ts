@@ -381,6 +381,7 @@ export default [
   route("link", "routes/link.tsx"),
   route("api/desktop/version", "routes/api.desktop.version.ts"),
   route("api/desktop/updated", "routes/api.desktop.updated.ts"),
+  route("api/desktop/agenda", "routes/api.desktop.agenda.ts"),
 
   // OAuth endpoints (no layout)
   route("oauth/authorize", "routes/oauth.authorize.ts"),

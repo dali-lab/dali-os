@@ -8,7 +8,7 @@ use crate::{
     config, keychain, notify, pairing, recording,
     state::{AppState, AuthState},
     tray,
-    tray_model::TrayView,
+    tray_model::{TitleMode, TrayView},
     window,
 };
 
@@ -128,6 +128,53 @@ pub fn tray_panel_set_height(app: AppHandle, height: f64) {
     window::set_tray_panel_height(&app, height);
 }
 
+/// "Join call" on the tray panel's Up next card — same http(s)-only
+/// validation as `open_external`, reused directly rather than duplicated.
+#[tauri::command]
+pub fn tray_open_external(app: AppHandle, url: String) -> Result<(), String> {
+    window::hide_tray_panel(&app);
+    open_external(app, url)
+}
+
+/// Any tray panel row/button that navigates the main window to an app-
+/// relative path (Up next's Notes, a to-do row, the "+" menu's Meeting/
+/// Document). `path` must start with "/" — never an absolute URL or a
+/// custom scheme.
+#[tauri::command]
+pub fn tray_open_path(app: AppHandle, path: String) -> Result<(), String> {
+    if !path.starts_with('/') {
+        return Err("refused non-absolute path".into());
+    }
+    window::hide_tray_panel(&app);
+    window::open_link(&app, &path);
+    Ok(())
+}
+
+/// "Record" on the tray panel's Up next card — starts recording the agenda's
+/// current next meeting (sourced from AppState, not the caller, since this
+/// is a mutating action).
+#[tauri::command]
+pub fn tray_record_next(app: AppHandle) {
+    window::hide_tray_panel(&app);
+    let next = app.state::<AppState>().agenda.lock().ok().and_then(|g| g.clone());
+    if let Some(next) = next.filter(|n| n.can_record) {
+        recording::start_for_occurrence(&app, next.id, next.starts_at, next.title);
+    }
+}
+
+/// The panel's "Menu bar shows" segmented control.
+#[tauri::command]
+pub fn tray_set_title_mode(app: AppHandle, mode: String) {
+    let Some(mode) = TitleMode::parse(&mode) else {
+        return;
+    };
+    if let Ok(mut g) = app.state::<AppState>().title_mode.lock() {
+        *g = mode;
+    }
+    tray::save_title_mode(&app, mode);
+    tray::refresh(&app);
+}
+
 #[tauri::command]
 pub fn open_external(app: AppHandle, url: String) -> Result<(), String> {
     // Only http(s) — never file:// or a custom scheme, even from trusted UI.
@@ -187,6 +234,19 @@ pub async fn do_sign_out(app: AppHandle) {
         if let Ok(mut tray_view) = tray_view_lock {
             *tray_view = None;
         }
+        let recording_title_lock = st.recording_title.lock();
+        if let Ok(mut recording_title) = recording_title_lock {
+            *recording_title = None;
+        }
+        let agenda_lock = st.agenda.lock();
+        if let Ok(mut agenda) = agenda_lock {
+            *agenda = None;
+        }
+        let tasks_lock = st.tasks.lock();
+        if let Ok(mut tasks) = tasks_lock {
+            tasks.clear();
+        }
+        st.task_count.store(0, std::sync::atomic::Ordering::SeqCst);
     }
     tray::refresh(&app);
     notify::clear_all_delivered();

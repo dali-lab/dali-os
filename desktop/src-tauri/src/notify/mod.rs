@@ -39,7 +39,7 @@ use std::sync::Mutex;
 use serde_json::json;
 use tauri::{AppHandle, Manager};
 
-use crate::{config, keychain, poller, recording, state::AppState, window};
+use crate::{config, keychain, recording, state::AppState, tray_model, window};
 
 #[cfg(target_os = "linux")]
 mod linux;
@@ -150,7 +150,7 @@ pub fn raise_record_prompt(app: &AppHandle, id: &str, payload: RecordPromptPaylo
             return;
         }
     }
-    let occurrence_start_unix = poller::parse_iso8601_unix(&payload.occurrence_start).unwrap_or(i64::MAX);
+    let occurrence_start_unix = tray_model::parse_iso8601_unix(&payload.occurrence_start).unwrap_or(i64::MAX);
     let view = json!({
         "id": id,
         "title": payload.title,
@@ -326,17 +326,6 @@ pub(crate) fn on_action(app: &AppHandle, id: &str, action: &str) {
     }
 }
 
-#[derive(serde::Deserialize)]
-struct CreatedRecording {
-    id: String,
-}
-
-#[derive(serde::Deserialize, Default)]
-struct RecordingErrorBody {
-    #[serde(default)]
-    error: String,
-}
-
 /// "Record" tapped on a record prompt (the floating window's
 /// `record_prompt_start` command, or a legacy banner's Record action): create
 /// the MeetingRecording and start capturing immediately, no deep link and no
@@ -346,38 +335,22 @@ struct RecordingErrorBody {
 pub(crate) fn start_recording_from_prompt(app: &AppHandle, id: String, payload: RecordPromptPayload) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        let Some(token) = keychain::get_token() else {
-            return on_clicked(&app, &id, payload.link.as_deref());
-        };
-        let http = app.state::<AppState>().http.clone();
-        let resp = http
-            .post(config::meeting_recordings_url())
-            .bearer_auth(&token)
-            .json(&serde_json::json!({
-                "scheduledMeetingId": payload.scheduled_meeting_id,
-                "occurrenceStart": payload.occurrence_start,
-            }))
-            .send()
-            .await;
-
-        let resp = match resp {
-            Ok(r) => r,
-            Err(_) => return on_clicked(&app, &id, payload.link.as_deref()),
-        };
-
-        if resp.status() == reqwest::StatusCode::CREATED {
-            if let Ok(created) = resp.json::<CreatedRecording>().await {
-                recording::start(&app, created.id);
-                mark_read(&app, &id);
-                return;
+        match recording::create_and_start(
+            &app,
+            &payload.scheduled_meeting_id,
+            &payload.occurrence_start,
+            payload.title.clone(),
+        )
+        .await
+        {
+            recording::StartOutcome::Started => mark_read(&app, &id),
+            recording::StartOutcome::Refused(error) => {
+                on_clicked(&app, &id, payload.link.as_deref());
+                if error == "recordingDisabled" {
+                    raise_simple(&app, "DALI OS", "Recording is turned off for this project.");
+                }
             }
-            return on_clicked(&app, &id, payload.link.as_deref());
-        }
-
-        let error = resp.json::<RecordingErrorBody>().await.unwrap_or_default().error;
-        on_clicked(&app, &id, payload.link.as_deref());
-        if error == "recordingDisabled" {
-            raise_simple(&app, "DALI OS", "Recording is turned off for this project.");
+            recording::StartOutcome::Failed => on_clicked(&app, &id, payload.link.as_deref()),
         }
     });
 }

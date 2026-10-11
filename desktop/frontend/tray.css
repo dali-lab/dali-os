@@ -72,16 +72,20 @@ button:focus-visible {
   50% { opacity: 0.35; }
 }
 
-.rec-text {
+.rec-clock {
+  flex: none;
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.rec-title {
   flex: 1;
   min-width: 0;
   font-size: 12.5px;
+  color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-.rec-text .rec-title {
-  color: var(--muted);
 }
 
 .btn-stop {
@@ -104,14 +108,14 @@ button:focus-visible {
   padding: 6px 6px 8px;
 }
 
-.unread-header {
+.sec-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 4px 8px 6px;
 }
 
-.unread-label {
+.sec-label {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.05em;
@@ -119,7 +123,7 @@ button:focus-visible {
   color: var(--muted);
 }
 
-.mark-all {
+.sec-link {
   font-size: 12px;
   font-weight: 600;
   color: var(--os-accent);
@@ -127,10 +131,10 @@ button:focus-visible {
   border: none;
   padding: 2px 4px;
 }
-.mark-all.hidden {
+.sec-link.hidden {
   display: none;
 }
-.mark-all:hover {
+.sec-link:hover {
   text-decoration: underline;
 }
 
@@ -229,4 +233,170 @@ button:focus-visible {
 .version {
   font-size: 11.5px;
   color: var(--muted);
+}
+
+/* Up next */
+
+.next {
+  padding: 10px 14px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.next.hidden,
+.todo.hidden,
+.kind.hidden,
+.btn.hidden,
+.new-menu.hidden {
+  display: none;
+}
+.next .sec-header {
+  padding: 0 0 4px;
+}
+.next-title {
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.next-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.kind {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 999px;
+  color: var(--os-accent);
+  background: var(--code-bg);
+}
+.next-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+}
+.btn {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 11px;
+}
+.btn:hover {
+  background: var(--code-bg);
+}
+.btn.primary {
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.btn.primary:hover {
+  opacity: 0.92;
+  background: var(--accent);
+}
+
+/* To do */
+
+.todo {
+  padding: 6px 6px 8px;
+  border-top: 1px solid var(--border);
+}
+.row .box {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  border: 1.5px solid var(--border);
+}
+
+/* Menu bar preference */
+
+.mode {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+}
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  overflow: hidden;
+}
+.seg button {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  padding: 4px 8px;
+}
+.seg button + button {
+  border-left: 1px solid var(--border);
+}
+.seg button[aria-pressed="true"] {
+  color: #ffffff;
+  background: var(--os-accent);
+}
+
+/* Footer status + New menu */
+
+.footer-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.conn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.conn-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.conn-dot.live {
+  background: #2fb67c;
+}
+.conn-dot.polling {
+  background: #e0a43e;
+}
+.new-wrap {
+  position: relative;
+}
+.new-menu {
+  position: absolute;
+  left: 0;
+  bottom: 34px;
+  min-width: 132px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px var(--shadow);
+}
+.new-menu button {
+  text-align: left;
+  font-size: 13px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+.new-menu button:hover {
+  background: var(--code-bg);
 }

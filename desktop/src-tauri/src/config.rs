@@ -73,6 +73,9 @@ pub fn notifications_url() -> String {
 pub fn notifications_stream_url() -> String {
     format!("{PROD_ORIGIN}/api/notifications/stream")
 }
+pub fn agenda_url() -> String {
+    format!("{PROD_ORIGIN}/api/desktop/agenda")
+}
 pub fn desktop_updated_url() -> String {
     format!("{PROD_ORIGIN}/api/desktop/updated")
 }

@@ -1,10 +1,17 @@
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, AtomicU8, Ordering};
 use std::sync::Mutex;
+use std::time::Instant;
 
 use serde::Serialize;
 
-use crate::tray_model::TrayView;
+use crate::tray_model::{TitleMode, TrayView};
+
+// `AppState.connection` values (tray.rs/poller.rs set these; tray.rs reads
+// them into tray_model::Connection for the view).
+pub const CONNECTION_LIVE: u8 = 0;
+pub const CONNECTION_POLLING: u8 = 1;
+pub const CONNECTION_OFFLINE: u8 = 2;
 
 // The shell's auth/session lifecycle. Fieldless variants serialize to their name
 // (e.g. "Pairing"), which the pairing UI compares against.
@@ -44,6 +51,30 @@ pub struct PendingRecordPrompt {
     pub scheduled_meeting_id: String,
     pub occurrence_start: String,
     pub occurrence_start_unix: i64,
+}
+
+// The next upcoming meeting/interview, as fetched from /api/desktop/agenda
+// (poller.rs). ISO timestamps are kept as given — tray_model parses them
+// against `now_unix` when building the view.
+#[derive(Clone)]
+pub struct AgendaNext {
+    pub id: String,
+    pub title: String,
+    pub starts_at: String,
+    pub ends_at: String,
+    pub join_url: Option<String>,
+    pub link: Option<String>,
+    pub note_page_id: Option<String>,
+    pub can_record: bool,
+}
+
+// One open to-do (form to fill, agreement to sign, …) from the notifications
+// payload's `tasks` array.
+#[derive(Clone)]
+pub struct TaskItem {
+    pub id: String,
+    pub title: String,
+    pub link: Option<String>,
 }
 
 pub struct AppState {
@@ -101,6 +132,23 @@ pub struct AppState {
     // session — a defensive guard against a second raise for the same id;
     // cleared on sign-out like the other per-session delivery state above.
     pub dismissed_record_prompts: Mutex<HashSet<String>>,
+    // Meeting title for the active recording (recording.rs has no title of
+    // its own — only a MeetingRecording id). Set when a recording starts
+    // from a record prompt or the tray's "Record" button, cleared when it
+    // stops.
+    pub recording_title: Mutex<Option<String>>,
+    // Latest value from /api/desktop/agenda (poller.rs), or None if there's
+    // no upcoming meeting.
+    pub agenda: Mutex<Option<AgendaNext>>,
+    // What the tray icon's title shows (persisted — see tray::load_title_mode
+    // / save_title_mode).
+    pub title_mode: Mutex<TitleMode>,
+    // Latest open to-dos from the notifications payload's `tasks` field.
+    pub tasks: Mutex<Vec<TaskItem>>,
+    pub task_count: AtomicI64,
+    // CONNECTION_LIVE/POLLING/OFFLINE — set by poller.rs's sync loop.
+    pub connection: AtomicU8,
+    pub last_sync: Mutex<Option<Instant>>,
 }
 
 impl AppState {
@@ -123,6 +171,13 @@ impl AppState {
             pending_record_prompts: Mutex::new(Vec::new()),
             current_record_prompt: Mutex::new(None),
             dismissed_record_prompts: Mutex::new(HashSet::new()),
+            recording_title: Mutex::new(None),
+            agenda: Mutex::new(None),
+            title_mode: Mutex::new(TitleMode::default()),
+            tasks: Mutex::new(Vec::new()),
+            task_count: AtomicI64::new(0),
+            connection: AtomicU8::new(CONNECTION_POLLING),
+            last_sync: Mutex::new(None),
         }
     }
 
