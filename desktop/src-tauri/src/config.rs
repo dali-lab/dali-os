@@ -6,8 +6,8 @@ pub const DEEP_LINK_SCHEME: &str = "dalios";
 
 // Bundled frontend assets (frontendDist) are served from the Tauri custom
 // protocol. On macOS/Linux that origin is `tauri://localhost`; this app ships
-// macOS only. The offline fallback page lives here so a failed remote load can
-// swap the main window to it without a network round-trip.
+// macOS, Linux, and Windows. The offline fallback page lives here so a failed
+// remote load can swap the main window to it without a network round-trip.
 pub const APP_ASSET_ORIGIN: &str = "tauri://localhost";
 
 // Cold-start reveal fallback: the page load normally reveals the window; if the
@@ -32,8 +32,8 @@ pub const POLL_BACKOFF_MAX_SECS: u64 = 300;
 // The stream sends a keepalive every 25s; treat a longer silence as a dead
 // connection and reconnect.
 pub const STREAM_STALL_SECS: u64 = 90;
-// Unread notifications listed in the tray menu.
-pub const TRAY_RECENT_MAX: usize = 5;
+// Unread notifications shown in the tray panel/menu.
+pub const TRAY_RECENT_MAX: usize = 8;
 
 /// One native meeting recording (recording.rs). `id` is validated as
 /// alphanumeric by the caller.

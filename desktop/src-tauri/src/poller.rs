@@ -19,6 +19,7 @@
 // prompt has aged out (30 minutes past its occurrence start). Items without a
 // video link (in-person, Meet) raise right away, same as any other banner.
 
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use futures_util::StreamExt;
@@ -264,26 +265,26 @@ async fn sync_once(app: &AppHandle, http: &reqwest::Client, token: &str) -> Sync
         }
     }
 
-    // Tray menu: latest unread, urgent bumped to the top (stable sort keeps
-    // feed order within each group).
-    let mut recent: Vec<RecentNotif> = body
+    // Tray/panel: latest unread, as delivered — tray_model derives the
+    // ordered, capped, urgent-first view from this plus unread_count below.
+    let recent: Vec<RecentNotif> = body
         .items
         .iter()
         .filter(|i| i.read_at.is_none() && !i.title.is_empty())
         .map(|i| RecentNotif {
+            id: i.id.clone(),
             title: i.title.clone(),
             link: i.link.clone(),
             urgent: i.urgent,
         })
         .collect();
-    recent.sort_by_key(|n| !n.urgent);
-    recent.truncate(config::TRAY_RECENT_MAX);
     if let Ok(mut g) = app.state::<AppState>().recent_notifs.lock() {
         *g = recent;
     }
+    app.state::<AppState>().unread_count.store(body.unread_count, Ordering::SeqCst);
 
     window::set_badge(app, body.unread_count);
-    tray::refresh(app, body.unread_count);
+    tray::refresh(app);
     SyncOutcome::Ok
 }
 

@@ -1,0 +1,232 @@
+/* The tray panel (window.rs sizes the frame: 304 wide, growing/shrinking
+   between 120 and 640 tall as tray.js measures its content). The window is
+   transparent, so the page paints nothing but the card and its own shadow;
+   body's padding is the gutter that shadow bleeds into before the window's
+   own bounds clip it. Color tokens come from pairing.css. */
+
+html, body {
+  width: 304px;
+  overflow: hidden;
+  background: transparent;
+}
+
+body {
+  margin: 0;
+  padding: 6px;
+  font-family: "Mulish", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  color: var(--ink);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: default;
+}
+button:focus-visible {
+  outline: 2px solid var(--os-accent);
+  outline-offset: 1px;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 14px 40px var(--shadow);
+  overflow: hidden;
+}
+
+/* Recording bar */
+
+.recording {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.recording.hidden {
+  display: none;
+}
+
+.rec-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #e0443e;
+  animation: rec-pulse 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rec-dot {
+    animation: none;
+  }
+}
+@keyframes rec-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.rec-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rec-text .rec-title {
+  color: var(--muted);
+}
+
+.btn-stop {
+  flex: none;
+  font-size: 12px;
+  font-weight: 700;
+  color: #ffffff;
+  background: #e0443e;
+  border: none;
+  border-radius: 8px;
+  padding: 5px 10px;
+}
+.btn-stop:hover {
+  opacity: 0.9;
+}
+
+/* Unread section */
+
+.unread {
+  padding: 6px 6px 8px;
+}
+
+.unread-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px 6px;
+}
+
+.unread-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.mark-all {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--os-accent);
+  background: transparent;
+  border: none;
+  padding: 2px 4px;
+}
+.mark-all.hidden {
+  display: none;
+}
+.mark-all:hover {
+  text-decoration: underline;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  padding: 7px 8px;
+}
+.row:hover {
+  background: var(--code-bg);
+}
+
+.row .dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--border);
+}
+.row .dot.urgent {
+  background: var(--accent);
+}
+
+.row-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.row-now {
+  flex: none;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.empty {
+  padding: 14px 8px 10px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.empty.hidden {
+  display: none;
+}
+
+/* Footer */
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: var(--code-bg);
+  border-top: 1px solid var(--border);
+}
+
+.footer-actions {
+  display: flex;
+  gap: 2px;
+}
+
+.icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+}
+.icon-btn:hover {
+  background: var(--border);
+  color: var(--ink);
+}
+.icon-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.version {
+  font-size: 11.5px;
+  color: var(--muted);
+}

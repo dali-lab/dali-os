@@ -1,8 +1,10 @@
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::Mutex;
 
 use serde::Serialize;
+
+use crate::tray_model::TrayView;
 
 // The shell's auth/session lifecycle. Fieldless variants serialize to their name
 // (e.g. "Pairing"), which the pairing UI compares against.
@@ -21,6 +23,7 @@ pub enum AuthState {
 // this list by index.
 #[derive(Clone)]
 pub struct RecentNotif {
+    pub id: String,
     pub title: String,
     pub link: Option<String>,
     pub urgent: bool,
@@ -53,8 +56,24 @@ pub struct AppState {
     // Notification ids already surfaced this session — dedupe so a steady poll
     // doesn't re-alert the same item.
     pub seen_notifs: Mutex<HashSet<String>>,
-    // Latest unread notifications, urgent first — rendered in the tray menu.
+    // Latest unread notifications, as delivered (unsorted/untruncated) —
+    // tray_model derives the tray menu/panel's ordered, capped view from
+    // this plus `unread_count` below.
     pub recent_notifs: Mutex<Vec<RecentNotif>>,
+    // Unread count from the last notifications sync — read by tray::refresh
+    // to build the tray/panel view.
+    pub unread_count: AtomicI64,
+    // The tray/panel's last-built view, kept so a freshly-opened panel
+    // window can render immediately and so the tray menu handler can resolve
+    // a "recent:<id>" click without re-deriving the view.
+    pub tray_view: Mutex<Option<TrayView>>,
+    // Tray icon rect from the last panel open, so a content-driven resize can
+    // re-anchor the panel to the icon (Windows grows upward).
+    pub tray_anchor: Mutex<Option<tauri::Rect>>,
+    // When the panel was last hidden. A tray click that lands right after a
+    // blur-hide is the same click that caused the blur, so toggle must not
+    // re-open on it.
+    pub tray_hidden_at: Mutex<Option<std::time::Instant>>,
     // Webview zoom factor (View → Zoom). In-memory; resets to 1.0 on restart.
     pub zoom: Mutex<f64>,
     // Remote-load tracking, so a failed/hung load of the prod origin can fall
@@ -92,6 +111,10 @@ impl AppState {
             pairing_cancel: AtomicBool::new(false),
             seen_notifs: Mutex::new(HashSet::new()),
             recent_notifs: Mutex::new(Vec::new()),
+            unread_count: AtomicI64::new(0),
+            tray_view: Mutex::new(None),
+            tray_anchor: Mutex::new(None),
+            tray_hidden_at: Mutex::new(None),
             zoom: Mutex::new(1.0),
             main_load_gen: AtomicU64::new(0),
             main_loaded_gen: AtomicU64::new(0),

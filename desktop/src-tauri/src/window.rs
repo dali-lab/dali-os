@@ -23,6 +23,17 @@ const RECORD_PROMPT_HEIGHT: f64 = 76.0;
 const RECORD_PROMPT_EXPANDED_HEIGHT: f64 = 212.0;
 const RECORD_PROMPT_TOP_MARGIN: f64 = 12.0;
 
+// Tray panel window (see tray.rs for when it's toggled): anchored under the
+// tray icon on macOS/Linux, above it on Windows (taskbar's at the bottom).
+// tray.js grows/shrinks the frame to fit its content via
+// `set_tray_panel_height`, between these bounds.
+const TRAY_PANEL_WIDTH: f64 = 304.0;
+const TRAY_PANEL_HEIGHT: f64 = 320.0;
+const TRAY_PANEL_MIN_HEIGHT: f64 = 120.0;
+const TRAY_PANEL_MAX_HEIGHT: f64 = 640.0;
+const TRAY_PANEL_GAP: f64 = 6.0;
+const TRAY_PANEL_REOPEN_GUARD: std::time::Duration = std::time::Duration::from_millis(300);
+
 pub fn build_pairing(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     if let Some(w) = app.get_webview_window("pairing") {
         return Ok(w);
@@ -301,6 +312,129 @@ pub fn hide_record_prompt(app: &AppHandle) {
     set_record_prompt_expanded(app, false);
     if let Ok(mut current) = app.state::<AppState>().current_record_prompt.lock() {
         *current = None;
+    }
+}
+
+fn build_tray_panel(app: &AppHandle) -> tauri::Result<WebviewWindow> {
+    if let Some(w) = app.get_webview_window("tray") {
+        return Ok(w);
+    }
+    WebviewWindowBuilder::new(app, "tray", WebviewUrl::App("tray.html".into()))
+        .inner_size(TRAY_PANEL_WIDTH, TRAY_PANEL_HEIGHT)
+        .resizable(false)
+        .decorations(false)
+        .transparent(true)
+        .always_on_top(true)
+        .visible_on_all_workspaces(true)
+        .skip_taskbar(true)
+        .shadow(false)
+        .visible(false)
+        .build()
+}
+
+/// Anchors the panel to the tray icon's rect (from the click event), on the
+/// monitor that rect is actually on, clamped into that monitor's work area.
+/// `rect`'s position/size come back physical; everything here converts to
+/// logical, matching `set_position`/`set_size` below.
+fn position_tray_panel(app: &AppHandle, window: &WebviewWindow, rect: &tauri::Rect, height: Option<f64>) {
+    let point = rect.position.to_physical::<f64>(1.0);
+    let monitor = app
+        .monitor_from_point(point.x, point.y)
+        .ok()
+        .flatten()
+        .or_else(|| app.primary_monitor().ok().flatten());
+    let Some(monitor) = monitor else {
+        return;
+    };
+
+    let scale = monitor.scale_factor();
+    let rect_pos = rect.position.to_logical::<f64>(scale);
+    let rect_size = rect.size.to_logical::<f64>(scale);
+    let panel_size = window
+        .inner_size()
+        .map(|s| (s.width as f64 / scale, s.height as f64 / scale))
+        .unwrap_or((TRAY_PANEL_WIDTH, TRAY_PANEL_HEIGHT));
+    // A set_size that just happened is not yet reflected by inner_size.
+    let panel_size = (panel_size.0, height.unwrap_or(panel_size.1));
+
+    let center_x = rect_pos.x + rect_size.width / 2.0;
+    let x = center_x - panel_size.0 / 2.0;
+    let y = if cfg!(target_os = "windows") {
+        rect_pos.y - panel_size.1 - TRAY_PANEL_GAP
+    } else {
+        rect_pos.y + rect_size.height + TRAY_PANEL_GAP
+    };
+
+    let area = monitor.work_area();
+    let area_x = area.position.x as f64 / scale;
+    let area_y = area.position.y as f64 / scale;
+    let area_w = area.size.width as f64 / scale;
+    let area_h = area.size.height as f64 / scale;
+    let x = x.clamp(area_x, (area_x + area_w - panel_size.0).max(area_x));
+    let y = y.clamp(area_y, (area_y + area_h - panel_size.1).max(area_y));
+
+    let _ = window.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(x, y)));
+}
+
+/// Toggle the tray panel: hide it if it's already showing, otherwise
+/// position it from the tray click's rect, hand it the current view (so a
+/// freshly built page has something to render immediately), and show it.
+pub fn toggle_tray_panel(app: &AppHandle, rect: &tauri::Rect) {
+    if let Some(w) = app.get_webview_window("tray") {
+        if w.is_visible().unwrap_or(false) {
+            hide_tray_panel(app);
+            return;
+        }
+    }
+    // The mouse-down of this same click already blurred (and hid) the panel
+    // on platforms where the tray takes focus; the mouse-up must not reopen it.
+    let just_hidden = app
+        .state::<AppState>()
+        .tray_hidden_at
+        .lock()
+        .ok()
+        .and_then(|g| *g)
+        .is_some_and(|t| t.elapsed() < TRAY_PANEL_REOPEN_GUARD);
+    if just_hidden {
+        return;
+    }
+    let Ok(w) = build_tray_panel(app) else {
+        return;
+    };
+    if let Ok(mut g) = app.state::<AppState>().tray_anchor.lock() {
+        *g = Some(*rect);
+    }
+    position_tray_panel(app, &w, rect, None);
+    if let Ok(view) = app.state::<AppState>().tray_view.lock() {
+        if let Some(view) = view.clone() {
+            let _ = app.emit_to("tray", "tray://state", view);
+        }
+    }
+    let _ = w.show();
+    let _ = w.set_focus();
+}
+
+pub fn hide_tray_panel(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window("tray") {
+        if w.is_visible().unwrap_or(false) {
+            let _ = w.hide();
+            if let Ok(mut g) = app.state::<AppState>().tray_hidden_at.lock() {
+                *g = Some(std::time::Instant::now());
+            }
+        }
+    }
+}
+
+/// Content-driven resize from tray.js, then re-anchor to the icon so the
+/// bottom edge stays put on Windows (the panel hangs above the taskbar).
+pub fn set_tray_panel_height(app: &AppHandle, height: f64) {
+    if let Some(w) = app.get_webview_window("tray") {
+        let height = height.clamp(TRAY_PANEL_MIN_HEIGHT, TRAY_PANEL_MAX_HEIGHT);
+        let _ = w.set_size(tauri::Size::Logical(tauri::LogicalSize::new(TRAY_PANEL_WIDTH, height)));
+        let anchor = app.state::<AppState>().tray_anchor.lock().ok().and_then(|g| *g);
+        if let Some(rect) = anchor {
+            position_tray_panel(app, &w, &rect, Some(height));
+        }
     }
 }
 

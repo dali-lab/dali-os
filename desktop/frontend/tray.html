@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DALI OS</title>
+    <link rel="stylesheet" href="pairing.css" />
+    <link rel="stylesheet" href="tray.css" />
+  </head>
+  <body>
+    <main id="card" class="card" role="dialog" aria-label="DALI OS">
+      <section id="recording" class="recording hidden">
+        <span class="rec-dot" aria-hidden="true"></span>
+        <span class="rec-text">Recording <span id="rec-title" class="rec-title"></span></span>
+        <button id="btn-stop" class="btn-stop">Stop</button>
+      </section>
+
+      <section class="unread">
+        <div class="unread-header">
+          <span id="unread-label" class="unread-label">Notifications</span>
+          <button id="btn-mark-all" class="mark-all hidden">Mark all read</button>
+        </div>
+        <div id="rows" class="rows"></div>
+        <div id="empty" class="empty hidden">You are caught up.</div>
+      </section>
+
+      <footer class="footer">
+        <div class="footer-actions">
+          <button id="btn-open" class="icon-btn" title="Open DALI OS" aria-label="Open DALI OS">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M4 11.5 12 4l8 7.5" />
+              <path d="M6 10v9a1 1 0 0 0 1 1h3v-5h4v5h3a1 1 0 0 0 1-1v-9" />
+            </svg>
+          </button>
+          <button id="btn-settings" class="icon-btn" title="Notification settings" aria-label="Notification settings">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 13a7.6 7.6 0 0 0 0-2l2-1.5-2-3.4-2.3.8a7.7 7.7 0 0 0-1.7-1l-.3-2.4h-4l-.3 2.4a7.7 7.7 0 0 0-1.7 1l-2.3-.8-2 3.4L6.6 11a7.6 7.6 0 0 0 0 2l-2 1.5 2 3.4 2.3-.8a7.7 7.7 0 0 0 1.7 1l.3 2.4h4l.3-2.4a7.7 7.7 0 0 0 1.7-1l2.3.8 2-3.4Z" />
+            </svg>
+          </button>
+          <button id="btn-quit" class="icon-btn" title="Quit DALI OS" aria-label="Quit DALI OS">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 3v8" />
+              <path d="M18.4 6.6a8 8 0 1 1-12.8 0" />
+            </svg>
+          </button>
+        </div>
+        <span id="version" class="version"></span>
+      </footer>
+    </main>
+    <script src="tray.js"></script>
+  </body>
+</html>

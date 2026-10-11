@@ -17,6 +17,7 @@ mod poller;
 mod recording;
 mod state;
 mod tray;
+mod tray_model;
 mod updater;
 mod window;
 
@@ -55,6 +56,15 @@ pub fn run() {
             commands::record_prompt_dismiss,
             commands::record_prompt_mute,
             commands::record_prompt_set_expanded,
+            commands::tray_get_view,
+            commands::tray_open_link,
+            commands::tray_mark_all_read,
+            commands::tray_open_app,
+            commands::tray_open_settings,
+            commands::tray_stop_recording,
+            commands::tray_quit,
+            commands::tray_panel_hide,
+            commands::tray_panel_set_height,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -105,6 +115,12 @@ pub fn run() {
                 if let WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
                     let _ = window.hide();
+                }
+            } else if window.label() == "tray" {
+                // Clicking anywhere outside the panel defocuses it — same
+                // dismissal as a native menu.
+                if let WindowEvent::Focused(false) = event {
+                    window::hide_tray_panel(window.app_handle());
                 }
             }
         })

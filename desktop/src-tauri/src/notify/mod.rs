@@ -288,9 +288,17 @@ pub(crate) fn on_clicked(app: &AppHandle, id: &str, link: Option<&str>) {
         Some(link) => window::open_link(&nav_app, link),
         None => window::show_main(&nav_app),
     });
-    if !id.is_empty() {
-        post(app, format!("{}/api/notifications/{id}/read", config::PROD_ORIGIN), None);
+    mark_read(app, id);
+}
+
+/// Best-effort POST /api/notifications/:id/read, shared by the banner click
+/// path above and the tray panel/menu (commands::tray_open_link,
+/// tray::open_recent). A no-op for an empty id (shell-local banners).
+pub(crate) fn mark_read(app: &AppHandle, id: &str) {
+    if id.is_empty() {
+        return;
     }
+    post(app, format!("{}/api/notifications/{id}/read", config::PROD_ORIGIN), None);
 }
 
 /// Banner action button: `read`, `rsvp:<accepted|tentative|declined>`, or
@@ -302,7 +310,7 @@ pub(crate) fn on_action(app: &AppHandle, id: &str, action: &str) {
         return;
     }
     if action == ACTION_READ {
-        post(app, format!("{}/api/notifications/{id}/read", config::PROD_ORIGIN), None);
+        mark_read(app, id);
     } else if action == ACTION_OPEN {
         let link = take_record_prompt(id).and_then(|p| p.link);
         on_clicked(app, id, link.as_deref());
@@ -360,7 +368,7 @@ pub(crate) fn start_recording_from_prompt(app: &AppHandle, id: String, payload: 
         if resp.status() == reqwest::StatusCode::CREATED {
             if let Ok(created) = resp.json::<CreatedRecording>().await {
                 recording::start(&app, created.id);
-                post(&app, format!("{}/api/notifications/{id}/read", config::PROD_ORIGIN), None);
+                mark_read(&app, &id);
                 return;
             }
             return on_clicked(&app, &id, payload.link.as_deref());
@@ -376,8 +384,10 @@ pub(crate) fn start_recording_from_prompt(app: &AppHandle, id: String, payload: 
 
 // Fire-and-forget authenticated POST. The server publishes the write to the
 // notification stream, so badge/tray/Notification Center converge through the
-// delivery loop rather than ad-hoc local state edits.
-fn post(app: &AppHandle, url: String, json: Option<serde_json::Value>) {
+// delivery loop rather than ad-hoc local state edits. `pub(crate)`: also used
+// directly by commands::tray_mark_all_read (no per-id URL, so `mark_read`
+// above doesn't fit).
+pub(crate) fn post(app: &AppHandle, url: String, json: Option<serde_json::Value>) {
     let http = app.state::<AppState>().http.clone();
     tauri::async_runtime::spawn(async move {
         let Some(token) = keychain::get_token() else {

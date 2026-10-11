@@ -1,100 +1,141 @@
-// Tray icon + menu. Left-click toggles the main window; the menu lists the
-// latest unread notifications (urgent first, click-through to their links)
-// above Open, Sign out, and Quit. refresh() re-renders the unread count next
-// to the menubar icon and rebuilds the menu after every delivery sync.
+// Tray icon + panel. Left-click toggles the custom DALI OS panel window
+// (window::toggle_tray_panel); right-click (and Linux, which reports no
+// left-click events through AppIndicator) shows a minimal native menu built
+// from the same tray_model::TrayView. refresh() re-derives that view from
+// AppState after every delivery sync and pushes it to both surfaces.
 // Combined with minimize-to-tray (see lib.rs window event), this keeps the
-// background delivery loop alive and glanceable when the window is closed.
+// background delivery loop alive and glanceable when the main window is
+// closed.
+
+use std::sync::atomic::Ordering;
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Manager, Wry};
+use tauri::{AppHandle, Emitter, Manager, Wry};
 
-use crate::{commands, recording, state::AppState, window};
+use crate::state::AppState;
+use crate::tray_model::{self, TraySnapshot, TrayView};
+use crate::{notify, recording, window};
 
 const TRAY_ID: &str = "main-tray";
-// Keeps long notification titles from blowing out the menu width.
-const TITLE_MAX_CHARS: usize = 44;
 
-fn truncated(s: &str) -> String {
-    if s.chars().count() <= TITLE_MAX_CHARS {
-        return s.to_string();
-    }
-    let cut: String = s.chars().take(TITLE_MAX_CHARS - 1).collect();
-    format!("{cut}…")
+fn snapshot(app: &AppHandle) -> TraySnapshot {
+    let state = app.state::<AppState>();
+    let notifs = state.recent_notifs.lock().map(|g| g.clone()).unwrap_or_default();
+    let unread_count = state.unread_count.load(Ordering::SeqCst);
+    // `recording` only ever holds the MeetingRecording id (recording.rs),
+    // never a title, so "recording" collapses to an empty, unknown title.
+    let recording = state.recording.lock().ok().and_then(|g| g.as_ref().map(|_| String::new()));
+    TraySnapshot { unread_count, notifs, recording, version: app.package_info().version.to_string() }
 }
 
-fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
-    let recent = app
-        .state::<AppState>()
-        .recent_notifs
-        .lock()
-        .map(|g| g.clone())
-        .unwrap_or_default();
-
+fn build_menu(app: &AppHandle, view: &TrayView) -> tauri::Result<Menu<Wry>> {
     let menu = Menu::new(app)?;
-    let recording = app
-        .state::<AppState>()
-        .recording
-        .lock()
-        .map(|g| g.is_some())
-        .unwrap_or(false);
-    if recording {
-        menu.append(&MenuItem::with_id(
-            app,
-            "stop-recording",
-            "● Stop recording",
-            true,
-            None::<&str>,
-        )?)?;
+    let recording = view.recording.is_some();
+
+    if cfg!(target_os = "linux") {
+        // The only surface on Linux: AppIndicator never reports tray clicks,
+        // so the recent rows have to live here instead of the panel.
+        menu.append(&MenuItem::with_id(app, "open", "Open DALI OS", true, None::<&str>)?)?;
+        if !view.unread.is_empty() {
+            menu.append(&PredefinedMenuItem::separator(app)?)?;
+            for row in &view.unread {
+                let prefix = if row.urgent { "⏰ " } else { "" };
+                menu.append(&MenuItem::with_id(
+                    app,
+                    format!("recent:{}", row.id),
+                    format!("{prefix}{}", row.title),
+                    true,
+                    None::<&str>,
+                )?)?;
+            }
+        }
+        if recording {
+            menu.append(&PredefinedMenuItem::separator(app)?)?;
+            menu.append(&MenuItem::with_id(app, "stop-recording", "● Stop recording", true, None::<&str>)?)?;
+        }
         menu.append(&PredefinedMenuItem::separator(app)?)?;
-    }
-    for (i, n) in recent.iter().enumerate() {
-        let prefix = if n.urgent { "⏰ " } else { "" };
-        let label = format!("{prefix}{}", truncated(&n.title));
-        menu.append(&MenuItem::with_id(
-            app,
-            format!("recent:{i}"),
-            label,
-            true,
-            None::<&str>,
-        )?)?;
-    }
-    if !recent.is_empty() {
+        menu.append(&MenuItem::with_id(app, "quit", "Quit DALI OS", true, None::<&str>)?)?;
+    } else {
+        if recording {
+            menu.append(&MenuItem::with_id(app, "stop-recording", "● Stop recording", true, None::<&str>)?)?;
+            menu.append(&PredefinedMenuItem::separator(app)?)?;
+        }
+        menu.append(&MenuItem::with_id(app, "open", "Open DALI OS", true, None::<&str>)?)?;
         menu.append(&PredefinedMenuItem::separator(app)?)?;
+        menu.append(&MenuItem::with_id(app, "quit", "Quit DALI OS", true, None::<&str>)?)?;
     }
-    menu.append(&MenuItem::with_id(app, "open", "Open DALI OS", true, None::<&str>)?)?;
-    menu.append(&MenuItem::with_id(app, "signout", "Sign out", true, None::<&str>)?)?;
-    menu.append(&PredefinedMenuItem::separator(app)?)?;
-    menu.append(&MenuItem::with_id(app, "quit", "Quit DALI OS", true, None::<&str>)?)?;
     Ok(menu)
 }
 
-/// Re-render the tray for the current unread state: the count beside the
-/// menubar icon (macOS/Linux; title is a no-op elsewhere) and the
-/// recent-notifications section of the menu.
-pub fn refresh(app: &AppHandle, unread: i64) {
+/// Open the link (or the main window, if it has none) for a "recent:<id>"
+/// menu click, resolving the id against the last-built view, then marks the
+/// notification read — same as a panel row click (commands::tray_open_link).
+fn open_recent(app: &AppHandle, id: &str) {
+    let link = app
+        .state::<AppState>()
+        .tray_view
+        .lock()
+        .ok()
+        .and_then(|g| g.clone())
+        .and_then(|v| v.unread.into_iter().find(|r| r.id == id))
+        .and_then(|r| r.link);
+    match link {
+        Some(link) => window::open_link(app, &link),
+        None => window::show_main(app),
+    }
+    notify::mark_read(app, id);
+}
+
+/// Re-derive the tray/panel view from AppState and push it to both
+/// surfaces: the icon's title/tooltip (always), the panel window (via
+/// `tray://state`, only if the view actually changed), and the native menu
+/// (only if its content changed — recording start/stop, or on Linux the
+/// unread rows, since that's everything the menu shows).
+pub fn refresh(app: &AppHandle) {
     let Some(tray) = app.tray_by_id(TRAY_ID) else {
         return;
     };
-    let _ = tray.set_title(if unread > 0 { Some(unread.to_string()) } else { None });
-    if let Ok(menu) = build_menu(app) {
-        let _ = tray.set_menu(Some(menu));
+
+    let view = tray_model::build(&snapshot(app));
+    let previous = app.state::<AppState>().tray_view.lock().map(|g| g.clone()).unwrap_or_default();
+
+    let _ = tray.set_title(tray_model::title(&view));
+    let _ = tray.set_tooltip(Some(tray_model::tooltip(&view)));
+
+    let menu_changed = match &previous {
+        None => true,
+        Some(prev) => {
+            prev.recording.is_some() != view.recording.is_some()
+                || (cfg!(target_os = "linux") && prev.unread != view.unread)
+        }
+    };
+    if menu_changed {
+        if let Ok(menu) = build_menu(app, &view) {
+            let _ = tray.set_menu(Some(menu));
+        }
+    }
+
+    if previous.as_ref() != Some(&view) {
+        if let Ok(mut guard) = app.state::<AppState>().tray_view.lock() {
+            *guard = Some(view.clone());
+        }
+        let _ = app.emit_to("tray", "tray://state", view);
     }
 }
 
-/// Rebuild just the menu (recording started or stopped), leaving the unread
-/// count beside the icon alone.
+/// Recording started or stopped — nothing else changed, but routing through
+/// `refresh` keeps the icon/menu/panel all derived from one place.
 pub fn rebuild_menu(app: &AppHandle) {
-    let Some(tray) = app.tray_by_id(TRAY_ID) else {
-        return;
-    };
-    if let Ok(menu) = build_menu(app) {
-        let _ = tray.set_menu(Some(menu));
-    }
+    refresh(app);
 }
 
 pub fn install(app: &AppHandle) -> tauri::Result<()> {
-    let menu = build_menu(app)?;
+    let view = tray_model::build(&snapshot(app));
+    let menu = build_menu(app, &view)?;
+    if let Ok(mut guard) = app.state::<AppState>().tray_view.lock() {
+        *guard = Some(view);
+    }
 
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
         .tooltip("DALI OS")
@@ -102,28 +143,13 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| {
             let id = event.id().as_ref();
-            if let Some(idx) = id.strip_prefix("recent:").and_then(|s| s.parse::<usize>().ok()) {
-                let link = app
-                    .state::<AppState>()
-                    .recent_notifs
-                    .lock()
-                    .ok()
-                    .and_then(|g| g.get(idx).and_then(|n| n.link.clone()));
-                match link {
-                    Some(link) => window::open_link(app, &link),
-                    None => window::show_main(app),
-                }
+            if let Some(notif_id) = id.strip_prefix("recent:") {
+                open_recent(app, notif_id);
                 return;
             }
             match id {
                 "open" => window::show_main(app),
                 "stop-recording" => recording::stop(),
-                "signout" => {
-                    let handle = app.clone();
-                    tauri::async_runtime::spawn(async move {
-                        commands::do_sign_out(handle).await;
-                    });
-                }
                 "quit" => app.exit(0),
                 _ => {}
             }
@@ -132,10 +158,11 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
             if let TrayIconEvent::Click {
                 button: MouseButton::Left,
                 button_state: MouseButtonState::Up,
+                rect,
                 ..
             } = event
             {
-                window::show_main(tray.app_handle());
+                window::toggle_tray_panel(tray.app_handle(), &rect);
             }
         });
 
