@@ -12,6 +12,7 @@ import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles, isAdmin, isCore, isCycleAdmin } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { listHiringEvents, isEventCheckInOpen } from "~/hiring/lib/hiring-events.server";
+import { countAnnouncementRecipients } from "~/hiring/lib/hiring-event-notice";
 import QRCode from "qrcode";
 import { changeApplicants } from "~/hiring/lib/cycle-applicants.server";
 import { invalidateActiveCycles } from "~/hiring/lib/cycles";
@@ -414,7 +415,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // built only for events whose check-in is currently open, to keep this
   // loader cheap on cycles with a long event history.
   const applicationEventsEnabled = await isFeatureEnabled("application-events", auth.user.sub, viewerRoles, request);
-  const hiringEventRows = applicationEventsEnabled ? await listHiringEvents(params.id!) : [];
+  const [hiringEventRows, announcementRecipientCount] = applicationEventsEnabled
+    ? await Promise.all([listHiringEvents(params.id!), countAnnouncementRecipients(params.id!)])
+    : [[], 0];
   const hiringEvents: HiringEventRow[] = hiringEventRows.map((e) => ({
     id: e.id,
     kind: e.kind,
@@ -466,6 +469,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       applicationEventsEnabled,
       hiringEvents,
       hiringEventCheckIns,
+      announcementRecipientCount,
       collabToken,
       currentUserId: auth.user.sub,
       presenceUserName: presenceUser?.name ?? auth.user.email,
@@ -2139,6 +2143,7 @@ export default function HiringLeadCycleDetails() {
               cycleId={cycle.id}
               events={loaderData.hiringEvents ?? []}
               announcementTemplateBound={!!loaderData?.hiringEmails?.["notification:ApplicationEventAnnouncement"]}
+              recipientCount={loaderData.announcementRecipientCount ?? 0}
               checkIns={loaderData.hiringEventCheckIns ?? {}}
             />
             </NavSection>
