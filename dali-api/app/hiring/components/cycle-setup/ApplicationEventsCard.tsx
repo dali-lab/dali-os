@@ -8,6 +8,7 @@ import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 import { useOsChrome } from "~/components/os-chrome";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
+import { USER_SEARCH_MIN_CHARS, useUserSearch } from "~/hooks/useUserSearch";
 import { formatDateShort, formatSessionWhen } from "~/lib/display";
 import { APPLICATION_TZ, getZonedParts, zonedDateTimeLocalToUtc } from "~/lib/timezone";
 import { cn } from "~/lib/cn";
@@ -157,6 +158,8 @@ function EventRow({
   const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [walkInQuery, setWalkInQuery] = useState("");
+  const searchHits = useUserSearch(walkInQuery);
 
   const deleteFetcher = useFetcher<{ error?: string }>();
   const checkInFetcher = useFetcher<{ error?: string }>();
@@ -244,7 +247,20 @@ function EventRow({
     name: r.applicant ? r.name : `${r.name} · Not an applicant yet`,
     present: r.present,
   }));
-  const walkInCandidates = roster.filter((r) => r.applicant && !r.present);
+  // Anyone can be a walk-in, not only this cycle's applicants: someone who
+  // applied to another cycle, or hasn't started at all, is still a person at
+  // the door. The cycle's own applicants are offered without typing; a search
+  // across every account fills in the rest.
+  const presentIds = new Set(roster.filter((r) => r.present).map((r) => r.userId));
+  const walkInOptions = new Map<string, { value: string; label: string }>();
+  for (const r of roster) {
+    if (r.applicant && !r.present) walkInOptions.set(r.userId, { value: r.userId, label: r.name });
+  }
+  for (const u of searchHits) {
+    if (!presentIds.has(u.id) && !walkInOptions.has(u.id)) {
+      walkInOptions.set(u.id, { value: u.id, label: u.email ? `${u.name} · ${u.email}` : u.name });
+    }
+  }
 
   const sentResult = announceFetcher.data && !("error" in announceFetcher.data) ? announceFetcher.data : null;
   const announcementPill =
@@ -361,10 +377,18 @@ function EventRow({
               ariaLabel="Add a walk-in"
               value=""
               placeholder="Add walk-in"
-              emptyLabel={roster.length === 0 ? "Loading…" : "No applicants left to add"}
-              options={walkInCandidates.map((c) => ({ value: c.userId, label: c.name }))}
+              emptyLabel={
+                roster.length === 0
+                  ? "Loading…"
+                  : walkInQuery.trim().length < USER_SEARCH_MIN_CHARS
+                    ? "Type a name to search everyone"
+                    : "No one found"
+              }
+              options={[...walkInOptions.values()]}
+              onQueryChange={setWalkInQuery}
               onChange={(userId) => {
                 if (userId) {
+                  setWalkInQuery("");
                   walkInFetcher.submit(
                     { userId, present: true },
                     { method: "post", action: eventsUrl, encType: "application/json" },
