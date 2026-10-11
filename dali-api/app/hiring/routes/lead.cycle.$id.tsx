@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { cn } from "~/lib/cn";
 import { hiringKey } from "~/email/lib/registry";
 import { EmailEditorModal } from "~/admin/components/EmailTemplatesAdmin";
-import { Form, Link, useParams, useLoaderData, useLocation, useSearchParams, useFetcher, redirect } from 'react-router'
+import { Form, Link, useParams, useLoaderData, useLocation, useSearchParams, useFetcher, useRevalidator, redirect } from 'react-router'
 import { Select, type SelectOption, Tooltip } from "~/components/ui/floating";
 import type { Route } from "./+types/lead.cycle.$id";
 import { prisma } from "~/lib/db";
@@ -1273,6 +1273,8 @@ const DECISION_SLICES: Record<DecisionSlice, { title: string; empty: string; inc
 export default function HiringLeadCycleDetails() {
   const toast = useToast()
   const dialog = useDialog()
+  const revalidator = useRevalidator()
+  const [assigningReviewers, setAssigningReviewers] = useState(false)
   const { id: cycleId } = useParams()
   const loaderData = useLoaderData<typeof loader>() as any
   const os = useOsChrome()
@@ -1640,6 +1642,29 @@ export default function HiringLeadCycleDetails() {
     })
     // The POST row lacks the user/domain relations the list shows; refetch.
     if (res.ok) await loadReviewers()
+  }
+
+  // Fills every domain's open reviewer slots. Safe to run again after adding
+  // reviewers or late applications: existing assignments are kept.
+  async function assignReviewers() {
+    if (!cycleId) return
+    setAssigningReviewers(true)
+    let assigned = 0
+    let error: string | null = null
+    for (const d of cycle?.domains ?? []) {
+      const res = await fetch(`/api/hiring/cycles/${cycleId}/domains/${d.domainId}/auto-assign`, {
+        method: 'POST',
+        credentials: 'include',
+      })
+      const body = await res.json().catch(() => ({}))
+      if (res.ok) assigned += body.assigned ?? 0
+      else error ??= body.error ?? `Couldn't assign reviewers (HTTP ${res.status}).`
+    }
+    setAssigningReviewers(false)
+    if (error) toast.error(error)
+    else if (assigned === 0) toast.info('Every application already has its reviewers.')
+    else toast.success(`${assigned} ${assigned === 1 ? 'review' : 'reviews'} assigned.`)
+    revalidator.revalidate()
   }
 
   async function removeReviewer(reviewerId: string) {
@@ -2688,6 +2713,20 @@ export default function HiringLeadCycleDetails() {
         <NavSection id="review-progress" title="Review progress">
         <DomainStatusList
           title="Review progress"
+          action={
+            <Tooltip content={cycleStatus === 'UnderReview' ? null : 'Close applications first.'}>
+              <span>
+                <button
+                  type="button"
+                  onClick={assignReviewers}
+                  disabled={cycleStatus !== 'UnderReview' || assigningReviewers}
+                  className={buttonClasses('secondary', 'sm')}
+                >
+                  {assigningReviewers ? 'Assigning' : 'Assign reviewers'}
+                </button>
+              </span>
+            </Tooltip>
+          }
           rows={(cycle?.domains ?? []).map((d: any) => {
             const r = loaderData?.phaseStatusByDomain?.[d.domainId]?.reviews ?? { assigned: 0, submitted: 0 }
             return {

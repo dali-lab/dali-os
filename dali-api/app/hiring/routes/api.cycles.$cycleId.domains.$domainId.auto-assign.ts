@@ -5,6 +5,7 @@ import { logAuditEvent } from "~/lib/audit";
 import { isCore, isDomainLead } from "~/lib/roles";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
 import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
+import { isMemberApplicants } from "~/hiring/lib/applicant-groups";
 
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
@@ -57,8 +58,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "A domain rubric must be set before assigning reviewers to applications" }, { status: 400 });
   }
 
-  const targetCount = domainCycle.reviewersPerApplication;
-
   const reviewers = await prisma.cycleReviewer.findMany({
     where: { applicationCycleId: cycleId!, domainId: domainId! },
     include: { reviews: { select: { id: true } } },
@@ -67,6 +66,12 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (reviewers.length === 0) {
     return Response.json({ error: "No reviewers assigned to this domain" }, { status: 400 });
   }
+
+  // Interns and Lab members cycles share one reviewer pool where everyone
+  // reads every application; Students cycles split the load per domain.
+  const targetCount = isMemberApplicants(cycle.applicants)
+    ? reviewers.length
+    : domainCycle.reviewersPerApplication;
 
   // DomainApplication.domainId is denormalized (set for both Standard and
   // Fellowship rows). On Standard cycles it's backfilled from
