@@ -280,7 +280,10 @@ export async function loader({ request }: Route.LoaderArgs) {
 
       const apps = cycle.applications.filter((app) => {
         const latestStatus = app.statusUpdates[0]?.newStatus;
-        return latestStatus === "Submitted" && app.domainApplications.length > 0;
+        return (
+          latestStatus === "Submitted" &&
+          app.domainApplications.some((da) => da.submittedAt != null)
+        );
       });
 
       // Compute inferred status for each domain application

@@ -4,7 +4,7 @@ import { requireAuth } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { isCore, isDomainLead } from "~/lib/roles";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
-import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
+import { inReviewPipelineFilter, submittedDomainApplicationFilter } from "~/hiring/lib/application-pipeline-filter";
 
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
@@ -77,6 +77,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     where: {
       selected: true,
       domainId: domainId!,
+      ...submittedDomainApplicationFilter,
       application: {
         applicationCycleId: cycleId!,
         ...inReviewPipelineFilter,

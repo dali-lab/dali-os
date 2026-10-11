@@ -72,6 +72,7 @@ describe("listMyHiringApplications", () => {
             },
             decisions: [],
             interviews: [],
+            submittedAt: d("2026-01-03"),
           },
         ],
       },

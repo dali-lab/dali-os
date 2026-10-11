@@ -64,7 +64,7 @@ function formatInterviewLocation(room?: { name: string } | null): string {
   return room ? `${room.name}, DALI Lab` : "Online";
 }
 
-function formatDeadline(iso: string, timeZone: string): string {
+export function formatDeadline(iso: string, timeZone: string): string {
   // In the applicant's own zone (viewerTimeZone resolves to ET when unset), with
   // time + zone abbreviation. Date-only in a hardcoded ET showed the wrong day
   // for applicants far from ET (11:59 PM ET is the next calendar day in Tokyo).
