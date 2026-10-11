@@ -16,6 +16,9 @@ export type ApplicationFilters = {
   stage: string | null;
   // Every selected signal must hold (AND), so narrowing stays predictable.
   engagement: EngagementFilter[];
+  // Application events (help hours, socials) the applicant attended. Any
+  // selected event matches (OR): "came to either help hour" is the question.
+  eventIds: string[];
   pieIncludesInProgress: boolean;
   query: string;
 };
@@ -25,6 +28,7 @@ export const EMPTY_FILTERS: ApplicationFilters = {
   statuses: [],
   stage: null,
   engagement: [],
+  eventIds: [],
   pieIncludesInProgress: false,
   query: "",
 };
@@ -41,9 +45,16 @@ export function isApplicationFilters(v: unknown): v is ApplicationFilters {
     (f.stage === null || typeof f.stage === "string") &&
     isStringList(f.engagement) &&
     f.engagement.every((k) => ENGAGEMENT_FILTERS.some((e) => e.key === k)) &&
+    // Missing on filters persisted before events existed; normalised to [] by
+    // withFilterDefaults rather than throwing the whole stored state away.
+    (f.eventIds === undefined || isStringList(f.eventIds)) &&
     typeof f.pieIncludesInProgress === "boolean" &&
     typeof f.query === "string"
   );
+}
+
+export function withFilterDefaults(f: ApplicationFilters): ApplicationFilters {
+  return { ...f, eventIds: f.eventIds ?? [] };
 }
 
 export const APPLICATION_SORT_COLUMNS = [

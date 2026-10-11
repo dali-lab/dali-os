@@ -5,6 +5,7 @@ import {
   DEFAULT_SORT,
   EMPTY_FILTERS,
   ENGAGEMENT_FILTERS,
+  withFilterDefaults,
   isApplicationFilters,
   isApplicationSort,
   sortApplications,
@@ -34,6 +35,7 @@ import {
 } from "~/components/ui/filter-panel";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
+import { formatDateShort } from "~/lib/display";
 import { StatusPie, type StatusSlice } from "~/hiring/components/analytics/StatusPie";
 import { Toggle } from "~/components/ui/Toggle";
 import {
@@ -279,17 +281,30 @@ export async function loader({ request }: Route.LoaderArgs) {
           applicationEventsEnabled
             ? prisma.hiringEventAttendance.findMany({
                 where: { userId: { in: applicantUserIds }, event: { applicationCycleId: selected.id } },
-                select: { userId: true },
-                distinct: ["userId"],
+                select: { userId: true, eventId: true },
               })
             : Promise.resolve([]),
         ])
       : Promise.resolve([[], [], [], []]),
   ]);
+  const eventOptions = applicationEventsEnabled
+    ? (
+        await prisma.hiringEvent.findMany({
+          where: { applicationCycleId: selected.id },
+          orderBy: { startsAt: "asc" },
+          select: { id: true, title: true, startsAt: true },
+        })
+      ).map((e) => ({ id: e.id, title: e.title, startsAt: e.startsAt.toISOString() }))
+    : [];
   const returningUserIds = new Set(priorRows.map((r) => r.userId));
   const emailedUserIds = new Set(emailRows.map((r) => r.linkedUserId));
   const educatedUserIds = new Set(educationRows.map((r) => r.applicantUserId));
-  const attendedUserIds = new Set(eventRows.map((r) => r.userId));
+  const attendedEventIdsByUser = new Map<string, string[]>();
+  for (const r of eventRows) {
+    const arr = attendedEventIdsByUser.get(r.userId) ?? [];
+    arr.push(r.eventId);
+    attendedEventIdsByUser.set(r.userId, arr);
+  }
 
   const rows = domainApps
     .map((da) => {
@@ -312,7 +327,8 @@ export async function loader({ request }: Route.LoaderArgs) {
         returning: returningUserIds.has(da.application.user.id),
         emailed: emailedUserIds.has(da.application.user.id),
         educated: educatedUserIds.has(da.application.user.id),
-        attendedEvent: attendedUserIds.has(da.application.user.id),
+        attendedEvent: attendedEventIdsByUser.has(da.application.user.id),
+        attendedEventIds: attendedEventIdsByUser.get(da.application.user.id) ?? [],
         stage: showPipeline
           ? pipelineStage(da as any, selected.currentStatus as ApplicationCycleStatus)
           : null,
@@ -335,6 +351,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     selectedCycleId: selected.id,
     selectedCycleName: selected.name,
     domainOptions,
+    eventOptions,
     showPipeline,
     rows,
   };
@@ -380,7 +397,8 @@ export default function ApplicationsDatabase() {
     EMPTY_FILTERS,
     isApplicationFilters,
   );
-  const { domainIds, statuses, stage, engagement, pieIncludesInProgress, query } = filters;
+  const { domainIds, statuses, stage, engagement, eventIds, pieIncludesInProgress, query } =
+    withFilterDefaults(filters);
   const patch = (next: Partial<ApplicationFilters>) => setFilters((prev) => ({ ...prev, ...next }));
   const setDomainIds = (f: (prev: string[]) => string[]) => patch({ domainIds: f(domainIds) });
   const setStatuses = (f: (prev: string[]) => string[]) => patch({ statuses: f(statuses) });
@@ -416,6 +434,11 @@ export default function ApplicationsDatabase() {
   // domain dropped from the cycle) must not silently empty the table.
   const knownDomainIds = new Set(data.gate === "ok" ? data.domainOptions.map((d) => d.id) : []);
   const activeDomainIds = domainIds.filter((id) => knownDomainIds.has(id));
+  const eventOptions = data.gate === "ok" ? data.eventOptions : [];
+  // Same guard for a remembered event that was deleted, or belongs to the
+  // cycle viewed last time.
+  const knownEventIds = new Set(eventOptions.map((e) => e.id));
+  const activeEventIds = eventIds.filter((id) => knownEventIds.has(id));
   // The pie counts every filter but its own, so picking a slice doesn't
   // collapse the chart to that one slice.
   const pieRows = useMemo(() => {
@@ -424,11 +447,13 @@ export default function ApplicationsDatabase() {
       if (activeDomainIds.length && !activeDomainIds.includes(r.domainId)) return false;
       if (statuses.length && !statuses.includes(r.status)) return false;
       if (engagement.some((k) => !r[k])) return false;
+      if (activeEventIds.length && !activeEventIds.some((id) => r.attendedEventIds.includes(id)))
+        return false;
       if (q && !`${r.name} ${r.email ?? ""}`.toLowerCase().includes(q))
         return false;
       return true;
     });
-  }, [rows, activeDomainIds, statuses, engagement, query]);
+  }, [rows, activeDomainIds, statuses, engagement, activeEventIds, query]);
   const [sort, setSort] = usePersistedState<ApplicationSort>(
     "dali:applications:sort",
     DEFAULT_SORT,
@@ -477,7 +502,11 @@ export default function ApplicationsDatabase() {
   // to choose between (Core/Admin, or a reviewer covering multiple domains).
   const showDomainFilter = data.domainOptions.length > 1;
   const activeFilterCount =
-    activeDomainIds.length + statuses.length + engagement.length + (stage ? 1 : 0);
+    activeDomainIds.length +
+    statuses.length +
+    engagement.length +
+    activeEventIds.length +
+    (stage ? 1 : 0);
   const engagementOptions = ENGAGEMENT_FILTERS;
 
   return (
@@ -526,7 +555,9 @@ export default function ApplicationsDatabase() {
               {activeFilterCount > 0 && (
                 <FilterResetButton
                   os={true}
-                  onClick={() => patch({ domainIds: [], statuses: [], stage: null, engagement: [] })}
+                  onClick={() =>
+                    patch({ domainIds: [], statuses: [], stage: null, engagement: [], eventIds: [] })
+                  }
                 />
               )}
             </div>
@@ -568,6 +599,20 @@ export default function ApplicationsDatabase() {
                 </FilterPill>
               ))}
             </FilterGroup>
+            {eventOptions.length > 0 && (
+              <FilterGroup label="Attended event" os={true}>
+                {eventOptions.map((e) => (
+                  <FilterPill
+                    key={e.id}
+                    os={true}
+                    selected={eventIds.includes(e.id)}
+                    onClick={() => patch({ eventIds: toggle(eventIds, e.id) })}
+                  >
+                    {e.title} · {formatDateShort(e.startsAt)}
+                  </FilterPill>
+                ))}
+              </FilterGroup>
+            )}
             {showDomainFilter && (
               <FilterGroup label="Domain" os={true}>
                 {data.domainOptions.map((d) => (

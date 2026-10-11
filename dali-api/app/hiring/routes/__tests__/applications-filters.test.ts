@@ -5,6 +5,7 @@ import {
   isApplicationFilters,
   isApplicationSort,
   sortApplications,
+  withFilterDefaults,
 } from "~/hiring/lib/application-filters";
 
 describe("isApplicationFilters", () => {
@@ -16,10 +17,18 @@ describe("isApplicationFilters", () => {
         statuses: ["Submitted"],
         stage: "Interview",
         engagement: ["returning", "educated", "attendedEvent"],
+        eventIds: ["ev1"],
         pieIncludesInProgress: true,
         query: "ada",
       }),
     ).toBe(true);
+  });
+
+  it("accepts filters stored before eventIds existed and fills the default in", () => {
+    const { eventIds: _omit, ...stale } = EMPTY_FILTERS;
+    expect(isApplicationFilters(stale)).toBe(true);
+    expect(withFilterDefaults(stale as typeof EMPTY_FILTERS).eventIds).toEqual([]);
+    expect(isApplicationFilters({ ...EMPTY_FILTERS, eventIds: [1] })).toBe(false);
   });
 
   it("rejects stale or corrupt stored values", () => {
