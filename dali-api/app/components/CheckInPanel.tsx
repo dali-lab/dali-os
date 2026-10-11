@@ -19,6 +19,8 @@ export function CheckInPanel({
   initialPresent,
   checkInUrl,
   checkInQrSvg,
+  checkInEndpoint,
+  qrPdfHref,
 }: {
   meetingId: string;
   meetingLabel: string;
@@ -26,17 +28,25 @@ export function CheckInPanel({
   initialPresent: boolean;
   checkInUrl: string | null;
   checkInQrSvg: string | null;
+  /** Where the check-in button POSTs. Defaults to the meeting's own route. */
+  checkInEndpoint?: string;
+  /** PDF download link for the QR card. Defaults to the meeting's own PDF
+   *  route; `null` hides the PDF buttons entirely (a caller with no PDF route). */
+  qrPdfHref?: string | null;
 }) {
   const [present, setPresent] = useState(initialPresent);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [qrOpen, setQrOpen] = useState(false);
+  const resolvedCheckInEndpoint = checkInEndpoint ?? `/api/scheduled-meetings/${meetingId}/check-in`;
+  const resolvedQrPdfHref =
+    qrPdfHref !== undefined ? qrPdfHref : `/api/scheduled-meetings/${meetingId}/check-in-qr.pdf`;
 
   async function checkIn() {
     setSubmitting(true);
     setError(null);
     try {
-      const res = await fetch(`/api/scheduled-meetings/${meetingId}/check-in`, {
+      const res = await fetch(resolvedCheckInEndpoint, {
         method: "POST",
         credentials: "include",
       });
@@ -106,13 +116,12 @@ export function CheckInPanel({
                 <Maximize2 className="w-3.5 h-3.5" aria-hidden />
                 Fullscreen
               </button>
-              <a
-                href={`/api/scheduled-meetings/${meetingId}/check-in-qr.pdf`}
-                className={buttonClasses("secondary", "sm")}
-              >
-                <Download className="w-3.5 h-3.5" aria-hidden />
-                Download PDF
-              </a>
+              {resolvedQrPdfHref && (
+                <a href={resolvedQrPdfHref} className={buttonClasses("secondary", "sm")}>
+                  <Download className="w-3.5 h-3.5" aria-hidden />
+                  Download PDF
+                </a>
+              )}
             </div>
           </div>
         </section>
@@ -122,7 +131,7 @@ export function CheckInPanel({
           meetingLabel={meetingLabel}
           checkInUrl={checkInUrl}
           checkInQrSvg={checkInQrSvg}
-          meetingId={meetingId}
+          qrPdfHref={resolvedQrPdfHref}
           onClose={() => setQrOpen(false)}
         />
       )}
@@ -134,13 +143,13 @@ function QrFullscreenOverlay({
   meetingLabel,
   checkInUrl,
   checkInQrSvg,
-  meetingId,
+  qrPdfHref,
   onClose,
 }: {
   meetingLabel: string;
   checkInUrl: string;
   checkInQrSvg: string;
-  meetingId: string;
+  qrPdfHref: string | null;
   onClose: () => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -233,13 +242,12 @@ function QrFullscreenOverlay({
           </h2>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          <a
-            href={`/api/scheduled-meetings/${meetingId}/check-in-qr.pdf`}
-            className={buttonClasses("secondary", "sm")}
-          >
-            <Download className="w-3.5 h-3.5" aria-hidden />
-            PDF
-          </a>
+          {qrPdfHref && (
+            <a href={qrPdfHref} className={buttonClasses("secondary", "sm")}>
+              <Download className="w-3.5 h-3.5" aria-hidden />
+              PDF
+            </a>
+          )}
           <button
             type="button"
             onClick={() => void toggleNativeFullscreen()}

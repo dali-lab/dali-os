@@ -97,6 +97,12 @@ export const FEATURE_FLAGS = [
     description:
       "A feedback button in the bottom right corner of the shell. It opens the feature request feed at /feedback, where lab members react and comment, or starts a new request: drag to select an area of the page as a screenshot (or skip it), then write it up. Screenshots use the browser's tab sharing prompt, so the desktop app and phones post text only. Ships off.",
   },
+  {
+    key: "application-events",
+    label: "Application events",
+    description:
+      "Help hours, socials and info sessions on a hiring cycle. Core creates events on the cycle page, emails everyone who started an application, and takes attendance by QR self check-in or by hand. Attendance shows on application reviews as an engagement signal. Ships off.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

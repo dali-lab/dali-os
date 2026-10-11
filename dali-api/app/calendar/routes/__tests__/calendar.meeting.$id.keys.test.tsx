@@ -14,7 +14,7 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 // The route module pulls the whole server stack in at import time; the
 // component under test needs none of it.
 vi.mock("~/lib/db", () => ({ prisma: {} }));
-vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn(), redirectApplicantToPortal: vi.fn() }));
+vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn(), redirectNonMemberToPortal: vi.fn(async () => null) }));
 vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn(), isProjectMember: vi.fn() }));
 vi.mock("~/lib/wallet-token", () => ({ walletTokensConfigured: vi.fn() }));

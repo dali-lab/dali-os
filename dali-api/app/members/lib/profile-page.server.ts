@@ -5,7 +5,7 @@
 
 import { redirect } from "react-router";
 import { prisma } from "~/lib/db";
-import { requireAuth, redirectApplicantToPortal, isImpersonating } from "~/lib/auth";
+import { requireAuth, redirectNonMemberToPortal, isImpersonating } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { graduateProgramLabel } from "~/lib/dartmouth-people";
@@ -253,7 +253,7 @@ export async function loadProfilePage({
 }): Promise<ProfilePageData> {
   const auth = await requireAuth(request);
   if (!auth.ok) throw redirectToLogin(request);
-  const portalRedirect = redirectApplicantToPortal(auth);
+  const portalRedirect = await redirectNonMemberToPortal(auth, request);
   if (portalRedirect) throw portalRedirect;
 
   const isSelf = auth.user.sub === targetId;
@@ -681,7 +681,7 @@ export async function runProfileAction({
 }): Promise<ProfileActionResult | Response> {
   const auth = await requireAuth(request);
   if (!auth.ok) throw redirectToLogin(request);
-  const portalRedirect = redirectApplicantToPortal(auth);
+  const portalRedirect = await redirectNonMemberToPortal(auth, request);
   if (portalRedirect) throw portalRedirect;
 
   const form = await request.formData();

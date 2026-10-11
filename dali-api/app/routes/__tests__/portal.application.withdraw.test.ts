@@ -55,7 +55,7 @@ beforeEach(() => {
   vi.mocked(getActiveCycleById).mockResolvedValue({ id: CYCLE_ID, currentStatus: "Open" } as any);
   vi.mocked(requireAuth).mockResolvedValue({
     ok: true,
-    user: { sub: USER_ID, email: "u@x.com", type: "applicant" },
+    user: { sub: USER_ID, email: "u@x.com", type: "dartmouth" },
   } as any);
 });
 

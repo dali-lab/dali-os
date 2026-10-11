@@ -40,6 +40,7 @@ export function AttendanceChecklist({
   defaultScanning = false,
   plain = false,
   attendees,
+  endpoint,
 }: {
   meetingId: string;
   /** Which occurrence this roster is (ISO original start) — each occurrence of
@@ -59,6 +60,10 @@ export function AttendanceChecklist({
   /** Drop the card and the fold, for a page that titles the section itself. */
   plain?: boolean;
   attendees: AttendanceRow[];
+  /** Where a toggle POSTs. Defaults to the meeting's own route; the body stays
+   *  `{ userId, present, occurrence }` regardless — a caller whose endpoint
+   *  isn't occurrence-scoped just ignores that field. */
+  endpoint?: string;
 }) {
   const [rows, setRows] = useState(attendees);
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
@@ -75,7 +80,7 @@ export function AttendanceChecklist({
     setRows((prev) => prev.map((r) => (r.userId === userId ? { ...r, present: next } : r)));
     setPendingIds((prev) => new Set(prev).add(userId));
     try {
-      const res = await fetch(`/api/scheduled-meetings/${meetingId}/attendance`, {
+      const res = await fetch(endpoint ?? `/api/scheduled-meetings/${meetingId}/attendance`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },

@@ -41,7 +41,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   const email = user.daliEmail ?? user.dartmouthEmail ?? user.personalEmail ?? "";
-  const type = user.daliEmail ? "member" : personalEmail ? "partner" : "applicant";
+  const type = user.daliEmail ? "member" : personalEmail ? "partner" : "dartmouth";
 
   const session = await issueSession({ userId: user.id });
 

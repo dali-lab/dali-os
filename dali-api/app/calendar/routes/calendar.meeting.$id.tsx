@@ -23,7 +23,7 @@ import { Modal, ModalFooter, ModalHeader } from "~/components/Modal";
 import { useOsChrome } from "~/components/os-chrome";
 import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
 import { cn } from "~/lib/cn";
-import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
+import { requireAuth, redirectNonMemberToPortal, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { getUserRoles, isProjectMember } from "~/lib/roles";
@@ -80,7 +80,7 @@ const OCCURRENCE_NAV_BAND_MS = 40 * 24 * 60 * 60_000;
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  const portalRedirect = redirectApplicantToPortal(auth);
+  const portalRedirect = await redirectNonMemberToPortal(auth, request);
   if (portalRedirect) return portalRedirect;
 
   const roles = await getUserRoles(auth.user.sub);
@@ -320,7 +320,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  if (auth.user.type === "applicant") {
+  if (await isNonMember(auth, request)) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
   const form = await request.formData();

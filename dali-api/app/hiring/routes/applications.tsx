@@ -16,9 +16,10 @@ import { redirect, useLoaderData, useNavigate, useSearchParams } from "react-rou
 import { ChevronDown, ChevronUp, SlidersHorizontal } from "lucide-react";
 import { SearchInput } from "~/components/ui/SearchInput";
 import type { Route } from "./+types/applications";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { prisma } from "~/lib/db";
 import { Popover, Select } from "~/components/ui/floating";
 import { filterPillClass } from "~/components/ui/floating/styles";
@@ -57,7 +58,7 @@ export const meta: Route.MetaFunction = () => [
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  if (auth.user.type === "applicant") return redirect("/portal");
+  if (await isNonMember(auth, request)) return redirect("/portal");
 
   // Reviewer assignments across all cycles — used both to decide which cycles
   // a reviewer can see and to scope domains within the selected cycle. Doesn't
@@ -70,6 +71,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     }),
   ]);
   const { isCore, isAdmin, isDomainLead, isInterviewer } = roles;
+  const applicationEventsEnabled = await isFeatureEnabled("application-events", auth.user.sub, roles, request);
 
   // Hard gate: a user with no hiring role at all (not Core/Admin/DomainLead and
   // a reviewer/interviewer on no cycle) has no business here — send them home
@@ -233,7 +235,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Both of these derive only from `domainApps` (not from each other), so the
   // blind-label lookup and the engagement-signal queries run concurrently
   // instead of one after the other.
-  const [blindLabels, [priorRows, emailRows, educationRows]] = await Promise.all([
+  const [blindLabels, [priorRows, emailRows, educationRows, eventRows]] = await Promise.all([
     (async () => {
       const daIdsByApplication = new Map<string, string[]>();
       if (applicationIds.length > 0) {
@@ -274,12 +276,20 @@ export async function loader({ request }: Route.LoaderArgs) {
             select: { applicantUserId: true },
             distinct: ["applicantUserId"],
           }),
+          applicationEventsEnabled
+            ? prisma.hiringEventAttendance.findMany({
+                where: { userId: { in: applicantUserIds }, event: { applicationCycleId: selected.id } },
+                select: { userId: true },
+                distinct: ["userId"],
+              })
+            : Promise.resolve([]),
         ])
-      : Promise.resolve([[], [], []]),
+      : Promise.resolve([[], [], [], []]),
   ]);
   const returningUserIds = new Set(priorRows.map((r) => r.userId));
   const emailedUserIds = new Set(emailRows.map((r) => r.linkedUserId));
   const educatedUserIds = new Set(educationRows.map((r) => r.applicantUserId));
+  const attendedUserIds = new Set(eventRows.map((r) => r.userId));
 
   const rows = domainApps
     .map((da) => {
@@ -302,6 +312,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         returning: returningUserIds.has(da.application.user.id),
         emailed: emailedUserIds.has(da.application.user.id),
         educated: educatedUserIds.has(da.application.user.id),
+        attendedEvent: attendedUserIds.has(da.application.user.id),
         stage: showPipeline
           ? pipelineStage(da as any, selected.currentStatus as ApplicationCycleStatus)
           : null,

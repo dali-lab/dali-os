@@ -1,5 +1,5 @@
 import { redirect } from "react-router";
-import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
+import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
@@ -10,7 +10,7 @@ import { isFeatureEnabled } from "~/lib/feature-flags.server";
 export async function requireFeedbackViewer(request: Request) {
   const auth = await requireAuth(request);
   if (!auth.ok) throw redirectToLogin(request);
-  if (auth.user.type === "applicant") throw redirect("/portal");
+  if (await isNonMember(auth, request)) throw redirect("/portal");
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) throw partnerRedirect;
 

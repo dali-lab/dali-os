@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
-vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
+vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn(), isNonMember: vi.fn(async () => false) }));
 vi.mock("~/lib/roles");
 vi.mock("~/lib/feature-flags.server");
 vi.mock("~/partners/lib/partner-emails.server");

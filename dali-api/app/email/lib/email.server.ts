@@ -3,7 +3,7 @@
 import { redirect } from "react-router";
 import { prisma } from "~/lib/db";
 import { cachedForTtl, clearTtlCache } from "~/lib/ttl-cache";
-import { requireAuth, isImpersonating } from "~/lib/auth";
+import { requireAuth, isImpersonating, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isAiEnabled } from "~/lib/ai.server";
 import { deleteObject, getObjectBytes } from "~/lib/s3";
@@ -55,7 +55,7 @@ export type FeedCursor = Record<string, string>;
 async function requireEmailUser(request: Request) {
   const auth = await requireAuth(request);
   if (!auth.ok) throw redirectToLogin(request);
-  if (auth.user.type === "applicant" || auth.user.type === "dartmouth") throw redirect("/portal");
+  if (auth.user.type === "dartmouth" || (await isNonMember(auth, request))) throw redirect("/portal");
   if (isEmailDemo(request)) return { userId: auth.user.sub, roles: null, demo: true as const };
   const roles = await getUserRoles(auth.user.sub, request);
   return { userId: auth.user.sub, roles, demo: false as const };

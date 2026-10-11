@@ -9,7 +9,7 @@ import { useLiveFavorites } from '~/components/favorites-live'
 import { LaunchWelcome } from '~/components/LaunchWelcome'
 import { NavPreloader } from '~/components/NavPreloader'
 import { TimeZonePrompt } from '~/components/TimeZonePrompt'
-import { requireAuth, redirectPartnerToPortal, impersonationAllowsWrites } from "~/lib/auth"
+import { requireAuth, redirectPartnerToPortal, impersonationAllowsWrites, isNonMember } from "~/lib/auth"
 import { maybeUpgradeLegacyToBetterAuth } from "~/lib/betterauth-upgrade.server"
 import { redirectToLogin } from '~/lib/login-next';
 import { getUserRoles, isLabMentor } from '~/lib/roles'
@@ -47,7 +47,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const pathname = new URL(request.url).pathname
   const publicDoc = () => publicDocRedirectForPath(pathname)
   if (!auth.ok) return (await publicDoc()) ?? redirectToLogin(request)
-  if (auth.user.type === 'applicant') return (await publicDoc()) ?? redirect('/portal')
+  if (await isNonMember(auth, request)) return (await publicDoc()) ?? redirect('/portal')
 
   // TEMPORARY (remove ~1 week post-cutover): silently migrate a validated legacy
   // session to a BetterAuth session, then reload the same URL so the new cookie

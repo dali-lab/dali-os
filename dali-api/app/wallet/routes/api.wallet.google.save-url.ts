@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.wallet.google.save-url";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, isNonMember } from "~/lib/auth";
 import {
   walletGoogleConfigured,
   buildGoogleWalletSaveUrl,
@@ -14,7 +14,7 @@ import {
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return Response.json({ error: "Unauthorized" }, { status: 401 });
-  if (auth.user.type === "applicant")
+  if (await isNonMember(auth, request))
     return Response.json({ error: "Forbidden" }, { status: 403 });
 
   if (!walletGoogleConfigured())

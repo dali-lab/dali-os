@@ -15,7 +15,7 @@ describe("isApplicationFilters", () => {
         domainIds: ["d1"],
         statuses: ["Submitted"],
         stage: "Interview",
-        engagement: ["returning", "educated"],
+        engagement: ["returning", "educated", "attendedEvent"],
         pieIncludesInProgress: true,
         query: "ada",
       }),

@@ -13,7 +13,7 @@
 import type { Route } from "./+types/integrations.calendar.google.callback";
 import { prisma } from "~/lib/db";
 import { buildEncryptedTokens } from "~/lib/google-calendar";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, isNonMember } from "~/lib/auth";
 import { CAL_STATE_COOKIE, GOOGLE_CALENDAR_SCOPE } from "~/routes/oauth.calendar.google.start";
 import { getApiBaseUrl } from "~/lib/app-env";
 import { exchangeGoogleCode, GoogleOAuthError, resolveGoogleEmail } from "~/lib/google-oauth";
@@ -54,7 +54,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) {
     return new Response(null, { status: 302, headers: { Location: "/login" } });
   }
-  if (auth.user.type === "applicant") {
+  if (await isNonMember(auth, request)) {
     return new Response(null, { status: 302, headers: { Location: "/portal" } });
   }
 

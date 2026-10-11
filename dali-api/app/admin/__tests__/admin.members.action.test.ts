@@ -12,7 +12,7 @@ vi.mock("~/lib/auth", () => ({
   unauthorized: vi.fn((_req: Request) =>
     Response.json({ error: "Unauthorized" }, { status: 401 }),
   ),
-  redirectApplicantToPortal: vi.fn(() => null),
+  redirectNonMemberToPortal: vi.fn(async () => null),
 }));
 vi.mock("~/lib/roles");
 vi.mock("~/lib/core-cycle", () => ({
