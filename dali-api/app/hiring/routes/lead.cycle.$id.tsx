@@ -426,6 +426,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     endsAt: e.endsAt.toISOString(),
     location: e.location,
     checkInOpenAt: e.checkInOpenAt ? e.checkInOpenAt.toISOString() : null,
+    broadcastAt: e.broadcastAt ? e.broadcastAt.toISOString() : null,
     announcementSentAt: e.announcementSentAt ? e.announcementSentAt.toISOString() : null,
     attendeeCount: e._count.attendances,
   }));

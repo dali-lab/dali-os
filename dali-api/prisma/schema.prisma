@@ -541,6 +541,9 @@ model HiringEvent {
   // Null = closed. Read with the event's time window in app/hiring/lib/hiring-events.server.ts.
   checkInOpenAt      DateTime?
   announcementSentAt DateTime?
+  // Stamped when Core puts this event's check-in QR on every paired door
+  // display. Only honoured while check-in is open (hiring-events.server.ts).
+  broadcastAt        DateTime?
   createdByUserId    String
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt

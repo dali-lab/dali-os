@@ -42,6 +42,7 @@ export type HiringEventRow = {
   endsAt: string;
   location: string | null;
   checkInOpenAt: string | null;
+  broadcastAt: string | null;
   announcementSentAt: string | null;
   attendeeCount: number;
 };
@@ -159,12 +160,14 @@ function EventRow({
 
   const deleteFetcher = useFetcher<{ error?: string }>();
   const checkInFetcher = useFetcher<{ error?: string }>();
+  const broadcastFetcher = useFetcher<{ error?: string }>();
   const announceFetcher = useFetcher<AnnouncementResult & { error?: string }>();
   const rosterFetcher = useFetcher<RosterEntry[]>();
   const walkInFetcher = useFetcher<{ error?: string }>();
 
   const eventsUrl = `/api/hiring/events/${event.id}`;
   const checkInOpen = event.checkInOpenAt != null;
+  const broadcasting = checkInOpen && event.broadcastAt != null;
 
   useEffect(() => {
     if (announceFetcher.state === "idle" && announceFetcher.data) {
@@ -203,6 +206,14 @@ function EventRow({
     );
   }
 
+  function toggleBroadcast() {
+    broadcastFetcher.submit(
+      { intent: "set-broadcast", on: !broadcasting },
+      { method: "post", action: eventsUrl, encType: "application/json" },
+    );
+  }
+
+  function sendAnnouncement() {
   async function sendAnnouncement() {
     const resend = event.announcementSentAt != null;
     const ok = await dialog.confirm({
@@ -260,6 +271,7 @@ function EventRow({
             <span className="text-sm font-semibold text-foreground">{event.title}</span>
             <Pill tone="accent">{EVENT_KIND_LABELS[event.kind]}</Pill>
             {announcementPill && <Pill tone="success">{announcementPill}</Pill>}
+            {broadcasting && <Pill tone="accent">On the iPads</Pill>}
           </div>
           <p className="text-xs text-os-grey">
             {formatSessionWhen(event.startsAt, event.endsAt, tz)}
@@ -276,6 +288,16 @@ function EventRow({
           >
             {checkInOpen ? "Close check-in" : "Open check-in"}
           </button>
+          <Tooltip content={checkInOpen ? null : "Open check-in first"}>
+            <button
+              type="button"
+              onClick={toggleBroadcast}
+              disabled={!checkInOpen || broadcastFetcher.state !== "idle"}
+              className={buttonClasses("secondary", "sm")}
+            >
+              {broadcasting ? "Take off iPads" : "Show on iPads"}
+            </button>
+          </Tooltip>
           <Tooltip content={announcementTemplateBound ? null : "Bind the Application event announcement template first"}>
             <button
               type="button"
@@ -319,6 +341,7 @@ function EventRow({
 
       {deleteFetcher.data?.error && <p className="text-xs text-red-700">{deleteFetcher.data.error}</p>}
       {checkInFetcher.data?.error && <p className="text-xs text-red-700">{checkInFetcher.data.error}</p>}
+      {broadcastFetcher.data?.error && <p className="text-xs text-red-700">{broadcastFetcher.data.error}</p>}
 
       {expanded && (
         <div className="flex flex-col gap-4 border-t border-os-container pt-3">

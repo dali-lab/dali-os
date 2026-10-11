@@ -65,6 +65,8 @@ export const AUDIT_ACTIONS = [
   "hiring.event.checkin.open",
   "hiring.event.checkin.close",
   "hiring.event.checkin.self",
+  "hiring.event.broadcast.on",
+  "hiring.event.broadcast.off",
   "hiring.event.attendance.mark",
   "domain.create",
   "domain.delete",

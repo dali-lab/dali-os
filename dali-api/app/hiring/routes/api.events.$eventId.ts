@@ -10,6 +10,7 @@ import {
   deleteHiringEvent,
   getEventRoster,
   markEventAttendance,
+  setEventBroadcast,
   setEventCheckInOpen,
   updateHiringEvent,
 } from "~/hiring/lib/hiring-events.server";
@@ -25,13 +26,16 @@ import { sendEventAnnouncement } from "~/hiring/lib/hiring-event-notice";
 // doesn't gate itself, so this route gates it directly.
 
 const ActionBodySchema = z.object({
-  intent: z.enum(["update", "delete", "set-check-in", "send-announcement", "mark-attendance"]).optional(),
+  intent: z
+    .enum(["update", "delete", "set-check-in", "set-broadcast", "send-announcement", "mark-attendance"])
+    .optional(),
   kind: z.enum(["HelpHour", "Social", "InfoSession", "Other"]).optional(),
   title: z.string().min(1).optional(),
   startsAt: z.string().min(1).optional(),
   endsAt: z.string().min(1).optional(),
   location: nullableTrimmed.optional(),
   open: z.boolean().optional(),
+  on: z.boolean().optional(),
   userId: idSchema.optional(),
   present: z.boolean().optional(),
   // Sent by AttendanceChecklist for occurrence-scoped meetings; this route
@@ -119,6 +123,16 @@ export async function action({ request, params }: Route.ActionArgs) {
         return withCors(request, Response.json({ error: "Missing 'open'" }, { status: 400 }));
       }
       const result = await setEventCheckInOpen({ eventId, open: body.open, actorId });
+      if ("error" in result) {
+        return withCors(request, Response.json({ error: result.error }, { status: result.status }));
+      }
+      return withCors(request, Response.json({ ok: true }));
+    }
+    case "set-broadcast": {
+      if (body.on === undefined) {
+        return withCors(request, Response.json({ error: "Missing 'on'" }, { status: 400 }));
+      }
+      const result = await setEventBroadcast({ eventId, on: body.on, actorId });
       if ("error" in result) {
         return withCors(request, Response.json({ error: result.error }, { status: result.status }));
       }

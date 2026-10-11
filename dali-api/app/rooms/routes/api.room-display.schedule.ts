@@ -3,6 +3,7 @@ import { displayUnauthorized, requireRoomDisplay } from "~/lib/room-display.serv
 import { resolvePhotoUrl } from "~/lib/photo";
 import { currentEvent, getRoomSchedule, parseWindow, serializeScheduleItem } from "~/lib/rooms.server";
 import { getActiveDisplayScan } from "~/lib/display-scan.server";
+import { getBroadcastEvent } from "~/hiring/lib/hiring-events.server";
 
 // GET /api/room-display/schedule?start=<iso>&end=<iso> — the paired room's
 // schedule for the display's local day, plus the event it should be scanning
@@ -15,10 +16,12 @@ export async function loader({ request }: Route.LoaderArgs) {
   const window = parseWindow(new URL(request.url));
   if (!window) return Response.json({ error: "start and end are required" }, { status: 400 });
 
-  const [items, scan] = await Promise.all([
+  const [items, scan, broadcast] = await Promise.all([
     getRoomSchedule(display.room.id, window.start, window.end),
     getActiveDisplayScan(),
+    getBroadcastEvent(),
   ]);
+  const origin = new URL(request.url).origin;
   const event = currentEvent(items);
   return Response.json({
     room: display.room,
@@ -32,6 +35,15 @@ export async function loader({ request }: Route.LoaderArgs) {
     ),
     currentEvent: event ? serializeScheduleItem(event) : null,
     attendanceScan: scan && { meetingId: scan.meetingId, title: scan.title, start: scan.start, end: scan.end },
+    applicationEvent: broadcast && {
+      id: broadcast.id,
+      title: broadcast.title,
+      kind: broadcast.kind,
+      start: broadcast.startsAt,
+      end: broadcast.endsAt,
+      location: broadcast.location,
+      checkInUrl: `${origin}/hiring/events/check-in/${broadcast.id}`,
+    },
     serverTime: new Date().toISOString(),
   });
 }
