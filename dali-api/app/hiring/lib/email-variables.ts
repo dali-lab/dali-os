@@ -98,6 +98,11 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlot, readonly TemplateVariableN
   // cycle's event card (hiring-event-notice.ts), to everyone who started an
   // application in the cycle.
   "notification:ApplicationEventAnnouncement": ["firstName", "eventTitle", "time", "location"],
+
+  // Domain added — manual "Email applicants" from a cycle's domain row
+  // (domain-added-notice.ts), once per domain, to everyone with a
+  // non-Withdrawn application in the cycle.
+  "notification:DomainAddedNotice": ["firstName", "domain", "closeDate", "applyUrl"],
 };
 
 export interface LintResult {

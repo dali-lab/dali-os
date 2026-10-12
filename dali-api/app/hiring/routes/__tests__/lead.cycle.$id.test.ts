@@ -17,6 +17,10 @@ vi.mock("~/hiring/lib/cycle-timeline.server", () => ({
   saveCycleTimeline: vi.fn(),
   roundsWithBoards: vi.fn().mockResolvedValue(new Set()),
 }));
+vi.mock("~/hiring/lib/domain-added-notice", () => ({
+  sendDomainAddedNotice: vi.fn(),
+  countDomainAddedRecipients: vi.fn(),
+}));
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
@@ -25,6 +29,7 @@ import { changeApplicants } from "~/hiring/lib/cycle-applicants.server";
 import { addDomainMentors, domainMentorIds } from "~/hiring/lib/cycle-rosters.server";
 import { addDomainChallenge, removeDomainChallenge } from "~/hiring/lib/application-form.server";
 import { saveCycleTimeline } from "~/hiring/lib/cycle-timeline.server";
+import { sendDomainAddedNotice } from "~/hiring/lib/domain-added-notice";
 import { STANDARD_TIMELINE, defaultTimeline } from "~/hiring/lib/cycle-timeline";
 import { defaultTimelineFor } from "~/hiring/lib/applicant-groups";
 import { action } from "~/hiring/routes/lead.cycle.$id";
@@ -1069,5 +1074,95 @@ describe("lead.cycle.$id action — set-domain-close-date", () => {
 
     expect(res.status).toBe(409);
     expect(mockPrisma.domainApplicationCycle.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("lead.cycle.$id action — notify-domain-added", () => {
+  const status = (newStatus: string) =>
+    mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue({ newStatus });
+
+  beforeEach(() => {
+    mockPrisma.domainApplicationCycle = { findUnique: vi.fn() };
+    vi.mocked(sendDomainAddedNotice).mockResolvedValue({ sent: 2, alreadySent: 0, skipped: 0 });
+  });
+
+  it("does nothing without confirm=true", async () => {
+    status("Open");
+    mockPrisma.domainApplicationCycle.findUnique.mockResolvedValue({ isReady: true });
+    await callAction({ intent: "notify-domain-added", domainId: DOMAIN_ID });
+    expect(sendDomainAddedNotice).not.toHaveBeenCalled();
+  });
+
+  it("refuses when the cycle isn't Open", async () => {
+    status("Draft");
+    mockPrisma.domainApplicationCycle.findUnique.mockResolvedValue({ isReady: true });
+    const res = (await callAction({
+      intent: "notify-domain-added",
+      domainId: DOMAIN_ID,
+      confirm: "true",
+    })) as Response;
+    expect(res.status).toBe(409);
+    expect(sendDomainAddedNotice).not.toHaveBeenCalled();
+  });
+
+  it("refuses when the domain isn't ready", async () => {
+    status("Open");
+    mockPrisma.domainApplicationCycle.findUnique.mockResolvedValue({ isReady: false });
+    const res = (await callAction({
+      intent: "notify-domain-added",
+      domainId: DOMAIN_ID,
+      confirm: "true",
+    })) as Response;
+    expect(res.status).toBe(409);
+    expect(sendDomainAddedNotice).not.toHaveBeenCalled();
+  });
+
+  it("refuses when the domain isn't in the cycle at all", async () => {
+    status("Open");
+    mockPrisma.domainApplicationCycle.findUnique.mockResolvedValue(null);
+    const res = (await callAction({
+      intent: "notify-domain-added",
+      domainId: DOMAIN_ID,
+      confirm: "true",
+    })) as Response;
+    expect(res.status).toBe(409);
+    expect(sendDomainAddedNotice).not.toHaveBeenCalled();
+  });
+
+  it("calls the sender once the cycle is Open and the domain is ready, with confirm", async () => {
+    status("Open");
+    mockPrisma.domainApplicationCycle.findUnique.mockResolvedValue({ isReady: true });
+    const res = (await callAction({
+      intent: "notify-domain-added",
+      domainId: DOMAIN_ID,
+      confirm: "true",
+    })) as Response;
+    expect(sendDomainAddedNotice).toHaveBeenCalledWith(CYCLE_ID, DOMAIN_ID, HIRING_LEAD_ID);
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toContain("notice=domain-added-notice-sent");
+  });
+
+  it("reports when nobody new was sent to (everyone already sent)", async () => {
+    status("Open");
+    mockPrisma.domainApplicationCycle.findUnique.mockResolvedValue({ isReady: true });
+    vi.mocked(sendDomainAddedNotice).mockResolvedValue({ sent: 0, alreadySent: 2, skipped: 0 });
+    const res = (await callAction({
+      intent: "notify-domain-added",
+      domainId: DOMAIN_ID,
+      confirm: "true",
+    })) as Response;
+    expect(res.headers.get("location")).toContain("notice=domain-added-notice-all-sent");
+  });
+
+  it("reports when there's no template bound yet", async () => {
+    status("Open");
+    mockPrisma.domainApplicationCycle.findUnique.mockResolvedValue({ isReady: true });
+    vi.mocked(sendDomainAddedNotice).mockResolvedValue({ sent: 0, alreadySent: 0, skipped: 3 });
+    const res = (await callAction({
+      intent: "notify-domain-added",
+      domainId: DOMAIN_ID,
+      confirm: "true",
+    })) as Response;
+    expect(res.headers.get("location")).toContain("notice=domain-added-notice-not-configured");
   });
 });

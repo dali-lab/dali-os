@@ -1895,6 +1895,10 @@ enum NotificationType {
   // Manual "Send announcement" blast from a hiring-cycle application event
   // to everyone who started an application in that cycle.
   ApplicationEventAnnouncement
+  // One-time notice when a domain joins an already-Open cycle with its own
+  // close date (domain-windows.ts), to everyone with a non-Withdrawn
+  // Application in the cycle.
+  DomainAddedNotice
 }
 
 // One row per (cycle, notificationType, applicant). Enforces single-send
