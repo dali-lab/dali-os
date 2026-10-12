@@ -3,7 +3,13 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db");
 
 import { prisma } from "~/lib/db";
-import { domainCloseDate, isDomainClosed, latestCloseDate } from "~/hiring/lib/domain-windows";
+import {
+  cycleDeadlineSummary,
+  domainCloseDate,
+  earliestCloseDate,
+  isDomainClosed,
+  latestCloseDate,
+} from "~/hiring/lib/domain-windows";
 import { canEditDomainSetup, domainGoLiveProblem, setDomainReady } from "~/hiring/lib/domain-windows.server";
 
 const mockPrisma = prisma as unknown as Record<string, any>;
@@ -46,6 +52,51 @@ describe("domainCloseDate / isDomainClosed", () => {
     expect(latestCloseDate([{ closeDate: null }, { closeDate: NOV_13 }], cycle)).toEqual(NOV_13);
     expect(latestCloseDate([{ closeDate: null }], cycle)).toEqual(OCT_30);
     expect(latestCloseDate([], cycle)).toBeNull();
+  });
+
+  it("earliestCloseDate is the conservative single date across every domain", () => {
+    expect(earliestCloseDate([{ closeDate: null }, { closeDate: NOV_13 }], cycle)).toEqual(OCT_30);
+    expect(earliestCloseDate([{ closeDate: NOV_13 }], cycle)).toEqual(NOV_13);
+    expect(earliestCloseDate([], cycle)).toBeNull();
+  });
+});
+
+describe("cycleDeadlineSummary", () => {
+  const domains = [
+    { domainId: "d1", closeDate: null },
+    { domainId: "d2", closeDate: NOV_13 },
+  ];
+
+  it("with no selection, shows the latest close across every ready domain and flags the earlier one", () => {
+    const { closeDate, earlierDomainsExist } = cycleDeadlineSummary(domains, cycle);
+    expect(closeDate).toEqual(NOV_13);
+    expect(earlierDomainsExist).toBe(true);
+  });
+
+  it("narrows to the applicant's selected domains when given a non-empty set", () => {
+    const { closeDate, earlierDomainsExist } = cycleDeadlineSummary(domains, cycle, ["d1"]);
+    expect(closeDate).toEqual(OCT_30);
+    // d2 (not selected) closes later than d1's shown deadline, so nothing closes earlier.
+    expect(earlierDomainsExist).toBe(false);
+  });
+
+  it("falls back to every ready domain when the selection is empty", () => {
+    const { closeDate } = cycleDeadlineSummary(domains, cycle, []);
+    expect(closeDate).toEqual(NOV_13);
+  });
+
+  it("earlierDomainsExist is false when every ready domain shares the same close", () => {
+    const { earlierDomainsExist } = cycleDeadlineSummary(
+      [{ domainId: "d1", closeDate: null }, { domainId: "d2", closeDate: null }],
+      cycle,
+    );
+    expect(earlierDomainsExist).toBe(false);
+  });
+
+  it("closeDate is null and earlierDomainsExist is false with no ready domains", () => {
+    const { closeDate, earlierDomainsExist } = cycleDeadlineSummary([], cycle);
+    expect(closeDate).toBeNull();
+    expect(earlierDomainsExist).toBe(false);
   });
 });
 

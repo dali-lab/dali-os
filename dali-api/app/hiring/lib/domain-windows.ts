@@ -30,3 +30,42 @@ export function latestCloseDate(domains: DomainWindow[], cycle: CycleWindow): Da
   }
   return latest;
 }
+
+/** The earliest close among the given domains — the conservative choice when
+ *  a single date must stand in for several domains with different windows
+ *  (the public site's one-`closeDate`-field fallback). Null when none close. */
+export function earliestCloseDate(domains: DomainWindow[], cycle: CycleWindow): Date | null {
+  let earliest: Date | null = null;
+  for (const d of domains) {
+    const close = domainCloseDate(d, cycle);
+    if (close && (!earliest || close < earliest)) earliest = close;
+  }
+  return earliest;
+}
+
+type DomainWindowWithId = DomainWindow & { domainId: string };
+
+/**
+ * The single close date worth showing for a cycle: the applicant's own
+ * deadline (latest across `selectedDomainIds`, when given and non-empty), or
+ * the latest across every ready domain otherwise. `earlierDomainsExist` is
+ * true when some ready domain's effective close is earlier than that date —
+ * the caller's cue to add a "some domains close earlier" qualifier, since the
+ * single date shown is otherwise the latest, not the only, deadline.
+ */
+export function cycleDeadlineSummary(
+  domains: DomainWindowWithId[],
+  cycle: CycleWindow,
+  selectedDomainIds?: Iterable<string> | null,
+): { closeDate: Date | null; earlierDomainsExist: boolean } {
+  const selected = selectedDomainIds ? new Set(selectedDomainIds) : null;
+  const relevant = selected && selected.size > 0 ? domains.filter((d) => selected.has(d.domainId)) : domains;
+  const closeDate = latestCloseDate(relevant, cycle);
+  const earlierDomainsExist =
+    closeDate !== null &&
+    domains.some((d) => {
+      const close = domainCloseDate(d, cycle);
+      return close !== null && close.getTime() < closeDate.getTime();
+    });
+  return { closeDate, earlierDomainsExist };
+}

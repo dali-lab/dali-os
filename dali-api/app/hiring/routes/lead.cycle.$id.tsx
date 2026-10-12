@@ -1055,6 +1055,38 @@ export async function action({ request, params }: Route.ActionArgs) {
     return cycleRedirect(request, params.id!);
   }
 
+  if (intent === "set-domain-close-date") {
+    const domainId = formData.get("domainId") as string;
+    if (!domainId) return Response.json({ error: "Missing domain" }, { status: 400 });
+    const latestUpdate = await prisma.applicationCycleStatusUpdate.findFirst({
+      where: { applicationCycleId: params.id },
+      orderBy: { createdAt: "desc" },
+      select: { newStatus: true },
+    });
+    const status = latestUpdate?.newStatus ?? "Draft";
+    if (status !== "Draft" && status !== "Open") {
+      return Response.json(
+        { error: "Domain close dates can only change while the cycle is Draft or Open." },
+        { status: 409 },
+      );
+    }
+    const raw = (formData.get("closeDate") as string) || null;
+    let closeDate: Date | null = null;
+    if (raw) {
+      const [y, m, d] = raw.split("-").map(Number);
+      closeDate = endOfDayInAppTz(new Date(Date.UTC(y, m - 1, d)));
+      if (closeDate.getTime() < Date.now()) {
+        return Response.json({ error: "Pick a date that hasn't passed" }, { status: 400 });
+      }
+    }
+    await prisma.domainApplicationCycle.update({
+      where: { domainId_applicationCycleId: { domainId, applicationCycleId: params.id } },
+      data: { closeDate },
+    });
+    invalidateActiveCycles();
+    return { ok: true };
+  }
+
   return cycleRedirect(request, params.id!);
 }
 
@@ -2185,6 +2217,7 @@ export default function HiringLeadCycleDetails() {
                       key={d.domainId}
                       domain={d}
                       cycleStatus={cycleStatus}
+                      cycleCloseDate={cycle?.closeDate ?? null}
                       showRubric={!!cycle?.hasChallenges}
                       challenge={challengeFor(d.domainId)}
                       rubricOptions={loaderData?.domainRubricVersions ?? []}
@@ -3777,9 +3810,21 @@ function GeneralApplicationSection({
   );
 }
 
+function toYmd(d: Date | string | null): string {
+  if (!d) return '';
+  const { year, month, day } = getZonedYMD(new Date(d), APPLICATION_TZ);
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function formatMonD(d: Date | string | null): string {
+  if (!d) return '';
+  return formatInTimeZone(new Date(d), APPLICATION_TZ, { month: 'short', day: 'numeric' });
+}
+
 function DomainOverridePanel({
   domain,
   cycleStatus,
+  cycleCloseDate,
   showRubric,
   challenge,
   rubricOptions,
@@ -3787,6 +3832,8 @@ function DomainOverridePanel({
 }: {
   domain: any;
   cycleStatus: string;
+  /** The cycle's own close date, for the "Same as cycle" label when this domain inherits it. */
+  cycleCloseDate: Date | string | null;
   /** The per-domain rubric scores the challenge; hidden when there is none. */
   showRubric: boolean;
   /** This domain's challenges; null when the cycle has none. */
@@ -3802,6 +3849,18 @@ function DomainOverridePanel({
   const staged = cycleStatus === 'Open' && !isReady;
   const setupEditable = cycleStatus === 'Draft' || staged;
   const readyLocked = !setupEditable;
+  // Unlike the rest of this panel's setup, the close date can move any time
+  // the cycle is still taking or reviewing changes — a lead may need to give
+  // one domain more (or less) time after it's already live to applicants.
+  const closeDateEditable = cycleStatus === 'Draft' || cycleStatus === 'Open';
+
+  const closeFetcher = useFetcher<{ error?: string }>();
+  const [editingClose, setEditingClose] = useState(false);
+  const [closeValue, setCloseValue] = useState(toYmd(domain.closeDate));
+  useEffect(() => { setCloseValue(toYmd(domain.closeDate)); }, [domain.closeDate]);
+  useEffect(() => {
+    if (closeFetcher.state === 'idle' && !closeFetcher.data?.error) setEditingClose(false);
+  }, [closeFetcher.state, closeFetcher.data]);
 
   const [selectedRubricId, setSelectedRubricId] = useState(domain.rubricVersionId ?? '');
   // Like the Challenge line, the rubric shows what's set and opens a picker on demand.
@@ -3913,6 +3972,75 @@ function DomainOverridePanel({
       {challenge && (
         <ChallengeLine domainId={domain.domainId} challenge={challenge} editable={setupEditable} />
       )}
+
+      <DomainSubRow
+        label="Closes"
+        value={
+          domain.closeDate ? (
+            <span>{formatMonD(domain.closeDate)}</span>
+          ) : (
+            <SubRowEmpty>
+              {cycleCloseDate ? `Same as cycle (${formatMonD(cycleCloseDate)})` : "Same as cycle (no date set)"}
+            </SubRowEmpty>
+          )
+        }
+        action={
+          closeDateEditable &&
+          !editingClose && (
+            <>
+              <button type="button" onClick={() => setEditingClose(true)} className={buttonClasses('secondary', 'sm')}>
+                {domain.closeDate ? 'Change' : 'Set'}
+              </button>
+              {domain.closeDate && (
+                <button
+                  type="button"
+                  disabled={closeFetcher.state !== 'idle'}
+                  onClick={() =>
+                    closeFetcher.submit(
+                      { intent: 'set-domain-close-date', domainId: domain.domainId, closeDate: '' },
+                      { method: 'post', preventScrollReset: true },
+                    )
+                  }
+                  className={buttonClasses('ghost', 'sm')}
+                >
+                  Clear
+                </button>
+              )}
+            </>
+          )
+        }
+        editor={
+          closeDateEditable && editingClose ? (
+            <closeFetcher.Form method="post" preventScrollReset className="flex flex-wrap items-end gap-2">
+              <input type="hidden" name="intent" value="set-domain-close-date" />
+              <input type="hidden" name="domainId" value={domain.domainId} />
+              <DateField
+                mode="date"
+                name="closeDate"
+                value={closeValue}
+                onChange={setCloseValue}
+                ariaLabel={`${domainName} closes`}
+                className="w-44"
+                buttonClassName={rowTrigger(os.formTrigger)}
+              />
+              <button type="submit" disabled={closeFetcher.state !== 'idle'} className={buttonClasses('primary', 'sm', 'h-9')}>
+                Save
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setCloseValue(toYmd(domain.closeDate));
+                  setEditingClose(false);
+                }}
+                className={buttonClasses('secondary', 'sm', 'h-9')}
+              >
+                Cancel
+              </button>
+              {closeFetcher.data?.error && <p className="w-full text-xs text-red-700">{closeFetcher.data.error}</p>}
+            </closeFetcher.Form>
+          ) : null
+        }
+      />
 
       {showRubric && (
         <DomainSubRow

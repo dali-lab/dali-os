@@ -1000,3 +1000,74 @@ describe("lead.cycle.$id action — add-domain / remove-domain", () => {
     });
   });
 });
+
+describe("lead.cycle.$id action — set-domain-close-date", () => {
+  const status = (newStatus: string) =>
+    mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue({ newStatus });
+  beforeEach(() => {
+    mockPrisma.domainApplicationCycle = { update: vi.fn().mockResolvedValue({}) };
+  });
+
+  it("sets end-of-day ET for a future date", async () => {
+    status("Open");
+    const futureYear = new Date().getUTCFullYear() + 1;
+    await callAction({ intent: "set-domain-close-date", domainId: DOMAIN_ID, closeDate: `${futureYear}-06-01` });
+
+    expect(mockPrisma.domainApplicationCycle.update).toHaveBeenCalledTimes(1);
+    const args = mockPrisma.domainApplicationCycle.update.mock.calls[0][0];
+    expect(args.where).toEqual({
+      domainId_applicationCycleId: { domainId: DOMAIN_ID, applicationCycleId: CYCLE_ID },
+    });
+    expect(args.data.closeDate).toBeInstanceOf(Date);
+    expect(args.data.closeDate.getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it("clears the close date (inherits the cycle's) when posted empty", async () => {
+    status("Draft");
+    await callAction({ intent: "set-domain-close-date", domainId: DOMAIN_ID, closeDate: "" });
+
+    expect(mockPrisma.domainApplicationCycle.update).toHaveBeenCalledWith({
+      where: { domainId_applicationCycleId: { domainId: DOMAIN_ID, applicationCycleId: CYCLE_ID } },
+      data: { closeDate: null },
+    });
+  });
+
+  it("refuses a date that has already passed", async () => {
+    status("Draft");
+    const res = (await callAction({
+      intent: "set-domain-close-date",
+      domainId: DOMAIN_ID,
+      closeDate: "2020-01-01",
+    })) as Response;
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("Pick a date that hasn't passed");
+    expect(mockPrisma.domainApplicationCycle.update).not.toHaveBeenCalled();
+  });
+
+  it("refuses once the cycle is UnderReview", async () => {
+    status("UnderReview");
+    const futureYear = new Date().getUTCFullYear() + 1;
+    const res = (await callAction({
+      intent: "set-domain-close-date",
+      domainId: DOMAIN_ID,
+      closeDate: `${futureYear}-06-01`,
+    })) as Response;
+
+    expect(res.status).toBe(409);
+    expect(mockPrisma.domainApplicationCycle.update).not.toHaveBeenCalled();
+  });
+
+  it("refuses once the cycle is Completed", async () => {
+    status("Completed");
+    const res = (await callAction({
+      intent: "set-domain-close-date",
+      domainId: DOMAIN_ID,
+      closeDate: "",
+    })) as Response;
+
+    expect(res.status).toBe(409);
+    expect(mockPrisma.domainApplicationCycle.update).not.toHaveBeenCalled();
+  });
+});

@@ -46,6 +46,9 @@ export async function loader({ request }: Route.LoaderArgs) {
     hasInterviews: true,
     closeDate: null as string | null,
     originalCloseDate: null as string | null,
+    deadline: null as string | null,
+    allDomainsClosed: false,
+    openDomainsNote: null as string | null,
     domainApplications: [] as any[],
     slotDurationMinutes: 30,
     hasApplication: false,
@@ -129,12 +132,19 @@ export default function Portal() {
     hasInterviews,
     closeDate,
     originalCloseDate,
+    deadline,
+    allDomainsClosed,
+    openDomainsNote,
     domainApplications,
     slotDurationMinutes,
     hasApplication,
     applicationStatus,
     viewerTimeZone,
   } = data;
+  // The strikethrough "extended from" copy only makes sense when the
+  // applicant's deadline is the cycle's own close — a domain with its own
+  // closeDate was never extended by the cycle-level Extend control.
+  const deadlineOriginal = deadline && deadline === closeDate ? originalCloseDate : null;
   const applyHref = `/portal/apply/${cycleId}`;
 
   const revalidator = useRevalidator();
@@ -172,7 +182,7 @@ export default function Portal() {
   } else if (das.length === 0) {
     if (applicationStatus === "Submitted") {
       topLevelStage = "Pending";
-    } else if (!hasApplication && cycleStatus === "Open") {
+    } else if (!hasApplication && !allDomainsClosed) {
       topLevelStage = "ApplicationOpen";
     } else if (!hasApplication) {
       topLevelStage = "ApplicationsClosed";
@@ -190,7 +200,7 @@ export default function Portal() {
           <h1 className="font-heading text-4xl font-medium text-foreground">
             {cycleName} Application Portal
           </h1>
-          {cycleStatus === "Open" && closeDate && <DeadlineLine closeDate={closeDate} originalCloseDate={originalCloseDate} timeZone={viewerTimeZone} />}
+          {cycleStatus === "Open" && deadline && <DeadlineLine closeDate={deadline} originalCloseDate={deadlineOriginal} timeZone={viewerTimeZone} />}
           {cycleChoices.length > 1 && (
             <nav aria-label="Cycles" className="mt-4 flex flex-wrap gap-2">
               {(cycleChoices as { id: string; name: string }[]).map((c) => (
@@ -227,7 +237,14 @@ export default function Portal() {
             </p>
           </div>
         )}
-        {topLevelStage === "ApplicationOpen" && <ApplicationOpenView cycleName={cycleName} applyHref={applyHref} />}
+        {topLevelStage === "ApplicationOpen" && (
+          <>
+            <ApplicationOpenView cycleName={cycleName} applyHref={applyHref} />
+            {openDomainsNote && (
+              <p className="max-w-2xl mx-auto -mt-8 text-center text-sm text-muted-foreground">{openDomainsNote}</p>
+            )}
+          </>
+        )}
         {topLevelStage === "Pending" && (
           <>
             <PendingView cycleName={cycleName} />
