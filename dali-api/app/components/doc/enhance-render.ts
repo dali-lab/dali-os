@@ -4,7 +4,13 @@
 // Sibling to insert.ts on purpose: same "plain types in, editor calls out"
 // shape, kept out of meeting-recorder since it's BlockNote-specific.
 
-import { actionItemMatchesBlock, type EditorOp, type EnhanceActionItem, type EnhanceOpBlock } from "~/components/meeting-recorder/enhance-plan";
+import {
+  actionItemMatchesBlock,
+  type EditorOp,
+  type EnhanceActionItem,
+  type EnhanceOpBlock,
+  type SnapshotBlock,
+} from "~/components/meeting-recorder/enhance-plan";
 import { blockOwnText } from "./schema/configs";
 import type { DocBlock, DocEditorInstance, DocPartialBlock } from "./schema/build";
 
@@ -39,6 +45,15 @@ export function findTranscriptToggle(blocks: readonly DocBlock[]): DocBlock | nu
       (b) => b.type === "heading" && Boolean((b.props as { isToggleable?: boolean }).isToggleable) && blockOwnText(b) === "Transcript",
     ) ?? null
   );
+}
+
+/** The top-level blocks Enhance reads and merges against: the document minus
+ *  its Transcript toggle. The toggle holds the raw transcript Insert already
+ *  wrote, so Enhance would otherwise anchor new notes below it or try to
+ *  rewrite its heading. */
+export function enhanceSnapshotBlocks(blocks: readonly DocBlock[]): SnapshotBlock[] {
+  const toggle = findTranscriptToggle(blocks);
+  return blocks.filter((b) => b !== toggle).map((b) => ({ id: b.id, type: b.type, text: blockOwnText(b) }));
 }
 
 export function hasTranscriptToggle(editor: DocEditorInstance): boolean {

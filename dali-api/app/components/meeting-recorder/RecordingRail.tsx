@@ -40,10 +40,10 @@ export function deriveRailState(
 ): RailState | null {
   if (rec.phase === "idle") return null;
   if (rec.phase !== "done") return rec.phase;
-  if (rec.insertedAt) return "inserted";
   if (rec.stalePreview) return "stalePreview";
   if (rec.enhanceSheetOpen) return rec.enhanceNotes ? "preview" : "generating";
   if (rec.enhancedAt) return "enhanced";
+  if (rec.insertedAt) return "inserted";
   return "ready";
 }
 
@@ -191,7 +191,9 @@ export function statusLineFor(rec: UseMeetingRecording, state: RailState): React
       }
       break;
     case "inserted":
-      text = "Already in this note. Discarding only removes the recording, not what was inserted.";
+      text = rec.aiEnabled
+        ? "Transcript inserted. Enhance can still write notes from it. Discarding only removes the recording, not what was inserted."
+        : "Transcript inserted. Discarding only removes the recording, not what was inserted.";
       break;
     case "stalePreview":
       text = "Someone enhanced this note after your preview.";
@@ -389,9 +391,21 @@ function RailActions({ rec, state }: { rec: UseMeetingRecording; state: RailStat
       );
 
     case "inserted":
-      return rec.canDiscard ? (
-        <IconButton label="Discard recording" icon={Trash2} tone="destructive" onClick={() => void rec.discard()} />
-      ) : null;
+      return (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {rec.canDiscard && <IconButton label="Discard recording" icon={Trash2} tone="destructive" onClick={() => void rec.discard()} />}
+          {rec.aiEnabled && rec.canEdit && (
+            <button
+              type="button"
+              onClick={() => void rec.onEnhanceClick(false)}
+              disabled={!rec.hasTranscript || rec.busy}
+              className={buttonClasses("primary", "sm")}
+            >
+              Enhance notes
+            </button>
+          )}
+        </div>
+      );
 
     case "stalePreview":
       return (
