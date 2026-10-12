@@ -40,6 +40,7 @@ export {
   citationHref,
   appendTaskMentionContent,
   transcriptToggleBlock,
+  enhanceSnapshotBlocks,
   findTranscriptToggle,
   hasTranscriptToggle,
 } from "./enhance-render";

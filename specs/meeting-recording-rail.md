@@ -94,7 +94,7 @@ Recording and stopping never render in a blocking surface at any width.
 | generating | "Reading your notes and the transcript…" | transcript | | Cancel |
 | preview | "Preview: 4 blocks changed, 6 added." plus "2 blocks changed while this ran and were left as typed." when > 0 | the preview list and action rows | Apply | Cancel |
 | enhanced | "Enhanced Oct 10, 2:14 PM by Ada. Enhance again rebuilds the notes from the current text and the transcript." | action rows with Create tasks for items without tasks (when the note is on a project and the viewer can create tasks); transcript | Enhance again | Discard (owner or Core) |
-| inserted | "Already in this note. Discarding only removes the recording, not what was inserted." | transcript | | Discard (owner or Core) |
+| inserted | "Transcript inserted. Enhance can still write notes from it. Discarding only removes the recording, not what was inserted." | transcript | AI on: Enhance notes | Discard (owner or Core) |
 | stale preview | "Someone enhanced this note after your preview." | | Reload preview | Cancel |
 
 Following someone else's recording uses the same states read-only with the
