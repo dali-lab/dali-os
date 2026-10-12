@@ -661,11 +661,13 @@ async function main() {
       startTermIds: [seedTerm.id, ...upcomingTerms.map((t) => t.id)],
       generalRubricVersionId: "rv-general-v1",
       applicationFormId: generalApplicationForm.id,
+      // Every domain is ready: an Open cycle only reaches Open once they all
+      // are, and applicants see ready domains only.
       domains: {
         create: [
-          { domainId: designDomain.id, rubricVersionId: designRubricVersion.id },
-          { domainId: engDomain.id, rubricVersionId: engRubricVersion.id },
-          { domainId: pmDomain.id, rubricVersionId: pmRubricVersion.id },
+          { domainId: designDomain.id, rubricVersionId: designRubricVersion.id, isReady: true },
+          { domainId: engDomain.id, rubricVersionId: engRubricVersion.id, isReady: true },
+          { domainId: pmDomain.id, rubricVersionId: pmRubricVersion.id, isReady: true },
         ],
       },
       domainChallengeForms: {
@@ -1504,9 +1506,9 @@ async function main() {
       applicationFormId: generalApplicationForm.id,
       domains: {
         create: [
-          { domainId: designDomain.id },
-          { domainId: engDomain.id },
-          { domainId: pmDomain.id },
+          { domainId: designDomain.id, isReady: true },
+          { domainId: engDomain.id, isReady: true },
+          { domainId: pmDomain.id, isReady: true },
         ],
       },
       domainChallengeForms: {
