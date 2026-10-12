@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Start AI meeting notes</title>
+    <link rel="stylesheet" href="pairing.css" />
+    <link rel="stylesheet" href="record-prompt.css" />
+  </head>
+  <body>
+    <main class="pill" role="alertdialog" aria-label="Start AI meeting notes">
+      <img class="app-icon" src="app-icon.png" alt="" width="36" height="36" />
+
+      <div class="text">
+        <div class="title">Start AI meeting notes</div>
+        <div id="subtitle" class="subtitle">Checking the meeting…</div>
+      </div>
+
+      <div class="split">
+        <button id="btn-start" class="split-main">Start recording</button>
+        <button id="btn-chevron" class="split-chevron" aria-haspopup="true" aria-expanded="false" aria-label="More options">
+          <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
+            <path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+      </div>
+
+      <button id="btn-close" class="close" aria-label="Dismiss" title="Dismiss">&times;</button>
+    </main>
+
+    <!-- Hangs below the pill. The window grows to fit it while it's open
+         (record_prompt_set_expanded) since nothing can paint past the frame. -->
+    <section id="menu" class="menu hidden" role="menu">
+      <button id="menu-open" class="menu-item" role="menuitem">Open the note instead</button>
+      <button id="menu-mute" class="menu-item" role="menuitem">Don't suggest for this meeting</button>
+      <button id="menu-dismiss" class="menu-item" role="menuitem">Not now</button>
+    </section>
+    <script src="record-prompt.js"></script>
+  </body>
+</html>

@@ -44,7 +44,7 @@ describe("list_my_upcoming_meetings", () => {
         id: "iv1",
         startTime: new Date("2026-05-14T15:00:00Z"),
         endTime: new Date("2026-05-14T15:30:00Z"),
-        location: "PodAppa",
+        room: { name: "Pod Appa" },
         assignments: [{ id: "a1" }, { id: "a2" }],
       },
     ]);

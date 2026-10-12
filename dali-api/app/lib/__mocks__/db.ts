@@ -121,6 +121,22 @@ export const prisma = {
   applicationCycleStatusUpdate: {
     findFirst: vi.fn(),
   },
+  hiringEvent: {
+    findUnique: vi.fn(),
+    findFirst: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+    create: vi.fn(),
+    update: vi.fn(),
+    updateMany: vi.fn(),
+    delete: vi.fn(),
+  },
+  hiringEventAttendance: {
+    findUnique: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+    upsert: vi.fn(),
+    delete: vi.fn(),
+    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+  },
   auditLog: {
     create: vi.fn(),
   },
@@ -270,6 +286,8 @@ export const prisma = {
     findFirst: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
     create: vi.fn(),
+    update: vi.fn(),
+    updateMany: vi.fn().mockResolvedValue({ count: 0 }),
   },
   epic: {
     findFirst: vi.fn(),
@@ -317,6 +335,7 @@ export const prisma = {
   },
   page: {
     findUnique: vi.fn(),
+    findUniqueOrThrow: vi.fn(),
     findFirst: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
     groupBy: vi.fn().mockResolvedValue([]),
@@ -385,6 +404,7 @@ export const prisma = {
   scheduledMeeting: {
     findMany: vi.fn().mockResolvedValue([]),
     findUnique: vi.fn(),
+    findUniqueOrThrow: vi.fn(),
     findFirst: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
@@ -542,7 +562,9 @@ export const prisma = {
   userCalendarLink: {
     findMany: vi.fn().mockResolvedValue([]),
     findUnique: vi.fn(),
+    findFirst: vi.fn(),
     update: vi.fn(),
+    delete: vi.fn(),
   },
   term: {
     findFirst: vi.fn().mockResolvedValue(null),
@@ -779,9 +801,13 @@ export const prisma = {
   meetingRecording: {
     create: vi.fn(),
     findUnique: vi.fn(),
+    findFirst: vi.fn().mockResolvedValue(null),
+    findMany: vi.fn().mockResolvedValue([]),
+    count: vi.fn().mockResolvedValue(0),
     update: vi.fn(),
+    updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     delete: vi.fn(),
-    deleteMany: vi.fn(),
+    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   },
   outboundMessage: {
     create: vi.fn(),

@@ -11,7 +11,13 @@ import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 import { buttonClasses } from "~/components/ui/Button";
 import { useDialog } from "~/components/ui/dialog";
 import { QuestionList } from "~/hiring/components/ApplicationAnswers";
+import {
+  loadContinuedInterestView,
+  type ContinuedInterestView,
+} from "~/hiring/lib/continued-interest.server";
 import { sendInterviewCancelEmails } from "~/hiring/lib/interview-emails";
+import { deprovisionInterviewMeet } from "~/hiring/lib/interview-meet";
+import { releaseInterviewRoom } from "~/hiring/lib/scheduling";
 
 export const meta: Route.MetaFunction = () => [{ title: "My application · DALI OS" }];
 
@@ -66,6 +72,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         name: da.domain?.name ?? "Unknown Domain",
         questions,
         answers,
+        continuedInterest: await loadContinuedInterestView(da),
       };
     }),
   );
@@ -132,7 +139,13 @@ export async function action({ request }: Route.ActionArgs) {
         applicationCycleId: active.id,
         domainApplication: { applicationId: application.id },
       },
-      select: { id: true, domainApplicationId: true },
+      select: {
+        id: true,
+        domainApplicationId: true,
+        calendarEventId: true,
+        roomBookingId: true,
+        roomBooking: { select: { userId: true } },
+      },
     });
 
     if (scheduled.length > 0) {
@@ -145,6 +158,9 @@ export async function action({ request }: Route.ActionArgs) {
         where: { interviewId: { in: ids }, status: "Active" },
         data: { status: "Declined" },
       });
+      for (const iv of scheduled) {
+        await releaseInterviewRoom(iv, tx);
+      }
     }
 
     return scheduled;
@@ -158,7 +174,10 @@ export async function action({ request }: Route.ActionArgs) {
     request,
   });
 
-  for (const { id, domainApplicationId } of cancelledInterviews) {
+  // Drop each cancelled interview's hiring-calendar event, then send the
+  // cancellation ICS. Both best-effort, like the single-interview cancel route.
+  for (const { id, domainApplicationId, calendarEventId } of cancelledInterviews) {
+    await deprovisionInterviewMeet({ id, calendarEventId });
     sendInterviewCancelEmails(id, domainApplicationId).catch(() => {});
   }
 
@@ -171,10 +190,12 @@ function DomainSection({
   name,
   questions,
   answers,
+  continuedInterest,
 }: {
   name: string;
   questions: Question[];
   answers: Record<string, string>;
+  continuedInterest: ContinuedInterestView | null;
 }) {
   return (
     <details className="group rounded-os-card border border-border overflow-hidden">
@@ -191,6 +212,15 @@ function DomainSection({
       </summary>
       <div className="px-6 py-5">
         <QuestionList questions={questions} answers={answers} />
+        {continuedInterest && (
+          <div className="mt-5 border-t border-border pt-5">
+            <p className="text-sm font-bold text-foreground mb-4">Continued interest</p>
+            <QuestionList
+              questions={continuedInterest.questions}
+              answers={continuedInterest.answers}
+            />
+          </div>
+        )}
       </div>
     </details>
   );
@@ -207,7 +237,7 @@ export default function PortalApplication() {
       canWithdraw: boolean;
       generalQuestions: Question[];
       generalAnswers: Record<string, string>;
-      domains: { id: string; name: string; questions: Question[]; answers: Record<string, string> }[];
+      domains: { id: string; name: string; questions: Question[]; answers: Record<string, string>; continuedInterest: ContinuedInterestView | null }[];
     };
 
   const isWithdrawn = withdrawnAt !== null;
@@ -325,6 +355,7 @@ export default function PortalApplication() {
                   name={d.name}
                   questions={d.questions}
                   answers={d.answers}
+                  continuedInterest={d.continuedInterest}
                 />
               ))}
             </div>

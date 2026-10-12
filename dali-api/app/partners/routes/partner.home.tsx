@@ -6,6 +6,7 @@ import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
 import { partnerProjectsWhereForOrgs } from "~/partners/lib/partner-access";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { ProjectCoverImage } from "~/projects/components/ProjectCoverImage";
+import { buttonClasses } from "~/components/ui/Button";
 import {
   PARTNER_APPLICATION_STATUS_LABELS,
   PARTNER_APPLICATION_STATUS_PILL,
@@ -180,7 +181,7 @@ function ApplicationCard({ app }: { app: AppRow }) {
   return (
     <Link
       to={`/partner/applications/${app.id}`}
-      className="block bg-card border border-border rounded-2xl p-4 hover:border-accent-coral transition"
+      className="block rounded-os-card bg-os-card p-4 transition-colors hover:bg-os-card-hover"
     >
       <div className="flex items-start justify-between gap-3 mb-4">
         <div className="min-w-0">
@@ -228,19 +229,19 @@ const STEPS = [
 function HowItWorks() {
   return (
     <section>
-      <h2 className="font-heading text-lg font-semibold text-dark-blue mb-4">
+      <h2 className="font-heading text-[19px] font-semibold text-foreground mb-4">
         How it works
       </h2>
       <ol className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {STEPS.map((s) => (
-          <li key={s.n} className="bg-card border border-border rounded-2xl p-5">
-            <span className="flex items-center justify-center h-8 w-8 rounded-full bg-accent-coral/15 text-accent-coral font-heading font-bold text-sm">
+          <li key={s.n} className="rounded-os-card bg-os-card p-5">
+            <span className="flex items-center justify-center h-8 w-8 rounded-full bg-os-accent/15 text-os-accent font-heading font-bold text-sm">
               {s.n}
             </span>
-            <p className="mt-3 font-heading font-semibold text-dark-blue">
+            <p className="mt-3 font-heading font-semibold text-foreground">
               {s.title}
             </p>
-            <p className="mt-1 text-sm text-muted-foreground">{s.desc}</p>
+            <p className="mt-1 text-sm text-os-grey">{s.desc}</p>
           </li>
         ))}
       </ol>
@@ -256,8 +257,8 @@ function LearnMoreLink({ muted }: { muted?: boolean }) {
       rel="noreferrer"
       className={`inline-flex items-center gap-1 text-sm font-medium transition ${
         muted
-          ? "text-muted-foreground hover:text-accent-coral"
-          : "text-accent-coral hover:underline"
+          ? "text-os-muted hover:text-os-accent"
+          : "text-os-accent hover:underline"
       }`}
     >
       Learn more about partnering with DALI
@@ -275,27 +276,24 @@ export default function PartnerHome() {
   return (
     <div className="flex flex-col gap-8 max-w-5xl">
       <div>
-        <h1 className="font-heading text-3xl font-bold text-dark-blue">
+        <h1 className="font-heading text-4xl font-medium text-foreground">
           Welcome{firstName ? `, ${firstName}` : ""}
         </h1>
-        <p className="text-muted-foreground mt-1">
+        <p className="text-os-grey mt-1">
           Your projects and applications with the DALI Lab.
         </p>
       </div>
 
       {isFresh && (
-        <section className="bg-card border border-border rounded-2xl p-8 sm:p-10 flex flex-col items-center text-center">
-          <h2 className="font-heading text-2xl font-bold text-dark-blue">
+        <section className="rounded-os-card bg-os-card p-8 sm:p-10 flex flex-col items-center text-center">
+          <h2 className="font-heading text-2xl font-bold text-foreground">
             Have an idea?
           </h2>
-          <p className="text-muted-foreground mt-2 max-w-md">
+          <p className="text-os-grey mt-2 max-w-md">
             Partner with the DALI Lab to design and build software with a student
             team. Pitch a project and we'll take it from there.
           </p>
-          <Link
-            to="/partner/apply"
-            className="mt-6 inline-block rounded-xl bg-dark-blue text-white font-heading font-semibold px-6 py-3 text-sm hover:opacity-90 transition"
-          >
+          <Link to="/partner/apply" className={buttonClasses("primary", "md", "mt-6")}>
             Pitch a project
           </Link>
           <div className="mt-4">
@@ -306,7 +304,7 @@ export default function PartnerHome() {
 
       {hasProjects && (
         <section>
-          <h2 className="font-heading text-lg font-semibold text-dark-blue mb-3">
+          <h2 className="font-heading text-[19px] font-semibold text-foreground mb-3">
             Your projects
           </h2>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -314,7 +312,7 @@ export default function PartnerHome() {
               <Link
                 key={p.id}
                 to={`/partner/projects/${p.id}`}
-                className="bg-card border border-border rounded-2xl overflow-hidden hover:border-accent-coral transition group"
+                className="group rounded-os-card bg-os-card overflow-hidden transition-colors hover:bg-os-card-hover"
               >
                 <ProjectCoverImage
                   name={p.name}
@@ -323,11 +321,11 @@ export default function PartnerHome() {
                   placeholderClassName="w-full h-32"
                 />
                 <div className="p-4">
-                  <span className="font-heading font-semibold text-dark-blue group-hover:text-accent-coral transition">
+                  <span className="font-heading font-semibold text-foreground group-hover:text-os-accent transition-colors">
                     {p.name}
                   </span>
                   {p.description && (
-                    <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
+                    <p className="text-sm text-os-grey mt-1 line-clamp-2">
                       {p.description}
                     </p>
                   )}
@@ -341,12 +339,12 @@ export default function PartnerHome() {
       {hasApplications && (
         <section>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="font-heading text-lg font-semibold text-dark-blue">
+            <h2 className="font-heading text-[19px] font-semibold text-foreground">
               Applications
             </h2>
             <Link
               to="/partner/apply"
-              className="text-sm font-medium text-accent-coral hover:underline"
+              className="text-sm font-medium text-os-accent hover:underline"
             >
               + Pitch a project
             </Link>
@@ -357,7 +355,7 @@ export default function PartnerHome() {
             ))}
           </div>
           {!hasProjects && (
-            <p className="text-xs text-muted-foreground mt-3">
+            <p className="text-xs text-os-muted mt-3">
               Once an application is accepted and a team is staffed, your project
               will appear here.
             </p>

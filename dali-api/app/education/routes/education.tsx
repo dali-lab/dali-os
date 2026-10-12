@@ -111,7 +111,7 @@ export default function EducationHub() {
       />
 
       {dashboard.myCourses.length === 0 && myApplications.length === 0 && (
-        <div className="rounded-2xl border border-border bg-card p-8 text-center">
+        <div className="rounded-os-card border border-border bg-card p-8 text-center">
           <p className="font-heading font-semibold text-foreground">
             You&apos;re not in a course yet
           </p>
@@ -132,7 +132,7 @@ export default function EducationHub() {
           <h2 className="mb-2 font-heading text-sm font-semibold uppercase tracking-wide text-muted-foreground">
             Your applications
           </h2>
-          <ul className="divide-y divide-border rounded-2xl border border-border bg-card">
+          <ul className="divide-y divide-border rounded-os-card border border-border bg-card">
             {myApplications.map((a) => (
               <li key={a.id} className="flex items-center justify-between gap-3 px-4 py-3">
                 <div className="min-w-0">
@@ -148,7 +148,7 @@ export default function EducationHub() {
                   {a.certificateId && (
                     <Link
                       to={`/education/certificates/${a.certificateId}`}
-                      className="text-xs font-semibold text-accent-coral hover:underline"
+                      className="text-xs font-semibold text-os-accent hover:underline"
                     >
                       Certificate
                     </Link>

@@ -35,6 +35,7 @@ function makeApp(opts: {
         application: { statusUpdates: opts.statusUpdates },
         decisions: [],
         interviews: [],
+        submittedAt: opts.statusUpdates.some((u) => u.newStatus === "Submitted") ? d("2026-01-01") : null,
       },
     ],
   };

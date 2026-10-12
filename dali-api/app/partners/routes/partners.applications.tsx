@@ -14,7 +14,7 @@ import { UPCOMING, termFilterOrder } from "~/lib/terms.shared";
 import type { DragEndEvent } from "@dnd-kit/core";
 import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
 import type { Route } from "./+types/partners.applications";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { prisma } from "~/lib/db";
@@ -99,7 +99,7 @@ type RequiredCell = {
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  if (auth.user.type === "applicant") return redirect("/portal");
+  if (await isNonMember(auth, request)) return redirect("/portal");
   if (!(await canViewStaffing(auth.user.sub))) return redirect("/");
 
   const [applications, canEdit, roleRequests, termFilter] =
@@ -220,7 +220,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  if (auth.user.type === "applicant") return redirect("/portal");
+  if (await isNonMember(auth, request)) return redirect("/portal");
   if (!(await isCore(auth.user.sub))) {
     return { error: "You don't have permission to create applications." };
   }
@@ -426,7 +426,7 @@ export default function PartnersApplications() {
                 autoFocus
                 required
                 placeholder="What is the partner pitching?"
-                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30"
               />
             </label>
             <label className="flex flex-col gap-1 text-xs">
@@ -436,7 +436,7 @@ export default function PartnersApplications() {
                 type="email"
                 required
                 placeholder="contact@company.com"
-                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30"
               />
             </label>
             <label className="flex flex-col gap-1 text-xs">
@@ -445,7 +445,7 @@ export default function PartnersApplications() {
                 name="applicantName"
                 type="text"
                 placeholder="Jane Smith (optional)"
-                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30"
               />
             </label>
           </div>
@@ -971,7 +971,7 @@ function DomainLegend({
           type="button"
           onClick={() => onFocus(d.id)}
           aria-pressed={focus === d.id}
-          className={`inline-flex items-center gap-1.5 text-xs text-muted-foreground rounded px-1 -mx-1 transition-opacity hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-coral/40 ${
+          className={`inline-flex items-center gap-1.5 text-xs text-muted-foreground rounded px-1 -mx-1 transition-opacity hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/40 ${
             focus === "all" || focus === d.id ? "opacity-100" : "opacity-40"
           }`}
         >

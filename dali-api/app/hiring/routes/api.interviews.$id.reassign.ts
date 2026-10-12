@@ -6,6 +6,7 @@ import { isCore } from "~/lib/roles";
 import { parseJson, idSchema } from "~/lib/validate";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
 import { sendReassignmentEmails } from "~/hiring/lib/interview-emails";
+import { syncInterviewMeetAttendees } from "~/hiring/lib/interview-meet";
 import { notifyInterviewAssigned } from "~/hiring/lib/interview-notifications";
 import { logAuditEvent } from "~/lib/audit";
 
@@ -111,7 +112,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     throw err;
   }
 
-  // Best-effort: notify old and new interviewers via email/calendar
+  // Best-effort: notify old and new interviewers via email/calendar, and put
+  // the replacement on the Meet event's guest list so they join without a knock.
+  syncInterviewMeetAttendees(interview.id).catch(() => {});
   sendReassignmentEmails(
     interview.id,
     interview.domainApplicationId,

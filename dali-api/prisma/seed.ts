@@ -656,16 +656,18 @@ async function main() {
       closeDate: ts(30 * 24 * 60 * 60 * 1000),
       // Hiring runs in the active term, and offers a start in it or the two
       // after it — a real choice, so /portal/apply shows the start-term picker
-      // (behind the `start-terms` flag) with something to pick.
+      // with something to pick.
       termId: seedTerm.id,
       startTermIds: [seedTerm.id, ...upcomingTerms.map((t) => t.id)],
       generalRubricVersionId: "rv-general-v1",
       applicationFormId: generalApplicationForm.id,
+      // Every domain is ready: an Open cycle only reaches Open once they all
+      // are, and applicants see ready domains only.
       domains: {
         create: [
-          { domainId: designDomain.id, rubricVersionId: designRubricVersion.id },
-          { domainId: engDomain.id, rubricVersionId: engRubricVersion.id },
-          { domainId: pmDomain.id, rubricVersionId: pmRubricVersion.id },
+          { domainId: designDomain.id, rubricVersionId: designRubricVersion.id, isReady: true },
+          { domainId: engDomain.id, rubricVersionId: engRubricVersion.id, isReady: true },
+          { domainId: pmDomain.id, rubricVersionId: pmRubricVersion.id, isReady: true },
         ],
       },
       domainChallengeForms: {
@@ -1504,9 +1506,9 @@ async function main() {
       applicationFormId: generalApplicationForm.id,
       domains: {
         create: [
-          { domainId: designDomain.id },
-          { domainId: engDomain.id },
-          { domainId: pmDomain.id },
+          { domainId: designDomain.id, isReady: true },
+          { domainId: engDomain.id, isReady: true },
+          { domainId: pmDomain.id, isReady: true },
         ],
       },
       domainChallengeForms: {
@@ -2032,6 +2034,95 @@ async function main() {
     },
   });
 
+  // ── Alumni ────────────────────────────────────────────────────────────────
+  // Graduated members. Inputs agree with the stored status so a recompute
+  // (login, daily sweep) leaves them Alumni. Casey has no personal email or
+  // location yet; Noor is Alumni by an off-cycle graduatedAt rather than
+  // directory signals. Priya and Marcus share a city, so the Connect map shows
+  // one pin holding two people.
+  const alumniData = [
+    {
+      email: "priya.raman@dali.dartmouth.edu", personalEmail: "priya.raman@example.com", first: "Priya", last: "Raman", handle: "priyaraman",
+      classYear: 2024, graduatedAt: null, isAlum: true,
+      place: { name: "New York, NY", lat: 40.7128, lng: -74.006 },
+      jobs: [
+        { id: "work-priya-1", company: "Figma", position: "Product Designer", location: "New York, NY", workMode: "Hybrid" as const, start: "2024-08-01", end: null, description: "Design systems for the editor." },
+        { id: "work-priya-2", company: "Duolingo", position: "Design Intern", location: "Pittsburgh, PA", workMode: "OnSite" as const, start: "2023-06-01", end: "2023-08-01", description: null },
+      ],
+    },
+    {
+      email: "marcus.bell@dali.dartmouth.edu", personalEmail: "marcus.bell@example.com", first: "Marcus", last: "Bell", handle: "marcusbell",
+      classYear: 2025, graduatedAt: null, isAlum: true,
+      place: { name: "New York, NY", lat: 40.7128, lng: -74.006 },
+      jobs: [
+        { id: "work-marcus-1", company: "Ramp", position: "Software Engineer", location: "New York, NY", workMode: "OnSite" as const, start: "2025-07-01", end: null, description: null },
+      ],
+    },
+    {
+      email: "casey.lindqvist@dali.dartmouth.edu", personalEmail: null, first: "Casey", last: "Lindqvist", handle: "caseylindqvist",
+      classYear: 2026, graduatedAt: null, isAlum: true,
+      place: null,
+      jobs: [],
+    },
+    {
+      email: "noor.haddad@dali.dartmouth.edu", personalEmail: "noor.haddad@example.com", first: "Noor", last: "Haddad", handle: "noorhaddad",
+      classYear: 2027, graduatedAt: new Date("2026-03-15T00:00:00.000Z"), isAlum: false,
+      place: { name: "London, UK", lat: 51.5074, lng: -0.1278 },
+      jobs: [
+        { id: "work-noor-1", company: "Monzo", position: "Product Manager", location: "London, UK", workMode: "Remote" as const, start: "2026-04-01", end: null, description: null },
+      ],
+    },
+  ];
+
+  for (const a of alumniData) {
+    const location = {
+      currentLocation: a.place?.name ?? null,
+      currentLocationLat: a.place?.lat ?? null,
+      currentLocationLng: a.place?.lng ?? null,
+    };
+    const alum = await prisma.user.upsert({
+      where: { daliEmail: a.email },
+      update: { firstName: a.first, lastName: a.last, handle: a.handle, ...location },
+      create: {
+        daliEmail: a.email,
+        personalEmail: a.personalEmail,
+        firstName: a.first,
+        lastName: a.last,
+        handle: a.handle,
+        classYear: a.classYear,
+        graduatedAt: a.graduatedAt,
+        membershipStatus: "Alumni",
+        membershipStatusComputedAt: new Date(),
+        dartmouthIsAlum: a.isAlum ? true : null,
+        dartmouthAffiliation: a.isAlum ? "ALUMNI" : null,
+        ...location,
+      },
+    });
+
+    await prisma.dALIMember.upsert({
+      where: { userId: alum.id },
+      update: {},
+      create: { userId: alum.id, onboardedAt: new Date(), tourCompletedAt: new Date() },
+    });
+
+    for (const job of a.jobs) {
+      const data = {
+        company: job.company,
+        position: job.position,
+        location: job.location,
+        workMode: job.workMode,
+        description: job.description,
+        startDate: new Date(job.start),
+        endDate: job.end ? new Date(job.end) : null,
+      };
+      await prisma.workExperience.upsert({
+        where: { id: job.id },
+        update: data,
+        create: { id: job.id, userId: alum.id, ...data },
+      });
+    }
+  }
+
   // ── Confidentiality agreement (Fall 2026) ────────────────────────────────
   // Bind a signed agreement to the active cycle so domain leads and the hiring
   // lead can access confidentiality-gated pages in E2E tests. Confidentiality
@@ -2106,6 +2197,20 @@ async function main() {
   interviewEnd.setDate(today.getDate() + 14);
   interviewEnd.setHours(23, 59, 59, 999);
 
+  // The two pods interviews book into — created by the
+  // interview-room-bookings migration, upserted here too in case that data
+  // step is ever skipped.
+  const podAppa = await prisma.room.upsert({
+    where: { id: "room_pod_appa" },
+    update: {},
+    create: { id: "room_pod_appa", name: "Pod Appa", description: "DALI Lab", capacity: 4 },
+  });
+  const podMomo = await prisma.room.upsert({
+    where: { id: "room_pod_momo" },
+    update: {},
+    create: { id: "room_pod_momo", name: "Pod Momo", description: "DALI Lab", capacity: 4 },
+  });
+
   await prisma.interviewConfig.upsert({
     where: { applicationCycleId: cycle.id },
     update: {
@@ -2116,6 +2221,7 @@ async function main() {
       interviewStartDate: interviewStart,
       interviewEndDate: interviewEnd,
       timezone: "America/New_York",
+      rooms: { connect: [{ id: podAppa.id }, { id: podMomo.id }] },
     },
     create: {
       applicationCycleId: cycle.id,
@@ -2126,6 +2232,7 @@ async function main() {
       interviewStartDate: interviewStart,
       interviewEndDate: interviewEnd,
       timezone: "America/New_York",
+      rooms: { connect: [{ id: podAppa.id }, { id: podMomo.id }] },
     },
   });
 
@@ -2726,9 +2833,9 @@ async function main() {
     id: string;
     domainAppId: string;
     window: { startTime: Date; endTime: Date };
-    inDomainCI: { id: string };
+    inDomainCI: { id: string; userId: string };
     crossDomainCI: { id: string };
-    location: "PodAppa" | "PodMomo" | "Online";
+    roomId: string;
   }[] = [];
 
   if (availabilityWindows.length >= 2) {
@@ -2739,7 +2846,7 @@ async function main() {
         window: availabilityWindows[0],
         inDomainCI: rileyCI,
         crossDomainCI: samCI,
-        location: "PodAppa",
+        roomId: podAppa.id,
       },
       {
         id: "interview-diego",
@@ -2747,7 +2854,7 @@ async function main() {
         window: availabilityWindows[1],
         inDomainCI: rileyCI,
         crossDomainCI: patCI,
-        location: "PodMomo",
+        roomId: podMomo.id,
       },
     );
   }
@@ -2756,13 +2863,36 @@ async function main() {
   for (const booking of interviewBookings) {
     const start = new Date(booking.window.startTime);
     const end = new Date(start.getTime() + slotMs);
+    // One RoomBooking per seeded in-person interview, so /rooms and the door
+    // displays show them in demo data too.
+    const roomBooking = await prisma.roomBooking.upsert({
+      where: { id: `${booking.id}-room` },
+      update: {
+        roomId: booking.roomId,
+        userId: booking.inDomainCI.userId,
+        start,
+        end,
+        cancelledAt: null,
+      },
+      create: {
+        id: `${booking.id}-room`,
+        roomId: booking.roomId,
+        userId: booking.inDomainCI.userId,
+        start,
+        end,
+        title: "Interview",
+        source: "Interview",
+        applicationCycleId: cycle.id,
+      },
+    });
     const interview = await prisma.interview.upsert({
       where: { id: booking.id },
       update: {
         startTime: start,
         endTime: end,
         status: "Scheduled",
-        location: booking.location,
+        roomId: booking.roomId,
+        roomBookingId: roomBooking.id,
       },
       create: {
         id: booking.id,
@@ -2771,7 +2901,8 @@ async function main() {
         startTime: start,
         endTime: end,
         status: "Scheduled",
-        location: booking.location,
+        roomId: booking.roomId,
+        roomBookingId: roomBooking.id,
       },
     });
 
@@ -2824,7 +2955,7 @@ async function main() {
   console.log(`  ${reviewSpecs.length} ApplicationReviews + ${decisionSpecs.length * 3} Decisions + ${interviewBookings.length} booked interviews for Fall 2026`);
 
   // ── Email templates (versioned, keyed by EmailTemplateType) ─────────────────
-  const seedTemplates: { type: 'ApplicationReceived' | 'ApplicationExtensionNotice' | 'Rejected' | 'RejectedPostInterview' | 'InvitedToInterview' | 'InterviewInviteMentor' | 'InterviewConfirmedApplicant' | 'InterviewCancelledApplicant' | 'InterviewCancelledInterviewer' | 'InterviewLocationChanged' | 'Waitlisted' | 'Accepted'; subject: string; body: string }[] = [
+  const seedTemplates: { type: 'ApplicationReceived' | 'ApplicationExtensionNotice' | 'Rejected' | 'RejectedPostInterview' | 'InvitedToInterview' | 'InterviewInviteMentor' | 'InterviewConfirmedApplicant' | 'InterviewCancelledApplicant' | 'InterviewCancelledInterviewer' | 'InterviewCancelledByTeamApplicant' | 'InterviewLocationChanged' | 'Waitlisted' | 'Accepted'; subject: string; body: string }[] = [
     {
       type: 'ApplicationReceived',
       subject: 'We received your DALI application!',
@@ -2864,6 +2995,11 @@ async function main() {
       type: 'InterviewCancelledApplicant',
       subject: 'Your {{domain}} interview has been cancelled',
       body: `Hi {{firstName}},\n\nYour {{domain}} interview scheduled for {{time}} has been cancelled. The calendar event has been removed.\n\n— DALI Lab`,
+    },
+    {
+      type: 'InterviewCancelledByTeamApplicant',
+      subject: 'Your {{domain}} interview needs a new time',
+      body: `Hi {{firstName}},\n\nThe DALI team had to cancel your {{domain}} interview scheduled for {{time}}. The calendar event has been removed.\n\nYou can pick a new time from your application page. If nothing there works for you, reply to this email and we'll sort it out.\n\n— DALI Lab`,
     },
     {
       type: 'InterviewCancelledInterviewer',

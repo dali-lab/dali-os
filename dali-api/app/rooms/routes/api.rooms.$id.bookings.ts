@@ -10,6 +10,7 @@ const BodySchema = z.object({
   end: z.coerce.date(),
   title: z.string().trim().max(200).optional(),
   source: z.enum(["Web", "App"]).default("Web"),
+  recurrenceRule: z.string().trim().max(500).optional(),
 });
 
 // POST /api/rooms/:id/bookings — book the room for yourself.
@@ -32,6 +33,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     end: body.end,
     title: body.title,
     source: body.source,
+    recurrenceRule: body.recurrenceRule,
   });
   if (!result.ok) {
     return withCors(request, Response.json({ error: result.error }, { status: result.status }));

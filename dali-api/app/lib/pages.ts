@@ -14,6 +14,7 @@ export async function createProjectPage(input: {
   meetingNoteId?: string;
   meetingOccurrenceStart?: Date;
   meetingWhiteboardId?: string;
+  notebookKey?: string;
   parentPageId?: string | null;
   kind?: PageKind;
 }): Promise<{ id: string }> {
@@ -37,6 +38,7 @@ export async function createProjectPage(input: {
       meetingNoteId: input.meetingNoteId ?? null,
       meetingOccurrenceStart: input.meetingOccurrenceStart ?? null,
       meetingWhiteboardId: input.meetingWhiteboardId ?? null,
+      notebookKey: input.notebookKey ?? null,
     },
     select: { id: true },
   });
@@ -53,6 +55,7 @@ export async function createLabMeetingPage(input: {
   meetingNoteId?: string;
   meetingOccurrenceStart?: Date;
   meetingWhiteboardId?: string;
+  notebookKey?: string;
   // FreeForm (note doc) by default; a meeting whiteboard passes Whiteboard.
   kind?: PageKind;
   // Optional Lab folder to nest under (null = Lab top level). Lets a General
@@ -83,12 +86,132 @@ export async function createLabMeetingPage(input: {
       meetingNoteId: input.meetingNoteId ?? null,
       meetingOccurrenceStart: input.meetingOccurrenceStart ?? null,
       meetingWhiteboardId: input.meetingWhiteboardId ?? null,
+      notebookKey: input.notebookKey ?? null,
       // Lab docs default to the communal shelf: everyone in the lab can edit.
       linkAccess: input.restricted ? "Restricted" : "LabMembers",
       linkPermission: input.restricted ? "View" : "Edit",
     },
     select: { id: true },
   });
+}
+
+// ─── Meeting notebooks ───────────────────────────────────────────────────────
+
+export type MeetingNotebookDestination = {
+  workspaceType: "Lab" | "Project";
+  workspaceId: string | null;
+  /** The folder a new notebook is filed in. */
+  parentPageId: string | null;
+  /** Lab only: start Restricted (filed inside a scoped drive). */
+  restricted?: boolean;
+};
+
+/**
+ * Find or create the notebook with this key (see meeting-notebook.ts for what
+ * the key means). The destination only places a NEW notebook: an existing one
+ * stays wherever it has since been moved, and its notes follow it. A notebook
+ * in the trash is retired from its key, so the next note starts a fresh one
+ * rather than landing somewhere nobody can see.
+ */
+export async function ensureMeetingNotebook(
+  input: { key: string; title: string; createdById: string } & MeetingNotebookDestination,
+): Promise<{ id: string }> {
+  const existing = await prisma.page.findUnique({
+    where: { notebookKey: input.key },
+    select: { id: true, archivedAt: true },
+  });
+  if (existing && existing.archivedAt === null) return { id: existing.id };
+  if (existing) {
+    await prisma.page.update({
+      where: { id: existing.id },
+      data: { notebookKey: `${input.key}#${existing.id}` },
+    });
+  }
+
+  const fields = {
+    title: input.title,
+    createdById: input.createdById,
+    parentPageId: input.parentPageId,
+    notebookKey: input.key,
+  };
+  try {
+    return input.workspaceType === "Project" && input.workspaceId
+      ? await createProjectPage({ projectId: input.workspaceId, ...fields })
+      : await createLabMeetingPage({ ...fields, restricted: input.restricted });
+  } catch (err) {
+    // Two notes for the same notebook created at once: the unique key lets one
+    // create it, and the other files into that one.
+    const raced = await prisma.page.findUnique({
+      where: { notebookKey: input.key },
+      select: { id: true },
+    });
+    if (raced) return raced;
+    throw err;
+  }
+}
+
+/** Where a notebook's tabs live: its own workspace and general access, so a
+ *  note is reachable by exactly the people the notebook is. */
+async function notebookTabPlacement(notebookId: string) {
+  const notebook = await prisma.page.findUniqueOrThrow({
+    where: { id: notebookId },
+    select: { workspaceType: true, workspaceId: true, linkAccess: true, linkPermission: true },
+  });
+  return { ...notebook, parentPageId: notebookId };
+}
+
+/** Create one meeting's note as a tab of `notebookId`. */
+export async function createNotebookTab(input: {
+  notebookId: string;
+  title: string;
+  createdById: string;
+  meetingNoteId: string;
+  meetingOccurrenceStart: Date;
+}): Promise<{ id: string }> {
+  const placement = await notebookTabPlacement(input.notebookId);
+  return prisma.page.create({
+    data: {
+      ...placement,
+      title: input.title,
+      createdById: input.createdById,
+      meetingNoteId: input.meetingNoteId,
+      meetingOccurrenceStart: input.meetingOccurrenceStart,
+    },
+    select: { id: true },
+  });
+}
+
+/**
+ * Re-file an existing note page as a tab of `notebookId`. Sharing that only
+ * makes sense where the note used to live is reset, as on any move. The
+ * notebook it left is trashed if that emptied it.
+ */
+export async function moveIntoNotebook(pageId: string, notebookId: string, title?: string): Promise<void> {
+  const [placement, page] = await Promise.all([
+    notebookTabPlacement(notebookId),
+    prisma.page.findUniqueOrThrow({
+      where: { id: pageId },
+      select: { parentPageId: true, workspaceType: true, workspaceId: true, parent: { select: { notebookKey: true } } },
+    }),
+  ]);
+  if (page.parentPageId === notebookId) return;
+  const sameWorkspace =
+    page.workspaceType === placement.workspaceType && page.workspaceId === placement.workspaceId;
+  await prisma.page.update({
+    where: { id: pageId },
+    data: {
+      ...placement,
+      ...(title ? { title } : {}),
+      pinnedAt: null,
+      ...(sameWorkspace ? {} : { partnerVisible: false, publicVisible: false }),
+    },
+  });
+  if (page.parentPageId && page.parent?.notebookKey) {
+    const left = await prisma.page.count({ where: { parentPageId: page.parentPageId, archivedAt: null } });
+    if (left === 0) {
+      await prisma.page.update({ where: { id: page.parentPageId }, data: { archivedAt: new Date() } });
+    }
+  }
 }
 
 // ─── Nesting guards ──────────────────────────────────────────────────────────

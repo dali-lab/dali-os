@@ -80,16 +80,19 @@ describe("lintTemplate", () => {
 });
 
 describe("TEMPLATE_VARIABLES registry shape", () => {
-  it("covers every decision and notification slot", () => {
+  it("covers every decision, notification and waitlist slot", () => {
     expect(Object.keys(TEMPLATE_VARIABLES).sort()).toEqual(
       [
         "decision:Accepted",
         "decision:InvitedToInterview",
         "decision:Rejected",
         "decision:Waitlisted",
+        "notification:ApplicationEventAnnouncement",
         "notification:ApplicationExtensionNotice",
         "notification:ApplicationReceived",
+        "notification:DomainAddedNotice",
         "notification:InterviewCancelledApplicant",
+        "notification:InterviewCancelledByTeamApplicant",
         "notification:InterviewCancelledInterviewer",
         "notification:InterviewConfirmedApplicant",
         "notification:InterviewInviteMentor",
@@ -97,6 +100,7 @@ describe("TEMPLATE_VARIABLES registry shape", () => {
         "notification:InterviewLocationChanged",
         "notification:InterviewReminderApplicant",
         "notification:InterviewReminderInterviewer",
+        "waitlist:ContinuedInterest",
       ].sort(),
     );
   });
@@ -137,6 +141,10 @@ describe("registry/call-site drift guard", () => {
     "notification:ApplicationReceived": ["firstName"],
     // extension-notice.ts
     "notification:ApplicationExtensionNotice": ["firstName", "originalCloseDate", "newCloseDate"],
+    // hiring-event-notice.ts
+    "notification:ApplicationEventAnnouncement": ["firstName", "eventTitle", "time", "location"],
+    // domain-added-notice.ts
+    "notification:DomainAddedNotice": ["firstName", "domain", "closeDate", "applyUrl"],
     // interview-emails.ts — intersection across cancel, invite, reassignment, location-change
     "notification:InterviewInviteMentor": ["firstName", "domain", "time", "location", "meetingUrl"],
     // api.domain-applications.$id.resend-invite.ts

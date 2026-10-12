@@ -8,7 +8,7 @@ import {
   useNavigate,
 } from "react-router";
 import type { Route } from "./+types/partners";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { canViewStaffing, isCore, isLabMember } from "~/lib/roles";
@@ -44,7 +44,7 @@ type OrgRow = {
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  if (auth.user.type === "applicant") return redirect("/portal");
+  if (await isNonMember(auth, request)) return redirect("/portal");
   // The org directory is lab-wide; editing and the applications pipeline stay
   // Core/Admin (canViewStaffing).
   const [labMember, canViewApplications] = await Promise.all([
@@ -256,7 +256,7 @@ export default function PartnersOrganizations() {
                 autoFocus
                 required
                 placeholder={individual ? "Full name" : "Organization name"}
-                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30"
               />
             </label>
             {individual ? (
@@ -269,7 +269,7 @@ export default function PartnersOrganizations() {
                   type="email"
                   required
                   placeholder="name@example.com"
-                  className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                  className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30"
                 />
               </label>
             ) : (
@@ -279,7 +279,7 @@ export default function PartnersOrganizations() {
                   name="website"
                   type="url"
                   placeholder="https://"
-                  className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                  className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30"
                 />
               </label>
             )}
@@ -449,7 +449,7 @@ function OrgAvatar({ org }: { org: Pick<OrgRow, "name" | "logoUrl"> }) {
     );
   }
   return (
-    <div className="w-8 h-8 rounded bg-brand-tint text-dark-blue flex items-center justify-center text-xs font-bold flex-shrink-0">
+    <div className="w-8 h-8 rounded bg-os-container text-foreground flex items-center justify-center text-xs font-bold flex-shrink-0">
       {org.name.slice(0, 1)}
     </div>
   );

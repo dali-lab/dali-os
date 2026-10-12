@@ -20,6 +20,7 @@ import { MAX_UPLOAD_LABEL } from "~/lib/file-validation";
 // schema package here doesn't drag BlockNote into any route's initial chunk.
 import { searchMentionableUsers, type MentionUser } from "~/components/doc/schema/mention";
 import { cn } from "~/lib/cn";
+import { OS_SURFACE_CLASS } from "~/components/ui/floating/styles";
 
 type Maintainer = { id: string; name: string; handle: string | null };
 
@@ -765,7 +766,7 @@ function MaintainerPicker({
         )}
       </div>
       {open && results.length > 0 && (
-        <div className="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-border bg-card py-1 text-sm shadow-brand-2">
+        <div className={cn("absolute z-10 mt-1 w-full overflow-hidden py-1 text-sm", OS_SURFACE_CLASS)}>
           {results.map((u) => (
             <button
               key={u.id}

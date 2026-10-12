@@ -1,7 +1,7 @@
 import { type CSSProperties, useEffect, useMemo, useState } from "react";
 import { isAdminOnlyCycle } from "~/hiring/lib/applicant-groups";
 import { Link, redirect, useFetcher, useLoaderData } from "react-router";
-import { Check, GripVertical, X } from "lucide-react";
+import { Check, GripVertical } from "lucide-react";
 import {
   DndContext,
   MouseSensor,
@@ -21,7 +21,6 @@ import { CSS } from "@dnd-kit/utilities";
 import { Tooltip } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
 import { Button } from "~/components/ui/Button";
-import { IconButton } from "~/components/ui/IconButton";
 import { FilterPill } from "~/components/ui/filter-panel";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
@@ -30,6 +29,11 @@ import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
 import { tiedRanks } from "~/hiring/lib/waitlist";
+import { CONTINUED_INTEREST_SLOT } from "~/hiring/lib/email-variables";
+import { getHiringEmail } from "~/hiring/lib/hiring-emails.server";
+import { renderEmail } from "~/lib/email";
+import { Modal, ModalHeader } from "~/components/Modal";
+import { modalCardClass } from "~/components/os-chrome";
 import {
   listActiveWaitlistEntries,
   type WaitlistEntry,
@@ -51,7 +55,17 @@ export async function loader({ request }: Route.LoaderArgs) {
   const visibleEntries = roles.isAdmin
     ? entries
     : entries.filter((e) => !isAdminOnlyCycle(e.cycle.applicants));
-  return { entries: visibleEntries };
+  return {
+    entries: visibleEntries,
+    continuedInterestEmail: await getHiringEmail(CONTINUED_INTEREST_SLOT),
+  };
+}
+
+type EmailCopy = { subject: string; body: string };
+
+/** Student-cycle removals send the continued interest email; member cycles don't. */
+function getsEmail(e: WaitlistEntry): boolean {
+  return e.cycle.applicants === "Students";
 }
 
 function fullName(e: WaitlistEntry): string {
@@ -62,9 +76,13 @@ function fullName(e: WaitlistEntry): string {
 }
 
 export default function WaitlistsPage() {
-  const { entries } = useLoaderData<typeof loader>() as { entries: WaitlistEntry[] };
+  const { entries, continuedInterestEmail } = useLoaderData<typeof loader>() as {
+    entries: WaitlistEntry[];
+    continuedInterestEmail: EmailCopy | null;
+  };
   const { pageTitle, bodyText } = useOsChrome();
   const [cycleFilter, setCycleFilter] = useState<string>("all");
+  const [removingAll, setRemovingAll] = useState(false);
 
   // Cycle chips: every cycle that contributes at least one active waitlister.
   const cycleOptions = useMemo(() => {
@@ -96,15 +114,26 @@ export default function WaitlistsPage() {
   const visibleDomains = filtering
     ? byDomain.filter((g) => g.rows.some((r) => r.cycle.id === cycleFilter))
     : byDomain;
+  // Remove all acts on what's shown, so a cycle chip narrows it to that cycle.
+  const shownEntries = visibleDomains.flatMap((g) =>
+    filtering ? g.rows.filter((r) => r.cycle.id === cycleFilter) : g.rows,
+  );
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
         <div className="flex items-end justify-between gap-4">
           <h1 className={pageTitle}>Waitlists</h1>
-          <span className="text-base text-os-grey tabular-nums">
-            {entries.length} waitlisted
-          </span>
+          <div className="flex items-center gap-4">
+            <span className="text-base text-os-grey tabular-nums">
+              {entries.length} waitlisted
+            </span>
+            {shownEntries.length > 0 && (
+              <Button variant="secondary" size="sm" onClick={() => setRemovingAll(true)}>
+                Remove all from waitlist
+              </Button>
+            )}
+          </div>
         </div>
         <p className={cn(bodyText, "max-w-2xl")}>
           Everyone waitlisted, in one order per domain across cycles. Drag to
@@ -152,7 +181,118 @@ export default function WaitlistsPage() {
           ))}
         </div>
       )}
+
+      {removingAll && (
+        <RemoveAllModal
+          entries={shownEntries}
+          email={continuedInterestEmail}
+          onClose={() => setRemovingAll(false)}
+        />
+      )}
     </div>
+  );
+}
+
+const REMOVE_ALL_TITLE_ID = "waitlist-remove-all-title";
+
+function RemoveAllModal({
+  entries,
+  email,
+  onClose,
+}: {
+  entries: WaitlistEntry[];
+  email: EmailCopy | null;
+  onClose: () => void;
+}) {
+  const fetcher = useFetcher<{ removed?: number; error?: string }>();
+  const busy = fetcher.state !== "idle";
+  const [previewing, setPreviewing] = useState<string | null>(null);
+  const emailed = entries.filter((e) => email && getsEmail(e)).length;
+
+  const done = fetcher.state === "idle" && fetcher.data && !fetcher.data.error;
+  useEffect(() => {
+    if (done) onClose();
+  }, [done]);
+
+  const removeAll = () =>
+    fetcher.submit(
+      { domainApplicationIds: entries.map((e) => e.domainApplicationId) },
+      { method: "post", action: "/api/hiring/waitlist/remove-all", encType: "application/json" },
+    );
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      labelledBy={REMOVE_ALL_TITLE_ID}
+      disableEscape={busy}
+      containerClassName={modalCardClass("max-w-2xl")}
+    >
+      <ModalHeader
+        titleId={REMOVE_ALL_TITLE_ID}
+        title={`Remove all ${entries.length} from the waitlist?`}
+        subtitle={`${emailed} of ${entries.length} get the continued interest email. Preview each one below.`}
+        onClose={onClose}
+      />
+      <ul className="flex max-h-[55vh] flex-col gap-2 overflow-y-auto">
+        {entries.map((e) => {
+          const sends = !!email && getsEmail(e);
+          const open = previewing === e.domainApplicationId;
+          const preview =
+            open && email
+              ? renderEmail(email, {
+                  firstName: e.applicant.firstName ?? "",
+                  domain: e.domain.displayName ?? e.domain.name,
+                })
+              : null;
+          return (
+            <li key={e.domainApplicationId} className="rounded-os-item bg-os-well px-4 py-3">
+              <div className="flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium text-foreground">{fullName(e)}</div>
+                  <div className="truncate text-xs text-os-grey">
+                    {e.domain.displayName ?? e.domain.name} · {e.cycle.name}
+                  </div>
+                </div>
+                {sends ? (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    aria-expanded={open}
+                    onClick={() => setPreviewing(open ? null : e.domainApplicationId)}
+                  >
+                    {open ? "Hide email" : "Preview email"}
+                  </Button>
+                ) : (
+                  <span className="shrink-0 text-xs text-os-grey">No email</span>
+                )}
+              </div>
+              {preview && (
+                <div className="mt-3 rounded-os-item bg-os-card p-3 text-sm">
+                  <p className="mb-1 text-xs text-os-grey">
+                    To {e.applicant.dartmouthEmail ?? "their Dartmouth email"}
+                  </p>
+                  <p className="mb-2 font-medium">{preview.subject}</p>
+                  {/* Safe: renderEmail runs the body through DOMPurify. */}
+                  <div dangerouslySetInnerHTML={{ __html: preview.html }} />
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      {fetcher.data?.error && (
+        <p className="mt-3 text-sm text-accent-coral">{fetcher.data.error}</p>
+      )}
+      <div className="flex justify-end gap-3 pt-5">
+        <Button variant="secondary" onClick={onClose} disabled={busy}>
+          Cancel
+        </Button>
+        <Button onClick={removeAll} disabled={busy}>
+          {busy ? "Removing…" : emailed > 0 ? "Remove all and send" : "Remove all"}
+        </Button>
+      </div>
+    </Modal>
   );
 }
 
@@ -308,8 +448,10 @@ function WaitlistRow({
       !(await dialog.confirm({
         title: `Remove ${fullName(entry)} from the waitlist?`,
         description:
-          "No email will be sent. The applicant's other waitlist entries (if any) are unaffected.",
-        confirmLabel: "Remove",
+          entry.cycle.applicants === "Students"
+            ? "They get the continued interest email, inviting them to reapply next cycle with this application. Their other waitlist entries are unaffected."
+            : "No email will be sent. Their other waitlist entries are unaffected.",
+        confirmLabel: "Remove from waitlist",
         tone: "destructive",
       }))
     )
@@ -365,14 +507,16 @@ function WaitlistRow({
         {error && <div className="mt-1 text-sm text-accent-coral">{error}</div>}
       </div>
 
-      <div className="flex shrink-0 items-center gap-1">
+      <div className="flex shrink-0 items-center gap-2">
         <Tooltip content="Runs the full release: member promotion, account setup, and the acceptance email, even if the cycle is closed.">
           <Button size="sm" onClick={onAccept} disabled={busy}>
             <Check className="h-4 w-4" aria-hidden />
             Accept
           </Button>
         </Tooltip>
-        <IconButton label="Remove" icon={X} tone="destructive" onClick={onRemove} disabled={busy} />
+        <Button variant="secondary" size="sm" onClick={onRemove} disabled={busy}>
+          Remove from waitlist
+        </Button>
       </div>
     </li>
   );

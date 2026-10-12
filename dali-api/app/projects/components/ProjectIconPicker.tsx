@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ProjectIcon } from "~/components/ProjectIcon";
+import { cn } from "~/lib/cn";
+import { OS_SURFACE_CLASS } from "~/components/ui/floating/styles";
 
 // Notion-style project icon picker. Mirrors the document PageIconPicker: a small
 // curated emoji grid plus a native input that accepts any pasted/typed emoji
@@ -52,7 +54,7 @@ export function ProjectIconPicker({
         {iconEmoji ?? "Add icon"}
       </button>
       {open && (
-        <div className="absolute left-0 z-30 mt-1 w-max rounded-md border border-border bg-card p-2 shadow-brand-2">
+        <div className={cn("absolute left-0 z-30 mt-1 w-max p-2", OS_SURFACE_CLASS)}>
           <div className="grid grid-cols-8 gap-1">
             {CURATED.map((emoji) => (
               <button

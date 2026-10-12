@@ -7,6 +7,7 @@ vi.mock("~/hiring/lib/confidentiality", () => ({ requirePageSignedOrRedirect: vi
 vi.mock("~/education/lib/engagement.server", () => ({ getEducationEngagement: vi.fn() }));
 vi.mock("~/hiring/lib/prior-applications.server", () => ({ listPriorApplications: vi.fn() }));
 vi.mock("~/hiring/lib/email-engagement.server", () => ({ getApplicantEmailEngagement: vi.fn() }));
+vi.mock("~/hiring/lib/hiring-events.server", () => ({ getHiringEventEngagement: vi.fn() }));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 
 import { prisma } from "~/lib/db";
@@ -16,6 +17,7 @@ import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { getEducationEngagement } from "~/education/lib/engagement.server";
 import { listPriorApplications } from "~/hiring/lib/prior-applications.server";
 import { getApplicantEmailEngagement } from "~/hiring/lib/email-engagement.server";
+import { getHiringEventEngagement } from "~/hiring/lib/hiring-events.server";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { loader } from "~/hiring/routes/applications.$domainApplicationId";
 
@@ -69,6 +71,7 @@ beforeEach(() => {
   vi.mocked(getEducationEngagement).mockResolvedValue([] as never);
   vi.mocked(listPriorApplications).mockResolvedValue([] as never);
   vi.mocked(getApplicantEmailEngagement).mockResolvedValue(null as never);
+  vi.mocked(getHiringEventEngagement).mockResolvedValue([] as never);
   vi.mocked(isFeatureEnabled).mockResolvedValue(false);
 
   mockPrisma.domainApplication = {
@@ -139,5 +142,35 @@ describe("applications.$domainApplicationId loader — blind review", () => {
 
     expect(result.blinded).toBe(false);
     expect(result.applicantName).toBe("Ada Lovelace");
+  });
+});
+
+describe("applications.$domainApplicationId loader — application events engagement", () => {
+  it("defaults to an empty list and skips the lookup when the flag is off", async () => {
+    const result: any = await callLoader();
+
+    expect(getHiringEventEngagement).not.toHaveBeenCalled();
+    expect(result.hiringEventEngagement).toEqual([]);
+    expect(result.cycleId).toBe(CYCLE_ID);
+  });
+
+  it("fetches the applicant's event attendance when the flag is on", async () => {
+    vi.mocked(isFeatureEnabled).mockResolvedValue(true);
+    vi.mocked(getHiringEventEngagement).mockResolvedValue([
+      {
+        eventId: "evt-1",
+        title: "Help hour",
+        kind: "HelpHour",
+        startsAt: new Date("2026-10-14T20:00:00.000Z"),
+        endsAt: new Date("2026-10-14T21:00:00.000Z"),
+        cycleId: CYCLE_ID,
+        cycleName: "Fall Cycle",
+      },
+    ] as never);
+
+    const result: any = await callLoader();
+
+    expect(getHiringEventEngagement).toHaveBeenCalledWith("u-1");
+    expect(result.hiringEventEngagement).toHaveLength(1);
   });
 });

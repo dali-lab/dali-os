@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.calendar.group-availability";
 import { z } from "zod";
-import { requireAuth, forbidden } from "~/lib/auth";
+import { requireAuth, forbidden, isNonMember } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import {
@@ -90,7 +90,7 @@ export async function action({ request }: Route.ActionArgs) {
   // nothing, so it stays available to an impersonated (read-only) session.
   const auth = await requireAuth(request, { allowImpersonatedWrite: true });
   if (!auth.ok) return withCors(request, auth.response);
-  if (auth.user.type === "applicant")
+  if (await isNonMember(auth, request))
     return forbidden(request);
 
   if (request.method !== "POST") {

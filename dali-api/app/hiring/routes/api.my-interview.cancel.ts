@@ -8,6 +8,7 @@ import { idSchema, parseJson } from "~/lib/validate";
 // import { deprovisionZoomMeeting } from "~/lib/zoom"; // S2S Zoom not configured yet
 import { deprovisionInterviewMeet } from "~/hiring/lib/interview-meet";
 import { sendInterviewCancelEmails } from "~/hiring/lib/interview-emails";
+import { releaseInterviewRoom } from "~/hiring/lib/scheduling";
 
 const CancelSchema = z.object({
   domainApplicationId: idSchema,
@@ -34,6 +35,7 @@ export async function action({ request }: Route.ActionArgs) {
       domainApplication: { application: { userId: auth.user.sub } },
       status: "Scheduled",
     },
+    include: { roomBooking: { select: { userId: true } } },
   });
 
   if (!interview) {
@@ -63,6 +65,7 @@ export async function action({ request }: Route.ActionArgs) {
       where: { interviewId: interview.id, status: "Active" },
       data: { status: "Declined" },
     });
+    await releaseInterviewRoom(interview, tx);
     return interviewUpdate;
   });
 

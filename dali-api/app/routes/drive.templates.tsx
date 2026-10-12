@@ -6,7 +6,7 @@ import {
   FolderKanban,
   LayoutTemplate,
 } from "lucide-react";
-import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
+import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { loadTemplates, type TemplateItem, type TemplateKind } from "~/lib/drive-templates.server";
 
@@ -23,7 +23,7 @@ export const handle = {
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  if (auth.user.type === "applicant") return redirect("/portal");
+  if (await isNonMember(auth, request)) return redirect("/portal");
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return partnerRedirect;
 
@@ -142,6 +142,11 @@ function TemplateCard({
         </span>
         {item.description && (
           <span className="block text-xs text-muted-foreground truncate">{item.description}</span>
+        )}
+        {item.meetingNoteBadge && (
+          <span className="mt-0.5 inline-flex items-center rounded-full bg-os-accent/10 px-1.5 py-0.5 text-[11px] font-medium text-os-accent">
+            {item.meetingNoteBadge}
+          </span>
         )}
       </span>
     </span>

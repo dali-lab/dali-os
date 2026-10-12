@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { redirect, useLoaderData, useRevalidator } from "react-router";
-import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
+import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { listFavoritesAndRecents, type FavoritePage } from "~/lib/user-pages.server";
 import { loadShellUser } from "~/lib/shell-user.server";
+import { isBirthdayToday } from "~/members/lib/warmth";
 import { timed } from "~/lib/server-timing";
 import { FavoriteIcon } from "~/components/FavoriteIcon";
 import { FavoriteStar } from "~/components/FavoriteStar";
@@ -31,7 +32,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const __loaderStart = performance.now();
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  if (auth.user.type === "applicant") return redirect("/portal");
+  if (await isNonMember(auth, request)) return redirect("/portal");
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return partnerRedirect;
 
@@ -58,8 +59,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   // browser's clock would disagree with every other time on the page (all of
   // which are formatted in `tz`) and would differ between render and hydration.
   const greetingHour = getZonedHourFraction(new Date(), tz);
-  const greeting =
-    greetingHour < 12 ? "Good morning" : greetingHour < 18 ? "Good afternoon" : "Good evening";
+  const greeting = isBirthdayToday(me?.birthday ?? null, new Date())
+    ? "Happy birthday"
+    : greetingHour < 12
+      ? "Good morning"
+      : greetingHour < 18
+        ? "Good afternoon"
+        : "Good evening";
 
   // This week's title and background; `?background=<id>` previews another background.
   const landing = scheduledLandingWeek(

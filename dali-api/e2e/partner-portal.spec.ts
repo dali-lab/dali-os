@@ -252,7 +252,10 @@ test.describe('partner portal', () => {
     await expect(
       page.getByRole('heading', { name: 'Welcome, Pat' }),
     ).toBeVisible();
-    await expect(page.getByText('Tuck Alumni Connect')).toBeVisible();
+    // The rail lists the project too; the card is the one in the main column.
+    await expect(
+      page.getByRole('main').getByText('Tuck Alumni Connect'),
+    ).toBeVisible();
 
     // Partner accounts never see the member shell.
     await page.goto('/');

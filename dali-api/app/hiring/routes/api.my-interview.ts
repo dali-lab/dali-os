@@ -17,6 +17,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       status: "Scheduled",
     },
     include: {
+      room: { select: { id: true, name: true } },
       assignments: {
         where: { status: "Active" },
       },

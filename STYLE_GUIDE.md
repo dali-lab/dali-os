@@ -5,6 +5,8 @@ roomy surfaces with big titles and one accent. This guide describes the
 **dali.os design system** as it lives in code. When the guide and the code
 disagree, the code wins, so update this file.
 
+A visual version for designers is `STYLE_GUIDE.html` at the repo root (open it in a browser; it has a light/dark switch and every token in both modes). It is hand-maintained: when you change a token or a component rule here, update it there too.
+
 Where it lives:
 
 | File | What it holds |

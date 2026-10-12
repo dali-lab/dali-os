@@ -440,14 +440,18 @@ async function searchApplications(
     : [...new Set(reviewerRows.map((r) => r.applicationCycleId))];
 
   // Leak-proofing: only cycles whose currently-bound confidentiality agreement
-  // this user has access to (signed, or Core/Admin, who are exempt).
-  const signedCycleIds = (
-    await Promise.all(
-      candidateCycleIds.map(async (id) =>
-        confidentialityCleared(await getCycleConfidentialityState(userId, id)) ? id : null,
-      ),
-    )
-  ).filter((id): id is string => id !== null);
+  // this user has access to (signed, or Core/Admin, who are exempt). Core is
+  // exempt by definition, so the per-cycle check (three queries per cycle ever
+  // run, on every keystroke) only runs for reviewers, who hold a few cycles.
+  const signedCycleIds = roles.isCore
+    ? candidateCycleIds
+    : (
+        await Promise.all(
+          candidateCycleIds.map(async (id) =>
+            confidentialityCleared(await getCycleConfidentialityState(userId, id)) ? id : null,
+          ),
+        )
+      ).filter((id): id is string => id !== null);
   if (signedCycleIds.length === 0) return [];
 
   const nameMatch = { user: { OR: [{ firstName: like }, { lastName: like }] } };

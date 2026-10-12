@@ -2,10 +2,16 @@ import type { Route } from "./+types/api.tasks.$id";
 import { prisma, Prisma } from "~/lib/db";
 import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
+import { fullName } from "~/lib/display";
 import { syncIssueForTask } from "../lib/github-task-sync";
 import { notifyTaskAssigned } from "../lib/task-notifications.server";
 import { parseChecklistInput, type ChecklistItem } from "../lib/task-checklist";
 
+// GET    /api/tasks/:id — minimal task card for the doc editor's taskMention
+//        hover card (TaskMentionHoverCard.tsx): id/title/status/assignee/
+//        dueAt only, never the description or checklist. Same access gate
+//        as the task modal's edit surface — a mention chip for a task the
+//        viewer can't reach falls back to its stored label.
 // PATCH  /api/tasks/:id — edit fields not covered by the move endpoint.
 //        Status/position changes still go through /api/tasks/:id/move so its
 //        column-rebalance logic stays unified. Body is a partial — only
@@ -17,6 +23,43 @@ import { parseChecklistInput, type ChecklistItem } from "../lib/task-checklist";
 //
 // Permission model mirrors task creation (isCore === Admin || Core, or a
 // project member).
+
+export async function loader({ request, params }: Route.LoaderArgs) {
+  const preflight = handlePreflight(request);
+  if (preflight) return preflight;
+
+  const task = await prisma.task.findUnique({
+    where: { id: params.id },
+    select: {
+      id: true,
+      title: true,
+      status: true,
+      dueAt: true,
+      projectId: true,
+      assignees: {
+        take: 1,
+        select: { user: { select: { firstName: true, lastName: true } } },
+      },
+    },
+  });
+  if (!task) {
+    return withCors(request, Response.json({ error: "Task not found" }, { status: 404 }));
+  }
+  const gate = await requireProjectEditAccess(request, task.projectId);
+  if (!gate.ok) return gate.response;
+
+  const assignee = task.assignees[0] ? { name: fullName(task.assignees[0].user) } : null;
+  return withCors(
+    request,
+    Response.json({
+      id: task.id,
+      title: task.title,
+      status: task.status,
+      assignee,
+      dueAt: task.dueAt ? task.dueAt.toISOString() : null,
+    }),
+  );
+}
 
 const PRIORITIES = ["Low", "Normal", "High", "Urgent"] as const;
 type Priority = (typeof PRIORITIES)[number];

@@ -14,13 +14,6 @@ vi.mock("~/lib/outbound.server", () => ({
   enqueueOutbound: vi.fn(),
   drainNow: vi.fn(),
 }));
-// Off by default, matching the registry, so every describe below exercises the
-// pre-feature behavior. The start-term describe turns it on for itself.
-const mockStartTermsFlag = vi.fn().mockResolvedValue(false);
-vi.mock("~/lib/feature-flags.server", () => ({
-  isFeatureEnabledForEveryone: (key: string) =>
-    key === "start-terms" ? mockStartTermsFlag() : Promise.resolve(false),
-}));
 vi.mock("~/hiring/lib/email-variables", async () => {
   const actual = await vi.importActual<typeof import("~/hiring/lib/email-variables")>(
     "~/hiring/lib/email-variables",
@@ -56,6 +49,9 @@ const mockPrisma = prisma as unknown as {
     create: ReturnType<typeof vi.fn>;
   };
   cycleDomainForm: {
+    findMany: ReturnType<typeof vi.fn>;
+  };
+  domainApplicationCycle: {
     findMany: ReturnType<typeof vi.fn>;
   };
   user: { findUnique: ReturnType<typeof vi.fn> };
@@ -106,8 +102,6 @@ const domainQuestions = [
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // clearAllMocks wipes the resolved value too, so restore the default.
-  mockStartTermsFlag.mockResolvedValue(false);
   (mockPrisma as any).application = {
     // The action's ownership check: the application is the caller's own.
     findFirst: vi.fn().mockResolvedValue({ id: APP_ID, applicationCycleId: CYCLE_ID }),
@@ -129,6 +123,10 @@ beforeEach(() => {
   (mockPrisma as any).cycleDomainForm = {
     findMany: vi.fn().mockResolvedValue([]),
   };
+  // No domain closes early unless a test says otherwise.
+  (mockPrisma as any).domainApplicationCycle = {
+    findMany: vi.fn().mockResolvedValue([]),
+  };
   (mockPrisma as any).user = { findUnique: vi.fn().mockResolvedValue(null) };
   (mockPrisma as any).emailTemplate = {
     findUnique: vi.fn().mockResolvedValue(null),
@@ -138,7 +136,7 @@ beforeEach(() => {
   };
   vi.mocked(requireAuth).mockResolvedValue({
     ok: true,
-    user: { sub: USER_ID, email: "u@x.com", type: "applicant" },
+    user: { sub: USER_ID, email: "u@x.com", type: "dartmouth" },
   } as any);
   vi.mocked(getActiveCycleById).mockResolvedValue(OPEN_STUDENTS_CYCLE as any);
 });
@@ -710,6 +708,174 @@ describe("POST /portal/apply (update-domains) — multi-challenge", () => {
   });
 });
 
+// ─── Per-domain application windows (a domain can close before/after the cycle) ──
+
+describe("POST /portal/apply — per-domain application windows", () => {
+  const CLOSED_PAST = new Date("2000-01-01T00:00:00Z");
+
+  function mockClosedDomain(domainId: string) {
+    mockPrisma.domainApplicationCycle.findMany.mockResolvedValue([
+      { domainId, closeDate: CLOSED_PAST },
+    ]);
+  }
+
+  it("create-draft drops a closed domain's selection — it is never created", async () => {
+    mockClosedDomain(DOMAIN_B);
+    mockPrisma.cycleDomainForm.findMany.mockResolvedValue([
+      { domainId: DOMAIN_A, formId: FORM_A, form: { versions: [{ id: FV_A1 }] } },
+      { domainId: DOMAIN_B, formId: FORM_B, form: { versions: [{ id: FV_B1 }] } },
+    ]);
+    mockPrisma.application.upsert.mockResolvedValue({
+      id: APP_ID,
+      answers: {},
+      domainApplications: [
+        { id: "da-1", domainId: DOMAIN_A, challengeFormVersion: { formId: FORM_A }, answers: {} },
+      ],
+    });
+
+    await action({
+      request: makeCreateDraftRequest([
+        { domainId: DOMAIN_A, challengeVersionId: CV_A1 },
+        { domainId: DOMAIN_B, challengeVersionId: CV_B1 },
+      ]),
+      params: {},
+      context: {},
+    } as any);
+
+    const callArg = mockPrisma.application.upsert.mock.calls[0][0];
+    expect(callArg.create.domainApplications.create).toEqual([
+      { domainId: DOMAIN_A, challengeFormVersionId: FV_A1, answers: {} },
+    ]);
+  });
+
+  it("update-domains does not add a closed domain even though it's validly linked", async () => {
+    mockClosedDomain(DOMAIN_B);
+    mockPrisma.cycleDomainForm.findMany.mockResolvedValue([
+      { domainId: DOMAIN_A, formId: FORM_A, form: { versions: [{ id: FV_A1 }] } },
+      { domainId: DOMAIN_B, formId: FORM_B, form: { versions: [{ id: FV_B1 }] } },
+    ]);
+    mockPrisma.domainApplication.findMany.mockResolvedValue([
+      { id: "da-1", applicationId: APP_ID, domainId: DOMAIN_A, challengeFormVersionId: FV_A1, selected: true },
+    ]);
+    mockPrisma.application.findUnique.mockResolvedValue({ id: APP_ID, answers: {}, domainApplications: [] });
+
+    await action({
+      request: makeUpdateDomainsRequest(APP_ID, [
+        { domainId: DOMAIN_A, challengeVersionId: CV_A1 },
+        { domainId: DOMAIN_B, challengeVersionId: CV_B1 },
+      ]),
+      params: {},
+      context: {},
+    } as any);
+
+    expect(mockPrisma.domainApplication.create).not.toHaveBeenCalled();
+  });
+
+  it("update-domains keeps an already-selected closed domain even when the client replays without it", async () => {
+    mockClosedDomain(DOMAIN_B);
+    mockPrisma.cycleDomainForm.findMany.mockResolvedValue([
+      { domainId: DOMAIN_A, formId: FORM_A, form: { versions: [{ id: FV_A1 }] } },
+    ]);
+    mockPrisma.domainApplication.findMany.mockResolvedValue([
+      { id: "da-1", applicationId: APP_ID, domainId: DOMAIN_A, challengeFormVersionId: FV_A1, selected: true },
+      { id: "da-2", applicationId: APP_ID, domainId: DOMAIN_B, challengeFormVersionId: FV_B1, selected: true },
+    ]);
+    mockPrisma.application.findUnique.mockResolvedValue({
+      id: APP_ID,
+      answers: {},
+      domainApplications: [
+        { id: "da-1", domainId: DOMAIN_A, challengeFormVersion: { formId: FORM_A }, answers: {} },
+        { id: "da-2", domainId: DOMAIN_B, challengeFormVersion: { formId: FORM_B }, answers: {} },
+      ],
+    });
+
+    // The client only posts domain A — domain B (closed) must stay selected anyway.
+    const res = (await action({
+      request: makeUpdateDomainsRequest(APP_ID, [{ domainId: DOMAIN_A, challengeVersionId: CV_A1 }]),
+      params: {},
+      context: {},
+    } as any)) as any;
+
+    expect(res.draft.selectedDomainIds).toEqual(expect.arrayContaining([DOMAIN_A, DOMAIN_B]));
+    expect(mockPrisma.domainApplication.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("save-draft skips the general answers and a frozen DA's answers, but still saves an open DA's", async () => {
+    mockClosedDomain(DOMAIN_B);
+    mockPrisma.domainApplication.findMany.mockResolvedValue([
+      { id: "da-1", domainId: DOMAIN_A, selected: true },
+      { id: "da-2", domainId: DOMAIN_B, selected: true },
+    ]);
+
+    const body = new URLSearchParams({
+      intent: "save-draft",
+      applicationId: APP_ID,
+      answers: JSON.stringify({ story: "should not be written" }),
+      domainAnswers: JSON.stringify([
+        { domainApplicationId: "da-1", answers: { domain_essay: "open answer" } },
+        { domainApplicationId: "da-2", answers: { domain_essay: "frozen answer" } },
+      ]),
+    });
+    await action({
+      request: new Request("http://localhost/portal/apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: body.toString(),
+      }),
+      params: {},
+      context: {},
+    } as any);
+
+    expect(mockPrisma.application.update.mock.calls[0][0].data).not.toHaveProperty("answers");
+    expect(mockPrisma.domainApplication.updateMany).toHaveBeenCalledWith({
+      where: { id: "da-1", applicationId: APP_ID },
+      data: { answers: { domain_essay: "open answer" } },
+    });
+    expect(mockPrisma.domainApplication.updateMany).not.toHaveBeenCalledWith({
+      where: { id: "da-2", applicationId: APP_ID },
+      data: { answers: { domain_essay: "frozen answer" } },
+    });
+  });
+
+  it("submit skips required-question validation on a frozen domain, merges it back into the selection, and only stamps submittedAt on the open one", async () => {
+    mockClosedDomain(DOMAIN_B);
+    mockPrisma.application.findUnique.mockResolvedValue({
+      applicationCycleId: CYCLE_ID,
+      applicationFormVersion: { questions: [] },
+    });
+    mockPrisma.domainApplication.findMany.mockResolvedValue([
+      { id: DA_ID, domainId: DOMAIN_A, selected: true, challengeFormVersion: { questions: domainQuestions } },
+      { id: "da-closed", domainId: DOMAIN_B, selected: true, challengeFormVersion: { questions: domainQuestions } },
+    ]);
+
+    // The client replays with only domain A selected, and no answer at all for
+    // the closed domain's (unanswerable) required question.
+    const res = await action({
+      request: makeSubmitRequest({
+        domainAnswers: [{ domainApplicationId: DA_ID, answers: { domain_essay: "fine" } }],
+        selectedDomainIds: [DOMAIN_A],
+      }),
+      params: {},
+      context: {},
+    } as any);
+
+    expect((res as any).error).toBeUndefined();
+    expect((res as Response).status).toBe(302);
+
+    const submittedAtCall = mockPrisma.domainApplication.updateMany.mock.calls.find(
+      (call: any) => call[0].data && "submittedAt" in call[0].data,
+    );
+    expect(submittedAtCall?.[0].where.id.in).toEqual([DA_ID]);
+
+    // The Submitted row is still created exactly once.
+    expect(mockPrisma.applicationStatusUpdate.create).toHaveBeenCalledTimes(1);
+    // The closed domain was never deselected, despite being left off the posted list.
+    expect(mockPrisma.domainApplication.updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: { selected: false } }),
+    );
+  });
+});
+
 describe("POST /portal/apply — open Students cycle guard", () => {
   it("rejects a write to an application that isn't the caller's", async () => {
     mockPrisma.application.findFirst.mockResolvedValue(null);
@@ -827,7 +993,6 @@ describe("POST /portal/apply — start term", () => {
     mockPrisma.application.update.mock.calls.at(-1)?.[0]?.data;
 
   beforeEach(() => {
-    mockStartTermsFlag.mockResolvedValue(true);
     vi.mocked(getActiveCycleById).mockResolvedValue(CHOICE_CYCLE as any);
     // No questions to answer, so the start term is the only submit gate.
     mockPrisma.application.findUnique.mockResolvedValue({
@@ -912,10 +1077,89 @@ describe("POST /portal/apply — start term", () => {
 
     expect(mockPrisma.application.upsert.mock.calls[0][0].create.startTermId).toBe(T_26F);
   });
+});
 
-  it("writes no start term at all while the flag is off", async () => {
-    mockStartTermsFlag.mockResolvedValue(false);
-    await action({ request: submitWith(T_26F), params: {}, context: {} } as any);
-    expect(lastUpdateData()).not.toHaveProperty("startTermId");
+describe("POST /portal/apply — reused waitlisted application", () => {
+  const continuedInterestQuestions = [
+    { key: "still_interested", type: "textarea", required: true, data: { label: "Why still?" } },
+  ];
+  // A DA reusing a waitlisted application: its challenge answers are a frozen
+  // copy, and the continued interest form is what the applicant fills in.
+  const continuedDa = {
+    id: DA_ID,
+    domainId: DOMAIN_A,
+    selected: true,
+    continuedFromId: "da-waitlisted",
+    challengeFormVersionId: "fv-old-cycle",
+    challengeFormVersion: { questions: domainQuestions },
+    continuedInterestFormVersion: { questions: continuedInterestQuestions },
+  };
+
+  beforeEach(() => {
+    mockPrisma.application.findUnique.mockResolvedValue({
+      applicationCycleId: CYCLE_ID,
+      applicationFormVersion: { questions: generalQuestions },
+    });
+    mockPrisma.domainApplication.findMany.mockResolvedValue([continuedDa]);
+  });
+
+  it("requires the continued interest form, not the frozen application", async () => {
+    const res = await action({
+      request: makeSubmitRequest({
+        domainAnswers: [{ domainApplicationId: DA_ID, answers: {} }],
+        selectedDomainIds: [DOMAIN_A],
+      }),
+      params: {},
+      context: {},
+    } as any);
+
+    expect((res as any).error).toMatch(/\(1 unanswered\)/);
+  });
+
+  it("saves continued interest answers and never overwrites the frozen ones", async () => {
+    mockPrisma.applicationStatusUpdate.findFirst.mockResolvedValue({ id: "already-submitted" });
+
+    await action({
+      request: makeSubmitRequest({
+        answers: { story: "tampered" },
+        domainAnswers: [
+          {
+            domainApplicationId: DA_ID,
+            answers: { domain_essay: "tampered" },
+            continuedInterestAnswers: { still_interested: "Yes" },
+          } as any,
+        ],
+        selectedDomainIds: [DOMAIN_A],
+      }),
+      params: {},
+      context: {},
+    } as any);
+
+    expect(mockPrisma.application.update.mock.calls[0][0].data).not.toHaveProperty("answers");
+    expect(mockPrisma.domainApplication.updateMany).toHaveBeenCalledWith({
+      where: { id: DA_ID, applicationId: APP_ID },
+      data: { continuedInterestAnswers: { still_interested: "Yes" } },
+    });
+  });
+
+  it("keeps the pinned challenge when domains change", async () => {
+    mockPrisma.cycleDomainForm.findMany.mockResolvedValue([
+      { domainId: DOMAIN_A, formId: FORM_A, form: { versions: [{ id: FV_A1 }] } },
+    ]);
+    mockPrisma.application.findUnique.mockResolvedValue({
+      id: APP_ID,
+      answers: {},
+      domainApplications: [],
+    });
+
+    await action({
+      request: makeUpdateDomainsRequest(APP_ID, [
+        { domainId: DOMAIN_A, challengeVersionId: CV_A1 },
+      ]),
+      params: {},
+      context: {},
+    } as any);
+
+    expect(mockPrisma.domainApplication.update).not.toHaveBeenCalled();
   });
 });

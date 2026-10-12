@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useFetcher } from "react-router";
 import { Clock } from "lucide-react";
+import { Button } from "~/components/ui/Button";
 import { formatZoneLabel, isValidTimezone } from "~/lib/timezone";
 
 // Location-aware timezone nudge (Google-Calendar style). After mount it reads
@@ -77,41 +78,31 @@ export function TimeZonePrompt({
 
   return (
     <div className="fixed bottom-4 left-4 z-50 w-80 max-w-[calc(100vw-2rem)] pointer-events-auto">
-      <div className="bg-card border border-border rounded-2xl shadow-brand-2 p-4 flex flex-col gap-3">
+      <div className="cal-surface flex flex-col gap-3 rounded-os-card border border-os-container bg-os-card p-4">
         <div className="flex items-start gap-2.5">
-          <span className="mt-0.5 text-accent-coral">
+          <span className="mt-0.5 text-os-grey">
             <Clock className="w-4 h-4" />
           </span>
           <div className="min-w-0">
             <p className="text-sm font-semibold text-foreground">
-              Update your timezone?
+              Update time zone
             </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              You look like you're in{" "}
+            <p className="mt-1 text-sm text-muted-foreground">
+              Your device is in{" "}
               <span className="font-medium text-foreground">
                 {formatZoneLabel(detected!)}
               </span>
-              , but your times show in {formatZoneLabel(userTimeZone)}.
+              . Times currently show in {formatZoneLabel(userTimeZone)}.
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={update}
-            disabled={busy}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-accent-coral px-3 py-1.5 text-sm font-semibold text-white hover:bg-accent-coral/90 disabled:opacity-60"
-          >
+          <Button size="sm" onClick={update} disabled={busy}>
             Update
-          </button>
-          <button
-            type="button"
-            onClick={keep}
-            disabled={busy}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-semibold text-foreground hover:bg-muted/50 disabled:opacity-60"
-          >
+          </Button>
+          <Button variant="secondary" size="sm" onClick={keep} disabled={busy}>
             Keep {formatZoneLabel(userTimeZone).split(" · ")[0]}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

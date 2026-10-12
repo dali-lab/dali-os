@@ -23,7 +23,7 @@ export function isLevelAdvance(from: Level | null, to: Level): boolean {
   return from !== null && LEVEL_RANK[to] > LEVEL_RANK[from];
 }
 
-async function adminRecipientIds(excludeUserId?: string): Promise<string[]> {
+export async function adminRecipientIds(excludeUserId?: string): Promise<string[]> {
   const rows = await prisma.adminMembership.findMany({ select: { userId: true } });
   const ids = new Set(rows.map((r) => r.userId));
   for (const id of getAdminUserIdsFromEnv()) ids.add(id);

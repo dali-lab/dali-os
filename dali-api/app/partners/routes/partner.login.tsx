@@ -13,6 +13,8 @@ import { sendMemberEmailConflictEmail } from "~/partners/lib/partner-emails.serv
 import { auth } from "~/lib/betterauth.server";
 import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { PARTNER_LINK_EXPIRY } from "~/partners/lib/magic-link";
+import { useOsShellRoot } from "~/lib/os-shell";
+import { buttonClasses } from "~/components/ui/Button";
 
 // UI resend cooldown. The server independently rate-limits (3 sends per
 // email per 15 minutes) — this just keeps the button from being mashed.
@@ -89,6 +91,7 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function PartnerLogin() {
+  useOsShellRoot(true);
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const submitting = navigation.state === "submitting";
@@ -107,26 +110,23 @@ export default function PartnerLogin() {
   }, [cooldown]);
 
   return (
-    <div className="min-h-screen bg-page flex items-center justify-center px-6">
-      <div className="w-full max-w-sm">
-        <div className="mb-8 flex items-center gap-3">
-          <img src="/logo-blue.svg" alt="DALI Lab" className="h-12 w-auto" />
-          <span className="font-heading text-2xl font-bold text-dark-blue">
-            DALI OS
-          </span>
-        </div>
-        <h1 className="font-heading text-3xl font-bold text-dark-blue mb-2">
+    <div className="os-shell flex min-h-screen items-center justify-center bg-os-bg px-6 text-foreground">
+      <div className="w-full max-w-sm rounded-os-card bg-os-card p-8">
+        <span className="font-os-logo text-2xl font-semibold text-os-accent">
+          dali.os
+        </span>
+        <h1 className="font-heading text-3xl font-bold text-foreground mt-6 mb-2">
           Partner sign in
         </h1>
 
         {sent ? (
-          <div className="mt-6 rounded-2xl bg-brand-tint p-6">
-            <p className="font-heading font-semibold text-dark-blue mb-1">
+          <div className="mt-6 rounded-os-item bg-os-well p-6">
+            <p className="font-heading font-semibold text-foreground mb-1">
               Check your email
             </p>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-os-grey">
               We sent an email to{" "}
-              <span className="font-medium text-dark-blue">{sent.email}</span>.
+              <span className="font-medium text-foreground">{sent.email}</span>.
               Open it and follow the link to continue. Sign-in links expire in{" "}
               {PARTNER_LINK_EXPIRY}.
             </p>
@@ -136,7 +136,7 @@ export default function PartnerLogin() {
                 <button
                   type="submit"
                   disabled={submitting || cooldown > 0}
-                  className="text-sm font-medium text-dark-blue hover:underline underline-offset-2 disabled:opacity-50 disabled:no-underline"
+                  className="text-sm font-medium text-foreground hover:underline underline-offset-2 disabled:opacity-50 disabled:no-underline"
                 >
                   {cooldown > 0
                     ? `Resend email (${cooldown}s)`
@@ -147,7 +147,7 @@ export default function PartnerLogin() {
               </Form>
               <a
                 href="/partner/login"
-                className="text-sm text-muted-foreground hover:text-foreground"
+                className="text-sm text-os-grey hover:text-foreground"
               >
                 Use a different email
               </a>
@@ -155,27 +155,27 @@ export default function PartnerLogin() {
           </div>
         ) : (
           <>
-            <p className="text-muted-foreground mb-6">
+            <p className="text-os-grey mb-6">
               Sign in or create your account — no password needed.
             </p>
 
             {actionData && "error" in actionData && (
-              <p className="mb-4 text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3">
+              <p className="mb-4 text-sm text-destructive bg-destructive/10 rounded-lg px-4 py-3">
                 {actionData.error}
               </p>
             )}
-            <Form method="post" className="flex flex-col gap-4">
+            <Form method="post" className="os-form flex flex-col gap-4">
               <input
                 type="email"
                 name="email"
                 required
                 placeholder="you@company.com"
-                className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral"
+                className="w-full"
               />
               <button
                 type="submit"
                 disabled={submitting}
-                className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
+                className={buttonClasses("primary", "md", "w-full")}
               >
                 {submitting ? "Sending…" : "Continue with email"}
               </button>
@@ -184,14 +184,14 @@ export default function PartnerLogin() {
             {/* The only org-adjacent line that belongs on an auth screen —
                 an invite genuinely IS a sign-in method. Everything else about
                 organizations lives after sign-in (partner.onboarding). */}
-            <p className="mt-6 text-xs text-muted-foreground">
+            <p className="mt-6 text-xs text-os-muted">
               Have an invite email? It signs you in directly — nothing needed
               here.
             </p>
           </>
         )}
 
-        <p className="mt-10 text-xs text-muted-foreground">
+        <p className="mt-10 text-xs text-os-muted">
           DALI member or Dartmouth student?{" "}
           <a href="/login" className="underline hover:text-foreground">
             Sign in here

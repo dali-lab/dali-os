@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
+  isNonMember: vi.fn(async () => false),
   forbidden: vi.fn(() => new Response("Forbidden", { status: 403 })),
 }));
 vi.mock("~/lib/db", () => ({

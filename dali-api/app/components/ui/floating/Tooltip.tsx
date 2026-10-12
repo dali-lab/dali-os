@@ -41,10 +41,10 @@ import { cn } from "~/lib/cn";
 // `role="tooltip"` wires the accessible description automatically.
 
 const LABEL_CLASS =
-  "pointer-events-none whitespace-nowrap rounded-md bg-foreground px-2 py-1 text-xs font-medium text-background shadow-brand-2";
+  "pointer-events-none whitespace-nowrap rounded-lg bg-foreground px-2 py-1 text-xs font-medium text-background shadow-[0_8px_24px_var(--color-os-shadow)]";
 
 const RICH_CLASS =
-  "max-w-[260px] rounded-md border border-border bg-card px-3 py-2 text-xs leading-relaxed text-foreground shadow-brand-2";
+  "max-w-[260px] rounded-os-item border border-os-container bg-os-card px-3 py-2 text-xs leading-relaxed text-foreground shadow-[0_16px_40px_var(--color-os-shadow)]";
 
 export const Tooltip = forwardRef<
   HTMLElement,

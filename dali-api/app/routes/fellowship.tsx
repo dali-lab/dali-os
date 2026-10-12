@@ -42,7 +42,7 @@ const COPY: PortalCopy = {
       You're currently in{" "}
       {domains.map((d, i) => (
         <span key={d.id}>
-          <span className="font-medium text-dark-blue">{d.displayName}</span>
+          <span className="font-medium text-foreground">{d.displayName}</span>
           {i < domains.length - 1 ? ", " : ""}
         </span>
       ))}

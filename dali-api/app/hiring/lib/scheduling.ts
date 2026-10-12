@@ -5,6 +5,7 @@ import { sendReassignmentEmails } from "~/hiring/lib/interview-emails";
 import { syncInterviewMeetAttendees } from "~/hiring/lib/interview-meet";
 import { zonedWallTimeUtc } from "~/lib/timezone";
 import { interviewerCalendars, type InterviewerCalendar } from "~/hiring/lib/interview-availability.server";
+import { createRoomBooking, cancelRoomBooking, getRoomSchedule, blockedBy } from "~/lib/rooms.server";
 
 // New-assignee notifications fire outside transactions (best-effort), so
 // scheduling.ts hands callers the cycleInterviewerIds that need notifying
@@ -75,8 +76,10 @@ export async function computeAvailableSlots(
 ): Promise<AvailableSlot[]> {
   const config = await prisma.interviewConfig.findUnique({
     where: { applicationCycleId: cycleId },
+    include: { rooms: { where: { archivedAt: null }, select: { id: true, name: true } } },
   });
   if (!config) return [];
+  if (mode === "in-person" && config.rooms.length === 0) return [];
 
   const { slotDurationMinutes, bufferMinutes, dayStartHour, dayEndHour, interviewStartDate, interviewEndDate, timezone, bookingNoticeHours } = config;
   const earliestBookable = new Date(Date.now() + bookingNoticeHours * 60 * 60_000);
@@ -109,18 +112,18 @@ export async function computeAvailableSlots(
     bookedIntervals: memberIntervals.get(r.userId) ?? [],
   }));
 
-  // For in-person mode, load existing pod bookings so we can filter out
-  // slots where both Pod Appa and Pod Momo are already occupied.
-  let podBookings: { startTime: Date; endTime: Date; location: string }[] = [];
+  // For in-person mode, load each room's schedule once over the whole
+  // interview window and keep only the items that would actually block a new
+  // interview booking for this cycle (blockedBy: same-cycle holds don't).
+  const roomSchedules = new Map<string, { start: Date; end: Date }[]>();
   if (mode === "in-person") {
-    podBookings = await prisma.interview.findMany({
-      where: {
-        applicationCycleId: cycleId,
-        status: "Scheduled",
-        location: { in: ["PodAppa", "PodMomo"] },
-      },
-      select: { startTime: true, endTime: true, location: true },
-    });
+    const windowStart = interviewStartDate;
+    const windowEnd = new Date(interviewEndDate.getTime() + 24 * 60 * 60_000);
+    const writer = { source: "Interview" as const, applicationCycleId: cycleId };
+    for (const room of config.rooms) {
+      const items = await getRoomSchedule(room.id, windowStart, windowEnd);
+      roomSchedules.set(room.id, items.filter((item) => blockedBy(item, writer)));
+    }
   }
 
   // Generate candidate slot start times
@@ -161,14 +164,13 @@ export async function computeAvailableSlots(
       new Set([...inDomainFreeMembers, ...crossDomainFreeMembers]).size >= 2;
 
     if (haveDistinctPair) {
-      // For in-person mode, skip slots where both pods are occupied
+      // For in-person mode, skip slots where every room is occupied
       if (mode === "in-person") {
-        const occupiedPods = new Set(
-          podBookings
-            .filter((b) => b.startTime < slotEnd && b.endTime > slotStart)
-            .map((b) => b.location),
-        );
-        if (occupiedPods.has("PodAppa") && occupiedPods.has("PodMomo")) continue;
+        const anyRoomFree = config.rooms.some((room) => {
+          const items = roomSchedules.get(room.id) ?? [];
+          return !items.some((item) => item.start < slotEnd && item.end > slotStart);
+        });
+        if (!anyRoomFree) continue;
       }
 
       results.push({
@@ -236,6 +238,7 @@ async function assignInterviewersWithTx(
 ) {
   const config = await tx.interviewConfig.findUnique({
     where: { applicationCycleId: cycleId },
+    include: { rooms: { where: { archivedAt: null }, select: { id: true, name: true } } },
   });
   if (!config) throw new Error("No interview config for this cycle");
 
@@ -309,28 +312,35 @@ async function assignInterviewersWithTx(
     throw new Error("No cross-domain interviewer available for this slot");
   }
 
-  // Determine location: auto-assign a pod for in-person, or Online
-  let location: "PodAppa" | "PodMomo" | "Online" = "Online";
+  // Auto-assign a room for in-person, booking it through rooms.server so
+  // /rooms and the door displays see it; null roomId/roomBookingId = Online.
+  let roomId: string | null = null;
+  let roomBookingId: string | null = null;
   if (mode === "in-person") {
-    const overlapping = await tx.interview.findMany({
-      where: {
-        applicationCycleId: cycleId,
-        status: "Scheduled",
-        location: { in: ["PodAppa", "PodMomo"] },
-        startTime: { lt: slotEnd },
-        endTime: { gt: slotStart },
-      },
-      select: { location: true },
-    });
-    const takenPods = new Set(overlapping.map((i) => i.location));
-    const pods: ("PodAppa" | "PodMomo")[] = Math.random() < 0.5
-      ? ["PodAppa", "PodMomo"]
-      : ["PodMomo", "PodAppa"];
-    const freePod = pods.find((p) => !takenPods.has(p));
-    if (freePod) {
-      location = freePod;
-    } else {
-      throw new Error("No pod available at this time");
+    if (config.rooms.length === 0) {
+      throw new Error("This cycle has no interview rooms set up");
+    }
+    for (const room of shuffle(config.rooms)) {
+      const booked = await createRoomBooking(
+        {
+          roomId: room.id,
+          userId: inDomainPick.userId,
+          start: slotStart,
+          end: slotEnd,
+          title: "Interview",
+          source: "Interview",
+          applicationCycleId: cycleId,
+        },
+        tx,
+      );
+      if (booked.ok) {
+        roomId = room.id;
+        roomBookingId = booked.value.id;
+        break;
+      }
+    }
+    if (!roomBookingId) {
+      throw new Error("No interview room available at this time");
     }
   }
 
@@ -341,7 +351,8 @@ async function assignInterviewersWithTx(
       startTime: slotStart,
       endTime: slotEnd,
       status: "Scheduled",
-      location,
+      roomId,
+      roomBookingId,
       assignments: {
         create: [
           {
@@ -523,7 +534,28 @@ export function isNoReplacementError(error: unknown): boolean {
   return error instanceof Error && error.message === REPLACEMENT_UNAVAILABLE;
 }
 
+// Release the room an interview was holding, if any — shared by every path
+// that cancels or re-books an interview (cancel, reschedule, location
+// change). The applicant isn't a User, so the actor for the cancel is the
+// booking's own holder (an interviewer), which the caller must have selected.
+export async function releaseInterviewRoom(
+  interview: { roomBookingId: string | null; roomBooking?: { userId: string } | null },
+  tx: Prisma.TransactionClient,
+): Promise<void> {
+  if (!interview.roomBookingId || !interview.roomBooking) return;
+  await cancelRoomBooking(interview.roomBookingId, interview.roomBooking.userId, {}, tx);
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function shuffle<T>(items: T[]): T[] {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
 
 export function isInterviewerFree(
   interviewer: InterviewerFreeCheck,

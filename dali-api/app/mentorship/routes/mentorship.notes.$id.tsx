@@ -2,7 +2,7 @@ import { useState } from "react";
 import { redirect, useLoaderData } from "react-router";
 import { Smile, Meh, Frown } from "lucide-react";
 import type { Route } from "./+types/mentorship.notes.$id";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { recordRouteVisit } from "~/lib/user-pages.server";
@@ -49,7 +49,7 @@ export const handle = {
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  if (auth.user.type === "applicant") return redirect("/portal");
+  if (await isNonMember(auth, request)) return redirect("/portal");
   if (!(await canViewMentorship(auth.user.sub))) {
     throw new Response("Forbidden", { status: 403 });
   }

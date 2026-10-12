@@ -7,6 +7,7 @@
 
 import { randomUUID } from "node:crypto";
 import { prisma } from "~/lib/db";
+import { canEditDomainSetup } from "~/hiring/lib/domain-windows.server";
 import { ensureProcessFolder, HIRING_PROCESS_ID } from "~/lib/bindings.server";
 import type { Question } from "~/types";
 import { resolveReferenceOptions } from "~/forms/lib/reference-sources";
@@ -157,6 +158,64 @@ export async function createCycleApplicationForm(
 }
 
 /**
+ * Create a Form for returning waitlisters (in the "Hiring" folder) and bind it
+ * via ApplicationCycle.continuedInterestFormId. No-op if the cycle already has
+ * one. Not cloned from the application template: it sits on top of an
+ * application the applicant has already written. Returns the bound form id.
+ */
+export async function createCycleContinuedInterestForm(
+  cycleId: string,
+  actorId: string,
+): Promise<string | null> {
+  const cycle = await prisma.applicationCycle.findUnique({
+    where: { id: cycleId },
+    select: { id: true, name: true, continuedInterestFormId: true },
+  });
+  if (!cycle) return null;
+  if (cycle.continuedInterestFormId) return cycle.continuedInterestFormId;
+
+  const questions: Question[] = [
+    {
+      key: randomUUID(),
+      type: "textarea",
+      required: true,
+      data: { label: "Why are you still interested in DALI?", maxWords: 200 },
+    },
+    {
+      key: randomUUID(),
+      type: "textarea",
+      required: false,
+      data: {
+        label: "What have you worked on or learned since you last applied? (optional)",
+        maxWords: 200,
+      },
+    },
+  ];
+  const folderPageId = await ensureProcessFolder({
+    processType: "HiringCycle",
+    processId: HIRING_PROCESS_ID,
+    purpose: "hiring-forms",
+    createdById: actorId,
+  });
+  const form = await prisma.form.create({
+    data: {
+      name: `${cycle.name} — Continued interest`,
+      folderPageId,
+      createdById: actorId,
+      versions: {
+        create: { versionNumber: 1, questions: questions as unknown as object, createdById: actorId },
+      },
+    },
+    select: { id: true },
+  });
+  await prisma.applicationCycle.update({
+    where: { id: cycleId },
+    data: { continuedInterestFormId: form.id },
+  });
+  return form.id;
+}
+
+/**
  * Auto-create a per-domain challenge Form (in the "Hiring" folder) and link it
  * to the (cycle, domain) via CycleDomainForm. Returns the new form id. A domain
  * may have several challenge Forms — the applicant picks one.
@@ -208,18 +267,10 @@ export async function createDomainChallengeForm(
   return form.id;
 }
 
-async function cycleIsDraft(cycleId: string): Promise<boolean> {
-  const latest = await prisma.applicationCycleStatusUpdate.findFirst({
-    where: { applicationCycleId: cycleId },
-    orderBy: { createdAt: "desc" },
-    select: { newStatus: true },
-  });
-  return (latest?.newStatus ?? "Draft") === "Draft";
-}
-
 /**
- * Add a challenge to a domain while the cycle is still being set up: link
- * `formId` when the lead picked an existing form, else create a fresh one.
+ * Add a challenge to a domain while its setup is still editable (see
+ * canEditDomainSetup): link `formId` when the lead picked an existing form,
+ * else create a fresh one.
  */
 export async function addDomainChallenge(
   cycleId: string,
@@ -227,7 +278,7 @@ export async function addDomainChallenge(
   actorId: string,
   formId?: string | null,
 ): Promise<"not-draft" | "not-found" | null> {
-  if (!(await cycleIsDraft(cycleId))) return "not-draft";
+  if (!(await canEditDomainSetup(cycleId, domainId))) return "not-draft";
   if (!formId) {
     await createDomainChallengeForm(cycleId, domainId, actorId);
     return null;
@@ -244,8 +295,9 @@ export async function addDomainChallenge(
 }
 
 /**
- * Unlink a domain's challenge form, in Draft only, and never once an applicant
- * has picked it. `cycleId`, when given, must be the link's cycle.
+ * Unlink a domain's challenge form while its setup is still editable, and
+ * never once an applicant has picked it. `cycleId`, when given, must be the
+ * link's cycle.
  */
 export async function removeDomainChallenge(
   cdfId: string,
@@ -253,7 +305,7 @@ export async function removeDomainChallenge(
 ): Promise<"not-found" | "not-draft" | "in-use" | null> {
   const cdf = await prisma.cycleDomainForm.findUnique({ where: { id: cdfId } });
   if (!cdf || (cycleId && cdf.applicationCycleId !== cycleId)) return "not-found";
-  if (!(await cycleIsDraft(cdf.applicationCycleId))) return "not-draft";
+  if (!(await canEditDomainSetup(cdf.applicationCycleId, cdf.domainId))) return "not-draft";
   const inUse = await prisma.domainApplication.count({
     where: {
       challengeFormVersion: { formId: cdf.formId },

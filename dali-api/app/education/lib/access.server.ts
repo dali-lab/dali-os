@@ -61,9 +61,9 @@ export async function requireEducationCore(
 
 /**
  * Member-shell education routes send non-member Dartmouth students to the
- * portal mirror. Deliberately checks "dartmouth" — deriveAuthType never
- * produces "applicant", so the app-wide redirectApplicantToPortal helper is a
- * no-op and must not be relied on here.
+ * portal mirror. Keys on the "dartmouth" auth type rather than the lab-wide
+ * redirectNonMemberToPortal helper because the destination differs: a
+ * Dartmouth student belongs on /portal/education, not the generic /portal.
  */
 export function redirectDartmouthToPortal(auth: AuthSuccess): Response | null {
   if (auth.user.type === "dartmouth") return redirect("/portal/education");

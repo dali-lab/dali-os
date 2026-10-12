@@ -8,6 +8,7 @@ import type {
   ResponseRow,
   VersionResponses,
 } from "~/forms/lib/version-responses.server";
+import { modalCardClass } from "~/components/os-chrome";
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, {
@@ -259,7 +260,7 @@ export function VersionResults({
         open={selected !== null}
         onClose={() => setOpenId(null)}
         labelledBy="response-detail-title"
-        containerClassName="bg-card rounded-2xl shadow-brand-2 max-w-2xl w-full p-5 sm:p-6 my-auto max-h-[85vh] overflow-y-auto"
+        containerClassName={modalCardClass("max-w-2xl")}
       >
         {selected && (
           <>

@@ -1,5 +1,5 @@
-import { useState, type MouseEvent, type ReactNode } from "react";
-import { useRevalidator } from "react-router";
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { useFetcher, useRevalidator } from "react-router";
 import {
   AlertTriangle,
   ArrowRight,
@@ -15,9 +15,8 @@ import {
 } from "lucide-react";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
-import { IconButton } from "~/components/ui/IconButton";
 import { Tooltip } from "~/components/ui/floating";
-import { Modal } from "~/components/Modal";
+import { Drawer } from "~/components/ui/Drawer";
 import { SegmentedTabButtons } from "~/components/AreaPillNav";
 import { RsvpButtons, notifyTasksChanged } from "~/components/RsvpButtons";
 import { buttonClasses } from "~/components/ui/Button";
@@ -260,20 +259,7 @@ export function TasksDrawer({
   const count = attentionCount(tasks, notifications, projectTasks);
 
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      labelledBy="tasks-drawer-title"
-      className="fixed inset-0 z-50 flex justify-end bg-os-overlay"
-      containerClassName="flex h-full w-full max-w-[480px] flex-col border-l border-os-container bg-os-card shadow-[-24px_0_60px_var(--color-os-shadow)] outline-none motion-safe:animate-detail-panel"
-    >
-      <div className="flex items-center gap-2 px-6 pt-6 pb-4">
-        <h2 id="tasks-drawer-title" className="flex-1 text-lg font-bold text-foreground">
-          Tasks ({count})
-        </h2>
-        {seeAll}
-        <IconButton label="Close" icon={X} onClick={onClose} className="h-9 w-9" iconClassName="h-5 w-5" />
-      </div>
+    <Drawer open={open} onClose={onClose} title={`Tasks (${count})`} headerActions={seeAll} width={480}>
       <div className="px-5 pb-3.5">
         <FeedTabs tab={tab} onChange={setTab} feed={feed} stretch />
       </div>
@@ -284,7 +270,7 @@ export function TasksDrawer({
           onOpen={onOpen}
         />
       </div>
-    </Modal>
+    </Drawer>
   );
 }
 
@@ -423,7 +409,7 @@ export function CardShell({
   return (
     <article
       className={cn(
-        "flex h-full min-w-0 flex-col rounded-2xl border border-os-container px-[18px] py-4",
+        "flex h-full min-w-0 flex-col rounded-os-card border border-os-container px-[18px] py-4",
         filled && "bg-os-card",
       )}
     >
@@ -692,6 +678,8 @@ function NotificationCard({
           size="md"
           className="gap-2"
         />
+      ) : notification.eventType === "coffee_chat.invite" && notification.link ? (
+        <CoffeeChatAnswer action={notification.link} />
       ) : (
         <>
           {notification.link && (
@@ -729,6 +717,38 @@ function NotificationCard({
         </>
       )}
     </CardShell>
+  );
+}
+
+// Accept / Decline for an anonymous coffee chat invite, posted to the invite's
+// own page action. Accepting swaps this card for one naming the sender.
+function CoffeeChatAnswer({ action }: { action: string }) {
+  const fetcher = useFetcher<{ error?: string } | null>();
+  const busy = fetcher.state !== "idle";
+  const sent = useRef(false);
+  // The shell's task list refreshes on this event, not on a route revalidation,
+  // so fire it once the answer has actually landed.
+  useEffect(() => {
+    if (busy) sent.current = true;
+    else if (sent.current) {
+      sent.current = false;
+      notifyTasksChanged();
+    }
+  }, [busy]);
+  const answer = (value: "accept" | "decline") =>
+    fetcher.submit({ answer: value }, { method: "post", action });
+  return (
+    <>
+      <button type="button" onClick={() => answer("accept")} disabled={busy} className={ctaClass(true)}>
+        <Check className={ctaIcon} aria-hidden />
+        Accept
+      </button>
+      <button type="button" onClick={() => answer("decline")} disabled={busy} className={ctaClass(false)}>
+        <X className={ctaIcon} aria-hidden />
+        Decline
+      </button>
+      {fetcher.data?.error && <p className="text-xs text-destructive">{fetcher.data.error}</p>}
+    </>
   );
 }
 

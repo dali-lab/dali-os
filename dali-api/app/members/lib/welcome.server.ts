@@ -1,5 +1,6 @@
 import { prisma } from "~/lib/db";
-import { notify, renderNotificationEmail } from "~/lib/notify.server";
+import { notify } from "~/lib/notify.server";
+import { renderMemberEmail } from "~/email/lib/layout.server";
 import { renderEmailTemplate } from "~/email/lib/templates.server";
 import type { NotificationCopyKey } from "~/email/lib/notification-copy";
 import {
@@ -205,17 +206,19 @@ export async function sendOnboardingReminders(args: {
       skipped++;
       continue;
     }
+    const mail = renderMemberEmail({
+      firstName: u.firstName,
+      title: copy.subject ?? "",
+      body: copy.body,
+      link: absLink,
+    });
     const { id } = await enqueueOutbound({
       channel: "email",
       purpose: "General",
       target: to,
       subject: copy.subject ?? "",
-      bodyHtml: renderNotificationEmail({
-        firstName: u.firstName,
-        title: copy.subject ?? "",
-        body: copy.body,
-        link: absLink,
-      }),
+      bodyHtml: mail.html,
+      bodyText: mail.text,
       recipientUserId: u.id,
       eventType: "member.onboarding",
     });

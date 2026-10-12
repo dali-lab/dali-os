@@ -4,7 +4,7 @@ import { Link } from "react-router";
 import type { DomainApplicationStatus } from "~/types";
 import { InterviewSlotPicker } from "~/hiring/components/InterviewSlotPicker";
 import { formatInterviewDate, formatInterviewTimeRangeDual } from "~/hiring/lib/interview-time";
-import { formatInstantWithZoneLabel } from "~/lib/timezone";
+import { APPLICATION_TZ, formatInTimeZone, formatInstantWithZoneLabel } from "~/lib/timezone";
 import { APPLICATIONS_FROM_EMAIL } from "~/lib/app-env";
 import { Button, buttonClasses } from "~/components/ui/Button";
 import { Checkbox } from "~/components/ui/Checkbox";
@@ -23,7 +23,12 @@ export interface DomainAppData {
   domainName: string;
   domainId: string;
   inferredStatus: DomainApplicationStatus;
-  interview: { id: string; startTime: string; endTime: string; status: string; location?: string; zoomJoinUrl?: string | null } | null;
+  /** This domain's application window has closed. Undefined where the caller doesn't track it. */
+  closed?: boolean;
+  /** Effective close (own override or the cycle's), ISO. */
+  closeDate?: string | null;
+  submittedAt?: string | null;
+  interview: { id: string; startTime: string; endTime: string; status: string; room?: { name: string } | null; zoomJoinUrl?: string | null; videoUrl?: string | null } | null;
 }
 
 interface TimeSlot {
@@ -60,13 +65,18 @@ function groupSlotsByDate(slots: TimeSlot[]): { date: string; slots: TimeSlot[] 
   return Array.from(map.entries()).map(([date, slots]) => ({ date, slots }));
 }
 
-function formatInterviewLocation(location?: string): string {
-  if (location === "PodAppa") return "Pod Appa, DALI Lab";
-  if (location === "PodMomo") return "Pod Momo, DALI Lab";
-  return "Online";
+function formatInterviewLocation(room?: { name: string } | null): string {
+  return room ? `${room.name}, DALI Lab` : "Online";
 }
 
-function formatDeadline(iso: string, timeZone: string): string {
+// "Nov 13" — the per-domain close date shown next to "Not submitted". Pinned
+// to APPLICATION_TZ (not the viewer's zone) since a close date is a calendar
+// day in the lab's own timezone, same as the apply page's per-domain pills.
+function formatShortDate(iso: string): string {
+  return formatInTimeZone(iso, APPLICATION_TZ, { month: "short", day: "numeric" });
+}
+
+export function formatDeadline(iso: string, timeZone: string): string {
   // In the applicant's own zone (viewerTimeZone resolves to ET when unset), with
   // time + zone abbreviation. Date-only in a hardcoded ET showed the wrong day
   // for applicants far from ET (11:59 PM ET is the next calendar day in Tokyo).
@@ -237,6 +247,41 @@ export function ApplicationDraftView({ cycleName, applyHref }: { cycleName: stri
       <Link to={applyHref} className="px-8 py-3 rounded-full bg-os-accent text-os-bg font-semibold font-heading tracking-wider hover:bg-os-accent-hover transition shadow-lg hover:shadow-xl">
         Continue Application
       </Link>
+    </div>
+  );
+}
+
+// A domain the applicant selected but never submitted — either it's still
+// open (an Edit link back to the apply page) or its own window closed before
+// they submitted (no link; it's not coming back).
+export function NotSubmittedView({
+  applyHref,
+  closed,
+  closeDate,
+}: {
+  applyHref: string;
+  closed: boolean;
+  closeDate?: string | null;
+}) {
+  const closeLabel = closeDate ? formatShortDate(closeDate) : null;
+  return (
+    <div className="max-w-2xl mx-auto py-12 text-center">
+      <h2 className="font-heading text-2xl font-bold text-foreground mb-3">
+        {closed ? "Not Submitted" : "Not Submitted Yet"}
+      </h2>
+      <p className="text-muted-foreground leading-relaxed mb-6">
+        {closed
+          ? `This domain's window closed${closeLabel ? ` ${closeLabel}` : ""}. It wasn't submitted.`
+          : `You haven't submitted for this domain yet${closeLabel ? `. It closes ${closeLabel}` : ""}.`}
+      </p>
+      {!closed && (
+        <Link
+          to={applyHref}
+          className="px-8 py-3 rounded-full bg-os-accent text-os-bg font-semibold font-heading tracking-wider hover:bg-os-accent-hover transition shadow-lg hover:shadow-xl"
+        >
+          Edit Application
+        </Link>
+      )}
     </div>
   );
 }
@@ -489,7 +534,7 @@ export function InterviewScheduledView({
   useEffect(() => {
     if (!rescheduling) return;
     setLoadingRescheduleSlots(true);
-    const mode = interview.location === "Online" ? "online" : "in-person";
+    const mode = interview.room ? "in-person" : "online";
     fetch(`/api/hiring/cycles/${cycleId}/available-slots?domainId=${domainApp.domainId}&mode=${mode}`, { credentials: "include" })
       .then(r => r.ok ? r.json() : [])
       .then((apiSlots: { startTime: string; endTime: string }[]) => {
@@ -541,7 +586,7 @@ export function InterviewScheduledView({
     if (!newSlot) return;
     setConfirmingReschedule(true);
     setRescheduleError(null);
-    const mode = interview.location === "Online" ? "online" : "in-person";
+    const mode = interview.room ? "in-person" : "online";
     try {
       const newEnd = new Date(new Date(newSlot.isoStart).getTime() + slotDurationMinutes * 60_000).toISOString();
       const res = await fetch("/api/hiring/my-interview/reschedule", {
@@ -577,7 +622,7 @@ export function InterviewScheduledView({
       <div className="max-w-2xl mx-auto py-12">
         <h2 className="font-heading text-xl font-bold text-foreground mb-2">Reschedule Interview</h2>
         <p className="text-sm text-muted-foreground mb-6">
-          Currently scheduled: <strong>{slot.date}, {slot.time}</strong> ({formatInterviewLocation(interview.location)}). Choose a format and new time.
+          Currently scheduled: <strong>{slot.date}, {slot.time}</strong> ({formatInterviewLocation(interview.room)}). Choose a format and new time.
         </p>
 
         {rescheduleError && (
@@ -648,12 +693,12 @@ export function InterviewScheduledView({
         </div>
         <div className="pt-4 border-t border-border/60">
           <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Location</span>
-          <p className="text-sm text-foreground mt-1">{formatInterviewLocation(interview.location)}</p>
+          <p className="text-sm text-foreground mt-1">{formatInterviewLocation(interview.room)}</p>
         </div>
-        {interview.location === "Online" && interview.zoomJoinUrl && (
+        {!interview.room && (interview.videoUrl || interview.zoomJoinUrl) && (
           <div className="pt-4 border-t border-border/60">
             <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Meeting Link</span>
-            <a href={interview.zoomJoinUrl} target="_blank" rel="noopener noreferrer"
+            <a href={interview.videoUrl ?? interview.zoomJoinUrl ?? undefined} target="_blank" rel="noopener noreferrer"
                className="flex items-center gap-1.5 text-sm text-os-accent hover:underline mt-1">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -829,6 +874,7 @@ export function DomainApplicationCard({
   viewerTimeZone,
   onRevalidate,
   submissionHref,
+  applyHref,
   forMembers,
 }: {
   da: DomainAppData;
@@ -837,6 +883,9 @@ export function DomainApplicationCard({
   hasInterviews: boolean;
   // Where "View your submission" goes; omitted where there's no such page.
   submissionHref?: string;
+  // Where the "not submitted yet" Edit link goes. Defaults to the Students
+  // apply page; member portals pass their own portalPath.
+  applyHref?: string;
   forMembers?: boolean;
   slotDurationMinutes: number;
   viewerTimeZone: string;
@@ -844,6 +893,9 @@ export function DomainApplicationCard({
 }) {
   const stage = da.inferredStatus;
   const [isExpanded, setIsExpanded] = useState(false);
+  const notSubmitted = stage === "ApplicationOpen";
+  const closeLabel = da.closeDate ? formatShortDate(da.closeDate) : null;
+  const resolvedApplyHref = applyHref ?? `/portal/apply/${cycleId}`;
 
   return (
     <div className="rounded-os-card border border-border overflow-hidden">
@@ -854,7 +906,13 @@ export function DomainApplicationCard({
       >
         <h3 className="font-heading text-base font-bold text-foreground">{da.domainName}</h3>
         <div className="flex items-center gap-3">
-          <StageIndicator stage={stage} hasInterviews={hasInterviews} />
+          {notSubmitted ? (
+            <span className="text-xs font-medium text-muted-foreground">
+              Not submitted{closeLabel ? ` · ${da.closed ? "closed" : "closes"} ${closeLabel}` : ""}
+            </span>
+          ) : (
+            <StageIndicator stage={stage} hasInterviews={hasInterviews} />
+          )}
           <svg
             className={`w-5 h-5 text-muted-foreground transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`}
             fill="none"
@@ -867,6 +925,9 @@ export function DomainApplicationCard({
       </button>
       {isExpanded && (
         <div className="px-2">
+          {stage === "ApplicationOpen" && (
+            <NotSubmittedView applyHref={resolvedApplyHref} closed={!!da.closed} closeDate={da.closeDate} />
+          )}
           {stage === "Pending" && <PendingView cycleName={cycleName} />}
           {stage === "Rejected" && <RejectedView cycleName={cycleName} />}
           {stage === "InvitedToInterview" && (

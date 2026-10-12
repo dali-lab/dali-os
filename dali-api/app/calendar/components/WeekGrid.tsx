@@ -229,7 +229,7 @@ export function EventRsvpControl({
         setError(`Recorded in DALI, but Google sync failed: ${json.gcalError}`);
         return;
       }
-      revalidator.revalidate();
+      await revalidator.revalidate();
       notifyTasksChanged();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Network error");
@@ -684,7 +684,7 @@ type BlockDragState =
 // Snap + clamp helpers — mirror WeekGrid's `hourFromY` exactly.
 const BLOCK_MIN_HOUR = HOURS[0];
 const BLOCK_MAX_HOUR = HOURS[HOURS.length - 1] + 1;
-const BLOCK_MIN_DURATION = SNAP_HOURS; // one 10-min step minimum
+const BLOCK_MIN_DURATION = SNAP_HOURS; // one snap step minimum
 // Empty strip kept clear on the right of each day column when drag-to-create is
 // on (Google-Calendar style), so a slot covered by events can still be dragged
 // to open the scheduling popover.
@@ -726,7 +726,10 @@ export function WeekGridEvent({
 
   // A recurring instance hands off to the composer, which asks for the scope
   // and confirms there — asking twice would be the worse experience.
+  // The popover steps aside while the confirm is up and comes back on Cancel,
+  // so the two never stack on screen.
   async function requestDelete() {
+    setDetailOpen(false);
     if (!e.recurring) {
       const ok = await dialog.confirm({
         title: e.label ? `Delete "${e.label}"?` : "Delete this event?",
@@ -734,9 +737,11 @@ export function WeekGridEvent({
         confirmLabel: "Delete",
         tone: "destructive",
       });
-      if (!ok) return;
+      if (!ok) {
+        setDetailOpen(true);
+        return;
+      }
     }
-    setDetailOpen(false);
     e.onDelete?.();
   }
   // Horizontal shift (in columns × colWidth px) while a move drag crosses days.

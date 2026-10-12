@@ -13,7 +13,7 @@ vi.mock("~/projects/lib/task-notifications.server", () => ({
 
 import { requireProjectEditAccess } from "~/lib/auth";
 import { prisma, Prisma } from "~/lib/db";
-import { action } from "~/projects/routes/api.tasks.$id";
+import { action, loader } from "~/projects/routes/api.tasks.$id";
 
 const TASK_ID = "task-1";
 const PROJECT_ID = "proj-1";
@@ -39,6 +39,11 @@ const mockPrisma = prisma as unknown as {
   taskComment: { deleteMany: ReturnType<typeof vi.fn> };
   $transaction: ReturnType<typeof vi.fn>;
 };
+
+function get() {
+  const request = new Request(`http://localhost/api/tasks/${TASK_ID}`, { method: "GET" });
+  return loader({ request, params: { id: TASK_ID } } as any) as Promise<Response>;
+}
 
 function call(method: "PATCH" | "DELETE", body?: unknown) {
   const request = new Request(`http://localhost/api/tasks/${TASK_ID}`, {
@@ -305,5 +310,56 @@ describe("PATCH /api/tasks/:id dependsOn", () => {
   it("rejects a non-array dependsOn", async () => {
     const res = await call("PATCH", { dependsOn: "t-a" });
     expect(res.status).toBe(400);
+  });
+});
+
+describe("GET /api/tasks/:id", () => {
+  function taskRow(overrides: Record<string, unknown> = {}) {
+    return {
+      id: TASK_ID,
+      title: "Ship it",
+      status: "InProgress",
+      dueAt: new Date("2026-11-01T00:00:00.000Z"),
+      projectId: PROJECT_ID,
+      assignees: [{ user: { firstName: "Ada", lastName: "Lovelace" } }],
+      ...overrides,
+    };
+  }
+
+  it("returns the minimal task card for a project member", async () => {
+    mockPrisma.task.findUnique.mockResolvedValue(taskRow());
+    const res = await get();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      id: TASK_ID,
+      title: "Ship it",
+      status: "InProgress",
+      assignee: { name: "Ada Lovelace" },
+      dueAt: "2026-11-01T00:00:00.000Z",
+    });
+  });
+
+  it("returns assignee: null and dueAt: null when unset", async () => {
+    mockPrisma.task.findUnique.mockResolvedValue(taskRow({ assignees: [], dueAt: null }));
+    const res = await get();
+    expect(await res.json()).toMatchObject({ assignee: null, dueAt: null });
+  });
+
+  it("404s when the task doesn't exist", async () => {
+    mockPrisma.task.findUnique.mockResolvedValue(null);
+    const res = await get();
+    expect(res.status).toBe(404);
+    expect(requireProjectEditAccess).not.toHaveBeenCalled();
+  });
+
+  it("uses the same project access gate as PATCH/DELETE", async () => {
+    mockPrisma.task.findUnique.mockResolvedValue(taskRow());
+    vi.mocked(requireProjectEditAccess).mockResolvedValue({
+      ok: false,
+      response: Response.json({ error: "Forbidden" }, { status: 403 }),
+    } as any);
+    const res = await get();
+    expect(res.status).toBe(403);
+    expect(requireProjectEditAccess).toHaveBeenCalledWith(expect.anything(), PROJECT_ID);
   });
 });

@@ -38,6 +38,7 @@ import { RsvpButtons } from "~/components/RsvpButtons";
 import { Select } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
+import { ROOM_BOOKING_NAV_ITEM } from "~/lib/nav-areas";
 import type {
   WhDay,
   CalendarLinkDTO,
@@ -94,6 +95,7 @@ import { useCalendarView, ymdUtc } from "~/calendar/lib/use-calendar-view";
 import { MonthGrid } from "~/calendar/components/MonthGrid";
 import { AgendaView } from "~/calendar/components/AgendaView";
 import { CreateEventModal } from "~/calendar/components/CreateEventModal";
+import { EditMeetingModal } from "~/calendar/components/EditMeetingModal";
 import { TimesheetEditPopover, TimesheetDragPopover, LogHoursDialog } from "~/calendar/components/timesheet";
 import { CalendarSettingsModal } from "~/calendar/components/CalendarSettingsModal";
 import { CalendarSidebar } from "~/calendar/components/CalendarSidebar";
@@ -391,6 +393,8 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   const [classesOpen, setClassesOpen] = useState(false);
   const [calMgrOpen, setCalMgrOpen] = useState(false);
   const [composer, setComposer] = useState<ComposerState | null>(null);
+  // A DALI meeting handed off from the edit popover to the full editor.
+  const [editMeetingId, setEditMeetingId] = useState<string | null>(null);
   // The tentative block drawn on the grid while a create composer is open, so a
   // dragged-out event stays visible (and tracks the composer's time edits)
   // instead of vanishing the moment the popover appears.
@@ -418,6 +422,23 @@ function CalendarScreen({ data }: { data: LoaderData }) {
   // revert is silent (looks like the drag just didn't take).
   useActionErrorToast(eventMoveFetcher.data as { error?: string } | undefined, {
     fallback: "Couldn't update the event. Please try again.",
+  });
+  // Detail-popover delete gets its own fetcher so a success can be confirmed
+  // with a toast: the popover has already closed by the time the server answers.
+  const eventDeleteFetcher = useFetcher<{ error?: string } | null>();
+  const prevDeleteState = useRef(eventDeleteFetcher.state);
+  useEffect(() => {
+    if (
+      prevDeleteState.current !== "idle" &&
+      eventDeleteFetcher.state === "idle" &&
+      !eventDeleteFetcher.data?.error
+    ) {
+      toast.success("Event deleted.");
+    }
+    prevDeleteState.current = eventDeleteFetcher.state;
+  }, [eventDeleteFetcher.state, eventDeleteFetcher.data, toast]);
+  useActionErrorToast(eventDeleteFetcher.data ?? undefined, {
+    fallback: "Couldn't delete the event. Please try again.",
   });
   // The wall-clock Y/M/D a drag lands on: the target day column when the move
   // crossed to another date, else the item's own start day. dayIdx columns are
@@ -462,6 +483,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
         intent: "event-move",
         destination: `${e.linkId}:${e.calendarId ?? "primary"}`,
         eventId: e.eventId,
+        recurringEventId: e.recurringEventId ?? "",
         startIso,
         endIso,
         timeZone: data.timezone,
@@ -481,7 +503,7 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       setComposer({ mode: "edit", event: e });
       return;
     }
-    eventMoveFetcher.submit(
+    eventDeleteFetcher.submit(
       {
         intent: "event-delete",
         destination: `${e.linkId}:${e.calendarId ?? "primary"}`,
@@ -800,8 +822,8 @@ function CalendarScreen({ data }: { data: LoaderData }) {
     "inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-2.5 text-sm font-medium text-foreground hover:bg-muted";
   // Calendars, classes and working hours are all "how this page is set up",
   // so they share one pill and one dialog rather than a row of them.
-  const settingsPill =
-    "inline-flex items-center gap-2 rounded-full border border-os-accent/35 bg-os-accent/10 px-4 py-2 text-[13px] font-bold text-os-accent transition-colors hover:bg-os-accent/20";
+  const iconPill =
+    "inline-flex h-9 w-9 items-center justify-center rounded-full border border-os-accent/35 bg-os-accent/10 text-os-accent transition-colors hover:bg-os-accent/20";
 
   return (
     <div className="flex w-full min-h-0 flex-1 flex-col gap-3">
@@ -859,15 +881,25 @@ function CalendarScreen({ data }: { data: LoaderData }) {
                 ))}
               </div>
 
-              <button
-                type="button"
-                onClick={() => setSettingsOpen(true)}
-                className={settingsPill}
-                title="Calendars, classes and working hours"
-              >
-                <Settings className="h-3.5 w-3.5" />
-                Settings
-              </button>
+              <Tooltip content={ROOM_BOOKING_NAV_ITEM.label}>
+                <Link
+                  to={ROOM_BOOKING_NAV_ITEM.href}
+                  className={iconPill}
+                  aria-label={ROOM_BOOKING_NAV_ITEM.label}
+                >
+                  <ROOM_BOOKING_NAV_ITEM.icon className="h-4 w-4" />
+                </Link>
+              </Tooltip>
+              <Tooltip content="Calendars, classes and working hours">
+                <button
+                  type="button"
+                  onClick={() => setSettingsOpen(true)}
+                  className={iconPill}
+                  aria-label="Calendar settings"
+                >
+                  <Settings className="h-4 w-4" />
+                </button>
+              </Tooltip>
 
               <button type="button" onClick={() => startCreate()} className={ADD_EVENT_BTN}>
                 <Plus className="h-4 w-4 stroke-[3]" />
@@ -1018,7 +1050,19 @@ function CalendarScreen({ data }: { data: LoaderData }) {
         <ClassesManagerModal data={data} onClose={() => setClassesOpen(false)} />
       )}
       {composer && (
-        <EventComposer data={data} state={composer} onClose={closeComposer} onDraftChange={syncDraft} />
+        <EventComposer
+          data={data}
+          state={composer}
+          onClose={closeComposer}
+          onDraftChange={syncDraft}
+          onOpenMeetingEditor={(id) => {
+            closeComposer();
+            setEditMeetingId(id);
+          }}
+        />
+      )}
+      {editMeetingId && (
+        <EditMeetingModal meetingId={editMeetingId} onClose={() => setEditMeetingId(null)} />
       )}
       {calMgrOpen && (
         <CalendarManagerModal data={data} onClose={() => setCalMgrOpen(false)} />

@@ -39,7 +39,7 @@ const DOT_SIZE: Partial<Record<AvatarSize, string>> = {
  * profile-page placeholders stay in step with the avatar.
  */
 export function useInitialsTint(): string {
-  return "bg-brand-tint text-dark-blue";
+  return "bg-os-well text-foreground";
 }
 
 export function Avatar({ photoUrl, name, size = "md", className, userId }: AvatarProps) {

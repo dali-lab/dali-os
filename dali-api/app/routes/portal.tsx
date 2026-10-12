@@ -5,6 +5,7 @@ import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getActiveCycles } from "~/hiring/lib/cycles";
 import { applicantPortalPath } from "~/hiring/lib/applicant-groups";
+import { cycleDeadlineSummary } from "~/hiring/lib/domain-windows";
 import { listCatalog, registrationOpen } from "~/education/lib/offerings.server";
 import { Clock } from "lucide-react";
 import { buttonClasses } from "~/components/ui/Button";
@@ -44,31 +45,57 @@ export async function loader({ request }: Route.LoaderArgs) {
   );
   // The latest status on my application in each active cycle
   // (Draft → Submitted → Withdrawn). Several cycles can be active at once.
-  const myActiveApps = await prisma.application.findMany({
-    where: { userId: auth.user.sub, applicationCycleId: { in: cycles.map((c) => c.id) } },
-    select: {
-      applicationCycleId: true,
-      statusUpdates: {
-        orderBy: { createdAt: "desc" },
-        take: 1,
-        select: { newStatus: true },
+  const [myActiveApps, readyDomainRows] = await Promise.all([
+    prisma.application.findMany({
+      where: { userId: auth.user.sub, applicationCycleId: { in: cycles.map((c) => c.id) } },
+      select: {
+        applicationCycleId: true,
+        statusUpdates: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: { newStatus: true },
+        },
+        domainApplications: { where: { selected: true }, select: { domainId: true } },
       },
-    },
-  });
+    }),
+    prisma.domainApplicationCycle.findMany({
+      where: { applicationCycleId: { in: cycles.map((c) => c.id) }, isReady: true },
+      select: { applicationCycleId: true, domainId: true, closeDate: true },
+    }),
+  ]);
   const statusByCycle = new Map(
     myActiveApps.map((a) => [a.applicationCycleId, a.statusUpdates[0]?.newStatus ?? null]),
   );
+  const selectedDomainIdsByCycle = new Map(
+    myActiveApps.map((a) => [a.applicationCycleId, a.domainApplications.map((da) => da.domainId)]),
+  );
+  const readyDomainsByCycle = new Map<string, { domainId: string; closeDate: Date | null }[]>();
+  for (const d of readyDomainRows) {
+    const arr = readyDomainsByCycle.get(d.applicationCycleId) ?? [];
+    arr.push({ domainId: d.domainId, closeDate: d.closeDate });
+    readyDomainsByCycle.set(d.applicationCycleId, arr);
+  }
   // Formatted server-side (locale + zone pinned, matching the tracker's
-  // deadline line) and only while Open — a lapsed date reads as nonsense.
-  const closesOnFor = (c: (typeof cycles)[number]) =>
-    c.currentStatus === "Open" && c.closeDate
-      ? c.closeDate.toLocaleDateString("en-US", {
-          timeZone: "America/New_York",
-          weekday: "short",
-          month: "short",
-          day: "numeric",
-        })
-      : null;
+  // deadline line) and only while Open — a lapsed date reads as nonsense. The
+  // date shown is the applicant's own deadline once they've applied (their
+  // selected domains' latest close), else the latest across every ready
+  // domain, flagging when that's not everyone's deadline.
+  const closesOnFor = (c: (typeof cycles)[number]) => {
+    if (c.currentStatus !== "Open") return null;
+    const { closeDate, earlierDomainsExist } = cycleDeadlineSummary(
+      readyDomainsByCycle.get(c.id) ?? [],
+      c,
+      selectedDomainIdsByCycle.get(c.id),
+    );
+    if (!closeDate) return null;
+    const formatted = closeDate.toLocaleDateString("en-US", {
+      timeZone: "America/New_York",
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    });
+    return earlierDomainsExist ? `${formatted} · some domains close earlier` : formatted;
+  };
 
   // Current courses only: finished or closed-out ones are history, not home.
   const now = new Date();

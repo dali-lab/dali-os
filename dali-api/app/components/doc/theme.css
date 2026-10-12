@@ -463,6 +463,20 @@ html.dark .dali-doc .bn-thread-mark[data-orphan="true"] {
   position: relative;
 }
 
+/* Recording rail (specs/meeting-recording-rail.md): unlike the comments
+ * rail above, it's sticky with its own scroll and 400px wide (the action
+ * rows need the extra 80px). top/height are set inline by DocumentEditor,
+ * measured off the actual .doc-topbar height rather than guessed here.
+ * Declared after .dali-doc-rail-container so these two classes together
+ * override its width/position on the same element. */
+.dali-recording-rail-width {
+  width: 400px;
+}
+.dali-recording-rail-sticky {
+  position: sticky;
+  overflow-y: auto;
+}
+
 .dali-doc-rail {
   position: relative;
   height: 100%;
@@ -1022,3 +1036,34 @@ a.dali-cmp-piece:hover .dali-cmp-row__title { text-decoration: underline; }
 .bn-editor[contenteditable="true"] .dali-cmp-spacer { border: 1px dashed var(--cmp-border); border-radius: 8px; }
 
 .dali-cmp-code { display: block; width: 100%; border: 0; border-radius: 14px; background: transparent; }
+
+/* ── Enhance citation chips (specs/meeting-notes-model.md §3) ────────────────
+ * Ordinary BlockNote links whose href carries `?transcript=` — styled as a
+ * compact pill instead of the default underlined link. The hover card itself
+ * is TranscriptChipHoverLayer (app/components/meeting-recorder/), which reads
+ * this same href pattern via event delegation. */
+.bn-root a[href*="?transcript="] {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0 6px;
+  margin-inline: 1px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.75em;
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--color-os-accent, #3b6cf6);
+  background: color-mix(in srgb, var(--color-os-accent, #3b6cf6) 12%, transparent);
+}
+.bn-root a[href*="?transcript="]:hover {
+  background: color-mix(in srgb, var(--color-os-accent, #3b6cf6) 20%, transparent);
+}
+
+/* ── BlockNote side menu vs. an overlaying Modal ─────────────────────────────
+ * BlockNote's side menu positions by mouse Y against the editor, not by DOM
+ * containment — a Modal overlaying the editor (e.g. the recorder's Transcript
+ * modal) still shows the "+"/drag handle for whatever block sits underneath
+ * the cursor. Modal.tsx keeps a body counter while any Modal is open. */
+body[data-modal-open] .bn-side-menu {
+  display: none;
+}

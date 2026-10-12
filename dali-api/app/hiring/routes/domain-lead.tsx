@@ -10,6 +10,7 @@ import { getUserRoles } from "~/lib/roles";
 import { requireAuth } from "~/lib/auth";
 import { Plus, Trash2, X, ChevronDown, ChevronUp } from "lucide-react";
 import { addDomainChallenge, removeDomainChallenge } from "~/hiring/lib/application-form.server";
+import { setDomainReady } from "~/hiring/lib/domain-windows.server";
 import { inferDomainApplicationStatus } from "~/hiring/lib/domain-application-status";
 import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
 import { getReviewStatus } from "~/hiring/lib/review-status";
@@ -77,45 +78,64 @@ export async function loader({ request }: Route.LoaderArgs) {
     return { domainData: [], pillRoles };
   }
 
-  const domainData = await Promise.all(
-    assignments.map(async (assignment) => {
-      const allCycles = await prisma.applicationCycle.findMany({
-        where: {
-          domains: { some: { domainId: assignment.domainId } },
-        },
+  // One query across every assignment's domain instead of one per domain
+  // (previously an N+1: a separate 6-level-deep findMany per domain lead
+  // assignment). Reshaped per assignment below to the exact shape a
+  // per-domain query would have returned.
+  const domainIds = assignments.map((a) => a.domainId);
+  const allCyclesShared = await prisma.applicationCycle.findMany({
+    where: {
+      domains: { some: { domainId: { in: domainIds } } },
+    },
+    include: {
+      statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
+      domains: { where: { domainId: { in: domainIds } } },
+      applications: {
         include: {
+          user: true,
           statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
-          domains: { where: { domainId: assignment.domainId } },
-          applications: {
+          domainApplications: {
+            where: {
+              selected: true,
+              domainId: { in: domainIds },
+            },
             include: {
-              user: true,
-              statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
-              domainApplications: {
-                where: {
-                  selected: true,
-                  domainId: assignment.domainId,
-                },
+              domain: true,
+              reviews: {
                 include: {
-                  domain: true,
-                  reviews: {
-                    include: {
-                      cycleReviewer: {
-                        include: { user: { select: { firstName: true, lastName: true, daliEmail: true } } },
-                      },
-                    },
+                  cycleReviewer: {
+                    include: { user: { select: { firstName: true, lastName: true, daliEmail: true } } },
                   },
-                  decisions: { orderBy: { createdAt: "desc" } },
-                  // Scheduled drives status inference; Completed feeds the
-                  // pre-decision "Post-interview" pill in the table.
-                  // Cancelled rows stay filtered out (audit-only).
-                  interviews: { where: { status: { in: ["Scheduled", "Completed"] } } },
                 },
               },
+              decisions: { orderBy: { createdAt: "desc" } },
+              // Scheduled drives status inference; Completed feeds the
+              // pre-decision "Post-interview" pill in the table.
+              // Cancelled rows stay filtered out (audit-only).
+              interviews: { where: { status: { in: ["Scheduled", "Completed"] } } },
             },
           },
         },
-        orderBy: { createdAt: "desc" },
-      });
+      },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const domainData = await Promise.all(
+    assignments.map(async (assignment) => {
+      // Narrow the shared fetch to exactly what a per-domain query would
+      // have returned: only this domain's DomainApplicationCycle row, and
+      // only this domain's selected DomainApplications on each application.
+      const allCycles = allCyclesShared
+        .filter((c) => c.domains.some((d) => d.domainId === assignment.domainId))
+        .map((c) => ({
+          ...c,
+          domains: c.domains.filter((d) => d.domainId === assignment.domainId),
+          applications: c.applications.map((app) => ({
+            ...app,
+            domainApplications: app.domainApplications.filter((da) => da.domainId === assignment.domainId),
+          })),
+        }));
 
       // Cycles eligible for the picker: every cycle this domain has ever run,
       // in any status. Several can be active at once, and Completed ones are
@@ -138,25 +158,114 @@ export async function loader({ request }: Route.LoaderArgs) {
 
       if (!activeCycle) return [{ assignment, cycle: null, availableCycles, apps: [], linkedChallengeForms: [], isChallengeReady: false, interviews: [], reviewers: [], delibsSessions: [], draftDecisions: [], cycleReviewersForDomain: [], delibRounds: [] as DomainRoundSummary[], rubricVersionOptions: [], currentRubricVersionId: null, rubricCriteria: [], interviewers: [], hasApplicationReviews: false, confidentialityRequired: null as null | "no_agreement" | "unsigned" }];
 
-      const confState = await getCycleConfidentialityState(auth.user.sub, activeCycle.id);
-      const confidentialityRequired = confidentialityBlock(confState);
-
       return [await (async (cycle) => {
 
-      // Drive challenge Forms linked to this domain in this cycle. The latest
-      // version's questions power the inline embed preview (HiringFormEmbed).
-      const linkedChallengeFormsRaw = await prisma.cycleDomainForm.findMany({
-        where: { applicationCycleId: cycle.id, domainId: assignment.domainId },
-        include: {
-          form: {
-            select: {
-              id: true,
-              name: true,
-              versions: { orderBy: { versionNumber: "desc" }, take: 1, select: { questions: true } },
+      // Pure reads off `cycle` — no await needed — computed up front so the
+      // batch below can use them.
+      const currentStatus = cycle?.statusUpdates[0]?.newStatus ?? "Draft";
+      const daDomainMatch = { domainId: assignment.domainId };
+
+      // Confidentiality state, linked challenge forms, interviews, reviewers,
+      // delibs sessions and delib round summaries only depend on cycle.id /
+      // domainId, not on each other — one wave instead of six sequential
+      // round-trips.
+      const [confState, linkedChallengeFormsRaw, interviews, reviewers, delibsSessions, delibRoundSummaries] = await Promise.all([
+        getCycleConfidentialityState(auth.user.sub, cycle.id),
+
+        // Drive challenge Forms linked to this domain in this cycle. The latest
+        // version's questions power the inline embed preview (HiringFormEmbed).
+        prisma.cycleDomainForm.findMany({
+          where: { applicationCycleId: cycle.id, domainId: assignment.domainId },
+          include: {
+            form: {
+              select: {
+                id: true,
+                name: true,
+                versions: { orderBy: { versionNumber: "desc" }, take: 1, select: { questions: true } },
+              },
             },
           },
-        },
-      });
+        }),
+
+        // Interviews for this domain in this cycle. Both Scheduled and Completed
+        // rows appear in the dashboard table — only cancelled rows are excluded
+        // (audit-only). Load for any non-Draft cycle: an interview can be booked
+        // while the cycle is still Open (a Released invite + scheduled slot), and
+        // those applicants must surface in the Interviews section rather than
+        // vanishing (they're excluded from Reviews).
+        currentStatus !== "Draft" && cycle
+          ? prisma.interview.findMany({
+              where: {
+                applicationCycleId: cycle.id,
+                status: { in: ["Scheduled", "Completed"] },
+                domainApplication: {
+                  domainId: assignment.domainId,
+                },
+              },
+              include: {
+                domainApplication: {
+                  include: {
+                    domain: true,
+                    application: {
+                      include: {
+                        user: { select: { firstName: true, lastName: true } },
+                      },
+                    },
+                  },
+                },
+                room: { select: { id: true, name: true } },
+                assignments: {
+                  where: { status: "Active" },
+                  include: {
+                    cycleInterviewer: {
+                      include: { user: true, domain: true },
+                    },
+                  },
+                },
+              },
+              orderBy: { startTime: "asc" },
+            })
+          : Promise.resolve([] as never[]),
+
+        // Reviewers for this domain in this cycle
+        cycle
+          ? prisma.cycleReviewer.findMany({
+              where: { applicationCycleId: cycle.id, domainId: assignment.domainId },
+              include: { user: true, domain: true },
+            })
+          : Promise.resolve([] as never[]),
+
+        // Delibs sessions for this domain+cycle
+        cycle
+          ? prisma.delibsSession.findMany({
+              where: { domainId: assignment.domainId, applicationCycleId: cycle.id },
+              orderBy: { createdAt: "desc" },
+            })
+          : Promise.resolve([] as never[]),
+
+        // Each delib round in the cycle's timeline, with how many of this
+        // domain's applicants qualify for its board right now.
+        cycle
+          ? Promise.all(
+              delibRounds(parseTimeline(cycle.timeline)).map(async (r) => ({
+                id: r.id,
+                label: r.label,
+                isFinal: r.isFinal,
+                leadsToInterviews: r.leadsToInterviews,
+                count: await prisma.domainApplication.count({
+                  where: {
+                    selected: true,
+                    ...daDomainMatch,
+                    application: { applicationCycleId: cycle.id, ...inReviewPipelineFilter },
+                    ...(await delibsQualifier(cycle, r.id, assignment.domainId)),
+                  },
+                }),
+              })),
+            )
+          : Promise.resolve([] as DomainRoundSummary[]),
+      ]);
+
+      const confidentialityRequired = confidentialityBlock(confState);
       const linkedChallengeForms = linkedChallengeFormsRaw.map((cdf) => ({
         id: cdf.id,
         formId: cdf.formId,
@@ -171,87 +280,11 @@ export async function loader({ request }: Route.LoaderArgs) {
 
       const apps = cycle.applications.filter((app) => {
         const latestStatus = app.statusUpdates[0]?.newStatus;
-        return latestStatus === "Submitted" && app.domainApplications.length > 0;
+        return (
+          latestStatus === "Submitted" &&
+          app.domainApplications.some((da) => da.submittedAt != null)
+        );
       });
-
-      // Interviews for this domain in this cycle. Both Scheduled and Completed
-      // rows appear in the dashboard table — only cancelled rows are excluded
-      // (audit-only). Load for any non-Draft cycle: an interview can be booked
-      // while the cycle is still Open (a Released invite + scheduled slot), and
-      // those applicants must surface in the Interviews section rather than
-      // vanishing (they're excluded from Reviews).
-      const currentStatus = cycle?.statusUpdates[0]?.newStatus ?? "Draft";
-      const interviews = currentStatus !== "Draft" && cycle
-        ? await prisma.interview.findMany({
-            where: {
-              applicationCycleId: cycle.id,
-              status: { in: ["Scheduled", "Completed"] },
-              domainApplication: {
-                domainId: assignment.domainId,
-              },
-            },
-            include: {
-              domainApplication: {
-                include: {
-                  domain: true,
-                  application: {
-                    include: {
-                      user: { select: { firstName: true, lastName: true } },
-                    },
-                  },
-                },
-              },
-              assignments: {
-                where: { status: "Active" },
-                include: {
-                  cycleInterviewer: {
-                    include: { user: true, domain: true },
-                  },
-                },
-              },
-            },
-            orderBy: { startTime: "asc" },
-          })
-        : [];
-
-      // Reviewers for this domain in this cycle
-      const reviewers = cycle
-        ? await prisma.cycleReviewer.findMany({
-            where: { applicationCycleId: cycle.id, domainId: assignment.domainId },
-            include: { user: true, domain: true },
-          })
-        : [];
-
-      // Delibs sessions for this domain+cycle
-      const delibsSessions = cycle
-        ? await prisma.delibsSession.findMany({
-            where: { domainId: assignment.domainId, applicationCycleId: cycle.id },
-            orderBy: { createdAt: "desc" },
-          })
-        : [];
-
-      const daDomainMatch = { domainId: assignment.domainId };
-
-      // Each delib round in the cycle's timeline, with how many of this
-      // domain's applicants qualify for its board right now.
-      const delibRoundSummaries: DomainRoundSummary[] = cycle
-        ? await Promise.all(
-            delibRounds(parseTimeline(cycle.timeline)).map(async (r) => ({
-              id: r.id,
-              label: r.label,
-              isFinal: r.isFinal,
-              leadsToInterviews: r.leadsToInterviews,
-              count: await prisma.domainApplication.count({
-                where: {
-                  selected: true,
-                  ...daDomainMatch,
-                  application: { applicationCycleId: cycle.id, ...inReviewPipelineFilter },
-                  ...(await delibsQualifier(cycle, r.id, assignment.domainId)),
-                },
-              }),
-            })),
-          )
-        : [];
 
       // Compute inferred status for each domain application
       const appsWithStatus = apps.map((app: any) => ({
@@ -375,13 +408,13 @@ export async function loader({ request }: Route.LoaderArgs) {
           assignment,
           cycle: sanitizedCycle,
           availableCycles,
-          apps: [] as any[],
+          apps: [] as never[],
           linkedChallengeForms,
           isChallengeReady,
-          interviews: [] as any[],
+          interviews: [] as never[],
           reviewers,
-          delibsSessions: [] as any[],
-          draftDecisions: [] as any[],
+          delibsSessions: [] as never[],
+          draftDecisions: [] as never[],
           cycleReviewersForDomain,
           delibRounds: [] as DomainRoundSummary[],
           rubricVersionOptions,
@@ -487,19 +520,8 @@ export async function action({ request }: Route.ActionArgs) {
 
   if (intent === "mark-ready" || intent === "unmark-ready") {
     const cycleId = formData.get("cycleId") as string;
-    const latestUpdate = await prisma.applicationCycleStatusUpdate.findFirst({
-      where: { applicationCycleId: cycleId },
-      orderBy: { createdAt: "desc" },
-    });
-    if ((latestUpdate?.newStatus ?? "Draft") !== "Draft") {
-      return redirect("/hiring/domain-lead");
-    }
-    const isReady = intent === "mark-ready";
-    await prisma.domainApplicationCycle.upsert({
-      where: { domainId_applicationCycleId: { domainId, applicationCycleId: cycleId } },
-      update: { isReady },
-      create: { domainId, applicationCycleId: cycleId, isReady },
-    });
+    const refused = await setDomainReady(cycleId, domainId, intent === "mark-ready");
+    if (refused) return { error: refused };
     return redirect("/hiring/domain-lead");
   }
 
@@ -508,7 +530,7 @@ export async function action({ request }: Route.ActionArgs) {
 
 export default function DomainLeadDashboard() {
   const data = useLoaderData<typeof loader>() as any;
-  const actionData = useActionData<typeof action>() as { notice?: string } | undefined;
+  const actionData = useActionData<typeof action>() as { notice?: string; error?: string } | undefined;
   const toast = useToast();
   const os = useOsChrome();
   const domainData = data?.domainData ?? [];
@@ -516,6 +538,7 @@ export default function DomainLeadDashboard() {
 
   useEffect(() => {
     if (actionData?.notice) toast.success(actionData.notice);
+    if (actionData?.error) toast.error(actionData.error);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per action result
   }, [actionData]);
 
@@ -710,8 +733,7 @@ function DomainPanel({ entry, allForms }: { entry: any; allForms: { id: string; 
       )}
 
       <SectionNavLayout label="Sections">
-        {/* Challenges: editable in Draft, read-only while open or in review. */}
-        {currentStatus === "Draft" && cycle.hasChallenges && (
+        {(currentStatus === "Draft" || (currentStatus === "Open" && !isChallengeReady)) && cycle.hasChallenges && (
           <NavSection id="challenges" title="Challenges">
             <SetupCard
               title="Challenges"
@@ -728,7 +750,7 @@ function DomainPanel({ entry, allForms }: { entry: any; allForms: { id: string; 
             </SetupCard>
           </NavSection>
         )}
-        {(currentStatus === "Open" || currentStatus === "UnderReview") && cycle.hasChallenges && (
+        {((currentStatus === "Open" && isChallengeReady) || currentStatus === "UnderReview") && cycle.hasChallenges && (
           <NavSection id="challenges" title="Challenges">
             <SetupCard
               title="Challenges"
@@ -962,12 +984,9 @@ function DomainPanel({ entry, allForms }: { entry: any; allForms: { id: string; 
                       booked: true,
                       status: interview.status as string,
                       time: `${start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} – ${end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`,
-                      location:
-                        interview.location === 'PodAppa' ? 'Pod Appa'
-                        : interview.location === 'PodMomo' ? 'Pod Momo'
-                        : 'Online',
-                      zoomJoinUrl: interview.location === 'Online' ? interview.zoomJoinUrl : null,
-                      videoUrl: interview.location === 'Online' ? interview.videoUrl : null,
+                      location: interview.room?.name ?? 'Online',
+                      zoomJoinUrl: interview.room ? null : interview.zoomJoinUrl,
+                      videoUrl: interview.room ? null : interview.videoUrl,
                       inDomain: interview.assignments
                         .filter((a: any) => a.role === 'InDomain' && a.status === 'Active')
                         .map(fmtAssignment)

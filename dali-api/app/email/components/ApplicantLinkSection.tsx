@@ -20,36 +20,9 @@ import { IconButton } from "~/components/ui/IconButton";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 import { cn } from "~/lib/cn";
+import { USER_SEARCH_MIN_CHARS as MIN_CHARS, useUserSearch } from "~/hooks/useUserSearch";
 
 type ApplicantLink = { userId: string; name: string; photoUrl: string | null; source: "Auto" | "Manual" };
-type SearchResult = { id: string; name: string; photoUrl: string | null; email: string };
-
-const MIN_CHARS = 2;
-const DEBOUNCE_MS = 150;
-
-function useUserSearch(query: string): SearchResult[] {
-  const [results, setResults] = useState<{ q: string; users: SearchResult[] }>({ q: "", users: [] });
-  useEffect(() => {
-    const q = query.trim();
-    if (q.length < MIN_CHARS) return;
-    const controller = new AbortController();
-    const timer = setTimeout(async () => {
-      try {
-        const res = await fetch(`/api/users/search?q=${encodeURIComponent(q)}`, { signal: controller.signal });
-        if (!res.ok) return;
-        const { users } = (await res.json()) as { users: SearchResult[] };
-        setResults({ q, users });
-      } catch {
-        // Aborted by the next keystroke.
-      }
-    }, DEBOUNCE_MS);
-    return () => {
-      clearTimeout(timer);
-      controller.abort();
-    };
-  }, [query]);
-  return results.q === query.trim() ? results.users : [];
-}
 
 // "Linked applicant" section of a Shared-inbox thread: who this thread is
 // matched to (by address, or by hand), with manual link/unlink. Sits directly

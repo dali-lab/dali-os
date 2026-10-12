@@ -8,7 +8,11 @@ vi.mock("~/lib/pages", () => ({
   ensureMeetingNotesFolder: vi.fn(async () => ({ id: "folder-project" })),
   ensureCoreMeetingNotesFolder: vi.fn(async () => "folder-core"),
   ensureLabMeetingNotesFolder: vi.fn(async () => "folder-lab-notes"),
+  ensureMeetingNotebook: vi.fn(async () => ({ id: "notebook-1" })),
+  createNotebookTab: vi.fn(async () => ({ id: "page-tab" })),
+  moveIntoNotebook: vi.fn(),
 }));
+vi.mock("~/lib/terms", () => ({ termWindows: vi.fn(async () => []) }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn(async () => false) }));
 vi.mock("~/lib/groups", () => ({ resolveGroupMembers: vi.fn(async () => []) }));
 vi.mock("~/lib/general-calendar", () => ({ isGeneralCalendarEvent: vi.fn(() => true) }));
@@ -18,6 +22,9 @@ vi.mock("~/lib/google-calendar", () => ({
   getGoogleEvent: vi.fn(),
   deleteGoogleCalendarEvent: vi.fn(),
 }));
+vi.mock("~/lib/page-copy.server", () => ({ copyPageBody: vi.fn() }));
+vi.mock("~/collab/read", () => ({ readDocAsBlocks: vi.fn(async () => []) }));
+vi.mock("~/components/doc/schema/configs", () => ({ blocksToPlainText: vi.fn(() => "") }));
 
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
@@ -29,6 +36,9 @@ import {
   ensureMeetingNotesFolder,
   ensureCoreMeetingNotesFolder,
   ensureLabMeetingNotesFolder,
+  ensureMeetingNotebook,
+  createNotebookTab,
+  moveIntoNotebook,
 } from "~/lib/pages";
 import {
   createGoogleCalendarEvent,
@@ -36,6 +46,10 @@ import {
   getGoogleEvent,
   deleteGoogleCalendarEvent,
 } from "~/lib/google-calendar";
+import { copyPageBody } from "~/lib/page-copy.server";
+import { readDocAsBlocks } from "~/collab/read";
+import { blocksToPlainText } from "~/components/doc/schema/configs";
+import { hashTemplateText, normalizeTemplateText } from "~/lib/meeting-note-template";
 import {
   attachMeetingNote,
   cancelScheduledMeeting,
@@ -43,6 +57,7 @@ import {
   isWithinCheckInWindow,
   markMeetingAttendance,
   meetingIsUpcoming,
+  resolveMeetingNoteTemplate,
   setMeetingProject,
   trackExternalEventAsMeeting,
   updateScheduledMeeting,
@@ -62,6 +77,16 @@ beforeEach(() => {
   // clearAllMocks keeps implementations, so a prior test's mockResolvedValue on
   // isCore would leak. Reset to the factory default; tests opt into Core.
   vi.mocked(isCore).mockResolvedValue(false);
+  // What a note's notebook is keyed on (see meeting-notebook.ts).
+  vi.mocked(prisma.scheduledMeeting.findUniqueOrThrow).mockResolvedValue({
+    title: "Sync",
+    isCoreMeeting: false,
+    scopeType: "UserList",
+    scopeId: null,
+    organizerId: "org-1",
+    participantUserIds: ["u2"],
+    guestEmails: [],
+  } as never);
 });
 
 describe("cancelScheduledMeeting", () => {
@@ -309,6 +334,8 @@ describe("createScheduledMeeting — where a note is filed", () => {
   };
   const labPage = createLabMeetingPage as unknown as ReturnType<typeof vi.fn>;
   const projectPage = createProjectPage as unknown as ReturnType<typeof vi.fn>;
+  // A note is a tab of its notebook; these assert where a new notebook goes.
+  const notebook = ensureMeetingNotebook as unknown as ReturnType<typeof vi.fn>;
   const projectFolder = ensureMeetingNotesFolder as unknown as ReturnType<typeof vi.fn>;
   const coreFolder = ensureCoreMeetingNotesFolder as unknown as ReturnType<typeof vi.fn>;
   const labFolder = ensureLabMeetingNotesFolder as unknown as ReturnType<typeof vi.fn>;
@@ -342,10 +369,20 @@ describe("createScheduledMeeting — where a note is filed", () => {
     });
 
     expect(projectFolder).toHaveBeenCalledWith("proj-7", "Team", "org-1");
-    expect(projectPage).toHaveBeenCalledWith(
-      expect.objectContaining({ projectId: "proj-7", parentPageId: "folder-project" }),
+    expect(notebook).toHaveBeenCalledWith(
+      expect.objectContaining({
+        key: "project:proj-7:Team:none",
+        workspaceType: "Project",
+        workspaceId: "proj-7",
+        parentPageId: "folder-project",
+      }),
+    );
+    expect(createNotebookTab).toHaveBeenCalledWith(
+      expect.objectContaining({ notebookId: "notebook-1", meetingNoteId: "m1" }),
     );
     expect(coreFolder).not.toHaveBeenCalled();
+    // The note itself is never a loose page any more.
+    expect(projectPage).not.toHaveBeenCalled();
     expect(labPage).not.toHaveBeenCalled();
   });
 
@@ -359,8 +396,8 @@ describe("createScheduledMeeting — where a note is filed", () => {
     });
 
     expect(coreFolder).toHaveBeenCalledWith("org-1");
-    expect(labPage).toHaveBeenCalledWith(
-      expect.objectContaining({ parentPageId: "folder-core", restricted: true }),
+    expect(notebook).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceType: "Lab", parentPageId: "folder-core", restricted: true }),
     );
   });
 
@@ -371,7 +408,7 @@ describe("createScheduledMeeting — where a note is filed", () => {
 
     // Deliberately the root, not the lab-wide Meeting notes folder: a Core note
     // that lost its folder must not land on the communal shelf.
-    expect(labPage).toHaveBeenCalledWith(
+    expect(notebook).toHaveBeenCalledWith(
       expect.objectContaining({ parentPageId: null, restricted: false }),
     );
     expect(labFolder).not.toHaveBeenCalled();
@@ -382,8 +419,8 @@ describe("createScheduledMeeting — where a note is filed", () => {
 
     expect(coreFolder).not.toHaveBeenCalled();
     expect(labFolder).toHaveBeenCalledWith("org-1");
-    expect(labPage).toHaveBeenCalledWith(
-      expect.objectContaining({ parentPageId: "folder-lab-notes" }),
+    expect(notebook).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceType: "Lab", parentPageId: "folder-lab-notes" }),
     );
   });
 
@@ -404,7 +441,7 @@ describe("createScheduledMeeting — where a note is filed", () => {
       noteLocation: { workspaceType: "Lab", workspaceId: null, parentPageId: "folder-chosen" },
     });
 
-    expect(labPage).toHaveBeenCalledWith(
+    expect(notebook).toHaveBeenCalledWith(
       expect.objectContaining({ parentPageId: "folder-chosen" }),
     );
     expect(labFolder).not.toHaveBeenCalled();
@@ -457,16 +494,19 @@ describe("setMeetingProject", () => {
 
     expect(res.ok).toBe(true);
     expect(projectFolder).toHaveBeenCalledWith("proj-7", "Team", "org-1");
-    expect(p.page.update).toHaveBeenCalledWith(
+    // The note moves to the project's Team notebook, which lives in that folder.
+    expect(ensureMeetingNotebook).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: "note-1" },
-        data: expect.objectContaining({
-          workspaceType: "Project",
-          workspaceId: "proj-7",
-          parentPageId: "folder-project",
-          linkAccess: "Restricted",
-        }),
+        key: "project:proj-7:Team:none",
+        workspaceType: "Project",
+        workspaceId: "proj-7",
+        parentPageId: "folder-project",
       }),
+    );
+    expect(moveIntoNotebook).toHaveBeenCalledWith(
+      "note-1",
+      "notebook-1",
+      "Cortex Team meeting note (Sep 10, 2026)",
     );
     expect(p.scheduledMeeting.update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -574,6 +614,71 @@ describe("createScheduledMeeting — attendance roster", () => {
     });
 
     expect(p.meetingAttendance.createMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("createScheduledMeeting — recordPrompt default", () => {
+  const p = prisma as unknown as {
+    scheduledMeeting: { create: ReturnType<typeof vi.fn> };
+    meetingAttendance: { createMany: ReturnType<typeof vi.fn> };
+  };
+
+  beforeEach(() => {
+    p.scheduledMeeting.create.mockResolvedValue({
+      id: "m1",
+      ownerCalendarEmail: "org@dali.dartmouth.edu",
+      createdAt: new Date("2026-09-01T12:00:00.000Z"),
+    });
+    p.meetingAttendance.createMany.mockResolvedValue({});
+    mockNotify.mockResolvedValue({ inApp: 0 });
+  });
+
+  function manyIds(n: number): string[] {
+    return Array.from({ length: n }, (_, i) => `u${i}`);
+  }
+
+  it("defaults recordPrompt to false for a SelfCheckIn event with more than 30 participants", async () => {
+    await createScheduledMeeting({
+      organizerId: "org-1",
+      organizerEmail: "org@dali.dartmouth.edu",
+      title: "All-lab kickoff",
+      durationMinutes: 60,
+      scope: { type: "UserList", participantUserIds: manyIds(31) },
+      attendanceMode: "SelfCheckIn",
+    });
+
+    expect(p.scheduledMeeting.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ recordPrompt: false }) }),
+    );
+  });
+
+  it("keeps recordPrompt true for a SelfCheckIn event with 30 or fewer participants", async () => {
+    await createScheduledMeeting({
+      organizerId: "org-1",
+      organizerEmail: "org@dali.dartmouth.edu",
+      title: "Team standup",
+      durationMinutes: 30,
+      scope: { type: "UserList", participantUserIds: manyIds(30) },
+      attendanceMode: "SelfCheckIn",
+    });
+
+    expect(p.scheduledMeeting.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ recordPrompt: true }) }),
+    );
+  });
+
+  it("keeps recordPrompt true for a large Roster meeting (the cap is SelfCheckIn-only)", async () => {
+    await createScheduledMeeting({
+      organizerId: "org-1",
+      organizerEmail: "org@dali.dartmouth.edu",
+      title: "Big roster meeting",
+      durationMinutes: 60,
+      scope: { type: "UserList", participantUserIds: manyIds(40) },
+    });
+
+    expect(p.scheduledMeeting.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ recordPrompt: true }) }),
+    );
   });
 });
 
@@ -1120,6 +1225,7 @@ describe("attachMeetingNote", () => {
     scheduledMeeting: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
     project: { findFirst: ReturnType<typeof vi.fn>; findUnique: ReturnType<typeof vi.fn> };
     meetingAttendance: { createMany: ReturnType<typeof vi.fn> };
+    page: { update: ReturnType<typeof vi.fn> };
   };
   const mockIsCore = isCore as unknown as ReturnType<typeof vi.fn>;
 
@@ -1184,7 +1290,7 @@ describe("attachMeetingNote", () => {
     const res = await attachMeetingNote({ meetingId: "m1", actorId: "u2" });
 
     expect(res).toEqual({ ok: true, notePageId: "page-x" });
-    expect(createLabMeetingPage).not.toHaveBeenCalled();
+    expect(createNotebookTab).not.toHaveBeenCalled();
   });
 
   it("gives a later occurrence of a recurring meeting its own note, filed beside the first", async () => {
@@ -1218,10 +1324,10 @@ describe("attachMeetingNote", () => {
       occurrence: new Date("2026-09-24T15:00:00Z"),
     });
 
-    expect(res).toEqual({ ok: true, notePageId: "page-lab" });
-    expect(createLabMeetingPage).toHaveBeenCalledWith(
+    expect(res).toEqual({ ok: true, notePageId: "page-tab" });
+    expect(createNotebookTab).toHaveBeenCalledWith(
       expect.objectContaining({
-        parentPageId: "folder-standups",
+        notebookId: "notebook-1",
         meetingNoteId: "m1",
         meetingOccurrenceStart: new Date("2026-09-24T15:00:00Z"),
       }),
@@ -1300,7 +1406,7 @@ describe("attachMeetingNote", () => {
       meetingTypeLabel: "All-hands",
     });
 
-    expect(res).toEqual({ ok: true, notePageId: "page-lab" });
+    expect(res).toEqual({ ok: true, notePageId: "page-tab" });
     expect(p.scheduledMeeting.update).toHaveBeenCalledWith({
       where: { id: "m1" },
       data: { meetingType: "Other", meetingTypeLabel: "All-hands", projectId: null },
@@ -1328,11 +1434,112 @@ describe("attachMeetingNote", () => {
       projectId: "proj-9",
     });
 
-    expect(res).toEqual({ ok: true, notePageId: "page-project" });
+    expect(res).toEqual({ ok: true, notePageId: "page-tab" });
     expect(p.scheduledMeeting.update).toHaveBeenCalledWith({
       where: { id: "m1" },
       data: { meetingType: "Team", meetingTypeLabel: null, projectId: "proj-9" },
     });
+  });
+
+  it("seeds the new note from the project's bound template and records the hash", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(meetingRow({ participantUserIds: ["org-1"] }));
+    p.project.findFirst.mockResolvedValue({ id: "proj-9" });
+    p.project.findUnique.mockResolvedValue({ name: "Deserto", meetingNoteTemplateId: "tpl-1" });
+    vi.mocked(prisma.page.findUnique).mockResolvedValue({
+      id: "tpl-1",
+      isTemplate: true,
+      archivedAt: null,
+    } as never);
+    vi.mocked(blocksToPlainText).mockReturnValue("## Agenda\n\n## Notes");
+
+    const res = await attachMeetingNote({
+      meetingId: "m1",
+      actorId: "org-1",
+      meetingType: "Team",
+      projectId: "proj-9",
+    });
+
+    expect(res).toEqual({ ok: true, notePageId: "page-tab" });
+    expect(copyPageBody).toHaveBeenCalledWith("tpl-1", "page-tab");
+    expect(p.page.update).toHaveBeenCalledWith({
+      where: { id: "page-tab" },
+      data: {
+        seededFromPageId: "tpl-1",
+        seededTemplateHash: hashTemplateText(normalizeTemplateText("## Agenda\n\n## Notes")),
+      },
+    });
+  });
+
+  it("leaves a new note unseeded when no template resolves", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(meetingRow());
+    vi.mocked(prisma.page.findFirst).mockResolvedValue(null);
+
+    const res = await attachMeetingNote({
+      meetingId: "m1",
+      actorId: "org-1",
+      meetingType: "Other",
+      meetingTypeLabel: "Standup",
+    });
+
+    expect(res).toEqual({ ok: true, notePageId: "page-tab" });
+    expect(copyPageBody).not.toHaveBeenCalled();
+    expect(p.page.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("resolveMeetingNoteTemplate", () => {
+  const pr = prisma as unknown as {
+    project: { findUnique: ReturnType<typeof vi.fn> };
+    page: { findUnique: ReturnType<typeof vi.fn>; findFirst: ReturnType<typeof vi.fn> };
+  };
+
+  it("prefers the project's bound template over the lab default", async () => {
+    pr.project.findUnique.mockResolvedValue({ meetingNoteTemplateId: "tpl-project" });
+    pr.page.findUnique.mockResolvedValue({ id: "tpl-project", isTemplate: true, archivedAt: null });
+    pr.page.findFirst.mockResolvedValue({ id: "tpl-lab-default" });
+
+    const result = await resolveMeetingNoteTemplate("proj-1", "Team");
+
+    expect(result).toEqual({ id: "tpl-project" });
+    expect(pr.page.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the lab default when the project has no binding", async () => {
+    pr.project.findUnique.mockResolvedValue({ meetingNoteTemplateId: null });
+    pr.page.findFirst.mockResolvedValue({ id: "tpl-lab-default" });
+
+    const result = await resolveMeetingNoteTemplate("proj-1", "Team");
+
+    expect(result).toEqual({ id: "tpl-lab-default" });
+  });
+
+  it("ignores a bound page that is no longer marked as a template", async () => {
+    pr.project.findUnique.mockResolvedValue({ meetingNoteTemplateId: "tpl-project" });
+    pr.page.findUnique.mockResolvedValue({ id: "tpl-project", isTemplate: false, archivedAt: null });
+    pr.page.findFirst.mockResolvedValue({ id: "tpl-lab-default" });
+
+    const result = await resolveMeetingNoteTemplate("proj-1", "Team");
+
+    expect(result).toEqual({ id: "tpl-lab-default" });
+  });
+
+  it("ignores a bound page that has been archived", async () => {
+    pr.project.findUnique.mockResolvedValue({ meetingNoteTemplateId: "tpl-project" });
+    pr.page.findUnique.mockResolvedValue({ id: "tpl-project", isTemplate: true, archivedAt: new Date() });
+    pr.page.findFirst.mockResolvedValue({ id: "tpl-lab-default" });
+
+    const result = await resolveMeetingNoteTemplate("proj-1", "Team");
+
+    expect(result).toEqual({ id: "tpl-lab-default" });
+  });
+
+  it("returns none and skips the project lookup for a project-less meeting", async () => {
+    pr.page.findFirst.mockResolvedValue(null);
+
+    const result = await resolveMeetingNoteTemplate(null, "Other");
+
+    expect(result).toBeNull();
+    expect(pr.project.findUnique).not.toHaveBeenCalled();
   });
 });
 

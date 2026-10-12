@@ -3,6 +3,8 @@ import type { Route } from "./+types/partner.onboarding";
 import { prisma } from "~/lib/db";
 import { requirePartnerCandidate } from "~/partners/lib/partner-auth.server";
 import { findOrLinkPartnerContact } from "~/partners/lib/partner-auth.server";
+import { useOsShellRoot } from "~/lib/os-shell";
+import { buttonClasses } from "~/components/ui/Button";
 
 export const meta: Route.MetaFunction = () => [
   { title: "DALI OS · Partner setup" },
@@ -47,34 +49,31 @@ export default function PartnerOnboarding({ actionData }: Route.ComponentProps) 
   const submitting = navigation.state === "submitting";
   const error = actionData && "error" in actionData ? actionData.error : null;
 
-  const inputClass =
-    "w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral";
-  const labelClass = "block text-sm font-medium text-dark-blue mb-1";
+  const labelClass = "os-field-label mb-1.5 block";
+
+  useOsShellRoot(true);
 
   return (
-    <div className="min-h-screen bg-page flex items-center justify-center px-6 py-12">
-      <div className="w-full max-w-md">
-        <div className="mb-8 flex items-center gap-3">
-          <img src="/logo-blue.svg" alt="DALI Lab" className="h-12 w-auto" />
-          <span className="font-heading text-2xl font-bold text-dark-blue">
-            DALI OS
-          </span>
-        </div>
-        <h1 className="font-heading text-3xl font-bold text-dark-blue mb-2">
+    <div className="os-shell flex min-h-screen items-center justify-center bg-os-bg px-6 py-12 text-foreground">
+      <div className="w-full max-w-md rounded-os-card bg-os-card p-8">
+        <span className="font-os-logo text-2xl font-semibold text-os-accent">
+          dali.os
+        </span>
+        <h1 className="font-heading text-3xl font-bold text-foreground mt-6 mb-2">
           You're signed in
         </h1>
-        <p className="text-muted-foreground mb-8">
-          as <span className="font-medium text-dark-blue">{email}</span> —
+        <p className="text-os-grey mb-8">
+          as <span className="font-medium text-foreground">{email}</span> —
           tell us your name and you're all set.
         </p>
 
         {error && (
-          <p className="mb-4 text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3">
+          <p className="mb-4 text-sm text-destructive bg-destructive/10 rounded-lg px-4 py-3">
             {error}
           </p>
         )}
 
-        <Form method="post" className="flex flex-col gap-5">
+        <Form method="post" className="os-form flex flex-col gap-5">
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label htmlFor="firstName" className={labelClass}>
@@ -85,7 +84,7 @@ export default function PartnerOnboarding({ actionData }: Route.ComponentProps) 
                 name="firstName"
                 required
                 defaultValue={firstName}
-                className={inputClass}
+                className="w-full"
               />
             </div>
             <div>
@@ -97,7 +96,7 @@ export default function PartnerOnboarding({ actionData }: Route.ComponentProps) 
                 name="lastName"
                 required
                 defaultValue={lastName}
-                className={inputClass}
+                className="w-full"
               />
             </div>
           </div>
@@ -105,7 +104,7 @@ export default function PartnerOnboarding({ actionData }: Route.ComponentProps) 
           <button
             type="submit"
             disabled={submitting}
-            className="mt-2 w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
+            className={buttonClasses("primary", "md", "mt-2 w-full")}
           >
             {submitting ? "Saving…" : "Continue"}
           </button>

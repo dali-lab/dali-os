@@ -10,7 +10,7 @@ import {
 } from "react-router";
 import { LayoutTemplate, PencilLine, Send } from "lucide-react";
 import type { Route } from "./+types/mentorship.browse";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { getCollabToken } from "~/lib/collab-token.server";
@@ -42,7 +42,6 @@ import {
   usePairMutations,
   useRoster,
 } from "../components/pair-editing";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { VIBES, VIBE_META } from "../lib/vibe";
 
 export const meta: Route.MetaFunction = () => [
@@ -89,7 +88,7 @@ function pickFilter(value: string | null): string {
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  if (auth.user.type === "applicant") return redirect("/portal");
+  if (await isNonMember(auth, request)) return redirect("/portal");
   if (!(await canViewMentorship(auth.user.sub))) {
     throw new Response("Forbidden", { status: 403 });
   }
@@ -275,9 +274,7 @@ export default function MentorshipBrowse() {
   const restored = useRef(false);
   const toast = useToast();
 
-  // Core-only Slack nudge (behind the mentorship-nudge flag).
-  const nudgeFlag = useFeatureFlag("mentorship-nudge");
-  const canNudge = data.isCore && nudgeFlag;
+  const canNudge = data.isCore;
   const unfilledById = useMemo(
     () => new Map(data.nudgeRecipients.map((r) => [r.id, r.count])),
     [data.nudgeRecipients],

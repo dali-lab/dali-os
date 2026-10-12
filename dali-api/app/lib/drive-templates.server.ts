@@ -26,6 +26,10 @@ export interface TemplateItem {
   // Fallback/target link. For page templates the gallery posts to
   // /api/page-templates; for project templates the card navigates here.
   useHref: string;
+  // Lab page templates only: set when this page is the lab-wide default
+  // meeting-note template for a meeting type (specs/meeting-notes-model.md
+  // §1). Shown as a small chip on the gallery row.
+  meetingNoteBadge?: string;
 }
 
 export interface TemplatesData {
@@ -46,6 +50,14 @@ export async function loadTemplates(userId: string): Promise<TemplatesData> {
   return { items: groups.flat() };
 }
 
+// Display label for a page's defaultMeetingNoteFor badge (meetingType names,
+// not the "General" wording the design doc used — see Prisma's MeetingType).
+const MEETING_NOTE_TYPE_LABEL: Record<string, string> = {
+  Team: "Team",
+  Partner: "Partner",
+  Other: "General",
+};
+
 async function loadPageTemplates(): Promise<TemplateItem[]> {
   // Lab-wide document templates: real Page rows flagged isTemplate. These are
   // the shared starter docs any lab member can spin a new document from.
@@ -58,7 +70,7 @@ async function loadPageTemplates(): Promise<TemplateItem[]> {
       kind: "FreeForm",
     },
     orderBy: { title: "asc" },
-    select: { id: true, title: true, iconEmoji: true },
+    select: { id: true, title: true, iconEmoji: true, defaultMeetingNoteFor: true },
   });
   return rows.map((r) => ({
     id: r.id,
@@ -69,6 +81,9 @@ async function loadPageTemplates(): Promise<TemplateItem[]> {
     // Fallback link (opens the template page). The gallery's "Use" posts to
     // /api/page-templates to duplicate it into the chosen scope.
     useHref: `/documents/${r.id}`,
+    meetingNoteBadge: r.defaultMeetingNoteFor
+      ? `Meeting notes default · ${MEETING_NOTE_TYPE_LABEL[r.defaultMeetingNoteFor]}`
+      : undefined,
   }));
 }
 

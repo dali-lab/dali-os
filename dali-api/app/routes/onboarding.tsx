@@ -33,10 +33,8 @@ export async function loader({ request }: Route.LoaderArgs) {
       user: { select: { adminMembership: { select: { isStaff: true } } } },
     },
   });
-  // Only un-onboarded members belong here. Non-members (applicants) go to the
-  // applicant portal; already-onboarded members and staff go home. (deriveAuthType
-  // never returns "applicant" — the prior type check here was dead code; the
-  // DALIMember row is the real member/non-member signal.)
+  // Only un-onboarded members belong here. Non-members go to the portal;
+  // already-onboarded members and staff go home.
   if (!member) return redirect("/portal");
   if (member.onboardedAt !== null || member.user.adminMembership?.isStaff === true)
     return redirect("/");
@@ -65,7 +63,7 @@ export default function OnboardingPage({ loaderData }: Route.ComponentProps) {
         <MemberFormFillView data={form} />
       ) : (
         <div className="py-10 text-center">
-          <h1 className="font-heading text-xl font-bold text-dark-blue">
+          <h1 className="font-heading text-xl font-bold text-foreground">
             Welcome to DALI!
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">

@@ -92,6 +92,9 @@ import { runInfraSnapshot } from "~/jobs/infra-snapshot.server";
 import { runTimetableSync } from "~/jobs/timetable-sync.server";
 import { runWalletRestyleBroadcastJob } from "~/jobs/wallet-restyle-broadcast.server";
 import { runApplicantEmailIndex } from "~/jobs/applicant-email-index.server";
+import { runRecordingFinalizer } from "~/jobs/recording-finalizer.server";
+import { runMeetingRecordPrompts } from "~/jobs/meeting-record-prompts.server";
+import { runMeetingNotesNudge } from "~/jobs/meeting-notes-nudge.server";
 
 export const JOBS: JobDefinition[] = [
   {
@@ -250,7 +253,7 @@ export const JOBS: JobDefinition[] = [
   {
     name: "retention-janitor",
     description:
-      "Deletes read notifications and stale reminder-ledger rows older than the retention window.",
+      "Deletes read notifications and stale reminder-ledger rows older than the retention window, plus finalized meeting transcripts older than their own window.",
     intervalMinutes: 1440,
     settings: [
       {
@@ -260,6 +263,14 @@ export const JOBS: JobDefinition[] = [
         min: 1,
         max: 36,
         default: 6,
+      },
+      {
+        key: "meetingTranscriptDays",
+        label: "Meeting transcript retention",
+        unit: "days",
+        min: 30,
+        max: 1095,
+        default: 365,
       },
     ],
     handler: runRetentionJanitor,
@@ -459,6 +470,47 @@ export const JOBS: JobDefinition[] = [
     intervalMinutes: 1440,
     enabledByDefault: false,
     handler: runWalletRestyleBroadcastJob,
+  },
+  {
+    name: "recording-finalizer",
+    description:
+      "Backstop for meeting recordings whose client never confirmed Stop cleanly, or whose transcription job never called back: starts processing (or finalizes empty) an abandoned Recording row, retries a Processing row stuck 30 minutes with no callback once, and fails it (deleting the audio) on a second timeout. Deletes a Pending row never claimed within 30 minutes.",
+    intervalMinutes: 5,
+    handler: runRecordingFinalizer,
+  },
+  {
+    name: "meeting-record-prompts",
+    description:
+      "Notifies a meeting's organizer shortly before it starts, offering to record it (bell, desktop banner, Slack DM per preference). Skips when the series opted out, the project disabled recording, the organizer lacks the ai-meeting-notes flag, a recording already exists for the occurrence, or the meeting has no note to record into.",
+    intervalMinutes: 1,
+    settings: [
+      {
+        key: "leadMinutes",
+        label: "Lead time before start",
+        unit: "min",
+        min: 0,
+        max: 10,
+        default: 1,
+      },
+    ],
+    handler: runMeetingRecordPrompts,
+  },
+  {
+    name: "meeting-notes-nudge",
+    description:
+      "Nudges a meeting recording's owner once its transcript is ready, when it hasn't been inserted into the note. Skips recordings with no scheduled meeting, before the configured delay past the occurrence's end, or for a recorder without the ai-meeting-notes flag.",
+    intervalMinutes: 5,
+    settings: [
+      {
+        key: "delayMinutes",
+        label: "Delay after occurrence ends",
+        unit: "min",
+        min: 5,
+        max: 120,
+        default: 15,
+      },
+    ],
+    handler: runMeetingNotesNudge,
   },
 ];
 

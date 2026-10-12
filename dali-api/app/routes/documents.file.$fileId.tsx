@@ -4,7 +4,7 @@ import { Download, Upload } from "lucide-react";
 import { Tooltip } from "~/components/ui/floating";
 import type { Route } from "./+types/documents.file.$fileId";
 import { prisma } from "~/lib/db";
-import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
+import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
 import { canViewFile, canEditFile } from "~/lib/fileAccess.server";
@@ -83,7 +83,7 @@ export const handle = {
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  if (auth.user.type === "applicant") return redirect("/portal");
+  if (await isNonMember(auth, request)) return redirect("/portal");
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return partnerRedirect;
 

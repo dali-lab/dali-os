@@ -59,6 +59,7 @@ export type Assignment = {
   projectId: string;
   domainId: string;
   level: Level;
+  status: "Proposed" | "Confirmed";
 };
 
 export type MemberCardModel = {
@@ -138,6 +139,27 @@ export function dedupeLiveAssignments<
     (r) =>
       r.status === "Proposed" || !proposedByProject.has(`${r.userId}|${r.projectId}`),
   );
+}
+
+// `pending` counts distinct members, not rows: a member assigned in two domains
+// who hasn't been finalized is one pending change.
+export function projectFinalizeState(
+  assignments: Assignment[],
+  projectId: string,
+): { state: "none" | "unfinalized" | "drifted" | "finalized"; pending: number } {
+  const rows = assignments.filter((a) => a.projectId === projectId);
+  if (rows.length === 0) return { state: "none", pending: 0 };
+
+  const hasProposed = rows.some((a) => a.status === "Proposed");
+  const hasConfirmed = rows.some((a) => a.status === "Confirmed");
+  const state: "unfinalized" | "drifted" | "finalized" =
+    hasProposed && hasConfirmed ? "drifted" : hasProposed ? "unfinalized" : "finalized";
+
+  const pending = new Set(
+    rows.filter((a) => a.status === "Proposed").map((a) => a.userId),
+  ).size;
+
+  return { state, pending };
 }
 
 /**

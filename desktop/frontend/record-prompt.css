@@ -1,0 +1,164 @@
+/* The floating record-prompt pill (window.rs sizes the frame: 560 wide,
+   76 tall, growing to 212 while the chevron menu is open). The window is
+   transparent, so the page paints nothing but the pill and its menu and draws
+   its own shadow in the padding around them. Color tokens come from
+   pairing.css; the split button adds its own ink so it stays readable on the
+   dark ramp's light accent. */
+
+:root {
+  --split-ink: #ffffff;
+  --split-divider: rgba(255, 255, 255, 0.28);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --split-ink: #13293a;
+    --split-divider: rgba(19, 41, 58, 0.22);
+  }
+}
+
+html, body {
+  width: 560px;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+}
+
+body {
+  display: block;
+  padding: 8px 10px;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.pill {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  height: 60px;
+  padding: 0 12px 0 14px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 30px;
+  box-shadow: 0 6px 22px var(--shadow);
+}
+
+.app-icon {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+}
+
+.text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.subtitle {
+  font-size: 12.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.split {
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  height: 38px;
+  border-radius: 19px;
+  background: var(--os-accent);
+  color: var(--split-ink);
+  overflow: hidden;
+}
+
+.split button {
+  font: inherit;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: default;
+}
+
+.split-main {
+  padding: 0 16px;
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.split-chevron {
+  display: flex;
+  align-items: center;
+  padding: 0 11px 0 9px;
+  border-left: 1px solid var(--split-divider);
+}
+
+.split button:hover {
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.close {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin-left: -4px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 24px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.pill:hover .close,
+.close:focus-visible {
+  opacity: 1;
+}
+.close:hover {
+  background: var(--code-bg);
+  color: var(--ink);
+}
+
+.menu {
+  width: 240px;
+  margin: 8px 0 0 auto;
+  padding: 6px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 6px 22px var(--shadow);
+  display: flex;
+  flex-direction: column;
+}
+.menu.hidden {
+  display: none;
+}
+
+.menu-item {
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+  padding: 9px 10px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink);
+}
+.menu-item:hover {
+  background: var(--code-bg);
+}

@@ -3,9 +3,11 @@ import {
   buildBoard,
   dedupeLiveAssignments,
   matchesDomainFilter,
+  projectFinalizeState,
   resolveAssignmentDomains,
   resolveAssignmentInputs,
   UNASSIGNED,
+  type Assignment,
   type MemberInput,
 } from "../staffing-board";
 
@@ -113,7 +115,9 @@ describe("buildBoard", () => {
           ],
         }),
       ],
-      assignments: [{ userId: "u1", projectId: "p1", domainId: "d1", level: "P3" }],
+      assignments: [
+        { userId: "u1", projectId: "p1", domainId: "d1", level: "P3", status: "Proposed" },
+      ],
     });
     expect(board.p1).toHaveLength(1);
     expect(board[UNASSIGNED]).toEqual([]);
@@ -126,8 +130,8 @@ describe("buildBoard", () => {
       projectIds: ["p1", "p2"],
       members: [member()],
       assignments: [
-        { userId: "u1", projectId: "p1", domainId: "d1", level: "P2" },
-        { userId: "u1", projectId: "p2", domainId: "d2", level: "P3" },
+        { userId: "u1", projectId: "p1", domainId: "d1", level: "P2", status: "Proposed" },
+        { userId: "u1", projectId: "p2", domainId: "d2", level: "P3", status: "Proposed" },
       ],
     });
     expect(board[UNASSIGNED]).toEqual([]);
@@ -147,8 +151,8 @@ describe("buildBoard", () => {
       projectIds: ["p1"],
       members: [member()],
       assignments: [
-        { userId: "u1", projectId: "p1", domainId: "d1", level: "P2" },
-        { userId: "u1", projectId: "p1", domainId: "d2", level: "P3" },
+        { userId: "u1", projectId: "p1", domainId: "d1", level: "P2", status: "Proposed" },
+        { userId: "u1", projectId: "p1", domainId: "d2", level: "P3", status: "Proposed" },
       ],
     });
     expect(board.p1).toHaveLength(1);
@@ -171,7 +175,9 @@ describe("buildBoard", () => {
       projectIds: ["p1"],
       members: [member({ preferences: [] })],
       // p9 isn't in projectIds — stale assignment from another term, say.
-      assignments: [{ userId: "u1", projectId: "p9", domainId: "d1", level: "P1" }],
+      assignments: [
+        { userId: "u1", projectId: "p9", domainId: "d1", level: "P1", status: "Proposed" },
+      ],
     });
     expect(board[UNASSIGNED]).toHaveLength(1);
     expect(board.p1).toEqual([]);
@@ -289,8 +295,8 @@ describe("buildBoard cardOrder", () => {
         }),
       ],
       assignments: [
-        { userId: "a", projectId: "p1", domainId: "d1", level: "P1" },
-        { userId: "b", projectId: "p1", domainId: "d1", level: "P1" },
+        { userId: "a", projectId: "p1", domainId: "d1", level: "P1", status: "Proposed" },
+        { userId: "b", projectId: "p1", domainId: "d1", level: "P1", status: "Proposed" },
       ],
       cardOrder: [{ userId: "a", columnKey: UNASSIGNED, sortKey: 0 }],
     });
@@ -489,5 +495,67 @@ describe("dedupeLiveAssignments", () => {
     expect(out).toHaveLength(3);
     expect(out.map((r) => r.userId).sort()).toEqual(["u1", "u2", "u3"]);
     expect(out.find((r) => r.userId === "u2")?.status).toBe("Proposed");
+  });
+});
+
+describe("projectFinalizeState", () => {
+  const assignment = (
+    userId: string,
+    status: "Proposed" | "Confirmed",
+    domainId = "d1",
+    projectId = "p1",
+  ): Assignment => ({ userId, projectId, domainId, level: "P1", status });
+
+  it("returns none when the project has no assignment rows", () => {
+    expect(projectFinalizeState([], "p1")).toEqual({ state: "none", pending: 0 });
+  });
+
+  it("ignores rows on other projects when computing none", () => {
+    const assignments = [assignment("u1", "Confirmed", "d1", "p2")];
+    expect(projectFinalizeState(assignments, "p1")).toEqual({ state: "none", pending: 0 });
+  });
+
+  it("returns unfinalized when every row is Proposed", () => {
+    const assignments = [
+      assignment("u1", "Proposed"),
+      assignment("u2", "Proposed"),
+    ];
+    expect(projectFinalizeState(assignments, "p1")).toEqual({
+      state: "unfinalized",
+      pending: 2,
+    });
+  });
+
+  it("returns finalized when every row is Confirmed", () => {
+    const assignments = [
+      assignment("u1", "Confirmed"),
+      assignment("u2", "Confirmed"),
+    ];
+    expect(projectFinalizeState(assignments, "p1")).toEqual({
+      state: "finalized",
+      pending: 0,
+    });
+  });
+
+  it("returns drifted when the project mixes Confirmed and Proposed rows", () => {
+    const assignments = [
+      assignment("u1", "Confirmed"),
+      assignment("u2", "Proposed"),
+    ];
+    expect(projectFinalizeState(assignments, "p1")).toEqual({
+      state: "drifted",
+      pending: 1,
+    });
+  });
+
+  it("counts distinct members, not rows, for pending (a two-domain member is one pending member)", () => {
+    const assignments = [
+      assignment("u1", "Confirmed"),
+      assignment("u2", "Proposed", "d1"),
+      assignment("u2", "Proposed", "d2"),
+    ];
+    const result = projectFinalizeState(assignments, "p1");
+    expect(result.state).toBe("drifted");
+    expect(result.pending).toBe(1);
   });
 });

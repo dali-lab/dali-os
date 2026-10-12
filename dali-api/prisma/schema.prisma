@@ -113,24 +113,30 @@ model User {
   dartmouthDepartmentClass String?
   dartmouthPeopleSyncedAt  DateTime?
 
-  pronouns       String?
-  photoUrl       String?
+  pronouns           String?
+  photoUrl           String?
   // Bio stored as a collab doc reference for rich formatting + @mentions.
-  bioDocId       String?
-  major          String?
-  hometown       String?
-  linkedinUrl    String?
+  bioDocId           String?
+  major              String?
+  hometown           String?
+  // Where the person lives now ("Based in" on the profile). Free text; the
+  // coordinates are geocoded from it on save (app/lib/geocode.server.ts) and
+  // place the person on the Connect map. Null coordinates = no pin.
+  currentLocation    String?
+  currentLocationLat Float?
+  currentLocationLng Float?
+  linkedinUrl        String?
   // Bare GitHub login (e.g. "octocat"). Used to add the member to their
   // project's GitHub team during staffing finalize, and to derive a profile
   // link in the UI. Editable in member details; nullable — a member with no
   // username is silently skipped (and reported) by that automation.
-  githubUsername String?
-  personalSite   String?
+  githubUsername     String?
+  personalSite       String?
   // Short public handle for @-mentions (e.g. "spark" for Sophie Park). Seeded
   // from first-initial + last-name (lowercased), auto-suffixed on collision,
   // and editable in profile. Nullable + unique like the other identity handles;
   // a user with no handle simply can't be @-mentioned until they set one.
-  handle         String? @unique
+  handle             String? @unique
 
   // Per-member secret mixed into the signed barcode carried by the member's
   // Apple/Google Wallet membership pass (see app/lib/wallet-token.ts). Set
@@ -172,6 +178,9 @@ model User {
 
   // ─── Relations: existing ──────────────────────────────────────────────────
   daliMember                    DALIMember?
+  workExperiences               WorkExperience[]
+  coffeeChatsSent               CoffeeChatInvite[]             @relation("CoffeeChatSender")
+  coffeeChatsReceived           CoffeeChatInvite[]             @relation("CoffeeChatRecipient")
   walletPassRegistrations       WalletPassRegistration[]
   applicationCycleStatusUpdates ApplicationCycleStatusUpdate[]
   applications                  Application[]
@@ -289,16 +298,22 @@ model User {
   cycleReviewers               CycleReviewer[]
   cycleInterviewers            CycleInterviewer[]
   domainLeadAssignmentsAsUser  DomainLeadAssignment[]
-  decisionsMade                Decision[]             @relation("DecisionMadeBy")
-  applicationReviewsSubmitted  ApplicationReview[]    @relation("ApplicationReviewSubmittedBy")
+  decisionsMade                Decision[]              @relation("DecisionMadeBy")
+  applicationReviewsSubmitted  ApplicationReview[]     @relation("ApplicationReviewSubmittedBy")
   delibsSessionsOpened         DelibsSession[]
   emailTemplateVersionsCreated EmailTemplateVersion[]
-  emailTemplatesEdited         EmailTemplate[]        @relation("EmailTemplateEditor")
+  emailTemplatesEdited         EmailTemplate[]         @relation("EmailTemplateEditor")
+  hiringEventAttendances       HiringEventAttendance[]
 
   // ─── Documents & files ───────────────────────────────────────────────────
   projectFileVersionsUploaded ProjectFileVersion[] @relation("ProjectFileVersionUploader")
   docComments                 DocComment[]         @relation("DocCommentAuthor")
   docCommentReactions         DocCommentReaction[]
+
+  // ─── DALI OS feedback (feature requests) ──────────────────────────────────
+  feedbackPosts     FeedbackPost[]
+  feedbackReactions FeedbackReaction[]
+  feedbackComments  FeedbackComment[]
 
   // ─── Page documentation (per-page guides) ─────────────────────────────────
   pageDocsMaintained PageDoc[]  @relation("PageDocMaintainer")
@@ -344,6 +359,59 @@ model DALIMember {
 
   userId String @unique
   user   User   @relation(fields: [userId], references: [id])
+}
+
+enum WorkMode {
+  OnSite
+  Hybrid
+  Remote
+}
+
+// A job on a person's profile (the Work experience card). Self-reported.
+model WorkExperience {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  company     String
+  position    String
+  description String?
+  location    String?
+  workMode    WorkMode?
+  // First of the month, UTC. A null endDate is a current job.
+  startDate   DateTime
+  endDate     DateTime?
+
+  @@index([userId, startDate])
+}
+
+enum CoffeeChatStatus {
+  Pending
+  Accepted
+  Declined
+}
+
+// An anonymous coffee chat invite sent from someone's profile. The recipient
+// is never shown the sender unless they accept — every read of senderId must
+// go through app/members/lib/coffee-chat.server.ts, which enforces that.
+model CoffeeChatInvite {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  senderId    String
+  sender      User   @relation("CoffeeChatSender", fields: [senderId], references: [id], onDelete: Cascade)
+  recipientId String
+  recipient   User   @relation("CoffeeChatRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+
+  status      CoffeeChatStatus @default(Pending)
+  respondedAt DateTime?
+
+  @@index([senderId, recipientId])
+  @@index([recipientId])
 }
 
 model ApplicationCycle {
@@ -434,6 +502,13 @@ model ApplicationCycle {
   applicationFormId String?
   applicationForm   Form?   @relation("CycleApplicationForm", fields: [applicationFormId], references: [id])
 
+  // Students cycles only. The short form a returning waitlister fills when they
+  // reuse a waitlisted application instead of applying from scratch
+  // (app/hiring/lib/continued-interest.server.ts). Null = the cycle doesn't
+  // offer reuse.
+  continuedInterestFormId String?
+  continuedInterestForm   Form?   @relation("CycleContinuedInterestForm", fields: [continuedInterestFormId], references: [id])
+
   statusUpdates        ApplicationCycleStatusUpdate[]
   applications         Application[]
   domains              DomainApplicationCycle[]
@@ -444,8 +519,61 @@ model ApplicationCycle {
   cycleInterviewers CycleInterviewer[]
   interviews        Interview[]
   delibsSessions    DelibsSession[]
+  roomBookings      RoomBooking[]
 
   signingBindings SigningBinding[]
+
+  hiringEvents HiringEvent[]
+}
+
+// Application events (help hours, socials, info sessions) Core runs during a
+// cycle. Two parts: a manual announcement email to everyone who started an
+// application, and attendance (QR self check-in or hand-marked), kept as an
+// engagement signal next to returning/emailed/educated.
+// See app/hiring/lib/hiring-events.server.ts.
+model HiringEvent {
+  id                 String           @id @default(cuid())
+  applicationCycleId String
+  applicationCycle   ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
+  kind               HiringEventKind  @default(HelpHour)
+  title              String
+  startsAt           DateTime
+  endsAt             DateTime
+  location           String?
+  // Stamped when Core opens self check-in (applicants scan the projected QR).
+  // Null = closed. Read with the event's time window in app/hiring/lib/hiring-events.server.ts.
+  checkInOpenAt      DateTime?
+  announcementSentAt DateTime?
+  // Stamped when Core puts this event's check-in QR on every paired door
+  // display. Only honoured while check-in is open (hiring-events.server.ts).
+  broadcastAt        DateTime?
+  createdByUserId    String
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  attendances HiringEventAttendance[]
+
+  @@index([applicationCycleId, startsAt])
+}
+
+enum HiringEventKind {
+  HelpHour
+  Social
+  InfoSession
+  Other
+}
+
+model HiringEventAttendance {
+  id             String      @id @default(cuid())
+  eventId        String
+  event          HiringEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User        @relation(fields: [userId], references: [id])
+  markedByUserId String?
+  markedAt       DateTime    @default(now())
+
+  @@unique([eventId, userId])
+  @@index([userId])
 }
 
 // Applicant-initiated status changes only. DALI-initiated outcomes (interview,
@@ -568,6 +696,11 @@ model DomainApplication {
   closedAt      DateTime?
   closureReason DomainApplicationClosureReason?
 
+  // When the applicant last submitted with this domain selected. Submission
+  // is recorded once per Application; a domain added afterwards stays null
+  // (and reads "Not submitted") until the applicant submits again.
+  submittedAt DateTime?
+
   applicationId          String
   application            Application  @relation(fields: [applicationId], references: [id])
   // The FormVersion of the picked per-domain challenge Form the applicant
@@ -579,6 +712,20 @@ model DomainApplication {
   domainId               String
   domain                 Domain       @relation(fields: [domainId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
+  // Continued interest: this DA reuses an earlier cycle's waitlisted DA rather
+  // than a fresh submission. `answers` and `challengeFormVersionId` (and the
+  // parent Application's general answers and form version) are copied from
+  // `continuedFrom` and frozen, so every reader of a normal application works
+  // unchanged; only the continued interest form below is new content.
+  continuedFromId                String?
+  continuedFrom                  DomainApplication?  @relation("DomainApplicationContinuedFrom", fields: [continuedFromId], references: [id])
+  continuedBy                    DomainApplication[] @relation("DomainApplicationContinuedFrom")
+  // The cycle's continued interest form at the version pinned when the
+  // applicant chose to reuse, and their answers (same shape as `answers`).
+  continuedInterestFormVersionId String?
+  continuedInterestFormVersion   FormVersion?        @relation("DomainApplicationContinuedInterestForm", fields: [continuedInterestFormVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  continuedInterestAnswers       Json?
+
   interviews Interview[]
   reviews    ApplicationReview[]
   decisions  Decision[]
@@ -586,6 +733,8 @@ model DomainApplication {
   @@index([applicationId])
   @@index([domainId])
   @@index([challengeFormVersionId])
+  @@index([continuedFromId])
+  @@index([continuedInterestFormVersionId])
 }
 
 // Drive-Form equivalent of ChallengeVersionApplicationCycle for per-domain
@@ -696,6 +845,12 @@ model DomainApplicationCycle {
   // True once the domain lead has explicitly confirmed their challenge config is ready
   isReady Boolean @default(false)
 
+  // Per-domain application close. Null inherits the cycle's closeDate. Set
+  // when a domain joins a cycle after it opened and needs its own window
+  // (app/hiring/lib/domain-windows.ts). Students cycles only; never drives
+  // the cycle's own Open→UnderReview transition.
+  closeDate DateTime?
+
   // Rubric assigned for this domain in this cycle (shared across all challenge versions for the domain)
   rubricVersionId         String?
   rubricVersion           RubricVersion? @relation(fields: [rubricVersionId], references: [id])
@@ -728,6 +883,14 @@ model InterviewConfig {
   bookingNoticeHours    Int @default(12) // minimum hours an applicant must book in the future
 
   timezone String @default("America/New_York")
+
+  // The rooms in-person interviews are booked into (one RoomBooking per
+  // interview, source Interview). Empty = no in-person slots.
+  rooms     Room[]
+  // Hold every interview room for interview hours across the interview window
+  // (one recurring RoomBooking per room, source InterviewHold) so members
+  // can't book over the cycle. Bookings from this cycle sit inside the hold.
+  holdRooms Boolean @default(false)
 }
 
 // A DALI member assigned as a written reviewer for a domain in a cycle.
@@ -775,12 +938,6 @@ enum InterviewStatus {
   CancelledByAdmin
 }
 
-enum InterviewLocation {
-  PodAppa
-  PodMomo
-  Online
-}
-
 model Interview {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
@@ -788,9 +945,10 @@ model Interview {
 
   // No @unique: a DomainApplication can accumulate historical Interview rows
   // (Cancelled/Completed) alongside at most one active row. The partial
-  // unique index "Interview_activeDomainApplication_key" (added in raw SQL
-  // in the migration) enforces "at most one Scheduled per DA" at the DB
-  // level. See SCHEDULING.md §Data model.
+  // unique index "Interview_activeDomainApplication_key" (raw SQL in
+  // migration 20261008180000_interview_active_unique_index; Prisma can't
+  // express a partial index) enforces "at most one Scheduled per DA" at
+  // the DB level.
   domainApplicationId String
   domainApplication   DomainApplication @relation(fields: [domainApplicationId], references: [id])
   applicationCycleId  String
@@ -798,8 +956,15 @@ model Interview {
 
   startTime DateTime
   endTime   DateTime
-  status    InterviewStatus   @default(Scheduled)
-  location  InterviewLocation @default(Online)
+  status    InterviewStatus @default(Scheduled)
+
+  // In-person interviews sit in one of the cycle's InterviewConfig.rooms and
+  // hold it through roomBooking (source Interview), so /rooms and the door
+  // displays see them. Both null = Online.
+  roomId        String?
+  room          Room?        @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  roomBookingId String?      @unique
+  roomBooking   RoomBooking? @relation(fields: [roomBookingId], references: [id], onDelete: SetNull)
 
   zoomMeetingId String?
   zoomJoinUrl   String?
@@ -1358,6 +1523,54 @@ model DocCommentReaction {
   @@index([commentId])
 }
 
+// A feature request or piece of feedback about DALI OS itself, posted from the
+// shell's feedback button and listed on /feedback for every lab member.
+model FeedbackPost {
+  id            String   @id @default(cuid())
+  authorId      String
+  body          String
+  // S3 key (uploads/feedback/...) of the cropped screenshot, when one was taken.
+  screenshotKey String?
+  // The page the author was on when they opened the composer.
+  pagePath      String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  author    User               @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  reactions FeedbackReaction[]
+  comments  FeedbackComment[]
+
+  @@index([createdAt])
+}
+
+// Same toggle semantics as DocCommentReaction: one row per (post, user, emoji).
+model FeedbackReaction {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  emoji     String   @db.VarChar(64)
+  createdAt DateTime @default(now())
+
+  post FeedbackPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId, emoji])
+  @@index([postId])
+}
+
+model FeedbackComment {
+  id        String   @id @default(cuid())
+  postId    String
+  authorId  String
+  body      String
+  createdAt DateTime @default(now())
+
+  post   FeedbackPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([postId, createdAt])
+}
+
 enum DocCommentTarget {
   doc
   file
@@ -1676,10 +1889,19 @@ enum NotificationType {
   InterviewConfirmedApplicant
   InterviewCancelledApplicant
   InterviewCancelledInterviewer
+  // The team cancelled it (not the applicant): tells them they can rebook.
+  InterviewCancelledByTeamApplicant
   InterviewLocationChanged
   // Scheduled 24h/1h reminders fired by the interview-reminders job.
   InterviewReminderApplicant
   InterviewReminderInterviewer
+  // Manual "Send announcement" blast from a hiring-cycle application event
+  // to everyone who started an application in that cycle.
+  ApplicationEventAnnouncement
+  // One-time notice when a domain joins an already-Open cycle with its own
+  // close date (domain-windows.ts), to everyone with a non-Withdrawn
+  // Application in the cycle.
+  DomainAddedNotice
 }
 
 // One row per (cycle, notificationType, applicant). Enforces single-send
@@ -1754,14 +1976,6 @@ model AiUsage {
   @@unique([userId, day])
 }
 
-// A native recording in progress for a collaborative document (any DocEditor
-// room the user can write to). The page creates
-// the row and hands its id to the desktop app over a dalios:// link; the app
-// records system audio and the mic, transcribes on-device, and appends lines
-// here with its desktop Session token. The page polls the lines and, once the
-// recording stops, writes notes into the doc and deletes the row. Transcript
-// text only: no audio ever reaches the server. Rows are owner-only, and a
-// user's stale rows are swept whenever they start a new recording.
 // A member's best run at the tetris game on the week 5 ("Build") home landing
 // scene. One row per player, holding their personal best rather than a log of
 // every game: the board is "the highest score each person has reached", so a
@@ -1786,32 +2000,80 @@ model TetrisScore {
   @@index([score])
 }
 
+// A browser- or desktop-captured recording for a collaborative document (any
+// DocEditor room the user can write to), batch-transcribed and diarized by
+// the self-hosted dali-asr Modal app once the recording stops. The page (or
+// desktop app) creates the row, PCM chunks land in private S3 under
+// `recordings/<id>/`, and `provider.process()` dispatches the job at Stop.
+// The callback writes `words`/`lines`/`speakers` and the audio is deleted.
+// Rows are owner-written, but reads follow the note's audience (see
+// canReadRecording). A user's stale, never-finalized rows are swept whenever
+// they start a new recording.
+
 model MeetingRecording {
-  id              String                 @id @default(cuid())
+  id            String                 @id @default(cuid())
   // The collab room the notes land in, e.g. "doc:<pageId>:body".
-  documentName    String
-  userId          String
-  status          MeetingRecordingStatus @default(Pending)
-  // Set by the page's Stop button; the app sees it on its next append.
-  stopRequested   Boolean                @default(false)
-  // Whether the app is capturing system audio (macOS 14.2+) or the mic only.
-  systemAudio     Boolean                @default(false)
-  // [{ at: seconds since start, text, source: "you" | "others" }]
-  lines           Json                   @default("[]")
+  documentName  String
+  userId        String
+  status        MeetingRecordingStatus @default(Pending)
+  // Set by the page's Stop button; checked by the chunks route response.
+  stopRequested Boolean                @default(false)
+
+  // The occurrence this recording belongs to, when started from a scheduled
+  // meeting's note. Nullable: ad-hoc recordings on any writable doc have
+  // neither.
+  scheduledMeetingId String?
+  scheduledMeeting   ScheduledMeeting? @relation(fields: [scheduledMeetingId], references: [id], onDelete: SetNull)
+  occurrenceStart    DateTime?
+
+  // Channels with at least one stored chunk: "mic" | "call".
+  channels      String[]  @default([])
+  // Segment start offsets in seconds, index = segment. Continue appends one;
+  // segment 0's start is implicitly 0.
+  segmentStarts Float[]   @default([])
+  // Highest seq stored per channel per segment, for the job description.
+  chunkIndex    Json      @default("{}") // { mic: [41, 12], call: [41] }
+  lastChunkAt   DateTime?
+
+  // Per-channel word arrays with absolute timestamps; lines derive from these.
+  words    Json @default("{}") // { mic: [{ s, e, w, sp }], call: [...] }
+  // [{ at, end, text, channel, speaker? }] speaker is "mic:1", "call:2", …
+  lines    Json @default("[]")
+  speakers Json @default("{}") // { "mic:1": "<userId>" | "Alex" }
+
   // Seconds recorded across finished sessions. Continue starts a new session
-  // whose lines are stamped from here, so the transcript reads as one.
-  recordedSeconds Float                  @default(0)
+  // whose timeline is stamped from here, so the transcript reads as one.
+  recordedSeconds Float     @default(0)
   error           String?
-  createdAt       DateTime               @default(now())
-  updatedAt       DateTime               @updatedAt
+  insertedAt      DateTime? // notes or transcript inserted into the doc
+  finalizedAt     DateTime? // audio deleted
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Enhance (specs/meeting-notes-model.md §2): the last server-verified merge
+  // plan, keyed to the editor snapshot it was computed from. A function of
+  // (recording, note at time T); dies with the row under the janitor.
+  notes      Json? // EnhancePlan, server-verified, plus snapshotAt
+  enhancedAt DateTime? // set only when a client successfully applied `notes`
+  enhancedBy String? // display name at apply time, not a User relation
+
+  // Tasks created from this recording's action items (specs/meeting-notes-model.md §4).
+  tasks Task[]
+  // Plus a partial unique index, MeetingRecording_activeDocument_key, on
+  // (documentName) WHERE status IN (Pending, Recording, Stopped, Processing):
+  // one live recording per document. Raw SQL in migration
+  // 20261010140000_recording_active_per_document; Prisma can't express it.
 
   @@index([userId])
+  @@index([scheduledMeetingId, occurrenceStart])
 }
 
 enum MeetingRecordingStatus {
   Pending
   Recording
   Stopped
+  Processing
+  Done
   Failed
 }
 
@@ -2362,12 +2624,18 @@ model ScheduledMeeting {
   // shows up there next to the meetings scoped to the Core group itself.
   isCoreMeeting Boolean @default(false)
 
+  // Per-series opt-out for the "Record this meeting?" prompt (notification,
+  // in-page banner, desktop one-tap). Set false by the organizer or Core;
+  // silences all three surfaces for everyone on this series.
+  recordPrompt Boolean @default(true)
+
   exceptions    MeetingException[]
   notifications Notification[]
   reminderLogs  MeetingReminderLog[]
   attendance    MeetingAttendance[]
   timeEntries   TimeEntry[]
   timeProposals MeetingTimeProposal[]
+  recordings    MeetingRecording[]
 
   createdAt DateTime @default(now())
 
@@ -2581,6 +2849,13 @@ model Notification {
   rsvp               MeetingRsvp?
   rsvpAt             DateTime?
 
+  // The occurrence (ORIGINAL start, see resolveOccurrence) this notification is
+  // about — set alongside scheduledMeetingId on meeting.record_prompt rows so
+  // the desktop feed can resolve the occurrence's note and video link without
+  // re-deriving it from dueAt (which carries the EFFECTIVE start on
+  // meeting.reminder, a different thing).
+  occurrenceStart DateTime?
+
   // Set on notifications fired for an InterviewAssignment. The tasks loader
   // hides the notification once the assignment is no longer Active or the
   // interview is no longer Scheduled, so reassignments / cancellations clear
@@ -2691,15 +2966,29 @@ enum TimeProposalStatus {
 // A dedicated log (rather than deduping on Notification) because per-user
 // preferences can deliver a reminder by email/DM with no in-app row at all.
 model MeetingReminderLog {
-  id                 String   @id @default(cuid())
+  id                 String              @id @default(cuid())
   scheduledMeetingId String
   occurrenceStart    DateTime
   userId             String
-  sentAt             DateTime @default(now())
+  // Reminder = the existing 15-min-lead meeting.reminder; RecordPrompt = the
+  // "record this meeting?" start notification (PR 2). Distinguishes the two
+  // idempotency keys sharing this ledger. Named MeetingReminderKind, not
+  // ReminderKind, because TaskReminder already owns that enum name
+  // (DayBefore/AtDeadline) — a global namespace collision, not a modeling
+  // choice.
+  kind               MeetingReminderKind @default(Reminder)
+  sentAt             DateTime            @default(now())
 
   meeting ScheduledMeeting @relation(fields: [scheduledMeetingId], references: [id], onDelete: Cascade)
 
-  @@unique([scheduledMeetingId, occurrenceStart, userId])
+  @@unique([scheduledMeetingId, occurrenceStart, userId, kind])
+}
+
+enum MeetingReminderKind {
+  Reminder
+  RecordPrompt
+  // The post-meeting transcript-ready nudge (specs/meeting-notes-model.md).
+  TranscriptReady
 }
 
 // Per-user calendar preferences. Lazily upserted on first write.
@@ -3313,6 +3602,18 @@ model Project {
   termCount      Int           @default(1)
   status         ProjectStatus @default(Active)
 
+  // Core-only opt-out: hides the Record button and all three "Record this
+  // meeting?" prompts for this project's meetings.
+  recordingPolicy RecordingPolicy @default(Allowed)
+
+  // Template page (a Page in this project's Drive, isTemplate = true) whose
+  // body seeds a fresh meeting note for this project (see attachMeetingNote
+  // in app/lib/scheduled-meeting.ts). Set from the template page itself
+  // ("Use for this project's meeting notes"). onDelete SetNull: deleting the
+  // template just unbinds it — new notes fall back to the Lab default for the
+  // meeting's type, same as an unset binding.
+  meetingNoteTemplateId String?
+
   // AI "TL;DR" of the project's work status, shown under the Progress-tab
   // status bar. Cached here (shared across viewers) and regenerated only when
   // the underlying work changes — aiTldrInputHash fingerprints the facts the
@@ -3394,9 +3695,10 @@ model Project {
   // Toggled by Core/Admin in the project settings modal.
   isPrivate Boolean @default(false)
 
-  overviewPage      Page? @relation("ProjectOverview", fields: [overviewPageId], references: [id])
-  prdPage           Page? @relation("ProjectPRD", fields: [prdPageId], references: [id])
-  publicWriteupPage Page? @relation("ProjectPublicWriteup", fields: [publicWriteupPageId], references: [id], onDelete: SetNull)
+  overviewPage        Page? @relation("ProjectOverview", fields: [overviewPageId], references: [id])
+  prdPage             Page? @relation("ProjectPRD", fields: [prdPageId], references: [id])
+  publicWriteupPage   Page? @relation("ProjectPublicWriteup", fields: [publicWriteupPageId], references: [id], onDelete: SetNull)
+  meetingNoteTemplate Page? @relation("ProjectMeetingNoteTemplate", fields: [meetingNoteTemplateId], references: [id], onDelete: SetNull)
 
   partners          ProjectPartner[]
   // The project's planned term set — the source of truth for which terms the
@@ -3588,6 +3890,11 @@ enum ProjectStatus {
   Active
   Paused
   Archived
+}
+
+enum RecordingPolicy {
+  Allowed
+  Disabled
 }
 
 // Continuing-or-not flag per project per term. Both PM and Partner Relations
@@ -3796,6 +4103,13 @@ model Task {
   // label survives reassignment.
   domainId String?
 
+  // Backlinks the meeting recording whose action item created this task
+  // (specs/meeting-notes-model.md §4) — "tasks from this meeting" is a query,
+  // and a re-run never creates a duplicate (MeetingRecording.notes.actionItems
+  // carries the taskId back). Nullable: most tasks aren't meeting-sourced.
+  // onDelete SetNull so discarding the recording doesn't take the task with it.
+  sourceRecordingId String?
+
   // Subtasks: simple checklist field rather than hierarchical Task→Task
   // children (Linear/Notion style).
   // JSON shape: [{ "text": "...", "done": false }]
@@ -3823,15 +4137,16 @@ model Task {
   githubIssueNumber Int?
   githubIssueUrl    String?
 
-  project   Project        @relation(fields: [projectId], references: [id])
-  epic      Epic?          @relation(fields: [epicId], references: [id])
-  story     UserStory?     @relation(fields: [storyId], references: [id])
-  domain    Domain?        @relation(fields: [domainId], references: [id])
-  assignees TaskAssignee[]
-  comments  TaskComment[]
-  reminders TaskReminder[]
-  files     TaskFileLink[]
-  views     TaskView[]
+  project         Project           @relation(fields: [projectId], references: [id])
+  epic            Epic?             @relation(fields: [epicId], references: [id])
+  story           UserStory?        @relation(fields: [storyId], references: [id])
+  domain          Domain?           @relation(fields: [domainId], references: [id])
+  sourceRecording MeetingRecording? @relation(fields: [sourceRecordingId], references: [id], onDelete: SetNull)
+  assignees       TaskAssignee[]
+  comments        TaskComment[]
+  reminders       TaskReminder[]
+  files           TaskFileLink[]
+  views           TaskView[]
 
   // Dependency edges, the same two-sided shape epics and stories carry.
   // `dependencies` are rows where this task waits on another; `blocking` are
@@ -3847,6 +4162,7 @@ model Task {
   @@unique([githubRepo, githubIssueNumber], name: "task_github_issue_unique")
   @@index([projectId])
   @@index([storyId])
+  @@index([sourceRecordingId])
 }
 
 // Directed edge: `task` waits on `dependsOnTask`. Both sides belong to the
@@ -4609,6 +4925,7 @@ model Form {
   educationOfferingsAsApplicationForm EducationOffering[]             @relation("EducationOfferingApplicationForm")
   educationBindings                   EducationFormBinding[]          @relation("EducationFormBindings")
   hiringCyclesAsApplicationForm       ApplicationCycle[]              @relation("CycleApplicationForm")
+  hiringCyclesAsContinuedInterestForm ApplicationCycle[]              @relation("CycleContinuedInterestForm")
   hiringDomainChallenges              CycleDomainForm[]
 
   @@index([folderPageId])
@@ -4649,6 +4966,7 @@ model FormVersion {
   // Internal hiring applications that pinned this version (see Application.applicationFormVersionId).
   hiringApplicationsAsPinnedForm      Application[]       @relation("ApplicationApplicationForm")
   hiringDomainApplicationsAsChallenge DomainApplication[] @relation("DomainApplicationChallengeForm")
+  hiringDomainApplicationsAsContinued DomainApplication[] @relation("DomainApplicationContinuedInterestForm")
 
   @@unique([formId, versionNumber])
   @@index([formId, versionNumber])
@@ -4985,6 +5303,13 @@ model Page {
   meetingNote            ScheduledMeeting? @relation("MeetingNotePage", fields: [meetingNoteId], references: [id])
   meetingOccurrenceStart DateTime?
 
+  // Set when this page is a meeting notebook: the one Drive document that
+  // holds a run of meeting notes, each note a child page shown as a side tab
+  // (Google Docs tabs). The key says which notes belong in it (see
+  // app/lib/meeting-notebook.ts) and makes find-or-create race safe. The
+  // notebook has no body of its own; opening it lands on a tab.
+  notebookKey String? @unique
+
   // Set when this page is a meeting's linked whiteboard (kind = Whiteboard).
   // Parallel to meetingNoteId: a meeting can have a note doc and/or a whiteboard,
   // each 1:1. See ScheduledMeeting.whiteboardPage.
@@ -4996,6 +5321,26 @@ model Page {
   // The new page is created by byte-copying the CollabDocument state into a
   // fresh doc id — no structural schema change, just a new row.
   isTemplate Boolean @default(false)
+
+  // Marks this (Lab, isTemplate) page as the lab-wide default meeting-note
+  // template for this meeting type — used by attachMeetingNote when a
+  // meeting's project has no template of its own bound. @@unique below lets
+  // every type have at most one default page; Postgres allows any number of
+  // NULL rows, so most pages are untouched by the constraint. Set Core-only
+  // from the template page's menu or the Drive templates gallery; setting it
+  // on a new page clears it from whichever page held it before.
+  defaultMeetingNoteFor MeetingType?
+
+  // Set by attachMeetingNote when this note was seeded from a template:
+  // seededFromPageId is that template's id (a plain id, not a relation — the
+  // template may later be deleted or unmarked without touching the note),
+  // and seededTemplateHash is the hash of the body text written at seed time.
+  // Together they let a later read answer "is this still the untouched
+  // template?" without re-fetching the template (see isUntouchedTemplate in
+  // app/lib/meeting-note-template.ts). Both null = an unseeded (today:
+  // blank) note, same as before this field existed.
+  seededFromPageId   String?
+  seededTemplateHash String?
 
   parent   Page?  @relation("PageTree", fields: [parentPageId], references: [id])
   children Page[] @relation("PageTree")
@@ -5010,9 +5355,15 @@ model Page {
   // dispatches to the right table at the app layer (see expansion_plan
   // §"Page Tree"). Two FK constraints on one column would conflict at the
   // DB level.
-  projectAsOverview      Project? @relation("ProjectOverview")
-  projectAsPRD           Project? @relation("ProjectPRD")
-  projectAsPublicWriteup Project? @relation("ProjectPublicWriteup")
+  projectAsOverview                  Project?  @relation("ProjectOverview")
+  projectAsPRD                       Project?  @relation("ProjectPRD")
+  projectAsPublicWriteup             Project?  @relation("ProjectPublicWriteup")
+  // Reverse of Project.meetingNoteTemplateId. A plain list (not @unique on
+  // that FK), so in principle more than one project could point at the same
+  // template page — the UI only ever sets it from the page itself, one
+  // project at a time, but nothing stops two different pages' owners from
+  // binding the same shared template.
+  projectsUsingAsMeetingNoteTemplate Project[] @relation("ProjectMeetingNoteTemplate")
 
   // Reverse of ProcessFolderBinding.folderPageId — the process folder-binding
   // rows (project meeting-notes folder, offering Forms folder, Core Agreements
@@ -5034,6 +5385,7 @@ model Page {
   searchIndex PageSearchIndex?
 
   @@unique([meetingNoteId, meetingOccurrenceStart])
+  @@unique([defaultMeetingNoteFor])
   @@index([workspaceType, workspaceId, parentPageId])
   @@index([archivedAt])
   // Trigram index behind the typo-tolerant title match in doc-search.server.ts
@@ -6589,9 +6941,11 @@ model Room {
   // their history and still resolve on old meetings.
   archivedAt  DateTime?
 
-  bookings RoomBooking[]
-  displays RoomDisplay[]
-  meetings ScheduledMeeting[]
+  bookings         RoomBooking[]
+  displays         RoomDisplay[]
+  meetings         ScheduledMeeting[]
+  interviews       Interview[]
+  interviewConfigs InterviewConfig[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -6601,6 +6955,10 @@ enum RoomBookingSource {
   Web
   Display
   App
+  // One applicant interview (Interview.roomBooking).
+  Interview
+  // A hiring cycle's standing hold on an interview room (InterviewConfig.holdRooms).
+  InterviewHold
 }
 
 // A lightweight hold on a room with no invitees ("I need the room 2-3pm").
@@ -6618,16 +6976,56 @@ model RoomBooking {
   end    DateTime
   source RoomBookingSource @default(Web)
 
+  // RFC 5545 RRULE; `start`/`end` are the first occurrence and give the
+  // duration. Null = a single booking.
+  recurrenceRule String?
+  exceptions     RoomBookingException[]
+
   // Soft-cancel so an early "I'm done" on the display frees the rest of the
   // slot without erasing that the room was used.
   cancelledAt       DateTime?
   cancelledByUserId String?
   cancelledBy       User?     @relation("RoomBookingCancelledBy", fields: [cancelledByUserId], references: [id], onDelete: SetNull)
 
+  // The Google calendar event that booked this room from its Location field,
+  // so deleting or retiming that event follows through to the hold. Null for
+  // holds made on /rooms or by a display.
+  sourceEventId String?
+
+  // When the last occurrence of a repeating booking ends (a series must have
+  // an end), so schedule reads can skip finished series. Null for a single
+  // booking.
+  seriesEnd DateTime?
+
+  // The hiring cycle an Interview / InterviewHold booking belongs to. Bookings
+  // of the same cycle never conflict with each other (interviews sit inside
+  // the cycle's hold); every other writer is blocked by both.
+  applicationCycleId String?
+  applicationCycle   ApplicationCycle? @relation(fields: [applicationCycleId], references: [id], onDelete: Cascade)
+  interview          Interview?
+
   createdAt DateTime @default(now())
 
   @@index([roomId, start])
   @@index([userId, start])
+  @@index([userId, sourceEventId])
+  @@index([applicationCycleId, source])
+}
+
+// Per-occurrence override/cancellation for a recurring RoomBooking. Mirrors
+// MeetingException field-for-field so expandOccurrences (meeting-occurrences.ts)
+// works unchanged against either.
+model RoomBookingException {
+  id                  String      @id @default(cuid())
+  roomBookingId       String
+  booking             RoomBooking @relation(fields: [roomBookingId], references: [id], onDelete: Cascade)
+  // The original occurrence start being overridden.
+  originalStart       DateTime
+  overrideStart       DateTime?
+  overrideDurationMin Int?
+  cancelled           Boolean     @default(false)
+
+  @@unique([roomBookingId, originalStart])
 }
 
 // A paired door display (the iPad outside a room). It authenticates with its
@@ -6649,6 +7047,8 @@ model RoomDisplay {
   tokenHash   String?   @unique
   activatedAt DateTime?
   lastSeenAt  DateTime?
+  // "0.2.0 (2)", sent by the iPad on every request; shown in Core ▸ Rooms.
+  appVersion  String?
   revokedAt   DateTime?
 
   createdByUserId String?
@@ -6715,6 +7115,10 @@ model BlogPost {
   visibility     BlogVisibility @default(Internal)
   // Null = draft, seen only by its author and Core.
   publishedAt    DateTime?
+
+  // Set while a draft waits for an Admin to approve it; cleared once it is
+  // published or withdrawn.
+  submittedAt    DateTime?
   // Core's front page arrangement: pinned posts lead in rank order (lowest
   // first); null = unpinned, falling in behind them newest first.
   frontPageRank  Int?

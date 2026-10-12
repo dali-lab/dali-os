@@ -11,6 +11,8 @@ import {
 } from "~/partners/lib/magic-link.server";
 import { findOrLinkPartnerContact } from "~/partners/lib/partner-auth.server";
 import { PARTNER_LINK_EXPIRY } from "~/partners/lib/magic-link";
+import { useOsShellRoot } from "~/lib/os-shell";
+import { buttonClasses } from "~/components/ui/Button";
 
 export const meta: Route.MetaFunction = () => [
   { title: "DALI OS · Sign in" },
@@ -79,20 +81,20 @@ export default function PartnerAuthVerify({
   const submitting = navigation.state === "submitting";
   const error = actionData && "error" in actionData ? actionData.error : null;
 
+  useOsShellRoot(true);
+
   return (
-    <div className="min-h-screen bg-page flex items-center justify-center px-6">
-      <div className="w-full max-w-sm text-center">
-        <img
-          src="/logo-blue.svg"
-          alt="DALI Lab"
-          className="h-12 w-auto mx-auto mb-8"
-        />
+    <div className="os-shell flex min-h-screen items-center justify-center bg-os-bg px-6 text-foreground">
+      <div className="w-full max-w-sm rounded-os-card bg-os-card p-8 text-center">
+        <span className="font-os-logo text-2xl font-semibold text-os-accent">
+          dali.os
+        </span>
         {valid && !error ? (
           <>
-            <h1 className="font-heading text-2xl font-bold text-dark-blue mb-2">
+            <h1 className="font-heading text-2xl font-bold text-foreground mt-6 mb-2">
               You're almost in
             </h1>
-            <p className="text-muted-foreground mb-8">
+            <p className="text-os-grey mb-8">
               Continue to finish signing in to the DALI partner portal.
             </p>
             <Form method="post">
@@ -100,7 +102,7 @@ export default function PartnerAuthVerify({
               <button
                 type="submit"
                 disabled={submitting}
-                className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
+                className={buttonClasses("primary", "md", "w-full")}
               >
                 {submitting ? "Signing in…" : "Continue to DALI OS"}
               </button>
@@ -108,17 +110,14 @@ export default function PartnerAuthVerify({
           </>
         ) : (
           <>
-            <h1 className="font-heading text-2xl font-bold text-dark-blue mb-2">
+            <h1 className="font-heading text-2xl font-bold text-foreground mt-6 mb-2">
               Link expired
             </h1>
-            <p className="text-muted-foreground mb-8">
+            <p className="text-os-grey mb-8">
               {error ??
                 `This sign-in link is invalid or has expired. Sign-in links work once and expire after ${PARTNER_LINK_EXPIRY}.`}
             </p>
-            <a
-              href="/partner/login"
-              className="inline-block rounded-xl bg-dark-blue text-white font-heading font-semibold px-6 py-3 hover:opacity-90 transition"
-            >
+            <a href="/partner/login" className={buttonClasses("primary", "md", "inline-block")}>
               Request a new link
             </a>
           </>

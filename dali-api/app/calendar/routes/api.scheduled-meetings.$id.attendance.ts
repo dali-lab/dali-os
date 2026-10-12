@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.scheduled-meetings.$id.attendance";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth, forbidden } from "~/lib/auth";
+import { requireAuth, forbidden, isNonMember } from "~/lib/auth";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
@@ -32,7 +32,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
-  if (auth.user.type === "applicant") return forbidden(request);
+  if (await isNonMember(auth, request)) return forbidden(request);
 
   if (request.method !== "POST") {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));

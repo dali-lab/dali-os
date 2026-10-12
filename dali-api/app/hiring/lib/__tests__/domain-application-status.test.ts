@@ -6,20 +6,44 @@ function makeDa(overrides: {
   decisions?: Array<{ stage: string; type: string; createdAt: Date }>;
   interviews?: Array<{ status: string }>;
   closureReason?: "AcceptedElsewhere" | null;
+  submittedAt?: Date | null;
 } = {}): any {
   return {
     application: { statusUpdates: overrides.statusUpdates ?? [] },
     decisions: overrides.decisions ?? [],
     interviews: overrides.interviews ?? [],
     closureReason: overrides.closureReason ?? null,
+    submittedAt: overrides.submittedAt ?? null,
   };
 }
 
 describe("inferDomainApplicationStatus", () => {
-  it("returns ApplicationOpen when cycle is Open and never submitted", () => {
+  it("returns ApplicationOpen when never submitted", () => {
     expect(
       inferDomainApplicationStatus(makeDa(), "Open"),
     ).toBe("ApplicationOpen");
+  });
+
+  it("returns ApplicationOpen for a DA added after the application was submitted, regardless of cycle status", () => {
+    // The application-level Submitted update exists, but this particular DA's
+    // own submittedAt is still null (e.g. the domain was added afterward).
+    const status = inferDomainApplicationStatus(
+      makeDa({ statusUpdates: [{ newStatus: "Submitted" }], submittedAt: null }),
+      "UnderReview",
+    );
+    expect(status).toBe("ApplicationOpen");
+  });
+
+  it("a never-submitted DA reads ApplicationOpen even with a Released decision and a Completed cycle", () => {
+    const status = inferDomainApplicationStatus(
+      makeDa({
+        statusUpdates: [{ newStatus: "Submitted" }],
+        submittedAt: null,
+        decisions: [{ type: "Rejected", stage: "Released", createdAt: new Date() }],
+      }),
+      "Completed",
+    );
+    expect(status).toBe("ApplicationOpen");
   });
 
   it("returns Withdrawn when application has a Withdrawn status update (terminal)", () => {
@@ -56,7 +80,7 @@ describe("inferDomainApplicationStatus", () => {
   it("returns Pending when submitted and no Released decision", () => {
     expect(
       inferDomainApplicationStatus(
-        makeDa({ statusUpdates: [{ newStatus: "Submitted" }] }),
+        makeDa({ statusUpdates: [{ newStatus: "Submitted" }], submittedAt: new Date() }),
         "UnderReview",
       ),
     ).toBe("Pending");
@@ -91,5 +115,21 @@ describe("inferDomainApplicationStatus", () => {
       "UnderReview",
     );
     expect(status).toBe("Withdrawn");
+  });
+
+  it("an applicant cancel is a withdrawal, but an admin cancel leaves them invited to rebook", () => {
+    const invited = [{ type: "InvitedToInterview", stage: "Released", createdAt: new Date() }];
+    const base = { statusUpdates: [{ newStatus: "Submitted" }], decisions: invited, submittedAt: new Date() };
+    expect(
+      inferDomainApplicationStatus(
+        makeDa({ ...base, interviews: [{ status: "CancelledByApplicant" }] }),
+        "UnderReview",
+      ),
+    ).toBe("Withdrawn");
+    // The include fragment filters CancelledByAdmin rows out before derivation,
+    // so from the derivation's point of view nothing was ever booked.
+    expect(inferDomainApplicationStatus(makeDa({ ...base, interviews: [] }), "UnderReview")).toBe(
+      "InvitedToInterview",
+    );
   });
 });

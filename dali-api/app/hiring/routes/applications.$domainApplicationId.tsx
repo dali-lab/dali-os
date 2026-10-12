@@ -12,6 +12,7 @@ import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { presignAnswers } from "~/hiring/lib/presign";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { ApplicationViewer } from "~/hiring/components/ApplicationViewer";
+import { loadContinuedInterestView } from "~/hiring/lib/continued-interest.server";
 import { ReviewSummary } from "~/hiring/components/ReviewSummary";
 import { DetailCard } from "~/hiring/components/DetailCard";
 import { ApplicantDetailHeader } from "~/hiring/components/ApplicantDetailHeader";
@@ -33,12 +34,14 @@ import {
 import { findFinalizableDraft } from "~/hiring/lib/decision-pills";
 import { getEducationEngagement } from "~/education/lib/engagement.server";
 import { EducationEngagementPanel } from "~/education/components/EducationEngagementPanel";
+import { getHiringEventEngagement } from "~/hiring/lib/hiring-events.server";
+import { ApplicationEventsPanel } from "~/hiring/components/ApplicationEventsPanel";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { listPriorApplications } from "~/hiring/lib/prior-applications.server";
 import { PriorApplicationsPanel } from "~/hiring/components/PriorApplicationsPanel";
 import { applicationBlindLabel, blindUser } from "~/hiring/lib/anonymization.server";
 import { getApplicantEmailEngagement } from "~/hiring/lib/email-engagement.server";
 import { ApplicantEmailPanel } from "~/hiring/components/ApplicantEmailPanel";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import type { Question, RubricCriterion } from "~/types";
 import { findRound, parseTimeline } from "~/hiring/lib/cycle-timeline";
 import { Select } from "~/components/ui/floating";
@@ -70,6 +73,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       id: true,
       domainId: true,
       answers: true,
+      continuedFromId: true,
+      continuedInterestFormVersionId: true,
+      continuedInterestAnswers: true,
       // Free-form note leads write during Initial delibs as interview prep.
       // The collab layer keeps this column in sync with the live Yjs doc, so
       // reading it directly is safe. Lead-only on the UI.
@@ -228,7 +234,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         startTime: true,
         endTime: true,
         status: true,
-        location: true,
+        room: { select: { id: true, name: true } },
         zoomJoinUrl: true,
         videoUrl: true,
         // Joint outcome — synced from `interview:{id}:recommendation` doc.
@@ -347,7 +353,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       startTime: iv.startTime.toISOString(),
       endTime: iv.endTime.toISOString(),
       status: iv.status,
-      location: iv.location,
+      room: iv.room,
       zoomJoinUrl: iv.zoomJoinUrl,
       videoUrl: iv.videoUrl,
       recommendation: iv.recommendation,
@@ -486,6 +492,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
             }
           : null,
         domain: da.domain,
+        continuedInterest: await loadContinuedInterestView(da),
       },
     ],
   };
@@ -499,15 +506,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     currentApplicationId: da.application.id,
     hideOutcomes: blinded,
   });
-  const emailEngagementEnabled = await isFeatureEnabled(
-    "applicant-email-engagement",
-    auth.user.sub,
-    roles,
-    request,
-  );
-  const emailEngagement = emailEngagementEnabled
-    ? await getApplicantEmailEngagement(da.application.user.id, { blinded })
-    : null;
+  const emailEngagement = await getApplicantEmailEngagement(da.application.user.id, { blinded });
+
+  const applicationEventsEnabled = await isFeatureEnabled("application-events", auth.user.sub, roles, request);
+  const hiringEventEngagement = applicationEventsEnabled
+    ? await getHiringEventEngagement(da.application.user.id)
+    : [];
 
   return {
     applicantName:
@@ -516,9 +520,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         .join(" ")
         .trim() || "Applicant",
     educationEngagement,
+    hiringEventEngagement,
     priorApplications,
     emailEngagement,
     blinded,
+    cycleId,
     cycleName: da.application.applicationCycle.name,
     domainName,
     application,
@@ -636,6 +642,7 @@ export default function ApplicationReadOnlyDetail() {
       </div>
 
       <EducationEngagementPanel entries={data.educationEngagement} />
+      <ApplicationEventsPanel entries={data.hiringEventEngagement} currentCycleId={data.cycleId} />
       <PriorApplicationsPanel
         entries={data.priorApplications}
         outcomesHidden={data.blinded}
@@ -719,7 +726,7 @@ function toInterviewNotesData(iv: InterviewRow): InterviewNotesData {
     startTime: iv.startTime,
     endTime: iv.endTime,
     status: iv.status,
-    location: iv.location,
+    room: iv.room,
     zoomJoinUrl: iv.zoomJoinUrl,
     videoUrl: iv.videoUrl,
     recommendation: iv.recommendation,

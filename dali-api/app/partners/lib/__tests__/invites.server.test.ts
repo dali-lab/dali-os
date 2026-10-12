@@ -2,9 +2,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("~/lib/db", () => ({
   prisma: {
-    // The shared email frame asks whether `email-layout` is on; no rows means
-    // the registry default (off), i.e. the pre-layout frame.
-    featureFlag: { findMany: vi.fn(async () => []) },
     user: { findFirst: vi.fn(), findUnique: vi.fn(), create: vi.fn() },
     dALIMember: { findUnique: vi.fn() },
     partnerContact: { findUnique: vi.fn(), upsert: vi.fn() },

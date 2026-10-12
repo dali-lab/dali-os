@@ -32,6 +32,7 @@ use super::Banner;
 
 const CATEGORY_INVITE: &str = "dali-meeting-invite";
 const CATEGORY_ROW: &str = "dali-notification";
+const CATEGORY_RECORD_PROMPT: &str = "dali-record-prompt";
 const USERINFO_LINK: &str = "link";
 // Shell-local banners still need a unique request identifier; the prefix maps
 // them back to "no row" in the response handler.
@@ -161,7 +162,16 @@ pub fn init(app: &AppHandle) {
         &no_intents,
         UNNotificationCategoryOptions::empty(),
     );
-    center.setNotificationCategories(&NSSet::from_retained_slice(&[invite, row]));
+    let record_prompt = UNNotificationCategory::categoryWithIdentifier_actions_intentIdentifiers_options(
+        &NSString::from_str(CATEGORY_RECORD_PROMPT),
+        &NSArray::from_retained_slice(&[
+            action(super::ACTION_RECORD, "Record"),
+            action(super::ACTION_OPEN, "Open"),
+        ]),
+        &no_intents,
+        UNNotificationCategoryOptions::empty(),
+    );
+    center.setNotificationCategories(&NSSet::from_retained_slice(&[invite, row, record_prompt]));
 
     UN_ACTIVE.store(true, Ordering::Relaxed);
 }
@@ -181,6 +191,8 @@ pub fn raise(app: &AppHandle, banner: Banner) {
     }
     if banner.rsvp {
         content.setCategoryIdentifier(&NSString::from_str(CATEGORY_INVITE));
+    } else if banner.record {
+        content.setCategoryIdentifier(&NSString::from_str(CATEGORY_RECORD_PROMPT));
     } else if banner.is_row() {
         content.setCategoryIdentifier(&NSString::from_str(CATEGORY_ROW));
     }

@@ -1,0 +1,84 @@
+// Shared, client-safe types for the meeting recorder — mirrors the
+// MeetingRecording contract in specs/meeting-transcription.md exactly, so the
+// server and client PRs type-check against the same shape.
+
+import type { TranscriptLine as ServerTranscriptLine } from "~/lib/meeting-transcript";
+import type { StoredEnhanceNotes } from "./enhance-plan";
+
+export type Channel = "mic" | "call";
+
+export type RecordingStatus = "Pending" | "Recording" | "Stopped" | "Processing" | "Done" | "Failed";
+
+/** "mic:1", "call:2", … — a diarized speaker within a channel. */
+export type SpeakerKey = string;
+
+/** Keyed by SpeakerKey; value is a User.id or free-text ("Someone else…"). */
+export type Speakers = Record<SpeakerKey, string>;
+
+/**
+ * Narrows the server's own TranscriptLine (~/lib/meeting-transcript, which
+ * `storedLines` on the server returns) to the v2 shape every line actually
+ * has: `ai-meeting-notes` was off before this release, so there are no
+ * pre-v2 rows with only `source` and no `channel` to fall back to.
+ */
+export type TranscriptLine = ServerTranscriptLine & { channel: Channel; end: number };
+
+export type RosterUser = { userId: string; name: string };
+
+export type StartRecordingResponse = {
+  id: string;
+  link: string;
+  transcriptionEnabled: boolean;
+  aiEnabled: boolean;
+};
+
+export type ChunkResponse = {
+  stopRequested: boolean;
+  behindSeconds: number;
+  lines: TranscriptLine[];
+};
+
+/**
+ * GET /api/meeting-recordings/:id. The owner gets the fuller shape
+ * (stopRequested, total/since paging, error); any other viewer who can read
+ * the note gets the read-only subset — those fields come back undefined.
+ */
+export type PollRecordingResponse = {
+  status: RecordingStatus;
+  channels: Channel[];
+  recordedSeconds: number;
+  lines: TranscriptLine[];
+  speakers: Speakers;
+  /** Server-resolved display name per assigned speaker key (a renamed
+   *  speaker's userId resolved through the user table; free text passes
+   *  through) — covers a speaker renamed to someone outside `roster`. */
+  speakerNames?: Record<SpeakerKey, string>;
+  error?: string | null;
+  stopRequested?: boolean;
+  total?: number;
+  /** Owner only. One entry per session; the last is the current segment. */
+  segmentStarts?: number[];
+  /** Set once notes or the transcript went into the note. */
+  insertedAt?: string | null;
+  /** Owner only. Set once the audio is deleted; Try again is pointless after. */
+  finalizedAt?: string | null;
+  /** The last server-verified Enhance plan, if one has been generated. */
+  notes?: StoredEnhanceNotes | null;
+  enhancedAt?: string | null;
+  enhancedBy?: string | null;
+  /** When the most recent chunk landed, for the "last audio …" status-line
+   *  suffix a follower sees while the owner's device is uploading. */
+  lastChunkAt?: string | null;
+};
+
+/** The note's newest recording (any status) as the page loader saw it, for a
+ *  viewer who didn't start it here (another person, or the same person on
+ *  another device) — the pickup effect's fallback once the viewer's own
+ *  backup and `?transcript=` are ruled out. */
+export type LatestRecording = {
+  id: string;
+  ownerName: string;
+  ownerIsYou: boolean;
+  status: RecordingStatus;
+  since: string;
+};

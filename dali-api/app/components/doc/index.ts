@@ -33,6 +33,18 @@ export {
   type InsertSigningFieldOpts,
 } from "./insert";
 
+// Meeting-notes Enhance: replays applyEnhancePlan's ops against a live
+// editor (meeting-recorder/enhance-plan.ts has the pure merge logic).
+export {
+  renderEnhanceOps,
+  citationHref,
+  appendTaskMentionContent,
+  transcriptToggleBlock,
+  enhanceSnapshotBlocks,
+  findTranscriptToggle,
+  hasTranscriptToggle,
+} from "./enhance-render";
+
 // Schema factory + editor/document types (heavy — client-only imports).
 export {
   buildSchema,

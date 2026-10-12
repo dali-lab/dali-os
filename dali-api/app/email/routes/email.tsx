@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLoaderData, useNavigate, useNavigation, useSearchParams } from "react-router";
 import {
   ArrowLeft,
@@ -18,7 +18,7 @@ import {
   X,
 } from "lucide-react";
 import type { Route } from "./+types/email";
-import { loadEmailPage, submitEmailAction } from "~/email/lib/email.server";
+import { loadEmailPage, submitEmailAction, type FeedCursor, type FeedThread } from "~/email/lib/email.server";
 import { useOsChrome } from "~/components/os-chrome";
 import { Button, buttonClasses } from "~/components/ui/Button";
 import { IconButton } from "~/components/ui/IconButton";
@@ -33,6 +33,7 @@ import { Composer } from "~/email/components/Composer";
 import { ThreadView } from "~/email/components/ThreadView";
 import { inboxDot, recipientDirectory, senderName, shortDate } from "~/email/lib/format";
 import { MAIL_FOLDERS, type MailFolderKey } from "~/email/lib/folders";
+import { mergeFeed, pushedOff, threadRef } from "~/email/lib/feed";
 
 export const meta: Route.MetaFunction = () => [{ title: "Email · DALI OS" }];
 
@@ -83,6 +84,9 @@ export default function EmailPage() {
   const [searching, setSearching] = useState(false);
   const [railCollapsed, setRailCollapsed] = useState(false);
   const [readerExpanded, setReaderExpanded] = useState(false);
+  // Pages past the loader's first one, kept only while the list shows the same mail.
+  const [older, setOlder] = useState<{ scope: string; threads: FeedThread[]; next: FeedCursor } | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const inboxes = data.accounts.filter((a) => !a.archived);
   const connected = inboxes.filter((a) => a.connected);
@@ -95,18 +99,25 @@ export default function EmailPage() {
   const totalUnread = Object.values(data.unread).reduce((sum, n) => sum + n, 0);
   const openInbox = data.accounts.find((a) => a.id === data.inbox);
   const personalInbox = data.accounts.find((a) => a.kind === "Personal");
+  const scope = [data.view, data.inbox, data.folder, data.query, params.get("in")].join("|");
+  const paged = older?.scope === scope ? older : null;
+  const threads = useMemo(
+    () => (paged ? mergeFeed(data.feed.threads, paged.threads) : data.feed.threads),
+    [data.feed.threads, paged],
+  );
+  const nextPage = paged ? paged.next : data.feed.next;
 
   const directory = useMemo(() => {
     const selectedMessages = data.selected && !data.selected.error ? data.selected.messages : [];
     return recipientDirectory(
       [
-        ...data.feed.threads.map((t) => t.from),
+        ...threads.map((t) => t.from),
         ...selectedMessages.flatMap((m) => [m.from, m.to, m.cc]),
         ...data.drafts.flatMap((d) => [d.to, d.cc, d.bcc]),
       ],
       data.accounts.map((a) => a.address),
     );
-  }, [data.feed.threads, data.selected, data.drafts, data.accounts]);
+  }, [threads, data.selected, data.drafts, data.accounts]);
 
   useEffect(() => {
     try {
@@ -122,6 +133,57 @@ export default function EmailPage() {
       onClick={() => setReaderExpanded((v) => !v)}
     />
   );
+
+  const firstPage = useRef({ scope, threads: data.feed.threads });
+  useEffect(() => {
+    const prev = firstPage.current;
+    firstPage.current = { scope, threads: data.feed.threads };
+    if (prev.scope !== scope) {
+      setOlder(null);
+      return;
+    }
+    const dropped = pushedOff(prev.threads, data.feed.threads);
+    if (dropped.length > 0) setOlder((o) => o && { ...o, threads: [...o.threads, ...dropped] });
+  }, [scope, data.feed.threads]);
+
+  // The loader marks an opened thread read on its first page; older pages are
+  // held here, so they follow along by hand.
+  const setOlderUnread = (ref: string, unread: boolean) =>
+    setOlder((o) => o && { ...o, threads: o.threads.map((t) => (threadRef(t) === ref ? { ...t, unread } : t)) });
+
+  useEffect(() => {
+    if (selectedRef) setOlderUnread(selectedRef, false);
+  }, [selectedRef]);
+
+  const onThreadAction = (intent: "archive" | "markUnread") => {
+    if (!selectedRef) return;
+    if (intent === "markUnread") setOlderUnread(selectedRef, true);
+    // Archiving only takes a thread out of the plain Inbox view.
+    else if (data.folder === "inbox" && !data.query) {
+      setOlder((o) => o && { ...o, threads: o.threads.filter((t) => threadRef(t) !== selectedRef) });
+    }
+  };
+
+  const loadMore = async () => {
+    setLoadingMore(true);
+    try {
+      const query = new URLSearchParams(params);
+      query.set("cursor", JSON.stringify(nextPage));
+      const res = await fetch(`/api/email/threads?${query}`);
+      if (!res.ok) throw new Error(`Load more failed (${res.status})`);
+      const page = (await res.json()) as typeof data.feed;
+      if (page.errors.length > 0) toast.error(`Couldn't load more from ${page.errors.map(labelFor).join(", ")}.`);
+      setOlder((o) => ({
+        scope,
+        threads: [...(o?.scope === scope ? o.threads : []), ...page.threads],
+        next: page.next,
+      }));
+    } catch {
+      toast.error("Couldn't load more mail. Try again.");
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   const toggleRail = () => {
     const next = !railCollapsed;
@@ -401,43 +463,52 @@ export default function EmailPage() {
                     </a>
                   )}
                 </div>
-              ) : data.feed.threads.length === 0 ? (
+              ) : threads.length === 0 ? (
                 <p className="p-6 text-center text-sm text-os-muted">
                   {connected.length === 0 ? "Connect an inbox to see mail" : "Nothing here"}
                 </p>
               ) : (
-                data.feed.threads.map((t) => {
-                  const ref = `${t.accountId}~${t.id}`;
-                  return (
-                    <Link
-                      key={ref}
-                      to={withParams({ t: ref })}
-                      preventScrollReset
-                      className={cn(
-                        "flex flex-col gap-0.5 border-b border-os-container px-3 py-3 first:rounded-t-os-item last:rounded-b-os-item last:border-b-0 hover:bg-os-hover",
-                        selectedRef === ref && "bg-os-hover",
-                      )}
-                    >
-                      <span className="flex items-center gap-2">
-                        {t.unread && (
-                          <Tooltip content={labelFor(t.accountId)}>
-                            <span className={cn("h-2 w-2 shrink-0 rounded-full", dotFor(t.accountId))} />
-                          </Tooltip>
+                <>
+                  {threads.map((t) => {
+                    const ref = threadRef(t);
+                    return (
+                      <Link
+                        key={ref}
+                        to={withParams({ t: ref })}
+                        preventScrollReset
+                        className={cn(
+                          "flex flex-col gap-0.5 border-b border-os-container px-3 py-3 first:rounded-t-os-item last-of-type:rounded-b-os-item last-of-type:border-b-0 hover:bg-os-hover",
+                          selectedRef === ref && "bg-os-hover",
                         )}
-                        <span className={cn("truncate text-sm text-foreground", t.unread && "font-semibold")}>
-                          {data.folder === "sent" ? recipientLabel(t.to) : senderName(t.from)}
-                          {t.messageCount > 1 && <span className="ml-1 text-xs font-normal text-os-muted">{t.messageCount}</span>}
-                        </span>
-                        <span className="ml-auto shrink-0 text-xs text-os-muted">{shortDate(t.date)}</span>
+                      >
+                        <span className="flex items-center gap-2">
+                          {t.unread && (
+                            <Tooltip content={labelFor(t.accountId)}>
+                              <span className={cn("h-2 w-2 shrink-0 rounded-full", dotFor(t.accountId))} />
+                            </Tooltip>
+                          )}
+                          <span className={cn("truncate text-sm text-foreground", t.unread && "font-semibold")}>
+                            {data.folder === "sent" ? recipientLabel(t.to) : senderName(t.from)}
+                            {t.messageCount > 1 && <span className="ml-1 text-xs font-normal text-os-muted">{t.messageCount}</span>}
+                          </span>
+                          <span className="ml-auto shrink-0 text-xs text-os-muted">{shortDate(t.date)}</span>
 
-                      </span>
-                      <span className={cn("truncate text-sm", t.unread ? "font-semibold text-foreground" : "text-foreground")}>
-                        {t.subject}
-                      </span>
-                      <span className="truncate text-xs text-os-muted">{t.snippet}</span>
-                    </Link>
-                  );
-                })
+                        </span>
+                        <span className={cn("truncate text-sm", t.unread ? "font-semibold text-foreground" : "text-foreground")}>
+                          {t.subject}
+                        </span>
+                        <span className="truncate text-xs text-os-muted">{t.snippet}</span>
+                      </Link>
+                    );
+                  })}
+                  {Object.keys(nextPage).length > 0 && (
+                    <div className="flex justify-center pt-2">
+                      <Button variant="ghost" size="sm" onClick={loadMore} disabled={loadingMore}>
+                        {loadingMore ? "Loading…" : "Load more"}
+                      </Button>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </section>
@@ -486,6 +557,7 @@ export default function EmailPage() {
                   directory={directory}
                   expandButton={expandButton}
                   onClose={() => navigate(withParams({ t: null }))}
+                  onThreadAction={onThreadAction}
                 />
               )
             ) : null}

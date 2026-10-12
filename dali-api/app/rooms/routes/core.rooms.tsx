@@ -58,6 +58,7 @@ export async function loader({ request }: Route.LoaderArgs) {
           label: true,
           activatedAt: true,
           lastSeenAt: true,
+          appVersion: true,
           setupCodeExpiresAt: true,
         },
       },
@@ -87,6 +88,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         label: d.label,
         activated: d.activatedAt !== null,
         lastSeenAt: d.lastSeenAt?.toISOString() ?? null,
+        appVersion: d.appVersion,
         setupExpired: !d.activatedAt && (!d.setupCodeExpiresAt || d.setupCodeExpiresAt < new Date()),
       })),
     })),
@@ -387,7 +389,14 @@ function RoomCard({
                   <span className="truncate text-sm text-foreground">{d.label}</span>
                   <span className="flex shrink-0 items-center gap-2">
                     {d.activated ? (
-                      <Pill dot="success">Seen {timeAgo(d.lastSeenAt)}</Pill>
+                      <>
+                        {d.appVersion && (
+                          <span className="text-xs text-muted-foreground" title="App version">
+                            v{d.appVersion}
+                          </span>
+                        )}
+                        <Pill dot="success">Seen {timeAgo(d.lastSeenAt)}</Pill>
+                      </>
                     ) : d.setupExpired ? (
                       <Pill dot="danger">Setup code expired</Pill>
                     ) : (

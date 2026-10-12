@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useFetcher, useNavigate } from "react-router";
 import { FileText, Plus, X } from "lucide-react";
@@ -40,8 +40,12 @@ export function OpenMeetingNoteButton({
 }) {
   const fetcher = useFetcher<{ ok?: boolean; error?: string; notePageId?: string }>();
   const navigate = useNavigate();
+  // Guards against stale fetcher.data from an earlier submit navigating a
+  // fresh click away before it has even been made.
+  const submittedRef = useRef(false);
   useEffect(() => {
-    if (fetcher.state === "idle" && fetcher.data?.notePageId) {
+    if (submittedRef.current && fetcher.state !== "submitting" && fetcher.data?.notePageId) {
+      submittedRef.current = false;
       navigate(`/documents/${fetcher.data.notePageId}`);
     }
   }, [fetcher.state, fetcher.data, navigate]);
@@ -51,12 +55,13 @@ export function OpenMeetingNoteButton({
         type="button"
         className={className}
         disabled={fetcher.state !== "idle"}
-        onClick={() =>
+        onClick={() => {
+          submittedRef.current = true;
           fetcher.submit(
             { intent: "add-meeting-note", meetingId, occurrence: occurrenceStart },
             { method: "post", ...(actionPath ? { action: actionPath } : {}) },
-          )
-        }
+          );
+        }}
       >
         <FileText className="h-3.5 w-3.5 text-os-grey" /> Meeting note
       </button>
@@ -165,10 +170,17 @@ function AddMeetingNoteModal({
   }, [onClose]);
 
   const submitting = fetcher.state !== "idle";
-  // The route action revalidates the calendar loader on success, so the popover
-  // picks up the new note link on its own once we close.
+  // Guards against stale fetcher.data from an earlier submit closing a
+  // freshly reopened modal before this one has submitted anything.
+  const submittedRef = useRef(false);
+  // Closes as soon as the action result arrives rather than waiting for the
+  // loader revalidation that follows to finish — the popover picks up the new
+  // note link on its own once that lands.
   useEffect(() => {
-    if (fetcher.state === "idle" && fetcher.data?.ok) onClose();
+    if (submittedRef.current && fetcher.state !== "submitting" && fetcher.data?.ok) {
+      submittedRef.current = false;
+      onClose();
+    }
   }, [fetcher.state, fetcher.data, onClose]);
 
   const valid = meetingNoteValid(note.state);
@@ -184,6 +196,7 @@ function AddMeetingNoteModal({
     if (payload.meetingTypeLabel) fields.meetingTypeLabel = String(payload.meetingTypeLabel);
     if (payload.projectId) fields.projectId = String(payload.projectId);
     if (payload.noteLocation) fields.noteLocation = JSON.stringify(payload.noteLocation);
+    submittedRef.current = true;
     fetcher.submit(fields, { method: "post", ...(actionPath ? { action: actionPath } : {}) });
   }
 

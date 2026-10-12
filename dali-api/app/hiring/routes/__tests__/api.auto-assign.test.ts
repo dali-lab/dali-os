@@ -80,6 +80,13 @@ describe("auto-assign action — withdrawn applications are skipped", () => {
     });
   });
 
+  it("excludes DomainApplications that were never themselves submitted", async () => {
+    await callAction();
+
+    const where = mockPrisma.domainApplication.findMany.mock.calls[0][0].where;
+    expect(where.submittedAt).toEqual({ not: null });
+  });
+
   it("does not create reviews when there are no qualifying applications", async () => {
     mockPrisma.domainApplication.findMany.mockResolvedValue([]);
 

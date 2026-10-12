@@ -14,6 +14,7 @@ import {
   GraduationCap,
 } from "lucide-react";
 import { Modal } from "./Modal";
+import { Button } from "./ui/Button";
 
 const DONE_KEY = "dalios-launch-welcome-seen-v1";
 const STEP_KEY = "dalios-launch-tour-step-v1";
@@ -576,14 +577,10 @@ export function LaunchWelcome({
             </p>
           </div>
           <div className="flex items-center justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={startTour}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-accent-coral px-4 py-2 text-sm font-semibold text-white hover:bg-accent-coral/90"
-            >
+            <Button onClick={startTour}>
               Show me around
               <ArrowRight className="w-4 h-4" />
-            </button>
+            </Button>
           </div>
         </div>
       </Modal>
@@ -624,9 +621,9 @@ export function LaunchWelcome({
       )}
 
       <div className="fixed bottom-4 right-4 z-50 w-80 max-w-[calc(100vw-2rem)] pointer-events-auto">
-        <div className="bg-card border border-border rounded-2xl shadow-brand-2 p-4 flex flex-col gap-3">
+        <div className="rounded-os-card border border-os-container bg-os-card shadow-[0_16px_40px_var(--color-os-shadow)] p-4 flex flex-col gap-3">
           <div className="flex items-start justify-between gap-2">
-            <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-accent-coral">
+            <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-os-accent">
               {isFinal ? (
                 <PartyPopper className="w-4 h-4" />
               ) : arrived ? (
@@ -671,7 +668,7 @@ export function LaunchWelcome({
                 className={
                   "h-1 rounded-full flex-1 " +
                   (i < step || (i === step && arrived) || isFinal
-                    ? "bg-accent-coral"
+                    ? "bg-os-accent"
                     : "bg-muted-foreground/20")
                 }
               />
@@ -680,33 +677,20 @@ export function LaunchWelcome({
 
           <div className="flex items-center justify-end gap-2 pt-1">
             {isFinal ? (
-              <button
-                type="button"
-                onClick={finishAndGoHome}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-accent-coral px-3 py-1.5 text-sm font-semibold text-white hover:bg-accent-coral/90"
-              >
+              <Button size="sm" onClick={finishAndGoHome}>
                 Back to home
-              </button>
+              </Button>
             ) : arrived ? (
               <>
                 {current?.arrivedAction && (
-                  <button
-                    type="button"
-                    onClick={current.arrivedAction.onClick}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-accent-coral px-3 py-1.5 text-sm font-semibold text-accent-coral hover:bg-accent-coral/10"
-                  >
+                  <Button variant="secondary" size="sm" onClick={current.arrivedAction.onClick}>
                     {current.arrivedAction.label}
-                  </button>
+                  </Button>
                 )}
-                <button
-                  ref={nextButtonRef}
-                  type="button"
-                  onClick={advance}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-accent-coral px-3 py-1.5 text-sm font-semibold text-white hover:bg-accent-coral/90"
-                >
+                <Button ref={nextButtonRef} size="sm" onClick={advance}>
                   Next
                   <ArrowRight className="w-4 h-4" />
-                </button>
+                </Button>
               </>
             ) : (
               <>

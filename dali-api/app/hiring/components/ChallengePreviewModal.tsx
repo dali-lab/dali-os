@@ -26,7 +26,7 @@ export function ChallengePreviewModal({
       open
       onClose={onClose}
       labelledBy={headingId}
-      containerClassName="bg-card rounded-2xl shadow-xl max-w-2xl w-full mx-4 p-6 max-h-[85vh] overflow-y-auto"
+      containerClassName="bg-card rounded-os-card shadow-xl max-w-2xl w-full mx-4 p-6 max-h-[85vh] overflow-y-auto"
     >
       <div className="space-y-5">
         <ModalHeader

@@ -12,6 +12,7 @@ import { generateCandidateSlots, isInterviewerFree } from "~/hiring/lib/scheduli
 import { APPLICATION_TZ } from "~/lib/timezone";
 import { interviewerCalendars } from "~/hiring/lib/interview-availability.server";
 import { blockLabel, delibRounds, parseTimeline } from "~/hiring/lib/cycle-timeline";
+import { domainCloseDate } from "~/hiring/lib/domain-windows";
 import { McpNotFoundError, McpForbiddenError } from "../../registry";
 
 export const GET_HIRING_CYCLE_TOOL = {
@@ -60,6 +61,7 @@ export async function runGetHiringCycle(userId: string, input: Input): Promise<u
         select: {
           domainId: true,
           isReady: true,
+          closeDate: true,
           domain: { select: { name: true, displayName: true } },
         },
       },
@@ -163,6 +165,7 @@ export async function runGetHiringCycle(userId: string, input: Input): Promise<u
       domainId: d.domainId,
       name: d.domain.displayName ?? d.domain.name,
       isReady: d.isReady,
+      closeDate: domainCloseDate(d, cycle)?.toISOString() ?? null,
     })),
     interviewConfig: interviewConfig
       ? {

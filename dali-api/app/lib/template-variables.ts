@@ -27,9 +27,13 @@ export const TEMPLATE_VARIABLES_REGISTRY = {
     description: "The DALI domain the application is for (e.g. Engineering).",
     contexts: ["email"],
   },
-  time: { description: "Interview start time, formatted in Eastern Time.", contexts: ["email"] },
-  location: { description: "Interview location (Pod or online).", contexts: ["email"] },
+  time: {
+    description: "Interview or event start time, formatted in Eastern Time.",
+    contexts: ["email"],
+  },
+  location: { description: "Interview or event location.", contexts: ["email"] },
   meetingUrl: { description: "Zoom join URL for online interviews.", contexts: ["email"] },
+  eventTitle: { description: "The application event's title.", contexts: ["email"] },
   originalCloseDate: {
     description: "The cycle's original close date (pre-extension), formatted in Eastern Time.",
     contexts: ["email"],
@@ -40,6 +44,14 @@ export const TEMPLATE_VARIABLES_REGISTRY = {
   },
   slackUrl: {
     description: "Link to the DALI Slack workspace.",
+    contexts: ["email"],
+  },
+  closeDate: {
+    description: "A domain or cycle close date, formatted in Eastern Time.",
+    contexts: ["email"],
+  },
+  applyUrl: {
+    description: "Link to the cycle's apply page.",
     contexts: ["email"],
   },
 

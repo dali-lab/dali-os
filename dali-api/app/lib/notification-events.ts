@@ -31,7 +31,8 @@ export type EventDef = {
     | "Mentorship"
     | "Announcements"
     | "Forms"
-    | "Onboarding";
+    | "Onboarding"
+    | "People";
   label: string;
   description: string;
   // The in-app row IS the workflow surface (RSVP buttons, form todo,
@@ -94,6 +95,29 @@ export const EVENT_TYPES = {
     label: "Proposed time changes",
     description: "When an invitee proposes a new time for a meeting you organized.",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
+  "meeting.record_prompt": {
+    kind: "General",
+    area: "Meetings",
+    label: "Record this meeting?",
+    description: "One minute before a meeting you organize starts, when it can be recorded.",
+    timeSensitive: true,
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
+  "meeting.transcript_ready": {
+    kind: "General",
+    area: "Meetings",
+    label: "Transcript ready",
+    description:
+      "After a meeting you recorded, when its transcript is ready and hasn't been added to the note.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
+  "room.booking_bumped": {
+    kind: "General",
+    area: "Meetings",
+    label: "Room bumped for interviews",
+    description: "When your room booking or meeting loses its room to a hiring cycle's interview hold.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
   },
   "class.schedule_changed": {
     kind: "General",
@@ -242,6 +266,15 @@ export const EVENT_TYPES = {
     lockedInApp: true,
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
+  "hiring.interview_cancelled": {
+    kind: "General",
+    area: "Hiring",
+    label: "Interview cancellations",
+    description: "When an interview you were assigned to is cancelled by the hiring lead.",
+    lockedInApp: true,
+    // The ICS cancellation already goes out by email; this is the in-app tile.
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
   "hiring.fellowship_invite": {
     kind: "General",
     area: "Hiring",
@@ -373,6 +406,36 @@ export const EVENT_TYPES = {
       "When a member is promoted to a new pay level, made an instructor, or added to Core.",
     adminOnly: true,
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
+  "blog.submitted": {
+    kind: "General",
+    area: "Documents",
+    label: "Blog posts to review",
+    description: "When a member submits a blog post for approval.",
+    adminOnly: true,
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
+  "blog.approved": {
+    kind: "General",
+    area: "Documents",
+    label: "Blog post approvals",
+    description: "When a blog post you submitted is approved and published.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
+  "coffee_chat.invite": {
+    kind: "General",
+    area: "People",
+    label: "Coffee chat invites",
+    description: "When someone anonymously invites you to a coffee chat.",
+    lockedInApp: true,
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
+  },
+  "coffee_chat.accepted": {
+    kind: "General",
+    area: "People",
+    label: "Coffee chat accepted",
+    description: "When a coffee chat invite is accepted, whether you sent it or accepted it.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
   },
   // Fallback stamped on rows that predate the registry (schema column
   // default). Never emitted by code; hidden from the settings page.

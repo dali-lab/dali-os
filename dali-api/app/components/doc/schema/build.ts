@@ -29,7 +29,7 @@ import type { Features } from "../features";
 import { CalloutSpec } from "./callout";
 import { ComponentSpec } from "./component";
 import { EmbedSpec } from "./embed";
-import { MentionSpec, PageMentionSpec } from "./mention";
+import { MentionSpec, PageMentionSpec, TaskMentionSpec } from "./mention";
 import { signingInlineSpecs } from "./signing";
 
 // Heading spec with allowToggleHeadings=true enables Notion-style collapsible
@@ -71,6 +71,7 @@ function fullInlineSpecs() {
     ...defaultInlineContentSpecs,
     mention: MentionSpec,
     pageMention: PageMentionSpec,
+    taskMention: TaskMentionSpec,
     ...signingInlineSpecs,
   };
 }
@@ -98,6 +99,7 @@ export function buildSchema(features: Features = {}) {
   if (!features.mentions) {
     delete inline.mention;
     delete inline.pageMention;
+    delete inline.taskMention;
   }
   if (!features.signing) {
     for (const key of Object.keys(signingInlineSpecs)) delete inline[key];

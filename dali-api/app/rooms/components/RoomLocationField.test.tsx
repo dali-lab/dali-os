@@ -9,6 +9,7 @@ import { RoomLocationField } from "./RoomLocationField";
 const rooms = [
   { id: "r1", name: "Studio", description: null, capacity: 8, conflict: null },
   { id: "r2", name: "Lounge", description: null, capacity: null, conflict: "Design crit" },
+  { id: "r3", name: "Annex", description: null, capacity: null, conflict: "Standup", conflictOn: "Oct 14" },
 ];
 
 let container: HTMLDivElement;
@@ -81,6 +82,11 @@ describe("RoomLocationField", () => {
     act(() => option("Lounge").click());
     expect(picked).toEqual([]);
     expect(input().value).toBe("");
+  });
+
+  it("shows a series conflict's date alongside what booked it", () => {
+    act(() => input().focus());
+    expect(option("Annex").textContent).toContain("Unavailable on Oct 14, booked for Standup");
   });
 
   it("typing another location drops the room", () => {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useFetcher } from "react-router";
 import { Shapes, X } from "lucide-react";
@@ -120,8 +120,16 @@ function AddMeetingWhiteboardModal({
   }, [onClose]);
 
   const submitting = fetcher.state !== "idle";
+  // Guards against stale fetcher.data from an earlier submit closing a
+  // freshly reopened modal before this one has submitted anything.
+  const submittedRef = useRef(false);
+  // Closes as soon as the action result arrives rather than waiting for the
+  // loader revalidation that follows to finish.
   useEffect(() => {
-    if (fetcher.state === "idle" && fetcher.data?.ok) onClose();
+    if (submittedRef.current && fetcher.state !== "submitting" && fetcher.data?.ok) {
+      submittedRef.current = false;
+      onClose();
+    }
   }, [fetcher.state, fetcher.data, onClose]);
 
   // With a known type the board reuses it; otherwise the shared fields must be
@@ -137,6 +145,7 @@ function AddMeetingWhiteboardModal({
       if (payload.projectId) fields.projectId = String(payload.projectId);
       if (payload.noteLocation) fields.noteLocation = JSON.stringify(payload.noteLocation);
     }
+    submittedRef.current = true;
     fetcher.submit(fields, { method: "post", ...(actionPath ? { action: actionPath } : {}) });
   }
 

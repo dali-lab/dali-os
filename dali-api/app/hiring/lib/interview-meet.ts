@@ -16,6 +16,7 @@ import type { Prisma } from "~/generated/prisma/client";
 import {
   createGoogleCalendarEvent,
   deleteGoogleCalendarEvent,
+  getGoogleEventMeetUrl,
   patchGoogleCalendarEvent,
   type GoogleAttendee,
 } from "~/lib/google-calendar";
@@ -39,6 +40,18 @@ export async function getHiringCalendarLink(): Promise<{ id: string } | null> {
     select: { id: true },
     orderBy: { linkedAt: "asc" },
   });
+}
+
+// A Google failure on the shared hiring account (a revoked token, a lost
+// Calendar scope) would otherwise only reach the server log while every online
+// interview quietly went out without a link. The link's syncError is what the
+// calendar settings cards already render, so the admin who owns that account
+// sees it there; a later success clears it.
+async function recordHiringLinkHealth(linkId: string, err: unknown): Promise<void> {
+  const syncError = err == null ? null : err instanceof Error ? err.message : String(err);
+  await prisma.userCalendarLink
+    .update({ where: { id: linkId }, data: { syncError, ...(syncError ? {} : { lastSyncedAt: new Date() }) } })
+    .catch(() => {});
 }
 
 const MEET_INCLUDE = {
@@ -106,17 +119,16 @@ function meetAttendees(interview: InterviewWithMeet): GoogleAttendee[] {
 // is connected, the interview is Online, and it hasn't already been provisioned. Await before sending the invite emails so they
 // re-read the row with the link present.
 export async function provisionInterviewMeet(interviewId: string): Promise<void> {
+  const link = await getHiringCalendarLink();
+  if (!link) return;
   try {
-    const link = await getHiringCalendarLink();
-    if (!link) return;
-
     const interview = await prisma.interview.findUnique({
       where: { id: interviewId },
       include: MEET_INCLUDE,
     });
     // Online only, and only once — a re-run (idempotent lease recovery, a double
     // click) must not mint a second conference.
-    if (!interview || interview.location !== "Online" || interview.calendarEventId) return;
+    if (!interview || interview.roomId !== null || interview.calendarEventId) return;
 
     const attendees = meetAttendees(interview);
     if (attendees.length === 0) return;
@@ -135,6 +147,8 @@ export async function provisionInterviewMeet(interviewId: string): Promise<void>
       sendUpdates: "none",
     });
 
+    // meetUrl may still be null here (Google mints the conference after the
+    // insert returns); ensureInterviewMeetUrl picks it up on the next read.
     await prisma.interview.update({
       where: { id: interviewId },
       data: {
@@ -143,8 +157,37 @@ export async function provisionInterviewMeet(interviewId: string): Promise<void>
         videoProvider: "GoogleMeet",
       },
     });
+    await recordHiringLinkHealth(link.id, null);
   } catch (err) {
     console.error("Failed to provision interview Meet:", err);
+    await recordHiringLinkHealth(link.id, err);
+  }
+}
+
+// Fill in a Meet link that wasn't ready when the event was created. No-op
+// unless the interview has an event but no link. Returns the link, if any, so
+// callers that are about to render or email it can use the fresh value.
+export async function ensureInterviewMeetUrl(interview: {
+  id: string;
+  calendarEventId: string | null;
+  videoUrl: string | null;
+}): Promise<string | null> {
+  if (interview.videoUrl || !interview.calendarEventId) return interview.videoUrl;
+  const link = await getHiringCalendarLink();
+  if (!link) return null;
+  try {
+    const meetUrl = await getGoogleEventMeetUrl({ linkId: link.id, eventId: interview.calendarEventId });
+    if (!meetUrl) return null;
+    await prisma.interview.update({
+      where: { id: interview.id },
+      data: { videoUrl: meetUrl, videoProvider: "GoogleMeet" },
+    });
+    await recordHiringLinkHealth(link.id, null);
+    return meetUrl;
+  } catch (err) {
+    console.error("Failed to read interview Meet link:", err);
+    await recordHiringLinkHealth(link.id, err);
+    return null;
   }
 }
 
@@ -155,9 +198,9 @@ export async function deprovisionInterviewMeet(interview: {
   id: string;
   calendarEventId: string | null;
 }): Promise<void> {
+  if (!interview.calendarEventId) return;
+  const link = await getHiringCalendarLink();
   try {
-    if (!interview.calendarEventId) return;
-    const link = await getHiringCalendarLink();
     if (link) {
       await deleteGoogleCalendarEvent({ linkId: link.id, eventId: interview.calendarEventId });
     }
@@ -165,8 +208,10 @@ export async function deprovisionInterviewMeet(interview: {
       where: { id: interview.id },
       data: { calendarEventId: null, videoUrl: null, videoProvider: null },
     });
+    if (link) await recordHiringLinkHealth(link.id, null);
   } catch (err) {
     console.error("Failed to deprovision interview Meet:", err);
+    if (link) await recordHiringLinkHealth(link.id, err);
   }
 }
 
@@ -174,22 +219,23 @@ export async function deprovisionInterviewMeet(interview: {
 // so the replacement is a recognized guest (no knock) and the old one drops off.
 // No-op when the interview has no Meet event.
 export async function syncInterviewMeetAttendees(interviewId: string): Promise<void> {
+  const interview = await prisma.interview.findUnique({
+    where: { id: interviewId },
+    include: MEET_INCLUDE,
+  });
+  if (!interview?.calendarEventId) return;
+  const link = await getHiringCalendarLink();
+  if (!link) return;
   try {
-    const interview = await prisma.interview.findUnique({
-      where: { id: interviewId },
-      include: MEET_INCLUDE,
-    });
-    if (!interview?.calendarEventId) return;
-    const link = await getHiringCalendarLink();
-    if (!link) return;
-
     await patchGoogleCalendarEvent({
       linkId: link.id,
       eventId: interview.calendarEventId,
       attendees: meetAttendees(interview),
       sendUpdates: "none",
     });
+    await recordHiringLinkHealth(link.id, null);
   } catch (err) {
     console.error("Failed to sync interview Meet attendees:", err);
+    await recordHiringLinkHealth(link.id, err);
   }
 }
