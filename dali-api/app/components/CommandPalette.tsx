@@ -93,6 +93,7 @@ export const TYPE_META: Record<SearchResultType, { icon: LucideIcon; section: st
   project: { icon: FolderKanban, section: "Projects" },
   education: { icon: GraduationCap, section: "Education" },
   partner: { icon: Handshake, section: "Partners" },
+  partnerContact: { icon: UserCircle, section: "Partners" },
   document: { icon: FileText, section: "Documents" },
   application: { icon: Briefcase, section: "Applicants" },
   form: { icon: ClipboardList, section: "Forms" },

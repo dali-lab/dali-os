@@ -468,4 +468,31 @@ export type PerUserFree = {
   calendarError: boolean;
 };
 
-export type GroupAvailResponse = { days: GroupAvailDay[]; perUser: PerUserFree[] };
+// `perUser` is omitted by the partner-portal aggregate endpoint
+// (/api/partner/availability) — it resolves participants server-side and
+// never reveals a per-person breakdown to the partner. ScheduleWeekGrid
+// renders an aggregate-only view (from `days`) when it's absent.
+export type GroupAvailResponse = { days: GroupAvailDay[]; perUser?: PerUserFree[] };
+
+// The subset of LoaderData that CreateEventModal needs to run in
+// `mode="meeting-only"` outside the calendar route (e.g. the partner CRM's
+// interview scheduler, mounted from /api/scheduling-data). LoaderData is a
+// structural superset, so the calendar route's existing loader output
+// satisfies this type unchanged — see loadSchedulingData.
+export type SchedulingData = Pick<
+  LoaderData,
+  | "users"
+  | "groups"
+  | "workingHours"
+  | "hasPersistedWorkingHours"
+  | "calendarLinks"
+  | "timezone"
+  | "currentUserId"
+  | "defaultEventBufferMin"
+  | "canSetSelfCheckIn"
+  | "canMarkCoreMeeting"
+  | "myProjects"
+  | "myRoles"
+  | "weekStartIso"
+  | "defaultEventDest"
+>;

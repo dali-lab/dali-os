@@ -35,6 +35,13 @@ describe("signing variables", () => {
       memberName: "Ada Lovelace",
       supervisorName: "",
       menteeName: "",
+      partnerName: "",
+      orgName: "",
+      legalEntityName: "",
+      legalEntityAddress: "",
+      fee: "",
+      fundingType: "",
+      projectTitle: "",
     });
   });
 });

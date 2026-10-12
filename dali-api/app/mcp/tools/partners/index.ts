@@ -40,6 +40,10 @@ import {
   runManagePartnerMeeting,
 } from "./manage-partner-meeting";
 import {
+  RESPOND_PARTNER_MEETING_REQUEST_TOOL,
+  runRespondPartnerMeetingRequest,
+} from "./respond-partner-meeting-request";
+import {
   MANAGE_PARTNER_PROJECT_LINK_TOOL,
   runManagePartnerProjectLink,
 } from "./manage-partner-project-link";
@@ -47,6 +51,22 @@ import {
   PROMOTE_PARTNER_APPLICATION_TOOL,
   runPromotePartnerApplication,
 } from "./promote-partner-application";
+import {
+  LIST_PARTNER_CONTACTS_TOOL,
+  runListPartnerContacts,
+} from "./list-partner-contacts";
+import {
+  MANAGE_PARTNER_CONTACT_TOOL,
+  runManagePartnerContact,
+} from "./manage-partner-contact";
+import {
+  MANAGE_PARTNER_INVOICE_TOOL,
+  runManagePartnerInvoice,
+} from "./manage-partner-invoice";
+import {
+  PARTNER_PIPELINE_REPORT_TOOL,
+  runPartnerPipelineReport,
+} from "./partner-pipeline-report";
 
 export const PARTNERS_TOOLS: McpTool[] = [
   {
@@ -99,6 +119,10 @@ export const PARTNERS_TOOLS: McpTool[] = [
     run: (ctx: McpCtx, args) => runManagePartnerMeeting(ctx.user.id, args),
   },
   {
+    def: RESPOND_PARTNER_MEETING_REQUEST_TOOL,
+    run: (ctx: McpCtx, args) => runRespondPartnerMeetingRequest(ctx.user.id, args),
+  },
+  {
     def: MANAGE_PARTNER_PROJECT_LINK_TOOL,
     run: (ctx: McpCtx, args) => runManagePartnerProjectLink(ctx.user.id, args),
   },
@@ -109,5 +133,23 @@ export const PARTNERS_TOOLS: McpTool[] = [
         ctx.user.id,
         args as Parameters<typeof runPromotePartnerApplication>[1],
       ),
+  },
+  {
+    def: LIST_PARTNER_CONTACTS_TOOL,
+    run: (ctx: McpCtx, args) =>
+      runListPartnerContacts(ctx.user.id, args as Parameters<typeof runListPartnerContacts>[1]),
+  },
+  {
+    def: MANAGE_PARTNER_CONTACT_TOOL,
+    run: (ctx: McpCtx, args) => runManagePartnerContact(ctx.user.id, args),
+  },
+  {
+    def: MANAGE_PARTNER_INVOICE_TOOL,
+    run: (ctx: McpCtx, args) => runManagePartnerInvoice(ctx.user.id, args),
+  },
+  {
+    def: PARTNER_PIPELINE_REPORT_TOOL,
+    run: (ctx: McpCtx, args) =>
+      runPartnerPipelineReport(ctx.user.id, args as Parameters<typeof runPartnerPipelineReport>[1]),
   },
 ];

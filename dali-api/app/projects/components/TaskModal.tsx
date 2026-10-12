@@ -34,11 +34,13 @@ import {
 import { DependencyLinks } from "./DependencyLinks";
 import { PeopleFilter } from "./PeopleFilter";
 import { cn } from "~/lib/cn";
-
-// Borderless control for the Details property panel — the row supplies the
-// structure, so the control itself stays quiet.
-const PROP_CONTROL =
-  "w-full bg-transparent text-sm text-foreground py-1 focus:outline-none disabled:opacity-60";
+import {
+  Field,
+  FieldPair,
+  ModalSection,
+  PropRow,
+  PROP_CONTROL,
+} from "~/components/ui/modal-fields";
 
 const COMMENT_MAX = 10_000;
 
@@ -912,7 +914,7 @@ export function TaskModal({
 
         {!isCreate && (
           <ModalSection
-            bordered={false}
+
             className="mb-4 gap-1.5 text-xs"
             title={
               <>
@@ -1023,7 +1025,7 @@ export function TaskModal({
           </FieldPair>
 
           <FieldPair>
-          <PropRow label="Assignees" align="start">
+          <PropRow label="Assignees">
             <PeopleFilter
               options={assigneeOptions}
               selected={assigneeIds}
@@ -1099,7 +1101,7 @@ export function TaskModal({
             </Tooltip>
           </PropRow>
 
-          <PropRow label="Blocked by" align="start">
+          <PropRow label="Blocked by">
             <MultiSelect
               values={dependsOn}
               options={dependencyOptions}
@@ -1112,7 +1114,7 @@ export function TaskModal({
             />
           </PropRow>
           {!isCreate && (
-            <PropRow label="Blocks" align="start">
+            <PropRow label="Blocks">
               <DependencyLinks items={blocksLinks} onSelect={onOpenTask} />
             </PropRow>
           )}
@@ -1460,99 +1462,6 @@ export function TaskModal({
   );
 }
 
-function Field({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  // The design's .field-hint: what the field means or why it's empty, under
-  // the control rather than inside it.
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="os-field-group">
-      <span className="os-field-label">
-        {label}
-      </span>
-      {children}
-      {hint && (
-        <span className="os-field-hint">
-          {hint}
-        </span>
-      )}
-    </label>
-  );
-}
-
-// Two fields on one line (the design's .field-row). The classic panel doesn't
-// pair — its rows are ruled, so they have to stay direct children of it.
-function FieldPair({ children }: { children: React.ReactNode }) {
-  return <div className="os-field-row">{children}</div>;
-}
-
-// A block below the fields — links, attachments, comments. The design fences
-// each with a rule and names it in caps; the classic modal uses a hairline and
-// a quiet caption.
-function ModalSection({
-  title,
-  className,
-  bordered = true,
-  children,
-}: {
-  title: React.ReactNode;
-  className?: string;
-  bordered?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <>
-      <div className="os-modal-divider" aria-hidden />
-      <div>
-        <span className={cn("block", "os-section-header")}>
-          {title}
-        </span>
-        <div className={cn("flex flex-col", className)}>{children}</div>
-      </div>
-    </>
-  );
-}
-
-// One field in the Details panel: the design stacks a caption over its value
-// full width; the classic panel is a ruled two-column table.
-function PropRow({
-  label,
-  hint,
-  required = false,
-  children,
-  align = "center",
-}: {
-  label: string;
-  hint?: string;
-  // Marks the field as one create mode won't submit without.
-  required?: boolean;
-  children: React.ReactNode;
-  align?: "center" | "start";
-}) {
-  const caption = (
-    <>
-      {label}
-      {required && <span className="os-required-mark">*</span>}
-    </>
-  );
-  return (
-    <div className="os-field-group min-w-0">
-      <span className="os-field-label">{caption}</span>
-      <div className="min-w-0">{children}</div>
-      {hint && <span className="os-field-hint">{hint}</span>}
-    </div>
-  );
-}
-
-// Strip scheme/host and `.git` from a project's repo URL so the dropdown
-// shows "owner/repo". Returns null when the value can't be reduced cleanly —
-// those entries are dropped from the picker rather than confusing the user.
 function normalizeRepoForDisplay(input: string): string | null {
   let s = input.trim();
   s = s.replace(/^https?:\/\/[^/]+\//, "");

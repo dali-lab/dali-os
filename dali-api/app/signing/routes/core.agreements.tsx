@@ -19,6 +19,7 @@ import type {
   SigningGateScope,
   SigningAudience,
   SigningCadence,
+  SigningDocumentKind,
 } from "~/generated/prisma/enums";
 import { getAgreementsOverview } from "~/signing/lib/console.server";
 import { resolveTermFilter } from "~/lib/terms";
@@ -106,6 +107,8 @@ export async function action({ request }: Route.ActionArgs) {
     const gateScope = formData.get("gateScope") as SigningGateScope;
     const audience = formData.get("audience") as SigningAudience;
     const cadence = formData.get("cadence") as SigningCadence;
+    const kind: SigningDocumentKind | null =
+      formData.get("kind") === "PartnerContract" ? "PartnerContract" : null;
 
     // File the new agreement into the Core Agreements binding folder up front so
     // its Drive breadcrumb resolves immediately. Best-effort — never block create.
@@ -122,6 +125,7 @@ export async function action({ request }: Route.ActionArgs) {
         gateScope: SCOPES.includes(gateScope) ? gateScope : "None",
         audience: AUDIENCES.includes(audience) ? audience : "Manual",
         cadence: CADENCES.includes(cadence) ? cadence : "Once",
+        kind,
         folderPageId,
       },
     });

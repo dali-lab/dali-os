@@ -50,7 +50,6 @@ export async function runSearch(opts: {
     searchProjects(q, like),
     searchTasks(q, like),
     searchOfferings(q, like),
-    searchPartnerOrgs(q, like),
     searchDocuments(q, like),
     // Page guides ("Docs") and /help articles — both readable by every lab
     // member, so ungated like docs.
@@ -68,6 +67,10 @@ export async function runSearch(opts: {
     roles.isCore || roles.isDomainLead ? searchAgreements(q, like) : NONE,
     // Core-only artifacts.
     roles.isCore ? searchCycles(q, like) : NONE,
+    // Partner orgs/contacts — Core-only, like every /core/partners/orgs and
+    // /core/partners/contacts route.
+    roles.isCore ? searchPartnerOrgs(q, like) : NONE,
+    roles.isCore ? searchPartnerContacts(q, like) : NONE,
     // Partner applications — Core/Admin (canViewStaffing), like the internal view.
     roles.canViewStaffing ? searchPartnerApplications(q, like) : NONE,
   ];
@@ -245,6 +248,27 @@ async function searchPartnerOrgs(q: string, like: Like): Promise<SearchResult[]>
     take: RAW_TAKE,
   });
   return simpleResults("partner", "Partner", rows.map((r) => ({ id: r.id, label: r.name })), q);
+}
+
+async function searchPartnerContacts(q: string, like: Like): Promise<SearchResult[]> {
+  const rows = await prisma.partnerContact.findMany({
+    where: { OR: [{ name: like }, { email: like }] },
+    select: { id: true, name: true, email: true },
+    take: RAW_TAKE,
+  });
+  return rankResults(
+    rows.map((c) => ({
+      result: {
+        type: "partnerContact" as const,
+        id: c.id,
+        title: c.name,
+        subtitle: c.email,
+        url: buildUrl.partnerContact(c.id),
+      },
+      text: [c.name, c.email],
+    })),
+    q,
+  );
 }
 
 async function searchDocuments(q: string, like: Like): Promise<SearchResult[]> {

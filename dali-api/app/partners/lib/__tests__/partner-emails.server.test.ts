@@ -22,6 +22,9 @@ import {
   sendLearnMoreRequestEmail,
   sendMeetingInviteEmail,
   sendMemberEmailConflictEmail,
+  sendContractSentEmail,
+  sendSowSharedEmail,
+  sendPartnerSurveyEmail,
 } from "~/partners/lib/partner-emails.server";
 
 const mockEnqueue = enqueueOutbound as unknown as ReturnType<typeof vi.fn>;
@@ -67,6 +70,16 @@ describe("partner emails escape interpolated values", () => {
     await sendMeetingInviteEmail("p@x.com", "Ada", "Tue 2pm <ET>");
     expect(sent().bodyHtml).toContain("&lt;ET&gt;");
   });
+
+  it("escapes a contact name on the contract-sent email", async () => {
+    await sendContractSentEmail("p@x.com", '<img src=x onerror="alert(1)">', "https://os.dali.dartmouth.edu/x");
+    expect(sent().bodyHtml).not.toContain("<img");
+  });
+
+  it("escapes a contact name on the SOW-shared email", async () => {
+    await sendSowSharedEmail("p@x.com", "<b>Ada</b>", "app-1");
+    expect(sent().bodyHtml).not.toContain("<b>Ada</b>");
+  });
 });
 
 describe("partner emails keep operator line breaks", () => {
@@ -101,5 +114,26 @@ describe("partner emails route to the Partners identity", () => {
   it("falls back to a neutral greeting when there is no name", async () => {
     await sendDecisionAcceptedEmail("p@x.com", null);
     expect(sent().bodyHtml).toContain("Hi there,");
+  });
+});
+
+describe("sendPartnerSurveyEmail", () => {
+  it("links to the survey url and dedupes per ProjectPartner", async () => {
+    await sendPartnerSurveyEmail(
+      "p@x.com",
+      "Ada",
+      "Alumni Connect",
+      "https://os.dali.dartmouth.edu/partner/survey/pp1",
+      "pp1",
+    );
+    expect(sent().bodyHtml).toContain("https://os.dali.dartmouth.edu/partner/survey/pp1");
+    expect(sent().dedupKey).toBe("partner.survey.invite:pp1");
+    expect(sent().eventType).toBe("partner.survey_invite");
+  });
+
+  it("escapes the project name", async () => {
+    await sendPartnerSurveyEmail("p@x.com", "Ada", "<b>Proj</b> & Co", "https://x/survey/pp1", "pp1");
+    expect(sent().bodyHtml).not.toContain("<b>Proj</b>");
+    expect(sent().bodyHtml).toContain("&amp;");
   });
 });

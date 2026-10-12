@@ -14,7 +14,18 @@ vi.mock("~/lib/db", () => ({
     partnerActivity: {
       create: vi.fn(),
     },
+    user: {
+      findUnique: vi.fn(),
+    },
   },
+}));
+
+vi.mock("~/partners/lib/partner-meetings.server", () => ({
+  linkScheduledMeetingToApplication: vi.fn(),
+}));
+
+vi.mock("~/lib/scheduled-meeting", () => ({
+  createScheduledMeeting: vi.fn(),
 }));
 
 vi.mock("~/lib/roles", async (orig) => {
@@ -56,6 +67,8 @@ vi.mock("~/mcp/registry", () => {
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
 import { logPartnerActivity } from "~/partners/lib/partner-activity.server";
+import { linkScheduledMeetingToApplication } from "~/partners/lib/partner-meetings.server";
+import { createScheduledMeeting } from "~/lib/scheduled-meeting";
 import {
   runManagePartnerMeeting,
   MANAGE_PARTNER_MEETING_TOOL,
@@ -67,6 +80,7 @@ const mockPrisma = prisma as unknown as {
     create: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
   };
+  user: { findUnique: ReturnType<typeof vi.fn> };
 };
 
 beforeEach(() => {
@@ -190,6 +204,96 @@ describe("create", () => {
       expect.anything(),
       expect.objectContaining({ type: "MeetingScheduled" }),
     );
+  });
+
+  it("links an already-created ScheduledMeeting via scheduledMeetingId", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    vi.mocked(linkScheduledMeetingToApplication).mockResolvedValue({
+      id: "pm-1",
+      scheduledAt: new Date("2026-11-10T15:00:00Z"),
+    });
+
+    const out = await runManagePartnerMeeting("u1", {
+      action: "create",
+      applicationId: "a1",
+      scheduledMeetingId: "meet-1",
+    });
+
+    expect(out).toMatchObject({ id: "pm-1", scheduledMeetingId: "meet-1" });
+    expect(linkScheduledMeetingToApplication).toHaveBeenCalledWith({
+      applicationId: "a1",
+      scheduledMeetingId: "meet-1",
+      actorUserId: "u1",
+    });
+    expect(mockPrisma.partnerMeeting.create).not.toHaveBeenCalled();
+  });
+
+  it("throws McpNotFoundError when scheduledMeetingId links to nothing", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    vi.mocked(linkScheduledMeetingToApplication).mockResolvedValue(null);
+    await expect(
+      runManagePartnerMeeting("u1", {
+        action: "create",
+        applicationId: "a1",
+        scheduledMeetingId: "missing",
+      }),
+    ).rejects.toMatchObject({ name: "McpNotFoundError" });
+  });
+
+  it("creates a real ScheduledMeeting via startTime+participantUserIds, then links it", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.partnerApplication.findUnique.mockResolvedValue({
+      applicantContact: { name: "Acme", email: "pat@acme.com" },
+    });
+    mockPrisma.user.findUnique.mockResolvedValue({ daliEmail: "core@dali.dartmouth.edu", dartmouthEmail: null });
+    vi.mocked(createScheduledMeeting).mockResolvedValue({
+      ok: true,
+      meeting: { id: "meet-2", selectedAt: new Date("2026-11-12T16:00:00Z") } as never,
+      notifiedCount: 1,
+      gcalError: null,
+      notePageId: null,
+      whiteboardPageId: null,
+    });
+    vi.mocked(linkScheduledMeetingToApplication).mockResolvedValue({
+      id: "pm-2",
+      scheduledAt: new Date("2026-11-12T16:00:00Z"),
+    });
+
+    const out = await runManagePartnerMeeting("u1", {
+      action: "create",
+      applicationId: "a1",
+      startTime: "2026-11-12T16:00:00Z",
+      participantUserIds: ["core-1", "core-2"],
+    });
+
+    expect(out).toMatchObject({ id: "pm-2", scheduledMeetingId: "meet-2" });
+    expect(createScheduledMeeting).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizerId: "u1",
+        organizerEmail: "core@dali.dartmouth.edu",
+        title: "DALI x Acme",
+        guestEmails: ["pat@acme.com"],
+        addMeet: true,
+        scope: { type: "UserList", participantUserIds: ["core-1", "core-2"] },
+      }),
+    );
+    expect(linkScheduledMeetingToApplication).toHaveBeenCalledWith({
+      applicationId: "a1",
+      scheduledMeetingId: "meet-2",
+      actorUserId: "u1",
+    });
+  });
+
+  it("requires participantUserIds alongside startTime", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    await expect(
+      runManagePartnerMeeting("u1", {
+        action: "create",
+        applicationId: "a1",
+        startTime: "2026-11-12T16:00:00Z",
+      }),
+    ).rejects.toMatchObject({ name: "McpInvalidError" });
+    expect(createScheduledMeeting).not.toHaveBeenCalled();
   });
 });
 

@@ -169,6 +169,7 @@ export function ParticipantPicker({
   responsesByUserId,
   guestEmails = [],
   onChangeGuestEmails,
+  fixedGuestEmails = [],
 }: {
   users: UserOption[];
   groups: GroupOption[];
@@ -186,6 +187,9 @@ export function ParticipantPicker({
   // picker stays members-only.
   guestEmails?: string[];
   onChangeGuestEmails?: (emails: string[]) => void;
+  /** Guests the caller pre-invited (e.g. the partner in a scheduled interview) —
+   *  rendered as chips with no remove button, since the caller owns the invite. */
+  fixedGuestEmails?: string[];
 }) {
   const { fieldRadius } = useOsChrome();
   const panelClass = usePanelClass();
@@ -212,6 +216,7 @@ export function ParticipantPicker({
     onChangeGuestEmails &&
     isGuestEmail(q) &&
     !guestEmails.includes(q) &&
+    !fixedGuestEmails.includes(q) &&
     !users.some((u) => u.daliEmail?.toLowerCase() === q)
       ? q
       : null;
@@ -363,6 +368,12 @@ export function ParticipantPicker({
             </span>
           );
         })}
+        {fixedGuestEmails.map((email) => (
+          <span key={`fe:${email}`} className={chip} title="Invited by this record — not removable here">
+            <Mail className="h-3 w-3 text-muted-foreground" />
+            {email}
+          </span>
+        ))}
         {guestEmails.map((email) => (
           <span key={`e:${email}`} className={chip}>
             <Mail className="h-3 w-3 text-muted-foreground" />
@@ -389,7 +400,7 @@ export function ParticipantPicker({
           aria-autocomplete="list"
           value={query}
           placeholder={
-            selectedUserIds.length + selectedGroupIds.length + guestEmails.length === 0
+            selectedUserIds.length + selectedGroupIds.length + guestEmails.length + fixedGuestEmails.length === 0
               ? onChangeGuestEmails
                 ? "Add guests, a group, or an email"
                 : "Add guests or a group"
@@ -415,10 +426,10 @@ export function ParticipantPicker({
             },
           })}
         />
-        {resolvedCount + guestEmails.length > 0 && (
+        {resolvedCount + guestEmails.length + fixedGuestEmails.length > 0 && (
           <span className="ml-auto shrink-0 pr-1 text-[11px] text-muted-foreground">
-            {resolvedCount + guestEmails.length}{" "}
-            {resolvedCount + guestEmails.length === 1 ? "person" : "people"}
+            {resolvedCount + guestEmails.length + fixedGuestEmails.length}{" "}
+            {resolvedCount + guestEmails.length + fixedGuestEmails.length === 1 ? "person" : "people"}
           </span>
         )}
       </div>
@@ -623,6 +634,8 @@ export function ScheduleWeekGrid({
   weekNav,
   enableOptimalTimes = false,
   onSuggestionsChange,
+  availabilityUrl = "/api/calendar/group-availability",
+  availabilityBody,
 }: {
   participantIds: string[];
   // True when the caller is rendering the current user's own availability
@@ -667,6 +680,13 @@ export function ScheduleWeekGrid({
   enableOptimalTimes?: boolean;
   /** Receives the ranked suggestions whenever they change (null when none apply). */
   onSuggestionsChange?: (s: SlotSuggestions | null) => void;
+  /** Where to POST for availability. Default is the member-directory endpoint;
+   *  the partner portal points this at /api/partner/availability, which
+   *  resolves participants server-side and never returns a perUser key. */
+  availabilityUrl?: string;
+  /** Extra fields merged into the POST body — the portal sends
+   *  { applicationId } or { projectId } instead of real userIds. */
+  availabilityBody?: Record<string, unknown>;
 }) {
   const { panel } = useOsChrome();
   const [data, setData] = useState<GroupAvailResponse | null>(null);
@@ -699,23 +719,24 @@ export function ScheduleWeekGrid({
   // itself is a fresh array each render — using it as a dep would make this
   // effect cancel+restart every render, leaving "Loading…" stuck on the screen.
   const participantKey = participantIds.slice().sort().join(",");
+  // Same stabilization for availabilityBody — the portal passes a fresh
+  // object literal ({ applicationId }) each render.
+  const availabilityBodyKey = availabilityBody ? JSON.stringify(availabilityBody) : "";
+  // The portal resolves its participants server-side, so it calls with
+  // participantIds=[] and an availabilityBody instead — the grid must still
+  // fetch (and render) in that case.
+  const hasQuery = participantKey.length > 0 || availabilityBodyKey.length > 0;
 
   useEffect(() => {
     // When hideAvailability is set there's nothing to fetch — clear any stale
     // data immediately so no tints are painted.
-    if (hideAvailability) {
+    if (hideAvailability || !hasQuery) {
       setData(null);
       setError(null);
       setLoading(false);
       return;
     }
     const ids = participantKey ? participantKey.split(",") : [];
-    if (ids.length === 0) {
-      setData(null);
-      setError(null);
-      setLoading(false);
-      return;
-    }
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -723,7 +744,7 @@ export function ScheduleWeekGrid({
     // ≥-duration match windows (data.days), which this grid never reads — the
     // gradient and slot breakdown are built from per-user free intervals. Re-
     // fetching on every drag would just flash "Loading availability…".
-    fetch("/api/calendar/group-availability", {
+    fetch(availabilityUrl, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
@@ -733,6 +754,7 @@ export function ScheduleWeekGrid({
         weekEndIso,
         durationMinutes,
         timezone,
+        ...(availabilityBodyKey ? (JSON.parse(availabilityBodyKey) as Record<string, unknown>) : {}),
       }),
     })
       .then(async (r) => {
@@ -756,7 +778,17 @@ export function ScheduleWeekGrid({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [participantKey, weekStartIso, weekEndIso, timezone, refreshKey, hideAvailability]);
+  }, [
+    participantKey,
+    weekStartIso,
+    weekEndIso,
+    timezone,
+    refreshKey,
+    hideAvailability,
+    hasQuery,
+    availabilityUrl,
+    availabilityBodyKey,
+  ]);
 
   // Build the 7-day axis from the week window so empty days still render.
   const weekStart = new Date(weekStartIso);
@@ -803,8 +835,13 @@ export function ScheduleWeekGrid({
   // Counting that as free is exactly what made a slot read "11/11 free" when
   // some of those people were actually busy, so we keep unknown participants out
   // of every free count and surface them as their own group instead.
+  // The partner-portal aggregate endpoint never returns a perUser key — there
+  // is nothing per-person to compute, so every per-user feature below (the
+  // gradient, the Available/Busy split, hover, "best times") is skipped in
+  // favor of the aggregate `days` buckets built further down.
+  const isAggregate = !!data && !data.perUser;
   const isKnown = (userId: string): boolean => {
-    const u = data?.perUser.find((p) => p.userId === userId);
+    const u = data?.perUser?.find((p) => p.userId === userId);
     return !!u && u.hasCalendar && !u.calendarError;
   };
   const unknownParticipantIds = participantIds.filter((id) => !isKnown(id));
@@ -813,7 +850,7 @@ export function ScheduleWeekGrid({
   // Pre-parse each KNOWN participant's free intervals into sorted (startMs,
   // endMs) tuples for fast containment checks below. Unknown participants are
   // excluded so they never tint a cell as "free".
-  const perUserFree: { startMs: number; endMs: number }[][] = data
+  const perUserFree: { startMs: number; endMs: number }[][] = data?.perUser
     ? data.perUser
         .filter((u) => isKnown(u.userId))
         .map((u) =>
@@ -883,9 +920,9 @@ export function ScheduleWeekGrid({
   // can read one person's availability at a glance. Each interval is clamped to
   // the visible [GRID_START_H, GRID_END_H) window of its day column.
   const hoveredFreeByColIdx: { startHour: number; durationHours: number }[][] =
-    data && hoveredUserId
+    data?.perUser && hoveredUserId
       ? (() => {
-          const free = data.perUser.find((u) => u.userId === hoveredUserId)?.free ?? [];
+          const free = data.perUser!.find((u) => u.userId === hoveredUserId)?.free ?? [];
           const ivs = free
             .map((iv) => ({
               startMs: new Date(iv.startIso).getTime(),
@@ -922,7 +959,7 @@ export function ScheduleWeekGrid({
     unknown: UserOption[];
   };
   let selectedSlot: SelectedSlot | null = null;
-  if (selectedStartLocal && selectedEndLocal && data && participantIds.length > 0) {
+  if (selectedStartLocal && selectedEndLocal && data?.perUser && participantIds.length > 0) {
     const sd = new Date(selectedStartLocal);
     const ed = new Date(selectedEndLocal);
     if (!isNaN(sd.getTime()) && !isNaN(ed.getTime()) && ed.getTime() > sd.getTime()) {
@@ -970,6 +1007,37 @@ export function ScheduleWeekGrid({
           else busy.push(user);
         }
         selectedSlot = { dow, startHour, duration, available, busy, unknown };
+      }
+    }
+  }
+
+  // ── Aggregate mode (no perUser — the partner portal's endpoint) ──────────
+  // Paint each day's free windows straight from the server's `days` buckets
+  // instead of the per-15-min gradient above, and reduce the selected-slot
+  // overlay to a plain free/not-free badge — there's no per-person breakdown
+  // to show.
+  const aggregateFreeByColIdx: { startHour: number; durationHours: number }[][] =
+    isAggregate && data
+      ? days.map((d) => data.days.find((b) => b.dayOfWeek === d.dayOfWeek)?.matches ?? [])
+      : [];
+
+  type AggregateSelected = { dow: number; startHour: number; duration: number; free: boolean };
+  let aggregateSelected: AggregateSelected | null = null;
+  if (isAggregate && data && selectedStartLocal && selectedEndLocal) {
+    const sd = new Date(selectedStartLocal);
+    const ed = new Date(selectedEndLocal);
+    if (!isNaN(sd.getTime()) && !isNaN(ed.getTime()) && ed.getTime() > sd.getTime()) {
+      const sameDay = sd.toDateString() === ed.toDateString();
+      const dow = sd.getDay();
+      const startHour = sd.getHours() + sd.getMinutes() / 60;
+      const endHour = ed.getHours() + ed.getMinutes() / 60;
+      const duration = sameDay ? endHour - startHour : 24 - startHour;
+      if (duration > 0) {
+        const bucket = data.days.find((b) => b.dayOfWeek === dow);
+        const free = !!bucket?.matches.some(
+          (m) => m.startHour <= startHour && m.startHour + m.durationHours >= startHour + duration,
+        );
+        aggregateSelected = { dow, startHour, duration, free };
       }
     }
   }
@@ -1030,7 +1098,19 @@ export function ScheduleWeekGrid({
       backgroundLayer={(dayIdx) => (
         <>
           {!hideAvailability && (
-            hoveredUserId ? (
+            isAggregate ? (
+              // Aggregate mode: paint the server's free windows directly
+              // (solid green) — there's no per-user gradient to compute.
+              (aggregateFreeByColIdx[dayIdx] ?? []).map((b, i) => (
+                <BlockBlock
+                  key={`agg-${i}`}
+                  topHour={GRID_START_H}
+                  startHour={b.startHour}
+                  duration={b.durationHours}
+                  style={{ backgroundColor: availabilityTint(1) }}
+                />
+              ))
+            ) : hoveredUserId ? (
               // One participant's own free intervals (solid green), so the
               // user can read that person's availability at a glance.
               (hoveredFreeByColIdx[dayIdx] ?? []).map((b, i) => (
@@ -1103,6 +1183,31 @@ export function ScheduleWeekGrid({
                 unknown={selectedSlot.unknown}
               />
             )}
+            {aggregateSelected && days[dayIdx]?.dayOfWeek === aggregateSelected.dow && (
+              <div
+                className={cn(
+                  "absolute left-0 right-0 z-30 rounded-sm border-2",
+                  aggregateSelected.free
+                    ? "border-green-600 bg-green-500/15 dark:border-green-400"
+                    : "border-os-accent bg-os-accent/10",
+                )}
+                style={{
+                  top: (aggregateSelected.startHour - HOURS[0]) * HOUR_PX,
+                  height: aggregateSelected.duration * HOUR_PX,
+                }}
+              >
+                <div
+                  className={cn(
+                    "m-1 inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[11px] font-semibold shadow-sm",
+                    aggregateSelected.free
+                      ? "bg-green-600 text-white dark:bg-green-500"
+                      : "bg-os-accent text-os-bg",
+                  )}
+                >
+                  {aggregateSelected.free ? "Everyone's free" : "Not everyone's free"}
+                </div>
+              </div>
+            )}
           </>
         );
       }}
@@ -1141,7 +1246,7 @@ export function ScheduleWeekGrid({
                 ]
         }
       />
-      {participantIds.length === 0 ? null : (
+      {!hasQuery ? null : (
         <>
           {!hideAvailability && loading && (
             <div className="px-4 py-1 text-xs text-muted-foreground">Loading availability…</div>

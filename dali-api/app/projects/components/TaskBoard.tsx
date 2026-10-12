@@ -30,6 +30,8 @@ import {
 import { Confetti } from "~/components/Confetti";
 import { Modal } from "~/components/Modal";
 import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
+import { osStatusAccent, type StatusAccent } from "~/components/board/status-accent";
+import { BoardCard, BoardCardMeta, BoardCardMetaRow, BoardCardChip } from "~/components/board/BoardCard";
 import { modalCardClass, useOsChrome } from "~/components/os-chrome";
 import {
   FilterCountBadge,
@@ -137,21 +139,13 @@ const NO_EPIC = "none";
 // CSS values rather than classes because app.css closes with an unlayered
 // `* { border-color: var(--color-border) }` that outranks every border-colour
 // utility Tailwind emits — an inline style is what beats it.
-type StatusAccent = { fill: string; ink: string; edge: string };
-
-const osToken = (name: string): StatusAccent => ({
-  fill: `var(--os-status-${name}-fill)`,
-  ink: `var(--os-status-${name}-ink)`,
-  edge: `var(--os-status-${name}-edge)`,
-});
-
 const STATUS_ACCENT_OS: Record<TaskStatus, StatusAccent> = {
-  Backlog: osToken("backlog"),
-  Todo: osToken("todo"),
-  InProgress: osToken("progress"),
-  InReview: osToken("review"),
-  Done: osToken("done"),
-  Cancelled: osToken("cancelled"),
+  Backlog: osStatusAccent("backlog"),
+  Todo: osStatusAccent("todo"),
+  InProgress: osStatusAccent("progress"),
+  InReview: osStatusAccent("review"),
+  Done: osStatusAccent("done"),
+  Cancelled: osStatusAccent("cancelled"),
 };
 
 // The classic shell keeps its own light-only treatment — it has no dark ground
@@ -1644,33 +1638,13 @@ function TaskCard({
   const dateRange = formatDateRange(card.startsAt, card.dueAt);
 
   return (
-    <div
-      {...dragHandleProps}
-      data-testid="task-card"
-      style={{ borderLeftColor: statusAccent(card.status, os).edge }}
-      className={cn(
-        "relative border border-l-4 flex focus-within:ring-2",
-        os
-          ? "rounded-os-item border-transparent bg-os-well text-[15px] focus-within:ring-os-accent/40"
-          : "rounded-md border-border bg-background text-sm focus-within:ring-accent-coral/30",
-        isDragging ? "opacity-40" : os ? "hover:bg-os-container/60" : "hover:bg-muted/20",
-      )}
+    <BoardCard
+      accentEdge={statusAccent(card.status, os).edge}
+      dragHandleProps={dragHandleProps}
+      isDragging={isDragging}
+      onOpen={onOpen}
+      testId="task-card"
     >
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={onOpen}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            onOpen();
-          }
-        }}
-        className={cn(
-          "flex-1 min-w-0 text-left cursor-pointer focus:outline-none",
-          os ? "p-3" : "p-2.5",
-        )}
-      >
         {/* Title line — a bell ahead of the name when the task has moved on
             since you last opened it (a field or description edit, a comment,
             an attached file, a GitHub link: anything that stamps activityAt). */}
@@ -1706,26 +1680,15 @@ function TaskCard({
         )}
 
         {/* Counts and dates, each an icon beside its value. */}
-        <div
-          className={cn(
-            "mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-muted-foreground",
-            META_TEXT(os),
-          )}
-        >
+        <BoardCardMetaRow>
           {blockedBy.length > 0 && (
-            <Tooltip content={`Waiting on ${blockedBy.map((b) => b.title).join(", ")}`}>
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1 px-1.5 py-0.5 border font-medium",
-                  os
-                    ? "rounded-full border-transparent bg-os-amber/15 text-os-amber"
-                    : "rounded-md border-amber-200 bg-amber-50 text-amber-800",
-                )}
-              >
-                <Lock aria-hidden className="w-3 h-3" />
-                Blocked
-              </span>
-            </Tooltip>
+            <BoardCardChip
+              tone="warn"
+              icon={<Lock aria-hidden className="w-3 h-3" />}
+              title={`Waiting on ${blockedBy.map((b) => b.title).join(", ")}`}
+            >
+              Blocked
+            </BoardCardChip>
           )}
           {/* Overdue tints the icon, not the date. Recolouring the text made
               the one meta item you always read sit in a different ink from the
@@ -1792,35 +1755,12 @@ function TaskCard({
               {card.domain.name}
             </span>
           )}
-        </div>
-      </div>
-    </div>
+        </BoardCardMetaRow>
+    </BoardCard>
   );
 }
 
-// One fact on the card's bottom line: an icon and its value, nothing else.
-// Borderless on purpose — a row of bordered pills competes with the title,
-// and these are counts, not labels.
-function MetaItem({
-  icon,
-  title,
-  className,
-  children,
-}: {
-  icon: ReactNode;
-  title?: string;
-  className?: string;
-  children: ReactNode;
-}) {
-  return (
-    <Tooltip content={title ?? null}>
-      <span className={cn("inline-flex items-center gap-1", className)}>
-        {icon}
-        {children}
-      </span>
-    </Tooltip>
-  );
-}
+const MetaItem = BoardCardMeta;
 
 // The card's date line. A task with both bounds shows its span ("Sep 1 –
 // Sep 30"); one bound names which end it is, so a start-only task doesn't

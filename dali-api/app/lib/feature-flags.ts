@@ -118,6 +118,18 @@ export const FEATURE_FLAGS = [
       "A feedback button in the bottom right corner of the shell. It opens the feature request feed at /feedback, where lab members react and comment, or starts a new request: drag to select an area of the page as a screenshot (or skip it), then write it up. Screenshots use the browser's tab sharing prompt, so the desktop app and phones post text only. Ships off.",
   },
   {
+    key: "partner-email",
+    label: "Partner email capture",
+    description:
+      "Indexes partners@ mail and shows threads on partner records. Ships off.",
+  },
+  {
+    key: "partner-finance",
+    label: "Partner finance tab",
+    description:
+      "Finance tab, invoices and deal terms on partner records. Ships off.",
+  },
+  {
     key: "application-events",
     label: "Application events",
     description:
