@@ -414,7 +414,7 @@
  * Below the desktop layout the milestone copy sits over the middle of the frame, so a playfield
  * beside it has nowhere to go. The board shrinks and the readouts move under it.
  */
-@container landing (max-width: 899px), (max-aspect-ratio: 11/10) {
+@container landing (max-width: 899px) or (max-aspect-ratio: 11/10) {
   /*
    * Only the playing stage stacks. Letting this reach the idle stage too drove the play button
    * to the bottom edge, where the recents row already is, and off the screen entirely on a
@@ -520,7 +520,7 @@
   }
 }
 
-@container landing (max-width: 899px), (max-aspect-ratio: 11/10) {
+@container landing (max-width: 899px) or (max-aspect-ratio: 11/10) {
   .t-pad {
     display: flex;
     justify-content: center;

@@ -140,7 +140,7 @@ body:has(.landing[data-background='build']) {
   z-index: 1;
 }
 
-@container landing (max-width: 899px), (max-aspect-ratio: 11/10) {
+@container landing (max-width: 899px) or (max-aspect-ratio: 11/10) {
   .landing[data-background='build'] .landing-content {
     position: relative;
   }
