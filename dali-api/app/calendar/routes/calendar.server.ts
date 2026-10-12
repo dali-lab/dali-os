@@ -144,6 +144,9 @@ function externalLinks(meetingUrl?: string, htmlLink?: string): EventLinkDTO[] {
   ];
 }
 
+const viewerOnEvent = (e: CalendarEvent): boolean =>
+  e.organizerSelf === true || e.responseStatus !== undefined;
+
 /**
  * The DALI meetings behind a set of Google events, keyed by the event id to
  * attach them to. A meeting DALI created records the Google event it made in
@@ -163,8 +166,12 @@ function externalLinks(meetingUrl?: string, htmlLink?: string): EventLinkDTO[] {
  * they would for a meeting they were invited to individually. Without this, a
  * lab-wide event showed a popover with no note and no attendance while every
  * other meeting on the grid had both.
+ *
+ * A viewer Google already has on the event — its organizer or a guest — sees
+ * its tracked meeting even when the DALI roster missed them (an organizer
+ * Google didn't list as a guest, for instance).
  */
-async function meetingsForExternalEvents(
+export async function meetingsForExternalEvents(
   events: CalendarEvent[],
   userId: string,
   canMarkCoreMeeting: boolean,
@@ -176,15 +183,21 @@ async function meetingsForExternalEvents(
   // Ids that reach the viewer through the general calendar, which admits any
   // lab member rather than only the invited.
   const labWideIds = new Set<string>();
+  // Ids where Google itself says the viewer is on the event (organizer or
+  // guest), independent of whether the DALI roster agrees.
+  const viewerOnEventIds = new Set<string>();
   for (const e of events) {
     const labWide = viewerIsLabMember && isGeneralCalendarEvent(e.calendarId);
+    const onEvent = viewerOnEvent(e);
     if (e.eventId) {
       seriesIds.add(e.eventId);
       if (labWide) labWideIds.add(e.eventId);
+      if (onEvent) viewerOnEventIds.add(e.eventId);
     }
     if (e.recurringEventId) {
       seriesIds.add(e.recurringEventId);
       if (labWide) labWideIds.add(e.recurringEventId);
+      if (onEvent) viewerOnEventIds.add(e.recurringEventId);
     }
     if (e.iCalUID) uidSet.add(e.iCalUID);
   }
@@ -193,6 +206,7 @@ async function meetingsForExternalEvents(
     { organizerId: userId },
     { participantUserIds: { has: userId } },
   ];
+  const admittedIds = new Set([...labWideIds, ...viewerOnEventIds]);
   const meetings = await prisma.scheduledMeeting.findMany({
     where: {
       status: { not: "Cancelled" },
@@ -207,11 +221,12 @@ async function meetingsForExternalEvents(
               : [{ externalEventId: { in: [...seriesIds] } }],
         },
         // Access: the invited (organizer/participant), plus any lab member for an
-        // event on the general calendar.
+        // event on the general calendar, plus any event Google itself says the
+        // viewer is on.
         {
           OR:
-            labWideIds.size > 0
-              ? [...invited, { externalEventId: { in: [...labWideIds] } }]
+            admittedIds.size > 0
+              ? [...invited, { externalEventId: { in: [...admittedIds] } }]
               : invited,
         },
       ],
@@ -295,7 +310,10 @@ async function meetingsForExternalEvents(
       canOpenNote:
         m.meetingType != null &&
         m.notePages.length > 0 &&
-        (isOrganizer || canMarkCoreMeeting || m.participantUserIds.includes(userId)),
+        (isOrganizer ||
+          canMarkCoreMeeting ||
+          m.participantUserIds.includes(userId) ||
+          viewerOnEvent(e)),
       canAddWhiteboard: isOrganizer || canMarkCoreMeeting,
       canInvite: isOrganizer || canMarkCoreMeeting,
     });
@@ -1688,7 +1706,7 @@ export async function loadCalendarData(
       Boolean(e.eventId) &&
       !eventMeetings.has(e.eventId) &&
       ((canMarkCoreMeeting && isGeneralCalendarEvent(e.calendarId)) ||
-        (roles.isLabMember && (e.organizerSelf === true || e.responseStatus !== undefined))),
+        (roles.isLabMember && viewerOnEvent(e))),
   }));
 
   // Classes: load all current+upcoming terms for the modal picker.

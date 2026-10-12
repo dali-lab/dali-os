@@ -1561,6 +1561,7 @@ describe("trackExternalEventAsMeeting", () => {
     description: "Weekly all-hands",
     attendeeEmails: ["ally@dali.dartmouth.edu", "outsider@example.com"],
     viewerInvited: false,
+    organizerEmail: null as string | null,
   };
 
   function arrange(
@@ -1671,16 +1672,138 @@ describe("trackExternalEventAsMeeting", () => {
     expect(mockNotify).not.toHaveBeenCalled();
   });
 
-  it("refuses an event that is already tracked", async () => {
+  it("puts the Google organizer on the roster even when Google doesn't list them as a guest", async () => {
+    const p = arrange({ event: { organizerEmail: "Organizer@dali.dartmouth.edu" } });
+
+    await trackExternalEventAsMeeting(input);
+
+    const where = p.user!.findMany.mock.calls[0][0].where as {
+      OR: [{ daliEmail: { in: string[] } }, { dartmouthEmail: { in: string[] } }];
+    };
+    expect(where.OR[0].daliEmail.in).toEqual(
+      expect.arrayContaining([
+        "organizer@dali.dartmouth.edu",
+        "ally@dali.dartmouth.edu",
+        "outsider@example.com",
+      ]),
+    );
+    expect(where.OR[0].daliEmail.in).toHaveLength(3);
+    expect(where.OR[1].dartmouthEmail.in).toEqual(where.OR[0].daliEmail.in);
+  });
+
+  it("does not duplicate an organizer who is also a guest", async () => {
+    const p = arrange({ event: { organizerEmail: "ally@dali.dartmouth.edu" } });
+
+    await trackExternalEventAsMeeting(input);
+
+    const where = p.user!.findMany.mock.calls[0][0].where as {
+      OR: [{ daliEmail: { in: string[] } }, { dartmouthEmail: { in: string[] } }];
+    };
+    expect(where.OR[0].daliEmail.in).toEqual(["ally@dali.dartmouth.edu", "outsider@example.com"]);
+  });
+
+  it("returns the existing meeting without re-adding it when the actor is already its organizer", async () => {
     const p = arrange();
-    p.scheduledMeeting!.findFirst.mockResolvedValue({ id: "m-existing" });
+    p.scheduledMeeting!.findFirst.mockResolvedValue({
+      id: "m-existing",
+      organizerId: "core-1",
+      participantUserIds: [],
+    });
+
+    const res = await trackExternalEventAsMeeting(input);
+
+    expect(res).toMatchObject({ ok: true, meeting: { id: "m-existing" } });
+    expect(p.scheduledMeeting!.create).not.toHaveBeenCalled();
+    expect(p.scheduledMeeting!.update).not.toHaveBeenCalled();
+  });
+
+  it("returns the existing meeting without re-adding it when the actor is already a participant", async () => {
+    const p = arrange();
+    p.scheduledMeeting!.findFirst.mockResolvedValue({
+      id: "m-existing",
+      organizerId: "someone-else",
+      participantUserIds: ["core-1"],
+    });
+
+    const res = await trackExternalEventAsMeeting(input);
+
+    expect(res).toMatchObject({ ok: true, meeting: { id: "m-existing" } });
+    expect(p.scheduledMeeting!.create).not.toHaveBeenCalled();
+    expect(p.scheduledMeeting!.update).not.toHaveBeenCalled();
+  });
+
+  it("joins the actor to an already-tracked event's roster when Google says they're on it", async () => {
+    const p = arrange({ event: { viewerInvited: true } });
+    p.scheduledMeeting!.findFirst.mockResolvedValue({
+      id: "m-existing",
+      organizerId: "someone-else",
+      participantUserIds: [],
+    });
+    p.scheduledMeeting!.update.mockResolvedValue({
+      id: "m-existing",
+      organizerId: "someone-else",
+      participantUserIds: ["core-1"],
+      selectedAt: new Date("2026-09-15T18:00:00.000Z"),
+      createdAt: new Date("2026-09-01T00:00:00.000Z"),
+    });
+    p.meetingAttendance!.findFirst.mockResolvedValue({ id: "att-1" });
+
+    const res = await trackExternalEventAsMeeting(input);
+
+    expect(p.scheduledMeeting!.update).toHaveBeenCalledWith({
+      where: { id: "m-existing" },
+      data: { participantUserIds: { push: "core-1" } },
+    });
+    expect(p.meetingAttendance!.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.arrayContaining([
+          expect.objectContaining({
+            scheduledMeetingId: "m-existing",
+            occurrenceStart: new Date("2026-09-15T18:00:00.000Z"),
+            userId: "core-1",
+          }),
+        ]),
+      }),
+    );
+    expect(res).toEqual({ ok: true, meeting: { id: "m-existing" } });
+  });
+
+  it("joins the actor to the roster without seeding attendance when the meeting has none yet", async () => {
+    const p = arrange({ event: { viewerInvited: true } });
+    p.scheduledMeeting!.findFirst.mockResolvedValue({
+      id: "m-existing",
+      organizerId: "someone-else",
+      participantUserIds: [],
+    });
+    p.scheduledMeeting!.update.mockResolvedValue({
+      id: "m-existing",
+      organizerId: "someone-else",
+      participantUserIds: ["core-1"],
+      selectedAt: new Date("2026-09-15T18:00:00.000Z"),
+      createdAt: new Date("2026-09-01T00:00:00.000Z"),
+    });
+    p.meetingAttendance!.findFirst.mockResolvedValue(null);
+
+    const res = await trackExternalEventAsMeeting(input);
+
+    expect(p.meetingAttendance!.createMany).not.toHaveBeenCalled();
+    expect(res).toEqual({ ok: true, meeting: { id: "m-existing" } });
+  });
+
+  it("refuses an event that is already tracked when the actor isn't on it and it isn't lab-wide", async () => {
+    const p = arrange({ general: false, event: { viewerInvited: false } });
+    p.scheduledMeeting!.findFirst.mockResolvedValue({
+      id: "m-existing",
+      organizerId: "someone-else",
+      participantUserIds: [],
+    });
 
     expect(await trackExternalEventAsMeeting(input)).toEqual({
       ok: false,
       error: "This event is already tracked in DALI",
       status: 409,
     });
-    expect(p.scheduledMeeting!.create).not.toHaveBeenCalled();
+    expect(p.scheduledMeeting!.update).not.toHaveBeenCalled();
   });
 
   it("refuses a calendar link that isn't the actor's", async () => {

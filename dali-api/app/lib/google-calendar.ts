@@ -1107,12 +1107,15 @@ export async function getGoogleEvent(opts: {
   attendeeEmails: string[];
   /** The account this link reads through organizes the event or is a guest. */
   viewerInvited: boolean;
+  /** The Google organizer's address, falling back to the creator; null when
+   *  Google omits both. */
+  organizerEmail: string | null;
 }> {
   const token = await getValidAccessTokenForLink(opts.linkId);
   const calendarId = encodeURIComponent(opts.calendarId ?? "primary");
   const params = new URLSearchParams({
     fields:
-      "id,iCalUID,summary,description,location,recurrence,start(dateTime,date),end(dateTime,date),organizer(self),attendees(email,self)",
+      "id,iCalUID,summary,description,location,recurrence,start(dateTime,date),end(dateTime,date),organizer(email,self),creator(email),attendees(email,self)",
   });
   const res = await fetch(
     `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${encodeURIComponent(opts.eventId)}?${params}`,
@@ -1131,7 +1134,8 @@ export async function getGoogleEvent(opts: {
     recurrence?: string[];
     start?: { dateTime?: string; date?: string };
     end?: { dateTime?: string; date?: string };
-    organizer?: { self?: boolean };
+    organizer?: { email?: string; self?: boolean };
+    creator?: { email?: string };
     attendees?: { email?: string; self?: boolean }[];
   };
   return {
@@ -1150,6 +1154,7 @@ export async function getGoogleEvent(opts: {
       .filter((e): e is string => typeof e === "string" && e.length > 0),
     viewerInvited:
       data.organizer?.self === true || (data.attendees ?? []).some((a) => a.self === true),
+    organizerEmail: (data.organizer?.email ?? data.creator?.email ?? "").trim() || null,
   };
 }
 

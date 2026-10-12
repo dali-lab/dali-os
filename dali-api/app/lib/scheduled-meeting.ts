@@ -2085,7 +2085,7 @@ export type TrackExternalEventInput = {
 };
 
 export type TrackExternalEventResult =
-  | { ok: true; meeting: ScheduledMeeting }
+  | { ok: true; meeting: Pick<ScheduledMeeting, "id"> }
   | { ok: false; error: string; status: number };
 
 /**
@@ -2109,6 +2109,10 @@ export type TrackExternalEventResult =
  * A series binds to its master id, matching how meetingsForExternalEvents
  * resolves an expanded instance, so tracking one occurrence covers the series —
  * one note and one roster for a weekly lab meeting, not one per week.
+ *
+ * Re-tracking an already-tracked event joins the actor to its roster instead of
+ * refusing, because an incomplete roster — e.g. an organizer Google didn't list
+ * as a guest — must not lock that person out of their own meeting.
  */
 export async function trackExternalEventAsMeeting(
   input: TrackExternalEventInput,
@@ -2143,13 +2147,6 @@ export async function trackExternalEventAsMeeting(
   }
 
   const externalEventId = input.recurringEventId || event.id;
-  const existing = await prisma.scheduledMeeting.findFirst({
-    where: { externalEventId, status: { not: "Cancelled" } },
-    select: { id: true },
-  });
-  if (existing) {
-    return { ok: false, error: "This event is already tracked in DALI", status: 409 };
-  }
 
   const startDate = event.startIso
     ? new Date(event.startIso)
@@ -2169,11 +2166,36 @@ export async function trackExternalEventAsMeeting(
       ? Math.round((endDate.getTime() - startDate.getTime()) / 60_000)
       : 60;
 
-  // The roster starts as whoever Google already has on the event, resolved to
-  // DALI members. An event on the general calendar often has no guest list at
+  const existing = await prisma.scheduledMeeting.findFirst({
+    where: { externalEventId, status: { not: "Cancelled" } },
+    select: { id: true, organizerId: true, participantUserIds: true },
+  });
+  if (existing) {
+    if (existing.organizerId === input.actorId || existing.participantUserIds.includes(input.actorId)) {
+      return { ok: true, meeting: { id: existing.id } };
+    }
+    if (event.viewerInvited || labWide) {
+      const updated = await prisma.scheduledMeeting.update({
+        where: { id: existing.id },
+        data: { participantUserIds: { push: input.actorId } },
+      });
+      await ensureOccurrenceRoster(updated, startDate);
+      return { ok: true, meeting: { id: updated.id } };
+    }
+    return { ok: false, error: "This event is already tracked in DALI", status: 409 };
+  }
+
+  // The roster starts as Google's organizer plus guests, resolved to DALI
+  // members. An event on the general calendar often has no guest list at
   // all, and that's fine — the roster is editable on the meeting page, and the
   // actor is always on it.
-  const attendeeEmails = event.attendeeEmails.map((e) => e.toLowerCase());
+  const attendeeEmails = Array.from(
+    new Set(
+      [...event.attendeeEmails, ...(event.organizerEmail ? [event.organizerEmail] : [])].map((e) =>
+        e.toLowerCase(),
+      ),
+    ),
+  );
   const attendees = attendeeEmails.length
     ? await prisma.user.findMany({
         where: {
