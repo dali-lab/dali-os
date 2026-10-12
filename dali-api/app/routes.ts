@@ -412,6 +412,9 @@ export default [
   // Global command-palette search (⌘K) — permission-scoped in the loader.
   route("api/search", "routes/api.search.ts"),
 
+  // High scores for the tetris game on the week 5 home landing scene.
+  route("api/landing/tetris-scores", "routes/api.landing.tetris-scores.ts"),
+
   // Activities (specs/activities.md): the time-boxed "mode" layer — the
   // onboarding scavenger hunt is mechanic #1. This endpoint feeds the shell's
   // activity modal (progress + leaderboard on GET; code submit on POST); the

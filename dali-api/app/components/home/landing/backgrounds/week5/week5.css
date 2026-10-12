@@ -1,0 +1,169 @@
+/*
+ * Week 5 build scene: a board of falling blocks that plays itself until someone presses start,
+ * and then stands down behind a real game (see Week5Background.tsx).
+ *
+ * Everything here is scoped to `.landing-week5` so it can't reach another week's background, and
+ * sized in the landing frame's container units, like the rest of landing.css, so the scene fits
+ * the shell's main column rather than the window.
+ */
+
+.landing[data-background='build'] {
+  /* The board's own backdrop is black to the edges of its frame, so the ground behind it is too. */
+  --content-start: 900ms;
+  background: #000000;
+}
+
+html:has(.landing[data-background='build']),
+body:has(.landing[data-background='build']) {
+  background: #000000;
+}
+
+.landing-week5 {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+
+  /* Base colour of the .landing-scrim gradients, as "r g b". */
+  --scrim-rgb: 0 0 0;
+  background-color: #000000;
+}
+
+/*
+ * The board fills the frame's height and is anchored left: at 2.64:1 the art is wider than any
+ * real window, and everything drawn sits in the left 60% -- the eleven columns end at x=2431 of
+ * 4075 and the rest is empty black. Taking the overhang off the right loses nothing, while
+ * centring would cut the leftmost column.
+ */
+.w5-board {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+/*
+ * The board covers the frame via preserveAspectRatio="xMinYMid slice" on the SVG itself, which
+ * prep-week5-art.py writes in. Deliberately no object-fit here: that property only applies to
+ * replaced elements, so on an inline <svg> it does nothing at all and the board comes out
+ * letterboxed into a band with black above and below.
+ */
+.w5-board svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* ---------- Reduced motion ---------- */
+
+/*
+ * Stop the export's own loop rather than pausing it: paused, a block hangs in mid-air wherever
+ * the loop happened to be. Dropped, every group falls back to the position in its own markup,
+ * which is a part-built board with nothing in flight -- the right picture to hold still on.
+ *
+ * landing.css also pauses loops inside .landing-animated, which would strand a block the same
+ * way, so this has to win. Hence the !important: it is overriding the export's inline stylesheet
+ * and the shared pause rule at once, and neither can be reached any other way.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .w5-board svg * {
+    animation: none !important;
+  }
+}
+
+/* ---------- Keeping the text column readable ---------- */
+
+/*
+ * Stacked layouts put the copy over the middle of the board rather than beside it, so the
+ * darkening comes from top and bottom. This is the base case; the desktop rule below replaces
+ * it with a sideways ramp once the copy moves into its own column.
+ */
+.landing-week5 .landing-scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    0deg,
+    rgb(var(--scrim-rgb) / 0.88) 0%,
+    rgb(var(--scrim-rgb) / 0.55) 50%,
+    rgb(var(--scrim-rgb) / 0.88) 100%
+  );
+}
+
+/*
+ * The shared scrim was tuned over the library room, which is dim and low-contrast at the right
+ * of the frame. This board is neither: it is saturated, high-contrast and, because the art is
+ * 2.64:1 and has to fill the frame's height, scaled up until the stack runs the full width
+ * behind the text. At the shared ramp the cards sit on bright blocks and the eye catches on
+ * them instead of the copy.
+ *
+ * So the ramp is pulled earlier and deeper on the right. The left third is left alone, where
+ * the board is meant to be read. The vertical ramp underneath it is kept shallow on purpose:
+ * the sideways one already covers the copy, and anything heavier washes the colour out of the
+ * stack, which sits along the bottom of the frame and is the one part worth looking at.
+ */
+@container landing (min-width: 900px) and (min-aspect-ratio: 11/10) {
+  .landing-week5 .landing-scrim {
+    background:
+      linear-gradient(
+        90deg,
+        rgb(var(--scrim-rgb) / 0) 22%,
+        rgb(var(--scrim-rgb) / 0.62) 44%,
+        rgb(var(--scrim-rgb) / 0.9) 64%,
+        rgb(var(--scrim-rgb) / 0.96) 100%
+      ),
+      linear-gradient(0deg, rgb(var(--scrim-rgb) / 0.28) 0%, rgb(var(--scrim-rgb) / 0) 45%);
+  }
+}
+
+/* ---------- Making room for the game ---------- */
+
+/*
+ * A background is z-index: -1 and pointer-events: none on every other week, which is right for a
+ * picture and wrong for something you play. The stacking is lifted to 0 so the board sits above
+ * the page's own backdrop but still below the milestone copy. Pointer events stay off here and
+ * are switched back on inside the game, for the button and the playfield only, so the search box
+ * and the recents links underneath keep working.
+ */
+.landing-week5 {
+  z-index: 0;
+  pointer-events: none;
+}
+
+/*
+ * The copy's half of that bargain. landing.css gives .landing-content a z-index on no layout, and
+ * in the stacked one it isn't positioned either -- which is fine under a background at -1 and not
+ * fine under one at 0, where the game would cover the text. It is positioned only in the stacked
+ * case, so the desktop rule in landing.css keeps the `position: absolute` that puts the copy in
+ * its own column.
+ */
+.landing[data-background='build'] .landing-content {
+  z-index: 1;
+}
+
+@container landing (max-width: 899px), (max-aspect-ratio: 11/10) {
+  .landing[data-background='build'] .landing-content {
+    position: relative;
+  }
+}
+
+/*
+ * While a game is on, the decorative loop steps back rather than stopping: dimmed and pushed
+ * slightly away, so the playfield reads as the thing in focus and the attract board as the wall
+ * behind it. It keeps running underneath, which is what makes coming back out of a game feel
+ * like returning to something still going rather than restarting it.
+ */
+.w5-board {
+  transition: opacity 420ms ease, filter 420ms ease, scale 520ms ease;
+}
+
+.w5-board-standby {
+  opacity: 0.28;
+  filter: saturate(0.5) blur(2px);
+  scale: 1.03;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .w5-board {
+    transition: none;
+  }
+}

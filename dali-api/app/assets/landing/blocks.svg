@@ -1,0 +1,3327 @@
+<svg preserveAspectRatio="xMinYMid slice" viewBox="0 0 4075 1545" fill="none" xmlns="http://www.w3.org/2000/svg">
+<style>
+@keyframes kf_Group_14252_transform_0 {
+  0% {
+    transform: translateX(221px) translateY(221px) translateY(-1103px);
+  }
+  42.78% {
+    transform: translateX(221px) translateY(221px) translateY(-1103px);
+  }
+  44.43% {
+    transform: translateX(221px) translateY(221px) translateY(-1103px);
+  }
+  44.44% {
+    transform: translateX(221px) translateY(221px) translateY(-882px);
+  }
+  46.1% {
+    transform: translateX(221px) translateY(221px) translateY(-882px);
+  }
+  46.11% {
+    transform: translateX(221px) translateY(221px) translateY(-661px);
+  }
+  47.77% {
+    transform: translateX(221px) translateY(221px) translateY(-661px);
+  }
+  47.78% {
+    transform: translateX(221px) translateY(221px) translateY(-440px);
+  }
+  49.43% {
+    transform: translateX(221px) translateY(221px) translateY(-440px);
+  }
+  49.44% {
+    transform: translateX(221px) translateY(221px) translateY(-219px);
+  }
+  51.1% {
+    transform: translateX(221px) translateY(221px) translateY(-219px);
+  }
+  51.11% {
+    transform: translateX(221px) translateY(221px) translateY(0px);
+  }
+  87.78% {
+    transform: translateX(221px) translateY(221px) translateY(0px);
+  }
+  87.82% {
+    transform: translateX(221px) translateY(221px) translateY(0px);
+  }
+  87.83% {
+    transform: translateX(221px) translateY(221px) translateY(-1103px);
+  }
+  100% {
+    transform: translateX(221px) translateY(221px) translateY(-1103px);
+  }
+}
+@keyframes kf_Group_14252_opacity_0 {
+  0% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  42.72% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  42.77% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  42.78% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  82.22% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  83.14% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  83.15% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  84.06% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  84.07% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  84.99% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  85% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  85.92% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  85.93% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  86.84% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  86.85% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  87.77% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  87.78% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+#Group_14252 {
+  transform-origin: 0 0;
+  animation:
+    kf_Group_14252_transform_0 18s linear infinite,
+    kf_Group_14252_opacity_0 18s linear infinite;
+}
+@keyframes kf_Group_14263_transform_0 {
+  0% {
+    transform: translateX(221px) translateY(-882px);
+  }
+  60.56% {
+    transform: translateX(221px) translateY(-882px);
+  }
+  62.21% {
+    transform: translateX(221px) translateY(-882px);
+  }
+  62.22% {
+    transform: translateX(221px) translateY(-661px);
+  }
+  63.88% {
+    transform: translateX(221px) translateY(-661px);
+  }
+  63.89% {
+    transform: translateX(221px) translateY(-440px);
+  }
+  65.55% {
+    transform: translateX(221px) translateY(-440px);
+  }
+  65.56% {
+    transform: translateX(221px) translateY(-219px);
+  }
+  67.21% {
+    transform: translateX(221px) translateY(-219px);
+  }
+  67.22% {
+    transform: translateX(221px) translateY(0px);
+  }
+  87.78% {
+    transform: translateX(221px) translateY(0px);
+  }
+  87.82% {
+    transform: translateX(221px) translateY(0px);
+  }
+  87.83% {
+    transform: translateX(221px) translateY(-882px);
+  }
+  100% {
+    transform: translateX(221px) translateY(-882px);
+  }
+}
+@keyframes kf_Group_14263_opacity_0 {
+  0% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  60.5% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  60.55% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  60.56% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  82.22% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  83.14% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  83.15% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  84.06% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  84.07% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  84.99% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  85% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  85.92% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  85.93% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  86.84% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  86.85% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  87.77% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  87.78% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+#Group_14263 {
+  transform-origin: 0 0;
+  animation:
+    kf_Group_14263_transform_0 18s linear infinite,
+    kf_Group_14263_opacity_0 18s linear infinite;
+}
+@keyframes kf_Group_14253_transform_0 {
+  0% {
+    transform: translateY(221px) translateY(-1103px);
+  }
+  20.56% {
+    transform: translateY(221px) translateY(-1103px);
+  }
+  22.21% {
+    transform: translateY(221px) translateY(-1103px);
+  }
+  22.22% {
+    transform: translateY(221px) translateY(-882px);
+  }
+  23.88% {
+    transform: translateY(221px) translateY(-882px);
+  }
+  23.89% {
+    transform: translateY(221px) translateY(-661px);
+  }
+  25.55% {
+    transform: translateY(221px) translateY(-661px);
+  }
+  25.56% {
+    transform: translateY(221px) translateY(-440px);
+  }
+  27.21% {
+    transform: translateY(221px) translateY(-440px);
+  }
+  27.22% {
+    transform: translateY(221px) translateY(-219px);
+  }
+  28.88% {
+    transform: translateY(221px) translateY(-219px);
+  }
+  28.89% {
+    transform: translateY(221px) translateY(0px);
+  }
+  87.78% {
+    transform: translateY(221px) translateY(0px);
+  }
+  87.82% {
+    transform: translateY(221px) translateY(0px);
+  }
+  87.83% {
+    transform: translateY(221px) translateY(-1103px);
+  }
+  100% {
+    transform: translateY(221px) translateY(-1103px);
+  }
+}
+@keyframes kf_Group_14253_opacity_0 {
+  0% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  20.5% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  20.55% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  20.56% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  82.22% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  83.14% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  83.15% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  84.06% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  84.07% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  84.99% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  85% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  85.92% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  85.93% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  86.84% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  86.85% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  87.77% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  87.78% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+#Group_14253 {
+  transform-origin: 0 0;
+  animation:
+    kf_Group_14253_transform_0 18s linear infinite,
+    kf_Group_14253_opacity_0 18s linear infinite;
+}
+@keyframes kf_Group_14292_transform_0 {
+  0% {
+    transform: translateX(221px) translateY(221px) translateY(-1103px);
+  }
+  11.67% {
+    transform: translateX(221px) translateY(221px) translateY(-1103px);
+  }
+  13.32% {
+    transform: translateX(221px) translateY(221px) translateY(-1103px);
+  }
+  13.33% {
+    transform: translateX(221px) translateY(221px) translateY(-882px);
+  }
+  14.99% {
+    transform: translateX(221px) translateY(221px) translateY(-882px);
+  }
+  15% {
+    transform: translateX(221px) translateY(221px) translateY(-661px);
+  }
+  16.66% {
+    transform: translateX(221px) translateY(221px) translateY(-661px);
+  }
+  16.67% {
+    transform: translateX(221px) translateY(221px) translateY(-440px);
+  }
+  18.32% {
+    transform: translateX(221px) translateY(221px) translateY(-440px);
+  }
+  18.33% {
+    transform: translateX(221px) translateY(221px) translateY(-219px);
+  }
+  19.99% {
+    transform: translateX(221px) translateY(221px) translateY(-219px);
+  }
+  20% {
+    transform: translateX(221px) translateY(221px) translateY(0px);
+  }
+  87.78% {
+    transform: translateX(221px) translateY(221px) translateY(0px);
+  }
+  87.82% {
+    transform: translateX(221px) translateY(221px) translateY(0px);
+  }
+  87.83% {
+    transform: translateX(221px) translateY(221px) translateY(-1103px);
+  }
+  100% {
+    transform: translateX(221px) translateY(221px) translateY(-1103px);
+  }
+}
+@keyframes kf_Group_14292_opacity_0 {
+  0% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  11.61% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  11.66% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  11.67% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  82.22% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  83.14% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  83.15% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  84.06% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  84.07% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  84.99% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  85% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  85.92% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  85.93% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  86.84% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  86.85% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  87.77% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  87.78% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+#Group_14292 {
+  transform-origin: 0 0;
+  animation:
+    kf_Group_14292_transform_0 18s linear infinite,
+    kf_Group_14292_opacity_0 18s linear infinite;
+}
+@keyframes kf_Group_14293_transform_0 {
+  0% {
+    transform: translateX(221px) translateY(-1324px);
+  }
+  33.89% {
+    transform: translateX(221px) translateY(-1324px);
+  }
+  35.55% {
+    transform: translateX(221px) translateY(-1324px);
+  }
+  35.56% {
+    transform: translateX(221px) translateY(-1103px);
+  }
+  37.21% {
+    transform: translateX(221px) translateY(-1103px);
+  }
+  37.22% {
+    transform: translateX(221px) translateY(-882px);
+  }
+  38.88% {
+    transform: translateX(221px) translateY(-882px);
+  }
+  38.89% {
+    transform: translateX(221px) translateY(-661px);
+  }
+  40.55% {
+    transform: translateX(221px) translateY(-661px);
+  }
+  40.56% {
+    transform: translateX(221px) translateY(-440px);
+  }
+  42.21% {
+    transform: translateX(221px) translateY(-440px);
+  }
+  42.22% {
+    transform: translateX(221px) translateY(-219px);
+  }
+  43.88% {
+    transform: translateX(221px) translateY(-219px);
+  }
+  43.89% {
+    transform: translateX(221px) translateY(0px);
+  }
+  87.78% {
+    transform: translateX(221px) translateY(0px);
+  }
+  87.82% {
+    transform: translateX(221px) translateY(0px);
+  }
+  87.83% {
+    transform: translateX(221px) translateY(-1324px);
+  }
+  100% {
+    transform: translateX(221px) translateY(-1324px);
+  }
+}
+@keyframes kf_Group_14293_opacity_0 {
+  0% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  33.83% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  33.88% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  33.89% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  82.22% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  83.14% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  83.15% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  84.06% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  84.07% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  84.99% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  85% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  85.92% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  85.93% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  86.84% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  86.85% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  87.77% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  87.78% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+#Group_14293 {
+  transform-origin: 0 0;
+  animation:
+    kf_Group_14293_transform_0 18s linear infinite,
+    kf_Group_14293_opacity_0 18s linear infinite;
+}
+@keyframes kf_Group_14295_transform_0 {
+  0% {
+    transform: translateX(442px) translateY(-1103px);
+  }
+  51.67% {
+    transform: translateX(442px) translateY(-1103px);
+  }
+  53.32% {
+    transform: translateX(442px) translateY(-1103px);
+  }
+  53.33% {
+    transform: translateX(442px) translateY(-882px);
+  }
+  54.99% {
+    transform: translateX(442px) translateY(-882px);
+  }
+  55% {
+    transform: translateX(442px) translateY(-661px);
+  }
+  56.66% {
+    transform: translateX(442px) translateY(-661px);
+  }
+  56.67% {
+    transform: translateX(442px) translateY(-440px);
+  }
+  58.32% {
+    transform: translateX(442px) translateY(-440px);
+  }
+  58.33% {
+    transform: translateX(442px) translateY(-219px);
+  }
+  59.99% {
+    transform: translateX(442px) translateY(-219px);
+  }
+  60% {
+    transform: translateX(442px) translateY(0px);
+  }
+  87.78% {
+    transform: translateX(442px) translateY(0px);
+  }
+  87.82% {
+    transform: translateX(442px) translateY(0px);
+  }
+  87.83% {
+    transform: translateX(442px) translateY(-1103px);
+  }
+  100% {
+    transform: translateX(442px) translateY(-1103px);
+  }
+}
+@keyframes kf_Group_14295_opacity_0 {
+  0% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  51.61% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  51.66% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  51.67% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  82.22% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  83.14% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  83.15% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  84.06% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  84.07% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  84.99% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  85% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  85.92% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  85.93% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  86.84% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  86.85% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  87.77% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  87.78% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+#Group_14295 {
+  transform-origin: 0 0;
+  animation:
+    kf_Group_14295_transform_0 18s linear infinite,
+    kf_Group_14295_opacity_0 18s linear infinite;
+}
+@keyframes kf_Group_14294_transform_0 {
+  0% {
+    transform: translateY(-1103px);
+  }
+  69.44% {
+    transform: translateY(-1103px);
+  }
+  71.1% {
+    transform: translateY(-1103px);
+  }
+  71.11% {
+    transform: translateY(-882px);
+  }
+  72.77% {
+    transform: translateY(-882px);
+  }
+  72.78% {
+    transform: translateY(-661px);
+  }
+  74.43% {
+    transform: translateY(-661px);
+  }
+  74.44% {
+    transform: translateY(-440px);
+  }
+  76.1% {
+    transform: translateY(-440px);
+  }
+  76.11% {
+    transform: translateY(-219px);
+  }
+  77.77% {
+    transform: translateY(-219px);
+  }
+  77.78% {
+    transform: translateY(0px);
+  }
+  87.78% {
+    transform: translateY(0px);
+  }
+  87.82% {
+    transform: translateY(0px);
+  }
+  87.83% {
+    transform: translateY(-1103px);
+  }
+  100% {
+    transform: translateY(-1103px);
+  }
+}
+@keyframes kf_Group_14294_opacity_0 {
+  0% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  69.39% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  69.43% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  69.44% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  82.22% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  83.14% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  83.15% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  84.06% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  84.07% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  84.99% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  85% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  85.92% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  85.93% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  86.84% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  86.85% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  87.77% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  87.78% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+#Group_14294 {
+  transform-origin: 0 0;
+  animation:
+    kf_Group_14294_transform_0 18s linear infinite,
+    kf_Group_14294_opacity_0 18s linear infinite;
+}
+@keyframes kf_Group_14281_transform_0 {
+  0% {
+    transform: translateX(221px) translateY(442px) translateY(-1103px);
+  }
+  2.78% {
+    transform: translateX(221px) translateY(442px) translateY(-1103px);
+  }
+  4.43% {
+    transform: translateX(221px) translateY(442px) translateY(-1103px);
+  }
+  4.44% {
+    transform: translateX(221px) translateY(442px) translateY(-882px);
+  }
+  6.1% {
+    transform: translateX(221px) translateY(442px) translateY(-882px);
+  }
+  6.11% {
+    transform: translateX(221px) translateY(442px) translateY(-661px);
+  }
+  7.77% {
+    transform: translateX(221px) translateY(442px) translateY(-661px);
+  }
+  7.78% {
+    transform: translateX(221px) translateY(442px) translateY(-440px);
+  }
+  9.43% {
+    transform: translateX(221px) translateY(442px) translateY(-440px);
+  }
+  9.44% {
+    transform: translateX(221px) translateY(442px) translateY(-219px);
+  }
+  11.1% {
+    transform: translateX(221px) translateY(442px) translateY(-219px);
+  }
+  11.11% {
+    transform: translateX(221px) translateY(442px) translateY(0px);
+  }
+  87.78% {
+    transform: translateX(221px) translateY(442px) translateY(0px);
+  }
+  87.82% {
+    transform: translateX(221px) translateY(442px) translateY(0px);
+  }
+  87.83% {
+    transform: translateX(221px) translateY(442px) translateY(-1103px);
+  }
+  100% {
+    transform: translateX(221px) translateY(442px) translateY(-1103px);
+  }
+}
+@keyframes kf_Group_14281_opacity_0 {
+  0% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  2.72% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  2.77% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  2.78% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  82.22% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  83.14% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  83.15% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  84.06% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  84.07% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  84.99% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  85% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  85.92% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  85.93% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  86.84% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  86.85% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  87.77% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  87.78% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+#Group_14281 {
+  transform-origin: 0 0;
+  animation:
+    kf_Group_14281_transform_0 18s linear infinite,
+    kf_Group_14281_opacity_0 18s linear infinite;
+}
+@keyframes kf_Group_14283_transform_0 {
+  0% {
+    transform: translateY(442px) translateY(-1324px);
+  }
+  47.22% {
+    transform: translateY(442px) translateY(-1324px);
+  }
+  48.88% {
+    transform: translateY(442px) translateY(-1324px);
+  }
+  48.89% {
+    transform: translateY(442px) translateY(-1103px);
+  }
+  50.55% {
+    transform: translateY(442px) translateY(-1103px);
+  }
+  50.56% {
+    transform: translateY(442px) translateY(-882px);
+  }
+  52.21% {
+    transform: translateY(442px) translateY(-882px);
+  }
+  52.22% {
+    transform: translateY(442px) translateY(-661px);
+  }
+  53.88% {
+    transform: translateY(442px) translateY(-661px);
+  }
+  53.89% {
+    transform: translateY(442px) translateY(-440px);
+  }
+  55.55% {
+    transform: translateY(442px) translateY(-440px);
+  }
+  55.56% {
+    transform: translateY(442px) translateY(-219px);
+  }
+  57.21% {
+    transform: translateY(442px) translateY(-219px);
+  }
+  57.22% {
+    transform: translateY(442px) translateY(0px);
+  }
+  87.78% {
+    transform: translateY(442px) translateY(0px);
+  }
+  87.82% {
+    transform: translateY(442px) translateY(0px);
+  }
+  87.83% {
+    transform: translateY(442px) translateY(-1324px);
+  }
+  100% {
+    transform: translateY(442px) translateY(-1324px);
+  }
+}
+@keyframes kf_Group_14283_opacity_0 {
+  0% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  47.17% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  47.21% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  47.22% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  82.22% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  83.14% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  83.15% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  84.06% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  84.07% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  84.99% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  85% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  85.92% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  85.93% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  86.84% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  86.85% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  87.77% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  87.78% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+#Group_14283 {
+  transform-origin: 0 0;
+  animation:
+    kf_Group_14283_transform_0 18s linear infinite,
+    kf_Group_14283_opacity_0 18s linear infinite;
+}
+@keyframes kf_Group_14282_transform_0 {
+  0% {
+    transform: translateX(221px) translateY(221px) translateY(-1324px);
+  }
+  25% {
+    transform: translateX(221px) translateY(221px) translateY(-1324px);
+  }
+  26.66% {
+    transform: translateX(221px) translateY(221px) translateY(-1324px);
+  }
+  26.67% {
+    transform: translateX(221px) translateY(221px) translateY(-1103px);
+  }
+  28.32% {
+    transform: translateX(221px) translateY(221px) translateY(-1103px);
+  }
+  28.33% {
+    transform: translateX(221px) translateY(221px) translateY(-882px);
+  }
+  29.99% {
+    transform: translateX(221px) translateY(221px) translateY(-882px);
+  }
+  30% {
+    transform: translateX(221px) translateY(221px) translateY(-661px);
+  }
+  31.66% {
+    transform: translateX(221px) translateY(221px) translateY(-661px);
+  }
+  31.67% {
+    transform: translateX(221px) translateY(221px) translateY(-440px);
+  }
+  33.32% {
+    transform: translateX(221px) translateY(221px) translateY(-440px);
+  }
+  33.33% {
+    transform: translateX(221px) translateY(221px) translateY(-219px);
+  }
+  34.99% {
+    transform: translateX(221px) translateY(221px) translateY(-219px);
+  }
+  35% {
+    transform: translateX(221px) translateY(221px) translateY(0px);
+  }
+  87.78% {
+    transform: translateX(221px) translateY(221px) translateY(0px);
+  }
+  87.82% {
+    transform: translateX(221px) translateY(221px) translateY(0px);
+  }
+  87.83% {
+    transform: translateX(221px) translateY(221px) translateY(-1324px);
+  }
+  100% {
+    transform: translateX(221px) translateY(221px) translateY(-1324px);
+  }
+}
+@keyframes kf_Group_14282_opacity_0 {
+  0% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  24.94% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  24.99% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  25% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  82.22% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  83.14% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  83.15% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  84.06% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  84.07% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  84.99% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  85% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  85.92% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  85.93% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  86.84% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  86.85% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  87.77% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  87.78% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+#Group_14282 {
+  transform-origin: 0 0;
+  animation:
+    kf_Group_14282_transform_0 18s linear infinite,
+    kf_Group_14282_opacity_0 18s linear infinite;
+}
+@keyframes kf_Group_14284_transform_0 {
+  0% {
+    transform: translateX(221px) translateY(-882px);
+  }
+  65% {
+    transform: translateX(221px) translateY(-882px);
+  }
+  66.66% {
+    transform: translateX(221px) translateY(-882px);
+  }
+  66.67% {
+    transform: translateX(221px) translateY(-661px);
+  }
+  68.32% {
+    transform: translateX(221px) translateY(-661px);
+  }
+  68.33% {
+    transform: translateX(221px) translateY(-440px);
+  }
+  69.99% {
+    transform: translateX(221px) translateY(-440px);
+  }
+  70% {
+    transform: translateX(221px) translateY(-219px);
+  }
+  71.66% {
+    transform: translateX(221px) translateY(-219px);
+  }
+  71.67% {
+    transform: translateX(221px) translateY(0px);
+  }
+  87.78% {
+    transform: translateX(221px) translateY(0px);
+  }
+  87.82% {
+    transform: translateX(221px) translateY(0px);
+  }
+  87.83% {
+    transform: translateX(221px) translateY(-882px);
+  }
+  100% {
+    transform: translateX(221px) translateY(-882px);
+  }
+}
+@keyframes kf_Group_14284_opacity_0 {
+  0% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  64.94% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  64.99% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  65% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  82.22% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  83.14% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  83.15% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  84.06% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  84.07% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  84.99% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  85% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  85.92% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  85.93% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  86.84% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  86.85% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  87.77% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  87.78% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+#Group_14284 {
+  transform-origin: 0 0;
+  animation:
+    kf_Group_14284_transform_0 18s linear infinite,
+    kf_Group_14284_opacity_0 18s linear infinite;
+}
+@keyframes kf_Group_14271_transform_0 {
+  0% {
+    transform: translateY(221px) translateY(-1324px);
+  }
+  7.22% {
+    transform: translateY(221px) translateY(-1324px);
+  }
+  8.88% {
+    transform: translateY(221px) translateY(-1324px);
+  }
+  8.89% {
+    transform: translateY(221px) translateY(-1103px);
+  }
+  10.55% {
+    transform: translateY(221px) translateY(-1103px);
+  }
+  10.56% {
+    transform: translateY(221px) translateY(-882px);
+  }
+  12.21% {
+    transform: translateY(221px) translateY(-882px);
+  }
+  12.22% {
+    transform: translateY(221px) translateY(-661px);
+  }
+  13.88% {
+    transform: translateY(221px) translateY(-661px);
+  }
+  13.89% {
+    transform: translateY(221px) translateY(-440px);
+  }
+  15.55% {
+    transform: translateY(221px) translateY(-440px);
+  }
+  15.56% {
+    transform: translateY(221px) translateY(-219px);
+  }
+  17.21% {
+    transform: translateY(221px) translateY(-219px);
+  }
+  17.22% {
+    transform: translateY(221px) translateY(0px);
+  }
+  87.78% {
+    transform: translateY(221px) translateY(0px);
+  }
+  87.82% {
+    transform: translateY(221px) translateY(0px);
+  }
+  87.83% {
+    transform: translateY(221px) translateY(-1324px);
+  }
+  100% {
+    transform: translateY(221px) translateY(-1324px);
+  }
+}
+@keyframes kf_Group_14271_opacity_0 {
+  0% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  7.17% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  7.21% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  7.22% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  82.22% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  83.14% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  83.15% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  84.06% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  84.07% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  84.99% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  85% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  85.92% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  85.93% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  86.84% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  86.85% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  87.77% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  87.78% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+#Group_14271 {
+  transform-origin: 0 0;
+  animation:
+    kf_Group_14271_transform_0 18s linear infinite,
+    kf_Group_14271_opacity_0 18s linear infinite;
+}
+@keyframes kf_Group_14272_transform_0 {
+  0% {
+    transform: translateY(-1103px);
+  }
+  29.44% {
+    transform: translateY(-1103px);
+  }
+  31.1% {
+    transform: translateY(-1103px);
+  }
+  31.11% {
+    transform: translateY(-882px);
+  }
+  32.77% {
+    transform: translateY(-882px);
+  }
+  32.78% {
+    transform: translateY(-661px);
+  }
+  34.43% {
+    transform: translateY(-661px);
+  }
+  34.44% {
+    transform: translateY(-440px);
+  }
+  36.1% {
+    transform: translateY(-440px);
+  }
+  36.11% {
+    transform: translateY(-219px);
+  }
+  37.77% {
+    transform: translateY(-219px);
+  }
+  37.78% {
+    transform: translateY(0px);
+  }
+  87.78% {
+    transform: translateY(0px);
+  }
+  87.82% {
+    transform: translateY(0px);
+  }
+  87.83% {
+    transform: translateY(-1103px);
+  }
+  100% {
+    transform: translateY(-1103px);
+  }
+}
+@keyframes kf_Group_14272_opacity_0 {
+  0% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  29.39% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  29.43% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  29.44% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  82.22% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  83.14% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  83.15% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  84.06% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  84.07% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  84.99% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  85% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  85.92% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  85.93% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  86.84% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  86.85% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  87.77% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  87.78% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+#Group_14272 {
+  transform-origin: 0 0;
+  animation:
+    kf_Group_14272_transform_0 18s linear infinite,
+    kf_Group_14272_opacity_0 18s linear infinite;
+}
+@keyframes kf_Group_14252_11_transform_0 {
+  0% {
+    transform: translateY(221px) translateY(-882px);
+  }
+  38.33% {
+    transform: translateY(221px) translateY(-882px);
+  }
+  39.99% {
+    transform: translateY(221px) translateY(-882px);
+  }
+  40% {
+    transform: translateY(221px) translateY(-661px);
+  }
+  41.66% {
+    transform: translateY(221px) translateY(-661px);
+  }
+  41.67% {
+    transform: translateY(221px) translateY(-440px);
+  }
+  43.32% {
+    transform: translateY(221px) translateY(-440px);
+  }
+  43.33% {
+    transform: translateY(221px) translateY(-219px);
+  }
+  44.99% {
+    transform: translateY(221px) translateY(-219px);
+  }
+  45% {
+    transform: translateY(221px) translateY(0px);
+  }
+  87.78% {
+    transform: translateY(221px) translateY(0px);
+  }
+  87.82% {
+    transform: translateY(221px) translateY(0px);
+  }
+  87.83% {
+    transform: translateY(221px) translateY(-882px);
+  }
+  100% {
+    transform: translateY(221px) translateY(-882px);
+  }
+}
+@keyframes kf_Group_14252_11_opacity_0 {
+  0% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  38.28% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  38.32% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  38.33% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  82.22% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  83.14% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  83.15% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  84.06% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  84.07% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  84.99% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  85% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  85.92% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  85.93% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  86.84% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  86.85% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  87.77% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  87.78% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+#Group_14252_11 {
+  transform-origin: 0 0;
+  animation:
+    kf_Group_14252_11_transform_0 18s linear infinite,
+    kf_Group_14252_11_opacity_0 18s linear infinite;
+}
+@keyframes kf_Group_14309_transform_0 {
+  0% {
+    transform: translateX(221px) translateY(221px) translateY(-1103px);
+  }
+  16.11% {
+    transform: translateX(221px) translateY(221px) translateY(-1103px);
+  }
+  17.77% {
+    transform: translateX(221px) translateY(221px) translateY(-1103px);
+  }
+  17.78% {
+    transform: translateX(221px) translateY(221px) translateY(-882px);
+  }
+  19.43% {
+    transform: translateX(221px) translateY(221px) translateY(-882px);
+  }
+  19.44% {
+    transform: translateX(221px) translateY(221px) translateY(-661px);
+  }
+  21.1% {
+    transform: translateX(221px) translateY(221px) translateY(-661px);
+  }
+  21.11% {
+    transform: translateX(221px) translateY(221px) translateY(-440px);
+  }
+  22.77% {
+    transform: translateX(221px) translateY(221px) translateY(-440px);
+  }
+  22.78% {
+    transform: translateX(221px) translateY(221px) translateY(-219px);
+  }
+  24.43% {
+    transform: translateX(221px) translateY(221px) translateY(-219px);
+  }
+  24.44% {
+    transform: translateX(221px) translateY(221px) translateY(0px);
+  }
+  87.78% {
+    transform: translateX(221px) translateY(221px) translateY(0px);
+  }
+  87.82% {
+    transform: translateX(221px) translateY(221px) translateY(0px);
+  }
+  87.83% {
+    transform: translateX(221px) translateY(221px) translateY(-1103px);
+  }
+  100% {
+    transform: translateX(221px) translateY(221px) translateY(-1103px);
+  }
+}
+@keyframes kf_Group_14309_opacity_0 {
+  0% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  16.06% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  16.1% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  16.11% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  82.22% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  83.14% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  83.15% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  84.06% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  84.07% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  84.99% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  85% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  85.92% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  85.93% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  86.84% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  86.85% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  87.77% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  87.78% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+#Group_14309 {
+  transform-origin: 0 0;
+  animation:
+    kf_Group_14309_transform_0 18s linear infinite,
+    kf_Group_14309_opacity_0 18s linear infinite;
+}
+@keyframes kf_Group_14308_transform_0 {
+  0% {
+    transform: translateY(-1103px);
+  }
+  56.11% {
+    transform: translateY(-1103px);
+  }
+  57.77% {
+    transform: translateY(-1103px);
+  }
+  57.78% {
+    transform: translateY(-882px);
+  }
+  59.43% {
+    transform: translateY(-882px);
+  }
+  59.44% {
+    transform: translateY(-661px);
+  }
+  61.1% {
+    transform: translateY(-661px);
+  }
+  61.11% {
+    transform: translateY(-440px);
+  }
+  62.77% {
+    transform: translateY(-440px);
+  }
+  62.78% {
+    transform: translateY(-219px);
+  }
+  64.43% {
+    transform: translateY(-219px);
+  }
+  64.44% {
+    transform: translateY(0px);
+  }
+  87.78% {
+    transform: translateY(0px);
+  }
+  87.82% {
+    transform: translateY(0px);
+  }
+  87.83% {
+    transform: translateY(-1103px);
+  }
+  100% {
+    transform: translateY(-1103px);
+  }
+}
+@keyframes kf_Group_14308_opacity_0 {
+  0% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  56.06% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  56.1% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  56.11% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  82.22% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  83.14% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  83.15% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  84.06% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  84.07% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  84.99% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  85% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  85.92% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  85.93% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  86.84% {
+    animation-timing-function: linear;
+    opacity: 1;
+  }
+  86.85% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  87.77% {
+    animation-timing-function: linear;
+    opacity: 0.1;
+  }
+  87.78% {
+    animation-timing-function: linear;
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+#Group_14308 {
+  transform-origin: 0 0;
+  animation:
+    kf_Group_14308_transform_0 18s linear infinite,
+    kf_Group_14308_opacity_0 18s linear infinite;
+}
+</style>
+<g id="Layer_1_Night_Vectorized_____v3" clip-path="url(#clip0_199_507)">
+<rect width="4074.9" height="1545" id="Layer_1_Night_Vectorized_____v3_bg_0" fill="black">
+</rect>
+<g id="Group_14175" transform="translate(442 1103)">
+<rect id="Rectangle_546" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_2" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14176" transform="translate(442 882)">
+<rect id="Rectangle_546_2" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_3" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_4" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14177" transform="translate(221 882)">
+<rect id="Rectangle_546_3" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_5" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_6" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14178" transform="translate(221 1103)">
+<rect id="Rectangle_546_4" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_7" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_8" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14179" transform="translate(221 1324)">
+<rect id="Rectangle_546_5" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_9" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_10" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14180" transform="translate(442 1324)">
+<rect id="Rectangle_546_6" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_11" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_12" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14181" transform="translate(442 661)">
+<rect id="Rectangle_546_7" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_13" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_14" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14182" transform="translate(221 661)">
+<rect id="Rectangle_546_8" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_15" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_16" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14183" transform="translate(0 661)">
+<rect id="Rectangle_546_9" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_17" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_18" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14184" transform="translate(0 882)">
+<rect id="Rectangle_546_10" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_19" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_20" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14185" transform="translate(0 1103)">
+<rect id="Rectangle_546_11" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_21" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_22" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14186" transform="translate(0 1324)">
+<rect id="Rectangle_546_12" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_23" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_24" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14199" transform="translate(1768 1103)">
+<rect id="Rectangle_546_13" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_25" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_26" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14200" transform="translate(1768 882)">
+<rect id="Rectangle_546_14" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_27" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_28" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14201" transform="translate(1547 882)">
+<rect id="Rectangle_546_15" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_29" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_30" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14202" transform="translate(1547 1103)">
+<rect id="Rectangle_546_16" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_31" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_32" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14203" transform="translate(1547 1324)">
+<rect id="Rectangle_546_17" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_33" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_34" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14204" transform="translate(1768 1324)">
+<rect id="Rectangle_546_18" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_35" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_36" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14205" transform="translate(1768 661)">
+<rect id="Rectangle_546_19" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_37" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_38" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14206" transform="translate(1547 661)">
+<rect id="Rectangle_546_20" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_39" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_40" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14207" transform="translate(1326 661)">
+<rect id="Rectangle_546_21" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_41" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_42" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14208" transform="translate(1326 882)">
+<rect id="Rectangle_546_22" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_43" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_44" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14209" transform="translate(1326 1103)">
+<rect id="Rectangle_546_23" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_45" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_46" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14210" transform="translate(1326 1324)">
+<rect id="Rectangle_546_24" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_47" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_48" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14187" transform="translate(1105 1103)">
+<rect id="Rectangle_546_25" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_49" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_50" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14188" transform="translate(1105 882)">
+<rect id="Rectangle_546_26" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_51" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_52" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14189" transform="translate(884 882)">
+<rect id="Rectangle_546_27" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_53" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_54" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14190" transform="translate(884 1103)">
+<rect id="Rectangle_546_28" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_55" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_56" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14191" transform="translate(884 1324)">
+<rect id="Rectangle_546_29" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_57" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_58" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14192" transform="translate(1105 1324)">
+<rect id="Rectangle_546_30" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_59" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_60" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14193" transform="translate(1105 661)">
+<rect id="Rectangle_546_31" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_61" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_62" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14194" transform="translate(884 661)">
+<rect id="Rectangle_546_32" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_63" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_64" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14195" transform="translate(663 661)">
+<rect id="Rectangle_546_33" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_65" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_66" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14196" transform="translate(663 882)">
+<rect id="Rectangle_546_34" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_67" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_68" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14197" transform="translate(663 1103)">
+<rect id="Rectangle_546_35" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_69" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_70" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14211" transform="translate(442 440)">
+<rect id="Rectangle_546_36" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_71" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_72" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14212" transform="translate(442 219)">
+<rect id="Rectangle_546_37" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_73" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_74" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14213" transform="translate(221 219)">
+<rect id="Rectangle_546_38" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_75" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_76" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14214" transform="translate(221 440)">
+<rect id="Rectangle_546_39" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_77" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_78" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14215" transform="translate(442 -2)">
+<rect id="Rectangle_546_40" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_79" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_80" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14216" transform="translate(221 -2)">
+<rect id="Rectangle_546_41" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_81" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_82" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14217" transform="translate(0 -2)">
+<rect id="Rectangle_546_42" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_83" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_84" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14218" transform="translate(0 219)">
+<rect id="Rectangle_546_43" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_85" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_86" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14219" transform="translate(0 440)">
+<rect id="Rectangle_546_44" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_87" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_88" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14220" transform="translate(1768 440)">
+<rect id="Rectangle_546_45" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_89" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_90" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14221" transform="translate(1768 219)">
+<rect id="Rectangle_546_46" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_91" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_92" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14222" transform="translate(1547 219)">
+<rect id="Rectangle_546_47" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_93" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_94" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14223" transform="translate(1547 440)">
+<rect id="Rectangle_546_48" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_95" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_96" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14224" transform="translate(1768 -2)">
+<rect id="Rectangle_546_49" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_97" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_98" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14225" transform="translate(1547 -2)">
+<rect id="Rectangle_546_50" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_99" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_100" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14238" transform="translate(2210 1103)">
+<rect id="Rectangle_546_51" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_101" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_102" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14239" transform="translate(2210 882)">
+<rect id="Rectangle_546_52" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_103" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_104" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14240" transform="translate(1989 882)">
+<rect id="Rectangle_546_53" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_105" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_106" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14241" transform="translate(1989 1103)">
+<rect id="Rectangle_546_54" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_107" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_108" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14242" transform="translate(1989 1324)">
+<rect id="Rectangle_546_55" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_109" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_110" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14243" transform="translate(2210 1324)">
+<rect id="Rectangle_546_56" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_111" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_112" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14244" transform="translate(2210 661)">
+<rect id="Rectangle_546_57" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_113" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_114" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14245" transform="translate(1989 661)">
+<rect id="Rectangle_546_58" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_115" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_116" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14246" transform="translate(2210 440)">
+<rect id="Rectangle_546_59" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_117" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_118" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14247" transform="translate(2210 219)">
+<rect id="Rectangle_546_60" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_119" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_120" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14248" transform="translate(1989 219)">
+<rect id="Rectangle_546_61" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_121" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_122" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14249" transform="translate(1989 440)">
+<rect id="Rectangle_546_62" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_123" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_124" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14250" transform="translate(2210 -2)">
+<rect id="Rectangle_546_63" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_125" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_126" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14251" transform="translate(1989 -2)">
+<rect id="Rectangle_546_64" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_127" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_128" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14226" transform="translate(1326 -2)">
+<rect id="Rectangle_546_65" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_129" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_130" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14227" transform="translate(1326 219)">
+<rect id="Rectangle_546_66" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_131" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_132" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14228" transform="translate(1326 440)">
+<rect id="Rectangle_546_67" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_133" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_134" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14229" transform="translate(1105 440)">
+<rect id="Rectangle_546_68" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_135" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_136" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14230" transform="translate(1105 219)">
+<rect id="Rectangle_546_69" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_137" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_138" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14231" transform="translate(884 219)">
+<rect id="Rectangle_546_70" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_139" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_140" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14232" transform="translate(884 440)">
+<rect id="Rectangle_546_71" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_141" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_142" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14233" transform="translate(1105 -2)">
+<rect id="Rectangle_546_72" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_143" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_144" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14234" transform="translate(884 -2)">
+<rect id="Rectangle_546_73" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_145" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_146" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14235" transform="translate(663 -2)">
+<rect id="Rectangle_546_74" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_147" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_148" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14236" transform="translate(663 219)">
+<rect id="Rectangle_546_75" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_149" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_150" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14237" transform="translate(663 440)">
+<rect id="Rectangle_546_76" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_151" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_152" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14198" transform="translate(663 1324)">
+<rect id="Rectangle_546_77" transform="translate(31 31)" width="159" height="159" fill="#161616"/>
+<path id="Vector_153" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#252525"/>
+<path id="Vector_154" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#010101"/>
+</g>
+<g id="Group_14296" transform="translate(1768 440)">
+<g id="Group_14252" opacity="0" transform="translate(221 221)">
+<path id="Vector_155" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#FF9C9C"/>
+<path id="Vector_156" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#DC5151"/>
+<g id="Group_14257" transform="translate(31 31)">
+<rect id="Rectangle_314" width="159" height="159" fill="#F97979"/>
+<g id="Shapes" clip-path="url(#clip1_199_507)" transform="translate(39.1736 38.0256)">
+<g id="Clip_path_group">
+<mask id="mask0_199_507" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="0" y="0" width="4075" height="1545">
+<g id="clip0_104_157">
+<path id="Vector_157" d="M79.5 0H0V79.5H79.5V0Z" fill="white"/>
+</g>
+</mask>
+<g mask="url(#mask0_199_507)">
+<g id="Group">
+<path id="Vector_158" fill-rule="evenodd" clip-rule="evenodd" d="M39.75 79.5C61.7031 79.5 79.5 61.7031 79.5 39.75C79.5 17.7967 61.7031 0 39.75 0C17.7967 0 0 17.7967 0 39.75C0 61.7031 17.7967 79.5 39.75 79.5ZM39.75 57.1406C49.3544 57.1406 57.1406 49.3544 57.1406 39.75C57.1406 30.1454 49.3544 22.3594 39.75 22.3594C30.1454 22.3594 22.3594 30.1454 22.3594 39.75C22.3594 49.3544 30.1454 57.1406 39.75 57.1406Z" fill="#FFF3B5"/>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+<g id="Group_14263" opacity="0" transform="translate(221)">
+<path id="Vector_159" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#FF9C9C"/>
+<path id="Vector_160" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#DC5151"/>
+<g id="Group_14257_2" transform="translate(31 31)">
+<rect id="Rectangle_314_2" width="159" height="159" fill="#F97979"/>
+<g id="Shapes_2" clip-path="url(#clip2_199_507)" transform="translate(39.1736 38.0256)">
+<g id="Clip_path_group_2">
+<mask id="mask1_199_507" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="0" y="0" width="4075" height="1545">
+<g id="clip0_104_157_2">
+<path id="Vector_161" d="M79.5 0H0V79.5H79.5V0Z" fill="white"/>
+</g>
+</mask>
+<g mask="url(#mask1_199_507)">
+<g id="Group_2">
+<path id="Vector_162" fill-rule="evenodd" clip-rule="evenodd" d="M39.75 79.5C61.7031 79.5 79.5 61.7031 79.5 39.75C79.5 17.7967 61.7031 0 39.75 0C17.7967 0 0 17.7967 0 39.75C0 61.7031 17.7967 79.5 39.75 79.5ZM39.75 57.1406C49.3544 57.1406 57.1406 49.3544 57.1406 39.75C57.1406 30.1454 49.3544 22.3594 39.75 22.3594C30.1454 22.3594 22.3594 30.1454 22.3594 39.75C22.3594 49.3544 30.1454 57.1406 39.75 57.1406Z" fill="#FFF3B5"/>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+<g id="Group_14253" opacity="0" transform="translate(0 221)">
+<path id="Vector_163" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#FF9C9C"/>
+<path id="Vector_164" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#DC5151"/>
+<g id="Group_14257_3" transform="translate(31 31)">
+<rect id="Rectangle_314_3" width="159" height="159" fill="#F97979"/>
+<g id="Shapes_3" clip-path="url(#clip3_199_507)" transform="translate(39.1736 38.0256)">
+<g id="Clip_path_group_3">
+<mask id="mask2_199_507" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="0" y="0" width="4075" height="1545">
+<g id="clip0_104_157_3">
+<path id="Vector_165" d="M79.5 0H0V79.5H79.5V0Z" fill="white"/>
+</g>
+</mask>
+<g mask="url(#mask2_199_507)">
+<g id="Group_3">
+<path id="Vector_166" fill-rule="evenodd" clip-rule="evenodd" d="M39.75 79.5C61.7031 79.5 79.5 61.7031 79.5 39.75C79.5 17.7967 61.7031 0 39.75 0C17.7967 0 0 17.7967 0 39.75C0 61.7031 17.7967 79.5 39.75 79.5ZM39.75 57.1406C49.3544 57.1406 57.1406 49.3544 57.1406 39.75C57.1406 30.1454 49.3544 22.3594 39.75 22.3594C30.1454 22.3594 22.3594 30.1454 22.3594 39.75C22.3594 49.3544 30.1454 57.1406 39.75 57.1406Z" fill="#FFF3B5"/>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+<g id="Group_14298" transform="translate(884 882)">
+<g id="Group_14276" transform="translate(0 221)">
+<path id="Vector_167" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#FF9C9C"/>
+<path id="Vector_168" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#DC5151"/>
+<g id="Group_14257_4" transform="translate(31 31)">
+<rect id="Rectangle_314_4" width="159" height="159" fill="#F97979"/>
+<g id="Shapes_4" clip-path="url(#clip4_199_507)" transform="translate(39.1736 38.0256)">
+<g id="Clip_path_group_4">
+<mask id="mask3_199_507" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="0" y="0" width="4075" height="1545">
+<g id="clip0_104_157_4">
+<path id="Vector_169" d="M79.5 0H0V79.5H79.5V0Z" fill="white"/>
+</g>
+</mask>
+<g mask="url(#mask3_199_507)">
+<g id="Group_4">
+<path id="Vector_170" fill-rule="evenodd" clip-rule="evenodd" d="M39.75 79.5C61.7031 79.5 79.5 61.7031 79.5 39.75C79.5 17.7967 61.7031 0 39.75 0C17.7967 0 0 17.7967 0 39.75C0 61.7031 17.7967 79.5 39.75 79.5ZM39.75 57.1406C49.3544 57.1406 57.1406 49.3544 57.1406 39.75C57.1406 30.1454 49.3544 22.3594 39.75 22.3594C30.1454 22.3594 22.3594 30.1454 22.3594 39.75C22.3594 49.3544 30.1454 57.1406 39.75 57.1406Z" fill="#FFF3B5"/>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+<g id="Group_14277" transform="translate(221 221)">
+<path id="Vector_171" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#FF9C9C"/>
+<path id="Vector_172" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#DC5151"/>
+<g id="Group_14257_5" transform="translate(31 31)">
+<rect id="Rectangle_314_5" width="159" height="159" fill="#F97979"/>
+<g id="Shapes_5" clip-path="url(#clip5_199_507)" transform="translate(39.1736 38.0256)">
+<g id="Clip_path_group_5">
+<mask id="mask4_199_507" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="0" y="0" width="4075" height="1545">
+<g id="clip0_104_157_5">
+<path id="Vector_173" d="M79.5 0H0V79.5H79.5V0Z" fill="white"/>
+</g>
+</mask>
+<g mask="url(#mask4_199_507)">
+<g id="Group_5">
+<path id="Vector_174" fill-rule="evenodd" clip-rule="evenodd" d="M39.75 79.5C61.7031 79.5 79.5 61.7031 79.5 39.75C79.5 17.7967 61.7031 0 39.75 0C17.7967 0 0 17.7967 0 39.75C0 61.7031 17.7967 79.5 39.75 79.5ZM39.75 57.1406C49.3544 57.1406 57.1406 49.3544 57.1406 39.75C57.1406 30.1454 49.3544 22.3594 39.75 22.3594C30.1454 22.3594 22.3594 30.1454 22.3594 39.75C22.3594 49.3544 30.1454 57.1406 39.75 57.1406Z" fill="#FFF3B5"/>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+<g id="Group_14278" transform="translate(221)">
+<path id="Vector_175" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#FF9C9C"/>
+<path id="Vector_176" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#DC5151"/>
+<g id="Group_14257_6" transform="translate(31 31)">
+<rect id="Rectangle_314_6" width="159" height="159" fill="#F97979"/>
+<g id="Shapes_6" clip-path="url(#clip6_199_507)" transform="translate(39.1736 38.0256)">
+<g id="Clip_path_group_6">
+<mask id="mask5_199_507" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="0" y="0" width="4075" height="1545">
+<g id="clip0_104_157_6">
+<path id="Vector_177" d="M79.5 0H0V79.5H79.5V0Z" fill="white"/>
+</g>
+</mask>
+<g mask="url(#mask5_199_507)">
+<g id="Group_6">
+<path id="Vector_178" fill-rule="evenodd" clip-rule="evenodd" d="M39.75 79.5C61.7031 79.5 79.5 61.7031 79.5 39.75C79.5 17.7967 61.7031 0 39.75 0C17.7967 0 0 17.7967 0 39.75C0 61.7031 17.7967 79.5 39.75 79.5ZM39.75 57.1406C49.3544 57.1406 57.1406 49.3544 57.1406 39.75C57.1406 30.1454 49.3544 22.3594 39.75 22.3594C30.1454 22.3594 22.3594 30.1454 22.3594 39.75C22.3594 49.3544 30.1454 57.1406 39.75 57.1406Z" fill="#FFF3B5"/>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+<g id="Group_14279" transform="translate(442)">
+<path id="Vector_179" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#FF9C9C"/>
+<path id="Vector_180" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#DC5151"/>
+<g id="Group_14257_7" transform="translate(31 31)">
+<rect id="Rectangle_314_7" width="159" height="159" fill="#F97979"/>
+<g id="Shapes_7" clip-path="url(#clip7_199_507)" transform="translate(39.1736 38.0256)">
+<g id="Clip_path_group_7">
+<mask id="mask6_199_507" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="0" y="0" width="4075" height="1545">
+<g id="clip0_104_157_7">
+<path id="Vector_181" d="M79.5 0H0V79.5H79.5V0Z" fill="white"/>
+</g>
+</mask>
+<g mask="url(#mask6_199_507)">
+<g id="Group_7">
+<path id="Vector_182" fill-rule="evenodd" clip-rule="evenodd" d="M39.75 79.5C61.7031 79.5 79.5 61.7031 79.5 39.75C79.5 17.7967 61.7031 0 39.75 0C17.7967 0 0 17.7967 0 39.75C0 61.7031 17.7967 79.5 39.75 79.5ZM39.75 57.1406C49.3544 57.1406 57.1406 49.3544 57.1406 39.75C57.1406 30.1454 49.3544 22.3594 39.75 22.3594C30.1454 22.3594 22.3594 30.1454 22.3594 39.75C22.3594 49.3544 30.1454 57.1406 39.75 57.1406Z" fill="#FFF3B5"/>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+<g id="Group_14306" transform="translate(1989 661)">
+<g id="Group_14256" transform="translate(221 442)">
+<path id="Vector_183" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#AEEBE4"/>
+<path id="Vector_184" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#6DCCC1"/>
+<g id="Group_14254" transform="translate(31 31)">
+<rect id="Rectangle_314_8" transform="translate(159) rotate(90)" width="159" height="159" fill="#8CE0D6"/>
+<g id="Shapes_8" clip-path="url(#clip8_199_507)" transform="translate(119.823 39.1733) rotate(90)">
+<g id="Clip_path_group_8">
+<mask id="mask7_199_507" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="0" y="0" width="4075" height="1545">
+<g id="clip0_104_157_8">
+<path id="Vector_185" d="M79.5 0H0V79.5H79.5V0Z" fill="white"/>
+</g>
+</mask>
+<g mask="url(#mask7_199_507)">
+<g id="Group_8">
+<path id="Vector_186" fill-rule="evenodd" clip-rule="evenodd" d="M39.75 79.5C61.7031 79.5 79.5 61.7031 79.5 39.75C79.5 17.7967 61.7031 0 39.75 0C17.7967 0 0 17.7967 0 39.75C0 61.7031 17.7967 79.5 39.75 79.5ZM39.75 57.1406C49.3544 57.1406 57.1406 49.3544 57.1406 39.75C57.1406 30.1454 49.3544 22.3594 39.75 22.3594C30.1454 22.3594 22.3594 30.1454 22.3594 39.75C22.3594 49.3544 30.1454 57.1406 39.75 57.1406Z" fill="#64B598"/>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+<g id="Group_14258" transform="translate(221 221)">
+<path id="Vector_187" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#AEEBE4"/>
+<path id="Vector_188" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#6DCCC1"/>
+<g id="Group_14254_2" transform="translate(31 31)">
+<rect id="Rectangle_314_9" transform="translate(159) rotate(90)" width="159" height="159" fill="#8CE0D6"/>
+<g id="Shapes_9" clip-path="url(#clip9_199_507)" transform="translate(119.823 39.1733) rotate(90)">
+<g id="Clip_path_group_9">
+<mask id="mask8_199_507" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="0" y="0" width="4075" height="1545">
+<g id="clip0_104_157_9">
+<path id="Vector_189" d="M79.5 0H0V79.5H79.5V0Z" fill="white"/>
+</g>
+</mask>
+<g mask="url(#mask8_199_507)">
+<g id="Group_9">
+<path id="Vector_190" fill-rule="evenodd" clip-rule="evenodd" d="M39.75 79.5C61.7031 79.5 79.5 61.7031 79.5 39.75C79.5 17.7967 61.7031 0 39.75 0C17.7967 0 0 17.7967 0 39.75C0 61.7031 17.7967 79.5 39.75 79.5ZM39.75 57.1406C49.3544 57.1406 57.1406 49.3544 57.1406 39.75C57.1406 30.1454 49.3544 22.3594 39.75 22.3594C30.1454 22.3594 22.3594 30.1454 22.3594 39.75C22.3594 49.3544 30.1454 57.1406 39.75 57.1406Z" fill="#64B598"/>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+<g id="Group_14259" transform="translate(221)">
+<path id="Vector_191" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#AEEBE4"/>
+<path id="Vector_192" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#6DCCC1"/>
+<g id="Group_14254_3" transform="translate(31 31)">
+<rect id="Rectangle_314_10" transform="translate(159) rotate(90)" width="159" height="159" fill="#8CE0D6"/>
+<g id="Shapes_10" clip-path="url(#clip10_199_507)" transform="translate(119.823 39.1733) rotate(90)">
+<g id="Clip_path_group_10">
+<mask id="mask9_199_507" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="0" y="0" width="4075" height="1545">
+<g id="clip0_104_157_10">
+<path id="Vector_193" d="M79.5 0H0V79.5H79.5V0Z" fill="white"/>
+</g>
+</mask>
+<g mask="url(#mask9_199_507)">
+<g id="Group_10">
+<path id="Vector_194" fill-rule="evenodd" clip-rule="evenodd" d="M39.75 79.5C61.7031 79.5 79.5 61.7031 79.5 39.75C79.5 17.7967 61.7031 0 39.75 0C17.7967 0 0 17.7967 0 39.75C0 61.7031 17.7967 79.5 39.75 79.5ZM39.75 57.1406C49.3544 57.1406 57.1406 49.3544 57.1406 39.75C57.1406 30.1454 49.3544 22.3594 39.75 22.3594C30.1454 22.3594 22.3594 30.1454 22.3594 39.75C22.3594 49.3544 30.1454 57.1406 39.75 57.1406Z" fill="#64B598"/>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+<g id="Group_14257_8" transform="translate(0 442)">
+<path id="Vector_195" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#AEEBE4"/>
+<path id="Vector_196" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#6DCCC1"/>
+<g id="Group_14254_4" transform="translate(31 31)">
+<rect id="Rectangle_314_11" transform="translate(159) rotate(90)" width="159" height="159" fill="#8CE0D6"/>
+<g id="Shapes_11" clip-path="url(#clip11_199_507)" transform="translate(119.823 39.1733) rotate(90)">
+<g id="Clip_path_group_11">
+<mask id="mask10_199_507" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="0" y="0" width="4075" height="1545">
+<g id="clip0_104_157_11">
+<path id="Vector_197" d="M79.5 0H0V79.5H79.5V0Z" fill="white"/>
+</g>
+</mask>
+<g mask="url(#mask10_199_507)">
+<g id="Group_11">
+<path id="Vector_198" fill-rule="evenodd" clip-rule="evenodd" d="M39.75 79.5C61.7031 79.5 79.5 61.7031 79.5 39.75C79.5 17.7967 61.7031 0 39.75 0C17.7967 0 0 17.7967 0 39.75C0 61.7031 17.7967 79.5 39.75 79.5ZM39.75 57.1406C49.3544 57.1406 57.1406 49.3544 57.1406 39.75C57.1406 30.1454 49.3544 22.3594 39.75 22.3594C30.1454 22.3594 22.3594 30.1454 22.3594 39.75C22.3594 49.3544 30.1454 57.1406 39.75 57.1406Z" fill="#64B598"/>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+<g id="Group_14300" transform="translate(0 661)">
+<g id="Group_14292" opacity="0" transform="translate(221 221)">
+<path id="Vector_199" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#AEEBE4"/>
+<path id="Vector_200" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#6DCCC1"/>
+<g id="Group_14254_5" transform="translate(31 31)">
+<rect id="Rectangle_314_12" transform="translate(159) rotate(90)" width="159" height="159" fill="#8CE0D6"/>
+<g id="Shapes_12" clip-path="url(#clip12_199_507)" transform="translate(119.823 39.1733) rotate(90)">
+<g id="Clip_path_group_12">
+<mask id="mask11_199_507" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="0" y="0" width="4075" height="1545">
+<g id="clip0_104_157_12">
+<path id="Vector_201" d="M79.5 0H0V79.5H79.5V0Z" fill="white"/>
+</g>
+</mask>
+<g mask="url(#mask11_199_507)">
+<g id="Group_12">
+<path id="Vector_202" fill-rule="evenodd" clip-rule="evenodd" d="M39.75 79.5C61.7031 79.5 79.5 61.7031 79.5 39.75C79.5 17.7967 61.7031 0 39.75 0C17.7967 0 0 17.7967 0 39.75C0 61.7031 17.7967 79.5 39.75 79.5ZM39.75 57.1406C49.3544 57.1406 57.1406 49.3544 57.1406 39.75C57.1406 30.1454 49.3544 22.3594 39.75 22.3594C30.1454 22.3594 22.3594 30.1454 22.3594 39.75C22.3594 49.3544 30.1454 57.1406 39.75 57.1406Z" fill="#64B598"/>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+<g id="Group_14293" opacity="0" transform="translate(221)">
+<path id="Vector_203" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#AEEBE4"/>
+<path id="Vector_204" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#6DCCC1"/>
+<g id="Group_14254_6" transform="translate(31 31)">
+<rect id="Rectangle_314_13" transform="translate(159) rotate(90)" width="159" height="159" fill="#8CE0D6"/>
+<g id="Shapes_13" clip-path="url(#clip13_199_507)" transform="translate(119.823 39.1733) rotate(90)">
+<g id="Clip_path_group_13">
+<mask id="mask12_199_507" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="0" y="0" width="4075" height="1545">
+<g id="clip0_104_157_13">
+<path id="Vector_205" d="M79.5 0H0V79.5H79.5V0Z" fill="white"/>
+</g>
+</mask>
+<g mask="url(#mask12_199_507)">
+<g id="Group_13">
+<path id="Vector_206" fill-rule="evenodd" clip-rule="evenodd" d="M39.75 79.5C61.7031 79.5 79.5 61.7031 79.5 39.75C79.5 17.7967 61.7031 0 39.75 0C17.7967 0 0 17.7967 0 39.75C0 61.7031 17.7967 79.5 39.75 79.5ZM39.75 57.1406C49.3544 57.1406 57.1406 49.3544 57.1406 39.75C57.1406 30.1454 49.3544 22.3594 39.75 22.3594C30.1454 22.3594 22.3594 30.1454 22.3594 39.75C22.3594 49.3544 30.1454 57.1406 39.75 57.1406Z" fill="#64B598"/>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+<g id="Group_14295" opacity="0" transform="translate(442)">
+<path id="Vector_207" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#AEEBE4"/>
+<path id="Vector_208" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#6DCCC1"/>
+<g id="Group_14254_7" transform="translate(31 31)">
+<rect id="Rectangle_314_14" transform="translate(159) rotate(90)" width="159" height="159" fill="#8CE0D6"/>
+<g id="Shapes_14" clip-path="url(#clip14_199_507)" transform="translate(119.823 39.1733) rotate(90)">
+<g id="Clip_path_group_14">
+<mask id="mask13_199_507" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="0" y="0" width="4075" height="1545">
+<g id="clip0_104_157_14">
+<path id="Vector_209" d="M79.5 0H0V79.5H79.5V0Z" fill="white"/>
+</g>
+</mask>
+<g mask="url(#mask13_199_507)">
+<g id="Group_14">
+<path id="Vector_210" fill-rule="evenodd" clip-rule="evenodd" d="M39.75 79.5C61.7031 79.5 79.5 61.7031 79.5 39.75C79.5 17.7967 61.7031 0 39.75 0C17.7967 0 0 17.7967 0 39.75C0 61.7031 17.7967 79.5 39.75 79.5ZM39.75 57.1406C49.3544 57.1406 57.1406 49.3544 57.1406 39.75C57.1406 30.1454 49.3544 22.3594 39.75 22.3594C30.1454 22.3594 22.3594 30.1454 22.3594 39.75C22.3594 49.3544 30.1454 57.1406 39.75 57.1406Z" fill="#64B598"/>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+<g id="Group_14294" opacity="0">
+<path id="Vector_211" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#AEEBE4"/>
+<path id="Vector_212" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#6DCCC1"/>
+<g id="Group_14254_8" transform="translate(31 31)">
+<rect id="Rectangle_314_15" transform="translate(159) rotate(90)" width="159" height="159" fill="#8CE0D6"/>
+<g id="Shapes_15" clip-path="url(#clip15_199_507)" transform="translate(119.823 39.1733) rotate(90)">
+<g id="Clip_path_group_15">
+<mask id="mask14_199_507" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="0" y="0" width="4075" height="1545">
+<g id="clip0_104_157_15">
+<path id="Vector_213" d="M79.5 0H0V79.5H79.5V0Z" fill="white"/>
+</g>
+</mask>
+<g mask="url(#mask14_199_507)">
+<g id="Group_15">
+<path id="Vector_214" fill-rule="evenodd" clip-rule="evenodd" d="M39.75 79.5C61.7031 79.5 79.5 61.7031 79.5 39.75C79.5 17.7967 61.7031 0 39.75 0C17.7967 0 0 17.7967 0 39.75C0 61.7031 17.7967 79.5 39.75 79.5ZM39.75 57.1406C49.3544 57.1406 57.1406 49.3544 57.1406 39.75C57.1406 30.1454 49.3544 22.3594 39.75 22.3594C30.1454 22.3594 22.3594 30.1454 22.3594 39.75C22.3594 49.3544 30.1454 57.1406 39.75 57.1406Z" fill="#64B598"/>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+<g id="Group_14304" transform="translate(1326 1103)">
+<g id="Group_14269">
+<path id="Vector_215" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#AEEBE4"/>
+<path id="Vector_216" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#6DCCC1"/>
+<g id="Group_14254_9" transform="translate(31 31)">
+<rect id="Rectangle_314_16" transform="translate(159) rotate(90)" width="159" height="159" fill="#8CE0D6"/>
+<g id="Shapes_16" clip-path="url(#clip16_199_507)" transform="translate(119.823 39.1733) rotate(90)">
+<g id="Clip_path_group_16">
+<mask id="mask15_199_507" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="0" y="0" width="4075" height="1545">
+<g id="clip0_104_157_16">
+<path id="Vector_217" d="M79.5 0H0V79.5H79.5V0Z" fill="white"/>
+</g>
+</mask>
+<g mask="url(#mask15_199_507)">
+<g id="Group_16">
+<path id="Vector_218" fill-rule="evenodd" clip-rule="evenodd" d="M39.75 79.5C61.7031 79.5 79.5 61.7031 79.5 39.75C79.5 17.7967 61.7031 0 39.75 0C17.7967 0 0 17.7967 0 39.75C0 61.7031 17.7967 79.5 39.75 79.5ZM39.75 57.1406C49.3544 57.1406 57.1406 49.3544 57.1406 39.75C57.1406 30.1454 49.3544 22.3594 39.75 22.3594C30.1454 22.3594 22.3594 30.1454 22.3594 39.75C22.3594 49.3544 30.1454 57.1406 39.75 57.1406Z" fill="#64B598"/>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+<g id="Group_14270" transform="translate(0 221)">
+<path id="Vector_219" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#AEEBE4"/>
+<path id="Vector_220" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#6DCCC1"/>
+<g id="Group_14254_10" transform="translate(31 31)">
+<rect id="Rectangle_314_17" transform="translate(159) rotate(90)" width="159" height="159" fill="#8CE0D6"/>
+<g id="Shapes_17" clip-path="url(#clip17_199_507)" transform="translate(119.823 39.1733) rotate(90)">
+<g id="Clip_path_group_17">
+<mask id="mask16_199_507" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="0" y="0" width="4075" height="1545">
+<g id="clip0_104_157_17">
+<path id="Vector_221" d="M79.5 0H0V79.5H79.5V0Z" fill="white"/>
+</g>
+</mask>
+<g mask="url(#mask16_199_507)">
+<g id="Group_17">
+<path id="Vector_222" fill-rule="evenodd" clip-rule="evenodd" d="M39.75 79.5C61.7031 79.5 79.5 61.7031 79.5 39.75C79.5 17.7967 61.7031 0 39.75 0C17.7967 0 0 17.7967 0 39.75C0 61.7031 17.7967 79.5 39.75 79.5ZM39.75 57.1406C49.3544 57.1406 57.1406 49.3544 57.1406 39.75C57.1406 30.1454 49.3544 22.3594 39.75 22.3594C30.1454 22.3594 22.3594 30.1454 22.3594 39.75C22.3594 49.3544 30.1454 57.1406 39.75 57.1406Z" fill="#64B598"/>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+<g id="Group_14268" transform="translate(221)">
+<path id="Vector_223" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#AEEBE4"/>
+<path id="Vector_224" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#6DCCC1"/>
+<g id="Group_14254_11" transform="translate(31 31)">
+<rect id="Rectangle_314_18" transform="translate(159) rotate(90)" width="159" height="159" fill="#8CE0D6"/>
+<g id="Shapes_18" clip-path="url(#clip18_199_507)" transform="translate(119.823 39.1733) rotate(90)">
+<g id="Clip_path_group_18">
+<mask id="mask17_199_507" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="0" y="0" width="4075" height="1545">
+<g id="clip0_104_157_18">
+<path id="Vector_225" d="M79.5 0H0V79.5H79.5V0Z" fill="white"/>
+</g>
+</mask>
+<g mask="url(#mask17_199_507)">
+<g id="Group_18">
+<path id="Vector_226" fill-rule="evenodd" clip-rule="evenodd" d="M39.75 79.5C61.7031 79.5 79.5 61.7031 79.5 39.75C79.5 17.7967 61.7031 0 39.75 0C17.7967 0 0 17.7967 0 39.75C0 61.7031 17.7967 79.5 39.75 79.5ZM39.75 57.1406C49.3544 57.1406 57.1406 49.3544 57.1406 39.75C57.1406 30.1454 49.3544 22.3594 39.75 22.3594C30.1454 22.3594 22.3594 30.1454 22.3594 39.75C22.3594 49.3544 30.1454 57.1406 39.75 57.1406Z" fill="#64B598"/>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+<g id="Group_14299" transform="translate(442 440)">
+<g id="Group_14281" opacity="0" transform="translate(221 442)">
+<path id="Vector_227" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#BDE6A4"/>
+<path id="Vector_228" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#80B75E"/>
+<g id="Group_14256_2" transform="translate(31 31)">
+<rect id="Rectangle_312" transform="translate(159) rotate(90)" width="159" height="159" fill="#A2D483"/>
+<circle id="Ellipse_500" transform="translate(118.864 40.1422) rotate(90)" cx="39.75" cy="39.75" r="39.75" fill="#092940"/>
+</g>
+</g>
+<g id="Group_14283" opacity="0" transform="translate(0 442)">
+<path id="Vector_229" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#BDE6A4"/>
+<path id="Vector_230" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#80B75E"/>
+<g id="Group_14256_3" transform="translate(31 31)">
+<rect id="Rectangle_312_2" transform="translate(159) rotate(90)" width="159" height="159" fill="#A2D483"/>
+<circle id="Ellipse_500_2" transform="translate(118.864 40.1422) rotate(90)" cx="39.75" cy="39.75" r="39.75" fill="#092940"/>
+</g>
+</g>
+<g id="Group_14282" opacity="0" transform="translate(221 221)">
+<path id="Vector_231" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#BDE6A4"/>
+<path id="Vector_232" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#80B75E"/>
+<g id="Group_14256_4" transform="translate(31 31)">
+<rect id="Rectangle_312_3" transform="translate(159) rotate(90)" width="159" height="159" fill="#A2D483"/>
+<circle id="Ellipse_500_3" transform="translate(118.864 40.1422) rotate(90)" cx="39.75" cy="39.75" r="39.75" fill="#092940"/>
+</g>
+</g>
+<g id="Group_14284" opacity="0" transform="translate(221)">
+<path id="Vector_233" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#BDE6A4"/>
+<path id="Vector_234" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#80B75E"/>
+<g id="Group_14256_5" transform="translate(31 31)">
+<rect id="Rectangle_312_4" transform="translate(159) rotate(90)" width="159" height="159" fill="#A2D483"/>
+<circle id="Ellipse_500_4" transform="translate(118.864 40.1422) rotate(90)" cx="39.75" cy="39.75" r="39.75" fill="#092940"/>
+</g>
+</g>
+</g>
+<g id="Group_14307" transform="translate(1768 882)">
+<g id="Group_14260" transform="translate(0 221)">
+<path id="Vector_235" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#BDE6A4"/>
+<path id="Vector_236" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#80B75E"/>
+<g id="Group_14256_6" transform="translate(31 31)">
+<rect id="Rectangle_312_5" transform="translate(159) rotate(90)" width="159" height="159" fill="#A2D483"/>
+<circle id="Ellipse_500_5" transform="translate(118.864 40.1422) rotate(90)" cx="39.75" cy="39.75" r="39.75" fill="#092940"/>
+</g>
+</g>
+<g id="Group_14261">
+<path id="Vector_237" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#BDE6A4"/>
+<path id="Vector_238" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#80B75E"/>
+<g id="Group_14256_7" transform="translate(31 31)">
+<rect id="Rectangle_312_6" transform="translate(159) rotate(90)" width="159" height="159" fill="#A2D483"/>
+<circle id="Ellipse_500_6" transform="translate(118.864 40.1422) rotate(90)" cx="39.75" cy="39.75" r="39.75" fill="#092940"/>
+</g>
+</g>
+<g id="Group_14262" transform="translate(221)">
+<path id="Vector_239" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#BDE6A4"/>
+<path id="Vector_240" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#80B75E"/>
+<g id="Group_14256_8" transform="translate(31 31)">
+<rect id="Rectangle_312_7" transform="translate(159) rotate(90)" width="159" height="159" fill="#A2D483"/>
+<circle id="Ellipse_500_7" transform="translate(118.864 40.1422) rotate(90)" cx="39.75" cy="39.75" r="39.75" fill="#092940"/>
+</g>
+</g>
+</g>
+<g id="Group_14305" transform="translate(1547 1324)">
+<g id="Group_14264" transform="translate(663)">
+<path id="Vector_241" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#F1A8CF"/>
+<path id="Vector_242" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#D97BAE"/>
+<g id="Group_14255" transform="translate(31 31)">
+<rect id="Rectangle_312_8" width="159" height="159" fill="#E68FBE"/>
+<circle id="Ellipse_500_8" transform="translate(40.136 40.1394)" cx="39.75" cy="39.75" r="39.75" fill="#CA60AC"/>
+</g>
+</g>
+<g id="Group_14265" transform="translate(442)">
+<path id="Vector_243" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#F1A8CF"/>
+<path id="Vector_244" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#D97BAE"/>
+<g id="Group_14255_2" transform="translate(31 31)">
+<rect id="Rectangle_312_9" width="159" height="159" fill="#E68FBE"/>
+<circle id="Ellipse_500_9" transform="translate(40.136 40.1394)" cx="39.75" cy="39.75" r="39.75" fill="#CA60AC"/>
+</g>
+</g>
+<g id="Group_14266" transform="translate(221)">
+<path id="Vector_245" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#F1A8CF"/>
+<path id="Vector_246" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#D97BAE"/>
+<g id="Group_14255_3" transform="translate(31 31)">
+<rect id="Rectangle_312_10" width="159" height="159" fill="#E68FBE"/>
+<circle id="Ellipse_500_10" transform="translate(40.136 40.1394)" cx="39.75" cy="39.75" r="39.75" fill="#CA60AC"/>
+</g>
+</g>
+<g id="Group_14267">
+<path id="Vector_247" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#F1A8CF"/>
+<path id="Vector_248" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#D97BAE"/>
+<g id="Group_14255_4" transform="translate(31 31)">
+<rect id="Rectangle_312_11" width="159" height="159" fill="#E68FBE"/>
+<circle id="Ellipse_500_11" transform="translate(40.136 40.1394)" cx="39.75" cy="39.75" r="39.75" fill="#CA60AC"/>
+</g>
+</g>
+</g>
+<g id="Group_14302" transform="translate(221 1103)">
+<g id="Group_14285" transform="translate(221 221)">
+<path id="Vector_249" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#F1A8CF"/>
+<path id="Vector_250" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#D97BAE"/>
+<g id="Group_14255_5" transform="translate(31 31)">
+<rect id="Rectangle_312_12" width="159" height="159" fill="#E68FBE"/>
+<circle id="Ellipse_500_12" transform="translate(40.136 40.1394)" cx="39.75" cy="39.75" r="39.75" fill="#CA60AC"/>
+</g>
+</g>
+<g id="Group_14286" transform="translate(221)">
+<path id="Vector_251" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#F1A8CF"/>
+<path id="Vector_252" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#D97BAE"/>
+<g id="Group_14255_6" transform="translate(31 31)">
+<rect id="Rectangle_312_13" width="159" height="159" fill="#E68FBE"/>
+<circle id="Ellipse_500_13" transform="translate(40.136 40.1394)" cx="39.75" cy="39.75" r="39.75" fill="#CA60AC"/>
+</g>
+</g>
+<g id="Group_14287">
+<path id="Vector_253" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#F1A8CF"/>
+<path id="Vector_254" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#D97BAE"/>
+<g id="Group_14255_7" transform="translate(31 31)">
+<rect id="Rectangle_312_14" width="159" height="159" fill="#E68FBE"/>
+<circle id="Ellipse_500_14" transform="translate(40.136 40.1394)" cx="39.75" cy="39.75" r="39.75" fill="#CA60AC"/>
+</g>
+</g>
+<g id="Group_14288" transform="translate(0 221)">
+<path id="Vector_255" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#F1A8CF"/>
+<path id="Vector_256" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#D97BAE"/>
+<g id="Group_14255_8" transform="translate(31 31)">
+<rect id="Rectangle_312_15" width="159" height="159" fill="#E68FBE"/>
+<circle id="Ellipse_500_15" transform="translate(40.136 40.1394)" cx="39.75" cy="39.75" r="39.75" fill="#CA60AC"/>
+</g>
+</g>
+</g>
+<g id="Group_14303" transform="translate(663 1103)">
+<g id="Group_14273" transform="translate(442 221)">
+<path id="Vector_257" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#FFF7D0"/>
+<path id="Vector_258" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#FFEB84"/>
+<g id="Group_14252_2" transform="translate(31 31)">
+<rect id="Rectangle_303" transform="translate(159) rotate(90)" width="159" height="159" fill="#FFF3B5"/>
+<g id="Shapes_19" clip-path="url(#clip19_199_507)" transform="translate(129.042 29.9518) rotate(90)">
+<g id="Clip_path_group_19">
+<mask id="mask18_199_507" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="0" y="0" width="4075" height="1545">
+<g id="clip0_119_312">
+<path id="Vector_259" d="M99.0952 0H0V99.0952H99.0952V0Z" fill="white"/>
+</g>
+</mask>
+<g mask="url(#mask18_199_507)">
+<g id="Group_19">
+<path id="Vector_260" fill-rule="evenodd" clip-rule="evenodd" d="M30.3866 49.5459C-27.1108 91.9009 7.21631 126.228 49.557 68.7195C91.8711 126.228 126.198 91.9009 68.727 49.5459C126.224 7.19744 91.8974 -27.1361 49.557 30.3787C7.18995 -27.1163 -27.1373 7.19744 30.3866 49.5459ZM49.5476 61.9345C56.3886 61.9345 61.9345 56.3886 61.9345 49.5476C61.9345 42.7065 56.3886 37.1607 49.5476 37.1607C42.7065 37.1607 37.1607 42.7065 37.1607 49.5476C37.1607 56.3886 42.7065 61.9345 49.5476 61.9345Z" fill="#24B1B1"/>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+<g id="Group_14274" transform="translate(221 221)">
+<path id="Vector_261" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#FFF7D0"/>
+<path id="Vector_262" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#FFEB84"/>
+<g id="Group_14252_3" transform="translate(31 31)">
+<rect id="Rectangle_303_2" transform="translate(159) rotate(90)" width="159" height="159" fill="#FFF3B5"/>
+<g id="Shapes_20" clip-path="url(#clip20_199_507)" transform="translate(129.042 29.9518) rotate(90)">
+<g id="Clip_path_group_20">
+<mask id="mask19_199_507" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="0" y="0" width="4075" height="1545">
+<g id="clip0_119_312_2">
+<path id="Vector_263" d="M99.0952 0H0V99.0952H99.0952V0Z" fill="white"/>
+</g>
+</mask>
+<g mask="url(#mask19_199_507)">
+<g id="Group_20">
+<path id="Vector_264" fill-rule="evenodd" clip-rule="evenodd" d="M30.3866 49.5459C-27.1108 91.9009 7.21631 126.228 49.557 68.7195C91.8711 126.228 126.198 91.9009 68.727 49.5459C126.224 7.19744 91.8974 -27.1361 49.557 30.3787C7.18995 -27.1163 -27.1373 7.19744 30.3866 49.5459ZM49.5476 61.9345C56.3886 61.9345 61.9345 56.3886 61.9345 49.5476C61.9345 42.7065 56.3886 37.1607 49.5476 37.1607C42.7065 37.1607 37.1607 42.7065 37.1607 49.5476C37.1607 56.3886 42.7065 61.9345 49.5476 61.9345Z" fill="#24B1B1"/>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+<g id="Group_14275" transform="translate(0 221)">
+<path id="Vector_265" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#FFF7D0"/>
+<path id="Vector_266" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#FFEB84"/>
+<g id="Group_14252_4" transform="translate(31 31)">
+<rect id="Rectangle_303_3" transform="translate(159) rotate(90)" width="159" height="159" fill="#FFF3B5"/>
+<g id="Shapes_21" clip-path="url(#clip21_199_507)" transform="translate(129.042 29.9518) rotate(90)">
+<g id="Clip_path_group_21">
+<mask id="mask20_199_507" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="0" y="0" width="4075" height="1545">
+<g id="clip0_119_312_3">
+<path id="Vector_267" d="M99.0952 0H0V99.0952H99.0952V0Z" fill="white"/>
+</g>
+</mask>
+<g mask="url(#mask20_199_507)">
+<g id="Group_21">
+<path id="Vector_268" fill-rule="evenodd" clip-rule="evenodd" d="M30.3866 49.5459C-27.1108 91.9009 7.21631 126.228 49.557 68.7195C91.8711 126.228 126.198 91.9009 68.727 49.5459C126.224 7.19744 91.8974 -27.1361 49.557 30.3787C7.18995 -27.1163 -27.1373 7.19744 30.3866 49.5459ZM49.5476 61.9345C56.3886 61.9345 61.9345 56.3886 61.9345 49.5476C61.9345 42.7065 56.3886 37.1607 49.5476 37.1607C42.7065 37.1607 37.1607 42.7065 37.1607 49.5476C37.1607 56.3886 42.7065 61.9345 49.5476 61.9345Z" fill="#24B1B1"/>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+<g id="Group_14280">
+<path id="Vector_269" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#FFF7D0"/>
+<path id="Vector_270" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#FFEB84"/>
+<g id="Group_14252_5" transform="translate(31 31)">
+<rect id="Rectangle_303_4" transform="translate(159) rotate(90)" width="159" height="159" fill="#FFF3B5"/>
+<g id="Shapes_22" clip-path="url(#clip22_199_507)" transform="translate(129.042 29.9518) rotate(90)">
+<g id="Clip_path_group_22">
+<mask id="mask21_199_507" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="0" y="0" width="4075" height="1545">
+<g id="clip0_119_312_4">
+<path id="Vector_271" d="M99.0952 0H0V99.0952H99.0952V0Z" fill="white"/>
+</g>
+</mask>
+<g mask="url(#mask21_199_507)">
+<g id="Group_22">
+<path id="Vector_272" fill-rule="evenodd" clip-rule="evenodd" d="M30.3866 49.5459C-27.1108 91.9009 7.21631 126.228 49.557 68.7195C91.8711 126.228 126.198 91.9009 68.727 49.5459C126.224 7.19744 91.8974 -27.1361 49.557 30.3787C7.18995 -27.1163 -27.1373 7.19744 30.3866 49.5459ZM49.5476 61.9345C56.3886 61.9345 61.9345 56.3886 61.9345 49.5476C61.9345 42.7065 56.3886 37.1607 49.5476 37.1607C42.7065 37.1607 37.1607 42.7065 37.1607 49.5476C37.1607 56.3886 42.7065 61.9345 49.5476 61.9345Z" fill="#24B1B1"/>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+<g id="Group_14301" transform="translate(0 882)">
+<g id="Group_14289" transform="translate(0 221)">
+<path id="Vector_273" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#FFF7D0"/>
+<path id="Vector_274" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#FFEB84"/>
+<g id="Group_14252_6" transform="translate(31 31)">
+<rect id="Rectangle_303_5" transform="translate(159) rotate(90)" width="159" height="159" fill="#FFF3B5"/>
+<g id="Shapes_23" clip-path="url(#clip23_199_507)" transform="translate(129.042 29.9518) rotate(90)">
+<g id="Clip_path_group_23">
+<mask id="mask22_199_507" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="0" y="0" width="4075" height="1545">
+<g id="clip0_119_312_5">
+<path id="Vector_275" d="M99.0952 0H0V99.0952H99.0952V0Z" fill="white"/>
+</g>
+</mask>
+<g mask="url(#mask22_199_507)">
+<g id="Group_23">
+<path id="Vector_276" fill-rule="evenodd" clip-rule="evenodd" d="M30.3866 49.5459C-27.1108 91.9009 7.21631 126.228 49.557 68.7195C91.8711 126.228 126.198 91.9009 68.727 49.5459C126.224 7.19744 91.8974 -27.1361 49.557 30.3787C7.18995 -27.1163 -27.1373 7.19744 30.3866 49.5459ZM49.5476 61.9345C56.3886 61.9345 61.9345 56.3886 61.9345 49.5476C61.9345 42.7065 56.3886 37.1607 49.5476 37.1607C42.7065 37.1607 37.1607 42.7065 37.1607 49.5476C37.1607 56.3886 42.7065 61.9345 49.5476 61.9345Z" fill="#24B1B1"/>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+<g id="Group_14291">
+<path id="Vector_277" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#FFF7D0"/>
+<path id="Vector_278" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#FFEB84"/>
+<g id="Group_14252_7" transform="translate(31 31)">
+<rect id="Rectangle_303_6" transform="translate(159) rotate(90)" width="159" height="159" fill="#FFF3B5"/>
+<g id="Shapes_24" clip-path="url(#clip24_199_507)" transform="translate(129.042 29.9518) rotate(90)">
+<g id="Clip_path_group_24">
+<mask id="mask23_199_507" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="0" y="0" width="4075" height="1545">
+<g id="clip0_119_312_6">
+<path id="Vector_279" d="M99.0952 0H0V99.0952H99.0952V0Z" fill="white"/>
+</g>
+</mask>
+<g mask="url(#mask23_199_507)">
+<g id="Group_24">
+<path id="Vector_280" fill-rule="evenodd" clip-rule="evenodd" d="M30.3866 49.5459C-27.1108 91.9009 7.21631 126.228 49.557 68.7195C91.8711 126.228 126.198 91.9009 68.727 49.5459C126.224 7.19744 91.8974 -27.1361 49.557 30.3787C7.18995 -27.1163 -27.1373 7.19744 30.3866 49.5459ZM49.5476 61.9345C56.3886 61.9345 61.9345 56.3886 61.9345 49.5476C61.9345 42.7065 56.3886 37.1607 49.5476 37.1607C42.7065 37.1607 37.1607 42.7065 37.1607 49.5476C37.1607 56.3886 42.7065 61.9345 49.5476 61.9345Z" fill="#24B1B1"/>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+<g id="Group_14290" transform="translate(0 442)">
+<path id="Vector_281" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#FFF7D0"/>
+<path id="Vector_282" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#FFEB84"/>
+<g id="Group_14252_8" transform="translate(31 31)">
+<rect id="Rectangle_303_7" transform="translate(159) rotate(90)" width="159" height="159" fill="#FFF3B5"/>
+<g id="Shapes_25" clip-path="url(#clip25_199_507)" transform="translate(129.042 29.9518) rotate(90)">
+<g id="Clip_path_group_25">
+<mask id="mask24_199_507" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="0" y="0" width="4075" height="1545">
+<g id="clip0_119_312_7">
+<path id="Vector_283" d="M99.0952 0H0V99.0952H99.0952V0Z" fill="white"/>
+</g>
+</mask>
+<g mask="url(#mask24_199_507)">
+<g id="Group_25">
+<path id="Vector_284" fill-rule="evenodd" clip-rule="evenodd" d="M30.3866 49.5459C-27.1108 91.9009 7.21631 126.228 49.557 68.7195C91.8711 126.228 126.198 91.9009 68.727 49.5459C126.224 7.19744 91.8974 -27.1361 49.557 30.3787C7.18995 -27.1163 -27.1373 7.19744 30.3866 49.5459ZM49.5476 61.9345C56.3886 61.9345 61.9345 56.3886 61.9345 49.5476C61.9345 42.7065 56.3886 37.1607 49.5476 37.1607C42.7065 37.1607 37.1607 42.7065 37.1607 49.5476C37.1607 56.3886 42.7065 61.9345 49.5476 61.9345Z" fill="#24B1B1"/>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+<g id="Group_14297" transform="translate(1547 661)">
+<g id="Group_14271" opacity="0" transform="translate(0 221)">
+<path id="Vector_285" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#FFF7D0"/>
+<path id="Vector_286" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#FFEB84"/>
+<g id="Group_14252_9" transform="translate(31 31)">
+<rect id="Rectangle_303_8" transform="translate(159) rotate(90)" width="159" height="159" fill="#FFF3B5"/>
+<g id="Shapes_26" clip-path="url(#clip26_199_507)" transform="translate(129.042 29.9518) rotate(90)">
+<g id="Clip_path_group_26">
+<mask id="mask25_199_507" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="0" y="0" width="4075" height="1545">
+<g id="clip0_119_312_8">
+<path id="Vector_287" d="M99.0952 0H0V99.0952H99.0952V0Z" fill="white"/>
+</g>
+</mask>
+<g mask="url(#mask25_199_507)">
+<g id="Group_26">
+<path id="Vector_288" fill-rule="evenodd" clip-rule="evenodd" d="M30.3866 49.5459C-27.1108 91.9009 7.21631 126.228 49.557 68.7195C91.8711 126.228 126.198 91.9009 68.727 49.5459C126.224 7.19744 91.8974 -27.1361 49.557 30.3787C7.18995 -27.1163 -27.1373 7.19744 30.3866 49.5459ZM49.5476 61.9345C56.3886 61.9345 61.9345 56.3886 61.9345 49.5476C61.9345 42.7065 56.3886 37.1607 49.5476 37.1607C42.7065 37.1607 37.1607 42.7065 37.1607 49.5476C37.1607 56.3886 42.7065 61.9345 49.5476 61.9345Z" fill="#24B1B1"/>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+<g id="Group_14272" opacity="0">
+<path id="Vector_289" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#FFF7D0"/>
+<path id="Vector_290" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#FFEB84"/>
+<g id="Group_14252_10" transform="translate(31 31)">
+<rect id="Rectangle_303_9" transform="translate(159) rotate(90)" width="159" height="159" fill="#FFF3B5"/>
+<g id="Shapes_27" clip-path="url(#clip27_199_507)" transform="translate(129.042 29.9518) rotate(90)">
+<g id="Clip_path_group_27">
+<mask id="mask26_199_507" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="0" y="0" width="4075" height="1545">
+<g id="clip0_119_312_9">
+<path id="Vector_291" d="M99.0952 0H0V99.0952H99.0952V0Z" fill="white"/>
+</g>
+</mask>
+<g mask="url(#mask26_199_507)">
+<g id="Group_27">
+<path id="Vector_292" fill-rule="evenodd" clip-rule="evenodd" d="M30.3866 49.5459C-27.1108 91.9009 7.21631 126.228 49.557 68.7195C91.8711 126.228 126.198 91.9009 68.727 49.5459C126.224 7.19744 91.8974 -27.1361 49.557 30.3787C7.18995 -27.1163 -27.1373 7.19744 30.3866 49.5459ZM49.5476 61.9345C56.3886 61.9345 61.9345 56.3886 61.9345 49.5476C61.9345 42.7065 56.3886 37.1607 49.5476 37.1607C42.7065 37.1607 37.1607 42.7065 37.1607 49.5476C37.1607 56.3886 42.7065 61.9345 49.5476 61.9345Z" fill="#24B1B1"/>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+<g id="Group_14310" transform="translate(1105 440)">
+<g id="Group_14252_11" opacity="0" transform="translate(0 221)">
+<path id="Vector_293" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#F1A8CF"/>
+<path id="Vector_294" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#D97BAE"/>
+<g id="Group_14255_9" transform="translate(31 31)">
+<rect id="Rectangle_312_16" width="159" height="159" fill="#E68FBE"/>
+<circle id="Ellipse_500_16" transform="translate(40.136 40.1394)" cx="39.75" cy="39.75" r="39.75" fill="#CA60AC"/>
+</g>
+</g>
+<g id="Group_14309" opacity="0" transform="translate(221 221)">
+<path id="Vector_295" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#F1A8CF"/>
+<path id="Vector_296" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#D97BAE"/>
+<g id="Group_14255_10" transform="translate(31 31)">
+<rect id="Rectangle_312_17" width="159" height="159" fill="#E68FBE"/>
+<circle id="Ellipse_500_17" transform="translate(40.136 40.1394)" cx="39.75" cy="39.75" r="39.75" fill="#CA60AC"/>
+</g>
+</g>
+<g id="Group_14308" opacity="0">
+<path id="Vector_297" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#F1A8CF"/>
+<path id="Vector_298" transform="matrix(-1 0 0 -1 221 221)" d="M0 221V0H221L190 31H31V190L0 221Z" fill="#D97BAE"/>
+<g id="Group_14255_11" transform="translate(31 31)">
+<rect id="Rectangle_312_18" width="159" height="159" fill="#E68FBE"/>
+<circle id="Ellipse_500_18" transform="translate(40.136 40.1394)" cx="39.75" cy="39.75" r="39.75" fill="#CA60AC"/>
+</g>
+</g>
+</g>
+
+</g>
+<defs>
+<filter id="filter0_d_199_507" x="-9.43354" y="41.0611" width="511.439" height="226.646" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+<feFlood flood-opacity="0" result="BackgroundImageFix"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset/>
+<feGaussianBlur stdDeviation="11.7922"/>
+<feComposite in2="hardAlpha" operator="out"/>
+<feColorMatrix type="matrix" values="0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.8 0"/>
+<feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_199_507"/>
+<feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_199_507" result="shape"/>
+</filter>
+<filter id="filter1_d_199_507" x="-7.66498" y="80.8121" width="410.697" height="307.895" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+<feFlood flood-opacity="0" result="BackgroundImageFix"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset/>
+<feGaussianBlur stdDeviation="11.7922"/>
+<feComposite in2="hardAlpha" operator="out"/>
+<feColorMatrix type="matrix" values="0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.8 0"/>
+<feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_199_507"/>
+<feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_199_507" result="shape"/>
+</filter>
+<filter id="filter2_d_199_507" x="-22.7885" y="0.907772" width="1495.29" height="245.223" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+<feFlood flood-opacity="0" result="BackgroundImageFix"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset/>
+<feGaussianBlur stdDeviation="11.7922"/>
+<feComposite in2="hardAlpha" operator="out"/>
+<feColorMatrix type="matrix" values="0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.8 0"/>
+<feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_199_507"/>
+<feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_199_507" result="shape"/>
+</filter>
+<filter id="filter3_d_199_507" x="-22.9946" y="-3.00824" width="590.064" height="118.881" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+<feFlood flood-opacity="0" result="BackgroundImageFix"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset/>
+<feGaussianBlur stdDeviation="11.7922"/>
+<feComposite in2="hardAlpha" operator="out"/>
+<feColorMatrix type="matrix" values="0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.8 0"/>
+<feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_199_507"/>
+<feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_199_507" result="shape"/>
+</filter>
+<clipPath id="clip0_199_507">
+<rect width="4074.9" height="1545" fill="white"/>
+</clipPath>
+<clipPath id="clip1_199_507">
+<rect width="79.5" height="79.5" fill="white"/>
+</clipPath>
+<clipPath id="clip2_199_507">
+<rect width="79.5" height="79.5" fill="white"/>
+</clipPath>
+<clipPath id="clip3_199_507">
+<rect width="79.5" height="79.5" fill="white"/>
+</clipPath>
+<clipPath id="clip4_199_507">
+<rect width="79.5" height="79.5" fill="white"/>
+</clipPath>
+<clipPath id="clip5_199_507">
+<rect width="79.5" height="79.5" fill="white"/>
+</clipPath>
+<clipPath id="clip6_199_507">
+<rect width="79.5" height="79.5" fill="white"/>
+</clipPath>
+<clipPath id="clip7_199_507">
+<rect width="79.5" height="79.5" fill="white"/>
+</clipPath>
+<clipPath id="clip8_199_507">
+<rect width="79.5" height="79.5" fill="white"/>
+</clipPath>
+<clipPath id="clip9_199_507">
+<rect width="79.5" height="79.5" fill="white"/>
+</clipPath>
+<clipPath id="clip10_199_507">
+<rect width="79.5" height="79.5" fill="white"/>
+</clipPath>
+<clipPath id="clip11_199_507">
+<rect width="79.5" height="79.5" fill="white"/>
+</clipPath>
+<clipPath id="clip12_199_507">
+<rect width="79.5" height="79.5" fill="white"/>
+</clipPath>
+<clipPath id="clip13_199_507">
+<rect width="79.5" height="79.5" fill="white"/>
+</clipPath>
+<clipPath id="clip14_199_507">
+<rect width="79.5" height="79.5" fill="white"/>
+</clipPath>
+<clipPath id="clip15_199_507">
+<rect width="79.5" height="79.5" fill="white"/>
+</clipPath>
+<clipPath id="clip16_199_507">
+<rect width="79.5" height="79.5" fill="white"/>
+</clipPath>
+<clipPath id="clip17_199_507">
+<rect width="79.5" height="79.5" fill="white"/>
+</clipPath>
+<clipPath id="clip18_199_507">
+<rect width="79.5" height="79.5" fill="white"/>
+</clipPath>
+<clipPath id="clip19_199_507">
+<rect width="99.0952" height="99.0952" fill="white"/>
+</clipPath>
+<clipPath id="clip20_199_507">
+<rect width="99.0952" height="99.0952" fill="white"/>
+</clipPath>
+<clipPath id="clip21_199_507">
+<rect width="99.0952" height="99.0952" fill="white"/>
+</clipPath>
+<clipPath id="clip22_199_507">
+<rect width="99.0952" height="99.0952" fill="white"/>
+</clipPath>
+<clipPath id="clip23_199_507">
+<rect width="99.0952" height="99.0952" fill="white"/>
+</clipPath>
+<clipPath id="clip24_199_507">
+<rect width="99.0952" height="99.0952" fill="white"/>
+</clipPath>
+<clipPath id="clip25_199_507">
+<rect width="99.0952" height="99.0952" fill="white"/>
+</clipPath>
+<clipPath id="clip26_199_507">
+<rect width="99.0952" height="99.0952" fill="white"/>
+</clipPath>
+<clipPath id="clip27_199_507">
+<rect width="99.0952" height="99.0952" fill="white"/>
+</clipPath>
+</defs>
+</svg>

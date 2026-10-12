@@ -55,9 +55,9 @@ model User {
   // lastName (the create hook in betterauth.server.ts splits it back into the
   // two source-of-truth columns). BetterAuth's `image` is NOT a new column —
   // it maps onto the existing `photoUrl` column via `fields` in the config.
-  email         String?  @unique
-  emailVerified Boolean  @default(false)
-  name          String   @default("")
+  email         String? @unique
+  emailVerified Boolean @default(false)
+  name          String  @default("")
 
   // ─── BetterAuth admin plugin (Phase 3 — impersonation) ────────────────────
   // `role` exists only to satisfy the admin plugin's impersonate gate — the
@@ -65,10 +65,10 @@ model User {
   // authorization otherwise stays in the role tables (AdminMembership et al.).
   // The ban* columns are unused (we don't use the ban feature) but the plugin's
   // session hook references user.banned, so they must exist.
-  role        String?
-  banned      Boolean?  @default(false)
-  banReason   String?
-  banExpires  DateTime?
+  role       String?
+  banned     Boolean?  @default(false)
+  banReason  String?
+  banExpires DateTime?
 
   // IANA zone, e.g. "America/New_York". Used by calendar/scheduling.
   timeZone String?
@@ -194,8 +194,8 @@ model User {
   mailSubscriptions    MailSubscription[]
   mailConnections      MailAccountConnection[]
   mailInboxArchives    MailInboxArchive[]
-  linkedMailMessages   MailMessageIndex[]      @relation("MailMessageIndexLinkedUser")
-  mailLinksMade        MailMessageIndex[]      @relation("MailMessageIndexLinkedBy")
+  linkedMailMessages   MailMessageIndex[]        @relation("MailMessageIndexLinkedUser")
+  mailLinksMade        MailMessageIndex[]        @relation("MailMessageIndexLinkedBy")
   scheduledMeetings    ScheduledMeeting[]
   meetingTimeProposals MeetingTimeProposal[]
   availabilitySettings UserAvailabilitySettings?
@@ -301,10 +301,10 @@ model User {
   docCommentReactions         DocCommentReaction[]
 
   // ─── Page documentation (per-page guides) ─────────────────────────────────
-  pageDocsMaintained PageDoc[] @relation("PageDocMaintainer")
+  pageDocsMaintained PageDoc[]  @relation("PageDocMaintainer")
   blogPosts          BlogPost[]
-  pageDocsCreated    PageDoc[] @relation("PageDocCreatedBy")
-  pageDocsLastEdited PageDoc[] @relation("PageDocLastEditedBy")
+  pageDocsCreated    PageDoc[]  @relation("PageDocCreatedBy")
+  pageDocsLastEdited PageDoc[]  @relation("PageDocLastEditedBy")
 
   // ─── Payroll: Reconcile back-relation ─────────────────────────────────────
   timesheetImports     TimesheetImport[]
@@ -313,6 +313,9 @@ model User {
 
   // ─── Public showcase ──────────────────────────────────────────────────────
   projectShowcasesUpdated ProjectShowcase[] @relation("ProjectShowcaseUpdatedBy")
+
+  // ─── Home landing ─────────────────────────────────────────────────────────
+  tetrisScore TetrisScore?
 }
 
 // A DALI lab member. userId is optional because a member may be known (e.g. via daliEmail)
@@ -1500,13 +1503,13 @@ model Session {
 // `Session` above so both run side by side until the legacy one is dropped at
 // cleanup. The auth instance sets session.modelName = "AuthSession".
 model AuthSession {
-  id        String   @id @default(cuid())
-  expiresAt DateTime
-  token     String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  ipAddress String?
-  userAgent String?
+  id             String   @id @default(cuid())
+  expiresAt      DateTime
+  token          String   @unique
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  ipAddress      String?
+  userAgent      String?
   // BetterAuth admin plugin: set to the impersonating admin's userId while an
   // impersonation session is active (null for normal sessions).
   impersonatedBy String?
@@ -1515,9 +1518,9 @@ model AuthSession {
   // authorized the session. No FK relation — looked up via prisma.oAuthGrant in
   // authenticateMcpRequest to keep the same downstream logic as the bespoke
   // Session path.
-  grantId   String?
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  grantId        String?
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([grantId])
@@ -1580,7 +1583,7 @@ model Verification {
 // superset that RESOLVES. The four address columns on User stay as the
 // one-per-category values we display and search.
 model UserEmail {
-  id     String @id @default(cuid())
+  id String @id @default(cuid())
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1759,6 +1762,30 @@ model AiUsage {
 // recording stops, writes notes into the doc and deletes the row. Transcript
 // text only: no audio ever reaches the server. Rows are owner-only, and a
 // user's stale rows are swept whenever they start a new recording.
+// A member's best run at the tetris game on the week 5 ("Build") home landing
+// scene. One row per player, holding their personal best rather than a log of
+// every game: the board is "the highest score each person has reached", so a
+// history would only let one good night fill all ten places.
+//
+// The score arrives from the browser and is therefore the player's word for it;
+// it is bounded on the way in but not verified, which is the right trade for a
+// landing-page easter egg and the wrong one for anything that matters. Scores
+// go with the user if the account is deleted.
+model TetrisScore {
+  // The player, and the row's identity: a personal best is one per person.
+  userId     String   @id
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  score      Int
+  lines      Int
+  level      Int
+  // When the best was set — shown on the board and used to break ties, so the
+  // player who got there first is listed first.
+  achievedAt DateTime @default(now())
+
+  // The board is read as "top N by score", which is this index read backwards.
+  @@index([score])
+}
+
 model MeetingRecording {
   id              String                 @id @default(cuid())
   // The collab room the notes land in, e.g. "doc:<pageId>:body".
@@ -2038,13 +2065,13 @@ model MailAccount {
   // backfill window; null means still backfilling (or never started).
   indexBackfilledAt DateTime?
 
-  user     User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  project  Project?      @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  drafts      MailDraft[]
-  comments    MailComment[]
-  categories  MailCategoryAccount[]
-  connections MailAccountConnection[]
-  archives    MailInboxArchive[]
+  user            User?                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project         Project?                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  drafts          MailDraft[]
+  comments        MailComment[]
+  categories      MailCategoryAccount[]
+  connections     MailAccountConnection[]
+  archives        MailInboxArchive[]
   indexedMessages MailMessageIndex[]
 
   @@unique([scopeKey, address])
@@ -2276,7 +2303,7 @@ model ScheduledMeeting {
   // Google event back to this meeting even when Google drops recurringEventId on
   // a detached instance. Primary join key on the calendar read path; backfilled
   // for pre-existing rows. Null = never pushed to Google / not yet backfilled.
-  iCalUID            String?
+  iCalUID String?
 
   // Optional video conference for the meeting. meetingUrl is the join link
   // (surfaced as a "Join" button and carried in notifications); it's minted on
@@ -2385,7 +2412,7 @@ model MeetingAttendance {
   // start (pre-exception), resolved by resolveOccurrence in
   // app/lib/meeting-occurrences.ts. A one-off meeting has a single key, its
   // selectedAt (createdAt while unscheduled).
-  occurrenceStart    DateTime
+  occurrenceStart DateTime
 
   meeting ScheduledMeeting @relation(fields: [scheduledMeetingId], references: [id])
   user    User             @relation(fields: [userId], references: [id])
@@ -2444,12 +2471,12 @@ model TimeEntry {
   // picked) — those still show in the ledger list, just not on the grid.
   // Set automatically for Meeting-sourced rows from the meeting's start time
   // + duration, and for grid drag-created Manual rows from the dragged range.
-  startTime          DateTime?
-  endTime            DateTime?
+  startTime              DateTime?
+  endTime                DateTime?
   // Meeting-sourced rows: which occurrence of scheduledMeetingId these hours
   // are for (same key as MeetingAttendance.occurrenceStart), so each week of a
   // recurring meeting logs its own hours. Null when scheduledMeetingId is.
-  occurrenceStart    DateTime?
+  occurrenceStart        DateTime?
   // Google Timesheet mirror (Phase 3). Soft pointers — no FK — same pattern as
   // MemberClass.linkId/calendarId. Null until the user enables the sync and the
   // entry is first pushed to Google. Set to null when the mirror event is deleted.
@@ -6511,7 +6538,7 @@ model ProjectChartString {
   term         Term                @relation(fields: [termId], references: [id])
   supersedes   ProjectChartString? @relation("ChartStringSupersession", fields: [supersedesId], references: [id], onDelete: Restrict)
   supersededBy ProjectChartString? @relation("ChartStringSupersession")
-  createdBy  User?               @relation("ChartStringCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  createdBy    User?               @relation("ChartStringCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
 
   @@index([projectId, termId])
   @@index([projectCode])
@@ -6676,21 +6703,21 @@ enum BlogVisibility {
 // The body is the collab room `blogPost:{id}:body`, synced back to contentJson
 // (see COLLAB_SOURCES) along with the excerpt and cover derived from it.
 model BlogPost {
-  id            String         @id @default(cuid())
-  title         String
-  contentJson   Json?
-  excerpt       String         @default("")
-  coverImageUrl String?
+  id             String         @id @default(cuid())
+  title          String
+  contentJson    Json?
+  excerpt        String         @default("")
+  coverImageUrl  String?
   // The author's own picks on the write page. Each wins over the value derived
   // from the body (excerpt / coverImageUrl) wherever the post is listed.
   summary        String?
   customCoverUrl String?
-  visibility    BlogVisibility @default(Internal)
+  visibility     BlogVisibility @default(Internal)
   // Null = draft, seen only by its author and Core.
-  publishedAt   DateTime?
+  publishedAt    DateTime?
   // Core's front page arrangement: pinned posts lead in rank order (lowest
   // first); null = unpinned, falling in behind them newest first.
-  frontPageRank Int?
+  frontPageRank  Int?
 
   authorId String
   author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)

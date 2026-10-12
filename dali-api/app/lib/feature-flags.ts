@@ -50,6 +50,14 @@ export type FeatureFlagDef = {
 
 export const FEATURE_FLAGS = [
   {
+    key: "landing-leaderboard",
+    label: "Home landing high scores",
+    description:
+      "Keeps a high-score board for the tetris game on the week 5 (\"Build\") home landing scene: one personal best per member, listed by name, shown on the attract screen and the game-over card. Off, the game plays exactly as before and nothing is recorded. Ships on — the kill switch exists because the scores are the player's own word for them.",
+    defaultEnabled: true,
+    defaultEveryone: true,
+  },
+  {
     key: "email-layout",
     label: "Standard email layout",
     description:
