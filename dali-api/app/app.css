@@ -191,6 +191,9 @@
   /* Milestones landing (home). */
   --font-display: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-milestone: "Dosis", "Inter", ui-sans-serif, system-ui, sans-serif;
+  /* The week 5 build scene's arcade chrome. Without the pixel face the Press Start button
+     silently falls back to a text font and loses the whole look. */
+  --font-arcade: "Press Start 2P", ui-monospace, "Courier New", monospace;
 }
 
 /* Dark mode overrides — toggled via html.dark (see lib/theme.ts + settings Appearance). */
