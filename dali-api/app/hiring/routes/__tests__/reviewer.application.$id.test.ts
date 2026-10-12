@@ -339,6 +339,7 @@ describe("reviewer.application.$id loader — prior applications", () => {
                   { stage: "Released", type: "Accepted", createdAt: new Date("2025-02-01") },
                 ],
                 interviews: [],
+                submittedAt: new Date("2025-01-01"),
               },
             ],
           },

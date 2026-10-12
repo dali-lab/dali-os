@@ -10,6 +10,7 @@ import { getUserRoles } from "~/lib/roles";
 import { requireAuth } from "~/lib/auth";
 import { Plus, Trash2, X, ChevronDown, ChevronUp } from "lucide-react";
 import { addDomainChallenge, removeDomainChallenge } from "~/hiring/lib/application-form.server";
+import { setDomainReady } from "~/hiring/lib/domain-windows.server";
 import { inferDomainApplicationStatus } from "~/hiring/lib/domain-application-status";
 import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
 import { getReviewStatus } from "~/hiring/lib/review-status";
@@ -279,7 +280,10 @@ export async function loader({ request }: Route.LoaderArgs) {
 
       const apps = cycle.applications.filter((app) => {
         const latestStatus = app.statusUpdates[0]?.newStatus;
-        return latestStatus === "Submitted" && app.domainApplications.length > 0;
+        return (
+          latestStatus === "Submitted" &&
+          app.domainApplications.some((da) => da.submittedAt != null)
+        );
       });
 
       // Compute inferred status for each domain application
@@ -516,19 +520,8 @@ export async function action({ request }: Route.ActionArgs) {
 
   if (intent === "mark-ready" || intent === "unmark-ready") {
     const cycleId = formData.get("cycleId") as string;
-    const latestUpdate = await prisma.applicationCycleStatusUpdate.findFirst({
-      where: { applicationCycleId: cycleId },
-      orderBy: { createdAt: "desc" },
-    });
-    if ((latestUpdate?.newStatus ?? "Draft") !== "Draft") {
-      return redirect("/hiring/domain-lead");
-    }
-    const isReady = intent === "mark-ready";
-    await prisma.domainApplicationCycle.upsert({
-      where: { domainId_applicationCycleId: { domainId, applicationCycleId: cycleId } },
-      update: { isReady },
-      create: { domainId, applicationCycleId: cycleId, isReady },
-    });
+    const refused = await setDomainReady(cycleId, domainId, intent === "mark-ready");
+    if (refused) return { error: refused };
     return redirect("/hiring/domain-lead");
   }
 
@@ -537,7 +530,7 @@ export async function action({ request }: Route.ActionArgs) {
 
 export default function DomainLeadDashboard() {
   const data = useLoaderData<typeof loader>() as any;
-  const actionData = useActionData<typeof action>() as { notice?: string } | undefined;
+  const actionData = useActionData<typeof action>() as { notice?: string; error?: string } | undefined;
   const toast = useToast();
   const os = useOsChrome();
   const domainData = data?.domainData ?? [];
@@ -545,6 +538,7 @@ export default function DomainLeadDashboard() {
 
   useEffect(() => {
     if (actionData?.notice) toast.success(actionData.notice);
+    if (actionData?.error) toast.error(actionData.error);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per action result
   }, [actionData]);
 
@@ -739,8 +733,7 @@ function DomainPanel({ entry, allForms }: { entry: any; allForms: { id: string; 
       )}
 
       <SectionNavLayout label="Sections">
-        {/* Challenges: editable in Draft, read-only while open or in review. */}
-        {currentStatus === "Draft" && cycle.hasChallenges && (
+        {(currentStatus === "Draft" || (currentStatus === "Open" && !isChallengeReady)) && cycle.hasChallenges && (
           <NavSection id="challenges" title="Challenges">
             <SetupCard
               title="Challenges"
@@ -757,7 +750,7 @@ function DomainPanel({ entry, allForms }: { entry: any; allForms: { id: string; 
             </SetupCard>
           </NavSection>
         )}
-        {(currentStatus === "Open" || currentStatus === "UnderReview") && cycle.hasChallenges && (
+        {((currentStatus === "Open" && isChallengeReady) || currentStatus === "UnderReview") && cycle.hasChallenges && (
           <NavSection id="challenges" title="Challenges">
             <SetupCard
               title="Challenges"
