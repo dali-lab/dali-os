@@ -159,6 +159,7 @@ export const AUDIT_ACTIONS = [
   "page.general-access",
   "page.folder-scope",
   "page.move-workspace",
+  "page.receiver",
   "page.pin",
   "project.showcase-status",
   "education.offering.create",

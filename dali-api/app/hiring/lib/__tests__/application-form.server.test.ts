@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { prisma } from "~/lib/db";
 import { ensureProcessFolder } from "~/lib/bindings.server";
+import { filingFolderOr } from "~/lib/drive-receivers.server";
 import { resolveReferenceOptions } from "~/forms/lib/reference-sources";
 import {
   createCycleApplicationForm,
@@ -24,6 +25,13 @@ vi.mock("~/lib/bindings.server", () => ({
   // create just records folderPageId.
   ensureProcessFolder: vi.fn().mockResolvedValue("hiring-folder"),
   HIRING_PROCESS_ID: "hiring",
+}));
+const receivers = vi.hoisted(() => ({ on: false }));
+vi.mock("~/lib/drive-receivers.server", () => ({
+  singletonSlot: (processType: string, folderType: string) => ({ processType, processId: "hiring", folderType }),
+  filingFolderOr: vi.fn(async (_slot: unknown, _actor: string, legacy: () => Promise<string | null>) =>
+    receivers.on ? "receiver-folder" : legacy(),
+  ),
 }));
 vi.mock("~/forms/lib/reference-sources", () => ({
   resolveReferenceOptions: vi.fn().mockResolvedValue([{ value: "p1", label: "Project 1" }]),
@@ -57,6 +65,7 @@ beforeEach(() => {
   mockPrisma.page.findFirst.mockResolvedValue(null);
   mockPrisma.page.count.mockResolvedValue(0);
   mockPrisma.form.count.mockResolvedValue(0);
+  receivers.on = false;
 });
 
 describe("loadHiringForm", () => {
@@ -188,5 +197,49 @@ describe("createDomainChallengeForm", () => {
     expect(mockPrisma.cycleDomainForm.create).toHaveBeenCalledWith({
       data: { applicationCycleId: "c1", domainId: "d1", formId: "chal-form" },
     });
+  });
+});
+
+describe("filing with receiver folders on", () => {
+  beforeEach(() => {
+    receivers.on = true;
+  });
+
+  it("files the application template via the ApplicationTemplates slot, not the binding", async () => {
+    mockPrisma.form.findFirst.mockResolvedValue(null);
+    mockPrisma.form.create.mockResolvedValue({ id: "tmpl-new" });
+
+    await ensureHiringTemplate("actor");
+
+    expect(filingFolderOr).toHaveBeenCalledWith(
+      { processType: "HiringCycle", processId: "hiring", folderType: "ApplicationTemplates" },
+      "actor",
+      expect.any(Function),
+    );
+    expect(ensureProcessFolder).not.toHaveBeenCalled();
+    expect(mockPrisma.form.create.mock.calls[0][0].data.folderPageId).toBe("receiver-folder");
+  });
+
+  it("files a cycle application form via the HiringForms slot", async () => {
+    mockPrisma.applicationCycle.findUnique.mockResolvedValue({
+      id: "c1",
+      name: "Fall",
+      applicants: "LabMembers",
+      applicationFormId: null,
+    });
+    mockPrisma.page.findFirst.mockResolvedValue({ id: "folder-tmpl" });
+    mockPrisma.form.findFirst.mockResolvedValue({ id: "tmpl", versions: [{ id: "tv" }] });
+    mockPrisma.form.findUnique.mockResolvedValue({ versions: [{ questions: [], intro: null }] });
+    mockPrisma.form.create.mockResolvedValue({ id: "new-form" });
+
+    await createCycleApplicationForm("c1", "actor");
+
+    expect(filingFolderOr).toHaveBeenCalledWith(
+      { processType: "HiringCycle", processId: "hiring", folderType: "HiringForms" },
+      "actor",
+      expect.any(Function),
+    );
+    expect(ensureProcessFolder).not.toHaveBeenCalled();
+    expect(mockPrisma.form.create.mock.calls[0][0].data.folderPageId).toBe("receiver-folder");
   });
 });

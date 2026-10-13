@@ -22,10 +22,10 @@ const mockPrisma = prisma as unknown as {
   };
   page: {
     findMany: ReturnType<typeof vi.fn>;
-    count: ReturnType<typeof vi.fn>;
     deleteMany: ReturnType<typeof vi.fn>;
   };
-  processFolderBinding: { findMany: ReturnType<typeof vi.fn> };
+  projectFile: { findMany: ReturnType<typeof vi.fn> };
+  form: { findMany: ReturnType<typeof vi.fn> };
   timeEntry: { count: ReturnType<typeof vi.fn> };
   budgetEntry: { count: ReturnType<typeof vi.fn> };
   budgetNote: { count: ReturnType<typeof vi.fn> };
@@ -54,10 +54,18 @@ function call() {
   return action({ request, params: { id: PROJECT_ID } } as any);
 }
 
-const MEETING_NOTES_FOLDERS = [
-  { id: "page-team-notes", contentDocId: null },
-  { id: "page-partner-notes", contentDocId: null },
-];
+const folder = (id: string, parentPageId: string | null = null) => ({
+  id,
+  kind: "Folder",
+  parentPageId,
+  contentDocId: null,
+});
+const doc = (id: string, parentPageId: string | null = null) => ({
+  id,
+  kind: "FreeForm",
+  parentPageId,
+  contentDocId: null,
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -77,18 +85,11 @@ beforeEach(() => {
     delete: vi.fn().mockReturnValue("project-delete-op"),
   };
   mockPrisma.page = {
-    findMany: vi.fn().mockResolvedValue(MEETING_NOTES_FOLDERS),
-    count: vi.fn().mockResolvedValue(0),
+    findMany: vi.fn().mockResolvedValue([]),
     deleteMany: vi.fn().mockReturnValue("page-delete-op"),
   };
-  // The meeting-notes folders are found via the project's folder bindings now
-  // (no systemKey) — point them at the same two folder ids the page query returns.
-  mockPrisma.processFolderBinding = {
-    findMany: vi.fn().mockResolvedValue([
-      { folderPageId: "page-team-notes" },
-      { folderPageId: "page-partner-notes" },
-    ]),
-  };
+  mockPrisma.projectFile = { findMany: vi.fn().mockResolvedValue([]) };
+  mockPrisma.form = { findMany: vi.fn().mockResolvedValue([]) };
   for (const model of [
     "timeEntry",
     "budgetEntry",
@@ -115,36 +116,78 @@ beforeEach(() => {
   mockPrisma.$transaction = vi.fn().mockImplementation((cb: any) => cb(mockPrisma));
 });
 
+function livePages(...pages: Array<ReturnType<typeof folder> | ReturnType<typeof doc>>) {
+  // The first findMany is the project's live pages; later ones (system pages) are not.
+  mockPrisma.page.findMany.mockImplementation(({ where }: any) =>
+    Promise.resolve(where.workspaceType === "Project" ? pages : []),
+  );
+}
+
 describe("DELETE /api/projects/:id", () => {
-  it("does not treat the auto-created meeting-notes folders as blocking documents", async () => {
+  it("deletes a project whose only pages are empty folders, and removes those folders", async () => {
+    livePages(folder("f-team"), folder("f-receiver"));
+
     const res = await call();
 
     expect(res.status).toBe(200);
-    // page.count must exclude both the overview page and the two meeting-notes
-    // folders, or the delete would 409 on "documents" for every real project.
-    const countArgs = mockPrisma.page.count.mock.calls[0]![0];
-    expect(countArgs.where.id.notIn).toEqual(
-      expect.arrayContaining(["page-overview", "page-team-notes", "page-partner-notes"]),
-    );
-  });
-
-  it("cleans up the meeting-notes folders in the same transaction as overview/PRD pages", async () => {
-    await call();
-
     expect(mockPrisma.page.deleteMany).toHaveBeenCalledWith({
-      where: { id: { in: ["page-overview", "page-team-notes", "page-partner-notes"] } },
+      where: { id: { in: ["page-overview", "f-team", "f-receiver"] } },
     });
   });
 
-  it("still blocks deletion when a genuine authored document exists", async () => {
-    mockPrisma.page.count.mockResolvedValueOnce(1);
+  it("blocks on a genuine authored document", async () => {
+    livePages(doc("d1"));
 
     const res = await call();
     const body = await res.json();
 
     expect(res.status).toBe(409);
-    expect(body.blocking).toEqual(
-      expect.arrayContaining([{ label: "documents", count: 1 }]),
+    expect(body.blocking).toEqual(expect.arrayContaining([{ label: "documents", count: 1 }]));
+  });
+
+  it("counts a folder holding a page as a blocker, plus the page itself", async () => {
+    livePages(folder("f1"), doc("d1", "f1"));
+
+    const res = await call();
+    const body = await res.json();
+
+    expect(res.status).toBe(409);
+    expect(body.blocking).toEqual(expect.arrayContaining([{ label: "documents", count: 2 }]));
+    expect(mockPrisma.page.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("counts a folder holding a file as non-empty", async () => {
+    livePages(folder("f1"));
+    mockPrisma.projectFile.findMany.mockResolvedValue([{ folderPageId: "f1" }]);
+
+    const res = await call();
+    const body = await res.json();
+
+    expect(res.status).toBe(409);
+    expect(body.blocking).toEqual(expect.arrayContaining([{ label: "documents", count: 1 }]));
+  });
+
+  it("counts a folder holding a form as non-empty", async () => {
+    livePages(folder("f1"));
+    mockPrisma.form.findMany.mockResolvedValue([{ folderPageId: "f1" }]);
+
+    const res = await call();
+
+    expect(res.status).toBe(409);
+  });
+
+  it("only looks at live pages in the project workspace, excluding the overview and PRD", async () => {
+    await call();
+
+    expect(mockPrisma.page.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          workspaceType: "Project",
+          workspaceId: PROJECT_ID,
+          id: { notIn: ["page-overview"] },
+          archivedAt: null,
+        },
+      }),
     );
   });
 
@@ -159,15 +202,5 @@ describe("DELETE /api/projects/:id", () => {
     expect(body.blocking).toEqual(
       expect.arrayContaining([{ label: "chart strings", count: 2 }]),
     );
-  });
-
-  it("does not treat already-archived documents as blocking", async () => {
-    // Deleting a document from the hub is a soft delete (archivedAt set) —
-    // the count query must filter those out or a project stays undeletable
-    // forever after its docs are "removed" from the UI.
-    await call();
-
-    const countArgs = mockPrisma.page.count.mock.calls[0]![0];
-    expect(countArgs.where.archivedAt).toBe(null);
   });
 });

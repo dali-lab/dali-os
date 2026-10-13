@@ -5,7 +5,7 @@ import { requireProjectEditAccess, requireMemberSession } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
 import { getPageAccess } from "~/lib/pageAccess.server";
-import { isRoot, ROOT_DELETE_ERROR } from "~/lib/drive-roots";
+import { isRoot, ROOT_DELETE_ERROR, CLEARED_FOLDER_TYPE } from "~/lib/drive-roots";
 
 // POST   /api/documents/:id — partial update. Body: any of
 //                             { title?, iconEmoji?, coverImageUrl? }.
@@ -135,7 +135,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
     await prisma.page.update({
       where: { id: pageId },
-      data: { archivedAt: new Date() },
+      data: { archivedAt: new Date(), ...CLEARED_FOLDER_TYPE },
     });
     await logAuditEvent({
       action: "document.delete",
