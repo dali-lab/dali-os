@@ -74,6 +74,7 @@ import {
   noteForOccurrence,
   resolveOccurrence,
 } from "~/lib/meeting-occurrences";
+import { meetingNotePath } from "~/lib/note-path.server";
 import { getZonedYMD, resolveUserTimeZone, zonedDayStartUtc } from "~/lib/timezone";
 import {
   bookRoomsForEvent,
@@ -2267,7 +2268,18 @@ export async function submitCalendarAction(request: Request) {
       if (!result.ok) {
         return Response.json({ error: result.error }, { status: result.status });
       }
-      return Response.json({ ok: true, notePageId: result.notePageId });
+      return Response.json({
+        ok: true,
+        notePageId: result.notePageId,
+        notebookId: result.notebookId,
+        createdNotebook: result.createdNotebook,
+        notePath: await meetingNotePath({
+          notePageId: result.notePageId,
+          notebookId: result.notebookId,
+          viewerSub: userId,
+          request,
+        }),
+      });
     }
 
     case "add-meeting-whiteboard": {

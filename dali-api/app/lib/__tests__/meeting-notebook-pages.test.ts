@@ -37,7 +37,7 @@ describe("ensureMeetingNotebook", () => {
   it("creates the notebook in the given folder when the key is new", async () => {
     page.findUnique.mockResolvedValue(null);
 
-    expect(await ensureMeetingNotebook(input)).toEqual({ id: "nb-new" });
+    expect(await ensureMeetingNotebook(input)).toEqual({ id: "nb-new", created: true });
     expect(page.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -49,6 +49,16 @@ describe("ensureMeetingNotebook", () => {
         }),
       }),
     );
+  });
+
+  it("does not claim to have created a notebook it reused or lost the race for", async () => {
+    page.findUnique.mockResolvedValue({ id: "nb-1", archivedAt: null } as never);
+    expect(await ensureMeetingNotebook(input)).not.toHaveProperty("created");
+
+    page.findUnique.mockReset();
+    page.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "nb-raced" } as never);
+    page.create.mockRejectedValue(Object.assign(new Error("unique"), { code: "P2002" }));
+    expect(await ensureMeetingNotebook(input)).not.toHaveProperty("created");
   });
 
   it("creates the notebook with kind Notebook", async () => {
@@ -68,7 +78,7 @@ describe("ensureMeetingNotebook", () => {
   it("starts a fresh notebook when the old one is in the trash", async () => {
     page.findUnique.mockResolvedValue({ id: "nb-old", archivedAt: new Date() } as never);
 
-    expect(await ensureMeetingNotebook(input)).toEqual({ id: "nb-new" });
+    expect(await ensureMeetingNotebook(input)).toEqual({ id: "nb-new", created: true });
     // The trashed one gives up the key but stays a notebook for its own tabs.
     expect(page.update).toHaveBeenCalledWith({
       where: { id: "nb-old" },

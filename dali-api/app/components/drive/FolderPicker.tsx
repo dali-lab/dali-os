@@ -296,6 +296,8 @@ export function FolderPicker({
   disabledDest,
   initial,
   confirmLabel = "Move",
+  pendingLabel = "Move to:",
+  emptyText = "There's nowhere to move this.",
   preferFolderType,
   onConfirm,
 }: {
@@ -311,6 +313,10 @@ export function FolderPicker({
   /** Where to open the browse view. Defaults to the drive list (or the sole drive). */
   initial?: Destination;
   confirmLabel?: string;
+  /** Footer prefix before the chosen path. */
+  pendingLabel?: string;
+  /** Shown when the browse view has no rows. */
+  emptyText?: string;
   /** Single destination. Multi-select is not built yet. */
   mode?: "single";
   /** Folders of this `FolderType` sort first and get a glyph (e.g. "Meetings"). */
@@ -587,7 +593,7 @@ export function FolderPicker({
       >
         {rows.length === 0 ? (
           <p className="px-3 py-6 text-center text-sm text-muted-foreground">
-            {searching ? "No matching folders." : "There's nowhere to move this."}
+            {searching ? "No matching folders." : emptyText}
           </p>
         ) : (
           rows.map((row, i) => {
@@ -667,7 +673,7 @@ export function FolderPicker({
         <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
           {pendingPath ? (
             <>
-              Move to: <span className="font-medium text-foreground">{pendingPath}</span>
+              {pendingLabel} <span className="font-medium text-foreground">{pendingPath}</span>
             </>
           ) : (
             "Select a destination"

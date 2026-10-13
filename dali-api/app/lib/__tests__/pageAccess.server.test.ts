@@ -523,6 +523,75 @@ describe("Group scope on the object path (non-Core group)", () => {
   });
 });
 
+describe("ignoreShares option", () => {
+  const memberNote = (overrides: Record<string, unknown> = {}) =>
+    page({ workspaceType: "Member", workspaceId: "someone-else", ...overrides });
+
+  it("denies a note reached only by a named share", async () => {
+    withShare("View");
+    expect(await getPageAccess("viewer", memberNote())).toEqual({
+      canView: true,
+      canEdit: false,
+      canComment: false,
+    });
+    expect(await getPageAccess("viewer", memberNote(), undefined, { ignoreShares: true })).toEqual(
+      denied(),
+    );
+  });
+
+  it("does not query shares on the single-page path", async () => {
+    await getPageAccess("viewer", memberNote(), undefined, { ignoreShares: true });
+    expect(mockPrisma.pageShare.findMany).not.toHaveBeenCalled();
+  });
+
+  it("does not query shares on the bulk path", async () => {
+    const result = await getPageAccessBulk("viewer", [memberNote()], undefined, {
+      ignoreShares: true,
+    });
+    expect(result.get("page-1")).toEqual(denied());
+    expect(mockPrisma.pageShare.findMany).not.toHaveBeenCalled();
+  });
+
+  it("keeps access the workspace already gives", async () => {
+    withShare("View");
+    const result = await getPageAccessBulk(
+      "viewer",
+      [memberNote({ labListing: "Listed" })],
+      undefined,
+      { ignoreShares: true },
+    );
+    expect(result.get("page-1")?.canView).toBe(true);
+  });
+
+  it("keeps General access: a public link still grants view", async () => {
+    withShare("Edit");
+    const result = await getPageAccessBulk(
+      "viewer",
+      [memberNote({ linkAccess: "Public" })],
+      undefined,
+      { ignoreShares: true },
+    );
+    expect(result.get("page-1")).toEqual({ canView: true, canEdit: false, canComment: false });
+  });
+
+  it("keeps General access: lab-members link grants a lab member", async () => {
+    vi.mocked(isLabMember).mockResolvedValue(true);
+    const result = await getPageAccessBulk(
+      "viewer",
+      [page({ linkAccess: "LabMembers", linkPermission: "Edit" })],
+      undefined,
+      { ignoreShares: true },
+    );
+    expect(result.get("page-1")?.canEdit).toBe(true);
+  });
+
+  it("keeps Core's full base on a lab page", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    const result = await getPageAccessBulk("viewer", [page()], undefined, { ignoreShares: true });
+    expect(result.get("page-1")).toEqual(full);
+  });
+});
+
 describe("governingScopeMap", () => {
   const node = (id: string, parentPageId: string | null, scope: Record<string, unknown> = {}) => ({
     id,

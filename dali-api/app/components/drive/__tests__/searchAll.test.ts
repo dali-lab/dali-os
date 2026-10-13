@@ -66,3 +66,15 @@ describe("searchAll", () => {
     expect(hit.scope.id).toBe("mine");
   });
 });
+
+describe("searchAll location", () => {
+  it("carries the item's location so a result can open its folder", () => {
+    const [hit] = searchAll(scopes, "handbook", "all");
+    expect(hit.location).toMatchObject({ scopeId: "mine", folderId: "f1", path: hit.path });
+  });
+
+  it("points a top-level result at its space", () => {
+    const [hit] = searchAll(scopes, "budget", "all");
+    expect(hit.location).toMatchObject({ scopeId: "lab", folderId: null });
+  });
+});

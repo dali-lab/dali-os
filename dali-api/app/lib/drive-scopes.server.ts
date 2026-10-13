@@ -7,6 +7,8 @@ import type { DriveItem, ProjectPageRow, ProjectFileRow } from "~/lib/drive.serv
 import { prisma } from "~/lib/db";
 import { requireAuth, isImpersonating } from "~/lib/auth";
 import { favoritePageIds } from "~/lib/user-pages.server";
+import { withChildCounts } from "~/lib/drive-counts.server";
+import { loadSharedWithMe } from "~/lib/drive-shared.server";
 import { visibleDriveSpaces } from "~/lib/drive-spaces";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { ensureAllRoots, findAllRoots, type RootKey } from "~/lib/drive-roots.server";
@@ -184,10 +186,13 @@ export async function loadDriveScopes({
   const hidePersonal = auth.ok && isImpersonating(auth);
 
   // Phase 1: load pages + files for every scope WITHOUT forms.
-  const [memberItems, labItems, liveRoots, ...projectItemArrays] = await Promise.all([
+  const [memberItems, sharedItems, labItems, liveRoots, ...projectItemArrays] = await Promise.all([
     hidePersonal
       ? Promise.resolve<DriveItem[]>([])
       : loadDriveScope({ userSub, scope: { kind: "Member" }, request }),
+    hidePersonal
+      ? Promise.resolve<DriveItem[]>([])
+      : loadSharedWithMe({ userSub, request }),
     loadDriveScope({
       userSub,
       scope: { kind: "Lab" },
@@ -381,6 +386,16 @@ export async function loadDriveScopes({
         });
         break;
 
+      case "shared-with-me":
+        result.push({
+          id: space.key,
+          label: space.label,
+          iconEmoji: null,
+          items: tagFavorites(sharedItems, favIds),
+          scopeAudience: "Shared with you",
+        });
+        break;
+
       case "lab-open":
         result.push({
           id: "lab",
@@ -496,7 +511,7 @@ export async function loadDriveScopes({
         break;
     }
   }
-  return result;
+  return result.map((scope) => ({ ...scope, items: withChildCounts(scope.items) }));
 }
 
 /**
@@ -549,7 +564,7 @@ export async function loadProjectDriveScope({
     id: `project:${projectId}`,
     label: projectName,
     iconEmoji: projectIconEmoji,
-    items,
+    items: withChildCounts(items),
     scopeAudience: "Project members",
   };
 }

@@ -18,6 +18,8 @@ import { isCore } from "~/lib/roles";
 // component) so React Router strips this import from the client bundle.
 import { HIRING_PROCESS_ID } from "~/lib/bindings.server";
 import { DriveFolderBindings } from "~/components/drive/DriveFolderBindings";
+import { DriveReceivers } from "~/components/drive/DriveReceivers";
+import { receiversEnabled } from "~/lib/drive-receivers.server";
 
 export const meta: Route.MetaFunction = () => [{ title: "Drive folders · Hiring · DALI OS" }];
 
@@ -25,20 +27,32 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
   if (!(await isCore(auth.user.sub))) return redirect("/");
-  return { processId: HIRING_PROCESS_ID };
+  return { processId: HIRING_PROCESS_ID, receiversEnabled: await receiversEnabled(request) };
 }
 
 export default function HiringDriveFoldersPage() {
-  const { processId } = useLoaderData<typeof loader>();
+  const { processId, receiversEnabled: receiversOn } = useLoaderData<typeof loader>();
   return (
     <div className="mx-auto max-w-2xl px-4 py-6">
       <h1 className="text-lg font-semibold text-gray-900">Drive folders</h1>
-      <p className="mt-1 text-sm text-gray-500">
-        Where hiring auto-files its shared artifacts — challenge/application forms, application
-        templates, and rubrics. Point each at any Drive folder, or let DALI create one. These are
-        normal folders: rename, move, or share them like anything else in Drive.
-      </p>
-      <DriveFolderBindings processType="HiringCycle" processId={processId} className="mt-6" />
+      {receiversOn ? (
+        <>
+          <p className="mt-1 text-sm text-gray-500">
+            Where hiring files its forms and application templates. Each slot takes any folder inside
+            Hiring, and you can also mark a folder from its Folder settings in Drive.
+          </p>
+          <DriveReceivers processType="HiringCycle" processId={processId} title="Receiver folders" className="mt-6" />
+        </>
+      ) : (
+        <>
+          <p className="mt-1 text-sm text-gray-500">
+            Where hiring auto-files its shared artifacts — challenge/application forms, application
+            templates, and rubrics. Point each at any Drive folder, or let DALI create one. These are
+            normal folders: rename, move, or share them like anything else in Drive.
+          </p>
+          <DriveFolderBindings processType="HiringCycle" processId={processId} className="mt-6" />
+        </>
+      )}
     </div>
   );
 }

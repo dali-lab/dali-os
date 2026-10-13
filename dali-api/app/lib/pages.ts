@@ -115,7 +115,7 @@ export type MeetingNotebookDestination = {
  */
 export async function ensureMeetingNotebook(
   input: { key: string; title: string; createdById: string } & MeetingNotebookDestination,
-): Promise<{ id: string }> {
+): Promise<{ id: string; created?: true }> {
   const existing = await prisma.page.findUnique({
     where: { notebookKey: input.key },
     select: { id: true, archivedAt: true },
@@ -136,9 +136,11 @@ export async function ensureMeetingNotebook(
     kind: "Notebook" as const,
   };
   try {
-    return input.workspaceType === "Project" && input.workspaceId
-      ? await createProjectPage({ projectId: input.workspaceId, ...fields })
-      : await createLabMeetingPage({ ...fields, restricted: input.restricted });
+    const page =
+      input.workspaceType === "Project" && input.workspaceId
+        ? await createProjectPage({ projectId: input.workspaceId, ...fields })
+        : await createLabMeetingPage({ ...fields, restricted: input.restricted });
+    return { id: page.id, created: true };
   } catch (err) {
     // Two notes for the same notebook created at once: the unique key lets one
     // create it, and the other files into that one.

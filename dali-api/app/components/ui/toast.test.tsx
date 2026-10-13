@@ -109,4 +109,40 @@ describe("useToast", () => {
     expect(container.textContent).toContain("Sticky");
     cleanup();
   });
+
+  it("renders each action as a button, runs it on click and dismisses the toast", () => {
+    const { container, api, cleanup } = captureToast();
+    const open = vi.fn();
+    const undo = vi.fn();
+    act(() => {
+      api.success("Filed to Core", {
+        actions: [
+          { label: "Open", onClick: open },
+          { label: "Undo", onClick: undo },
+        ],
+      });
+    });
+    const labels = [...container.querySelectorAll("button")].map((b) => b.textContent);
+    expect(labels).toEqual(expect.arrayContaining(["Open", "Undo"]));
+
+    const undoButton = [...container.querySelectorAll("button")].find((b) => b.textContent === "Undo")!;
+    act(() => {
+      undoButton.click();
+    });
+    expect(undo).toHaveBeenCalledTimes(1);
+    expect(open).not.toHaveBeenCalled();
+    expect(container.textContent).not.toContain("Filed to Core");
+    cleanup();
+  });
+
+  it("renders no action row when none are given", () => {
+    const { container, api, cleanup } = captureToast();
+    act(() => {
+      api.info("Plain");
+    });
+    expect([...container.querySelectorAll("button")].map((b) => b.getAttribute("aria-label"))).toEqual([
+      "Dismiss",
+    ]);
+    cleanup();
+  });
 });
