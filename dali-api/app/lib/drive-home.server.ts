@@ -1,6 +1,5 @@
 import { prisma } from "~/lib/db";
 import { getPageAccessBulk, PAGE_ACCESS_SELECT } from "~/lib/pageAccess.server";
-import { isCore } from "~/lib/roles";
 import { expandOccurrences } from "~/lib/meeting-occurrences";
 import { pageRowToDriveItem } from "~/lib/drive.server";
 import type { DriveItem } from "~/lib/drive.server";
@@ -17,14 +16,14 @@ const HOME_PAGE_KINDS: PageKind[] = ["Folder", "FreeForm", "Structured", "Whiteb
 export type HomePageItem = Extract<DriveItem, { type: "folder" | "doc" }> & { visitedAt: Date | null };
 
 export type HomeUpcoming = {
-  item: Extract<DriveItem, { type: "doc" }>;
-  nextAt: Date;
+  meetingId: string;
   meetingTitle: string;
+  nextAt: Date;
+  item: Extract<DriveItem, { type: "doc" }>;
 };
 
 export type DriveHomeData = {
   recent: HomePageItem[];
-  starred: HomePageItem[];
   upcoming: HomeUpcoming[];
 };
 
@@ -45,64 +44,55 @@ export async function loadDriveHome(viewerId: string, request?: Request): Promis
   const windowEnd = new Date(now.getTime() + UPCOMING_WINDOW_DAYS * 24 * 60 * 60_000);
   const pageFilter = { is: { archivedAt: null, kind: { in: HOME_PAGE_KINDS } } };
 
-  const [recentRows, starredRows, meetings] = await Promise.all([
+  const [recentRows, meetings] = await Promise.all([
     prisma.userFavorite.findMany({
       where: { userId: viewerId, pageId: { not: null }, visitedAt: { not: null }, page: pageFilter },
       orderBy: { visitedAt: "desc" },
       take: HOME_LIMIT * READ_MULTIPLIER,
       select: { visitedAt: true, page: { select: PAGE_SELECT } },
     }),
-    prisma.userFavorite.findMany({
-      where: { userId: viewerId, pageId: { not: null }, favoritedAt: { not: null }, page: pageFilter },
-      orderBy: { favoritedAt: "desc" },
-      take: HOME_LIMIT * READ_MULTIPLIER,
-      select: { visitedAt: true, page: { select: PAGE_SELECT } },
-    }),
-    isCore(viewerId, request).then((core) => upcomingMeetings(viewerId, core, now, windowEnd)),
+    upcomingMeetings(viewerId, now, windowEnd),
   ]);
 
-  const upcomingByNotebook = soonestPerNotebook(meetings, now, windowEnd);
+  const upcomingBySeries = soonestPerSeries(meetings, now, windowEnd);
   const pages = new Map<string, PageRow>();
-  for (const row of [...recentRows, ...starredRows]) if (row.page) pages.set(row.page.id, row.page);
-  for (const { notebook } of upcomingByNotebook) pages.set(notebook.id, notebook);
+  for (const row of recentRows) if (row.page) pages.set(row.page.id, row.page);
+  for (const { notebook } of upcomingBySeries) pages.set(notebook.id, notebook);
 
   const access = await getPageAccessBulk(viewerId, [...pages.values()], request);
   const viewable = (id: string) => access.get(id)?.canView === true;
 
-  const toItems = (rows: typeof recentRows, favorited: boolean): HomePageItem[] =>
-    rows
-      .filter((r) => r.page && viewable(r.page.id))
-      .slice(0, HOME_LIMIT)
-      .map((r) => ({ ...pageRowToDriveItem(r.page!), favorited, visitedAt: r.visitedAt }));
+  const recent = recentRows
+    .filter((r) => r.page && viewable(r.page.id))
+    .slice(0, HOME_LIMIT)
+    .map((r): HomePageItem => ({ ...pageRowToDriveItem(r.page!), favorited: false, visitedAt: r.visitedAt }));
 
-  const upcoming = upcomingByNotebook
+  const upcoming = upcomingBySeries
     .filter(({ notebook }) => viewable(notebook.id))
     .slice(0, HOME_LIMIT)
-    .map(({ notebook, nextAt, meetingTitle }): HomeUpcoming => ({
-      item: pageRowToDriveItem(notebook) as HomeUpcoming["item"],
-      nextAt,
+    .map(({ meetingId, meetingTitle, nextAt, notebook }): HomeUpcoming => ({
+      meetingId,
       meetingTitle,
+      nextAt,
+      item: pageRowToDriveItem(notebook) as HomeUpcoming["item"],
     }));
 
-  return {
-    recent: toItems(recentRows, false),
-    starred: toItems(starredRows, true),
-    upcoming,
-  };
+  return { recent, upcoming };
 }
 
 type MeetingRow = Awaited<ReturnType<typeof upcomingMeetings>>[number];
 
-function upcomingMeetings(viewerId: string, viewerIsCore: boolean, now: Date, windowEnd: Date) {
+function upcomingMeetings(viewerId: string, now: Date, windowEnd: Date) {
   return prisma.scheduledMeeting.findMany({
     where: {
       notebookId: { not: null },
       status: "Confirmed",
       selectedAt: { not: null, lte: windowEnd },
       OR: [{ recurrenceRule: { not: null } }, { selectedAt: { gte: new Date(now.getTime() - GUARD_MS) } }],
-      ...(viewerIsCore ? {} : { AND: [{ OR: [{ organizerId: viewerId }, { participantUserIds: { has: viewerId } }] }] }),
+      AND: [{ OR: [{ organizerId: viewerId }, { participantUserIds: { has: viewerId } }] }],
     },
     select: {
+      id: true,
       title: true,
       selectedAt: true,
       durationMinutes: true,
@@ -115,20 +105,19 @@ function upcomingMeetings(viewerId: string, viewerIsCore: boolean, now: Date, wi
   });
 }
 
-/** One entry per notebook: its earliest occurrence starting inside [now, windowEnd], soonest first. */
-function soonestPerNotebook(meetings: MeetingRow[], now: Date, windowEnd: Date) {
-  const best = new Map<string, { notebook: PageRow; nextAt: Date; meetingTitle: string }>();
+/** One entry per meeting series: its earliest occurrence starting inside [now, windowEnd], soonest first. */
+function soonestPerSeries(meetings: MeetingRow[], now: Date, windowEnd: Date) {
+  const scanFrom = new Date(now.getTime() - GUARD_MS);
+  const scanTo = new Date(windowEnd.getTime() + GUARD_MS);
+  const rows: { meetingId: string; meetingTitle: string; nextAt: Date; notebook: PageRow }[] = [];
   for (const meeting of meetings) {
     if (!meeting.notebook) continue;
-    const scanFrom = new Date(now.getTime() - GUARD_MS);
-    const scanTo = new Date(windowEnd.getTime() + GUARD_MS);
+    let nextAt: Date | null = null;
     for (const occ of expandOccurrences(meeting, meeting.exceptions, scanFrom, scanTo)) {
       if (occ.start < now || occ.start > windowEnd) continue;
-      const current = best.get(meeting.notebook.id);
-      if (!current || occ.start < current.nextAt) {
-        best.set(meeting.notebook.id, { notebook: meeting.notebook, nextAt: occ.start, meetingTitle: meeting.title });
-      }
+      if (!nextAt || occ.start < nextAt) nextAt = occ.start;
     }
+    if (nextAt) rows.push({ meetingId: meeting.id, meetingTitle: meeting.title, nextAt, notebook: meeting.notebook });
   }
-  return [...best.values()].sort((a, b) => a.nextAt.getTime() - b.nextAt.getTime());
+  return rows.sort((a, b) => a.nextAt.getTime() - b.nextAt.getTime());
 }

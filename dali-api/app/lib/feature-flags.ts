@@ -133,7 +133,7 @@ export const FEATURE_FLAGS = [
     key: "drive-home",
     label: "Drive Home",
     description:
-      "Shows upcoming meeting notebooks, recently opened and starred documents above the space chooser at the Drive root. Ships off.",
+      "Shows your upcoming meetings and recently opened documents above the space chooser at the Drive root. Ships off.",
   },
 ] as const satisfies readonly FeatureFlagDef[];
 

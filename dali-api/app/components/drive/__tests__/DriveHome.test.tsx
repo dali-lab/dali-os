@@ -23,12 +23,13 @@ const doc = (id: string, extra: Record<string, unknown> = {}): HomePageItem =>
   }) as HomePageItem;
 
 const notebook = (id: string, nextAt: Date, meetingTitle: string): HomeUpcoming => ({
+  meetingId: `m-${id}`,
   item: { type: "doc", isNotebook: true, id, title: `Notebook ${id}`, parentFolderId: null, iconEmoji: null, updatedAt: NOW, href: `/documents/${id}` },
   nextAt,
   meetingTitle,
 });
 
-const empty: DriveHomeData = { recent: [], starred: [], upcoming: [] };
+const empty: DriveHomeData = { recent: [], upcoming: [] };
 const scopes: LocatableScope[] = [
   { id: "lab", label: "Lab", items: [{ id: "f1", title: "Plans", parentFolderId: null }, { id: "a", title: "Doc a", parentFolderId: "f1" }] },
 ];
@@ -47,16 +48,9 @@ describe("homeSections", () => {
     expect(homeSections(empty)).toEqual([]);
   });
 
-  it("omits empty sections and keeps upcoming, recent, starred order", () => {
-    expect(homeSections({ ...empty, starred: [doc("a")], upcoming: [notebook("n", hours(1), "x")] })).toEqual([
-      "upcoming",
-      "starred",
-    ]);
-    expect(homeSections({ upcoming: [notebook("n", hours(1), "x")], recent: [doc("a")], starred: [doc("b")] })).toEqual([
-      "upcoming",
-      "recent",
-      "starred",
-    ]);
+  it("omits empty sections and keeps upcoming, recent order", () => {
+    expect(homeSections({ ...empty, upcoming: [notebook("n", hours(1), "x")] })).toEqual(["upcoming"]);
+    expect(homeSections({ upcoming: [notebook("n", hours(1), "x")], recent: [doc("a")] })).toEqual(["upcoming", "recent"]);
   });
 });
 
@@ -65,24 +59,30 @@ describe("DriveHome", () => {
     expect(render(empty)).toBe("");
   });
 
-  it("renders only the sections that have cards", () => {
+  it("renders only the sections that have rows", () => {
     const html = render({ ...empty, recent: [doc("a")] });
     expect(html).toContain('data-testid="drive-home-recent"');
     expect(html).not.toContain('data-testid="drive-home-upcoming"');
-    expect(html).not.toContain('data-testid="drive-home-starred"');
     expect(html).toContain(">Recent<");
   });
 
-  it("shows the upcoming notebook with its next time and meeting title", () => {
+  it("has no Starred heading or star glyph", () => {
+    const html = render({ upcoming: [notebook("n1", hours(3), "Weekly sync")], recent: [doc("a")] });
+    expect(html).not.toContain("Starred");
+    expect(html).not.toContain("drive-home-starred");
+    expect(html).not.toContain("lucide-star");
+  });
+
+  it("titles an upcoming row by the meeting and puts the time and notebook in the reason", () => {
     const html = render({ ...empty, upcoming: [notebook("n1", hours(3), "Weekly sync")] });
     expect(html).toContain(">Upcoming meetings<");
-    expect(html).toContain("Notebook n1");
-    expect(html).toContain("Next in 3 hours · Weekly sync");
-    expect(html).toContain('href="/documents/n1"');
+    expect(html).toMatch(/<a [^>]*href="\/documents\/n1"[^>]*>Weekly sync<\/a>/);
+    expect(html).toContain("in 3 hours · Notebook n1");
+    expect(html).not.toContain("Next in");
     expect(html).not.toContain('data-testid="drive-location"');
   });
 
-  it("shows recent cards with opened time and a location link", () => {
+  it("shows recent rows with the opened time and a location link", () => {
     const html = render({ ...empty, recent: [doc("a")] });
     expect(html).toContain("Doc a");
     expect(html).toContain("Opened 2 hours ago");
@@ -91,28 +91,35 @@ describe("DriveHome", () => {
     expect(html).toContain("Plans");
   });
 
+  it("keeps the location on one line and hides it below md", () => {
+    const html = render({ ...empty, recent: [doc("a")] });
+    expect(html).toMatch(/<button [^>]*class="[^"]*\btruncate\b/);
+    expect(html).toMatch(/<div class="[^"]*\bhidden\b[^"]*\bmin-w-0\b[^"]*\bmd:block\b/);
+  });
+
+  it("truncates the title and lays rows out as a list with no horizontal scrollers", () => {
+    const html = render({ upcoming: [notebook("n1", hours(3), "Weekly sync")], recent: [doc("a")] });
+    expect(html).toMatch(/<a [^>]*class="[^"]*\bmin-w-0\b[^"]*\btruncate\b/);
+    expect(html).toContain("hover:bg-os-container");
+    expect(html).toContain("rounded-os-item");
+    expect(html).not.toContain("overflow-x-auto");
+    expect(html).not.toContain("w-56");
+  });
+
   it("leaves the location out when the item's space is not loaded", () => {
     const html = render({ ...empty, recent: [doc("zzz")] });
     expect(html).not.toContain('data-testid="drive-location"');
   });
 
-  it("marks starred cards with a star", () => {
-    const starred = render({ ...empty, starred: [doc("a")] });
-    const recent = render({ ...empty, recent: [doc("a")] });
-    expect(starred).toContain("lucide-star");
-    expect(recent).not.toContain("lucide-star");
-  });
-
-  it("omits the opened line when there is no visit time", () => {
-    const html = render({ ...empty, starred: [doc("a", { visitedAt: null })] });
+  it("omits the opened text when there is no visit time", () => {
+    const html = render({ ...empty, recent: [doc("a", { visitedAt: null })] });
     expect(html).not.toContain("Opened");
   });
 
-  it("uses the shared card tokens and focusable links", () => {
+  it("makes the whole row a focusable link", () => {
     const html = render({ ...empty, recent: [doc("a")] });
-    expect(html).toContain("rounded-os-card");
-    expect(html).toContain("bg-os-card");
-    expect(html).toContain("hover:bg-os-card-hover");
+    expect(html).toContain("focus-within:ring-2");
+    expect(html).toContain("after:absolute after:inset-0");
     expect(html).toMatch(/<a [^>]*href="\/documents\/a"/);
   });
 
