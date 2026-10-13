@@ -83,6 +83,7 @@ import { relativeTime } from "~/lib/relative-time";
 import { cn } from "~/lib/cn";
 import { isProcessRootSpace } from "~/lib/drive-spaces";
 import { ProcessLinkPill } from "~/components/drive/ProcessLinkPill";
+import { AudienceSignal, AudienceDetail } from "~/components/drive/AudienceSignal";
 import { buttonClasses } from "~/components/ui/Button";
 
 /* Drive's type scale. It was written a step below the rest of the app — rows at
@@ -164,6 +165,9 @@ export type DriveBrowserProps = {
   /** Called when the user picks Share for a doc or folder. The browser mounts
    *  the ShareDialog in-place with this item as the target. */
   onShareItem?: (item: DriveItem) => void;
+  /** Called once when the Share dialog closes after sharing changed, so the
+   *  host can reload the listing and refresh each row's audience. */
+  onSharingChanged?: () => void;
   /**
    * When set, the browser is locked to the single scope whose id matches this
    * value. Column 0 (the scope list) is suppressed — the user is already inside
@@ -615,6 +619,7 @@ export function DriveBrowser({
   tagChips,
   tagFilter,
   onShareItem,
+  onSharingChanged,
   embeddedScopeId,
   onTogglePartnerVisible,
   hasActivePartner,
@@ -626,6 +631,7 @@ export function DriveBrowser({
 
   // Share dialog state — the item currently targeted for in-place sharing.
   const [shareTarget, setShareTarget] = useState<{ id: string; title: string; workspaceType: string } | null>(null);
+  const sharingChangedRef = useRef(false);
 
   // Wrap the hub's getScopeActions to inject the in-place Share handler.
   // Sharing only applies to doc/folder (Page-backed) items; the wrapper passes
@@ -1812,6 +1818,7 @@ export function DriveBrowser({
               restingCount={restingCount}
               onToggleFavorite={onToggleFavorite}
               onOpenItem={onOpenItem}
+              onOpenFolder={(folderId) => onNavigate(detailScopeId, folderId)}
               onPreview={setPreviewItem}
               onClose={closeDetails}
             />
@@ -1838,7 +1845,16 @@ export function DriveBrowser({
         key={shareTarget.id}
         page={shareTarget}
         open={true}
-        onClose={() => setShareTarget(null)}
+        onChanged={() => {
+          sharingChangedRef.current = true;
+        }}
+        onClose={() => {
+          setShareTarget(null);
+          if (sharingChangedRef.current) {
+            sharingChangedRef.current = false;
+            onSharingChanged?.();
+          }
+        }}
       />
     )}
 
@@ -1927,6 +1943,7 @@ function DriveDetailsPane({
   restingCount,
   onToggleFavorite,
   onOpenItem,
+  onOpenFolder,
   onPreview,
   onClose,
 }: {
@@ -1941,6 +1958,8 @@ function DriveDetailsPane({
   restingCount: number;
   onToggleFavorite?: (item: DriveItem) => void;
   onOpenItem: (item: DriveItem) => void;
+  /** Jump to a folder in the Drive (the "inherited from" link). */
+  onOpenFolder: (folderId: string) => void;
   onPreview: (item: DriveItem) => void;
   onClose: () => void;
 }) {
@@ -1990,6 +2009,18 @@ function DriveDetailsPane({
               (item as { partnerVisible?: boolean | null }).partnerVisible && (
                 <DetailFact label="Sharing" value="Shared with partner" />
               )}
+            {(item.type === "doc" || item.type === "folder" || item.type === "file") && item.audience && (
+              <DetailFact
+                label="Who can see this"
+                value={
+                  <AudienceDetail
+                    audience={item.audience}
+                    onOpenFolder={onOpenFolder}
+                    onManage={canShare && actions?.onShare ? () => actions.onShare!(item) : undefined}
+                  />
+                }
+              />
+            )}
           </dl>
 
           {/* Actions */}
@@ -2275,6 +2306,7 @@ function ColumnItemRow({
       <span className="min-w-0 flex-1 truncate font-medium">
         {item.title || "Untitled"}
       </span>
+      <RowAudience item={item} actions={scopeActions} />
       {/* Signal ②: process linkage pill. */}
       {item.linkedProcess && (
         <ProcessLinkPill label={item.linkedProcess.label} href={item.linkedProcess.href} />
@@ -2335,9 +2367,17 @@ function ColumnItemRow({
  */
 const COLUMN_SIZE = "flex-1 min-w-[12.5rem]";
 
+/** The audience marker for a row; clicking opens Share for items that have one. */
+function RowAudience({ item, actions }: { item: DriveItem; actions: RowActions | null }) {
+  if (item.type !== "doc" && item.type !== "folder" && item.type !== "file") return null;
+  if (!item.audience) return null;
+  const share = item.type !== "file" ? actions?.onShare : undefined;
+  return <AudienceSignal audience={item.audience} onOpenShare={share ? () => share(item) : undefined} />;
+}
+
 /** One labelled fact in a details panel. Renders nothing when the value is
  *  empty, so a doc with no size doesn't show a blank row. */
-function DetailFact({ label, value }: { label: string; value: string }) {
+function DetailFact({ label, value }: { label: string; value: ReactNode }) {
   if (!value) return null;
   return (
     <div className="flex flex-col gap-1">
@@ -2869,6 +2909,7 @@ function ListRow({
       <span className="flex items-center gap-2 min-w-0">
         {itemIcon(item)}
         <span className="truncate font-medium text-foreground">{item.title || "Untitled"}</span>
+        <RowAudience item={item} actions={actions} />
         {/* Signal ②: process linkage pill. */}
         {item.linkedProcess && (
           <ProcessLinkPill label={item.linkedProcess.label} href={item.linkedProcess.href} />
@@ -2998,6 +3039,7 @@ function GridTile({
       >
         {item.title || "Untitled"}
       </span>
+      <RowAudience item={item} actions={actions} />
       {/* Signal ②: process linkage pill. Centered below the title. */}
       {item.linkedProcess && (
         <ProcessLinkPill label={item.linkedProcess.label} href={item.linkedProcess.href} />

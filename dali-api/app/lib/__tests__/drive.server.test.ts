@@ -14,11 +14,24 @@ vi.mock("~/lib/pageAccess.server", () => {
     }),
     // Files use this via canViewFile; default false → unscoped files stay visible.
     isUnderGoverningScope: vi.fn().mockResolvedValue(false),
+    governingScopeMap: vi.fn((rows: Array<{ id: string }>) => new Map(rows.map((r) => [r.id, null]))),
   };
 });
+vi.mock("~/lib/roles", () => ({
+  isCore: vi.fn().mockResolvedValue(false),
+  isProjectMember: vi.fn().mockResolvedValue(false),
+  isLabMember: vi.fn().mockResolvedValue(true),
+}));
+vi.mock("~/lib/page-audience.server", () => ({
+  summarizeAudience: vi.fn(async (_viewer: string, rows: Array<{ id: string }>) =>
+    new Map(rows.map((r) => [r.id, { kind: "private", label: `aud:${r.id}`, permission: "Edit" }])),
+  ),
+}));
 
 import { prisma } from "~/lib/db";
-import { getPageAccess } from "~/lib/pageAccess.server";
+import { getPageAccess, getPageAccessBulk, governingScopeMap } from "~/lib/pageAccess.server";
+import { isCore, isProjectMember } from "~/lib/roles";
+import { summarizeAudience } from "~/lib/page-audience.server";
 import { loadDriveScope, loadOrphanForms } from "~/lib/drive.server";
 
 const mockPrisma = prisma as unknown as {
@@ -37,6 +50,8 @@ beforeEach(() => {
   mockPrisma.projectFile.findMany.mockResolvedValue([]);
   mockPrisma.form.findMany.mockResolvedValue([]);
   vi.mocked(getPageAccess).mockResolvedValue(VIEW_ONLY as any);
+  vi.mocked(isCore).mockResolvedValue(false);
+  vi.mocked(isProjectMember).mockResolvedValue(false);
 });
 
 describe("loadDriveScope — Lab scope", () => {
@@ -244,5 +259,169 @@ describe("loadDriveScope — Project scope", () => {
     expect(callArg.where).toHaveProperty("projectId");
     expect(callArg.where).not.toHaveProperty("workspaceType");
     expect(items.some((i) => i.id === "pf1")).toBe(true);
+  });
+});
+
+describe("loadDriveScope — audience", () => {
+  const audienceOf = (items: Array<{ id: string }>, id: string) =>
+    (items.find((i) => i.id === id) as { audience?: unknown } | undefined)?.audience;
+  const folder = (over: Record<string, unknown> = {}) =>
+    pageRow({ id: "folder-1", title: "Plans", kind: "Folder", ...over });
+  const file = (over: Record<string, unknown> = {}) => ({
+    id: "f1",
+    title: "Brief",
+    folderPageId: null,
+    updatedAt: new Date("2026-10-01T00:00:00Z"),
+    ...over,
+  });
+  const managers = () => {
+    const [, , opts] = vi.mocked(summarizeAudience).mock.calls[0] as unknown as [
+      string,
+      unknown,
+      { canManageSharing: (id: string) => boolean; governingByPageId: unknown },
+    ];
+    return opts;
+  };
+
+  it("summarises the pages the viewer can see in one call and attaches it to folders and docs", async () => {
+    mockPrisma.page.findMany.mockResolvedValue([folder(), pageRow({ id: "doc-1", parentPageId: "folder-1" })]);
+    const items = await loadDriveScope({ userSub: "u1", scope: { kind: "Lab" } });
+    expect(summarizeAudience).toHaveBeenCalledTimes(1);
+    expect(items.find((i) => i.id === "folder-1")).toMatchObject({ audience: { label: "aud:folder-1" } });
+    expect(items.find((i) => i.id === "doc-1")).toMatchObject({ audience: { label: "aud:doc-1" } });
+  });
+
+  it("only summarises pages the viewer can see", async () => {
+    mockPrisma.page.findMany.mockResolvedValue([pageRow({ id: "secret" }), pageRow({ id: "open" })]);
+    vi.mocked(getPageAccess).mockImplementation(async (_u: string, p: any) =>
+      (p.id === "secret" ? DENIED : VIEW_ONLY) as any,
+    );
+    await loadDriveScope({ userSub: "u1", scope: { kind: "Lab" } });
+    const rows = vi.mocked(summarizeAudience).mock.calls[0][1] as unknown as Array<{ id: string }>;
+    expect(rows.map((r) => r.id)).toEqual(["open"]);
+  });
+
+  it("hands the in-process governing map to both access and the summary (Lab)", async () => {
+    mockPrisma.page.findMany.mockResolvedValue([folder()]);
+    await loadDriveScope({ userSub: "u1", scope: { kind: "Lab" } });
+    const map = vi.mocked(governingScopeMap).mock.results[0].value;
+    expect(vi.mocked(getPageAccessBulk).mock.calls[0][4]).toBe(map);
+    expect(managers().governingByPageId).toBe(map);
+  });
+
+  it("hands the governing map to access when a project folder is scoped", async () => {
+    mockPrisma.page.findMany.mockResolvedValue([
+      pageRow({ id: "pf", workspaceType: "Project", workspaceId: "proj-1", scopeKind: "Private" }),
+    ]);
+    await loadDriveScope({ userSub: "u1", scope: { kind: "Project", projectId: "proj-1" } });
+    const map = vi.mocked(governingScopeMap).mock.results[0].value;
+    expect(vi.mocked(getPageAccessBulk).mock.calls[0][4]).toBe(map);
+    expect(managers().governingByPageId).toBe(map);
+  });
+
+  it("Lab: Core manages every page, a creator manages their own, others manage nothing", async () => {
+    const rows = [pageRow({ id: "mine", createdById: "u1" }), pageRow({ id: "theirs", createdById: "x" })];
+    mockPrisma.page.findMany.mockResolvedValue(rows);
+    await loadDriveScope({ userSub: "u1", scope: { kind: "Lab" } });
+    expect(managers().canManageSharing("mine")).toBe(true);
+    expect(managers().canManageSharing("theirs")).toBe(false);
+
+    vi.mocked(summarizeAudience).mockClear();
+    vi.mocked(isCore).mockResolvedValue(true);
+    await loadDriveScope({ userSub: "u1", scope: { kind: "Lab" } });
+    expect(managers().canManageSharing("theirs")).toBe(true);
+  });
+
+  it("Project: Core or a project member manages; a lab-only viewer does not", async () => {
+    mockPrisma.page.findMany.mockResolvedValue([pageRow({ id: "p", workspaceType: "Project", workspaceId: "proj-1" })]);
+    const scope = { kind: "Project" as const, projectId: "proj-1" };
+    await loadDriveScope({ userSub: "u1", scope });
+    expect(managers().canManageSharing("p")).toBe(false);
+
+    vi.mocked(summarizeAudience).mockClear();
+    vi.mocked(isProjectMember).mockResolvedValue(true);
+    await loadDriveScope({ userSub: "u1", scope });
+    expect(managers().canManageSharing("p")).toBe(true);
+    expect(isProjectMember).toHaveBeenCalledWith("u1", "proj-1", undefined);
+  });
+
+  it("Education: Core or an assigned instructor manages", async () => {
+    mockPrisma.page.findMany.mockResolvedValue([pageRow({ id: "e", workspaceType: "EducationOffering", workspaceId: "off-1" })]);
+    const assignment = (prisma as any).instructorAssignment.findFirst as ReturnType<typeof vi.fn>;
+    const scope = { kind: "EducationOffering" as const, offeringId: "off-1" };
+    assignment.mockResolvedValue(null);
+    await loadDriveScope({ userSub: "u1", scope });
+    expect(managers().canManageSharing("e")).toBe(false);
+
+    vi.mocked(summarizeAudience).mockClear();
+    assignment.mockResolvedValue({ id: "ia" });
+    await loadDriveScope({ userSub: "u1", scope });
+    expect(managers().canManageSharing("e")).toBe(true);
+    expect(assignment).toHaveBeenCalledWith({ where: { userId: "u1", offeringId: "off-1" }, select: { id: true } });
+  });
+
+  it("does not summarise anything for the viewer's own Member drive", async () => {
+    mockPrisma.page.findMany.mockResolvedValue([pageRow({ id: "note", workspaceType: "Member" })]);
+    const items = await loadDriveScope({ userSub: "u1", scope: { kind: "Member" } });
+    expect(summarizeAudience).not.toHaveBeenCalled();
+    expect(audienceOf(items, "note")).toBeUndefined();
+  });
+
+  describe("files", () => {
+    it("a file takes its folder's audience, pointed at that folder, without the share list", async () => {
+      mockPrisma.page.findMany.mockResolvedValue([folder({ title: "Plans" })]);
+      vi.mocked(summarizeAudience).mockResolvedValueOnce(
+        new Map([
+          [
+            "folder-1",
+            {
+              kind: "people",
+              label: "Shared with 2 people and groups",
+              count: 2,
+              permission: "Edit",
+              people: [{ id: "u2", name: "Ada", photoUrl: null }],
+              canManage: true,
+              inheritedFrom: { id: "elsewhere", title: "Elsewhere" },
+            },
+          ],
+        ]),
+      );
+      mockPrisma.projectFile.findMany.mockResolvedValue([file({ folderPageId: "folder-1" })]);
+      const items = await loadDriveScope({ userSub: "u1", scope: { kind: "Lab" } });
+      expect(audienceOf(items, "f1")).toEqual({
+        kind: "people",
+        label: "Shared with 2 people and groups",
+        permission: "Edit",
+        inheritedFrom: { id: "folder-1", title: "Plans" },
+      });
+    });
+
+    it("a loose Lab file is open to the whole lab and editable", async () => {
+      mockPrisma.projectFile.findMany.mockResolvedValue([file()]);
+      const items = await loadDriveScope({ userSub: "u1", scope: { kind: "Lab" } });
+      expect(audienceOf(items, "f1")).toEqual({
+        kind: "lab",
+        label: "Everyone in the lab",
+        permission: "Edit",
+      });
+    });
+
+    it("a loose project file is lab-visible but not lab-editable", async () => {
+      mockPrisma.projectFile.findMany.mockResolvedValue([file({ projectId: "proj-1" })]);
+      const items = await loadDriveScope({ userSub: "u1", scope: { kind: "Project", projectId: "proj-1" } });
+      expect(audienceOf(items, "f1")).toMatchObject({ kind: "lab", permission: "View" });
+    });
+
+    it("a file whose folder is not in the listing gets no audience", async () => {
+      mockPrisma.projectFile.findMany.mockResolvedValue([file({ folderPageId: "unlisted" })]);
+      const items = await loadDriveScope({ userSub: "u1", scope: { kind: "Lab" } });
+      expect(audienceOf(items, "f1")).toBeUndefined();
+    });
+
+    it("Member files carry no audience", async () => {
+      mockPrisma.projectFile.findMany.mockResolvedValue([file()]);
+      const items = await loadDriveScope({ userSub: "u1", scope: { kind: "Member" } });
+      expect(audienceOf(items, "f1")).toBeUndefined();
+    });
   });
 });
