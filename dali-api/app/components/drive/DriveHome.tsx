@@ -4,11 +4,12 @@ import { LocationLink } from "~/components/drive/LocationLink";
 import { locateItem, type LocatableScope } from "~/components/drive/location";
 import { HOME_SECTION_TITLES, homeSections, type HomeSectionKey } from "~/components/drive/home-sections";
 import { relativeTime } from "~/lib/relative-time";
+import { cn } from "~/lib/cn";
 import type { DriveItem } from "~/lib/drive.server";
 import type { DriveHomeData } from "~/lib/drive-home.server";
 
 const ROW =
-  "group relative flex min-h-10 items-center gap-3 rounded-os-item px-2 py-1.5 transition-colors hover:bg-os-container focus-within:ring-2 focus-within:ring-inset focus-within:ring-accent-coral";
+  "group relative flex min-h-8 items-center gap-3 rounded-os-item px-2 py-1 transition-colors hover:bg-os-container focus-within:ring-2 focus-within:ring-inset focus-within:ring-accent-coral";
 const TITLE =
   "min-w-0 flex-1 truncate text-sm font-medium text-foreground after:absolute after:inset-0 focus-visible:outline-none";
 const REASON = "min-w-0 max-w-[45%] truncate text-xs text-muted-foreground md:shrink-0";
@@ -64,7 +65,7 @@ function HomeRow({
         </span>
       )}
       {showLocation && (
-        <div className="relative z-10 hidden w-1/3 min-w-0 md:block">
+        <div className="relative z-10 hidden w-2/5 min-w-0 lg:block">
           <LocationLink location={locateItem(scopes, item)} onNavigate={onNavigate} />
         </div>
       )}
@@ -92,7 +93,7 @@ export function DriveHome({ data, ...actions }: RowActions & { data: DriveHomeDa
   };
 
   return (
-    <div className="flex flex-col gap-5" data-testid="drive-home">
+    <div className={cn("grid gap-x-6 gap-y-4", sections.length > 1 && "md:grid-cols-2")} data-testid="drive-home">
       {sections.map((key) => (
         <section key={key} aria-labelledby={`drive-home-${key}`} data-testid={`drive-home-${key}`}>
           <h2 id={`drive-home-${key}`} className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
