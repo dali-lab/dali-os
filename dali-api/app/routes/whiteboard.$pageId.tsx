@@ -5,7 +5,7 @@ import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { getPresenceUser } from "~/lib/presence-user";
-import { getPageAccess } from "~/lib/pageAccess.server";
+import { PAGE_ACCESS_SELECT, getPageAccess } from "~/lib/pageAccess.server";
 import { recordPageVisit } from "~/lib/user-pages.server";
 import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
 import { driveRootCrumbs } from "~/lib/drive-crumbs";
@@ -105,20 +105,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const page = await prisma.page.findUnique({
     where: { id: params.pageId },
     select: {
-      id: true,
+      ...PAGE_ACCESS_SELECT,
       title: true,
       kind: true,
-      archivedAt: true,
       iconEmoji: true,
-      parentPageId: true,
-      workspaceType: true,
-      workspaceId: true,
-      partnerVisible: true,
-      profileVisible: true,
-      labListing: true,
-      linkAccess: true,
-      linkPermission: true,
-      createdById: true,
       // When this board is a meeting's whiteboard, carry the meeting + its note
       // so the canvas can show a context bar linking across to them.
       meetingWhiteboard: {
@@ -139,18 +129,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     return redirect(`/documents/${page.id}`);
   }
 
-  const access = await getPageAccess(auth.user.sub, {
-    id: page.id,
-    workspaceType: page.workspaceType,
-    workspaceId: page.workspaceId,
-    archivedAt: page.archivedAt,
-    createdById: page.createdById,
-    partnerVisible: page.partnerVisible,
-    profileVisible: page.profileVisible,
-    labListing: page.labListing,
-    linkAccess: page.linkAccess,
-    linkPermission: page.linkPermission,
-  });
+  const access = await getPageAccess(auth.user.sub, page);
   if (!access.canView) throw new Response("Not found", { status: 404 });
 
   // Breadcrumb ancestry (mirrors the document viewer): the owning hub for

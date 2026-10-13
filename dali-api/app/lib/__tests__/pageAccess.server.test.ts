@@ -30,7 +30,7 @@ import { prisma } from "~/lib/db";
 import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
 import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
 import { resolveGroupMembers, listVisibleGroupIdsForUser } from "~/lib/groups";
-import { getPageAccess } from "../pageAccess.server";
+import { getPageAccess, PAGE_ACCESS_SELECT } from "../pageAccess.server";
 
 const mockPrisma = prisma as any;
 
@@ -413,5 +413,106 @@ describe("Core drive (Group scope)", () => {
     const result = await getPageAccess("core-user", child);
     expect(result.canView).toBe(true);
     expect(result.canEdit).toBe(true);
+  });
+});
+
+describe("PAGE_ACCESS_SELECT", () => {
+  it("selects exactly the columns the access computation reads", () => {
+    expect(Object.keys(PAGE_ACCESS_SELECT).sort()).toEqual(
+      [
+        "id",
+        "workspaceType",
+        "workspaceId",
+        "parentPageId",
+        "archivedAt",
+        "createdById",
+        "partnerVisible",
+        "profileVisible",
+        "labListing",
+        "linkAccess",
+        "linkPermission",
+        "scopeKind",
+        "scopeGroupId",
+        "scopePermission",
+      ].sort(),
+    );
+  });
+
+  it("selects every column with true", () => {
+    expect(Object.values(PAGE_ACCESS_SELECT).every((v) => v === true)).toBe(true);
+  });
+
+  it("is what the by-id path selects", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue(null);
+    await getPageAccess("u1", "page-1");
+    expect(mockPrisma.page.findUnique).toHaveBeenCalledWith({
+      where: { id: "page-1" },
+      select: PAGE_ACCESS_SELECT,
+    });
+  });
+});
+
+// ── Group scope that is not Core, via the object path ───────────────────────
+//
+// Callers that hand getPageAccess a row instead of an id only get the scope
+// cascade if the row carries parentPageId; omitting it silently falls through
+// to the Lab creator/Core rule.
+describe("Group scope on the object path (non-Core group)", () => {
+  const DESIGN_GROUP = "g-design";
+  const governingFolder = (permission: "View" | "Edit") => ({
+    id: "design-root",
+    parentPageId: null,
+    scopeKind: "Group",
+    scopeGroupId: DESIGN_GROUP,
+    scopePermission: permission,
+    createdById: "someone-else",
+  });
+  const childDoc = (over: Record<string, unknown> = {}) =>
+    page({
+      id: "child-doc",
+      workspaceType: "Lab",
+      parentPageId: "design-root",
+      scopeKind: null,
+      linkAccess: "Restricted",
+      createdById: "someone-else",
+      ...over,
+    });
+
+  beforeEach(() => {
+    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(resolveGroupMembers).mockResolvedValue(["design-member"]);
+  });
+
+  it("lets a group member edit a doc under the folder when scopePermission is Edit", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue(governingFolder("Edit"));
+    const result = await getPageAccess("design-member", childDoc());
+    expect(result).toEqual(full);
+    expect(resolveGroupMembers).toHaveBeenCalledWith(DESIGN_GROUP);
+  });
+
+  it("lets a group member view but not edit when scopePermission is View", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue(governingFolder("View"));
+    const result = await getPageAccess("design-member", childDoc());
+    expect(result).toEqual({ canView: true, canEdit: false, canComment: false });
+  });
+
+  it("denies the same member when the object omits parentPageId", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue(governingFolder("Edit"));
+    const { parentPageId: _omitted, scopeKind: _scope, ...withoutScopeFields } = childDoc() as Record<string, unknown> & { id: string; workspaceType: string; workspaceId: string | null };
+    const result = await getPageAccess("design-member", withoutScopeFields);
+    expect(result).toEqual(denied());
+    expect(mockPrisma.page.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("denies a lab member who is not in the group", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue(governingFolder("Edit"));
+    const result = await getPageAccess("other-lab-member", childDoc());
+    expect(result).toEqual(denied());
+  });
+
+  it("still lets the creator in when they are not in the group", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue(governingFolder("Edit"));
+    const result = await getPageAccess("author", childDoc({ createdById: "author" }));
+    expect(result).toEqual(full);
   });
 });

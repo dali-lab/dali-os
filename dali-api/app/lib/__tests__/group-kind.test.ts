@@ -6,6 +6,7 @@ describe("groupKind", () => {
     expect(groupKind({ systemKey: null })).toBe("custom");
     expect(groupKind({ systemKey: "core" })).toBe("lab");
     expect(groupKind({ systemKey: "hiring" })).toBe("lab");
+    expect(groupKind({ systemKey: "mentors" })).toBe("lab");
     expect(groupKind({ systemKey: "alumni" })).toBe("lab");
     expect(groupKind({ systemKey: "project:abc" })).toBe("project");
     expect(groupKind({ systemKey: "domain:abc" })).toBe("domain");
