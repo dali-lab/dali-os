@@ -757,11 +757,11 @@ function CoffeeChatAnswer({ action }: { action: string }) {
 /* ------------------------------------------------------------------ */
 
 const WORK_META_ICON = {
-  overdue: AlertTriangle,
+  carried: AlertTriangle,
   stale: AlertTriangle,
   review: Eye,
-  due: Clock,
-  none: Calendar,
+  sprint: Clock,
+  backlog: Calendar,
 } as const;
 
 function ProjectTaskCard({

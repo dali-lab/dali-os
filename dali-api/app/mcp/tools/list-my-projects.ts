@@ -5,8 +5,8 @@
 
 import { prisma } from "~/lib/db";
 import { currentTerm } from "~/lib/roles";
-import { currentSprintBand } from "~/projects/lib/task-board";
 import { DAY } from "~/projects/lib/timeline-days";
+import { labTodayUtcDay } from "~/lib/timezone";
 
 export const LIST_MY_PROJECTS_TOOL = {
   name: "list_my_projects",
@@ -71,11 +71,6 @@ export async function runListMyProjects(callerId: string, input: Input) {
         name: true,
         status: true,
         imageUrl: true,
-        projectTerms: {
-          select: {
-            term: { select: { code: true, startDate: true, endDate: true, sortKey: true } },
-          },
-        },
       },
     }),
     prisma.task.groupBy({
@@ -108,25 +103,27 @@ export async function runListMyProjects(callerId: string, input: Input) {
     }
   }
 
-  const now = new Date();
+  const today = new Date(labTodayUtcDay(new Date()));
+  const activeSprints = await prisma.sprint.findMany({
+    where: {
+      projectId: { in: projects.map((p) => p.id) },
+      closedAt: null,
+      startsOn: { lte: today },
+      endsOn: { gte: today },
+    },
+    select: { projectId: true, number: true, endsOn: true },
+  });
+  const activeByProject = new Map(activeSprints.map((s) => [s.projectId, s]));
   const out: MyProjectOut[] = projects.map((p) => {
-    const termSpans = p.projectTerms
-      .map((pt) => pt.term)
-      .sort((a, b) => a.sortKey - b.sortKey)
-      .map((t) => ({
-        code: t.code,
-        startsAt: t.startDate.toISOString(),
-        endsAt: t.endDate.toISOString(),
-      }));
-    const band = currentSprintBand(termSpans, now);
+    const sprint = activeByProject.get(p.id);
     return {
       id: p.id,
       name: p.name,
       status: p.status,
       imageUrl: p.imageUrl,
       currentTermAssignment: currentTermByProject.get(p.id) ?? null,
-      activeSprint: band
-        ? { label: band.label, endsAt: new Date(band.end + DAY).toISOString() }
+      activeSprint: sprint
+        ? { label: `Sprint ${sprint.number}`, endsAt: new Date(sprint.endsOn.getTime() + DAY).toISOString() }
         : null,
       openTaskCount: openTaskByProject.get(p.id) ?? 0,
     };

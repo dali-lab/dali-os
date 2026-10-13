@@ -25,12 +25,8 @@ const mockPrisma = prisma as unknown as {
     delete: ReturnType<typeof vi.fn>;
     count: ReturnType<typeof vi.fn>;
   };
-  taskDependency: {
-    deleteMany: ReturnType<typeof vi.fn>;
-    createMany: ReturnType<typeof vi.fn>;
-  };
   epic: { findUnique: ReturnType<typeof vi.fn> };
-  userStory: { findUnique: ReturnType<typeof vi.fn> };
+  sprint: { findUnique: ReturnType<typeof vi.fn> };
   taskAssignee: {
     findMany: ReturnType<typeof vi.fn>;
     createMany: ReturnType<typeof vi.fn>;
@@ -65,17 +61,17 @@ beforeEach(() => {
       id: TASK_ID,
       githubIssueNumber: null,
       projectId: PROJECT_ID,
+      epicId: "epic-0",
+      sprintId: null,
+      status: "Todo",
+      sprint: null,
     }),
     update: vi.fn().mockResolvedValue({}),
     delete: vi.fn().mockReturnValue("task-delete-op"),
     count: vi.fn(),
   };
-  mockPrisma.taskDependency = {
-    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
-    createMany: vi.fn().mockResolvedValue({ count: 0 }),
-  };
   mockPrisma.epic = { findUnique: vi.fn() };
-  mockPrisma.userStory = { findUnique: vi.fn() };
+  mockPrisma.sprint = { findUnique: vi.fn() };
   mockPrisma.taskAssignee = {
     findMany: vi.fn().mockResolvedValue([]),
     createMany: vi.fn().mockResolvedValue({ count: 0 }),
@@ -106,72 +102,6 @@ describe("PATCH /api/tasks/:id epic", () => {
     expect(mockPrisma.task.update).toHaveBeenCalledWith({
       where: { id: TASK_ID },
       data: { epicId: "epic-1", activityAt: expect.any(Date) },
-    });
-  });
-});
-
-describe("PATCH /api/tasks/:id story", () => {
-  it("rejects a story that belongs to another project", async () => {
-    mockPrisma.userStory.findUnique.mockResolvedValue({
-      epicId: "epic-x",
-      epic: { projectId: "other-project" },
-    });
-    const res = await call("PATCH", { storyId: "story-9" });
-    expect(res.status).toBe(400);
-    expect(mockPrisma.task.update).not.toHaveBeenCalled();
-  });
-
-  it("links a story and pins the epic to the story's epic", async () => {
-    mockPrisma.userStory.findUnique.mockResolvedValue({
-      epicId: "epic-A",
-      epic: { projectId: PROJECT_ID },
-    });
-    const res = await call("PATCH", { storyId: "story-1" });
-    expect(res.status).toBe(200);
-    // A story implies its epic — both are written, even though only storyId
-    // was sent, so the two can never disagree.
-    expect(mockPrisma.task.update).toHaveBeenCalledWith({
-      where: { id: TASK_ID },
-      data: { storyId: "story-1", epicId: "epic-A", activityAt: expect.any(Date) },
-    });
-  });
-
-  it("drops an orphaned story when the epic moves out from under it", async () => {
-    mockPrisma.task.findUnique.mockResolvedValue({
-      id: TASK_ID,
-      githubIssueNumber: null,
-      projectId: PROJECT_ID,
-      epicId: "epic-A",
-      storyId: "story-1",
-    });
-    // The task's current story still lives under epic-A.
-    mockPrisma.userStory.findUnique.mockResolvedValue({
-      epicId: "epic-A",
-      epic: { projectId: PROJECT_ID },
-    });
-    mockPrisma.epic.findUnique.mockResolvedValue({ projectId: PROJECT_ID });
-    const res = await call("PATCH", { epicId: "epic-B" });
-    expect(res.status).toBe(200);
-    expect(mockPrisma.task.update).toHaveBeenCalledWith({
-      where: { id: TASK_ID },
-      data: { epicId: "epic-B", storyId: null, activityAt: expect.any(Date) },
-    });
-  });
-
-  it("unlinks the story on null without touching the epic", async () => {
-    mockPrisma.task.findUnique.mockResolvedValue({
-      id: TASK_ID,
-      githubIssueNumber: null,
-      projectId: PROJECT_ID,
-      epicId: "epic-A",
-      storyId: "story-1",
-    });
-    const res = await call("PATCH", { storyId: null });
-    expect(res.status).toBe(200);
-    expect(mockPrisma.userStory.findUnique).not.toHaveBeenCalled();
-    expect(mockPrisma.task.update).toHaveBeenCalledWith({
-      where: { id: TASK_ID },
-      data: { storyId: null, activityAt: expect.any(Date) },
     });
   });
 });
@@ -272,54 +202,13 @@ describe("DELETE /api/tasks/:id", () => {
   });
 });
 
-describe("PATCH /api/tasks/:id dependsOn", () => {
-  it("replaces the blocked-by set with same-project tasks", async () => {
-    mockPrisma.task.count.mockResolvedValue(2);
-    const res = await call("PATCH", { dependsOn: ["t-a", "t-b", "t-a", TASK_ID] });
-    expect(res.status).toBe(200);
-    // Deduped, and a self-edge is dropped before validating.
-    expect(mockPrisma.task.count).toHaveBeenCalledWith({
-      where: { id: { in: ["t-a", "t-b"] }, projectId: PROJECT_ID },
-    });
-    expect(mockPrisma.taskDependency.deleteMany).toHaveBeenCalledWith({
-      where: { taskId: TASK_ID },
-    });
-    expect(mockPrisma.taskDependency.createMany).toHaveBeenCalledWith({
-      data: [
-        { taskId: TASK_ID, dependsOnTaskId: "t-a" },
-        { taskId: TASK_ID, dependsOnTaskId: "t-b" },
-      ],
-    });
-  });
-
-  it("rejects a dependency on a task outside the project", async () => {
-    mockPrisma.task.count.mockResolvedValue(0);
-    const res = await call("PATCH", { dependsOn: ["foreign"] });
-    expect(res.status).toBe(400);
-    expect(mockPrisma.taskDependency.deleteMany).not.toHaveBeenCalled();
-  });
-
-  it("clears the set with an empty array", async () => {
-    const res = await call("PATCH", { dependsOn: [] });
-    expect(res.status).toBe(200);
-    expect(mockPrisma.task.count).not.toHaveBeenCalled();
-    expect(mockPrisma.taskDependency.deleteMany).toHaveBeenCalled();
-    expect(mockPrisma.taskDependency.createMany).not.toHaveBeenCalled();
-  });
-
-  it("rejects a non-array dependsOn", async () => {
-    const res = await call("PATCH", { dependsOn: "t-a" });
-    expect(res.status).toBe(400);
-  });
-});
-
 describe("GET /api/tasks/:id", () => {
   function taskRow(overrides: Record<string, unknown> = {}) {
     return {
       id: TASK_ID,
       title: "Ship it",
       status: "InProgress",
-      dueAt: new Date("2026-11-01T00:00:00.000Z"),
+      sprint: { number: 4 },
       projectId: PROJECT_ID,
       assignees: [{ user: { firstName: "Ada", lastName: "Lovelace" } }],
       ...overrides,
@@ -335,14 +224,14 @@ describe("GET /api/tasks/:id", () => {
       title: "Ship it",
       status: "InProgress",
       assignee: { name: "Ada Lovelace" },
-      dueAt: "2026-11-01T00:00:00.000Z",
+      sprint: "Sprint 4",
     });
   });
 
-  it("returns assignee: null and dueAt: null when unset", async () => {
-    mockPrisma.task.findUnique.mockResolvedValue(taskRow({ assignees: [], dueAt: null }));
+  it("returns assignee: null and sprint: null (backlog) when unset", async () => {
+    mockPrisma.task.findUnique.mockResolvedValue(taskRow({ assignees: [], sprint: null }));
     const res = await get();
-    expect(await res.json()).toMatchObject({ assignee: null, dueAt: null });
+    expect(await res.json()).toMatchObject({ assignee: null, sprint: null });
   });
 
   it("404s when the task doesn't exist", async () => {
@@ -361,5 +250,58 @@ describe("GET /api/tasks/:id", () => {
     const res = await get();
     expect(res.status).toBe(403);
     expect(requireProjectEditAccess).toHaveBeenCalledWith(expect.anything(), PROJECT_ID);
+  });
+});
+
+describe("PATCH /api/tasks/:id sprint", () => {
+  const taskIn = (over: Record<string, unknown>) =>
+    mockPrisma.task.findUnique.mockResolvedValue({
+      id: TASK_ID,
+      githubIssueNumber: null,
+      projectId: PROJECT_ID,
+      epicId: "epic-0",
+      sprintId: null,
+      status: "Todo",
+      sprint: null,
+      ...over,
+    });
+
+  it("schedules into an open sprint of the same project", async () => {
+    mockPrisma.sprint.findUnique.mockResolvedValue({ projectId: PROJECT_ID, closedAt: null });
+    const res = await call("PATCH", { sprintId: "s1" });
+    expect(res.status).toBe(200);
+    expect(mockPrisma.task.update).toHaveBeenCalledWith({
+      where: { id: TASK_ID },
+      data: { sprintId: "s1", activityAt: expect.any(Date) },
+    });
+  });
+
+  it("moves to the backlog on null", async () => {
+    taskIn({ sprintId: "s1", sprint: { closedAt: null } });
+    const res = await call("PATCH", { sprintId: null });
+    expect(res.status).toBe(200);
+    expect(mockPrisma.task.update.mock.calls[0]![0].data.sprintId).toBeNull();
+  });
+
+  it("rejects another project's sprint and a closed sprint", async () => {
+    mockPrisma.sprint.findUnique.mockResolvedValueOnce({ projectId: "other", closedAt: null });
+    expect((await call("PATCH", { sprintId: "x" })).status).toBe(400);
+    mockPrisma.sprint.findUnique.mockResolvedValueOnce({ projectId: PROJECT_ID, closedAt: new Date() });
+    expect((await call("PATCH", { sprintId: "closed" })).status).toBe(400);
+    expect(mockPrisma.task.update).not.toHaveBeenCalled();
+  });
+
+  it("freezes a task in a closed sprint, except moving unfinished work out", async () => {
+    taskIn({ sprintId: "old", sprint: { closedAt: new Date() }, status: "Done" });
+    expect((await call("PATCH", { title: "x" })).status).toBe(409);
+    expect((await call("PATCH", { sprintId: null })).status).toBe(409);
+
+    taskIn({ sprintId: "old", sprint: { closedAt: new Date() }, status: "InProgress" });
+    expect((await call("PATCH", { title: "x" })).status).toBe(409);
+    expect((await call("PATCH", { sprintId: null })).status).toBe(200);
+  });
+
+  it("rejects clearing the epic (every task keeps one)", async () => {
+    expect((await call("PATCH", { epicId: null })).status).toBe(400);
   });
 });

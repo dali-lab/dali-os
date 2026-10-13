@@ -136,13 +136,6 @@ export const EVENT_TYPES = {
     // preference on purpose), so notify() must not also DM here.
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
-  "task.due_reminder": {
-    kind: "General",
-    area: "Tasks",
-    label: "Task deadline reminders",
-    description: "A day before and at the moment a task you're assigned is due.",
-    defaults: { inApp: true, desktop: true, slackDm: true, email: "Off" },
-  },
   "task.assigned": {
     kind: "General",
     area: "Tasks",
@@ -180,6 +173,13 @@ export const EVENT_TYPES = {
     description:
       "When a sprint on one of your projects ends — a summary of what got done and where unfinished tasks rolled to.",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
+  "project.sprint_ending": {
+    kind: "General",
+    area: "Tasks",
+    label: "Sprint ending",
+    description: "The morning a sprint ends, if you still have unfinished tasks in it.",
+    defaults: { inApp: true, desktop: true, slackDm: true, email: "Off" },
   },
   "collab.comment_reply": {
     kind: "General",

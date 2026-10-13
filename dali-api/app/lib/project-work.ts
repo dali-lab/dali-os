@@ -12,7 +12,9 @@ export type ProjectWorkItem = {
   projectId: string;
   projectName: string;
   status: (typeof OPEN_WORK_STATUSES)[number];
-  dueAt: string | null;
+  // Null = in the project backlog. endsOn is the sprint's last day (UTC midnight).
+  sprint: { label: string; endsOn: string } | null;
+  carryoverCount: number;
   activityAt: string;
   link: string;
 };
@@ -22,7 +24,7 @@ export function projectTaskLink(projectId: string, taskId: string): string {
 }
 
 export type ProjectWorkMeta = {
-  kind: "overdue" | "stale" | "review" | "due" | "none";
+  kind: "carried" | "stale" | "review" | "sprint" | "backlog";
   warn: boolean;
   text: string;
 };
@@ -34,18 +36,20 @@ function formatDay(iso: string): string {
     weekday: "short",
     month: "short",
     day: "numeric",
+    timeZone: "UTC",
   });
 }
 
-// One line per card, most pressing first: overdue beats stale beats review.
+// One line per card, most pressing first: carried beats stale beats review.
 // Thresholds match the project status bar (computeProjectStatus).
 export function projectWorkMeta(
-  item: Pick<ProjectWorkItem, "status" | "dueAt" | "activityAt">,
+  item: Pick<ProjectWorkItem, "status" | "sprint" | "carryoverCount" | "activityAt">,
   now: Date = new Date(),
 ): ProjectWorkMeta {
   const nowMs = now.getTime();
-  if (item.dueAt && new Date(item.dueAt).getTime() < nowMs) {
-    return { kind: "overdue", warn: true, text: `Overdue · was due ${formatDay(item.dueAt)}` };
+  if (item.carryoverCount > 0) {
+    const times = item.carryoverCount === 1 ? "once" : `${item.carryoverCount}×`;
+    return { kind: "carried", warn: true, text: `Carried over ${times}` };
   }
   if (item.status === "InProgress") {
     const idle = Math.floor((nowMs - new Date(item.activityAt).getTime()) / DAY_MS);
@@ -54,6 +58,8 @@ export function projectWorkMeta(
     }
   }
   if (item.status === "InReview") return { kind: "review", warn: false, text: "In review" };
-  if (item.dueAt) return { kind: "due", warn: false, text: `Due ${formatDay(item.dueAt)}` };
-  return { kind: "none", warn: false, text: "No due date" };
+  if (item.sprint) {
+    return { kind: "sprint", warn: false, text: `${item.sprint.label} · ends ${formatDay(item.sprint.endsOn)}` };
+  }
+  return { kind: "backlog", warn: false, text: "Backlog" };
 }

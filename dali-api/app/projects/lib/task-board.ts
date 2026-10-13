@@ -1,17 +1,7 @@
-// Pure helpers for the project task board. Mirrors the shape conventions in
-// staffing-board.ts: route loaders pass plain data in, the component renders
-// the board the helper builds, and persistence goes through an /api route.
+// Pure helpers for the project task board: loaders pass plain data in, the
+// component renders the board these build, persistence goes through /api.
 
-import {
-  DAY,
-  SPRINT_DAYS,
-  utcDayOf,
-  utcDayStart,
-  localTodayUtcDay,
-  type SprintBand,
-  type TimelineTermSpan,
-} from "./timeline-days";
-import { termWeekNumber } from "~/lib/terms.shared";
+import type { SprintModel } from "./sprints";
 
 export const TASK_STATUSES = [
   "Backlog",
@@ -38,346 +28,52 @@ export type Priority = "Low" | "Normal" | "High" | "Urgent";
 export type TaskCardModel = {
   id: string;
   title: string;
-  // Plain-text task description, edited in the task modal. Null when unset.
   description: string | null;
   status: TaskStatus;
   priority: Priority;
   position: number;
-  // ISO timestamp (UTC) or null. The pill on TaskCard formats it for display.
-  // Stored as a string here so the model serializes cleanly through the
-  // loader → client boundary without a Date round-trip.
-  dueAt: string | null;
-  // Optional timeline start, paired with dueAt to give the task a span on the
-  // project timeline. Planning-only — it fires no reminders.
-  startsAt: string | null;
+  // Null only for rows the per-project backfill hasn't reached yet.
   epicId: string | null;
-  // Optional parent user story. Drives the timeline's task-inside-story
-  // nesting; null hangs the task directly off its epic/sprint.
-  storyId: string | null;
-  // Ids of tasks this one waits on (TaskDependency). The card shows a Blocked
-  // chip while any of them is unfinished; the modal edits the set.
-  dependsOn: string[];
-  // Subtasks checklist (Task.checklist Json). Null when unset; the card shows
-  // a done/total chip and the modal owns editing.
+  // Null = the project backlog.
+  sprintId: string | null;
+  // Times this task rolled into a following sprint unfinished.
+  carryoverCount: number;
   checklist: { text: string; done: boolean }[] | null;
-  // Each assignee with id + display name. Id powers the modal's assignee
-  // dropdown; name powers the card chip.
   assignees: { id: string; name: string }[];
-  // Optional domain label on the task itself (Domain.code/displayName).
-  // Independent of who's assigned.
   domain: { id: string; name: string } | null;
-  // GitHub mirror link, populated when the task was created with the
-  // "Create GitHub issue" toggle on. Both fields are present together; both
-  // null means the task is not mirrored.
   githubIssueUrl: string | null;
   githubIssueNumber: number | null;
-  // Linked work artifacts (ProjectFile) — versioned uploads the task's work
-  // lives in (graphics, animation, design exports). Card shows a count chip;
-  // the modal lists them with links to the file page.
   files: { id: string; title: string; versionCount: number }[];
-  // Number of comments on the task — the card's comment chip. The modal owns
-  // the thread itself; this is just the count the board shows.
   commentCount: number;
   createdBy: { id: string; name: string };
-  // ISO timestamp (UTC).
   createdAt: string;
-  // Last meaningful activity on the task (status/field edit, description
-  // change, assignee change, comment, attached file, GitHub link — see
-  // Task.activityAt), as an ISO timestamp. Dates the card's "Updated" chip.
   activityAt: string;
-  // True when `activityAt` is newer than the viewer's last open. False for
-  // tasks the viewer has never opened, so a fresh board isn't flagged "new"
-  // wall-to-wall. Drives the card's "Updated" chip.
+  // activityAt is newer than the viewer's last open of this task.
   hasUnread: boolean;
 };
 
-// The board's sprint scope (the sprint filter, stored in `?sprint=`): which
-// sprint's work the board is showing. `all` (the default) is every task in the
-// selected term, `current` the sprint containing today, `backlog` the undated
-// pool, or a concrete sprint key (the band's UTC-midnight start, stringified). Sprints are the term-anchored 7-day
-// bands the timeline draws — not stored rows. The extra `(string & {})` keeps
-// the three literals in autocomplete while still admitting any band key.
-export type SprintScope = "all" | "current" | "backlog" | (string & {});
+/** The columns a sprint board draws, in flow order. Backlog is not a column. */
+export const BOARD_STATUSES = ["Todo", "InProgress", "InReview", "Done", "Cancelled"] as const satisfies readonly TaskStatus[];
 
-const SPRINT_STEP = SPRINT_DAYS * DAY;
+export type BoardEpic = { id: string; title: string };
 
-/** The UTC-day window [start, end] of the term containing `day`, or null. */
-function termWindowContaining(
-  terms: TimelineTermSpan[],
-  day: number,
-): { start: number; end: number } | null {
-  for (const t of terms) {
-    const start = utcDayOf(t.startsAt);
-    const end = utcDayOf(t.endsAt);
-    if (day >= start && day <= end) return { start, end };
-  }
-  return null;
-}
-
-/**
- * The sprint band containing `now`: the term-anchored 7-day band, numbered from
- * 1 off its term's start (a ten-week term gives Sprint 1..10). Null when today
- * falls outside every term (a break week) — the board then has no "current"
- * sprint rather than surfacing an out-of-term band.
- */
-export function currentSprintBand(
-  terms: TimelineTermSpan[],
-  now: Date,
-): SprintBand | null {
-  const today = localTodayUtcDay(now);
-  const term = termWindowContaining(terms, today);
-  if (!term) return null;
-  const number = termWeekNumber(today, term.start);
-  const key = term.start + (number - 1) * SPRINT_STEP;
-  const end = Math.min(key + SPRINT_STEP - DAY, term.end);
-  return { key, end, label: `Sprint ${number}` };
-}
-
-/** The [start, end] UTC days a task's dates cover, or null when undated. */
-function taskSpanDays(task: {
-  startsAt: string | null;
-  dueAt: string | null;
-}): { start: number; end: number } | null {
-  const startIso = task.startsAt ?? task.dueAt;
-  const endIso = task.dueAt ?? task.startsAt;
-  if (!startIso || !endIso) return null;
-  return { start: utcDayOf(startIso), end: utcDayOf(endIso) };
-}
-
-/**
- * Resolve the effective scope from a raw `?sprint=` value: an explicit,
- * still-valid value wins; no value or a stale one (`current` with nothing
- * running, or a band key that isn't a term-aligned sprint start) is `all`.
- *
- * The default is the whole term, not the current week: a one-week slice hid
- * every other task in the term (a task added with next week's deadline
- * vanished on create) while the board still read as "this term".
- */
-export function resolveSprintScope(
-  param: string | null,
-  terms: TimelineTermSpan[],
-  now: Date,
-): SprintScope {
-  const fallback: SprintScope = "all";
-  if (!param || param === "all" || param === "backlog") return param || fallback;
-  if (param === "current") {
-    return currentSprintBand(terms, now) ? "current" : fallback;
-  }
-  const key = Number(param);
-  if (!Number.isFinite(key)) return fallback;
-  const term = termWindowContaining(terms, key);
-  return term && (key - term.start) % SPRINT_STEP === 0 ? param : fallback;
-}
-
-/**
- * Does a task fall in the selected scope? `all` matches everything; `current`
- * the sprint containing today; `backlog` the undated; a concrete band key any
- * task whose date span overlaps that 7-day band — the same rule the timeline
- * uses to place task bars, so board and timeline agree.
- */
-export function taskInSprintScope(
-  task: { startsAt: string | null; dueAt: string | null },
-  scope: SprintScope,
-  terms: TimelineTermSpan[],
-  now: Date,
-): boolean {
-  if (scope === "all") return true;
-  const span = taskSpanDays(task);
-  if (scope === "backlog") return span === null;
-  if (span === null) return false;
-  const key =
-    scope === "current" ? currentSprintBand(terms, now)?.key ?? null : Number(scope);
-  if (key === null || !Number.isFinite(key)) return false;
-  return span.start <= key + SPRINT_STEP - DAY && span.end >= key;
-}
-
-/**
- * The sprint-filter picker options for the selected term's sprints
- * (`Sprint 1..N · Current|Past|Upcoming`), current-first, then upcoming
- * ascending, then past newest-first. Empty when no specific term is selected —
- * the picker is disabled while the board shows all terms, since sprint numbers
- * reset per term and a flat list would be ambiguous.
- */
-export function sprintPickerOptions(
-  terms: TimelineTermSpan[],
-  selectedTermCode: string | null,
-  now: Date,
-): { value: string; label: string }[] {
-  if (!selectedTermCode) return [];
-  const term = terms.find((t) => t.code === selectedTermCode);
-  if (!term) return [];
-  const start = utcDayOf(term.startsAt);
-  const end = utcDayOf(term.endsAt);
-  const today = localTodayUtcDay(now);
-  const bands: { key: number; label: string; phase: string; rank: number }[] = [];
-  let n = 0;
-  for (let key = start; key <= end; key += SPRINT_STEP, n++) {
-    const bandEnd = Math.min(key + SPRINT_STEP - DAY, end);
-    const phase =
-      today >= key && today <= bandEnd ? "Current" : today > bandEnd ? "Past" : "Upcoming";
-    const rank = phase === "Current" ? 0 : phase === "Upcoming" ? 1 : 2;
-    bands.push({ key, label: `Sprint ${n + 1}`, phase, rank });
-  }
-  bands.sort((a, z) =>
-    a.rank !== z.rank ? a.rank - z.rank : a.rank === 2 ? z.key - a.key : a.key - z.key,
-  );
-  return bands.map((b) => ({ value: String(b.key), label: `${b.label} · ${b.phase}` }));
-}
-
-export type BoardEpic = {
-  id: string;
-  title: string;
-  // Terms this epic has work in — the terms its effective date span (widened
-  // to cover its stories and tasks) overlaps. The board's term filter prunes
-  // epic pills whose termIds miss the selected term.
-  termIds: string[];
-};
-
-// Choices the TaskModal needs to populate its assignee + domain dropdowns.
-// Loader fetches once per board render and passes through to TaskBoard.
 export type TaskBoardOptions = {
-  // `domainId` is the member's staffed domain on this project (current/latest
-  // term) — the modal autofills it into a new task's Domain when they're
-  // assigned. Null when they hold no staffing row (e.g. a folded-in carryover
-  // assignee).
+  // `domainId` is the member's staffed domain here — the modal autofills it.
   members: { id: string; name: string; photoUrl: string | null; domainId: string | null }[];
   domains: { id: string; name: string }[];
-  // Project.repoUrls — surfaced in the TaskModal's "Create GitHub issue"
-  // picker. Empty array hides the picker entirely.
+  // Non-empty shows the modal's "Create GitHub issue" picker.
   repoUrls: string[];
-  // Term spans, oldest first — the same anchor the timeline's fixed one-week
-  // sprint grid uses. The modal derives which weeks a task lands in from its
-  // dates against this rather than asking anyone to pick a sprint.
-  termSpans: TimelineTermSpan[];
   epics: BoardEpic[];
-  // The project's user stories, for the modal's story picker. Ordered by epic
-  // then position; `epicId` drives the same Epic → child cascade as sprints.
-  stories: { id: string; title: string; epicId: string }[];
-  // Live project files for the modal's "attach existing artifact" picker.
   projectFiles: { id: string; title: string }[];
-  // Term filter options: the project's planned terms plus any term a sprint
-  // resolves to, newest first. Fewer than two terms hides the filter.
-  terms: { id: string; code: string }[];
-  // The lab's current term when it appears in `terms` — the board's default
-  // filter selection. Null (project doesn't run this term) defaults to All.
-  currentTermId: string | null;
+  sprints: SprintModel[];
+  anchors: SprintAnchor[];
 };
 
-// Minimal Term shape the resolvers need. Callers pass terms sorted
-// chronologically (ascending sortKey/startDate).
-export type TermWindow = { id: string; startDate: Date; endDate: Date };
+export type SprintAnchor = { termId: string; termCode: string; anchorDay: number };
 
-/**
- * Resolve the term a date falls in: the term whose [startDate, endDate]
- * window contains it, or — for dates in an inter-term gap (break weeks) —
- * the next upcoming term, mirroring currentTerm()'s roll-forward so a sprint
- * planned during the break before a term counts toward that term. Null when
- * the date is after every term's end.
- */
-export function resolveTermIdForDate(
-  terms: TermWindow[],
-  date: Date,
-): string | null {
-  for (const t of terms) {
-    if (date <= t.endDate) return t.id;
-  }
-  return null;
-}
-
-/**
- * Terms a task counts toward: every term its [start, due] span overlaps, plus
- * the term each end rolls forward to when it lands in a break week. So a task
- * started this term and due next shows on both boards, and one dated in the
- * gap before a term counts toward that term. Undated tasks have no term.
- *
- * Compared by UTC day: task dates are stored as UTC midnight while term
- * bounds carry a local-midnight offset, and an instant comparison would push
- * a task due on a term's first day into the term before.
- */
-export function taskTermIds(
-  terms: TermWindow[],
-  task: { startsAt: string | null; dueAt: string | null },
-): string[] {
-  const span = taskSpanDays(task);
-  if (!span) return [];
-  const days = terms.map((t) => ({
-    id: t.id,
-    start: utcDayStart(t.startDate.getTime()),
-    end: utcDayStart(t.endDate.getTime()),
-  }));
-  const ids = new Set<string>();
-  for (const t of days) {
-    if (t.end >= span.start && t.start <= span.end) ids.add(t.id);
-  }
-  for (const day of [span.start, span.end]) {
-    const next = days.find((t) => day <= t.end);
-    if (next) ids.add(next.id);
-  }
-  return days.filter((t) => ids.has(t.id)).map((t) => t.id);
-}
-
-/**
- * The dependencies still holding an item up: the ids in `dependsOn` whose item
- * is loaded and not finished. An id missing from `byId` (archived work, which
- * is always Done/Cancelled) doesn't block. Shared by tasks, stories and epics,
- * which differ only in what counts as finished.
- */
-export function openDependencies<T>(
-  dependsOn: string[],
-  byId: Map<string, T>,
-  isFinished: (item: T) => boolean,
-): T[] {
-  const open: T[] = [];
-  for (const id of dependsOn) {
-    const item = byId.get(id);
-    if (item && !isFinished(item)) open.push(item);
-  }
-  return open;
-}
-
-/** Done or Cancelled: the task no longer holds up work that waits on it. */
+/** Done or Cancelled. */
 export function isTaskFinished(task: { status: string }): boolean {
   return task.status === "Done" || task.status === "Cancelled";
-}
-
-/**
- * Carried-over work, Linear-cycle style: an unfinished task (not Done/Cancelled)
- * whose anchor date (due, else start) falls before `boundaryStartMs` — the start
- * of the current sprint band, or the current term's start on a break week when
- * no band is running. Such work rolls forward into the current view instead of
- * dropping off, the way an unfinished issue rolls into the next cycle. Because
- * the boundary is a single instant, this is one rule at every zoom level: a task
- * overdue from an earlier sprint this term and one left over from a past term
- * both carry forward the same way. Done/Cancelled work stays filed where it
- * happened; a null boundary (no current term/sprint) carries nothing.
- */
-export function isCarriedOverTask(
-  task: Pick<TaskCardModel, "status" | "startsAt" | "dueAt">,
-  boundaryStartMs: number | null,
-): boolean {
-  if (task.status === "Done" || task.status === "Cancelled") return false;
-  if (boundaryStartMs === null) return false;
-  const raw = task.dueAt ?? task.startsAt;
-  if (!raw) return false;
-  return new Date(raw).getTime() < boundaryStartMs;
-}
-
-/**
- * Terms whose windows overlap [start, end]. Either bound may be null
- * (open-ended): a null start matches every term up to `end`, a null end every
- * term from `start` on. Both null = no dated span = no terms.
- */
-export function termIdsInRange(
-  terms: TermWindow[],
-  start: Date | null,
-  end: Date | null,
-): string[] {
-  if (!start && !end) return [];
-  return terms
-    .filter(
-      (t) => (!start || t.endDate >= start) && (!end || t.startDate <= end),
-    )
-    .map((t) => t.id);
 }
 
 /**
@@ -445,28 +141,9 @@ export function isTaskStatus(x: unknown): x is TaskStatus {
 }
 
 /**
- * Reconcile a create-mode seed for the TaskModal's Epic + User story pair.
- *
- * A story pins its epic (UserStory.epicId is required) and the create endpoint
- * derives epicId from storyId rather than trusting the client. The seed follows
- * the same precedence, so the form can never open showing a story under an epic
- * it doesn't belong to. "" is the unset value both Selects already use for their
- * "No epic" / "None" option.
- */
-export function seedTaskLinks(
-  stories: { id: string; epicId: string }[],
-  seed: { epicId?: string | null; storyId?: string | null },
-): { epicId: string; storyId: string } {
-  // A story the options list doesn't know about has no option to select, so it
-  // falls back to the epic seed rather than setting a value nothing matches.
-  const story = seed.storyId ? stories.find((s) => s.id === seed.storyId) : undefined;
-  if (story) return { epicId: story.epicId, storyId: story.id };
-  return { epicId: seed.epicId ?? "", storyId: "" };
-}
-
-/**
  * Move `taskId` into `toStatus` at `targetIndex` (clamped; -1 or >= length
- * appends). Returns the updated flat task list — the target column renumbered
+ * appends), ordering only among tasks `inScope` (the board's sprint). Returns
+ * the updated flat task list — the target column renumbered
  * 0..n so ordering is dense — plus the column's ordered ids, which is exactly
  * the `orderedIds` payload for POST /api/tasks/:id/move.
  */
@@ -475,11 +152,12 @@ export function moveTaskInBoard(
   taskId: string,
   toStatus: TaskStatus,
   targetIndex: number,
+  inScope: (t: TaskCardModel) => boolean = () => true,
 ): { tasks: TaskCardModel[]; orderedIds: string[] } {
   const moved = tasks.find((t) => t.id === taskId);
   if (!moved) return { tasks, orderedIds: [] };
 
-  const column = buildTaskBoard(tasks)[toStatus].filter((t) => t.id !== taskId);
+  const column = buildTaskBoard(tasks.filter(inScope))[toStatus].filter((t) => t.id !== taskId);
   const index =
     targetIndex < 0 || targetIndex > column.length ? column.length : targetIndex;
   column.splice(index, 0, { ...moved, status: toStatus });

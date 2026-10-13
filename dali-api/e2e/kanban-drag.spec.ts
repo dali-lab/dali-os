@@ -1,5 +1,6 @@
 import { test, expect } from './fixtures';
 import type { Locator, Page } from '@playwright/test';
+import { dragHandleTo } from './helpers';
 
 // One real drag test against the unified KanbanBoard primitive (PR-02).
 // TaskBoard is the cleanest target: the seed gives the DALI OS project a
@@ -34,45 +35,6 @@ const CARD = '[data-testid="task-card"]';
 const column = (page: Page, label: string): Locator =>
   page.locator(COLUMN).filter({ hasText: label }).first();
 
-// Drag `handle` into `target`, stepping past the 6px activation threshold first
-// so the PointerSensor engages, then gliding into the column.
-async function dragHandleTo(page: Page, handle: Locator, target: Locator) {
-  // Bring the card into view before measuring — a mouse drag to off-viewport
-  // coordinates never reaches the element.
-  await handle.scrollIntoViewIfNeeded();
-
-  const handleBox = await handle.boundingBox();
-  const targetBox = await target.boundingBox();
-  const viewport = page.viewportSize();
-  if (!handleBox || !targetBox || !viewport) {
-    throw new Error('Missing drag geometry');
-  }
-
-  const startX = handleBox.x + handleBox.width / 2;
-  const startY = handleBox.y + handleBox.height / 2;
-  // Drop at the destination column's horizontal centre, on the same row band as
-  // the (now visible) handle. The columns share a row, so the handle's y is
-  // inside the destination column's visible area too — no risk of aiming
-  // above/below the fold for a tall column.
-  const endX = targetBox.x + targetBox.width / 2;
-  const endY = Math.min(
-    Math.max(startY, targetBox.y + 8),
-    Math.min(targetBox.y + targetBox.height - 8, viewport.height - 8),
-  );
-
-  await page.mouse.move(startX, startY);
-  await page.mouse.down();
-  // Nudge past the 6px activation threshold to engage the PointerSensor; the
-  // small steps emit several pointermove events so dnd-kit starts the drag.
-  await page.mouse.move(startX + 4, startY + 4, { steps: 3 });
-  await page.mouse.move(startX + 12, startY + 12, { steps: 5 });
-  // Glide into the destination column in steps so dnd-kit registers the over,
-  // then settle in place before release.
-  await page.mouse.move(endX, endY, { steps: 15 });
-  await page.mouse.move(endX, endY);
-  await page.mouse.up();
-}
-
 const PROJECT_ID = 'project-dali-os';
 
 test.describe('KanbanBoard drag (TaskBoard)', () => {
@@ -88,11 +50,9 @@ test.describe('KanbanBoard drag (TaskBoard)', () => {
     // shared DB by moving tasks between columns). The login cookie set by
     // loginAs is reused by page.request.
     const cardTitle = `E2E drag ${Date.now()}`;
-    // A non-Backlog task needs a deadline server-side (the create endpoint
-    // rejects dateless scheduled work), so give the Todo card a due date.
-    const dueAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    // The board opens on the active sprint, so file the card there.
     const created = await page.request.post(`/api/projects/${PROJECT_ID}/tasks`, {
-      data: { title: cardTitle, status: 'Todo', dueAt },
+      data: { title: cardTitle, status: 'Todo', sprintId: 'current' },
     });
     expect(created.ok()).toBe(true);
 

@@ -71,7 +71,6 @@ export function resolveJobSettings(
   return resolved;
 }
 
-import { runTaskDueReminders } from "~/jobs/task-due-reminders.server";
 import { runMeetingReminders } from "~/jobs/meeting-reminders.server";
 import { runScheduledAnnouncements } from "~/jobs/scheduled-announcements.server";
 import { runSessionFeedbackSweep } from "~/jobs/session-feedback-sweep.server";
@@ -97,13 +96,6 @@ import { runMeetingRecordPrompts } from "~/jobs/meeting-record-prompts.server";
 import { runMeetingNotesNudge } from "~/jobs/meeting-notes-nudge.server";
 
 export const JOBS: JobDefinition[] = [
-  {
-    name: "task-due-reminders",
-    description:
-      "Reminds assignees a day before and at the moment a task's deadline hits.",
-    intervalMinutes: 5,
-    handler: runTaskDueReminders,
-  },
   {
     name: "meeting-reminders",
     description:
@@ -229,7 +221,7 @@ export const JOBS: JobDefinition[] = [
   {
     name: "sprint-lifecycle",
     description:
-      "Posts a per-sprint wrap-up (done/total of the tasks due in it) to each project's members and Slack channel the day after a sprint — a term-anchored one-week band — ends. Sprints are computed from the project's terms, so nothing is activated or closed; the dedupKey makes the wrap-up fire once.",
+      "Materializes each project's weekly sprints, closes ended sprints (snapshot + roll unfinished tasks to the next sprint of the term), posts the wrap-up, and nudges assignees the morning a sprint ends.",
     intervalMinutes: 60,
     handler: runSprintLifecycle,
   },

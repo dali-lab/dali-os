@@ -3182,6 +3182,7 @@ model Term {
   staffingCycles        StaffingCycle[]
   projectTermStatuses   ProjectTermStatus[]
   projectTerms          ProjectTerm[]
+  sprints               Sprint[]
   projectRoleRequests   ProjectRoleRequest[]
   staffingAssignments   StaffingAssignment[]
   partnerApplications   PartnerApplicationTargetTerm[]
@@ -3700,33 +3701,38 @@ model Project {
   publicWriteupPage   Page? @relation("ProjectPublicWriteup", fields: [publicWriteupPageId], references: [id], onDelete: SetNull)
   meetingNoteTemplate Page? @relation("ProjectMeetingNoteTemplate", fields: [meetingNoteTemplateId], references: [id], onDelete: SetNull)
 
-  partners          ProjectPartner[]
+  partners            ProjectPartner[]
   // The project's planned term set — the source of truth for which terms the
   // project runs. The start term is the earliest of these (by Term.sortKey).
-  projectTerms      ProjectTerm[]
-  termStatuses      ProjectTermStatus[]
-  assignments       ProjectAssignment[]
-  mailAccounts      MailAccount[]
-  roleRequests      ProjectRoleRequest[]
-  mentorshipPairs   MentorshipPair[]
-  externalMentors   ExternalMentor[]
-  epics             Epic[]
-  tasks             Task[]
+  projectTerms        ProjectTerm[]
+  termStatuses        ProjectTermStatus[]
+  assignments         ProjectAssignment[]
+  mailAccounts        MailAccount[]
+  roleRequests        ProjectRoleRequest[]
+  mentorshipPairs     MentorshipPair[]
+  externalMentors     ExternalMentor[]
+  epics               Epic[]
+  tasks               Task[]
+  sprints             Sprint[]
+  // Stamped once the project's pre-sprint tasks (dated, story-nested, epic-less)
+  // have been mapped onto stored sprints and General. Null = not yet — the
+  // backfill runs lazily per project and from the sprint-lifecycle sweep.
+  sprintsBackfilledAt DateTime?
   // Declared domains for the project — surfaced on the project detail page
   // and editable by Admin/Core/Hiring Lead. Display-only today; staffing
   // gating off this set is a follow-up.
-  domains           ProjectDomain[]
-  domainScopes      ProjectDomainScope[]
+  domains             ProjectDomain[]
+  domainScopes        ProjectDomainScope[]
   // Standalone uploaded files in the project's Files section.
-  files             ProjectFile[]
-  budgetEntries     BudgetEntry[]
-  budgetNotes       BudgetNote[]
-  chartStrings      ProjectChartString[]
-  scheduledMeetings ScheduledMeeting[]
-  timeEntries       TimeEntry[]
+  files               ProjectFile[]
+  budgetEntries       BudgetEntry[]
+  budgetNotes         BudgetNote[]
+  chartStrings        ProjectChartString[]
+  scheduledMeetings   ScheduledMeeting[]
+  timeEntries         TimeEntry[]
   // The curated public face of this project, if it has one. Absent until
   // someone opens the project's Public view.
-  showcase          ProjectShowcase?
+  showcase            ProjectShowcase?
 
   createdAt DateTime @default(now())
 }
@@ -3840,8 +3846,11 @@ model ProjectDomain {
 // counts as active in a given term iff a row exists for that (project, term).
 // Project.termCount is the *expected* length of this set, not derived from it.
 model ProjectTerm {
-  projectId String
-  termId    String
+  projectId       String
+  termId          String
+  // UTC weekday (0 = Sunday … 6 = Saturday) the team's sprints start on this
+  // term. Null = the weekday the term starts on.
+  sprintAnchorDay Int?
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   term    Term    @relation(fields: [termId], references: [id])
@@ -3950,6 +3959,8 @@ model Epic {
   // Description as collab doc — Notion-style rich content.
   descriptionDocId String?
   status           EpicStatus @default(Open)
+  // The one hand-set epic state; every other status is derived from its tasks.
+  cancelledAt      DateTime?
   // Explicit timeline span. Nullable: an epic may be created before its
   // dates are known. When null, the timeline falls back to the min/max of
   // its stories' (and their tasks') dates (see buildTimelineEpics).
@@ -4066,19 +4077,66 @@ enum UserStoryStatus {
   Done
 }
 
-// Sprints are not stored: a sprint is a computed term-anchored one-week band
-// (Sprint 1..N per term), derived from the project's terms — see
-// app/projects/lib/timeline-days.ts (sprintBands). A task belongs to a sprint
-// by its dates, not a stored FK.
+// One week of a project's term, generated from ProjectTerm.sprintAnchorDay
+// (app/projects/lib/sprints.ts). Rows are materialized for current and future
+// terms only; status is derived (closedAt → Closed, today inside → Active).
+model Sprint {
+  id        String    @id @default(cuid())
+  projectId String
+  termId    String
+  number    Int
+  startsOn  DateTime
+  // Inclusive last day; the term's final sprint is truncated at term end.
+  endsOn    DateTime
+  closedAt  DateTime?
+
+  plannedCount     Int?
+  completedCount   Int?
+  carriedOverCount Int?
+
+  project   Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  term      Term                 @relation(fields: [termId], references: [id])
+  tasks     Task[]
+  snapshots SprintTaskSnapshot[] @relation("SnapshotSprint")
+  carriedIn SprintTaskSnapshot[] @relation("SnapshotCarriedTo")
+
+  createdAt DateTime @default(now())
+
+  @@unique([projectId, startsOn])
+  @@unique([projectId, termId, number])
+  @@index([termId])
+}
+
+// A task as it stood when its sprint closed. Carried tasks have since moved
+// sprintId, so past boards render from these rows, not from Task.
+model SprintTaskSnapshot {
+  sprintId          String
+  taskId            String
+  statusAtClose     TaskStatus
+  carriedToSprintId String?
+
+  sprint    Sprint  @relation("SnapshotSprint", fields: [sprintId], references: [id], onDelete: Cascade)
+  task      Task    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  carriedTo Sprint? @relation("SnapshotCarriedTo", fields: [carriedToSprintId], references: [id], onDelete: SetNull)
+
+  @@id([sprintId, taskId])
+  @@index([taskId])
+  @@index([carriedToSprintId])
+}
 
 model Task {
-  id        String  @id @default(cuid())
-  projectId String
+  id             String  @id @default(cuid())
+  projectId      String
   // Optional epic linkage for cross-sprint grouping.
-  epicId    String?
+  epicId         String?
   // Optional parent user story. Null = the task hangs directly off the epic
   // (or nothing). Drives the timeline's task-inside-story nesting.
-  storyId   String?
+  storyId        String?
+  // Null = the project backlog.
+  sprintId       String?
+  // Times the sprint-lifecycle job rolled this task into a following sprint —
+  // the "slipping" signal that replaced overdue-by-dueAt.
+  carryoverCount Int     @default(0)
 
   title            String
   // Plain-text task description, edited in the task modal.
@@ -4137,11 +4195,13 @@ model Task {
   githubIssueNumber Int?
   githubIssueUrl    String?
 
-  project         Project           @relation(fields: [projectId], references: [id])
-  epic            Epic?             @relation(fields: [epicId], references: [id])
-  story           UserStory?        @relation(fields: [storyId], references: [id])
-  domain          Domain?           @relation(fields: [domainId], references: [id])
-  sourceRecording MeetingRecording? @relation(fields: [sourceRecordingId], references: [id], onDelete: SetNull)
+  project         Project              @relation(fields: [projectId], references: [id])
+  epic            Epic?                @relation(fields: [epicId], references: [id])
+  story           UserStory?           @relation(fields: [storyId], references: [id])
+  sprint          Sprint?              @relation(fields: [sprintId], references: [id], onDelete: SetNull)
+  sprintSnapshots SprintTaskSnapshot[]
+  domain          Domain?              @relation(fields: [domainId], references: [id])
+  sourceRecording MeetingRecording?    @relation(fields: [sourceRecordingId], references: [id], onDelete: SetNull)
   assignees       TaskAssignee[]
   comments        TaskComment[]
   reminders       TaskReminder[]
@@ -4162,6 +4222,7 @@ model Task {
   @@unique([githubRepo, githubIssueNumber], name: "task_github_issue_unique")
   @@index([projectId])
   @@index([storyId])
+  @@index([sprintId])
   @@index([sourceRecordingId])
 }
 
@@ -7118,10 +7179,10 @@ model BlogPost {
 
   // Set while a draft waits for an Admin to approve it; cleared once it is
   // published or withdrawn.
-  submittedAt    DateTime?
+  submittedAt   DateTime?
   // Core's front page arrangement: pinned posts lead in rank order (lowest
   // first); null = unpinned, falling in behind them newest first.
-  frontPageRank  Int?
+  frontPageRank Int?
 
   authorId String
   author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)

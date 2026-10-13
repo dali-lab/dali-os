@@ -11,10 +11,20 @@ vi.mock("~/projects/lib/task-notifications.server", () => ({
 vi.mock("~/projects/lib/github-task-sync", () => ({
   syncIssueForTask: vi.fn().mockResolvedValue(undefined),
 }));
+vi.mock("~/projects/lib/sprints.server", () => ({
+  activeSprintId: vi.fn(),
+  checkSprintTarget: vi.fn().mockResolvedValue(null),
+  resolveTaskPlacement: vi.fn(),
+}));
 
 import { prisma } from "~/lib/db";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { syncIssueForTask } from "~/projects/lib/github-task-sync";
+import {
+  activeSprintId,
+  checkSprintTarget,
+  resolveTaskPlacement,
+} from "~/projects/lib/sprints.server";
 import {
   runUpdateTask,
   UPDATE_TASK_TOOL,
@@ -89,82 +99,78 @@ describe("update_task", () => {
     expect(out).toMatchObject({ noop: true });
   });
 
-  it("links a story and pins the epic to the story's epic", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
-    mockPrisma.task.findUnique.mockResolvedValue({
+  describe("sprint and epic", () => {
+    let update: ReturnType<typeof vi.fn>;
+    const row = (over: Record<string, unknown> = {}) => ({
       id: "t1",
       projectId: "p1",
       githubIssueNumber: null,
-      epicId: null,
-      storyId: null,
+      epicId: "e0",
+      sprintId: null,
+      status: "Todo",
+      sprint: null,
       assignees: [],
+      ...over,
     });
-    mockPrisma.userStory.findUnique.mockResolvedValue({
-      epicId: "e-A",
-      epic: { projectId: "p1" },
+    beforeEach(() => {
+      vi.mocked(isCore).mockResolvedValue(true);
+      update = vi.fn();
+      mockPrisma.$transaction.mockImplementation(async (fn: unknown) =>
+        (fn as (tx: unknown) => unknown)({ task: { update }, taskAssignee: {} }),
+      );
     });
-    const update = vi.fn();
-    mockPrisma.$transaction.mockImplementation(async (fn: unknown) => {
-      const cb = fn as (tx: typeof prisma) => Promise<unknown>;
-      return cb({
-        task: { update },
-        taskAssignee: { deleteMany: vi.fn(), createMany: vi.fn() },
-      } as unknown as typeof prisma);
+
+    it("moves to a sprint, the active sprint, or the backlog", async () => {
+      mockPrisma.task.findUnique.mockResolvedValue(row());
+      await runUpdateTask("u1", { taskId: "t1", sprintId: "s2" });
+      expect(checkSprintTarget).toHaveBeenCalledWith("p1", "s2");
+      expect(update.mock.calls[0]![0].data).toMatchObject({ sprintId: "s2" });
+
+      vi.mocked(activeSprintId).mockResolvedValue("s-now");
+      await runUpdateTask("u1", { taskId: "t1", sprintId: "current" });
+      expect(update.mock.calls[1]![0].data).toMatchObject({ sprintId: "s-now" });
+
+      mockPrisma.task.findUnique.mockResolvedValue(row({ sprintId: "s2", sprint: { closedAt: null } }));
+      await runUpdateTask("u1", { taskId: "t1", sprintId: "" });
+      expect(update.mock.calls[2]![0].data).toMatchObject({ sprintId: null });
     });
-    // Story wins over a contradictory epic in the same call.
-    await runUpdateTask("u1", { taskId: "t1", storyId: "s1", epicId: "e-ignored" });
-    expect(update).toHaveBeenCalledWith({
-      where: { id: "t1" },
-      data: { epicId: "e-A", storyId: "s1" },
+
+    it("rejects an invalid sprint target and a missing active sprint", async () => {
+      mockPrisma.task.findUnique.mockResolvedValue(row());
+      vi.mocked(checkSprintTarget).mockResolvedValueOnce({ error: "That sprint is closed" });
+      await expect(runUpdateTask("u1", { taskId: "t1", sprintId: "old" })).rejects.toMatchObject({
+        status: 400,
+      });
+      vi.mocked(activeSprintId).mockResolvedValue(null);
+      await expect(
+        runUpdateTask("u1", { taskId: "t1", sprintId: "current" }),
+      ).rejects.toMatchObject({ status: 400 });
+    });
+
+    it("freezes closed-sprint tasks except moving unfinished work out", async () => {
+      mockPrisma.task.findUnique.mockResolvedValue(
+        row({ sprintId: "old", status: "Done", sprint: { closedAt: new Date() } }),
+      );
+      await expect(runUpdateTask("u1", { taskId: "t1", title: "x" })).rejects.toMatchObject({
+        status: 409,
+      });
+      mockPrisma.task.findUnique.mockResolvedValue(
+        row({ sprintId: "old", status: "Todo", sprint: { closedAt: new Date() } }),
+      );
+      await runUpdateTask("u1", { taskId: "t1", sprintId: "" });
+      expect(update.mock.calls[0]![0].data).toMatchObject({ sprintId: null });
+    });
+
+    it("validates an epic change against the project", async () => {
+      mockPrisma.task.findUnique.mockResolvedValue(row());
+      vi.mocked(resolveTaskPlacement).mockResolvedValueOnce({ epicId: "e1", sprintId: undefined });
+      await runUpdateTask("u1", { taskId: "t1", epicId: "e1" });
+      expect(update.mock.calls[0]![0].data).toMatchObject({ epicId: "e1" });
+      vi.mocked(resolveTaskPlacement).mockResolvedValueOnce({ error: "Epic is not part of this project" });
+      await expect(runUpdateTask("u1", { taskId: "t1", epicId: "x" })).rejects.toMatchObject({
+        status: 400,
+      });
     });
   });
 
-  it("drops an orphaned story when the epic moves out from under it", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
-    mockPrisma.task.findUnique.mockResolvedValue({
-      id: "t1",
-      projectId: "p1",
-      githubIssueNumber: null,
-      epicId: "e-A",
-      storyId: "s1",
-      assignees: [],
-    });
-    mockPrisma.userStory.findUnique.mockResolvedValue({
-      epicId: "e-A",
-      epic: { projectId: "p1" },
-    });
-    mockPrisma.epic.findUnique.mockResolvedValue({ projectId: "p1" });
-    const update = vi.fn();
-    mockPrisma.$transaction.mockImplementation(async (fn: unknown) => {
-      const cb = fn as (tx: typeof prisma) => Promise<unknown>;
-      return cb({
-        task: { update },
-        taskAssignee: { deleteMany: vi.fn(), createMany: vi.fn() },
-      } as unknown as typeof prisma);
-    });
-    await runUpdateTask("u1", { taskId: "t1", epicId: "e-B" });
-    expect(update).toHaveBeenCalledWith({
-      where: { id: "t1" },
-      data: { epicId: "e-B", storyId: null },
-    });
-  });
-
-  it("rejects a story from another project", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
-    mockPrisma.task.findUnique.mockResolvedValue({
-      id: "t1",
-      projectId: "p1",
-      githubIssueNumber: null,
-      epicId: null,
-      storyId: null,
-      assignees: [],
-    });
-    mockPrisma.userStory.findUnique.mockResolvedValue({
-      epicId: "e",
-      epic: { projectId: "other" },
-    });
-    await expect(
-      runUpdateTask("u1", { taskId: "t1", storyId: "s1" }),
-    ).rejects.toMatchObject({ status: 400 });
-  });
 });

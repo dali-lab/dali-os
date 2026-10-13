@@ -32,6 +32,8 @@ export async function archiveIdleTasks(opts: {
       status: { in: [...ARCHIVABLE_STATUSES] },
       // updatedAt is bumped on any field edit, so this is "no activity since".
       updatedAt: { lt: cutoff },
+      // Done work stays on its sprint's board until that sprint closes.
+      OR: [{ sprintId: null }, { sprint: { closedAt: { not: null } } }],
       ...(opts.projectId ? { projectId: opts.projectId } : {}),
     },
     data: { archivedAt: opts.now },

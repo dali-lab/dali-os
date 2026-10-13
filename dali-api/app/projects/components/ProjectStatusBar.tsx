@@ -33,7 +33,7 @@ import type { ProjectTldrResponse } from "~/routes/api.ai.project-tldr";
 // and a provider is configured — an AI one-liner cached on the project.
 //
 // Every chip explains *why* on hover: the counts alone read as bare numbers, so
-// each one opens a rich tooltip naming the tasks behind it (which are overdue,
+// each one opens a rich tooltip naming the tasks behind it (which carried over,
 // what's left to do, the sprint window). Detail comes pre-computed from the
 // loader as `breakdown`.
 
@@ -192,21 +192,21 @@ export function ProjectStatusBar({
     tip: ReactNode;
   }[] = [
     {
-      key: "overdue",
-      n: facts.overdue,
-      label: `${facts.overdue} overdue`,
+      key: "carried",
+      n: facts.carried,
+      label: `${facts.carried} carried over`,
       icon: AlertTriangle,
       tip: (
         <TipTaskList
-          heading="Overdue"
-          items={breakdown.overdue.map((o) => (
+          heading="Carried over"
+          items={breakdown.carried.map((o) => (
             <>
               <span className="text-foreground">{o.title}</span>
-              <span> — {o.daysOver <= 0 ? "due today" : `${o.daysOver}d over`}</span>
+              <span> — rolled {o.times === 1 ? "once" : `${o.times}×`}</span>
               {isNotable(o.priority) ? <span> · {o.priority}</span> : null}
             </>
           ))}
-          moreCount={facts.overdue - breakdown.overdue.length}
+          moreCount={facts.carried - breakdown.carried.length}
         />
       ),
     },
@@ -375,7 +375,7 @@ export function ProjectStatusBar({
               <Tooltip
                 variant="rich"
                 placement="bottom"
-                content="No overdue, unscheduled, or stalled work — the board is moving."
+                content="Nothing carried over, unscheduled, or stalled — the board is moving."
               >
                 <Chip tone="good" className={TRIGGER_HINT}>
                   On track

@@ -61,13 +61,13 @@ beforeEach(() => {
 describe("update_story schema additions", () => {
   it("new fields appear in inputSchema", () => {
     const props = UPDATE_STORY_TOOL.inputSchema.properties;
-    expect(props).toHaveProperty("startsAt");
-    expect(props).toHaveProperty("endsAt");
+    expect(props).not.toHaveProperty("startsAt");
+    expect(props).not.toHaveProperty("endsAt");
+    expect(props).not.toHaveProperty("dependsOn");
     expect(props).toHaveProperty("priority");
     expect(props).toHaveProperty("successMetric");
     expect(props).toHaveProperty("acceptanceCriteria");
     expect(props).toHaveProperty("category");
-    expect(props).toHaveProperty("dependsOn");
   });
 
   it("sets priority to Must", async () => {
@@ -87,30 +87,6 @@ describe("update_story schema additions", () => {
   it("rejects invalid priority", async () => {
     await expect(
       runUpdateStory("u1", { storyId: "s1", priority: "Blocker" }),
-    ).rejects.toMatchObject({ status: 400 });
-  });
-
-  it("sets startsAt from date-only string (UTC midnight)", async () => {
-    await runUpdateStory("u1", { storyId: "s1", startsAt: "2026-10-01" });
-    expect(mockPrisma.userStory.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          startsAt: new Date("2026-10-01T00:00:00.000Z"),
-        }),
-      }),
-    );
-  });
-
-  it("clears startsAt with empty string", async () => {
-    await runUpdateStory("u1", { storyId: "s1", startsAt: "" });
-    expect(mockPrisma.userStory.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ startsAt: null }) }),
-    );
-  });
-
-  it("rejects invalid startsAt", async () => {
-    await expect(
-      runUpdateStory("u1", { storyId: "s1", startsAt: "not-a-date" }),
     ).rejects.toMatchObject({ status: 400 });
   });
 
@@ -142,37 +118,6 @@ describe("update_story schema additions", () => {
     expect(mockPrisma.userStory.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ category: "auth" }) }),
     );
-  });
-
-  it("replaces dependsOn (with duplicate dedup)", async () => {
-    mockPrisma.userStory.count.mockResolvedValue(2);
-    await runUpdateStory("u1", { storyId: "s1", dependsOn: ["s2", "s3", "s2"] });
-    // $transaction should receive: deleteMany + 2 creates
-    const ops: unknown[] = mockPrisma.$transaction.mock.calls[0][0];
-    expect(ops).toHaveLength(3); // deleteMany + 2 creates
-    expect(mockPrisma.userStory.count).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ id: { in: ["s2", "s3"] } }) }),
-    );
-  });
-
-  it("clears all dependencies with empty array", async () => {
-    await runUpdateStory("u1", { storyId: "s1", dependsOn: [] });
-    const ops: unknown[] = mockPrisma.$transaction.mock.calls[0][0];
-    // deleteMany only — no creates
-    expect(ops).toHaveLength(1);
-  });
-
-  it("rejects a dependency target from another project", async () => {
-    mockPrisma.userStory.count.mockResolvedValue(0); // 0 of 1 valid
-    await expect(
-      runUpdateStory("u1", { storyId: "s1", dependsOn: ["s-other"] }),
-    ).rejects.toMatchObject({ status: 400 });
-  });
-
-  it("self-dependency is silently removed from dependsOn", async () => {
-    // Only "s1" in the list → after filter it's empty → skip count
-    await runUpdateStory("u1", { storyId: "s1", dependsOn: ["s1"] });
-    expect(mockPrisma.userStory.count).not.toHaveBeenCalled();
   });
 
   it("returns noop when nothing changes", async () => {

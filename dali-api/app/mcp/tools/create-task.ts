@@ -3,7 +3,13 @@
 
 import { prisma } from "~/lib/db";
 import { canEditProject } from "./access";
-import { isTaskStatus, TASK_STATUSES } from "~/projects/lib/task-board";
+import { BOARD_STATUSES, isTaskStatus } from "~/projects/lib/task-board";
+import {
+  activeSprintId,
+  openSprintForDay,
+  resolveTaskPlacement,
+} from "~/projects/lib/sprints.server";
+import { utcDayOf } from "~/projects/lib/timeline-days";
 import { createIssueForTask, normalizeRepo } from "~/projects/lib/github-task-sync";
 import { notifyTaskAssigned } from "~/projects/lib/task-notifications.server";
 
@@ -13,7 +19,7 @@ type Priority = (typeof PRIORITIES)[number];
 export const CREATE_TASK_TOOL = {
   name: "create_task",
   description:
-    "Create a project task. Requires Core or project-member access. Lands at end of target column. Optionally mirrors to a GitHub issue (`mirrorToGithubRepo` must be one of the project's repoUrls).",
+    "Create a project task. Requires Core or project-member access. Every task belongs to an epic (omit `epicId` to file it under the project's General epic) and to one weekly sprint or the backlog: pass a `sprintId` from list_sprints, \"current\" for the active sprint, or omit for the backlog. Tasks have no due dates. Optionally mirrors to a GitHub issue (`mirrorToGithubRepo` must be one of the project's repoUrls).",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -25,26 +31,20 @@ export const CREATE_TASK_TOOL = {
       },
       status: {
         type: "string",
-        enum: TASK_STATUSES as unknown as string[],
+        enum: BOARD_STATUSES as unknown as string[],
         description: "Defaults to 'Todo'.",
       },
       priority: { type: "string", enum: PRIORITIES as unknown as string[] },
-      epicId: { type: "string", description: "Optional epic linkage." },
-      storyId: {
+      epicId: {
+        type: "string",
+        description: "Epic to file the task under. Omit for the project's General epic.",
+      },
+      sprintId: {
         type: "string",
         description:
-          "Optional parent user story. Pins the task's epic to the story's epic (overrides epicId).",
+          "Sprint id from list_sprints, or \"current\" for the active sprint. Omit for the backlog. Closed sprints are rejected.",
       },
       domainId: { type: "string", description: "Optional domain chip." },
-      startsAt: {
-        type: "string",
-        description:
-          "Timeline start (ISO timestamp, planning only). Empty string or omitted = no start.",
-      },
-      dueAt: {
-        type: "string",
-        description: "ISO timestamp. Empty string or omitted = no deadline.",
-      },
       assigneeUserIds: {
         type: "array",
         items: { type: "string" },
@@ -69,10 +69,11 @@ type Input = {
   status?: string;
   priority?: Priority;
   epicId?: string;
-  storyId?: string;
+  sprintId?: string;
   domainId?: string;
-  startsAt?: string;
-  dueAt?: string;
+  /** Internal (meeting action items): a calendar day; the task lands in the
+   *  open sprint containing it. Ignored when sprintId is given. */
+  forDay?: string;
   assigneeUserIds?: string[];
   mirrorToGithubRepo?: string;
   /** Meeting notes model (specs/meeting-notes-model.md §4): set only by the
@@ -97,7 +98,9 @@ export async function runCreateTask(callerId: string, input: Input) {
   if (!title) throw new CreateTaskError("Title is required", 400);
 
   const status = input.status ?? "Todo";
-  if (!isTaskStatus(status)) throw new CreateTaskError("Invalid status", 400);
+  if (!isTaskStatus(status) || status === "Backlog") {
+    throw new CreateTaskError("Invalid status", 400);
+  }
 
   const project = await prisma.project.findUnique({
     where: { id: input.projectId },
@@ -105,50 +108,22 @@ export async function runCreateTask(callerId: string, input: Input) {
   });
   if (!project) throw new CreateTaskError("Project not found", 404);
 
-  // An epic/story id must belong to this project — a foreign id would let a
-  // member of one project file tasks onto another project's board (matches the
-  // web create route's guard).
-  // A story pins its epic (UserStory.epicId is required), so the two are never
-  // set independently: a story derives the epic; only a story-less task takes a
-  // free-standing epic (matches the web create route).
-  let epicId: string | null = input.epicId && input.epicId !== "" ? input.epicId : null;
-  const storyId: string | null = input.storyId && input.storyId !== "" ? input.storyId : null;
-  if (storyId) {
-    const story = await prisma.userStory.findUnique({
-      where: { id: storyId },
-      select: { epicId: true, epic: { select: { projectId: true } } },
-    });
-    if (!story || story.epic.projectId !== input.projectId) {
-      throw new CreateTaskError("Story is not part of this project", 400);
-    }
-    epicId = story.epicId;
-  } else if (epicId) {
-    const epic = await prisma.epic.findUnique({
-      where: { id: epicId },
-      select: { projectId: true },
-    });
-    if (!epic || epic.projectId !== input.projectId) {
-      throw new CreateTaskError("Epic is not part of this project", 400);
-    }
+  let sprintId: string | null = null;
+  if (input.sprintId === "current") {
+    sprintId = await activeSprintId(input.projectId);
+    if (!sprintId) throw new CreateTaskError("No sprint is running on this project", 400);
+  } else if (input.sprintId) {
+    sprintId = input.sprintId;
+  } else if (input.forDay) {
+    const t = Date.parse(input.forDay);
+    if (!Number.isFinite(t)) throw new CreateTaskError("Invalid forDay", 400);
+    sprintId = await openSprintForDay(input.projectId, utcDayOf(input.forDay));
   }
-
-  let startsAt: Date | null = null;
-  if (input.startsAt && input.startsAt !== "") {
-    const d = new Date(input.startsAt);
-    if (!Number.isFinite(d.getTime())) {
-      throw new CreateTaskError("Invalid startsAt", 400);
-    }
-    startsAt = d;
-  }
-
-  let dueAt: Date | null = null;
-  if (input.dueAt && input.dueAt !== "") {
-    const d = new Date(input.dueAt);
-    if (!Number.isFinite(d.getTime())) {
-      throw new CreateTaskError("Invalid dueAt", 400);
-    }
-    dueAt = d;
-  }
+  const placed = await resolveTaskPlacement(input.projectId, {
+    epicId: input.epicId || null,
+    sprintId,
+  });
+  if ("error" in placed) throw new CreateTaskError(placed.error, 400);
 
   let githubRepo: string | null = null;
   if (input.mirrorToGithubRepo && input.mirrorToGithubRepo !== "") {
@@ -167,7 +142,7 @@ export async function runCreateTask(callerId: string, input: Input) {
   }
 
   const last = await prisma.task.findFirst({
-    where: { projectId: input.projectId, status },
+    where: { projectId: input.projectId, status, sprintId: placed.sprintId ?? null },
     orderBy: { position: "desc" },
     select: { position: true },
   });
@@ -184,11 +159,9 @@ export async function runCreateTask(callerId: string, input: Input) {
         status,
         position,
         priority: input.priority ?? "Normal",
-        epicId,
-        storyId,
+        epicId: placed.epicId,
+        sprintId: placed.sprintId ?? null,
         domainId: input.domainId && input.domainId !== "" ? input.domainId : null,
-        startsAt,
-        dueAt,
         createdById: callerId,
         sourceRecordingId: input.sourceRecordingId ?? null,
       },
@@ -222,5 +195,5 @@ export async function runCreateTask(callerId: string, input: Input) {
     );
   }
 
-  return { id: task.id, status, position };
+  return { id: task.id, status, position, epicId: placed.epicId, sprintId: placed.sprintId ?? null };
 }

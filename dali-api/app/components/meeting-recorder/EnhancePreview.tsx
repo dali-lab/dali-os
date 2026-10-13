@@ -200,7 +200,7 @@ export function EnhancePreview({ rec, mode }: { rec: UseMeetingRecording; mode: 
                         onChange={(value) =>
                           setItemState((s) => ({ ...s, [i]: { ...(s[i] ?? { checked: true, ownerUserId: "" }), dueAt: value } }))
                         }
-                        ariaLabel="Due date"
+                        ariaLabel="Sprint week — the task lands in the sprint containing this day"
                       />
                       {item.dueSource && <span className="text-[11px] text-muted-foreground">from &quot;{item.dueSource}&quot;</span>}
                     </div>

@@ -8,19 +8,19 @@ import {
 } from "react";
 import { useDialog } from "~/components/ui/dialog";
 import { useRevalidator, useSearchParams } from "react-router";
-import { Menu, MenuItem, Popover, Tooltip, InfoTip } from "~/components/ui/floating";
+import { Menu, MenuItem, Popover, Select, Tooltip, InfoTip } from "~/components/ui/floating";
 import type { DragEndEvent } from "@dnd-kit/core";
 import {
   Archive,
+  ArrowRight,
   Bell,
-  CalendarDays,
   CheckSquare,
   ChevronDown,
   ChevronsLeft,
   ChevronsRight,
   Link2,
-  Lock,
   MessageSquare,
+  RotateCw,
   MoreHorizontal,
   Paperclip,
   Plus,
@@ -44,45 +44,43 @@ import {
 } from "~/components/ui/filter-panel";
 import { cn } from "~/lib/cn";
 import { useOptimisticBoardMove } from "~/components/board/useOptimisticBoardMove";
-import { ALL_TERMS, termFilterOrder } from "~/lib/terms.shared";
 import {
+  BOARD_STATUSES,
   buildTaskBoard,
   moveTaskInBoard,
   nextPositionInColumn,
   isTaskStatus,
-  TASK_STATUSES,
+  isTaskFinished,
   TASK_STATUS_LABELS,
   type TaskBoardOptions,
   taskMatchesQuery,
   type TaskCardModel,
   type TaskStatus,
-  currentSprintBand,
-  resolveSprintScope,
-  taskInSprintScope,
-  sprintPickerOptions,
-  taskTermIds,
-  openDependencies,
-  isTaskFinished,
-  isCarriedOverTask,
-  type SprintScope,
-  type TermWindow,
 } from "../lib/task-board";
-import { utcDayOf, localTodayUtcDay } from "../lib/timeline-days";
+import {
+  defaultBoardSprint,
+  sprintDays,
+  sprintLabel,
+  sprintRangeLabel,
+  sprintStatus,
+  type SprintModel,
+} from "../lib/sprints";
+import { localTodayUtcDay } from "../lib/timeline-days";
+import { SprintAnchorControl } from "./SprintAnchorControl";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { PeopleFilter, type PersonOption } from "./PeopleFilter";
 import { TaskModal, type NewTaskValues } from "./TaskModal";
 
-/** Epic/story context an outside Add task carries into the create form. Either
- *  side may be null — Add ▸ Task from the timeline toolbar has neither. */
+/** Context an outside Add task carries into the create form. */
 export type TaskCreateSeed = {
   epicId: string | null;
-  storyId: string | null;
-  // The epic modal that closed to make room for this form, handed back when the
-  // form closes so the next task is one click away instead of a trip back
-  // through the timeline. Null where the add covered nothing up (the outline,
-  // the Add menu, a column) — there, nothing should spring open.
+  // The epic modal that closed to make room for this form, handed back when
+  // the form closes. Null where the add covered nothing up.
   reopenEpicId?: string | null;
 };
+
+/** A card on a closed sprint's board, as it stood when the sprint closed. */
+export type SnapshotCard = TaskCardModel & { carriedTo: string | null };
 
 type Props = {
   projectId: string;
@@ -108,7 +106,7 @@ type Props = {
   onCreateClosed?: (seed: TaskCreateSeed) => void;
   // The board's people filter (os). Rendered beside the search input and
   // applied only to the board's tasks. Empty = no people filter; the board's
-  // own filters (epic/sprint/term/mine/search) still apply on top.
+  // own filters (epic/sprint/mine/search) still apply on top.
   filterPeopleIds?: string[];
   // People who hold tasks on this project — the filter's options. Empty (or no
   // onPeopleChange) hides the control.
@@ -119,8 +117,6 @@ type Props = {
 // Card and list meta. 11px sits below the design's smallest step.
 const META_TEXT = (os: boolean) => (os ? "text-xs" : "text-[11px]");
 
-// The `?epic=` filter value for tasks with no epic.
-const NO_EPIC = "none";
 
 // Each status owns a hue. The column header wears it as a solid bar and the
 // card carries it on its left edge, so a card still reads as belonging to its
@@ -196,14 +192,8 @@ const STATUS_ACCENT_CLASSIC: Record<TaskStatus, StatusAccent> = {
 const statusAccent = (status: TaskStatus, os: boolean): StatusAccent =>
   (os ? STATUS_ACCENT_OS : STATUS_ACCENT_CLASSIC)[status];
 
-// Columns that may be collapsed away when empty via the "Hide empty" toggle.
-// Deliberately only the low-traffic ends of the flow — hiding an empty
-// active column (Todo/In progress/Done) would remove a drop target you
-// actually drag into, whereas an empty Backlog/Cancelled is just wasted width.
-const COLLAPSIBLE_EMPTY_STATUSES: TaskStatus[] = ["Backlog", "Cancelled"];
-const HIDE_EMPTY_KEY = "taskboard:hideEmptyCols";
-// Columns the viewer has folded to a spine via the column menu. Per-browser,
-// like the hide-empty preference — a board layout choice, not a shared one.
+const SHOW_CANCELLED_KEY = "taskboard:showCancelled";
+// Columns the viewer has folded to a spine via the column menu. Per-browser.
 const COLLAPSED_KEY = "taskboard:collapsedCols";
 
 export function TaskBoard({
@@ -246,20 +236,21 @@ export function TaskBoard({
   // project loader, so `?q=` would refetch the whole board per character.
   const { os } = useOsChrome();
   const [query, setQuery] = useState("");
-  // View density preference (per-browser, not shared): collapse empty
-  // Backlog/Cancelled columns so they stop eating horizontal space. Defaults
-  // to on; a toggle reveals them and the choice persists in localStorage.
-  const [hideEmptyCols, setHideEmptyCols] = useState(true);
+  const [showCancelled, setShowCancelled] = useState(false);
   useEffect(() => {
-    setHideEmptyCols(window.localStorage.getItem(HIDE_EMPTY_KEY) !== "0");
+    try {
+      setShowCancelled(window.localStorage.getItem(SHOW_CANCELLED_KEY) === "1");
+    } catch {
+      /* storage disabled: default hidden */
+    }
   }, []);
-  const toggleHideEmpty = useCallback(() => {
-    setHideEmptyCols((v) => {
+  const toggleShowCancelled = useCallback(() => {
+    setShowCancelled((v) => {
       const next = !v;
       try {
-        window.localStorage.setItem(HIDE_EMPTY_KEY, next ? "1" : "0");
+        window.localStorage.setItem(SHOW_CANCELLED_KEY, next ? "1" : "0");
       } catch {
-        /* private-mode / storage-disabled: fall back to in-memory only */
+        /* private-mode / storage-disabled: in-memory only */
       }
       return next;
     });
@@ -335,78 +326,62 @@ export function TaskBoard({
     }
   }, [archiving, dialog, projectId, refresh, setError, tasks]);
 
-  // The open task is tracked in the URL (`?task=<id>`) so GitHub issue mirrors
-  // and other external links can deep-link straight to a task. The sprint
-  // filter lives in `?sprint=` for the same reason (shareable board slices).
+  // ?task=, ?epic=, ?sprint= and ?mine= are URL state so board slices and
+  // task links can be shared.
   const [searchParams, setSearchParams] = useSearchParams();
   const openTaskId = searchParams.get("task");
   const epicFilter = searchParams.get("epic");
-  const sprintFilter = searchParams.get("sprint");
-  const termParam = searchParams.get("term");
+  const sprintParam = searchParams.get("sprint");
+  const mineOnly = searchParams.get("mine") === "1";
 
-  // The term filter only makes sense once the project spans more than one term
-  // (its options are the project's terms + any term a sprint lands in). With
-  // one term there's nothing to slice between, so it's hidden and the board
-  // shows everything.
-  const termFilterEnabled = options.terms.length >= 2;
-  // Effective term: an explicit `?term=` wins; otherwise default to the lab's
-  // current term when the project runs it (the whole point — open the board on
-  // this term's work, not the full multi-term backlog). `all` opts out.
-  const effectiveTerm = useMemo(() => {
-    if (!termFilterEnabled) return ALL_TERMS;
-    if (termParam === ALL_TERMS) return ALL_TERMS;
-    if (termParam && options.terms.some((t) => t.id === termParam)) {
-      return termParam;
-    }
-    return options.currentTermId ?? ALL_TERMS;
-  }, [termFilterEnabled, termParam, options.terms, options.currentTermId]);
+  const today = useMemo(() => localTodayUtcDay(), []);
+  const multiTerm = useMemo(
+    () => new Set(options.sprints.map((s) => s.termId)).size > 1,
+    [options.sprints],
+  );
+  const selectedSprint: SprintModel | null = useMemo(() => {
+    const explicit = options.sprints.find((s) => s.id === sprintParam);
+    if (explicit) return explicit;
+    return (
+      defaultBoardSprint(
+        options.sprints.map((s) => ({ ...sprintDays(s), s })),
+        today,
+      )?.s ?? null
+    );
+  }, [options.sprints, sprintParam, today]);
+  const selectedStatus = selectedSprint ? sprintStatus(sprintDays(selectedSprint), today) : null;
+  const readOnly = selectedStatus === "Closed";
+  const canEdit = canManage && !readOnly && selectedSprint !== null;
+  const inSprint = useCallback(
+    (t: TaskCardModel) => selectedSprint !== null && t.sprintId === selectedSprint.id,
+    [selectedSprint],
+  );
 
-  // Term windows keyed by id — used to resolve a task's term from its own dates
-  // (a task's sprint, and therefore its term, is derived, not stored).
-  const termWindows = useMemo<TermWindow[]>(
+  // A closed sprint's board is its snapshot: carried tasks have since moved on.
+  const [snapshot, setSnapshot] = useState<{ sprintId: string; cards: SnapshotCard[] } | null>(null);
+  useEffect(() => {
+    if (!selectedSprint?.closed || snapshot?.sprintId === selectedSprint.id) return;
+    let live = true;
+    void fetch(`/api/sprints/${selectedSprint.id}`, { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`Request failed: ${r.status}`))))
+      .then((j: { cards: SnapshotCard[] }) => {
+        if (live) setSnapshot({ sprintId: selectedSprint.id, cards: j.cards });
+      })
+      .catch((e: unknown) => live && setError(e instanceof Error ? e.message : "Load failed"));
+    return () => {
+      live = false;
+    };
+  }, [selectedSprint, snapshot?.sprintId, setError]);
+  const carriedToById = useMemo(
     () =>
-      options.termSpans.map((s) => ({
-        id: options.terms.find((t) => t.code === s.code)?.id ?? s.code,
-        startDate: new Date(s.startsAt),
-        endDate: new Date(s.endsAt),
-      })),
-    [options.termSpans, options.terms],
+      new Map(
+        (snapshot?.sprintId === selectedSprint?.id ? snapshot?.cards ?? [] : []).map((c) => [
+          c.id,
+          c.carriedTo,
+        ]),
+      ),
+    [snapshot, selectedSprint],
   );
-
-  // Stable "now" for the computed sprint grid; sprints are the term-anchored
-  // 7-day bands the timeline draws (see task-board.ts).
-  const now = useMemo(() => new Date(), []);
-
-  // Linear-style carryover boundary: unfinished work dated before the current
-  // sprint band's start rolls forward into it. On a break week (no band
-  // running) fall back to the current term's start so past-term work still
-  // carries. Null when there's no current term at all — then nothing carries.
-  const carryoverBoundaryMs = useMemo<number | null>(() => {
-    const band = currentSprintBand(options.termSpans, now);
-    if (band) return band.key;
-    const cur = termWindows.find((w) => w.id === options.currentTermId);
-    return cur ? cur.startDate.getTime() : null;
-  }, [options.termSpans, now, termWindows, options.currentTermId]);
-
-  // Sprint is a drill-down under Term (sprint numbers reset each term): it only
-  // applies once a specific term is chosen, and lists that term's sprints. The
-  // board opens on the whole term; the current sprint is one pick away.
-  const sprintEnabled = effectiveTerm !== ALL_TERMS;
-  const selectedTermCode = useMemo(
-    () => (sprintEnabled ? options.terms.find((t) => t.id === effectiveTerm)?.code ?? null : null),
-    [sprintEnabled, options.terms, effectiveTerm],
-  );
-  const termHasToday =
-    sprintEnabled &&
-    effectiveTerm === options.currentTermId &&
-    currentSprintBand(options.termSpans, now) !== null;
-  const sprintScope: SprintScope = useMemo(() => {
-    if (!sprintEnabled) return "all";
-    const resolved = resolveSprintScope(sprintFilter, options.termSpans, now);
-    // `current` is today's sprint, which lives in the current term only.
-    return resolved === "current" && !termHasToday ? "all" : resolved;
-  }, [sprintEnabled, sprintFilter, options.termSpans, now, termHasToday]);
-  const sprintDeviates = sprintEnabled && sprintScope !== "all";
 
   const setParam = useCallback(
     (key: string, value: string | null) => {
@@ -422,50 +397,14 @@ export function TaskBoard({
     },
     [setSearchParams],
   );
-  // Sprint is a top-level scope independent of epic, so picking an epic leaves
-  // it untouched.
-  const setEpicFilter = useCallback(
-    (value: string | null) => {
-      setSearchParams(
-        (prev) => {
-          const next = new URLSearchParams(prev);
-          if (value) next.set("epic", value);
-          else next.delete("epic");
-          return next;
-        },
-        { replace: true, preventScrollReset: true },
-      );
-    },
-    [setSearchParams],
-  );
-  // Changing term drops the sprint filter (sprint numbers reset per term, and a
-  // sprint from another term would leave the board empty) — the epic filter
-  // stays put; its pill is kept visible below even when pruned so it can still
-  // be cleared.
-  const setTermFilter = useCallback(
-    (value: string) => {
-      setSearchParams(
-        (prev) => {
-          const next = new URLSearchParams(prev);
-          next.set("term", value);
-          next.delete("sprint");
-          return next;
-        },
-        { replace: true, preventScrollReset: true },
-      );
-    },
-    [setSearchParams],
-  );
+  const setEpicFilter = useCallback((value: string | null) => setParam("epic", value), [setParam]);
   const setOpenTaskId = useCallback(
     (id: string | null) => setParam("task", id),
     [setParam],
   );
 
-  // An outside Add task opens the create form here. Placed below the filter
-  // state because it has to read the epic filter: a seeded epic the filter
-  // excludes would create the card and hide it in the same breath, so the
-  // filter steps aside. (Term and sprint are date-derived — nothing to clear
-  // until the deadline is picked.)
+  // A seeded epic the filter excludes would create the card and hide it in the
+  // same breath, so the filter steps aside.
   useEffect(() => {
     if (!createSeed) return;
     setCreateStatus("Todo");
@@ -475,52 +414,18 @@ export function TaskBoard({
     if (createSeed.epicId && epicFilter && epicFilter !== createSeed.epicId) {
       setParam("epic", null);
     }
-    // epicFilter/setParam are read, not tracked: a filter change mid-form must
-    // not reopen the modal. Only a fresh seed object should.
+    // Only a fresh seed object should reopen the form.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [createSeed]);
 
-  // Epic pills for the selected term: an epic shows only if it has work in the
-  // term (its termIds cover it). The currently-selected epic is always kept so
-  // it stays deselectable even when it has nothing in this term.
-  const visibleEpics = useMemo(
-    () =>
-      effectiveTerm === ALL_TERMS
-        ? options.epics
-        : options.epics.filter(
-            (e) => e.termIds.includes(effectiveTerm) || e.id === epicFilter,
-          ),
-    [options.epics, effectiveTerm, epicFilter],
-  );
-
   const filteredTasks = useMemo(() => {
-    let ts = tasks;
-    if (epicFilter === NO_EPIC) ts = ts.filter((t) => t.epicId === null);
-    else if (epicFilter) ts = ts.filter((t) => t.epicId === epicFilter);
-    if (sprintScope !== "all") {
-      ts = ts.filter(
-        (t) =>
-          taskInSprintScope(t, sprintScope, options.termSpans, now) ||
-          // Linear-style: unfinished work from an earlier sprint rolls into the
-          // current one (the board's default scope) so it can't fall off before
-          // the term filter even sees it.
-          (sprintScope === "current" && isCarriedOverTask(t, carryoverBoundaryMs)),
-      );
-    }
-    if (effectiveTerm !== ALL_TERMS) {
-      ts = ts.filter((t) => {
-        // A task's terms come from its own dates: every term its span touches.
-        // Undated (backlog) work is term-less — always visible so it stays the
-        // pool you plan from.
-        if (t.dueAt === null && t.startsAt === null) return true;
-        // Unfinished work dated before the current sprint rolls forward onto the
-        // current term's board — a past term is just an earlier cycle, so it
-        // carries the same way rather than vanishing at rollover.
-        if (effectiveTerm === options.currentTermId && isCarriedOverTask(t, carryoverBoundaryMs))
-          return true;
-        return taskTermIds(termWindows, t).includes(effectiveTerm);
-      });
-    }
+    let ts: TaskCardModel[] = selectedSprint?.closed
+      ? snapshot?.sprintId === selectedSprint.id
+        ? snapshot.cards
+        : []
+      : tasks.filter(inSprint);
+    if (epicFilter) ts = ts.filter((t) => t.epicId === epicFilter);
+    if (mineOnly) ts = ts.filter((t) => t.assignees.some((a) => a.id === currentUserId));
     if (filterPeopleIds.length > 0) {
       const want = new Set(filterPeopleIds);
       ts = ts.filter((t) => t.assignees.some((a) => want.has(a.id)));
@@ -529,26 +434,17 @@ export function TaskBoard({
     return ts;
   }, [
     tasks,
+    selectedSprint,
+    snapshot,
+    inSprint,
     epicFilter,
-    sprintScope,
-    options.termSpans,
-    now,
-    effectiveTerm,
-    termWindows,
-    options.currentTermId,
-    carryoverBoundaryMs,
+    mineOnly,
+    currentUserId,
     filterPeopleIds,
     query,
   ]);
 
   const board = useMemo(() => buildTaskBoard(filteredTasks), [filteredTasks]);
-  // Over the whole board, not the filtered slice: a task is blocked by what it
-  // waits on even when that work is filtered out of view.
-  const tasksById = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks]);
-  const blockersOf = useCallback(
-    (t: TaskCardModel) => openDependencies(t.dependsOn, tasksById, isTaskFinished),
-    [tasksById],
-  );
   const openTask = openTaskId ? tasks.find((t) => t.id === openTaskId) ?? null : null;
 
   // Clear the unread dot the moment a task is opened: optimistically locally
@@ -588,21 +484,20 @@ export function TaskBoard({
     return new Promise((resolve) => {
       move(
         (cur) => {
-          const moved = toStatus ? moveTaskInBoard(cur, taskId, toStatus, -1).tasks : cur;
+          const moved = toStatus
+            ? moveTaskInBoard(cur, taskId, toStatus, -1, inSprint).tasks
+            : cur;
           return moved.map((t) => (t.id === taskId ? { ...t, ...fields } : t));
         },
         async () => {
           const body: Record<string, unknown> = {};
-          if ("dueAt" in patch) body.dueAt = patch.dueAt;
-          if ("startsAt" in patch) body.startsAt = patch.startsAt;
           if ("domain" in patch) body.domainId = patch.domain?.id ?? null;
           if ("assignees" in patch)
             body.assigneeIds = (patch.assignees ?? []).map((a) => a.id);
           if ("title" in patch) body.title = patch.title;
           if ("description" in patch) body.description = patch.description;
-          if ("epicId" in patch) body.epicId = patch.epicId ?? null;
-          if ("storyId" in patch) body.storyId = patch.storyId ?? null;
-          if ("dependsOn" in patch) body.dependsOn = patch.dependsOn ?? [];
+          if ("epicId" in patch && patch.epicId) body.epicId = patch.epicId;
+          if ("sprintId" in patch) body.sprintId = patch.sprintId ?? null;
           if ("checklist" in patch) body.checklist = patch.checklist ?? null;
           try {
             if (Object.keys(body).length > 0) {
@@ -618,7 +513,7 @@ export function TaskBoard({
               }
             }
             if (toStatus) {
-              const { orderedIds } = moveTaskInBoard(tasks, taskId, toStatus, -1);
+              const { orderedIds } = moveTaskInBoard(tasks, taskId, toStatus, -1, inSprint);
               await persistMove(taskId, toStatus, orderedIds);
             }
           } catch (e) {
@@ -652,7 +547,7 @@ export function TaskBoard({
   }
 
   function handleDragEnd(event: DragEndEvent) {
-    if (!canManage) return;
+    if (!canEdit) return;
     const overId = event.over?.id;
     if (!overId || typeof overId !== "string") return;
     const data = event.active.data.current as
@@ -674,25 +569,22 @@ export function TaskBoard({
       const overTask = tasks.find((t) => t.id === overId);
       if (!overTask || overTask.id === taskId) return;
       toStatus = overTask.status;
-      // The over card's index in the FULL column, even when a sprint filter
-      // is active: inserting at the target's global position preserves hidden
-      // tasks' relative order while landing where the user sees.
-      targetIndex = buildTaskBoard(tasks)[toStatus].findIndex(
+      // Index among the sprint's whole column, so tasks hidden by the epic or
+      // people filters keep their relative order.
+      targetIndex = buildTaskBoard(tasks.filter(inSprint))[toStatus].findIndex(
         (t) => t.id === overId,
       );
     }
 
-    const orderedIds = moveTaskInBoard(tasks, taskId, toStatus, targetIndex).orderedIds;
+    const orderedIds = moveTaskInBoard(tasks, taskId, toStatus, targetIndex, inSprint).orderedIds;
     move(
-      (cur) => moveTaskInBoard(cur, taskId, toStatus, targetIndex).tasks,
+      (cur) => moveTaskInBoard(cur, taskId, toStatus, targetIndex, inSprint).tasks,
       () => persistMove(taskId, toStatus, orderedIds).then(refresh),
     );
     if (toStatus === "Done" && fromStatus !== "Done") setCelebrate(true);
   }
 
-  // Create from the modal. The POST endpoint applies title/status/dates/
-  // epic/story; domain/assignees are applied with a follow-up PATCH via the
-  // same optimistic path the card edits use.
+  // Domain and assignees aren't create fields; they follow as a PATCH.
   async function handleCreate(values: NewTaskValues) {
     setError(null);
     const res = await fetch(`/api/projects/${projectId}/tasks`, {
@@ -703,10 +595,8 @@ export function TaskBoard({
         title: values.title,
         description: values.description,
         status: values.status,
-        dueAt: values.dueAt,
-        startsAt: values.startsAt,
         epicId: values.epicId,
-        storyId: values.storyId,
+        sprintId: values.sprintId,
         ...(values.github ? { github: values.github } : {}),
       }),
     });
@@ -733,20 +623,17 @@ export function TaskBoard({
         title: values.title,
         description: values.description,
         status: values.status,
-        // Server-owned since the modal stopped offering the field: the create
-        // endpoint applies the column default, and this mirrors it optimistically.
         priority: "Normal",
-        position: nextPositionInColumn(buildTaskBoard(cur), values.status),
-        dueAt: values.dueAt,
-        startsAt: values.startsAt,
+        position: nextPositionInColumn(
+          buildTaskBoard(cur.filter((t) => t.sprintId === values.sprintId)),
+          values.status,
+        ),
         epicId: values.epicId,
-        storyId: values.storyId,
-        dependsOn: [],
+        sprintId: values.sprintId,
+        carryoverCount: 0,
         checklist: values.checklist ?? null,
         assignees,
         domain,
-        // The GH issue is filed async after we ack; the link surfaces on the
-        // next revalidation. Null here means no badge in the meantime.
         githubIssueUrl: null,
         githubIssueNumber: null,
         files: [],
@@ -768,7 +655,6 @@ export function TaskBoard({
     const patch: Partial<TaskCardModel> = {};
     if (domain) patch.domain = domain;
     if (assignees.length > 0) patch.assignees = assignees;
-    if (values.dependsOn.length > 0) patch.dependsOn = values.dependsOn;
     if (Object.keys(patch).length > 0) {
       await patchTask(id, patch);
     } else {
@@ -801,13 +687,8 @@ export function TaskBoard({
     setIsCreating(true);
   }, []);
 
-  const columns: KanbanColumn<TaskCardModel>[] = TASK_STATUSES.filter(
-    (status) =>
-      !(
-        hideEmptyCols &&
-        COLLAPSIBLE_EMPTY_STATUSES.includes(status) &&
-        (board[status]?.length ?? 0) === 0
-      ),
+  const columns: KanbanColumn<TaskCardModel>[] = BOARD_STATUSES.filter(
+    (status) => showCancelled || status !== "Cancelled",
   ).map((status) => {
     const accent = statusAccent(status, os);
     const label = TASK_STATUS_LABELS[status];
@@ -898,7 +779,7 @@ export function TaskBoard({
               </button>
             }
           >
-            {canManage && (
+            {canEdit && (
               <MenuItem
                 icon={<Plus className="h-4 w-4" aria-hidden />}
                 onSelect={() => startCreate(status)}
@@ -921,7 +802,7 @@ export function TaskBoard({
       // stretch the whole hub taller than the viewport. Mirrors StaffingBoard.
       listClassName:
         "flex flex-col gap-2 p-2 min-h-[360px] max-h-[calc(100vh-14rem)] overflow-y-auto",
-      listHeader: canManage ? (
+      listHeader: canEdit ? (
         <button
           type="button"
           onClick={() => startCreate(status)}
@@ -940,49 +821,35 @@ export function TaskBoard({
     };
   });
 
-  // The epic control only earns its place when the project has epics to slice
-  // by. Under a term filter the option set is pruned to epics with work in it.
-  const showEpicFilter = visibleEpics.length > 0;
+  const activeFilterCount = (epicFilter ? 1 : 0) + (mineOnly ? 1 : 0);
 
-  // What the Customize badge counts: every active slice bar the search box,
-  // which has its own visible field. The term and sprint filters count only
-  // when they aren't sitting on their default (this term / all its sprints).
-  const defaultTerm = options.currentTermId ?? ALL_TERMS;
-  const activeFilterCount =
-    (epicFilter ? 1 : 0) +
-    (sprintDeviates ? 1 : 0) +
-    (termFilterEnabled && effectiveTerm !== defaultTerm ? 1 : 0);
-
-  // Option lists for the two comboboxes. `null` is the "no filter" row in
-  // both, and leads so it's the first thing an empty query offers.
   const epicOptions: ComboOption[] = useMemo(
     () => [
       { value: null, label: "All epics" },
-      ...visibleEpics.map((e) => ({ value: e.id as string | null, label: e.title })),
-      { value: NO_EPIC as string | null, label: "No epic" },
+      ...options.epics.map((e) => ({ value: e.id as string | null, label: e.title })),
     ],
-    [visibleEpics],
+    [options.epics],
   );
-  // The sprint combobox lists the selected term's computed sprints
-  // (`Sprint N · Current|Past|Upcoming`, current-first). Its default, the whole
-  // term, is the neutral (`null`) row, so sitting on it reads as "no filter"
-  // and doesn't light the Customize badge — the same convention the term filter
-  // uses for the current term.
-  const sprintScopeOptions: ComboOption[] = useMemo(() => {
-    const opts: ComboOption[] = [{ value: null, label: "All sprints" }];
-    if (termHasToday) opts.push({ value: "current", label: "Current sprint" });
-    opts.push({ value: "backlog", label: "Backlog (no sprint)" });
-    for (const o of sprintPickerOptions(options.termSpans, selectedTermCode, now)) {
-      opts.push({ value: o.value, label: o.label });
-    }
-    return opts;
-  }, [termHasToday, options.termSpans, selectedTermCode, now]);
+  const sprintOptions = useMemo(
+    () =>
+      [...options.sprints]
+        .sort((a, z) => Date.parse(z.startsOn) - Date.parse(a.startsOn))
+        .map((s) => {
+          const status = sprintStatus(sprintDays(s), today);
+          return {
+            value: s.id,
+            label: `${sprintLabel(s, multiTerm)} · ${status === "Active" ? "Current" : status === "Closed" ? "Past" : "Upcoming"}`,
+            description: sprintRangeLabel(s),
+          };
+        }),
+    [options.sprints, today, multiTerm],
+  );
 
   const resetFilters = useCallback(() => {
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev);
-        for (const key of ["epic", "sprint", "term"]) next.delete(key);
+        for (const key of ["epic", "mine"]) next.delete(key);
         return next;
       },
       { replace: true, preventScrollReset: true },
@@ -992,6 +859,22 @@ export function TaskBoard({
   return (
     <div className={cn("flex flex-col", os ? "gap-4" : "gap-3")}>
       <Confetti trigger={celebrate} onFire={() => setCelebrate(false)} />
+      <SprintHeader
+        sprint={selectedSprint}
+        status={selectedStatus}
+        options={sprintOptions}
+        multiTerm={multiTerm}
+        onSelect={(id) => setParam("sprint", id)}
+        anchorControl={
+          <SprintAnchorControl
+            projectId={projectId}
+            anchors={options.anchors}
+            canEdit={canManage}
+            focusTermId={selectedSprint?.termId ?? null}
+            onSaved={refresh}
+          />
+        }
+      />
       <div className={cn("flex min-w-0 items-center", os ? "gap-3" : "gap-2")}>
         <SearchInput
           value={query}
@@ -1043,55 +926,14 @@ export function TaskBoard({
                   )}
                 </div>
 
-                {/* Sprint: a drill-down under Term. Sprint numbers reset per
-                    term, so it's disabled on "All terms" and lists the selected
-                    term's sprints once one is chosen. The default scope is the
-                    neutral row. */}
-                {termFilterEnabled && (
-                  <FilterCombobox
-                    id="taskboard-sprint-scope"
-                    label="Sprint"
-                    ariaLabel="Filter board by sprint"
-                    placeholder={sprintEnabled ? "Search sprints…" : "Select a term first"}
-                    os={os}
-                    options={sprintScopeOptions}
-                    value={sprintScope === "all" ? null : sprintScope}
-                    onChange={(next) => setParam("sprint", next)}
-                    disabled={!sprintEnabled}
-                  />
-                )}
+                <FilterToggleRow
+                  label="Only my tasks"
+                  os={os}
+                  checked={mineOnly}
+                  onChange={() => setParam("mine", mineOnly ? null : "1")}
+                />
 
-                {termFilterEnabled && (
-                  <FilterGroup
-                    label="Term"
-                    os={os}
-                    hint={
-                      <InfoTip
-                        content="Term code format: last two digits of the year + S (spring), F (fall), or X (summer). E.g. 26F = Fall 2026."
-                        placement="right"
-                      />
-                    }
-                  >
-                    {termFilterOrder(
-                      options.terms.map((t) => ({
-                        id: t.id,
-                        code: t.code,
-                        isCurrent: t.id === options.currentTermId,
-                      })),
-                    ).map((opt) => (
-                      <FilterPill
-                        key={opt.value}
-                        os={os}
-                        selected={effectiveTerm === opt.value}
-                        onClick={() => setTermFilter(opt.value)}
-                      >
-                        {opt.label}
-                      </FilterPill>
-                    ))}
-                  </FilterGroup>
-                )}
-
-                {showEpicFilter && (
+                {options.epics.length > 0 && (
                   <FilterCombobox
                     id="taskboard-epic-options"
                     label="Epic"
@@ -1113,10 +955,10 @@ export function TaskBoard({
               >
                 <FilterSectionLabel os={os}>Layout</FilterSectionLabel>
                 <FilterToggleRow
-                  label="Hide empty Backlog / Cancelled"
+                  label="Show Cancelled column"
                   os={os}
-                  checked={hideEmptyCols}
-                  onChange={toggleHideEmpty}
+                  checked={showCancelled}
+                  onChange={toggleShowCancelled}
                 />
                 {collapsedCols.length > 0 && (
                   <button
@@ -1174,6 +1016,13 @@ export function TaskBoard({
         </div>
       </div>
 
+      {selectedSprint === null && (
+        <p className="text-sm text-muted-foreground">
+          This project has no sprints yet — sprints are generated for each current or upcoming
+          term the project runs. Add a term in project settings; until then, plan in the Backlog.
+        </p>
+      )}
+
       {query.trim() && filteredTasks.length === 0 && (
         <p className="text-sm text-muted-foreground">
           No tasks match &ldquo;{query.trim()}&rdquo;.
@@ -1185,7 +1034,7 @@ export function TaskBoard({
         columns={columns}
         getCardId={(t) => t.id}
         getCardData={(t) => ({ taskId: t.id, fromStatus: t.status })}
-        draggable={canManage}
+        draggable={canEdit}
         sortable
         dropPlaceholder
         onDragEnd={handleDragEnd}
@@ -1194,14 +1043,14 @@ export function TaskBoard({
           const t = activeId ? tasks.find((x) => x.id === activeId) : null;
           return t ? (
             <div className="w-60 rotate-1 shadow-xl">
-              <TaskCard card={t} blockedBy={blockersOf(t)} isDragging={false} onOpen={() => {}} />
+              <TaskCard card={t} carriedTo={null} isDragging={false} onOpen={() => {}} />
             </div>
           ) : null;
         }}
         renderCard={(card, { isDragging, dragHandleProps }) => (
           <TaskCard
             card={card}
-            blockedBy={blockersOf(card)}
+            carriedTo={carriedToById.get(card.id) ?? null}
             dragHandleProps={dragHandleProps}
             isDragging={isDragging}
             onOpen={() => setOpenTaskId(card.id)}
@@ -1214,9 +1063,7 @@ export function TaskBoard({
           task={openTask}
           projectId={projectId}
           options={options}
-          allTasks={tasks}
-          onOpenTask={setOpenTaskId}
-          canManage={canManage}
+          canManage={canManage && !(openTask.sprintId && options.sprints.find((s) => s.id === openTask.sprintId)?.closed && isTaskFinished(openTask))}
           onClose={() => setOpenTaskId(null)}
           onPatch={(patch) => patchTask(openTask.id, patch)}
           onDelete={() => deleteTask(openTask.id)}
@@ -1235,15 +1082,9 @@ export function TaskBoard({
         <TaskModal
           projectId={projectId}
           options={options}
-          allTasks={tasks}
           canManage={canManage}
-          // An outside add's own epic/story wins; otherwise the board's epic
-          // filter stands in, as it always has.
-          defaultEpicId={
-            createLinks?.epicId ??
-            (epicFilter && epicFilter !== NO_EPIC ? epicFilter : null)
-          }
-          defaultStoryId={createLinks?.storyId ?? null}
+          defaultEpicId={createLinks?.epicId ?? epicFilter ?? null}
+          defaultSprintId={canEdit ? selectedSprint?.id ?? null : null}
           defaultStatus={createStatus}
           onClose={closeCreate}
           onCreate={handleCreate}
@@ -1487,7 +1328,7 @@ type ArchivedTask = {
   id: string;
   title: string;
   status: TaskStatus;
-  dueAt: string | null;
+  sprint: string | null;
   archivedAt: string;
   domain: { id: string; name: string } | null;
   assignees: { id: string; name: string }[];
@@ -1617,31 +1458,22 @@ function ArchivedTasksModal({
 // pointer.
 function TaskCard({
   card,
-  blockedBy,
+  carriedTo,
   dragHandleProps = {},
   isDragging,
   onOpen,
 }: {
   card: TaskCardModel;
-  // Unfinished tasks this one waits on. Non-empty shows the Blocked chip.
-  blockedBy: TaskCardModel[];
+  // Set on a closed sprint's board for work that rolled on ("Sprint 5").
+  carriedTo: string | null;
   dragHandleProps?: Record<string, unknown>;
   isDragging: boolean;
   onOpen: () => void;
 }) {
   const { os } = useOsChrome();
-  // dueAt is a date-only value (UTC midnight of the due day). A task is overdue
-  // once the viewer's local calendar day is past that day — not the instant it
-  // is stored at, which would flip overdue at the viewer's local midnight.
-  const overdue =
-    card.dueAt != null &&
-    card.status !== "Done" &&
-    card.status !== "Cancelled" &&
-    localTodayUtcDay() > utcDayOf(card.dueAt);
-
+  const slipping = card.carryoverCount > 0 && !isTaskFinished(card);
   const checklist = Array.isArray(card.checklist) ? card.checklist : null;
   const checklistDone = checklist?.filter((i) => i.done).length ?? 0;
-  const dateRange = formatDateRange(card.startsAt, card.dueAt);
 
   return (
     <div
@@ -1712,40 +1544,25 @@ function TaskCard({
             META_TEXT(os),
           )}
         >
-          {blockedBy.length > 0 && (
-            <Tooltip content={`Waiting on ${blockedBy.map((b) => b.title).join(", ")}`}>
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1 px-1.5 py-0.5 border font-medium",
-                  os
-                    ? "rounded-full border-transparent bg-os-amber/15 text-os-amber"
-                    : "rounded-md border-amber-200 bg-amber-50 text-amber-800",
-                )}
-              >
-                <Lock aria-hidden className="w-3 h-3" />
-                Blocked
-              </span>
-            </Tooltip>
+          {carriedTo && (
+            <MetaItem
+              icon={<ArrowRight aria-hidden className="w-3.5 h-3.5" />}
+              title={`Unfinished at close — rolled to ${carriedTo}`}
+            >
+              {carriedTo}
+            </MetaItem>
           )}
-          {/* Overdue tints the icon, not the date. Recolouring the text made
-              the one meta item you always read sit in a different ink from the
-              counts beside it, so the row read as broken rather than as a
-              warning — and on a card whose dates are simply set, that colour
-              had no meaning at all. */}
-          {dateRange && (
+          {slipping && !carriedTo && (
             <MetaItem
               icon={
-                <CalendarDays
+                <RotateCw
                   aria-hidden
-                  className={cn(
-                    "w-3.5 h-3.5",
-                    overdue && (os ? "text-os-amber" : "text-accent-coral"),
-                  )}
+                  className={cn("w-3.5 h-3.5", os ? "text-os-amber" : "text-accent-coral")}
                 />
               }
-              title={overdue ? `Overdue — ${dateRange}` : undefined}
+              title={`Rolled over from ${card.carryoverCount} earlier sprint${card.carryoverCount === 1 ? "" : "s"}`}
             >
-              {dateRange}
+              Carried ×{card.carryoverCount}
             </MetaItem>
           )}
           {checklist && checklist.length > 0 && (
@@ -1822,16 +1639,6 @@ function MetaItem({
   );
 }
 
-// The card's date line. A task with both bounds shows its span ("Sep 1 –
-// Sep 30"); one bound names which end it is, so a start-only task doesn't
-// read as a deadline.
-function formatDateRange(startsAt: string | null, dueAt: string | null): string | null {
-  if (startsAt && dueAt) return `${formatDuePill(startsAt)} – ${formatDuePill(dueAt)}`;
-  if (dueAt) return `Due ${formatDuePill(dueAt)}`;
-  if (startsAt) return `Start ${formatDuePill(startsAt)}`;
-  return null;
-}
-
 // Compact age for the "Updated" chip — "3h", "2d", "5w". Anything older than
 // a year is just "1y+"; the exact stamp is in the chip's title.
 function formatSince(iso: string): string {
@@ -1844,21 +1651,6 @@ function formatSince(iso: string): string {
   const weeks = Math.round(days / 7);
   if (weeks < 52) return `${weeks}w`;
   return "1y+";
-}
-
-// Short label for the pill: "Mar 12" if it's this year, otherwise "Mar 12, 2027".
-// Task dates are date-only (UTC midnight), so the label reads them in UTC — the
-// same convention as the timeline's day labels — to avoid a west-of-UTC viewer
-// seeing the previous day.
-function formatDuePill(iso: string): string {
-  const d = new Date(iso);
-  const sameYear = d.getUTCFullYear() === new Date().getUTCFullYear();
-  return d.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-    ...(sameYear ? {} : { year: "numeric" }),
-  });
 }
 
 async function persistMove(
@@ -1876,4 +1668,53 @@ async function persistMove(
     const body = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(body.error ?? `Request failed: ${res.status}`);
   }
+}
+
+function SprintHeader({
+  sprint,
+  status,
+  options,
+  multiTerm,
+  onSelect,
+  anchorControl,
+}: {
+  sprint: SprintModel | null;
+  status: "Upcoming" | "Active" | "Closed" | null;
+  options: { value: string; label: string; description: string }[];
+  multiTerm: boolean;
+  onSelect: (id: string) => void;
+  anchorControl: ReactNode;
+}) {
+  const { os } = useOsChrome();
+  if (!sprint) return <div className="flex justify-end">{anchorControl}</div>;
+  const badge =
+    status === "Active"
+      ? os
+        ? "bg-os-accent/15 text-os-accent"
+        : "bg-accent-teal/15 text-[#00706f]"
+      : "bg-muted text-muted-foreground";
+  return (
+    <div className={cn("flex flex-wrap items-center", os ? "gap-3" : "gap-2")}>
+      <Select
+        value={sprint.id}
+        options={options}
+        onChange={onSelect}
+        ariaLabel="Choose sprint"
+      />
+      <span className={cn("text-muted-foreground", os ? "text-sm" : "text-xs")}>
+        {sprintRangeLabel(sprint)}
+      </span>
+      <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", badge)}>
+        {status === "Active" ? "Current sprint" : status === "Closed" ? "Closed · read-only" : "Upcoming"}
+      </span>
+      {sprint.closed && sprint.plannedCount !== null && (
+        <span className={cn("text-muted-foreground", os ? "text-sm" : "text-xs")}>
+          {sprint.completedCount} of {sprint.plannedCount} done
+          {sprint.carriedOverCount ? ` · ${sprint.carriedOverCount} rolled on` : ""}
+        </span>
+      )}
+      <span className="sr-only">{sprintLabel(sprint, multiTerm)}</span>
+      <div className="ml-auto">{anchorControl}</div>
+    </div>
+  );
 }

@@ -53,8 +53,8 @@ describe("list_notification_preferences", () => {
       email: "Daily",
       explicit: true,
     });
-    const dueReminder = byType.get("task.due_reminder")!;
-    expect(dueReminder).toMatchObject({
+    const sprintEnding = byType.get("project.sprint_ending")!;
+    expect(sprintEnding).toMatchObject({
       inApp: true,
       slackDm: true, // registry default
       email: "Off",

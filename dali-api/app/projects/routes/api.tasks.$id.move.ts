@@ -5,6 +5,7 @@ import { withCors, handlePreflight } from "~/lib/cors";
 import { isTaskStatus } from "../lib/task-board";
 import { closeIssueForTask, syncIssueForTask } from "../lib/github-task-sync";
 import { notifyTaskStatusChanged } from "../lib/task-notifications.server";
+import { checkSprintTarget } from "../lib/sprints.server";
 
 // POST /api/tasks/:id/move
 //
@@ -14,16 +15,19 @@ import { notifyTaskStatusChanged } from "../lib/task-notifications.server";
 //     renumbered to its index, and :id gets `status`. Handles both cross-
 //     column moves and within-column reordering.
 //   { status, position }   — legacy append-to-end shape.
-// Same permission model as task creation.
+// Either shape may carry `sprintId` (null = backlog) to move the task between
+// sprints, e.g. a drag in the backlog view.
 
-type Body =
+type Body = (
   | { status: string; orderedIds: string[]; position?: undefined }
-  | { status: string; position: number; orderedIds?: undefined };
+  | { status: string; position: number; orderedIds?: undefined }
+) & { sprintId?: string | null };
 
 function isBody(x: unknown): x is Body {
   if (!x || typeof x !== "object") return false;
   const o = x as Record<string, unknown>;
   if (typeof o.status !== "string") return false;
+  if (o.sprintId !== undefined && o.sprintId !== null && typeof o.sprintId !== "string") return false;
   if (Array.isArray(o.orderedIds)) {
     return o.orderedIds.every((id) => typeof id === "string");
   }
@@ -39,7 +43,14 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
   const task = await prisma.task.findUnique({
     where: { id: params.id },
-    select: { id: true, githubIssueNumber: true, projectId: true, status: true },
+    select: {
+      id: true,
+      githubIssueNumber: true,
+      projectId: true,
+      status: true,
+      sprintId: true,
+      sprint: { select: { closedAt: true } },
+    },
   });
   if (!task) {
     return withCors(request, Response.json({ error: "Task not found" }, { status: 404 }));
@@ -56,9 +67,25 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!isBody(body)) {
     return withCors(request, Response.json({ error: "Invalid body" }, { status: 400 }));
   }
-  if (!isTaskStatus(body.status)) {
+  if (!isTaskStatus(body.status) || body.status === "Backlog") {
     return withCors(request, Response.json({ error: "Invalid status" }, { status: 400 }));
   }
+  const leavingClosed =
+    body.sprintId !== undefined &&
+    body.sprintId !== task.sprintId &&
+    task.status !== "Done" &&
+    task.status !== "Cancelled";
+  if (task.sprint?.closedAt && !leavingClosed) {
+    return withCors(request, Response.json({ error: "That sprint is closed" }, { status: 409 }));
+  }
+  const sprintError = await checkSprintTarget(task.projectId, body.sprintId);
+  if (sprintError) {
+    return withCors(request, Response.json(sprintError, { status: 400 }));
+  }
+  const sprintData =
+    body.sprintId !== undefined && body.sprintId !== task.sprintId
+      ? { sprintId: body.sprintId, activityAt: new Date() }
+      : {};
 
   if (body.orderedIds !== undefined) {
     if (!body.orderedIds.includes(params.id!)) {
@@ -92,7 +119,10 @@ export async function action({ request, params }: Route.ActionArgs) {
       body.orderedIds.map((id, index) =>
         prisma.task.update({
           where: { id },
-          data: id === params.id ? { ...draggedData, position: index } : { position: index },
+          data:
+            id === params.id
+              ? { ...draggedData, ...sprintData, position: index }
+              : { position: index },
         }),
       ),
     );
@@ -103,6 +133,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         status: body.status,
         position: body.position,
         ...(body.status !== task.status ? { activityAt: new Date() } : {}),
+        ...sprintData,
       },
     });
   }

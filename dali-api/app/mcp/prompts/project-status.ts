@@ -51,7 +51,7 @@ export const PROJECT_STATUS_PROMPT: PromptDefinition = {
             "- **Headline** — one sentence summary.",
             "- **This sprint** — what shipped, what's in progress (use the Done + InReview tasks).",
             "- **Up next** — top 3 Todo items.",
-            "- **Risks / blockers** — items overdue or stuck. Be honest; if there are none, say so.",
+            "- **Risks / blockers** — tasks carried over from earlier sprints, or stuck. Be honest; if there are none, say so.",
             "- **Asks** — anything the audience can help with.",
             "",
             "Keep it under 200 words. Don't invent metrics that aren't in the tool output.",

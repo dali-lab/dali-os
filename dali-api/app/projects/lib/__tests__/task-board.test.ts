@@ -1,24 +1,13 @@
 import { describe, it, expect } from "vitest";
 import {
+  BOARD_STATUSES,
   buildTaskBoard,
   taskMatchesQuery,
   moveTaskInBoard,
   nextPositionInColumn,
-  resolveTermIdForDate,
-  isCarriedOverTask,
-  termIdsInRange,
-  currentSprintBand,
-  resolveSprintScope,
-  taskInSprintScope,
-  sprintPickerOptions,
-  taskTermIds,
-  openDependencies,
   isTaskFinished,
-  seedTaskLinks,
   type TaskCardModel,
-  type TermWindow,
 } from "../task-board";
-import type { TimelineTermSpan } from "../timeline-days";
 
 function task(
   id: string,
@@ -32,11 +21,9 @@ function task(
     status,
     priority: "Normal",
     position,
-    dueAt: null,
-    startsAt: null,
     epicId: null,
-    storyId: null,
-    dependsOn: [],
+    sprintId: null,
+    carryoverCount: 0,
     checklist: null,
     assignees: [],
     domain: null,
@@ -116,139 +103,6 @@ describe("nextPositionInColumn", () => {
   });
 });
 
-// Three consecutive terms with a one-week gap between each (the inter-term
-// break). Ascending, as the resolvers require.
-const TERMS: TermWindow[] = [
-  {
-    id: "spring",
-    startDate: new Date("2026-03-30T00:00:00.000Z"),
-    endDate: new Date("2026-06-01T00:00:00.000Z"),
-  },
-  {
-    id: "summer",
-    startDate: new Date("2026-06-22T00:00:00.000Z"),
-    endDate: new Date("2026-08-31T00:00:00.000Z"),
-  },
-  {
-    id: "fall",
-    startDate: new Date("2026-09-14T00:00:00.000Z"),
-    endDate: new Date("2026-12-01T00:00:00.000Z"),
-  },
-];
-
-describe("resolveTermIdForDate", () => {
-  it("resolves a date inside a term's window to that term", () => {
-    expect(resolveTermIdForDate(TERMS, new Date("2026-07-15T00:00:00Z"))).toBe(
-      "summer",
-    );
-  });
-
-  it("rolls a break-week date forward to the next term", () => {
-    // Between Spring's end and Summer's start — counts toward Summer.
-    expect(resolveTermIdForDate(TERMS, new Date("2026-06-10T00:00:00Z"))).toBe(
-      "summer",
-    );
-  });
-
-  it("resolves a date before every term to the first term", () => {
-    expect(resolveTermIdForDate(TERMS, new Date("2026-01-01T00:00:00Z"))).toBe(
-      "spring",
-    );
-  });
-
-  it("returns null for a date after the last term ends", () => {
-    expect(
-      resolveTermIdForDate(TERMS, new Date("2027-01-01T00:00:00Z")),
-    ).toBeNull();
-  });
-
-  it("treats the endDate boundary as still in-term", () => {
-    expect(resolveTermIdForDate(TERMS, TERMS[0].endDate)).toBe("spring");
-  });
-});
-
-describe("isCarriedOverTask", () => {
-  const dated = (
-    over: Partial<Pick<TaskCardModel, "status" | "startsAt" | "dueAt">>,
-  ): TaskCardModel => ({ ...task("t", "Todo", 0), ...over });
-  // The current sprint band starts here; anything unfinished before it carries.
-  const BOUNDARY = new Date("2026-10-15T00:00:00Z").getTime();
-
-  it("rolls unfinished past-term work forward (a past term is just an earlier cycle)", () => {
-    expect(
-      isCarriedOverTask(dated({ dueAt: "2026-07-15T00:00:00Z" }), BOUNDARY),
-    ).toBe(true);
-  });
-
-  it("also rolls forward work overdue from an earlier sprint this term (one rule, every zoom level)", () => {
-    expect(
-      isCarriedOverTask(dated({ dueAt: "2026-10-01T00:00:00Z" }), BOUNDARY),
-    ).toBe(true);
-  });
-
-  it("falls back to startsAt when dueAt is null", () => {
-    expect(
-      isCarriedOverTask(dated({ startsAt: "2026-07-15T00:00:00Z" }), BOUNDARY),
-    ).toBe(true);
-  });
-
-  it("leaves Done and Cancelled work where it happened", () => {
-    expect(
-      isCarriedOverTask(dated({ status: "Done", dueAt: "2026-07-15T00:00:00Z" }), BOUNDARY),
-    ).toBe(false);
-    expect(
-      isCarriedOverTask(dated({ status: "Cancelled", dueAt: "2026-07-15T00:00:00Z" }), BOUNDARY),
-    ).toBe(false);
-  });
-
-  it("ignores work dated on or after the boundary (current or future cycle)", () => {
-    expect(isCarriedOverTask(dated({ dueAt: "2026-10-15T00:00:00Z" }), BOUNDARY)).toBe(false);
-    expect(isCarriedOverTask(dated({ dueAt: "2026-10-20T00:00:00Z" }), BOUNDARY)).toBe(false);
-  });
-
-  it("returns false for undated work and a null boundary (no current term/sprint)", () => {
-    expect(isCarriedOverTask(dated({}), BOUNDARY)).toBe(false);
-    expect(isCarriedOverTask(dated({ dueAt: "2026-07-15T00:00:00Z" }), null)).toBe(false);
-  });
-});
-
-describe("termIdsInRange", () => {
-  it("returns terms whose windows overlap the span", () => {
-    expect(
-      termIdsInRange(
-        TERMS,
-        new Date("2026-05-15T00:00:00Z"),
-        new Date("2026-07-15T00:00:00Z"),
-      ),
-    ).toEqual(["spring", "summer"]);
-  });
-
-  it("treats a null start as open-ended on the left", () => {
-    expect(
-      termIdsInRange(TERMS, null, new Date("2026-06-25T00:00:00Z")),
-    ).toEqual(["spring", "summer"]);
-  });
-
-  it("treats a null end as open-ended on the right", () => {
-    expect(
-      termIdsInRange(TERMS, new Date("2026-08-01T00:00:00Z"), null),
-    ).toEqual(["summer", "fall"]);
-  });
-
-  it("returns nothing when both bounds are null (no dated span)", () => {
-    expect(termIdsInRange(TERMS, null, null)).toEqual([]);
-  });
-
-  it("returns a single term for a span fully inside one window", () => {
-    expect(
-      termIdsInRange(
-        TERMS,
-        new Date("2026-07-01T00:00:00Z"),
-        new Date("2026-07-10T00:00:00Z"),
-      ),
-    ).toEqual(["summer"]);
-  });
-});
 
 describe("taskMatchesQuery", () => {
   const searchable = (over: Partial<TaskCardModel>): TaskCardModel => ({
@@ -287,167 +141,27 @@ describe("taskMatchesQuery", () => {
   });
 });
 
-describe("computed sprint scope", () => {
-  // A 10-week fall term; sprints run Sep 7 (Sprint 1) in fixed 7-day bands.
-  const TERMS: TimelineTermSpan[] = [
-    { code: "26F", startsAt: "2026-09-07T00:00:00.000Z", endsAt: "2026-11-15T00:00:00.000Z" },
-  ];
-  const NOW = new Date("2026-09-16T12:00:00.000Z"); // in Sprint 2 (Sep 14–20)
-  const OUTSIDE = new Date("2026-08-01T12:00:00.000Z"); // before the term
 
-  it("finds the current sprint band, numbered off the term start", () => {
-    expect(currentSprintBand(TERMS, NOW)?.label).toBe("Sprint 2");
-    expect(currentSprintBand(TERMS, OUTSIDE)).toBeNull();
-    expect(currentSprintBand([], NOW)).toBeNull();
-  });
-
-  it("resolves an explicit, still-valid param and falls back otherwise", () => {
-    const key = String(currentSprintBand(TERMS, NOW)!.key);
-    expect(resolveSprintScope("all", TERMS, NOW)).toBe("all");
-    expect(resolveSprintScope("backlog", TERMS, NOW)).toBe("backlog");
-    expect(resolveSprintScope("current", TERMS, NOW)).toBe("current");
-    expect(resolveSprintScope(key, TERMS, NOW)).toBe(key);
-    // No param → the whole term, even while a sprint is running: a one-week
-    // default hid the rest of the term's work.
-    expect(resolveSprintScope(null, TERMS, NOW)).toBe("all");
-    // A key not aligned to any term's sprint grid → default.
-    expect(resolveSprintScope("123", TERMS, NOW)).toBe("all");
-    // `current` with nothing running → default.
-    expect(resolveSprintScope("current", TERMS, OUTSIDE)).toBe("all");
-  });
-
-  it("matches a task to a scope by its date span", () => {
-    const sprint2 = String(currentSprintBand(TERMS, NOW)!.key); // Sep 14–20
-    const inSprint2 = { startsAt: null, dueAt: "2026-09-17T00:00:00.000Z" };
-    const inSprint1 = { startsAt: null, dueAt: "2026-09-09T00:00:00.000Z" };
-    const undated = { startsAt: null, dueAt: null };
-    // A task spanning Sprint 1 into Sprint 2.
-    const spanning = { startsAt: "2026-09-09T00:00:00.000Z", dueAt: "2026-09-17T00:00:00.000Z" };
-
-    expect(taskInSprintScope(inSprint2, "all", TERMS, NOW)).toBe(true);
-    expect(taskInSprintScope(undated, "all", TERMS, NOW)).toBe(true);
-
-    expect(taskInSprintScope(inSprint2, "current", TERMS, NOW)).toBe(true);
-    expect(taskInSprintScope(inSprint1, "current", TERMS, NOW)).toBe(false);
-    expect(taskInSprintScope(undated, "current", TERMS, NOW)).toBe(false);
-
-    expect(taskInSprintScope(undated, "backlog", TERMS, NOW)).toBe(true);
-    expect(taskInSprintScope(inSprint2, "backlog", TERMS, NOW)).toBe(false);
-
-    expect(taskInSprintScope(inSprint2, sprint2, TERMS, NOW)).toBe(true);
-    expect(taskInSprintScope(inSprint1, sprint2, TERMS, NOW)).toBe(false);
-    expect(taskInSprintScope(spanning, sprint2, TERMS, NOW)).toBe(true);
-  });
-
-  it("lists the selected term's sprints current-first, nothing for all-terms", () => {
-    const opts = sprintPickerOptions(TERMS, "26F", NOW);
-    expect(opts).toHaveLength(10);
-    expect(opts[0].label).toBe("Sprint 2 · Current");
-    for (const o of opts) expect(Number.isFinite(Number(o.value))).toBe(true);
-    expect(sprintPickerOptions(TERMS, null, NOW)).toEqual([]);
-    expect(sprintPickerOptions(TERMS, "99W", NOW)).toEqual([]);
-  });
-});
-
-describe("taskTermIds", () => {
-  const span = (startsAt: string | null, dueAt: string | null) => ({ startsAt, dueAt });
-
-  it("returns the term a single-day task falls in", () => {
-    expect(taskTermIds(TERMS, span(null, "2026-07-15T00:00:00.000Z"))).toEqual(["summer"]);
-  });
-
-  it("counts a task toward every term its span touches", () => {
-    // Started late summer, due early fall: on both boards.
-    expect(
-      taskTermIds(TERMS, span("2026-08-20T00:00:00.000Z", "2026-09-20T00:00:00.000Z")),
-    ).toEqual(["summer", "fall"]);
-  });
-
-  it("rolls a break-week task forward to the next term", () => {
-    expect(taskTermIds(TERMS, span(null, "2026-09-05T00:00:00.000Z"))).toEqual(["fall"]);
-  });
-
-  it("puts a task due on a term's first day in that term despite a local-midnight offset", () => {
-    const offset: TermWindow[] = [
-      {
-        id: "summer",
-        startDate: new Date("2026-06-22T04:00:00.000Z"),
-        endDate: new Date("2026-08-31T04:00:00.000Z"),
-      },
-      {
-        id: "fall",
-        startDate: new Date("2026-09-14T04:00:00.000Z"),
-        endDate: new Date("2026-12-01T05:00:00.000Z"),
-      },
+describe("moveTaskInBoard — sprint scope", () => {
+  it("orders only among in-scope tasks, leaving other sprints' positions alone", () => {
+    const tasks = [
+      { ...task("a", "Todo", 0), sprintId: "S1" },
+      { ...task("b", "Todo", 1), sprintId: "S1" },
+      { ...task("x", "Todo", 0), sprintId: "S2" },
     ];
-    expect(taskTermIds(offset, span(null, "2026-09-14T00:00:00.000Z"))).toEqual(["fall"]);
-    expect(taskTermIds(offset, span(null, "2026-08-31T00:00:00.000Z"))).toEqual(["summer"]);
-  });
-
-  it("gives backdated work its past term", () => {
-    expect(taskTermIds(TERMS, span("2026-04-01T00:00:00.000Z", "2026-04-10T00:00:00.000Z"))).toEqual([
-      "spring",
-    ]);
-  });
-
-  it("returns nothing for an undated task", () => {
-    expect(taskTermIds(TERMS, span(null, null))).toEqual([]);
+    const res = moveTaskInBoard(tasks, "b", "Todo", 0, (t) => t.sprintId === "S1");
+    expect(res.orderedIds).toEqual(["b", "a"]);
+    expect(res.tasks.find((t) => t.id === "x")!.position).toBe(0);
   });
 });
 
-describe("openDependencies", () => {
-  it("returns only loaded, unfinished blockers", () => {
-    const byId = new Map([
-      ["a", task("a", "InProgress", 0)],
-      ["b", task("b", "Done", 0)],
-      ["c", task("c", "Cancelled", 0)],
-    ]);
-    // "gone" isn't loaded (archived work is always finished), so it doesn't block.
-    const open = openDependencies(["a", "b", "c", "gone"], byId, isTaskFinished);
-    expect(open.map((t) => t.id)).toEqual(["a"]);
+describe("BOARD_STATUSES / isTaskFinished", () => {
+  it("draws no Backlog column", () => {
+    expect(BOARD_STATUSES).toEqual(["Todo", "InProgress", "InReview", "Done", "Cancelled"]);
   });
-});
-
-describe("seedTaskLinks", () => {
-  const stories = [
-    { id: "s1", epicId: "e1" },
-    { id: "s2", epicId: "e2" },
-  ];
-
-  it("derives the epic from a seeded story", () => {
-    expect(seedTaskLinks(stories, { storyId: "s2" })).toEqual({
-      epicId: "e2",
-      storyId: "s2",
-    });
-  });
-
-  it("lets the story's own epic win over a conflicting epic seed", () => {
-    // A story pins its epic — the create endpoint overrides epicId the same
-    // way, so the form must never open showing s1 under e2.
-    expect(seedTaskLinks(stories, { epicId: "e2", storyId: "s1" })).toEqual({
-      epicId: "e1",
-      storyId: "s1",
-    });
-  });
-
-  it("seeds the epic alone when no story is given", () => {
-    expect(seedTaskLinks(stories, { epicId: "e1" })).toEqual({
-      epicId: "e1",
-      storyId: "",
-    });
-  });
-
-  it("drops a story the options list doesn't know, keeping the epic seed", () => {
-    expect(seedTaskLinks(stories, { epicId: "e1", storyId: "gone" })).toEqual({
-      epicId: "e1",
-      storyId: "",
-    });
-  });
-
-  it("blanks both when nothing is seeded", () => {
-    expect(seedTaskLinks(stories, { epicId: null, storyId: null })).toEqual({
-      epicId: "",
-      storyId: "",
-    });
+  it("treats Done and Cancelled as finished", () => {
+    expect(isTaskFinished({ status: "Done" })).toBe(true);
+    expect(isTaskFinished({ status: "Cancelled" })).toBe(true);
+    expect(isTaskFinished({ status: "InReview" })).toBe(false);
   });
 });

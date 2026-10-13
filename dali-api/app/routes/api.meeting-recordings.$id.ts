@@ -223,7 +223,7 @@ export async function action({ request, params }: Route.ActionArgs) {
             title: item.title,
             description,
             assigneeUserIds: item.assigneeId ? [item.assigneeId] : undefined,
-            dueAt: item.dueAt,
+            forDay: item.dueAt,
             sourceRecordingId: rec.id,
           });
         } catch (err) {

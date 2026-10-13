@@ -55,10 +55,13 @@ beforeEach(() => {
 });
 
 describe("update_task schema additions", () => {
-  it("description and startsAt appear in inputSchema", () => {
+  it("offers description and sprintId, and no date fields", () => {
     const props = UPDATE_TASK_TOOL.inputSchema.properties;
     expect(props).toHaveProperty("description");
-    expect(props).toHaveProperty("startsAt");
+    expect(props).toHaveProperty("sprintId");
+    expect(props).not.toHaveProperty("startsAt");
+    expect(props).not.toHaveProperty("dueAt");
+    expect(props).not.toHaveProperty("storyId");
   });
 
   it("sets description to trimmed value", async () => {
@@ -83,38 +86,6 @@ describe("update_task schema additions", () => {
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ description: null }) }),
     );
-  });
-
-  it("sets startsAt from ISO string", async () => {
-    const update = vi.fn();
-    mockPrisma.$transaction.mockImplementation(async (fn: unknown) => {
-      const cb = fn as (tx: typeof prisma) => Promise<unknown>;
-      return cb({ task: { update }, taskAssignee: { deleteMany: vi.fn(), createMany: vi.fn() } } as unknown as typeof prisma);
-    });
-    await runUpdateTask("u1", { taskId: "t1", startsAt: "2026-09-01T00:00:00.000Z" });
-    expect(update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ startsAt: new Date("2026-09-01T00:00:00.000Z") }),
-      }),
-    );
-  });
-
-  it("clears startsAt with empty string", async () => {
-    const update = vi.fn();
-    mockPrisma.$transaction.mockImplementation(async (fn: unknown) => {
-      const cb = fn as (tx: typeof prisma) => Promise<unknown>;
-      return cb({ task: { update }, taskAssignee: { deleteMany: vi.fn(), createMany: vi.fn() } } as unknown as typeof prisma);
-    });
-    await runUpdateTask("u1", { taskId: "t1", startsAt: "" });
-    expect(update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ startsAt: null }) }),
-    );
-  });
-
-  it("rejects invalid startsAt", async () => {
-    await expect(
-      runUpdateTask("u1", { taskId: "t1", startsAt: "not-a-date" }),
-    ).rejects.toMatchObject({ status: 400 });
   });
 
   it("triggers GH sync when description changes on a linked task", async () => {

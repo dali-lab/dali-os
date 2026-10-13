@@ -7,11 +7,10 @@ import {
 } from "~/lib/week-events";
 import { expandOccurrences, noteForOccurrence } from "~/lib/meeting-occurrences";
 import { resolveUserTimeZone } from "~/lib/timezone";
-import type { TimelineEpic } from "~/projects/components/EpicsTimeline";
+import type { TimelineSprint } from "~/projects/components/EpicsTimeline";
 
 // The month grid on a project's Meetings tab: everything booked on the
-// project's calendar identity, plus the epic and story deadlines the planning
-// timeline draws, on one grid.
+// project's calendar identity, plus its sprint boundaries, on one grid.
 //
 // Meetings come from our own ScheduledMeeting rows rather than from Google.
 // Every meeting records the calendar identity that owns it
@@ -42,11 +41,11 @@ export async function buildProjectCalendar(opts: {
   viewerId: string;
   projectId: string;
   calendarEmail: string | null;
-  /** Already built for the planning timeline — the deadline source. */
-  epics: TimelineEpic[];
+  /** Already built for the planning timeline. */
+  sprints: TimelineSprint[];
   now?: Date;
 }): Promise<ProjectCalendar> {
-  const { request, viewerId, projectId, calendarEmail, epics } = opts;
+  const { request, viewerId, projectId, calendarEmail, sprints } = opts;
   const now = opts.now ?? new Date();
 
   const viewer = await prisma.user.findUnique({
@@ -116,30 +115,14 @@ export async function buildProjectCalendar(opts: {
     }
   }
 
-  // Deadlines are the *end* of a span: an epic or story that finishes inside
-  // the month lands on its last day. A bar that merely runs through the month
-  // has no date here — the timeline is where a span is read.
-  for (const epic of epics) {
-    const epicEnd = epic.endsAt ? toMonthEvent(
-      { id: `epic:${epic.id}`, kind: "epic", label: epic.title, start: new Date(epic.endsAt), allDay: true },
-      dayIndexByKey,
-      timeZone,
-    ) : null;
-    if (epicEnd) events.push(epicEnd);
-
-    for (const story of epic.stories) {
-      const storyEnd = toMonthEvent(
-        {
-          id: `story:${story.id}`,
-          kind: "story",
-          label: story.title,
-          start: new Date(story.endsAt),
-          allDay: true,
-        },
+  for (const sp of sprints) {
+    for (const [edge, iso] of [["starts", sp.startsOn], ["ends", sp.endsOn]] as const) {
+      const mapped = toMonthEvent(
+        { id: `sprint:${sp.id}:${edge}`, kind: "sprint", label: `${sp.label} ${edge}`, start: new Date(iso), allDay: true },
         dayIndexByKey,
         timeZone,
       );
-      if (storyEnd) events.push(storyEnd);
+      if (mapped) events.push(mapped);
     }
   }
 

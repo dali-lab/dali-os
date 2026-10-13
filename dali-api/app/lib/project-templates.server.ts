@@ -3,12 +3,11 @@
 // ProjectTemplate (no live FK back to the source project). We deliberately do
 // NOT clone collab docs (epic/task descriptionDocId) — those are left blank for
 // the new project to author; only plain-text descriptions and checklists carry
-// over. Sprints are the computed term grid, not stored rows, so they aren't
-// captured; instantiated tasks land in the backlog until they're dated.
+// over. A task's sprint travels as an offset into the project's sprint list,
+// re-applied to the new project's own sprints.
 
 import { prisma } from "~/lib/db";
 import type {
-  EpicStatus,
   TaskStatus,
   Priority,
   UserStoryStatus,
@@ -18,12 +17,14 @@ import type {
 import { githubTeamSlug } from "~/lib/github-slug";
 import { ensureProjectGroup } from "~/lib/groups";
 import { duplicatePage } from "~/lib/page-copy.server";
+import { ensureSprints, getOrCreateGeneralEpic } from "~/projects/lib/sprints.server";
 
 // ─── Blueprint shape (version 1) ─────────────────────────────────────────────
 // Refs (`e0`, …) are blueprint-local ids used to wire tasks→epic without leaking
 // real cuids.
 
-export const PROJECT_BLUEPRINT_VERSION = 1;
+// v2 adds BlueprintTask.sprintOffset; v1 blueprints instantiate into the backlog.
+export const PROJECT_BLUEPRINT_VERSION = 2;
 
 export interface BlueprintStory {
   title: string;
@@ -39,7 +40,6 @@ export interface BlueprintEpic {
   ref: string;
   title: string;
   description: string | null;
-  status: EpicStatus;
   stories: BlueprintStory[];
 }
 
@@ -52,6 +52,8 @@ export interface BlueprintTask {
   epicRef: string | null;
   // Domains are lab-global, so the id carries over verbatim.
   domainId: string | null;
+  // 0 = the project's first sprint; null/absent = the backlog.
+  sprintOffset?: number | null;
 }
 
 export interface ProjectBlueprint {
@@ -63,7 +65,7 @@ export interface ProjectBlueprint {
 // ─── Capture ─────────────────────────────────────────────────────────────────
 
 export async function captureProjectBlueprint(projectId: string): Promise<ProjectBlueprint> {
-  const [epics, tasks] = await Promise.all([
+  const [epics, tasks, sprints] = await Promise.all([
     prisma.epic.findMany({
       where: { projectId },
       orderBy: { position: "asc" },
@@ -73,7 +75,13 @@ export async function captureProjectBlueprint(projectId: string): Promise<Projec
       where: { projectId, archivedAt: null },
       orderBy: [{ status: "asc" }, { position: "asc" }],
     }),
+    prisma.sprint.findMany({
+      where: { projectId },
+      orderBy: { startsOn: "asc" },
+      select: { id: true },
+    }),
   ]);
+  const sprintIndex = new Map(sprints.map((sp, i) => [sp.id, i]));
 
   const epicRefById = new Map<string, string>();
   epics.forEach((e, i) => epicRefById.set(e.id, `e${i}`));
@@ -84,7 +92,6 @@ export async function captureProjectBlueprint(projectId: string): Promise<Projec
       ref: epicRefById.get(e.id)!,
       title: e.title,
       description: e.description,
-      status: e.status,
       stories: e.stories.map((s) => ({
         title: s.title,
         notes: s.notes,
@@ -103,6 +110,7 @@ export async function captureProjectBlueprint(projectId: string): Promise<Projec
       checklist: t.checklist ?? null,
       epicRef: t.epicId ? (epicRefById.get(t.epicId) ?? null) : null,
       domainId: t.domainId,
+      sprintOffset: t.sprintId ? (sprintIndex.get(t.sprintId) ?? null) : null,
     })),
   };
 }
@@ -166,6 +174,13 @@ export async function instantiateProjectTemplate(input: {
     select: { id: true, name: true },
   });
 
+  await ensureSprints(project.id);
+  const newSprints = await prisma.sprint.findMany({
+    where: { projectId: project.id },
+    orderBy: { startsOn: "asc" },
+    select: { id: true },
+  });
+
   await prisma.$transaction(async (tx) => {
     // Epics first, so tasks can point at them.
     const epicIdByRef = new Map<string, string>();
@@ -175,7 +190,6 @@ export async function instantiateProjectTemplate(input: {
           projectId: project.id,
           title: e.title,
           description: e.description,
-          status: e.status,
           position: i,
           stories: {
             create: e.stories.map((s, si) => ({
@@ -195,23 +209,29 @@ export async function instantiateProjectTemplate(input: {
       epicIdByRef.set(e.ref, epic.id);
     }
 
-    // Tasks, remapping epic refs; checklist JSON carries verbatim. Position is
-    // per (status) column, in blueprint order. Tasks land undated (backlog) —
-    // their sprint is derived from dates the new project will set.
-    const posByStatus = new Map<string, number>();
+    // Every task needs an epic; a blueprint task without one files under General.
+    let generalId: string | null = null;
+    const posByColumn = new Map<string, number>();
     for (const t of blueprint.tasks) {
-      const pos = posByStatus.get(t.status) ?? 0;
-      posByStatus.set(t.status, pos + 1);
+      const status: TaskStatus = t.status === "Backlog" ? "Todo" : t.status;
+      const sprintId =
+        t.sprintOffset != null ? (newSprints[t.sprintOffset]?.id ?? null) : null;
+      const column = `${sprintId ?? "backlog"}:${status}`;
+      const pos = posByColumn.get(column) ?? 0;
+      posByColumn.set(column, pos + 1);
+      let epicId = t.epicRef ? (epicIdByRef.get(t.epicRef) ?? null) : null;
+      epicId ??= generalId ??= await getOrCreateGeneralEpic(project.id, tx);
       await tx.task.create({
         data: {
           projectId: project.id,
           title: t.title,
           description: t.description,
-          status: t.status,
+          status,
           priority: t.priority,
           position: pos,
           checklist: (t.checklist ?? undefined) as object | undefined,
-          epicId: t.epicRef ? (epicIdByRef.get(t.epicRef) ?? null) : null,
+          epicId,
+          sprintId,
           domainId: t.domainId,
           createdById: input.createdBy,
         },

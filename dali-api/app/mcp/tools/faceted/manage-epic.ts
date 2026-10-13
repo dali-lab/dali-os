@@ -10,9 +10,9 @@ import { DELETE_EPIC_TOOL, runDeleteEpic } from "../delete-epic";
 const MANAGE_EPIC_DEF = {
   name: "manage_epic",
   description: `Manage project epics. Pass \`action\` to select the operation:
-- \`create\`: create an epic. Requires: projectId, title.
-- \`update\`: edit an epic's fields (title, description, status, dates, target term). Requires: epicId.
-- \`delete\`: delete an epic; sprints and tasks have their epicId nulled. Requires: epicId.`,
+- \`create\`: create an epic (a dateless bucket of tasks). Requires: projectId, title.
+- \`update\`: edit an epic's title/description, or cancel/reopen it (\`cancelled\`). Status and timeline span follow its tasks. Requires: epicId.
+- \`delete\`: delete an epic; its tasks move to the project's General epic. Requires: epicId.`,
   inputSchema: {
     type: "object" as const,
     properties: {

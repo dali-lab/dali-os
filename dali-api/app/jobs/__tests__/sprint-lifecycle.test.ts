@@ -1,6 +1,8 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db", () => ({
+  prisma: { project: { findMany: vi.fn() }, sprint: { findFirst: vi.fn() } },
+}));
 vi.mock("~/slack/lib/slack-client", () => ({
   slackConfigured: vi.fn().mockReturnValue(true),
   postMessage: vi.fn().mockResolvedValue({ ts: "1" }),
@@ -11,138 +13,150 @@ vi.mock("~/lib/notify.server", () => ({
 vi.mock("~/projects/lib/project-members.server", () => ({
   currentProjectParticipantIds: vi.fn().mockResolvedValue(new Set(["u1", "u2"])),
 }));
+vi.mock("~/jobs/job-slack", () => ({ jobChannelPostAllowed: vi.fn().mockReturnValue(true) }));
+vi.mock("~/projects/lib/sprints.server", () => ({
+  ensureSprints: vi.fn().mockResolvedValue(undefined),
+  closeEndedSprints: vi.fn().mockResolvedValue([]),
+}));
 
 import { prisma } from "~/lib/db";
 import { postMessage } from "~/slack/lib/slack-client";
 import { notify } from "~/lib/notify.server";
-import { currentProjectParticipantIds } from "~/projects/lib/project-members.server";
-import { runSprintLifecycle } from "~/jobs/sprint-lifecycle.server";
+import { closeEndedSprints, ensureSprints } from "~/projects/lib/sprints.server";
+import { runSprintLifecycle, wrapUpSummary } from "~/jobs/sprint-lifecycle.server";
 
-const mockPrisma = prisma as unknown as Record<
-  string,
-  Record<string, ReturnType<typeof vi.fn>>
->;
-const mockPost = postMessage as unknown as ReturnType<typeof vi.fn>;
-const mockNotify = notify as unknown as ReturnType<typeof vi.fn>;
-const mockParticipants =
-  currentProjectParticipantIds as unknown as ReturnType<typeof vi.fn>;
+const mocked = (f: unknown) => f as ReturnType<typeof vi.fn>;
+const findProjects = mocked(prisma.project.findMany);
+const findSprint = mocked(prisma.sprint.findFirst);
 
-// Term: Jul 1 → Sep 1. Sprint 1 = Jul 1–7, Sprint 2 = Jul 8–14, Sprint 3 = Jul 15…
-// NOW = Jul 15 → yesterday Jul 14 = the last day of Sprint 2, so Sprint 2 just
-// closed. The band key is the UTC midnight of Jul 8.
-const NOW = new Date("2026-07-15T12:00:00Z");
-const MID = new Date("2026-07-17T12:00:00Z"); // yesterday (Jul 16) is mid-sprint
-const SPRINT2_KEY = Date.UTC(2026, 6, 8);
+// 10:00 ET Tue 2026-10-13 (after the nudge hour) and 08:00 ET (before it).
+const MORNING = new Date("2026-10-13T14:00:00Z");
+const EARLY = new Date("2026-10-13T12:00:00Z");
+const run = (now = MORNING) => runSprintLifecycle({ now, lastSuccessAt: null, settings: {} });
 
-function activeProject(overrides: Record<string, unknown> = {}) {
-  return {
-    id: "p1",
-    name: "DALI OS",
-    slackChannelId: "C123",
-    projectTerms: [
-      {
-        term: {
-          startDate: new Date("2026-07-01T00:00:00Z"),
-          endDate: new Date("2026-09-01T00:00:00Z"),
-        },
-      },
-    ],
-    ...overrides,
-  };
-}
+const project = (extra = {}) => ({
+  id: "p1",
+  name: "DALI OS",
+  status: "Active",
+  slackChannelId: "C1",
+  ...extra,
+});
+
+const closed = (extra = {}) => ({
+  id: "s3",
+  number: 3,
+  termId: "26F",
+  startsOn: new Date("2026-09-30"),
+  endsOn: new Date("2026-10-06"),
+  planned: 4,
+  completed: 3,
+  carried: 1,
+  nextSprintId: "s4",
+  ...extra,
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
-  process.env.NOTIFY_SLACK_DM_OVERRIDE = "1"; // non-prod test env
-  mockPrisma.project.findMany.mockResolvedValue([activeProject()]);
-  mockPrisma.task.findMany.mockResolvedValue([{ status: "Done" }, { status: "Todo" }]);
-  mockParticipants.mockResolvedValue(new Set(["u1", "u2"]));
-  mockNotify.mockResolvedValue({ inApp: 2, emailed: 0, slackDmed: 0 });
+  findProjects.mockResolvedValue([project()]);
+  findSprint.mockResolvedValue(null);
+  mocked(notify).mockResolvedValue({ inApp: 2, emailed: 0, slackDmed: 0 });
+  mocked(closeEndedSprints).mockResolvedValue([]);
 });
 
-afterEach(() => {
-  delete process.env.NOTIFY_SLACK_DM_OVERRIDE;
+describe("wrapUpSummary", () => {
+  it("mentions rolled work only when there is some", () => {
+    expect(wrapUpSummary({ planned: 1, completed: 1, carried: 0 })).toBe("1 of 1 task done.");
+    expect(wrapUpSummary({ planned: 4, completed: 3, carried: 1 })).toBe(
+      "3 of 4 tasks done. 1 rolled to the next sprint.",
+    );
+  });
 });
 
-describe("sprint-lifecycle (per-sprint wrap-up)", () => {
-  it("notifies members and posts to Slack the day after a sprint ends", async () => {
-    const result = await runSprintLifecycle({ now: NOW, lastSuccessAt: null, settings: {} });
-
-    expect(mockParticipants).toHaveBeenCalledWith("p1");
-    expect(mockNotify).toHaveBeenCalledTimes(1);
-    const arg = mockNotify.mock.calls[0][0];
-    expect(arg.eventType).toBe("project.sprint_closed");
-    expect(arg.message.vars.itemTitle).toBe("Sprint 2");
-    expect(arg.message.vars.contextName).toBe("DALI OS");
-    expect(arg.message.vars.itemDetail).toContain("1 of 2 tasks done");
-    expect(arg.message.link).toBe("/projects/p1?tab=board");
-    expect(arg.message.dedupKey).toBe(`sprint-closed:p1:${SPRINT2_KEY}`);
-    expect(arg.recipients.map((r: { userId: string }) => r.userId).sort()).toEqual(["u1", "u2"]);
-
-    expect(mockPost).toHaveBeenCalledTimes(1);
-    const [channel, text] = mockPost.mock.calls[0];
-    expect(channel).toBe("C123");
-    expect(text).toContain("*Sprint 2* wrapped up");
-    expect(text).toContain("1 of 2 tasks done");
-    expect(result.items).toBe(1);
+describe("runSprintLifecycle", () => {
+  it("ensures and closes sprints for every selected project", async () => {
+    await run();
+    expect(ensureSprints).toHaveBeenCalledWith("p1", MORNING);
+    expect(closeEndedSprints).toHaveBeenCalledWith("p1", MORNING);
   });
 
-  it("does nothing when no sprint ended yesterday", async () => {
-    const result = await runSprintLifecycle({ now: MID, lastSuccessAt: null, settings: {} });
-    expect(mockNotify).not.toHaveBeenCalled();
-    expect(mockPost).not.toHaveBeenCalled();
-    expect(result.items).toBe(0);
+  it("posts one wrap-up (in-app + Slack) for the latest closed sprint", async () => {
+    mocked(closeEndedSprints).mockResolvedValue([closed({ id: "s2", number: 2 }), closed()]);
+    const res = await run();
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(mocked(notify).mock.calls[0]![0]).toMatchObject({
+      eventType: "project.sprint_closed",
+      message: {
+        vars: { itemTitle: "Sprint 3", contextName: "DALI OS", itemDetail: "3 of 4 tasks done. 1 rolled to the next sprint." },
+        dedupKey: "sprint-closed:p1:s3",
+      },
+      recipients: [{ userId: "u1" }, { userId: "u2" }],
+    });
+    expect(postMessage).toHaveBeenCalledWith("C1", expect.stringContaining("*Sprint 3* wrapped up"));
+    expect(res.items).toBe(1);
   });
 
-  it("skips a re-fired tick (dedupKey already claimed → no fresh in-app rows)", async () => {
-    mockNotify.mockResolvedValue({ inApp: 0, emailed: 0, slackDmed: 0 });
-    const result = await runSprintLifecycle({ now: NOW, lastSuccessAt: null, settings: {} });
-    expect(mockNotify).toHaveBeenCalledTimes(1);
-    expect(mockPost).not.toHaveBeenCalled(); // gated on the fresh dispatch
-    expect(result.items).toBe(0);
+  it("skips Slack when the dedupKey was already claimed", async () => {
+    mocked(closeEndedSprints).mockResolvedValue([closed()]);
+    mocked(notify).mockResolvedValue({ inApp: 0, emailed: 0, slackDmed: 0 });
+    await run();
+    expect(postMessage).not.toHaveBeenCalled();
   });
 
-  it("skips the wrap-up entirely when nobody is currently on the project", async () => {
-    mockParticipants.mockResolvedValue(new Set());
-    const result = await runSprintLifecycle({ now: NOW, lastSuccessAt: null, settings: {} });
-    expect(mockNotify).not.toHaveBeenCalled();
-    expect(mockPost).not.toHaveBeenCalled();
-    expect(result.items).toBe(0);
+  it("does not announce an empty sprint", async () => {
+    mocked(closeEndedSprints).mockResolvedValue([closed({ planned: 0, completed: 0, carried: 0 })]);
+    await run();
+    expect(notify).not.toHaveBeenCalled();
   });
 
-  it("skips an empty sprint (no tasks due in it)", async () => {
-    mockPrisma.task.findMany.mockResolvedValue([]);
-    const result = await runSprintLifecycle({ now: NOW, lastSuccessAt: null, settings: {} });
-    expect(mockNotify).not.toHaveBeenCalled();
-    expect(result.items).toBe(0);
+  it("closes but stays quiet for inactive projects (backfill sweep)", async () => {
+    findProjects.mockResolvedValue([project({ status: "Completed" })]);
+    mocked(closeEndedSprints).mockResolvedValue([closed()]);
+    await run();
+    expect(closeEndedSprints).toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
+    expect(findSprint).not.toHaveBeenCalled();
   });
 
-  it("skips the Slack post when the project has no channel", async () => {
-    mockPrisma.project.findMany.mockResolvedValue([activeProject({ slackChannelId: null })]);
-    const result = await runSprintLifecycle({ now: NOW, lastSuccessAt: null, settings: {} });
-    expect(mockNotify).toHaveBeenCalledTimes(1);
-    expect(mockPost).not.toHaveBeenCalled();
-    expect(result.items).toBe(1);
+  it("nudges each assignee with their unfinished count on the sprint's last day", async () => {
+    findSprint.mockResolvedValue({
+      id: "s4",
+      number: 4,
+      tasks: [
+        { assignees: [{ userId: "u1" }, { userId: "u2" }] },
+        { assignees: [{ userId: "u1" }] },
+        { assignees: [] },
+      ],
+    });
+    await run();
+    expect(findSprint.mock.calls[0]![0].where).toMatchObject({
+      projectId: "p1",
+      closedAt: null,
+      endsOn: new Date("2026-10-13T00:00:00Z"),
+    });
+    const calls = mocked(notify).mock.calls.map((c) => c[0]);
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toMatchObject({
+      eventType: "project.sprint_ending",
+      message: { vars: { itemDetail: "Ends today — 2 unfinished tasks." }, dedupKey: "sprint-ending:s4:u1" },
+      recipients: [{ userId: "u1" }],
+    });
+    expect(calls[1]).toMatchObject({
+      message: { vars: { itemDetail: "Ends today — 1 unfinished task." }, dedupKey: "sprint-ending:s4:u2" },
+    });
   });
 
-  it("gates the channel post to prod without the override", async () => {
-    delete process.env.NOTIFY_SLACK_DM_OVERRIDE;
-    const result = await runSprintLifecycle({ now: NOW, lastSuccessAt: null, settings: {} });
-    expect(mockNotify).toHaveBeenCalledTimes(1);
-    expect(mockPost).not.toHaveBeenCalled();
-    expect(result.items).toBe(1);
+  it("holds the nudge until the morning", async () => {
+    await run(EARLY);
+    expect(findSprint).not.toHaveBeenCalled();
   });
 
-  it("keeps going through the batch when one project's wrap-up throws", async () => {
-    mockPrisma.project.findMany.mockResolvedValue([
-      activeProject(),
-      activeProject({ id: "p2" }),
-    ]);
-    mockPrisma.task.findMany
-      .mockRejectedValueOnce(new Error("boom"))
-      .mockResolvedValue([{ status: "Done" }]);
-    const result = await runSprintLifecycle({ now: NOW, lastSuccessAt: null, settings: {} });
-    expect(result.items).toBe(1);
-    expect(result.note).toContain("1 wrap-up(s) failed");
+  it("isolates a failing project", async () => {
+    findProjects.mockResolvedValue([project({ id: "bad" }), project({ id: "p2" })]);
+    mocked(ensureSprints).mockRejectedValueOnce(new Error("boom"));
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await run();
+    expect(closeEndedSprints).toHaveBeenCalledWith("p2", MORNING);
+    expect(res.note).toMatch(/1 project/);
+    err.mockRestore();
   });
 });

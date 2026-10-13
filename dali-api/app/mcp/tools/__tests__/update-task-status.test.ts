@@ -37,6 +37,45 @@ describe("update_task_status", () => {
     ).rejects.toBeInstanceOf(UpdateTaskStatusError);
   });
 
+  it("rejects the retired Backlog status", async () => {
+    await expect(
+      runUpdateTaskStatus("u1", { taskId: "t1", status: "Backlog" }),
+    ).rejects.toMatchObject({ status: 400 });
+  });
+
+  it("refuses to move a task inside a closed sprint", async () => {
+    mockPrisma.task.findUnique.mockResolvedValue({
+      id: "t1",
+      status: "Todo",
+      projectId: "p1",
+      sprintId: "old",
+      sprint: { closedAt: new Date() },
+      assignees: [{ userId: "u1" }],
+    });
+    await expect(
+      runUpdateTaskStatus("u1", { taskId: "t1", status: "Done" }),
+    ).rejects.toMatchObject({ status: 409 });
+  });
+
+  it("appends within the task's own sprint column", async () => {
+    mockPrisma.task.findUnique.mockResolvedValue({
+      id: "t1",
+      status: "Todo",
+      projectId: "p1",
+      sprintId: "s4",
+      sprint: { closedAt: null },
+      assignees: [{ userId: "u1" }],
+    });
+    mockPrisma.task.aggregate.mockResolvedValue({ _max: { position: 1 } });
+    mockPrisma.task.update.mockResolvedValue({});
+    await runUpdateTaskStatus("u1", { taskId: "t1", status: "InProgress" });
+    expect(mockPrisma.task.aggregate.mock.calls[0]![0].where).toEqual({
+      projectId: "p1",
+      status: "InProgress",
+      sprintId: "s4",
+    });
+  });
+
   it("rejects when task is missing", async () => {
     mockPrisma.task.findUnique.mockResolvedValue(null);
     await expect(
@@ -57,7 +96,7 @@ describe("update_task_status", () => {
     expect(out).toMatchObject({ ok: true, previousStatus: "Todo", newStatus: "Done" });
     expect(mockPrisma.task.update).toHaveBeenCalledWith({
       where: { id: "t1" },
-      data: { status: "Done", position: 5 },
+      data: { status: "Done", position: 5, activityAt: expect.any(Date) },
     });
     // Core should NOT be consulted when the caller is already an assignee.
     expect(isCore).not.toHaveBeenCalled();
@@ -77,7 +116,7 @@ describe("update_task_status", () => {
     expect(out.newStatus).toBe("InReview");
     expect(mockPrisma.task.update).toHaveBeenCalledWith({
       where: { id: "t1" },
-      data: { status: "InReview", position: 0 },
+      data: { status: "InReview", position: 0, activityAt: expect.any(Date) },
     });
   });
 

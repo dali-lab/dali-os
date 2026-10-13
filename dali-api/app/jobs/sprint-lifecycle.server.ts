@@ -1,131 +1,132 @@
-// Sprint lifecycle: a per-sprint wrap-up.
+// Sprint lifecycle. Per project: materialize sprints (and run the one-time
+// task backfill), close sprints whose last day has passed (snapshot, rollover,
+// wrap-up), and nudge assignees on the morning of a sprint's last day.
 //
-// Sprints are not stored rows — a sprint is a fixed one-week band anchored to
-// each term a project runs (Sprint 1..N per term), the same grid the board and
-// timeline draw. So there is nothing to "activate" or "close": a sprint simply
-// ends when its last day passes. On the day after a sprint's last day, this job
-// posts a wrap-up (done/total of the tasks that were due in it) to the project's
-// members (in-app + desktop banner, preference-gated) and Slack channel.
-//
-// Idempotency comes from notify()'s dedupKey (sprint-closed:<projectId>:<key>),
-// not a CAS row-claim: a re-fired tick creates no new in-app rows, and the Slack
-// post is gated on that fresh dispatch so it fires exactly once per sprint.
+// Idempotency: closing is a closedAt CAS (closeEndedSprints); wrap-ups and
+// nudges go through notify() dedupKeys, and the Slack post rides the fresh
+// in-app dispatch so a re-fired tick posts nothing.
 
 import { prisma } from "~/lib/db";
 import { postMessage, slackConfigured } from "~/slack/lib/slack-client";
 import { notify } from "~/lib/notify.server";
 import { currentProjectParticipantIds } from "~/projects/lib/project-members.server";
 import { jobChannelPostAllowed } from "~/jobs/job-slack";
-import { DAY, SPRINT_DAYS, utcDayOf, localTodayUtcDay } from "~/projects/lib/timeline-days";
+import { closeEndedSprints, ensureSprints, type ClosedSprint } from "~/projects/lib/sprints.server";
+import { labHour, labTodayUtcDay } from "~/lib/timezone";
 import type { JobContext, JobResult } from "~/jobs/registry";
 
-const SPRINT_STEP = SPRINT_DAYS * DAY;
-const BATCH = 50;
+const BATCH = 200;
+export const NUDGE_HOUR = 9;
 
-type TermWindow = { startsAt: string; endsAt: string };
-
-/**
- * The sprint band that ended *yesterday* for a project, given its term windows —
- * the sprint that just closed and is worth a wrap-up today. Numbered from 1 off
- * its term's start (matching the timeline). Null when no band ended yesterday.
- */
-export function sprintClosedYesterday(
-  terms: TermWindow[],
-  todayUtc: number,
-): { key: number; label: string; start: number; end: number } | null {
-  const yesterday = todayUtc - DAY;
-  for (const t of terms) {
-    const start = utcDayOf(t.startsAt);
-    const end = utcDayOf(t.endsAt);
-    if (yesterday < start || yesterday > end) continue;
-    const n = Math.floor((yesterday - start) / SPRINT_STEP);
-    const key = start + n * SPRINT_STEP;
-    const bandEnd = Math.min(key + SPRINT_STEP - DAY, end);
-    if (bandEnd === yesterday) return { key, label: `Sprint ${n + 1}`, start: key, end: bandEnd };
-  }
-  return null;
+export function wrapUpSummary(s: Pick<ClosedSprint, "planned" | "completed" | "carried">): string {
+  const base = `${s.completed} of ${s.planned} task${s.planned === 1 ? "" : "s"} done.`;
+  return s.carried > 0 ? `${base} ${s.carried} rolled to the next sprint.` : base;
 }
 
-export async function runSprintLifecycle({ now }: JobContext): Promise<JobResult> {
-  const todayUtc = localTodayUtcDay(now);
-  const projects = await prisma.project.findMany({
-    where: { status: "Active" },
-    take: BATCH,
+async function postWrapUp(
+  project: { id: string; name: string; slackChannelId: string | null },
+  sprint: ClosedSprint,
+): Promise<boolean> {
+  if (sprint.planned === 0) return false;
+  const summary = wrapUpSummary(sprint);
+  const label = `Sprint ${sprint.number}`;
+  const memberIds = await currentProjectParticipantIds(project.id);
+  if (memberIds.size === 0) return false;
+  const res = await notify({
+    eventType: "project.sprint_closed",
+    message: {
+      vars: { itemTitle: label, contextName: project.name, itemDetail: summary },
+      link: `/projects/${project.id}?tab=board&sprint=${sprint.id}`,
+      dedupKey: `sprint-closed:${project.id}:${sprint.id}`,
+    },
+    recipients: [...memberIds].map((userId) => ({ userId })),
+  });
+  const fresh = res.inApp > 0;
+  if (fresh && project.slackChannelId && slackConfigured() && jobChannelPostAllowed()) {
+    await postMessage(
+      project.slackChannelId,
+      `:checkered_flag: *${label}* wrapped up. ${summary}`,
+    ).catch((err) => console.error(`[jobs] project ${project.id}: slack post failed`, err));
+  }
+  return fresh;
+}
+
+async function nudgeEndingSprint(
+  project: { id: string; name: string },
+  todayUtc: number,
+): Promise<number> {
+  const sprint = await prisma.sprint.findFirst({
+    where: { projectId: project.id, closedAt: null, endsOn: new Date(todayUtc) },
     select: {
       id: true,
-      name: true,
-      slackChannelId: true,
-      projectTerms: {
-        select: { term: { select: { startDate: true, endDate: true } } },
+      number: true,
+      tasks: {
+        where: { archivedAt: null, status: { notIn: ["Done", "Cancelled"] } },
+        select: { assignees: { select: { userId: true } } },
       },
     },
   });
+  if (!sprint) return 0;
+  const open = new Map<string, number>();
+  for (const t of sprint.tasks) {
+    for (const a of t.assignees) open.set(a.userId, (open.get(a.userId) ?? 0) + 1);
+  }
+  let sent = 0;
+  for (const [userId, count] of open) {
+    const res = await notify({
+      eventType: "project.sprint_ending",
+      message: {
+        vars: {
+          itemTitle: `Sprint ${sprint.number}`,
+          contextName: project.name,
+          itemDetail: `Ends today — ${count} unfinished task${count === 1 ? "" : "s"}.`,
+        },
+        link: `/projects/${project.id}?tab=board&sprint=${sprint.id}&mine=1`,
+        dedupKey: `sprint-ending:${sprint.id}:${userId}`,
+      },
+      recipients: [{ userId }],
+    });
+    sent += res.inApp > 0 ? 1 : 0;
+  }
+  return sent;
+}
 
-  let closed = 0;
+export async function runSprintLifecycle({ now }: JobContext): Promise<JobResult> {
+  const todayUtc = labTodayUtcDay(now);
+  const projects = await prisma.project.findMany({
+    where: {
+      OR: [
+        { status: "Active", projectTerms: { some: { term: { endDate: { gte: new Date(todayUtc) } } } } },
+        { sprintsBackfilledAt: null },
+        { sprints: { some: { closedAt: null, endsOn: { lt: new Date(todayUtc) } } } },
+      ],
+    },
+    take: BATCH,
+    orderBy: { sprintsBackfilledAt: { sort: "asc", nulls: "first" } },
+    select: { id: true, name: true, status: true, slackChannelId: true },
+  });
+
+  let wrapped = 0;
+  let nudged = 0;
   let failed = 0;
   for (const project of projects) {
-    const terms = project.projectTerms.map((pt) => ({
-      startsAt: pt.term.startDate.toISOString(),
-      endsAt: pt.term.endDate.toISOString(),
-    }));
-    const band = sprintClosedYesterday(terms, todayUtc);
-    if (!band) continue;
-
     try {
-      // Tasks whose anchor date (due, else start) fell in the closed sprint —
-      // the same "which sprint is this in" rule the board uses.
-      const from = new Date(band.start);
-      const to = new Date(band.end + DAY);
-      const tasks = await prisma.task.findMany({
-        where: {
-          projectId: project.id,
-          status: { not: "Cancelled" },
-          OR: [
-            { dueAt: { gte: from, lt: to } },
-            { AND: [{ dueAt: null }, { startsAt: { gte: from, lt: to } }] },
-          ],
-        },
-        select: { status: true },
-      });
-      if (tasks.length === 0) continue; // an empty sprint isn't worth a ping
-
-      const doneCount = tasks.filter((t) => t.status === "Done").length;
-      const summary = `${doneCount} of ${tasks.length} task${tasks.length === 1 ? "" : "s"} done.`;
-
-      // In-app + desktop first: its dedupKey is the source of once-only truth.
-      const memberIds = await currentProjectParticipantIds(project.id);
-      let fresh = false;
-      if (memberIds.size > 0) {
-        const res = await notify({
-          eventType: "project.sprint_closed",
-          message: {
-            vars: { itemTitle: band.label, contextName: project.name, itemDetail: summary },
-            link: `/projects/${project.id}?tab=board`,
-            dedupKey: `sprint-closed:${project.id}:${band.key}`,
-          },
-          recipients: [...memberIds].map((userId) => ({ userId })),
-        });
-        fresh = res.inApp > 0;
+      await ensureSprints(project.id, now);
+      const closed = await closeEndedSprints(project.id, now);
+      if (project.status === "Active") {
+        // Only the most recent close is news; older ones closed here are catch-up.
+        const latest = closed.at(-1);
+        if (latest && (await postWrapUp(project, latest))) wrapped++;
+        if (labHour(now) >= NUDGE_HOUR) nudged += await nudgeEndingSprint(project, todayUtc);
       }
-
-      // Slack channel post rides the same fresh dispatch, so a re-fired tick
-      // (dedupKey already claimed → no new in-app rows) posts nothing.
-      if (fresh && project.slackChannelId && slackConfigured() && jobChannelPostAllowed()) {
-        const text = `:checkered_flag: *${band.label}* wrapped up. ${summary}`;
-        await postMessage(project.slackChannelId, text).catch((err) =>
-          console.error(`[jobs] project ${project.id}: slack post failed`, err),
-        );
-      }
-
-      if (fresh) closed++;
     } catch (err) {
       failed++;
-      console.error(`[jobs] project ${project.id}: sprint wrap-up failed`, err);
+      console.error(`[jobs] project ${project.id}: sprint lifecycle failed`, err);
     }
   }
 
   return {
-    items: closed,
-    note: failed > 0 ? `${failed} wrap-up(s) failed — see logs` : undefined,
+    items: wrapped + nudged,
+    note: failed > 0 ? `${failed} project(s) failed — see logs` : undefined,
   };
 }

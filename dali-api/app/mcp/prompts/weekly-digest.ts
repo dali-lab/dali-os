@@ -25,7 +25,7 @@ export const WEEKLY_DIGEST_PROMPT: PromptDefinition = {
             "",
             "Then write a short briefing with these sections:",
             "",
-            "- **This week's focus** — at most 5 tasks, picked by due date and priority. Note overdue items explicitly.",
+            "- **This week's focus** — at most 5 tasks, from the active sprint first, then by priority. Note tasks that carried over from an earlier sprint explicitly.",
             "- **Meetings** — chronological list, one line each: time, title, who else is there (use `get_member_profile` if a name would help).",
             "- **Unread inbox** — group by kind (announcements vs. invites vs. other); summarize each in one line.",
             "- **Suggested next action** — a single concrete thing to do right now.",

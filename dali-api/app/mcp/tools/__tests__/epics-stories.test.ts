@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
+vi.mock("~/projects/lib/sprints.server", () => ({ deleteEpic: vi.fn() }));
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, isCore: vi.fn(), isProjectMember: vi.fn() };
@@ -8,6 +9,7 @@ vi.mock("~/lib/roles", async (orig) => {
 
 import { prisma } from "~/lib/db";
 import { isCore, isProjectMember } from "~/lib/roles";
+import { deleteEpic } from "~/projects/lib/sprints.server";
 import { runListEpics, LIST_EPICS_TOOL } from "~/mcp/tools/list-epics";
 import {
   runCreateEpic,
@@ -54,27 +56,38 @@ describe("epic + story tools", () => {
     expect(DELETE_STORY_TOOL.requiredScope).toBe("mcp:write");
   });
 
-  it("list_epics returns epics with their stories", async () => {
+  it("list_epics derives status, sprint span and progress from tasks", async () => {
+    const sprint = (s: string, e: string) => ({ startsOn: new Date(s), endsOn: new Date(e) });
     mockPrisma.epic.findMany.mockResolvedValue([
       {
         id: "e1",
         title: "Onboarding",
         description: null,
-        status: "Open",
-        startsAt: null,
-        endsAt: null,
+        cancelledAt: null,
         stories: [],
+        tasks: [
+          { status: "Done", sprint: sprint("2026-09-23T00:00:00Z", "2026-09-29T00:00:00Z") },
+          { status: "InProgress", sprint: sprint("2026-09-16T00:00:00Z", "2026-09-22T00:00:00Z") },
+          { status: "Todo", sprint: null },
+          { status: "Cancelled", sprint: null },
+        ],
       },
+      { id: "e2", title: "Later", description: null, cancelledAt: null, stories: [], tasks: [] },
     ]);
     const out = await runListEpics("u1", { projectId: "p1" });
-    expect(out.epics[0]).toMatchObject({ id: "e1", title: "Onboarding", stories: [] });
-  });
-
-  it("create_epic enforces title and date order", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
-    await expect(
-      runCreateEpic("u1", { projectId: "p1", title: "x", startsAt: "2026-06-14", endsAt: "2026-06-01" }),
-    ).rejects.toBeInstanceOf(CreateEpicError);
+    expect(out.epics[0]).toEqual({
+      id: "e1",
+      title: "Onboarding",
+      description: null,
+      status: "InProgress",
+      startsOn: "2026-09-16T00:00:00.000Z",
+      endsOn: "2026-09-29T00:00:00.000Z",
+      tasks: { done: 1, total: 3 },
+      stories: [],
+    });
+    expect(out.epics[1]).toMatchObject({ status: "NotStarted", startsOn: null, endsOn: null });
+    const filtered = await runListEpics("u1", { projectId: "p1", status: ["NotStarted"] });
+    expect(filtered.epics.map((e) => e.id)).toEqual(["e2"]);
   });
 
   it("create_epic creates with defaults", async () => {
@@ -86,14 +99,14 @@ describe("epic + story tools", () => {
     expect(out).toEqual({ id: "e-new" });
     expect(mockPrisma.epic.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ position: 3, status: "Open", description: null }),
+        data: { projectId: "p1", title: "Build", description: null, position: 3 },
       }),
     );
   });
 
   it("update_epic clears description with empty string", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
-    mockPrisma.epic.findUnique.mockResolvedValue({ id: "e1", startsAt: null, endsAt: null });
+    mockPrisma.epic.findUnique.mockResolvedValue({ id: "e1", projectId: "p1", cancelledAt: null });
     mockPrisma.epic.update.mockResolvedValue({});
     await runUpdateEpic("u1", { epicId: "e1", description: "  " });
     expect(mockPrisma.epic.update).toHaveBeenCalledWith({
@@ -102,13 +115,26 @@ describe("epic + story tools", () => {
     });
   });
 
-  it("delete_epic nulls sprint/task epicId and removes stories", async () => {
+  it("update_epic cancels and reopens, and no-ops when unchanged", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
-    mockPrisma.epic.findUnique.mockResolvedValue({ id: "e1" });
-    mockPrisma.$transaction.mockResolvedValue([]);
-    const out = await runDeleteEpic("u1", { epicId: "e1" });
-    expect(out).toEqual({ ok: true, epicId: "e1" });
-    expect(mockPrisma.$transaction).toHaveBeenCalled();
+    mockPrisma.epic.findUnique.mockResolvedValue({ id: "e1", projectId: "p1", cancelledAt: null });
+    mockPrisma.epic.update.mockResolvedValue({});
+    await runUpdateEpic("u1", { epicId: "e1", cancelled: true });
+    expect(mockPrisma.epic.update.mock.calls[0]![0].data.cancelledAt).toBeInstanceOf(Date);
+    expect(await runUpdateEpic("u1", { epicId: "e1", cancelled: false })).toMatchObject({ noop: true });
+    mockPrisma.epic.findUnique.mockResolvedValue({ id: "e1", projectId: "p1", cancelledAt: new Date() });
+    await runUpdateEpic("u1", { epicId: "e1", cancelled: false });
+    expect(mockPrisma.epic.update.mock.calls[1]![0].data).toEqual({ cancelledAt: null });
+  });
+
+  it("delete_epic moves tasks to General via deleteEpic, refusing a busy General", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.epic.findUnique.mockResolvedValue({ id: "e1", projectId: "p1" });
+    vi.mocked(deleteEpic).mockResolvedValueOnce("ok");
+    expect(await runDeleteEpic("u1", { epicId: "e1" })).toEqual({ ok: true, epicId: "e1" });
+    expect(deleteEpic).toHaveBeenCalledWith("e1", "p1");
+    vi.mocked(deleteEpic).mockResolvedValueOnce("general-in-use");
+    await expect(runDeleteEpic("u1", { epicId: "e1" })).rejects.toMatchObject({ status: 409 });
   });
 
   it("create_story appends position 0 when first", async () => {

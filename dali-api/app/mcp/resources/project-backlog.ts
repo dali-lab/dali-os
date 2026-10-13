@@ -1,8 +1,5 @@
-// MCP resource `dali://projects/{projectId}/backlog` — every undated task on a
-// project (no start or due date, so it isn't in any sprint yet). The project
-// board resource includes a count but not the cards themselves; backlog is
-// exposed separately because it can be large and a client may only need it when
-// planning the next sprint.
+// MCP resource `dali://projects/{projectId}/backlog` — the project's backlog:
+// open tasks not yet in any sprint, in the team's ranked order.
 
 import { prisma } from "~/lib/db";
 import { fullName } from "~/lib/display";
@@ -11,7 +8,7 @@ export const PROJECT_BACKLOG_RESOURCE = {
   uriTemplate: "dali://projects/{projectId}/backlog",
   name: "Project backlog",
   description:
-    "Every undated task on a project (no start or due date, so unscheduled into any sprint), excluding Done/Cancelled. Use this when planning the next sprint.",
+    "The project's backlog: open tasks not in any sprint, in the team's ranked order. Use this when planning a sprint; schedule a task with update_task's sprintId.",
   mimeType: "application/json",
   requiredScope: "mcp:read" as const,
 };
@@ -40,11 +37,11 @@ export async function readProjectBacklogResource(projectId: string): Promise<str
   const tasks = await prisma.task.findMany({
     where: {
       projectId,
-      startsAt: null,
-      dueAt: null,
+      archivedAt: null,
+      sprintId: null,
       status: { notIn: ["Done", "Cancelled"] },
     },
-    orderBy: [{ priority: "desc" }, { createdAt: "asc" }],
+    orderBy: [{ position: "asc" }, { createdAt: "asc" }],
     select: {
       id: true,
       title: true,
@@ -52,7 +49,7 @@ export async function readProjectBacklogResource(projectId: string): Promise<str
       priority: true,
       epicId: true,
       epic: { select: { title: true } },
-      dueAt: true,
+      carryoverCount: true,
       assignees: {
         select: {
           user: { select: { id: true, firstName: true, lastName: true } },
@@ -71,7 +68,7 @@ export async function readProjectBacklogResource(projectId: string): Promise<str
         priority: t.priority,
         epicId: t.epicId,
         epicTitle: t.epic?.title ?? null,
-        dueAt: t.dueAt?.toISOString() ?? null,
+        carriedOver: t.carryoverCount,
         assignees: t.assignees.map((a) => ({
           id: a.user.id,
           name: fullName(a.user),

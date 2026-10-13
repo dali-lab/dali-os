@@ -99,7 +99,8 @@ const work = (id: string): ProjectWorkItem => ({
   projectId: "p1",
   projectName: "DALI OS",
   status: "Todo",
-  dueAt: null,
+  sprint: null,
+  carryoverCount: 0,
   activityAt: "2026-09-12T12:00:00.000Z",
   link: `/projects/p1?tab=board&task=${id}`,
 });
@@ -133,7 +134,7 @@ describe("splitFeed", () => {
 
   it("folds unread pings about a listed project task into its card", () => {
     const feed = splitFeed(
-      [{ ...task("t1"), eventType: "task.due_reminder", link: "/projects/p1?tab=board&task=w1" }],
+      [{ ...task("t1"), eventType: "project.sprint_ending", link: "/projects/p1?tab=board&task=w1" }],
       [
         notif({ id: "n1", eventType: "task.comment", link: "/projects/p1?task=w1" }),
         notif({ id: "n2", eventType: "task.comment", link: "/projects/p1?task=w2" }),
@@ -152,7 +153,7 @@ describe("attentionCount with project work", () => {
   });
 
   it("doesn't count a ping folded into its project task", () => {
-    const ping = { ...task("t1"), eventType: "task.due_reminder", link: "/projects/p1?task=w1" };
+    const ping = { ...task("t1"), eventType: "project.sprint_ending", link: "/projects/p1?task=w1" };
     expect(attentionCount([ping], [], [work("w1")])).toBe(1);
   });
 });

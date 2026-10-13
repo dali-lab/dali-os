@@ -12,13 +12,9 @@ import {
   rangeLabel,
   type EpicStatus,
   type TimelineEpic,
-  type TimelineStory,
-  type EpicDependencyEdge,
-  type StoryDependencyEdge,
-  type TaskDependencyEdge,
 } from "./EpicsTimeline";
 
-const EPIC_STATUSES: EpicStatus[] = ["Backlog", "Open", "InProgress", "Done", "Cancelled"];
+const EPIC_STATUSES: EpicStatus[] = ["Open", "InProgress", "Done", "Cancelled"];
 const ALL_STATUSES = "all" as const;
 
 // The filters are toolbar controls, not form fields, so they wear the row's own
@@ -26,29 +22,15 @@ const ALL_STATUSES = "all" as const;
 // type as Edit and New beside them.
 const FILTER_PILL = "os-edit-btn max-w-[220px]";
 
-/** Done/total for a story: cancelled tasks are out of both numbers. */
-function storyCounts(story: TimelineStory): { done: number; total: number } {
-  const counted = story.tasks.filter((t) => t.status !== "Cancelled");
-  return { done: counted.filter((t) => t.status === "Done").length, total: counted.length };
-}
-
 /**
- * The timeline's other half: the same epic → story → task tree read as an
- * outline rather than placed on a date grid. The grid answers "when"; this
- * answers "what is under this epic", which is the question a grid with bars
- * running off both edges is worst at.
- *
- * It opens on the current term because that is the work in flight — the whole
- * backlog is a term filter away, not the landing view.
+ * The timeline as an outline: each epic, its sprinted tasks (with the sprint
+ * they sit in), and its user stories as requirement rows.
  */
 export function EpicList({
   epics,
   terms,
   epicTermIds,
   currentTermId,
-  epicDependencies = [],
-  storyDependencies = [],
-  taskDependencies = [],
   actions,
   onEpicClick,
   onStoryClick,
@@ -61,20 +43,15 @@ export function EpicList({
   /** Terms each epic counts toward, keyed by epic id (see the loader). */
   epicTermIds?: Record<string, string[]>;
   currentTermId?: string | null;
-  /** Dependency edges at each level. A row whose blocker is unfinished is
-   *  marked Blocked. */
-  epicDependencies?: EpicDependencyEdge[];
-  storyDependencies?: StoryDependencyEdge[];
-  taskDependencies?: TaskDependencyEdge[];
   /** The toolbar's right-hand controls (view toggle, New) — this view draws
    *  its own header row, so it takes them the way the timeline does. */
   actions?: ReactNode;
   onEpicClick?: (epicId: string) => void;
   onStoryClick?: (epicId: string) => void;
   onTaskClick?: (taskId: string) => void;
-  /** Files a new task under a story. Omitted (no board to receive it, or no
-   *  edit rights) hides the per-story add affordance. */
-  onAddTask?: (epicId: string, storyId: string) => void;
+  /** Files a new task under an epic. Omitted (no board to receive it, or no
+   *  edit rights) hides the per-epic add affordance. */
+  onAddTask?: (epicId: string) => void;
 }) {
   const termOptions = useMemo(
     () => termFilterOrder(terms.map((t) => ({ ...t, isCurrent: t.id === currentTermId }))),
@@ -84,26 +61,6 @@ export function EpicList({
   const [termFilter, setTermFilter] = useState(() =>
     currentTermId && terms.some((t) => t.id === currentTermId) ? currentTermId : ALL_TERMS,
   );
-  // Ids with at least one unfinished blocker, per level.
-  const blocked = useMemo(() => {
-    const epicStatus = new Map(epics.map((e) => [e.id, e.status]));
-    const storyStatus = new Map(
-      epics.flatMap((e) => e.stories.map((st) => [st.id, st.status] as const)),
-    );
-    const epicIds = new Set<string>();
-    for (const d of epicDependencies) {
-      const st = epicStatus.get(d.dependsOnEpicId);
-      if (st && st !== "Done" && st !== "Cancelled") epicIds.add(d.epicId);
-    }
-    const storyIds = new Set<string>();
-    for (const d of storyDependencies) {
-      const st = storyStatus.get(d.dependsOnStoryId);
-      if (st && st !== "Done") storyIds.add(d.storyId);
-    }
-    const taskIds = new Set(taskDependencies.filter((d) => d.open).map((d) => d.taskId));
-    return { epicIds, storyIds, taskIds };
-  }, [epics, epicDependencies, storyDependencies, taskDependencies]);
-
   const [statusFilter, setStatusFilter] = useState<EpicStatus | typeof ALL_STATUSES>(
     ALL_STATUSES,
   );
@@ -111,7 +68,6 @@ export function EpicList({
   // Collapsed rather than expanded ids, so an epic added while the list is open
   // arrives showing its stories instead of folded shut.
   const [collapsedEpics, setCollapsedEpics] = useState<Set<string>>(new Set());
-  const [openStories, setOpenStories] = useState<Set<string>>(new Set());
   const toggle = (set: Set<string>, id: string) => {
     const next = new Set(set);
     if (next.has(id)) next.delete(id);
@@ -174,82 +130,63 @@ export function EpicList({
                     level="epic"
                     depth={0}
                     open={open}
-                    expandable={epic.stories.length > 0}
+                    expandable={epic.tasks.length + epic.requirements.length > 0}
                     onToggle={() => setCollapsedEpics((s) => toggle(s, epic.id))}
                     title={epic.title}
                     onTitleClick={onEpicClick && (() => onEpicClick(epic.id))}
                     status={EPIC_STATUS_LABEL[epic.status]}
-                    blocked={blocked.epicIds.has(epic.id)}
                     dates={
                       epic.startsAt && epic.endsAt
                         ? rangeLabel(epic.startsAt, epic.endsAt)
                         : "Unscheduled"
                     }
+                    counts={epic.progress.total > 0 ? epic.progress : null}
+                    trailing={
+                      onAddTask && (
+                        <Tooltip content="Add task">
+                          <button
+                            type="button"
+                            aria-label={`Add task to ${epic.title}`}
+                            onClick={() => onAddTask(epic.id)}
+                            className="os-icon-btn h-5 w-5 flex-shrink-0 opacity-0 transition-opacity group-hover/row:opacity-100 focus-visible:opacity-100"
+                          >
+                            <Plus className="h-3.5 w-3.5 text-os-grey" strokeWidth={3} aria-hidden />
+                          </button>
+                        </Tooltip>
+                      )
+                    }
                   />
                   {open &&
-                    epic.stories.map((story) => {
-                      const storyOpen = openStories.has(story.id);
-                      return (
-                        <div key={story.id}>
-                          <Row
-                            level="story"
-                            depth={1}
-                            open={storyOpen}
-                            expandable={story.tasks.length > 0}
-                            onToggle={() => setOpenStories((s) => toggle(s, story.id))}
-                            title={story.title}
-                            onTitleClick={
-                              onStoryClick && (() => onStoryClick(epic.id))
-                            }
-                            status={STORY_STATUS_LABEL[story.status]}
-                            blocked={blocked.storyIds.has(story.id)}
-                            dates={rangeLabel(story.startsAt, story.endsAt)}
-                            counts={
-                              story.tasks.length > 0 ? storyCounts(story) : null
-                            }
-                            trailing={
-                              onAddTask && (
-                                <Tooltip content="Add task">
-                                  <button
-                                    type="button"
-                                    aria-label={`Add task to ${story.title}`}
-                                    onClick={() => onAddTask(epic.id, story.id)}
-                                    className="os-icon-btn h-5 w-5 flex-shrink-0 opacity-0 transition-opacity group-hover/row:opacity-100 focus-visible:opacity-100"
-                                  >
-                                    <Plus
-                                      className="h-3.5 w-3.5 text-os-grey"
-                                      strokeWidth={3}
-                                      aria-hidden
-                                    />
-                                  </button>
-                                </Tooltip>
-                              )
-                            }
-                          />
-                          {storyOpen &&
-                            story.tasks.map((task) => (
-                              <Row
-                                key={task.id}
-                                level="task"
-                                depth={2}
-                                expandable={false}
-                                title={task.title}
-                                onTitleClick={
-                                  onTaskClick && (() => onTaskClick(task.id))
-                                }
-                                status={TASK_STATUS_LABEL[task.status]}
-                                blocked={blocked.taskIds.has(task.id)}
-                                dates={rangeLabel(task.startsAt, task.endsAt)}
-                                meta={
-                                  task.assignees.length > 0
-                                    ? task.assignees.map((a) => a.name).join(", ")
-                                    : null
-                                }
-                              />
-                            ))}
-                        </div>
-                      );
-                    })}
+                    epic.tasks.map((task) => (
+                      <Row
+                        key={task.id}
+                        level="task"
+                        depth={1}
+                        expandable={false}
+                        title={task.title}
+                        onTitleClick={onTaskClick && (() => onTaskClick(task.id))}
+                        status={TASK_STATUS_LABEL[task.status]}
+                        dates={rangeLabel(task.startsAt, task.endsAt)}
+                        meta={
+                          task.assignees.length > 0
+                            ? task.assignees.map((a) => a.name).join(", ")
+                            : null
+                        }
+                      />
+                    ))}
+                  {open &&
+                    epic.requirements.map((story) => (
+                      <Row
+                        key={story.id}
+                        level="story"
+                        depth={1}
+                        expandable={false}
+                        title={story.title}
+                        onTitleClick={onStoryClick && (() => onStoryClick(epic.id))}
+                        status={STORY_STATUS_LABEL[story.status]}
+                        dates="Requirement"
+                      />
+                    ))}
                 </li>
               );
             })}
@@ -271,21 +208,19 @@ function Row({
   title,
   onTitleClick,
   status,
-  blocked = false,
   dates,
   counts,
   meta,
   trailing,
 }: {
   level: "epic" | "story" | "task";
-  depth: 0 | 1 | 2;
+  depth: 0 | 1;
   open?: boolean;
   expandable: boolean;
   onToggle?: () => void;
   title: string;
   onTitleClick?: (() => void) | undefined;
   status: string;
-  blocked?: boolean;
   dates: string;
   counts?: { done: number; total: number } | null;
   meta?: string | null;
@@ -298,7 +233,6 @@ function Row({
         "group/row flex items-center gap-2 px-4 py-2 transition-colors hover:bg-os-hover",
         depth > 0 && "border-t border-border/60",
         depth === 1 && "pl-10",
-        depth === 2 && "pl-16",
       )}
     >
       {expandable ? (
@@ -356,11 +290,6 @@ function Row({
       <span className="hidden flex-shrink-0 text-xs tabular-nums text-os-muted sm:inline">
         {dates}
       </span>
-      {blocked && (
-        <span className="flex-shrink-0 rounded-full bg-os-amber/15 px-2 py-0.5 text-[11px] font-semibold text-os-amber">
-          Blocked
-        </span>
-      )}
       <span className="flex-shrink-0 rounded-full border border-os-container px-2 py-0.5 text-[11px] font-semibold text-os-grey">
         {status}
       </span>

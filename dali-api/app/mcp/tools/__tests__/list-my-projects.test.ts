@@ -17,21 +17,12 @@ const mockPrisma = prisma as unknown as {
   projectAssignment: { findMany: ReturnType<typeof vi.fn> };
   project: { findMany: ReturnType<typeof vi.fn> };
   task: { groupBy: ReturnType<typeof vi.fn> };
-};
-
-// A term window wide enough that "today" always falls inside it, so the
-// computed current-sprint band is deterministically non-null in any test run.
-const WIDE_TERM = {
-  term: {
-    code: "26S",
-    startDate: new Date("2000-01-03T00:00:00Z"), // a Monday
-    endDate: new Date("2100-01-01T00:00:00Z"),
-    sortKey: 1,
-  },
+  sprint: { findMany: ReturnType<typeof vi.fn> };
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockPrisma.sprint = { findMany: vi.fn().mockResolvedValue([]) };
 });
 
 describe("list_my_projects", () => {
@@ -65,10 +56,12 @@ describe("list_my_projects", () => {
       },
     ]);
     mockPrisma.project.findMany.mockResolvedValue([
-      // p1 runs a term whose window contains today → a current sprint exists.
-      { id: "p1", name: "Alpha", status: "Active", imageUrl: null, projectTerms: [WIDE_TERM] },
-      // p2 runs no terms → no current sprint.
-      { id: "p2", name: "Beta", status: "Active", imageUrl: null, projectTerms: [] },
+      { id: "p1", name: "Alpha", status: "Active", imageUrl: null },
+      { id: "p2", name: "Beta", status: "Active", imageUrl: null },
+    ]);
+    // Only p1 has a sprint running today.
+    mockPrisma.sprint.findMany.mockResolvedValue([
+      { projectId: "p1", number: 4, endsOn: new Date("2026-10-13T00:00:00Z") },
     ]);
     mockPrisma.task.groupBy.mockResolvedValue([
       { projectId: "p1", _count: { _all: 7 } },
@@ -83,8 +76,14 @@ describe("list_my_projects", () => {
       currentTermAssignment: { termCode: "26S", domainName: "Fullstack Dev", level: "P3" },
       openTaskCount: 7,
     });
-    expect(out.projects[0].activeSprint?.label).toMatch(/^Sprint \d+$/);
-    expect(typeof out.projects[0].activeSprint?.endsAt).toBe("string");
+    expect(out.projects[0].activeSprint).toEqual({
+      label: "Sprint 4",
+      endsAt: "2026-10-14T00:00:00.000Z",
+    });
+    expect(mockPrisma.sprint.findMany.mock.calls[0]![0].where).toMatchObject({
+      projectId: { in: ["p1", "p2"] },
+      closedAt: null,
+    });
     expect(out.projects[1]).toMatchObject({
       id: "p2",
       currentTermAssignment: null,

@@ -50,7 +50,6 @@ describe("list_archived_tasks", () => {
 
   it("returns archived tasks with ISO dates and assignees", async () => {
     const archivedAt = new Date("2026-09-10T12:00:00.000Z");
-    const dueAt = new Date("2026-09-08T00:00:00.000Z");
     mockPrisma.project.findUnique.mockResolvedValue({ id: "p1" });
     mockPrisma.task.findMany.mockResolvedValue([
       {
@@ -58,7 +57,7 @@ describe("list_archived_tasks", () => {
         title: "My Task",
         status: "Done",
         priority: "Normal",
-        dueAt,
+        sprint: { number: 3 },
         archivedAt,
         domain: { id: "d1", displayName: "Web" },
         assignees: [
@@ -73,14 +72,14 @@ describe("list_archived_tasks", () => {
       title: "My Task",
       status: "Done",
       priority: "Normal",
-      dueAt: dueAt.toISOString(),
+      sprint: "Sprint 3",
       archivedAt: archivedAt.toISOString(),
       domain: { id: "d1", name: "Web" },
       assignees: [{ id: "u2", name: "Alice Smith" }],
     });
   });
 
-  it("handles null dueAt and domain", async () => {
+  it("handles a backlog task with no domain", async () => {
     mockPrisma.project.findUnique.mockResolvedValue({ id: "p1" });
     mockPrisma.task.findMany.mockResolvedValue([
       {
@@ -88,7 +87,7 @@ describe("list_archived_tasks", () => {
         title: "Undated",
         status: "Cancelled",
         priority: "Low",
-        dueAt: null,
+        sprint: null,
         archivedAt: new Date("2026-09-11T00:00:00.000Z"),
         domain: null,
         assignees: [],
@@ -96,7 +95,7 @@ describe("list_archived_tasks", () => {
     ]);
     const out = await runListArchivedTasks("u1", { projectId: "p1" });
     expect(out.tasks[0]).toMatchObject({
-      dueAt: null,
+      sprint: null,
       domain: null,
       assignees: [],
     });

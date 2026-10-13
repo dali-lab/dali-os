@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
+vi.mock("~/projects/lib/sprints.server", () => ({ activeSprintId: vi.fn() }));
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, currentTerm: vi.fn() };
@@ -8,6 +9,7 @@ vi.mock("~/lib/roles", async (orig) => {
 
 import { prisma } from "~/lib/db";
 import { currentTerm } from "~/lib/roles";
+import { activeSprintId } from "~/projects/lib/sprints.server";
 import {
   runGetProjectOverview,
   GET_PROJECT_OVERVIEW_TOOL,
@@ -17,7 +19,8 @@ import {
 const mockPrisma = prisma as unknown as {
   project: { findUnique: ReturnType<typeof vi.fn> };
   projectAssignment: { findMany: ReturnType<typeof vi.fn> };
-  epic: { findFirst: ReturnType<typeof vi.fn> };
+  epic: { findMany: ReturnType<typeof vi.fn> };
+  sprint: { findUnique: ReturnType<typeof vi.fn> };
   task: { groupBy: ReturnType<typeof vi.fn> };
 };
 
@@ -65,12 +68,20 @@ describe("get_project_overview", () => {
         domain: { id: "d1", displayName: "Dev" },
       },
     ]);
-    mockPrisma.epic.findFirst.mockResolvedValue({
-      id: "e1",
-      title: "Onboarding",
-      description: null,
-      status: "InProgress",
-    });
+    mockPrisma.epic.findMany.mockResolvedValue([
+      { id: "e0", title: "Done", description: null, cancelledAt: null, tasks: [{ status: "Done" }] },
+      { id: "e2", title: "Later", description: null, cancelledAt: null, tasks: [] },
+      { id: "e1", title: "Onboarding", description: null, cancelledAt: null, tasks: [{ status: "InProgress" }] },
+    ]);
+    vi.mocked(activeSprintId).mockResolvedValue("s4");
+    (mockPrisma as any).sprint = {
+      findUnique: vi.fn().mockResolvedValue({
+        id: "s4",
+        number: 4,
+        startsOn: new Date("2026-10-07T00:00:00Z"),
+        endsOn: new Date("2026-10-13T00:00:00Z"),
+      }),
+    };
     mockPrisma.task.groupBy.mockResolvedValue([
       { status: "Todo", _count: { _all: 3 } },
       { status: "Done", _count: { _all: 5 } },
@@ -86,9 +97,16 @@ describe("get_project_overview", () => {
       currentEpic: { id: "e1", title: "Onboarding", status: "InProgress" },
       taskCountByStatus: { Todo: 3, InProgress: 0, InReview: 0, Done: 5, Cancelled: 0 },
     });
-    // Current sprint is the term-anchored week containing today.
-    expect(out.activeSprint?.label).toMatch(/^Sprint \d+$/);
-    expect(typeof out.activeSprint?.endsAt).toBe("string");
+    expect(out.activeSprint).toEqual({
+      id: "s4",
+      label: "Sprint 4",
+      startsAt: "2026-10-07T00:00:00.000Z",
+      endsAt: "2026-10-14T00:00:00.000Z",
+    });
+    expect(mockPrisma.epic.findMany.mock.calls[0]![0].where).toEqual({
+      projectId: "p1",
+      cancelledAt: null,
+    });
   });
 
   it("throws when the project is missing", async () => {

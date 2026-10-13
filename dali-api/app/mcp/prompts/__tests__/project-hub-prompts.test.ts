@@ -12,15 +12,14 @@ describe("project hub prompts", () => {
     }
   });
 
-  it("sprint-planning interpolates projectId and sprint length", () => {
-    const msgs = SPRINT_PLANNING_PROMPT.build({
-      projectId: "proj-abc",
-      sprintLengthDays: "7",
-    });
+  it("sprint-planning interpolates projectId and schedules via sprintId", () => {
+    const msgs = SPRINT_PLANNING_PROMPT.build({ projectId: "proj-abc" });
     const text = msgs[0].content.text;
-    expect(text).toContain("proj-abc");
-    expect(text).toContain("7-day");
+    expect(text).toContain('list_sprints` with projectId="proj-abc"');
     expect(text).toContain("dali://projects/proj-abc/board");
+    expect(text).toContain("dali://projects/proj-abc/backlog");
+    expect(text).toContain("`sprintId`");
+    expect(text).not.toMatch(/due date|its dates/);
   });
 
   it("standup interpolates projectId", () => {

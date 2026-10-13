@@ -1,32 +1,14 @@
 import type { Route } from "./+types/api.epics.$id";
-import { prisma, Prisma } from "~/lib/db";
+import { prisma } from "~/lib/db";
 import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
+import { deleteEpic, GENERAL_EPIC_TITLE } from "../lib/sprints.server";
 
-// POST   /api/epics/:id  — edit. Body: { title?, status?, startsAt?,
-//                          endsAt?, dependsOn? }
-// DELETE /api/epics/:id  — delete. Tasks pointing at this epic have
-//                          their epicId nulled (both are nullable links) so
-//                          nothing is orphaned or cascade-deleted. User
-//                          stories are deleted with the epic (RESTRICT FK,
-//                          they have no life outside it).
-//
-// Same permission model as project edit (isCore === Admin || Core).
+// POST   /api/epics/:id — edit { title?, description?, cancelled? }.
+// DELETE /api/epics/:id — delete; its tasks move to the project's General
+//                         epic and its user stories go with it.
 
-const EPIC_STATUSES = ["Backlog", "Open", "InProgress", "Done", "Cancelled"] as const;
-type EpicStatus = (typeof EPIC_STATUSES)[number];
-function isEpicStatus(x: unknown): x is EpicStatus {
-  return typeof x === "string" && (EPIC_STATUSES as readonly string[]).includes(x);
-}
-
-type EditBody = {
-  title?: string;
-  description?: string | null;
-  status?: string;
-  startsAt?: string | null;
-  endsAt?: string | null;
-  dependsOn?: string[];
-};
+type EditBody = { title?: string; description?: string | null; cancelled?: boolean };
 
 function isEditBody(x: unknown): x is EditBody {
   if (!x || typeof x !== "object") return false;
@@ -34,16 +16,7 @@ function isEditBody(x: unknown): x is EditBody {
   if (o.title !== undefined && typeof o.title !== "string") return false;
   if (o.description !== undefined && o.description !== null && typeof o.description !== "string")
     return false;
-  if (o.status !== undefined && typeof o.status !== "string") return false;
-  if (o.startsAt !== undefined && o.startsAt !== null && typeof o.startsAt !== "string")
-    return false;
-  if (o.endsAt !== undefined && o.endsAt !== null && typeof o.endsAt !== "string")
-    return false;
-  if (
-    o.dependsOn !== undefined &&
-    (!Array.isArray(o.dependsOn) || o.dependsOn.some((v) => typeof v !== "string"))
-  )
-    return false;
+  if (o.cancelled !== undefined && typeof o.cancelled !== "boolean") return false;
   return true;
 }
 
@@ -57,7 +30,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const epicId = params.id!;
   const epic = await prisma.epic.findUnique({
     where: { id: epicId },
-    select: { id: true, startsAt: true, endsAt: true, projectId: true },
+    select: { id: true, projectId: true, title: true, cancelledAt: true },
   });
   if (!epic) {
     return withCors(request, Response.json({ error: "Epic not found" }, { status: 404 }));
@@ -66,11 +39,16 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!gate.ok) return gate.response;
 
   if (request.method === "DELETE") {
-    await prisma.$transaction([
-      prisma.task.updateMany({ where: { epicId }, data: { epicId: null } }),
-      prisma.userStory.deleteMany({ where: { epicId } }),
-      prisma.epic.delete({ where: { id: epicId } }),
-    ]);
+    const result = await deleteEpic(epicId, epic.projectId);
+    if (result === "general-in-use") {
+      return withCors(
+        request,
+        Response.json(
+          { error: `Move this epic's tasks elsewhere before deleting ${GENERAL_EPIC_TITLE}.` },
+          { status: 409 },
+        ),
+      );
+    }
     return withCors(request, Response.json({ ok: true }));
   }
 
@@ -84,14 +62,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Invalid body" }, { status: 400 }));
   }
 
-  const data: {
-    title?: string;
-    description?: string | null;
-    status?: EpicStatus;
-    startsAt?: Date | null;
-    endsAt?: Date | null;
-  } = {};
-
+  const data: { title?: string; description?: string | null; cancelledAt?: Date | null } = {};
   if (body.title !== undefined) {
     const title = body.title.trim();
     if (!title) {
@@ -100,81 +71,13 @@ export async function action({ request, params }: Route.ActionArgs) {
     data.title = title;
   }
   if (body.description !== undefined) {
-    // Empty string clears the description back to null.
     const desc = body.description?.trim() ?? "";
     data.description = desc === "" ? null : desc;
   }
-  if (body.status !== undefined) {
-    if (!isEpicStatus(body.status)) {
-      return withCors(request, Response.json({ error: "Invalid status" }, { status: 400 }));
-    }
-    data.status = body.status;
-  }
-  if (body.startsAt !== undefined) {
-    if (body.startsAt === null) {
-      data.startsAt = null;
-    } else {
-      const d = new Date(body.startsAt);
-      if (!Number.isFinite(d.getTime())) {
-        return withCors(request, Response.json({ error: "Invalid start date" }, { status: 400 }));
-      }
-      data.startsAt = d;
-    }
-  }
-  if (body.endsAt !== undefined) {
-    if (body.endsAt === null) {
-      data.endsAt = null;
-    } else {
-      const d = new Date(body.endsAt);
-      if (!Number.isFinite(d.getTime())) {
-        return withCors(request, Response.json({ error: "Invalid end date" }, { status: 400 }));
-      }
-      data.endsAt = d;
-    }
+  if (body.cancelled !== undefined && body.cancelled !== (epic.cancelledAt !== null)) {
+    data.cancelledAt = body.cancelled ? new Date() : null;
   }
 
-  // Validate the resulting range: use the incoming value where provided,
-  // otherwise the stored value. Only enforce when both ends resolve to a
-  // date (either side may legitimately be null).
-  const effStart = data.startsAt !== undefined ? data.startsAt : epic.startsAt;
-  const effEnd = data.endsAt !== undefined ? data.endsAt : epic.endsAt;
-  if (effStart && effEnd && effEnd <= effStart) {
-    return withCors(
-      request,
-      Response.json({ error: "End date must be after start date" }, { status: 400 }),
-    );
-  }
-
-  const ops: Prisma.PrismaPromise<unknown>[] = [
-    prisma.epic.update({ where: { id: epicId }, data }),
-  ];
-
-  // Dependencies are replaced wholesale, mirroring the story route: each id
-  // must be another epic in the same project. (Cycles aren't blocked — the
-  // arrows are advisory, and the unique index dedupes repeats.)
-  if (body.dependsOn !== undefined) {
-    const ids = [...new Set(body.dependsOn)].filter((x) => x && x !== epicId);
-    if (ids.length > 0) {
-      const valid = await prisma.epic.count({
-        where: { id: { in: ids }, projectId: epic.projectId },
-      });
-      if (valid !== ids.length) {
-        return withCors(
-          request,
-          Response.json({ error: "Invalid dependency target" }, { status: 400 }),
-        );
-      }
-    }
-    ops.push(
-      prisma.epicDependency.deleteMany({ where: { epicId } }),
-      ...ids.map((depId) =>
-        prisma.epicDependency.create({
-          data: { epicId, dependsOnEpicId: depId },
-        }),
-      ),
-    );
-  }
-
-  await prisma.$transaction(ops);
+  await prisma.epic.update({ where: { id: epicId }, data });
   return withCors(request, Response.json({ ok: true }));
 }

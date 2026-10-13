@@ -20,7 +20,6 @@ test.describe("admin jobs panel", () => {
     const frame = adminFrame(page);
 
     for (const name of [
-      "task-due-reminders",
       "meeting-reminders",
       "scheduled-announcements",
       "session-feedback-sweep",

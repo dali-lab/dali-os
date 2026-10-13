@@ -3,26 +3,16 @@
 import { prisma } from "~/lib/db";
 import { canEditProject } from "./access";
 
-const EPIC_STATUSES = ["Backlog", "Open", "InProgress", "Done", "Cancelled"] as const;
-type EpicStatus = (typeof EPIC_STATUSES)[number];
-
 export const CREATE_EPIC_TOOL = {
   name: "create_epic",
   description:
-    "Create an epic on a project. Requires Core or project-member access.",
+    "Create an epic (a bucket of related tasks, roughly a feature) on a project. Epics have no dates: on the timeline an epic spans the first through the last sprint holding one of its tasks. Requires Core or project-member access.",
   inputSchema: {
     type: "object" as const,
     properties: {
       projectId: { type: "string", minLength: 1 },
       title: { type: "string", minLength: 1, maxLength: 200 },
       description: { type: "string", maxLength: 5000 },
-      status: {
-        type: "string",
-        enum: EPIC_STATUSES as unknown as string[],
-        description: "Defaults to 'Open'.",
-      },
-      startsAt: { type: "string", description: "Optional ISO timestamp." },
-      endsAt: { type: "string", description: "Optional ISO timestamp." },
     },
     required: ["projectId", "title"],
     additionalProperties: false,
@@ -30,14 +20,7 @@ export const CREATE_EPIC_TOOL = {
   requiredScope: "mcp:write" as const,
 };
 
-type Input = {
-  projectId: string;
-  title: string;
-  description?: string;
-  status?: EpicStatus;
-  startsAt?: string;
-  endsAt?: string;
-};
+type Input = { projectId: string; title: string; description?: string };
 
 export class CreateEpicError extends Error {
   constructor(message: string, public status: number) {
@@ -46,28 +29,12 @@ export class CreateEpicError extends Error {
   }
 }
 
-function parseDate(v: string | undefined): Date | null | "invalid" {
-  if (v === undefined || v === "") return null;
-  const d = new Date(v);
-  return Number.isFinite(d.getTime()) ? d : "invalid";
-}
-
 export async function runCreateEpic(callerId: string, input: Input) {
   if (!(await canEditProject(callerId, input.projectId))) {
     throw new CreateEpicError("Forbidden", 403);
   }
-
   const title = input.title.trim();
   if (!title) throw new CreateEpicError("Title is required", 400);
-
-  const startsAt = parseDate(input.startsAt);
-  const endsAt = parseDate(input.endsAt);
-  if (startsAt === "invalid" || endsAt === "invalid") {
-    throw new CreateEpicError("Invalid dates", 400);
-  }
-  if (startsAt && endsAt && endsAt <= startsAt) {
-    throw new CreateEpicError("End date must be after start date", 400);
-  }
 
   const project = await prisma.project.findUnique({
     where: { id: input.projectId },
@@ -80,21 +47,15 @@ export async function runCreateEpic(callerId: string, input: Input) {
     orderBy: { position: "desc" },
     select: { position: true },
   });
-  const position = last ? last.position + 1 : 0;
-
   const description = input.description?.trim() ?? "";
   const epic = await prisma.epic.create({
     data: {
       projectId: input.projectId,
       title,
       description: description === "" ? null : description,
-      status: input.status ?? "Open",
-      position,
-      startsAt,
-      endsAt,
+      position: last ? last.position + 1 : 0,
     },
     select: { id: true },
   });
-
   return { id: epic.id };
 }

@@ -25,10 +25,9 @@ import { OS_SURFACE_CLASS } from "~/components/ui/floating/styles";
 
 export type WeekDayDTO = { num: number; isToday: boolean };
 
-// "epic"/"story" are deadline markers, not bookings — a project's planning
-// dates dropped onto the same grid as its meetings. They wear the timeline's
-// level hues so a deadline reads the same in both views.
-export type WeekEventKind = "general" | "meeting" | "epic" | "story";
+// "sprint" marks a project's sprint boundaries (start and last day), not a
+// booking, dropped onto the same grid as its meetings.
+export type WeekEventKind = "general" | "meeting" | "sprint";
 
 export type WeekEvent = {
   id: string;
@@ -78,8 +77,7 @@ const EVENT_TEXT = "text-[hsl(203_38%_18%)]";
 const EVENT_FILLS: Record<WeekEventKind, string> = {
   general: `bg-accent-teal-light ${EVENT_TEXT}`,
   meeting: `bg-accent-coral-light ${EVENT_TEXT}`,
-  epic: `bg-[#c9b6ff] ${EVENT_TEXT}`,
-  story: `bg-[#8fdedb] ${EVENT_TEXT}`,
+  sprint: `bg-[#c9b6ff] ${EVENT_TEXT}`,
 };
 
 export function WeekCalendarPanel({

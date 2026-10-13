@@ -174,21 +174,13 @@ export const NOTIFICATION_COPY = {
     subject: "Task reopened from GitHub: {{itemTitle}}",
     body: "The linked issue was reopened, so the status is now {{statusLabel}}.",
   },
-  "task.due_tomorrow": {
-    eventType: "task.due_reminder",
-    label: "Task due tomorrow",
-    description: "Sent the day before a task is due.",
-    variables: ["itemTitle", "when"],
-    subject: "Task due tomorrow: {{itemTitle}}",
-    body: "Due {{when}}.",
-  },
-  "task.due_now": {
-    eventType: "task.due_reminder",
-    label: "Task due now",
-    description: "Sent when a task reaches its deadline.",
-    variables: ["itemTitle", "when"],
-    subject: "Task due now: {{itemTitle}}",
-    body: "Due {{when}}.",
+  "project.sprint_ending": {
+    eventType: "project.sprint_ending",
+    label: "Sprint ending",
+    description: "Sent the morning a sprint ends to assignees with unfinished tasks in it.",
+    variables: ["itemTitle", "contextName", "itemDetail"],
+    subject: "{{itemTitle}} ends today",
+    body: "{{contextName}} — {{itemDetail}}",
   },
   "project.sprint_closed": {
     eventType: "project.sprint_closed",

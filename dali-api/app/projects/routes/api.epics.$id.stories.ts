@@ -5,8 +5,8 @@ import { withCors, handlePreflight } from "~/lib/cors";
 
 // POST /api/epics/:id/stories
 //
-// Create a user story under an epic. Body: { title, notes?, status?, startsAt?,
-// endsAt?, successMetric?, acceptanceCriteria?, category?, priority? }.
+// Create a user story under an epic. Body: { title, notes?, status?,
+// successMetric?, acceptanceCriteria?, category?, priority? }.
 // status defaults to "Todo"; position is appended after the current max.
 // Dependencies aren't set here — a brand-new story has nothing to point at yet;
 // they're added via POST /api/stories/:id.
@@ -30,8 +30,6 @@ type Body = {
   status?: string;
   // Date-only strings (YYYY-MM-DD) or null. Stored as UTC midnight so the
   // timeline's UTC day math lands on the column the user picked.
-  startsAt?: string | null;
-  endsAt?: string | null;
   successMetric?: string | null;
   acceptanceCriteria?: string | null;
   category?: string | null;
@@ -48,8 +46,6 @@ function isBody(x: unknown): x is Body {
   if (typeof o.title !== "string") return false;
   if (o.notes != null && typeof o.notes !== "string") return false;
   if (o.status !== undefined && typeof o.status !== "string") return false;
-  if (!isNullableString(o.startsAt)) return false;
-  if (!isNullableString(o.endsAt)) return false;
   if (!isNullableString(o.successMetric)) return false;
   if (!isNullableString(o.acceptanceCriteria)) return false;
   if (!isNullableString(o.category)) return false;
@@ -63,12 +59,6 @@ function normText(v: string | null | undefined): string | null {
   return t === "" ? null : t;
 }
 
-// Date-only input → UTC midnight, matching how sprint/epic dates are stored.
-function parseDay(v: string | null | undefined): Date | null {
-  if (v == null || v === "") return null;
-  const d = new Date(`${v.slice(0, 10)}T00:00:00.000Z`);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
 
 export async function action({ request, params }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
@@ -118,12 +108,6 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (body.priority != null && body.priority !== "" && !isStoryPriority(body.priority)) {
     return withCors(request, Response.json({ error: "Invalid priority" }, { status: 400 }));
   }
-  for (const key of ["startsAt", "endsAt"] as const) {
-    if (body[key] != null && body[key] !== "" && !parseDay(body[key])) {
-      return withCors(request, Response.json({ error: `Invalid ${key}` }, { status: 400 }));
-    }
-  }
-
   const story = await prisma.userStory.create({
     data: {
       epicId,
@@ -131,8 +115,6 @@ export async function action({ request, params }: Route.ActionArgs) {
       notes: normText(body.notes),
       status,
       position,
-      startsAt: parseDay(body.startsAt),
-      endsAt: parseDay(body.endsAt),
       successMetric: normText(body.successMetric),
       acceptanceCriteria: normText(body.acceptanceCriteria),
       priority:

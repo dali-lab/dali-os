@@ -248,7 +248,7 @@ export function PartnerProjectHubView({
     currentTermCode,
     team,
     timelineEpics,
-    timelineTerms,
+    timelineSprints,
     editableEpics,
     drive,
   } = data;
@@ -339,8 +339,8 @@ export function PartnerProjectHubView({
           // sizes to its bars rather than holding the planning floor.
           <EpicsTimeline
             epics={timelineEpics}
-            terms={timelineTerms}
-            hiddenLevels={["task"]}
+            sprints={timelineSprints}
+            hiddenLevels={["story", "task"]}
             compact
             onEpicClick={setOpenEpicId}
             onStoryClick={(epicId) => setOpenEpicId(epicId)}
@@ -426,9 +426,6 @@ export function PartnerProjectHubView({
           <EpicDetail
             projectId={project.id}
             epic={openEpic}
-            storyOptions={[]}
-            epicOptions={[]}
-            timelineTerms={timelineTerms}
             canManage={false}
             busy={false}
             run={() => {}}

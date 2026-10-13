@@ -11,7 +11,7 @@
 import { prisma } from "~/lib/db";
 import { canEditProject } from "./access";
 import {
-  TASK_STATUSES,
+  BOARD_STATUSES,
   type TaskStatus,
   isTaskStatus,
 } from "~/projects/lib/task-board";
@@ -30,7 +30,7 @@ export const UPDATE_TASK_STATUS_TOOL = {
       },
       status: {
         type: "string",
-        enum: TASK_STATUSES as unknown as string[],
+        enum: BOARD_STATUSES as unknown as string[],
         description: "Target status column.",
       },
     },
@@ -50,7 +50,7 @@ export class UpdateTaskStatusError extends Error {
 }
 
 export async function runUpdateTaskStatus(callerId: string, input: Input) {
-  if (!isTaskStatus(input.status)) {
+  if (!isTaskStatus(input.status) || input.status === "Backlog") {
     throw new UpdateTaskStatusError("Invalid status", 400);
   }
   const newStatus: TaskStatus = input.status;
@@ -61,10 +61,15 @@ export async function runUpdateTaskStatus(callerId: string, input: Input) {
       id: true,
       status: true,
       projectId: true,
+      sprintId: true,
+      sprint: { select: { closedAt: true } },
       assignees: { select: { userId: true } },
     },
   });
   if (!task) throw new UpdateTaskStatusError("Task not found", 404);
+  if (task.sprint?.closedAt) {
+    throw new UpdateTaskStatusError("That sprint is closed — move the task to an open sprint first", 409);
+  }
 
   const isAssignee = task.assignees.some((a) => a.userId === callerId);
   const allowed =
@@ -76,14 +81,14 @@ export async function runUpdateTaskStatus(callerId: string, input: Input) {
   // Append to the end of the target column (same project, same status). Mirrors
   // the web `nextPositionInColumn` helper without round-tripping the whole board.
   const maxInCol = await prisma.task.aggregate({
-    where: { projectId: task.projectId, status: newStatus },
+    where: { projectId: task.projectId, status: newStatus, sprintId: task.sprintId },
     _max: { position: true },
   });
   const nextPosition = (maxInCol._max.position ?? -1) + 1;
 
   await prisma.task.update({
     where: { id: input.taskId },
-    data: { status: newStatus, position: nextPosition },
+    data: { status: newStatus, position: nextPosition, activityAt: new Date() },
   });
 
   return {

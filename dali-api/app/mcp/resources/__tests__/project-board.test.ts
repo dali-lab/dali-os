@@ -1,8 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
+vi.mock("~/projects/lib/sprints.server", () => ({
+  ensureSprints: vi.fn(),
+  loadSprintModels: vi.fn(),
+}));
 
 import { prisma } from "~/lib/db";
+import { ensureSprints, loadSprintModels } from "~/projects/lib/sprints.server";
 import {
   matchProjectBoardUri,
   readProjectBoardResource,
@@ -39,56 +44,70 @@ describe("project-board resource", () => {
     );
   });
 
-  it("groups tasks into sprint boards + backlog by their dates", async () => {
-    // Term Jun 1 → Aug 1. Sprint 1 = Jun 1–7; a task due Jun 3 lands there.
-    // Grouping is by task date vs band range, independent of "today".
-    mockPrisma.project.findUnique.mockResolvedValue({
-      id: "p1",
-      name: "Alpha",
-      status: "Active",
-      projectTerms: [
-        {
-          term: {
-            code: "26X",
-            startDate: new Date("2026-06-01T00:00:00Z"),
-            endDate: new Date("2026-08-01T00:00:00Z"),
-            sortKey: 1,
-          },
-        },
-      ],
-    });
+  it("groups live sprinted tasks under their stored sprint, with closed snapshots", async () => {
+    mockPrisma.project.findUnique.mockResolvedValue({ id: "p1", name: "Alpha", status: "Active" });
+    vi.mocked(loadSprintModels).mockResolvedValue([
+      {
+        id: "s1",
+        number: 1,
+        termId: "26X",
+        termCode: "26X",
+        startsOn: "2000-06-01T00:00:00.000Z",
+        endsOn: "2000-06-07T00:00:00.000Z",
+        closed: true,
+        plannedCount: 3,
+        completedCount: 2,
+        carriedOverCount: 1,
+      },
+      {
+        id: "s2",
+        number: 2,
+        termId: "26X",
+        termCode: "26X",
+        startsOn: "2999-06-08T00:00:00.000Z",
+        endsOn: "2999-06-14T00:00:00.000Z",
+        closed: false,
+        plannedCount: null,
+        completedCount: null,
+        carriedOverCount: null,
+      },
+    ]);
     mockPrisma.task.findMany.mockResolvedValue([
       {
         id: "t1",
         title: "A",
-        status: "Todo",
+        status: "InProgress",
         priority: "Normal",
-        startsAt: null,
-        dueAt: new Date("2026-06-03T00:00:00Z"), // Sprint 1
-        epicId: null,
-        position: 0,
+        epicId: "e1",
+        sprintId: "s2",
+        carryoverCount: 1,
         assignees: [{ user: { id: "u1", firstName: "A", lastName: "B" } }],
       },
+    ]);
+    mockPrisma.task.count.mockResolvedValue(4);
+
+    const data = JSON.parse(await readProjectBoardResource("p1"));
+    expect(ensureSprints).toHaveBeenCalledWith("p1");
+    expect(data.sprints[0]).toMatchObject({
+      id: "s1",
+      phase: "closed",
+      planned: 3,
+      completed: 2,
+      carriedOver: 1,
+    });
+    expect(data.sprints[1]).toMatchObject({ id: "s2", phase: "upcoming" });
+    expect(data.sprints[1]).not.toHaveProperty("planned");
+    expect(data.sprints[1].tasks.InProgress).toEqual([
       {
-        id: "t2",
-        title: "B",
-        status: "Todo",
+        id: "t1",
+        title: "A",
+        status: "InProgress",
         priority: "Normal",
-        startsAt: null,
-        dueAt: null, // undated → backlog
-        epicId: null,
-        position: 0,
-        assignees: [],
+        epicId: "e1",
+        carriedOver: 1,
+        assignees: [{ id: "u1", name: "A B" }],
       },
     ]);
-    mockPrisma.task.count.mockResolvedValue(1);
-
-    const text = await readProjectBoardResource("p1");
-    const data = JSON.parse(text);
-    // Sprint 1 is the first band (Jun 1–7); the Jun 3 task lands in it.
-    expect(data.sprints[0].label).toBe("Sprint 1");
-    expect(data.sprints[0].tasks.Todo.map((c: { id: string }) => c.id)).toEqual(["t1"]);
-    expect(data.backlog.openCount).toBe(1);
-    expect(data.backlog.tasks.Todo.map((c: { id: string }) => c.id)).toEqual(["t2"]);
+    expect(data.backlog).toEqual({ openCount: 4 });
   });
 });

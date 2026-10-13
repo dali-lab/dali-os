@@ -25,7 +25,8 @@ describe("list_my_tasks", () => {
         title: "Wire up auth",
         status: "InProgress",
         priority: "High",
-        dueAt: new Date("2026-06-10T00:00:00Z"),
+        carryoverCount: 1,
+        sprint: { id: "s4", number: 4, endsOn: new Date("2026-06-10T00:00:00Z") },
         createdAt: new Date("2026-06-01T00:00:00Z"),
         projectId: "p1",
         project: { name: "Alpha" },
@@ -42,8 +43,10 @@ describe("list_my_tasks", () => {
       projectName: "Alpha",
       domainName: "Dev",
       assigneeUserIds: ["u1", "u2"],
-      dueAt: "2026-06-10T00:00:00.000Z",
+      sprint: { id: "s4", label: "Sprint 4", endsOn: "2026-06-10T00:00:00.000Z" },
+      carriedOver: 1,
     });
+    expect(out.tasks[0]).not.toHaveProperty("dueAt");
     expect(mockPrisma.task.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({

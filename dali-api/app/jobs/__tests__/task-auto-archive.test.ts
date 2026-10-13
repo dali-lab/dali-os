@@ -37,6 +37,8 @@ describe("runTaskAutoArchive", () => {
     expect(arg.where.archivedAt).toBeNull();
     expect(arg.where.status).toEqual({ in: ["Done", "Cancelled"] });
     expect(arg.where.projectId).toBeUndefined();
+    // ...outside any still-open sprint (backlog, or a closed sprint)...
+    expect(arg.where.OR).toEqual([{ sprintId: null }, { sprint: { closedAt: { not: null } } }]);
     // ...where "stale" is now minus the threshold (7 days here).
     const cutoff = arg.where.updatedAt.lt as Date;
     expect(NOW.getTime() - cutoff.getTime()).toBe(7 * 24 * 60 * 60 * 1000);

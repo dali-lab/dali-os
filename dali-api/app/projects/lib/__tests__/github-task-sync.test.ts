@@ -54,7 +54,7 @@ function fakeOctokit(): { client: Octokit; issues: IssueOps } {
 const taskDetail = {
   description: null as string | null,
   priority: "Normal",
-  dueAt: null as Date | null,
+  sprint: null as { number: number; endsOn: Date } | null,
   epic: null as { title: string } | null,
   domain: null as { displayName: string } | null,
   project: { name: "Signup Revamp" },
@@ -109,7 +109,7 @@ describe("createIssueForTask", () => {
       title: "Wire signup form",
       description: "Hook the form up to the API",
       priority: "High",
-      dueAt: new Date("2026-07-30T00:00:00Z"),
+      sprint: { number: 4, endsOn: new Date("2026-07-30T00:00:00Z") },
       status: "Todo",
       githubRepo: null,
       githubIssueNumber: null,
@@ -135,7 +135,7 @@ describe("createIssueForTask", () => {
     const createdBody = (issues.create.mock.calls[0][0] as { body: string }).body;
     expect(createdBody).toContain("Hook the form up to the API");
     expect(createdBody).toContain("**Priority:** High");
-    expect(createdBody).toContain("**Due:** 2026-07-30");
+    expect(createdBody).toContain("**Sprint:** 4 (ends 2026-07-30)");
     expect(createdBody).toContain("**Epic:** Onboarding");
     expect(createdBody).toContain("**Domain:** Dev");
     expect(createdBody).toContain("**Project:** Signup Revamp");

@@ -3,44 +3,11 @@ import { prisma } from "~/lib/db";
 import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 
-// POST /api/projects/:id/epics
-//
-// Create an epic on a project. Body:
-//   { title, status?, startsAt?, endsAt? }
-// status defaults to "Open"; position is appended after the current max.
-// startsAt/endsAt are optional ISO strings (nullable on the model); if both
-// are given, endsAt must be after startsAt.
-// Same permission model as project edit (isCore === Admin || Core).
+// POST /api/projects/:id/epics { title } — create an epic, appended last.
+// Epics carry no dates: their timeline span follows their tasks' sprints.
 
-const EPIC_STATUSES = ["Backlog", "Open", "InProgress", "Done", "Cancelled"] as const;
-type EpicStatus = (typeof EPIC_STATUSES)[number];
-function isEpicStatus(x: unknown): x is EpicStatus {
-  return typeof x === "string" && (EPIC_STATUSES as readonly string[]).includes(x);
-}
-
-type Body = {
-  title: string;
-  status?: string;
-  startsAt?: string | null;
-  endsAt?: string | null;
-};
-
-function isBody(x: unknown): x is Body {
-  if (!x || typeof x !== "object") return false;
-  const o = x as Record<string, unknown>;
-  if (typeof o.title !== "string") return false;
-  if (o.status !== undefined && typeof o.status !== "string") return false;
-  if (o.startsAt != null && typeof o.startsAt !== "string") return false;
-  if (o.endsAt != null && typeof o.endsAt !== "string") return false;
-  return true;
-}
-
-// Parse an optional ISO date field. Returns undefined when absent/null,
-// a Date when valid, or the string "invalid" when present but unparseable.
-function parseOptionalDate(v: string | null | undefined): Date | undefined | "invalid" {
-  if (v == null) return undefined;
-  const d = new Date(v);
-  return Number.isFinite(d.getTime()) ? d : "invalid";
+function isBody(x: unknown): x is { title: string } {
+  return !!x && typeof x === "object" && typeof (x as Record<string, unknown>).title === "string";
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -68,23 +35,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Title is required" }, { status: 400 }));
   }
 
-  const status = body.status ?? "Open";
-  if (!isEpicStatus(status)) {
-    return withCors(request, Response.json({ error: "Invalid status" }, { status: 400 }));
-  }
-
-  const startsAt = parseOptionalDate(body.startsAt);
-  const endsAt = parseOptionalDate(body.endsAt);
-  if (startsAt === "invalid" || endsAt === "invalid") {
-    return withCors(request, Response.json({ error: "Invalid dates" }, { status: 400 }));
-  }
-  if (startsAt && endsAt && endsAt <= startsAt) {
-    return withCors(
-      request,
-      Response.json({ error: "End date must be after start date" }, { status: 400 }),
-    );
-  }
-
   const project = await prisma.project.findUnique({
     where: { id: params.id },
     select: { id: true },
@@ -104,10 +54,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     data: {
       projectId: params.id,
       title,
-      status,
       position,
-      startsAt: startsAt ?? null,
-      endsAt: endsAt ?? null,
     },
     select: { id: true },
   });

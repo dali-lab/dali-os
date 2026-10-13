@@ -15,9 +15,8 @@ import { MentionTextInput } from "~/components/MentionTextInput";
 import { Markdown } from "~/components/Markdown";
 import { useDialog } from "~/components/ui/dialog";
 import { Checkbox } from "~/components/ui/Checkbox";
-import { DateField } from "~/components/ui/DateField";
 import { uploadFileToS3 } from "~/lib/upload-client";
-import { MultiSelect, Select, Tooltip } from "~/components/ui/floating";
+import { Select, Tooltip } from "~/components/ui/floating";
 import {
   normalizeChecklist,
   CHECKLIST_MAX_ITEMS,
@@ -25,13 +24,9 @@ import {
   type ChecklistItem,
 } from "../lib/task-checklist";
 import type { TaskBoardOptions, TaskCardModel, TaskStatus } from "../lib/task-board";
-import {
-  TASK_STATUSES,
-  TASK_STATUS_LABELS,
-  isTaskFinished,
-  seedTaskLinks,
-} from "../lib/task-board";
-import { DependencyLinks } from "./DependencyLinks";
+import { BOARD_STATUSES, TASK_STATUS_LABELS } from "../lib/task-board";
+import { localTodayUtcDay } from "../lib/timeline-days";
+import { sprintDays, sprintLabel, sprintRangeLabel, sprintStatus } from "../lib/sprints";
 import { PeopleFilter } from "./PeopleFilter";
 import { cn } from "~/lib/cn";
 
@@ -51,31 +46,25 @@ type CommentModel = {
   author: { id: string; name: string; photoUrl: string | null };
 };
 
-// Field values collected by the modal in create mode. The board turns these
-// into a POST (title/dueAt/epic/github) plus follow-up patches
-// (domain/assignees).
+// Field values collected by the modal in create mode. Domain and assignees
+// follow the create POST as a PATCH.
 export type NewTaskValues = {
   title: string;
   description: string | null;
   status: TaskStatus;
-  dueAt: string | null;
-  // Timeline start, as a UTC-midnight day. Null = inherit from the story.
-  startsAt: string | null;
   domainId: string | null;
   assigneeIds: string[];
-  // Null = no epic / no parent story. (A task's sprint is derived from its
-  // dates, not chosen here.)
+  // "" lets the server file it under the project's General epic.
   epicId: string | null;
-  storyId: string | null;
-  // Tasks the new one waits on. Applied with a follow-up PATCH, like assignees.
-  dependsOn: string[];
-  // Not collected in create mode today (the create endpoint doesn't accept a
-  // checklist); present so the board's optimistic card mapping can read it.
+  // Null = the backlog.
+  sprintId: string | null;
   checklist?: ChecklistItem[] | null;
-  // Present = mirror to GitHub on create. `repo` is one of project.repoUrls
-  // (normalized to "owner/repo" by the server).
+  // Present = mirror to GitHub on create.
   github: { repo: string } | null;
 };
+
+// The epic the create form falls back to when nothing else seeds one.
+const GENERAL_EPIC_TITLE = "General";
 
 type ArtifactModel = TaskCardModel["files"][number];
 
@@ -83,15 +72,13 @@ export function TaskModal({
   task,
   projectId,
   options,
-  allTasks,
-  onOpenTask,
   canManage,
   onClose,
   onPatch,
   onCreate,
   onDelete,
   defaultEpicId,
-  defaultStoryId,
+  defaultSprintId,
   defaultStatus,
   onArtifactsChanged,
   onCommentCountChange,
@@ -100,11 +87,6 @@ export function TaskModal({
   task?: TaskCardModel;
   projectId: string;
   options: TaskBoardOptions;
-  // Every task on the board: the "Blocked by" choices, and the source of the
-  // reverse "Blocks" list.
-  allTasks: TaskCardModel[];
-  // Edit mode: opens another task from a dependency link.
-  onOpenTask?: (taskId: string) => void;
   canManage: boolean;
   onClose: () => void;
   // Resolves with the save outcome; on failure the modal stays open and
@@ -115,11 +97,8 @@ export function TaskModal({
   onDelete?: () => void;
   // Create mode: seeds the epic picker (e.g. from the board's epic filter).
   defaultEpicId?: string | null;
-  // Create mode: seeds the user story picker, so adding a task from a story row
-  // arrives already filed under it. The story pins the epic, so this wins over
-  // defaultEpicId (see seedTaskLinks) — the same precedence the create endpoint
-  // applies server-side. Both pickers stay editable.
-  defaultStoryId?: string | null;
+  // Create mode: seeds the sprint picker (the board's open sprint); null = backlog.
+  defaultSprintId?: string | null;
   // Create mode: seeds the status picker, so a column's own Add task lands the
   // new card in that column rather than always in To do.
   defaultStatus?: TaskStatus;
@@ -145,56 +124,37 @@ export function TaskModal({
   const [assigneeIds, setAssigneeIds] = useState<string[]>(
     task?.assignees.map((a) => a.id) ?? [],
   );
-  const [dueDate, setDueDate] = useState<string>(
-    task?.dueAt ? dateInputValue(task.dueAt) : "",
-  );
-  // Backlog is the one column that holds undated work; anywhere else a new
-  // task is scheduled work, so it has to land on the timeline with a deadline.
-  const deadlineRequired = isCreate && status !== "Backlog";
-  const missingDeadline = deadlineRequired && !dueDate;
-  // Timeline start. Paired with the deadline it gives the task a span on the
-  // planning timeline; left blank the bar inherits its story's span.
-  const [startDate, setStartDate] = useState<string>(
-    task?.startsAt ? dateInputValue(task.startsAt) : "",
-  );
-  // Create mode only: the Epic/User story pair the form opens on, reconciled so
-  // a seeded story always brings its own epic. Read once, by the two useStates
-  // below — editing either picker afterwards is unaffected.
-  const seededLinks = seedTaskLinks(options.stories, {
-    epicId: defaultEpicId,
-    storyId: defaultStoryId,
-  });
-  const [storyId, setStoryId] = useState<string>(
-    task ? task.storyId ?? "" : seededLinks.storyId,
-  );
-  const [dependsOn, setDependsOn] = useState<string[]>(task?.dependsOn ?? []);
   const [domainId, setDomainId] = useState<string>(task?.domain?.id ?? "");
   const [epicId, setEpicId] = useState<string>(
-    task ? task.epicId ?? "" : seededLinks.epicId,
+    task?.epicId ??
+      defaultEpicId ??
+      options.epics.find((e) => e.title === GENERAL_EPIC_TITLE)?.id ??
+      "",
   );
-
-  // Dependency choices are every other task on the board. "Blocks" is the
-  // reverse edge: tasks that list this one in their own Blocked by.
-  const dependencyOptions = useMemo(
-    () =>
-      allTasks
-        .filter((t) => t.id !== task?.id)
-        .map((t) => ({ value: t.id, label: t.title })),
-    [allTasks, task?.id],
+  const [sprintId, setSprintId] = useState<string>(
+    task ? task.sprintId ?? "" : defaultSprintId ?? "",
   );
-  const blocksLinks = useMemo(
-    () =>
-      task
-        ? allTasks
-            .filter((t) => t.dependsOn.includes(task.id))
-            .map((t) => ({ id: t.id, label: t.title, open: !isTaskFinished(t) }))
-        : [],
-    [allTasks, task],
-  );
-
-  // Stories always belong to an epic, so with no epic picked there's nothing
-  // to choose from.
-  const epicStories = epicId ? options.stories.filter((s) => s.epicId === epicId) : [];
+  // Backlog plus every sprint still open to work; a task already sitting in a
+  // closed sprint keeps that sprint listed (disabled) so its value renders.
+  const sprintOptions = useMemo(() => {
+    const today = localTodayUtcDay();
+    const multiTerm = new Set(options.sprints.map((x) => x.termId)).size > 1;
+    return [
+      { value: "", label: "Backlog" },
+      ...[...options.sprints]
+        .sort((a, z) => Date.parse(a.startsOn) - Date.parse(z.startsOn))
+        .filter((x) => sprintStatus(sprintDays(x), today) !== "Closed" || x.id === task?.sprintId)
+        .map((x) => {
+          const st = sprintStatus(sprintDays(x), today);
+          return {
+            value: x.id,
+            label: `${sprintLabel(x, multiTerm)}${st === "Active" ? " · current" : ""}`,
+            description: sprintRangeLabel(x),
+            disabled: st === "Closed",
+          };
+        }),
+    ];
+  }, [options.sprints, task?.sprintId]);
 
   // Assignable people are the current-term team (options.members). A task
   // carried over from an earlier term may still hold an assignee who has since
@@ -219,20 +179,6 @@ export function TaskModal({
     if (added && !domainId) {
       const staffed = options.members.find((m) => m.id === added)?.domainId;
       if (staffed) setDomainId(staffed);
-    }
-  }
-  // Why a picker has nothing in it, said once under the field. Inside the
-  // control it read as a value you could choose; the design's .field-hint is
-  // where an explanation belongs.
-  const storyHint = epicStories.length
-    ? undefined
-    : epicId
-      ? "This epic has no user stories yet."
-      : "Pick an epic first.";
-  function changeEpic(next: string) {
-    setEpicId(next);
-    if (!options.stories.some((s) => s.id === storyId && s.epicId === next)) {
-      setStoryId("");
     }
   }
   const [checklist, setChecklist] = useState<ChecklistItem[]>(task?.checklist ?? []);
@@ -298,10 +244,7 @@ export function TaskModal({
     setDescription(task.description ?? "");
     setStatus(task.status);
     setAssigneeIds(task.assignees.map((a) => a.id));
-    setDueDate(task.dueAt ? dateInputValue(task.dueAt) : "");
-    setStartDate(task.startsAt ? dateInputValue(task.startsAt) : "");
-    setStoryId(task.storyId ?? "");
-    setDependsOn(task.dependsOn);
+    setSprintId(task.sprintId ?? "");
     setDomainId(task.domain?.id ?? "");
     setEpicId(task.epicId ?? "");
     setChecklist(task.checklist ?? []);
@@ -348,17 +291,8 @@ export function TaskModal({
     const currentDescription = (current.description ?? "").trim() || null;
     if (nextDescription !== currentDescription) patch.description = nextDescription;
     if (status !== current.status) patch.status = status;
-    // Compare the date the picker shows, not a rebuilt ISO — reconstructing
-    // the UTC-midnight timestamp from a YYYY-MM-DD round-trips the value, so an
-    // untouched deadline no longer looks dirty.
-    const currentDueDate = current.dueAt ? dateInputValue(current.dueAt) : "";
-    if (dueDate !== currentDueDate) {
-      patch.dueAt = dueDate ? `${dueDate}T00:00:00.000Z` : null;
-    }
-    const currentStartDate = current.startsAt ? dateInputValue(current.startsAt) : "";
-    if (startDate !== currentStartDate) {
-      patch.startsAt = startDate ? `${startDate}T00:00:00.000Z` : null;
-    }
+    const nextSprintId = sprintId === "" ? null : sprintId;
+    if (nextSprintId !== current.sprintId) patch.sprintId = nextSprintId;
     const nextDomain =
       domainId === ""
         ? null
@@ -366,13 +300,7 @@ export function TaskModal({
     const currentDomainId = current.domain?.id ?? null;
     const nextDomainId = nextDomain?.id ?? null;
     if (nextDomainId !== currentDomainId) patch.domain = nextDomain;
-    const nextEpicId = epicId === "" ? null : epicId;
-    if (nextEpicId !== current.epicId) patch.epicId = nextEpicId;
-    const nextStoryId = storyId === "" ? null : storyId;
-    if (nextStoryId !== current.storyId) patch.storyId = nextStoryId;
-    if ([...dependsOn].sort().join() !== [...current.dependsOn].sort().join()) {
-      patch.dependsOn = dependsOn;
-    }
+    if (epicId !== "" && epicId !== current.epicId) patch.epicId = epicId;
     const nextChecklist = normalizeChecklist(checklist);
     const currentChecklist = normalizeChecklist(current.checklist ?? []);
     if (JSON.stringify(nextChecklist) !== JSON.stringify(currentChecklist)) {
@@ -400,12 +328,10 @@ export function TaskModal({
     return (
       title.trim() !== "" ||
       description.trim() !== "" ||
-      status !== "Todo" ||
-      dueDate !== "" ||
+      status !== (defaultStatus ?? "Todo") ||
+      sprintId !== (defaultSprintId ?? "") ||
       domainId !== "" ||
       assigneeIds.length > 0 ||
-      dependsOn.length > 0 ||
-      epicId !== (defaultEpicId ?? "") ||
       githubEnabled
     );
   }
@@ -445,10 +371,7 @@ export function TaskModal({
     setDescription(current.description ?? "");
     setStatus(current.status);
     setAssigneeIds(current.assignees.map((a) => a.id));
-    setDueDate(current.dueAt ? dateInputValue(current.dueAt) : "");
-    setStartDate(current.startsAt ? dateInputValue(current.startsAt) : "");
-    setStoryId(current.storyId ?? "");
-    setDependsOn(current.dependsOn);
+    setSprintId(current.sprintId ?? "");
     setDomainId(current.domain?.id ?? "");
     setEpicId(current.epicId ?? "");
     setChecklist(current.checklist ?? []);
@@ -503,23 +426,16 @@ export function TaskModal({
   async function handleCreate() {
     const trimmed = title.trim();
     if (!trimmed || !onCreate) return;
-    if (missingDeadline) {
-      setSaveError("Give the task a deadline, or create it in Backlog.");
-      return;
-    }
     setSaving(true);
     try {
       await onCreate({
         title: trimmed,
         description: description.trim() ? description.trim() : null,
         status,
-        dueAt: dueDate ? `${dueDate}T00:00:00.000Z` : null,
-        startsAt: startDate ? `${startDate}T00:00:00.000Z` : null,
         domainId: domainId === "" ? null : domainId,
         assigneeIds,
         epicId: epicId === "" ? null : epicId,
-        storyId: storyId === "" ? null : storyId,
-        dependsOn,
+        sprintId: sprintId === "" ? null : sprintId,
         github: githubEnabled && githubRepo ? { repo: githubRepo } : null,
       });
       onClose();
@@ -986,41 +902,20 @@ export function TaskModal({
               value={status}
               disabled={!canManage}
               onChange={(value) => setStatus(value as TaskStatus)}
-              options={TASK_STATUSES.map((s) => ({ value: s, label: TASK_STATUS_LABELS[s] }))}
+              options={BOARD_STATUSES.map((s) => ({ value: s, label: TASK_STATUS_LABELS[s] }))}
               buttonClassName={PROP_CONTROL}
             />
           </PropRow>
 
-          <FieldPair>
-          <PropRow label="Starts">
-            <DateField
-              mode="date"
-              value={startDate}
+          <PropRow label="Sprint">
+            <Select
+              value={sprintId}
               disabled={!canManage}
-              onChange={(value) => setStartDate(value)}
-              className="w-full"
-              ariaLabel="Start date"
+              onChange={(value) => setSprintId(value)}
+              options={sprintOptions}
+              buttonClassName={PROP_CONTROL}
             />
           </PropRow>
-          <PropRow
-            label="Deadline"
-            required={deadlineRequired}
-            hint={
-              deadlineRequired && !dueDate
-                ? "Required unless the task starts in Backlog."
-                : undefined
-            }
-          >
-            <DateField
-              mode="date"
-              value={dueDate}
-              disabled={!canManage}
-              onChange={(value) => setDueDate(value)}
-              className="w-full"
-              ariaLabel="Deadline"
-            />
-          </PropRow>
-          </FieldPair>
 
           <FieldPair>
           <PropRow label="Assignees" align="start">
@@ -1057,65 +952,17 @@ export function TaskModal({
           </>
 
           <FieldPair>
-          <PropRow label="Epic">
+          <PropRow label="Epic" required>
             <Select
               value={epicId}
               disabled={!canManage}
-              onChange={(value) => changeEpic(value)}
-              placeholder="No epic"
-              options={[
-                { value: "", label: "No epic" },
-                ...options.epics.map((e) => ({ value: e.id, label: e.title })),
-              ]}
+              onChange={(value) => setEpicId(value)}
+              placeholder={GENERAL_EPIC_TITLE}
+              options={options.epics.map((e) => ({ value: e.id, label: e.title }))}
               buttonClassName={PROP_CONTROL}
             />
           </PropRow>
           </FieldPair>
-
-          <PropRow label="User story" hint={storyHint}>
-            <Tooltip
-              variant="rich"
-              content={
-                epicStories.length === 0
-                  ? epicId
-                    ? "This epic has no user stories yet. Add stories from the Progress tab."
-                    : "Pick an epic first — user stories are scoped to an epic."
-                  : null
-              }
-            >
-              <span>
-                <Select
-                  value={storyId}
-                  disabled={!canManage || epicStories.length === 0}
-                  onChange={(value) => setStoryId(value)}
-                  placeholder="None"
-                  options={[
-                    { value: "", label: "None" },
-                    ...epicStories.map((s) => ({ value: s.id, label: s.title })),
-                  ]}
-                  buttonClassName={PROP_CONTROL}
-                />
-              </span>
-            </Tooltip>
-          </PropRow>
-
-          <PropRow label="Blocked by" align="start">
-            <MultiSelect
-              values={dependsOn}
-              options={dependencyOptions}
-              disabled={!canManage || readOnly}
-              onChange={setDependsOn}
-              ariaLabel="Tasks this one waits on"
-              placeholder="Nothing"
-              emptyLabel="No other tasks on this board"
-              buttonClassName={PROP_CONTROL}
-            />
-          </PropRow>
-          {!isCreate && (
-            <PropRow label="Blocks" align="start">
-              <DependencyLinks items={blocksLinks} onSelect={onOpenTask} />
-            </PropRow>
-          )}
         </div>
 
         {isCreate && canManage && githubRepos.length > 0 && (
@@ -1435,7 +1282,7 @@ export function TaskModal({
                     variant="primary"
                     size="sm"
                     onClick={() => void handleCreate()}
-                    disabled={!title.trim() || missingDeadline || saving}
+                    disabled={!title.trim() || saving}
                   >
                     {saving ? "Creating…" : "Create task"}
                   </Button>
@@ -1560,14 +1407,6 @@ function normalizeRepoForDisplay(input: string): string | null {
   s = s.replace(/\.git$/, "");
   s = s.replace(/\/+$/, "");
   return /^[^/\s]+\/[^/\s]+$/.test(s) ? s : null;
-}
-
-// Task startsAt/dueAt are date-only values stored as UTC midnight (see the
-// timeline's UTC-day convention in timeline-days.ts). Read the UTC calendar
-// date so the picker shows the same day the bar occupies — a local getDate()
-// would drift a day for viewers west of UTC.
-function dateInputValue(iso: string): string {
-  return new Date(iso).toISOString().slice(0, 10);
 }
 
 function formatCreatedAt(iso: string): string {

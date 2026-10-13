@@ -17,6 +17,8 @@ import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { getUserRoles } from "~/lib/roles";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { prisma } from "~/lib/db";
+import { loadSprintModels } from "~/projects/lib/sprints.server";
+import { labTodayUtcDay } from "~/lib/timezone";
 import {
   computeProjectStatus,
   factsFingerprint,
@@ -58,10 +60,10 @@ const TASK_TAKE = 1000;
 // what to focus on first, why, and the obvious next step. Naming specific tasks
 // is what makes it concrete rather than a paraphrase of the chips.
 const SYSTEM_PROMPT = `You are a project-health analyst for a software lab's project board. \
-The reader ALREADY sees the raw counts (done/total, overdue, unscheduled, in review, active sprint) as labels directly above your text. \
+The reader ALREADY sees the raw counts (done/total, carried over, unscheduled, in review, active sprint) as labels directly above your text. \
 Do NOT restate those numbers or list the categories back — that is wasted space. \
 Instead, in ONE or TWO sentences, give a judgment the counts don't: name the single most important thing to address and WHY, cite the specific task(s) involved when it sharpens the point, and suggest the obvious next step if there is one. \
-Weigh it like a lead would: overdue high-priority work and running with no sprint plan matter more than a large-but-moving backlog; a few stalled tasks can be the real story. \
+Weigh it like a lead would: high-priority work that keeps rolling from sprint to sprint and started work sitting outside any sprint matter more than a large-but-moving backlog; a few stalled tasks can be the real story. \
 If the project is genuinely healthy, say so in one short sentence instead of inventing problems. \
 Plain text only: no preamble, no markdown, no bullet points, no headings.`;
 
@@ -79,12 +81,12 @@ function factsToPrompt(name: string, f: ProjectStatusFacts, d: TldrDetail): stri
     ? `${f.activeSprint.label}, ${
         f.activeSprint.daysRemaining >= 0
           ? `${f.activeSprint.daysRemaining} day(s) left`
-          : `${-f.activeSprint.daysRemaining} day(s) overdue`
+          : "ending"
       }`
     : "NONE running";
-  const overdue = d.overdue.length
-    ? d.overdue
-        .map((o) => `"${o.title}" [${o.priority}, ${o.daysOver}d overdue]`)
+  const carried = d.carried.length
+    ? d.carried
+        .map((o) => `"${o.title}" [${o.priority}, rolled over ${o.times}x]`)
         .join("; ")
     : "none";
   const stale = d.stale.length
@@ -99,8 +101,8 @@ function factsToPrompt(name: string, f: ProjectStatusFacts, d: TldrDetail): stri
     `Active sprint: ${sprint}.`,
     `Distinct assignees (rough team size): ${d.teamSize}.`,
     `Open priority mix: ${d.urgentOpen} urgent, ${d.highOpen} high.`,
-    `Overdue tasks (${f.overdue}): ${overdue}.`,
-    `Unscheduled in-motion tasks with no sprint: ${f.unscheduled} (${d.unscheduledHighPriority} of them high/urgent).`,
+    `Tasks carried over from earlier sprints (${f.carried}): ${carried}.`,
+    `Started tasks sitting in the backlog, outside any sprint: ${f.unscheduled} (${d.unscheduledHighPriority} of them high/urgent).`,
     `In review (${f.inReview}): ${inReview}.`,
     `Stalled 14d+ (${f.stale}): ${stale}.`,
   ].join("\n");
@@ -169,15 +171,10 @@ export async function action({ request }: Route.ActionArgs) {
           title: true,
           status: true,
           priority: true,
-          startsAt: true,
-          dueAt: true,
+          sprintId: true,
+          carryoverCount: true,
           activityAt: true,
           assignees: { select: { userId: true } },
-        },
-      },
-      projectTerms: {
-        select: {
-          term: { select: { code: true, startDate: true, endDate: true, sortKey: true } },
         },
       },
     },
@@ -192,24 +189,19 @@ export async function action({ request }: Route.ActionArgs) {
     title: t.title,
     status: t.status as TaskStatus,
     priority: t.priority as Priority,
-    startsAt: t.startsAt,
-    dueAt: t.dueAt,
+    sprintId: t.sprintId,
+    carryoverCount: t.carryoverCount,
     activityAt: t.activityAt,
     assigneeIds: t.assignees.map((a) => a.userId),
   }));
-  // Term spans (oldest first) anchor the computed sprint grid the current-sprint
-  // fact is read off — the same grid the timeline and board use.
-  const terms = project.projectTerms
-    .map((pt) => pt.term)
-    .sort((a, b) => a.sortKey - b.sortKey)
-    .map((t) => ({
-      code: t.code,
-      startsAt: t.startDate.toISOString(),
-      endsAt: t.endDate.toISOString(),
-    }));
   const facts = computeProjectStatus(
-    { projectStatus: project.status as ProjectWorkStatus, tasks, terms },
+    {
+      projectStatus: project.status as ProjectWorkStatus,
+      tasks,
+      sprints: await loadSprintModels(project.id),
+    },
     now,
+    labTodayUtcDay(now),
   );
   const detail = buildTldrDetail(tasks, now);
 

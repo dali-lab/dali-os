@@ -86,7 +86,7 @@ beforeEach(() => {
     workspaceId: "proj1",
   } as never);
   vi.mocked(prisma.task.findMany).mockResolvedValue([] as never);
-  vi.mocked(runCreateTask).mockResolvedValue({ id: "task1", status: "Todo", position: 0 });
+  vi.mocked(runCreateTask).mockResolvedValue({ id: "task1", status: "Todo", position: 0, epicId: "general", sprintId: null });
 });
 
 describe('POST /api/meeting-recordings/:id { action: "createTasks" }', () => {
@@ -117,7 +117,7 @@ describe('POST /api/meeting-recordings/:id { action: "createTasks" }', () => {
       title: "Send the revised scope",
       description: 'Action item from "Standup notes" at 20:03.\nhttp://localhost/documents/p1?transcript=rec1&at=1203',
       assigneeUserIds: ["u-ada"],
-      dueAt: "2026-10-17T00:00:00.000Z",
+      forDay: "2026-10-17T00:00:00.000Z",
       sourceRecordingId: "rec1",
     });
     // The action item's taskId is written back for the dedup guard.
@@ -189,7 +189,7 @@ describe('POST /api/meeting-recordings/:id { action: "createTasks" }', () => {
   it("keeps the task ids already created when a later item fails, so a retry can't duplicate them", async () => {
     vi.mocked(runCreateTask)
       .mockResolvedValueOnce({ id: "task1" } as never)
-      .mockRejectedValueOnce(new CreateTaskError("Invalid dueAt", 400));
+      .mockRejectedValueOnce(new CreateTaskError("Invalid forDay", 400));
     const res = await run({
       action: "createTasks",
       items: [
@@ -198,7 +198,7 @@ describe('POST /api/meeting-recordings/:id { action: "createTasks" }', () => {
       ],
     });
     expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: "Invalid dueAt", created: [{ index: 0, taskId: "task1" }] });
+    expect(await res.json()).toEqual({ error: "Invalid forDay", created: [{ index: 0, taskId: "task1" }] });
     expect(prisma.meetingRecording.update).toHaveBeenCalledWith({
       where: { id: "rec1" },
       data: {

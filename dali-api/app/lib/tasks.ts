@@ -251,7 +251,7 @@ async function getInternalCycleApplyTask(
   };
 }
 
-/** Open project tasks assigned to a user, soonest deadline first. */
+/** Open project tasks assigned to a user: soonest sprint first, backlog last. */
 export async function listMyProjectTasks(userId: string): Promise<ProjectWorkItem[]> {
   const rows = await prisma.task.findMany({
     where: {
@@ -260,13 +260,14 @@ export async function listMyProjectTasks(userId: string): Promise<ProjectWorkIte
       archivedAt: null,
       project: { status: { not: "Archived" } },
     },
-    orderBy: [{ dueAt: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }],
+    orderBy: [{ sprint: { startsOn: "asc" } }, { createdAt: "desc" }],
     take: 50,
     select: {
       id: true,
       title: true,
       status: true,
-      dueAt: true,
+      carryoverCount: true,
+      sprint: { select: { number: true, endsOn: true } },
       activityAt: true,
       projectId: true,
       project: { select: { name: true } },
@@ -278,7 +279,10 @@ export async function listMyProjectTasks(userId: string): Promise<ProjectWorkIte
     projectId: t.projectId,
     projectName: t.project.name,
     status: t.status as ProjectWorkItem["status"],
-    dueAt: t.dueAt?.toISOString() ?? null,
+    sprint: t.sprint
+      ? { label: `Sprint ${t.sprint.number}`, endsOn: t.sprint.endsOn.toISOString() }
+      : null,
+    carryoverCount: t.carryoverCount,
     activityAt: t.activityAt.toISOString(),
     link: projectTaskLink(t.projectId, t.id),
   }));

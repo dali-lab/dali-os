@@ -42,7 +42,6 @@ export async function notifyTaskAssigned(args: {
       id: true,
       title: true,
       projectId: true,
-      dueAt: true,
       project: { select: { name: true } },
     },
   });
@@ -55,7 +54,6 @@ export async function notifyTaskAssigned(args: {
     message: {
       vars: { itemTitle: task.title, contextName: task.project.name },
       link: taskLink(task.projectId, task.id),
-      dueAt: task.dueAt,
     },
     recipients: recipients.map((userId) => ({ userId })),
   });

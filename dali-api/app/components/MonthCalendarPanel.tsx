@@ -39,8 +39,7 @@ const EVENT_FILLS: Record<MonthEvent["kind"], string> = {
   meeting: `bg-accent-coral-light ${EVENT_TEXT}`,
   // The timeline's level hues, so an epic deadline here and an epic bar there
   // are the same colour. Light tints, because the chip's ink is fixed dark.
-  epic: `bg-[#c9b6ff] ${EVENT_TEXT}`,
-  story: `bg-[#8fdedb] ${EVENT_TEXT}`,
+  sprint: `bg-[#c9b6ff] ${EVENT_TEXT}`,
 };
 // Past three chips a cell stops being scannable; the rest go behind a count
 // that opens the week.

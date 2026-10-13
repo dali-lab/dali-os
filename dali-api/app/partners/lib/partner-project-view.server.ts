@@ -4,9 +4,11 @@ import { resolvePhotoUrl } from "~/lib/photo";
 import { getDownloadUrl } from "~/lib/s3";
 import { fullName } from "~/lib/display";
 import { buildTimelineEpics } from "~/projects/lib/timeline-epics";
+import { loadSprintModels } from "~/projects/lib/sprints.server";
+import { deriveEpicStatus, sprintLabel } from "~/projects/lib/sprints";
 import type {
   TimelineEpic,
-  TimelineTerm,
+  TimelineSprint,
 } from "~/projects/components/EpicsTimeline";
 import type { EditableEpic } from "~/projects/components/EpicSprintManager";
 
@@ -79,7 +81,7 @@ export type PartnerProjectViewData = {
   // resolver — minus the task level, which the partner hub hides. Every
   // non-cancelled epic, in position order.
   timelineEpics: TimelineEpic[];
-  timelineTerms: TimelineTerm[];
+  timelineSprints: TimelineSprint[];
   // The same epics again, in the shape the project hub's detail modal reads —
   // clicking a bar opens that modal here too, read-only. Deliberately thinner
   // than the hub's copy: see toEditableEpic.
@@ -126,7 +128,8 @@ export async function loadPartnerProjectView(
     partnership,
     assignments,
     epicsRaw,
-    storyTaskRows,
+    epicTaskRows,
+    sprintModels,
     pageRows,
     sharedFileRows,
   ] = await Promise.all([
@@ -152,38 +155,33 @@ export async function loadPartnerProjectView(
             },
           })
         : Promise.resolve([]),
-      // Cancelled epics are dropped work — partners never see them. Stories
-      // come along because they're the timeline's second level of bars.
+      // Cancelled epics are dropped work — partners never see them.
       prisma.epic.findMany({
-        where: { projectId: project.id, status: { not: "Cancelled" } },
+        where: { projectId: project.id, cancelledAt: null },
         orderBy: { position: "asc" },
         select: {
           id: true,
           title: true,
           description: true,
-          status: true,
-          startsAt: true,
-          endsAt: true,
+          cancelledAt: true,
           stories: {
             orderBy: { position: "asc" },
-            select: {
-              id: true,
-              title: true,
-              notes: true,
-              status: true,
-              startsAt: true,
-              endsAt: true,
-            },
+            select: { id: true, title: true, notes: true, status: true },
           },
         },
       }),
-      // Dates only. Tasks never reach the partner — they're read here because a
-      // story with no dates of its own is placed by the tasks under it, and a
-      // partner's story bar has to land where the internal timeline puts it.
+      // Sprint + status only: they place and colour the epic bars. Task titles
+      // and assignees never reach the partner.
       prisma.task.findMany({
-        where: { projectId: project.id, archivedAt: null, storyId: { not: null } },
-        select: { id: true, storyId: true, startsAt: true, dueAt: true },
+        where: { projectId: project.id, archivedAt: null, epicId: { not: null } },
+        select: {
+          id: true,
+          epicId: true,
+          status: true,
+          sprint: { select: { startsOn: true, endsOn: true, number: true, termId: true } },
+        },
       }),
+      loadSprintModels(project.id),
       // Shared docs, plus every folder — folders carry no partnerVisible flag
       // of their own, so which ones a partner sees falls out of what's in them
       // (filtered below).
@@ -227,53 +225,49 @@ export async function loadPartnerProjectView(
   // empty: partners see what's being built and when, not who is on which card.
   const timelineEpics = buildTimelineEpics({
     epics: epicsRaw,
-    tasks: storyTaskRows,
+    tasks: epicTaskRows,
     includeTasks: false,
   });
 
-  // What the read-only detail modal actually renders, and nothing else. The
-  // modal shows an epic's status, dates, plain-text description and the *names*
-  // of its stories; it never renders a story's success metric, acceptance
-  // criteria, category, priority or dependency edges, so those don't travel to
-  // a partner's browser just to satisfy the shape. `notes` does, because the
-  // "still needs its details" dot is derived from it.
-  //
-  // descriptionDocId is dropped for the same reason: the collab room behind an
-  // epic description isn't shared with partners, and passing the id would only
-  // buy them a "Sign in again to see the description" they can never satisfy.
-  const editableEpics: EditableEpic[] = epicsRaw.map((e) => ({
-    id: e.id,
-    title: e.title,
-    description: e.description,
-    status: e.status,
-    startsAt: e.startsAt?.toISOString() ?? null,
-    endsAt: e.endsAt?.toISOString() ?? null,
-    descriptionDocId: null,
-    // The hub shows the shape of the work, not its planning edges.
-    dependsOn: [],
-    stories: e.stories.map((st) => ({
-      id: st.id,
-      title: st.title,
-      notes: st.notes,
-      status: st.status,
-      startsAt: st.startsAt?.toISOString() ?? null,
-      endsAt: st.endsAt?.toISOString() ?? null,
-      dependsOn: [],
-      successMetric: null,
-      acceptanceCriteria: null,
-      category: null,
-      priority: null,
-    })),
-  }));
+  // What the read-only detail modal renders, and nothing else: no task titles,
+  // no story prod-req fields, no collab doc id (partners can't open the room).
+  const multiTerm = new Set(sprintModels.map((sp) => sp.termId)).size > 1;
+  const editableEpics: EditableEpic[] = epicsRaw.map((e) => {
+    const epicTasks = epicTaskRows.filter((t) => t.epicId === e.id);
+    const placed = epicTasks
+      .flatMap((t) => (t.sprint ? [t.sprint] : []))
+      .sort((a, z) => a.startsOn.getTime() - z.startsOn.getTime());
+    const codeOf = (termId: string) =>
+      sprintModels.find((sp) => sp.termId === termId)?.termCode ?? "";
+    return {
+      id: e.id,
+      title: e.title,
+      description: e.description,
+      status: deriveEpicStatus(e, epicTasks.map((t) => t.status)),
+      descriptionDocId: null,
+      sprints: [
+        ...new Set(placed.map((sp) => sprintLabel({ number: sp.number, termCode: codeOf(sp.termId) }, multiTerm))),
+      ],
+      tasks: [],
+      stories: e.stories.map((st) => ({
+        id: st.id,
+        title: st.title,
+        notes: st.notes,
+        status: st.status,
+        successMetric: null,
+        acceptanceCriteria: null,
+        category: null,
+        priority: null,
+      })),
+    };
+  });
 
-  // Term spans anchor the fixed one-week sprint grid and label its bands.
-  const timelineTerms: TimelineTerm[] = [...project.projectTerms]
-    .sort((a, b) => a.term.sortKey - b.term.sortKey)
-    .map((t) => ({
-      code: t.term.code,
-      startsAt: t.term.startDate.toISOString(),
-      endsAt: t.term.endDate.toISOString(),
-    }));
+  const timelineSprints: TimelineSprint[] = sprintModels.map((sp) => ({
+    id: sp.id,
+    startsOn: sp.startsOn,
+    endsOn: sp.endsOn,
+    label: sprintLabel(sp, multiTerm),
+  }));
 
   // Dedupe the roster: one row per person, domains joined.
   const roster = new Map<
@@ -367,7 +361,7 @@ export async function loadPartnerProjectView(
     currentTermCode: current?.code ?? null,
     team,
     timelineEpics,
-    timelineTerms,
+    timelineSprints,
     editableEpics,
     drive,
   };

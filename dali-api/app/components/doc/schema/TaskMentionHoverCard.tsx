@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { cn } from "~/lib/cn";
-import { formatDateShort } from "~/lib/display";
 import { TASK_STATUS_LABELS, type TaskStatus } from "~/projects/lib/task-board";
 
 // Status/assignee/due-date resolution for a taskMention chip (mention.tsx
@@ -18,7 +17,8 @@ type CardTask = {
   title: string;
   status: TaskStatus;
   assignee: { name: string } | null;
-  dueAt: string | null;
+  // "Sprint 4", or null in the backlog.
+  sprint: string | null;
 };
 
 const cache = new Map<string, CardTask | null>();
@@ -131,9 +131,7 @@ export function taskMentionHoverContent(task: CardTask | null | "loading", fallb
       {task.assignee && (
         <span className="text-muted-foreground">Assigned to {task.assignee.name}</span>
       )}
-      {task.dueAt && (
-        <span className="text-muted-foreground">Due {formatDateShort(task.dueAt)}</span>
-      )}
+      <span className="text-muted-foreground">{task.sprint ?? "Backlog"}</span>
     </span>
   );
 }

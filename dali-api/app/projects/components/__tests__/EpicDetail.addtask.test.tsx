@@ -1,11 +1,4 @@
 // @vitest-environment jsdom
-//
-// Guards the per-story "Add task" affordance in the epic detail modal — the
-// other half of the story-scoped shortcut (see EpicList.addtask.test.tsx).
-// Three things have to hold: it appears only when a task can actually be
-// created (an onAddTask handler — the partner hub mounts this modal read-only
-// and passes none), it names its own story, and clicking it hands that story
-// back so the task form can open already filed under it.
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { createElement, act, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -18,35 +11,33 @@ import { DialogProvider } from "~/components/ui/dialog";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-function epic(): EditableEpic {
+function epic(over: Partial<EditableEpic> = {}): EditableEpic {
   return {
     id: "epic-1",
     title: "Design",
     description: null,
-    status: "Open",
-    startsAt: null,
-    endsAt: null,
+    status: "InProgress",
     descriptionDocId: null,
-    dependsOn: [],
+    sprints: ["Sprint 3", "Sprint 4"],
+    tasks: [
+      { id: "task-1", title: "Wireframes", status: "InProgress", sprint: "Sprint 4" },
+      { id: "task-2", title: "Copy", status: "Todo", sprint: null },
+    ],
     stories: [
       {
         id: "story-1",
         title: "Onboarding",
         notes: null,
         status: "Todo",
-        startsAt: null,
-        endsAt: null,
-        dependsOn: [],
         successMetric: null,
         acceptanceCriteria: null,
         category: null,
         priority: null,
       },
     ],
+    ...over,
   };
 }
-
-const ADD_LABEL = "Add task to Onboarding";
 
 let container: HTMLDivElement | undefined;
 let root: Root | undefined;
@@ -56,12 +47,9 @@ type DetailProps = ComponentProps<typeof EpicDetail>;
 const baseProps: DetailProps = {
   projectId: "p1",
   epic: epic(),
-  storyOptions: [],
-  epicOptions: [],
-  timelineTerms: [],
   canManage: true,
   busy: false,
-  run: () => {},
+  run: (fn) => void fn(),
   api: async () => {},
   collabToken: null,
   userName: "Tester",
@@ -70,19 +58,21 @@ const baseProps: DetailProps = {
 };
 
 function mount(props: Partial<DetailProps>) {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }));
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   act(() =>
     root!.render(
-      createElement(
-        DialogProvider,
-        null,
-        createElement(EpicDetail, { ...baseProps, ...props }),
-      ),
+      createElement(DialogProvider, null, createElement(EpicDetail, { ...baseProps, ...props })),
     ),
   );
 }
+
+const buttonWithText = (text: string) =>
+  [...container!.querySelectorAll("button")].find((b) => b.textContent?.includes(text)) as
+    | HTMLButtonElement
+    | undefined;
 
 afterEach(() => {
   if (root) {
@@ -95,38 +85,54 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("EpicDetail add-task affordance", () => {
-  it("renders a per-story add button for a manager with a handler", () => {
-    // The modal pings for a description room on a manager open; it's irrelevant
-    // here and wrapped in its own try/catch, but stub it so nothing warns.
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }));
-    mount({ onAddTask: () => {} });
-    expect(container!.querySelector(`[aria-label="${ADD_LABEL}"]`)).toBeTruthy();
+describe("EpicDetail", () => {
+  it("shows the derived status and the sprints its tasks sit in", () => {
+    mount({});
+    expect(container!.textContent).toContain("In progress");
+    expect(container!.textContent).toContain("Sprint 3");
+    expect(container!.textContent).toContain("Sprint 4");
   });
 
-  it("renders nothing without a handler (partner hub)", () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }));
-    // The partner hub mounts this with canManage false and no handler at all.
-    mount({ canManage: false });
-    expect(container!.querySelector(`[aria-label="${ADD_LABEL}"]`)).toBeNull();
-    expect(container!.textContent).not.toContain("Add task");
+  it("prompts to sprint a task when the epic is unscheduled", () => {
+    mount({ epic: epic({ sprints: [] }) });
+    expect(container!.textContent).toContain("Put one of its tasks in a sprint");
   });
 
-  it("renders nothing for a viewer even when a handler is passed", () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }));
-    mount({ canManage: false, onAddTask: () => {} });
-    expect(container!.querySelector(`[aria-label="${ADD_LABEL}"]`)).toBeNull();
+  it("lists tasks beside stories, with their sprint or Backlog, and opens one on click", () => {
+    const onOpenTask = vi.fn();
+    mount({ onOpenTask });
+    expect(container!.textContent).toContain("Tasks (2)");
+    expect(container!.textContent).toContain("Backlog");
+    expect(container!.textContent).toContain("Onboarding");
+    act(() => buttonWithText("Wireframes")!.click());
+    expect(onOpenTask).toHaveBeenCalledWith("task-1");
   });
 
-  it("clicking the add hands back the story it sits on", () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }));
+  it("adds a task to the epic for a manager with a handler", () => {
     const onAddTask = vi.fn();
     mount({ onAddTask });
-    const button = container!.querySelector(
-      `[aria-label="${ADD_LABEL}"]`,
-    ) as HTMLElement;
-    act(() => button.click());
-    // Just the story — the caller knows which epic's modal is open.
-    expect(onAddTask).toHaveBeenCalledWith("story-1");
+    act(() => buttonWithText("Add task")!.click());
+    expect(onAddTask).toHaveBeenCalledWith();
+  });
+
+  it("offers no add for viewers or without a handler (partner hub)", () => {
+    mount({ canManage: false, onAddTask: () => {} });
+    expect(buttonWithText("Add task")).toBeUndefined();
+    act(() => root!.unmount());
+    root = undefined;
+    mount({});
+    expect(buttonWithText("Add task")).toBeUndefined();
+  });
+
+  it("cancels and reopens the epic", () => {
+    const api = vi.fn(async () => {});
+    mount({ api });
+    act(() => buttonWithText("Cancel epic")!.click());
+    expect(api).toHaveBeenCalledWith("/api/epics/epic-1", "POST", { cancelled: true });
+    act(() => root!.unmount());
+    root = undefined;
+    mount({ api, epic: epic({ status: "Cancelled" }) });
+    act(() => buttonWithText("Reopen epic")!.click());
+    expect(api).toHaveBeenLastCalledWith("/api/epics/epic-1", "POST", { cancelled: false });
   });
 });

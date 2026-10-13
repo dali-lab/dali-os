@@ -379,3 +379,19 @@ export function formatDualTime(
   if (viewer.time === anchor.time && viewer.label === anchor.label) return anchorStr;
   return `${anchorStr} · ${viewer.time} your time (${viewer.label})`;
 }
+
+/** The lab's (ET) calendar date as a UTC-midnight ms — the server-side "today" for day-keyed records like sprints. */
+export function labTodayUtcDay(now: Date): number {
+  const [y, m, d] = new Intl.DateTimeFormat("en-CA", { timeZone: APPLICATION_TZ })
+    .format(now)
+    .split("-")
+    .map(Number);
+  return Date.UTC(y!, m! - 1, d!);
+}
+
+/** The lab's (ET) wall-clock hour, 0–23. */
+export function labHour(now: Date): number {
+  return Number(
+    new Intl.DateTimeFormat("en-US", { timeZone: APPLICATION_TZ, hour: "numeric", hourCycle: "h23" }).format(now),
+  );
+}

@@ -31,7 +31,7 @@ export const STANDUP_PROMPT: PromptDefinition = {
             "",
             "- **In progress** — every task currently in 'InProgress' or 'InReview', grouped by assignee.",
             "- **Moved to Done since yesterday** — tasks now in Done. (If you can't tell from the snapshot, say so explicitly rather than guessing.)",
-            "- **Blocked or stale** — InProgress tasks with no assignee, missing domain, or visible due-date risk.",
+            "- **Blocked or stale** — InProgress tasks with no assignee or domain, and tasks that carried over from an earlier sprint.",
             "- **Today's focus** — top 3 cards the team should push on (your judgment; cite task ids).",
             "",
             "Keep the whole standup under ~200 words.",

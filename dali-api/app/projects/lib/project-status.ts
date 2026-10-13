@@ -1,13 +1,10 @@
-// Pure helper for the project Progress-tab status bar. Route loaders pass the
-// project's raw task rows + term spans in; this turns them into the handful of
-// work-status facts the bar renders (progress, current sprint, and the
-// attention flags — overdue / unscheduled / in-review / stale). No Prisma
-// import, so it lives beside the other client-safe board helpers and unit-tests
-// without a DB. The AI-TLDR route runs the SAME function to build its prompt
-// facts, so the summary and the chips can never disagree.
+// Pure helper for the project Progress-tab status bar: the project's task rows
+// and sprints in, the work-status facts the bar renders out. The AI-TLDR route
+// runs the same function, so the summary and the chips can't disagree.
 
-import { currentSprintBand, TASK_STATUS_LABELS, type TaskStatus, type Priority } from "./task-board";
-import type { TimelineTermSpan } from "./timeline-days";
+import { TASK_STATUS_LABELS, type TaskStatus, type Priority } from "./task-board";
+import { defaultBoardSprint, sprintStatus, type SprintModel } from "./sprints";
+import { DAY, utcDayStart } from "./timeline-days";
 
 export type ProjectWorkStatus = "Active" | "Paused" | "Archived";
 
@@ -19,17 +16,15 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // "Cancelled" work is dropped from the total (it isn't outstanding); "Done"
 // counts toward completion. Everything else is open work.
 const CLOSED: readonly TaskStatus[] = ["Done", "Cancelled"];
-// Work that is in motion and therefore expected to be dated (so it lands in a
-// sprint) — a Backlog task with no dates is intentional parking, not a planning
-// gap, so it's excluded from the "unscheduled" flag.
-const SCHEDULABLE: readonly TaskStatus[] = ["Todo", "InProgress", "InReview"];
+// Started work belongs in a sprint; a To-do in the backlog is just planning.
+const IN_MOTION: readonly TaskStatus[] = ["InProgress", "InReview"];
 
 export interface StatusTaskInput {
   id: string;
   status: TaskStatus;
-  // A task's sprint is derived from its dates: undated (both null) = unplanned.
-  startsAt: Date | string | null;
-  dueAt: Date | string | null;
+  // Null = the backlog.
+  sprintId: string | null;
+  carryoverCount: number;
   activityAt: Date | string;
 }
 
@@ -51,17 +46,15 @@ export interface ProjectStatusFacts {
   /** Outstanding + done, excluding Cancelled. */
   totalTasks: number;
   doneTasks: number;
-  /** Non-closed tasks whose dueAt is in the past. */
-  overdue: number;
-  /** In-motion tasks (Todo/InProgress/InReview) with no dates (unplanned). */
+  /** Open tasks that rolled over from an earlier sprint at least once. */
+  carried: number;
+  /** Started tasks (InProgress/InReview) sitting in the backlog. */
   unscheduled: number;
   inReview: number;
   /** InProgress tasks untouched for STALE_DAYS. */
   stale: number;
-  /** Ids of the overdue / stale tasks (sorted). Not rendered — they ride in the
-   *  fingerprint so the cached AI summary regenerates when the *specific*
-   *  problem tasks change, not just when the totals do. */
-  overdueIds: string[];
+  /** Ids of the carried / stale tasks (sorted), for the AI fingerprint. */
+  carriedIds: string[];
   staleIds: string[];
   activeSprint: ActiveSprintFacts | null;
   /** False for a project with no tasks — the bar shows a calm "no work yet"
@@ -77,19 +70,20 @@ export function computeProjectStatus(
   input: {
     projectStatus: ProjectWorkStatus;
     tasks: StatusTaskInput[];
-    terms: TimelineTermSpan[];
+    sprints: SprintModel[];
   },
   now: Date,
+  todayUtc: number = utcDayStart(now.getTime()),
 ): ProjectStatusFacts {
   const nowMs = now.getTime();
   const staleBefore = nowMs - STALE_DAYS * DAY_MS;
-  const { tasks, terms } = input;
+  const { tasks, sprints } = input;
 
   let totalTasks = 0;
   let doneTasks = 0;
   let unscheduled = 0;
   let inReview = 0;
-  const overdueIds: string[] = [];
+  const carriedIds: string[] = [];
   const staleIds: string[] = [];
 
   for (const t of tasks) {
@@ -97,23 +91,21 @@ export function computeProjectStatus(
     if (t.status !== "Cancelled") totalTasks++;
     if (t.status === "Done") doneTasks++;
     if (t.status === "InReview") inReview++;
-    if (!closed && t.dueAt != null && ms(t.dueAt) < nowMs) overdueIds.push(t.id);
-    if (t.startsAt == null && t.dueAt == null && SCHEDULABLE.includes(t.status)) unscheduled++;
+    if (!closed && t.carryoverCount > 0) carriedIds.push(t.id);
+    if (t.sprintId === null && IN_MOTION.includes(t.status)) unscheduled++;
     if (t.status === "InProgress" && ms(t.activityAt) < staleBefore) staleIds.push(t.id);
   }
-  overdueIds.sort();
+  carriedIds.sort();
   staleIds.sort();
 
-  // The current sprint = the term-anchored 7-day band containing today. band.end
-  // is the last day's UTC midnight, so the sprint boundary is the start of the
-  // day after it.
-  const band = currentSprintBand(terms, now);
-  const activeSprint: ActiveSprintFacts | null = band
+  const current = activeSprintOf(sprints, todayUtc);
+  const activeSprint: ActiveSprintFacts | null = current
     ? {
-        label: band.label,
-        startsAt: new Date(band.key).toISOString(),
-        endsAt: new Date(band.end + DAY_MS).toISOString(),
-        daysRemaining: Math.ceil((band.end + DAY_MS - nowMs) / DAY_MS),
+        label: `Sprint ${current.number}`,
+        startsAt: current.startsOn,
+        // The boundary is the start of the day after the last sprint day.
+        endsAt: new Date(Date.parse(current.endsOn) + DAY).toISOString(),
+        daysRemaining: Math.ceil((Date.parse(current.endsOn) + DAY - nowMs) / DAY_MS),
       }
     : null;
 
@@ -121,15 +113,24 @@ export function computeProjectStatus(
     projectStatus: input.projectStatus,
     totalTasks,
     doneTasks,
-    overdue: overdueIds.length,
+    carried: carriedIds.length,
     unscheduled,
     inReview,
     stale: staleIds.length,
-    overdueIds,
+    carriedIds,
     staleIds,
     activeSprint,
     hasWork: tasks.length > 0,
   };
+}
+
+/** The sprint containing today, if one is running. */
+export function activeSprintOf(sprints: SprintModel[], todayUtc: number): SprintModel | null {
+  const pick = defaultBoardSprint(
+    sprints.map((s) => ({ startsOn: Date.parse(s.startsOn), endsOn: Date.parse(s.endsOn), closed: s.closed, s })),
+    todayUtc,
+  );
+  return pick && sprintStatus(pick, todayUtc) === "Active" ? pick.s : null;
 }
 
 /**
@@ -145,9 +146,7 @@ export function factsFingerprint(f: ProjectStatusFacts): string {
     f.doneTasks,
     f.unscheduled,
     f.inReview,
-    // Identity, not just counts: the AI summary names specific overdue/stalled
-    // tasks, so it must regenerate when *which* tasks those are changes.
-    f.overdueIds,
+    f.carriedIds,
     f.staleIds,
     f.activeSprint?.label ?? null,
     f.activeSprint?.endsAt ?? null,
@@ -167,8 +166,8 @@ export interface TldrTaskInput extends StatusTaskInput {
 }
 
 export interface TldrDetail {
-  /** Most-overdue first, capped. */
-  overdue: { title: string; priority: Priority; daysOver: number }[];
+  /** Most-carried first, capped. */
+  carried: { title: string; priority: Priority; times: number }[];
   /** Longest-stalled first, capped. */
   stale: { title: string; daysStale: number }[];
   /** In-review task titles, capped. */
@@ -176,13 +175,13 @@ export interface TldrDetail {
   /** Open (non-closed) tasks at each urgent tier. */
   urgentOpen: number;
   highOpen: number;
-  /** High/Urgent tasks that are unscheduled (in motion, no dates). */
+  /** High/Urgent started tasks sitting in the backlog. */
   unscheduledHighPriority: number;
   /** Distinct assignees across all loaded tasks — a rough active-team size. */
   teamSize: number;
 }
 
-const OVERDUE_CAP = 5;
+const CARRIED_CAP = 5;
 const STALE_CAP = 3;
 const IN_REVIEW_CAP = 4;
 
@@ -190,7 +189,7 @@ export function buildTldrDetail(tasks: TldrTaskInput[], now: Date): TldrDetail {
   const nowMs = now.getTime();
   const staleBefore = nowMs - STALE_DAYS * DAY_MS;
 
-  const overdue: TldrDetail["overdue"] = [];
+  const carried: TldrDetail["carried"] = [];
   const stale: TldrDetail["stale"] = [];
   const inReview: string[] = [];
   const assignees = new Set<string>();
@@ -205,32 +204,27 @@ export function buildTldrDetail(tasks: TldrTaskInput[], now: Date): TldrDetail {
       if (t.priority === "Urgent") urgentOpen++;
       else if (t.priority === "High") highOpen++;
     }
-    if (!closed && t.dueAt != null && ms(t.dueAt) < nowMs) {
-      overdue.push({
-        title: t.title,
-        priority: t.priority,
-        daysOver: Math.floor((nowMs - ms(t.dueAt)) / DAY_MS),
-      });
+    if (!closed && t.carryoverCount > 0) {
+      carried.push({ title: t.title, priority: t.priority, times: t.carryoverCount });
     }
     if (t.status === "InProgress" && ms(t.activityAt) < staleBefore) {
       stale.push({ title: t.title, daysStale: Math.floor((nowMs - ms(t.activityAt)) / DAY_MS) });
     }
     if (t.status === "InReview") inReview.push(t.title);
     if (
-      t.startsAt == null &&
-      t.dueAt == null &&
-      SCHEDULABLE.includes(t.status) &&
+      t.sprintId === null &&
+      IN_MOTION.includes(t.status) &&
       (t.priority === "High" || t.priority === "Urgent")
     ) {
       unscheduledHighPriority++;
     }
   }
 
-  overdue.sort((a, b) => b.daysOver - a.daysOver);
+  carried.sort((a, b) => b.times - a.times);
   stale.sort((a, b) => b.daysStale - a.daysStale);
 
   return {
-    overdue: overdue.slice(0, OVERDUE_CAP),
+    carried: carried.slice(0, CARRIED_CAP),
     stale: stale.slice(0, STALE_CAP),
     inReview: inReview.slice(0, IN_REVIEW_CAP),
     urgentOpen,
@@ -258,8 +252,8 @@ export interface StatusBreakdown {
    *  behind the done/total progress bar. Cancelled is omitted — it's excluded
    *  from the total too. */
   byStatus: { status: TaskStatus; label: string; count: number }[];
-  /** Most-overdue first. */
-  overdue: { title: string; priority: Priority; daysOver: number }[];
+  /** Most-carried first. */
+  carried: { title: string; priority: Priority; times: number }[];
   /** Highest-priority first, then title. */
   unscheduled: { title: string; priority: Priority }[];
   /** Longest-stalled first. */
@@ -272,7 +266,7 @@ export const BREAKDOWN_CAP = 6;
 
 // Progress-bar tooltip order: what's finished first, then work in flight, then
 // what hasn't started.
-const PROGRESS_ORDER: readonly TaskStatus[] = ["Done", "InReview", "InProgress", "Todo", "Backlog"];
+const PROGRESS_ORDER: readonly TaskStatus[] = ["Done", "InReview", "InProgress", "Todo"];
 
 const PRIORITY_RANK: Record<Priority, number> = { Urgent: 0, High: 1, Normal: 2, Low: 3 };
 
@@ -281,7 +275,7 @@ export function computeStatusBreakdown(tasks: BreakdownTaskInput[], now: Date): 
   const staleBefore = nowMs - STALE_DAYS * DAY_MS;
 
   const counts = new Map<TaskStatus, number>();
-  const overdue: StatusBreakdown["overdue"] = [];
+  const carried: StatusBreakdown["carried"] = [];
   const unscheduled: StatusBreakdown["unscheduled"] = [];
   const stale: StatusBreakdown["stale"] = [];
   const inReview: string[] = [];
@@ -289,14 +283,10 @@ export function computeStatusBreakdown(tasks: BreakdownTaskInput[], now: Date): 
   for (const t of tasks) {
     counts.set(t.status, (counts.get(t.status) ?? 0) + 1);
     const closed = CLOSED.includes(t.status);
-    if (!closed && t.dueAt != null && ms(t.dueAt) < nowMs) {
-      overdue.push({
-        title: t.title,
-        priority: t.priority,
-        daysOver: Math.floor((nowMs - ms(t.dueAt)) / DAY_MS),
-      });
+    if (!closed && t.carryoverCount > 0) {
+      carried.push({ title: t.title, priority: t.priority, times: t.carryoverCount });
     }
-    if (t.startsAt == null && t.dueAt == null && SCHEDULABLE.includes(t.status)) {
+    if (t.sprintId === null && IN_MOTION.includes(t.status)) {
       unscheduled.push({ title: t.title, priority: t.priority });
     }
     if (t.status === "InProgress" && ms(t.activityAt) < staleBefore) {
@@ -305,7 +295,7 @@ export function computeStatusBreakdown(tasks: BreakdownTaskInput[], now: Date): 
     if (t.status === "InReview") inReview.push(t.title);
   }
 
-  overdue.sort((a, b) => b.daysOver - a.daysOver);
+  carried.sort((a, b) => b.times - a.times);
   unscheduled.sort(
     (a, b) => PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] || a.title.localeCompare(b.title),
   );
@@ -319,7 +309,7 @@ export function computeStatusBreakdown(tasks: BreakdownTaskInput[], now: Date): 
 
   return {
     byStatus,
-    overdue: overdue.slice(0, BREAKDOWN_CAP),
+    carried: carried.slice(0, BREAKDOWN_CAP),
     unscheduled: unscheduled.slice(0, BREAKDOWN_CAP),
     stale: stale.slice(0, BREAKDOWN_CAP),
     inReview: inReview.slice(0, BREAKDOWN_CAP),

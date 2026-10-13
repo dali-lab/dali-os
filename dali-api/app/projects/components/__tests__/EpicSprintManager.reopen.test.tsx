@@ -2,7 +2,7 @@
 //
 // The epic modal has to close to make room for the task form (a modal on a
 // modal buries the one underneath), which left you back on the timeline with
-// the epic shut — cumbersome when a story needs more than one task. These pin
+// the epic shut — cumbersome when an epic needs more than one task. These pin
 // the round trip: the modal reopens when the caller reports the form closed,
 // and the add that closed it is the one that asks for it back.
 import { describe, it, expect, afterEach, vi } from "vitest";
@@ -27,20 +27,16 @@ function epics(): EditableEpic[] {
       id: "epic-1",
       title: "Design",
       description: null,
-      status: "Open",
-      startsAt: null,
-      endsAt: null,
+      status: "NotStarted",
       descriptionDocId: null,
-      dependsOn: [],
+      sprints: [],
+      tasks: [],
       stories: [
         {
           id: "story-1",
           title: "Onboarding",
           notes: null,
           status: "Todo",
-          startsAt: null,
-          endsAt: null,
-          dependsOn: [],
           successMetric: null,
           acceptanceCriteria: null,
           category: null,
@@ -51,7 +47,7 @@ function epics(): EditableEpic[] {
   ];
 }
 
-type AddLink = { epicId: string; storyId: string; reopenEpicId?: string };
+type AddLink = { epicId: string; reopenEpicId?: string };
 
 // Drives `reopenEpic` from real state, the way the project route does with
 // what onCreateClosed hands it. The manager reaches for useNavigate and
@@ -93,6 +89,11 @@ function mount() {
   act(() => root!.render(createElement(Stub, { initialEntries: ["/"] })));
 }
 
+const addButton = () =>
+  [...document.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Add task") as
+    | HTMLElement
+    | undefined;
+
 const epicModalOpen = () => container!.querySelector("#epic-detail-title") != null;
 
 afterEach(() => {
@@ -128,26 +129,20 @@ describe("EpicSprintManager epic reopen", () => {
     expect(epicModalOpen()).toBe(false);
   });
 
-  it("closes on a story's add and asks for that epic back", () => {
+  it("closes on the epic's add and asks for that epic back", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }));
     const add = vi.fn();
     onAddTask = add;
     mount();
 
     act(() => setReopen!({ epicId: "epic-1" }));
-    const plus = container!.querySelector(
-      '[aria-label="Add task to Onboarding"]',
-    ) as HTMLElement;
+    const plus = addButton()!;
     expect(plus).toBeTruthy();
     act(() => plus.click());
 
     // Out of the way for the form, carrying the way back.
     expect(epicModalOpen()).toBe(false);
-    expect(add).toHaveBeenCalledWith({
-      epicId: "epic-1",
-      storyId: "story-1",
-      reopenEpicId: "epic-1",
-    });
+    expect(add).toHaveBeenCalledWith({ epicId: "epic-1", reopenEpicId: "epic-1" });
   });
 
   it("reopens again after a second add, so repeat adds keep working", () => {
@@ -158,9 +153,7 @@ describe("EpicSprintManager epic reopen", () => {
     for (const _pass of [1, 2]) {
       act(() => setReopen!({ epicId: "epic-1" }));
       expect(epicModalOpen()).toBe(true);
-      const plus = container!.querySelector(
-        '[aria-label="Add task to Onboarding"]',
-      ) as HTMLElement;
+      const plus = addButton()!;
       act(() => plus.click());
       expect(epicModalOpen()).toBe(false);
     }

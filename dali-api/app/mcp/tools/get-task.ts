@@ -43,7 +43,8 @@ export async function runGetTask(_callerId: string, input: Input) {
       description: true,
       status: true,
       priority: true,
-      dueAt: true,
+      carryoverCount: true,
+      sprint: { select: { id: true, number: true, startsOn: true, endsOn: true, closedAt: true } },
       archivedAt: true,
       checklist: true,
       githubRepo: true,
@@ -78,7 +79,16 @@ export async function runGetTask(_callerId: string, input: Input) {
     description: task.description,
     status: task.status,
     priority: task.priority,
-    dueAt: task.dueAt?.toISOString() ?? null,
+    sprint: task.sprint
+      ? {
+          id: task.sprint.id,
+          label: `Sprint ${task.sprint.number}`,
+          startsOn: task.sprint.startsOn.toISOString(),
+          endsOn: task.sprint.endsOn.toISOString(),
+          closed: task.sprint.closedAt !== null,
+        }
+      : null,
+    carriedOver: task.carryoverCount,
     archivedAt: task.archivedAt?.toISOString() ?? null,
     checklist: task.checklist ?? [],
     project: task.project,

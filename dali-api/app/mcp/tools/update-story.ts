@@ -1,6 +1,6 @@
 // MCP `update_story` — Core or project member. Mirrors api.stories.$id POST.
 
-import { prisma, Prisma } from "~/lib/db";
+import { prisma } from "~/lib/db";
 import { canEditProject } from "./access";
 
 const STORY_STATUSES = ["Todo", "InProgress", "Done"] as const;
@@ -24,16 +24,11 @@ function normText(v: string | null | undefined): string | null | undefined {
   return t === "" ? null : t;
 }
 
-// Date-only input (YYYY-MM-DD) → UTC midnight, matching the web route.
-function parseDay(v: string): Date | null {
-  const d = new Date(`${v.slice(0, 10)}T00:00:00.000Z`);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
 
 export const UPDATE_STORY_TOOL = {
   name: "update_story",
   description:
-    "Edit a user story (title, notes, status, dates, priority, successMetric, acceptanceCriteria, category, dependsOn). Requires Core or project-member access. Empty string clears nullable text fields; null clears date fields; omit a field to leave it unchanged.",
+    "Edit a user story — a requirement inside an epic, a sibling of its tasks (title, notes, status, priority, successMetric, acceptanceCriteria, category). Stories have no dates and never enter sprints. Requires Core or project-member access. Empty string clears nullable text fields; omit a field to leave it unchanged.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -43,15 +38,6 @@ export const UPDATE_STORY_TOOL = {
       status: {
         type: "string",
         enum: STORY_STATUSES as unknown as string[],
-      },
-      startsAt: {
-        type: "string",
-        description:
-          "Date-only string (YYYY-MM-DD) or empty string to clear. Stored as UTC midnight.",
-      },
-      endsAt: {
-        type: "string",
-        description: "Date-only string (YYYY-MM-DD) or empty string to clear.",
       },
       priority: {
         type: "string",
@@ -71,12 +57,6 @@ export const UPDATE_STORY_TOOL = {
         type: "string",
         description: "Category label. Empty string clears.",
       },
-      dependsOn: {
-        type: "array",
-        items: { type: "string" },
-        description:
-          "Full replacement set of story ids this story depends on (waits for). Omit to leave unchanged; empty array clears all dependencies.",
-      },
     },
     required: ["storyId"],
     additionalProperties: false,
@@ -89,13 +69,10 @@ type Input = {
   title?: string;
   notes?: string;
   status?: StoryStatus;
-  startsAt?: string;
-  endsAt?: string;
   priority?: string;
   successMetric?: string;
   acceptanceCriteria?: string;
   category?: string;
-  dependsOn?: string[];
 };
 
 export class UpdateStoryError extends Error {
@@ -120,8 +97,6 @@ export async function runUpdateStory(callerId: string, input: Input) {
     title?: string;
     notes?: string | null;
     status?: StoryStatus;
-    startsAt?: Date | null;
-    endsAt?: Date | null;
     priority?: StoryPriority | null;
     successMetric?: string | null;
     acceptanceCriteria?: string | null;
@@ -156,54 +131,9 @@ export async function runUpdateStory(callerId: string, input: Input) {
       throw new UpdateStoryError("Invalid priority", 400);
     }
   }
-  for (const key of ["startsAt", "endsAt"] as const) {
-    const raw = input[key];
-    if (raw === undefined) continue;
-    if (raw === "" || raw === null) {
-      data[key] = null;
-      continue;
-    }
-    const parsed = parseDay(raw);
-    if (!parsed) {
-      throw new UpdateStoryError(`Invalid ${key}`, 400);
-    }
-    data[key] = parsed;
-  }
-
-  const wantsDependencies = Array.isArray(input.dependsOn);
-  const hasCoreChanges = Object.keys(data).length > 0;
-
-  if (!hasCoreChanges && !wantsDependencies) {
+  if (Object.keys(data).length === 0) {
     return { ok: true, storyId: input.storyId, noop: true };
   }
-
-  const ops: Prisma.PrismaPromise<unknown>[] = [];
-  if (hasCoreChanges) {
-    ops.push(prisma.userStory.update({ where: { id: input.storyId }, data }));
-  }
-
-  if (wantsDependencies) {
-    const ids = [...new Set(input.dependsOn ?? [])].filter(
-      (x) => x && x !== input.storyId,
-    );
-    if (ids.length > 0) {
-      const valid = await prisma.userStory.count({
-        where: { id: { in: ids }, epic: { projectId: story.epic.projectId } },
-      });
-      if (valid !== ids.length) {
-        throw new UpdateStoryError("Invalid dependency target", 400);
-      }
-    }
-    ops.push(
-      prisma.userStoryDependency.deleteMany({ where: { storyId: input.storyId } }),
-      ...ids.map((depId) =>
-        prisma.userStoryDependency.create({
-          data: { storyId: input.storyId, dependsOnStoryId: depId },
-        }),
-      ),
-    );
-  }
-
-  await prisma.$transaction(ops);
+  await prisma.userStory.update({ where: { id: input.storyId }, data });
   return { ok: true, storyId: input.storyId };
 }

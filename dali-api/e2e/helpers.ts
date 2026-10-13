@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 import pg from 'pg';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dali:dali@localhost:5432/dali';
@@ -134,4 +134,43 @@ export async function confirmDialog(page: Page, confirmLabel: string) {
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
   await dialog.getByRole('button', { name: confirmLabel, exact: true }).click();
+}
+
+// Drag `handle` into `target`, stepping past the 6px activation threshold first
+// so the PointerSensor engages, then gliding into the column.
+export async function dragHandleTo(page: Page, handle: Locator, target: Locator) {
+  // Bring the card into view before measuring — a mouse drag to off-viewport
+  // coordinates never reaches the element.
+  await handle.scrollIntoViewIfNeeded();
+
+  const handleBox = await handle.boundingBox();
+  const targetBox = await target.boundingBox();
+  const viewport = page.viewportSize();
+  if (!handleBox || !targetBox || !viewport) {
+    throw new Error('Missing drag geometry');
+  }
+
+  const startX = handleBox.x + handleBox.width / 2;
+  const startY = handleBox.y + handleBox.height / 2;
+  // Drop at the destination column's horizontal centre, on the same row band as
+  // the (now visible) handle. The columns share a row, so the handle's y is
+  // inside the destination column's visible area too — no risk of aiming
+  // above/below the fold for a tall column.
+  const endX = targetBox.x + targetBox.width / 2;
+  const endY = Math.min(
+    Math.max(startY, targetBox.y + 8),
+    Math.min(targetBox.y + targetBox.height - 8, viewport.height - 8),
+  );
+
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  // Nudge past the 6px activation threshold to engage the PointerSensor; the
+  // small steps emit several pointermove events so dnd-kit starts the drag.
+  await page.mouse.move(startX + 4, startY + 4, { steps: 3 });
+  await page.mouse.move(startX + 12, startY + 12, { steps: 5 });
+  // Glide into the destination column in steps so dnd-kit registers the over,
+  // then settle in place before release.
+  await page.mouse.move(endX, endY, { steps: 15 });
+  await page.mouse.move(endX, endY);
+  await page.mouse.up();
 }

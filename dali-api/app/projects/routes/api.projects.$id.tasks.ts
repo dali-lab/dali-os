@@ -6,28 +6,19 @@ import { isTaskStatus } from "../lib/task-board";
 import { createIssueForTask, normalizeRepo } from "../lib/github-task-sync";
 import { USER_NAME_SELECT } from "~/lib/prisma-shapes";
 import { fullName } from "~/lib/display";
+import { activeSprintId, resolveTaskPlacement } from "../lib/sprints.server";
 
-// POST /api/projects/:id/tasks
-//
-// Create a task on a project. Body: { title, status?, epicId?, storyId?,
-// startsAt? }. A task's sprint is derived from its dates, not stored.
-// status defaults to "Todo"; position is appended after the current max in
-// the target column so the new card lands last. Mirrors the project-edit
-// permission model (isCore === Admin || Core).
+// POST /api/projects/:id/tasks — create a task. No epic files it under the
+// project's General epic; no sprint puts it in the backlog; sprintId
+// "current" means the active sprint.
 
 type Body = {
   title: string;
   description?: string | null;
   status?: string;
   epicId?: string | null;
-  // Parent user story. Must belong to this project.
-  storyId?: string | null;
-  // Timeline start (planning only — fires no reminders).
-  startsAt?: string | null;
-  // ISO timestamp (or null/absent for no deadline).
-  dueAt?: string | null;
-  // Present = mirror to GH. `repo` must be one of the project's repoUrls
-  // (server validates; never trust the client's free-text).
+  sprintId?: string | null;
+  // `repo` must be one of the project's repoUrls (validated server-side).
   github?: { repo: string };
 };
 
@@ -38,22 +29,13 @@ function isBody(x: unknown): x is Body {
   if (o.description != null && typeof o.description !== "string") return false;
   if (o.status !== undefined && typeof o.status !== "string") return false;
   if (o.epicId != null && typeof o.epicId !== "string") return false;
-  if (o.storyId != null && typeof o.storyId !== "string") return false;
-  if (o.startsAt != null && typeof o.startsAt !== "string") return false;
-  if (o.dueAt != null && typeof o.dueAt !== "string") return false;
+  if (o.sprintId != null && typeof o.sprintId !== "string") return false;
   if (o.github !== undefined) {
     if (!o.github || typeof o.github !== "object") return false;
     const g = o.github as Record<string, unknown>;
     if (typeof g.repo !== "string") return false;
   }
   return true;
-}
-
-function parseDueAt(raw: string | null | undefined): Date | null | "invalid" {
-  if (raw == null || raw === "") return null;
-  const d = new Date(raw);
-  if (Number.isNaN(d.getTime())) return "invalid";
-  return d;
 }
 
 // GET /api/projects/:id/tasks — list a project's archived tasks
@@ -76,8 +58,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       title: true,
       status: true,
       priority: true,
-      dueAt: true,
       archivedAt: true,
+      sprint: { select: { number: true } },
       domain: { select: { id: true, displayName: true } },
       assignees: { select: { user: { select: USER_NAME_SELECT } } },
     },
@@ -88,7 +70,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     title: t.title,
     status: t.status,
     priority: t.priority,
-    dueAt: t.dueAt ? t.dueAt.toISOString() : null,
+    sprint: t.sprint ? `Sprint ${t.sprint.number}` : null,
     archivedAt: t.archivedAt!.toISOString(),
     domain: t.domain ? { id: t.domain.id, name: t.domain.displayName } : null,
     assignees: t.assignees.map((a) => ({ id: a.user.id, name: fullName(a.user) })),
@@ -124,31 +106,8 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   const status = body.status ?? "Todo";
-  if (!isTaskStatus(status)) {
+  if (!isTaskStatus(status) || status === "Backlog") {
     return withCors(request, Response.json({ error: "Invalid status" }, { status: 400 }));
-  }
-
-  const dueAt = parseDueAt(body.dueAt);
-  if (dueAt === "invalid") {
-    return withCors(request, Response.json({ error: "Invalid dueAt" }, { status: 400 }));
-  }
-  const startsAt = parseDueAt(body.startsAt);
-  if (startsAt === "invalid") {
-    return withCors(request, Response.json({ error: "Invalid startsAt" }, { status: 400 }));
-  }
-
-  // Backlog is the one column that holds undated work; anywhere else a new task
-  // is scheduled work and has to land on the timeline with a deadline. The
-  // create modal enforces this client-side (TaskModal); mirror it here so a
-  // direct API call can't file dateless scheduled work.
-  if (status !== "Backlog" && dueAt == null) {
-    return withCors(
-      request,
-      Response.json(
-        { error: "Give the task a deadline, or create it in Backlog." },
-        { status: 400 },
-      ),
-    );
   }
 
   const project = await prisma.project.findUnique({
@@ -159,37 +118,19 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Project not found" }, { status: 404 }));
   }
 
-  // An epic/story id must belong to this project — a foreign id would let a
-  // member of one project file tasks onto another project's board.
-  // A story pins its epic (UserStory.epicId is required), so the two are never
-  // set independently: a story derives the epic; only a story-less task takes a
-  // free-standing epic. This keeps task.storyId and task.epicId from diverging
-  // — the timeline nests a task under its story's epic regardless of epicId.
-  let epicId: string | null = body.epicId ?? null;
-  const storyId: string | null = body.storyId ?? null;
-  if (storyId != null) {
-    const story = await prisma.userStory.findUnique({
-      where: { id: storyId },
-      select: { epicId: true, epic: { select: { projectId: true } } },
-    });
-    if (!story || story.epic.projectId !== params.id) {
+  let sprintId = body.sprintId ?? null;
+  if (sprintId === "current") {
+    sprintId = await activeSprintId(params.id!);
+    if (!sprintId) {
       return withCors(
         request,
-        Response.json({ error: "Story is not part of this project" }, { status: 400 }),
+        Response.json({ error: "No sprint is running on this project" }, { status: 400 }),
       );
     }
-    epicId = story.epicId;
-  } else if (epicId != null) {
-    const epic = await prisma.epic.findUnique({
-      where: { id: epicId },
-      select: { projectId: true },
-    });
-    if (!epic || epic.projectId !== params.id) {
-      return withCors(
-        request,
-        Response.json({ error: "Epic is not part of this project" }, { status: 400 }),
-      );
-    }
+  }
+  const placed = await resolveTaskPlacement(params.id, { epicId: body.epicId, sprintId });
+  if ("error" in placed) {
+    return withCors(request, Response.json(placed, { status: 400 }));
   }
 
   // Validate the GH repo (if requested) is one of the project's declared
@@ -211,9 +152,8 @@ export async function action({ request, params }: Route.ActionArgs) {
     githubRepo = requested;
   }
 
-  // Append after the current max position in the target column.
   const last = await prisma.task.findFirst({
-    where: { projectId: params.id, status },
+    where: { projectId: params.id, status, sprintId: placed.sprintId ?? null },
     orderBy: { position: "desc" },
     select: { position: true },
   });
@@ -228,10 +168,8 @@ export async function action({ request, params }: Route.ActionArgs) {
       description,
       status,
       position,
-      epicId,
-      storyId,
-      dueAt,
-      startsAt,
+      epicId: placed.epicId,
+      sprintId: placed.sprintId ?? null,
       createdById: auth.user.sub,
     },
     select: { id: true },

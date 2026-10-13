@@ -7,8 +7,9 @@
 import { prisma } from "~/lib/db";
 import { currentTerm } from "~/lib/roles";
 import { fullName } from "~/lib/display";
-import { currentSprintBand } from "~/projects/lib/task-board";
 import { DAY } from "~/projects/lib/timeline-days";
+import { activeSprintId } from "~/projects/lib/sprints.server";
+import { deriveEpicStatus } from "~/projects/lib/sprints";
 
 export const GET_PROJECT_OVERVIEW_TOOL = {
   name: "get_project_overview",
@@ -68,7 +69,7 @@ export async function runGetProjectOverview(input: Input) {
   });
   if (!project) throw new ProjectNotFoundError(input.projectId);
 
-  const [currentAssignments, openEpic, taskCounts] = await Promise.all([
+  const [currentAssignments, epicRows, taskCounts] = await Promise.all([
     termId
       ? prisma.projectAssignment.findMany({
           where: { projectId: input.projectId, termId },
@@ -79,13 +80,16 @@ export async function runGetProjectOverview(input: Input) {
           },
         })
       : Promise.resolve([]),
-    prisma.epic.findFirst({
-      where: {
-        projectId: input.projectId,
-        status: { in: ["Open", "InProgress"] },
-      },
+    prisma.epic.findMany({
+      where: { projectId: input.projectId, cancelledAt: null },
       orderBy: { position: "asc" },
-      select: { id: true, title: true, description: true, status: true },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        cancelledAt: true,
+        tasks: { where: { archivedAt: null }, select: { status: true } },
+      },
     }),
     prisma.task.groupBy({
       by: ["status"],
@@ -108,21 +112,31 @@ export async function runGetProjectOverview(input: Input) {
     .sort((a, b) => a.sortKey - b.sortKey);
   const termCodes = sortedTerms.map((t) => t.code);
 
-  // Current sprint: the term-anchored 7-day band containing today (Sprint 1..N
-  // per term), the same grid the board and timeline draw. Null on a break week.
-  const termSpans = sortedTerms.map((t) => ({
-    code: t.code,
-    startsAt: t.startDate.toISOString(),
-    endsAt: t.endDate.toISOString(),
-  }));
-  const band = currentSprintBand(termSpans, new Date());
-  const activeSprint = band
+  const sprintId = await activeSprintId(input.projectId);
+  const sprint = sprintId
+    ? await prisma.sprint.findUnique({
+        where: { id: sprintId },
+        select: { id: true, number: true, startsOn: true, endsOn: true },
+      })
+    : null;
+  const activeSprint = sprint
     ? {
-        label: band.label,
-        startsAt: new Date(band.key).toISOString(),
-        endsAt: new Date(band.end + DAY).toISOString(),
+        id: sprint.id,
+        label: `Sprint ${sprint.number}`,
+        startsAt: sprint.startsOn.toISOString(),
+        endsAt: new Date(sprint.endsOn.getTime() + DAY).toISOString(),
       }
     : null;
+
+  // The epic in flight: first with started work, else first not yet done.
+  const epics = epicRows.map((e) => ({
+    ...e,
+    status: deriveEpicStatus(e, e.tasks.map((t) => t.status)),
+  }));
+  const openEpic =
+    epics.find((e) => e.status === "InProgress") ??
+    epics.find((e) => e.status === "NotStarted") ??
+    null;
 
   return {
     id: project.id,

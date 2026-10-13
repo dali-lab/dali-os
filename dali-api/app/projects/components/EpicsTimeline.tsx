@@ -6,17 +6,15 @@ import {
   useRef,
   useState,
   type CSSProperties,
-  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { ArrowUpRight, ChevronRight, GripVertical } from "lucide-react";
+import { ArrowUpRight, ChevronRight } from "lucide-react";
 import {
   DAY,
   dayOffset,
   daySpan,
   localTodayUtcDay,
-  sprintBands as computeSprintBands,
   utcDayOf,
 } from "../lib/timeline-days";
 import { Tooltip } from "~/components/ui/floating";
@@ -56,67 +54,27 @@ export type TimelineStory = {
 export type TimelineEpic = {
   id: string;
   title: string;
-  // Prose for the hover card. The design leads its popover with this — a bar's
-  // title says which thing it is, this says what it's for.
+  // Prose for the hover card.
   description?: string | null;
   status: EpicStatus;
-  // Null when the epic has no dates and nothing underneath it to derive them
-  // from — rendered as "unscheduled" rather than as a bar.
+  // First through last sprint holding one of its tasks; null = unscheduled.
   startsAt: string | null;
   endsAt: string | null;
-  // Stories under this epic, drawn as bars nested inside the epic bar.
+  // Dated story bars. Stories are dateless requirements now, so builders send
+  // none; the level stays for the layout until the Phase 2 cleanup.
   stories: TimelineStory[];
-  // Tasks linked straight to the epic (no story), drawn as task bars directly
-  // under the epic, below its story rows. Empty on task-free surfaces.
+  // The epic's user stories as requirement rows (outline + hover count).
+  requirements: { id: string; title: string; status: StoryStatus; incomplete: boolean }[];
+  // Sprinted tasks, each spanning its sprint's week.
   tasks: TimelineTask[];
+  // Done/total over the epic's non-cancelled tasks, sprinted or not.
+  progress: { done: number; total: number };
 };
 
-/** A term's span, used to anchor and label the fixed one-week sprint grid. */
-export type TimelineTerm = { code: string; startsAt: string; endsAt: string };
-
-export type StoryDependencyEdge = { storyId: string; dependsOnStoryId: string };
-
-export type EpicDependencyEdge = { epicId: string; dependsOnEpicId: string };
-
-// `open`: the blocking task is still unfinished. Carried on the edge because a
-// blocker needn't be on the timeline at all (a task outside any story).
-export type TaskDependencyEdge = { taskId: string; dependsOnTaskId: string; open: boolean };
+/** A stored sprint, drawn as one band of the header's sprint row. */
+export type TimelineSprint = { id: string; startsOn: string; endsOn: string; label: string };
 
 type Level = "epic" | "story" | "task";
-
-function findBarSpan(
-  epics: TimelineEpic[],
-  kind: Level,
-  id: string,
-): { startsAt: string; endsAt: string } | null {
-  for (const e of epics) {
-    if (kind === "epic" && e.id === id) {
-      return e.startsAt && e.endsAt ? { startsAt: e.startsAt, endsAt: e.endsAt } : null;
-    }
-    for (const t of e.tasks) {
-      if (kind === "task" && t.id === id) {
-        return { startsAt: t.startsAt, endsAt: t.endsAt };
-      }
-    }
-    for (const st of e.stories) {
-      if (kind === "story" && st.id === id) {
-        return { startsAt: st.startsAt, endsAt: st.endsAt };
-      }
-      for (const t of st.tasks) {
-        if (kind === "task" && t.id === id) {
-          return { startsAt: t.startsAt, endsAt: t.endsAt };
-        }
-      }
-    }
-  }
-  return null;
-}
-
-function shiftIsoDays(iso: string, days: number): string {
-  const d = new Date(iso);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString();
-}
 
 // ── Geometry ────────────────────────────────────────────────────────────────
 // Bars are absolutely positioned in px rather than snapped to a row grid: a
@@ -544,9 +502,6 @@ function HoverBar({
   assignees,
   children,
   onClick,
-  onDragStart,
-  onResizeStart,
-  draggable = false,
 }: {
   className: string;
   style: CSSProperties;
@@ -558,21 +513,9 @@ function HoverBar({
   children?: ReactNode;
   // When set, the bar becomes a button that opens the matching detail view.
   onClick?: () => void;
-  // Edit mode only: begins a horizontal drag that reschedules the bar.
-  onDragStart?: (e: ReactPointerEvent) => void;
-  // Edit mode only: grips on the two ends, which move one date each.
-  onResizeStart?: (edge: "start" | "end") => (e: ReactPointerEvent) => void;
-  draggable?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
-  // The grip takes the level's ink, not white: an epic or story bar is an
-  // outline over the page, so a white pill on it vanished against light
-  // mode's paper. Ink is by construction the readable extreme for that level —
-  // deep on paper, pale on the dark ground — so it holds on an outlined bar
-  // and on the filled task plate alike. Opacity, not a second colour, does the
-  // at-rest fade.
-  const gripColor = OS_LEVEL[kind].ink;
   // Epic and story boxes are outlines with nested bars inside; the hover card
   // belongs to the name header, not the empty interior. A task bar *is* its
   // title, so the whole plate still opens the card.
@@ -585,12 +528,9 @@ function HoverBar({
         ref={hoverHeader ? undefined : setAnchorEl}
         className={cn(
           className,
-          onClick && !draggable && "cursor-pointer",
-          // The design's edit mode: bars become things you take hold of.
-          draggable && "cursor-grab active:cursor-grabbing",
+          onClick && "cursor-pointer",
         )}
         style={style}
-        onPointerDown={onDragStart}
         onMouseEnter={hoverHeader ? undefined : show}
         onMouseLeave={hoverHeader ? undefined : hide}
         {...(onClick
@@ -607,37 +547,6 @@ function HoverBar({
             }
           : {})}
       >
-        {/* Grips on the two ends: the middle of the bar moves the whole span,
-            the ends adjust one date each. The hit area is a transparent 8px
-            strip, but it draws a visible pill inside itself — an edge you can
-            only find by hovering is an edge nobody finds. Clearly visible at
-            rest in edit mode (the whole point of edit mode is that the bars
-            can be taken hold of), solid on hover. */}
-        {draggable && onResizeStart && (
-          <>
-            {(["start", "end"] as const).map((edge) => (
-              <span
-                key={edge}
-                className={cn(
-                  "group/grip absolute inset-y-0 z-20 flex w-2.5 cursor-ew-resize items-center justify-center",
-                  edge === "start" ? "left-0" : "right-0",
-                )}
-                onPointerDown={onResizeStart(edge)}
-                title={
-                  edge === "start"
-                    ? "Drag to move the start date"
-                    : "Drag to move the end date"
-                }
-                aria-hidden
-              >
-                <span
-                  className="h-1/2 max-h-3.5 min-h-2.5 w-1 rounded-full opacity-90 transition-opacity group-hover/grip:opacity-100"
-                  style={{ background: gripColor }}
-                />
-              </span>
-            ))}
-          </>
-        )}
         {hoverHeader ? (
           <span ref={setAnchorEl} onMouseEnter={show} onMouseLeave={hide}>
             {children}
@@ -660,89 +569,15 @@ function HoverBar({
   );
 }
 
-/** One level's dependency arrows, drawn between the bars laid out for it.
- *  `z-20` lifts them above the bars, `pointer-events-none` keeps those
- *  clickable. Edges whose endpoints aren't currently laid out (scrolled out of
- *  the window, or the level toggled off) are skipped. A backward edge — the
- *  dependent starting before its blocker ends — still draws; the bezier simply
- *  loops leftward, which is the point: it's what an out-of-order plan looks
- *  like. */
-function DependencyArrows({
-  level,
-  edges,
-  rects,
-  width,
-  height,
-}: {
-  level: Level;
-  // Directed: `from` (the blocker) → `to` (the dependent).
-  edges: { from: string; to: string }[];
-  rects: Map<string, { sx: number; ex: number; cy: number }>;
-  width: number;
-  height: number;
-}) {
-  if (edges.length === 0) return null;
-  const color = OS_LEVEL[level].edge;
-  const markerId = `${level}-dep-arrow`;
-  return (
-    <svg
-      className="pointer-events-none absolute inset-0 z-20 overflow-visible"
-      width={width}
-      height={height}
-      aria-hidden
-    >
-      <defs>
-        <marker
-          id={markerId}
-          viewBox="0 0 8 8"
-          refX="6.5"
-          refY="4"
-          markerWidth="6"
-          markerHeight="6"
-          orient="auto"
-        >
-          <path d="M0,0 L8,4 L0,8 z" fill={color} />
-        </marker>
-      </defs>
-      {edges.map((d) => {
-        const from = rects.get(d.from);
-        const to = rects.get(d.to);
-        if (!from || !to) return null;
-        const x1 = from.ex;
-        const y1 = from.cy;
-        const x2 = to.sx;
-        const y2 = to.cy;
-        const dx = Math.max(18, Math.abs(x2 - x1) / 2);
-        return (
-          <path
-            key={`${d.from}->${d.to}`}
-            d={`M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`}
-            fill="none"
-            stroke={color}
-            strokeWidth={1.5}
-            strokeOpacity={0.9}
-            markerEnd={`url(#${markerId})`}
-          />
-        );
-      })}
-    </svg>
-  );
-}
-
 // ── Component ───────────────────────────────────────────────────────────────
 
 export function EpicsTimeline({
   epics,
-  terms = [],
-  storyDependencies = [],
-  epicDependencies = [],
-  taskDependencies = [],
+  sprints = [],
   hiddenLevels,
   compact = false,
   fillHeight = false,
   actions,
-  editMode = false,
-  onReschedule,
   onEpicClick,
   onStoryClick,
   onTaskClick,
@@ -750,18 +585,8 @@ export function EpicsTimeline({
   epics: TimelineEpic[];
   // Optional per-epic task progress keyed by epic id (Cancelled tasks
   // excluded), shown in the epic hover card.
-  // Project terms, oldest first. Anchor and labels for the one-week sprint
-  // grid; with none, the grid falls back to plain week-of labels.
-  terms?: TimelineTerm[];
-  // Directed "depends on" edges (storyId waits on dependsOnStoryId), drawn as
-  // arrows between story bars. Edges whose endpoints aren't currently laid out
-  // (epic scrolled out of view, or story level hidden) are skipped.
-  storyDependencies?: StoryDependencyEdge[];
-  // The same edges one level up (epicId waits on dependsOnEpicId), drawn
-  // between epic bars in the epic hue.
-  epicDependencies?: EpicDependencyEdge[];
-  // And one level down (taskId waits on dependsOnTaskId), between task bars.
-  taskDependencies?: TaskDependencyEdge[];
+  // The project's stored sprints, drawn as the header's sprint row.
+  sprints?: TimelineSprint[];
   // Levels this timeline doesn't have at all — dropped from the legend, from
   // the bars, and from the hover rows that count them. Distinct from the
   // legend's own on/off toggles: those are the viewer's choice, this is the
@@ -781,207 +606,10 @@ export function EpicsTimeline({
   // Rendered flush right on the level-toggle row, so the page's primary action
   // shares a line with the legend instead of taking a toolbar of its own.
   actions?: ReactNode;
-  // The design's edit mode: bars can be dragged sideways to reschedule. Off,
-  // the timeline is read-only apart from clicking through to a detail view.
-  editMode?: boolean;
-  // The caller owns persistence (and the revalidate that re-lays the bars out).
-  // Called on drop with the whole-day shift the drag amounts to, and which
-  // edge was held: "move" shifts the whole span, "start"/"end" move one end.
-  // May return a promise so the timeline can hold the dropped position until
-  // the save settles (and drop it if the save fails).
-  onReschedule?: (
-    kind: Level,
-    id: string,
-    deltaDays: number,
-    edge: "move" | "start" | "end",
-  ) => void | Promise<void>;
   onEpicClick?: (epicId: string) => void;
   onStoryClick?: (epicId: string, storyId: string) => void;
   onTaskClick?: (taskId: string) => void;
 }) {
-  /* Drag-to-reschedule. The bar's own transform follows the pointer so the
-     gesture reads as direct manipulation, but only whole days are ever
-     committed — the grid is a day grid, and a half-day shift isn't a thing a
-     start date can be. `moved` gates the click that would otherwise open the
-     detail modal the moment you let go.
-
-     On drop the live transform would vanish before the loader revalidates,
-     so the bar would snap back to its old dates and then jump forward —
-     `pending` holds the same overlay until the new dates arrive (or the
-     save fails). */
-  type DragEdge = "move" | "start" | "end";
-  type DragState = {
-    kind: Level;
-    id: string;
-    edge: DragEdge;
-    startX: number;
-    dx: number;
-    moved: boolean;
-  };
-  type PendingDrag = {
-    kind: Level;
-    id: string;
-    edge: DragEdge;
-    dx: number;
-    origStart: string;
-    origEnd: string;
-  };
-  const dragRef = useRef<DragState | null>(null);
-  const suppressClickRef = useRef(false);
-  // `dragActive` owns the window listeners; `dragTick` only forces the repaint
-  // that moves the bar. Keeping them apart matters: subscribing on the tick
-  // would tear down and re-add the pointermove listener on every pointermove.
-  const [dragActive, setDragActive] = useState(false);
-  const [dragTick, setDragTick] = useState(0);
-  const [pending, setPending] = useState<PendingDrag | null>(null);
-
-  // Whether a bar can actually be dragged right now: edit mode is on and the
-  // caller wired up persistence. Drives every visible drag affordance (the
-  // grab cursor, the end grips, the grab-handle glyph, the hint) so the surface
-  // never signals "drag me" when a drag couldn't be saved — the partner hub, or
-  // a viewer without manage rights, get the read-only timeline unchanged.
-  const canReschedule = editMode && Boolean(onReschedule);
-
-  const beginDrag = useCallback(
-    (kind: Level, id: string, edge: DragEdge = "move") =>
-      (e: ReactPointerEvent) => {
-        if (!editMode || !onReschedule) return;
-        e.preventDefault();
-        e.stopPropagation();
-        setPending(null);
-        dragRef.current = { kind, id, edge, startX: e.clientX, dx: 0, moved: false };
-        setDragActive(true);
-      },
-    [editMode, onReschedule],
-  );
-
-  useEffect(() => {
-    if (!dragActive) return;
-    const move = (e: globalThis.PointerEvent) => {
-      const d = dragRef.current;
-      if (!d) return;
-      d.dx = e.clientX - d.startX;
-      if (Math.abs(d.dx) > 3) d.moved = true;
-      setDragTick((t) => t + 1);
-    };
-    const up = () => {
-      const d = dragRef.current;
-      dragRef.current = null;
-      setDragActive(false);
-      if (!d) return;
-      suppressClickRef.current = d.moved;
-      const days = Math.round(d.dx / PX_PER_DAY);
-      if (!(d.moved && days !== 0)) return;
-      const span = findBarSpan(epics, d.kind, d.id);
-      if (!span) {
-        onReschedule?.(d.kind, d.id, days, d.edge);
-        return;
-      }
-      // Keep the snapped overlay on the bar until the saved dates land.
-      const next: PendingDrag = {
-        kind: d.kind,
-        id: d.id,
-        edge: d.edge,
-        dx: days * PX_PER_DAY,
-        origStart: span.startsAt,
-        origEnd: span.endsAt,
-      };
-      setPending(next);
-      const result = onReschedule?.(d.kind, d.id, days, d.edge);
-      if (result != null && typeof (result as Promise<void>).then === "function") {
-        (result as Promise<void>).catch(() => setPending(null));
-      } else {
-        // Caller declined to persist (e.g. inverted span) — drop the overlay.
-        setPending(null);
-      }
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-    window.addEventListener("pointercancel", up);
-    return () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      window.removeEventListener("pointercancel", up);
-    };
-  }, [dragActive, onReschedule, epics]);
-
-  // Drop the overlay once the bar's dates match what the drag asked for —
-  // checked against the live props so we never apply the shift on top of the
-  // already-updated layout.
-  useEffect(() => {
-    if (!pending) return;
-    const live = findBarSpan(epics, pending.kind, pending.id);
-    if (!live) {
-      setPending(null);
-      return;
-    }
-    const days = pending.dx / PX_PER_DAY;
-    const expectedStart =
-      pending.edge === "end" ? pending.origStart : shiftIsoDays(pending.origStart, days);
-    const expectedEnd =
-      pending.edge === "start" ? pending.origEnd : shiftIsoDays(pending.origEnd, days);
-    if (
-      utcDayOf(live.startsAt) === utcDayOf(expectedStart) &&
-      utcDayOf(live.endsAt) === utcDayOf(expectedEnd)
-    ) {
-      setPending(null);
-    }
-  }, [epics, pending]);
-
-  // Wraps a bar's click so the pointerup that ends a drag doesn't also open
-  // the detail modal. Consumes the flag, so a real click straight after works.
-  const guardClick = useCallback((fn?: () => void) => {
-    if (!fn) return undefined;
-    return () => {
-      if (suppressClickRef.current) {
-        suppressClickRef.current = false;
-        return;
-      }
-      fn();
-    };
-  }, []);
-
-  // The live (or pending) offset for the bar under the pointer, snapped to the
-  // day grid so what you see is what will be committed.
-  void dragTick;
-  const dragStyle = (kind: Level, id: string, width: number): CSSProperties => {
-    const live = dragRef.current;
-    const overlay = live ?? pending;
-    if (!overlay || overlay.kind !== kind || overlay.id !== id) return {};
-    // New dates already in props — don't stack the pending transform on them.
-    if (!live && pending) {
-      const bar = findBarSpan(epics, pending.kind, pending.id);
-      if (bar) {
-        const days = pending.dx / PX_PER_DAY;
-        const expectedStart =
-          pending.edge === "end" ? pending.origStart : shiftIsoDays(pending.origStart, days);
-        const expectedEnd =
-          pending.edge === "start" ? pending.origEnd : shiftIsoDays(pending.origEnd, days);
-        if (
-          utcDayOf(bar.startsAt) === utcDayOf(expectedStart) &&
-          utcDayOf(bar.endsAt) === utcDayOf(expectedEnd)
-        ) {
-          return {};
-        }
-      }
-    }
-    const snapped = live
-      ? Math.round(live.dx / PX_PER_DAY) * PX_PER_DAY
-      : overlay.dx;
-    const lift = { zIndex: 40, boxShadow: "0 10px 24px var(--color-os-shadow)" };
-    // Resizing keeps the opposite edge pinned and never lets the bar collapse
-    // past a single day — the commit below clamps the same way, so what you
-    // drag is what you get.
-    if (overlay.edge === "start") {
-      const dx = Math.min(snapped, width - PX_PER_DAY);
-      return { ...lift, transform: `translateX(${dx}px)`, width: width - dx };
-    }
-    if (overlay.edge === "end") {
-      return { ...lift, width: Math.max(width + snapped, PX_PER_DAY) };
-    }
-    return { ...lift, transform: `translateX(${snapped}px)` };
-  };
-
   const [visibleLevels, setVisibleLevels] = useState<Record<Level, boolean>>({
     epic: true,
     story: true,
@@ -1060,18 +688,22 @@ export function EpicsTimeline({
     return out;
   }, [bounds, days]);
 
-  // Sprint bands: a fixed one-week grid anchored to the earliest term start.
-  // The tiling/labelling math lives in timeline-days (and is unit-tested
-  // there); this only turns each band into pixels.
   const sprintBands = useMemo(() => {
     if (!bounds) return [];
-    return computeSprintBands(bounds.min, bounds.max, terms, fmtDay).map((b) => ({
-      key: b.key,
-      left: ((b.key - bounds.min) / DAY) * PX_PER_DAY,
-      width: ((b.end - b.key) / DAY + 1) * PX_PER_DAY,
-      label: b.label,
-    }));
-  }, [bounds, terms]);
+    return sprints
+      .map((sp) => ({ sp, start: utcDayOf(sp.startsOn), end: utcDayOf(sp.endsOn) }))
+      .filter(({ start, end }) => end >= bounds.min && start <= bounds.max)
+      .map(({ sp, start, end }) => {
+        const from = Math.max(start, bounds.min);
+        const to = Math.min(end, bounds.max);
+        return {
+          key: sp.id,
+          left: ((from - bounds.min) / DAY) * PX_PER_DAY,
+          width: ((to - from) / DAY + 1) * PX_PER_DAY,
+          label: sp.label,
+        };
+      });
+  }, [bounds, sprints]);
 
   const today = localTodayUtcDay();
   const todayLeft =
@@ -1421,8 +1053,6 @@ export function EpicsTimeline({
       // Only the tail of the throw itself springs back; anything slower that
       // happened after it is the viewer steering, and steering is left alone.
       if (performance.now() - at > FLICK_MAX_AGE_MS) return;
-      // Dragging a bar can scroll the box; that scroll belongs to the drag.
-      if (dragRef.current) return;
       const box = scrollerRef.current;
       const target = centerScrollLeft();
       if (!box || target == null) return;
@@ -1521,16 +1151,6 @@ export function EpicsTimeline({
         })}
         {actions && <div className="ml-auto flex items-center gap-2">{actions}</div>}
       </div>
-
-      {/* Edit mode says, in words, what the bars now let you do — the grab
-          handles and cursor show it on each bar, this states it once so the
-          gesture isn't something you have to discover by trying. */}
-      {canReschedule && (
-        <div className="flex items-center gap-2 rounded-xl border border-os-accent/30 bg-os-accent/10 px-3 py-2 text-[13px] font-medium text-foreground">
-          <GripVertical className="h-4 w-4 shrink-0 text-os-accent" aria-hidden />
-          <span>Drag a bar to move it, or grab an end to change one date.</span>
-        </div>
-      )}
 
       <div
         className={cn(
@@ -1708,45 +1328,6 @@ export function EpicsTimeline({
                   </div>
                 </div>
 
-                {/* Dependency arrows, one layer per level. Outermost first so a
-                    finer edge paints over a coarser one where they cross. */}
-                {shown("epic") && (
-                  <DependencyArrows
-                    level="epic"
-                    edges={epicDependencies.map((d) => ({
-                      from: d.dependsOnEpicId,
-                      to: d.epicId,
-                    }))}
-                    rects={layout.epicRects}
-                    width={bounds.width}
-                    height={gridHeight}
-                  />
-                )}
-                {shown("story") && (
-                  <DependencyArrows
-                    level="story"
-                    edges={storyDependencies.map((d) => ({
-                      from: d.dependsOnStoryId,
-                      to: d.storyId,
-                    }))}
-                    rects={layout.storyRects}
-                    width={bounds.width}
-                    height={gridHeight}
-                  />
-                )}
-                {shown("task") && (
-                  <DependencyArrows
-                    level="task"
-                    edges={taskDependencies.map((d) => ({
-                      from: d.dependsOnTaskId,
-                      to: d.taskId,
-                    }))}
-                    rects={layout.taskRects}
-                    width={bounds.width}
-                    height={gridHeight}
-                  />
-                )}
-
                 {/* Bars, outermost first so nested levels paint on top. */}
                 {shown("epic") &&
                   epicBars.map((b) => {
@@ -1760,15 +1341,7 @@ export function EpicsTimeline({
                           top: b.top,
                           height: b.height,
                           border: `1px solid ${OS_LEVEL.epic.edge}`,
-                          ...dragStyle(
-                            "epic",
-                            b.epic.id,
-                            barX("epic", b.left, b.width).width,
-                          ),
                         }}
-                        draggable={canReschedule}
-                        onDragStart={beginDrag("epic", b.epic.id)}
-                        onResizeStart={(edge) => beginDrag("epic", b.epic.id, edge)}
                         title={b.epic.title}
                         description={b.epic.description}
                         rows={[
@@ -1777,21 +1350,15 @@ export function EpicsTimeline({
                             label: "Dates",
                             value: rangeLabel(b.epic.startsAt!, b.epic.endsAt!),
                           },
-                          // A hidden level is counted nowhere either — a card
-                          // reading "Stories 0" on a surface with no story bars
-                          // is worse than no row at all.
-                          ...(hidden("story")
-                            ? []
-                            : [
-                                {
-                                  label: "Stories",
-                                  value: String(b.epic.stories.length),
-                                },
-                              ]),
+                          {
+                            label: "Tasks done",
+                            value: `${b.epic.progress.done} of ${b.epic.progress.total}`,
+                          },
+                          ...(b.epic.requirements.length > 0
+                            ? [{ label: "Stories", value: String(b.epic.requirements.length) }]
+                            : []),
                         ]}
-                        onClick={guardClick(
-                          onEpicClick ? () => onEpicClick(b.epic.id) : undefined,
-                        )}
+                        onClick={onEpicClick ? () => onEpicClick(b.epic.id) : undefined}
                       >
                         {/* Colour only the name header, not the whole box —
                             nested story bars sit on the grid inside an outline.
@@ -1804,12 +1371,6 @@ export function EpicsTimeline({
                           style={{ height: BAR_HEADER_H }}
                         >
                           <span className="sticky left-1.5 inline-flex max-w-full items-center gap-1 px-3 py-1 text-[12px] leading-4 font-semibold tracking-[0.24px] whitespace-nowrap">
-                            {canReschedule && (
-                              <GripVertical
-                                className="-ml-1 h-3.5 w-3.5 shrink-0 opacity-80"
-                                aria-hidden
-                              />
-                            )}
                             <span className="truncate">{b.epic.title}</span>
                           </span>
                         </span>
@@ -1828,15 +1389,7 @@ export function EpicsTimeline({
                           top: b.top,
                           height: b.height,
                           border: `1px solid ${OS_LEVEL.story.edge}`,
-                          ...dragStyle(
-                            "story",
-                            b.story.id,
-                            barX("story", b.left, b.width).width,
-                          ),
                         }}
-                      draggable={canReschedule}
-                      onDragStart={beginDrag("story", b.story.id)}
-                      onResizeStart={(edge) => beginDrag("story", b.story.id, edge)}
                       title={b.story.title}
                       description={b.story.description}
                       rows={[
@@ -1849,11 +1402,9 @@ export function EpicsTimeline({
                           ? []
                           : [{ label: "Tasks", value: String(b.story.tasks.length) }]),
                       ]}
-                      onClick={guardClick(
-                        onStoryClick
+                      onClick={onStoryClick
                           ? () => onStoryClick(b.epicId, b.story.id)
-                          : undefined,
-                      )}
+                          : undefined}
                     >
                       {/* Same header-only fill and sticky name as the epic
                           bar — a wide story that scrolls off the left keeps
@@ -1863,12 +1414,6 @@ export function EpicsTimeline({
                         style={{ height: BAR_HEADER_H }}
                       >
                         <span className="sticky left-1.5 inline-flex max-w-full items-center px-2.5 py-1 text-[11px] leading-4 font-semibold tracking-[0.2px] whitespace-nowrap">
-                          {canReschedule && (
-                            <GripVertical
-                              className="-ml-1 mr-0.5 h-3.5 w-3.5 shrink-0 opacity-80"
-                              aria-hidden
-                            />
-                          )}
                           {b.story.incomplete && (
                             <span className="os-incomplete-dot mr-1.5 shrink-0">!</span>
                           )}
@@ -1892,15 +1437,7 @@ export function EpicsTimeline({
                         top: b.top,
                         height: b.height,
                         border: "none",
-                        ...dragStyle(
-                          "task",
-                          b.task.id,
-                          barX("task", b.left, b.width).width,
-                        ),
                       }}
-                      draggable={canReschedule}
-                      onDragStart={beginDrag("task", b.task.id)}
-                      onResizeStart={(edge) => beginDrag("task", b.task.id, edge)}
                       title={b.task.title}
                       rows={[
                         { label: "Status", value: TASK_STATUS_LABEL[b.task.status] },
@@ -1926,19 +1463,11 @@ export function EpicsTimeline({
                           : []),
                       ]}
                       assignees={b.task.assignees}
-                      onClick={guardClick(
-                        onTaskClick ? () => onTaskClick(b.task.id) : undefined,
-                      )}
+                      onClick={onTaskClick ? () => onTaskClick(b.task.id) : undefined}
                     >
                       {/* The bar itself carries the ink. A grab handle sits
                           ahead of the name in edit mode so the plate reads as
                           something you take hold of, not just a label. */}
-                      {canReschedule && (
-                        <GripVertical
-                          className="-ml-0.5 mr-1 h-3.5 w-3.5 shrink-0 opacity-80"
-                          aria-hidden
-                        />
-                      )}
                       <span className="truncate text-[12px] font-semibold tracking-[0.24px]">
                         {b.task.title}
                       </span>

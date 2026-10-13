@@ -335,11 +335,11 @@ describe("notify", () => {
     expect(res.slackDmed).toBe(1);
   });
 
-  it("uses task.due_reminder's Slack-on default without any preference row", async () => {
+  it("uses project.sprint_ending's Slack-on default without any preference row", async () => {
     mockPrisma.user.findMany.mockResolvedValue([user("u1", { slackUserId: "U123" })]);
     const res = await notify({
-      eventType: "task.due_reminder",
-      message: { title: "Task due" },
+      eventType: "project.sprint_ending",
+      message: { title: "Sprint ends today" },
       recipients: [{ userId: "u1" }],
     });
     expect(res.slackDmed).toBe(1);

@@ -37,7 +37,9 @@ function buildIssueBody(task: TaskWithAssignees): string {
 
   const meta: string[] = [];
   if (task.priority && task.priority !== "Normal") meta.push(`**Priority:** ${task.priority}`);
-  if (task.dueAt) meta.push(`**Due:** ${task.dueAt.toISOString().slice(0, 10)}`);
+  if (task.sprint) {
+    meta.push(`**Sprint:** ${task.sprint.number} (ends ${task.sprint.endsOn.toISOString().slice(0, 10)})`);
+  }
   if (task.epic) meta.push(`**Epic:** ${task.epic.title}`);
   if (task.domain) meta.push(`**Domain:** ${task.domain.displayName}`);
   meta.push(`**Project:** ${task.project.name}`);
@@ -278,7 +280,7 @@ type TaskWithAssignees = {
   title: string;
   description: string | null;
   priority: string;
-  dueAt: Date | null;
+  sprint: { number: number; endsOn: Date } | null;
   status: TaskStatus;
   githubRepo: string | null;
   githubIssueNumber: number | null;
@@ -297,7 +299,7 @@ async function loadTask(taskId: string): Promise<TaskWithAssignees | null> {
       title: true,
       description: true,
       priority: true,
-      dueAt: true,
+      sprint: { select: { number: true, endsOn: true } },
       status: true,
       githubRepo: true,
       githubIssueNumber: true,

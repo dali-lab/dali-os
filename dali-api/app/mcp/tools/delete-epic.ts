@@ -1,13 +1,13 @@
-// MCP `delete_epic` — Core or project member. Tasks pointing at the epic have
-// their epicId nulled (mirrors api.epics.$id DELETE).
+// MCP `delete_epic` — Core or project member. Mirrors api.epics.$id DELETE.
 
 import { prisma } from "~/lib/db";
 import { canEditProject } from "./access";
+import { deleteEpic } from "~/projects/lib/sprints.server";
 
 export const DELETE_EPIC_TOOL = {
   name: "delete_epic",
   description:
-    "Delete an epic. Tasks pointing at it have their epicId nulled (no cascade). Requires Core or project-member access.",
+    "Delete an epic. Its tasks move to the project's General epic and its user stories are deleted. Requires Core or project-member access.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -39,14 +39,9 @@ export async function runDeleteEpic(callerId: string, input: Input) {
     throw new DeleteEpicError("Forbidden", 403);
   }
 
-  await prisma.$transaction([
-    prisma.task.updateMany({
-      where: { epicId: input.epicId },
-      data: { epicId: null },
-    }),
-    prisma.userStory.deleteMany({ where: { epicId: input.epicId } }),
-    prisma.epic.delete({ where: { id: input.epicId } }),
-  ]);
+  if ((await deleteEpic(input.epicId, epic.projectId)) === "general-in-use") {
+    throw new DeleteEpicError("Move General's tasks elsewhere before deleting it", 409);
+  }
 
   return { ok: true, epicId: input.epicId };
 }
