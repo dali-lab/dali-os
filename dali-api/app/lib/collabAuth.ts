@@ -4,7 +4,7 @@ import { confidentialityCleared, getCycleConfidentialityState } from "~/hiring/l
 import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { COLLAB_SOURCES } from "~/collab/sources";
-import { getPageAccess } from "~/lib/pageAccess.server";
+import { PAGE_ACCESS_SELECT, getPageAccess } from "~/lib/pageAccess.server";
 
 /** Hydrate author IDs into `{ id, name, photoUrl }` objects in a single IN
  * query. `photoUrl` is resolved to a ready avatar src (null → initials). */
@@ -153,21 +153,9 @@ export async function authorizeCollabDoc(
     const page = await prisma.page.findUnique({
       where: { id },
       select: {
-        id: true,
-        archivedAt: true,
+        ...PAGE_ACCESS_SELECT,
         meetingNoteId: true,
-        workspaceType: true,
-        workspaceId: true,
-        partnerVisible: true,
-        createdById: true,
         studentEditable: true,
-        // Read by getPageAccess's object path — keep this select in sync so the
-        // collab socket honors named-share tiers and the General access setting
-        // exactly as the by-id path does.
-        profileVisible: true,
-        labListing: true,
-        linkAccess: true,
-        linkPermission: true,
       },
     });
     if (!page) return deny;
@@ -221,17 +209,8 @@ export async function authorizeCollabDoc(
     const page = await prisma.page.findUnique({
       where: { id },
       select: {
-        id: true,
-        archivedAt: true,
-        workspaceType: true,
-        workspaceId: true,
-        partnerVisible: true,
-        createdById: true,
+        ...PAGE_ACCESS_SELECT,
         studentEditable: true,
-        profileVisible: true,
-        labListing: true,
-        linkAccess: true,
-        linkPermission: true,
       },
     });
     if (!page || page.archivedAt !== null) return deny;

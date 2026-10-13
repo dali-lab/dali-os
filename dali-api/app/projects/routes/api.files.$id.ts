@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.files.$id";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth, requireMemberSession } from "~/lib/auth";
+import { requireAuth, requireMemberSession, isNonMember, redirectPartnerToPortal } from "~/lib/auth";
 import { canViewFile, canEditFile } from "~/lib/fileAccess.server";
 import { UNKNOWN_LABEL } from "~/lib/display";
 import { withCors, handlePreflight } from "~/lib/cors";
@@ -40,6 +40,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
+  if ((await isNonMember(auth, request)) || (await redirectPartnerToPortal(auth))) {
+    return withCors(request, Response.json({ error: "File not found" }, { status: 404 }));
+  }
 
   const file = await prisma.projectFile.findUnique({
     where: { id: params.id },
@@ -69,8 +72,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!file || file.archivedAt !== null) {
     return withCors(request, Response.json({ error: "File not found" }, { status: 404 }));
   }
-  // View gate: owner-only for My Drive files, folder access for scoped (Core)
-  // files, open otherwise. 404 (not 403) so a private file's existence is hidden.
+  // 404 (not 403) so a private file's existence is hidden.
   if (!(await canViewFile(auth.user.sub, file, request))) {
     return withCors(request, Response.json({ error: "File not found" }, { status: 404 }));
   }
@@ -117,9 +119,6 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!file || file.archivedAt !== null) {
     return withCors(request, Response.json({ error: "File not found" }, { status: 404 }));
   }
-  // Any authenticated member session; edit rights then follow the file's scope:
-  // My Drive = owner, Core/scoped = folder edit, project = members/Core, lab =
-  // any lab member (canEditFile).
   const gate = await requireMemberSession(request);
   if (!gate.ok) return withCors(request, gate.response);
   const auth = gate.auth;

@@ -17,7 +17,7 @@ import { publicDocRedirectForPath } from "~/lib/public-doc.server";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { fullName, formatDateShort } from "~/lib/display";
 import { getPresenceUser } from "~/lib/presence-user";
-import { getPageAccess, getPageAccessBulk } from "~/lib/pageAccess.server";
+import { PAGE_ACCESS_SELECT, getPageAccess, getPageAccessBulk } from "~/lib/pageAccess.server";
 import { getUserRoles, isProjectMember } from "~/lib/roles";
 import type { MeetingType } from "~/generated/prisma/client";
 import { isFavorited, recordPageVisit } from "~/lib/user-pages.server";
@@ -75,13 +75,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const page = await prisma.page.findUnique({
     where: { id: params.pageId },
     select: {
-      id: true,
+      ...PAGE_ACCESS_SELECT,
       title: true,
       kind: true,
-      workspaceType: true,
-      workspaceId: true,
-      parentPageId: true,
-      archivedAt: true,
       meetingNoteId: true,
       meetingOccurrenceStart: true,
       seededFromPageId: true,
@@ -93,12 +89,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       isTemplate: true,
       typography: true,
       updatedAt: true,
-      createdById: true,
-      partnerVisible: true,
-      profileVisible: true,
-      labListing: true,
-      linkAccess: true,
-      linkPermission: true,
       defaultMeetingNoteFor: true,
       createdBy: { select: { firstName: true, lastName: true } },
       lastEditedBy: { select: { firstName: true, lastName: true } },
@@ -116,34 +106,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw new Response("Not found", { status: 404 });
   }
 
-  // Unified permission resolution. Passing the full field set (createdById, the
-  // general-access + note-visibility flags) makes this match the by-id path
-  // exactly — the Lab branch keys off createdById/Core plus the General-access
-  // and share layers. The Member read gate is folded in here (getPageAccess
-  // handles notes), so there's no separate noteAccess pre-check.
   // Only a meeting note reaches this line archived (checked above). Its access
   // has to be resolved from the page's ordinary rules — the default deny would
   // 404 the meeting's "Open meeting note" link and the printed check-in QR the
   // moment someone trashes the note — and is then narrowed to read-only: a
   // trashed doc is readable, never writable, until it's restored.
   const trashed = page.archivedAt !== null;
-  const access = await getPageAccess(
-    auth.user.sub,
-    {
-      id: page.id,
-      workspaceType: page.workspaceType,
-      workspaceId: page.workspaceId,
-      archivedAt: page.archivedAt,
-      createdById: page.createdById,
-      partnerVisible: page.partnerVisible,
-      profileVisible: page.profileVisible,
-      labListing: page.labListing,
-      linkAccess: page.linkAccess,
-      linkPermission: page.linkPermission,
-    },
-    request,
-    { includeArchived: trashed },
-  );
+  const access = await getPageAccess(auth.user.sub, page, request, { includeArchived: trashed });
   if (!access.canView) throw new Response("Not found", { status: 404 });
   const canEdit = access.canEdit && !trashed;
   const canComment = access.canComment && !trashed;
@@ -192,20 +161,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       where: { parentPageId: page.parent.id, OR: [{ archivedAt: null }, { id: page.id }] },
       orderBy: { meetingOccurrenceStart: "desc" },
       select: {
-        id: true,
+        ...PAGE_ACCESS_SELECT,
         title: true,
         meetingOccurrenceStart: true,
         meetingNote: { select: { title: true } },
-        // The same access shape the page itself was judged on above.
-        workspaceType: true,
-        workspaceId: true,
-        archivedAt: true,
-        createdById: true,
-        partnerVisible: true,
-        profileVisible: true,
-        labListing: true,
-        linkAccess: true,
-        linkPermission: true,
       },
     });
     const tabAccess = await getPageAccessBulk(auth.user.sub, tabRows, request, {

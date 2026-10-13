@@ -3,7 +3,10 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db");
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isProjectMember: vi.fn() }));
-vi.mock("~/lib/pageAccess.server", () => ({ getPageAccess: vi.fn() }));
+vi.mock("~/lib/pageAccess.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/lib/pageAccess.server")>()),
+  getPageAccess: vi.fn(),
+}));
 vi.mock("~/lib/cors", () => ({
   handlePreflight: () => null,
   withCors: (_req: Request, res: Response) => res,
