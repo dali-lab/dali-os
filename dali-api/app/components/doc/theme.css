@@ -1059,6 +1059,35 @@ a.dali-cmp-piece:hover .dali-cmp-row__title { text-decoration: underline; }
   background: color-mix(in srgb, var(--color-os-accent, #3b6cf6) 20%, transparent);
 }
 
+/* ── Enhance marks (specs/meeting-recording-rail.md Step 2) ──────────────────
+ * Two reserved `backgroundColor` prop values — ENHANCE_MARK_ADDED /
+ * ENHANCE_MARK_PRIOR (app/components/meeting-recorder/enhance-plan.ts) —
+ * that BlockNote serializes as a `data-background-color` attribute on
+ * `.bn-block-content` (schema/blocks/internal.ts), the same attribute the
+ * stock color swatches key off. Both selector forms mirror BlockNote's own
+ * swatch CSS (@blocknote/shadcn/dist/style.css): the bare attribute paints
+ * the block's own content, and the `.bn-block:has(...)` ancestor paints the
+ * full block row (bullet/checkbox gutter included). Neither value is ever
+ * offered by the Colors sub-menu (DocSideMenu), so these two selectors are
+ * the only things that can ever match them. */
+.dali-doc [data-background-color="enhance-added"],
+.dali-doc .bn-block:has(> .bn-block-content[data-background-color="enhance-added"]) {
+  background-color: color-mix(in srgb, var(--color-accent-teal) 14%, var(--color-card));
+  border-radius: 4px;
+}
+
+.dali-doc [data-background-color="enhance-prior"],
+.dali-doc .bn-block:has(> .bn-block-content[data-background-color="enhance-prior"]) {
+  background-color: var(--color-muted);
+  border-radius: 4px;
+}
+
+/* The strikethrough lives on the tint, never as an inline style written
+ * into the block's own content. */
+.dali-doc .bn-block:has(> .bn-block-content[data-background-color="enhance-prior"]) .bn-inline-content {
+  text-decoration: line-through;
+}
+
 /* ── BlockNote side menu vs. an overlaying Modal ─────────────────────────────
  * BlockNote's side menu positions by mouse Y against the editor, not by DOM
  * containment — a Modal overlaying the editor (e.g. the recorder's Transcript

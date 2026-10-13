@@ -68,6 +68,17 @@ export type EnhanceVerified = {
   unmatchedOwners: number;
 };
 
+/** The two reserved `backgroundColor` values Enhance writes to mark a block
+ *  pending review (specs/meeting-recording-rail.md Step 2) — plain strings
+ *  on BlockNote's existing per-block prop, never offered by the Colors
+ *  sub-menu. "added" covers both a changed block (kept its id, new text) and
+ *  a genuinely new block; "prior" marks a block Enhance would otherwise have
+ *  removed outright (an untouched-template heading), left in place instead
+ *  so Keep/Revert has something to act on. */
+export const ENHANCE_MARK_ADDED = "enhance-added" as const;
+export const ENHANCE_MARK_PRIOR = "enhance-prior" as const;
+export type EnhanceMark = typeof ENHANCE_MARK_ADDED | typeof ENHANCE_MARK_PRIOR;
+
 /** The shape stored on MeetingRecording.notes and returned by both the
  *  enhance endpoint and GET /api/meeting-recordings/:id. */
 export type StoredEnhanceNotes = {
@@ -86,6 +97,15 @@ export type StoredEnhanceNotes = {
    *  the page's own occurrence-only roster prop. Optional: absent on plans
    *  stored before this field existed. */
   roster?: { userId: string; name: string }[];
+  /** Full prior DocBlock JSON (content/props/children), keyed by block id,
+   *  for every block an "update" op changed — captured by renderEnhanceOps
+   *  before it overwrites the block, so Revert restores the original inline
+   *  styles, links, comment marks, and task chips rather than plain text. */
+  priorBlocks?: Record<string, unknown>;
+  /** ISO timestamp set when the last enhance-added/enhance-prior mark on
+   *  this note cleared, by any means — informational, lets the nudge job
+   *  and MCP tell "enhanced" from "enhanced and reviewed". */
+  reviewedAt?: string | null;
 };
 
 export type ApplyEnhancePlanResult = {

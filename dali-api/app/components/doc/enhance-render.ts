@@ -6,8 +6,11 @@
 
 import {
   actionItemMatchesBlock,
+  ENHANCE_MARK_ADDED,
+  ENHANCE_MARK_PRIOR,
   type EditorOp,
   type EnhanceActionItem,
+  type EnhanceMark,
   type EnhanceOpBlock,
   type SnapshotBlock,
 } from "~/components/meeting-recorder/enhance-plan";
@@ -150,37 +153,221 @@ export function toPartialBlock(
   return { type: "paragraph", content } as DocPartialBlock;
 }
 
+function withMark(block: DocPartialBlock, mark: EnhanceMark): DocPartialBlock {
+  return {
+    ...block,
+    props: { ...(block.props as Record<string, unknown> | undefined), backgroundColor: mark },
+  } as DocPartialBlock;
+}
+
 /**
- * Applies applyEnhancePlan's ops to the live editor, one BlockNote call per
- * op, in order. Each call is its own undo step (BlockNote's default); callers
- * that want "Apply" as one undo step should wrap this in editor.transact if
- * the schema exposes it, but the primary undo safety net here is the "Before
- * enhance" named version saved just before this runs.
+ * Applies applyEnhancePlan's ops to the live editor inside one BlockNote
+ * transaction (editor.transact — @blocknote/core/src/editor/BlockNoteEditor.ts),
+ * so the editor's own undo reverts the whole write, never half of it
+ * (specs/meeting-recording-rail.md Step 2). Every updated or inserted block
+ * is tinted `enhance-added`; a `remove` op tints the block `enhance-prior`
+ * instead of deleting it, leaving something for Keep/Revert to act on.
+ * Returns the full prior JSON (content/props/children) of every block an
+ * "update" op touched, captured before the overwrite — the caller persists
+ * this as `StoredEnhanceNotes.priorBlocks` for Revert to restore from.
  */
 export function renderEnhanceOps(
   editor: DocEditorInstance,
   ops: EditorOp[],
   ctx: { pageId: string; recordingId: string; actionItems?: EnhanceActionItem[]; projectId?: string | null },
+): { priorBlocks: Record<string, unknown> } {
+  return editor.transact(() => {
+    const priorBlocks: Record<string, unknown> = {};
+    for (const op of ops) {
+      if (op.kind === "update") {
+        const prior = editor.getBlock(op.id);
+        if (prior) priorBlocks[op.id] = structuredClone(prior);
+        const content = buildInlineContent(op.text, op.cites, ctx.pageId, ctx.recordingId);
+        editor.updateBlock(op.id, {
+          content,
+          props: { backgroundColor: ENHANCE_MARK_ADDED },
+        } as unknown as DocPartialBlock);
+        continue;
+      }
+      if (op.kind === "remove") {
+        editor.updateBlock(op.id, {
+          props: { backgroundColor: ENHANCE_MARK_PRIOR },
+        } as unknown as DocPartialBlock);
+        continue;
+      }
+      // op.kind === "insertAfter"
+      const blocks = op.blocks.map((b) => withMark(toPartialBlock(b, ctx.pageId, ctx.recordingId, ctx), ENHANCE_MARK_ADDED));
+      if (!blocks.length) continue;
+      if (op.afterId === null) {
+        const doc = editor.document;
+        if (doc.length > 0) editor.insertBlocks(blocks, doc[0]!, "before");
+        else editor.replaceBlocks(editor.document, blocks);
+      } else {
+        editor.insertBlocks(blocks, op.afterId, "after");
+      }
+    }
+    return { priorBlocks };
+  });
+}
+
+function enhanceMarkOf(block: { props: Record<string, unknown> }): EnhanceMark | null {
+  const bg = block.props.backgroundColor;
+  return bg === ENHANCE_MARK_ADDED || bg === ENHANCE_MARK_PRIOR ? bg : null;
+}
+
+/** Every top-level block carrying a reserved Enhance mark, in document
+ *  order — the data the rail's "pending review" state derives from
+ *  (specs/meeting-recording-rail.md Step 2: "Pending is derived from the
+ *  document, not from a flag"). Top-level only, matching applyEnhancePlan's
+ *  own granularity. */
+export function findEnhanceMarks(
+  blocks: readonly DocBlock[],
+): { id: string; mark: EnhanceMark; type: string; text: string }[] {
+  const hits: { id: string; mark: EnhanceMark; type: string; text: string }[] = [];
+  for (const block of blocks) {
+    const mark = enhanceMarkOf(block);
+    if (mark) hits.push({ id: block.id, mark, type: block.type, text: blockOwnText(block) });
+  }
+  return hits;
+}
+
+export function hasEnhanceMarks(blocks: readonly DocBlock[]): boolean {
+  return blocks.some((block) => enhanceMarkOf(block) !== null);
+}
+
+/** Clears a block's Enhance tint without otherwise changing it. No-op when
+ *  `id` no longer exists. */
+export function clearEnhanceMark(editor: DocEditorInstance, id: string): void {
+  if (!editor.getBlock(id)) return;
+  editor.updateBlock(id, { props: { backgroundColor: "default" } } as unknown as DocPartialBlock);
+}
+
+/** Keep: clears the tint on a changed/added block, or deletes a removed
+ *  (`enhance-prior`) block outright — the template heading Enhance would
+ *  have removed on apply. No-op when `id` no longer exists or carries no
+ *  mark. */
+export function keepEnhanceBlock(editor: DocEditorInstance, id: string): void {
+  const block = editor.getBlock(id);
+  if (!block) return;
+  const mark = enhanceMarkOf(block);
+  if (mark === ENHANCE_MARK_PRIOR) {
+    editor.removeBlocks([id]);
+    return;
+  }
+  if (mark === ENHANCE_MARK_ADDED) {
+    clearEnhanceMark(editor, id);
+  }
+}
+
+/** Revert: restores a changed block from `priorBlocks`, deletes an added
+ *  block that has no prior entry (a genuine insert), or clears the tint on
+ *  a removed (`enhance-prior`) block, leaving it as it was. No-op when `id`
+ *  no longer exists or carries no mark. */
+export function revertEnhanceBlock(
+  editor: DocEditorInstance,
+  id: string,
+  priorBlocks: Record<string, unknown>,
 ): void {
-  for (const op of ops) {
-    if (op.kind === "update") {
-      const content = buildInlineContent(op.text, op.cites, ctx.pageId, ctx.recordingId);
-      editor.updateBlock(op.id, { content } as unknown as DocPartialBlock);
-      continue;
+  const block = editor.getBlock(id);
+  if (!block) return;
+  const mark = enhanceMarkOf(block);
+  if (mark === ENHANCE_MARK_PRIOR) {
+    clearEnhanceMark(editor, id);
+    return;
+  }
+  if (mark !== ENHANCE_MARK_ADDED) return;
+  const prior = priorBlocks[id] as (Record<string, unknown> & { id?: string }) | undefined;
+  if (!prior) {
+    editor.removeBlocks([id]);
+    return;
+  }
+  const { id: _priorId, ...update } = prior;
+  editor.updateBlock(id, update as DocPartialBlock);
+}
+
+/** Keep every block currently carrying an Enhance mark, in one transaction.
+ *  Iterates the marks present when called and skips an id that's already
+ *  gone by the time its turn comes (specs/meeting-recording-rail.md Step 2:
+ *  "Concurrent review"). Returns the number kept. */
+export function keepAllEnhance(editor: DocEditorInstance): number {
+  return editor.transact(() => {
+    const marks = findEnhanceMarks(editor.document);
+    let count = 0;
+    for (const { id } of marks) {
+      if (!editor.getBlock(id)) continue;
+      keepEnhanceBlock(editor, id);
+      count++;
     }
-    if (op.kind === "remove") {
-      editor.removeBlocks([op.id]);
-      continue;
+    return count;
+  });
+}
+
+/** Revert every block currently carrying an Enhance mark, in one
+ *  transaction. Same skip-if-already-gone behavior as keepAllEnhance.
+ *  Returns the number reverted. */
+export function revertAllEnhance(editor: DocEditorInstance, priorBlocks: Record<string, unknown>): number {
+  return editor.transact(() => {
+    const marks = findEnhanceMarks(editor.document);
+    let count = 0;
+    for (const { id } of marks) {
+      if (!editor.getBlock(id)) continue;
+      revertEnhanceBlock(editor, id, priorBlocks);
+      count++;
     }
-    // op.kind === "insertAfter"
-    const blocks = op.blocks.map((b) => toPartialBlock(b, ctx.pageId, ctx.recordingId, ctx));
-    if (!blocks.length) continue;
-    if (op.afterId === null) {
-      const doc = editor.document;
-      if (doc.length > 0) editor.insertBlocks(blocks, doc[0]!, "before");
-      else editor.replaceBlocks(editor.document, blocks);
-    } else {
-      editor.insertBlocks(blocks, op.afterId, "after");
+    return count;
+  });
+}
+
+const ENHANCE_MARK_HTML_FORMATS = [
+  { format: "blocknote/html", raw: true },
+  { format: "text/html", raw: false },
+] as const;
+
+/** Strips a `data-background-color="enhance-added"` / `"enhance-prior"`
+ *  attribute out of pasted HTML. A block carrying one of these copied out
+ *  of a note (or back into the same one) would otherwise arrive tinted with
+ *  no recording behind it to Keep or Revert against (specs/meeting-
+ *  recording-rail.md Step 2: "Marks and the rest of the note"). Every other
+ *  `data-background-color` value, and everything else in the markup, is
+ *  left untouched. */
+export function stripEnhanceMarksFromHtml(html: string): string {
+  return html.replace(
+    new RegExp(`\\s*data-background-color\\s*=\\s*(["'])(${ENHANCE_MARK_ADDED}|${ENHANCE_MARK_PRIOR})\\1`, "gi"),
+    "",
+  );
+}
+
+type PasteCapableEditor = { pasteHTML: (html: string, raw?: boolean) => void };
+
+/** BlockNote `pasteHandler` option (passed to useCreateBlockNote in
+ *  DocEditorImpl). Intercepts only the two clipboard HTML formats that can
+ *  carry a `data-background-color` attribute, in the same priority
+ *  BlockNote's own default handler picks between them (`blocknote/html`
+ *  over `text/html` — @blocknote/core/src/api/clipboard/fromClipboard/
+ *  pasteExtension.ts), and strips the two reserved values before handing
+ *  the HTML to the editor. Every other clipboard format (markdown, plain
+ *  text, files, code) is untouched — delegated straight to
+ *  `defaultPasteHandler`. */
+export function enhancePasteHandler({
+  event,
+  editor,
+  defaultPasteHandler,
+}: {
+  event: ClipboardEvent;
+  editor: PasteCapableEditor;
+  defaultPasteHandler: (opts?: { prioritizeMarkdownOverHTML?: boolean; plainTextAsMarkdown?: boolean }) => boolean | undefined;
+}): boolean | undefined {
+  const data = event.clipboardData;
+  if (data) {
+    for (const { format, raw } of ENHANCE_MARK_HTML_FORMATS) {
+      if (!data.types.includes(format)) continue;
+      const html = data.getData(format);
+      if (html.includes(ENHANCE_MARK_ADDED) || html.includes(ENHANCE_MARK_PRIOR)) {
+        editor.pasteHTML(stripEnhanceMarksFromHtml(html), raw);
+        return true;
+      }
+      break;
     }
   }
+  return defaultPasteHandler();
 }

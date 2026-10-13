@@ -43,6 +43,15 @@ export {
   enhanceSnapshotBlocks,
   findTranscriptToggle,
   hasTranscriptToggle,
+  findEnhanceMarks,
+  hasEnhanceMarks,
+  clearEnhanceMark,
+  keepEnhanceBlock,
+  revertEnhanceBlock,
+  keepAllEnhance,
+  revertAllEnhance,
+  stripEnhanceMarksFromHtml,
+  enhancePasteHandler,
 } from "./enhance-render";
 
 // Schema factory + editor/document types (heavy — client-only imports).
