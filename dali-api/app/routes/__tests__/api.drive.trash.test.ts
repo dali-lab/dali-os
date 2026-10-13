@@ -222,6 +222,17 @@ describe("POST /api/drive/trash (purge)", () => {
     expect(mockPrisma.page.delete).not.toHaveBeenCalled();
   });
 
+  it("refuses to purge a Drive root", async () => {
+    vi.mocked(getPageAccess).mockResolvedValue(FULL);
+    (prisma.page.findUnique as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ folderType: "Root" });
+
+    const res = (await action({ request: purgeRequest("folder", "root1") } as never)) as Response;
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("This is a Drive root and can't be deleted");
+    expect(mockPrisma.page.delete).not.toHaveBeenCalled();
+  });
+
   it("purges an empty folder", async () => {
     vi.mocked(getPageAccess).mockResolvedValue(FULL);
 

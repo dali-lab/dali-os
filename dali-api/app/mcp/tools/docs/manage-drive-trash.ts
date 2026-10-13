@@ -10,6 +10,7 @@ import { prisma } from "~/lib/db";
 import { canViewForms } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { canEditFile } from "~/lib/fileAccess.server";
+import { isRoot, ROOT_DELETE_ERROR } from "~/lib/drive-roots";
 import { requireForAction } from "~/mcp/registry";
 import type { McpCtx, McpTool } from "~/mcp/registry";
 
@@ -108,6 +109,8 @@ export async function runManageDriveTrash(callerId: string, input: ManageDriveTr
   if (action === "restore") {
     await prisma.page.update({ where: { id }, data: { archivedAt: null } });
   } else {
+    const target = await prisma.page.findUnique({ where: { id }, select: { folderType: true } });
+    if (target && isRoot(target)) throw new ManageDriveTrashError(ROOT_DELETE_ERROR, 400);
     await prisma.page.delete({ where: { id } });
   }
   return { ok: true };

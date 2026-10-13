@@ -54,6 +54,8 @@ import {
   User,
   Users,
   Shield,
+  Briefcase,
+  Heart,
   HardDrive,
   Search,
   X,
@@ -79,6 +81,7 @@ import { Menu, ContextMenu, Tooltip } from "~/components/ui/floating";
 import { ShareDialog } from "~/components/sharing/ShareDialog";
 import { relativeTime } from "~/lib/relative-time";
 import { cn } from "~/lib/cn";
+import { isProcessRootSpace } from "~/lib/drive-spaces";
 import { ProcessLinkPill } from "~/components/drive/ProcessLinkPill";
 import { buttonClasses } from "~/components/ui/Button";
 
@@ -358,6 +361,8 @@ function scopeIcon(scope: DriveTreeScope, size: IconSize = "sm") {
   }`;
   if (scope.id === "mine") return <User className={`${cls} text-muted-foreground`} />;
   if (scope.id === "core") return <Shield className={`${cls} text-accent-coral/80`} />;
+  if (scope.id === "hiring") return <Briefcase className={`${cls} text-accent-coral/80`} />;
+  if (scope.id === "mentorship") return <Heart className={`${cls} text-accent-coral/80`} />;
   if (scope.id === "lab") return <Users className={`${cls} text-muted-foreground`} />;
   // Synthetic group scopes use a folder icon (no emoji on the group itself).
   if (scope.id === "projects" || scope.id === "education") return <Folder className={`${cls} text-accent-coral/80`} />;
@@ -639,7 +644,7 @@ export function DriveBrowser({
         // loaded. Still worth getting right — education pages are not Project
         // ones, and the fallback claimed they were.
         const wt =
-          !scope || scope.id === "lab" || scope.id === "core"
+          !scope || scope.id === "lab" || isProcessRootSpace(scope.id)
             ? "Lab"
             : scope.id === "mine"
               ? "Member"
@@ -2145,12 +2150,12 @@ function ColumnScopeRow({
   onDoubleClick: () => void;
 }) {
   const t = useDriveText();
-  const isCore = scope.id === "core";
+  const isProcessRoot = isProcessRootSpace(scope.id);
   // Synthetic group scopes ("projects"/"education") are not valid drop targets —
   // dropping on the group row is ambiguous (which project?). Only individual
   // project folders inside the group accept drops via the normal folder-drop path.
   const isGroupScope = scope.id === "projects" || scope.id === "education";
-  const isProject = scope.id !== "mine" && scope.id !== "lab" && !isCore && !isGroupScope;
+  const isProject = scope.id !== "mine" && scope.id !== "lab" && !isProcessRoot && !isGroupScope;
   const label =
     scope.id === "mine" ? "My Drive" : scope.id === "lab" ? "Lab" : scope.label;
 
@@ -2639,9 +2644,9 @@ function ScopeList({
   return (
     <div className="flex flex-col divide-y divide-border/50" data-testid="drive-listing">
       {scopes.map((scope) => {
-        const isCore = scope.id === "core";
+        const isProcessRoot = isProcessRootSpace(scope.id);
         const isGroupScope = scope.id === "projects" || scope.id === "education";
-        const isProject = scope.id !== "mine" && scope.id !== "lab" && !isCore && !isGroupScope;
+        const isProject = scope.id !== "mine" && scope.id !== "lab" && !isProcessRoot && !isGroupScope;
         const label = scope.id === "mine" ? "My Drive" : scope.id === "lab" ? "Lab" : scope.label;
         return (
           <div

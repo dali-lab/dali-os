@@ -5,6 +5,7 @@ import { requireProjectEditAccess, requireMemberSession } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
 import { getPageAccess } from "~/lib/pageAccess.server";
+import { isRoot, ROOT_DELETE_ERROR } from "~/lib/drive-roots";
 
 // POST   /api/documents/:id — partial update. Body: any of
 //                             { title?, iconEmoji?, coverImageUrl? }.
@@ -58,7 +59,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const pageId = params.id!;
   const page = await prisma.page.findUnique({
     where: { id: pageId },
-    select: { id: true, workspaceType: true, workspaceId: true, kind: true },
+    select: { id: true, workspaceType: true, workspaceId: true, kind: true, folderType: true },
   });
   if (
     !page ||
@@ -103,6 +104,9 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   if (request.method === "DELETE") {
+    if (isRoot(page)) {
+      return withCors(request, Response.json({ error: ROOT_DELETE_ERROR }, { status: 400 }));
+    }
     if (page.kind === "Folder") {
       // "Empty" has to mean empty of everything a folder can hold, not just of
       // sub-pages. Files, forms, agreements and rubrics are filed by

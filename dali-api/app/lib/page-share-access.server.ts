@@ -18,6 +18,8 @@ import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { sharePermissionFor } from "~/lib/page-sharing.server";
+import { resolveGroupMembers } from "~/lib/groups";
+import { isRoot, ROOT_PUBLIC_ERROR, ROOT_SCOPE_ERROR } from "~/lib/drive-roots";
 import type {
   WorkspaceType,
   LinkAccess,
@@ -244,6 +246,10 @@ export async function setGeneralAccess(
   if (linkPermission === "FullAccess") {
     throw new GeneralAccessError("Links can't grant full access");
   }
+  if (linkAccess === "Public") {
+    const target = await prisma.page.findUnique({ where: { id: pageId }, select: { folderType: true } });
+    if (target && isRoot(target)) throw new GeneralAccessError(ROOT_PUBLIC_ERROR);
+  }
   if (linkAccess === "Public" || linkAccess === "Restricted") {
     linkPermission = "View";
   }
@@ -258,6 +264,21 @@ export async function setGeneralAccess(
     metadata: { linkAccess, linkPermission },
   });
   return { linkAccess, linkPermission };
+}
+
+async function groupIncludesCore(groupId: string): Promise<boolean> {
+  const core = await prisma.groupDefinition.findUnique({
+    where: { systemKey: "core" },
+    select: { id: true },
+  });
+  if (!core) return false;
+  if (core.id === groupId) return true;
+  const [members, coreMembers] = await Promise.all([
+    resolveGroupMembers(groupId),
+    resolveGroupMembers(core.id),
+  ]);
+  const have = new Set(members);
+  return coreMembers.every((id) => have.has(id));
 }
 
 /**
@@ -284,13 +305,17 @@ export async function setFolderScope(
     scopePermission?: SharePermission | null;
   },
 ): Promise<{ scopeKind: ScopeKind | null; scopeGroupId: string | null; scopePermission: SharePermission | null }> {
-  const page = await prisma.page.findUnique({ where: { id: pageId }, select: { kind: true } });
+  const page = await prisma.page.findUnique({
+    where: { id: pageId },
+    select: { kind: true, folderType: true },
+  });
   if (!page) throw new PageShareNotFoundError();
   if (page.kind !== "Folder") {
     throw new GeneralAccessError("Only folders have folder access");
   }
 
   const scopeKind = input.scopeKind;
+  if (isRoot(page) && scopeKind !== "Group") throw new GeneralAccessError(ROOT_SCOPE_ERROR);
   if (scopeKind == null) {
     await prisma.page.update({
       where: { id: pageId },
@@ -309,6 +334,9 @@ export async function setFolderScope(
       select: { id: true },
     });
     if (!group) throw new GeneralAccessError("Unknown group");
+    if (isRoot(page) && !(await groupIncludesCore(scopeGroupId))) {
+      throw new GeneralAccessError(ROOT_SCOPE_ERROR);
+    }
   }
 
   // Never FullAccess (re-share is a named grant only, same as general access).

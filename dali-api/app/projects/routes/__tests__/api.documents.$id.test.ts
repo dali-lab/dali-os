@@ -124,6 +124,26 @@ describe("DELETE /api/documents/:id — folder contents guard", () => {
 
 // The doc editor's title box posts here whatever workspace the page is in, so a
 // personal note has to be renameable through this route.
+describe("DELETE /api/documents/:id — Drive roots", () => {
+  beforeEach(() => {
+    vi.mocked(getPageAccess).mockResolvedValue({ canEdit: true } as any);
+  });
+
+  it("400s on a root and archives nothing, even an empty one", async () => {
+    m.page.findUnique.mockResolvedValue(labFolder({ folderType: "Root" }));
+    const res = await del();
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("This is a Drive root and can't be deleted");
+    expect(m.page.update).not.toHaveBeenCalled();
+  });
+
+  it("still archives a folder that only carries a receiver type", async () => {
+    m.page.findUnique.mockResolvedValue(labFolder({ folderType: "Meetings" }));
+    const res = await del();
+    expect(res.status).toBe(200);
+  });
+});
+
 describe("POST /api/documents/:id — personal notes", () => {
   it("renames the owner's own note", async () => {
     m.page.findUnique.mockResolvedValue(notePage());

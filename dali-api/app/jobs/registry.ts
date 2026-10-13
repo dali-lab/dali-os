@@ -78,6 +78,7 @@ import { runSessionFeedbackSweep } from "~/jobs/session-feedback-sweep.server";
 import { runSessionReminderSweep } from "~/jobs/session-reminder-sweep.server";
 import { runDailyDigest, runWeeklyDigest } from "~/lib/notification-digest.server";
 import { runRetentionJanitor } from "~/jobs/retention-janitor.server";
+import { runDriveRootsReparent } from "~/jobs/drive-roots-reparent.server";
 import { runSprintLifecycle } from "~/jobs/sprint-lifecycle.server";
 import { runFormWindows } from "~/jobs/form-windows.server";
 import { runInterviewReminders } from "~/jobs/interview-reminders.server";
@@ -470,6 +471,13 @@ export const JOBS: JobDefinition[] = [
     intervalMinutes: 1440,
     enabledByDefault: false,
     handler: runWalletRestyleBroadcastJob,
+  },
+  {
+    name: "drive-roots-reparent",
+    description: "One-time: moves Core-scoped top-level folders under the Core and Hiring roots.",
+    intervalMinutes: 1440,
+    enabledByDefault: false,
+    handler: runDriveRootsReparent,
   },
   {
     name: "recording-finalizer",

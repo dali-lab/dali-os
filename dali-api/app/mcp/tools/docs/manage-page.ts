@@ -3,7 +3,7 @@
 
 import { prisma } from "~/lib/db";
 import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
-import { PAGE_ACCESS_SELECT, getPageAccess } from "~/lib/pageAccess.server";
+import { getPageAccess } from "~/lib/pageAccess.server";
 import { canEditProject } from "~/mcp/tools/access";
 import { requireForAction } from "~/mcp/registry";
 import { duplicatePage } from "~/lib/page-copy.server";
@@ -11,6 +11,7 @@ import { setFavorite } from "~/lib/user-pages.server";
 import { canManageSharing } from "~/lib/page-share-access.server";
 import { logAuditEvent } from "~/lib/audit";
 import { pageDepth, MAX_PAGE_DEPTH, isAncestorOf } from "~/lib/pages";
+import { isRoot, ROOT_MOVE_ERROR } from "~/lib/drive-roots";
 import type { McpCtx, McpTool } from "~/mcp/registry";
 import type { Prisma } from "~/generated/prisma/client";
 
@@ -120,11 +121,16 @@ export async function runManagePage(callerId: string, input: ManagePageInput) {
   if (input.action === "set_template") {
     const page = await prisma.page.findUnique({
       where: { id: input.pageId },
-      select: { ...PAGE_ACCESS_SELECT, kind: true },
+      select: { id: true, workspaceType: true, workspaceId: true, archivedAt: true, kind: true },
     });
     if (!page || page.archivedAt !== null) throw new ManagePageError("Page not found", 404);
     if (page.kind !== "FreeForm") throw new ManagePageError("Only FreeForm pages can be templates", 400);
-    const access = await getPageAccess(callerId, page);
+    const access = await getPageAccess(callerId, {
+      id: page.id,
+      workspaceType: page.workspaceType,
+      workspaceId: page.workspaceId,
+      archivedAt: page.archivedAt,
+    });
     if (!access.canEdit) throw new ManagePageError("Permission denied", 403);
     await prisma.page.update({ where: { id: input.pageId }, data: { isTemplate: input.isTemplate! } });
     return { ok: true };
@@ -133,13 +139,18 @@ export async function runManagePage(callerId: string, input: ManagePageInput) {
   if (input.action === "typography") {
     const page = await prisma.page.findUnique({
       where: { id: input.pageId },
-      select: { ...PAGE_ACCESS_SELECT, kind: true },
+      select: { id: true, workspaceType: true, workspaceId: true, archivedAt: true, kind: true },
     });
     if (!page || page.archivedAt !== null) throw new ManagePageError("Page not found", 404);
     if (page.kind !== "FreeForm") {
       throw new ManagePageError("Only FreeForm pages have typography settings", 400);
     }
-    const access = await getPageAccess(callerId, page);
+    const access = await getPageAccess(callerId, {
+      id: page.id,
+      workspaceType: page.workspaceType,
+      workspaceId: page.workspaceId,
+      archivedAt: page.archivedAt,
+    });
     if (!access.canEdit) throw new ManagePageError("Permission denied", 403);
     await prisma.page.update({
       where: { id: input.pageId },
@@ -196,6 +207,7 @@ export async function runManagePage(callerId: string, input: ManagePageInput) {
       kind: true,
       archivedAt: true,
       createdById: true,
+      folderType: true,
       partnerVisible: true,
       publicVisible: true,
       projectAsOverview: { select: { id: true } },
@@ -209,6 +221,7 @@ export async function runManagePage(callerId: string, input: ManagePageInput) {
   ) {
     throw new ManagePageError("Document not found", 404);
   }
+  if (isRoot(page)) throw new ManagePageError(ROOT_MOVE_ERROR, 400);
 
   let dest: { type: "Lab" | "Project"; id: string | null };
   if (!input.workspaceType) {

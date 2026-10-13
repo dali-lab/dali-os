@@ -10,6 +10,7 @@ import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import type { Prisma, WorkspaceType } from "~/generated/prisma/client";
 import { pageDepth, MAX_PAGE_DEPTH, isAncestorOf, collectSubtree } from "~/lib/pages";
+import { isRoot, ROOT_MOVE_ERROR } from "~/lib/drive-roots";
 import { getPageAccess, isUnderGoverningScope } from "~/lib/pageAccess.server";
 
 // POST /api/pages/:id/move — move and/or reorder a document.
@@ -75,6 +76,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       workspaceId: true,
       kind: true,
       notebookKey: true,
+      folderType: true,
       archivedAt: true,
       createdById: true,
       partnerVisible: true,
@@ -95,6 +97,10 @@ export async function action({ request, params }: Route.ActionArgs) {
         page.workspaceId !== null;
   if (!page || !sourceShapeOk || page.archivedAt !== null) {
     return withCors(request, Response.json({ error: "Document not found" }, { status: 404 }));
+  }
+
+  if (isRoot(page)) {
+    return withCors(request, Response.json({ error: ROOT_MOVE_ERROR }, { status: 400 }));
   }
 
   const body = await parseJson(request, BodySchema);
