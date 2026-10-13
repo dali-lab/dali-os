@@ -10,33 +10,20 @@ import {
   LAB_PROCESS_ID,
   MENTORSHIP_PROCESS_ID,
 } from "~/lib/bindings.server";
+import {
+  RECEIVER_LABELS,
+  RECEIVER_SLOTS,
+  type ReceiverFolderType,
+  type ReceiverProcessType,
+} from "~/lib/drive-receivers";
 import type { FolderType, ProcessType } from "~/generated/prisma/client";
 
-export type ReceiverFolderType = Exclude<FolderType, "Root">;
-export type ReceiverProcessType = "Core" | "HiringCycle" | "Mentorship" | "Project" | "Lab";
+export { RECEIVER_LABELS, RECEIVER_SLOTS, type ReceiverFolderType, type ReceiverProcessType };
 
 export type ReceiverSlot = {
   processType: ProcessType;
   processId: string;
   folderType: ReceiverFolderType;
-};
-
-export const RECEIVER_LABELS: Record<ReceiverFolderType, string> = {
-  Meetings: "Meeting notebooks",
-  HiringForms: "Hiring forms",
-  ApplicationTemplates: "Application templates",
-  Agreements: "Agreements",
-  EducationTemplates: "Education templates",
-  CertificateBackgrounds: "Certificate backgrounds",
-  MentorNotebooks: "Mentor notebooks",
-};
-
-export const RECEIVER_SLOTS: Record<ReceiverProcessType, readonly ReceiverFolderType[]> = {
-  Core: ["Meetings", "Agreements", "EducationTemplates", "CertificateBackgrounds"],
-  HiringCycle: ["HiringForms", "ApplicationTemplates"],
-  Mentorship: ["MentorNotebooks"],
-  Project: ["Meetings"],
-  Lab: ["Meetings"],
 };
 
 export class ReceiverError extends Error {

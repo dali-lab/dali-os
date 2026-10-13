@@ -72,6 +72,7 @@ import {
   Info,
   PanelRightClose,
   History,
+  SlidersHorizontal,
 } from "lucide-react";
 import type { DriveItem } from "~/lib/drive.server";
 import { categorize } from "~/lib/file-type";
@@ -84,6 +85,8 @@ import { cn } from "~/lib/cn";
 import { isProcessRootSpace } from "~/lib/drive-spaces";
 import { ProcessLinkPill } from "~/components/drive/ProcessLinkPill";
 import { buttonClasses } from "~/components/ui/Button";
+import { FolderSettingsModal } from "~/components/drive/FolderSettingsModal";
+import { eligibleSlotsFor, isPageFolder, projectIdFor, receivesLabel } from "~/components/drive/receiver-options";
 
 /* Drive's type scale. It was written a step below the rest of the app — rows at
    text-sm, metadata at text-xs, column headers at 11px — which reads as a
@@ -116,6 +119,8 @@ export type RowActions = {
   onDelete: (item: DriveItem) => void;
   /** Open the in-place Share dialog for a page-backed item (doc or folder). */
   onShare?: (item: DriveItem) => void;
+  /** Open the "This folder receives" settings for a page folder. */
+  onFolderSettings?: (item: DriveItem) => void;
 };
 
 type SortKey = "name" | "modified" | "size";
@@ -183,6 +188,8 @@ export type DriveBrowserProps = {
   /** Whether the project has an active partner relationship. Controls whether
    *  the partner-visibility toggle is shown in item menus. */
   hasActivePartner?: boolean;
+  /** Turns on "Folder settings…" (what a folder receives). Omitted while the `drive-receivers` flag is off. */
+  receiverViewer?: { isCore: boolean; isProjectMember: boolean };
 };
 
 // ── Pure helpers ─────────────────────────────────────────────────────────────
@@ -421,6 +428,11 @@ function itemMenuItems(
           {itemPartnerVisible ? "Stop sharing with partner" : "Share with partner"}
         </Menu.Item>
       )}
+      {item.type === "folder" && isPageFolder(item) && actions.onFolderSettings && (
+        <Menu.Item icon={<SlidersHorizontal className="h-3.5 w-3.5" />} onSelect={() => actions.onFolderSettings!(item)}>
+          Folder settings…
+        </Menu.Item>
+      )}
       {(canRename || canMove) && <Menu.Separator />}
       {canRename && (
         <Menu.Item icon={<Pencil className="h-3.5 w-3.5" />} onSelect={() => actions.onRename(item)}>
@@ -618,6 +630,7 @@ export function DriveBrowser({
   embeddedScopeId,
   onTogglePartnerVisible,
   hasActivePartner,
+  receiverViewer,
 }: DriveBrowserProps) {
   const currentScope = useMemo(
     () => scopes.find((s) => s.id === currentScopeId) ?? null,
@@ -627,6 +640,8 @@ export function DriveBrowser({
   // Share dialog state — the item currently targeted for in-place sharing.
   const [shareTarget, setShareTarget] = useState<{ id: string; title: string; workspaceType: string } | null>(null);
 
+  const [folderSettings, setFolderSettings] = useState<{ item: DriveItem; scopeId: string } | null>(null);
+
   // Wrap the hub's getScopeActions to inject the in-place Share handler.
   // Sharing only applies to doc/folder (Page-backed) items; the wrapper passes
   // onShare so itemMenuItems and the leaf toolbar can show it without the hub
@@ -635,6 +650,7 @@ export function DriveBrowser({
     const base = getScopeActions(scopeId);
     return {
       ...base,
+      ...(receiverViewer ? { onFolderSettings: (item: DriveItem) => setFolderSettings({ item, scopeId }) } : {}),
       onShare: (item: DriveItem) => {
         if (item.type !== "doc" && item.type !== "folder") return;
         // workspaceType is not on DriveItem directly; infer from the scope id
@@ -1842,6 +1858,25 @@ export function DriveBrowser({
       />
     )}
 
+    {folderSettings && receiverViewer && (
+      <FolderSettingsModal
+        key={folderSettings.item.id}
+        open
+        onClose={() => setFolderSettings(null)}
+        folder={folderSettings.item}
+        slots={eligibleSlotsFor(
+          folderSettings.scopeId,
+          projectIdFor(
+            folderSettings.scopeId,
+            scopes.find((sc) => sc.id === folderSettings.scopeId)?.items ?? [],
+            folderSettings.item.id,
+          ),
+          receiverViewer.isCore,
+          receiverViewer.isProjectMember,
+        )}
+      />
+    )}
+
     {/* Quick Look — spacebar preview overlay. A modal portal, so it never
         disturbs the browser layout underneath (Google Drive / Finder pattern). */}
     {previewItem && (
@@ -1983,6 +2018,9 @@ function DriveDetailsPane({
           <dl className="mt-4 flex flex-col gap-3.5 border-t border-border pt-3.5">
             <DetailFact label="Where" value={scopePathLabel || "—"} />
             <DetailFact label="Modified" value={relativeTime(item.updatedAt as unknown as string)} />
+            {item.type === "folder" && receivesLabel(item.folderType) && (
+              <DetailFact label="Receives" value={receivesLabel(item.folderType)!} />
+            )}
             {item.type === "file" && item.sizeBytes != null && (
               <DetailFact label="Size" value={formatSize(item.sizeBytes)} />
             )}
