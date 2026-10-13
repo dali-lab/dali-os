@@ -107,7 +107,7 @@ export const SCHEDULE_MEETING_TOOL = {
       isCoreMeeting: {
         type: "boolean",
         description:
-          "Mark as a Core meeting (Core-only). Only takes effect when the caller is Core. Defaults to false.",
+          "Legacy. Core is decided by where the meeting's notebook is filed; this only files a project-less note in Core's Meetings folder. Only takes effect when the caller is Core. Defaults to false.",
       },
       addMeet: {
         type: "boolean",

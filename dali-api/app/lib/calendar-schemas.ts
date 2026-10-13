@@ -209,14 +209,6 @@ export const ToggleMeetingTimeEntrySchema = z.object({
   occurrence: isoString.optional(),
 });
 
-// "Mark as a Core meeting" on a meeting's detail popover — the same flag the
-// create form sets, editable after the fact. Core-only; the action re-checks.
-export const SetMeetingCoreSchema = z.object({
-  intent: z.literal("set-meeting-core"),
-  meetingId: z.string().min(1),
-  isCoreMeeting: z.boolean(),
-});
-
 // Associate an existing meeting with a project after creation (behind the
 // unified-core-project-meetings flag). Sets its type/project and re-files any
 // note. Requires a real project; the action re-checks organizer/Core + project
@@ -309,7 +301,6 @@ export const CalendarActionSchema = z.discriminatedUnion("intent", [
   UpdateTimeEntrySchema,
   DeleteTimeEntrySchema,
   ToggleMeetingTimeEntrySchema,
-  SetMeetingCoreSchema,
   SetMeetingProjectSchema,
   AddMeetingNoteSchema,
   AddMeetingWhiteboardSchema,

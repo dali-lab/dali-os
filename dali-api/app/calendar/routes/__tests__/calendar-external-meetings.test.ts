@@ -12,7 +12,19 @@ vi.mock("~/lib/general-calendar", () => ({
   isGeneralCalendarEvent: vi.fn(() => false),
 }));
 
+vi.mock("~/lib/core-meeting.server", () => ({
+  isMeetingCoreBulk: vi.fn(async (ms: Array<{ id: string; isCoreMeeting: boolean }>) =>
+    new Map(ms.map((m) => [m.id, m.isCoreMeeting])),
+  ),
+}));
+vi.mock("~/lib/pageAccess.server", () => ({
+  getPageAccessBulk: vi.fn(),
+  PAGE_ACCESS_SELECT: { id: true },
+}));
+
 import { prisma } from "~/lib/db";
+import { isMeetingCoreBulk } from "~/lib/core-meeting.server";
+import { getPageAccessBulk } from "~/lib/pageAccess.server";
 import { meetingsForExternalEvents } from "~/calendar/routes/calendar.server";
 import type { CalendarEvent } from "~/lib/google-calendar";
 
@@ -21,6 +33,7 @@ const mockPrisma = prisma as unknown as {
     findMany: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
   };
+  page: { findMany: ReturnType<typeof vi.fn> };
 };
 
 function baseEvent(over: Partial<CalendarEvent> = {}): CalendarEvent {
@@ -92,5 +105,38 @@ describe("meetingsForExternalEvents", () => {
       { organizerId: "viewer-1" },
       { participantUserIds: { has: "viewer-1" } },
     ]);
+  });
+
+  it("derives isCoreMeeting from placement, not the stored flag", async () => {
+    mockPrisma.scheduledMeeting.findMany.mockResolvedValue([
+      { ...baseMeeting(), isCoreMeeting: true, notebookId: "nb1" },
+    ]);
+    mockPrisma.page.findMany.mockResolvedValue([]);
+    vi.mocked(isMeetingCoreBulk).mockResolvedValueOnce(new Map([["m1", false]]));
+
+    const result = await meetingsForExternalEvents([baseEvent()], "viewer-1", false, false);
+
+    expect(result.get("evt-1")).toMatchObject({ isCoreMeeting: false });
+  });
+
+  it("offers the notebook for filing only when the viewer can edit it", async () => {
+    mockPrisma.scheduledMeeting.findMany.mockResolvedValue([
+      { ...baseMeeting(), notebookId: "nb1" },
+    ]);
+    mockPrisma.page.findMany.mockResolvedValue([{ id: "nb1", title: "Core sync" }]);
+    vi.mocked(getPageAccessBulk).mockResolvedValueOnce(new Map([["nb1", { canView: true, canEdit: true }]]) as never);
+    const editable = await meetingsForExternalEvents([baseEvent()], "viewer-1", false, false);
+    expect(editable.get("evt-1")?.notebook).toEqual({ id: "nb1", title: "Core sync" });
+
+    vi.mocked(getPageAccessBulk).mockResolvedValueOnce(new Map([["nb1", { canView: true, canEdit: false }]]) as never);
+    const readOnly = await meetingsForExternalEvents([baseEvent()], "viewer-1", false, false);
+    expect(readOnly.get("evt-1")?.notebook).toBeNull();
+  });
+
+  it("has no notebook to file for a meeting without one", async () => {
+    mockPrisma.scheduledMeeting.findMany.mockResolvedValue([baseMeeting()]);
+    const result = await meetingsForExternalEvents([baseEvent()], "viewer-1", false, false);
+    expect(result.get("evt-1")?.notebook).toBeNull();
+    expect(mockPrisma.page.findMany).not.toHaveBeenCalled();
   });
 });

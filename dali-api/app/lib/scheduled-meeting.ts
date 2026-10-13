@@ -39,7 +39,7 @@ import { isCore, isProjectMember } from "~/lib/roles";
 import { isGeneralCalendarEvent } from "~/lib/general-calendar";
 import { copyPageBody } from "~/lib/page-copy.server";
 import { createNotebook, loadEditableNotebook, NotebookError } from "~/lib/notebooks.server";
-import { isExistingChoice, type NotebookChoice } from "~/lib/notebook-choice";
+import { isExistingChoice, type NotebookChoice, type NotebookLocation } from "~/lib/notebook-choice";
 import { readDocAsBlocks } from "~/collab/read";
 import { pageDocName } from "~/collab/roomName";
 import { blocksToPlainText } from "~/components/doc/schema/configs";
@@ -287,6 +287,8 @@ export type CreateScheduledMeetingInput = {
   /** Which notebook the first note files into (and the series defaults to).
    *  When set without a meetingType, the type is derived from it. */
   notebook?: NotebookChoice | null;
+  /** Lets shortcut creation honour the viewer's impersonation and link access. */
+  request?: Request;
   // General ("Other") meetings only: where to file the note page. Authorized and
   // resolved by resolveNoteDestination — an unauthorized/invalid location (or an
   // omitted one) falls back to the Lab root. Ignored for Team/Partner, which file
@@ -328,6 +330,8 @@ export type CreateScheduledMeetingResult =
       notebookId: string | null;
       createdNotebook: boolean;
       whiteboardPageId: string | null;
+      /** Links in the notebook choice the actor couldn't file. */
+      declinedLinks: DeclinedNotebookLink[];
     }
   | { ok: false; error: string };
 
@@ -634,7 +638,43 @@ async function resolveArtifactFiling(
   return file({ workspaceType: "Lab", workspaceId: null, parentPageId }, title);
 }
 
-type ResolvedNotebook = { id: string; title: string; created: boolean; templatePageId: string | null };
+type Placement = { workspaceType: string; workspaceId: string | null; parentPageId: string | null };
+
+type ResolvedNotebook = {
+  id: string;
+  title: string;
+  created: boolean;
+  templatePageId: string | null;
+  /** Where the notebook itself lives: a link to this place is not a link. */
+  primary: Placement;
+};
+
+/** A link the actor couldn't file: the place and why. */
+export type DeclinedNotebookLink = { location: NotebookLocation; error: string };
+
+const locationKey = (l: Placement) => `${l.workspaceType}:${l.workspaceId ?? ""}:${l.parentPageId ?? ""}`;
+
+/** A shortcut to the notebook at each link, best effort like shortcutNotebookIntoCore: a place the actor can't file into is reported, never fatal. */
+async function fileNotebookLinks(
+  notebook: ResolvedNotebook,
+  links: NotebookLocation[] | undefined,
+  actorId: string,
+  request?: Request,
+): Promise<DeclinedNotebookLink[]> {
+  const declined: DeclinedNotebookLink[] = [];
+  const seen = new Set([locationKey(notebook.primary)]);
+  for (const link of links ?? []) {
+    if (seen.has(locationKey(link))) continue;
+    seen.add(locationKey(link));
+    try {
+      await createShortcut({ targetPageId: notebook.id, dest: link, actorId, request });
+    } catch (err) {
+      if (!(err instanceof ShortcutError)) throw err;
+      declined.push({ location: link, error: err.message });
+    }
+  }
+  return declined;
+}
 
 /**
  * The notebook a caller's choice names: an existing one the actor can edit, or
@@ -649,7 +689,13 @@ async function resolveNotebookChoice(
 ): Promise<ResolvedNotebook> {
   if (isExistingChoice(choice)) {
     const row = await loadEditableNotebook(choice.existingId, actorId);
-    return { id: row.id, title: row.title, created: false, templatePageId: row.templatePageId };
+    return {
+      id: row.id,
+      title: row.title,
+      created: false,
+      templatePageId: row.templatePageId,
+      primary: { workspaceType: row.workspaceType, workspaceId: row.workspaceId, parentPageId: row.parentPageId },
+    };
   }
   const location = choice.location ?? null;
   const explicit = location && !(location.workspaceType === "Lab" && location.parentPageId === null) ? location : null;
@@ -663,7 +709,17 @@ async function resolveNotebookChoice(
     templatePageId: choice.templatePageId ?? null,
     actorId,
   });
-  return { id: created.id, title: choice.title.trim(), created: true, templatePageId: choice.templatePageId ?? null };
+  return {
+    id: created.id,
+    title: choice.title.trim(),
+    created: true,
+    templatePageId: choice.templatePageId ?? null,
+    primary: {
+      workspaceType: dest.workspaceType,
+      workspaceId: dest.workspaceType === "Project" ? dest.workspaceId : null,
+      parentPageId: dest.parentPageId,
+    },
+  };
 }
 
 /** The type a note filed via a notebook is recorded under: the caller's own if
@@ -866,6 +922,11 @@ export async function createScheduledMeeting(
       whiteboardPageId = (await buildMeetingArtifactPage({ ...common, artifact: "whiteboard" })).id;
   }
 
+  const declinedLinks =
+    notebookPlan && input.notebook
+      ? await fileNotebookLinks(notebookPlan, input.notebook.links, input.organizerId, input.request)
+      : [];
+
   if (recorded || attendanceMode === "SelfCheckIn" || participantUserIds.length > 0) {
     await seedMeetingRoster({
       id: meeting.id,
@@ -905,6 +966,7 @@ export async function createScheduledMeeting(
     notebookId,
     createdNotebook,
     whiteboardPageId,
+    declinedLinks,
   };
 }
 
@@ -926,6 +988,8 @@ export type AttachMeetingNoteInput = {
   /** The notebook this note files into. Omitted = the series' default, else the
    *  type-keyed notebook. Naming one is the organizer's or Core's call. */
   notebook?: NotebookChoice | null;
+  /** Lets shortcut creation honour the viewer's impersonation and link access. */
+  request?: Request;
 };
 
 export type AttachMeetingNoteResult =
@@ -936,6 +1000,8 @@ export type AttachMeetingNoteResult =
       createdNotebook: boolean;
       /** The series' default notebook after this call. */
       seriesNotebookId: string | null;
+      /** Links in the notebook choice the actor couldn't file. */
+      declinedLinks: DeclinedNotebookLink[];
     }
   | { ok: false; error: string; status: number };
 
@@ -1034,7 +1100,18 @@ export async function attachMeetingNote(
       meetingTypeLabel: true,
       projectId: true,
       notebookId: true,
-      notebook: { select: { id: true, title: true, kind: true, archivedAt: true, templatePageId: true } },
+      notebook: {
+        select: {
+          id: true,
+          title: true,
+          kind: true,
+          archivedAt: true,
+          templatePageId: true,
+          workspaceType: true,
+          workspaceId: true,
+          parentPageId: true,
+        },
+      },
       notePages: {
         select: {
           id: true,
@@ -1061,6 +1138,7 @@ export async function attachMeetingNote(
       notebookId: existing.parentPageId,
       createdNotebook: false,
       seriesNotebookId: meeting.notebookId,
+      declinedLinks: [],
     };
   }
 
@@ -1133,7 +1211,13 @@ export async function attachMeetingNote(
         noteLocation: null,
       }));
     } else if (series) {
-      plan = { id: series.id, title: series.title, created: false, templatePageId: series.templatePageId };
+      plan = {
+        id: series.id,
+        title: series.title,
+        created: false,
+        templatePageId: series.templatePageId,
+        primary: series,
+      };
     }
   } catch (err) {
     if (err instanceof NotebookError) return { ok: false, error: err.message, status: err.status };
@@ -1183,6 +1267,7 @@ export async function attachMeetingNote(
         notebookId: raced.parentPageId,
         createdNotebook: false,
         seriesNotebookId: meeting.notebookId,
+        declinedLinks: [],
       };
     }
     throw err;
@@ -1219,7 +1304,10 @@ export async function attachMeetingNote(
 
   await seedNoteFromTemplate(notePageId, projectId, meetingType, plan?.templatePageId ?? null);
 
-  return { ok: true, notePageId, notebookId, createdNotebook, seriesNotebookId };
+  const declinedLinks =
+    chosen && plan ? await fileNotebookLinks(plan, chosen.links, input.actorId, input.request) : [];
+
+  return { ok: true, notePageId, notebookId, createdNotebook, seriesNotebookId, declinedLinks };
 }
 
 export type AttachMeetingWhiteboardInput = {

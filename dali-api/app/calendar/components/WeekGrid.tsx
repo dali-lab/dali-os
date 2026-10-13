@@ -3,11 +3,12 @@ import { createPortal } from "react-dom";
 import { Link, useFetcher, useRevalidator } from "react-router";
 import {
   Building2, Wifi, Users, FileText, Pencil, Copy, Trash2,
-  Check, HelpCircle, X, Video, ExternalLink, Clock, Shapes,
+  Check, HelpCircle, X, Video, ExternalLink, Clock, Shapes, FolderInput,
 } from "lucide-react";
 import { Tooltip, isInFloatingLayer } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
 import { Toggle } from "~/components/ui/Toggle";
+import { FileInPicker } from "~/components/drive/FileInPicker";
 import { Modal, ModalHeader, ModalFooter } from "~/components/Modal";
 import { DateField } from "~/components/ui/DateField";
 import { TimeField } from "~/components/ui/TimeField";
@@ -591,22 +592,20 @@ export function CalendarEventDetailPopover({
 const popoverActionBtn =
   "inline-flex items-center gap-1.5 rounded-full border border-os-container bg-os-well px-3 py-1.5 text-[13px] font-medium text-foreground transition-colors hover:border-os-container-hi";
 
-// Per-meeting toggles in the event detail popover: log the meeting on your own
-// timesheet, and (Core only) flag it as a Core meeting. Both write through the
-// calendar route action, so a success revalidates the loader and the Timesheet
-// tab picks the entry up without a reload.
+// Per-meeting controls in the event detail popover: log the meeting on your own
+// timesheet, and file its notebook somewhere else. The timesheet toggle writes
+// through the calendar route action, so a success revalidates the loader and
+// the Timesheet tab picks the entry up without a reload.
 export function MeetingDetailToggles({ meeting }: { meeting: NonNullable<EventBlock["meeting"]> }) {
   const timesheetFetcher = useFetcher<{ error?: string }>();
-  const coreFetcher = useFetcher<{ error?: string }>();
+  const revalidator = useRevalidator();
+  const [filing, setFiling] = useState(false);
 
   // Revalidation lands a beat after the submission, so read the in-flight value
   // off formData — otherwise the box visibly snaps back before settling.
   const onTimesheet = timesheetFetcher.formData
     ? timesheetFetcher.formData.get("onTimesheet") === "true"
     : meeting.onTimesheet;
-  const isCoreMeeting = coreFetcher.formData
-    ? coreFetcher.formData.get("isCoreMeeting") === "true"
-    : meeting.isCoreMeeting;
 
   return (
     <div className="mt-3 flex flex-col gap-2.5 rounded-os-item bg-os-well px-3 py-2.5 text-[13px]">
@@ -629,25 +628,18 @@ export function MeetingDetailToggles({ meeting }: { meeting: NonNullable<EventBl
       {timesheetFetcher.data?.error && (
         <p className="text-[12px] text-red-600">{timesheetFetcher.data.error}</p>
       )}
-      {meeting.canMarkCoreMeeting && (
+      {meeting.notebook && (
         <>
-          <Toggle
-            checked={isCoreMeeting}
-            disabled={coreFetcher.state !== "idle"}
-            onChange={(ev) =>
-              coreFetcher.submit(
-                {
-                  intent: "set-meeting-core",
-                  meetingId: meeting.meetingId,
-                  isCoreMeeting: String(ev.target.checked),
-                },
-                { method: "post", action: meeting.actionPath },
-              )
-            }
-            label="Core meeting"
-          />
-          {coreFetcher.data?.error && (
-            <p className="text-[12px] text-red-600">{coreFetcher.data.error}</p>
+          <button type="button" onClick={() => setFiling(true)} className={cn(popoverActionBtn, "self-start")}>
+            <FolderInput className="h-3.5 w-3.5 text-os-grey" /> File in…
+          </button>
+          {filing && (
+            <FileInPicker
+              target={{ id: meeting.notebook.id, title: meeting.notebook.title, isFolder: false }}
+              mode="multi"
+              onClose={() => setFiling(false)}
+              onDone={() => void revalidator.revalidate()}
+            />
           )}
         </>
       )}

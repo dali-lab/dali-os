@@ -130,6 +130,27 @@ describe("POST /api/scheduled-meetings: notebook choice", () => {
     expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ notebook, projectId: "p1" }));
   });
 
+  it("passes the notebook's links through and reports the ones that were declined", async () => {
+    const links = [{ workspaceType: "Lab", workspaceId: null, parentPageId: "f2" }];
+    const declinedLinks = [{ location: links[0], error: "You can't add to that folder" }];
+    mockCreate.mockResolvedValue({ ...created, declinedLinks });
+
+    const res = await post({ ...noType, notebook: { title: "Standup", links } });
+
+    expect(res.status).toBe(201);
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ notebook: { title: "Standup", links }, request: expect.any(Request) }),
+    );
+    expect((await res.json()).declinedLinks).toEqual(declinedLinks);
+  });
+
+  it("rejects more than eight links", async () => {
+    const link = { workspaceType: "Lab", workspaceId: null, parentPageId: "f2" };
+
+    expect((await post({ ...noType, notebook: { title: "A", links: Array(9).fill(link) } })).status).toBe(400);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
   it("still accepts the older meetingType payload with no notebook", async () => {
     const res = await post();
 

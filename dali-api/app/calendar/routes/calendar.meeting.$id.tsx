@@ -29,6 +29,7 @@ import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { getUserRoles, isProjectMember } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { isMeetingCore } from "~/lib/core-meeting.server";
 import { walletTokensConfigured } from "~/lib/wallet-token";
 import { getActiveDisplayScan, startDisplayScan, stopDisplayScan } from "~/lib/display-scan.server";
 import { useDialog } from "~/components/ui/dialog";
@@ -250,7 +251,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     meetingId: meeting.id,
     meetingLabel: meeting.title,
     typeLabel,
-    isCoreMeeting: meeting.isCoreMeeting,
+    isCoreMeeting: await isMeetingCore(meeting),
     organizerName: fullName(meeting.organizer),
     selectedAtIso: meeting.selectedAt ? occurrence.start.toISOString() : null,
     occurrenceStart: occurrence.originalStart.toISOString(),

@@ -113,6 +113,23 @@ describe("add-meeting-note action notebook choice", () => {
     expect(mockAttach).toHaveBeenCalledWith(expect.objectContaining({ notebook, projectId: "p1" }));
   });
 
+  it("passes links through with the request, and returns the links that were declined", async () => {
+    const links = [{ workspaceType: "Lab", workspaceId: null, parentPageId: "f2" }];
+    const declinedLinks = [{ location: links[0], error: "You can't add to that folder" }];
+    mockAttach.mockResolvedValue({ ...filed, declinedLinks });
+
+    const res = await post({
+      intent: "add-meeting-note",
+      meetingId: "m1",
+      notebook: JSON.stringify({ existingId: "nb-1", links }),
+    });
+
+    expect(mockAttach).toHaveBeenCalledWith(
+      expect.objectContaining({ notebook: { existingId: "nb-1", links }, request: expect.any(Request) }),
+    );
+    expect((await res.json()).declinedLinks).toEqual(declinedLinks);
+  });
+
   it("passes no notebook when the field is absent, so the series default decides", async () => {
     await post({ intent: "add-meeting-note", meetingId: "m1" });
 

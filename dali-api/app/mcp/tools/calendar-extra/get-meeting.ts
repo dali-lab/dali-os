@@ -7,6 +7,7 @@ import { fullName } from "~/lib/display";
 import { noteForOccurrence } from "~/lib/meeting-occurrences";
 import { parseOccurrenceParam, resolveMeetingOccurrence } from "~/lib/scheduled-meeting";
 import { canReadRecording } from "~/lib/meeting-recording.server";
+import { isMeetingCore } from "~/lib/core-meeting.server";
 import { McpNotFoundError, McpForbiddenError } from "../../registry";
 
 export const GET_MEETING_DEF = {
@@ -52,6 +53,7 @@ export async function runGetMeeting(callerId: string, input: Input) {
       durationMinutes: true,
       status: true,
       isCoreMeeting: true,
+      notebookId: true,
       meetingUrl: true,
       recurrenceRule: true,
       organizer: { select: { firstName: true, lastName: true } },
@@ -126,7 +128,7 @@ export async function runGetMeeting(callerId: string, input: Input) {
     recurrenceRule: meeting.recurrenceRule,
     meetingType: meeting.meetingType,
     typeLabel,
-    isCoreMeeting: meeting.isCoreMeeting,
+    isCoreMeeting: await isMeetingCore(meeting),
     attendanceMode: meeting.attendanceMode,
     projectId: meeting.projectId,
     organizerName: fullName(meeting.organizer),

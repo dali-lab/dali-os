@@ -37,6 +37,37 @@ describe("notebookChoiceSchema", () => {
   });
 });
 
+describe("notebookChoiceSchema links", () => {
+  const lab = { workspaceType: "Lab", workspaceId: null, parentPageId: "f1" };
+  const project = { workspaceType: "Project", workspaceId: "p1", parentPageId: null };
+
+  it("accepts links on a new notebook and on an existing one", () => {
+    expect(notebookChoiceSchema.parse({ title: "A", links: [lab, project] })).toEqual({
+      title: "A",
+      links: [lab, project],
+    });
+    expect(notebookChoiceSchema.parse({ existingId: "nb_1", links: [lab] })).toEqual({
+      existingId: "nb_1",
+      links: [lab],
+    });
+  });
+
+  it("keeps links optional", () => {
+    expect(notebookChoiceSchema.parse({ title: "A" })).not.toHaveProperty("links");
+  });
+
+  it("allows eight links and rejects nine", () => {
+    expect(notebookChoiceSchema.safeParse({ title: "A", links: Array(8).fill(lab) }).success).toBe(true);
+    expect(notebookChoiceSchema.safeParse({ title: "A", links: Array(9).fill(lab) }).success).toBe(false);
+  });
+
+  it("validates each link like a location", () => {
+    const bad = { workspaceType: "Project", workspaceId: null, parentPageId: null };
+    expect(notebookChoiceSchema.safeParse({ title: "A", links: [bad] }).success).toBe(false);
+    expect(notebookChoiceSchema.safeParse({ existingId: "nb_1", links: [bad] }).success).toBe(false);
+  });
+});
+
 describe("isExistingChoice", () => {
   it("tells the two shapes apart", () => {
     expect(isExistingChoice({ existingId: "nb_1" })).toBe(true);

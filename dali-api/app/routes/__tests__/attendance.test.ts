@@ -5,6 +5,7 @@ vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
   isNonMember: vi.fn(async () => false),
 }));
+vi.mock("~/lib/core-meeting.server", () => ({ isMeetingCoreBulk: vi.fn() }));
 vi.mock("~/lib/roles", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/lib/roles")>()),
   isCore: vi.fn(),
@@ -12,9 +13,10 @@ vi.mock("~/lib/roles", async (importOriginal) => ({
 }));
 
 import { prisma } from "~/lib/db";
+import { isMeetingCoreBulk } from "~/lib/core-meeting.server";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { isCore, isProjectMember } from "~/lib/roles";
-import { action } from "~/routes/attendance";
+import { action, loader } from "~/routes/attendance";
 
 const mockPrisma = prisma as unknown as Record<
   string,
@@ -140,5 +142,64 @@ describe("POST /attendance — set-absence-note", () => {
   it("rejects an unknown intent", async () => {
     const res = await post({ intent: "delete-everything", meetingId: "m", userId: "u" });
     expect(res.status).toBe(400);
+  });
+});
+
+describe("GET /attendance - scope label", () => {
+  const row = (id: string, over: Record<string, unknown> = {}) => ({
+    id,
+    title: id,
+    selectedAt: new Date("2026-10-01T15:00:00Z"),
+    durationMinutes: 60,
+    meetingType: "Other",
+    meetingTypeLabel: "Sync",
+    isCoreMeeting: false,
+    notebookId: null,
+    organizerId: "viewer-1",
+    project: null,
+    organizer: { firstName: "A", lastName: "B", daliEmail: null },
+    exceptions: [],
+    attendance: [
+      {
+        occurrenceStart: new Date("2026-10-01T15:00:00Z"),
+        present: false,
+        markedAt: null,
+        absenceNote: null,
+        userId: "viewer-1",
+        user: { id: "viewer-1", firstName: "A", lastName: "B", daliEmail: null },
+      },
+    ],
+    ...over,
+  });
+
+  it("labels a meeting Core by its notebook's placement, a project meeting by its project, the rest General", async () => {
+    mockPrisma.scheduledMeeting.findMany.mockResolvedValue([
+      row("placed", { notebookId: "nb1" }),
+      row("flagged-only", { isCoreMeeting: true, notebookId: "nb2" }),
+      row("project", { project: { id: "p1", name: "Atlas" }, notebookId: "nb3" }),
+      row("plain"),
+    ]);
+    mockPrisma.projectAssignment.findMany.mockResolvedValue([]);
+    vi.mocked(isMeetingCoreBulk).mockResolvedValue(
+      new Map([
+        ["placed", true],
+        ["flagged-only", false],
+        ["project", true],
+        ["plain", false],
+      ]),
+    );
+
+    const { events } = (await loader({
+      request: new Request("http://localhost/attendance"),
+      params: {},
+      context: {},
+    } as never)) as { events: Array<{ meetingId: string; scope: string }> };
+
+    expect(Object.fromEntries(events.map((e) => [e.meetingId, e.scope]))).toEqual({
+      placed: "Core",
+      "flagged-only": "General",
+      project: "Atlas",
+      plain: "General",
+    });
   });
 });

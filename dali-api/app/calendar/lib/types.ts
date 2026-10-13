@@ -205,8 +205,13 @@ export type EventMeetingDTO = {
   hasType: boolean;
   /** Whether the viewer already has a TimeEntry for this meeting. */
   onTimesheet: boolean;
+  /** Derived from where the meeting's notebook is filed (see core-meeting.server). */
   isCoreMeeting: boolean;
-  /** Core only — hides the "Core meeting" checkbox for everyone else. */
+  /** The meeting's notebook, only when the viewer can edit it: the popover's
+   *  "File in…" target. Null for a meeting with no notebook or one the viewer
+   *  can't edit. */
+  notebook: { id: string; title: string } | null;
+  /** Core only; the Add note and whiteboard permissions derive from it. */
   canMarkCoreMeeting: boolean;
   /** Whether the viewer (organizer or Core) may add a notes doc to a meeting
    *  that doesn't have one yet — gates the popover's "Add meeting notes"
