@@ -1,13 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Select } from "~/components/ui/floating";
 import { Radio } from "~/components/ui/Radio";
+import { FolderPicker, type Destination } from "~/components/drive/FolderPicker";
+import { useDriveDestinations } from "~/components/drive/use-drive-destinations";
 import {
-  DestinationPicker,
-  type PickerDrive,
-  type PickerFolder,
-  type Destination,
-} from "~/components/drive/DestinationPicker";
-import {
+  noteDestinationRows,
+  noteInitialDest,
+  noteLocationFromDest,
   type MeetingNoteLocation,
   type MeetingNoteState,
   CORE_NOTE_FOLDER_LABEL,
@@ -52,14 +51,6 @@ export function useMeetingNote() {
   };
 }
 
-type MoveDestination = {
-  type: "Lab" | "Project";
-  id: string | null;
-  label: string;
-  iconEmoji: string | null;
-  folders: { id: string; title: string; parentId: string | null }[];
-};
-
 export function MeetingNoteFields({
   note,
   myProjects = [],
@@ -88,44 +79,13 @@ export function MeetingNoteFields({
   }, [core]);
 
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [drives, setDrives] = useState<PickerDrive[]>([]);
-  const [folders, setFolders] = useState<PickerFolder[]>([]);
-  const [loadedDest, setLoadedDest] = useState(false);
-
-  // Lazily fetch Drive destinations the first time the picker is opened — mirrors
-  // MoveToDialog's transform of /api/move-destinations.
-  async function openPicker() {
-    if (!loadedDest) {
-      try {
-        const res = await fetch("/api/move-destinations", { credentials: "include" });
-        const json = await res.json();
-        const dests = (json.destinations ?? []) as MoveDestination[];
-        setDrives(dests.map((d) => ({ id: d.type === "Lab" ? "lab" : d.id!, label: d.label, iconEmoji: d.iconEmoji })));
-        setFolders(
-          dests.flatMap((d) => {
-            const driveId = d.type === "Lab" ? "lab" : d.id!;
-            return d.folders.map((f) => ({ id: f.id, driveId, parentId: f.parentId, title: f.title }));
-          }),
-        );
-        setLoadedDest(true);
-      } catch {
-        // Leave the picker unopened on failure; the default (Lab-wide) still applies.
-        return;
-      }
-    }
-    setPickerOpen(true);
-  }
+  const destinations = useDriveDestinations({ enabled: pickerOpen, onError: () => setPickerOpen(false) });
+  const noteRows = useMemo(() => noteDestinationRows(destinations.rows), [destinations.rows]);
 
   function onPick(dest: Destination) {
-    const drive = drives.find((d) => d.id === dest.driveId);
-    const folder = dest.folderId ? folders.find((f) => f.id === dest.folderId) : null;
-    const label = folder ? `${drive?.label ?? "Drive"} / ${folder.title}` : (drive?.label ?? "Lab-wide");
-    note.setLocation({
-      workspaceType: dest.driveId === "lab" ? "Lab" : "Project",
-      workspaceId: dest.driveId === "lab" ? null : dest.driveId,
-      parentPageId: dest.folderId,
-      label,
-    });
+    const location = noteLocationFromDest(dest, noteRows);
+    if (!location) return;
+    note.setLocation(location);
     setPickerOpen(false);
   }
 
@@ -215,7 +175,7 @@ export function MeetingNoteFields({
                 </span>
                 <button
                   type="button"
-                  onClick={() => void openPicker()}
+                  onClick={() => setPickerOpen(true)}
                   className="shrink-0 rounded-md border border-border px-3 py-2 text-sm text-foreground transition-colors hover:bg-muted/40"
                 >
                   Change…
@@ -226,20 +186,14 @@ export function MeetingNoteFields({
         </>
       )}
 
-      {pickerOpen && (
-        <DestinationPicker
+      {pickerOpen && destinations.status === "ready" && (
+        <FolderPicker
           open
           heading="Save meeting note to"
-          drives={drives}
-          folders={folders}
-          initial={
-            state.location
-              ? {
-                  driveId: state.location.workspaceType === "Lab" ? "lab" : (state.location.workspaceId ?? "lab"),
-                  folderId: state.location.parentPageId,
-                }
-              : { driveId: "lab", folderId: null }
-          }
+          drives={noteRows.drives}
+          folders={noteRows.folders}
+          preferFolderType="Meetings"
+          initial={noteInitialDest(state.location, noteRows)}
           confirmLabel="Save here"
           onClose={() => setPickerOpen(false)}
           onConfirm={onPick}
