@@ -1816,6 +1816,13 @@ export default function DriveHub() {
     [],
   );
 
+  const applyTag = useCallback(
+    (id: string) => {
+      if (!selectedTagIds.has(id)) toggleTag(id);
+    },
+    [selectedTagIds, toggleTag],
+  );
+
   const clearTags = useCallback(() => {
     patchParams((p) => p.delete("tag"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2058,6 +2065,7 @@ export default function DriveHub() {
           </>
         }
         tagFilter={tagFilter}
+        onTagClick={applyTag}
         receiverViewer={receiversOn ? { isCore: canManageAgreements, isProjectMember: true } : undefined}
       />
 

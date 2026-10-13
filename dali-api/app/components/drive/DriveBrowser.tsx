@@ -92,6 +92,7 @@ import { cn } from "~/lib/cn";
 import { isProcessRootSpace, SHARED_SPACE_KEY } from "~/lib/drive-spaces";
 import { ProcessLinkPill } from "~/components/drive/ProcessLinkPill";
 import { AudienceSignal, AudienceDetail } from "~/components/drive/AudienceSignal";
+import { TagDots, TagLabels } from "~/components/drive/TagDots";
 import { buttonClasses } from "~/components/ui/Button";
 import { crumbsFor, locationOf, type ItemLocation } from "~/components/drive/location";
 import { LocationLink } from "~/components/drive/LocationLink";
@@ -135,6 +136,8 @@ export type RowActions = {
   onDelete: (item: DriveItem) => void;
   /** Open the in-place Share dialog for a page-backed item (doc or folder). */
   onShare?: (item: DriveItem) => void;
+  /** Apply a tag to the Drive's tag filter (clicking a tag dot). */
+  onTagClick?: (tagId: string) => void;
   /** "File in…" and "Add shortcut to…", injected by the browser for items that can be filed in several places. */
   fileIn?: {
     allows: (item: DriveItem) => boolean;
@@ -193,6 +196,8 @@ export type DriveBrowserProps = {
   /** Called when the user picks Share for a doc or folder. The browser mounts
    *  the ShareDialog in-place with this item as the target. */
   onShareItem?: (item: DriveItem) => void;
+  /** Called with a tag id when a row's tag dot is clicked; the host applies it to its tag filter. */
+  onTagClick?: (tagId: string) => void;
   /** Called once when the Share dialog closes after sharing changed, so the
    *  host can reload the listing and refresh each row's audience. */
   onSharingChanged?: () => void;
@@ -706,6 +711,7 @@ export function DriveBrowser({
   tagChips,
   tagFilter,
   onShareItem,
+  onTagClick,
   onSharingChanged,
   embeddedScopeId,
   onTogglePartnerVisible,
@@ -751,6 +757,7 @@ export function DriveBrowser({
         openMulti: (item: DriveItem) => openFileIn(item, "multi"),
         openSingle: (item: DriveItem) => openFileIn(item, "single"),
       },
+      ...(onTagClick ? { onTagClick } : {}),
       ...(receiverViewer ? { onFolderSettings: (item: DriveItem) => setFolderSettings({ item, scopeId }) } : {}),
       onShare: (item: DriveItem) => {
         if (item.type !== "doc" && item.type !== "folder") return;
@@ -2188,6 +2195,9 @@ function DriveDetailsPane({
               (item as { partnerVisible?: boolean | null }).partnerVisible && (
                 <DetailFact label="Sharing" value="Shared with partner" />
               )}
+            {(item.type === "doc" || item.type === "folder") && !!item.tags?.length && (
+              <DetailFact label="Tags" value={<TagLabels tags={item.tags} />} />
+            )}
             {(item.type === "doc" || item.type === "folder" || item.type === "file") && item.audience && (
               <DetailFact
                 label="Who can see this"
@@ -2502,6 +2512,7 @@ function ColumnItemRow({
       </span>
       <ShortcutMarks item={item} />
       <FolderCount item={item} />
+      <RowTags item={item} actions={scopeActions} />
       <RowAudience item={item} actions={scopeActions} />
       {/* Signal ②: process linkage pill. */}
       {item.linkedProcess && (
@@ -2586,6 +2597,12 @@ function FolderCount({ item, className = "" }: { item: DriveItem; className?: st
       {label}
     </span>
   );
+}
+
+/** Tag dots after a row's title; clicking one filters the Drive by that tag. */
+function RowTags({ item, actions }: { item: DriveItem; actions: RowActions | null }) {
+  if (item.type !== "doc" && item.type !== "folder") return null;
+  return <TagDots tags={item.tags} onApply={actions?.onTagClick} />;
 }
 
 /** The audience marker for a row; clicking opens Share for items that have one. */
@@ -3175,6 +3192,7 @@ function ListRow({
         <span className="truncate font-medium text-foreground">{item.title || "Untitled"}</span>
         <ShortcutMarks item={item} />
         <FolderCount item={item} />
+        <RowTags item={item} actions={actions} />
         <RowAudience item={item} actions={actions} />
         {/* Signal ②: process linkage pill. */}
         {item.linkedProcess && (
@@ -3312,6 +3330,7 @@ function GridTile({
       </span>
       <ShortcutMarks item={item} />
       <FolderCount item={item} />
+      <RowTags item={item} actions={actions} />
       <RowAudience item={item} actions={actions} />
       {/* Signal ②: process linkage pill. Centered below the title. */}
       {item.linkedProcess && (
@@ -3391,6 +3410,7 @@ function FolderCard({
         <span className={`truncate ${t.row} font-medium text-foreground`}>{item.title || "Untitled"}</span>
         <span className="flex items-center gap-2">
           <FolderCount item={item} />
+          <RowTags item={item} actions={actions} />
           <RowAudience item={item} actions={actions} />
         </span>
       </div>
@@ -3455,6 +3475,7 @@ export function SearchResults({
               {itemIcon(hit.item)}
               <span className="truncate font-medium text-foreground">{hit.item.title || "Untitled"}</span>
               <FolderCount item={hit.item} />
+              <RowTags item={hit.item} actions={getScopeActions(hit.scope.id)} />
               {/* Signal ②: process linkage pill in search results. */}
               {hit.item.linkedProcess && (
                 <ProcessLinkPill label={hit.item.linkedProcess.label} href={hit.item.linkedProcess.href} />

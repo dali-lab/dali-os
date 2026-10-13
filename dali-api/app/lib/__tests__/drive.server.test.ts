@@ -333,6 +333,45 @@ describe("loadDriveScope — shortcuts", () => {
   });
 });
 
+describe("loadDriveScope — tags", () => {
+  const tagRow = (id: string, label: string, color: string | null = "#ff0000") => ({ tag: { id, label, color } });
+  const scopes = [
+    { name: "Lab", scope: { kind: "Lab" as const } },
+    { name: "Project", scope: { kind: "Project" as const, projectId: "proj-1" } },
+    { name: "Education", scope: { kind: "EducationOffering" as const, offeringId: "off-1" } },
+    { name: "Member", scope: { kind: "Member" as const } },
+  ];
+
+  it.each(scopes)("$name: selects only live tags as part of the page query, with no extra query", async ({ scope }) => {
+    await loadDriveScope({ userSub: "u1", scope });
+    const pageQueries = mockPrisma.page.findMany.mock.calls.map((c) => c[0]).filter((q) => q.where.kind?.in);
+    expect(pageQueries.length).toBeGreaterThan(0);
+    for (const q of pageQueries) {
+      expect(q.select.tags).toEqual({
+        where: { tag: { archivedAt: null } },
+        select: { tag: { select: { id: true, label: true, color: true } } },
+      });
+    }
+  });
+
+  it.each(scopes)("$name: maps tags onto docs and folders, sorted by label", async ({ scope }) => {
+    mockPrisma.page.findMany.mockResolvedValue([
+      pageRow({ id: "folder-1", kind: "Folder", tags: [tagRow("t2", "Zeta", null), tagRow("t1", "Alpha")] }),
+      pageRow({ id: "doc-1", tags: [tagRow("t3", "Mid", "#00f")] }),
+      pageRow({ id: "doc-2" }),
+    ]);
+    const items = await loadDriveScope({ userSub: "u1", scope });
+    expect(items.find((i) => i.id === "folder-1")).toMatchObject({
+      tags: [
+        { id: "t1", label: "Alpha", color: "#ff0000" },
+        { id: "t2", label: "Zeta", color: null },
+      ],
+    });
+    expect(items.find((i) => i.id === "doc-1")).toMatchObject({ tags: [{ id: "t3", label: "Mid", color: "#00f" }] });
+    expect(items.find((i) => i.id === "doc-2")).toMatchObject({ tags: [] });
+  });
+});
+
 describe("loadOrphanForms — archived/deleted-folder safety-net", () => {
   it("surfaces a form whose folder is gone at the General root, but not one in a live folder", async () => {
     mockPrisma.form.findMany.mockResolvedValue([

@@ -25,6 +25,7 @@ import { canViewFile } from "~/lib/fileAccess.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { summarizeAudience } from "~/lib/page-audience.server";
 import type { Audience } from "~/lib/page-audience";
+import type { DriveItemTag } from "~/lib/drive-tags";
 import {
   NO_ACCESS_SHORTCUT_TITLE,
   shortcutTargetHref,
@@ -35,6 +36,16 @@ import type { PageKind, Prisma } from "~/generated/prisma/client";
 
 /** Every page kind a Drive listing (and the Trash) surfaces. */
 export const DRIVE_PAGE_KINDS: PageKind[] = ["Folder", "FreeForm", "Structured", "Whiteboard", "Notebook", "Shortcut"];
+
+/** The tag relation both Drive page loaders select: live tags only, one include per page query. */
+const PAGE_TAGS_SELECT = {
+  where: { tag: { archivedAt: null } },
+  select: { tag: { select: { id: true, label: true, color: true } } },
+} as const;
+
+function tagsOf(row: { tags?: { tag: DriveItemTag }[] }): DriveItemTag[] {
+  return (row.tags ?? []).map((t) => t.tag).sort((a, b) => a.label.localeCompare(b.label));
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -79,6 +90,8 @@ export type DriveItem =
       partnerVisible?: boolean | null;
       /** Who can see this item. Pages carry their own; files take their folder's. */
       audience?: Audience;
+      /** Live tags on this page, by label. */
+      tags?: DriveItemTag[];
     }
   | {
       type: "doc";
@@ -119,6 +132,8 @@ export type DriveItem =
       partnerVisible?: boolean | null;
       /** Who can see this item. Pages carry their own; files take their folder's. */
       audience?: Audience;
+      /** Live tags on this page, by label. */
+      tags?: DriveItemTag[];
     }
   | {
       type: "shortcut";
@@ -390,6 +405,7 @@ async function loadLabPages(userSub: string, request?: Request): Promise<DriveIt
       scopeKind: true,
       scopeGroupId: true,
       scopePermission: true,
+      tags: PAGE_TAGS_SELECT,
     },
   });
 
@@ -419,6 +435,7 @@ async function loadLabPages(userSub: string, request?: Request): Promise<DriveIt
             parentFolderId: row.parentPageId,
             iconEmoji: row.iconEmoji,
             folderType: row.folderType,
+            tags: tagsOf(row),
             updatedAt: row.updatedAt,
             href: `/documents/${row.id}`,
             audience: audiences.get(row.id),
@@ -427,6 +444,7 @@ async function loadLabPages(userSub: string, request?: Request): Promise<DriveIt
             type: "doc",
             isWhiteboard: row.kind === "Whiteboard",
             isNotebook: row.kind === "Notebook",
+            tags: tagsOf(row),
             id: row.id,
             title: row.title,
             parentFolderId: row.parentPageId,
@@ -487,6 +505,7 @@ export const PROJECT_PAGE_SELECT = {
   scopeKind: true,
   scopeGroupId: true,
   scopePermission: true,
+  tags: PAGE_TAGS_SELECT,
 } as const;
 
 export type ProjectPageRow = Prisma.PageGetPayload<{ select: typeof PROJECT_PAGE_SELECT }>;
@@ -494,7 +513,7 @@ export type ProjectPageRow = Prisma.PageGetPayload<{ select: typeof PROJECT_PAGE
 export type PageItemRow = Pick<
   ProjectPageRow,
   "id" | "title" | "kind" | "parentPageId" | "iconEmoji" | "folderType" | "updatedAt" | "partnerVisible"
->;
+> & { tags?: Parameters<typeof tagsOf>[0]["tags"] };
 
 /** The folder or doc DriveItem for a Page row. Shortcut rows are not handled here (see `shortcutItems`). */
 export function pageRowToDriveItem(
@@ -509,6 +528,7 @@ export function pageRowToDriveItem(
       parentFolderId: row.parentPageId,
       iconEmoji: row.iconEmoji,
       folderType: row.folderType,
+      tags: tagsOf(row),
       updatedAt: row.updatedAt,
       href: `/documents/${row.id}`,
       partnerVisible: row.partnerVisible,
@@ -519,6 +539,7 @@ export function pageRowToDriveItem(
     type: "doc",
     isWhiteboard: row.kind === "Whiteboard",
     isNotebook: row.kind === "Notebook",
+    tags: tagsOf(row),
     id: row.id,
     title: row.title,
     parentFolderId: row.parentPageId,
@@ -637,6 +658,7 @@ async function loadEducationPages(
       scopeKind: true,
       scopeGroupId: true,
       scopePermission: true,
+      tags: PAGE_TAGS_SELECT,
     },
   });
 
@@ -661,6 +683,7 @@ async function loadEducationPages(
           parentFolderId: row.parentPageId,
           iconEmoji: row.iconEmoji,
           folderType: row.folderType,
+          tags: tagsOf(row),
           updatedAt: row.updatedAt,
           href: `/documents/${row.id}`,
           audience: audiences.get(row.id),
@@ -669,6 +692,7 @@ async function loadEducationPages(
           type: "doc",
           isWhiteboard: row.kind === "Whiteboard",
           isNotebook: row.kind === "Notebook",
+          tags: tagsOf(row),
           id: row.id,
           title: row.title,
           parentFolderId: row.parentPageId,
@@ -713,6 +737,7 @@ async function loadMemberPages(userSub: string, request?: Request): Promise<Driv
       folderType: true,
       updatedAt: true,
       targetPageId: true,
+      tags: PAGE_TAGS_SELECT,
     },
   });
 
@@ -727,6 +752,7 @@ async function loadMemberPages(userSub: string, request?: Request): Promise<Driv
           parentFolderId: row.parentPageId,
           iconEmoji: row.iconEmoji,
           folderType: row.folderType,
+          tags: tagsOf(row),
           updatedAt: row.updatedAt,
           href: `/documents/${row.id}`,
         }
@@ -734,6 +760,7 @@ async function loadMemberPages(userSub: string, request?: Request): Promise<Driv
           type: "doc",
           isWhiteboard: row.kind === "Whiteboard",
           isNotebook: row.kind === "Notebook",
+          tags: tagsOf(row),
           id: row.id,
           title: row.title,
           parentFolderId: row.parentPageId,
