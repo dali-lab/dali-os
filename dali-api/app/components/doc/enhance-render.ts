@@ -8,9 +8,11 @@ import {
   actionItemMatchesBlock,
   ENHANCE_MARK_ADDED,
   ENHANCE_MARK_PRIOR,
+  markOfProps,
   type EditorOp,
   type EnhanceActionItem,
   type EnhanceMark,
+  type EnhanceMarkEntry,
   type EnhanceOpBlock,
   type SnapshotBlock,
 } from "~/components/meeting-recorder/enhance-plan";
@@ -211,8 +213,7 @@ export function renderEnhanceOps(
 }
 
 function enhanceMarkOf(block: { props: Record<string, unknown> }): EnhanceMark | null {
-  const bg = block.props.backgroundColor;
-  return bg === ENHANCE_MARK_ADDED || bg === ENHANCE_MARK_PRIOR ? bg : null;
+  return markOfProps(block.props);
 }
 
 /** Every top-level block carrying a reserved Enhance mark, in document
@@ -220,10 +221,8 @@ function enhanceMarkOf(block: { props: Record<string, unknown> }): EnhanceMark |
  *  (specs/meeting-recording-rail.md Step 2: "Pending is derived from the
  *  document, not from a flag"). Top-level only, matching applyEnhancePlan's
  *  own granularity. */
-export function findEnhanceMarks(
-  blocks: readonly DocBlock[],
-): { id: string; mark: EnhanceMark; type: string; text: string }[] {
-  const hits: { id: string; mark: EnhanceMark; type: string; text: string }[] = [];
+export function findEnhanceMarks(blocks: readonly DocBlock[]): EnhanceMarkEntry[] {
+  const hits: EnhanceMarkEntry[] = [];
   for (const block of blocks) {
     const mark = enhanceMarkOf(block);
     if (mark) hits.push({ id: block.id, mark, type: block.type, text: blockOwnText(block) });

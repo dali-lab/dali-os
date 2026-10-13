@@ -40,13 +40,26 @@ import {
   blockOwnText,
   blocksToPlainText,
   enhanceSnapshotBlocks,
+  findEnhanceMarks,
   findTranscriptToggle,
   hasTranscriptToggle,
+  keepAllEnhance,
+  keepEnhanceBlock,
   renderEnhanceOps,
+  revertAllEnhance,
+  revertEnhanceBlock,
   transcriptToggleBlock,
+  EnhanceReviewContext,
 } from "~/components/doc";
 import type { DocEditorInstance, DocPartialBlock } from "~/components/doc/schema/build";
-import { actionItemMatchesBlock, type EditorOp, type EnhanceActionItem, type SnapshotBlock } from "~/components/meeting-recorder/enhance-plan";
+import {
+  actionItemMatchesBlock,
+  type EditorOp,
+  type EnhanceActionItem,
+  type EnhanceBlockChange,
+  type EnhanceMarkEntry,
+  type SnapshotBlock,
+} from "~/components/meeting-recorder/enhance-plan";
 import { pageDocName } from "~/collab/roomName";
 import { redirectToLogin } from "~/lib/login-next";
 import { walletTokensConfigured } from "~/lib/wallet-token";
@@ -708,9 +721,43 @@ export default function DocumentPage() {
   // Meeting recording writes into the doc through the live editor, so
   // collaborators see the notes arrive like any other edit.
   const editorRef = useRef<DocEditorInstance | null>(null);
+  // Document-change listeners registered by useMeetingRecording's
+  // subscribeDocumentChanges prop (specs/meeting-recording-rail.md Step 2) —
+  // a Set so the single editor.onChange subscription below fans out to every
+  // registered hook instance (notebook tabs can mount more than one
+  // RecordingMount in the same render, though only one is ever enabled).
+  // Kept as a ref, not state: registering/unregistering must never itself
+  // trigger a re-render.
+  const docChangeListenersRef = useRef<Set<(ctx: { marks: EnhanceMarkEntry[]; changes: EnhanceBlockChange[] }) => void>>(
+    new Set(),
+  );
   const onEditorReady = useCallback((ed: DocEditorInstance) => {
     editorRef.current = ed;
+    const marks = findEnhanceMarks(ed.document);
+    for (const cb of docChangeListenersRef.current) cb({ marks, changes: [] });
+    ed.onChange((editor, { getChanges }) => {
+      const liveMarks = findEnhanceMarks(editor.document);
+      const changes = getChanges() as unknown as EnhanceBlockChange[];
+      for (const cb of docChangeListenersRef.current) cb({ marks: liveMarks, changes });
+    });
   }, []);
+  // Lets useMeetingRecording subscribe without this route importing anything
+  // BlockNote-specific into the hook: it hands over plain data (a mark scan
+  // + the transaction's change list), computed here where the real editor
+  // and its onChange API live. Called once immediately with the document's
+  // current marks if the editor is already up; otherwise onEditorReady seeds
+  // it once the editor mounts.
+  const subscribeDocumentChanges = useCallback(
+    (cb: (ctx: { marks: EnhanceMarkEntry[]; changes: EnhanceBlockChange[] }) => void) => {
+      docChangeListenersRef.current.add(cb);
+      const editor = editorRef.current;
+      if (editor) cb({ marks: findEnhanceMarks(editor.document), changes: [] });
+      return () => {
+        docChangeListenersRef.current.delete(cb);
+      };
+    },
+    [],
+  );
   const insertMeetingNotes = useCallback((markdown: string, transcript: string[]) => {
     const editor = editorRef.current;
     if (!editor) return false;
@@ -737,21 +784,51 @@ export default function DocumentPage() {
     };
   }, []);
 
-  // Replays Enhance's merge ops against the live editor, then inserts the
-  // transcript toggle if Apply didn't already find one — same toggle
-  // insertMeetingNotes uses, de-duplicated by heading text.
+  // Replays Enhance's merge ops against the live editor (marking every
+  // touched block, Step 2), then inserts the transcript toggle if nothing
+  // did already — same toggle insertMeetingNotes uses, de-duplicated by
+  // heading text. Returns renderEnhanceOps's captured priorBlocks for the
+  // hook to persist as StoredEnhanceNotes.priorBlocks.
   const onApplyEnhance = useCallback(
-    (ops: EditorOp[], recordingId: string, transcript: string[], actionItems: EnhanceActionItem[]): boolean => {
+    (
+      ops: EditorOp[],
+      recordingId: string,
+      transcript: string[],
+      actionItems: EnhanceActionItem[],
+    ): { ok: boolean; priorBlocks?: Record<string, unknown> } => {
       const editor = editorRef.current;
-      if (!editor) return false;
-      renderEnhanceOps(editor, ops, { pageId, recordingId, actionItems, projectId: meetingProjectId });
+      if (!editor) return { ok: false };
+      const { priorBlocks } = renderEnhanceOps(editor, ops, { pageId, recordingId, actionItems, projectId: meetingProjectId });
       if (transcript.length && !hasTranscriptToggle(editor)) {
         appendBlocks(editor, [transcriptToggleBlock(transcript)]);
       }
-      return true;
+      return { ok: true, priorBlocks };
     },
     [pageId, meetingProjectId],
   );
+
+  // Keep/Revert — one block or every marked block at once (specs/meeting-
+  // recording-rail.md Step 2). Backs the rail's row buttons and header
+  // actions, the side-menu items (via EnhanceReviewContext below), and the
+  // hook's own local-edit-counts-as-Keep detection.
+  const onKeepBlock = useCallback((id: string) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    keepEnhanceBlock(editor, id);
+  }, []);
+  const onRevertBlock = useCallback((id: string, priorBlocks: Record<string, unknown>) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    revertEnhanceBlock(editor, id, priorBlocks);
+  }, []);
+  const onKeepAllBlocks = useCallback((): number => {
+    const editor = editorRef.current;
+    return editor ? keepAllEnhance(editor) : 0;
+  }, []);
+  const onRevertAllBlocks = useCallback((priorBlocks: Record<string, unknown>): number => {
+    const editor = editorRef.current;
+    return editor ? revertAllEnhance(editor, priorBlocks) : 0;
+  }, []);
 
   // A speaker rename after Insert/Enhance leaves the names baked into the
   // Transcript toggle stale — rewrite its children from the current
@@ -818,6 +895,11 @@ export default function DocumentPage() {
       seededTemplateHash={seededTemplateHash}
       getNoteState={getNoteState}
       onApplyEnhance={onApplyEnhance}
+      subscribeDocumentChanges={subscribeDocumentChanges}
+      onKeepBlock={onKeepBlock}
+      onRevertBlock={onRevertBlock}
+      onKeepAllBlocks={onKeepAllBlocks}
+      onRevertAllBlocks={onRevertAllBlocks}
       onSpeakersChanged={onSpeakersChanged}
       projectId={meetingProjectId}
       canCreateTasks={canCreateTasks}
@@ -894,48 +976,58 @@ export default function DocumentPage() {
           />
         );
 
+        // Lets DocSideMenu offer Keep change/Revert change on a marked block
+        // without the generic side menu knowing anything about Enhance
+        // (specs/meeting-recording-rail.md Step 2). Null when the recording
+        // hook isn't mounted — the side menu then renders nothing extra.
+        const enhanceReview = rec
+          ? { keepBlock: rec.keepBlock, revertBlock: rec.revertBlock, priorBlocks: rec.enhanceNotes?.priorBlocks }
+          : null;
+
         return (
-          <div className="flex flex-col gap-4">
-            {trashed && <TrashedNoteBanner pageId={pageId} canRestore={canRestore} />}
-            {attendance && recordingEnabled && recordingAllowed && (
-              <RecordPromptBanner
-                meetingId={attendance.meetingId}
-                occurrenceStart={attendance.occurrenceStart}
-                windowEndIso={attendance.windowEndIso}
-                canEdit={canEdit}
-                recordingEnabled={recordingEnabled}
-                recordPromptEnabled={attendance.recordPromptEnabled}
-                hasActiveRecording={hasActiveRecording}
-                canDontSuggest={attendance.canDontSuggestRecording}
-                onRecord={() => setRecordAutoOpen(true)}
-                onDontSuggest={() => void dontSuggestRecording()}
-              />
-            )}
-            {attendance?.selfCheckIn && (
-              <CheckInPanel
-                meetingId={attendance.meetingId}
-                meetingLabel={attendance.meetingLabel}
-                viewerInvited={attendance.viewerInvited}
-                initialPresent={attendance.viewerPresent}
-                checkInUrl={attendance.checkInUrl}
-                checkInQrSvg={attendance.checkInQrSvg}
-              />
-            )}
-            {notebook ? (
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
-                <NotebookTabs notebook={notebook} currentId={pageId} />
-                <div className="min-w-0 flex-1">
-                  <TranscriptChipHoverLayer onChipClick={onChipClick} railOpen={Boolean(rec?.open)}>
-                    {editor}
-                  </TranscriptChipHoverLayer>
+          <EnhanceReviewContext.Provider value={enhanceReview}>
+            <div className="flex flex-col gap-4">
+              {trashed && <TrashedNoteBanner pageId={pageId} canRestore={canRestore} />}
+              {attendance && recordingEnabled && recordingAllowed && (
+                <RecordPromptBanner
+                  meetingId={attendance.meetingId}
+                  occurrenceStart={attendance.occurrenceStart}
+                  windowEndIso={attendance.windowEndIso}
+                  canEdit={canEdit}
+                  recordingEnabled={recordingEnabled}
+                  recordPromptEnabled={attendance.recordPromptEnabled}
+                  hasActiveRecording={hasActiveRecording}
+                  canDontSuggest={attendance.canDontSuggestRecording}
+                  onRecord={() => setRecordAutoOpen(true)}
+                  onDontSuggest={() => void dontSuggestRecording()}
+                />
+              )}
+              {attendance?.selfCheckIn && (
+                <CheckInPanel
+                  meetingId={attendance.meetingId}
+                  meetingLabel={attendance.meetingLabel}
+                  viewerInvited={attendance.viewerInvited}
+                  initialPresent={attendance.viewerPresent}
+                  checkInUrl={attendance.checkInUrl}
+                  checkInQrSvg={attendance.checkInQrSvg}
+                />
+              )}
+              {notebook ? (
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+                  <NotebookTabs notebook={notebook} currentId={pageId} />
+                  <div className="min-w-0 flex-1">
+                    <TranscriptChipHoverLayer onChipClick={onChipClick} railOpen={Boolean(rec?.open)}>
+                      {editor}
+                    </TranscriptChipHoverLayer>
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <TranscriptChipHoverLayer onChipClick={onChipClick} railOpen={Boolean(rec?.open)}>
-                {editor}
-              </TranscriptChipHoverLayer>
-            )}
-          </div>
+              ) : (
+                <TranscriptChipHoverLayer onChipClick={onChipClick} railOpen={Boolean(rec?.open)}>
+                  {editor}
+                </TranscriptChipHoverLayer>
+              )}
+            </div>
+          </EnhanceReviewContext.Provider>
         );
       }}
     </RecordingMount>
