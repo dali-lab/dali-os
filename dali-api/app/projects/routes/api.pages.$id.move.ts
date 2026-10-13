@@ -13,6 +13,7 @@ import { pageDepth, MAX_PAGE_DEPTH, isAncestorOf, collectSubtree } from "~/lib/p
 import { isRoot, ROOT_MOVE_ERROR } from "~/lib/drive-roots";
 import { clearTypeIfLeavingRoot } from "~/lib/drive-receivers.server";
 import { getPageAccess, isUnderGoverningScope } from "~/lib/pageAccess.server";
+import { addToNotebook, notebookErrorResponse } from "~/lib/notebooks.server";
 
 // POST /api/pages/:id/move — move and/or reorder a document.
 //   { parentPageId, beforeId? }                  → reorder within its workspace
@@ -76,7 +77,6 @@ export async function action({ request, params }: Route.ActionArgs) {
       workspaceType: true,
       workspaceId: true,
       kind: true,
-      notebookKey: true,
       folderType: true,
       archivedAt: true,
       createdById: true,
@@ -169,7 +169,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   // Restricted push, and the files filed anywhere inside it.
   // A meeting notebook carries its tabs (child pages) the same way.
   const subtree =
-    page.kind === "Folder" || page.kind === "Notebook" || page.notebookKey !== null
+    page.kind === "Folder" || page.kind === "Notebook"
       ? await collectSubtree(pageId)
       : { ids: [], height: 0 };
   // `folderPageId` can only point at a Folder, so passing every descendant id
@@ -205,6 +205,19 @@ export async function action({ request, params }: Route.ActionArgs) {
       where: { id: body.parentPageId },
       select: { workspaceType: true, workspaceId: true, parentPageId: true, kind: true, archivedAt: true },
     });
+    // A notebook is a valid parent for documents and notes only, and the tab
+    // takes the notebook's workspace, so the destination workspace is moot.
+    if (parent && parent.kind === "Notebook" && parent.archivedAt === null) {
+      if (page.kind !== "FreeForm") {
+        return withCors(request, Response.json({ error: "Only documents can be added to a notebook" }, { status: 400 }));
+      }
+      try {
+        await addToNotebook(pageId, body.parentPageId, userId);
+      } catch (err) {
+        return withCors(request, notebookErrorResponse(err));
+      }
+      return withCors(request, Response.json({ ok: true }));
+    }
     if (
       !parent ||
       parent.archivedAt !== null ||

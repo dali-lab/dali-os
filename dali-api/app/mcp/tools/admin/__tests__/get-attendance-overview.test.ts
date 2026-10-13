@@ -151,6 +151,14 @@ describe("get_attendance_overview", () => {
     expect(out.events[0].typeLabel).toBe("Game Night");
   });
 
+  it("labels a typeless meeting \"Meeting\" instead of dropping it", async () => {
+    (prisma.scheduledMeeting.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { ...MEETING_ROW, meetingType: null },
+    ]);
+    const out = await runGetAttendanceOverview(makeCtx(), {});
+    expect(out.events[0].typeLabel).toBe("Meeting");
+  });
+
   it("returns empty events list when no meetings", async () => {
     (prisma.scheduledMeeting.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     const out = await runGetAttendanceOverview(makeCtx(), {});

@@ -15,6 +15,24 @@ vi.mock("~/lib/auth", () => ({
 }));
 vi.mock("~/lib/pageAccess.server", () => ({ getPageAccess: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
+vi.mock("~/lib/notebooks.server", () => {
+  class NotebookError extends Error {
+    constructor(
+      message: string,
+      public status: number,
+    ) {
+      super(message);
+    }
+  }
+  return {
+    NotebookError,
+    notebookErrorResponse: (err: unknown) => {
+      if (err instanceof NotebookError) return Response.json({ error: err.message }, { status: err.status });
+      throw err;
+    },
+    trashNotebook: vi.fn(),
+  };
+});
 vi.mock("~/lib/cors", () => ({
   withCors: (_req: Request, res: Response) => res,
   handlePreflight: () => null,
@@ -23,6 +41,7 @@ vi.mock("~/lib/cors", () => ({
 import { prisma } from "~/lib/db";
 import { requireMemberSession, requireProjectEditAccess } from "~/lib/auth";
 import { getPageAccess } from "~/lib/pageAccess.server";
+import { NotebookError, trashNotebook } from "~/lib/notebooks.server";
 import { action } from "../api.documents.$id";
 
 const m = prisma as any;
@@ -256,5 +275,51 @@ describe("EducationOffering pages", () => {
     vi.mocked(getPageAccess).mockResolvedValue({ canEdit: false } as any);
     expect((await post({ title: "x" })).status).toBe(404);
     expect(m.page.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("DELETE /api/documents/:id — notebooks", () => {
+  const notebook = (over: Record<string, unknown> = {}) => labFolder({ kind: "Notebook", ...over });
+
+  beforeEach(() => {
+    vi.mocked(getPageAccess).mockResolvedValue({ canEdit: true } as any);
+    vi.mocked(trashNotebook).mockReset();
+  });
+
+  it("trashes the notebook with its tabs instead of archiving the container alone", async () => {
+    m.page.findUnique.mockResolvedValue(notebook());
+    const res = await del();
+    expect(res.status).toBe(200);
+    expect(trashNotebook).toHaveBeenCalledWith("p1", "u1");
+    expect(m.page.update).not.toHaveBeenCalled();
+    expect(m.page.count).not.toHaveBeenCalled();
+  });
+
+  it("does the same for a project notebook behind the project gate", async () => {
+    m.page.findUnique.mockResolvedValue(notebook({ workspaceType: "Project", workspaceId: "proj1" }));
+    const res = await del();
+    expect(res.status).toBe(200);
+    expect(requireProjectEditAccess).toHaveBeenCalled();
+    expect(trashNotebook).toHaveBeenCalledWith("p1", "u1");
+  });
+
+  it("maps a library refusal to its status", async () => {
+    m.page.findUnique.mockResolvedValue(notebook());
+    vi.mocked(trashNotebook).mockRejectedValue(new NotebookError("You can't edit this notebook", 403));
+    expect((await del()).status).toBe(403);
+  });
+
+  it("404s a caller who cannot edit the page before trashing anything", async () => {
+    m.page.findUnique.mockResolvedValue(notebook());
+    vi.mocked(getPageAccess).mockResolvedValue({ canEdit: false } as any);
+    expect((await del()).status).toBe(404);
+    expect(trashNotebook).not.toHaveBeenCalled();
+  });
+
+  it("leaves a rename of a notebook on the ordinary path", async () => {
+    m.page.findUnique.mockResolvedValue(notebook());
+    expect((await post({ title: "Renamed" })).status).toBe(200);
+    expect(m.page.update.mock.calls[0][0].data.title).toBe("Renamed");
+    expect(trashNotebook).not.toHaveBeenCalled();
   });
 });
