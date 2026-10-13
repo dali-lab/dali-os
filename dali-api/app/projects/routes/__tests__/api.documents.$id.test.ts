@@ -316,6 +316,24 @@ describe("EducationOffering pages", () => {
   });
 });
 
+describe("DELETE /api/documents/:id — shortcuts", () => {
+  beforeEach(() => {
+    vi.mocked(getPageAccess).mockResolvedValue({ canEdit: true } as any);
+  });
+
+  it("only archives a shortcut: no grant is removed and no content guard runs", async () => {
+    m.page.findUnique.mockResolvedValue(labFolder({ kind: "Shortcut" }));
+
+    const res = await del();
+
+    expect(res.status).toBe(200);
+    expect(m.page.update).toHaveBeenCalledTimes(1);
+    expect(m.page.update.mock.calls[0][0].data.archivedAt).toBeInstanceOf(Date);
+    expect(Object.keys(m.page.update.mock.calls[0][0].data)).not.toContain("grantShareId");
+    expect(m.projectFile.count).not.toHaveBeenCalled();
+  });
+});
+
 describe("DELETE /api/documents/:id — notebooks", () => {
   const notebook = (over: Record<string, unknown> = {}) => labFolder({ kind: "Notebook", ...over });
 

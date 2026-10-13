@@ -1,4 +1,5 @@
 import type { AudienceKind } from "~/lib/page-audience";
+import type { ShortcutTargetType } from "~/lib/shortcut-targets";
 
 export const CORAL_FOLDER = "text-accent-coral/80";
 const TEAL_FOLDER = "text-accent-teal/80";
@@ -17,7 +18,7 @@ export function folderTintClass(audience?: { kind: AudienceKind } | null): strin
   }
 }
 
-export type GlyphSource = {
+export type PlainGlyphSource = {
   type: "folder" | "doc" | "file" | "form" | "agreement" | "rubric";
   iconEmoji?: string | null;
   folderType?: string | null;
@@ -26,6 +27,8 @@ export type GlyphSource = {
   isNotebook?: boolean;
   tabCount?: number;
 };
+
+export type GlyphSource = PlainGlyphSource | { type: "shortcut"; targetType: ShortcutTargetType };
 
 export type ItemGlyph =
   | { kind: "emoji"; emoji: string }
@@ -36,9 +39,11 @@ export type ItemGlyph =
   | { kind: "file" }
   | { kind: "form" }
   | { kind: "agreement" }
-  | { kind: "rubric" };
+  | { kind: "rubric" }
+  | { kind: "shortcut"; target: ItemGlyph };
 
 export function pickGlyph(item: GlyphSource): ItemGlyph {
+  if (item.type === "shortcut") return { kind: "shortcut", target: pickShortcutTarget(item.targetType) };
   if (item.type === "doc" && item.isNotebook) return { kind: "notebook", tabs: tabBadge(item.tabCount) };
   if (item.type === "folder" || item.type === "doc") {
     if (item.iconEmoji) return { kind: "emoji", emoji: item.iconEmoji };
@@ -53,6 +58,19 @@ export function pickGlyph(item: GlyphSource): ItemGlyph {
       return item.isWhiteboard ? { kind: "whiteboard" } : { kind: "doc" };
     default:
       return { kind: item.type };
+  }
+}
+
+function pickShortcutTarget(targetType: ShortcutTargetType): ItemGlyph {
+  switch (targetType) {
+    case "folder":
+      return pickGlyph({ type: "folder" });
+    case "notebook":
+      return pickGlyph({ type: "doc", isNotebook: true });
+    case "whiteboard":
+      return pickGlyph({ type: "doc", isWhiteboard: true });
+    case "doc":
+      return pickGlyph({ type: "doc" });
   }
 }
 

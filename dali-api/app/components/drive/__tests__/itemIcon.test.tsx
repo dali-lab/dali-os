@@ -8,6 +8,8 @@ const folder = (extra: Record<string, unknown> = {}) =>
   ({ type: "folder", id: "f", title: "F", parentFolderId: null, iconEmoji: null, updatedAt: at, href: "/x", ...extra }) as DriveItem;
 const doc = (extra: Record<string, unknown> = {}) =>
   ({ type: "doc", id: "d", title: "D", parentFolderId: null, iconEmoji: null, updatedAt: at, href: "/x", ...extra }) as DriveItem;
+const shortcut = (targetType: string) =>
+  ({ type: "shortcut", id: "s", title: "S", parentFolderId: null, iconEmoji: null, updatedAt: at, href: "/x", targetType }) as DriveItem;
 const html = (item: DriveItem, size?: "sm" | "lg" | "xl") => renderToStaticMarkup(<>{itemIcon(item, size)}</>);
 
 describe("itemIcon", () => {
@@ -57,5 +59,21 @@ describe("itemIcon", () => {
   it("scales the badge mark with the glyph", () => {
     expect(html(folder({ folderType: "Meetings" }), "sm")).toContain("w-2.5 h-2.5");
     expect(html(folder({ folderType: "Meetings" }), "xl")).toContain("w-3.5 h-3.5");
+  });
+
+  it("draws a shortcut as its target's glyph under a corner arrow", () => {
+    const folderOut = html(shortcut("folder"));
+    expect(folderOut).toContain("lucide-folder");
+    expect(folderOut).toContain("text-accent-coral");
+    expect(folderOut).toContain("lucide-corner-down-right");
+    expect(folderOut).toContain("bg-background");
+    expect(html(shortcut("doc"))).toContain("lucide-file-text");
+    expect(html(shortcut("whiteboard"))).toContain("lucide-shapes");
+    expect(html(shortcut("notebook"))).toContain("lucide-notebook-pen");
+  });
+
+  it("scales a shortcut's arrow with the glyph", () => {
+    expect(html(shortcut("doc"), "sm")).toContain("w-2.5 h-2.5");
+    expect(html(shortcut("doc"), "xl")).toContain("w-3.5 h-3.5");
   });
 });

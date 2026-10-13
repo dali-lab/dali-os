@@ -42,6 +42,7 @@ import {
   ChevronDown,
   ChevronUp,
   ClipboardList,
+  CornerDownRight,
   FileSignature,
   FileText,
   Shapes,
@@ -92,7 +93,7 @@ import { AudienceSignal, AudienceDetail } from "~/components/drive/AudienceSigna
 import { buttonClasses } from "~/components/ui/Button";
 import { crumbsFor, locationOf, type ItemLocation } from "~/components/drive/location";
 import { LocationLink } from "~/components/drive/LocationLink";
-import { CORAL_FOLDER, folderCountLabel, pickGlyph } from "~/components/drive/glyphs";
+import { CORAL_FOLDER, folderCountLabel, pickGlyph, type ItemGlyph } from "~/components/drive/glyphs";
 import { FolderSettingsModal } from "~/components/drive/FolderSettingsModal";
 import { eligibleSlotsFor, isPageFolder, projectIdFor, receivesLabel } from "~/components/drive/receiver-options";
 
@@ -338,12 +339,15 @@ function GlyphBadge({ children, badge }: { children: ReactNode; badge: ReactNode
 }
 
 export function itemIcon(item: DriveItem, size: IconSize = "sm") {
+  return glyphIcon(pickGlyph(item), item, size);
+}
+
+function glyphIcon(glyph: ItemGlyph, item: DriveItem, size: IconSize): ReactNode {
   const cls = size === "xl" ? "w-10 h-10" : size === "lg" ? "w-8 h-8" : "w-4 h-4";
   const markCls = size === "xl" ? "w-3.5 h-3.5" : size === "lg" ? "w-3 h-3" : "w-2.5 h-2.5";
   const emojiCls = `${cls} flex items-center justify-center leading-none shrink-0 ${
     size === "xl" ? "text-3xl" : size === "lg" ? "text-2xl" : "text-sm"
   }`;
-  const glyph = pickGlyph(item);
   switch (glyph.kind) {
     case "emoji":
       return <span className={emojiCls}>{glyph.emoji}</span>;
@@ -383,6 +387,12 @@ export function itemIcon(item: DriveItem, size: IconSize = "sm") {
       return <FileSignature className={`${cls} text-muted-foreground shrink-0`} />;
     case "rubric":
       return <ClipboardCheck className={`${cls} text-muted-foreground shrink-0`} />;
+    case "shortcut":
+      return (
+        <GlyphBadge badge={<CornerDownRight className={`${markCls} text-foreground`} />}>
+          {glyphIcon(glyph.target, item, size)}
+        </GlyphBadge>
+      );
     case "whiteboard":
       return <Shapes className={`${cls} text-muted-foreground shrink-0`} />;
     case "doc":

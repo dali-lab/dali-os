@@ -1,5 +1,5 @@
 // MCP `manage_page` — faceted page management tool.
-// Actions: pin · move · duplicate · favorite · set_template · typography.
+// Actions: pin · move · duplicate · favorite · set_template · typography · create_shortcut · delete_shortcut.
 
 import { prisma } from "~/lib/db";
 import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
@@ -13,38 +13,43 @@ import { logAuditEvent } from "~/lib/audit";
 import { pageDepth, MAX_PAGE_DEPTH, isAncestorOf } from "~/lib/pages";
 import { isRoot, ROOT_MOVE_ERROR } from "~/lib/drive-roots";
 import { clearTypeIfLeavingRoot } from "~/lib/drive-receivers.server";
+import { createShortcut, deleteShortcut, ShortcutError } from "~/lib/shortcuts.server";
 import type { McpCtx, McpTool } from "~/mcp/registry";
 import type { Prisma } from "~/generated/prisma/client";
 
 export const MANAGE_PAGE_TOOL_DEF = {
   name: "manage_page",
   description:
-    "Manage a page: pin/unpin, move/reorder, duplicate, favorite/unfavorite, toggle template status, or update typography display settings. Permissions mirror the web (pin requires project-edit or lab-member; move requires manage access; duplicate/set_template requires edit access; favorite requires view access; typography requires edit access on a FreeForm page).",
+    "Manage a page: pin/unpin, move/reorder, duplicate, favorite/unfavorite, toggle template status, update typography display settings, or create/delete a shortcut. Permissions mirror the web (pin requires project-edit or lab-member; move requires manage access; duplicate/set_template requires edit access; favorite requires view access; typography requires edit access on a FreeForm page; create_shortcut requires view access to the page and edit access to the destination folder, and shares the page with the folder's audience when you can manage its sharing; delete_shortcut requires edit access to the shortcut's folder and removes only the share it created).",
   inputSchema: {
     type: "object" as const,
     properties: {
       action: {
         type: "string",
-        enum: ["pin", "move", "duplicate", "favorite", "set_template", "typography"],
+        enum: ["pin", "move", "duplicate", "favorite", "set_template", "typography", "create_shortcut", "delete_shortcut"],
       },
-      pageId: { type: "string", minLength: 1, description: "Required for all actions." },
+      pageId: {
+        type: "string",
+        minLength: 1,
+        description: "Required for all actions. For 'delete_shortcut' it is the shortcut's id; for 'create_shortcut' it is the page the shortcut points at.",
+      },
       // pin
       pinned: { type: "boolean", description: "For 'pin': true to pin, false to unpin." },
       // move
       parentPageId: {
         type: "string",
         nullable: true,
-        description: "For 'move': target parent folder id, or null for top-level.",
+        description: "For 'move' and 'create_shortcut': target parent folder id, or null for top-level.",
       },
       beforeId: { type: "string", description: "For 'move': place before this sibling's id." },
       workspaceType: {
         type: "string",
         enum: ["Lab", "Project"],
-        description: "For 'move' cross-workspace: destination workspace type.",
+        description: "For 'move' cross-workspace and 'create_shortcut': destination workspace type.",
       },
       workspaceId: {
         type: "string",
-        description: "For 'move' to a project: the project id.",
+        description: "For 'move' and 'create_shortcut' into a project: the project id.",
       },
       // favorite
       favorited: { type: "boolean", description: "For 'favorite': true to add, false to remove." },
@@ -80,10 +85,20 @@ const ACTION_REQUIRED: Record<string, string[]> = {
   favorite: ["favorited"],
   set_template: ["isTemplate"],
   typography: ["font", "smallText", "fullWidth"],
+  create_shortcut: ["workspaceType"],
+  delete_shortcut: [],
 };
 
 type ManagePageInput = {
-  action: "pin" | "move" | "duplicate" | "favorite" | "set_template" | "typography";
+  action:
+    | "pin"
+    | "move"
+    | "duplicate"
+    | "favorite"
+    | "set_template"
+    | "typography"
+    | "create_shortcut"
+    | "delete_shortcut";
   pageId: string;
   pinned?: boolean;
   parentPageId?: string | null;
@@ -100,6 +115,36 @@ type ManagePageInput = {
 
 export async function runManagePage(callerId: string, input: ManagePageInput) {
   requireForAction(input.action, input as Record<string, unknown>, ACTION_REQUIRED);
+
+  if (input.action === "create_shortcut" || input.action === "delete_shortcut") {
+    try {
+      if (input.action === "delete_shortcut") {
+        await deleteShortcut(input.pageId, callerId);
+        return { ok: true };
+      }
+      if (input.workspaceType === "Project" && !input.workspaceId) {
+        throw new ManagePageError("action 'create_shortcut' into a project requires: workspaceId", 400);
+      }
+      const result = await createShortcut({
+        targetPageId: input.pageId,
+        dest: {
+          workspaceType: input.workspaceType!,
+          workspaceId: input.workspaceType === "Lab" ? null : input.workspaceId!,
+          parentPageId: input.parentPageId ?? null,
+        },
+        actorId: callerId,
+      });
+      return {
+        ok: true,
+        shortcutId: result.shortcutId,
+        created: result.created,
+        grantDeclined: result.grantDeclined,
+      };
+    } catch (err) {
+      if (err instanceof ShortcutError) throw new ManagePageError(err.message, err.status);
+      throw err;
+    }
+  }
 
   if (input.action === "duplicate") {
     try {
