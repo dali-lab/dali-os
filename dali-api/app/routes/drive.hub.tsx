@@ -37,6 +37,8 @@ import { DriveTagFilter } from "~/components/drive/DriveTagFilter";
 import { FolderPicker } from "~/components/drive/FolderPicker";
 import type { PickerDrive, PickerFolder, Destination } from "~/components/drive/FolderPicker";
 import { buildPickerRows } from "~/components/drive/picker-rows";
+import { LocationLink } from "~/components/drive/LocationLink";
+import { locateFolder, type LocatableScope } from "~/components/drive/location";
 import { moveDriveItem, driveErrorFrom } from "~/components/drive/move-item";
 import { reportMoveBatch, runMoveBatch, itemCount } from "~/components/drive/move-batch";
 import { useDriveFileUpload } from "~/components/drive/useDriveFileUpload";
@@ -1999,6 +2001,11 @@ export default function DriveHub() {
 
       {trashOpen && (
         <TrashPanel
+          scopes={driveScopes}
+          onNavigate={(scopeId, folderId) => {
+            setTrashOpen(false);
+            onNavigate(scopeId, folderId);
+          }}
           onClose={() => setTrashOpen(false)}
           onRevalidate={() => revalidator.revalidate()}
           dialog={dialog}
@@ -2015,15 +2022,20 @@ type TrashItem = {
   id: string;
   type: "doc" | "folder" | "file" | "form";
   title: string;
+  parentFolderId: string | null;
   archivedAt: string;
 };
 
 function TrashPanel({
+  scopes,
+  onNavigate,
   onClose,
   onRevalidate,
   dialog,
   toast,
 }: {
+  scopes: LocatableScope[];
+  onNavigate: (scopeId: string, folderId: string | null) => void;
   onClose: () => void;
   onRevalidate: () => void;
   dialog: ReturnType<typeof useDialog>;
@@ -2128,6 +2140,9 @@ function TrashPanel({
                 <span className="text-xs text-muted-foreground">
                   Deleted {new Date(item.archivedAt).toLocaleDateString()}
                 </span>
+              </span>
+              <span className="flex w-44 shrink-0 min-w-0">
+                <LocationLink location={locateFolder(scopes, item.parentFolderId)} onNavigate={onNavigate} />
               </span>
               <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                 <button

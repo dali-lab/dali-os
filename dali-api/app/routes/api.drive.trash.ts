@@ -133,18 +133,21 @@ export async function loader({ request }: Route.LoaderArgs) {
       id: p.id,
       type: p.kind === "Folder" ? ("folder" as const) : ("doc" as const),
       title: p.title ?? "",
+      parentFolderId: p.parentPageId,
       archivedAt: p.archivedAt!.toISOString(),
     })),
     ...accessibleFiles.map((f) => ({
       id: f.id,
       type: "file" as const,
       title: f.title,
+      parentFolderId: f.folderPageId,
       archivedAt: f.archivedAt!.toISOString(),
     })),
     ...archivedForms.map((f) => ({
       id: f.id,
       type: "form" as const,
       title: f.name,
+      parentFolderId: null,
       archivedAt: f.archivedAt!.toISOString(),
     })),
   ].sort((a, b) => new Date(b.archivedAt).getTime() - new Date(a.archivedAt).getTime());
