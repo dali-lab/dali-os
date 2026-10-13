@@ -121,6 +121,8 @@ import type { RowActions } from "~/components/drive/DriveBrowser";
 import { FolderPicker } from "~/components/drive/FolderPicker";
 import type { PickerDrive, PickerFolder, Destination } from "~/components/drive/FolderPicker";
 import { moveDriveItem, driveErrorFrom } from "~/components/drive/move-item";
+import { deleteShortcutRequest } from "~/components/drive/shortcut-api";
+import { SHORTCUT_REMOVED_TOAST, bulkDeletedToast } from "~/components/drive/file-in";
 import { reportMoveBatch, runMoveBatch, itemCount } from "~/components/drive/move-batch";
 import { useDriveFileUpload } from "~/components/drive/useDriveFileUpload";
 import { useToast } from "~/components/ui/toast";
@@ -4775,16 +4777,21 @@ function ProjectDriveTab({
       onDelete: async (item) => {
         const ok = await dialog.confirm({
           title: `Delete "${item.title || "this item"}"?`,
-          description: item.type === "folder" ? "The folder must be empty first." : "This moves it to the trash.",
+          description:
+            item.type === "folder"
+              ? "The folder must be empty first."
+              : item.type === "shortcut"
+                ? "Only the shortcut is removed. The original stays where it is."
+                : "This moves it to the trash.",
           tone: "destructive",
           confirmLabel: "Delete",
         });
         if (!ok) return;
-        const isFile = item.type === "file";
-        const endpoint = isFile ? `/api/files/${item.id}` : `/api/documents/${item.id}`;
-        const res = await fetch(endpoint, { method: "DELETE", credentials: "include" });
-        if (res.ok) revalidate();
-        else toast.error("Couldn't delete");
+        const res = await deleteDriveItemRequest(item);
+        if (res.ok) {
+          if (item.type === "shortcut") toast.success(SHORTCUT_REMOVED_TOAST);
+          revalidate();
+        } else toast.error("Couldn't delete");
       },
     }),
     [dialog, toast, revalidate, pickMoveDestination, onMove, scopeId],
@@ -4852,6 +4859,12 @@ function ProjectDriveTab({
     }
   }, [dialog, createPage, revalidate, toast]);
 
+  function deleteDriveItemRequest(item: DriveItem): Promise<Response> {
+    if (item.type === "shortcut") return deleteShortcutRequest(item.id);
+    const endpoint = item.type === "file" ? `/api/files/${item.id}` : `/api/documents/${item.id}`;
+    return fetch(endpoint, { method: "DELETE", credentials: "include" });
+  }
+
   const onBulkDelete = useCallback(
     async (items: DriveItem[]) => {
       if (items.length === 0) return;
@@ -4864,20 +4877,21 @@ function ProjectDriveTab({
       if (!ok) return;
       let fail = 0;
       for (const it of items) {
-        const endpoint = it.type === "file" ? `/api/files/${it.id}` : `/api/documents/${it.id}`;
-        const res = await fetch(endpoint, { method: "DELETE", credentials: "include" });
+        const res = await deleteDriveItemRequest(it);
         if (!res.ok) fail++;
       }
       revalidate();
       if (fail) toast.error(`${fail} item${fail === 1 ? "" : "s"} couldn't be deleted`);
-      else toast.success(`Deleted ${items.length}`);
+      else toast.success(bulkDeletedToast(items));
     },
     [dialog, toast, revalidate],
   );
 
   const onBulkMove = useCallback(
     async (items: DriveItem[]) => {
-      const movable = items.filter((i) => i.type === "doc" || i.type === "folder" || i.type === "file");
+      const movable = items.filter(
+        (i) => i.type === "doc" || i.type === "folder" || i.type === "file" || i.type === "shortcut",
+      );
       if (movable.length === 0) return;
       const dest = await pickMoveDestination(movable[0], `Move ${itemCount(movable.length)}`);
       if (!dest) return;

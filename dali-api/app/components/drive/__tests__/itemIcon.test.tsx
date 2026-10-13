@@ -8,8 +8,6 @@ const folder = (extra: Record<string, unknown> = {}) =>
   ({ type: "folder", id: "f", title: "F", parentFolderId: null, iconEmoji: null, updatedAt: at, href: "/x", ...extra }) as DriveItem;
 const doc = (extra: Record<string, unknown> = {}) =>
   ({ type: "doc", id: "d", title: "D", parentFolderId: null, iconEmoji: null, updatedAt: at, href: "/x", ...extra }) as DriveItem;
-const shortcut = (targetType: string) =>
-  ({ type: "shortcut", id: "s", title: "S", parentFolderId: null, iconEmoji: null, updatedAt: at, href: "/x", targetType }) as DriveItem;
 const html = (item: DriveItem, size?: "sm" | "lg" | "xl") => renderToStaticMarkup(<>{itemIcon(item, size)}</>);
 
 describe("itemIcon", () => {
@@ -61,19 +59,51 @@ describe("itemIcon", () => {
     expect(html(folder({ folderType: "Meetings" }), "xl")).toContain("w-3.5 h-3.5");
   });
 
-  it("draws a shortcut as its target's glyph under a corner arrow", () => {
-    const folderOut = html(shortcut("folder"));
-    expect(folderOut).toContain("lucide-folder");
-    expect(folderOut).toContain("text-accent-coral");
-    expect(folderOut).toContain("lucide-corner-down-right");
-    expect(folderOut).toContain("bg-background");
-    expect(html(shortcut("doc"))).toContain("lucide-file-text");
-    expect(html(shortcut("whiteboard"))).toContain("lucide-shapes");
-    expect(html(shortcut("notebook"))).toContain("lucide-notebook-pen");
-  });
+  describe("shortcut", () => {
+    const shortcut = (extra: Record<string, unknown> = {}) =>
+      ({
+        type: "shortcut",
+        id: "s",
+        title: "S",
+        parentFolderId: null,
+        iconEmoji: null,
+        updatedAt: at,
+        href: "/x",
+        targetId: "t",
+        targetType: "doc",
+        canOpen: true,
+        originalInTrash: false,
+        ...extra,
+      }) as DriveItem;
 
-  it("scales a shortcut's arrow with the glyph", () => {
-    expect(html(shortcut("doc"), "sm")).toContain("w-2.5 h-2.5");
-    expect(html(shortcut("doc"), "xl")).toContain("w-3.5 h-3.5");
+    it("draws the target's glyph with an arrow badge", () => {
+      const out = html(shortcut());
+      expect(out).toContain("lucide-file-text");
+      expect(out).toContain("lucide-corner-down-right");
+      expect(out).toContain("bg-background");
+    });
+
+    it("follows the target type", () => {
+      expect(html(shortcut({ targetType: "folder" }))).toContain("lucide-folder");
+      expect(html(shortcut({ targetType: "whiteboard" }))).toContain("lucide-shapes");
+      expect(html(shortcut({ targetType: "notebook" }))).toContain("lucide-notebook-pen");
+    });
+
+    it("swaps the arrow for a lock when the viewer can't open the original", () => {
+      const out = html(shortcut({ canOpen: false }));
+      expect(out).toContain("lucide-lock");
+      expect(out).not.toContain("lucide-corner-down-right");
+    });
+
+    it("scales the badge with the glyph", () => {
+      expect(html(shortcut(), "sm")).toContain("w-2.5 h-2.5");
+      expect(html(shortcut(), "xl")).toContain("w-3.5 h-3.5");
+    });
+
+    it("keeps the arrow when the original is in the trash", () => {
+      const out = html(shortcut({ canOpen: false, originalInTrash: true }));
+      expect(out).toContain("lucide-corner-down-right");
+      expect(out).not.toContain("lucide-lock");
+    });
   });
 });

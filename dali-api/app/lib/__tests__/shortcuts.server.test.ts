@@ -55,6 +55,7 @@ import {
   placePage,
   swapPrimary,
   shortcutsOf,
+  placementsOf,
   resolveShortcut,
   resolveShortcutTarget,
   type Dest,
@@ -718,6 +719,49 @@ describe("shortcutsOf", () => {
       { shortcutId: "s2", workspaceType: "Lab", workspaceId: null, folderId: null, path: [] },
     ]);
     expect(m.page.findMany.mock.calls[0][0].where).toEqual({ kind: "Shortcut", targetPageId: "t1", archivedAt: null });
+  });
+});
+
+describe("placementsOf", () => {
+  beforeEach(() => {
+    vi.mocked(folderPath).mockResolvedValue([{ id: "origin", title: "Meetings" }]);
+    m.page.findMany.mockResolvedValue([{ id: "s1", workspaceType: "Lab", workspaceId: null, parentPageId: null }]);
+  });
+
+  it("returns the page's own place and its visible shortcuts", async () => {
+    expect(await placementsOf("t1", "viewer")).toEqual({
+      primary: {
+        workspaceType: "Project",
+        workspaceId: "projA",
+        folderId: "origin",
+        path: [{ id: "origin", title: "Meetings" }],
+      },
+      shortcuts: [{ shortcutId: "s1", workspaceType: "Lab", workspaceId: null, folderId: null, path: [] }],
+    });
+  });
+
+  it("gives a top-level page an empty path", async () => {
+    put(target({ parentPageId: null }));
+    expect((await placementsOf("t1", "viewer")).primary).toEqual({
+      workspaceType: "Project",
+      workspaceId: "projA",
+      folderId: null,
+      path: [],
+    });
+  });
+
+  it("is 404 for a page the viewer can't see, without listing anything", async () => {
+    vi.mocked(getPageAccess).mockResolvedValue({ canView: false, canEdit: false, canComment: false });
+    await expect(placementsOf("t1", "viewer")).rejects.toMatchObject({ status: 404 });
+    expect(m.page.findMany).not.toHaveBeenCalled();
+  });
+
+  it("is 404 for a missing, trashed or shortcut page", async () => {
+    await expect(placementsOf("nope", "viewer")).rejects.toMatchObject({ status: 404 });
+    put(target({ archivedAt: new Date() }));
+    await expect(placementsOf("t1", "viewer")).rejects.toMatchObject({ status: 404 });
+    put(target({ kind: "Shortcut" }));
+    await expect(placementsOf("t1", "viewer")).rejects.toMatchObject({ status: 404 });
   });
 });
 
