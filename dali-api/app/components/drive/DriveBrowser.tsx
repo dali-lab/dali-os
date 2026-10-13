@@ -42,6 +42,7 @@ import {
   ChevronDown,
   ChevronUp,
   ClipboardList,
+  CornerDownRight,
   FileSignature,
   FileText,
   Shapes,
@@ -345,6 +346,15 @@ function itemIcon(item: DriveItem, size: IconSize = "sm") {
       return <FileSignature className={`${cls} text-muted-foreground shrink-0`} />;
     case "rubric":
       return <ClipboardCheck className={`${cls} text-muted-foreground shrink-0`} />;
+    case "shortcut": {
+      const Glyph = item.targetType === "folder" ? Folder : item.targetType === "whiteboard" ? Shapes : FileText;
+      return (
+        <span className={`relative ${cls} shrink-0`}>
+          <Glyph className={`${cls} ${item.targetType === "folder" ? "text-accent-coral/80" : "text-muted-foreground"}`} />
+          <CornerDownRight className="absolute -bottom-1 -right-1 w-2.5 h-2.5 rounded-sm bg-card text-foreground" />
+        </span>
+      );
+    }
     default:
       // Docs: respect size so grid/preview icons dwarf the label the way a
       // Finder icon does (PageIcon is a fixed list-row glyph and ignores size).

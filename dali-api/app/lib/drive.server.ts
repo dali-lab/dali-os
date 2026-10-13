@@ -20,15 +20,21 @@
 //     ORGANISATION only — it does not change who can see or fill a form.
 
 import { prisma } from "~/lib/db";
-import { getPageAccess, getPageAccessBulk, governingScopeMap } from "~/lib/pageAccess.server";
+import { getPageAccess, getPageAccessBulk, governingScopeMap, PAGE_ACCESS_SELECT } from "~/lib/pageAccess.server";
 import { canViewFile } from "~/lib/fileAccess.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { summarizeAudience } from "~/lib/page-audience.server";
 import type { Audience } from "~/lib/page-audience";
+import {
+  NO_ACCESS_SHORTCUT_TITLE,
+  shortcutTargetHref,
+  shortcutTargetType,
+  type ShortcutTargetType,
+} from "~/lib/shortcut-targets";
 import type { PageKind, Prisma } from "~/generated/prisma/client";
 
 /** Every page kind a Drive listing (and the Trash) surfaces. */
-export const DRIVE_PAGE_KINDS: PageKind[] = ["Folder", "FreeForm", "Structured", "Whiteboard", "Notebook"];
+export const DRIVE_PAGE_KINDS: PageKind[] = ["Folder", "FreeForm", "Structured", "Whiteboard", "Notebook", "Shortcut"];
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -98,6 +104,27 @@ export type DriveItem =
        */
       partnerVisible?: boolean | null;
       /** Who can see this item. Pages carry their own; files take their folder's. */
+      audience?: Audience;
+    }
+  | {
+      type: "shortcut";
+      id: string;
+      /** The target's title, or "Shortcut (no access)" when the viewer can't open it. */
+      title: string;
+      parentFolderId: string | null;
+      iconEmoji: null;
+      updatedAt: Date;
+      /** The target's own URL; the shortcut's when the viewer has no access. */
+      href: string;
+      targetId: string;
+      targetType: ShortcutTargetType;
+      /** False when the viewer lacks access to the target or it is in the trash. */
+      canOpen: boolean;
+      originalInTrash: boolean;
+      sizeBytes?: number | null;
+      favorited?: boolean;
+      linkedProcess?: { label: string; href: string } | null;
+      partnerVisible?: boolean | null;
       audience?: Audience;
     }
   | {
@@ -260,6 +287,62 @@ function withFileAudience(items: DriveItem[], looseEdit: boolean): DriveItem[] {
   });
 }
 
+type ShortcutRow = {
+  id: string;
+  parentPageId: string | null;
+  updatedAt: Date;
+  targetPageId: string | null;
+};
+
+/** DriveItems for the shortcut rows a loader already found visible: one query over their distinct targets. */
+async function shortcutItems(
+  rows: ShortcutRow[],
+  userSub: string,
+  request?: Request,
+  audiences?: Map<string, Audience>,
+): Promise<DriveItem[]> {
+  if (rows.length === 0) return [];
+  const targetIds = [...new Set(rows.flatMap((r) => (r.targetPageId ? [r.targetPageId] : [])))];
+  const targets = await prisma.page.findMany({
+    where: { id: { in: targetIds } },
+    select: { ...PAGE_ACCESS_SELECT, title: true, kind: true },
+  });
+  const access = await getPageAccessBulk(userSub, targets, request, { includeArchived: true });
+  const byId = new Map(targets.map((t) => [t.id, t]));
+
+  return rows.map((row): DriveItem => {
+    const target = row.targetPageId ? byId.get(row.targetPageId) : undefined;
+    const base = {
+      type: "shortcut" as const,
+      id: row.id,
+      parentFolderId: row.parentPageId,
+      iconEmoji: null,
+      updatedAt: row.updatedAt,
+      targetId: row.targetPageId ?? "",
+      audience: audiences?.get(row.id),
+    };
+    if (!target || !access.get(target.id)?.canView) {
+      return {
+        ...base,
+        title: NO_ACCESS_SHORTCUT_TITLE,
+        href: `/documents/${row.id}`,
+        targetType: "doc",
+        canOpen: false,
+        originalInTrash: false,
+      };
+    }
+    const originalInTrash = target.archivedAt !== null;
+    return {
+      ...base,
+      title: target.title,
+      href: shortcutTargetHref(target.kind, target.id),
+      targetType: shortcutTargetType(target.kind),
+      canOpen: !originalInTrash,
+      originalInTrash,
+    };
+  });
+}
+
 /** Load pages (folders + docs) for a Lab-scope drive, filtering each through
  *  getPageAccess so the caller gets exactly what the viewer may view. */
 async function loadLabPages(userSub: string, request?: Request): Promise<DriveItem[]> {
@@ -279,6 +362,7 @@ async function loadLabPages(userSub: string, request?: Request): Promise<DriveIt
       iconEmoji: true,
       folderType: true,
       updatedAt: true,
+      targetPageId: true,
       // Fields getPageAccess needs when passed as PageShape
       workspaceType: true,
       workspaceId: true,
@@ -311,6 +395,7 @@ async function loadLabPages(userSub: string, request?: Request): Promise<DriveIt
 
   const items: DriveItem[] = [];
   for (const row of visible) {
+    if (row.kind === "Shortcut") continue;
     items.push(
       row.kind === "Folder"
         ? {
@@ -340,7 +425,13 @@ async function loadLabPages(userSub: string, request?: Request): Promise<DriveIt
           },
     );
   }
-  return items;
+  const shortcuts = await shortcutItems(
+    visible.filter((row) => row.kind === "Shortcut"),
+    userSub,
+    request,
+    audiences,
+  );
+  return [...items, ...shortcuts];
 }
 
 /** Load pages for a project-scope drive. Project membership (Core or staffed)
@@ -366,6 +457,7 @@ export const PROJECT_PAGE_SELECT = {
   iconEmoji: true,
   folderType: true,
   updatedAt: true,
+  targetPageId: true,
   partnerVisible: true,
   // Only read by the scoped branch below; cheap to carry either way, and it
   // saves getPageAccessBulk re-fetching every row.
@@ -408,7 +500,9 @@ async function loadProjectPages(
   const manager = (await isCore(userSub, request)) || (await isProjectMember(userSub, projectId, request));
   const audiences = await audiencesFor(userSub, visible, governing, () => manager);
 
-  return visible.map((row) =>
+  const pageItems = visible
+    .filter((row) => row.kind !== "Shortcut")
+    .map((row): DriveItem =>
     row.kind === "Folder"
       ? {
           type: "folder",
@@ -437,7 +531,16 @@ async function loadProjectPages(
           partnerVisible: row.partnerVisible,
           audience: audiences.get(row.id),
         },
-  );
+    );
+  return [
+    ...pageItems,
+    ...(await shortcutItems(
+      visible.filter((row) => row.kind === "Shortcut"),
+      userSub,
+      request,
+      audiences,
+    )),
+  ];
 }
 
 /** Load pages (folders + docs) for a single EducationOffering workspace.
@@ -495,6 +598,7 @@ async function loadEducationPages(
       iconEmoji: true,
       folderType: true,
       updatedAt: true,
+      targetPageId: true,
       // See loadProjectPages: only used when the workspace holds a scoped folder.
       workspaceType: true,
       workspaceId: true,
@@ -521,7 +625,9 @@ async function loadEducationPages(
     })) !== null;
   const audiences = await audiencesFor(userSub, visible, governing, () => manager);
 
-  return visible.map((row) =>
+  const pageItems = visible
+    .filter((row) => row.kind !== "Shortcut")
+    .map((row): DriveItem =>
     row.kind === "Folder"
       ? {
           type: "folder",
@@ -548,13 +654,22 @@ async function loadEducationPages(
               : `/documents/${row.id}`,
           audience: audiences.get(row.id),
         },
-  );
+    );
+  return [
+    ...pageItems,
+    ...(await shortcutItems(
+      visible.filter((row) => row.kind === "Shortcut"),
+      userSub,
+      request,
+      audiences,
+    )),
+  ];
 }
 
 /** Load pages (folders + docs) for the viewer's own Member drive — their
  *  personal notes. Owner-only by construction: every row is workspaceId=userSub,
  *  and getPageAccess grants the owner FULL, so no per-page filtering is needed. */
-async function loadMemberPages(userSub: string): Promise<DriveItem[]> {
+async function loadMemberPages(userSub: string, request?: Request): Promise<DriveItem[]> {
   const rows = await prisma.page.findMany({
     where: {
       workspaceType: "Member",
@@ -571,10 +686,13 @@ async function loadMemberPages(userSub: string): Promise<DriveItem[]> {
       iconEmoji: true,
       folderType: true,
       updatedAt: true,
+      targetPageId: true,
     },
   });
 
-  return rows.map((row) =>
+  const pageItems = rows
+    .filter((row) => row.kind !== "Shortcut")
+    .map((row): DriveItem =>
     row.kind === "Folder"
       ? {
           type: "folder",
@@ -599,7 +717,16 @@ async function loadMemberPages(userSub: string): Promise<DriveItem[]> {
               ? `/whiteboard/${row.id}`
               : `/documents/${row.id}`,
         },
-  );
+    );
+  return [
+    ...pageItems,
+    ...(await shortcutItems(
+      rows.filter((row) => row.kind === "Shortcut"),
+      userSub,
+      request,
+      undefined,
+    )),
+  ];
 }
 
 /** Load the viewer's own My Drive files (Member workspace, owner-scoped). */
@@ -1093,7 +1220,7 @@ export async function loadDriveScope({
     // Private drive: the viewer's own personal notes + files, owner-scoped. No
     // forms or agreements live here.
     const [pages, files] = await Promise.all([
-      loadMemberPages(userSub),
+      loadMemberPages(userSub, request),
       loadMemberFiles(userSub),
     ]);
     return [...pages, ...files];
