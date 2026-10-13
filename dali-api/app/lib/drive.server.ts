@@ -491,6 +491,45 @@ export const PROJECT_PAGE_SELECT = {
 
 export type ProjectPageRow = Prisma.PageGetPayload<{ select: typeof PROJECT_PAGE_SELECT }>;
 
+export type PageItemRow = Pick<
+  ProjectPageRow,
+  "id" | "title" | "kind" | "parentPageId" | "iconEmoji" | "folderType" | "updatedAt" | "partnerVisible"
+>;
+
+/** The folder or doc DriveItem for a Page row. Shortcut rows are not handled here (see `shortcutItems`). */
+export function pageRowToDriveItem(
+  row: PageItemRow,
+  audience?: Audience,
+): Extract<DriveItem, { type: "folder" | "doc" }> {
+  if (row.kind === "Folder") {
+    return {
+      type: "folder",
+      id: row.id,
+      title: row.title,
+      parentFolderId: row.parentPageId,
+      iconEmoji: row.iconEmoji,
+      folderType: row.folderType,
+      updatedAt: row.updatedAt,
+      href: `/documents/${row.id}`,
+      partnerVisible: row.partnerVisible,
+      audience,
+    };
+  }
+  return {
+    type: "doc",
+    isWhiteboard: row.kind === "Whiteboard",
+    isNotebook: row.kind === "Notebook",
+    id: row.id,
+    title: row.title,
+    parentFolderId: row.parentPageId,
+    iconEmoji: row.iconEmoji,
+    updatedAt: row.updatedAt,
+    href: row.kind === "Whiteboard" ? `/whiteboard/${row.id}` : `/documents/${row.id}`,
+    partnerVisible: row.partnerVisible,
+    audience,
+  };
+}
+
 async function loadProjectPages(
   projectId: string,
   userSub: string,
@@ -517,37 +556,7 @@ async function loadProjectPages(
 
   const pageItems = visible
     .filter((row) => row.kind !== "Shortcut")
-    .map((row): DriveItem =>
-    row.kind === "Folder"
-      ? {
-          type: "folder",
-          id: row.id,
-          title: row.title,
-          parentFolderId: row.parentPageId,
-          iconEmoji: row.iconEmoji,
-          folderType: row.folderType,
-          updatedAt: row.updatedAt,
-          href: `/documents/${row.id}`,
-          partnerVisible: row.partnerVisible,
-          audience: audiences.get(row.id),
-        }
-      : {
-          type: "doc",
-          isWhiteboard: row.kind === "Whiteboard",
-          isNotebook: row.kind === "Notebook",
-          id: row.id,
-          title: row.title,
-          parentFolderId: row.parentPageId,
-          iconEmoji: row.iconEmoji,
-          updatedAt: row.updatedAt,
-          href:
-            row.kind === "Whiteboard"
-              ? `/whiteboard/${row.id}`
-              : `/documents/${row.id}`,
-          partnerVisible: row.partnerVisible,
-          audience: audiences.get(row.id),
-        },
-    );
+    .map((row) => pageRowToDriveItem(row, audiences.get(row.id)));
   return [
     ...pageItems,
     ...(await shortcutItems(

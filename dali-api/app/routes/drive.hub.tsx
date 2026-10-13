@@ -30,9 +30,12 @@ import { resolveTermFilter } from "~/lib/terms";
 import { TermFilter } from "~/components/TermFilter";
 import { prisma } from "~/lib/db";
 import { loadDriveScopes } from "~/lib/drive-scopes.server";
+import { loadDriveHome } from "~/lib/drive-home.server";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import type { DriveTreeScope } from "~/lib/drive-scopes.server";
 import type { DriveItem } from "~/lib/drive.server";
 import { DriveBrowser } from "~/components/drive/DriveBrowser";
+import { DriveHome } from "~/components/drive/DriveHome";
 import type { RowActions } from "~/components/drive/DriveBrowser";
 import { DriveTagFilter } from "~/components/drive/DriveTagFilter";
 import { FolderPicker } from "~/components/drive/FolderPicker";
@@ -212,6 +215,9 @@ export async function loader({ request }: Route.LoaderArgs) {
     request,
   });
 
+  const homeEnabled = await isFeatureEnabled("drive-home", auth.user.sub, roles, request);
+  const homePromise = homeEnabled ? loadDriveHome(auth.user.sub, request) : Promise.resolve(null);
+
   // Tags come from the join tables keyed by the ids the scopes actually
   // resolved to, rather than being selected into every page/file query in
   // drive.server. Two bounded queries instead of a join on each of the six
@@ -261,6 +267,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     canViewForms: userCanViewForms,
     canManageAgreements: userCanManageAgreements,
     receiversEnabled: await receiversEnabled(request),
+    homeEnabled,
+    home: await homePromise,
     // My Drive is the Member workspace keyed by the viewer's own id — the
     // cross-drive move needs it to name the source workspace it's leaving.
     viewerId: auth.user.sub,
@@ -1147,6 +1155,8 @@ export default function DriveHub() {
     canViewForms,
     canManageAgreements,
     receiversEnabled: receiversOn,
+    homeEnabled,
+    home,
     viewerId,
   } = useLoaderData() as LoaderData;
   const [searchParams, setSearchParams] = useSearchParams();
@@ -2016,6 +2026,10 @@ export default function DriveHub() {
         </h1>
       </header>
       {uploadError && <p className="text-sm text-red-600">{uploadError}</p>}
+
+      {homeEnabled && home && !effectiveScopeId && !search && (
+        <DriveHome data={home} scopes={driveScopes} onOpen={onOpenItem} onNavigate={onNavigate} />
+      )}
 
       <DriveBrowser
         scopes={driveScopes}

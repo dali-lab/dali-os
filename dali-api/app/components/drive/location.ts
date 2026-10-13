@@ -47,3 +47,9 @@ export function locateFolder(scopes: LocatableScope[], folderId: string | null):
   const scope = scopes.find((s) => s.items.some((i) => i.id === folderId));
   return scope ? locationOf(scope, folderId) : null;
 }
+
+/** Where an item lives, when the space holding it is loaded. */
+export function locateItem(scopes: LocatableScope[], item: LocatableItem): ItemLocation | null {
+  const scope = scopes.find((s) => s.items.some((i) => i.id === item.id));
+  return scope ? locationOf(scope, item.parentFolderId) : null;
+}
