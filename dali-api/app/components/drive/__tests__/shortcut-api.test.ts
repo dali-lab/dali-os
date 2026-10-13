@@ -3,9 +3,11 @@ import {
   createShortcutRequest,
   deleteShortcutRequest,
   fetchPlacements,
+  movePageToPlaceRequest,
   placePageRequest,
   swapPrimaryRequest,
 } from "~/components/drive/shortcut-api";
+import type { PagePlace } from "~/components/drive/file-in";
 
 const dest = { workspaceType: "Lab", workspaceId: null, parentPageId: "f1" } as const;
 
@@ -80,5 +82,38 @@ describe("fetchPlacements", () => {
   it("is null when the page can't be read", async () => {
     stub(reply({ error: "Document not found" }, 404));
     expect(await fetchPlacements("p1")).toBeNull();
+  });
+});
+
+describe("movePageToPlaceRequest", () => {
+  const place: PagePlace = { workspaceType: "Project", workspaceId: "proj", folderId: "f9", path: [] };
+
+  it("moves the page to the place's folder and workspace", async () => {
+    const fetchMock = stub(reply({ ok: true }));
+    expect(await movePageToPlaceRequest("p1", place)).toEqual({ ok: true });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/pages/p1/move");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body)).toEqual({ parentPageId: "f9", workspaceType: "Project", workspaceId: "proj" });
+  });
+
+  it("sends a top-level place as a null parent", async () => {
+    const fetchMock = stub(reply({ ok: true }));
+    await movePageToPlaceRequest("p1", { ...place, workspaceType: "Lab", workspaceId: null, folderId: null });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ parentPageId: null, workspaceType: "Lab", workspaceId: null });
+  });
+
+  it("never asks to move a page into My Drive", async () => {
+    const fetchMock = stub(reply({ ok: true }));
+    const res = await movePageToPlaceRequest("p1", { ...place, workspaceType: "Member" });
+    expect(res.ok).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("hands back the server's reason, or a plain one when the request fails", async () => {
+    stub(reply({ error: "Not allowed" }, 403));
+    expect(await movePageToPlaceRequest("p1", place)).toEqual({ ok: false, error: "Not allowed" });
+    stub(new Error("offline"));
+    expect(await movePageToPlaceRequest("p1", place)).toEqual({ ok: false, error: "Couldn't move it back" });
   });
 });

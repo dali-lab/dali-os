@@ -1,17 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
-  bulkDeletedToast,
   canFileIn,
   destinationForPlace,
   folderShortcutTarget,
   locateTarget,
   placeLabel,
-  placeToast,
   planPlacement,
   shortcutRowState,
-  shortcutToast,
   toServerDest,
-  SHORTCUT_REMOVED_TOAST,
   type PagePlace,
 } from "~/components/drive/file-in";
 import type { Destination } from "~/components/drive/FolderPicker";
@@ -138,7 +134,7 @@ describe("planPlacement", () => {
       locked: [],
     });
     expect(plan.primaryChanged).toBe(false);
-    expect(plan.added).toBe(2);
+    expect(plan.addedDestinations).toEqual([core, docs]);
     expect(plan.payload).toEqual({
       destinations: [
         { workspaceType: "Lab", workspaceId: null, parentPageId: "lab-a" },
@@ -157,7 +153,7 @@ describe("planPlacement", () => {
       locked: [core],
     });
     expect(plan.primaryChanged).toBe(true);
-    expect(plan.added).toBe(1);
+    expect(plan.addedDestinations).toEqual([lab]);
     expect(plan.payload?.destinations).toHaveLength(2);
     expect(plan.payload?.primaryIndex).toBe(1);
     expect(plan.payload?.destinations[1].parentPageId).toBe("p1-docs");
@@ -170,7 +166,7 @@ describe("planPlacement", () => {
       currentPrimary: lab,
       locked: [core],
     });
-    expect(plan).toMatchObject({ primaryChanged: false, added: 0 });
+    expect(plan).toMatchObject({ primaryChanged: false, addedDestinations: [] });
   });
 
   it("has no payload when a chosen destination can't be filed into", () => {
@@ -181,45 +177,6 @@ describe("planPlacement", () => {
       locked: [],
     });
     expect(plan.payload).toBeNull();
-  });
-});
-
-describe("toasts", () => {
-  it("names what was added, the primary, and how many grants were declined", () => {
-    expect(placeToast({ added: 2, declined: 1, primaryPath: "Lab / A" })).toBe(
-      "2 locations added. Primary: Lab / A. 1 could not be shared; ask the owner.",
-    );
-  });
-
-  it("is singular for one and drops the lines that don't apply", () => {
-    expect(placeToast({ added: 1, declined: 0, primaryPath: "Lab / A" })).toBe("1 location added. Primary: Lab / A.");
-    expect(placeToast({ added: 0, declined: 0, primaryPath: "Lab / A" })).toBe("Primary: Lab / A.");
-  });
-
-  it("reports a single shortcut", () => {
-    expect(shortcutToast({ created: true, grantDeclined: false, folderLabel: "Lab / A" })).toBe("Shortcut added to Lab / A.");
-    expect(shortcutToast({ created: true, grantDeclined: true, folderLabel: "Lab / A" })).toBe(
-      "Shortcut added to Lab / A. It could not be shared; ask the owner.",
-    );
-    expect(shortcutToast({ created: false, grantDeclined: false, folderLabel: "Lab / A" })).toBe(
-      "There is already a shortcut in Lab / A.",
-    );
-  });
-
-  it("says the original is untouched when a shortcut is removed", () => {
-    expect(SHORTCUT_REMOVED_TOAST).toBe("Shortcut removed. The original is untouched.");
-  });
-});
-
-describe("bulkDeletedToast", () => {
-  it("says the originals are untouched when only shortcuts went", () => {
-    expect(bulkDeletedToast([{ type: "shortcut" }, { type: "shortcut" }])).toBe("2 shortcuts removed. The originals are untouched.");
-    expect(bulkDeletedToast([{ type: "shortcut" }])).toBe(SHORTCUT_REMOVED_TOAST);
-  });
-
-  it("counts a mixed selection plainly", () => {
-    expect(bulkDeletedToast([{ type: "shortcut" }, { type: "doc" }])).toBe("Deleted 2");
-    expect(bulkDeletedToast([{ type: "doc" }])).toBe("Deleted 1");
   });
 });
 
