@@ -317,6 +317,9 @@ export type CreateScheduledMeetingResult =
       notifiedCount: number;
       gcalError: string | null;
       notePageId: string | null;
+      /** The notebook the note is a tab of, and whether this call created it. */
+      notebookId: string | null;
+      createdNotebook: boolean;
       whiteboardPageId: string | null;
     }
   | { ok: false; error: string };
@@ -384,7 +387,7 @@ async function ensureNotebookForNote(input: {
   date: Date;
   authorId: string;
   dest: MeetingNotebookDestination;
-}): Promise<{ id: string }> {
+}): Promise<{ id: string; created?: true }> {
   const [meeting, windows] = await Promise.all([
     prisma.scheduledMeeting.findUniqueOrThrow({
       where: { id: input.meetingId },
@@ -412,8 +415,12 @@ async function ensureNotebookForNote(input: {
   return ensureMeetingNotebook({ ...identity, createdById: input.authorId, ...input.dest });
 }
 
+/** A meeting asset just filed. For a note, `notebookId` is the notebook it is a
+ *  tab of and `createdNotebook` says whether this very call made that notebook. */
+type BuiltArtifactPage = { id: string; notebookId: string | null; createdNotebook: boolean };
+
 // Create a meeting-asset Page (note doc or whiteboard) for a meeting and return
-// its id. Shared by createScheduledMeeting (asset requested at creation) and the
+// where it landed. Shared by createScheduledMeeting (asset requested at creation) and the
 // attach* helpers (asset added to an already-created meeting) so the three
 // filing paths — project (Team/Partner), Core, and General (chosen Drive
 // location) — live in one place for both artifacts. `authorId` is the creator
@@ -432,12 +439,12 @@ async function buildMeetingArtifactPage(input: {
   startDate: Date | null;
   /** Notes only: which occurrence the note is for (see resolveOccurrence). */
   occurrenceStart?: Date;
-}): Promise<string> {
+}): Promise<BuiltArtifactPage> {
   const noteDate = input.startDate ?? new Date();
   const dateLabel = formatDateShort(noteDate);
   const isBoard = input.artifact === "whiteboard";
   const occurrenceStart = input.occurrenceStart ?? noteDate;
-  const file = async (dest: MeetingNotebookDestination, pageTitle: string): Promise<string> => {
+  const file = async (dest: MeetingNotebookDestination, pageTitle: string): Promise<BuiltArtifactPage> => {
     if (!isBoard) {
       const notebook = await ensureNotebookForNote({ ...input, date: occurrenceStart, dest });
       const tab = await createNotebookTab({
@@ -447,7 +454,7 @@ async function buildMeetingArtifactPage(input: {
         meetingNoteId: input.meetingId,
         meetingOccurrenceStart: occurrenceStart,
       });
-      return tab.id;
+      return { id: tab.id, notebookId: notebook.id, createdNotebook: notebook.created === true };
     }
     const fields = {
       title: pageTitle,
@@ -460,7 +467,7 @@ async function buildMeetingArtifactPage(input: {
       dest.workspaceType === "Project" && dest.workspaceId
         ? await createProjectPage({ projectId: dest.workspaceId, ...fields })
         : await createLabMeetingPage({ ...fields, restricted: dest.restricted });
-    return page.id;
+    return { id: page.id, notebookId: null, createdNotebook: false };
   };
   // The artifact noun in the title, so a note and a board for the same meeting
   // stay distinguishable in Drive and search. Whiteboards always carry
@@ -670,6 +677,8 @@ export async function createScheduledMeeting(
   // participants (+ organizer), never the whole lab.
   let notePageId: string | null = null;
   let whiteboardPageId: string | null = null;
+  let notebookId: string | null = null;
+  let createdNotebook = false;
   if (input.meetingType) {
     // Default to a note (and no board) when the caller only set meetingType —
     // matches the pre-whiteboard behaviour for MCP and other callers.
@@ -686,14 +695,17 @@ export async function createScheduledMeeting(
       startDate,
     };
     if (wantNote) {
-      notePageId = await buildMeetingArtifactPage({
+      const note = await buildMeetingArtifactPage({
         ...common,
         artifact: "note",
         occurrenceStart: startDate ?? meeting.createdAt,
       });
+      notePageId = note.id;
+      notebookId = note.notebookId;
+      createdNotebook = note.createdNotebook;
     }
     if (wantWhiteboard)
-      whiteboardPageId = await buildMeetingArtifactPage({ ...common, artifact: "whiteboard" });
+      whiteboardPageId = (await buildMeetingArtifactPage({ ...common, artifact: "whiteboard" })).id;
   }
 
   if (input.meetingType || attendanceMode === "SelfCheckIn" || participantUserIds.length > 0) {
@@ -732,6 +744,8 @@ export async function createScheduledMeeting(
     notifiedCount,
     gcalError,
     notePageId,
+    notebookId,
+    createdNotebook,
     whiteboardPageId,
   };
 }
@@ -754,7 +768,7 @@ export type AttachMeetingNoteInput = {
 };
 
 export type AttachMeetingNoteResult =
-  | { ok: true; notePageId: string }
+  | { ok: true; notePageId: string; notebookId: string | null; createdNotebook: boolean }
   | { ok: false; error: string; status: number };
 
 /**
@@ -837,7 +851,9 @@ export async function attachMeetingNote(
 
   const occurrence = await resolveMeetingOccurrence(meeting, input.occurrence);
   const existing = noteForOccurrence(meeting.notePages, occurrence.originalStart);
-  if (existing) return { ok: true, notePageId: existing.id };
+  if (existing) {
+    return { ok: true, notePageId: existing.id, notebookId: existing.parentPageId, createdNotebook: false };
+  }
 
   const core = await isCore(input.actorId);
   const isOrganizer = meeting.organizerId === input.actorId;
@@ -889,8 +905,10 @@ export async function attachMeetingNote(
   const projectId = reuseType ? meeting.projectId : (input.projectId ?? null);
 
   let notePageId: string;
+  let notebookId: string | null;
+  let createdNotebook: boolean;
   try {
-    notePageId = await buildMeetingArtifactPage({
+    const built = await buildMeetingArtifactPage({
       meetingId: meeting.id,
       authorId: input.actorId,
       artifact: "note",
@@ -908,15 +926,20 @@ export async function attachMeetingNote(
       startDate: occurrence.start,
       occurrenceStart: occurrence.originalStart,
     });
+    notePageId = built.id;
+    notebookId = built.notebookId;
+    createdNotebook = built.createdNotebook;
   } catch (err) {
     // Two people opening the same occurrence's notes at once: the unique
     // (meetingNoteId, meetingOccurrenceStart) key lets one create it, and the
     // other gets that one.
     const raced = await prisma.page.findFirst({
       where: { meetingNoteId: meeting.id, meetingOccurrenceStart: occurrence.originalStart },
-      select: { id: true },
+      select: { id: true, parentPageId: true },
     });
-    if (raced) return { ok: true, notePageId: raced.id };
+    if (raced) {
+      return { ok: true, notePageId: raced.id, notebookId: raced.parentPageId, createdNotebook: false };
+    }
     throw err;
   }
 
@@ -955,7 +978,7 @@ export async function attachMeetingNote(
     });
   }
 
-  return { ok: true, notePageId };
+  return { ok: true, notePageId, notebookId, createdNotebook };
 }
 
 export type AttachMeetingWhiteboardInput = {
@@ -1068,7 +1091,7 @@ export async function attachMeetingWhiteboard(
     };
   }
 
-  const whiteboardPageId = await buildMeetingArtifactPage({
+  const { id: whiteboardPageId } = await buildMeetingArtifactPage({
     meetingId: meeting.id,
     authorId: input.actorId,
     artifact: "whiteboard",

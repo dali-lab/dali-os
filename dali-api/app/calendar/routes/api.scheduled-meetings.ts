@@ -11,6 +11,7 @@ import {
   type ScheduledMeetingScope,
 } from "~/lib/scheduled-meeting";
 import { assertMeetingRoomsFree } from "~/lib/rooms.server";
+import { meetingNotePath } from "~/lib/note-path.server";
 
 const Base = {
   title: z.string().trim().min(1).max(200),
@@ -185,6 +186,16 @@ export async function action({ request }: Route.ActionArgs) {
         notifiedCount: result.notifiedCount,
         gcalError: result.gcalError,
         notePageId: result.notePageId,
+        notebookId: result.notebookId,
+        createdNotebook: result.createdNotebook,
+        notePath: result.notePageId
+          ? await meetingNotePath({
+              notePageId: result.notePageId,
+              notebookId: result.notebookId,
+              viewerSub: auth.user.sub,
+              request,
+            })
+          : null,
         whiteboardPageId: result.whiteboardPageId,
       },
       { status: 201 },

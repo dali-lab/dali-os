@@ -8,6 +8,8 @@ import {
   meetingNotePayload,
   MeetingNoteFields,
 } from "~/calendar/components/MeetingNoteFields";
+import { filedNoteFrom, type FiledNoteResponse } from "~/calendar/lib/filed-note";
+import { useFiledNoteToast } from "~/calendar/lib/useFiledNoteToast";
 
 // Post-hoc counterpart to the create modal's meeting-note fields: adds a notes
 // doc to a meeting that was created without one. The note config (About →
@@ -38,17 +40,21 @@ export function OpenMeetingNoteButton({
   actionPath?: string;
   className?: string;
 }) {
-  const fetcher = useFetcher<{ ok?: boolean; error?: string; notePageId?: string }>();
+  const fetcher = useFetcher<FiledNoteResponse>();
   const navigate = useNavigate();
+  const showFiledNote = useFiledNoteToast();
   // Guards against stale fetcher.data from an earlier submit navigating a
   // fresh click away before it has even been made.
   const submittedRef = useRef(false);
   useEffect(() => {
     if (submittedRef.current && fetcher.state !== "submitting" && fetcher.data?.notePageId) {
       submittedRef.current = false;
+      const filed = filedNoteFrom(fetcher.data);
+      // Already on its way to the note, so the toast only says where it went.
+      if (filed) showFiledNote(filed, { open: false });
       navigate(`/documents/${fetcher.data.notePageId}`);
     }
-  }, [fetcher.state, fetcher.data, navigate]);
+  }, [fetcher.state, fetcher.data, navigate, showFiledNote]);
   return (
     <>
       <button
@@ -120,7 +126,8 @@ function AddMeetingNoteModal({
   onClose: () => void;
 }) {
   const note = useMeetingNote();
-  const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
+  const fetcher = useFetcher<FiledNoteResponse>();
+  const showFiledNote = useFiledNoteToast();
   const [myProjects, setMyProjects] = useState<{ id: string; name: string }[]>([]);
 
   // The note is being added explicitly, so it's always "enabled" — the toggle
@@ -179,9 +186,11 @@ function AddMeetingNoteModal({
   useEffect(() => {
     if (submittedRef.current && fetcher.state !== "submitting" && fetcher.data?.ok) {
       submittedRef.current = false;
+      const filed = filedNoteFrom(fetcher.data);
+      if (filed) showFiledNote(filed);
       onClose();
     }
-  }, [fetcher.state, fetcher.data, onClose]);
+  }, [fetcher.state, fetcher.data, onClose, showFiledNote]);
 
   const valid = meetingNoteValid(note.state);
 

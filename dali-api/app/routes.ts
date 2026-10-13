@@ -180,6 +180,8 @@ export default [
     // Unified Templates gallery (documents, forms, mentor notes, email,
     // agreements), gated behind the `templates` feature flag.
     route("drive/templates", "routes/drive.templates.tsx"),
+    // Resolves a page id to its place in the Drive (Reveal in Drive).
+    route("drive/reveal/:pageId", "routes/drive.reveal.$pageId.ts"),
 
     // Documents & files — full-page reusable editor + file viewer. Literal
     // "file" segment precedes the :pageId param so it isn't captured. Browsing

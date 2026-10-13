@@ -72,6 +72,7 @@ import {
   Info,
   PanelRightClose,
   History,
+  UserPlus,
 } from "lucide-react";
 import type { DriveItem } from "~/lib/drive.server";
 import { categorize } from "~/lib/file-type";
@@ -81,7 +82,7 @@ import { Menu, ContextMenu, Tooltip } from "~/components/ui/floating";
 import { ShareDialog } from "~/components/sharing/ShareDialog";
 import { relativeTime } from "~/lib/relative-time";
 import { cn } from "~/lib/cn";
-import { isProcessRootSpace } from "~/lib/drive-spaces";
+import { isProcessRootSpace, SHARED_SPACE_KEY } from "~/lib/drive-spaces";
 import { ProcessLinkPill } from "~/components/drive/ProcessLinkPill";
 import { buttonClasses } from "~/components/ui/Button";
 
@@ -116,9 +117,11 @@ export type RowActions = {
   onDelete: (item: DriveItem) => void;
   /** Open the in-place Share dialog for a page-backed item (doc or folder). */
   onShare?: (item: DriveItem) => void;
+  /** Rename, Move and Delete are left off the item menu (the Shared with me space). */
+  readOnly?: boolean;
 };
 
-type SortKey = "name" | "modified" | "size";
+type SortKey = "name" | "modified" | "size" | "shared";
 type SortDir = "asc" | "desc";
 type ViewMode = "columns" | "list" | "grid";
 /** Where the browser is pointed: a drive, and a folder inside it. */
@@ -236,12 +239,17 @@ function ms(d: Date): number {
   return new Date(d as unknown as string).getTime();
 }
 
+function sharedAtMs(item: DriveItem): number {
+  return item.type === "doc" && item.sharedAt ? ms(item.sharedAt) : 0;
+}
+
 // Folders always group first; sort within each group by the chosen key.
 function sortItems(items: DriveItem[], key: SortKey, dir: SortDir): DriveItem[] {
   const cmp = (a: DriveItem, b: DriveItem) => {
     let r = 0;
     if (key === "name") r = (a.title || "").localeCompare(b.title || "");
     else if (key === "modified") r = ms(a.updatedAt) - ms(b.updatedAt);
+    else if (key === "shared") r = sharedAtMs(a) - sharedAtMs(b);
     else r = (a.sizeBytes ?? 0) - (b.sizeBytes ?? 0);
     if (r === 0) r = (a.title || "").localeCompare(b.title || "");
     return dir === "asc" ? r : -r;
@@ -360,6 +368,7 @@ function scopeIcon(scope: DriveTreeScope, size: IconSize = "sm") {
     size === "xl" ? "text-3xl" : size === "lg" ? "text-2xl" : "text-base"
   }`;
   if (scope.id === "mine") return <User className={`${cls} text-muted-foreground`} />;
+  if (scope.id === SHARED_SPACE_KEY) return <UserPlus className={`${cls} text-muted-foreground`} />;
   if (scope.id === "core") return <Shield className={`${cls} text-accent-coral/80`} />;
   if (scope.id === "hiring") return <Briefcase className={`${cls} text-accent-coral/80`} />;
   if (scope.id === "mentorship") return <Heart className={`${cls} text-accent-coral/80`} />;
@@ -380,11 +389,11 @@ function itemMenuItems(
 ): ReactNode {
   // Folders are ordinary (no systemKey scaffolding) — rename/move/delete are
   // always allowed by this gate.
-  const canRename = item.type === "folder" || item.type === "doc" || item.type === "file" || item.type === "form" || item.type === "agreement";
+  const canRename = !actions.readOnly && (item.type === "folder" || item.type === "doc" || item.type === "file" || item.type === "form" || item.type === "agreement");
   // drive-spaces: email templates are now managed by Drive (rename/move/delete
   // allowed); agreements and rubrics remain placement-locked.
-  const canMove = item.type !== "agreement" && item.type !== "rubric";
-  const canDelete = item.type === "folder" || item.type === "doc" || item.type === "file" || item.type === "form";
+  const canMove = !actions.readOnly && item.type !== "agreement" && item.type !== "rubric";
+  const canDelete = !actions.readOnly && (item.type === "folder" || item.type === "doc" || item.type === "file" || item.type === "form");
   const canFavorite = item.type === "doc" || item.type === "folder";
   // Sharing via PageShare works for Page-backed items only (doc and folder).
   // Files, forms, agreements, rubrics, email templates have separate or no
@@ -513,6 +522,7 @@ function FavoriteButton({
 }
 
 const GRID_COLUMNS = "minmax(0,1fr) 9rem 5rem 3.75rem";
+const SHARED_GRID_COLUMNS = "minmax(0,1fr) 9rem 9rem 5rem 3.75rem";
 
 /** Icon-view geometry, shared by the drive tiles and the item tiles. Fixed cell
  *  width (not `1fr`) so a sparse row doesn't stretch one tile across the pane —
@@ -663,6 +673,15 @@ export function DriveBrowser({
   const [activeId, setActiveId] = useState<string | null>(null);
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: "name", dir: "asc" });
   const [viewMode, setViewMode] = useState<ViewMode>("columns");
+  useEffect(() => {
+    setSort((prev) =>
+      currentScopeId === SHARED_SPACE_KEY
+        ? { key: "shared", dir: "desc" }
+        : prev.key === "shared"
+          ? { key: "name", dir: "asc" }
+          : prev,
+    );
+  }, [currentScopeId]);
   // The details rail is a horizontal side-peek: opening it reflows the body's
   // width once, never its vertical position, so it can never re-target the
   // cursor the way an inserted top bar did. Toggled from the toolbar, persisted,
@@ -1671,7 +1690,7 @@ export function DriveBrowser({
                       key={`col-${levelIdx}`}
                       testid={`drive-col-${levelIdx}`}
                       isEmpty={items.length === 0}
-                      emptyMessage="This folder is empty."
+                      emptyMessage={sId === SHARED_SPACE_KEY ? "Documents shared with you by name appear here." : "This folder is empty."}
                     >
                       {items.map((item) => {
                         const isHighlighted = highlightedId === item.id;
@@ -2710,7 +2729,16 @@ function ScopeContents({
   suppressClickRef: React.MutableRefObject<boolean>;
 }) {
   const t = useDriveText();
-  if (listing.length === 0) return <EmptyLine>This folder is empty. Drop files here to upload.</EmptyLine>;
+  const isSharedSpace = scope.id === SHARED_SPACE_KEY;
+  if (listing.length === 0) {
+    return (
+      <EmptyLine>
+        {isSharedSpace
+          ? "Documents shared with you by name appear here."
+          : "This folder is empty. Drop files here to upload."}
+      </EmptyLine>
+    );
+  }
 
   if (viewMode === "grid") {
     return (
@@ -2742,9 +2770,12 @@ function ScopeContents({
       {/* Column header (sortable) */}
       <div
         className={`grid items-center gap-2 border-b border-border px-2 py-1.5 ${t.label} font-medium uppercase tracking-wide text-muted-foreground`}
-        style={{ gridTemplateColumns: GRID_COLUMNS }}
+        style={{ gridTemplateColumns: isSharedSpace ? SHARED_GRID_COLUMNS : GRID_COLUMNS }}
       >
         <SortHeader label="Name" active={sort.key === "name"} dir={sort.dir} onClick={() => onToggleSort("name")} testid="drive-sort-name" />
+        {isSharedSpace && (
+          <SortHeader label="Shared by" active={sort.key === "shared"} dir={sort.dir} onClick={() => onToggleSort("shared")} testid="drive-sort-shared" />
+        )}
         <SortHeader label="Modified" active={sort.key === "modified"} dir={sort.dir} onClick={() => onToggleSort("modified")} testid="drive-sort-modified" />
         <SortHeader label="Size" active={sort.key === "size"} dir={sort.dir} onClick={() => onToggleSort("size")} align="right" testid="drive-sort-size" />
         <span aria-hidden="true" />
@@ -2851,7 +2882,7 @@ function ListRow({
       onClick={(e) => onRowClick(item.id, e)}
       onDoubleClick={() => onOpen(item.id)}
       style={{
-        gridTemplateColumns: GRID_COLUMNS,
+        gridTemplateColumns: scopeId === SHARED_SPACE_KEY ? SHARED_GRID_COLUMNS : GRID_COLUMNS,
         ...(drag.transform ? { transform: `translate3d(${drag.transform.x}px, ${drag.transform.y}px, 0)`, transition: "none" } : {}),
       }}
       className={`group grid items-center dnd-touch-handle ${t.itemRow} rounded-lg ${t.row} cursor-default select-none ${
@@ -2883,6 +2914,11 @@ function ListRow({
             </Tooltip>
           )}
       </span>
+      {scopeId === SHARED_SPACE_KEY && (
+        <span className={`${t.meta} text-muted-foreground truncate`}>
+          {item.type === "doc" ? (item.sharedBy?.name ?? "Unknown") : ""}
+        </span>
+      )}
       <span className={`${t.meta} text-muted-foreground tabular-nums truncate`}>{relativeTime(item.updatedAt as unknown as string)}</span>
       <span className={`${t.meta} text-muted-foreground tabular-nums text-right`}>{formatSize(item.sizeBytes)}</span>
       <span className="flex items-center justify-end">

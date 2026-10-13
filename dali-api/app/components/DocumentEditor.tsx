@@ -9,7 +9,7 @@ import {
   type RefObject,
 } from "react";
 import { useNavigate, useRevalidator } from "react-router";
-import { Check, CloudOff, Copy, Download, FileDown, FolderInput, History, LayoutTemplate, Link, Loader2, MessageSquare, MoreHorizontal, Printer, Search, Upload, Users } from "lucide-react";
+import { Check, CloudOff, Copy, Download, FileDown, FolderInput, FolderSearch, History, LayoutTemplate, Link, Loader2, MessageSquare, MoreHorizontal, Printer, Search, Upload, Users } from "lucide-react";
 import { DocEditor, appendBlocks, stripBlockIds, type DocSyncState, type TocHeading } from "~/components/doc";
 import type { DocEditorInstance } from "~/components/doc/schema/build";
 import { DocCommentsPanel, useDocThreadCount } from "~/components/doc/comments";
@@ -24,6 +24,7 @@ import { PageCover } from "./doc-chrome/PageCover";
 import { DocToc } from "./doc-chrome/DocToc";
 import { relativeTime } from "~/lib/relative-time";
 import { Menu, Select, type SelectOption, Tooltip } from "~/components/ui/floating";
+import { revealInDriveHref } from "~/lib/drive-crumbs";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { ShareDialog } from "~/components/sharing/ShareDialog";
@@ -709,6 +710,14 @@ export function DocumentEditor({
             >
               <Copy className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               Duplicate
+            </button>
+            <button
+              type="button"
+              onClick={() => window.location.assign(revealInDriveHref(pageId))}
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
+            >
+              <FolderSearch className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              Reveal in Drive
             </button>
             {canManageAccess && (
               <button
