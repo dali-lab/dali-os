@@ -26,6 +26,7 @@ vi.mock("~/lib/page-share-access.server", () => ({
 vi.mock("~/lib/page-audience.server", () => ({ describePageAudience: vi.fn() }));
 
 import { requireAuth } from "~/lib/auth";
+import { prisma } from "~/lib/db";
 import { listPageShares } from "~/lib/page-sharing.server";
 import { requirePageShareManager, PageShareForbiddenError } from "~/lib/page-share-access.server";
 import { describePageAudience } from "~/lib/page-audience.server";
@@ -71,8 +72,44 @@ describe("POST /api/pages/:id/share state", () => {
     vi.mocked(describePageAudience).mockResolvedValue({ audience, inherited } as never);
 
     const res = await run("state");
-    expect(await res.json()).toEqual({ ok: true, context: CONTEXT, shares: SHARES, audience, inherited });
+    expect(await res.json()).toEqual({
+      ok: true,
+      context: CONTEXT,
+      shares: SHARES.map((s) => ({ ...s, viaShortcut: null })),
+      audience,
+      inherited,
+    });
     expect(describePageAudience).toHaveBeenCalledWith(USER_ID, "page-1");
+  });
+
+  it("marks a share a shortcut created with the folder that shortcut sits in", async () => {
+    vi.mocked(listPageShares).mockResolvedValue([
+      ...SHARES,
+      { id: "s2", principalType: "Group", principalId: "g1", permission: "Edit", label: "Core" },
+      { id: "s3", principalType: "Group", principalId: "g2", permission: "View", label: "Studio" },
+    ] as never);
+    vi.mocked(prisma.page.findMany).mockResolvedValue([
+      { grantShareId: "s2", parent: { title: "Check-ins" } },
+      { grantShareId: "s3", parent: null },
+    ] as never);
+
+    const body = await (await run("state")).json();
+
+    expect(body.shares.map((s: { id: string; viaShortcut: unknown }) => [s.id, s.viaShortcut])).toEqual([
+      ["s1", null],
+      ["s2", { folderTitle: "Check-ins" }],
+      ["s3", { folderTitle: null }],
+    ]);
+    expect(prisma.page.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { grantShareId: { in: ["s1", "s2", "s3"] } } }),
+    );
+  });
+
+  it("asks nothing of the database when nobody has the page shared", async () => {
+    vi.mocked(listPageShares).mockResolvedValue([]);
+    const body = await (await run("state")).json();
+    expect(body.shares).toEqual([]);
+    expect(prisma.page.findMany).not.toHaveBeenCalled();
   });
 
   it("sends inherited: null when nothing governs the page", async () => {

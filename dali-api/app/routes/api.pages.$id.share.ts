@@ -43,6 +43,22 @@ function parseScopeKind(v: string | undefined): ScopeKind | null {
   return v && SCOPE_KINDS.includes(v) ? (v as ScopeKind) : null;
 }
 
+/** Share rows that a shortcut created when it was placed, with the folder that shortcut sits in. */
+async function markViaShortcut<T extends { id: string }>(
+  shares: T[],
+): Promise<Array<T & { viaShortcut: { folderTitle: string | null } | null }>> {
+  if (shares.length === 0) return [];
+  const shortcuts = await prisma.page.findMany({
+    where: { grantShareId: { in: shares.map((s) => s.id) } },
+    select: { grantShareId: true, parent: { select: { title: true } } },
+  });
+  const byShare = new Map(shortcuts.map((p) => [p.grantShareId, p.parent?.title ?? null]));
+  return shares.map((s) => ({
+    ...s,
+    viaShortcut: byShare.has(s.id) ? { folderTitle: byShare.get(s.id) ?? null } : null,
+  }));
+}
+
 export async function action({ request, params }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
   if (preflight) return preflight;
@@ -70,7 +86,10 @@ export async function action({ request, params }: Route.ActionArgs) {
           listPageShares(pageId),
           describePageAudience(me, pageId),
         ]);
-        return withCors(request, Response.json({ ok: true, context, shares, audience, inherited }));
+        return withCors(
+          request,
+          Response.json({ ok: true, context, shares: await markViaShortcut(shares), audience, inherited }),
+        );
       }
       case "share-options": {
         if (!(await isLabMember(me))) {

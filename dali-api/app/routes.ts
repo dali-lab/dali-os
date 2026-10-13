@@ -627,6 +627,7 @@ export default [
   route("api/pages/:id/move", "projects/routes/api.pages.$id.move.ts"),
   route("api/pages/:id/place", "routes/api.pages.$id.place.ts"),
   route("api/pages/:id/swap-primary", "routes/api.pages.$id.swap-primary.ts"),
+  route("api/pages/:id/shortcuts", "routes/api.pages.$id.shortcuts.ts"),
   route("api/shortcuts", "routes/api.shortcuts.ts"),
   route("api/shortcuts/:id", "routes/api.shortcuts.$id.ts"),
   route("api/pages/:id/duplicate", "routes/api.pages.$id.duplicate.ts"),

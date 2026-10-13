@@ -28,7 +28,15 @@ export type PlainGlyphSource = {
   tabCount?: number;
 };
 
-export type GlyphSource = PlainGlyphSource | { type: "shortcut"; targetType: ShortcutTargetType };
+export type ShortcutGlyphSource = {
+  type: "shortcut";
+  targetType: ShortcutTargetType;
+  /** False when the viewer can't open the original. */
+  canOpen?: boolean;
+  originalInTrash?: boolean;
+};
+
+export type GlyphSource = PlainGlyphSource | ShortcutGlyphSource;
 
 export type ItemGlyph =
   | { kind: "emoji"; emoji: string }
@@ -40,10 +48,16 @@ export type ItemGlyph =
   | { kind: "form" }
   | { kind: "agreement" }
   | { kind: "rubric" }
-  | { kind: "shortcut"; target: ItemGlyph };
+  | { kind: "shortcut"; target: ItemGlyph; locked: boolean };
 
 export function pickGlyph(item: GlyphSource): ItemGlyph {
-  if (item.type === "shortcut") return { kind: "shortcut", target: pickShortcutTarget(item.targetType) };
+  if (item.type === "shortcut") {
+    return {
+      kind: "shortcut",
+      target: pickShortcutTarget(item.targetType),
+      locked: item.canOpen === false && !item.originalInTrash,
+    };
+  }
   if (item.type === "doc" && item.isNotebook) return { kind: "notebook", tabs: tabBadge(item.tabCount) };
   if (item.type === "folder" || item.type === "doc") {
     if (item.iconEmoji) return { kind: "emoji", emoji: item.iconEmoji };

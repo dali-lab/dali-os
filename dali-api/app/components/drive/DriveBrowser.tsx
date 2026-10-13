@@ -43,6 +43,7 @@ import {
   ChevronUp,
   ClipboardList,
   CornerDownRight,
+  Lock,
   FileSignature,
   FileText,
   Shapes,
@@ -86,6 +87,7 @@ import type { DriveTreeScope } from "~/lib/drive-scopes.server";
 import { Menu, ContextMenu, Tooltip } from "~/components/ui/floating";
 import { ShareDialog } from "~/components/sharing/ShareDialog";
 import { relativeTime } from "~/lib/relative-time";
+import { useRevalidator } from "react-router";
 import { cn } from "~/lib/cn";
 import { isProcessRootSpace, SHARED_SPACE_KEY } from "~/lib/drive-spaces";
 import { ProcessLinkPill } from "~/components/drive/ProcessLinkPill";
@@ -93,6 +95,11 @@ import { AudienceSignal, AudienceDetail } from "~/components/drive/AudienceSigna
 import { buttonClasses } from "~/components/ui/Button";
 import { crumbsFor, locationOf, type ItemLocation } from "~/components/drive/location";
 import { LocationLink } from "~/components/drive/LocationLink";
+import { FileInPicker, type FileInTarget } from "~/components/drive/FileInPicker";
+import { AlsoInSection, OriginalValue } from "~/components/drive/ShortcutDetails";
+import { DetailFact } from "~/components/drive/DetailFact";
+import { menuEntries, type MenuEntry } from "~/components/drive/item-menu";
+import { canFileIn, folderShortcutTarget, locateTarget, shortcutRowState } from "~/components/drive/file-in";
 import { CORAL_FOLDER, folderCountLabel, pickGlyph, type ItemGlyph } from "~/components/drive/glyphs";
 import { FolderSettingsModal } from "~/components/drive/FolderSettingsModal";
 import { eligibleSlotsFor, isPageFolder, projectIdFor, receivesLabel } from "~/components/drive/receiver-options";
@@ -128,6 +135,12 @@ export type RowActions = {
   onDelete: (item: DriveItem) => void;
   /** Open the in-place Share dialog for a page-backed item (doc or folder). */
   onShare?: (item: DriveItem) => void;
+  /** "File in…" and "Add shortcut to…", injected by the browser for items that can be filed in several places. */
+  fileIn?: {
+    allows: (item: DriveItem) => boolean;
+    openMulti: (item: DriveItem) => void;
+    openSingle: (item: DriveItem) => void;
+  };
   /** Rename, Move and Delete are left off the item menu (the Shared with me space). */
   readOnly?: boolean;
   /** Open the "This folder receives" settings for a page folder. */
@@ -224,6 +237,8 @@ function kindLabel(item: DriveItem): string {
       return "Form";
     case "rubric":
       return "Rubric";
+    case "shortcut":
+      return "Shortcut";
     default:
       return "Agreement";
   }
@@ -387,12 +402,14 @@ function glyphIcon(glyph: ItemGlyph, item: DriveItem, size: IconSize): ReactNode
       return <FileSignature className={`${cls} text-muted-foreground shrink-0`} />;
     case "rubric":
       return <ClipboardCheck className={`${cls} text-muted-foreground shrink-0`} />;
-    case "shortcut":
+    case "shortcut": {
+      const Mark = glyph.locked ? Lock : CornerDownRight;
       return (
-        <GlyphBadge badge={<CornerDownRight className={`${markCls} text-foreground`} />}>
+        <GlyphBadge badge={<Mark data-testid="shortcut-badge" className={`${markCls} text-foreground`} />}>
           {glyphIcon(glyph.target, item, size)}
         </GlyphBadge>
       );
+    }
     case "whiteboard":
       return <Shapes className={`${cls} text-muted-foreground shrink-0`} />;
     case "doc":
@@ -425,23 +442,32 @@ function itemMenuItems(
   onToggleFavorite?: (item: DriveItem) => void,
   onTogglePartnerVisible?: (item: DriveItem, next: boolean) => void,
 ): ReactNode {
-  // Folders are ordinary (no systemKey scaffolding) — rename/move/delete are
-  // always allowed by this gate.
-  const canRename = !actions.readOnly && (item.type === "folder" || item.type === "doc" || item.type === "file" || item.type === "form" || item.type === "agreement");
-  // drive-spaces: email templates are now managed by Drive (rename/move/delete
-  // allowed); agreements and rubrics remain placement-locked.
-  const canMove = !actions.readOnly && item.type !== "agreement" && item.type !== "rubric";
-  const canDelete = !actions.readOnly && (item.type === "folder" || item.type === "doc" || item.type === "file" || item.type === "form");
-  const canFavorite = item.type === "doc" || item.type === "folder";
-  // Sharing via PageShare works for Page-backed items only (doc and folder).
-  // Files, forms, agreements, rubrics, email templates have separate or no
-  // sharing surfaces, so the Share option is intentionally omitted for them.
-  const canShare = (item.type === "doc" || item.type === "folder") && !!actions.onShare;
+  const entries = menuEntries(item, {
+    share: !!actions.onShare,
+    fileIn: !!actions.fileIn?.allows(item),
+    favorite: !!onToggleFavorite,
+    partner: !!onTogglePartnerVisible,
+    readOnly: !!actions.readOnly,
+  });
+  const has = (entry: MenuEntry) => entries.includes(entry);
+  const canRename = has("rename");
+  const canMove = has("move");
+  const canDelete = has("delete");
+  const canFavorite = has("favorite");
+  const canFileIn = has("file-in");
+  const canShare = has("share");
+  const canTogglePartner = has("partner");
   // Partner visibility toggle: applies to docs and files in project-scoped Drive.
   // partnerVisible lives on the doc/file variant — access it via cast to avoid
   // widening the union type unnecessarily.
   const itemPartnerVisible = (item as { partnerVisible?: boolean | null }).partnerVisible ?? false;
-  const canTogglePartner = !!onTogglePartnerVisible && (item.type === "doc" || item.type === "file");
+  if (entries.length === 1 && canDelete) {
+    return (
+      <Menu.Item icon={<Trash2 className="h-3.5 w-3.5" />} onSelect={() => actions.onDelete(item)}>
+        Delete
+      </Menu.Item>
+    );
+  }
   return (
     <>
       <Menu.Item icon={<FolderOpen className="h-3.5 w-3.5" />} onSelect={onOpen}>
@@ -483,6 +509,16 @@ function itemMenuItems(
         <Menu.Item icon={<FolderInput className="h-3.5 w-3.5" />} onSelect={() => actions.onRequestMove(item)}>
           Move to…
         </Menu.Item>
+      )}
+      {canFileIn && (
+        <>
+          <Menu.Item icon={<CornerDownRight className="h-3.5 w-3.5" />} onSelect={() => actions.fileIn!.openMulti(item)}>
+            File in…
+          </Menu.Item>
+          <Menu.Item icon={<CornerDownRight className="h-3.5 w-3.5" />} onSelect={() => actions.fileIn!.openSingle(item)}>
+            Add shortcut to…
+          </Menu.Item>
+        </>
       )}
       {canDelete && (
         <>
@@ -656,7 +692,7 @@ export function DriveBrowser({
   search,
   onSearchChange,
   onNavigate,
-  onOpenItem,
+  onOpenItem: hostOpenItem,
   onMove,
   getScopeActions,
   onToggleFavorite,
@@ -684,6 +720,18 @@ export function DriveBrowser({
   // Share dialog state — the item currently targeted for in-place sharing.
   const [shareTarget, setShareTarget] = useState<{ id: string; title: string; workspaceType: string } | null>(null);
   const sharingChangedRef = useRef(false);
+  const [fileIn, setFileIn] = useState<{ target: FileInTarget; mode: "multi" | "single" } | null>(null);
+  const revalidator = useRevalidator();
+
+  /** A shortcut to a folder opens that folder in the Drive; anything else follows the host. */
+  function onOpenItem(item: DriveItem) {
+    const folder = folderShortcutTarget(scopes, item);
+    if (folder) {
+      onNavigate(folder.scopeId, folder.folderId);
+      return;
+    }
+    hostOpenItem(item);
+  }
 
   const [folderSettings, setFolderSettings] = useState<{ item: DriveItem; scopeId: string } | null>(null);
 
@@ -693,8 +741,16 @@ export function DriveBrowser({
   // needing to know the browser owns the ShareDialog state.
   function getInternalScopeActions(scopeId: string): RowActions {
     const base = getScopeActions(scopeId);
+    const scopeItems = scopes.find((s) => s.id === scopeId)?.items ?? [];
+    const openFileIn = (item: DriveItem, mode: "multi" | "single") =>
+      setFileIn({ target: { id: item.id, title: item.title, isFolder: item.type === "folder" }, mode });
     return {
       ...base,
+      fileIn: {
+        allows: (item: DriveItem) => canFileIn(item, scopeId, scopeItems),
+        openMulti: (item: DriveItem) => openFileIn(item, "multi"),
+        openSingle: (item: DriveItem) => openFileIn(item, "single"),
+      },
       ...(receiverViewer ? { onFolderSettings: (item: DriveItem) => setFolderSettings({ item, scopeId }) } : {}),
       onShare: (item: DriveItem) => {
         if (item.type !== "doc" && item.type !== "folder") return;
@@ -1417,13 +1473,17 @@ export function DriveBrowser({
       detailItem.type === "agreement");
   // drive-spaces: email templates are movable in Drive (card-grid list retired).
   const canItemMove =
-    !!detailItem && detailItem.type !== "agreement" && detailItem.type !== "rubric";
+    !!detailItem &&
+    detailItem.type !== "agreement" &&
+    detailItem.type !== "rubric" &&
+    !(detailItem.type === "shortcut" && !detailItem.canOpen);
   const canItemDelete =
     !!detailItem &&
     (detailItem.type === "folder" ||
       detailItem.type === "doc" ||
       detailItem.type === "file" ||
-      detailItem.type === "form");
+      detailItem.type === "form" ||
+      detailItem.type === "shortcut");
   const canItemDownload = !!detailItem && detailItem.type === "file";
   // Share: page-backed items only (doc and folder). Folders support sharing via
   // PageShare, which was previously impossible from the Drive surface.
@@ -1882,6 +1942,8 @@ export function DriveBrowser({
               canShare={!!canItemShare}
               canDelete={!!canItemDelete}
               restingCount={restingCount}
+              scopes={scopes}
+              onNavigate={onNavigate}
               onToggleFavorite={onToggleFavorite}
               onOpenItem={onOpenItem}
               onOpenFolder={(folderId) => onNavigate(detailScopeId, folderId)}
@@ -1921,6 +1983,16 @@ export function DriveBrowser({
             onSharingChanged?.();
           }
         }}
+      />
+    )}
+
+    {fileIn && (
+      <FileInPicker
+        key={`${fileIn.mode}:${fileIn.target.id}`}
+        target={fileIn.target}
+        mode={fileIn.mode}
+        onClose={() => setFileIn(null)}
+        onDone={() => void revalidator.revalidate()}
       />
     )}
 
@@ -2026,6 +2098,8 @@ function DriveDetailsPane({
   canShare,
   canDelete,
   restingCount,
+  scopes,
+  onNavigate,
   onToggleFavorite,
   onOpenItem,
   onOpenFolder,
@@ -2041,6 +2115,8 @@ function DriveDetailsPane({
   canShare: boolean;
   canDelete: boolean;
   restingCount: number;
+  scopes: DriveTreeScope[];
+  onNavigate: (scopeId: string | null, folderId: string | null) => void;
   onToggleFavorite?: (item: DriveItem) => void;
   onOpenItem: (item: DriveItem) => void;
   /** Jump to a folder in the Drive (the "inherited from" link). */
@@ -2087,8 +2163,23 @@ function DriveDetailsPane({
           <dl className="mt-4 flex flex-col gap-3.5 border-t border-border pt-3.5">
             <DetailFact label="Where" value={scopePathLabel || "—"} />
             <DetailFact label="Modified" value={relativeTime(item.updatedAt as unknown as string)} />
+            {item.type === "shortcut" && (
+              <DetailFact
+                label="Original"
+                value={
+                  <OriginalValue
+                    item={item}
+                    location={locateTarget(scopes, item.targetId)}
+                    onNavigate={onNavigate}
+                  />
+                }
+              />
+            )}
             {item.type === "folder" && receivesLabel(item.folderType) && (
               <DetailFact label="Receives" value={receivesLabel(item.folderType)!} />
+            )}
+            {(item.type === "doc" || item.type === "folder") && (
+              <AlsoInSection key={item.id} page={item} scopes={scopes} onNavigate={onNavigate} />
             )}
             {item.type === "file" && item.sizeBytes != null && (
               <DetailFact label="Size" value={formatSize(item.sizeBytes)} />
@@ -2113,8 +2204,13 @@ function DriveDetailsPane({
 
           {/* Actions */}
           <div className="mt-4 flex flex-col border-t border-border pt-2">
-            {item.type !== "folder" && (
-              <DetailAction icon={<FolderOpen />} label="Open" onClick={() => onOpenItem(item)} />
+            {item.type !== "folder" && !(item.type === "shortcut" && !item.canOpen) && (
+              <DetailAction
+                icon={<FolderOpen />}
+                label={item.type === "shortcut" ? "Open original" : "Open"}
+                testid={item.type === "shortcut" ? "drive-open-original" : undefined}
+                onClick={() => onOpenItem(item)}
+              />
             )}
             {isPreviewable(item) && (
               <DetailAction icon={<Search />} label="Preview" onClick={() => onPreview(item)} />
@@ -2138,6 +2234,16 @@ function DriveDetailsPane({
             )}
             {canShare && actions?.onShare && (
               <DetailAction icon={<Share2 />} label="Share…" onClick={() => actions.onShare!(item)} />
+            )}
+            {actions?.fileIn?.allows(item) && (
+              <>
+                <DetailAction icon={<CornerDownRight />} label="File in…" onClick={() => actions.fileIn!.openMulti(item)} />
+                <DetailAction
+                  icon={<CornerDownRight />}
+                  label="Add shortcut to…"
+                  onClick={() => actions.fileIn!.openSingle(item)}
+                />
+              </>
             )}
             {canDelete && actions && (
               <DetailAction icon={<Trash2 />} label="Delete" destructive onClick={() => actions.onDelete(item)} />
@@ -2379,7 +2485,7 @@ function ColumnItemRow({
       data-row-id={item.id}
       onClick={(e) => { e.stopPropagation(); onClick(e); }}
       className={`group flex items-center rounded-lg dnd-touch-handle ${t.itemRow} ${t.row} cursor-default select-none ${
-        drag.isDragging ? "opacity-40" : ""
+        drag.isDragging ? "opacity-40" : shortcutRowState(item).dimmed ? "opacity-60" : ""
       } ${
         drop.isOver ? "ring-2 ring-inset ring-accent-coral bg-accent-coral/10" : ""
       } ${
@@ -2394,6 +2500,7 @@ function ColumnItemRow({
       <span className="min-w-0 flex-1 truncate font-medium">
         {item.title || "Untitled"}
       </span>
+      <ShortcutMarks item={item} />
       <FolderCount item={item} />
       <RowAudience item={item} actions={scopeActions} />
       {/* Signal ②: process linkage pill. */}
@@ -2456,6 +2563,19 @@ function ColumnItemRow({
  */
 const COLUMN_SIZE = "flex-1 min-w-[12.5rem]";
 
+/** The "Original in trash" chip on a shortcut whose target was deleted. */
+function ShortcutMarks({ item }: { item: DriveItem }) {
+  if (!shortcutRowState(item).inTrash) return null;
+  return (
+    <span
+      data-testid="shortcut-trash-chip"
+      className="shrink-0 rounded-full border border-border px-1.5 py-0.5 text-[10px] leading-none text-muted-foreground"
+    >
+      Original in trash
+    </span>
+  );
+}
+
 /** "12 items" / "Empty" after a folder's name; nothing for other items or before counts load. */
 function FolderCount({ item, className = "" }: { item: DriveItem; className?: string }) {
   const t = useDriveText();
@@ -2474,18 +2594,6 @@ function RowAudience({ item, actions }: { item: DriveItem; actions: RowActions |
   if (!item.audience) return null;
   const share = item.type !== "file" ? actions?.onShare : undefined;
   return <AudienceSignal audience={item.audience} onOpenShare={share ? () => share(item) : undefined} />;
-}
-
-/** One labelled fact in a details panel. Renders nothing when the value is
- *  empty, so a doc with no size doesn't show a blank row. */
-function DetailFact({ label, value }: { label: string; value: ReactNode }) {
-  if (!value) return null;
-  return (
-    <div className="flex flex-col gap-1">
-      <dt className="text-[11px] font-bold uppercase tracking-[0.5px] text-muted-foreground">{label}</dt>
-      <dd className="text-sm text-foreground break-words">{value}</dd>
-    </div>
-  );
 }
 
 function DetailAction({
@@ -3051,7 +3159,7 @@ function ListRow({
         ...(drag.transform ? { transform: `translate3d(${drag.transform.x}px, ${drag.transform.y}px, 0)`, transition: "none" } : {}),
       }}
       className={`group grid items-center dnd-touch-handle ${t.itemRow} rounded-lg ${t.row} cursor-default select-none ${
-        drag.isDragging ? "opacity-40" : ""
+        drag.isDragging ? "opacity-40" : shortcutRowState(item).dimmed ? "opacity-60" : ""
       } ${
         drop.isOver && isFolder
           ? "bg-accent-coral/10 ring-1 ring-accent-coral/40"
@@ -3065,6 +3173,7 @@ function ListRow({
       <span className="flex items-center gap-2 min-w-0">
         {itemIcon(item)}
         <span className="truncate font-medium text-foreground">{item.title || "Untitled"}</span>
+        <ShortcutMarks item={item} />
         <FolderCount item={item} />
         <RowAudience item={item} actions={actions} />
         {/* Signal ②: process linkage pill. */}
@@ -3166,7 +3275,7 @@ function GridTile({
       // rectangle), not on a border, so a grid of files reads as a grid of
       // files rather than a grid of boxes.
       className={`${GRID_TILE} dnd-touch-handle ${
-        drag.isDragging ? "opacity-40" : ""
+        drag.isDragging ? "opacity-40" : shortcutRowState(item).dimmed ? "opacity-60" : ""
       } ${
         drop.isOver && isFolder
           ? "bg-accent-coral/10 ring-2 ring-inset ring-accent-coral"
@@ -3201,6 +3310,7 @@ function GridTile({
       >
         {item.title || "Untitled"}
       </span>
+      <ShortcutMarks item={item} />
       <FolderCount item={item} />
       <RowAudience item={item} actions={actions} />
       {/* Signal ②: process linkage pill. Centered below the title. */}

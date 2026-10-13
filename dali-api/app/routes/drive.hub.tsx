@@ -40,7 +40,9 @@ import type { PickerDrive, PickerFolder, Destination } from "~/components/drive/
 import { buildPickerRows } from "~/components/drive/picker-rows";
 import { LocationLink } from "~/components/drive/LocationLink";
 import { locateFolder, type LocatableScope } from "~/components/drive/location";
-import { moveDriveItem, driveErrorFrom } from "~/components/drive/move-item";
+import { moveDriveItem, driveErrorFrom, isPageItem } from "~/components/drive/move-item";
+import { deleteShortcutRequest } from "~/components/drive/shortcut-api";
+import { SHORTCUT_REMOVED_TOAST, bulkDeletedToast } from "~/components/drive/file-in";
 import { reportMoveBatch, runMoveBatch, itemCount } from "~/components/drive/move-batch";
 import { useDriveFileUpload } from "~/components/drive/useDriveFileUpload";
 import type { UploadTarget } from "~/components/drive/useDriveFileUpload";
@@ -810,6 +812,7 @@ function makeScopeActions({
   // Forms are now SOFT-ARCHIVED (archivedAt = now) from Drive, matching how
   // docs and files are handled. Hard-delete is reserved for Trash ("purge").
   async function deleteItem(item: DriveItem): Promise<Response> {
+    if (item.type === "shortcut") return deleteShortcutRequest(item.id);
     if (item.type === "form") {
       const fd = new FormData();
       fd.set("intent", "archive-form");
@@ -834,7 +837,9 @@ function makeScopeActions({
       description:
         item.type === "folder"
           ? "The folder must be empty first."
-          : item.type === "form"
+          : item.type === "shortcut"
+            ? "Only the shortcut is removed. The original stays where it is."
+            : item.type === "form"
             ? "The form will be moved to Trash. Restore it any time from Trash, or purge it there permanently."
             : "It will be archived and removed from your Drive.",
       tone: "destructive",
@@ -869,7 +874,7 @@ function makeScopeActions({
           { duration: 6000 },
         );
       } else {
-        toast.success("Deleted");
+        toast.success(item.type === "shortcut" ? SHORTCUT_REMOVED_TOAST : "Deleted");
       }
       revalidate();
     } else {
@@ -888,7 +893,7 @@ function makeScopeActions({
     // drive; null elsewhere), so "move to top" keeps items inside the scope.
     const target = destFolderId ?? rootParent;
     let res: Response;
-    if (item.type === "doc" || item.type === "folder") {
+    if (isPageItem(item)) {
       if (kind === "mine") {
         const fd = new FormData();
         fd.set("intent", "update");
@@ -1338,7 +1343,7 @@ export default function DriveHub() {
         // Files/forms move by folderPageId (no workspace change), so restrict
         // them to the Lab-workspace drives. Docs/folders can also move into
         // project/offering workspaces.
-        const isDocOrFolder = item.type === "doc" || item.type === "folder";
+        const isDocOrFolder = isPageItem(item);
         if (!isDocOrFolder) {
           // Files/forms: Lab workspace only (no project/offering cross-move).
           return kind !== "project" && kind !== "projects-group" && kind !== "education-group";
@@ -1421,7 +1426,7 @@ export default function DriveHub() {
       }
 
       let res: Response;
-      if (item.type === "doc" || item.type === "folder") {
+      if (isPageItem(item)) {
         const crossWs = d.workspaceType !== srcWs.workspaceType || d.workspaceId !== srcWs.workspaceId;
         res = await fetch(`/api/pages/${item.id}/move`, {
           method: "POST",
@@ -1709,7 +1714,7 @@ export default function DriveHub() {
       }
       revalidator.revalidate();
       if (fail) toast.error(`${fail} item${fail === 1 ? "" : "s"} couldn't be deleted`);
-      else toast.success(`Deleted ${items.length}`);
+      else toast.success(bulkDeletedToast(items));
     },
     [effectiveScopeId, scopeActionsMap, dialog, toast, revalidator],
   );

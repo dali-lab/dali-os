@@ -20,15 +20,17 @@ vi.mock("~/lib/shortcuts.server", () => {
     deleteShortcut: vi.fn(),
     placePage: vi.fn(),
     swapPrimary: vi.fn(),
+    placementsOf: vi.fn(),
   };
 });
 
 import { requireAuth } from "~/lib/auth";
-import { createShortcut, deleteShortcut, placePage, swapPrimary, ShortcutError } from "~/lib/shortcuts.server";
+import { createShortcut, deleteShortcut, placePage, swapPrimary, placementsOf, ShortcutError } from "~/lib/shortcuts.server";
 import { action as createAction } from "../api.shortcuts";
 import { action as deleteAction } from "../api.shortcuts.$id";
 import { action as placeAction } from "../api.pages.$id.place";
 import { action as swapAction } from "../api.pages.$id.swap-primary";
+import { loader as shortcutsLoader } from "../api.pages.$id.shortcuts";
 
 const dest = { workspaceType: "Project", workspaceId: "projA", parentPageId: "f1" };
 
@@ -169,5 +171,34 @@ describe("POST /api/pages/:id/swap-primary", () => {
   it("maps a refusal to its status", async () => {
     vi.mocked(swapPrimary).mockRejectedValue(new ShortcutError("Shortcut not found", 404));
     expect((await call({ shortcutId: "s1" })).status).toBe(404);
+  });
+});
+
+describe("GET /api/pages/:id/shortcuts", () => {
+  const call = (method = "GET") => shortcutsLoader({ request: req(method), params: { id: "p1" } } as any);
+  const placements = {
+    primary: { workspaceType: "Project", workspaceId: "projA", folderId: "f1", path: [{ id: "f1", title: "Meetings" }] },
+    shortcuts: [{ shortcutId: "s1", workspaceType: "Lab", workspaceId: null, folderId: null, path: [] }],
+  };
+
+  it("returns where the page lives and its shortcuts, for the signed-in viewer", async () => {
+    vi.mocked(placementsOf).mockResolvedValue(placements as any);
+    const res = await call();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, ...placements });
+    expect(placementsOf).toHaveBeenCalledWith("p1", "u1", expect.any(Request));
+  });
+
+  it("is 401 without a session and reads nothing", async () => {
+    vi.mocked(requireAuth).mockResolvedValue({ ok: false, response: Response.json({}, { status: 401 }) } as any);
+    expect((await call()).status).toBe(401);
+    expect(placementsOf).not.toHaveBeenCalled();
+  });
+
+  it("is 404 for a page the viewer can't see", async () => {
+    vi.mocked(placementsOf).mockRejectedValue(new ShortcutError("Document not found", 404));
+    const res = await call();
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "Document not found" });
   });
 });
