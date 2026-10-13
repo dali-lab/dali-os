@@ -1,143 +1,161 @@
 import { describe, it, expect } from "vitest";
 import {
-  CORE_NOTE_LABEL,
   emptyMeetingNote,
+  meetingNoteActive,
   meetingNoteValid,
   meetingNotePayload,
+  notebookChoiceOf,
   noteDestinationRows,
   noteInitialDest,
   noteLocationFromDest,
+  type MeetingNoteLocation,
   type MeetingNoteState,
 } from "~/calendar/components/meeting-note";
+import { notebookChoiceSchema } from "~/lib/notebook-choice";
 
 const base = (over: Partial<MeetingNoteState> = {}): MeetingNoteState => ({
   ...emptyMeetingNote,
   ...over,
 });
 
+const loc = (over: Partial<MeetingNoteLocation> = {}): MeetingNoteLocation => ({
+  workspaceType: "Lab",
+  workspaceId: null,
+  parentPageId: null,
+  label: "Lab-wide",
+  ...over,
+});
+
+const existing = { id: "nb_1", title: "Weekly check-in", path: "Core / Meetings" };
+
+describe("meetingNoteActive", () => {
+  it("is true for a note, a whiteboard, or both, false for neither", () => {
+    expect(meetingNoteActive(base())).toBe(false);
+    expect(meetingNoteActive(base({ enabled: true }))).toBe(true);
+    expect(meetingNoteActive(base({ whiteboard: true }))).toBe(true);
+    expect(meetingNoteActive(base({ enabled: true, whiteboard: true }))).toBe(true);
+  });
+});
+
 describe("meetingNoteValid", () => {
-  it("is valid when the note is disabled, regardless of other fields", () => {
-    expect(meetingNoteValid(base({ enabled: false, about: "", label: "" }))).toBe(true);
+  it("is valid when the note is off, whatever else is filled in", () => {
+    expect(meetingNoteValid(base({ enabled: false, notebookMode: "existing", existing: null }))).toBe(true);
+    expect(meetingNoteValid(base({ whiteboard: true }))).toBe(true);
   });
 
-  it("requires a name for a General (no-project) note", () => {
-    expect(meetingNoteValid(base({ enabled: true, about: "", label: "" }))).toBe(false);
-    expect(meetingNoteValid(base({ enabled: true, about: "", label: "  " }))).toBe(false);
-    expect(meetingNoteValid(base({ enabled: true, about: "", label: "All-hands" }))).toBe(true);
+  it("needs a name for a new notebook", () => {
+    expect(meetingNoteValid(base({ enabled: true, notebookMode: "new", title: "" }))).toBe(false);
+    expect(meetingNoteValid(base({ enabled: true, notebookMode: "new", title: "   " }))).toBe(false);
+    expect(meetingNoteValid(base({ enabled: true, notebookMode: "new", title: "All-hands" }))).toBe(true);
   });
 
-  it("needs no name for a Team/Partner project note", () => {
-    expect(meetingNoteValid(base({ enabled: true, about: "proj_1", label: "" }))).toBe(true);
+  it("needs a chosen notebook when adding to an existing one, and ignores the new-notebook name", () => {
+    expect(meetingNoteValid(base({ enabled: true, notebookMode: "existing", existing: null, title: "Named" }))).toBe(false);
+    expect(meetingNoteValid(base({ enabled: true, notebookMode: "existing", existing }))).toBe(true);
   });
 
-  it("requires a name for an Other project note", () => {
-    expect(meetingNoteValid(base({ enabled: true, about: "proj_1", subtype: "Other", label: " " }))).toBe(false);
-    expect(meetingNoteValid(base({ enabled: true, about: "proj_1", subtype: "Other", label: "Review" }))).toBe(true);
+  it("needs no project name: About is optional in both modes", () => {
+    expect(meetingNoteValid(base({ enabled: true, about: "proj_1", title: "Sync" }))).toBe(true);
+  });
+});
+
+describe("notebookChoiceOf", () => {
+  it("is null when no note is requested", () => {
+    expect(notebookChoiceOf(base({ whiteboard: true, title: "Sync" }))).toBeNull();
+  });
+
+  it("is the existing notebook's id, and nothing else", () => {
+    expect(notebookChoiceOf(base({ enabled: true, notebookMode: "existing", existing, title: "ignored" }))).toEqual({
+      existingId: "nb_1",
+    });
+  });
+
+  it("is null for existing mode before a notebook is picked", () => {
+    expect(notebookChoiceOf(base({ enabled: true, notebookMode: "existing" }))).toBeNull();
+  });
+
+  it("carries the trimmed name, template and no location by default", () => {
+    expect(
+      notebookChoiceOf(base({ enabled: true, notebookMode: "new", title: " Weekly ", templatePageId: "tpl_1" })),
+    ).toEqual({ title: "Weekly", location: null, templatePageId: "tpl_1" });
+  });
+
+  it("drops the Lab-wide top level, which is the default", () => {
+    expect(notebookChoiceOf(base({ enabled: true, title: "Sync", location: loc() }))).toMatchObject({ location: null });
+  });
+
+  it("sends a chosen folder without its display label", () => {
+    expect(
+      notebookChoiceOf(base({ enabled: true, title: "Sync", location: loc({ parentPageId: "f1", label: "Lab / Meetings" }) })),
+    ).toMatchObject({ location: { workspaceType: "Lab", workspaceId: null, parentPageId: "f1" } });
   });
 });
 
 describe("meetingNotePayload", () => {
-  it("emits nothing when the note is disabled", () => {
-    expect(meetingNotePayload(base({ enabled: false, about: "proj_1" }))).toEqual({});
+  it("emits nothing when neither asset is requested", () => {
+    expect(meetingNotePayload(base({ about: "proj_1", title: "Sync" }))).toEqual({});
   });
 
-  it("project path → Team/Partner + projectId, no label/location", () => {
-    expect(meetingNotePayload(base({ enabled: true, about: "proj_1", subtype: "Team" }))).toEqual({
+  it("a note into a new notebook", () => {
+    expect(meetingNotePayload(base({ enabled: true, title: "Sync" }))).toEqual({
       note: true,
       whiteboard: false,
-      meetingType: "Team",
+      notebook: { title: "Sync", location: null, templatePageId: null },
+    });
+  });
+
+  it("a note into an existing notebook", () => {
+    expect(meetingNotePayload(base({ enabled: true, notebookMode: "existing", existing }))).toEqual({
+      note: true,
+      whiteboard: false,
+      notebook: { existingId: "nb_1" },
+    });
+  });
+
+  it("carries the project the meeting is about", () => {
+    expect(meetingNotePayload(base({ enabled: true, about: "proj_1", title: "Sync" }))).toMatchObject({
       projectId: "proj_1",
     });
-    expect(
-      meetingNotePayload(base({ enabled: true, about: "proj_9", subtype: "Partner" })),
-    ).toEqual({ note: true, whiteboard: false, meetingType: "Partner", projectId: "proj_9" });
   });
 
-  it("project Other → Other + trimmed label + projectId", () => {
-    expect(
-      meetingNotePayload(base({ enabled: true, about: "proj_1", subtype: "Other", label: " Review " })),
-    ).toEqual({
-      note: true,
-      whiteboard: false,
-      meetingType: "Other",
-      meetingTypeLabel: "Review",
+  it("no longer carries a meeting type", () => {
+    const out = meetingNotePayload(base({ enabled: true, about: "proj_1", title: "Sync" }));
+    expect(out).not.toHaveProperty("meetingType");
+    expect(out).not.toHaveProperty("meetingTypeLabel");
+  });
+
+  it("a whiteboard alone has no notebook", () => {
+    expect(meetingNotePayload(base({ whiteboard: true, about: "proj_1" }))).toEqual({
+      note: false,
+      whiteboard: true,
       projectId: "proj_1",
     });
   });
 
-  it("General path → Other + trimmed label, no projectId", () => {
-    expect(meetingNotePayload(base({ enabled: true, about: "", label: "  Sync  " }))).toEqual({
-      note: true,
-      whiteboard: false,
-      meetingType: "Other",
-      meetingTypeLabel: "Sync",
-    });
+  it("a General whiteboard alone files in the chosen folder via noteLocation", () => {
+    const out = meetingNotePayload(base({ whiteboard: true, location: loc({ parentPageId: "f1" }) }));
+    expect(out.noteLocation).toEqual({ workspaceType: "Lab", workspaceId: null, parentPageId: "f1" });
   });
 
-  it("sets the whiteboard flag when only the board is requested", () => {
+  it("never sends noteLocation for the Lab-wide default, for a project, or alongside a note", () => {
+    expect(meetingNotePayload(base({ whiteboard: true, location: loc() }))).not.toHaveProperty("noteLocation");
     expect(
-      meetingNotePayload(base({ enabled: false, whiteboard: true, about: "proj_1", subtype: "Team" })),
-    ).toEqual({ note: false, whiteboard: true, meetingType: "Team", projectId: "proj_1" });
-  });
-
-  it("omits noteLocation for the Lab-wide default (null or Lab top level)", () => {
-    expect(
-      meetingNotePayload(base({ enabled: true, about: "", label: "Sync", location: null })),
+      meetingNotePayload(base({ whiteboard: true, about: "proj_1", location: loc({ parentPageId: "f1" }) })),
     ).not.toHaveProperty("noteLocation");
     expect(
-      meetingNotePayload(
-        base({
-          enabled: true,
-          about: "",
-          label: "Sync",
-          location: { workspaceType: "Lab", workspaceId: null, parentPageId: null, label: "Lab-wide" },
-        }),
+      meetingNotePayload(base({ enabled: true, whiteboard: true, title: "Sync", location: loc({ parentPageId: "f1" }) })),
+    ).not.toHaveProperty("noteLocation");
+  });
+
+  it("every notebook payload satisfies the server's schema", () => {
+    const choices = [
+      notebookChoiceOf(base({ enabled: true, title: "Sync" })),
+      notebookChoiceOf(base({ enabled: true, notebookMode: "existing", existing })),
+      notebookChoiceOf(
+        base({ enabled: true, title: "Sync", location: loc({ workspaceType: "Project", workspaceId: "p1" }), templatePageId: "t" }),
       ),
-    ).not.toHaveProperty("noteLocation");
-  });
-
-  it("sends noteLocation for a chosen Lab folder", () => {
-    const out = meetingNotePayload(
-      base({
-        enabled: true,
-        about: "",
-        label: "Sync",
-        location: { workspaceType: "Lab", workspaceId: null, parentPageId: "folder_1", label: "Lab-wide / Meetings" },
-      }),
-    );
-    expect(out.noteLocation).toEqual({ workspaceType: "Lab", workspaceId: null, parentPageId: "folder_1" });
-  });
-
-  it("sends noteLocation for a project destination", () => {
-    const out = meetingNotePayload(
-      base({
-        enabled: true,
-        about: "",
-        label: "Sync",
-        location: { workspaceType: "Project", workspaceId: "proj_2", parentPageId: null, label: "Fireflies" },
-      }),
-    );
-    expect(out.noteLocation).toEqual({ workspaceType: "Project", workspaceId: "proj_2", parentPageId: null });
-    // General notes never carry a projectId — filing location is not project association.
-    expect(out).not.toHaveProperty("projectId");
-  });
-});
-
-describe("the Core shape", () => {
-  // A Core meeting's note takes the General path — Core isn't a project, so
-  // there's nothing to file it under and no Team/Partner split to draw. The
-  // default name is what keeps it submittable the moment the toggle goes on.
-  it("is valid as soon as the default Core name is in place", () => {
-    expect(meetingNoteValid(base({ enabled: true, about: "", label: CORE_NOTE_LABEL }))).toBe(true);
-  });
-
-  it("emits the General payload, never a project one", () => {
-    expect(meetingNotePayload(base({ enabled: true, about: "", label: CORE_NOTE_LABEL }))).toEqual({
-      note: true,
-      whiteboard: false,
-      meetingType: "Other",
-      meetingTypeLabel: CORE_NOTE_LABEL,
-    });
+    ];
+    for (const choice of choices) expect(notebookChoiceSchema.safeParse(choice).success).toBe(true);
   });
 });
 

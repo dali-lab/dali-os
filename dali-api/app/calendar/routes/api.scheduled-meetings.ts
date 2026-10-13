@@ -12,6 +12,7 @@ import {
 } from "~/lib/scheduled-meeting";
 import { assertMeetingRoomsFree } from "~/lib/rooms.server";
 import { meetingNotePath } from "~/lib/note-path.server";
+import { notebookChoiceSchema } from "~/lib/notebook-choice";
 
 const Base = {
   title: z.string().trim().min(1).max(200),
@@ -58,6 +59,10 @@ const Base = {
   // (a note whenever meetingType is set).
   note: z.boolean().optional(),
   whiteboard: z.boolean().optional(),
+  // Which notebook the first note files into (and the series defaults to): one
+  // that exists, or one to create. With it, meetingType/meetingTypeLabel are
+  // derived server-side and may be omitted.
+  notebook: notebookChoiceSchema.optional(),
   // People with no DALI profile, invited by address through the Google event.
   guestEmails: z.array(z.string().trim().email().max(320)).max(MAX_GUEST_EMAILS).optional(),
 } as const;
@@ -81,12 +86,15 @@ const CreateSchema = z
     message: "A project is required for Team and Partner meetings",
     path: ["projectId"],
   })
-  // A custom note location only makes sense for General meetings (Other with no
-  // project) — project meetings file into the project itself.
-  .refine((v) => (v.noteLocation ? v.meetingType === "Other" && !v.projectId : true), {
-    message: "noteLocation is only allowed for General meetings",
-    path: ["noteLocation"],
-  })
+  // A custom note location only makes sense for General meetings (Other, or no
+  // type yet, with no project) — project meetings file into the project itself.
+  .refine(
+    (v) => (v.noteLocation ? (v.meetingType === undefined || v.meetingType === "Other") && !v.projectId : true),
+    {
+      message: "noteLocation is only allowed for General meetings",
+      path: ["noteLocation"],
+    },
+  )
   // Lab locations carry no workspaceId; Project locations require one.
   .refine(
     (v) =>
@@ -167,6 +175,7 @@ export async function action({ request }: Route.ActionArgs) {
     noteLocation: body.noteLocation,
     createNote: body.note,
     createWhiteboard: body.whiteboard,
+    notebook: body.notebook,
     attendanceMode: body.attendanceMode,
     isCoreMeeting: coreMeeting,
     addMeet: body.addMeet,

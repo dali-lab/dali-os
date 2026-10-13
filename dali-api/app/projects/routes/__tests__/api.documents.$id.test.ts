@@ -149,11 +149,11 @@ describe("DELETE /api/documents/:id?ifEmpty=1 — notebooks", () => {
     m.page.findUnique.mockResolvedValue(labFolder({ kind: "Notebook" }));
   });
 
-  it("archives a notebook with no live notes", async () => {
+  it("trashes a notebook with no live notes", async () => {
     const res = await del("?ifEmpty=1");
     expect(res.status).toBe(200);
     expect(m.page.count).toHaveBeenCalledWith({ where: { parentPageId: "p1", archivedAt: null } });
-    expect(trashNotebook).toHaveBeenCalled();
+    expect(trashNotebook).toHaveBeenCalledWith("p1", expect.any(String));
   });
 
   it("keeps a notebook that still has notes", async () => {
@@ -167,7 +167,7 @@ describe("DELETE /api/documents/:id?ifEmpty=1 — notebooks", () => {
     m.page.count.mockResolvedValue(3);
     const res = await del();
     expect(res.status).toBe(200);
-    expect(trashNotebook).toHaveBeenCalled();
+    expect(trashNotebook).toHaveBeenCalledWith("p1", expect.any(String));
   });
 
   it("ignores the guard on a page that is not a notebook", async () => {

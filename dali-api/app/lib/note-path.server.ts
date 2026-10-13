@@ -14,6 +14,24 @@ export function formatFiledPath(parts: string[]): string {
   return parts.join(PATH_SEPARATOR);
 }
 
+/** Where a notebook sits: its space, the project, and the folders above it. */
+export async function notebookLocationParts(
+  notebook: { parentPageId: string | null; workspaceType: string; workspaceId: string | null },
+  viewerSub: string,
+  request?: Request,
+): Promise<string[]> {
+  const where = await driveLocation(notebook.parentPageId, notebook, viewerSub, request);
+  const space = DRIVE_SPACES.find((s) => s.key === where.scope)?.label ?? where.scope;
+  const project =
+    where.scope === "projects" && where.workspaceFolderId
+      ? await prisma.project.findUnique({
+          where: { id: where.workspaceFolderId },
+          select: { name: true },
+        })
+      : null;
+  return [space, ...(project ? [project.name] : []), ...where.folders.map((f) => f.title || "Untitled folder")];
+}
+
 /** Null when the note has no notebook to name. */
 export async function meetingNotePath({
   notePageId,
@@ -33,23 +51,8 @@ export async function meetingNotePath({
   });
   if (!notebook) return null;
 
-  const where = await driveLocation(notebook.parentPageId, notebook, viewerSub, request);
-  const space = DRIVE_SPACES.find((s) => s.key === where.scope)?.label ?? where.scope;
-  const project =
-    where.scope === "projects" && where.workspaceFolderId
-      ? await prisma.project.findUnique({
-          where: { id: where.workspaceFolderId },
-          select: { name: true },
-        })
-      : null;
-
   return {
-    label: formatFiledPath([
-      space,
-      ...(project ? [project.name] : []),
-      ...where.folders.map((f) => f.title || "Untitled folder"),
-      notebook.title,
-    ]),
+    label: formatFiledPath([...(await notebookLocationParts(notebook, viewerSub, request)), notebook.title]),
     href: `/documents/${notePageId}`,
   };
 }

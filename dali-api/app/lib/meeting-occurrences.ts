@@ -222,6 +222,16 @@ export function noteForOccurrence<T extends { meetingOccurrenceStart: Date | nul
   return notes.find((n) => n.meetingOccurrenceStart?.getTime() === occurrenceStart.getTime()) ?? null;
 }
 
+/** The first occurrence still ahead (or under way) that has no note yet; null
+ *  when every upcoming one has its note. `occurrences` is in time order. */
+export function nextOpenOccurrence(
+  occurrences: Occurrence[],
+  notes: { meetingOccurrenceStart: Date | null }[],
+  now: Date,
+): Occurrence | null {
+  return occurrences.find((o) => o.end >= now && noteForOccurrence(notes, o.originalStart) === null) ?? null;
+}
+
 /** RRULE UTC "UNTIL" in basic format (YYYYMMDDTHHMMSSZ). */
 export function rruleUntilBasic(d: Date): string {
   return d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
