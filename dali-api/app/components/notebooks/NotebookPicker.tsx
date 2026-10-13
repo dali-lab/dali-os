@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { modalCardClass } from "~/components/os-chrome";
 import { buttonClasses } from "~/components/ui/Button";
@@ -68,7 +69,9 @@ export function NotebookPicker({
   const suggested = offered.filter((r) => r.suggested);
   const recent = offered.filter((r) => !r.suggested);
 
-  return (
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
     <Modal
       open={open}
       onClose={onClose}
@@ -113,7 +116,8 @@ export function NotebookPicker({
           Cancel
         </button>
       </div>
-    </Modal>
+    </Modal>,
+    document.body,
   );
 }
 

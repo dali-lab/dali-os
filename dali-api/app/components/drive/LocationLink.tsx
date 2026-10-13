@@ -22,7 +22,7 @@ export function LocationLink({
       }}
       onPointerDown={(e) => e.stopPropagation()}
       onDoubleClick={(e) => e.stopPropagation()}
-      className="min-w-0 truncate text-left text-xs text-muted-foreground hover:text-foreground hover:underline"
+      className="block min-w-0 max-w-full truncate text-left text-xs text-muted-foreground hover:text-foreground hover:underline"
     >
       {[location.scopeLabel, ...location.folders.map((f) => f.title)].map((label, i) => (
         <Fragment key={i}>

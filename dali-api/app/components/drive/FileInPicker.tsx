@@ -4,13 +4,10 @@ import { pickDrives } from "~/components/drive/picker-rows";
 import { descendantFolderIds, needsAudienceConfirm, resolveMoveTarget } from "~/components/drive/move-target";
 import { useDriveDestinations } from "~/components/drive/use-drive-destinations";
 import { createShortcutRequest, placePageRequest, usePlacements } from "~/components/drive/shortcut-api";
-import {
-  destinationForPlace,
-  placeToast,
-  planPlacement,
-  shortcutToast,
-  toServerDest,
-} from "~/components/drive/file-in";
+import { destinationForPlace, planPlacement, toServerDest } from "~/components/drive/file-in";
+import { ACTION_TOAST_MS, filedToast, pathLabel, shortcutToast } from "~/components/drive/action-toast";
+import { filingEntry, shortcutEntry, type FileInResult } from "~/components/drive/filing-history";
+import { useDriveHistoryContext } from "~/components/drive/use-drive-history";
 import type { MultiResult } from "~/components/drive/picker-multi";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
@@ -33,9 +30,10 @@ export function FileInPicker({
   mode: "multi" | "single";
   onClose: () => void;
   /** Called after anything was written, so the host can reload the listing. */
-  onDone: () => void;
+  onDone: (result: FileInResult) => void;
 }) {
   const toast = useToast();
+  const history = useDriveHistoryContext();
   const dialog = useDialog();
   const { rows, status } = useDriveDestinations({
     enabled: true,
@@ -66,11 +64,13 @@ export function FileInPicker({
 
   const pathOf = useCallback(
     (dest: Destination) =>
-      destinationPath(
-        dest,
-        new Map(filable.drives.map((d) => [d.id, d])),
-        new Map(filable.folders.map((f) => [f.id, f])),
-      ).join(" / "),
+      pathLabel(
+        destinationPath(
+          dest,
+          new Map(filable.drives.map((d) => [d.id, d])),
+          new Map(filable.folders.map((f) => [f.id, f])),
+        ),
+      ),
     [filable],
   );
 
@@ -92,7 +92,7 @@ export function FileInPicker({
         toast.error("Pick a project or offering to file into.");
         return;
       }
-      if (!plan.primaryChanged && plan.added === 0) {
+      if (!plan.primaryChanged && plan.addedDestinations.length === 0) {
         toast.info("Nothing to change.");
         onClose();
         return;
@@ -117,17 +117,33 @@ export function FileInPicker({
         toast.error(res.error);
         return;
       }
-      toast.success(
-        placeToast({
-          added: plan.added,
-          declined: res.declined ?? 0,
-          primaryPath: pathOf(primary),
+      const createdShortcutIds = res.shortcutIds ?? [];
+      const entry = history?.record(
+        filingEntry({
+          pageId: target.id,
+          previousPrimary: placements.primary,
+          primaryChanged: plan.primaryChanged,
+          destinations: plan.payload.destinations,
+          primaryIndex: plan.payload.primaryIndex,
+          createdShortcutIds,
         }),
       );
-      onDone();
+      toast.success(
+        filedToast({
+          title: target.title,
+          destination: pathOf(primary),
+          shortcutDestinations: plan.addedDestinations.map(pathOf),
+          declined: res.declined ?? 0,
+        }),
+        {
+          duration: ACTION_TOAST_MS,
+          actions: entry ? [{ label: "Undo", onClick: () => void history?.undoEntry(entry) }] : [],
+        },
+      );
+      onDone({ previousPrimary: placements.primary, createdShortcutIds });
       onClose();
     },
-    [placements, currentPrimary, filable, lockedDestinations, pathOf, target, dialog, toast, onDone, onClose],
+    [placements, currentPrimary, filable, lockedDestinations, pathOf, target, dialog, toast, history, onDone, onClose],
   );
 
   const confirmSingle = useCallback(
@@ -142,17 +158,23 @@ export function FileInPicker({
         toast.error(res.error);
         return;
       }
+      const entry = res.created ? history?.record(shortcutEntry({ pageId: target.id, dest: server, shortcutId: res.shortcutId })) : undefined;
       toast.success(
         shortcutToast({
           created: res.created,
+          title: target.title,
+          destination: pathOf(dest),
           grantDeclined: res.grantDeclined,
-          folderLabel: pathOf(dest),
         }),
+        {
+          duration: ACTION_TOAST_MS,
+          actions: entry ? [{ label: "Undo", onClick: () => void history?.undoEntry(entry) }] : [],
+        },
       );
-      if (res.created) onDone();
+      if (res.created) onDone({ previousPrimary: placements?.primary ?? null, createdShortcutIds: [res.shortcutId] });
       onClose();
     },
-    [filable, pathOf, target.id, toast, onDone, onClose],
+    [filable, pathOf, target, placements, toast, history, onDone, onClose],
   );
 
   const common = {

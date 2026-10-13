@@ -1,14 +1,26 @@
 import { useEffect, useId, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link, useNavigate, useRevalidator } from "react-router";
-import { BookOpen, FilePlus, FileText, MoreHorizontal, Plus } from "lucide-react";
+import {
+  BookOpen,
+  FilePlus,
+  FileText,
+  MoreHorizontal,
+  NotebookPen,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Plus,
+} from "lucide-react";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { modalCardClass, useOsChrome } from "~/components/os-chrome";
 import { buttonClasses } from "~/components/ui/Button";
+import { IconButton } from "~/components/ui/IconButton";
 import { useDialog } from "~/components/ui/dialog";
 import { Combobox, Menu, Select } from "~/components/ui/floating";
 import { useToast } from "~/components/ui/toast";
 import { NotebookPicker } from "~/components/notebooks/NotebookPicker";
 import { useNoteTemplates } from "~/components/notebooks/use-note-templates";
+import { useRailCollapsed } from "~/components/notebooks/use-rail-collapsed";
 import {
   detachRequest,
   notebookRequest,
@@ -221,7 +233,9 @@ function AddDocumentModal({
     }
   }
 
-  return (
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
     <Modal open onClose={onClose} labelledBy={titleId} containerClassName={modalCardClass("max-w-md")}>
       <ModalHeader titleId={titleId} title="Add an existing document" onClose={onClose} />
       <Combobox
@@ -236,7 +250,8 @@ function AddDocumentModal({
       <p className="mt-3 text-xs text-muted-foreground">
         The document keeps its content and becomes a tab of this notebook.
       </p>
-    </Modal>
+    </Modal>,
+    document.body,
   );
 }
 
@@ -255,7 +270,9 @@ function SetTemplateModal({
   const [templateId, setTemplateId] = useState(notebook.templateId ?? "");
   const [saving, setSaving] = useState(false);
 
-  return (
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
     <Modal open onClose={onClose} labelledBy={titleId} containerClassName={modalCardClass("max-w-md")}>
       <ModalHeader titleId={titleId} title="Notebook template" onClose={onClose} />
       <p className="mb-3 text-sm text-muted-foreground">New notes in this notebook start from this template.</p>
@@ -285,20 +302,19 @@ function SetTemplateModal({
           Save
         </button>
       </div>
-    </Modal>
+    </Modal>,
+    document.body,
   );
 }
 
 function NotebookTitle({ notebook }: { notebook: NotebookView }) {
   const revalidator = useRevalidator();
   const run = useNotebookRequest();
-  const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(notebook.title);
 
   useEffect(() => setDraft(notebook.title), [notebook.title]);
 
   async function commit() {
-    setEditing(false);
     const next = draft.trim();
     if (!next || next === notebook.title) {
       setDraft(notebook.title);
@@ -309,37 +325,25 @@ function NotebookTitle({ notebook }: { notebook: NotebookView }) {
   }
 
   if (!notebook.canEdit) {
-    return <p className="truncate px-2 text-sm font-semibold text-foreground">{notebook.title}</p>;
-  }
-  if (editing) {
-    return (
-      <input
-        autoFocus
-        aria-label="Notebook name"
-        value={draft}
-        maxLength={200}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => void commit()}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") e.currentTarget.blur();
-          if (e.key === "Escape") {
-            setDraft(notebook.title);
-            setEditing(false);
-          }
-        }}
-        className="w-full min-w-0 rounded-md border border-border bg-background px-2 py-1 text-sm font-semibold text-foreground focus:border-accent-coral focus:outline-none"
-      />
-    );
+    return <p className="min-w-0 flex-1 truncate px-2 text-sm font-semibold text-foreground">{notebook.title}</p>;
   }
   return (
-    <button
-      type="button"
-      onClick={() => setEditing(true)}
-      title="Rename notebook"
-      className="min-w-0 truncate rounded-md px-2 py-1 text-left text-sm font-semibold text-foreground transition-colors hover:bg-os-container"
-    >
-      {notebook.title}
-    </button>
+    <input
+      aria-label="Notebook title"
+      value={draft}
+      maxLength={200}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => void commit()}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") {
+          const el = e.currentTarget;
+          setDraft(notebook.title);
+          requestAnimationFrame(() => el.blur());
+        }
+      }}
+      className="min-w-0 flex-1 cursor-text truncate rounded-os-item bg-transparent px-2 py-1 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-os-container/60 focus:bg-os-container"
+    />
   );
 }
 
@@ -393,39 +397,75 @@ function TabMenu({ notebook, tab }: { notebook: NotebookView; tab: NotebookTab }
 }
 
 // A notebook's notes as side tabs, the way a Google Doc lists its tabs: one
-// document in the Drive, one tab per meeting.
+// document in the Drive, one tab per meeting. Collapsing only applies at lg and
+// up, where the rail is a column; below that it stays a horizontal tab scroller.
 export function NotebookRail({ notebook, currentId }: { notebook: NotebookView; currentId: string }) {
   const { card } = useOsChrome();
+  const { collapsed, setCollapsed } = useRailCollapsed();
+  const count = notebook.tabs.length;
   return (
     <nav
       aria-label={notebook.title}
-      className={cn(card, "flex min-w-0 shrink-0 flex-col gap-2 p-3 lg:sticky lg:top-4 lg:w-56")}
+      className={cn(
+        card,
+        "flex min-w-0 shrink-0 flex-col gap-2 p-3 lg:sticky lg:top-4",
+        collapsed ? "lg:w-10 lg:items-center lg:p-1.5" : "lg:w-56",
+      )}
     >
-      <NotebookTitle notebook={notebook} />
-      <NotebookControls notebook={notebook} />
-      <ul className="flex gap-1 overflow-x-auto lg:max-h-[70vh] lg:flex-col lg:overflow-y-auto">
-        {notebook.tabs.map((tab) => {
-          const current = tab.id === currentId;
-          return (
-            <li key={tab.id} className="group relative flex shrink-0 items-center gap-1">
-              <Link
-                to={`/documents/${tab.id}`}
-                aria-current={current ? "page" : undefined}
-                className={cn(
-                  "block min-w-0 flex-1 rounded-os-item px-2 py-1.5 text-sm transition-colors",
-                  current
-                    ? "bg-os-accent/15 text-os-accent"
-                    : "text-os-grey hover:bg-os-container hover:text-foreground",
-                )}
-              >
-                <span className="block truncate">{tab.label}</span>
-                {tab.meeting && <span className="block truncate text-xs">{tab.meeting}</span>}
-              </Link>
-              {notebook.canEdit && <TabMenu notebook={notebook} tab={tab} />}
-            </li>
-          );
-        })}
-      </ul>
+      {collapsed && (
+        <div data-testid="notebook-rail-strip" className="hidden flex-col items-center gap-2 lg:flex">
+          <IconButton label="Show tabs" icon={PanelLeftOpen} onClick={() => setCollapsed(false)} />
+          <button
+            type="button"
+            aria-label={`Show ${count} ${count === 1 ? "tab" : "tabs"}`}
+            onClick={() => setCollapsed(false)}
+            className="flex flex-col items-center gap-1 rounded-md p-1 text-os-grey transition-colors hover:bg-os-container hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-teal"
+          >
+            <NotebookPen className="h-4 w-4" aria-hidden />
+            <span
+              data-testid="notebook-rail-count"
+              className="min-w-4 rounded-full bg-os-accent/15 px-1 text-center text-[10px] font-semibold leading-4 tabular-nums text-os-accent"
+            >
+              {count}
+            </span>
+          </button>
+        </div>
+      )}
+      <div className={cn("contents", collapsed && "lg:hidden")}>
+        <div className="flex items-center gap-1">
+          <NotebookTitle notebook={notebook} />
+          <IconButton
+            label="Hide tabs"
+            icon={PanelLeftClose}
+            className="hidden shrink-0 lg:inline-flex"
+            onClick={() => setCollapsed(true)}
+          />
+        </div>
+        <NotebookControls notebook={notebook} />
+        <ul className="flex gap-1 overflow-x-auto lg:max-h-[70vh] lg:flex-col lg:overflow-y-auto">
+          {notebook.tabs.map((tab) => {
+            const current = tab.id === currentId;
+            return (
+              <li key={tab.id} className="group relative flex shrink-0 items-center gap-1">
+                <Link
+                  to={`/documents/${tab.id}`}
+                  aria-current={current ? "page" : undefined}
+                  className={cn(
+                    "block min-w-0 flex-1 rounded-os-item px-2 py-1.5 text-sm transition-colors",
+                    current
+                      ? "bg-os-accent/15 text-os-accent"
+                      : "text-os-grey hover:bg-os-container hover:text-foreground",
+                  )}
+                >
+                  <span className="block truncate">{tab.label}</span>
+                  {tab.meeting && <span className="block truncate text-xs">{tab.meeting}</span>}
+                </Link>
+                {notebook.canEdit && <TabMenu notebook={notebook} tab={tab} />}
+              </li>
+            );
+          })}
+        </ul>
+      </div>
     </nav>
   );
 }

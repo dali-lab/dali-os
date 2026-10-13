@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, Eye, Landmark, Lock, Trash2, Users, X } from "lucide-react";
+import { Check, Eye, Lock, Trash2, Users, X } from "lucide-react";
+import { LabAudienceGlyph } from "~/components/drive/AudienceSignal";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { Radio } from "~/components/ui/Radio";
 import { Modal, ModalHeader } from "~/components/Modal";
@@ -269,7 +270,7 @@ export function NoteShareModal({
           list something the lab can't read. */}
       <div className="flex flex-col gap-2 border-t border-border pt-4">
         <h3 className="text-xs font-semibold text-muted-foreground inline-flex items-center gap-1.5">
-          <Landmark className="w-3.5 h-3.5" />
+          <LabAudienceGlyph labelled={false} />
           Lab Documents page
         </h3>
         {listing === "Listed" ? (

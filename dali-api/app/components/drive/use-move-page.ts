@@ -1,5 +1,7 @@
 import { useCallback, useMemo } from "react";
-import type { Destination } from "~/components/drive/FolderPicker";
+import { destinationPath, type Destination } from "~/components/drive/FolderPicker";
+import { ACTION_TOAST_MS, movedToast, pathLabel } from "~/components/drive/action-toast";
+import { fetchPlacements, movePageToPlaceRequest } from "~/components/drive/shortcut-api";
 import { pickDrives, type PickerRows } from "~/components/drive/picker-rows";
 import {
   descendantFolderIds,
@@ -25,7 +27,7 @@ export function useMovePage({
   title: string;
   current: MoveCurrent;
   rows: PickerRows;
-  /** Called after a successful move; close the picker here. */
+  /** Called after a successful move or its undo; close the picker and reload here. */
   onMoved: () => void;
 }) {
   const dialog = useDialog();
@@ -56,6 +58,7 @@ export function useMovePage({
         });
         if (!ok) return;
       }
+      const before = await fetchPlacements(pageId);
       const res = await fetch(`/api/pages/${pageId}/move`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -72,7 +75,32 @@ export function useMovePage({
         toast.error(res.error);
         return;
       }
-      toast.success(`Moved to ${target.label}.`);
+      const origin = before?.primary;
+      const undo = async () => {
+        const back = origin ? await movePageToPlaceRequest(pageId, origin) : null;
+        if (!back?.ok) {
+          toast.error(back ? back.error : "Couldn't move it back");
+          return;
+        }
+        toast.info("Move undone");
+        onMoved();
+      };
+      toast.success(
+        movedToast({
+          titles: [title],
+          destination: pathLabel(
+            destinationPath(
+              dest,
+              new Map(movable.drives.map((d) => [d.id, d])),
+              new Map(movable.folders.map((f) => [f.id, f])),
+            ),
+          ),
+        }),
+        {
+          duration: ACTION_TOAST_MS,
+          actions: origin && origin.workspaceType !== "Member" ? [{ label: "Undo", onClick: () => void undo() }] : [],
+        },
+      );
       onMoved();
     },
     [movable, current, dialog, toast, title, pageId, onMoved],

@@ -6,14 +6,12 @@ vi.mock("~/lib/db", () => ({
     scheduledMeeting: { findMany: vi.fn() },
   },
 }));
-vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
 vi.mock("~/lib/pageAccess.server", async () => {
   const actual = await vi.importActual<typeof import("~/lib/pageAccess.server")>("~/lib/pageAccess.server");
   return { ...actual, getPageAccessBulk: vi.fn() };
 });
 
 import { prisma } from "~/lib/db";
-import { isCore } from "~/lib/roles";
 import { getPageAccessBulk } from "~/lib/pageAccess.server";
 import { HOME_LIMIT, loadDriveHome } from "~/lib/drive-home.server";
 
@@ -43,6 +41,7 @@ const fav = (id: string, visitedAt: Date | null = NOW, extra: Record<string, unk
 });
 
 const meeting = (notebookId: string, extra: Record<string, unknown> = {}) => ({
+  id: `m-${notebookId}`,
   title: `Meeting ${notebookId}`,
   selectedAt: hours(2),
   durationMinutes: 30,
@@ -60,15 +59,10 @@ function allow(denied: string[] = []) {
 
 function stub({
   recent = [] as any[],
-  starred = [] as any[],
   meetings = [] as any[],
-  core = false,
 } = {}) {
-  m.userFavorite.findMany.mockImplementation(async (args: any) =>
-    args.where.favoritedAt ? starred : recent,
-  );
+  m.userFavorite.findMany.mockResolvedValue(recent);
   m.scheduledMeeting.findMany.mockResolvedValue(meetings);
-  (isCore as any).mockResolvedValue(core);
 }
 
 beforeEach(() => {
@@ -79,7 +73,7 @@ beforeEach(() => {
 });
 afterEach(() => vi.useRealTimers());
 
-describe("loadDriveHome recent and starred", () => {
+describe("loadDriveHome recent", () => {
   it("maps pages to DriveItems with visitedAt", async () => {
     stub({ recent: [fav("a", hours(-1)), fav("w", hours(-2), { kind: "Whiteboard" }), fav("f", hours(-3), { kind: "Folder" })] });
     const home = await loadDriveHome("u1");
@@ -89,51 +83,45 @@ describe("loadDriveHome recent and starred", () => {
       ["f", "folder", "/documents/f"],
     ]);
     expect(home.recent[0].visitedAt).toEqual(hours(-1));
+    expect(home.recent[0].favorited).toBe(false);
   });
 
-  it("flags starred rows as favorited and recents as not", async () => {
-    stub({ recent: [fav("a")], starred: [fav("s")] });
+  it("has no starred section", async () => {
+    stub({ recent: [fav("a")] });
     const home = await loadDriveHome("u1");
-    expect(home.starred[0]).toMatchObject({ id: "s", favorited: true });
-    expect(home.recent[0]).toMatchObject({ id: "a", favorited: false });
+    expect(home).not.toHaveProperty("starred");
+    expect(m.userFavorite.findMany).toHaveBeenCalledTimes(1);
+    expect(m.userFavorite.findMany.mock.calls[0][0].where).not.toHaveProperty("favoritedAt");
   });
 
   it("drops pages the viewer can no longer view", async () => {
     allow(["b"]);
-    stub({ recent: [fav("a"), fav("b"), fav("c")], starred: [fav("b"), fav("d")] });
+    stub({ recent: [fav("a"), fav("b"), fav("c")] });
     const home = await loadDriveHome("u1");
     expect(home.recent.map((i) => i.id)).toEqual(["a", "c"]);
-    expect(home.starred.map((i) => i.id)).toEqual(["d"]);
   });
 
-  it("caps each section after the access filter", async () => {
+  it("caps the section after the access filter", async () => {
     const rows = Array.from({ length: 20 }, (_, i) => fav(`p${i}`));
     allow(["p0", "p1"]);
-    stub({ recent: rows, starred: rows });
+    stub({ recent: rows });
     const home = await loadDriveHome("u1");
     expect(home.recent).toHaveLength(HOME_LIMIT);
     expect(home.recent[0].id).toBe("p2");
-    expect(home.starred).toHaveLength(HOME_LIMIT);
   });
 
   it("asks only for the viewer's live, non-shortcut pages ordered by recency", async () => {
     stub();
     await loadDriveHome("u1");
-    const calls = m.userFavorite.findMany.mock.calls.map((c: any[]) => c[0]);
-    const recentArgs = calls.find((a: any) => a.where.visitedAt);
-    const starredArgs = calls.find((a: any) => a.where.favoritedAt);
-    expect(recentArgs.where).toMatchObject({ userId: "u1", visitedAt: { not: null } });
-    expect(recentArgs.orderBy).toEqual({ visitedAt: "desc" });
-    expect(starredArgs.where).toMatchObject({ userId: "u1", favoritedAt: { not: null } });
-    expect(starredArgs.orderBy).toEqual({ favoritedAt: "desc" });
-    for (const a of [recentArgs, starredArgs]) {
-      expect(a.where.page.is.archivedAt).toBeNull();
-      expect(a.where.page.is.kind.in).not.toContain("Shortcut");
-    }
+    const args = m.userFavorite.findMany.mock.calls[0][0];
+    expect(args.where).toMatchObject({ userId: "u1", visitedAt: { not: null } });
+    expect(args.orderBy).toEqual({ visitedAt: "desc" });
+    expect(args.where.page.is.archivedAt).toBeNull();
+    expect(args.where.page.is.kind.in).not.toContain("Shortcut");
   });
 
-  it("checks access once across both sections", async () => {
-    stub({ recent: [fav("a"), fav("b")], starred: [fav("b"), fav("c")] });
+  it("checks access once across recents and upcoming notebooks", async () => {
+    stub({ recent: [fav("a"), fav("b")], meetings: [meeting("c")] });
     await loadDriveHome("u1");
     expect(getPageAccessBulk).toHaveBeenCalledTimes(1);
     const ids = (getPageAccessBulk as any).mock.calls[0][1].map((p: { id: string }) => p.id).sort();
@@ -146,7 +134,7 @@ describe("loadDriveHome upcoming", () => {
     stub({ meetings: [meeting("n1")] });
     const { upcoming } = await loadDriveHome("u1");
     expect(upcoming).toHaveLength(1);
-    expect(upcoming[0]).toMatchObject({ nextAt: hours(2), meetingTitle: "Meeting n1" });
+    expect(upcoming[0]).toMatchObject({ meetingId: "m-n1", nextAt: hours(2), meetingTitle: "Meeting n1" });
     expect(upcoming[0].item).toMatchObject({ id: "n1", type: "doc", isNotebook: true });
   });
 
@@ -177,16 +165,32 @@ describe("loadDriveHome upcoming", () => {
     expect(upcoming[0].nextAt.getTime()).toBeLessThan(NOW.getTime() + 3 * 86_400_000);
   });
 
-  it("lists a notebook once when two meetings share it, keeping the soonest", async () => {
+  it("lists one row per meeting even when two meetings share a notebook", async () => {
     stub({
       meetings: [
-        meeting("n1", { title: "Later", selectedAt: hours(30) }),
-        meeting("n1", { title: "Sooner", selectedAt: hours(5) }),
+        meeting("n1", { id: "later", title: "Later", selectedAt: hours(30) }),
+        meeting("n1", { id: "sooner", title: "Sooner", selectedAt: hours(5) }),
       ],
     });
     const { upcoming } = await loadDriveHome("u1");
+    expect(upcoming.map((u) => [u.meetingId, u.meetingTitle, u.item.id])).toEqual([
+      ["sooner", "Sooner", "n1"],
+      ["later", "Later", "n1"],
+    ]);
+  });
+
+  it("titles each row by the meeting, not the notebook", async () => {
+    stub({ meetings: [meeting("n1", { title: "Weekly sync", notebook: page("n1", { kind: "Notebook", title: "Core meeting notes" }) })] });
+    const { upcoming } = await loadDriveHome("u1");
+    expect(upcoming[0].meetingTitle).toBe("Weekly sync");
+    expect(upcoming[0].item.title).toBe("Core meeting notes");
+  });
+
+  it("picks the soonest occurrence of a series", async () => {
+    stub({ meetings: [meeting("n1", { selectedAt: hours(2), recurrenceRule: "FREQ=DAILY" })] });
+    const { upcoming } = await loadDriveHome("u1");
     expect(upcoming).toHaveLength(1);
-    expect(upcoming[0]).toMatchObject({ meetingTitle: "Sooner", nextAt: hours(5) });
+    expect(upcoming[0].nextAt).toEqual(hours(2));
   });
 
   it("skips a cancelled occurrence and moves on to the next one", async () => {
@@ -217,7 +221,7 @@ describe("loadDriveHome upcoming", () => {
     expect(upcoming[0].nextAt).toEqual(hours(10));
   });
 
-  it("orders notebooks soonest first and caps at the limit", async () => {
+  it("orders meetings soonest first and caps at the limit", async () => {
     const meetings = Array.from({ length: 12 }, (_, i) => meeting(`n${i}`, { selectedAt: hours(60 - i) }));
     stub({ meetings });
     const { upcoming } = await loadDriveHome("u1");
@@ -227,7 +231,7 @@ describe("loadDriveHome upcoming", () => {
     expect([...times].sort((a, b) => a - b)).toEqual(times);
   });
 
-  it("drops a notebook the viewer cannot open", async () => {
+  it("drops a meeting whose notebook the viewer cannot open", async () => {
     allow(["n2"]);
     stub({ meetings: [meeting("n1"), meeting("n2")] });
     const { upcoming } = await loadDriveHome("u1");
@@ -242,11 +246,10 @@ describe("loadDriveHome upcoming", () => {
     expect(where.AND).toEqual([{ OR: [{ organizerId: "u1" }, { participantUserIds: { has: "u1" } }] }]);
   });
 
-  it("does not restrict by organizer or participant for Core", async () => {
-    stub({ core: true });
-    await loadDriveHome("u1");
+  it("scopes to the viewer's own meetings even for Core, with no Core-wide branch", async () => {
+    stub();
+    await loadDriveHome("core-user");
     const { where } = m.scheduledMeeting.findMany.mock.calls[0][0];
-    expect(where.AND).toBeUndefined();
-    expect(where).toMatchObject({ notebookId: { not: null }, status: "Confirmed" });
+    expect(where.AND).toEqual([{ OR: [{ organizerId: "core-user" }, { participantUserIds: { has: "core-user" } }] }]);
   });
 });

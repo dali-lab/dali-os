@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { AudienceDetail, AudienceSignal } from "~/components/drive/AudienceSignal";
+import { AudienceDetail, AudienceSignal, LabAudienceGlyph } from "~/components/drive/AudienceSignal";
 import type { Audience } from "~/lib/page-audience";
 
 const base: Audience = { kind: "private", label: "Only you", permission: "Edit" };
@@ -41,8 +41,19 @@ describe("AudienceSignal glyphs", () => {
     expect(html).toContain(">Team<");
   });
 
-  it.each(["lab", "public"] as const)("shows a globe for %s", (kind) => {
-    expect(signal({ ...base, kind, label: "x" })).toContain("lucide-globe");
+  it("shows people with a 'Lab' pill, and no globe, for everyone in the lab", () => {
+    const html = signal({ ...base, kind: "lab", label: "Everyone in the lab" });
+    expect(html).toContain('data-audience-kind="lab"');
+    expect(html).toContain("lucide-users");
+    expect(html).toContain(">Lab<");
+    expect(html).not.toContain("lucide-globe");
+  });
+
+  it("keeps the globe for public", () => {
+    const html = signal({ ...base, kind: "public", label: "Anyone with the link" });
+    expect(html).toContain("lucide-globe");
+    expect(html).not.toContain("lucide-users");
+    expect(html).not.toContain(">Lab<");
   });
 
   it("swaps the glyph for an avatar stack with +N when people are present", () => {
@@ -101,5 +112,19 @@ describe("AudienceDetail", () => {
     expect(detail(aud, { onManage: vi.fn() })).toContain('data-testid="audience-manage"');
     expect(detail(base, { onManage: vi.fn() })).not.toContain('data-testid="audience-manage"');
     expect(detail(aud)).not.toContain('data-testid="audience-manage"');
+  });
+});
+
+describe("LabAudienceGlyph", () => {
+  it("is the people icon plus a Lab pill", () => {
+    const html = renderToStaticMarkup(createElement(LabAudienceGlyph));
+    expect(html).toContain("lucide-users");
+    expect(html).toContain(">Lab<");
+  });
+
+  it("drops the pill when unlabelled", () => {
+    const html = renderToStaticMarkup(createElement(LabAudienceGlyph, { labelled: false }));
+    expect(html).toContain("lucide-users");
+    expect(html).not.toContain("Lab");
   });
 });

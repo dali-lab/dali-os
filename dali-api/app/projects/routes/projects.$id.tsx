@@ -122,8 +122,15 @@ import { FolderPicker } from "~/components/drive/FolderPicker";
 import type { PickerDrive, PickerFolder, Destination } from "~/components/drive/FolderPicker";
 import { moveDriveItem, driveErrorFrom } from "~/components/drive/move-item";
 import { deleteShortcutRequest } from "~/components/drive/shortcut-api";
-import { SHORTCUT_REMOVED_TOAST, bulkDeletedToast } from "~/components/drive/file-in";
-import { reportMoveBatch, runMoveBatch, itemCount } from "~/components/drive/move-batch";
+import { destinationLabel } from "~/components/drive/action-toast";
+import { reportMoveBatch, runHiddenMoveBatch, itemCount } from "~/components/drive/move-batch";
+import { withoutHidden, usePendingHidden } from "~/components/drive/pending-hidden";
+import { runTrash } from "~/components/drive/trash-batch";
+import {
+  DriveHistoryContext,
+  useDriveHistory,
+  useDriveHistoryKeys,
+} from "~/components/drive/use-drive-history";
 import { useDriveFileUpload } from "~/components/drive/useDriveFileUpload";
 import { useToast } from "~/components/ui/toast";
 import { filterPillClass } from "~/components/ui/floating/styles";
@@ -4566,6 +4573,13 @@ function ProjectDriveTab({
   const [typeFilter, setTypeFilter] = useState<ProjectDriveTypeFilter>("all");
   const scopeId = projectDriveScope.id;
   const revalidate = useCallback(() => revalidator.revalidate(), [revalidator]);
+  const history = useDriveHistory({ onChange: revalidate });
+  useDriveHistoryKeys(history);
+  const pendingHidden = usePendingHidden(revalidator.state, projectDriveScope);
+  const visibleScopes = useMemo(
+    () => withoutHidden([projectDriveScope], pendingHidden.ids),
+    [projectDriveScope, pendingHidden.ids],
+  );
 
   // Upload into the current project folder via the shared presign→register flow
   // (identical path to the main Drive hub — see useDriveFileUpload).
@@ -4658,38 +4672,59 @@ function ProjectDriveTab({
     [navigate],
   );
 
-  // One item's move, with no reporting — the callers below decide whether to
-  // speak for one item or for a batch.
+  // One item's move, with no reporting: the batch below speaks for the
+  // selection. `onError` gets the reason a move was refused.
   const moveOne = useCallback(
-    async (item: DriveItem, destFolderId: string | null): Promise<boolean> => {
+    async (item: DriveItem, destFolderId: string | null, onError?: (message: string) => void): Promise<boolean> => {
       // Both endpoints (and what each calls its destination field) live in
       // move-item.ts, shared with the Drive hub — this embed had its own copy
       // and it drifted out of step with the pages endpoint's schema.
       try {
         const res = await moveDriveItem(item, destFolderId);
         if (res.ok) return true;
-        toast.error((await driveErrorFrom(res)) ?? "Couldn't move");
+        onError?.((await driveErrorFrom(res)) ?? "Couldn't move");
         return false;
       } catch {
-        toast.error("Couldn't move");
+        onError?.("Couldn't move");
         return false;
       }
     },
-    [toast],
+    [],
+  );
+
+  // Move a selection into a folder (null = the project's top level): hide the
+  // rows, move them one by one, then revalidate and report once.
+  const moveItems = useCallback(
+    async (items: DriveItem[], destFolderId: string | null) => {
+      let failure: string | undefined;
+      const landed = await runHiddenMoveBatch(
+        items,
+        (item) =>
+          moveOne(item, destFolderId, (message) => {
+            failure ??= message;
+          }),
+        pendingHidden,
+      );
+      reportMoveBatch(
+        { toast, history, revalidate },
+        {
+          landed,
+          total: items.length,
+          destination: destinationLabel(projectDriveScope, destFolderId),
+          forward: (l) => moveOne(l.item, destFolderId),
+          back: (l) => moveOne({ ...l.item, parentFolderId: destFolderId }, l.folderId),
+          failure: items.length === 1 ? failure : undefined,
+        },
+      );
+    },
+    [moveOne, pendingHidden, toast, history, revalidate, projectDriveScope],
   );
 
   // Dropping a selection onto a folder. Dragging one row of a multi-selection
-  // now brings the whole selection, so this takes a list and revalidates once
-  // for the batch rather than once per item.
+  // brings the whole selection, so this takes a list.
   const onMove = useCallback(
-    async (_scopeId: string, items: DriveItem[], destFolderId: string | null) => {
-      let moved = 0;
-      for (const item of items) {
-        if (await moveOne(item, destFolderId)) moved++;
-      }
-      if (moved > 0) revalidator.revalidate();
-    },
-    [moveOne, revalidator],
+    (_scopeId: string, items: DriveItem[], destFolderId: string | null) => moveItems(items, destFolderId),
+    [moveItems],
   );
 
   // Open the destination picker over this project's folders and resolve with the
@@ -4787,14 +4822,10 @@ function ProjectDriveTab({
           confirmLabel: "Delete",
         });
         if (!ok) return;
-        const res = await deleteDriveItemRequest(item);
-        if (res.ok) {
-          if (item.type === "shortcut") toast.success(SHORTCUT_REMOVED_TOAST);
-          revalidate();
-        } else toast.error("Couldn't delete");
+        await runTrash({ items: [item], deleteOne: deleteDriveItemRequest, hiding: pendingHidden, history, toast, revalidate });
       },
     }),
-    [dialog, toast, revalidate, pickMoveDestination, onMove, scopeId],
+    [dialog, toast, revalidate, pickMoveDestination, onMove, scopeId, pendingHidden, history],
   );
 
   // Toggle the viewer's personal favorite on a doc/folder.
@@ -4875,16 +4906,9 @@ function ProjectDriveTab({
         confirmLabel: "Delete",
       });
       if (!ok) return;
-      let fail = 0;
-      for (const it of items) {
-        const res = await deleteDriveItemRequest(it);
-        if (!res.ok) fail++;
-      }
-      revalidate();
-      if (fail) toast.error(`${fail} item${fail === 1 ? "" : "s"} couldn't be deleted`);
-      else toast.success(bulkDeletedToast(items));
+      await runTrash({ items, deleteOne: deleteDriveItemRequest, hiding: pendingHidden, history, toast, revalidate });
     },
-    [dialog, toast, revalidate],
+    [dialog, toast, revalidate, pendingHidden, history],
   );
 
   const onBulkMove = useCallback(
@@ -4894,22 +4918,9 @@ function ProjectDriveTab({
       );
       if (movable.length === 0) return;
       const dest = await pickMoveDestination(movable[0], `Move ${itemCount(movable.length)}`);
-      if (!dest) return;
-      const moved = await runMoveBatch(movable, (item) => moveOne(item, dest.folderId));
-      const destName = projectDriveScope.items.find((i) => i.id === dest.folderId)?.title;
-      reportMoveBatch(toast, revalidate, {
-        moved: moved.length,
-        total: movable.length,
-        summary:
-          moved.length < movable.length
-            ? `Moved ${moved.length} of ${itemCount(movable.length)}`
-            : `Moved ${itemCount(moved.length)}${destName ? ` to ${destName}` : ""}`,
-        undo: async () => {
-          for (const o of moved) await moveOne(o.item, o.folderId);
-        },
-      });
+      if (dest) await moveItems(movable, dest.folderId);
     },
-    [pickMoveDestination, moveOne, revalidate, projectDriveScope, toast],
+    [pickMoveDestination, moveItems],
   );
 
   const filterControl = (
@@ -4969,14 +4980,14 @@ function ProjectDriveTab({
   );
 
   return (
-    <>
+    <DriveHistoryContext.Provider value={history}>
       {uploadError && (
         <div className="mb-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-1.5 text-sm text-destructive">
           {uploadError}
         </div>
       )}
       <DriveBrowser
-        scopes={[projectDriveScope]}
+        scopes={visibleScopes}
         currentScopeId={scopeId}
         currentFolderId={currentFolderId}
         typeFilter={typeFilter}
@@ -5018,7 +5029,7 @@ function ProjectDriveTab({
           onConfirm={(dest) => resolveMovePicker(dest)}
         />
       )}
-    </>
+    </DriveHistoryContext.Provider>
   );
 }
 
