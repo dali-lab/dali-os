@@ -321,11 +321,30 @@ export type CreateScheduledMeetingResult =
     }
   | { ok: false; error: string };
 
+/**
+ * Whether a meeting keeps an attendance roster: it has a type, a notebook, a
+ * self check-in, or invited people. Shared by the roster reconcile on edit and
+ * the manual attendance route and MCP tool.
+ */
+export function tracksAttendance(meeting: {
+  meetingType: MeetingType | null;
+  notebookId: string | null;
+  attendanceMode: string | null;
+  participantUserIds: string[];
+}): boolean {
+  return (
+    meeting.meetingType != null ||
+    meeting.notebookId != null ||
+    meeting.attendanceMode === "SelfCheckIn" ||
+    meeting.participantUserIds.length > 0
+  );
+}
+
 export function folderOfNote(note: {
   parentPageId: string | null;
-  parent?: { notebookKey: string | null; parentPageId: string | null } | null;
+  parent?: { kind: string; parentPageId: string | null } | null;
 }): string | null {
-  return note.parent?.notebookKey ? note.parent.parentPageId : note.parentPageId;
+  return note.parent?.kind === "Notebook" ? note.parent.parentPageId : note.parentPageId;
 }
 
 // Authorize + resolve a General meeting's chosen note location. Mirrors the
@@ -825,7 +844,7 @@ export async function attachMeetingNote(
           workspaceType: true,
           workspaceId: true,
           parentPageId: true,
-          parent: { select: { notebookKey: true, parentPageId: true } },
+          parent: { select: { kind: true, parentPageId: true } },
         },
         orderBy: { meetingOccurrenceStart: "desc" },
       },
@@ -1007,7 +1026,7 @@ export async function attachMeetingWhiteboard(
           workspaceType: true,
           workspaceId: true,
           parentPageId: true,
-          parent: { select: { notebookKey: true, parentPageId: true } },
+          parent: { select: { kind: true, parentPageId: true } },
         },
         orderBy: { meetingOccurrenceStart: "asc" },
         take: 1,
@@ -1759,6 +1778,7 @@ export async function updateScheduledMeeting(
       organizerCalendarLinkId: true,
       organizerCalendarId: true,
       meetingType: true,
+      notebookId: true,
       attendanceMode: true,
       recurrenceRule: true,
       scopeType: true,
@@ -1937,14 +1957,9 @@ export async function updateScheduledMeeting(
     },
   });
 
-  // Reconcile the roster to the new guest list. A meeting stays attendance-tracked
-  // while it has a note, self check-in, or any guests; editing it down to none
-  // drops its roster (and with it the Attendance-tab row), same as create's gate.
-  const tracksAttendance =
-    meeting.meetingType !== null ||
-    meeting.attendanceMode === "SelfCheckIn" ||
-    participantUserIds.length > 0;
-  const desiredIds = tracksAttendance
+  // Reconcile the roster to the new guest list; a meeting that no longer
+  // tracksAttendance drops its roster (and with it the Attendance-tab row).
+  const desiredIds = tracksAttendance({ ...meeting, participantUserIds })
     ? new Set([...participantUserIds, meeting.organizerId])
     : new Set<string>();
   const existingRows = await prisma.meetingAttendance.findMany({

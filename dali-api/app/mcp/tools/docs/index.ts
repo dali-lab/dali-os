@@ -40,6 +40,7 @@ import {
   runNameCollabVersion,
 } from "./collab-versions";
 import { MANAGE_COMMENT_TOOL_DEF, runManageComment } from "./manage-comment";
+import { MANAGE_NOTEBOOK_TOOL_DEF, runManageNotebook } from "./manage-notebook";
 import { MANAGE_PAGE_TOOL_DEF, runManagePage } from "./manage-page";
 import { LIST_PAGE_TEMPLATES_TOOL, runListPageTemplates } from "./list-page-templates";
 import { LIST_DRIVE_TRASH_TOOL, runListDriveTrash } from "./list-drive-trash";
@@ -140,6 +141,11 @@ export const DOCS_TOOLS: McpTool[] = [
     def: MANAGE_PAGE_TOOL_DEF,
     run: (ctx: McpCtx, args) =>
       runManagePage(ctx.user.id, args as Parameters<typeof runManagePage>[1]),
+  },
+  {
+    def: MANAGE_NOTEBOOK_TOOL_DEF,
+    run: (ctx: McpCtx, args) =>
+      runManageNotebook(ctx.user.id, args as Parameters<typeof runManageNotebook>[1]),
   },
   {
     def: LIST_PAGE_TEMPLATES_TOOL,

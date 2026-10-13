@@ -5,14 +5,13 @@ import { requireAuth, forbidden, isNonMember } from "~/lib/auth";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
-import { markMeetingAttendance, parseOccurrenceParam } from "~/lib/scheduled-meeting";
+import { markMeetingAttendance, parseOccurrenceParam, tracksAttendance } from "~/lib/scheduled-meeting";
 
 // POST /api/scheduled-meetings/:id/attendance
 //
 // Toggle whether an invited participant was present at one occurrence of a
-// meeting (`occurrence`, omitted = the first). Only
-// meetings created with a meetingType (project-scoped or Lab-workspace — see
-// createScheduledMeeting) have MeetingAttendance rows; this 404s otherwise.
+// meeting (`occurrence`, omitted = the first). Only meetings that
+// tracksAttendance() have MeetingAttendance rows; this 404s otherwise.
 // The TimeEntry sync (upsert on present, delete otherwise) lives in
 // markMeetingAttendance, shared with the self-check-in route. Callers are the
 // organizer or anyone with project-edit access on the meeting's project (same
@@ -43,9 +42,17 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const meeting = await prisma.scheduledMeeting.findUnique({
     where: { id: params.id },
-    select: { id: true, organizerId: true, projectId: true, meetingType: true },
+    select: {
+      id: true,
+      organizerId: true,
+      projectId: true,
+      meetingType: true,
+      notebookId: true,
+      attendanceMode: true,
+      participantUserIds: true,
+    },
   });
-  if (!meeting || !meeting.meetingType) {
+  if (!meeting || !tracksAttendance(meeting)) {
     return withCors(request, Response.json({ error: "Not found" }, { status: 404 }));
   }
 

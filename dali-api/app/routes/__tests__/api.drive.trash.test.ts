@@ -173,6 +173,38 @@ describe("POST /api/drive/trash (restore)", () => {
   });
 });
 
+describe("POST /api/drive/trash (restore a notebook)", () => {
+  const pageMock = prisma.page as unknown as {
+    findUnique: ReturnType<typeof vi.fn>;
+    updateMany: ReturnType<typeof vi.fn>;
+  };
+
+  beforeEach(() => {
+    vi.mocked(getPageAccess).mockResolvedValue(FULL);
+  });
+
+  it("brings back the tabs that were trashed with it, by the same instant", async () => {
+    pageMock.findUnique.mockResolvedValue({ kind: "Notebook", archivedAt: ARCHIVED_AT });
+
+    const res = (await action({ request: restoreRequest("doc", "nb-1") } as never)) as Response;
+
+    expect(res.status).toBe(200);
+    expect(mockPrisma.page.update).toHaveBeenCalledWith({ where: { id: "nb-1" }, data: { archivedAt: null } });
+    expect(pageMock.updateMany).toHaveBeenCalledWith({
+      where: { parentPageId: "nb-1", archivedAt: ARCHIVED_AT },
+      data: { archivedAt: null },
+    });
+  });
+
+  it("restores only the page itself for anything that is not a notebook", async () => {
+    pageMock.findUnique.mockResolvedValue({ kind: "FreeForm", archivedAt: ARCHIVED_AT });
+
+    await action({ request: restoreRequest("doc", "page-1") } as never);
+
+    expect(pageMock.updateMany).not.toHaveBeenCalled();
+  });
+});
+
 function purgeRequest(type: string, id: string) {
   const body = new FormData();
   body.set("intent", "purge");

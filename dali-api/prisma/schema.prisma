@@ -5362,6 +5362,12 @@ model Page {
   seededFromPageId   String?
   seededTemplateHash String?
 
+  // Notebook only: the template page new notes in this notebook seed from.
+  // A real relation (unlike seededFromPageId) so deleting the template clears it.
+  templatePageId           String?
+  templatePage             Page?   @relation("NotebookTemplate", fields: [templatePageId], references: [id], onDelete: SetNull)
+  notebooksUsingAsTemplate Page[]  @relation("NotebookTemplate")
+
   parent   Page?  @relation("PageTree", fields: [parentPageId], references: [id])
   children Page[] @relation("PageTree")
 

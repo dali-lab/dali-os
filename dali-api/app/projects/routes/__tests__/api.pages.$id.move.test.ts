@@ -26,6 +26,24 @@ vi.mock("~/lib/cors", () => ({
   handlePreflight: () => null,
 }));
 vi.mock("~/education/lib/access.server", () => ({ isOfferingManager: vi.fn() }));
+vi.mock("~/lib/notebooks.server", () => {
+  class NotebookError extends Error {
+    constructor(
+      message: string,
+      public status: number,
+    ) {
+      super(message);
+    }
+  }
+  return {
+    NotebookError,
+    notebookErrorResponse: (err: unknown) => {
+      if (err instanceof NotebookError) return Response.json({ error: err.message }, { status: err.status });
+      throw err;
+    },
+    addToNotebook: vi.fn(),
+  };
+});
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
@@ -34,6 +52,7 @@ import { canManageSharing } from "~/lib/page-share-access.server";
 import { getPageAccess, isUnderGoverningScope } from "~/lib/pageAccess.server";
 import { isOfferingManager } from "~/education/lib/access.server";
 import { logAuditEvent } from "~/lib/audit";
+import { NotebookError, addToNotebook } from "~/lib/notebooks.server";
 import { action } from "../api.pages.$id.move";
 
 const m = prisma as any;
@@ -441,5 +460,69 @@ describe("POST /api/pages/:id/move", () => {
     const res = await call({ parentPageId: null });
     expect(res.status).toBe(200);
     expect(getPageAccess).not.toHaveBeenCalled();
+  });
+});
+describe("POST /api/pages/:id/move — into a notebook", () => {
+  const notebook = { workspaceType: "Lab", workspaceId: null, parentPageId: null, kind: "Notebook", archivedAt: null };
+  const mockPage = (page: Record<string, unknown>) =>
+    m.page.findUnique.mockImplementation(async ({ where }: any) =>
+      where.id === "p1" ? page : (pagesById[where.id] ?? null),
+    );
+
+  beforeEach(() => {
+    pagesById = { nb1: notebook };
+    vi.mocked(addToNotebook).mockReset();
+  });
+
+  it("files a doc into the notebook through addToNotebook and writes nothing itself", async () => {
+    mockPage(labPage());
+    const res = await call({ parentPageId: "nb1" });
+    expect(res.status).toBe(200);
+    expect(addToNotebook).toHaveBeenCalledWith("p1", "nb1", "u1");
+    expect(m.$transaction).not.toHaveBeenCalled();
+    expect(m.page.update).not.toHaveBeenCalled();
+  });
+
+  it("files a meeting note the same way", async () => {
+    mockPage(labPage({ meetingNoteId: "m1" }));
+    expect((await call({ parentPageId: "nb1" })).status).toBe(200);
+    expect(addToNotebook).toHaveBeenCalledWith("p1", "nb1", "u1");
+  });
+
+  it("files into a notebook of another workspace without a workspace in the body", async () => {
+    mockPage(projectPage());
+    pagesById = { nb1: { ...notebook, workspaceType: "Lab", workspaceId: null } };
+    expect((await call({ parentPageId: "nb1" })).status).toBe(200);
+    expect(addToNotebook).toHaveBeenCalled();
+  });
+
+  it.each(["Folder", "Whiteboard", "Notebook"])("refuses a %s as a tab", async (kind) => {
+    mockPage(labPage({ kind }));
+    const res = await call({ parentPageId: "nb1" });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/only documents/i);
+    expect(addToNotebook).not.toHaveBeenCalled();
+  });
+
+  it("maps the library's refusal to its status", async () => {
+    mockPage(labPage());
+    vi.mocked(addToNotebook).mockRejectedValue(new NotebookError("You can't edit this notebook", 403));
+    const res = await call({ parentPageId: "nb1" });
+    expect(res.status).toBe(403);
+    expect(m.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("still 404s a trashed notebook", async () => {
+    mockPage(labPage());
+    pagesById = { nb1: { ...notebook, archivedAt: new Date() } };
+    expect((await call({ parentPageId: "nb1" })).status).toBe(404);
+    expect(addToNotebook).not.toHaveBeenCalled();
+  });
+
+  it("still refuses a plain doc as a parent", async () => {
+    mockPage(labPage());
+    pagesById = { d2: { ...notebook, kind: "FreeForm" } };
+    expect((await call({ parentPageId: "d2" })).status).toBe(400);
+    expect(addToNotebook).not.toHaveBeenCalled();
   });
 });

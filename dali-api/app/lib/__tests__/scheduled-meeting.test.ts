@@ -61,6 +61,7 @@ import {
   resolveMeetingNoteTemplate,
   setMeetingProject,
   trackExternalEventAsMeeting,
+  tracksAttendance,
   updateScheduledMeeting,
 } from "~/lib/scheduled-meeting";
 import { isGeneralCalendarEvent } from "~/lib/general-calendar";
@@ -998,6 +999,42 @@ describe("updateScheduledMeeting", () => {
     expect(mockNotify).not.toHaveBeenCalled();
   });
 
+  it("keeps the organizer on the roster of a typeless meeting that has a notebook", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(
+      meetingRow({ participantUserIds: [], notebookId: "nb-1", attendanceMode: "None" }),
+    );
+    p.meetingAttendance.findMany.mockResolvedValue([]);
+
+    const res = await updateScheduledMeeting("m1", "org-1", {
+      title: "Solo",
+      durationMinutes: 30,
+      scope: { type: "None" },
+      startTime: "2026-09-10T15:00:00.000Z",
+    });
+
+    expect(res.ok).toBe(true);
+    expect(p.meetingAttendance.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: [expect.objectContaining({ userId: "org-1" })] }),
+    );
+  });
+
+  it("drops the roster of a typeless meeting with no notebook once its guests go", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(
+      meetingRow({ participantUserIds: [], notebookId: null, attendanceMode: "None" }),
+    );
+    p.meetingAttendance.findMany.mockResolvedValue([{ userId: "org-1" }]);
+
+    await updateScheduledMeeting("m1", "org-1", {
+      title: "Solo",
+      durationMinutes: 30,
+      scope: { type: "None" },
+      startTime: "2026-09-10T15:00:00.000Z",
+    });
+
+    expect(p.meetingAttendance.createMany).not.toHaveBeenCalled();
+    expect(p.meetingAttendance.deleteMany).toHaveBeenCalled();
+  });
+
   it("403s a non-organizer who isn't Core", async () => {
     p.scheduledMeeting.findUnique.mockResolvedValue(meetingRow());
 
@@ -1204,21 +1241,45 @@ describe("updateScheduledMeeting", () => {
   });
 });
 
+describe("tracksAttendance", () => {
+  const base = { meetingType: null, notebookId: null, attendanceMode: "None", participantUserIds: [] as string[] };
+
+  it("is false for a typeless meeting with nothing else", () => {
+    expect(tracksAttendance(base)).toBe(false);
+  });
+
+  it("is true with a type", () => {
+    expect(tracksAttendance({ ...base, meetingType: "Other" })).toBe(true);
+  });
+
+  it("is true with a notebook and no type", () => {
+    expect(tracksAttendance({ ...base, notebookId: "nb-1" })).toBe(true);
+  });
+
+  it("is true for self check-in", () => {
+    expect(tracksAttendance({ ...base, attendanceMode: "SelfCheckIn" })).toBe(true);
+  });
+
+  it("is true with invited people", () => {
+    expect(tracksAttendance({ ...base, participantUserIds: ["u1"] })).toBe(true);
+  });
+});
+
 describe("folderOfNote", () => {
   it("is the folder a note sits in directly", () => {
-    expect(folderOfNote({ parentPageId: "folder-a", parent: { notebookKey: null, parentPageId: "elsewhere" } })).toBe("folder-a");
+    expect(folderOfNote({ parentPageId: "folder-a", parent: { kind: "Folder", parentPageId: "elsewhere" } })).toBe("folder-a");
     expect(folderOfNote({ parentPageId: "folder-a" })).toBe("folder-a");
   });
 
   it("is the notebook's folder for a note that is a tab in a notebook", () => {
     expect(
-      folderOfNote({ parentPageId: "notebook-1", parent: { notebookKey: "k", parentPageId: "folder-a" } }),
+      folderOfNote({ parentPageId: "notebook-1", parent: { kind: "Notebook", parentPageId: "folder-a" } }),
     ).toBe("folder-a");
   });
 
   it("is null for a note in a notebook at the workspace root", () => {
     expect(
-      folderOfNote({ parentPageId: "notebook-1", parent: { notebookKey: "k", parentPageId: null } }),
+      folderOfNote({ parentPageId: "notebook-1", parent: { kind: "Notebook", parentPageId: null } }),
     ).toBeNull();
   });
 
@@ -1380,7 +1441,7 @@ describe("attachMeetingNote", () => {
             workspaceType: "Lab",
             workspaceId: null,
             parentPageId: "notebook-old",
-            parent: { notebookKey: "key-old", parentPageId: "folder-standups" },
+            parent: { kind: "Notebook", parentPageId: "folder-standups" },
           },
         ],
       }),

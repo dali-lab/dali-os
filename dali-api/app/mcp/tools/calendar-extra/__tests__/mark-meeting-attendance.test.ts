@@ -25,11 +25,14 @@ vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, isCore: vi.fn(), isProjectMember: vi.fn() };
 });
-vi.mock("~/lib/scheduled-meeting", async (importOriginal) => ({
-  parseOccurrenceParam: (await importOriginal<typeof import("~/lib/scheduled-meeting")>())
-    .parseOccurrenceParam,
-  markMeetingAttendance: vi.fn(),
-}));
+vi.mock("~/lib/scheduled-meeting", async (importOriginal) => {
+  const real = await importOriginal<typeof import("~/lib/scheduled-meeting")>();
+  return {
+    parseOccurrenceParam: real.parseOccurrenceParam,
+    tracksAttendance: real.tracksAttendance,
+    markMeetingAttendance: vi.fn(),
+  };
+});
 
 import { prisma } from "~/lib/db";
 import { isCore, isProjectMember } from "~/lib/roles";
@@ -59,16 +62,38 @@ describe("mark_meeting_attendance", () => {
     ).rejects.toMatchObject({ name: "McpNotFoundError" });
   });
 
-  it("throws McpNotFoundError when meetingType is null", async () => {
+  it("throws McpNotFoundError when the meeting keeps no roster", async () => {
     mockPrisma.scheduledMeeting.findUnique.mockResolvedValue({
       id: "m1",
       organizerId: "u1",
       projectId: null,
       meetingType: null,
+      notebookId: null,
+      attendanceMode: "None",
+      participantUserIds: [],
     });
     await expect(
       runMarkMeetingAttendance("u1", { meetingId: "m1", userId: "u2", present: true }),
     ).rejects.toMatchObject({ name: "McpNotFoundError" });
+  });
+
+  it("admits a typeless meeting that has a notebook", async () => {
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue({
+      id: "m1",
+      organizerId: "u-org",
+      projectId: null,
+      meetingType: null,
+      notebookId: "nb1",
+      attendanceMode: "None",
+      participantUserIds: [],
+    });
+    vi.mocked(isCore).mockResolvedValue(false);
+    vi.mocked(isProjectMember).mockResolvedValue(false);
+    vi.mocked(markMeetingAttendance).mockResolvedValue({ ok: true });
+
+    const out = await runMarkMeetingAttendance("u-org", { meetingId: "m1", userId: "u2", present: true });
+    expect(out).toEqual({ ok: true });
+    expect(markMeetingAttendance).toHaveBeenCalledWith("m1", "u2", true, "u-org", null);
   });
 
   it("throws McpForbiddenError for non-member non-Core non-organizer", async () => {
