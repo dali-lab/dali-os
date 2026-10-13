@@ -1962,6 +1962,7 @@ export default function DriveHub() {
         onBulkDelete={onBulkDelete}
         onBulkMove={(items) => void onBulkMove(items)}
         onMoveToScope={onMoveToScope}
+        onSharingChanged={() => revalidator.revalidate()}
         onUploadFiles={currentScope ? uploadFiles : undefined}
         filterControl={filterControl}
         newMenu={toolbarActions}

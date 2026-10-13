@@ -20,8 +20,11 @@
 //     ORGANISATION only — it does not change who can see or fill a form.
 
 import { prisma } from "~/lib/db";
-import { getPageAccess, getPageAccessBulk } from "~/lib/pageAccess.server";
+import { getPageAccess, getPageAccessBulk, governingScopeMap } from "~/lib/pageAccess.server";
 import { canViewFile } from "~/lib/fileAccess.server";
+import { isCore, isProjectMember } from "~/lib/roles";
+import { summarizeAudience } from "~/lib/page-audience.server";
+import type { Audience } from "~/lib/page-audience";
 import type { PageKind, Prisma } from "~/generated/prisma/client";
 
 /** Every page kind a Drive listing (and the Trash) surfaces. */
@@ -66,6 +69,8 @@ export type DriveItem =
        * Only populated in project-scoped Drive loads; null/undefined elsewhere.
        */
       partnerVisible?: boolean | null;
+      /** Who can see this item. Pages carry their own; files take their folder's. */
+      audience?: Audience;
     }
   | {
       type: "doc";
@@ -92,6 +97,8 @@ export type DriveItem =
        * Only populated in project-scoped Drive loads; null/undefined elsewhere.
        */
       partnerVisible?: boolean | null;
+      /** Who can see this item. Pages carry their own; files take their folder's. */
+      audience?: Audience;
     }
   | {
       type: "file";
@@ -116,6 +123,8 @@ export type DriveItem =
        * Only populated in project-scoped Drive loads; null/undefined elsewhere.
        */
       partnerVisible?: boolean | null;
+      /** Who can see this item. Pages carry their own; files take their folder's. */
+      audience?: Audience;
     }
   | {
       type: "form";
@@ -192,10 +201,63 @@ async function filterScoped<T extends { id: string; scopeKind?: unknown }>(
   rows: T[],
   userSub: string,
   request?: Request,
+  governingByPageId?: Parameters<typeof getPageAccessBulk>[4],
 ): Promise<T[]> {
   if (!rows.some((r) => r.scopeKind != null)) return rows;
-  const access = await getPageAccessBulk(userSub, rows as unknown as Parameters<typeof getPageAccessBulk>[1], request);
+  const access = await getPageAccessBulk(
+    userSub,
+    rows as unknown as Parameters<typeof getPageAccessBulk>[1],
+    request,
+    undefined,
+    governingByPageId,
+  );
   return rows.filter((r) => access.get(r.id)?.canView);
+}
+
+type AudienceRow = Parameters<typeof summarizeAudience>[1][number];
+
+/** Audience for every row the viewer can see, from the rows already in hand. */
+function audiencesFor(
+  userSub: string,
+  visible: AudienceRow[],
+  governing: Parameters<typeof getPageAccessBulk>[4],
+  canManage: (row: AudienceRow) => boolean,
+) {
+  const byId = new Map(visible.map((r) => [r.id, r]));
+  return summarizeAudience(userSub, visible, {
+    governingByPageId: governing,
+    canManageSharing: (id) => {
+      const row = byId.get(id);
+      return !!row && canManage(row);
+    },
+  });
+}
+
+/**
+ * Files follow their folder's access (see canViewFile), so they show the
+ * folder's audience, pointed at that folder. A file in no folder is open to
+ * every lab member, which is what the summary says. A named share list belongs
+ * to the folder, so the file does not repeat it.
+ */
+function withFileAudience(items: DriveItem[], looseEdit: boolean): DriveItem[] {
+  const folders = new Map<string, Extract<DriveItem, { type: "folder" }>>();
+  for (const item of items) if (item.type === "folder") folders.set(item.id, item);
+  const loose: Audience = {
+    kind: "lab",
+    label: "Everyone in the lab",
+    permission: looseEdit ? "Edit" : "View",
+  };
+  return items.map((item) => {
+    if (item.type !== "file") return item;
+    if (!item.parentFolderId) return { ...item, audience: loose };
+    const folder = folders.get(item.parentFolderId);
+    if (!folder?.audience) return item;
+    const { people: _people, count: _count, canManage: _canManage, ...inherited } = folder.audience;
+    return {
+      ...item,
+      audience: { ...inherited, inheritedFrom: { id: folder.id, title: folder.title } },
+    };
+  });
 }
 
 /** Load pages (folders + docs) for a Lab-scope drive, filtering each through
@@ -233,13 +295,22 @@ async function loadLabPages(userSub: string, request?: Request): Promise<DriveIt
     },
   });
 
-  // One batched pageShare query instead of N individual ones.
-  const accessMap = await getPageAccessBulk(userSub, rows, request);
+  // One batched pageShare query instead of N individual ones; the ancestry walk
+  // runs over the rows in hand instead of one query per level per page.
+  const governing = governingScopeMap(rows);
+  const accessMap = await getPageAccessBulk(userSub, rows, request, undefined, governing);
+
+  const visible = rows.filter((row) => accessMap.get(row.id)?.canView);
+  const core = await isCore(userSub, request);
+  const audiences = await audiencesFor(
+    userSub,
+    visible,
+    governing,
+    (row) => core || row.createdById === userSub,
+  );
 
   const items: DriveItem[] = [];
-  for (const row of rows) {
-    const access = accessMap.get(row.id);
-    if (!access?.canView) continue;
+  for (const row of visible) {
     items.push(
       row.kind === "Folder"
         ? {
@@ -251,6 +322,7 @@ async function loadLabPages(userSub: string, request?: Request): Promise<DriveIt
             folderType: row.folderType,
             updatedAt: row.updatedAt,
             href: `/documents/${row.id}`,
+            audience: audiences.get(row.id),
           }
         : {
             type: "doc",
@@ -264,6 +336,7 @@ async function loadLabPages(userSub: string, request?: Request): Promise<DriveIt
               row.kind === "Whiteboard"
                 ? `/whiteboard/${row.id}`
                 : `/documents/${row.id}`,
+            audience: audiences.get(row.id),
           },
     );
   }
@@ -330,7 +403,10 @@ async function loadProjectPages(
       select: PROJECT_PAGE_SELECT,
     }));
 
-  const visible = await filterScoped(rows, userSub, request);
+  const governing = governingScopeMap(rows);
+  const visible = await filterScoped(rows, userSub, request, governing);
+  const manager = (await isCore(userSub, request)) || (await isProjectMember(userSub, projectId, request));
+  const audiences = await audiencesFor(userSub, visible, governing, () => manager);
 
   return visible.map((row) =>
     row.kind === "Folder"
@@ -344,6 +420,7 @@ async function loadProjectPages(
           updatedAt: row.updatedAt,
           href: `/documents/${row.id}`,
           partnerVisible: row.partnerVisible,
+          audience: audiences.get(row.id),
         }
       : {
           type: "doc",
@@ -358,6 +435,7 @@ async function loadProjectPages(
               ? `/whiteboard/${row.id}`
               : `/documents/${row.id}`,
           partnerVisible: row.partnerVisible,
+          audience: audiences.get(row.id),
         },
   );
 }
@@ -433,7 +511,15 @@ async function loadEducationPages(
     },
   });
 
-  const visible = await filterScoped(rows, userSub, request);
+  const governing = governingScopeMap(rows);
+  const visible = await filterScoped(rows, userSub, request, governing);
+  const manager =
+    (await isCore(userSub, request)) ||
+    (await prisma.instructorAssignment.findFirst({
+      where: { userId: userSub, offeringId },
+      select: { id: true },
+    })) !== null;
+  const audiences = await audiencesFor(userSub, visible, governing, () => manager);
 
   return visible.map((row) =>
     row.kind === "Folder"
@@ -446,6 +532,7 @@ async function loadEducationPages(
           folderType: row.folderType,
           updatedAt: row.updatedAt,
           href: `/documents/${row.id}`,
+          audience: audiences.get(row.id),
         }
       : {
           type: "doc",
@@ -459,6 +546,7 @@ async function loadEducationPages(
             row.kind === "Whiteboard"
               ? `/whiteboard/${row.id}`
               : `/documents/${row.id}`,
+          audience: audiences.get(row.id),
         },
   );
 }
@@ -1028,7 +1116,7 @@ export async function loadDriveScope({
     // Use preloaded forms when the caller has already fetched them (avoids a
     // repeated full-table scan when loadDriveScopes pre-fetches all at once).
     const forms = preloadedForms ?? (canViewForms ? await loadForms(undefined, linkedProcessMap) : []);
-    return [...pages, ...files, ...forms, ...agreements, ...rubrics];
+    return [...withFileAudience([...pages, ...files], true), ...forms, ...agreements, ...rubrics];
   }
 
   // EducationOffering scope — pages + uploaded files.
@@ -1039,7 +1127,7 @@ export async function loadDriveScope({
       loadEducationFiles(offeringId),
     ]);
     const forms = preloadedForms ?? (canViewForms ? await loadForms(undefined, linkedProcessMap) : []);
-    return [...pages, ...files, ...forms];
+    return [...withFileAudience([...pages, ...files], false), ...forms];
   }
 
   // Project scope
@@ -1056,5 +1144,5 @@ export async function loadDriveScope({
   // repeated full-table scan when loadDriveScopes pre-fetches all at once).
   const forms = preloadedForms ?? (canViewForms ? await loadForms(undefined, linkedProcessMap) : []);
 
-  return [...pages, ...files, ...forms];
+  return [...withFileAudience([...pages, ...files], false), ...forms];
 }
