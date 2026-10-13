@@ -1028,6 +1028,21 @@ export default function DriveHub() {
     viewerId,
   } = useLoaderData() as LoaderData;
   const [searchParams, setSearchParams] = useSearchParams();
+  // Reveal in Drive arrives with ?select=<id>: the browser takes it once, and
+  // it leaves the URL so a refresh or a shared link does not re-select it.
+  const [initialSelectedId] = useState(() => searchParams.get("select") ?? undefined);
+  useEffect(() => {
+    if (!initialSelectedId) return;
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("select");
+        return next;
+      },
+      { replace: true },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const navigate = useNavigate();
   const dialog = useDialog();
   const toast = useToast();
@@ -1846,6 +1861,8 @@ export default function DriveHub() {
         search={search}
         onSearchChange={onSearchChange}
         onNavigate={onNavigate}
+        onHistory={(delta) => void navigate(delta)}
+        initialSelectedId={initialSelectedId}
         onOpenItem={onOpenItem}
         onMove={onMove}
         getScopeActions={getScopeActions}
