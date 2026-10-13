@@ -1,5 +1,5 @@
 import { prisma } from "~/lib/db";
-import { resolveGroupMembers } from "~/lib/groups";
+import { resolveCoreActor } from "~/jobs/core-actor.server";
 import { ensureAllRoots } from "~/lib/drive-roots.server";
 import { HIRING_PROCESS_ID } from "~/lib/bindings.server";
 import { collectSubtree, MAX_PAGE_DEPTH } from "~/lib/pages";
@@ -13,14 +13,9 @@ function abort(reason: string): JobResult {
 }
 
 export async function runDriveRootsReparent(): Promise<JobResult> {
-  const core = await prisma.groupDefinition.findUnique({
-    where: { systemKey: "core" },
-    select: { id: true },
-  });
-  if (!core) return abort("the Core group does not exist");
-
-  const actor = [...(await resolveGroupMembers(core.id))].sort()[0];
-  if (!actor) return abort("there are no current Core members to create the roots as");
+  const resolved = await resolveCoreActor();
+  if ("abort" in resolved) return abort(resolved.abort);
+  const { actorId: actor, coreGroupId } = resolved;
 
   const roots = await ensureAllRoots(actor);
 
@@ -37,7 +32,7 @@ export async function runDriveRootsReparent(): Promise<JobResult> {
         kind: "Folder",
         archivedAt: null,
         scopeKind: "Group",
-        scopeGroupId: core.id,
+        scopeGroupId: coreGroupId,
         folderType: null,
       },
       orderBy: { createdAt: "asc" },
