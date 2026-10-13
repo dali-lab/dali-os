@@ -4,40 +4,76 @@ import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
 import { buttonClasses } from "~/components/ui/Button";
 import { cn } from "~/lib/cn";
-import { isUntouchedTemplate } from "~/lib/meeting-note-template";
-import { applyEnhancePlan, type ApplyEnhancePlanResult } from "./enhance-plan";
-import { formatClock } from "./transcript";
+import { actionItemMatchesBlock, buildEnhanceChangeRows, type EnhanceChangeRow } from "./enhance-plan";
 import { formatIsoDate, type UseMeetingRecording } from "./use-meeting-recording";
-
-/** Recomputes Enhance's merge fresh from the live editor — shared by
- *  RecordingRail's "preview" status line and EnhancePreview's body, so the
- *  two never disagree on the counts. Null until notes + a live editor are
- *  both available. */
-export function computeEnhancePreview(rec: UseMeetingRecording): ApplyEnhancePlanResult | null {
-  if (!rec.enhanceNotes || !rec.getNoteState) return null;
-  const state = rec.getNoteState();
-  if (!state) return null;
-  const untouchedTemplate = isUntouchedTemplate(
-    { seededFromPageId: rec.seededFromPageId, seededTemplateHash: rec.seededTemplateHash },
-    state.bodyText,
-  );
-  return applyEnhancePlan(rec.enhanceNotes.snapshot, state.blocks, rec.enhanceNotes.plan, { untouchedTemplate });
-}
 
 type ActionItemRowState = { checked: boolean; ownerUserId: string; dueAt: string };
 
+const KIND_BADGE: Record<EnhanceChangeRow["kind"], string> = {
+  Added: "bg-os-accent/15 text-os-accent",
+  Changed: "bg-os-accent/15 text-os-accent",
+  Removed: "bg-os-container text-muted-foreground",
+};
+
+/** One row of the pending-review change list: kind word, the block's own
+ *  (clickable, scroll-to) text, the heading above it, "Was: …" for a changed
+ *  block, then Keep/Revert — in that order, matching specs/meeting-
+ *  recording-rail.md Step 2's "Change list" enumeration. The kind word always
+ *  leads so the distinction is never color-only. */
+function EnhanceChangeRowView({ row, rec }: { row: EnhanceChangeRow; rec: UseMeetingRecording }) {
+  const text = row.text || "(empty)";
+  return (
+    <div className="flex flex-col gap-1 rounded-lg border border-os-container bg-background px-3 py-2">
+      <div className="flex items-center gap-2">
+        <span
+          className={cn(
+            "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+            KIND_BADGE[row.kind],
+          )}
+        >
+          {row.kind}
+        </span>
+        <button
+          type="button"
+          onClick={() => rec.scrollToBlock(row.id)}
+          className="min-w-0 flex-1 truncate text-left text-sm text-foreground hover:underline"
+        >
+          {text}
+        </button>
+      </div>
+      {row.heading && <p className="text-[11px] text-muted-foreground">{row.heading}</p>}
+      {row.priorText && <p className="text-xs text-muted-foreground">Was: {row.priorText}</p>}
+      <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => rec.keepBlock(row.id)}
+          aria-label={`Keep change: ${text}`}
+          className={buttonClasses("secondary", "sm")}
+        >
+          Keep
+        </button>
+        <button
+          type="button"
+          onClick={() => rec.revertBlock(row.id)}
+          aria-label={`Revert change: ${text}`}
+          className={buttonClasses("secondary", "sm")}
+        >
+          Revert
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /**
- * The rail's "preview" and "enhanced" body (specs/meeting-recording-rail.md):
- * each changed/added block with its heading for context (preview only), then
- * the action items as editable rows stacked on two lines to fit 400px, then
- * Create tasks. Apply/Cancel/Enhance again live in the rail's header, not
+ * The rail's "pendingReview" and "enhanced" body (specs/meeting-recording-
+ * rail.md Step 2): the change list (pendingReview only), then the action
+ * items as editable rows stacked on two lines to fit 400px, then Create
+ * tasks. Keep all/Revert all/Enhance again live in the rail's header, not
  * here.
  */
-export function EnhancePreview({ rec, mode }: { rec: UseMeetingRecording; mode: "preview" | "enhanced" }) {
+export function EnhancePreview({ rec, mode }: { rec: UseMeetingRecording; mode: "pendingReview" | "enhanced" }) {
   const notes = rec.enhanceNotes;
-  const preview = computeEnhancePreview(rec);
-  const changed = preview?.ops.filter((op) => op.kind === "update") ?? [];
-  const added = preview?.ops.filter((op) => op.kind === "insertAfter") ?? [];
 
   const [itemState, setItemState] = useState<Record<number, ActionItemRowState>>({});
   const [createTasksBusy, setCreateTasksBusy] = useState(false);
@@ -58,6 +94,12 @@ export function EnhancePreview({ rec, mode }: { rec: UseMeetingRecording; mode: 
   }, [notes]);
 
   if (!notes) return null;
+
+  // The live top-level blocks, read fresh each render — cheap (a plain
+  // getter, not reactive state) and needed both for the change-list rows'
+  // heading lookup and for "Task kept" below.
+  const liveBlocks = rec.getNoteState?.()?.blocks ?? [];
+  const rows = mode === "pendingReview" ? buildEnhanceChangeRows(rec.pendingMarks, liveBlocks, notes.priorBlocks) : [];
 
   // The plan's own roster (occurrence attendance + the note's project
   // current-term members, specs/meeting-notes-model.md §6) is more complete
@@ -92,19 +134,12 @@ export function EnhancePreview({ rec, mode }: { rec: UseMeetingRecording; mode: 
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
-      {mode === "preview" && (
-        <div className="flex flex-col gap-2 rounded-xl bg-os-well px-3 py-3">
-          {changed.length === 0 && added.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nothing to change.</p>
+      {mode === "pendingReview" && (
+        <div className="flex flex-col gap-2">
+          {rows.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Nothing left to review.</p>
           ) : (
-            <>
-              {changed.map((op) => op.kind === "update" && <EnhanceOpRow key={op.id} label="Changed" text={op.text} cites={op.cites} />)}
-              {added.map(
-                (op, i) =>
-                  op.kind === "insertAfter" &&
-                  op.blocks.map((b, j) => <EnhanceOpRow key={`${i}-${j}`} label="Added" text={b.text} cites={b.cites} />),
-              )}
-            </>
+            rows.map((row) => <EnhanceChangeRowView key={row.id} row={row} rec={rec} />)
           )}
           {(notes.verified.droppedBlocks > 0 || notes.verified.droppedCites > 0) && (
             <p className="text-xs text-muted-foreground">
@@ -136,11 +171,21 @@ export function EnhancePreview({ rec, mode }: { rec: UseMeetingRecording; mode: 
             {notes.plan.actionItems.map((item, i) => {
               const row = itemState[i];
               if (item.taskId) {
+                // A checklist block Enhance wrote still carries this item's
+                // text: keeping (or never having been reviewed yet) reads
+                // "Task created". Revert removed/restored that line, so the
+                // task it already made is now orphaned from the note's own
+                // text — "Task kept" (specs/meeting-recording-rail.md Step
+                // 2: "Revert on a block that already has a task... leaves
+                // the task, with the rail row reading 'Task kept'").
+                const stillWritten = liveBlocks.some(
+                  (b) => b.type === "checkListItem" && actionItemMatchesBlock(item.text, b.text),
+                );
                 return (
                   <li key={i} className="flex flex-col gap-1 rounded-lg bg-os-well px-3 py-2 text-sm text-foreground">
                     <p>{item.text}</p>
                     <p className="text-xs text-muted-foreground">
-                      Task created
+                      {stillWritten ? "Task created" : "Task kept"}
                       {rec.projectId && (
                         <>
                           {" · "}
@@ -211,29 +256,6 @@ export function EnhancePreview({ rec, mode }: { rec: UseMeetingRecording; mode: 
           </ul>
         </div>
       )}
-    </div>
-  );
-}
-
-function EnhanceOpRow({ label, text, cites }: { label: "Changed" | "Added"; text: string; cites: number[] }) {
-  return (
-    <div className="flex flex-col gap-1 rounded-lg border border-os-container bg-background px-3 py-2">
-      <span
-        className={cn(
-          "self-start rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
-          label === "Added" ? "bg-os-accent/15 text-os-accent" : "bg-os-container text-muted-foreground",
-        )}
-      >
-        {label}
-      </span>
-      <p className="text-sm text-foreground">
-        {text}
-        {cites.map((c) => (
-          <span key={c} className="ml-1.5 rounded-full bg-os-accent/10 px-1.5 py-0.5 font-mono text-[11px] text-os-accent">
-            {formatClock(c)}
-          </span>
-        ))}
-      </p>
     </div>
   );
 }

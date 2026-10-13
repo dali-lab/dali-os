@@ -11,6 +11,16 @@
 // still matches what the model saw, insert where it was told to (or the
 // closest faithful fallback when that anchor is gone), and — for an
 // untouched-template note only — drop headings the model never filled in.
+//
+// Also owns the pure half of inline review (specs/meeting-recording-rail.md
+// Step 2): classifying a mark as Added/Changed/Removed, the change-list row
+// shape, and detecting a local edit on an already-marked block — all plain
+// data in, plain data out, so use-meeting-recording.ts and EnhancePreview.tsx
+// can unit-test them without a live BlockNote editor. blockOwnText (below) is
+// itself editor-free (doc/schema/configs.ts), so this module stays safe
+// everywhere enhance-plan.ts already was (client and server).
+
+import { blockOwnText } from "~/components/doc/schema/configs";
 
 /** One top-level block's id, type, and own text (not its children) — what
  *  both the enhance request and the client-side merge key blocks on. */
@@ -68,6 +78,30 @@ export type EnhanceVerified = {
   unmatchedOwners: number;
 };
 
+/** The two reserved `backgroundColor` values Enhance writes to mark a block
+ *  pending review (specs/meeting-recording-rail.md Step 2) — plain strings
+ *  on BlockNote's existing per-block prop, never offered by the Colors
+ *  sub-menu. "added" covers both a changed block (kept its id, new text) and
+ *  a genuinely new block; "prior" marks a block Enhance would otherwise have
+ *  removed outright (an untouched-template heading), left in place instead
+ *  so Keep/Revert has something to act on. */
+export const ENHANCE_MARK_ADDED = "enhance-added" as const;
+export const ENHANCE_MARK_PRIOR = "enhance-prior" as const;
+export type EnhanceMark = typeof ENHANCE_MARK_ADDED | typeof ENHANCE_MARK_PRIOR;
+
+/** A block currently carrying a reserved mark — findEnhanceMarks's (app/
+ *  components/doc/enhance-render.ts) return element, duplicated here as a
+ *  type only so this module doesn't import the editor-bound one. */
+export type EnhanceMarkEntry = { id: string; mark: EnhanceMark; type: string; text: string };
+
+/** The reserved mark on a block's own `props`, or null — the one spot this
+ *  check lives; doc/enhance-render.ts's enhanceMarkOf and DocSideMenu both
+ *  delegate here instead of keeping their own copy. */
+export function markOfProps(props: Record<string, unknown> | undefined): EnhanceMark | null {
+  const bg = props?.backgroundColor;
+  return bg === ENHANCE_MARK_ADDED || bg === ENHANCE_MARK_PRIOR ? bg : null;
+}
+
 /** The shape stored on MeetingRecording.notes and returned by both the
  *  enhance endpoint and GET /api/meeting-recordings/:id. */
 export type StoredEnhanceNotes = {
@@ -86,6 +120,15 @@ export type StoredEnhanceNotes = {
    *  the page's own occurrence-only roster prop. Optional: absent on plans
    *  stored before this field existed. */
   roster?: { userId: string; name: string }[];
+  /** Full prior DocBlock JSON (content/props/children), keyed by block id,
+   *  for every block an "update" op changed — captured by renderEnhanceOps
+   *  before it overwrites the block, so Revert restores the original inline
+   *  styles, links, comment marks, and task chips rather than plain text. */
+  priorBlocks?: Record<string, unknown>;
+  /** ISO timestamp set when the last enhance-added/enhance-prior mark on
+   *  this note cleared, by any means — informational, lets the nudge job
+   *  and MCP tell "enhanced" from "enhanced and reviewed". */
+  reviewedAt?: string | null;
 };
 
 export type ApplyEnhancePlanResult = {
@@ -240,4 +283,128 @@ export function actionItemMatchesBlock(itemText: string, blockText: string): boo
   if (a === b) return true;
   const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
   return shorter.length >= 12 && longer.includes(shorter);
+}
+
+// ─── Inline review: pure helpers (specs/meeting-recording-rail.md Step 2) ──
+
+/** One block changed/inserted/deleted/moved by a single BlockNote transaction
+ *  — the shape of an element in editor.onChange's getChanges() result
+ *  (@blocknote/core's BlocksChanged), narrowed to only the fields this module
+ *  reads so it never needs the real (editor-bound) type. */
+export type EnhanceBlockChange = {
+  type: "insert" | "update" | "delete" | "move";
+  source: { type: string };
+  block: { id: string; props?: Record<string, unknown> };
+  prevBlock?: { id: string; props?: Record<string, unknown> } | null;
+};
+
+const LOCAL_CHANGE_SOURCE_TYPES = new Set(["local", "paste", "drop"]);
+
+/**
+ * Block ids a local edit should count as Keep for: an "update" change, from
+ * this client (not a remote Yjs update, not undo/redo), where the block
+ * already carried a reserved mark BEFORE this change AND still carries one
+ * now. The "still carries one now" half is what makes this safe to call
+ * again on the change produced by clearing the mark itself — by then the
+ * block's current mark is gone, so it drops out and nothing recurses.
+ * `marks` is the reserved-mark list as of AFTER this change (e.g.
+ * findEnhanceMarks(editor.document), called fresh in the onChange handler).
+ */
+export function localEditKeepIds(
+  changes: readonly EnhanceBlockChange[],
+  marks: readonly Pick<EnhanceMarkEntry, "id">[],
+): string[] {
+  const markedIds = new Set(marks.map((m) => m.id));
+  const kept = new Set<string>();
+  for (const change of changes) {
+    if (change.type !== "update") continue;
+    if (!LOCAL_CHANGE_SOURCE_TYPES.has(change.source.type)) continue;
+    if (!markedIds.has(change.block.id)) continue;
+    if (!markOfProps(change.prevBlock?.props)) continue;
+    kept.add(change.block.id);
+  }
+  return [...kept];
+}
+
+/** First line of a block's own text — what the rail row and the side-menu
+ *  item both show instead of the whole (possibly multi-line) block. */
+export function firstLineOf(text: string): string {
+  const i = text.indexOf("\n");
+  return (i === -1 ? text : text.slice(0, i)).trim();
+}
+
+/** Added/Changed/Removed for one marked block (spec: "a block with the added
+ *  mark whose id is in priorBlocks is Changed; otherwise Added; prior mark is
+ *  Removed"). */
+export function classifyEnhanceMark(
+  hit: Pick<EnhanceMarkEntry, "id" | "mark">,
+  priorBlocks: Record<string, unknown> | undefined,
+): "Added" | "Changed" | "Removed" {
+  if (hit.mark === ENHANCE_MARK_PRIOR) return "Removed";
+  return priorBlocks && Object.prototype.hasOwnProperty.call(priorBlocks, hit.id) ? "Changed" : "Added";
+}
+
+/** Counts for the rail's "N changed, N added, N removed" status line. */
+export function summarizeEnhanceMarks(
+  marks: readonly Pick<EnhanceMarkEntry, "id" | "mark">[],
+  priorBlocks: Record<string, unknown> | undefined,
+): { changed: number; added: number; removed: number } {
+  const counts = { changed: 0, added: 0, removed: 0 };
+  for (const m of marks) {
+    const kind = classifyEnhanceMark(m, priorBlocks);
+    if (kind === "Changed") counts.changed++;
+    else if (kind === "Added") counts.added++;
+    else counts.removed++;
+  }
+  return counts;
+}
+
+/** The nearest heading strictly before `id` in document order, or null —
+ *  context for the rail's change-list row. Walks the FULL top-level block
+ *  list (not just the marked ones), since the nearest heading is often an
+ *  untouched block. */
+export function headingAbove(blocks: readonly SnapshotBlock[], id: string): string | null {
+  const index = blocks.findIndex((b) => b.id === id);
+  if (index <= 0) return null;
+  for (let i = index - 1; i >= 0; i--) {
+    if (blocks[i]!.type === "heading") return blocks[i]!.text;
+  }
+  return null;
+}
+
+function priorBlockFirstLine(prior: unknown): string | null {
+  if (!prior || typeof prior !== "object") return null;
+  const text = blockOwnText(prior as Parameters<typeof blockOwnText>[0]);
+  return text ? firstLineOf(text) : null;
+}
+
+export type EnhanceChangeRow = {
+  id: string;
+  kind: "Added" | "Changed" | "Removed";
+  /** First line of the block's current (post-Enhance) text. */
+  text: string;
+  /** Nearest heading above the block, for context, or null. */
+  heading: string | null;
+  /** First line of the block's text before Enhance touched it — Changed
+   *  rows only. */
+  priorText: string | null;
+};
+
+/** The rail's change list, one row per marked block in document order
+ *  (findEnhanceMarks already returns them in order). */
+export function buildEnhanceChangeRows(
+  marks: readonly EnhanceMarkEntry[],
+  blocks: readonly SnapshotBlock[],
+  priorBlocks: Record<string, unknown> | undefined,
+): EnhanceChangeRow[] {
+  return marks.map((m) => {
+    const kind = classifyEnhanceMark(m, priorBlocks);
+    return {
+      id: m.id,
+      kind,
+      text: firstLineOf(m.text),
+      heading: headingAbove(blocks, m.id),
+      priorText: kind === "Changed" ? priorBlockFirstLine(priorBlocks?.[m.id]) : null,
+    };
+  });
 }

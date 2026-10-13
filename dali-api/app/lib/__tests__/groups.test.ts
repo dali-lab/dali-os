@@ -85,7 +85,7 @@ describe("isGroupArchived", () => {
   });
 
   it("never auto-archives the term-independent dynamic groups", () => {
-    for (const q of ["core", "hiring", "alumni", "domain:d1", "offering:o1"]) {
+    for (const q of ["core", "hiring", "mentors", "alumni", "domain:d1", "offering:o1"]) {
       expect(
         isGroupArchived({ archivedAt: null, boundTermIds: [], dynamicQuery: q }, ctx),
       ).toBe(false);

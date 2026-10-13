@@ -75,6 +75,7 @@ describe("GET /api/meeting-recordings/:id", () => {
     expect(json.stopRequested).toBe(false);
     expect(json.speakers).toEqual({ "mic:1": userId });
     expect(json.speakerNames).toEqual({ "mic:1": "Priya Shah" });
+    expect(json.reviewedAt).toBeNull();
   });
 
   it("gives a non-owner viewer the read-only shape, also with speakerNames resolved", async () => {
@@ -89,6 +90,31 @@ describe("GET /api/meeting-recordings/:id", () => {
     const json = await res.json();
     expect(json.stopRequested).toBeUndefined();
     expect(json.speakerNames).toEqual({ "mic:1": "Priya Shah" });
+    expect(json.reviewedAt).toBeNull();
+  });
+
+  it("surfaces notes.reviewedAt for both the owner and a viewer", async () => {
+    vi.mocked(prisma.meetingRecording.findUnique).mockResolvedValue({
+      id: "rec1",
+      userId: "u1",
+      documentName: "doc:p1:body",
+      status: "Done",
+      stopRequested: false,
+      channels: ["mic"],
+      segmentStarts: [0],
+      recordedSeconds: 42,
+      error: null,
+      speakers: {},
+      lines: [],
+      insertedAt: null,
+      finalizedAt: new Date("2026-10-10T00:00:00Z"),
+      notes: { reviewedAt: "2026-10-10T00:10:00.000Z" },
+      enhancedAt: new Date("2026-10-10T00:05:00Z"),
+      enhancedBy: "Ada Lovelace",
+    } as never);
+    const res = await run();
+    const json = await res.json();
+    expect(json.reviewedAt).toBe("2026-10-10T00:10:00.000Z");
   });
 
   it("passes free-text speaker assignments through speakerNames unchanged", async () => {

@@ -52,6 +52,7 @@ import { readDocAsBlocks } from "~/collab/read";
 import { replaceCollabDocContent } from "~/collab/write";
 import { generateAndVerifyEnhancePlan } from "~/lib/meeting-notes-enhance.server";
 import { _resetForTests as resetRateLimits } from "~/lib/rate-limit";
+import { ENHANCE_MARK_ADDED, ENHANCE_MARK_PRIOR } from "~/components/meeting-recorder/enhance-plan";
 import {
   runEnhanceMeetingNotes,
   ENHANCE_MEETING_NOTES_DEF,
@@ -210,6 +211,44 @@ describe("enhance_meeting_notes", () => {
       data: { enhancedAt: expect.any(Date), enhancedBy: "Ada Lovelace" },
     });
     expect(result).toMatchObject({ applied: true, enhancedBy: "Ada Lovelace" });
+  });
+
+  it("apply refuses (409) when a top-level block in the live doc carries a reserved mark", async () => {
+    const stored = {
+      plan: { blocks: [], actionItems: [] },
+      verified: { droppedCites: 0, droppedBlocks: 0, unmatchedOwners: 0 },
+      snapshotAt: "2026-10-10T00:00:00.000Z",
+      snapshot: [],
+    };
+    mockPrisma.meetingRecording.findUnique.mockResolvedValue(recording({ notes: stored }));
+    vi.mocked(readDocAsBlocks).mockResolvedValue([
+      { id: "b1", type: "paragraph", props: { backgroundColor: ENHANCE_MARK_ADDED }, content: [], children: [] },
+    ] as never);
+
+    await expect(
+      runEnhanceMeetingNotes(ctxFor("u1"), { recordingId: "rec1", apply: true }),
+    ).rejects.toMatchObject({ status: 409, message: "Keep or revert the current changes first" });
+
+    expect(forceSnapshot).not.toHaveBeenCalled();
+    expect(replaceCollabDocContent).not.toHaveBeenCalled();
+    expect(mockPrisma.meetingRecording.update).not.toHaveBeenCalled();
+  });
+
+  it("apply refuses (409) for an enhance-prior mark too", async () => {
+    const stored = {
+      plan: { blocks: [], actionItems: [] },
+      verified: { droppedCites: 0, droppedBlocks: 0, unmatchedOwners: 0 },
+      snapshotAt: "2026-10-10T00:00:00.000Z",
+      snapshot: [],
+    };
+    mockPrisma.meetingRecording.findUnique.mockResolvedValue(recording({ notes: stored }));
+    vi.mocked(readDocAsBlocks).mockResolvedValue([
+      { id: "b1", type: "heading", props: { backgroundColor: ENHANCE_MARK_PRIOR }, content: [], children: [] },
+    ] as never);
+
+    await expect(
+      runEnhanceMeetingNotes(ctxFor("u1"), { recordingId: "rec1", apply: true }),
+    ).rejects.toMatchObject({ status: 409 });
   });
 
   it("apply 503s when the collab server isn't running in this process", async () => {

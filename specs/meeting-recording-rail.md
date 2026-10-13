@@ -164,9 +164,9 @@ confirm while recording, the "Insert transcript" label as shipped.
 
 ## Not in this step
 
-- In-document preview tinting with Keep / Undo.
 - Inline "Make task" hover affordance on checklist items.
 - Any change to the record prompt banner or the native pill.
+- In-document preview tinting with Keep / Undo: specified below as step 2.
 
 ## Risks
 
@@ -177,3 +177,171 @@ confirm while recording, the "Insert transcript" label as shipped.
 - `MeetingRecorder.tsx` is ~1,900 lines; the split above is the bulk of the
   work. Behaviour is unchanged by the hook extraction, so the existing route
   and component tests must keep passing before the rail is wired.
+
+## Step 2: inline enhance preview
+
+Draft 2, Oct 12 2026, after a design review of draft 1. Scope: UI plus one
+small change to the recording's stored notes. The merge rule, server
+verification, createTasks and citation chips stay as shipped.
+
+### Problem
+
+The step-1 preview is a list in the rail: "Changed" and "Added" rows, each
+showing only the new text. Nobody can tell where a row lands in the note or
+what a changed block said before. Removals (template headings the model left
+empty) are not listed at all, so they vanish on Apply with no warning. People
+cannot evaluate Apply, so they either apply blind or never use Enhance.
+
+Granola's enhance is inline: when the meeting ends it rewrites the note in
+place, keeps the original notes behind a toggle, and offers no per-change
+review. Granola is single-user. A DALI note is shared, so the inline shape
+has to work when two people are looking at the same preview.
+
+### Shape
+
+Enhance writes to the document immediately, marked, and the review happens
+in the note. There is no separate Apply step.
+
+- **Preview is a write.** Clicking Enhance notes runs the plan through the
+  existing merge and replays the ops against the editor as it does today,
+  in **one editor transaction** (so the editor's own Cmd+Z reverts the whole
+  write, never half of it), with every block the plan touches marked. The
+  "Before enhance" version snapshot and the `enhanced` lock happen first,
+  exactly as Apply does now.
+- **Marks live in the document**, so every editor sees the same preview,
+  on any device, after a reload, and in the Drawer on a narrow canvas.
+  The marker is the block's existing `backgroundColor` prop, a default
+  BlockNote prop on every block, stored in Yjs as a free string, with two
+  values the Colors sub-menu never offers: `enhance-added` and
+  `enhance-prior`. No editor schema change, so nothing for other clients to
+  decode. The Colors sub-menu in `DocSideMenu` keeps its normal palette;
+  choosing any color from it on a marked block counts as Keep. Theme CSS
+  maps `enhance-added` to a soft accent tint and `enhance-prior` to a grey
+  tint with `text-decoration: line-through` on the block, in light and dark.
+  The strikethrough is CSS on the tint, never an inline style written into
+  the content.
+- **Changed block.** Keeps its id, gets the new text and the `enhance-added`
+  tint. Its prior text is not written to the document. At write time the
+  recording's stored notes gain `priorBlocks`, a map from block id to the
+  full prior block (content, props, children), so Revert restores the
+  original inline styles, links, comment marks and task chips rather than
+  plain text. The rail row for a changed block shows "Was: <prior first
+  line>", and the side-menu Revert button's tooltip shows the same.
+- **Added block.** `enhance-added` tint. Citation chips are the ordinary
+  links they are today and work during review.
+- **Removed block** (an untouched-template heading the model never filled):
+  stays in place with the `enhance-prior` tint. Deleted on Keep, cleared on
+  Revert.
+- **Keep** clears the tint on a block, or deletes a removed block. **Revert**
+  restores a changed block from `priorBlocks`, deletes an added block, or
+  clears the tint on a removed block. Both are ordinary editor operations on
+  specific block ids, never a whole-document replace, so a teammate's typing
+  in untouched blocks during the review is never lost. The "Before enhance"
+  version stays in History as the safety net and is not used by Revert.
+- **Per-block and whole-note.** The rail header shows Keep all and Revert
+  all while any marked block exists. Each rail row carries its own Keep and
+  Revert, at every width, since the row is where the before text is and the
+  side menu is a hover gutter that touch and compact density never show.
+  On a wide canvas each marked block also gets Keep and Revert in its side
+  menu (`DocSideMenu`). A local edit to a marked block counts as Keep: the
+  tint clears. Local means the editor transaction's origin is this client,
+  not a remote Yjs update and not the editor's own undo stack.
+- **Concurrent review.** Two people acting on the same block is last writer
+  wins over Yjs. The worst case is one person's Keep landing after the
+  other's Revert, which leaves the block in whichever state arrived last,
+  never a lost block. Keep all and Revert all iterate the marks present at
+  click time and skip ids that are already gone.
+- **Anyone who can edit the note can keep or revert**, not only whoever ran
+  Enhance. The marks are shared state; gating review to the enhancer would
+  leave a tinted note nobody else could clean up. A viewer without edit sees
+  the pending state with no Keep or Revert and no instruction.
+- **Pending is derived from the document**, not from a flag: the rail is in
+  the `pending review` state while any block carries a reserved tint. The
+  scan runs on document change, memoized per Yjs transaction. No column to
+  reconcile, nothing left behind if a tab closes, and marks that survive a
+  Cmd+Z of the enhance write are cleared by the same scan. The stored notes
+  gain `reviewedAt`, set when the last mark clears by any means, so the
+  nudge job and MCP can tell "enhanced" from "enhanced and reviewed"; it is
+  informational.
+
+### Rail states, revised
+
+| State | Status line | Body | Primary | Secondary |
+|---|---|---|---|---|
+| generating | "Reading your notes and the transcript…" | transcript | | Cancel |
+| pending review | "Ada enhanced this note: 4 changed, 6 added, 1 removed." plus "2 blocks changed while this ran and were left as typed." when > 0 | change list (below), then the action rows and Create tasks | Keep all | Revert all |
+| enhanced | "Enhanced Oct 10, 2:14 PM by Ada. Reviewed." | action rows, transcript | Enhance again | Discard (owner or Core) |
+| stale preview | unchanged | | | |
+
+The `preview` state and its Apply / Cancel pair are cut. While pending
+review, Enhance again reads "Revert all and enhance again" and does exactly
+that, so an unreviewed note is never stuck. Discard during pending review
+reverts all first, then deletes the recording, so tints never outlive the
+rail.
+
+**Change list.** One row per marked block, in document order: the kind word
+(Added, Changed, Removed), the first line of the new text, the heading above
+it, "Was: <prior first line>" for a changed block, and Keep / Revert.
+Clicking the row's text scrolls the note to that block and flashes it. Rows
+disappear as blocks are kept or reverted and the status line counts tick
+down.
+
+**Narrow canvas.** The Drawer shows the same header and list, with Keep and
+Revert on each row. The top-bar button reads "Review" with the pending count
+while any mark remains.
+
+**Someone else's enhance.** A viewer who arrives while marks exist sees the
+`pending review` state with the enhancer's name. The owner-only background
+auto-preview from step 1 (`use-meeting-recording.ts`, the effect after
+`highlightAt`) is cut: there is nothing to pre-compute when preview and apply
+are the same write, and a background write to a shared note is not
+acceptable. Enhance runs only on a click.
+
+### Marks and the rest of the note
+
+- `backgroundColor` values other than the two reserved ones are untouched
+  and never produced by Enhance.
+- Paste: BlockNote reads `data-background-color` from clipboard HTML, so a
+  marked block copied into another document would arrive marked with no
+  recording behind it. The paste handler strips the two reserved values.
+- Create tasks works during pending review; a task created from a marked
+  checklist item links to that block id, and Keep leaves the id intact.
+  Revert on a block that already has a task removes or restores the block
+  and leaves the task, with the rail row reading "Task kept".
+- Insert transcript, speaker renames and the Transcript toggle are
+  unaffected: Enhance never marks the toggle.
+- Server write paths refuse while marks exist: the generate endpoint and
+  the MCP `enhance_meeting_notes` apply path both snapshot the live
+  document, so they return "Keep or revert the current changes first" when
+  any top-level block carries a reserved tint. The MCP apply path otherwise
+  still writes directly with no marks: an agent run is a deliberate
+  instruction with no reviewer at the screen.
+- Retention janitor and version history ignore marks.
+
+### Accessibility
+
+- Marked blocks carry `aria-description` "Added by Enhance, pending review"
+  / "Changed by Enhance, pending review" / "Removed by Enhance, pending
+  review". Support is patchy, so the reliable channel is the buttons: rail
+  rows and side-menu items are named "Keep change: <first line>" and "Revert
+  change: <first line>", and each rail row starts with its kind word so the
+  distinction is never color-only.
+- Keep all and Revert all announce on the rail's live region: "Kept 11
+  changes." / "Reverted 11 changes."
+
+### Cut
+
+The `preview` rail state, Apply, Cancel, the owner-only background
+auto-preview, the "Changed" / "Added" rows that show text out of context.
+
+### Risks
+
+- Updating a changed block's content drops comment marks and task chips on
+  that line. Pre-existing in Apply; `priorBlocks` makes Revert restore them,
+  Keep does not bring them back. Note it in the row ("Was:" shows the old
+  line) and accept.
+- The reserved values are plain strings. A test on `DocSideMenu`'s Colors
+  config asserts the palette never includes them, and the paste handler test
+  asserts they are stripped.
+- Deriving pending from a per-transaction scan is O(top-level blocks); the
+  notes are short. Measure once on the longest prod note before shipping.

@@ -1,10 +1,8 @@
 // MCP `get_project_file` — return full version history + signed download URLs
 // for a single project file. Mirrors GET /api/files/:id.
-//
-// Gate: mcp:read (any authenticated member — communal project files are
-// visible to all lab members, matching the web route's canViewFile default).
 
 import { prisma } from "~/lib/db";
+import { canViewFile } from "~/lib/fileAccess.server";
 import { getDownloadUrl } from "~/lib/s3";
 import { hydrateAuthors } from "~/lib/collabAuth";
 import { UNKNOWN_LABEL } from "~/lib/display";
@@ -31,7 +29,7 @@ export const GET_PROJECT_FILE_TOOL = {
 
 type Input = { fileId: string };
 
-export async function runGetProjectFile(_callerId: string, input: Input) {
+export async function runGetProjectFile(callerId: string, input: Input) {
   const file = await prisma.projectFile.findUnique({
     where: { id: input.fileId },
     select: {
@@ -41,6 +39,8 @@ export async function runGetProjectFile(_callerId: string, input: Input) {
       archivedAt: true,
       projectId: true,
       workspaceType: true,
+      workspaceId: true,
+      folderPageId: true,
       versions: {
         orderBy: { createdAt: "desc" },
         select: {
@@ -55,7 +55,7 @@ export async function runGetProjectFile(_callerId: string, input: Input) {
       },
     },
   });
-  if (!file || file.archivedAt !== null) {
+  if (!file || file.archivedAt !== null || !(await canViewFile(callerId, file))) {
     throw new McpNotFoundError("File not found or archived");
   }
 
