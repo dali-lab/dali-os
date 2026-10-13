@@ -28,7 +28,7 @@ import { getUserRoles } from "~/lib/roles";
 import { receiversEnabled } from "~/lib/drive-receivers.server";
 import { resolveTermFilter } from "~/lib/terms";
 import { TermFilter } from "~/components/TermFilter";
-import { prisma } from "~/lib/db";
+import { loadProjectWorkspaces, loadEducationWorkspaces, loadAllDocTags, loadItemTagIds } from "~/lib/drive-hub.server";
 import { loadDriveScopes } from "~/lib/drive-scopes.server";
 import { loadDriveHome } from "~/lib/drive-home.server";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
@@ -124,8 +124,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return partnerRedirect;
 
+  const userId = auth.user.sub;
   const [roles, termFilter] = await Promise.all([
-    getUserRoles(auth.user.sub, request),
+    getUserRoles(userId, request),
     resolveTermFilter(request),
   ]);
   // isCore is the gate for agreement authoring. Passed down as canManageAgreements
@@ -133,130 +134,41 @@ export async function loader({ request }: Route.LoaderArgs) {
   const userCanViewForms = roles.canViewForms;
   const userCanManageAgreements = roles.isCore;
 
-  // Load only the project list needed to build Drive scopes — same access
-  // filter as documents.hub: Core sees all projects; others see only projects
-  // they're staffed on, scoped to the selected term. `?term=` scopes which
-  // project (and Education) drives appear, exactly as it scopes the projects
-  // hub; "All terms" drops the gate so older drives stay reachable. My Drive /
-  // General / Core are never term-filtered.
-  const termId = termFilter.isAll ? null : termFilter.termId;
-  // rawProjects and termWindow don't depend on each other — both only need
-  // termId/roles — so they run as one wave instead of two round-trips.
-  const [rawProjects, termWindow] = await Promise.all([
-    prisma.project.findMany({
-      where: {
-        ...(termId ? { projectTerms: { some: { termId } } } : {}),
-        ...(roles.isCore ? {} : { assignments: { some: { userId: auth.user.sub } } }),
-      },
-      orderBy: [{ status: "asc" }, { name: "asc" }],
-      select: { id: true, name: true, iconEmoji: true },
-    }),
-    // Education workspaces. Access rule mirrors pageAccess.server: Core sees
-    // all offerings; non-Core sees offerings where they are an instructor
-    // (any term) OR have an Approved application. Offerings don't store a
-    // term — one belongs to the selected term when its run starts inside
-    // that term's date window — so the term gate is a date range on
-    // `startsAt`, not the instructor-assignment term.
-    termId
-      ? prisma.term.findUnique({
-          where: { id: termId },
-          select: { startDate: true, endDate: true },
-        })
-      : null,
-  ]);
-  const projectWorkspaces = rawProjects.map((p) => ({
-    key: p.id,
-    label: p.name,
-    kind: "project" as const,
-    projectIconEmoji: p.iconEmoji,
-  }));
-
-  const startsInTerm = termWindow
-    ? { startsAt: { gte: termWindow.startDate, lte: termWindow.endDate } }
-    : {};
-  const approvedOrInstructor = roles.isCore
-    ? // Core sees all offerings; gate on the term window when a specific term
-      // is selected, or show all when "all terms" is chosen.
-      await prisma.educationOffering.findMany({
-        where: termWindow ? startsInTerm : undefined,
-        orderBy: { title: "asc" },
-        select: { id: true, title: true },
-      })
-    : // Non-Core: instructor on the offering (any term) OR Approved application.
-      // When a specific term is selected, ALSO require the run to start in it.
-      await prisma.educationOffering.findMany({
-        where: {
-          AND: [
-            startsInTerm,
-            {
-              OR: [
-                { instructors: { some: { userId: auth.user.sub } } },
-                { applications: { some: { applicantUserId: auth.user.sub, status: "Approved" } } },
-              ],
-            },
-          ],
-        },
-        orderBy: { title: "asc" },
-        select: { id: true, title: true },
-      });
-  const educationWorkspaces = approvedOrInstructor.map((o) => ({
-    key: o.id,
-    label: o.title,
-    kind: "education" as const,
-  }));
-
-  const driveScopes = await loadDriveScopes({
-    userSub: auth.user.sub,
-    projectWorkspaces,
-    educationWorkspaces,
-    canViewForms: userCanViewForms,
-    canManageAgreements: userCanManageAgreements,
+  // `?term=` scopes which project (and Education) drives appear, exactly as it
+  // scopes the projects hub; "All terms" drops the gate so older drives stay
+  // reachable. My Drive / General / Core are never term-filtered.
+  const viewer = {
+    userId,
     isCore: roles.isCore,
-    request,
-  });
+    termId: termFilter.isAll ? null : termFilter.termId,
+  };
 
-  const homeEnabled = await isFeatureEnabled("drive-home", auth.user.sub, roles, request);
-  const homePromise = homeEnabled ? loadDriveHome(auth.user.sub, request) : Promise.resolve(null);
-
-  // Tags come from the join tables keyed by the ids the scopes actually
-  // resolved to, rather than being selected into every page/file query in
-  // drive.server. Two bounded queries instead of a join on each of the six
-  // scope loaders, and drive.server keeps knowing nothing about tags.
-  const pageIds: string[] = [];
-  const fileIds: string[] = [];
-  for (const scope of driveScopes) {
-    for (const item of scope.items) {
-      if (item.type === "doc" || item.type === "folder") pageIds.push(item.id);
-      else if (item.type === "file") fileIds.push(item.id);
-    }
-  }
-  const [allTags, pageTags, fileTags] = await Promise.all([
-    // Every live tag, not just the ones already on something visible here.
-    // Restricting it to what's in view hides the control completely until
-    // somebody has tagged a document — which reads as "the filter is missing"
-    // rather than "nothing is tagged yet". Matches the old documents hub.
-    prisma.docTag.findMany({
-      where: { archivedAt: null },
-      orderBy: { label: "asc" },
-      select: { id: true, label: true, slug: true, color: true },
-    }),
-    pageIds.length
-      ? prisma.pageTag.findMany({
-          where: { pageId: { in: pageIds }, tag: { archivedAt: null } },
-          select: { pageId: true, tag: { select: { id: true } } },
-        })
-      : Promise.resolve([]),
-    fileIds.length
-      ? prisma.projectFileTag.findMany({
-          where: { fileId: { in: fileIds }, tag: { archivedAt: null } },
-          select: { fileId: true, tag: { select: { id: true } } },
-        })
-      : Promise.resolve([]),
+  // Only the item tags wait on the scopes (they're keyed by the ids the scopes
+  // resolved to). Everything else starts now and is awaited together.
+  const [{ driveScopes, itemTagIds }, allTags, receivers, { homeEnabled, home }] = await Promise.all([
+    (async () => {
+      const [projectWorkspaces, educationWorkspaces] = await Promise.all([
+        loadProjectWorkspaces(viewer),
+        loadEducationWorkspaces(viewer),
+      ]);
+      const driveScopes = await loadDriveScopes({
+        auth,
+        projectWorkspaces,
+        educationWorkspaces,
+        canViewForms: userCanViewForms,
+        canManageAgreements: userCanManageAgreements,
+        isCore: roles.isCore,
+        request,
+      });
+      return { driveScopes, itemTagIds: await loadItemTagIds(driveScopes) };
+    })(),
+    loadAllDocTags(),
+    receiversEnabled(request),
+    (async () => {
+      const homeEnabled = await isFeatureEnabled("drive-home", userId, roles, request);
+      return { homeEnabled, home: homeEnabled ? await loadDriveHome(userId, request) : null };
+    })(),
   ]);
-
-  const itemTagIds: Record<string, string[]> = {};
-  for (const { pageId, tag } of pageTags) (itemTagIds[pageId] ??= []).push(tag.id);
-  for (const { fileId, tag } of fileTags) (itemTagIds[fileId] ??= []).push(tag.id);
 
   return {
     driveScopes,
@@ -266,12 +178,12 @@ export async function loader({ request }: Route.LoaderArgs) {
     selectedTerm: termFilter.selected,
     canViewForms: userCanViewForms,
     canManageAgreements: userCanManageAgreements,
-    receiversEnabled: await receiversEnabled(request),
+    receiversEnabled: receivers,
     homeEnabled,
-    home: await homePromise,
+    home,
     // My Drive is the Member workspace keyed by the viewer's own id — the
     // cross-drive move needs it to name the source workspace it's leaving.
-    viewerId: auth.user.sub,
+    viewerId: userId,
   };
 }
 

@@ -5,7 +5,7 @@
 import { loadDriveScope, loadForms, loadOrphanForms, buildLinkedProcessMap } from "~/lib/drive.server";
 import type { DriveItem, ProjectPageRow, ProjectFileRow } from "~/lib/drive.server";
 import { prisma } from "~/lib/db";
-import { requireAuth, isImpersonating } from "~/lib/auth";
+import { isImpersonating, type AuthSuccess } from "~/lib/auth";
 import { favoritePageIds } from "~/lib/user-pages.server";
 import { withChildCounts } from "~/lib/drive-counts.server";
 import { loadSharedWithMe } from "~/lib/drive-shared.server";
@@ -106,6 +106,25 @@ async function resolveLiveRoots(userSub: string, isCore: boolean) {
   return findAllRoots();
 }
 
+async function loadLegacyCoreTops() {
+  const coreGroup = await prisma.groupDefinition.findUnique({
+    where: { systemKey: "core" },
+    select: { id: true },
+  });
+  if (!coreGroup) return [];
+  return prisma.page.findMany({
+    where: {
+      workspaceType: "Lab",
+      workspaceId: null,
+      parentPageId: null,
+      scopeKind: "Group",
+      scopeGroupId: coreGroup.id,
+      archivedAt: null,
+    },
+    select: { id: true, folderType: true },
+  });
+}
+
 type WorkspaceOut = {
   key: string;
   label: string;
@@ -128,7 +147,7 @@ type WorkspaceOut = {
  *   - No form is duplicated across scopes.
  */
 export async function loadDriveScopes({
-  userSub,
+  auth,
   projectWorkspaces,
   educationWorkspaces,
   canViewForms,
@@ -136,7 +155,8 @@ export async function loadDriveScopes({
   isCore,
   request,
 }: {
-  userSub: string;
+  /** The viewer's already-resolved session; its `user.sub` is the viewer. */
+  auth: AuthSuccess;
   projectWorkspaces: WorkspaceOut[];
   /** Education offerings the viewer can access (enrolled / instructor / Core). */
   educationWorkspaces: WorkspaceOut[];
@@ -164,12 +184,7 @@ export async function loadDriveScopes({
     isAlumni: false,
   };
   const spaces = visibleDriveSpaces(roleFlags);
-
-  const [favIds, linkedProcessMap] = await Promise.all([
-    favoritePageIds(userSub),
-    // Signal ②: build process linkages once for the whole load (no per-row queries).
-    buildLinkedProcessMap(),
-  ]);
+  const userSub = auth.user.sub;
 
   const projectIds = projectWorkspaces.map((w) => w.key);
   const projectNames = new Map(projectWorkspaces.map((w) => [w.key, w.label]));
@@ -182,26 +197,75 @@ export async function loadDriveScopes({
   // My Drive is the member's private space (Member-workspace pages and files,
   // i.e. their personal notes). An admin impersonating them gets the scope but
   // none of its contents — nothing personal is even queried.
-  const auth = await requireAuth(request);
-  const hidePersonal = auth.ok && isImpersonating(auth);
+  const hidePersonal = isImpersonating(auth);
 
-  // Phase 1: load pages + files for every scope WITHOUT forms.
-  const [memberItems, sharedItems, labItems, liveRoots, ...projectItemArrays] = await Promise.all([
+  const processSpaces = spaces.filter((s) => s.backing === "process-root" && s.rootKey);
+  const needForms = canViewForms || isCore;
+
+  // Signal ②: build process linkages once for the whole load (no per-row queries).
+  const linkedProcessMapPending = buildLinkedProcessMap();
+  const liveRootsPending = resolveLiveRoots(userSub, isCore);
+  // Whether the viewer can open each root only needs the roots, not the Lab load.
+  const rootAccessPending = liveRootsPending.then((live) =>
+    Promise.all(
+      processSpaces.map(async (space) => {
+        const key = space.rootKey!;
+        const rootId = live.byKey[key];
+        if (!rootId) return null;
+        const access = await getPageAccess(userSub, rootId, request);
+        return access.canView ? { key, rootId } : null;
+      }),
+    ),
+  );
+  // Until the reparent job has run, Core-scoped folders still sit at the Lab
+  // top level. Looked up speculatively: it needs nothing from the Lab load.
+  const legacyTopsPending = isCore ? loadLegacyCoreTops() : Promise.resolve([]);
+  // Forms are read unscoped so they don't wait on the folder ids: placement
+  // below keeps only forms at a scope's top level or inside one of its folders.
+  const allFormsPending = needForms
+    ? linkedProcessMapPending.then((map) => loadForms(undefined, map))
+    : Promise.resolve([] as DriveItem[]);
+  // Safety-net: forms whose folder was archived/deleted are dropped by the scoped
+  // placement below; surface them at the General root so none are lost.
+  // Gated on the un-widened canViewForms (they land in the Lab scope, like labForms).
+  const orphanFormsPending = canViewForms
+    ? linkedProcessMapPending.then((map) => loadOrphanForms(map))
+    : Promise.resolve([] as DriveItem[]);
+
+  const [
+    favIds,
+    memberItems,
+    sharedItems,
+    labItems,
+    liveRoots,
+    rootAccess,
+    legacyTops,
+    allForms,
+    orphanForms,
+    ...scopeItemArrays
+  ] = await Promise.all([
+    favoritePageIds(userSub),
     hidePersonal
       ? Promise.resolve<DriveItem[]>([])
       : loadDriveScope({ userSub, scope: { kind: "Member" }, request }),
     hidePersonal
       ? Promise.resolve<DriveItem[]>([])
       : loadSharedWithMe({ userSub, request }),
-    loadDriveScope({
-      userSub,
-      scope: { kind: "Lab" },
-      canViewForms: false,
-      canManageAgreements: isCore,
-      request,
-      linkedProcessMap,
-    }),
-    resolveLiveRoots(userSub, isCore),
+    linkedProcessMapPending.then((linkedProcessMap) =>
+      loadDriveScope({
+        userSub,
+        scope: { kind: "Lab" },
+        canViewForms: false,
+        canManageAgreements: isCore,
+        request,
+        linkedProcessMap,
+      }),
+    ),
+    liveRootsPending,
+    rootAccessPending,
+    legacyTopsPending,
+    allFormsPending,
+    orphanFormsPending,
     ...projectIds.map((projectId) =>
       loadDriveScope({
         userSub,
@@ -210,11 +274,7 @@ export async function loadDriveScopes({
         request,
       }),
     ),
-  ]);
-
-  // Load education offering pages in parallel (no forms yet).
-  const educationItemArrays = await Promise.all(
-    educationIds.map((offeringId) =>
+    ...educationIds.map((offeringId) =>
       loadDriveScope({
         userSub,
         scope: { kind: "EducationOffering", offeringId },
@@ -222,27 +282,9 @@ export async function loadDriveScopes({
         request,
       }),
     ),
-  );
-
-  // Phase 2: load all forms in ONE query across all visible folder ids.
-  const needForms = canViewForms || isCore;
-  let allForms: DriveItem[] = [];
-  // Safety-net: forms whose folder was archived/deleted are dropped by the scoped
-  // loadForms query above; surface them at the General root so none are lost.
-  // Gated on the un-widened canViewForms (they land in the Lab scope, like labForms).
-  let orphanForms: DriveItem[] = [];
-  if (needForms) {
-    const allFolderIds = [
-      ...labItems.filter((i) => i.type === "folder").map((i) => i.id),
-      ...projectItemArrays.flatMap((arr) => arr.filter((i) => i.type === "folder").map((i) => i.id)),
-      ...educationItemArrays.flatMap((arr) => arr.filter((i) => i.type === "folder").map((i) => i.id)),
-    ];
-    // Pass linkedProcessMap so each form row gets its process annotation (Signal ②).
-    [allForms, orphanForms] = await Promise.all([
-      loadForms(allFolderIds, linkedProcessMap),
-      canViewForms ? loadOrphanForms(linkedProcessMap) : Promise.resolve([] as DriveItem[]),
-    ]);
-  }
+  ]);
+  const projectItemArrays = scopeItemArrays.slice(0, projectIds.length);
+  const educationItemArrays = scopeItemArrays.slice(projectIds.length);
 
   // Carve every root's subtree out of the Lab load, whichever process owns it:
   // a Mentorship root must never show as a folder in General, and a viewer who
@@ -255,47 +297,21 @@ export async function loadDriveScopes({
   for (const rootId of liveRoots.ids) {
     for (const id of subtreeIds(labItems, rootId)) carved.add(id);
   }
-  const processSpaces = spaces.filter((s) => s.backing === "process-root" && s.rootKey);
-  await Promise.all(
-    processSpaces.map(async (space) => {
-      const key = space.rootKey!;
-      const rootId = liveRoots.byKey[key];
-      if (!rootId) return;
-      const access = await getPageAccess(userSub, rootId, request);
-      if (!access.canView) return;
-      visibleRootIds.set(key, rootId);
-      const inRoot = subtreeIds(labItems, rootId);
-      rootSpaceItems.set(
-        key,
-        labItems
-          .filter((it) => inRoot.has(it.id) && it.id !== rootId)
-          .map((it) => (it.parentFolderId === rootId ? { ...it, parentFolderId: null } : it)),
-      );
-      rootFolderIdsByKey.set(key, inRoot);
-    }),
-  );
+  for (const visible of rootAccess) {
+    if (!visible) continue;
+    const { key, rootId } = visible;
+    visibleRootIds.set(key, rootId);
+    const inRoot = subtreeIds(labItems, rootId);
+    rootSpaceItems.set(
+      key,
+      labItems
+        .filter((it) => inRoot.has(it.id) && it.id !== rootId)
+        .map((it) => (it.parentFolderId === rootId ? { ...it, parentFolderId: null } : it)),
+    );
+    rootFolderIdsByKey.set(key, inRoot);
+  }
 
-  // Until the reparent job has run, Core-scoped folders still sit at the Lab
-  // top level. Show them in Core too, so the space reads the same before and
-  // after the move.
   if (isCore && visibleRootIds.has("core")) {
-    const coreGroup = await prisma.groupDefinition.findUnique({
-      where: { systemKey: "core" },
-      select: { id: true },
-    });
-    const legacyTops = coreGroup
-      ? await prisma.page.findMany({
-          where: {
-            workspaceType: "Lab",
-            workspaceId: null,
-            parentPageId: null,
-            scopeKind: "Group",
-            scopeGroupId: coreGroup.id,
-            archivedAt: null,
-          },
-          select: { id: true, folderType: true },
-        })
-      : [];
     const legacyIds = new Set<string>();
     for (const top of legacyTops) {
       if (top.folderType === "Root" || carved.has(top.id)) continue;
