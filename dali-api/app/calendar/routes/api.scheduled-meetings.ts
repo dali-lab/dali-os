@@ -176,6 +176,7 @@ export async function action({ request }: Route.ActionArgs) {
     createNote: body.note,
     createWhiteboard: body.whiteboard,
     notebook: body.notebook,
+    request,
     attendanceMode: body.attendanceMode,
     isCoreMeeting: coreMeeting,
     addMeet: body.addMeet,
@@ -197,6 +198,7 @@ export async function action({ request }: Route.ActionArgs) {
         notePageId: result.notePageId,
         notebookId: result.notebookId,
         createdNotebook: result.createdNotebook,
+        declinedLinks: result.declinedLinks,
         notePath: result.notePageId
           ? await meetingNotePath({
               notePageId: result.notePageId,

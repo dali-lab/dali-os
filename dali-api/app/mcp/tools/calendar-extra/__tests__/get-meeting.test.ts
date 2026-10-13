@@ -30,10 +30,12 @@ vi.mock("~/lib/display", () => ({
     `${u.firstName} ${u.lastName}`.trim(),
 }));
 vi.mock("~/lib/meeting-recording.server", () => ({ canReadRecording: vi.fn() }));
+vi.mock("~/lib/core-meeting.server", () => ({ isMeetingCore: vi.fn() }));
 
 import { prisma } from "~/lib/db";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { canReadRecording } from "~/lib/meeting-recording.server";
+import { isMeetingCore } from "~/lib/core-meeting.server";
 import { runGetMeeting, GET_MEETING_DEF } from "~/mcp/tools/calendar-extra/get-meeting";
 
 const mockPrisma = prisma as unknown as {
@@ -98,6 +100,19 @@ describe("get_meeting", () => {
     await expect(runGetMeeting("u-other", { meetingId: "m1" })).rejects.toMatchObject({
       name: "McpForbiddenError",
     });
+  });
+
+  it("reports isCoreMeeting from where the notebook is filed, not the column", async () => {
+    const meeting = { ...MEETING_BASE, notebookId: "nb1", isCoreMeeting: false };
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(meeting);
+    vi.mocked(isMeetingCore).mockResolvedValue(true);
+    vi.mocked(isCore).mockResolvedValue(false);
+    vi.mocked(isProjectMember).mockResolvedValue(false);
+
+    const out = await runGetMeeting("u-org", { meetingId: "m1" });
+
+    expect(out.isCoreMeeting).toBe(true);
+    expect(isMeetingCore).toHaveBeenCalledWith(meeting);
   });
 
   it("returns full detail for organizer", async () => {

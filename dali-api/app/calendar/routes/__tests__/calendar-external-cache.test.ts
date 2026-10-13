@@ -32,7 +32,6 @@ describe("shouldInvalidateExternalCache", () => {
   it("skips invalidation for a DB-only write that can't change what Google returns", () => {
     expect(shouldInvalidateExternalCache("add-meeting-note")).toBe(false);
     expect(shouldInvalidateExternalCache("add-meeting-whiteboard")).toBe(false);
-    expect(shouldInvalidateExternalCache("set-meeting-core")).toBe(false);
     expect(shouldInvalidateExternalCache("set-meeting-project")).toBe(false);
     expect(shouldInvalidateExternalCache("set-working-segments")).toBe(false);
     expect(shouldInvalidateExternalCache("copy-weekdays")).toBe(false);

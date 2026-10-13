@@ -1,5 +1,7 @@
 import { redirect } from "react-router";
 import { prisma } from "~/lib/db";
+import { getPageAccessBulk, PAGE_ACCESS_SELECT } from "~/lib/pageAccess.server";
+import { isMeetingCoreBulk } from "~/lib/core-meeting.server";
 import { requireAuth, forbidden, redirectNonMemberToPortal, isImpersonating } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { listAllGroups } from "~/lib/groups";
@@ -253,6 +255,11 @@ export async function meetingsForExternalEvents(
       timeEntries: { where: { userId }, select: { occurrenceStart: true } },
     },
   });
+  const coreByMeeting = await isMeetingCoreBulk(meetings);
+  const fileableNotebooks = await notebooksViewerCanEdit(
+    meetings.flatMap((m) => (m.notebookId ? [m.notebookId] : [])),
+    userId,
+  );
   // Stable-key + fallback indexes. iCalUID is shared across every attendee copy
   // and every instance of a series (see matchMeetingForEvent); externalEventId
   // is the mutable per-copy id we fall back to for un-backfilled rows.
@@ -303,7 +310,8 @@ export async function meetingsForExternalEvents(
       whiteboardPageId: m.whiteboardPage?.id ?? null,
       hasType: m.meetingType != null,
       onTimesheet: m.timeEntries.some((t) => t.occurrenceStart?.getTime() === key),
-      isCoreMeeting: m.isCoreMeeting,
+      isCoreMeeting: coreByMeeting.get(m.id) ?? false,
+      notebook: m.notebookId ? (fileableNotebooks.get(m.notebookId) ?? null) : null,
       canMarkCoreMeeting,
       // Adding notes/whiteboards after the fact is the organizer's or Core's
       // call — the same authority the attach* helpers re-check server-side.
@@ -320,6 +328,19 @@ export async function meetingsForExternalEvents(
     });
   }
   return byEventId;
+}
+
+/** The notebooks among `ids` the viewer can edit, keyed by id: what the popover's "File in…" needs. */
+async function notebooksViewerCanEdit(ids: string[], userId: string): Promise<Map<string, { id: string; title: string }>> {
+  if (ids.length === 0) return new Map();
+  const rows = await prisma.page.findMany({
+    where: { id: { in: [...new Set(ids)] }, kind: "Notebook", archivedAt: null },
+    select: { ...PAGE_ACCESS_SELECT, title: true },
+  });
+  const access = await getPageAccessBulk(userId, rows);
+  return new Map(
+    rows.filter((r) => access.get(r.id)?.canEdit).map((r) => [r.id, { id: r.id, title: r.title }]),
+  );
 }
 
 /**
@@ -1301,8 +1322,6 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
         onTimesheet: asBool(get("onTimesheet")),
         occurrence: get("occurrence") || undefined,
       };
-    case "set-meeting-core":
-      return { intent, meetingId: get("meetingId"), isCoreMeeting: asBool(get("isCoreMeeting")) };
     case "set-meeting-project":
       return {
         intent,
@@ -1787,7 +1806,7 @@ export async function loadCalendarData(
 }
 
 // The intents that write lab records rather than the viewer's own calendar:
-// meeting notes and their Drive pages, the Core-meeting marker, the logged-time
+// meeting notes and their Drive pages, the logged-time
 // link on a meeting, promoting a Google event into a DALI meeting, and
 // subscribing to the lab's general calendar. The portal calendar posts here
 // too, so these stay member-only — everything else (working hours, linked
@@ -1796,7 +1815,6 @@ export async function loadCalendarData(
 const MEMBER_ONLY_CALENDAR_INTENTS = new Set([
   "subscribe-general-calendar",
   "toggle-meeting-time-entry",
-  "set-meeting-core",
   "add-meeting-note",
   "track-event-as-meeting",
 ]);
@@ -1808,7 +1826,6 @@ const MEMBER_ONLY_CALENDAR_INTENTS = new Set([
 const DB_ONLY_CALENDAR_INTENTS = new Set([
   "add-meeting-note",
   "add-meeting-whiteboard",
-  "set-meeting-core",
   "set-meeting-project",
   "set-working-segments",
   "copy-weekdays",
@@ -2231,25 +2248,6 @@ export async function submitCalendarAction(request: Request) {
       return null;
     }
 
-    case "set-meeting-core": {
-      // The checkbox is hidden for non-Core, but the gate lives here — the
-      // form is a hint, the server decides (same rule as the create route).
-      if (!(await isCore(userId, request))) return forbidden(request);
-      const meeting = await prisma.scheduledMeeting.findUnique({
-        where: { id: input.meetingId },
-        select: { id: true, organizerId: true, participantUserIds: true, scopeType: true },
-      });
-      if (!meeting) return Response.json({ error: "Not found" }, { status: 404 });
-      if (!(await canActOnMeeting(meeting, userId, request))) {
-        return Response.json({ error: "You weren't invited to this meeting" }, { status: 403 });
-      }
-      await prisma.scheduledMeeting.update({
-        where: { id: meeting.id },
-        data: { isCoreMeeting: input.isCoreMeeting },
-      });
-      return null;
-    }
-
     case "set-meeting-project": {
       // setMeetingProject checks organizer/Core + project membership.
       const result = await setMeetingProject({
@@ -2275,12 +2273,14 @@ export async function submitCalendarAction(request: Request) {
         projectId: input.projectId ?? null,
         noteLocation: input.noteLocation ?? null,
         notebook: input.notebook ?? null,
+        request,
       });
       if (!result.ok) {
         return Response.json({ error: result.error }, { status: result.status });
       }
       return Response.json({
         ok: true,
+        declinedLinks: result.declinedLinks,
         notePageId: result.notePageId,
         notebookId: result.notebookId,
         createdNotebook: result.createdNotebook,

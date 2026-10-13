@@ -17,11 +17,13 @@ vi.mock("~/lib/display-scan.server", () => ({
   startDisplayScan: vi.fn(),
   stopDisplayScan: vi.fn(),
 }));
+vi.mock("~/lib/core-meeting.server", () => ({ isMeetingCore: vi.fn(async () => false) }));
 vi.mock("qrcode", () => ({ default: { toString: vi.fn().mockResolvedValue("<svg/>") } }));
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { getUserRoles, isProjectMember } from "~/lib/roles";
+import { isMeetingCore } from "~/lib/core-meeting.server";
 import { getActiveDisplayScan, startDisplayScan, stopDisplayScan } from "~/lib/display-scan.server";
 import { action, loader } from "~/calendar/routes/calendar.meeting.$id";
 
@@ -128,6 +130,20 @@ describe("meeting page — one occurrence of a recurring meeting", () => {
 
     expect(d.notePageId).toBeNull();
     expect(d.canOpenNote).toBe(true);
+  });
+});
+
+describe("meeting page — Core label", () => {
+  it("shows the label placement derives, not the stored column", async () => {
+    mockAuth.mockResolvedValue({ ok: true, user: { sub: "organizer-1", type: "member" } });
+    const row = meeting({ notebookId: "nb1", isCoreMeeting: false });
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(row);
+    vi.mocked(isMeetingCore).mockResolvedValueOnce(true);
+
+    const d = (await load()) as unknown as { isCoreMeeting: boolean };
+
+    expect(d.isCoreMeeting).toBe(true);
+    expect(isMeetingCore).toHaveBeenCalledWith(row);
   });
 });
 

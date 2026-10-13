@@ -33,6 +33,7 @@ import {
   type AttendeeSort,
 } from "~/lib/attendee-sort";
 import { cn } from "~/lib/cn";
+import { isMeetingCoreBulk } from "~/lib/core-meeting.server";
 
 // Each roster is already split into checked-in / not-submitted columns, so
 // "Checked in first" would be a no-op here; the check-in time is the ordering
@@ -80,6 +81,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       meetingType: true,
       meetingTypeLabel: true,
       isCoreMeeting: true,
+      notebookId: true,
       organizerId: true,
       project: { select: { id: true, name: true } },
       organizer: { select: { firstName: true, lastName: true, daliEmail: true } },
@@ -111,6 +113,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     }),
   ]);
   const memberProjectIds = new Set(assignments.map((a) => a.projectId));
+  const coreByMeeting = await isMeetingCoreBulk(meetings);
 
   const now = Date.now();
   const events = meetings.flatMap((m) => {
@@ -125,7 +128,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     const canEdit = m.organizerId === userId || core;
     const scope = m.project
       ? m.project.name
-      : m.isCoreMeeting
+      : coreByMeeting.get(m.id)
         ? "Core"
         : "General";
     const typeLabel =
