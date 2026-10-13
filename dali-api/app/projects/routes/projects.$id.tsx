@@ -57,6 +57,7 @@ import { listProjectInfraRequests } from "~/lib/infra/requests.server";
 import { ProjectInfraSection } from "~/projects/components/ProjectInfraSection";
 import { ensureProjectGroup } from "~/lib/groups";
 import { ensureMeetingNotesFolder } from "~/lib/pages";
+import { receiversEnabled } from "~/lib/drive-receivers.server";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { formatDateShort, formatDateTime, fullName, UNKNOWN_LABEL } from "~/lib/display";
@@ -529,10 +530,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // ── Stage 2: everything that depends on the project row ──────────────────────
   // ensureMeetingNotesFolder must complete before pageRows (creates the system
   // folders that pageRows needs to return), so run them first then fan out.
-  await Promise.all([
-    ensureMeetingNotesFolder(project.id, "Team", auth.user.sub),
-    ensureMeetingNotesFolder(project.id, "Partner", auth.user.sub),
-  ]);
+  // With receivers on nothing auto-creates a folder, so the backfill stops.
+  if (!(await receiversEnabled(request))) {
+    await Promise.all([
+      ensureMeetingNotesFolder(project.id, "Team", auth.user.sub),
+      ensureMeetingNotesFolder(project.id, "Partner", auth.user.sub),
+    ]);
+  }
 
   const [
     pageRows,

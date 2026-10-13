@@ -7,6 +7,7 @@ import { buttonClasses } from "~/components/ui/Button";
 import { Select, type SelectOption, InfoTip } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
 import { modalCardClass } from "~/components/os-chrome";
+import { audienceLine, type Audience, type InheritedScope } from "~/lib/page-audience";
 
 // One Share dialog for every document — Project, Lab, EducationOffering and
 // personal notes. Google Docs' shape: add people, a "People with access" list
@@ -72,23 +73,12 @@ const FOLDER_SCOPE_OPTIONS: SelectOption<string>[] = [
   { value: "Group", label: "A group…", description: "Everyone in a specific group (e.g. Core, a project team)." },
 ];
 
-function baseAccessLine(ctx: Context): string {
-  switch (ctx.workspaceType) {
-    case "Lab":
-      return ctx.linkAccess === "Restricted"
-        ? "Only you and the people below can open it."
-        : ctx.linkAccess === "Public"
-          ? "Anyone with the link can view it."
-          : "Everyone in the lab can access it.";
-    case "Project":
-      return "Project staff can edit · lab members can view.";
-    case "EducationOffering":
-      return "Instructors can edit · lab members can view.";
-    case "Member":
-      return "Only you, unless you share it or turn on general access.";
-    default:
-      return "";
-  }
+// The inherited folder scope as one sentence for the "Inherited from" block.
+function inheritedSummary(i: InheritedScope): string {
+  const who =
+    i.scopeKind === "Group" ? (i.groupName ?? "A group") : i.scopeKind === "Lab" ? "Everyone in the lab" : "Only people added to the folder";
+  const level = i.permission === "View" ? "can view" : i.permission === "Comment" ? "can comment" : "can edit";
+  return `${who} ${level}`;
 }
 
 // Map the raw share-route context payload into the dialog's Context shape.
@@ -120,6 +110,8 @@ export function ShareDialog({
 }) {
   const [ctx, setCtx] = useState<Context | null>(null);
   const [shares, setShares] = useState<Share[]>([]);
+  const [audience, setAudience] = useState<Audience | null>(null);
+  const [inherited, setInherited] = useState<InheritedScope | null>(null);
   const [query, setQuery] = useState("");
   const [members, setMembers] = useState<Option[]>([]);
   const [groups, setGroups] = useState<Option[]>([]);
@@ -154,6 +146,8 @@ export function ShareDialog({
         setCtx(toContext(d.context, page.workspaceType));
       }
       setShares(d.shares ?? []);
+      setAudience(d.audience ?? null);
+      setInherited(d.inherited ?? null);
     });
     void post({ intent: "share-options", q: "" }).then((d) => setGroups(d.groups ?? []));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -192,6 +186,8 @@ export function ShareDialog({
       setCtx(toContext(d.context, page.workspaceType));
     }
     setShares(d.shares ?? []);
+    setAudience(d.audience ?? null);
+    setInherited(d.inherited ?? null);
   }
 
   // Partner sharing is its own audience (the project's partner portal), not the
@@ -320,7 +316,21 @@ export function ShareDialog({
           People with access
           <InfoTip content="Individual people or groups who can access this document. View = read-only; Comment = read and add comments; Edit = make changes; Full access = edit and manage sharing." />
         </h3>
-        <p className="text-xs text-muted-foreground -mt-1.5">{ctx ? baseAccessLine(ctx) : "…"}</p>
+        <p className="text-xs text-muted-foreground -mt-1.5">{audience ? audienceLine(audience) : "…"}</p>
+        {inherited && (
+          <div
+            data-testid="share-inherited"
+            className="flex items-start gap-2.5 rounded-md border border-border px-3 py-2.5 text-sm"
+          >
+            <Folder className="w-3.5 h-3.5 mt-0.5 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-foreground">
+                Inherited from folder {inherited.title || "Untitled"}
+              </span>
+              <span className="block text-xs text-muted-foreground">{inheritedSummary(inherited)}</span>
+            </span>
+          </div>
+        )}
         <ul className="flex flex-col gap-1.5">
           {ctx?.owner && (
             <li className="flex items-center gap-2.5 text-sm px-3 py-2.5 rounded-md border border-border bg-muted">

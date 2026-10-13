@@ -6,6 +6,7 @@
 
 import { prisma } from "~/lib/db";
 import { getObjectBytes, getDownloadUrl } from "~/lib/s3";
+import { filingFolderOr, singletonSlot } from "~/lib/drive-receivers.server";
 import {
   ensureProcessFolder,
   CERTIFICATE_TEMPLATES_PROCESS_ID,
@@ -97,12 +98,14 @@ export async function createCertificateTemplate(args: {
 
   // Auto-file the background into the CertificateTemplates folder binding
   // (creates a default Core-scoped folder on first upload; Core can repoint it).
-  const folderPageId = await ensureProcessFolder({
-    processType: "CertificateTemplates",
-    processId: CERTIFICATE_TEMPLATES_PROCESS_ID,
-    purpose: "background",
-    createdById: args.actorId,
-  });
+  const folderPageId = await filingFolderOr(singletonSlot("Core", "CertificateBackgrounds"), args.actorId, () =>
+    ensureProcessFolder({
+      processType: "CertificateTemplates",
+      processId: CERTIFICATE_TEMPLATES_PROCESS_ID,
+      purpose: "background",
+      createdById: args.actorId,
+    }),
+  );
 
   // Create the Drive file + first version, then the template pointing at it.
   const fileId = await prisma.$transaction(async (tx) => {
