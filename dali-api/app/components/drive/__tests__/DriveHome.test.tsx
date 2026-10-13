@@ -91,10 +91,19 @@ describe("DriveHome", () => {
     expect(html).toContain("Plans");
   });
 
-  it("keeps the location on one line and hides it below md", () => {
+  it("keeps the location on one line and hides it below lg", () => {
     const html = render({ ...empty, recent: [doc("a")] });
     expect(html).toMatch(/<button [^>]*class="[^"]*\btruncate\b/);
-    expect(html).toMatch(/<div class="[^"]*\bhidden\b[^"]*\bmin-w-0\b[^"]*\bmd:block\b/);
+    expect(html).toMatch(/<div class="[^"]*\bhidden\b[^"]*\bmin-w-0\b[^"]*\blg:block\b/);
+  });
+
+  it("puts Upcoming and Recent side by side so the browser stays on the first screen", () => {
+    const both = render({ upcoming: [notebook("n1", hours(3), "Weekly sync")], recent: [doc("a")] });
+    expect(both).toMatch(/data-testid="drive-home"[^>]*/);
+    expect(both).toMatch(/<div class="[^"]*\bgrid\b[^"]*\bmd:grid-cols-2\b/);
+    const one = render({ ...empty, recent: [doc("a")] });
+    expect(one).not.toContain("md:grid-cols-2");
+    expect(one).toMatch(/\bmin-h-8\b/);
   });
 
   it("truncates the title and lays rows out as a list with no horizontal scrollers", () => {
