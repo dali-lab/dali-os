@@ -100,3 +100,50 @@ export function folderCountLabel(itemCount?: number): string | null {
   if (itemCount === 0) return "Empty";
   return itemCount === 1 ? "1 item" : `${itemCount} items`;
 }
+
+const SHORTCUT_TARGET_NOUN: Partial<Record<ItemGlyph["kind"], string>> = {
+  folder: "a folder",
+  notebook: "a notebook",
+  whiteboard: "a whiteboard",
+};
+
+/** Hover text for a row glyph: what the item is and, for folders, who can see it. */
+export function glyphLabel(
+  glyph: ItemGlyph,
+  ctx: {
+    audienceLabel?: string | null;
+    tabCount?: number;
+    originalInTrash?: boolean;
+    /** The item's own type; only needed to name an emoji glyph, which hides it. */
+    itemType?: string;
+  } = {},
+): string {
+  const folder = (name: string) => (ctx.audienceLabel ? `${name} · ${ctx.audienceLabel}` : name);
+  switch (glyph.kind) {
+    case "emoji":
+      return ctx.itemType === "folder" ? folder("Folder") : "Document";
+    case "folder":
+      return folder(glyph.mark === "calendar" ? "Meetings folder" : "Folder");
+    case "notebook": {
+      const tabs = ctx.tabCount ?? 0;
+      return `Notebook · ${tabs < 1 ? "no tabs" : `${tabs} ${tabs === 1 ? "tab" : "tabs"}`}`;
+    }
+    case "shortcut": {
+      const label = `Shortcut to ${SHORTCUT_TARGET_NOUN[glyph.target.kind] ?? "a document"}`;
+      if (ctx.originalInTrash) return `${label} · original in trash`;
+      return glyph.locked ? `${label} · you can't open the original` : label;
+    }
+    case "whiteboard":
+      return "Whiteboard";
+    case "doc":
+      return "Document";
+    case "file":
+      return "File";
+    case "form":
+      return "Form";
+    case "agreement":
+      return "Agreement";
+    case "rubric":
+      return "Rubric";
+  }
+}

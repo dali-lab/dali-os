@@ -3,6 +3,7 @@ import {
   CORAL_FOLDER,
   folderCountLabel,
   folderTintClass,
+  glyphLabel,
   pickGlyph,
   tabBadge,
   type PlainGlyphSource,
@@ -131,5 +132,91 @@ describe("folderCountLabel", () => {
     expect(folderCountLabel(0)).toBe("Empty");
     expect(folderCountLabel(1)).toBe("1 item");
     expect(folderCountLabel(12)).toBe("12 items");
+  });
+});
+
+describe("glyphLabel", () => {
+  const label = (src: PlainGlyphSource | ShortcutGlyphSource, ctx: Parameters<typeof glyphLabel>[1] = {}) =>
+    glyphLabel(pickGlyph(src), ctx);
+
+  it("names a folder with who can see it", () => {
+    expect(label({ type: "folder" }, { audienceLabel: "Everyone in the lab" })).toBe("Folder · Everyone in the lab");
+    expect(label({ type: "folder" }, { audienceLabel: "Only you" })).toBe("Folder · Only you");
+    expect(label({ type: "folder" }, { audienceLabel: "Project team · lab can view" })).toBe(
+      "Folder · Project team · lab can view",
+    );
+  });
+
+  it("names a folder with no audience on its own", () => {
+    expect(label({ type: "folder" })).toBe("Folder");
+    expect(label({ type: "folder" }, { audienceLabel: null })).toBe("Folder");
+    expect(label({ type: "folder" }, { audienceLabel: "" })).toBe("Folder");
+  });
+
+  it("calls a calendar-marked folder a Meetings folder", () => {
+    expect(label({ type: "folder", folderType: "Meetings" }, { audienceLabel: "Everyone in the lab" })).toBe(
+      "Meetings folder · Everyone in the lab",
+    );
+    expect(label({ type: "folder", folderType: "Meetings" })).toBe("Meetings folder");
+  });
+
+  it("keeps a tag-marked or Root folder a plain Folder", () => {
+    expect(label({ type: "folder", folderType: "Hiring" })).toBe("Folder");
+    expect(label({ type: "folder", folderType: "Root" })).toBe("Folder");
+  });
+
+  it("counts a notebook's tabs", () => {
+    expect(label({ type: "doc", isNotebook: true }, { tabCount: 3 })).toBe("Notebook · 3 tabs");
+    expect(label({ type: "doc", isNotebook: true }, { tabCount: 1 })).toBe("Notebook · 1 tab");
+    expect(label({ type: "doc", isNotebook: true }, { tabCount: 0 })).toBe("Notebook · no tabs");
+    expect(label({ type: "doc", isNotebook: true })).toBe("Notebook · no tabs");
+  });
+
+  it("does not put an audience on a notebook", () => {
+    expect(label({ type: "doc", isNotebook: true }, { tabCount: 2, audienceLabel: "Only you" })).toBe("Notebook · 2 tabs");
+  });
+
+  it("names the plain kinds", () => {
+    expect(label({ type: "doc" })).toBe("Document");
+    expect(label({ type: "doc", isWhiteboard: true })).toBe("Whiteboard");
+    expect(label({ type: "file" })).toBe("File");
+    expect(label({ type: "form" })).toBe("Form");
+    expect(label({ type: "agreement" })).toBe("Agreement");
+    expect(label({ type: "rubric" })).toBe("Rubric");
+  });
+
+  it("names a custom-icon folder or doc by its type", () => {
+    expect(label({ type: "folder", iconEmoji: "🚀" }, { itemType: "folder", audienceLabel: "Only you" })).toBe(
+      "Folder · Only you",
+    );
+    expect(label({ type: "doc", iconEmoji: "📝" }, { itemType: "doc" })).toBe("Document");
+    expect(label({ type: "doc", iconEmoji: "📝" })).toBe("Document");
+  });
+
+  it.each([
+    ["doc", "Shortcut to a document"],
+    ["folder", "Shortcut to a folder"],
+    ["notebook", "Shortcut to a notebook"],
+    ["whiteboard", "Shortcut to a whiteboard"],
+  ] as const)("names a shortcut to a %s", (targetType, expected) => {
+    expect(label({ type: "shortcut", targetType, canOpen: true })).toBe(expected);
+  });
+
+  it("flags a shortcut whose original is in the trash", () => {
+    expect(
+      label({ type: "shortcut", targetType: "doc", canOpen: false, originalInTrash: true }, { originalInTrash: true }),
+    ).toBe("Shortcut to a document · original in trash");
+  });
+
+  it("flags a shortcut whose original the viewer can't open", () => {
+    expect(label({ type: "shortcut", targetType: "folder", canOpen: false })).toBe(
+      "Shortcut to a folder · you can't open the original",
+    );
+  });
+
+  it("does not use the audience for a shortcut", () => {
+    expect(label({ type: "shortcut", targetType: "doc", canOpen: true }, { audienceLabel: "Only you" })).toBe(
+      "Shortcut to a document",
+    );
   });
 });
