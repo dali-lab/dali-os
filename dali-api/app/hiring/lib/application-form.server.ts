@@ -15,6 +15,7 @@ import { safeParseJsonString } from "~/forms/lib/forms-data";
 import type { CycleApplicants } from "~/generated/prisma/client";
 
 const TEMPLATE_NAME = "Internal Application Template";
+const TEMPLATE_KEY = "hiring-application-template";
 
 function defaultQuestions(): Question[] {
   return [
@@ -58,7 +59,7 @@ export async function ensureHiringTemplate(actorId: string): Promise<string> {
     createdById: actorId,
   });
   const existing = await prisma.form.findFirst({
-    where: { name: TEMPLATE_NAME, folderPageId },
+    where: { templateKey: TEMPLATE_KEY },
     select: { id: true, versions: { select: { id: true }, take: 1 } },
   });
   if (existing?.versions.length) return existing.id;
@@ -76,6 +77,7 @@ export async function ensureHiringTemplate(actorId: string): Promise<string> {
   const created = await prisma.form.create({
     data: {
       name: TEMPLATE_NAME,
+      templateKey: TEMPLATE_KEY,
       folderPageId,
       createdById: actorId,
       versions: {

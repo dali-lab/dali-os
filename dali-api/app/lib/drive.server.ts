@@ -22,7 +22,10 @@
 import { prisma } from "~/lib/db";
 import { getPageAccess, getPageAccessBulk } from "~/lib/pageAccess.server";
 import { canViewFile } from "~/lib/fileAccess.server";
-import type { Prisma } from "~/generated/prisma/client";
+import type { PageKind, Prisma } from "~/generated/prisma/client";
+
+/** Every page kind a Drive listing (and the Trash) surfaces. */
+export const DRIVE_PAGE_KINDS: PageKind[] = ["Folder", "FreeForm", "Structured", "Whiteboard", "Notebook"];
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -201,7 +204,7 @@ async function loadLabPages(userSub: string, request?: Request): Promise<DriveIt
       workspaceType: "Lab",
       workspaceId: null,
       archivedAt: null,
-      kind: { in: ["Folder", "FreeForm", "Structured", "Whiteboard"] },
+      kind: { in: DRIVE_PAGE_KINDS },
     },
     orderBy: { position: "asc" },
     select: {
@@ -316,7 +319,7 @@ async function loadProjectPages(
         workspaceType: "Project",
         workspaceId: projectId,
         archivedAt: null,
-        kind: { in: ["Folder", "FreeForm", "Structured", "Whiteboard"] },
+        kind: { in: DRIVE_PAGE_KINDS },
       },
       orderBy: { position: "asc" },
       select: PROJECT_PAGE_SELECT,
@@ -397,7 +400,7 @@ async function loadEducationPages(
       workspaceType: "EducationOffering",
       workspaceId: offeringId,
       archivedAt: null,
-      kind: { in: ["Folder", "FreeForm", "Structured", "Whiteboard"] },
+      kind: { in: DRIVE_PAGE_KINDS },
     },
     orderBy: { position: "asc" },
     select: {
@@ -461,7 +464,7 @@ async function loadMemberPages(userSub: string): Promise<DriveItem[]> {
       workspaceType: "Member",
       workspaceId: userSub,
       archivedAt: null,
-      kind: { in: ["Folder", "FreeForm", "Structured", "Whiteboard"] },
+      kind: { in: DRIVE_PAGE_KINDS },
     },
     orderBy: { position: "asc" },
     select: {

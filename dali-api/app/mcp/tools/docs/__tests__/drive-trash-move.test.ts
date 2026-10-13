@@ -141,6 +141,19 @@ describe("list_drive_trash", () => {
     expect(out.items[1].id).toBe("p1");
   });
 
+  it("includes archived notebooks", async () => {
+    vi.mocked(canViewForms).mockResolvedValue(false);
+    mockPrisma.page.findMany.mockResolvedValue([
+      { id: "nb1", title: "Weekly sync", archivedAt: new Date("2026-01-01"), kind: "Notebook" },
+    ]);
+    vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canComment: false, canEdit: false } as never);
+    mockPrisma.projectFile.findMany.mockResolvedValue([]);
+
+    const out = await runListDriveTrash("u1");
+    expect(out.items.map((i) => i.id)).toEqual(["nb1"]);
+    expect(mockPrisma.page.findMany.mock.calls[0][0].where.kind.in).toContain("Notebook");
+  });
+
   it("excludes pages the caller cannot view", async () => {
     vi.mocked(canViewForms).mockResolvedValue(false);
     mockPrisma.page.findMany.mockResolvedValue([

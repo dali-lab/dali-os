@@ -293,6 +293,26 @@ describe("POST /api/pages/:id/move", () => {
     });
   });
 
+  it("carries a notebook's tabs by its kind, without needing a notebookKey", async () => {
+    m.page.findUnique.mockResolvedValue(projectPage({ kind: "Notebook", notebookKey: null }));
+    vi.mocked(isProjectMember).mockResolvedValue(true);
+    vi.mocked(isLabMember).mockResolvedValue(true);
+    childrenByParent = { p1: ["tab1", "tab2"] };
+    const res = await call({ parentPageId: null, workspaceType: "Lab", workspaceId: null });
+    expect(res.status).toBe(200);
+    expect(carriedPageIds().sort()).toEqual(["tab1", "tab2"]);
+  });
+
+  it("does not collect a subtree for a plain document", async () => {
+    m.page.findUnique.mockResolvedValue(projectPage({ kind: "FreeForm", notebookKey: null }));
+    vi.mocked(isProjectMember).mockResolvedValue(true);
+    vi.mocked(isLabMember).mockResolvedValue(true);
+    childrenByParent = { p1: ["stray"] };
+    const res = await call({ parentPageId: null, workspaceType: "Lab", workspaceId: null });
+    expect(res.status).toBe(200);
+    expect(carriedPageIds()).toEqual([]);
+  });
+
   it("files landing in a project are keyed by projectId, not workspaceType", async () => {
     m.page.findUnique.mockResolvedValue(labPage({ kind: "Folder" }));
     vi.mocked(isCore).mockResolvedValue(true);

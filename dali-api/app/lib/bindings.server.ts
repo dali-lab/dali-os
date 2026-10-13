@@ -86,6 +86,7 @@ export const FOLDER_SLOTS: Record<ProcessType, FolderSlot[]> = {
   CertificateTemplates: [
     { purpose: "background", label: "Certificate backgrounds", defaultTitle: "Certificate Backgrounds" },
   ],
+  Mentorship: [],
 };
 
 export function slotFor(processType: ProcessType, purpose: string): FolderSlot | undefined {
@@ -110,6 +111,7 @@ function workspaceFor(
     case "HiringCycle":
     case "Core":
     case "CertificateTemplates":
+    case "Mentorship":
       return { workspaceType: "Lab", workspaceId: null, coreScoped: true };
     case "Lab":
       // Same workspace as Core, deliberately unscoped: a Lab folder inherits the

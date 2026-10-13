@@ -133,6 +133,7 @@ export async function ensureMeetingNotebook(
     createdById: input.createdById,
     parentPageId: input.parentPageId,
     notebookKey: input.key,
+    kind: "Notebook" as const,
   };
   try {
     return input.workspaceType === "Project" && input.workspaceId

@@ -109,6 +109,22 @@ describe("ensureHiringTemplate", () => {
     expect(id).toBe("tmpl-new");
     expect(mockPrisma.form.create.mock.calls[0][0].data.folderPageId).toBe("hiring-folder");
   });
+
+  it("finds the template by templateKey regardless of the folder it sits in", async () => {
+    mockPrisma.form.findFirst.mockResolvedValue({ id: "tmpl-elsewhere", versions: [{ id: "tv" }] });
+
+    await expect(ensureHiringTemplate("actor")).resolves.toBe("tmpl-elsewhere");
+    expect(mockPrisma.form.findFirst.mock.calls[0][0].where).toEqual({ templateKey: "hiring-application-template" });
+    expect(mockPrisma.form.create).not.toHaveBeenCalled();
+  });
+
+  it("stamps the templateKey on a newly created template", async () => {
+    mockPrisma.form.findFirst.mockResolvedValue(null);
+    mockPrisma.form.create.mockResolvedValue({ id: "tmpl-new" });
+
+    await ensureHiringTemplate("actor");
+    expect(mockPrisma.form.create.mock.calls[0][0].data.templateKey).toBe("hiring-application-template");
+  });
 });
 
 describe("createCycleApplicationForm", () => {

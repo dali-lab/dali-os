@@ -19,6 +19,12 @@ const TEMPLATE_NAMES: Record<OfferingType, string> = {
   Workshop: "Workshop RSVP Template",
 };
 
+const TEMPLATE_KEYS: Record<OfferingType, string> = {
+  Miniseries: "education-template-miniseries",
+  Fellowship: "education-template-fellowship",
+  Workshop: "education-template-workshop",
+};
+
 function defaultQuestions(type: OfferingType): Question[] {
   if (isMultiSession(type)) {
     return [
@@ -75,7 +81,7 @@ export async function ensureEducationTemplates(actorId: string): Promise<void> {
   for (const type of OFFERING_TYPES) {
     const name = TEMPLATE_NAMES[type];
     const existing = await prisma.form.findFirst({
-      where: { name, folderPageId },
+      where: { templateKey: TEMPLATE_KEYS[type] },
       select: { id: true, versions: { select: { id: true }, take: 1 } },
     });
     if (existing?.versions.length) continue;
@@ -93,6 +99,7 @@ export async function ensureEducationTemplates(actorId: string): Promise<void> {
     await prisma.form.create({
       data: {
         name,
+        templateKey: TEMPLATE_KEYS[type],
         folderPageId,
         createdById: actorId,
         versions: {
@@ -124,7 +131,7 @@ export async function createOfferingApplicationForm(
 
   await ensureEducationTemplates(actorId);
   const template = await prisma.form.findFirst({
-    where: { name: TEMPLATE_NAMES[offering.type] },
+    where: { templateKey: TEMPLATE_KEYS[offering.type] },
     select: {
       versions: {
         orderBy: { versionNumber: "desc" },

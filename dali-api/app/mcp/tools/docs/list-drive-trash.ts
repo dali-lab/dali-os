@@ -36,7 +36,7 @@ export async function runListDriveTrash(callerId: string) {
   const archivedPages = await prisma.page.findMany({
     where: {
       archivedAt: { not: null },
-      kind: { in: ["FreeForm", "Folder", "Structured"] },
+      kind: { in: ["FreeForm", "Folder", "Structured", "Notebook"] },
     },
     select: { id: true, title: true, archivedAt: true, kind: true },
     orderBy: { archivedAt: "desc" },

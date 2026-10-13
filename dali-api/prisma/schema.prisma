@@ -2608,6 +2608,9 @@ model ScheduledMeeting {
   // recurring series gets a fresh doc each week rather than one shared doc.
   notePages        Page[]       @relation("MeetingNotePage")
   whiteboardPage   Page?        @relation("MeetingWhiteboardPage")
+  // The series' default notebook: each occurrence note files as a child of it.
+  notebookId       String?
+  notebook         Page?        @relation("MeetingSeriesNotebook", fields: [notebookId], references: [id], onDelete: SetNull)
 
   // Roster (default): organizer/Core check people off by hand via
   // AttendanceChecklist. SelfCheckIn: attendees mark themselves present via
@@ -2640,6 +2643,7 @@ model ScheduledMeeting {
   createdAt DateTime @default(now())
 
   @@index([iCalUID])
+  @@index([notebookId])
 }
 
 enum ScopeType {
@@ -4868,6 +4872,10 @@ model Form {
   // drive tree; it does not affect fill/visibility semantics in any way.
   folderPageId String?
 
+  // Stable identity for the hiring and education template forms, so they are
+  // found by key rather than by name plus placement. Null on every other form.
+  templateKey String? @unique
+
   createdById String
   createdBy   User   @relation(fields: [createdById], references: [id])
 
@@ -5310,6 +5318,18 @@ model Page {
   // notebook has no body of its own; opening it lands on a tab.
   notebookKey String? @unique
 
+  // Typed folder columns. Plus a partial unique index, Page_process_folder_type_live,
+  // on (processType, processId, folderType) WHERE archivedAt IS NULL AND
+  // folderType IS NOT NULL: one live root or receiver per process. Raw SQL in
+  // migration 20261013120000_drive_typed_folders_and_notebooks; Prisma can't
+  // express it.
+  folderType  FolderType?
+  processType ProcessType?
+  processId   String?
+
+  // Series that use this notebook page as their default notebook.
+  seriesUsingAsNotebook ScheduledMeeting[] @relation("MeetingSeriesNotebook")
+
   // Set when this page is a meeting's linked whiteboard (kind = Whiteboard).
   // Parallel to meetingNoteId: a meeting can have a note doc and/or a whiteboard,
   // each 1:1. See ScheduledMeeting.whiteboardPage.
@@ -5453,6 +5473,8 @@ enum ProcessType {
   Lab
   // Lab-wide singleton for certificate-template background images (Core-scoped).
   CertificateTemplates
+  // Lab-wide singleton for the mentorship space (sentinel id "mentorship").
+  Mentorship
 }
 
 // Who a personal note has been shared with, beyond its own profileVisible
@@ -5586,6 +5608,22 @@ enum PageKind {
   // A collaborative Excalidraw canvas. Body lives in a whiteboard:{id}:canvas
   // collab room (Y.Map of elements), not in contentDocId.
   Whiteboard
+  // A run of meeting notes shown as one Drive item; each note is a child page
+  // rendered as a tab. No body of its own.
+  Notebook
+}
+
+// What a folder is or receives. Root = a Drive space root; the rest mark a
+// folder as the receiver for one kind of auto-filed artifact.
+enum FolderType {
+  Root
+  Meetings
+  HiringForms
+  ApplicationTemplates
+  Agreements
+  EducationTemplates
+  CertificateBackgrounds
+  MentorNotebooks
 }
 
 enum ScopeKind {
