@@ -972,6 +972,7 @@ export function CreateEventModal({
                       fieldClass={fieldClass}
                       labelClass={labelClass}
                       core={isCoreMeeting}
+                      meetingTitle={title}
                     />
                   </div>
                 )}

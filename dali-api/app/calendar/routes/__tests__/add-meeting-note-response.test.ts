@@ -86,3 +86,49 @@ describe("add-meeting-note action response", () => {
     expect(mockNotePath).not.toHaveBeenCalled();
   });
 });
+
+describe("add-meeting-note action notebook choice", () => {
+  const filed = { ok: true, notePageId: "note-1", notebookId: "nb-1", createdNotebook: false, seriesNotebookId: "nb-s" };
+
+  beforeEach(() => {
+    mockAttach.mockResolvedValue(filed);
+    mockNotePath.mockResolvedValue({ label: "Core ▸ Weekly", href: "/documents/note-1" });
+  });
+
+  it("passes an existing-notebook choice through to attachMeetingNote", async () => {
+    await post({ intent: "add-meeting-note", meetingId: "m1", notebook: JSON.stringify({ existingId: "nb-1" }) });
+
+    expect(mockAttach).toHaveBeenCalledWith(expect.objectContaining({ notebook: { existingId: "nb-1" } }));
+  });
+
+  it("passes a new-notebook choice through", async () => {
+    const notebook = {
+      title: "Retro",
+      location: { workspaceType: "Lab", workspaceId: null, parentPageId: "f1" },
+      templatePageId: "tpl",
+    };
+
+    await post({ intent: "add-meeting-note", meetingId: "m1", projectId: "p1", notebook: JSON.stringify(notebook) });
+
+    expect(mockAttach).toHaveBeenCalledWith(expect.objectContaining({ notebook, projectId: "p1" }));
+  });
+
+  it("passes no notebook when the field is absent, so the series default decides", async () => {
+    await post({ intent: "add-meeting-note", meetingId: "m1" });
+
+    expect(mockAttach).toHaveBeenCalledWith(expect.objectContaining({ notebook: null }));
+  });
+
+  it("returns the series default so the client can offer to change it", async () => {
+    const body = await (await post({ intent: "add-meeting-note", meetingId: "m1" })).json();
+
+    expect(body).toMatchObject({ notebookId: "nb-1", seriesNotebookId: "nb-s" });
+  });
+
+  it("rejects a notebook choice that is neither shape", async () => {
+    const res = await post({ intent: "add-meeting-note", meetingId: "m1", notebook: JSON.stringify({ nope: true }) });
+
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(mockAttach).not.toHaveBeenCalled();
+  });
+});

@@ -7,7 +7,6 @@ import { Button } from "~/components/ui/Button";
 import { useToast } from "~/components/ui/toast";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { modalCardClass, useOsChrome } from "~/components/os-chrome";
-import { cn } from "~/lib/cn";
 import type { Route } from "./+types/documents.$pageId";
 import { prisma } from "~/lib/db";
 import { ensureOccurrenceRoster } from "~/lib/scheduled-meeting";
@@ -61,6 +60,8 @@ import {
   type SnapshotBlock,
 } from "~/components/meeting-recorder/enhance-plan";
 import { pageDocName } from "~/collab/roomName";
+import { nextNoteTarget } from "~/lib/notebook-series.server";
+import { NotebookRail, NotebookChip, type NotebookView } from "~/components/notebooks/NotebookRail";
 import { redirectToLogin } from "~/lib/login-next";
 import { walletTokensConfigured } from "~/lib/wallet-token";
 import { resolveShortcutTarget } from "~/lib/shortcuts.server";
@@ -96,7 +97,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       meetingOccurrenceStart: true,
       seededFromPageId: true,
       seededTemplateHash: true,
-      parent: { select: { id: true, title: true, kind: true } },
+      parent: {
+        select: {
+          ...PAGE_ACCESS_SELECT,
+          title: true,
+          kind: true,
+          templatePage: { select: { id: true, title: true } },
+        },
+      },
       iconEmoji: true,
       coverImageUrl: true,
       isTemplate: true,
@@ -172,33 +180,45 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
   // The other notes in this one's notebook, newest first, for the side tabs.
-  let notebook: {
-    title: string;
-    tabs: { id: string; label: string; meeting: string | null }[];
-  } | null = null;
+  let notebook: NotebookView | null = null;
   if (page.parent?.kind === "Notebook") {
-    const tabRows = await prisma.page.findMany({
-      where: { parentPageId: page.parent.id, OR: [{ archivedAt: null }, { id: page.id }] },
-      orderBy: { meetingOccurrenceStart: "desc" },
-      select: {
-        ...PAGE_ACCESS_SELECT,
-        title: true,
-        meetingOccurrenceStart: true,
-        meetingNote: { select: { title: true } },
-      },
-    });
+    const [tabRows, notebookAccess, nextNote] = await Promise.all([
+      prisma.page.findMany({
+        where: { parentPageId: page.parent.id, OR: [{ archivedAt: null }, { id: page.id }] },
+        orderBy: { meetingOccurrenceStart: "desc" },
+        select: {
+          ...PAGE_ACCESS_SELECT,
+          title: true,
+          meetingNoteId: true,
+          meetingOccurrenceStart: true,
+          meetingNote: { select: { title: true } },
+        },
+      }),
+      getPageAccess(auth.user.sub, page.parent, request),
+      nextNoteTarget(page.parent.id),
+    ]);
     const tabAccess = await getPageAccessBulk(auth.user.sub, tabRows, request, {
       includeArchived: trashed,
     });
     const visible = tabRows.filter((t) => tabAccess.get(t.id)?.canView);
     // Naming the meeting only helps when the notebook holds more than one.
     const mixed = new Set(visible.map((t) => t.meetingNote?.title)).size > 1;
+    const canEditNotebook = notebookAccess.canEdit && !trashed;
     notebook = {
+      id: page.parent.id,
       title: page.parent.title,
+      canEdit: canEditNotebook,
+      workspaceType: page.parent.workspaceType,
+      workspaceId: page.parent.workspaceId,
+      folderId: page.parent.parentPageId,
+      templateId: page.parent.templatePage?.id ?? null,
+      projectId: page.parent.workspaceType === "Project" ? page.parent.workspaceId : null,
+      nextNote: canEditNotebook ? nextNote : null,
       tabs: visible.map((t) => ({
         id: t.id,
         label: t.meetingOccurrenceStart ? formatDateShort(t.meetingOccurrenceStart) : t.title,
         meeting: mixed ? (t.meetingNote?.title ?? null) : null,
+        isNote: t.meetingNoteId !== null,
       })),
     };
   }
@@ -413,6 +433,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     subtitle: presenceUser?.subtitle ?? null,
     attendance,
     notebook,
+    notebookConversion:
+      canEdit &&
+      page.kind === "FreeForm" &&
+      page.parent?.kind !== "Notebook" &&
+      page.meetingNoteId === null &&
+      (page.workspaceType === "Lab" || page.workspaceType === "Project")
+        ? { parentPageId: page.parentPageId }
+        : null,
     backlinks,
     trashed,
     canRestore,
@@ -437,48 +465,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       latestRecordingRow !== null &&
       (ACTIVE_RECORDING_STATUSES as readonly string[]).includes(latestRecordingRow.status),
   };
-}
-
-// A notebook's notes as side tabs, the way a Google Doc lists its tabs: one
-// document in the Drive, one tab per meeting.
-function NotebookTabs({
-  notebook,
-  currentId,
-}: {
-  notebook: { title: string; tabs: { id: string; label: string; meeting: string | null }[] };
-  currentId: string;
-}) {
-  const { card } = useOsChrome();
-  return (
-    <nav
-      aria-label={notebook.title}
-      className={cn(card, "flex min-w-0 shrink-0 flex-col gap-2 p-3 lg:sticky lg:top-4 lg:w-56")}
-    >
-      <p className="truncate px-2 text-sm font-semibold text-foreground">{notebook.title}</p>
-      <ul className="flex gap-1 overflow-x-auto lg:max-h-[70vh] lg:flex-col lg:overflow-y-auto">
-        {notebook.tabs.map((tab) => {
-          const current = tab.id === currentId;
-          return (
-            <li key={tab.id} className="shrink-0">
-              <Link
-                to={`/documents/${tab.id}`}
-                aria-current={current ? "page" : undefined}
-                className={cn(
-                  "block rounded-os-item px-2 py-1.5 text-sm transition-colors",
-                  current
-                    ? "bg-os-accent/15 text-os-accent"
-                    : "text-os-grey hover:bg-os-container hover:text-foreground",
-                )}
-              >
-                <span className="block truncate">{tab.label}</span>
-                {tab.meeting && <span className="block truncate text-xs">{tab.meeting}</span>}
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
-    </nav>
-  );
 }
 
 // A trashed meeting note still opens (read-only) so check-in and the meeting's
@@ -639,6 +625,7 @@ export default function DocumentPage() {
     updatedAt,
     attendance,
     notebook,
+    notebookConversion,
     backlinks,
     trashed,
     canRestore,
@@ -907,6 +894,7 @@ export default function DocumentPage() {
             backlinks={backlinks}
             focusMentionUserId={focusMentionUserId}
             meetingNoteTemplateAction={meetingNoteTemplateAction}
+            notebookConversion={notebookConversion}
             aiEnabled
             onEditorReady={onEditorReady}
             onContainerWideChange={setContainerWide}
@@ -978,9 +966,10 @@ export default function DocumentPage() {
                   checkInQrSvg={attendance.checkInQrSvg}
                 />
               )}
-              {notebook ? (
+              {notebook && notebook.tabs.length <= 1 && <NotebookChip notebook={notebook} />}
+              {notebook && notebook.tabs.length > 1 ? (
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
-                  <NotebookTabs notebook={notebook} currentId={pageId} />
+                  <NotebookRail notebook={notebook} currentId={pageId} />
                   <div className="min-w-0 flex-1">
                     <TranscriptChipHoverLayer onChipClick={onChipClick} railOpen={Boolean(rec?.open)}>
                       {editor}

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { AssignmentType } from "~/generated/prisma/client";
+import { notebookChoiceSchema } from "~/lib/notebook-choice";
 
 // Minutes from local midnight: 0..1440 (inclusive end allowed for endMinute).
 const minuteOfDay = z.number().int().min(0).max(1440);
@@ -248,6 +249,8 @@ export const AddMeetingNoteSchema = z.object({
     })
     .nullable()
     .optional(),
+  // The notebook the note files into; with it the type fields above are derived.
+  notebook: notebookChoiceSchema.optional(),
 });
 
 // Post-hoc "Add whiteboard" — the whiteboard counterpart of AddMeetingNoteSchema.

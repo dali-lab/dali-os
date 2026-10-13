@@ -239,6 +239,7 @@ export async function meetingsForExternalEvents(
       iCalUID: true,
       isCoreMeeting: true,
       meetingType: true,
+      notebookId: true,
       participantUserIds: true,
       selectedAt: true,
       createdAt: true,
@@ -309,8 +310,7 @@ export async function meetingsForExternalEvents(
       // Once the meeting has notes, anyone in it opens the next occurrence's.
       canAddNote: isOrganizer || canMarkCoreMeeting,
       canOpenNote:
-        m.meetingType != null &&
-        m.notePages.length > 0 &&
+        ((m.meetingType != null && m.notePages.length > 0) || !!m.notebookId) &&
         (isOrganizer ||
           canMarkCoreMeeting ||
           m.participantUserIds.includes(userId) ||
@@ -1326,6 +1326,15 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
           // Leave undefined; the asset falls back to its default destination.
         }
       }
+      let notebook: unknown = undefined;
+      const notebookRaw = get("notebook");
+      if (notebookRaw) {
+        try {
+          notebook = JSON.parse(notebookRaw);
+        } catch {
+          // Left undefined; the schema then asks for the type fields instead.
+        }
+      }
       return {
         intent,
         meetingId: get("meetingId"),
@@ -1334,6 +1343,7 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
         meetingTypeLabel: get("meetingTypeLabel") || undefined,
         projectId: get("projectId") || undefined,
         noteLocation,
+        notebook,
       };
     }
     case "set-timesheet-sync":
@@ -2264,6 +2274,7 @@ export async function submitCalendarAction(request: Request) {
         meetingTypeLabel: input.meetingTypeLabel ?? null,
         projectId: input.projectId ?? null,
         noteLocation: input.noteLocation ?? null,
+        notebook: input.notebook ?? null,
       });
       if (!result.ok) {
         return Response.json({ error: result.error }, { status: result.status });
@@ -2273,6 +2284,7 @@ export async function submitCalendarAction(request: Request) {
         notePageId: result.notePageId,
         notebookId: result.notebookId,
         createdNotebook: result.createdNotebook,
+        seriesNotebookId: result.seriesNotebookId,
         notePath: await meetingNotePath({
           notePageId: result.notePageId,
           notebookId: result.notebookId,

@@ -15,6 +15,7 @@ import {
   Plus,
   QrCode,
   Tablet,
+  X,
 } from "lucide-react";
 import { Select } from "~/components/ui/floating";
 import { Radio } from "~/components/ui/Radio";
@@ -47,6 +48,8 @@ import { EditMeetingModal } from "~/calendar/components/EditMeetingModal";
 import { AddMeetingNoteButton, OpenMeetingNoteButton } from "~/calendar/components/AddMeetingNoteModal";
 import { AddMeetingWhiteboardButton } from "~/calendar/components/AddMeetingWhiteboardModal";
 import { RecordPromptBanner } from "~/components/RecordPromptBanner";
+import { NotebookPicker } from "~/components/notebooks/NotebookPicker";
+import { useSeriesNotebook } from "~/calendar/lib/useSeriesNotebook";
 import type { Route } from "./+types/calendar.meeting.$id";
 
 export const meta: Route.MetaFunction = () => [{ title: "Meeting · DALI OS" }];
@@ -92,6 +95,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       organizerId: true,
       meetingType: true,
       meetingTypeLabel: true,
+      notebookId: true,
+      notebook: { select: { id: true, title: true } },
       attendanceMode: true,
       projectId: true,
       project: { select: { name: true, recordingPolicy: true } },
@@ -259,7 +264,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     description: meeting.description,
     notePageId: noteForOccurrence(meeting.notePages, occurrence.originalStart)?.id ?? null,
     // The meeting keeps notes, so this occurrence's doc is made on demand.
-    canOpenNote: meeting.meetingType != null && meeting.notePages.length > 0,
+    canOpenNote: (meeting.meetingType != null && meeting.notePages.length > 0) || !!meeting.notebookId,
+    notebook: meeting.notebook,
     whiteboardPageId: meeting.whiteboardPage?.id ?? null,
     // Adding a whiteboard is the same authority as adding a note. hasType lets
     // the add flow skip the About/type step when the meeting already knows it.
@@ -647,6 +653,8 @@ export default function CalendarMeetingPage() {
   // MeetingAttendance rows only ever returns "not invited".
   const [editing, setEditing] = useState(false);
   const [projectOpen, setProjectOpen] = useState(false);
+  const [notebookPickerOpen, setNotebookPickerOpen] = useState(false);
+  const seriesNotebook = useSeriesNotebook();
   const selfCheckInFetcher = useFetcher<{ ok?: boolean; error?: string }>();
   const ipadFetcher = useFetcher<{ ok?: boolean; error?: string }>();
   const dialog = useDialog();
@@ -752,6 +760,7 @@ export default function CalendarMeetingPage() {
               // /calendar, which is also where the grid's popover posts it.
               <AddMeetingNoteButton
                 meetingId={d.meetingId}
+                meetingTitle={d.meetingLabel}
                 occurrenceStart={d.occurrenceStart}
                 isCoreMeeting={d.isCoreMeeting}
                 actionPath="/calendar"
@@ -833,8 +842,40 @@ export default function CalendarMeetingPage() {
             )}
           </Fact>
         )}
+        {(d.notebook || d.canAddNote) && (
+          <Fact label="Notebook">
+            {d.notebook ? (
+              <Link to={`/documents/${d.notebook.id}`} className="truncate font-medium hover:underline">
+                {d.notebook.title}
+              </Link>
+            ) : (
+              <span className="text-os-grey">None</span>
+            )}
+            {d.canAddNote && (
+              <>
+                <IconButton label="Change notebook" icon={Pencil} onClick={() => setNotebookPickerOpen(true)} />
+                {d.notebook && (
+                  <IconButton label="Unset notebook" icon={X} onClick={() => void seriesNotebook.unsetNotebook(d.meetingId)} />
+                )}
+              </>
+            )}
+          </Fact>
+        )}
       </div>
 
+      {notebookPickerOpen && (
+        <NotebookPicker
+          open
+          heading="This meeting's notebook"
+          projectId={d.projectId}
+          meetingId={d.meetingId}
+          onClose={() => setNotebookPickerOpen(false)}
+          onPick={(picked) => {
+            setNotebookPickerOpen(false);
+            void seriesNotebook.changeNotebook(d.meetingId, picked.id);
+          }}
+        />
+      )}
       {editing && <EditMeetingModal meetingId={d.meetingId} onClose={() => setEditing(false)} />}
       {projectOpen && (
         <MeetingProjectModal

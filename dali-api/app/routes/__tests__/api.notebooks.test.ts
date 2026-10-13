@@ -5,6 +5,7 @@ vi.mock("~/lib/cors", () => ({
   withCors: (_req: unknown, res: unknown) => res,
   handlePreflight: () => null,
 }));
+vi.mock("~/lib/notebook-listing.server", () => ({ listNotebooks: vi.fn() }));
 vi.mock("~/lib/notebooks.server", () => {
   class NotebookError extends Error {
     constructor(
@@ -26,7 +27,8 @@ vi.mock("~/lib/notebooks.server", () => {
 
 import { requireMemberSession } from "~/lib/auth";
 import { NotebookError, createNotebook } from "~/lib/notebooks.server";
-import { action } from "~/routes/api.notebooks";
+import { listNotebooks } from "~/lib/notebook-listing.server";
+import { action, loader } from "~/routes/api.notebooks";
 
 function post(body: unknown, method = "POST") {
   return action({
@@ -83,5 +85,47 @@ describe("POST /api/notebooks", () => {
     const res = await post({ title: "x", workspaceType: "Lab", parentPageId: "f1" });
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: "You can't put things in that folder" });
+  });
+});
+
+function get(query = "") {
+  return loader({ request: new Request(`http://os.test/api/notebooks${query}`) } as never) as Promise<Response>;
+}
+
+describe("GET /api/notebooks", () => {
+  const listed = [
+    { id: "nb1", title: "Weekly", path: "Lab ▸ Meetings", tabCount: 3, lastNoteAt: "2026-09-10T15:00:00.000Z", suggested: true },
+  ];
+
+  beforeEach(() => {
+    vi.mocked(listNotebooks).mockResolvedValue(listed);
+  });
+
+  it("lists the notebooks for the signed-in member", async () => {
+    const res = await get();
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ notebooks: listed });
+    expect(listNotebooks).toHaveBeenCalledWith(
+      expect.objectContaining({ actorId: "u1", q: null, projectId: null, meetingId: null }),
+    );
+  });
+
+  it("passes the search, project and meeting through", async () => {
+    await get("?q=week&projectId=p1&meetingId=m1");
+
+    expect(listNotebooks).toHaveBeenCalledWith(
+      expect.objectContaining({ actorId: "u1", q: "week", projectId: "p1", meetingId: "m1" }),
+    );
+  });
+
+  it("returns the session gate's response when not a member, and lists nothing", async () => {
+    vi.mocked(requireMemberSession).mockResolvedValue({
+      ok: false,
+      response: new Response("no", { status: 403 }),
+    } as never);
+
+    expect((await get()).status).toBe(403);
+    expect(listNotebooks).not.toHaveBeenCalled();
   });
 });
