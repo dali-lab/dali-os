@@ -24,10 +24,18 @@ import { cn } from "~/lib/cn";
 
 export type ToastVariant = "error" | "success" | "info";
 
+export interface ToastAction {
+  label: string;
+  /** Runs on click; the toast dismisses itself afterwards. */
+  onClick: () => void;
+}
+
 export interface ToastOptions {
   variant?: ToastVariant;
   /** ms until auto-dismiss; 0 keeps it until dismissed manually. */
   duration?: number;
+  /** Buttons under the message, e.g. Open and Undo. */
+  actions?: ToastAction[];
 }
 
 interface ToastRecord {
@@ -35,6 +43,7 @@ interface ToastRecord {
   message: ReactNode;
   variant: ToastVariant;
   duration: number;
+  actions: ToastAction[];
 }
 
 type VariantToastFn = (
@@ -68,6 +77,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       message,
       variant: opts?.variant ?? "info",
       duration: opts?.duration ?? DEFAULT_DURATION,
+      actions: opts?.actions ?? [],
     };
     setToasts((prev) => [...prev, record]);
   }, []);
@@ -145,7 +155,26 @@ function ToastItem({
       )}
     >
       <Icon className={cn("mt-0.5 h-5 w-5 shrink-0", accent)} aria-hidden />
-      <div className="min-w-0 flex-1 text-sm text-foreground">{toast.message}</div>
+      <div className="min-w-0 flex-1 text-sm text-foreground">
+        {toast.message}
+        {toast.actions.length > 0 && (
+          <div className="mt-2 flex gap-3">
+            {toast.actions.map((action) => (
+              <button
+                key={action.label}
+                type="button"
+                onClick={() => {
+                  action.onClick();
+                  onDismiss(toast.id);
+                }}
+                className="font-medium text-os-accent underline-offset-2 hover:underline"
+              >
+                {action.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
       <button
         type="button"
         onClick={() => onDismiss(toast.id)}

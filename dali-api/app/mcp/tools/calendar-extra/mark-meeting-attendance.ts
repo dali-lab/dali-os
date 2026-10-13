@@ -1,16 +1,16 @@
 // MCP `mark_meeting_attendance` — toggle a participant's attendance on a meeting
-// that has MeetingAttendance rows (i.e., meetingType is set). Mirrors the logic
+// that has MeetingAttendance rows (see tracksAttendance). Mirrors the logic
 // of api.scheduled-meetings.$id.attendance.ts. Requires `mcp:write` scope.
 
 import { prisma } from "~/lib/db";
 import { isCore, isProjectMember } from "~/lib/roles";
-import { markMeetingAttendance, parseOccurrenceParam } from "~/lib/scheduled-meeting";
+import { markMeetingAttendance, parseOccurrenceParam, tracksAttendance } from "~/lib/scheduled-meeting";
 import { McpNotFoundError, McpForbiddenError, McpInvalidError } from "../../registry";
 
 export const MARK_MEETING_ATTENDANCE_DEF = {
   name: "mark_meeting_attendance",
   description:
-    "Mark a participant present or absent for a meeting. Only meetings created with a meetingType have an attendance roster. Allowed for: the meeting organizer, Core members, or project members of the meeting's project.",
+    "Mark a participant present or absent for a meeting. Only meetings with an attendance roster (a type, a notebook, self check-in or invited people) can be marked. Allowed for: the meeting organizer, Core members, or project members of the meeting's project.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -45,10 +45,18 @@ type Input = { meetingId: string; userId: string; present: boolean; occurrenceSt
 export async function runMarkMeetingAttendance(callerId: string, input: Input) {
   const meeting = await prisma.scheduledMeeting.findUnique({
     where: { id: input.meetingId },
-    select: { id: true, organizerId: true, projectId: true, meetingType: true },
+    select: {
+      id: true,
+      organizerId: true,
+      projectId: true,
+      meetingType: true,
+      notebookId: true,
+      attendanceMode: true,
+      participantUserIds: true,
+    },
   });
 
-  if (!meeting || !meeting.meetingType) {
+  if (!meeting || !tracksAttendance(meeting)) {
     throw new McpNotFoundError("Meeting not found");
   }
 

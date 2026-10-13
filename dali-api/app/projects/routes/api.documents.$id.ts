@@ -5,12 +5,16 @@ import { requireProjectEditAccess, requireMemberSession } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
 import { getPageAccess } from "~/lib/pageAccess.server";
+import { notebookErrorResponse, trashNotebook } from "~/lib/notebooks.server";
 import { isRoot, ROOT_DELETE_ERROR, CLEARED_FOLDER_TYPE } from "~/lib/drive-roots";
 
 // POST   /api/documents/:id — partial update. Body: any of
 //                             { title?, iconEmoji?, coverImageUrl? }.
 // DELETE /api/documents/:id — archive (sets archivedAt; archived pages drop
-//                             out of the hub / workspace list by default).
+//                             out of the hub / workspace list by default). A
+//                             notebook is archived with its tabs.
+//                             `?ifEmpty=1` on a Notebook refuses (409) while it
+//                             still holds live notes.
 //
 // Documents are FreeForm Pages. Project-scoped pages use the project-edit gate
 // (isCore === Admin || Core, or a project assignee). Lab, EducationOffering and
@@ -106,6 +110,30 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (request.method === "DELETE") {
     if (isRoot(page)) {
       return withCors(request, Response.json({ error: ROOT_DELETE_ERROR }, { status: 400 }));
+    }
+    if (page.kind === "Notebook") {
+      // The filing toast's Undo asks for a notebook to go only if the note it
+      // just removed was its last, so a note filed in the meantime keeps it.
+      if (new URL(request.url).searchParams.get("ifEmpty") === "1") {
+        const notes = await prisma.page.count({ where: { parentPageId: pageId, archivedAt: null } });
+        if (notes > 0) {
+          return withCors(request, Response.json({ error: "This notebook still has notes." }, { status: 409 }));
+        }
+      }
+      // The tabs go to Trash with their notebook, and come back with it.
+      try {
+        await trashNotebook(pageId, auth.user.sub);
+      } catch (err) {
+        return withCors(request, notebookErrorResponse(err));
+      }
+      await logAuditEvent({
+        action: "document.delete",
+        userId: auth.user.sub,
+        targetId: pageId,
+        metadata: { workspaceType: page.workspaceType, soft: true, notebook: true },
+        request,
+      });
+      return withCors(request, Response.json({ ok: true }));
     }
     if (page.kind === "Folder") {
       // "Empty" has to mean empty of everything a folder can hold, not just of

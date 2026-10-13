@@ -41,6 +41,13 @@ export interface PageAccessOptions {
    * documents.$pageId, which downgrades the result to read-only itself.
    */
   includeArchived?: boolean;
+  /**
+   * Compute the access the viewer would have with every named PageShare
+   * removed: workspace role rules plus General access (link) only. Lets the
+   * Drive's "Shared with me" tell a page reached by name from one the viewer
+   * already sees through membership or a link.
+   */
+  ignoreShares?: boolean;
 }
 
 export interface PageShape {
@@ -159,9 +166,10 @@ async function shareAndLinkGrant(
   request?: Request,
   preloadedShares?: Array<{ principalType: string; principalId: string; permission: SharePermission }>,
   preloadedGroupIds?: string[],
+  ignoreShares?: boolean,
 ): Promise<PageAccessResult> {
   const groupIds = preloadedGroupIds ?? (await groupIdsForUser(userSub, request));
-  const sharesForPage = preloadedShares ?? await (async () => {
+  const sharesForPage = ignoreShares ? [] : preloadedShares ?? await (async () => {
     // Single-page path: fetch the shares for this one page (original behaviour).
     const rows = await prisma.pageShare.findMany({
       where: {
@@ -411,7 +419,14 @@ async function computePageAccessCore(
   // each workspace's role-based base below. They only ever grant more access —
   // never a downgrade — and carry the exact View/Comment/Edit/FullAccess tier,
   // so a "View" share does not confer comment the way role-based viewing does.
-  const extra = await shareAndLinkGrant(page, userSub, request, preloadedShares, preloadedGroupIds);
+  const extra = await shareAndLinkGrant(
+    page,
+    userSub,
+    request,
+    preloadedShares,
+    preloadedGroupIds,
+    options?.ignoreShares,
+  );
 
   // ── Member-workspace (personal notes) ────────────────────────────────────
   // Privacy is the whole point. Core gets NO bypass here — only the owner (full)
@@ -557,10 +572,12 @@ export async function getPageAccessBulk(
 
   // One query for all shares across the page list — avoids the N×pageShare.findMany
   // that getPageAccess would fire when called once per page.
-  const allShareRows = await prisma.pageShare.findMany({
-    where: { pageId: { in: pageIds } },
-    select: { pageId: true, principalType: true, principalId: true, permission: true },
-  });
+  const allShareRows = options?.ignoreShares
+    ? []
+    : await prisma.pageShare.findMany({
+        where: { pageId: { in: pageIds } },
+        select: { pageId: true, principalType: true, principalId: true, permission: true },
+      });
 
   // Group by pageId for O(1) per-page lookup below.
   const sharesByPage = new Map<string, Array<{ principalType: string; principalId: string; permission: SharePermission }>>();

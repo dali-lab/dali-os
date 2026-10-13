@@ -37,7 +37,7 @@ describe("ensureMeetingNotebook", () => {
   it("creates the notebook in the given folder when the key is new", async () => {
     page.findUnique.mockResolvedValue(null);
 
-    expect(await ensureMeetingNotebook(input)).toEqual({ id: "nb-new" });
+    expect(await ensureMeetingNotebook(input)).toEqual({ id: "nb-new", created: true });
     expect(page.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -49,6 +49,16 @@ describe("ensureMeetingNotebook", () => {
         }),
       }),
     );
+  });
+
+  it("does not claim to have created a notebook it reused or lost the race for", async () => {
+    page.findUnique.mockResolvedValue({ id: "nb-1", archivedAt: null } as never);
+    expect(await ensureMeetingNotebook(input)).not.toHaveProperty("created");
+
+    page.findUnique.mockReset();
+    page.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "nb-raced" } as never);
+    page.create.mockRejectedValue(Object.assign(new Error("unique"), { code: "P2002" }));
+    expect(await ensureMeetingNotebook(input)).not.toHaveProperty("created");
   });
 
   it("creates the notebook with kind Notebook", async () => {
@@ -68,7 +78,7 @@ describe("ensureMeetingNotebook", () => {
   it("starts a fresh notebook when the old one is in the trash", async () => {
     page.findUnique.mockResolvedValue({ id: "nb-old", archivedAt: new Date() } as never);
 
-    expect(await ensureMeetingNotebook(input)).toEqual({ id: "nb-new" });
+    expect(await ensureMeetingNotebook(input)).toEqual({ id: "nb-new", created: true });
     // The trashed one gives up the key but stays a notebook for its own tabs.
     expect(page.update).toHaveBeenCalledWith({
       where: { id: "nb-old" },
@@ -94,7 +104,7 @@ describe("moveIntoNotebook", () => {
         parentPageId: "nb-general",
         workspaceType: "Lab",
         workspaceId: null,
-        parent: { notebookKey: "general:users:abc" },
+        parent: { kind: "Notebook" },
       } as never);
     page.count.mockResolvedValue(0);
 
@@ -117,12 +127,90 @@ describe("moveIntoNotebook", () => {
         parentPageId: "folder-team",
         workspaceType: "Project",
         workspaceId: "p1",
-        parent: { notebookKey: null },
+        parent: { kind: "Folder" },
       } as never);
 
     await moveIntoNotebook("note-1", "nb-team");
 
     expect(page.update).toHaveBeenCalledTimes(1);
     expect(page.count).not.toHaveBeenCalled();
+  });
+  it("trashes a manual notebook, which has no auto-grouping key, once it is emptied", async () => {
+    page.findUniqueOrThrow
+      .mockResolvedValueOnce(notebook as never)
+      .mockResolvedValueOnce({
+        parentPageId: "nb-manual",
+        workspaceType: "Project",
+        workspaceId: "p1",
+        parent: { kind: "Notebook" },
+      } as never);
+    page.count.mockResolvedValue(0);
+
+    await moveIntoNotebook("doc-1", "nb-team");
+
+    expect(page.update).toHaveBeenCalledWith({
+      where: { id: "nb-manual" },
+      data: { archivedAt: expect.any(Date) },
+    });
+  });
+
+  it("keeps a notebook that still has tabs", async () => {
+    page.findUniqueOrThrow
+      .mockResolvedValueOnce(notebook as never)
+      .mockResolvedValueOnce({
+        parentPageId: "nb-manual",
+        workspaceType: "Project",
+        workspaceId: "p1",
+        parent: { kind: "Notebook" },
+      } as never);
+    page.count.mockResolvedValue(2);
+
+    await moveIntoNotebook("doc-1", "nb-team");
+
+    expect(page.update).toHaveBeenCalledTimes(1);
+  });
+
+  it("files after the tabs already there and leaves the meeting link alone", async () => {
+    page.findUniqueOrThrow
+      .mockResolvedValueOnce(notebook as never)
+      .mockResolvedValueOnce({
+        parentPageId: null,
+        workspaceType: "Project",
+        workspaceId: "p1",
+        parent: null,
+      } as never);
+    page.findFirst.mockResolvedValue({ position: 6 } as never);
+
+    await moveIntoNotebook("note-1", "nb-team");
+
+    const data = page.update.mock.calls[0][0].data;
+    expect(data.position).toBe(7);
+    expect(data).not.toHaveProperty("meetingNoteId");
+    expect(data).not.toHaveProperty("meetingOccurrenceStart");
+  });
+
+  it("starts the first tab at position 0", async () => {
+    page.findUniqueOrThrow
+      .mockResolvedValueOnce(notebook as never)
+      .mockResolvedValueOnce({ parentPageId: null, workspaceType: "Project", workspaceId: "p1", parent: null } as never);
+
+    await moveIntoNotebook("note-1", "nb-team");
+
+    expect(page.update.mock.calls[0][0].data.position).toBe(0);
+  });
+
+  it("drops the personal-note flags when a My Drive note joins a notebook", async () => {
+    page.findUniqueOrThrow
+      .mockResolvedValueOnce(notebook as never)
+      .mockResolvedValueOnce({ parentPageId: null, workspaceType: "Member", workspaceId: "u1", parent: null } as never);
+
+    await moveIntoNotebook("note-1", "nb-team");
+
+    expect(page.update.mock.calls[0][0].data).toMatchObject({
+      profileVisible: false,
+      labListing: "None",
+      labListingNote: null,
+      partnerVisible: false,
+    });
   });
 });

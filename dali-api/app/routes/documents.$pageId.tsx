@@ -96,8 +96,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       meetingOccurrenceStart: true,
       seededFromPageId: true,
       seededTemplateHash: true,
-      notebookKey: true,
-      parent: { select: { id: true, title: true, notebookKey: true } },
+      parent: { select: { id: true, title: true, kind: true } },
       iconEmoji: true,
       coverImageUrl: true,
       isTemplate: true,
@@ -161,7 +160,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   // A meeting notebook has no body of its own: it opens on the note for the
   // latest meeting that has started, or the first one coming up.
-  if (page.notebookKey) {
+  if (page.kind === "Notebook") {
     const tabs = await prisma.page.findMany({
       where: { parentPageId: page.id, archivedAt: null },
       orderBy: { meetingOccurrenceStart: "desc" },
@@ -177,7 +176,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     title: string;
     tabs: { id: string; label: string; meeting: string | null }[];
   } | null = null;
-  if (page.parent?.notebookKey) {
+  if (page.parent?.kind === "Notebook") {
     const tabRows = await prisma.page.findMany({
       where: { parentPageId: page.parent.id, OR: [{ archivedAt: null }, { id: page.id }] },
       orderBy: { meetingOccurrenceStart: "desc" },
