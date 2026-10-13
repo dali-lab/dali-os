@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("~/lib/db", () => ({
   prisma: {
-    page: { findUnique: vi.fn(), findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
+    page: { findUnique: vi.fn(), findMany: vi.fn(), aggregate: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     projectFile: { findMany: vi.fn(), updateMany: vi.fn() },
     signingDocument: { count: vi.fn() },
     rubric: { count: vi.fn() },
@@ -18,7 +18,10 @@ vi.mock("~/lib/roles", () => ({
 vi.mock("~/lib/page-share-access.server", () => ({ canManageSharing: vi.fn() }));
 vi.mock("~/lib/pageAccess.server", () => ({
   getPageAccess: vi.fn(),
-  isUnderGoverningScope: vi.fn(),
+}));
+vi.mock("~/lib/page-ancestry.server", async (importActual) => ({
+  ...(await importActual<typeof import("~/lib/page-ancestry.server")>()),
+  loadAncestorChain: vi.fn(),
 }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/cors", () => ({
@@ -50,7 +53,8 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
 import { canManageSharing } from "~/lib/page-share-access.server";
-import { getPageAccess, isUnderGoverningScope } from "~/lib/pageAccess.server";
+import { getPageAccess } from "~/lib/pageAccess.server";
+import { loadAncestorChain } from "~/lib/page-ancestry.server";
 import { isOfferingManager } from "~/education/lib/access.server";
 import { logAuditEvent } from "~/lib/audit";
 import { NotebookError, addToNotebook } from "~/lib/notebooks.server";
@@ -98,7 +102,7 @@ function notePage(over: Record<string, unknown> = {}) {
  * `where` shape is the only stable way to script them.
  */
 let childrenByParent: Record<string, string[]> = {};
-/** Extra `page.findUnique` answers by id, for the parent-folder + depth walk. */
+/** Extra page rows by id: the destination folder and its ancestors, served as one chain. */
 let pagesById: Record<string, Record<string, unknown>> = {};
 
 beforeEach(() => {
@@ -110,9 +114,16 @@ beforeEach(() => {
   vi.mocked(isLabMember).mockResolvedValue(false);
   vi.mocked(isOfferingManager).mockResolvedValue(false);
   vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canEdit: true, canComment: true });
-  vi.mocked(isUnderGoverningScope).mockResolvedValue(false);
   childrenByParent = {};
   pagesById = {};
+  vi.mocked(loadAncestorChain).mockImplementation((async (startId: string) => {
+    const chain: Record<string, unknown>[] = [];
+    for (let id: string | null = startId; id !== null && pagesById[id]; id = pagesById[id].parentPageId as string | null) {
+      chain.push({ id, scopeKind: null, ...pagesById[id] });
+    }
+    return chain;
+  }) as never);
+  m.page.aggregate.mockResolvedValue({ _max: { position: null } });
   m.page.findMany.mockImplementation(async ({ where }: any) => {
     // Subtree BFS: `parentPageId: { in: [...] }`. Siblings: a plain parentPageId.
     const inList = where?.parentPageId?.in;

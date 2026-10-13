@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
 vi.mock("~/lib/pageAccess.server", () => {
@@ -33,12 +33,15 @@ import { prisma } from "~/lib/db";
 import { getPageAccess, getPageAccessBulk, governingScopeMap } from "~/lib/pageAccess.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { summarizeAudience } from "~/lib/page-audience.server";
-import { loadDriveScope, loadOrphanForms } from "~/lib/drive.server";
+import { loadDriveScope, loadOrphanForms, buildLinkedProcessMap } from "~/lib/drive.server";
 
 const mockPrisma = prisma as unknown as {
   page: { findMany: ReturnType<typeof vi.fn> };
   projectFile: { findMany: ReturnType<typeof vi.fn> };
   form: { findMany: ReturnType<typeof vi.fn> };
+  applicationCycle: { findMany: ReturnType<typeof vi.fn> };
+  cycleDomainForm: { findMany: ReturnType<typeof vi.fn> };
+  educationOffering: { findMany: ReturnType<typeof vi.fn> };
 };
 
 const VIEW_ONLY = { canView: true, canEdit: false, canComment: false, canManageAccess: false };
@@ -587,5 +590,133 @@ describe("loadDriveScope — audience", () => {
       const items = await loadDriveScope({ userSub: "u1", scope: { kind: "Member" } });
       expect(audienceOf(items, "f1")).toBeUndefined();
     });
+  });
+});
+
+const later = <T>(value: T, ms: number) => new Promise<T>((resolve) => setTimeout(() => resolve(value), ms));
+
+describe("file folder checks", () => {
+  const fileRow = (id: string, folderPageId: string | null, over: Record<string, unknown> = {}) => ({
+    id,
+    title: id,
+    folderPageId,
+    projectId: "proj-1",
+    updatedAt: new Date("2026-10-01T00:00:00Z"),
+    ...over,
+  });
+  const rows = [fileRow("f1", "slow"), fileRow("f2", "hidden"), fileRow("f3", null), fileRow("f4", "slow")];
+
+  function accessByFolder() {
+    let inFlight = 0;
+    let peak = 0;
+    vi.mocked(getPageAccess).mockImplementation((async (_user: string, folderId: string) => {
+      inFlight++;
+      peak = Math.max(peak, inFlight);
+      const access = await later(folderId === "hidden" ? DENIED : VIEW_ONLY, folderId === "slow" ? 20 : 1);
+      inFlight--;
+      return access;
+    }) as never);
+    return () => peak;
+  }
+
+  it.each([
+    ["Lab", { kind: "Lab" as const }],
+    ["Project", { kind: "Project" as const, projectId: "proj-1" }],
+  ])("%s: checks each distinct folder once, all at the same time, and keeps the files' order", async (_n, scope) => {
+    mockPrisma.projectFile.findMany.mockResolvedValue(rows);
+    const peak = accessByFolder();
+
+    const items = await loadDriveScope({ userSub: "u1", scope });
+
+    expect(items.filter((i) => i.type === "file").map((i) => i.id)).toEqual(["f1", "f3", "f4"]);
+    const folders = vi.mocked(getPageAccess).mock.calls.map((c) => c[1]);
+    expect(folders.sort()).toEqual(["hidden", "slow"]);
+    expect(peak()).toBe(2);
+  });
+});
+
+describe("loadDriveScope — Lab shortcuts", () => {
+  it("looks up shortcut targets while the audiences are still being summarised", async () => {
+    mockPrisma.page.findMany.mockImplementation(async (args: any) =>
+      args.where.id?.in
+        ? [pageRow({ id: "t-1", title: "Kickoff notes" })]
+        : [pageRow({ id: "sc-1", kind: "Shortcut", targetPageId: "t-1" })],
+    );
+    let release!: () => void;
+    vi.mocked(summarizeAudience).mockImplementationOnce(
+      () => new Promise((resolve) => (release = () => resolve(new Map([["sc-1", { kind: "lab", label: "L", permission: "View" }]])))) as never,
+    );
+
+    const pending = loadDriveScope({ userSub: "u1", scope: { kind: "Lab" } });
+    await vi.waitFor(() =>
+      expect(mockPrisma.page.findMany.mock.calls.some(([a]) => a.where.id?.in)).toBe(true),
+    );
+    release();
+    const items = await pending;
+
+    expect(items.find((i) => i.id === "sc-1")).toMatchObject({
+      title: "Kickoff notes",
+      audience: { kind: "lab", label: "L" },
+    });
+  });
+});
+
+describe("buildLinkedProcessMap", () => {
+  const cycle = (id: string, name: string, extra: Record<string, unknown>) => ({ id, name, ...extra });
+
+  afterEach(() => {
+    mockPrisma.applicationCycle.findMany.mockReset().mockResolvedValue([]);
+    mockPrisma.cycleDomainForm.findMany.mockReset().mockResolvedValue([]);
+    mockPrisma.educationOffering.findMany.mockReset().mockResolvedValue([]);
+  });
+
+  it("lets the first binding win in a fixed order, whichever query answers first", async () => {
+    mockPrisma.applicationCycle.findMany.mockImplementation(async (args: any) =>
+      args.where.applicationFormId
+        ? later([cycle("c1", "26F", { applicationFormId: "shared" })], 20)
+        : [cycle("c2", "27W", { continuedInterestFormId: "shared" })],
+    );
+    mockPrisma.cycleDomainForm.findMany.mockResolvedValue([
+      { formId: "shared", applicationCycle: { id: "c3", name: "27S" } },
+      { formId: "challenge", applicationCycle: { id: "c3", name: "27S" } },
+    ]);
+    mockPrisma.educationOffering.findMany.mockResolvedValue([
+      { id: "o1", title: "Intro", applicationFormId: "challenge" },
+      { id: "o2", title: "Studio", applicationFormId: "edu" },
+    ]);
+
+    const map = await buildLinkedProcessMap();
+
+    expect(map.get("shared")).toEqual({ label: "Hiring – 26F", href: "/hiring/lead/cycle/c1" });
+    expect(map.get("challenge")).toEqual({ label: "Hiring – 27S", href: "/hiring/lead/cycle/c3" });
+    expect(map.get("edu")).toEqual({ label: "Studio", href: "/education/manage/o2" });
+  });
+
+  it("prefers the continued-interest form over a challenge form bound to the same id", async () => {
+    mockPrisma.applicationCycle.findMany.mockImplementation(async (args: any) =>
+      args.where.continuedInterestFormId ? [cycle("c2", "27W", { continuedInterestFormId: "dup" })] : [],
+    );
+    mockPrisma.cycleDomainForm.findMany.mockResolvedValue([
+      { formId: "dup", applicationCycle: { id: "c3", name: "27S" } },
+    ]);
+
+    const map = await buildLinkedProcessMap();
+
+    expect(map.get("dup")).toEqual({ label: "Hiring – 27W", href: "/hiring/lead/cycle/c2" });
+  });
+
+  it("starts all four lookups before any of them answers", async () => {
+    const started: string[] = [];
+    const slow = (name: string) => async () => {
+      started.push(name);
+      return later([], 5);
+    };
+    mockPrisma.applicationCycle.findMany.mockImplementation(slow("cycle"));
+    mockPrisma.cycleDomainForm.findMany.mockImplementation(slow("domain"));
+    mockPrisma.educationOffering.findMany.mockImplementation(slow("offering"));
+
+    const pending = buildLinkedProcessMap();
+    expect(started.sort()).toEqual(["cycle", "cycle", "domain", "offering"]);
+    await pending;
   });
 });

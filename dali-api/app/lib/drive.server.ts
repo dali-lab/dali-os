@@ -328,7 +328,7 @@ async function shortcutItems(
   rows: ShortcutRow[],
   userSub: string,
   request?: Request,
-  audiences?: Map<string, Audience>,
+  audiencesPending?: Map<string, Audience> | Promise<Map<string, Audience>>,
 ): Promise<DriveItem[]> {
   if (rows.length === 0) return [];
   const targetIds = [...new Set(rows.flatMap((r) => (r.targetPageId ? [r.targetPageId] : [])))];
@@ -338,6 +338,7 @@ async function shortcutItems(
   });
   const access = await getPageAccessBulk(userSub, targets, request, { includeArchived: true });
   const byId = new Map(targets.map((t) => [t.id, t]));
+  const audiences = await audiencesPending;
 
   return rows.map((row): DriveItem => {
     const target = row.targetPageId ? byId.get(row.targetPageId) : undefined;
@@ -372,10 +373,38 @@ async function shortcutItems(
   });
 }
 
+/**
+ * The shared tail of the workspace page loaders: apply the scoped-folder filter,
+ * resolve the viewer's sharing authority, then build audiences and shortcut rows.
+ * The authority check (`managerPending`) runs alongside the filter and the
+ * shortcut targets alongside the audiences, since neither feeds the other.
+ */
+async function resolveVisibleRows<T extends ProjectPageRow>(
+  rows: T[],
+  userSub: string,
+  request: Request | undefined,
+  managerPending: Promise<boolean>,
+) {
+  const governing = governingScopeMap(rows);
+  const [visible, manager] = await Promise.all([
+    filterScoped(rows, userSub, request, governing),
+    managerPending,
+  ]);
+  const audiencesPending = audiencesFor(userSub, visible, governing, () => manager);
+  const shortcutsPending = shortcutItems(
+    visible.filter((row) => row.kind === "Shortcut"),
+    userSub,
+    request,
+    audiencesPending,
+  );
+  const [audiences, shortcuts] = await Promise.all([audiencesPending, shortcutsPending]);
+  return { visible, audiences, shortcuts };
+}
+
 /** Load pages (folders + docs) for a Lab-scope drive, filtering each through
  *  getPageAccess so the caller gets exactly what the viewer may view. */
 async function loadLabPages(userSub: string, request?: Request): Promise<DriveItem[]> {
-  const rows = await prisma.page.findMany({
+  const rowsQuery = prisma.page.findMany({
     where: {
       workspaceType: "Lab",
       workspaceId: null,
@@ -408,6 +437,7 @@ async function loadLabPages(userSub: string, request?: Request): Promise<DriveIt
       tags: PAGE_TAGS_SELECT,
     },
   });
+  const [rows, core] = await Promise.all([rowsQuery, isCore(userSub, request)]);
 
   // One batched pageShare query instead of N individual ones; the ancestry walk
   // runs over the rows in hand instead of one query per level per page.
@@ -415,13 +445,19 @@ async function loadLabPages(userSub: string, request?: Request): Promise<DriveIt
   const accessMap = await getPageAccessBulk(userSub, rows, request, undefined, governing);
 
   const visible = rows.filter((row) => accessMap.get(row.id)?.canView);
-  const core = await isCore(userSub, request);
-  const audiences = await audiencesFor(
+  const audiencesPending = audiencesFor(
     userSub,
     visible,
     governing,
     (row) => core || row.createdById === userSub,
   );
+  const shortcutsPending = shortcutItems(
+    visible.filter((row) => row.kind === "Shortcut"),
+    userSub,
+    request,
+    audiencesPending,
+  );
+  const [audiences, shortcuts] = await Promise.all([audiencesPending, shortcutsPending]);
 
   const items: DriveItem[] = [];
   for (const row of visible) {
@@ -458,12 +494,6 @@ async function loadLabPages(userSub: string, request?: Request): Promise<DriveIt
           },
     );
   }
-  const shortcuts = await shortcutItems(
-    visible.filter((row) => row.kind === "Shortcut"),
-    userSub,
-    request,
-    audiences,
-  );
   return [...items, ...shortcuts];
 }
 
@@ -570,23 +600,17 @@ async function loadProjectPages(
       select: PROJECT_PAGE_SELECT,
     }));
 
-  const governing = governingScopeMap(rows);
-  const visible = await filterScoped(rows, userSub, request, governing);
-  const manager = (await isCore(userSub, request)) || (await isProjectMember(userSub, projectId, request));
-  const audiences = await audiencesFor(userSub, visible, governing, () => manager);
+  const { visible, audiences, shortcuts } = await resolveVisibleRows(
+    rows,
+    userSub,
+    request,
+    (async () => (await isCore(userSub, request)) || (await isProjectMember(userSub, projectId, request)))(),
+  );
 
   const pageItems = visible
     .filter((row) => row.kind !== "Shortcut")
     .map((row) => pageRowToDriveItem(row, audiences.get(row.id)));
-  return [
-    ...pageItems,
-    ...(await shortcutItems(
-      visible.filter((row) => row.kind === "Shortcut"),
-      userSub,
-      request,
-      audiences,
-    )),
-  ];
+  return [...pageItems, ...shortcuts];
 }
 
 /** Load pages (folders + docs) for a single EducationOffering workspace.
@@ -662,15 +686,17 @@ async function loadEducationPages(
     },
   });
 
-  const governing = governingScopeMap(rows);
-  const visible = await filterScoped(rows, userSub, request, governing);
-  const manager =
-    (await isCore(userSub, request)) ||
-    (await prisma.instructorAssignment.findFirst({
-      where: { userId: userSub, offeringId },
-      select: { id: true },
-    })) !== null;
-  const audiences = await audiencesFor(userSub, visible, governing, () => manager);
+  const { visible, audiences, shortcuts } = await resolveVisibleRows(
+    rows,
+    userSub,
+    request,
+    (async () =>
+      (await isCore(userSub, request)) ||
+      (await prisma.instructorAssignment.findFirst({
+        where: { userId: userSub, offeringId },
+        select: { id: true },
+      })) !== null)(),
+  );
 
   const pageItems = visible
     .filter((row) => row.kind !== "Shortcut")
@@ -705,15 +731,7 @@ async function loadEducationPages(
           audience: audiences.get(row.id),
         },
     );
-  return [
-    ...pageItems,
-    ...(await shortcutItems(
-      visible.filter((row) => row.kind === "Shortcut"),
-      userSub,
-      request,
-      audiences,
-    )),
-  ];
+  return [...pageItems, ...shortcuts];
 }
 
 /** Load pages (folders + docs) for the viewer's own Member drive — their
@@ -841,12 +859,12 @@ async function loadLabFiles(userSub: string, request?: Request): Promise<DriveIt
     return p;
   };
 
+  const allowed = await Promise.all(
+    rows.map((f) => (f.folderPageId ? canViewFolder(f.folderPageId) : true)),
+  );
   const out: DriveItem[] = [];
-  for (const f of rows) {
-    // Fast path: files at the lab root (no folder) skip the access check.
-    if (f.folderPageId && !(await canViewFolder(f.folderPageId))) {
-      continue;
-    }
+  rows.forEach((f, i) => {
+    if (!allowed[i]) return;
     out.push({
       type: "file",
       id: f.id,
@@ -857,7 +875,7 @@ async function loadLabFiles(userSub: string, request?: Request): Promise<DriveIt
       href: `/documents/file/${f.id}`,
       sizeBytes: f.currentVersion?.sizeBytes ?? null,
     });
-  }
+  });
   return out;
 }
 
@@ -903,19 +921,18 @@ async function loadFiles(
   // Memoised per folder: every file in the same folder gets the same answer,
   // and a file at the project root skips the walk entirely.
   const folderAccess = new Map<string, Promise<boolean>>();
-  const visible: typeof rows = [];
-  for (const f of rows) {
-    if (!f.folderPageId) {
-      visible.push(f);
-      continue;
-    }
-    let allowed = folderAccess.get(f.folderPageId);
-    if (!allowed) {
-      allowed = canViewFile(userSub, { projectId: f.projectId, folderPageId: f.folderPageId }, request);
-      folderAccess.set(f.folderPageId, allowed);
-    }
-    if (await allowed) visible.push(f);
-  }
+  const allowed = await Promise.all(
+    rows.map((f) => {
+      if (!f.folderPageId) return true;
+      let pending = folderAccess.get(f.folderPageId);
+      if (!pending) {
+        pending = canViewFile(userSub, { projectId: f.projectId, folderPageId: f.folderPageId }, request);
+        folderAccess.set(f.folderPageId, pending);
+      }
+      return pending;
+    }),
+  );
+  const visible = rows.filter((_, i) => allowed[i]);
 
   return visible.map((f) => ({
     type: "file" as const,
@@ -1100,11 +1117,30 @@ export async function loadOrphanForms(
 export async function buildLinkedProcessMap(): Promise<Map<string, { label: string; href: string }>> {
   const map = new Map<string, { label: string; href: string }>();
 
-  // ── Forms: hiring cycles (applicationFormId) ──────────────────────────────
-  const cycleAppForms = await prisma.applicationCycle.findMany({
-    where: { applicationFormId: { not: null } },
-    select: { id: true, name: true, applicationFormId: true },
-  });
+  // The four lookups are independent; the first-binding-wins rule is applied
+  // below in a fixed order, so it doesn't depend on which query returns first.
+  const [cycleAppForms, cycleContinuedForms, domainForms, offeringAppForms] = await Promise.all([
+    prisma.applicationCycle.findMany({
+      where: { applicationFormId: { not: null } },
+      select: { id: true, name: true, applicationFormId: true },
+    }),
+    prisma.applicationCycle.findMany({
+      where: { continuedInterestFormId: { not: null } },
+      select: { id: true, name: true, continuedInterestFormId: true },
+    }),
+    // Each challenge form is bound to a specific cycle; use the cycle name.
+    prisma.cycleDomainForm.findMany({
+      select: {
+        formId: true,
+        applicationCycle: { select: { id: true, name: true } },
+      },
+    }),
+    prisma.educationOffering.findMany({
+      where: { applicationFormId: { not: null } },
+      select: { id: true, title: true, applicationFormId: true },
+    }),
+  ]);
+
   for (const c of cycleAppForms) {
     if (c.applicationFormId && !map.has(c.applicationFormId)) {
       map.set(c.applicationFormId, {
@@ -1113,12 +1149,6 @@ export async function buildLinkedProcessMap(): Promise<Map<string, { label: stri
       });
     }
   }
-
-  // ── Forms: hiring cycles (continuedInterestFormId) ────────────────────────
-  const cycleContinuedForms = await prisma.applicationCycle.findMany({
-    where: { continuedInterestFormId: { not: null } },
-    select: { id: true, name: true, continuedInterestFormId: true },
-  });
   for (const c of cycleContinuedForms) {
     if (c.continuedInterestFormId && !map.has(c.continuedInterestFormId)) {
       map.set(c.continuedInterestFormId, {
@@ -1127,15 +1157,6 @@ export async function buildLinkedProcessMap(): Promise<Map<string, { label: stri
       });
     }
   }
-
-  // ── Forms: hiring domain challenges (CycleDomainForm) ────────────────────
-  // Each challenge form is bound to a specific cycle; use the cycle name.
-  const domainForms = await prisma.cycleDomainForm.findMany({
-    select: {
-      formId: true,
-      applicationCycle: { select: { id: true, name: true } },
-    },
-  });
   for (const df of domainForms) {
     if (!map.has(df.formId)) {
       map.set(df.formId, {
@@ -1144,12 +1165,6 @@ export async function buildLinkedProcessMap(): Promise<Map<string, { label: stri
       });
     }
   }
-
-  // ── Forms: education offerings (applicationFormId) ────────────────────────
-  const offeringAppForms = await prisma.educationOffering.findMany({
-    where: { applicationFormId: { not: null } },
-    select: { id: true, title: true, applicationFormId: true },
-  });
   for (const o of offeringAppForms) {
     if (o.applicationFormId && !map.has(o.applicationFormId)) {
       map.set(o.applicationFormId, {

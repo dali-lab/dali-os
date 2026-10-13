@@ -5,10 +5,11 @@ import { isOfferingManager } from "~/education/lib/access.server";
 import { canManageSharing } from "~/lib/page-share-access.server";
 import { logAuditEvent } from "~/lib/audit";
 import type { Prisma, WorkspaceType } from "~/generated/prisma/client";
-import { pageDepth, MAX_PAGE_DEPTH, isAncestorOf, collectSubtree } from "~/lib/pages";
+import { MAX_PAGE_DEPTH, collectSubtree } from "~/lib/pages";
+import { loadAncestorChain, chainDepth, chainHasAncestor, chainGoverningScope } from "~/lib/page-ancestry.server";
 import { isRoot, ROOT_MOVE_ERROR } from "~/lib/drive-roots";
 import { clearTypeIfLeavingRoot } from "~/lib/drive-receivers.server";
-import { getPageAccess, isUnderGoverningScope } from "~/lib/pageAccess.server";
+import { getPageAccess } from "~/lib/pageAccess.server";
 import { addToNotebook, notebookErrorResponse } from "~/lib/notebooks.server";
 
 // POST /api/pages/:id/move — move and/or reorder a document.
@@ -63,6 +64,31 @@ export type MovePageResult =
 
 function fail(status: number, error: string): MovePageResult {
   return { ok: false, status, error };
+}
+
+async function canEditDestination(userId: string, dest: { type: WorkspaceType; id: string | null }) {
+  if (dest.type === "Lab") return isLabMember(userId);
+  // Only instructors for this offering (or Core) may add docs to its Drive.
+  if (dest.type === "EducationOffering") return isOfferingManager(userId, dest.id!);
+  return (await isCore(userId)) || (await isProjectMember(userId, dest.id!));
+}
+
+async function countHeldArtifacts(folderIds: string[]) {
+  if (folderIds.length === 0) return 0;
+  const [agreements, rubrics] = await Promise.all([
+    prisma.signingDocument.count({ where: { folderPageId: { in: folderIds }, archivedAt: null } }),
+    prisma.rubric.count({ where: { folderPageId: { in: folderIds } } }),
+  ]);
+  return agreements + rubrics;
+}
+
+async function findFilesInFolders(folderIds: string[]) {
+  if (folderIds.length === 0) return [];
+  const files = await prisma.projectFile.findMany({
+    where: { folderPageId: { in: folderIds }, archivedAt: null },
+    select: { id: true },
+  });
+  return files.map((f) => f.id);
 }
 
 /**
@@ -136,34 +162,96 @@ export async function movePage({
   }
   const sameWorkspace = dest.type === page.workspaceType && dest.id === page.workspaceId;
 
-  // Source authority: must be able to manage this doc where it currently lives.
-  const canManageSource = await canManageSharing(
-    {
-      id: page.id,
-      workspaceType: page.workspaceType,
-      workspaceId: page.workspaceId,
-      createdById: page.createdById,
-    },
-    userId,
+  // None of these reads depends on another, so they run together; their results
+  // are then checked in the order the refusals have always taken precedence.
+  const needsFiles = !sameWorkspace && page.kind === "Folder";
+  const subtreePending: Promise<{ ids: string[]; height: number }> =
+    page.kind === "Folder" || page.kind === "Notebook"
+      ? collectSubtree(pageId)
+      : Promise.resolve({ ids: [], height: 0 });
+  // `folderPageId` can only point at a Folder, so passing every descendant id
+  // here is harmless — the non-folders simply never match.
+  const folderIdsPending = subtreePending.then((subtree) =>
+    page.kind === "Folder" ? [pageId, ...subtree.ids] : [],
   );
+  const parentChainPending = body.parentPageId
+    ? loadAncestorChain(body.parentPageId)
+    : Promise.resolve([]);
+  const appendOnly = !body.beforeId;
+  const siblingScope = {
+    workspaceType: dest.type,
+    workspaceId: dest.id,
+    parentPageId: body.parentPageId,
+    archivedAt: null,
+  };
+
+  const [
+    canManageSource,
+    canDest,
+    subtree,
+    subtreeFolderIds,
+    parentChain,
+    parentAccess,
+    heldArtifacts,
+    movedFileIds,
+    siblings,
+    lastPosition,
+  ] = await Promise.all([
+    // Source authority: must be able to manage this doc where it currently lives.
+    canManageSharing(
+      {
+        id: page.id,
+        workspaceType: page.workspaceType,
+        workspaceId: page.workspaceId,
+        createdById: page.createdById,
+      },
+      userId,
+    ),
+    // Destination authority (cross-workspace only): must be able to edit there.
+    sameWorkspace ? Promise.resolve(true) : canEditDestination(userId, dest),
+    subtreePending,
+    folderIdsPending,
+    parentChainPending,
+    // Being able to edit in the destination WORKSPACE is not the same as being
+    // able to edit in the destination FOLDER: any lab member passes the Lab
+    // check, scoped folders included. Without this, a member could file a doc
+    // into Core's drive — and immediately lose it, since landing in a scope
+    // forces the page Restricted. /api/drive/move already checks this for
+    // files and forms; pages were the gap.
+    body.parentPageId ? getPageAccess(userId, body.parentPageId, request) : Promise.resolve(null),
+    // Agreements and rubrics are filed by `folderPageId` alone — unlike pages and
+    // files they carry no project/offering scope column, and only the Lab drive
+    // loads them. A folder holding one can't leave the Lab workspace without
+    // stranding it somewhere nothing lists it.
+    !sameWorkspace && page.workspaceType === "Lab"
+      ? folderIdsPending.then(countHeldArtifacts)
+      : Promise.resolve(0),
+    // Files are placed by `folderPageId` but scoped by their own columns, so a
+    // cross-workspace move has to rewrite both. Leaving the scope behind strands
+    // every upload inside the folder exactly the way a stale grandchild strands.
+    // Forms need no equivalent: `Form` has no scope column — loadForms resolves a
+    // form's drive purely from the folder it points at, which just moved.
+    needsFiles ? folderIdsPending.then(findFilesInFolders) : Promise.resolve([] as string[]),
+    appendOnly
+      ? Promise.resolve([] as { id: string }[])
+      : prisma.page.findMany({
+          where: siblingScope,
+          orderBy: { position: "asc" },
+          select: { id: true },
+        }),
+    appendOnly
+      ? prisma.page.aggregate({
+          where: { ...siblingScope, id: { not: pageId } },
+          _max: { position: true },
+        })
+      : Promise.resolve(null),
+  ]);
+
   if (!canManageSource) {
     return fail(403, "You can't move this document");
   }
-
-  // Destination authority (cross-workspace only): must be able to edit there.
-  if (!sameWorkspace) {
-    let canDest: boolean;
-    if (dest.type === "Lab") {
-      canDest = await isLabMember(userId);
-    } else if (dest.type === "EducationOffering") {
-      // Only instructors for this offering (or Core) may add docs to its Drive.
-      canDest = await isOfferingManager(userId, dest.id!);
-    } else {
-      canDest = (await isCore(userId)) || (await isProjectMember(userId, dest.id!));
-    }
-    if (!canDest) {
-      return fail(403, "You can't move documents into that destination");
-    }
+  if (!canDest) {
+    return fail(403, "You can't move documents into that destination");
   }
 
   // Guardrails.
@@ -175,42 +263,14 @@ export async function movePage({
       return fail(400, "The Overview and PRD docs can't be moved out of their project");
     }
   }
-
-  // A folder moves as a whole subtree, so everything below depends on knowing
-  // it up front: the depth guard, the per-page workspace rewrite, the
-  // Restricted push, and the files filed anywhere inside it.
-  // A meeting notebook carries its tabs (child pages) the same way.
-  const subtree =
-    page.kind === "Folder" || page.kind === "Notebook"
-      ? await collectSubtree(pageId)
-      : { ids: [], height: 0 };
-  // `folderPageId` can only point at a Folder, so passing every descendant id
-  // here is harmless — the non-folders simply never match.
-  const subtreeFolderIds = page.kind === "Folder" ? [pageId, ...subtree.ids] : [];
-
-  // Agreements and rubrics are filed by `folderPageId` alone — unlike pages and
-  // files they carry no project/offering scope column, and only the Lab drive
-  // loads them. A folder holding one can't leave the Lab workspace without
-  // stranding it somewhere nothing lists it.
-  if (!sameWorkspace && page.workspaceType === "Lab" && subtreeFolderIds.length > 0) {
-    const [agreements, rubrics] = await Promise.all([
-      prisma.signingDocument.count({
-        where: { folderPageId: { in: subtreeFolderIds }, archivedAt: null },
-      }),
-      prisma.rubric.count({ where: { folderPageId: { in: subtreeFolderIds } } }),
-    ]);
-    if (agreements + rubrics > 0) {
-      return fail(400, "This folder holds agreements or rubrics, which only live in the Lab drive. Move them out first.");
-    }
+  if (heldArtifacts > 0) {
+    return fail(400, "This folder holds agreements or rubrics, which only live in the Lab drive. Move them out first.");
   }
 
   // Parent folder (if nesting) must live in the DESTINATION; depth ≤ MAX_PAGE_DEPTH.
   let parentPageId: string | null = null;
   if (body.parentPageId) {
-    const parent = await prisma.page.findUnique({
-      where: { id: body.parentPageId },
-      select: { workspaceType: true, workspaceId: true, parentPageId: true, kind: true, archivedAt: true },
-    });
+    const parent = parentChain[0];
     // A notebook is a valid parent for documents and notes only, and the tab
     // takes the notebook's workspace, so the destination workspace is moot.
     if (parent && parent.kind === "Notebook" && parent.archivedAt === null) {
@@ -233,26 +293,19 @@ export async function movePage({
     if (parent.kind !== "Folder") {
       return fail(400, "Documents can only nest inside a folder");
     }
-    // Being able to edit in the destination WORKSPACE is not the same as being
-    // able to edit in the destination FOLDER: any lab member passes the Lab
-    // check, scoped folders included. Without this, a member could file a doc
-    // into Core's drive — and immediately lose it, since landing in a scope
-    // forces the page Restricted. /api/drive/move already checks this for
-    // files and forms; pages were the gap.
-    const parentAccess = await getPageAccess(userId, body.parentPageId, request);
-    if (!parentAccess.canEdit) {
+    if (!parentAccess?.canEdit) {
       return fail(403, "You can't put things in that folder");
     }
     // The moved page lands one below its new parent, and its own subtree keeps
     // going from there — so a 3-deep folder needs 3 levels of headroom, not 1.
     // Checking only the parent let a subtree settle past MAX_PAGE_DEPTH, deeper
     // than the ancestry walk in getPageAccess reaches.
-    const depth = await pageDepth(body.parentPageId);
+    const depth = chainDepth(parentChain);
     if (depth < 0 || depth + 1 + subtree.height > MAX_PAGE_DEPTH) {
       return fail(400, "Folder is too deeply nested");
     }
     // Cycle guard: the destination can't be a descendant of the page being moved.
-    if (await isAncestorOf(pageId, body.parentPageId)) {
+    if (chainHasAncestor(parentChain, pageId)) {
       return fail(400, "A document can't be moved into its own descendant");
     }
     parentPageId = body.parentPageId;
@@ -264,20 +317,6 @@ export async function movePage({
   // left), so it disappears from the Drive entirely.
   const movedPageIds = !sameWorkspace ? subtree.ids : [];
 
-  // Files are placed by `folderPageId` but scoped by their own columns, so a
-  // cross-workspace move has to rewrite both. Leaving the scope behind strands
-  // every upload inside the folder exactly the way a stale grandchild strands.
-  const movedFileIds =
-    !sameWorkspace && subtreeFolderIds.length > 0
-      ? (
-          await prisma.projectFile.findMany({
-            where: { folderPageId: { in: subtreeFolderIds }, archivedAt: null },
-            select: { id: true },
-          })
-        ).map((f) => f.id)
-      : [];
-  // Forms need no equivalent: `Form` has no scope column — loadForms resolves a
-  // form's drive purely from the folder it points at, which just moved.
   const fileScope: Prisma.ProjectFileUncheckedUpdateManyInput =
     dest.type === "Project"
       ? { projectId: dest.id, workspaceType: null, workspaceId: null }
@@ -292,12 +331,9 @@ export async function movePage({
     ...(page.workspaceType === "EducationOffering" ? { sessionId: null } : {}),
   };
 
-  // Rebuild the destination sibling order (in the destination workspace).
-  const siblings = await prisma.page.findMany({
-    where: { workspaceType: dest.type, workspaceId: dest.id, parentPageId, archivedAt: null },
-    orderBy: { position: "asc" },
-    select: { id: true },
-  });
+  // Without a `beforeId` the page goes after the current last sibling and
+  // nobody else is renumbered; with one, the destination order is rebuilt.
+  const appendPosition = appendOnly ? (lastPosition?._max.position ?? -1) + 1 : null;
   const order = siblings.map((s) => s.id).filter((id) => id !== pageId);
   const beforeIndex = body.beforeId ? order.indexOf(body.beforeId) : -1;
   if (beforeIndex >= 0) order.splice(beforeIndex, 0, pageId);
@@ -315,7 +351,7 @@ export async function movePage({
   // and any descendants coming with it — must go Restricted so the scope, not
   // the lab-wide link grant, governs access (otherwise "Everyone in the lab"
   // would keep it visible inside a Core folder).
-  const destScoped = await isUnderGoverningScope(parentPageId);
+  const destScoped = chainGoverningScope(parentChain) !== null;
   // General access is workspace-specific, so reset it on every cross-workspace
   // move: a doc landing on the Lab shelf becomes lab-wide editable (the shelf's
   // default), and one leaving the shelf drops back to its workspace's own rules.
@@ -357,7 +393,14 @@ export async function movePage({
     : [];
 
   await prisma.$transaction([
-    prisma.page.update({ where: { id: pageId }, data: { parentPageId, ...crossData } }),
+    prisma.page.update({
+      where: { id: pageId },
+      data: {
+        parentPageId,
+        ...crossData,
+        ...(appendPosition !== null ? { position: appendPosition } : {}),
+      },
+    }),
     ...(movedPageIds.length
       ? [prisma.page.updateMany({ where: { id: { in: movedPageIds } }, data: childData })]
       : []),
@@ -372,27 +415,30 @@ export async function movePage({
     ...(movedFileIds.length
       ? [prisma.projectFile.updateMany({ where: { id: { in: movedFileIds } }, data: fileData })]
       : []),
-    ...order.map((id, index) => prisma.page.update({ where: { id }, data: { position: index } })),
+    ...(appendOnly
+      ? []
+      : order.map((id, index) => prisma.page.update({ where: { id }, data: { position: index } }))),
     ...extraOps,
   ]);
 
-  const clearedReceivers = await clearTypeIfLeavingRoot(subtreeFolderIds);
-
-  if (!sameWorkspace) {
-    await logAuditEvent({
-      action: "page.move-workspace",
-      userId,
-      targetId: pageId,
-      metadata: {
-        from: { type: page.workspaceType, id: page.workspaceId },
-        to: { type: dest.type, id: dest.id },
-        kind: page.kind,
-        descendantCount: movedPageIds.length,
-        fileCount: movedFileIds.length,
-      },
-      request,
-    });
-  }
+  const [clearedReceivers] = await Promise.all([
+    clearTypeIfLeavingRoot(subtreeFolderIds),
+    sameWorkspace
+      ? undefined
+      : logAuditEvent({
+          action: "page.move-workspace",
+          userId,
+          targetId: pageId,
+          metadata: {
+            from: { type: page.workspaceType, id: page.workspaceId },
+            to: { type: dest.type, id: dest.id },
+            kind: page.kind,
+            descendantCount: movedPageIds.length,
+            fileCount: movedFileIds.length,
+          },
+          request,
+        }),
+  ]);
 
   return { ok: true, clearedReceivers };
 }

@@ -41,7 +41,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   ]);
 
   const scopes = await loadDriveScopes({
-    userSub: userId,
+    auth: gate.auth,
     projectWorkspaces: projects.map((p) => ({
       key: p.id,
       label: p.name,
