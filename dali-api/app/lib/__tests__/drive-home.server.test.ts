@@ -15,6 +15,10 @@ import { prisma } from "~/lib/db";
 import { getPageAccessBulk } from "~/lib/pageAccess.server";
 import { HOME_LIMIT, loadDriveHome } from "~/lib/drive-home.server";
 
+it("keeps each Home section to four rows so the browser is visible on open", () => {
+  expect(HOME_LIMIT).toBe(4);
+});
+
 const m = prisma as any;
 const NOW = new Date("2026-10-13T12:00:00Z");
 const hours = (n: number) => new Date(NOW.getTime() + n * 3_600_000);

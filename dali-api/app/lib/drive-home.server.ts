@@ -5,7 +5,7 @@ import { pageRowToDriveItem } from "~/lib/drive.server";
 import type { DriveItem } from "~/lib/drive.server";
 import type { PageKind, Prisma } from "~/generated/prisma/client";
 
-export const HOME_LIMIT = 8;
+export const HOME_LIMIT = 4;
 export const UPCOMING_WINDOW_DAYS = 7;
 // Rows read per section before the access filter drops the ones the viewer can no longer open.
 const READ_MULTIPLIER = 3;
