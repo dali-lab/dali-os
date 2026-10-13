@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
-vi.mock("~/lib/pageAccess.server", () => {
+vi.mock("~/lib/pageAccess.server", async (importOriginal) => {
   const getPageAccess = vi.fn();
   return {
+    ...(await importOriginal<typeof import("~/lib/pageAccess.server")>()),
     getPageAccess,
     // Delegates to the getPageAccess mock per page so existing per-page mock
     // setups drive the batched path unchanged.
