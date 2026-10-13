@@ -6,7 +6,7 @@ import { prisma } from "~/lib/db";
 import { isCore, isLabMember } from "~/lib/roles";
 import { createLabPage } from "~/lib/pages";
 import { duplicatePage } from "~/lib/page-copy.server";
-import { isRoot, ROOT_DELETE_ERROR } from "~/lib/drive-roots";
+import { isRoot, ROOT_DELETE_ERROR, CLEARED_FOLDER_TYPE } from "~/lib/drive-roots";
 
 // ─── list_lab_documents ───────────────────────────────────────────────────────
 
@@ -240,7 +240,7 @@ export async function runDeleteLabDocument(callerId: string, input: DeleteInput)
 
   await prisma.page.update({
     where: { id: input.pageId },
-    data: { archivedAt: new Date() },
+    data: { archivedAt: new Date(), ...CLEARED_FOLDER_TYPE },
   });
 
   return { ok: true };

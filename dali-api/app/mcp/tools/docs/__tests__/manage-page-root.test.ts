@@ -26,8 +26,11 @@ vi.mock("~/lib/db", () => ({
       findMany: vi.fn(),
       delete: vi.fn(),
     },
+    $transaction: vi.fn(),
   },
 }));
+
+vi.mock("~/lib/drive-receivers.server", () => ({ clearTypeIfLeavingRoot: vi.fn() }));
 
 vi.mock("~/lib/roles", () => ({
   isCore: vi.fn(),
@@ -67,6 +70,8 @@ vi.mock("~/mcp/tools/access", () => ({
 
 import { prisma } from "~/lib/db";
 import { runManagePage } from "~/mcp/tools/docs/manage-page";
+import { canManageSharing } from "~/lib/page-share-access.server";
+import { clearTypeIfLeavingRoot } from "~/lib/drive-receivers.server";
 
 const mockPrisma = prisma as unknown as {
   page: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
@@ -91,5 +96,55 @@ describe("manage_page move — Drive roots", () => {
       message: "Drive roots can't be moved",
     });
     expect(mockPrisma.page.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("manage_page move: receiver lifecycle", () => {
+  function folder(over: Record<string, unknown> = {}) {
+    return {
+      id: "f1", workspaceType: "Lab", workspaceId: null, kind: "Folder", archivedAt: null,
+      createdById: "u1", folderType: "HiringForms", projectAsOverview: null, projectAsPRD: null, ...over,
+    };
+  }
+
+  beforeEach(() => {
+    vi.mocked(canManageSharing).mockResolvedValue(true);
+    (prisma as any).page.findMany.mockResolvedValue([]);
+    (prisma as any).$transaction.mockResolvedValue([]);
+    vi.mocked(clearTypeIfLeavingRoot).mockResolvedValue([]);
+  });
+
+  it("checks the moved folder after the move and reports what it cleared", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue(folder());
+    vi.mocked(clearTypeIfLeavingRoot).mockResolvedValue(["f1"]);
+
+    const result = await runManagePage("u1", { action: "move", pageId: "f1", parentPageId: null });
+
+    expect(clearTypeIfLeavingRoot).toHaveBeenCalledWith(["f1"]);
+    expect(result).toEqual({ ok: true, clearedReceivers: ["f1"] });
+    expect(vi.mocked(clearTypeIfLeavingRoot).mock.invocationCallOrder[0]).toBeGreaterThan(
+      (prisma as any).$transaction.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("includes the children a cross-workspace folder move carries", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue(folder());
+    (prisma as any).page.findMany.mockImplementation(({ where }: any) =>
+      Promise.resolve(where.parentPageId === "f1" ? [{ id: "c1" }] : []),
+    );
+    const { isLabMember, isCore } = await import("~/lib/roles");
+    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isCore).mockResolvedValue(true);
+
+    await runManagePage("u1", { action: "move", pageId: "f1", parentPageId: null, workspaceType: "Project", workspaceId: "p1" });
+
+    expect(clearTypeIfLeavingRoot).toHaveBeenCalledWith(["f1", "c1"]);
+  });
+
+  it("has nothing to check for a plain document", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue(folder({ kind: "FreeForm", folderType: null }));
+    const result = await runManagePage("u1", { action: "move", pageId: "f1", parentPageId: null });
+    expect(clearTypeIfLeavingRoot).toHaveBeenCalledWith([]);
+    expect(result).toEqual({ ok: true, clearedReceivers: [] });
   });
 });
