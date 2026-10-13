@@ -3,8 +3,8 @@
 // Mirrors the logic in api.mentorship.notes.$id.ts GET handler.
 
 import { prisma } from "~/lib/db";
-import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { canViewMentorship, canViewMentorNote } from "~/mentorship/lib/visibility";
+import { readMentorNoteBlocks } from "~/mentorship/lib/note-body.server";
 import type { McpCtx, McpTool } from "../../registry";
 import { McpForbiddenError, McpNotFoundError } from "../../registry";
 
@@ -42,6 +42,7 @@ export async function runGetMentorNote(
       domainId: true,
       weekOf: true,
       contentJson: true,
+      pageId: true,
       vibe: true,
       updatedAt: true,
       mentor: { select: { id: true, firstName: true, lastName: true } },
@@ -76,7 +77,7 @@ export async function runGetMentorNote(
     termId: note.termId,
     domainId: note.domainId,
     weekOf: note.weekOf.toISOString(),
-    contentJson: ensureBlocks(note.contentJson),
+    contentJson: await readMentorNoteBlocks(note),
     vibe: note.vibe,
     updatedAt: note.updatedAt.toISOString(),
     mentor: note.mentor,

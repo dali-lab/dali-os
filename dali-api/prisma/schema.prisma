@@ -5370,6 +5370,7 @@ model Page {
 
   parent   Page?  @relation("PageTree", fields: [parentPageId], references: [id])
   children Page[] @relation("PageTree")
+  mentorNote MentorNote? @relation("MentorNotePage")
 
   // Lab-wide tags applied to this document. Comments (doc-level + inline) live
   // in DocComment with targetType=doc, targetId=Page.id — referenced loosely
@@ -5656,6 +5657,11 @@ model MentorNote {
   // Mentor's at-a-glance read on how the mentee is doing this week. Null until
   // the mentor picks one — the browse grid renders it as a colored cell.
   vibe        MentorNoteVibe?
+
+  // The note's body and Drive presence: a tab in the pair's notebook. Null
+  // until the note is migrated or first opened; a deleted Page just unlinks.
+  pageId String? @unique
+  page   Page?   @relation("MentorNotePage", fields: [pageId], references: [id], onDelete: SetNull)
 
   mentor User @relation("MentorNoteMentor", fields: [mentorId], references: [id])
   mentee User @relation("MentorNoteMentee", fields: [menteeId], references: [id])
