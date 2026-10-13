@@ -213,7 +213,16 @@ export async function action({ request }: Route.ActionArgs) {
     } else if (type === "doc" || type === "folder") {
       const access = await getPageAccess(userId, id, request, { includeArchived: true });
       if (!access.canEdit) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+      const trashed = await prisma.page.findUnique({ where: { id }, select: { kind: true, archivedAt: true } });
       await prisma.page.update({ where: { id }, data: { archivedAt: null } });
+      // A notebook was archived together with its tabs at one instant; bring
+      // back exactly those, not tabs that were trashed on their own earlier.
+      if (trashed?.kind === "Notebook" && trashed.archivedAt) {
+        await prisma.page.updateMany({
+          where: { parentPageId: id, archivedAt: trashed.archivedAt },
+          data: { archivedAt: null },
+        });
+      }
     } else {
       return withCors(request, Response.json({ error: "Unknown type" }, { status: 400 }));
     }

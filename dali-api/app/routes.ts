@@ -489,6 +489,7 @@ export default [
   route("api/scheduled-meetings/:id/edit-context", "calendar/routes/api.scheduled-meetings.$id.edit-context.ts"),
   route("api/scheduled-meetings/:id/cancel", "calendar/routes/api.scheduled-meetings.$id.cancel.ts"),
   route("api/scheduled-meetings/:id/attendance", "calendar/routes/api.scheduled-meetings.$id.attendance.ts"),
+  route("api/scheduled-meetings/:id/notebook", "calendar/routes/api.scheduled-meetings.$id.notebook.ts"),
   route("api/scheduled-meetings/:id/check-in", "calendar/routes/api.scheduled-meetings.$id.check-in.ts"),
   route("api/scheduled-meetings/:id/propose-time", "calendar/routes/api.scheduled-meetings.$id.propose-time.ts"),
   route("api/scheduled-meetings/:id/proposal", "calendar/routes/api.scheduled-meetings.$id.proposal.ts"),
@@ -611,6 +612,9 @@ export default [
   // Lab-wide documents (collab Pages scoped to the Lab workspace)
   route("api/lab-documents", "routes/api.lab-documents.ts"),
   route("api/documents/:id", "projects/routes/api.documents.$id.ts"),
+  route("api/notebooks", "routes/api.notebooks.ts"),
+  route("api/notebooks/:id", "routes/api.notebooks.$id.ts"),
+  route("api/pages/:id/meeting", "routes/api.pages.$id.meeting.ts"),
   route("api/pages/:id/partner-visible", "projects/routes/api.pages.$id.partner-visible.ts"),
   route("api/pages/:id/public-visible", "projects/routes/api.pages.$id.public-visible.ts"),
 
