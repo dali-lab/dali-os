@@ -7,6 +7,7 @@ import type { DriveItem, ProjectPageRow, ProjectFileRow } from "~/lib/drive.serv
 import { prisma } from "~/lib/db";
 import { requireAuth, isImpersonating } from "~/lib/auth";
 import { favoritePageIds } from "~/lib/user-pages.server";
+import { withChildCounts } from "~/lib/drive-counts.server";
 import { loadSharedWithMe } from "~/lib/drive-shared.server";
 import { visibleDriveSpaces } from "~/lib/drive-spaces";
 import { getPageAccess } from "~/lib/pageAccess.server";
@@ -510,7 +511,7 @@ export async function loadDriveScopes({
         break;
     }
   }
-  return result;
+  return result.map((scope) => ({ ...scope, items: withChildCounts(scope.items) }));
 }
 
 /**
@@ -563,7 +564,7 @@ export async function loadProjectDriveScope({
     id: `project:${projectId}`,
     label: projectName,
     iconEmoji: projectIconEmoji,
-    items,
+    items: withChildCounts(items),
     scopeAudience: "Project members",
   };
 }

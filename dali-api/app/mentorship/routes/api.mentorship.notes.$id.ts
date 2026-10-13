@@ -3,11 +3,12 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { canViewMentorship, canViewMentorNote } from "../lib/visibility";
+import { readMentorNoteBlocks } from "../lib/note-body.server";
+import { archiveMentorNotePage } from "../lib/pair-notebook.server";
 
 // GET    /api/mentorship/notes/:id  — read one (author, any lab mentor, or Core/Admin).
-//                                     contentJson is normalized to block JSON.
+//                                     contentJson is the page's body as block JSON.
 // PATCH  /api/mentorship/notes/:id  — update vibe. Author or Core only. The body
 //                                     is a collaborative document (Hocuspocus
 //                                     sync-back owns contentJson writes).
@@ -42,6 +43,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       domainId: true,
       weekOf: true,
       contentJson: true,
+      pageId: true,
       vibe: true,
       updatedAt: true,
       mentor: { select: { id: true, firstName: true, lastName: true } },
@@ -72,7 +74,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     request,
     Response.json({
       ...note,
-      contentJson: ensureBlocks(note.contentJson),
+      contentJson: await readMentorNoteBlocks(note),
       weekOf: note.weekOf.toISOString(),
       updatedAt: note.updatedAt.toISOString(),
       project,
@@ -94,7 +96,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const note = await prisma.mentorNote.findUnique({
     where: { id: params.id! },
-    select: { id: true, mentorId: true },
+    select: { id: true, mentorId: true, pageId: true },
   });
   if (!note) {
     return withCors(request, Response.json({ error: "Not found" }, { status: 404 }));
@@ -106,6 +108,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   if (request.method === "DELETE") {
     await prisma.mentorNote.delete({ where: { id: note.id } });
+    await archiveMentorNotePage(note.pageId);
     return withCors(request, Response.json({ ok: true }));
   }
 

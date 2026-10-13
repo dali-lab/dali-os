@@ -25,6 +25,7 @@ import type { ReactNode } from "react";
 import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
+import { receiversEnabled } from "~/lib/drive-receivers.server";
 import { resolveTermFilter } from "~/lib/terms";
 import { TermFilter } from "~/components/TermFilter";
 import { prisma } from "~/lib/db";
@@ -37,6 +38,8 @@ import { DriveTagFilter } from "~/components/drive/DriveTagFilter";
 import { FolderPicker } from "~/components/drive/FolderPicker";
 import type { PickerDrive, PickerFolder, Destination } from "~/components/drive/FolderPicker";
 import { buildPickerRows } from "~/components/drive/picker-rows";
+import { LocationLink } from "~/components/drive/LocationLink";
+import { locateFolder, type LocatableScope } from "~/components/drive/location";
 import { moveDriveItem, driveErrorFrom } from "~/components/drive/move-item";
 import { reportMoveBatch, runMoveBatch, itemCount } from "~/components/drive/move-batch";
 import { useDriveFileUpload } from "~/components/drive/useDriveFileUpload";
@@ -255,6 +258,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     selectedTerm: termFilter.selected,
     canViewForms: userCanViewForms,
     canManageAgreements: userCanManageAgreements,
+    receiversEnabled: await receiversEnabled(request),
     // My Drive is the Member workspace keyed by the viewer's own id — the
     // cross-drive move needs it to name the source workspace it's leaving.
     viewerId: auth.user.sub,
@@ -1137,6 +1141,7 @@ export default function DriveHub() {
     selectedTerm,
     canViewForms,
     canManageAgreements,
+    receiversEnabled: receiversOn,
     viewerId,
   } = useLoaderData() as LoaderData;
   const [searchParams, setSearchParams] = useSearchParams();
@@ -2034,6 +2039,7 @@ export default function DriveHub() {
           </>
         }
         tagFilter={tagFilter}
+        receiverViewer={receiversOn ? { isCore: canManageAgreements, isProjectMember: true } : undefined}
       />
 
       {/* Hidden upload input (driven by the New menu) + template picker modal */}
@@ -2067,6 +2073,11 @@ export default function DriveHub() {
 
       {trashOpen && (
         <TrashPanel
+          scopes={driveScopes}
+          onNavigate={(scopeId, folderId) => {
+            setTrashOpen(false);
+            onNavigate(scopeId, folderId);
+          }}
           onClose={() => setTrashOpen(false)}
           onRevalidate={() => revalidator.revalidate()}
           dialog={dialog}
@@ -2083,15 +2094,20 @@ type TrashItem = {
   id: string;
   type: "doc" | "folder" | "file" | "form";
   title: string;
+  parentFolderId: string | null;
   archivedAt: string;
 };
 
 function TrashPanel({
+  scopes,
+  onNavigate,
   onClose,
   onRevalidate,
   dialog,
   toast,
 }: {
+  scopes: LocatableScope[];
+  onNavigate: (scopeId: string, folderId: string | null) => void;
   onClose: () => void;
   onRevalidate: () => void;
   dialog: ReturnType<typeof useDialog>;
@@ -2196,6 +2212,9 @@ function TrashPanel({
                 <span className="text-xs text-muted-foreground">
                   Deleted {new Date(item.archivedAt).toLocaleDateString()}
                 </span>
+              </span>
+              <span className="flex w-44 shrink-0 min-w-0">
+                <LocationLink location={locateFolder(scopes, item.parentFolderId)} onNavigate={onNavigate} />
               </span>
               <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                 <button

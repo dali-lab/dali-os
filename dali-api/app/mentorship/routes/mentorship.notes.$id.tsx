@@ -1,17 +1,19 @@
 import { useState } from "react";
-import { redirect, useLoaderData } from "react-router";
+import { Link, redirect, useLoaderData } from "react-router";
 import { Smile, Meh, Frown } from "lucide-react";
 import type { Route } from "./+types/mentorship.notes.$id";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { recordRouteVisit } from "~/lib/user-pages.server";
-import { isCore } from "~/lib/roles";
+import { getPageAccess } from "~/lib/pageAccess.server";
+import { pageDocName } from "~/collab/roomName";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { DocEditor } from "~/components/doc";
-import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { Tooltip, InfoTip } from "~/components/ui/floating";
 import { canViewMentorship, canViewMentorNote } from "../lib/visibility";
+import { ensureMentorNotePage } from "../lib/pair-notebook.server";
+import { readMentorNoteBlocks } from "../lib/note-body.server";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { VIBES, VIBE_META, type Vibe } from "../lib/vibe";
@@ -19,6 +21,7 @@ import { weekNumberInTerm } from "../lib/week";
 
 type LoaderData = {
   id: string;
+  pageId: string;
   weekOfIso: string;
   weekNumber: number | null;
   contentJson: unknown;
@@ -65,6 +68,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       domainId: true,
       weekOf: true,
       contentJson: true,
+      pageId: true,
       vibe: true,
       mentor: { select: { id: true, firstName: true, lastName: true } },
       mentee: { select: { id: true, firstName: true, lastName: true } },
@@ -75,6 +79,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw new Response("Forbidden", { status: 403 });
   }
 
+  const { pageId } = await ensureMentorNotePage(note, auth.user.sub);
+  const access = await getPageAccess(auth.user.sub, pageId);
+  if (!access.canView) throw new Response("Forbidden", { status: 403 });
+
   // After the visibility gate — the note the viewer can open lands in recents.
   recordRouteVisit(
     auth.user.sub,
@@ -83,7 +91,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     request,
   );
 
-  const [project, term, domain, core, me] = await Promise.all([
+  const [project, term, domain, me] = await Promise.all([
     prisma.project.findUnique({
       where: { id: note.projectId },
       select: { name: true },
@@ -96,7 +104,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       where: { id: note.domainId },
       select: { displayName: true },
     }),
-    isCore(auth.user.sub),
     prisma.user.findUnique({
       where: { id: auth.user.sub },
       select: { firstName: true, lastName: true },
@@ -105,18 +112,17 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const data: LoaderData = {
     id: note.id,
+    pageId,
     weekOfIso: note.weekOf.toISOString(),
     weekNumber: term ? weekNumberInTerm(note.weekOf, term.startDate) : null,
-    // Read view renders blocks; legacy rows still hold ProseMirror JSON until
-    // their first collab edit, so normalize server-side.
-    contentJson: ensureBlocks(note.contentJson),
+    contentJson: await readMentorNoteBlocks({ pageId, contentJson: note.contentJson }),
     vibe: note.vibe,
     mentor: note.mentor,
     mentee: note.mentee,
     projectName: project?.name ?? "Unknown",
     termCode: term?.code ?? "?",
     domainDisplay: domain?.displayName ?? "Unknown",
-    canEdit: note.mentorId === auth.user.sub || core,
+    canEdit: access.canEdit,
     collabToken: await getCollabToken(request),
     userName: [me?.firstName, me?.lastName].filter(Boolean).join(" ") || "Mentor",
   };
@@ -175,6 +181,10 @@ export default function MentorNoteEditor() {
         <p className="text-base text-os-grey">
           {data.weekNumber != null && `Week ${data.weekNumber} · `}
           {fmt(data.weekOfIso)}
+          {" · "}
+          <Link to={`/documents/${data.pageId}`} className="underline hover:text-foreground">
+            Open in Drive
+          </Link>
         </p>
         <p className={cn(bodyText, "inline-flex items-center gap-1")}>
           Author: {fullName(data.mentor)}
@@ -247,7 +257,7 @@ export default function MentorNoteEditor() {
         <DocEditor
           features="notes"
           collab={{
-            documentName: `mentorNote:${data.id}:body`,
+            documentName: pageDocName(data.pageId),
             token: data.collabToken,
             userName: data.userName,
           }}

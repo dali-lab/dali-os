@@ -18,6 +18,10 @@ vi.mock("~/lib/drive-receivers.server", () => ({
   projectSlot: (projectId: string) => ({ processType: "Project", processId: projectId, folderType: "Meetings" }),
   singletonSlot: (processType: string, folderType: string) => ({ processType, processId: processType.toLowerCase(), folderType }),
 }));
+vi.mock("~/lib/shortcuts.server", () => {
+  class ShortcutError extends Error {}
+  return { createShortcut: vi.fn(), ShortcutError };
+});
 vi.mock("~/lib/terms", () => ({ termWindows: vi.fn(async () => []) }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn(async () => false) }));
 vi.mock("~/lib/groups", () => ({ resolveGroupMembers: vi.fn(async () => []) }));
@@ -48,6 +52,7 @@ import { notify } from "~/lib/notify.server";
 import { isCore } from "~/lib/roles";
 import { receiversEnabled, resolveFilingFolder } from "~/lib/drive-receivers.server";
 import { resolveGroupMembers } from "~/lib/groups";
+import { createShortcut, ShortcutError } from "~/lib/shortcuts.server";
 import {
   createProjectPage,
   createLabMeetingPage,
@@ -518,6 +523,80 @@ describe("createScheduledMeeting — where a note is filed with receiver folders
 
   afterEach(() => {
     vi.mocked(receiversEnabled).mockResolvedValue(false);
+  });
+
+  describe("a Core meeting held for a project", () => {
+    const coreProject = { ...base, isCoreMeeting: true, meetingType: "Team" as const, meetingTypeLabel: null, projectId: "proj-7" };
+    const page = prisma as unknown as { page: { count: ReturnType<typeof vi.fn> } };
+
+    beforeEach(() => {
+      resolve.mockImplementation(async (slot: { processType: string }) =>
+        slot.processType === "Core"
+          ? { folderId: "core-meetings", viaReceiver: true }
+          : { folderId: "recv-1", viaReceiver: true },
+      );
+      page.page.count.mockResolvedValue(0);
+      vi.mocked(createShortcut).mockReset();
+    });
+
+    it("puts one shortcut to the new notebook in Core's Meetings receiver, as the note author", async () => {
+      await createScheduledMeeting(coreProject);
+
+      expect(resolve).toHaveBeenCalledWith({ processType: "Core", processId: "core", folderType: "Meetings" }, "org-1");
+      expect(createShortcut).toHaveBeenCalledTimes(1);
+      expect(createShortcut).toHaveBeenCalledWith({
+        targetPageId: "notebook-1",
+        dest: { workspaceType: "Lab", workspaceId: null, parentPageId: "core-meetings" },
+        actorId: "org-1",
+      });
+    });
+
+    it("falls back to the Core root when there is no Meetings receiver", async () => {
+      resolve.mockImplementation(async (slot: { processType: string }) =>
+        slot.processType === "Core" ? { folderId: "core-root", viaReceiver: false } : { folderId: "recv-1", viaReceiver: true },
+      );
+
+      await createScheduledMeeting(coreProject);
+
+      expect(createShortcut).toHaveBeenCalledWith(
+        expect.objectContaining({ dest: { workspaceType: "Lab", workspaceId: null, parentPageId: "core-root" } }),
+      );
+    });
+
+    it("does nothing for a later note in a notebook that already has tabs", async () => {
+      page.page.count.mockResolvedValue(1);
+
+      await createScheduledMeeting(coreProject);
+
+      expect(createShortcut).not.toHaveBeenCalled();
+    });
+
+    it("does nothing for a project meeting that is not a Core meeting", async () => {
+      await createScheduledMeeting({ ...coreProject, isCoreMeeting: false });
+
+      expect(createShortcut).not.toHaveBeenCalled();
+    });
+
+    it("does nothing with receivers off", async () => {
+      vi.mocked(receiversEnabled).mockResolvedValue(false);
+
+      await createScheduledMeeting(coreProject);
+
+      expect(createShortcut).not.toHaveBeenCalled();
+    });
+
+    it("still files the note when the author can't edit Core's folder", async () => {
+      vi.mocked(createShortcut).mockRejectedValue(new ShortcutError("You can't put things in that folder"));
+
+      await expect(createScheduledMeeting(coreProject)).resolves.toMatchObject({ ok: true });
+      expect(createNotebookTab).toHaveBeenCalled();
+    });
+
+    it("surfaces an unexpected failure instead of hiding it", async () => {
+      vi.mocked(createShortcut).mockRejectedValue(new Error("db down"));
+
+      await expect(createScheduledMeeting(coreProject)).rejects.toThrow("db down");
+    });
   });
 
   it("files a Team meeting to the project's Meetings receiver and creates no Team folder", async () => {

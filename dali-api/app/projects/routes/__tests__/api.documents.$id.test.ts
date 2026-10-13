@@ -175,6 +175,7 @@ describe("DELETE /api/documents/:id?ifEmpty=1 — notebooks", () => {
     m.page.count.mockResolvedValue(5);
     const res = await del("?ifEmpty=1");
     expect(res.status).toBe(200);
+    expect(trashNotebook).not.toHaveBeenCalled();
   });
 });
 
@@ -312,6 +313,24 @@ describe("EducationOffering pages", () => {
     vi.mocked(getPageAccess).mockResolvedValue({ canEdit: false } as any);
     expect((await post({ title: "x" })).status).toBe(404);
     expect(m.page.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("DELETE /api/documents/:id — shortcuts", () => {
+  beforeEach(() => {
+    vi.mocked(getPageAccess).mockResolvedValue({ canEdit: true } as any);
+  });
+
+  it("only archives a shortcut: no grant is removed and no content guard runs", async () => {
+    m.page.findUnique.mockResolvedValue(labFolder({ kind: "Shortcut" }));
+
+    const res = await del();
+
+    expect(res.status).toBe(200);
+    expect(m.page.update).toHaveBeenCalledTimes(1);
+    expect(m.page.update.mock.calls[0][0].data.archivedAt).toBeInstanceOf(Date);
+    expect(Object.keys(m.page.update.mock.calls[0][0].data)).not.toContain("grantShareId");
+    expect(m.projectFile.count).not.toHaveBeenCalled();
   });
 });
 

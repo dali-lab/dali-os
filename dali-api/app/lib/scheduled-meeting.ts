@@ -33,6 +33,7 @@ import {
 } from "~/lib/pages";
 import { receiversEnabled, resolveFilingFolder, projectSlot, singletonSlot } from "~/lib/drive-receivers.server";
 import { meetingNotebookIdentity, meetingTypeForNotebook, termForDate } from "~/lib/meeting-notebook";
+import { createShortcut, ShortcutError } from "~/lib/shortcuts.server";
 import { termWindows } from "~/lib/terms";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { isGeneralCalendarEvent } from "~/lib/general-calendar";
@@ -440,6 +441,23 @@ async function ensureNotebookForNote(input: {
   return ensureMeetingNotebook({ ...identity, createdById: input.authorId, ...input.dest });
 }
 
+// A Core meeting held for a project files its notebook in the project; Core's
+// Meetings receiver (else the Core root) gets one shortcut to it. Best effort:
+// an author who can't edit that folder just leaves it out, and the project
+// notebook is the record either way.
+async function shortcutNotebookIntoCore(notebookId: string, authorId: string): Promise<void> {
+  const { folderId } = await resolveFilingFolder(singletonSlot("Core", "Meetings"), authorId);
+  try {
+    await createShortcut({
+      targetPageId: notebookId,
+      dest: { workspaceType: "Lab", workspaceId: null, parentPageId: folderId },
+      actorId: authorId,
+    });
+  } catch (err) {
+    if (!(err instanceof ShortcutError)) throw err;
+  }
+}
+
 /** A meeting asset just filed. For a note, `notebookId` is the notebook it is a
  *  tab of and `createdNotebook` says whether this very call made that notebook. */
 type BuiltArtifactPage = { id: string; notebookId: string | null; createdNotebook: boolean };
@@ -489,6 +507,10 @@ async function buildMeetingArtifactPage(
   const { dest, title } = await resolveArtifactFiling(input, isBoard, dateLabel);
   if (!isBoard) {
     const notebook = await ensureNotebookForNote({ ...input, date: occurrenceStart, dest });
+    const firstNote =
+      input.isCoreMeeting && !!input.projectId && (await receiversEnabled())
+        ? (await prisma.page.count({ where: { parentPageId: notebook.id } })) === 0
+        : false;
     const tab = await createNotebookTab({
       notebookId: notebook.id,
       title,
@@ -496,6 +518,7 @@ async function buildMeetingArtifactPage(
       meetingNoteId: input.meetingId,
       meetingOccurrenceStart: occurrenceStart,
     });
+    if (firstNote) await shortcutNotebookIntoCore(notebook.id, input.authorId);
     return { id: tab.id, notebookId: notebook.id, createdNotebook: notebook.created === true };
   }
   const fields = {

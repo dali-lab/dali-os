@@ -163,12 +163,13 @@ async function notebookTabPlacement(notebookId: string) {
   return { ...notebook, parentPageId: notebookId };
 }
 
-/** Create one meeting's note as a tab of `notebookId`. */
+/** Create one tab of `notebookId`: a meeting's note, or (no `meetingNoteId`) a
+ *  plain doc ordered by `meetingOccurrenceStart`. */
 export async function createNotebookTab(input: {
   notebookId: string;
   title: string;
   createdById: string;
-  meetingNoteId: string;
+  meetingNoteId?: string;
   meetingOccurrenceStart: Date;
 }): Promise<{ id: string }> {
   const placement = await notebookTabPlacement(input.notebookId);
@@ -177,7 +178,7 @@ export async function createNotebookTab(input: {
       ...placement,
       title: input.title,
       createdById: input.createdById,
-      meetingNoteId: input.meetingNoteId,
+      meetingNoteId: input.meetingNoteId ?? null,
       meetingOccurrenceStart: input.meetingOccurrenceStart,
     },
     select: { id: true },

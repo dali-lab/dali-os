@@ -79,6 +79,7 @@ import { runSessionReminderSweep } from "~/jobs/session-reminder-sweep.server";
 import { runDailyDigest, runWeeklyDigest } from "~/lib/notification-digest.server";
 import { runRetentionJanitor } from "~/jobs/retention-janitor.server";
 import { runDriveRootsReparent } from "~/jobs/drive-roots-reparent.server";
+import { runMentorNotesToNotebooks } from "~/jobs/mentor-notes-to-notebooks.server";
 import { runSprintLifecycle } from "~/jobs/sprint-lifecycle.server";
 import { runFormWindows } from "~/jobs/form-windows.server";
 import { runInterviewReminders } from "~/jobs/interview-reminders.server";
@@ -478,6 +479,14 @@ export const JOBS: JobDefinition[] = [
     intervalMinutes: 1440,
     enabledByDefault: false,
     handler: runDriveRootsReparent,
+  },
+  {
+    name: "mentor-notes-to-notebooks",
+    description:
+      "One-time: gives each mentor note a tab in its pair's Mentorship notebook, 200 notes per run. Turn off once 'remaining' reaches 0.",
+    intervalMinutes: 1,
+    enabledByDefault: false,
+    handler: runMentorNotesToNotebooks,
   },
   {
     name: "recording-finalizer",

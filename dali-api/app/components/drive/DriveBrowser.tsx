@@ -42,6 +42,7 @@ import {
   ChevronDown,
   ChevronUp,
   ClipboardList,
+  CornerDownRight,
   FileSignature,
   FileText,
   Shapes,
@@ -72,7 +73,11 @@ import {
   Info,
   PanelRightClose,
   History,
+  NotebookPen,
+  CalendarDays,
+  Tag,
   UserPlus,
+  SlidersHorizontal,
 } from "lucide-react";
 import type { DriveItem } from "~/lib/drive.server";
 import { categorize } from "~/lib/file-type";
@@ -86,6 +91,11 @@ import { isProcessRootSpace, SHARED_SPACE_KEY } from "~/lib/drive-spaces";
 import { ProcessLinkPill } from "~/components/drive/ProcessLinkPill";
 import { AudienceSignal, AudienceDetail } from "~/components/drive/AudienceSignal";
 import { buttonClasses } from "~/components/ui/Button";
+import { crumbsFor, locationOf, type ItemLocation } from "~/components/drive/location";
+import { LocationLink } from "~/components/drive/LocationLink";
+import { CORAL_FOLDER, folderCountLabel, pickGlyph, type ItemGlyph } from "~/components/drive/glyphs";
+import { FolderSettingsModal } from "~/components/drive/FolderSettingsModal";
+import { eligibleSlotsFor, isPageFolder, projectIdFor, receivesLabel } from "~/components/drive/receiver-options";
 
 /* Drive's type scale. It was written a step below the rest of the app — rows at
    text-sm, metadata at text-xs, column headers at 11px — which reads as a
@@ -120,6 +130,8 @@ export type RowActions = {
   onShare?: (item: DriveItem) => void;
   /** Rename, Move and Delete are left off the item menu (the Shared with me space). */
   readOnly?: boolean;
+  /** Open the "This folder receives" settings for a page folder. */
+  onFolderSettings?: (item: DriveItem) => void;
 };
 
 type SortKey = "name" | "modified" | "size" | "shared";
@@ -190,6 +202,8 @@ export type DriveBrowserProps = {
   /** Whether the project has an active partner relationship. Controls whether
    *  the partner-visibility toggle is shown in item menus. */
   hasActivePartner?: boolean;
+  /** Turns on "Folder settings…" (what a folder receives). Omitted while the `drive-receivers` flag is off. */
+  receiverViewer?: { isCore: boolean; isProjectMember: boolean };
 };
 
 // ── Pure helpers ─────────────────────────────────────────────────────────────
@@ -263,25 +277,7 @@ function sortItems(items: DriveItem[], key: SortKey, dir: SortDir): DriveItem[] 
   return [...folders, ...rest];
 }
 
-export function crumbsFor(
-  items: DriveItem[],
-  folderId: string | null,
-): { id: string; title: string }[] {
-  const byId = new Map(items.map((it) => [it.id, it]));
-  const chain: { id: string; title: string }[] = [];
-  let cursor = folderId;
-  const seen = new Set<string>();
-  while (cursor && !seen.has(cursor)) {
-    seen.add(cursor);
-    const node = byId.get(cursor);
-    if (!node) break;
-    chain.unshift({ id: node.id, title: node.title || "Untitled" });
-    cursor = node.parentFolderId;
-  }
-  return chain;
-}
-
-export type SearchHit = { scope: DriveTreeScope; item: DriveItem; path: string };
+export type SearchHit = { scope: DriveTreeScope; item: DriveItem; path: string; location: ItemLocation };
 
 export function searchAll(
   scopes: DriveTreeScope[],
@@ -299,9 +295,8 @@ export function searchAll(
       if (typeFilter !== "all" && item.type !== typeFilter) continue;
       if (needle && !(item.title || "").toLowerCase().includes(needle)) continue;
       if (tagFilter && !tagFilter(item)) continue;
-      const crumbs = crumbsFor(scope.items, item.parentFolderId);
-      const path = [scope.label, ...crumbs.map((c) => c.title)].join(" › ");
-      hits.push({ scope, item, path });
+      const location = locationOf(scope, item.parentFolderId);
+      hits.push({ scope, item, path: location.path, location });
     }
   }
   return hits.sort((a, b) => (a.item.title || "").localeCompare(b.item.title || ""));
@@ -329,20 +324,59 @@ function folderDescendants(items: DriveItem[], folderId: string): Set<string> {
 
 type IconSize = "sm" | "lg" | "xl";
 
-function itemIcon(item: DriveItem, size: IconSize = "sm") {
+const FOLDER_MARKS = { calendar: CalendarDays, tag: Tag } as const;
+
+/** A small mark pinned to a glyph's bottom-right corner, on a disc that cuts it out of the artwork. */
+function GlyphBadge({ children, badge }: { children: ReactNode; badge: ReactNode }) {
+  return (
+    <span className="relative inline-flex shrink-0">
+      {children}
+      <span className="absolute -bottom-1 -right-1 flex items-center justify-center rounded-full bg-background">
+        {badge}
+      </span>
+    </span>
+  );
+}
+
+export function itemIcon(item: DriveItem, size: IconSize = "sm") {
+  return glyphIcon(pickGlyph(item), item, size);
+}
+
+function glyphIcon(glyph: ItemGlyph, item: DriveItem, size: IconSize): ReactNode {
   const cls = size === "xl" ? "w-10 h-10" : size === "lg" ? "w-8 h-8" : "w-4 h-4";
+  const markCls = size === "xl" ? "w-3.5 h-3.5" : size === "lg" ? "w-3 h-3" : "w-2.5 h-2.5";
   const emojiCls = `${cls} flex items-center justify-center leading-none shrink-0 ${
     size === "xl" ? "text-3xl" : size === "lg" ? "text-2xl" : "text-sm"
   }`;
-  switch (item.type) {
-    case "folder":
-      // Folders that mirror an entity (project/offering) or that the user gave a
-      // custom emoji carry `iconEmoji` — show it instead of the generic glyph.
-      return item.iconEmoji ? (
-        <span className={emojiCls}>{item.iconEmoji}</span>
-      ) : (
-        <Folder className={`${cls} text-accent-coral/80 shrink-0`} />
+  switch (glyph.kind) {
+    case "emoji":
+      return <span className={emojiCls}>{glyph.emoji}</span>;
+    case "folder": {
+      const folder = <Folder className={`${cls} ${glyph.tint} shrink-0`} />;
+      if (!glyph.mark) return folder;
+      const Mark = FOLDER_MARKS[glyph.mark];
+      return <GlyphBadge badge={<Mark className={`${markCls} ${CORAL_FOLDER}`} />}>{folder}</GlyphBadge>;
+    }
+    case "notebook": {
+      const notebook = <NotebookPen className={`${cls} ${CORAL_FOLDER} shrink-0`} />;
+      if (!glyph.tabs) return notebook;
+      return (
+        <GlyphBadge
+          badge={
+            <span
+              data-testid="notebook-tab-count"
+              className={`min-w-3.5 px-0.5 text-center font-semibold leading-3.5 tabular-nums text-muted-foreground ${
+                size === "sm" ? "text-[9px]" : "text-[10px]"
+              }`}
+            >
+              {glyph.tabs}
+            </span>
+          }
+        >
+          {notebook}
+        </GlyphBadge>
       );
+    }
     case "file": {
       const Icon = iconForCategory(categorize({ fileName: item.title || "" }));
       return <Icon className={`${cls} text-muted-foreground shrink-0`} />;
@@ -353,16 +387,16 @@ function itemIcon(item: DriveItem, size: IconSize = "sm") {
       return <FileSignature className={`${cls} text-muted-foreground shrink-0`} />;
     case "rubric":
       return <ClipboardCheck className={`${cls} text-muted-foreground shrink-0`} />;
-    default:
-      // Docs: respect size so grid/preview icons dwarf the label the way a
-      // Finder icon does (PageIcon is a fixed list-row glyph and ignores size).
-      return item.iconEmoji ? (
-        <span className={emojiCls}>{item.iconEmoji}</span>
-      ) : item.type === "doc" && item.isWhiteboard ? (
-        <Shapes className={`${cls} text-muted-foreground shrink-0`} />
-      ) : (
-        <FileText className={`${cls} text-muted-foreground shrink-0`} />
+    case "shortcut":
+      return (
+        <GlyphBadge badge={<CornerDownRight className={`${markCls} text-foreground`} />}>
+          {glyphIcon(glyph.target, item, size)}
+        </GlyphBadge>
       );
+    case "whiteboard":
+      return <Shapes className={`${cls} text-muted-foreground shrink-0`} />;
+    case "doc":
+      return <FileText className={`${cls} text-muted-foreground shrink-0`} />;
   }
 }
 
@@ -432,6 +466,11 @@ function itemMenuItems(
           onSelect={() => onTogglePartnerVisible!(item, !itemPartnerVisible)}
         >
           {itemPartnerVisible ? "Stop sharing with partner" : "Share with partner"}
+        </Menu.Item>
+      )}
+      {item.type === "folder" && isPageFolder(item) && actions.onFolderSettings && (
+        <Menu.Item icon={<SlidersHorizontal className="h-3.5 w-3.5" />} onSelect={() => actions.onFolderSettings!(item)}>
+          Folder settings…
         </Menu.Item>
       )}
       {(canRename || canMove) && <Menu.Separator />}
@@ -526,6 +565,8 @@ function FavoriteButton({
 }
 
 const GRID_COLUMNS = "minmax(0,1fr) 9rem 5rem 3.75rem";
+/** Flat listings (search, tag and type results) trade Size for where the item lives. */
+const GRID_COLUMNS_FLAT = "minmax(0,1fr) minmax(0,16rem) 5rem 2rem";
 const SHARED_GRID_COLUMNS = "minmax(0,1fr) 9rem 9rem 5rem 3.75rem";
 
 /** Icon-view geometry, shared by the drive tiles and the item tiles. Fixed cell
@@ -633,6 +674,7 @@ export function DriveBrowser({
   embeddedScopeId,
   onTogglePartnerVisible,
   hasActivePartner,
+  receiverViewer,
 }: DriveBrowserProps) {
   const currentScope = useMemo(
     () => scopes.find((s) => s.id === currentScopeId) ?? null,
@@ -643,6 +685,8 @@ export function DriveBrowser({
   const [shareTarget, setShareTarget] = useState<{ id: string; title: string; workspaceType: string } | null>(null);
   const sharingChangedRef = useRef(false);
 
+  const [folderSettings, setFolderSettings] = useState<{ item: DriveItem; scopeId: string } | null>(null);
+
   // Wrap the hub's getScopeActions to inject the in-place Share handler.
   // Sharing only applies to doc/folder (Page-backed) items; the wrapper passes
   // onShare so itemMenuItems and the leaf toolbar can show it without the hub
@@ -651,6 +695,7 @@ export function DriveBrowser({
     const base = getScopeActions(scopeId);
     return {
       ...base,
+      ...(receiverViewer ? { onFolderSettings: (item: DriveItem) => setFolderSettings({ item, scopeId }) } : {}),
       onShare: (item: DriveItem) => {
         if (item.type !== "doc" && item.type !== "folder") return;
         // workspaceType is not on DriveItem directly; infer from the scope id
@@ -1770,6 +1815,7 @@ export function DriveBrowser({
                   selected={selected}
                   onRowClick={handleRowClick}
                   onOpen={openById}
+                  onOpenLocation={onNavigate}
                   getScopeActions={getInternalScopeActions}
                   onToggleFavorite={onToggleFavorite}
                 />
@@ -1787,6 +1833,7 @@ export function DriveBrowser({
               ) : (
                 <ScopeContents
                   scope={currentScope}
+                  atScopeTop={currentFolderId === null}
                   listing={listing}
                   viewMode={viewMode === "grid" ? "grid" : "list"}
                   sort={sort}
@@ -1874,6 +1921,25 @@ export function DriveBrowser({
             onSharingChanged?.();
           }
         }}
+      />
+    )}
+
+    {folderSettings && receiverViewer && (
+      <FolderSettingsModal
+        key={folderSettings.item.id}
+        open
+        onClose={() => setFolderSettings(null)}
+        folder={folderSettings.item}
+        slots={eligibleSlotsFor(
+          folderSettings.scopeId,
+          projectIdFor(
+            folderSettings.scopeId,
+            scopes.find((sc) => sc.id === folderSettings.scopeId)?.items ?? [],
+            folderSettings.item.id,
+          ),
+          receiverViewer.isCore,
+          receiverViewer.isProjectMember,
+        )}
       />
     )}
 
@@ -2021,6 +2087,9 @@ function DriveDetailsPane({
           <dl className="mt-4 flex flex-col gap-3.5 border-t border-border pt-3.5">
             <DetailFact label="Where" value={scopePathLabel || "—"} />
             <DetailFact label="Modified" value={relativeTime(item.updatedAt as unknown as string)} />
+            {item.type === "folder" && receivesLabel(item.folderType) && (
+              <DetailFact label="Receives" value={receivesLabel(item.folderType)!} />
+            )}
             {item.type === "file" && item.sizeBytes != null && (
               <DetailFact label="Size" value={formatSize(item.sizeBytes)} />
             )}
@@ -2325,6 +2394,7 @@ function ColumnItemRow({
       <span className="min-w-0 flex-1 truncate font-medium">
         {item.title || "Untitled"}
       </span>
+      <FolderCount item={item} />
       <RowAudience item={item} actions={scopeActions} />
       {/* Signal ②: process linkage pill. */}
       {item.linkedProcess && (
@@ -2385,6 +2455,18 @@ function ColumnItemRow({
  * horizontal scroll, the way Finder's columns behave.
  */
 const COLUMN_SIZE = "flex-1 min-w-[12.5rem]";
+
+/** "12 items" / "Empty" after a folder's name; nothing for other items or before counts load. */
+function FolderCount({ item, className = "" }: { item: DriveItem; className?: string }) {
+  const t = useDriveText();
+  const label = item.type === "folder" ? folderCountLabel(item.itemCount) : null;
+  if (!label) return null;
+  return (
+    <span data-testid="folder-count" className={`shrink-0 ${t.meta} text-muted-foreground ${className}`}>
+      {label}
+    </span>
+  );
+}
 
 /** The audience marker for a row; clicking opens Share for items that have one. */
 function RowAudience({ item, actions }: { item: DriveItem; actions: RowActions | null }) {
@@ -2737,8 +2819,9 @@ function ScopeList({
 
 // ── In-scope contents (list + grid) ──────────────────────────────────────────
 
-function ScopeContents({
+export function ScopeContents({
   scope,
+  atScopeTop,
   listing,
   viewMode,
   sort,
@@ -2754,6 +2837,8 @@ function ScopeContents({
   suppressClickRef,
 }: {
   scope: DriveTreeScope;
+  /** The space's top level, where folders sit in a band above the files. */
+  atScopeTop: boolean;
   listing: DriveItem[];
   viewMode: "list" | "grid";
   sort: { key: SortKey; dir: SortDir };
@@ -2780,63 +2865,103 @@ function ScopeContents({
     );
   }
 
+  const bandFolders = atScopeTop ? listing.filter((item) => item.type === "folder") : [];
+  const files = atScopeTop ? listing.filter((item) => item.type !== "folder") : listing;
+  const band =
+    bandFolders.length > 0 ? (
+      <section aria-label="Folders" data-testid="drive-folder-band">
+        <h3 className={`px-2 pb-1.5 pt-1 ${t.label} font-medium uppercase tracking-wide text-muted-foreground`}>
+          Folders
+        </h3>
+        <div className="flex gap-3 overflow-x-auto px-2 pb-3">
+          {bandFolders.map((item) => (
+            <FolderCard
+              key={item.id}
+              item={item}
+              scopeId={scope.id}
+              selected={selected.has(item.id)}
+              active={activeId === item.id}
+              onRowClick={onRowClick}
+              onOpen={onOpen}
+              actions={actions}
+              onToggleFavorite={onToggleFavorite}
+              onTogglePartnerVisible={onTogglePartnerVisible}
+            />
+          ))}
+        </div>
+      </section>
+    ) : null;
+  const filesHeading =
+    band && files.length > 0 ? (
+      <h3 className={`px-2 pb-1 pt-1 ${t.label} font-medium uppercase tracking-wide text-muted-foreground`}>Files</h3>
+    ) : null;
+
   if (viewMode === "grid") {
     return (
-      <div
-        className={GRID_CONTAINER}
-        data-testid="drive-listing"
-      >
-        {listing.map((item) => (
-          <GridTile
-            key={item.id}
-            item={item}
-            scopeId={scope.id}
-            selected={selected.has(item.id)}
-            active={activeId === item.id}
-            onRowClick={onRowClick}
-            onOpen={onOpen}
-            actions={actions}
-            onToggleFavorite={onToggleFavorite}
-            onTogglePartnerVisible={onTogglePartnerVisible}
-            suppressClickRef={suppressClickRef}
-          />
-        ))}
+      <div data-testid="drive-listing">
+        {band}
+        {filesHeading}
+        {files.length > 0 && (
+          <div className={GRID_CONTAINER}>
+            {files.map((item) => (
+              <GridTile
+                key={item.id}
+                item={item}
+                scopeId={scope.id}
+                selected={selected.has(item.id)}
+                active={activeId === item.id}
+                onRowClick={onRowClick}
+                onOpen={onOpen}
+                actions={actions}
+                onToggleFavorite={onToggleFavorite}
+                onTogglePartnerVisible={onTogglePartnerVisible}
+                suppressClickRef={suppressClickRef}
+              />
+            ))}
+          </div>
+        )}
       </div>
     );
   }
 
   return (
     <div data-testid="drive-listing">
-      {/* Column header (sortable) */}
-      <div
-        className={`grid items-center gap-2 border-b border-border px-2 py-1.5 ${t.label} font-medium uppercase tracking-wide text-muted-foreground`}
-        style={{ gridTemplateColumns: isSharedSpace ? SHARED_GRID_COLUMNS : GRID_COLUMNS }}
-      >
-        <SortHeader label="Name" active={sort.key === "name"} dir={sort.dir} onClick={() => onToggleSort("name")} testid="drive-sort-name" />
-        {isSharedSpace && (
-          <SortHeader label="Shared by" active={sort.key === "shared"} dir={sort.dir} onClick={() => onToggleSort("shared")} testid="drive-sort-shared" />
-        )}
-        <SortHeader label="Modified" active={sort.key === "modified"} dir={sort.dir} onClick={() => onToggleSort("modified")} testid="drive-sort-modified" />
-        <SortHeader label="Size" active={sort.key === "size"} dir={sort.dir} onClick={() => onToggleSort("size")} align="right" testid="drive-sort-size" />
-        <span aria-hidden="true" />
-      </div>
-      <div className="flex flex-col divide-y divide-border/50">
-        {listing.map((item) => (
-          <ListRow
-            key={item.id}
-            item={item}
-            scopeId={scope.id}
-            selected={selected.has(item.id)}
-            active={activeId === item.id}
-            onRowClick={onRowClick}
-            onOpen={onOpen}
-            actions={actions}
-            onToggleFavorite={onToggleFavorite}
-            onTogglePartnerVisible={onTogglePartnerVisible}
-            suppressClickRef={suppressClickRef}
-          />
-        ))}
-      </div>
+      {band}
+      {filesHeading}
+      {files.length > 0 && (
+        <>
+          {/* Column header (sortable) */}
+          <div
+            className={`grid items-center gap-2 border-b border-border px-2 py-1.5 ${t.label} font-medium uppercase tracking-wide text-muted-foreground`}
+            style={{ gridTemplateColumns: isSharedSpace ? SHARED_GRID_COLUMNS : GRID_COLUMNS }}
+          >
+            <SortHeader label="Name" active={sort.key === "name"} dir={sort.dir} onClick={() => onToggleSort("name")} testid="drive-sort-name" />
+            {isSharedSpace && (
+              <SortHeader label="Shared by" active={sort.key === "shared"} dir={sort.dir} onClick={() => onToggleSort("shared")} testid="drive-sort-shared" />
+            )}
+            <SortHeader label="Modified" active={sort.key === "modified"} dir={sort.dir} onClick={() => onToggleSort("modified")} testid="drive-sort-modified" />
+            <SortHeader label="Size" active={sort.key === "size"} dir={sort.dir} onClick={() => onToggleSort("size")} align="right" testid="drive-sort-size" />
+            <span aria-hidden="true" />
+          </div>
+          <div className="flex flex-col divide-y divide-border/50">
+            {files.map((item) => (
+              <ListRow
+                key={item.id}
+                item={item}
+                scopeId={scope.id}
+                selected={selected.has(item.id)}
+                active={activeId === item.id}
+                onRowClick={onRowClick}
+                onOpen={onOpen}
+                actions={actions}
+                onToggleFavorite={onToggleFavorite}
+                onTogglePartnerVisible={onTogglePartnerVisible}
+                suppressClickRef={suppressClickRef}
+              />
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -2940,6 +3065,7 @@ function ListRow({
       <span className="flex items-center gap-2 min-w-0">
         {itemIcon(item)}
         <span className="truncate font-medium text-foreground">{item.title || "Untitled"}</span>
+        <FolderCount item={item} />
         <RowAudience item={item} actions={actions} />
         {/* Signal ②: process linkage pill. */}
         {item.linkedProcess && (
@@ -3075,6 +3201,7 @@ function GridTile({
       >
         {item.title || "Untitled"}
       </span>
+      <FolderCount item={item} />
       <RowAudience item={item} actions={actions} />
       {/* Signal ②: process linkage pill. Centered below the title. */}
       {item.linkedProcess && (
@@ -3093,13 +3220,91 @@ function GridTile({
   );
 }
 
+function FolderCard({
+  item,
+  scopeId,
+  selected,
+  active,
+  onRowClick,
+  onOpen,
+  actions,
+  onToggleFavorite,
+  onTogglePartnerVisible,
+}: {
+  item: DriveItem;
+  scopeId: string;
+  selected: boolean;
+  active: boolean;
+  onRowClick: (id: string, e: ReactMouseEvent) => void;
+  onOpen: (id: string) => void;
+  actions: RowActions;
+  onToggleFavorite?: (item: DriveItem) => void;
+  onTogglePartnerVisible?: (item: DriveItem, next: boolean) => void;
+}) {
+  const t = useDriveText();
+  const drag = useDraggable({ id: `${scopeId}::${item.id}`, data: { item, scopeId } });
+  const drop = useDroppable({
+    id: `${scopeId}::drop::${item.id}`,
+    data: { destFolderId: item.id, destScopeId: scopeId },
+  });
+  function setRefs(node: HTMLDivElement | null) {
+    drag.setNodeRef(node);
+    drop.setNodeRef(node);
+  }
+
+  const card = (
+    <div
+      ref={setRefs}
+      {...drag.attributes}
+      {...drag.listeners}
+      data-testid={`drive-item-${item.type}-${item.id}`}
+      onClick={(e) => onRowClick(item.id, e)}
+      onDoubleClick={() => onOpen(item.id)}
+      style={drag.transform ? { transform: `translate3d(${drag.transform.x}px, ${drag.transform.y}px, 0)`, transition: "none" } : undefined}
+      className={`group relative flex w-48 shrink-0 flex-col gap-3 rounded-os-card border border-border p-3 dnd-touch-handle cursor-default select-none transition-colors ${
+        drag.isDragging ? "opacity-40" : ""
+      } ${
+        drop.isOver
+          ? "bg-accent-coral/10 ring-2 ring-inset ring-accent-coral"
+          : selected
+            ? "bg-os-container"
+            : active
+              ? "bg-os-hover"
+              : "bg-os-card hover:bg-os-card-hover"
+      }`}
+    >
+      <div className="absolute right-1.5 top-1.5 flex items-center">
+        <FavoriteButton item={item} onToggleFavorite={onToggleFavorite} />
+      </div>
+      {itemIcon(item, "lg")}
+      <div className="flex min-w-0 flex-col gap-1">
+        <span className={`truncate ${t.row} font-medium text-foreground`}>{item.title || "Untitled"}</span>
+        <span className="flex items-center gap-2">
+          <FolderCount item={item} />
+          <RowAudience item={item} actions={actions} />
+        </span>
+      </div>
+    </div>
+  );
+
+  return (
+    <ContextMenu
+      items={itemMenuItems(item, actions, () => onOpen(item.id), onToggleFavorite, onTogglePartnerVisible)}
+      ariaLabel="Item actions"
+    >
+      {card}
+    </ContextMenu>
+  );
+}
+
 // ── Search results ───────────────────────────────────────────────────────────
 
-function SearchResults({
+export function SearchResults({
   hits,
   selected,
   onRowClick,
   onOpen,
+  onOpenLocation,
   getScopeActions,
   onToggleFavorite,
 }: {
@@ -3107,40 +3312,59 @@ function SearchResults({
   selected: Set<string>;
   onRowClick: (id: string, e: ReactMouseEvent) => void;
   onOpen: (id: string) => void;
+  onOpenLocation: (scopeId: string, folderId: string | null) => void;
   getScopeActions: (scopeId: string) => RowActions;
   onToggleFavorite?: (item: DriveItem) => void;
 }) {
   const t = useDriveText();
   if (hits.length === 0) return <EmptyLine>No matches.</EmptyLine>;
   return (
-    <div className="flex flex-col divide-y divide-border/50 p-1" data-testid="drive-search-results">
-      {hits.map((hit) => (
-        <div
-          key={`${hit.scope.id}:${hit.item.id}`}
-          data-testid={`drive-search-hit-${hit.item.id}`}
-          onClick={(e) => onRowClick(hit.item.id, e)}
-          onDoubleClick={() => onOpen(hit.item.id)}
-          className={`group flex items-center ${t.itemRow} ${t.row} cursor-default select-none rounded-md ${
-            selected.has(hit.item.id) ? "bg-os-container" : "hover:bg-os-hover"
-          }`}
-        >
-          {itemIcon(hit.item)}
-          <span className="min-w-0 flex-1 truncate">
-            <span className="font-medium text-foreground">{hit.item.title || "Untitled"}</span>
-            <span className={`ml-2 ${t.meta} text-muted-foreground truncate`}>{hit.path}</span>
-          </span>
-          {/* Signal ②: process linkage pill in search results. */}
-          {hit.item.linkedProcess && (
-            <ProcessLinkPill label={hit.item.linkedProcess.label} href={hit.item.linkedProcess.href} />
-          )}
-          <RowActionsMenu
-            item={hit.item}
-            actions={getScopeActions(hit.scope.id)}
-            onOpen={() => onOpen(hit.item.id)}
-            onToggleFavorite={onToggleFavorite}
-          />
-        </div>
-      ))}
+    <div className="p-1" data-testid="drive-search-results">
+      <div
+        className={`grid items-center gap-2 border-b border-border px-2.5 py-1.5 ${t.label} font-medium uppercase tracking-wide text-muted-foreground`}
+        style={{ gridTemplateColumns: GRID_COLUMNS_FLAT }}
+      >
+        <span>Name</span>
+        <span>Location</span>
+        <span>Modified</span>
+        <span aria-hidden="true" />
+      </div>
+      <div className="flex flex-col divide-y divide-border/50">
+        {hits.map((hit) => (
+          <div
+            key={`${hit.scope.id}:${hit.item.id}`}
+            data-testid={`drive-search-hit-${hit.item.id}`}
+            onClick={(e) => onRowClick(hit.item.id, e)}
+            onDoubleClick={() => onOpen(hit.item.id)}
+            style={{ gridTemplateColumns: GRID_COLUMNS_FLAT }}
+            className={`group grid items-center ${t.itemRow} ${t.row} cursor-default select-none rounded-md ${
+              selected.has(hit.item.id) ? "bg-os-container" : "hover:bg-os-hover"
+            }`}
+          >
+            <span className="flex min-w-0 items-center gap-2">
+              {itemIcon(hit.item)}
+              <span className="truncate font-medium text-foreground">{hit.item.title || "Untitled"}</span>
+              <FolderCount item={hit.item} />
+              {/* Signal ②: process linkage pill in search results. */}
+              {hit.item.linkedProcess && (
+                <ProcessLinkPill label={hit.item.linkedProcess.label} href={hit.item.linkedProcess.href} />
+              )}
+            </span>
+            <LocationLink location={hit.location} onNavigate={onOpenLocation} />
+            <span className={`${t.meta} text-muted-foreground tabular-nums truncate`}>
+              {relativeTime(hit.item.updatedAt as unknown as string)}
+            </span>
+            <span className="flex items-center justify-end">
+              <RowActionsMenu
+                item={hit.item}
+                actions={getScopeActions(hit.scope.id)}
+                onOpen={() => onOpen(hit.item.id)}
+                onToggleFavorite={onToggleFavorite}
+              />
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
