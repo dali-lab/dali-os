@@ -56,9 +56,9 @@ function post(body: unknown) {
     params: { id: "p1" },
   } as any);
 }
-function del() {
+function del(query = "") {
   return action({
-    request: new Request("http://localhost/api/documents/p1", { method: "DELETE" }),
+    request: new Request(`http://localhost/api/documents/p1${query}`, { method: "DELETE" }),
     params: { id: "p1" },
   } as any);
 }
@@ -138,6 +138,43 @@ describe("DELETE /api/documents/:id — folder contents guard", () => {
     const res = await del();
     expect(res.status).toBe(200);
     expect(m.projectFile.count).not.toHaveBeenCalled();
+  });
+});
+
+// The filing toast's Undo trashes the notebook it created, but only if the note
+// it just removed was the last one in it.
+describe("DELETE /api/documents/:id?ifEmpty=1 — notebooks", () => {
+  beforeEach(() => {
+    vi.mocked(getPageAccess).mockResolvedValue({ canEdit: true } as any);
+    m.page.findUnique.mockResolvedValue(labFolder({ kind: "Notebook" }));
+  });
+
+  it("archives a notebook with no live notes", async () => {
+    const res = await del("?ifEmpty=1");
+    expect(res.status).toBe(200);
+    expect(m.page.count).toHaveBeenCalledWith({ where: { parentPageId: "p1", archivedAt: null } });
+    expect(m.page.update.mock.calls[0][0].data.archivedAt).toBeInstanceOf(Date);
+  });
+
+  it("keeps a notebook that still has notes", async () => {
+    m.page.count.mockResolvedValue(1);
+    const res = await del("?ifEmpty=1");
+    expect(res.status).toBe(409);
+    expect(m.page.update).not.toHaveBeenCalled();
+  });
+
+  it("archives a notebook with notes when the guard is not asked for", async () => {
+    m.page.count.mockResolvedValue(3);
+    const res = await del();
+    expect(res.status).toBe(200);
+    expect(m.page.update).toHaveBeenCalled();
+  });
+
+  it("ignores the guard on a page that is not a notebook", async () => {
+    m.page.findUnique.mockResolvedValue(labFolder({ kind: "FreeForm" }));
+    m.page.count.mockResolvedValue(5);
+    const res = await del("?ifEmpty=1");
+    expect(res.status).toBe(200);
   });
 });
 

@@ -33,3 +33,8 @@ export function driveRootCrumbs(scope: string | null | undefined): DriveRootCrum
   if (scope === "education") return [root, { label: "Education", to: "/drive?scope=education" }];
   return [root];
 }
+
+/** The route that resolves a page to its place in the Drive (Reveal in Drive). */
+export function revealInDriveHref(pageId: string): string {
+  return `/drive/reveal/${pageId}`;
+}
