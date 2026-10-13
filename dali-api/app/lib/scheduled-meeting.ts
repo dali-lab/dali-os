@@ -23,15 +23,12 @@ import { buildIcs } from "~/lib/ics";
 import {
   createProjectPage,
   createLabMeetingPage,
-  ensureMeetingNotesFolder,
-  ensureCoreMeetingNotesFolder,
-  ensureLabMeetingNotesFolder,
-  ensureMeetingNotebook,
+  createMeetingNotebook,
   createNotebookTab,
   moveIntoNotebook,
   type MeetingNotebookDestination,
 } from "~/lib/pages";
-import { receiversEnabled, resolveFilingFolder, projectSlot, singletonSlot } from "~/lib/drive-receivers.server";
+import { resolveFilingFolder, projectSlot, singletonSlot } from "~/lib/drive-receivers.server";
 import { meetingNotebookIdentity, meetingTypeForNotebook, termForDate } from "~/lib/meeting-notebook";
 import { createShortcut, ShortcutError } from "~/lib/shortcuts.server";
 import { termWindows } from "~/lib/terms";
@@ -402,9 +399,11 @@ async function resolveNoteDestination(
   };
 }
 
-// The notebook a meeting's note for `date` is filed in, created at `dest` when
-// it doesn't exist yet. Type and project are passed rather than read off the
-// meeting because callers decide them before (or while) recording them.
+// The series' notebook, or a new one at `dest` that becomes the series' notebook.
+// A notebook that is trashed, or sits in a different workspace than `dest`
+// (a meeting just moved into a project), is replaced. Type and project are
+// passed rather than read off the meeting because callers decide them before
+// (or while) recording them.
 async function ensureNotebookForNote(input: {
   meetingId: string;
   meetingType: MeetingType;
@@ -425,10 +424,23 @@ async function ensureNotebookForNote(input: {
         organizerId: true,
         participantUserIds: true,
         guestEmails: true,
+        notebookId: true,
+        notebook: { select: { archivedAt: true, workspaceType: true, workspaceId: true } },
       },
     }),
     termWindows(),
   ]);
+  const current = meeting.notebook;
+  if (
+    meeting.notebookId &&
+    current &&
+    current.archivedAt === null &&
+    current.workspaceType === input.dest.workspaceType &&
+    (current.workspaceId ?? null) === (input.dest.workspaceId ?? null)
+  ) {
+    return { id: meeting.notebookId };
+  }
+
   const identity = meetingNotebookIdentity(
     {
       ...meeting,
@@ -438,7 +450,22 @@ async function ensureNotebookForNote(input: {
     },
     termForDate(windows, input.date),
   );
-  return ensureMeetingNotebook({ ...identity, createdById: input.authorId, ...input.dest });
+  const created = await createMeetingNotebook({ title: identity.title, createdById: input.authorId, ...input.dest });
+  const claimed = await prisma.scheduledMeeting.updateMany({
+    where: { id: input.meetingId, notebookId: meeting.notebookId },
+    data: { notebookId: created.id },
+  });
+  if (claimed.count === 0) {
+    const winner = await prisma.scheduledMeeting.findUniqueOrThrow({
+      where: { id: input.meetingId },
+      select: { notebookId: true },
+    });
+    if (winner.notebookId) {
+      await prisma.page.delete({ where: { id: created.id } });
+      return { id: winner.notebookId };
+    }
+  }
+  return { id: created.id, created: true };
 }
 
 // A Core meeting held for a project files its notebook in the project; Core's
@@ -508,7 +535,7 @@ async function buildMeetingArtifactPage(
   if (!isBoard) {
     const notebook = await ensureNotebookForNote({ ...input, date: occurrenceStart, dest });
     const firstNote =
-      input.isCoreMeeting && !!input.projectId && (await receiversEnabled())
+      input.isCoreMeeting && !!input.projectId
         ? (await prisma.page.count({ where: { parentPageId: notebook.id } })) === 0
         : false;
     const tab = await createNotebookTab({
@@ -549,25 +576,9 @@ async function resolveArtifactFiling(
   const noun = isBoard ? "whiteboard" : "meeting note";
   let title = isBoard ? `${dateLabel} whiteboard` : dateLabel;
 
-  const receivers = await receiversEnabled();
-
   if (input.projectId) {
-    // Team/Partner assets nest under their default, undeletable folder;
-    // "Other" assets stay top-level (no default folder for a custom label).
-    // With receivers on, every project meeting files to the project's Meetings
-    // receiver, else the project top level.
-    let parentPageId: string | null = receivers
-      ? (await resolveFilingFolder(projectSlot(input.projectId), input.authorId)).folderId
-      : null;
+    const { folderId: parentPageId } = await resolveFilingFolder(projectSlot(input.projectId), input.authorId);
     if (input.meetingType === "Team" || input.meetingType === "Partner") {
-      if (!receivers) {
-        const folder = await ensureMeetingNotesFolder(
-          input.projectId,
-          input.meetingType,
-          input.authorId,
-        );
-        parentPageId = folder.id;
-      }
       // Named for the project and kind they belong to, so they stay
       // identifiable once they leave that folder — in search, in Drive, and on
       // the meeting itself.
@@ -596,9 +607,7 @@ async function resolveArtifactFiling(
         ? `${input.meetingTypeLabel} whiteboard (${dateLabel})`
         : `${input.meetingTypeLabel} (${dateLabel})`;
     }
-    const coreFolderId = receivers
-      ? (await resolveFilingFolder(singletonSlot("Core", "Meetings"), input.authorId)).folderId
-      : await ensureCoreMeetingNotesFolder(input.authorId);
+    const { folderId: coreFolderId } = await resolveFilingFolder(singletonSlot("Core", "Meetings"), input.authorId);
     return file(
       {
         workspaceType: "Lab",
@@ -628,9 +637,7 @@ async function resolveArtifactFiling(
   // other Lab doc. An explicitly chosen folder still wins.
   const parentPageId =
     dest.parentPageId ??
-    (receivers
-      ? (await resolveFilingFolder(singletonSlot("Lab", "Meetings"), input.authorId)).folderId
-      : await ensureLabMeetingNotesFolder(input.authorId));
+    (await resolveFilingFolder(singletonSlot("Lab", "Meetings"), input.authorId)).folderId;
   return file({ workspaceType: "Lab", workspaceId: null, parentPageId }, title);
 }
 
@@ -1382,16 +1389,9 @@ async function refileMeetingArtifactToProject(input: {
 }): Promise<void> {
   const dateLabel = formatDateShort(input.startDate ?? new Date());
   const noun = input.isBoard ? "whiteboard" : "meeting note";
-  const receivers = await receiversEnabled();
-  let parentPageId: string | null = receivers
-    ? (await resolveFilingFolder(projectSlot(input.projectId), input.authorId)).folderId
-    : null;
+  const { folderId: parentPageId } = await resolveFilingFolder(projectSlot(input.projectId), input.authorId);
   let title: string;
   if (input.meetingType === "Team" || input.meetingType === "Partner") {
-    if (!receivers) {
-      const folder = await ensureMeetingNotesFolder(input.projectId, input.meetingType, input.authorId);
-      parentPageId = folder.id;
-    }
     title = `${input.projectName} ${input.meetingType} ${noun} (${dateLabel})`;
   } else {
     // "Other": no default folder for a custom label, so it sits at the project

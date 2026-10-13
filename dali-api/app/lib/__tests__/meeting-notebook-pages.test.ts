@@ -1,14 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
-vi.mock("~/lib/bindings.server", () => ({
-  ensureProcessFolder: vi.fn(),
-  CORE_PROCESS_ID: "core",
-  LAB_PROCESS_ID: "lab",
-}));
 
 import { prisma } from "~/lib/db";
-import { ensureMeetingNotebook, moveIntoNotebook } from "~/lib/pages";
+import { createMeetingNotebook, ensureMeetingNotebook, moveIntoNotebook } from "~/lib/pages";
 
 const page = vi.mocked(prisma.page);
 const input = {
@@ -24,6 +19,38 @@ beforeEach(() => {
   vi.resetAllMocks();
   page.findFirst.mockResolvedValue(null);
   page.create.mockResolvedValue({ id: "nb-new" } as never);
+});
+
+describe("createMeetingNotebook", () => {
+  const dest = { title: "Weekly sync notes", createdById: "u1", workspaceType: "Project" as const, workspaceId: "p1", parentPageId: "folder-1" };
+
+  it("creates a Project notebook in the folder, with no notebookKey", async () => {
+    expect(await createMeetingNotebook(dest)).toEqual({ id: "nb-new" });
+    expect(page.create.mock.calls[0][0].data).toMatchObject({
+      kind: "Notebook",
+      workspaceType: "Project",
+      workspaceId: "p1",
+      parentPageId: "folder-1",
+      title: "Weekly sync notes",
+      notebookKey: null,
+    });
+  });
+
+  it("creates a Lab notebook, restricted when filed inside a scoped drive", async () => {
+    await createMeetingNotebook({ ...dest, workspaceType: "Lab", workspaceId: null, restricted: true });
+    expect(page.create.mock.calls[0][0].data).toMatchObject({
+      kind: "Notebook",
+      workspaceType: "Lab",
+      workspaceId: null,
+      linkAccess: "Restricted",
+      notebookKey: null,
+    });
+  });
+
+  it("passes a notebookKey through when given one", async () => {
+    await createMeetingNotebook({ ...dest, notebookKey: "k1" });
+    expect(page.create.mock.calls[0][0].data.notebookKey).toBe("k1");
+  });
 });
 
 describe("ensureMeetingNotebook", () => {

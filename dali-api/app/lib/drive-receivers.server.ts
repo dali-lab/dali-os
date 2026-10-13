@@ -1,6 +1,5 @@
 import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";
-import { isFeatureEnabledForEveryone } from "~/lib/feature-flags.server";
 import { MAX_PAGE_DEPTH } from "~/lib/pages";
 import { ensureRoot, rootKeyFor, type RootKey } from "~/lib/drive-roots.server";
 import { CLEARED_FOLDER_TYPE } from "~/lib/drive-roots";
@@ -9,7 +8,7 @@ import {
   HIRING_PROCESS_ID,
   LAB_PROCESS_ID,
   MENTORSHIP_PROCESS_ID,
-} from "~/lib/bindings.server";
+} from "~/lib/process-ids";
 import {
   RECEIVER_LABELS,
   RECEIVER_SLOTS,
@@ -327,19 +326,4 @@ export async function resolveFilingFolder(
   const rootKey = ROOT_KEY_FOR_PROCESS[slot.processType];
   if (!rootKey) return { folderId: null, viaReceiver: false };
   return { folderId: await ensureRoot(rootKey, actorId), viaReceiver: false };
-}
-
-export async function receiversEnabled(request?: Request): Promise<boolean> {
-  return isFeatureEnabledForEveryone("drive-receivers", request);
-}
-
-/** The folder a feature files into: receiver-else-root behind the flag, the caller's old path otherwise. */
-export async function filingFolderOr(
-  slot: ReceiverSlot,
-  actorId: string,
-  legacy: () => Promise<string | null>,
-  request?: Request,
-): Promise<string | null> {
-  if (!(await receiversEnabled(request))) return legacy();
-  return (await resolveFilingFolder(slot, actorId)).folderId;
 }

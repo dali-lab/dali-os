@@ -1,13 +1,10 @@
-// Which notebook a meeting's note belongs in. A notebook is one Drive document
-// (a Page carrying `notebookKey`) whose child pages are the individual notes,
-// shown as side tabs. Pure, so the grouping rules can be tested without Prisma;
-// the find-or-create lives in ensureMeetingNotebook (pages.ts).
+// What a meeting's notebook is called, and the audience key the notebook picker
+// uses to suggest notebooks a meeting's people have used before. Pure, so the
+// rules can be tested without Prisma.
 //
-//   • Team / Partner project meetings share one notebook per project per term.
-//   • Everything else shares one per audience: the group or project the meeting
-//     was scoped to, or the exact set of people invited. A recurring series
-//     always has the same audience, so its occurrences land together, and a
-//     one-off meeting with the same people joins the notes they already have.
+//   - Team / Partner project meetings are titled by project meeting type and term.
+//   - Everything else is keyed by audience: the group or project the meeting
+//     was scoped to, or the exact set of people invited.
 
 import { createHash } from "node:crypto";
 import type { MeetingType, ScopeType } from "~/generated/prisma/client";

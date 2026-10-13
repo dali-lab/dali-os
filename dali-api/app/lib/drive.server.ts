@@ -947,9 +947,7 @@ async function loadAgreements(
   _linkedProcessMap?: Map<string, { label: string; href: string }>,
 ): Promise<DriveItem[]> {
   const rows = await prisma.signingDocument.findMany({
-    // Placed-only: agreements live in the Core "agreements" bound folder (see
-    // bindings.server.ts). An unplaced row would be one whose folder was cleared
-    // and not yet re-filed — don't float it at the Lab root.
+    // Placed-only: an unplaced agreement shouldn't float at the Lab root.
     where: { archivedAt: null, folderPageId: { not: null } },
     orderBy: { createdAt: "desc" },
     select: { id: true, name: true, folderPageId: true, updatedAt: true, gateScope: true },

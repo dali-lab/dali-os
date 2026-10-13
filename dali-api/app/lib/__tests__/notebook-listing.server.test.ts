@@ -14,7 +14,6 @@ vi.mock("~/lib/note-path.server", () => ({
 
 import { prisma } from "~/lib/db";
 import { getPageAccessBulk } from "~/lib/pageAccess.server";
-import { meetingNotebookIdentity } from "~/lib/meeting-notebook";
 import { listNotebooks, MAX_LISTED } from "~/lib/notebook-listing.server";
 
 const m = prisma as any;
@@ -27,7 +26,6 @@ const nb = (id: string, over: Record<string, unknown> = {}) => ({
   workspaceType: "Lab",
   workspaceId: null,
   parentPageId: "f1",
-  notebookKey: null,
   ...over,
 });
 
@@ -171,16 +169,13 @@ describe("listNotebooks", () => {
     ]);
   });
 
-  it("matches a legacy notebook by its notebook key", async () => {
-    const identity = meetingNotebookIdentity(
-      { ...meeting(), meetingType: "Other" } as never,
-      null,
-    );
-    m.page.findMany.mockResolvedValueOnce([nb("legacy", { notebookKey: identity.key })]);
-    access(["legacy"]);
-    m.scheduledMeeting.findUnique.mockResolvedValue(meeting());
+  it("does not read notebookKey", async () => {
+    m.page.findMany.mockResolvedValueOnce([nb("a")]);
+    access(["a"]);
 
-    expect(await listNotebooks({ actorId: "u1", meetingId: "m1" })).toMatchObject([{ id: "legacy", suggested: true }]);
+    await listNotebooks({ actorId: "u1" });
+
+    expect(m.page.findMany.mock.calls[0][0].select).not.toHaveProperty("notebookKey");
   });
 
   it("looks up no meeting data when no meeting is given", async () => {

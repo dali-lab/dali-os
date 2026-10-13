@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db", () => ({
   prisma: {
     groupDefinition: { findUnique: vi.fn() },
-    processFolderBinding: { findMany: vi.fn() },
+    form: { findMany: vi.fn() },
     page: { findMany: vi.fn(), count: vi.fn(), update: vi.fn() },
   },
 }));
@@ -32,7 +32,7 @@ beforeEach(() => {
   m.groupDefinition.findUnique.mockResolvedValue({ id: "grp_core" });
   vi.mocked(resolveGroupMembers).mockResolvedValue(["u_b", "u_a"]);
   vi.mocked(ensureAllRoots).mockResolvedValue({ core: "root_core", hiring: "root_hiring", mentorship: "root_m" });
-  m.processFolderBinding.findMany.mockResolvedValue([]);
+  m.form.findMany.mockResolvedValue([]);
   m.page.findMany.mockImplementation(async () => tops);
   m.page.count.mockResolvedValue(0);
   m.page.update.mockResolvedValue({});
@@ -74,18 +74,49 @@ describe("runDriveRootsReparent", () => {
     });
   });
 
-  it("moves a hiring-bound folder under the Hiring root", async () => {
-    tops = [{ id: "forms", title: "Hiring Forms" }, { id: "f1", title: "Finance" }];
-    m.processFolderBinding.findMany.mockResolvedValue([{ folderPageId: "forms" }]);
+  it.each(["Hiring Forms", "Application Templates", "Rubrics"])(
+    "moves a folder titled %s under the Hiring root",
+    async (title) => {
+      tops = [{ id: "legacy", title }, { id: "f1", title: "Finance" }];
+
+      await runDriveRootsReparent();
+
+      expect(m.page.update).toHaveBeenCalledWith({ where: { id: "legacy" }, data: { parentPageId: "root_hiring" } });
+      expect(m.page.update).toHaveBeenCalledWith({ where: { id: "f1" }, data: { parentPageId: "root_core" } });
+    },
+  );
+
+  it("moves a folder that holds a hiring cycle form under the Hiring root whatever its title", async () => {
+    tops = [{ id: "renamed", title: "Recruiting stuff" }, { id: "f1", title: "Finance" }];
+    m.form.findMany.mockResolvedValue([{ folderPageId: "renamed" }]);
 
     await runDriveRootsReparent();
 
-    expect(m.processFolderBinding.findMany.mock.calls[0][0].where).toMatchObject({
-      processType: "HiringCycle",
-      processId: "hiring",
-    });
-    expect(m.page.update).toHaveBeenCalledWith({ where: { id: "forms" }, data: { parentPageId: "root_hiring" } });
+    expect(m.page.update).toHaveBeenCalledWith({ where: { id: "renamed" }, data: { parentPageId: "root_hiring" } });
     expect(m.page.update).toHaveBeenCalledWith({ where: { id: "f1" }, data: { parentPageId: "root_core" } });
+  });
+
+  it("looks for hiring cycle forms by application form, continued-interest form and domain challenge", async () => {
+    tops = [{ id: "a", title: "A" }, { id: "b", title: "B" }];
+
+    await runDriveRootsReparent();
+
+    expect(m.form.findMany.mock.calls[0][0].where).toEqual({
+      folderPageId: { in: ["a", "b"] },
+      OR: [
+        { hiringCyclesAsApplicationForm: { some: {} } },
+        { hiringCyclesAsContinuedInterestForm: { some: {} } },
+        { hiringDomainChallenges: { some: {} } },
+      ],
+    });
+  });
+
+  it("matches legacy titles exactly, not by substring", async () => {
+    tops = [{ id: "x", title: "Hiring Forms archive" }];
+
+    await runDriveRootsReparent();
+
+    expect(m.page.update).toHaveBeenCalledWith({ where: { id: "x" }, data: { parentPageId: "root_core" } });
   });
 
   it("skips a folder whose subtree would pass the depth limit and reports it", async () => {
