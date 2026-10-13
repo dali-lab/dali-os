@@ -1,5 +1,5 @@
 import { prisma } from "~/lib/db";
-import { currentTerm, getActiveCoreCycleTermIds } from "~/lib/roles";
+import { currentTerm, getActiveCoreCycleTermIds, isLabMentor } from "~/lib/roles";
 import { ACTIVE_LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
 
 // Single source of truth for resolving a GroupDefinition to its member userIds.
@@ -21,7 +21,7 @@ export async function resolveGroupMembers(groupId: string): Promise<string[]> {
 // Context threaded through a batch of resolveDynamicQuery calls (e.g. one per
 // group in resolveAllGroups): `request` enables per-request memoization in
 // currentTerm/getActiveCoreCycleTermIds, and `coreMembers` — when supplied —
-// lets "core" and "hiring" (which both resolve Core's current members) share
+// lets "core", "hiring" and "mentors" (which all resolve Core's current members) share
 // one computed promise instead of each hitting the DB separately.
 type DynamicQueryContext = {
   request?: Request;
@@ -48,6 +48,8 @@ export async function resolveDynamicQuery(
       return ctx?.coreMembers ?? resolveCoreMembers(ctx?.request);
     case "hiring":
       return resolveHiringMembers(ctx);
+    case "mentors":
+      return resolveMentorMembers(ctx);
     case "alumni":
       return resolveAlumni();
     default:
@@ -196,6 +198,45 @@ async function resolveHiringMembers(ctx?: DynamicQueryContext): Promise<string[]
   return [...set];
 }
 
+// "Is a lab mentor": the bulk inverse of isLabMentor (roles.ts) for the current
+// term, plus Core. Core is the Core group's own membership (active cycle), so
+// the two groups can never disagree about who is Core.
+async function resolveMentorMembers(ctx?: DynamicQueryContext): Promise<string[]> {
+  const term = await currentTerm(ctx?.request);
+  if (!term) return [];
+  const termId = term.id;
+  const [core, p3, leads, pmMentors] = await Promise.all([
+    ctx?.coreMembers ?? resolveCoreMembers(ctx?.request),
+    prisma.projectAssignment.findMany({
+      where: { termId, level: "P3" },
+      select: { userId: true },
+      distinct: ["userId"],
+    }),
+    prisma.domainLeadAssignment.findMany({
+      where: { termId },
+      select: { userId: true },
+      distinct: ["userId"],
+    }),
+    prisma.user.findMany({
+      where: {
+        domainEligibilities: { some: { level: "P3", domain: { code: "PM" } } },
+        OR: [
+          { projectAssignments: { some: { termId } } },
+          { coreAssignments: { some: { termId } } },
+          { domainLeadAssignmentsAsUser: { some: { termId } } },
+          { instructorAssignments: { some: { termId } } },
+        ],
+      },
+      select: { id: true },
+    }),
+  ]);
+  const set = new Set<string>(core);
+  for (const r of p3) set.add(r.userId);
+  for (const r of leads) set.add(r.userId);
+  for (const u of pmMentors) set.add(u.id);
+  return [...set];
+}
+
 // Whether `userId` belongs to at least one of `groupIds`. Static membership
 // is read straight off the rows (no resolver queries); Dynamic groups resolve
 // one at a time with a short-circuit so a hit on the first never resolves the
@@ -292,7 +333,7 @@ export async function loadGroupArchiveContext(): Promise<GroupArchiveContext> {
 // migration to keep in sync. A Paused project keeps its group: it's expected
 // back.
 //
-// Dynamic groups other than term/project (domain, core, hiring, alumni,
+// Dynamic groups other than term/project (domain, core, hiring, mentors, alumni,
 // offering) have nothing to outlive and never auto-archive.
 export function isGroupArchived(
   group: {
@@ -345,12 +386,16 @@ async function resolveAllGroups(request?: Request): Promise<VisibleGroup[]> {
     loadGroupArchiveContext(),
   ]);
 
-  // "core" and "hiring" both resolve Core's current members — the default
-  // groups include both (see syncDefaultGroups), so every call here would
-  // otherwise run resolveCoreMembers' two round trips twice. Computing the
-  // promise once up front and sharing it via ctx collapses that to one.
+  // "core", "hiring" and "mentors" all resolve Core's current members — the
+  // default groups include all three (see syncDefaultGroups), so every call here
+  // would otherwise run resolveCoreMembers' two round trips once per group.
+  // Computing the promise once up front and sharing it via ctx collapses that
+  // to one.
   const needsCoreMembers = groups.some(
-    (g) => g.dynamicQuery === "core" || g.dynamicQuery === "hiring",
+    (g) =>
+      g.dynamicQuery === "core" ||
+      g.dynamicQuery === "hiring" ||
+      g.dynamicQuery === "mentors",
   );
   const coreMembers = needsCoreMembers ? resolveCoreMembers(request) : undefined;
 
@@ -426,6 +471,7 @@ async function deriveUserGroups(userId: string, request?: Request) {
   const offeringIds = new Set<string>();
   let needsCore = false;
   let needsHiring = false;
+  let needsMentors = false;
   let needsAlumni = false;
 
   for (const g of groups) {
@@ -438,6 +484,7 @@ async function deriveUserGroups(userId: string, request?: Request) {
       case "offering": if (id) offeringIds.add(id); break;
       case "core":    needsCore = true;    break;
       case "hiring":  needsHiring = true;  break;
+      case "mentors": needsMentors = true; break;
       case "alumni":  needsAlumni = true;  break;
     }
   }
@@ -462,7 +509,7 @@ async function deriveUserGroups(userId: string, request?: Request) {
           select: { termId: true, projectId: true },
         })
       : Promise.resolve([] as { termId: string; projectId: string }[]),
-    termIds.size > 0 || needsCore || needsHiring
+    termIds.size > 0 || needsCore || needsHiring || needsMentors
       ? prisma.coreAssignment.findMany({
           where: { userId },
           select: { termId: true },
@@ -563,6 +610,9 @@ async function deriveUserGroups(userId: string, request?: Request) {
     userDomainLeads.length > 0 ||
     userReviewers.length > 0 ||
     userInterviewers.length > 0;
+  // Core plus the per-user lab-mentor predicate: the inverse of resolveMentorMembers.
+  const isInMentors =
+    needsMentors && (isInCore || (await isLabMentor(userId, currentTermRow?.id, request)));
 
   // Collect the group definitions the user belongs to, using the in-memory
   // data — zero additional queries. memberIds are NOT resolved here; the two
@@ -584,6 +634,7 @@ async function deriveUserGroups(userId: string, request?: Request) {
           case "offering": isMember = id ? userOfferingIds.has(id) : false; break;
           case "core":     isMember = isInCore; break;
           case "hiring":   isMember = isInHiring; break;
+          case "mentors":  isMember = isInMentors; break;
           case "alumni":   isMember = isAlumni; break;
           default:         isMember = false; break;
         }
@@ -748,6 +799,19 @@ export async function ensureHiringGroup() {
   });
 }
 
+export async function ensureMentorsGroup() {
+  await prisma.groupDefinition.upsert({
+    where: { systemKey: "mentors" },
+    update: {},
+    create: {
+      name: "Mentors",
+      type: "Dynamic",
+      dynamicQuery: "mentors",
+      systemKey: "mentors",
+    },
+  });
+}
+
 export async function ensureAlumniGroup() {
   await prisma.groupDefinition.upsert({
     where: { systemKey: "alumni" },
@@ -774,6 +838,7 @@ export async function syncDefaultGroups() {
   await Promise.all([
     ensureCoreGroup(),
     ensureHiringGroup(),
+    ensureMentorsGroup(),
     ensureAlumniGroup(),
     ...terms.map((t) => ensureTermGroup(t.id, t.code)),
     ...projects.map((p) => ensureProjectGroup(p.id, p.name)),

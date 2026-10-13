@@ -7,7 +7,7 @@
 // — works for Project, Lab, and personal-note (Member) workspace pages.
 
 import { prisma } from "~/lib/db";
-import { getPageAccess } from "~/lib/pageAccess.server";
+import { PAGE_ACCESS_SELECT, getPageAccess } from "~/lib/pageAccess.server";
 import { markdownToBlocks } from "~/collab/blocknote-server";
 import { replaceCollabDocContent } from "~/collab/write";
 import { pageDocName } from "~/collab/roomName";
@@ -48,12 +48,9 @@ export async function runSetPageContent(callerId: string, input: Input) {
   const page = await prisma.page.findUnique({
     where: { id: input.pageId },
     select: {
-      id: true,
+      ...PAGE_ACCESS_SELECT,
       kind: true,
-      workspaceType: true,
-      workspaceId: true,
       contentDocId: true,
-      archivedAt: true,
     },
   });
   if (!page) throw new SetPageContentError("Page not found", 404);
@@ -76,12 +73,7 @@ export async function runSetPageContent(callerId: string, input: Input) {
 
   // Use getPageAccess — the same gate as the web — so Project/Lab/Member
   // pages all get the correct permission check without reimplementing it.
-  const access = await getPageAccess(callerId, {
-    id: page.id,
-    workspaceType: page.workspaceType,
-    workspaceId: page.workspaceId,
-    archivedAt: page.archivedAt,
-  });
+  const access = await getPageAccess(callerId, page);
   if (!access.canEdit) {
     throw new SetPageContentError("Forbidden", 403);
   }

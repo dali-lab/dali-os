@@ -60,6 +60,24 @@ export interface PageShape {
   [key: string]: unknown;
 }
 
+/** Every Page column `computePageAccessCore` reads. Select all of it wherever a row is passed to `getPageAccess`/`getPageAccessBulk`. */
+export const PAGE_ACCESS_SELECT = {
+  id: true,
+  workspaceType: true,
+  workspaceId: true,
+  parentPageId: true,
+  archivedAt: true,
+  createdById: true,
+  partnerVisible: true,
+  profileVisible: true,
+  labListing: true,
+  linkAccess: true,
+  linkPermission: true,
+  scopeKind: true,
+  scopeGroupId: true,
+  scopePermission: true,
+} as const;
+
 const DENIED: PageAccessResult = {
   canView: false,
   canEdit: false,
@@ -304,22 +322,7 @@ export async function getPageAccess(
   if (typeof pageOrId === "string") {
     const row = await prisma.page.findUnique({
       where: { id: pageOrId },
-      select: {
-        id: true,
-        workspaceType: true,
-        workspaceId: true,
-        archivedAt: true,
-        partnerVisible: true,
-        createdById: true,
-        profileVisible: true,
-        labListing: true,
-        linkAccess: true,
-        linkPermission: true,
-        parentPageId: true,
-        scopeKind: true,
-        scopeGroupId: true,
-        scopePermission: true,
-      },
+      select: PAGE_ACCESS_SELECT,
     });
     if (!row) return DENIED;
     page = row;

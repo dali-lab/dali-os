@@ -321,6 +321,13 @@ export type CreateScheduledMeetingResult =
     }
   | { ok: false; error: string };
 
+export function folderOfNote(note: {
+  parentPageId: string | null;
+  parent?: { notebookKey: string | null; parentPageId: string | null } | null;
+}): string | null {
+  return note.parent?.notebookKey ? note.parent.parentPageId : note.parentPageId;
+}
+
 // Authorize + resolve a General meeting's chosen note location. Mirrors the
 // /api/move-destinations eligibility (Lab-wide, plus any project the organizer
 // can edit) so a note can only land where the organizer may write. Anything
@@ -818,6 +825,7 @@ export async function attachMeetingNote(
           workspaceType: true,
           workspaceId: true,
           parentPageId: true,
+          parent: { select: { notebookKey: true, parentPageId: true } },
         },
         orderBy: { meetingOccurrenceStart: "desc" },
       },
@@ -894,7 +902,7 @@ export async function attachMeetingNote(
         ? {
             workspaceType: previous.workspaceType === "Project" ? "Project" : "Lab",
             workspaceId: previous.workspaceId,
-            parentPageId: previous.parentPageId,
+            parentPageId: folderOfNote(previous),
           }
         : (input.noteLocation ?? null),
       startDate: occurrence.start,
@@ -994,7 +1002,13 @@ export async function attachMeetingWhiteboard(
       whiteboardPage: { select: { id: true } },
       // The whiteboard is one per series; it files beside the first note.
       notePages: {
-        select: { id: true, workspaceType: true, workspaceId: true, parentPageId: true },
+        select: {
+          id: true,
+          workspaceType: true,
+          workspaceId: true,
+          parentPageId: true,
+          parent: { select: { notebookKey: true, parentPageId: true } },
+        },
         orderBy: { meetingOccurrenceStart: "asc" },
         take: 1,
       },
@@ -1050,7 +1064,7 @@ export async function attachMeetingWhiteboard(
     noteLocation = {
       workspaceType: "Lab",
       workspaceId: null,
-      parentPageId: note.parentPageId,
+      parentPageId: folderOfNote(note),
     };
   }
 

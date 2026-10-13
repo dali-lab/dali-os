@@ -40,7 +40,8 @@ vi.mock("~/hiring/lib/confidentiality", async (importOriginal) => ({
 // The doc: branch now delegates to getPageAccess. Mock it so collabAuth tests
 // stay focused on the entity-routing logic rather than re-testing page access
 // rules (those live in pageAccess.server.test.ts).
-vi.mock("~/lib/pageAccess.server", () => ({
+vi.mock("~/lib/pageAccess.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/lib/pageAccess.server")>()),
   getPageAccess: vi.fn(),
 }));
 
@@ -48,7 +49,7 @@ import { prisma } from "~/lib/db";
 import { isDomainLead, isCore, isProjectMember, isLabMember } from "~/lib/roles";
 import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
-import { getPageAccess } from "~/lib/pageAccess.server";
+import { PAGE_ACCESS_SELECT, getPageAccess } from "~/lib/pageAccess.server";
 import { authorizeCollabDoc } from "../collabAuth";
 
 const mockPrisma = prisma as any;
@@ -296,6 +297,17 @@ describe("authorizeCollabDoc", () => {
       });
     });
 
+    it("selects the full access field set and hands the row to getPageAccess", async () => {
+      const row = { id: "p1", parentPageId: "folder-1", scopeKind: null, archivedAt: null };
+      setPage(row);
+      await authorizeCollabDoc("user1", "doc:p1:body");
+      expect(mockPrisma.page.findUnique).toHaveBeenCalledWith({
+        where: { id: "p1" },
+        select: expect.objectContaining(PAGE_ACCESS_SELECT),
+      });
+      expect(getPageAccess).toHaveBeenCalledWith("user1", expect.objectContaining(row));
+    });
+
     it("rejects when getPageAccess denies (canView=false)", async () => {
       setPage();
       vi.mocked(getPageAccess).mockResolvedValue({
@@ -304,6 +316,23 @@ describe("authorizeCollabDoc", () => {
         canComment: false,
       });
       expect(await authorizeCollabDoc("user1", "doc:p1:body")).toMatchObject(denied());
+    });
+  });
+
+  describe("whiteboard docs (whiteboard:{pageId}:canvas)", () => {
+    it("selects the full access field set and hands the row to getPageAccess", async () => {
+      const row = { id: "w1", parentPageId: "folder-1", scopeKind: null, archivedAt: null };
+      mockPrisma.page.findUnique.mockResolvedValue(row);
+      vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canEdit: false, canComment: true });
+      expect(await authorizeCollabDoc("user1", "whiteboard:w1:canvas")).toEqual({
+        allowed: true,
+        readOnly: true,
+      });
+      expect(mockPrisma.page.findUnique).toHaveBeenCalledWith({
+        where: { id: "w1" },
+        select: expect.objectContaining(PAGE_ACCESS_SELECT),
+      });
+      expect(getPageAccess).toHaveBeenCalledWith("user1", expect.objectContaining(row));
     });
   });
 
