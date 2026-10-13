@@ -48,6 +48,8 @@ export type DriveItem =
       /** `parentPageId` for pages, null when top-level. */
       parentFolderId: string | null;
       iconEmoji: string | null;
+      /** The folder's `FolderType` (Meetings, Agreements, ...); null for a plain folder. */
+      folderType?: string | null;
       updatedAt: Date;
       href: string;
       /** File size in bytes (files only; null elsewhere). Drives the Size column. */
@@ -213,6 +215,7 @@ async function loadLabPages(userSub: string, request?: Request): Promise<DriveIt
       kind: true,
       parentPageId: true,
       iconEmoji: true,
+      folderType: true,
       updatedAt: true,
       // Fields getPageAccess needs when passed as PageShape
       workspaceType: true,
@@ -245,6 +248,7 @@ async function loadLabPages(userSub: string, request?: Request): Promise<DriveIt
             title: row.title,
             parentFolderId: row.parentPageId,
             iconEmoji: row.iconEmoji,
+            folderType: row.folderType,
             updatedAt: row.updatedAt,
             href: `/documents/${row.id}`,
           }
@@ -287,6 +291,7 @@ export const PROJECT_PAGE_SELECT = {
   kind: true,
   parentPageId: true,
   iconEmoji: true,
+  folderType: true,
   updatedAt: true,
   partnerVisible: true,
   // Only read by the scoped branch below; cheap to carry either way, and it
@@ -335,6 +340,7 @@ async function loadProjectPages(
           title: row.title,
           parentFolderId: row.parentPageId,
           iconEmoji: row.iconEmoji,
+          folderType: row.folderType,
           updatedAt: row.updatedAt,
           href: `/documents/${row.id}`,
           partnerVisible: row.partnerVisible,
@@ -409,6 +415,7 @@ async function loadEducationPages(
       kind: true,
       parentPageId: true,
       iconEmoji: true,
+      folderType: true,
       updatedAt: true,
       // See loadProjectPages: only used when the workspace holds a scoped folder.
       workspaceType: true,
@@ -436,6 +443,7 @@ async function loadEducationPages(
           title: row.title,
           parentFolderId: row.parentPageId,
           iconEmoji: row.iconEmoji,
+          folderType: row.folderType,
           updatedAt: row.updatedAt,
           href: `/documents/${row.id}`,
         }
@@ -473,6 +481,7 @@ async function loadMemberPages(userSub: string): Promise<DriveItem[]> {
       kind: true,
       parentPageId: true,
       iconEmoji: true,
+      folderType: true,
       updatedAt: true,
     },
   });
@@ -485,6 +494,7 @@ async function loadMemberPages(userSub: string): Promise<DriveItem[]> {
           title: row.title,
           parentFolderId: row.parentPageId,
           iconEmoji: row.iconEmoji,
+          folderType: row.folderType,
           updatedAt: row.updatedAt,
           href: `/documents/${row.id}`,
         }
