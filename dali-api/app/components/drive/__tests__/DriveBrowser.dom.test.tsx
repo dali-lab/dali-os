@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, createElement, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { createRoutesStub } from "react-router";
-import { DriveBrowser } from "~/components/drive/DriveBrowser";
+import { DndContext, MouseSensor, useDraggable, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { DriveBrowser, ScopeList } from "~/components/drive/DriveBrowser";
 import { DialogProvider } from "~/components/ui/dialog";
 import { ToastProvider } from "~/components/ui/toast";
 import type { DriveTreeScope } from "~/lib/drive-scopes.server";
@@ -26,7 +27,7 @@ const lab: DriveTreeScope = {
   id: "lab",
   label: "Lab-wide",
   iconEmoji: null,
-  items: [folder("f1"), doc("d1"), doc("d2"), doc("d3"), doc("d4", "f1"), doc("d5", "f1")],
+  items: [folder("f1"), doc("d1"), doc("d2"), doc("d3"), doc("d4", "f1"), doc("d5", "f1"), folder("f2", { parentFolderId: "f1" })],
 };
 const mine: DriveTreeScope = { id: "mine", label: "My Drive", iconEmoji: null, items: [doc("m1")] };
 const actions = { onRename: vi.fn(), onRequestMove: vi.fn(), onDelete: vi.fn() };
@@ -38,8 +39,17 @@ const onBulkMove = vi.fn();
 const onBulkDelete = vi.fn();
 const onNavigate = vi.fn();
 const onHistory = vi.fn();
+const onMove = vi.fn();
+const onMoveToScope = vi.fn();
 
-type MountOptions = { view?: "columns" | "list" | "grid"; scopeId?: string | null; folderId?: string | null; search?: string; onHistory?: boolean };
+type MountOptions = {
+  view?: "columns" | "list" | "grid";
+  scopeId?: string | null;
+  folderId?: string | null;
+  search?: string;
+  onHistory?: boolean;
+  initialSelectedId?: string;
+};
 
 /** The browser at a location, with `onNavigate` moving it the way the hub's URL does. */
 async function mount(opts: MountOptions = {}) {
@@ -58,8 +68,10 @@ async function mount(opts: MountOptions = {}) {
         setLoc({ scopeId, folderId });
       },
       onHistory: opts.onHistory ? onHistory : undefined,
+      initialSelectedId: opts.initialSelectedId,
+      onMove,
+      onMoveToScope,
       onOpenItem,
-      onMove: vi.fn(),
       getScopeActions: () => actions,
       onBulkMove,
       onBulkDelete,
@@ -426,7 +438,7 @@ describe("DriveBrowser columns: layout follows the URL", () => {
     await key(p, "ArrowUp");
     expect(isChecked("f1")).toBe(true);
     await key(p, "ArrowRight");
-    expect(isChecked("d4")).toBe(true);
+    expect(isChecked("f2")).toBe(true);
   });
 
   it("enters a folder with the right arrow when it is not open yet", async () => {
@@ -435,7 +447,7 @@ describe("DriveBrowser columns: layout follows the URL", () => {
     await key(p, "ArrowDown");
     await key(p, "ArrowRight");
     expect(onNavigate).toHaveBeenCalledWith("lab", "f1");
-    expect(isChecked("d4")).toBe(true);
+    expect(isChecked("f2")).toBe(true);
   });
 
   it("does not open a document with the right arrow", async () => {
@@ -732,5 +744,564 @@ describe("DriveBrowser glyph tooltips", () => {
     await mount();
     await click(row("doc", "d1").querySelector('[data-testid="item-glyph"]')!);
     expect(onOpenItem).toHaveBeenCalledTimes(1);
+  });
+});
+
+const box = (top: number, bottom: number) =>
+  ({ left: 0, right: 200, top, bottom, width: 200, height: bottom - top, x: 0, y: top, toJSON: () => ({}) }) as DOMRect;
+const place = (el: Element, top: number) => {
+  el.getBoundingClientRect = () => box(top, top + 30);
+};
+const mouse = (target: Element | Document, type: "mousedown" | "mousemove" | "mouseup", y: number) =>
+  act(async () => {
+    target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: 10, clientY: y }));
+  });
+const realRect = HTMLElement.prototype.getBoundingClientRect;
+afterEach(() => {
+  HTMLElement.prototype.getBoundingClientRect = realRect;
+});
+/**
+ * Pick `el` up and carry it `dy` px down. The drag starts past 6px; whatever it
+ * should land on is placed first. The drag overlay is measured for collisions
+ * and has no layout in jsdom, so every unplaced element sits at the top.
+ */
+async function carry(el: Element, dy: number) {
+  HTMLElement.prototype.getBoundingClientRect = () => box(0, 30);
+  await mouse(el, "mousedown", 10);
+  await mouse(document, "mousemove", 20);
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 100));
+  });
+  await mouse(document, "mousemove", 10 + dy);
+}
+/** Drop, then wait out dnd-kit's 50ms click guard on the document, which would swallow the next test's first clicks. */
+const release = async () => {
+  await mouse(document, "mouseup", 10);
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 60));
+  });
+};
+const ghost = () => document.querySelector('[data-testid="drive-drag-ghost"]');
+
+const hoverGlyph = (el: Element) =>
+  act(async () => {
+    el.querySelector('[data-testid="item-glyph"]')!.dispatchEvent(new MouseEvent("mouseenter", { bubbles: false }));
+    await new Promise((r) => setTimeout(r, 400));
+  });
+const menuLabels = () => Array.from(document.querySelectorAll('[role="menuitem"]')).map((el) => el.textContent);
+const menuItem = (label: string) =>
+  Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find((el) => el.textContent === label)!;
+const actionsButton = (id: string) => byTestId(`drive-item-actions-${id}`);
+
+describe("DriveBrowser: the checkbox has its own slot before the glyph", () => {
+  const leadViews = [
+    ["columns", { view: "columns" as const }, () => row("folder", "f1")],
+    ["list", { view: "list" as const, folderId: "f1" }, () => row("folder", "f2")],
+    ["search", { search: "Folder" }, () => byTestId("drive-search-hit-f1")],
+  ] as const;
+
+  describe.each(leadViews)("%s", (_name, opts, target) => {
+    it("keeps a fixed-width slot that does not hold the glyph", async () => {
+      await mount(opts);
+      const slot = target().querySelector("[data-marquee-ignore]")!;
+      expect(slot.className).toContain("w-5");
+      expect(slot.className).toContain("shrink-0");
+      expect(slot.querySelector('[data-testid="item-glyph"]')).toBeNull();
+      expect(slot.nextElementSibling?.querySelector('[data-testid="item-glyph"]') ?? slot.nextElementSibling).toBe(
+        target().querySelector('[data-testid="item-glyph"]')!.parentElement === slot.nextElementSibling
+          ? slot.nextElementSibling
+          : target().querySelector('[data-testid="item-glyph"]'),
+      );
+    });
+
+    it("shows the checkbox on hover, on focus within, or when selected, and holds its place otherwise", async () => {
+      await mount(opts);
+      const slot = target().querySelector("[data-marquee-ignore]") as HTMLElement;
+      expect(slot.className).toContain("opacity-0");
+      expect(slot.className).toContain("group-hover:opacity-100");
+      expect(slot.className).toContain("focus-within:opacity-100");
+      await click(slot.querySelector("input")!);
+      expect(slot.className).toContain("opacity-100");
+      expect(slot.className).not.toContain("opacity-0");
+    });
+
+    it("leaves the glyph uncovered so its tooltip shows on hover", async () => {
+      await mount(opts);
+      const glyph = target().querySelector('[data-testid="item-glyph"]')!;
+      expect(glyph.closest('[class*="group-hover:opacity-0"]')).toBeNull();
+      await hoverGlyph(target());
+      expect(document.querySelector('[role="tooltip"]')?.textContent).toBe("Folder · Everyone in the lab");
+    });
+  });
+
+  it("keeps a tile's and a band card's checkbox in the top-left corner", async () => {
+    await mount({ view: "grid" });
+    for (const el of [row("folder", "f1"), row("doc", "d1")]) {
+      const box = el.querySelector("[data-marquee-ignore]")!;
+      expect(box.className).toContain("absolute");
+      expect(box.className).toContain("left-1.5");
+      expect(box.className).toContain("top-1.5");
+    }
+  });
+});
+
+describe("DriveBrowser drag: one ghost, from the overlay", () => {
+  const cases = [
+    ["columns", { view: "columns" as const }],
+    ["list", { view: "list" as const }],
+    ["grid tile", { view: "grid" as const }],
+  ] as const;
+
+  describe.each(cases)("%s", (_name, opts) => {
+    it("dims the source in place and shows only the overlay under the pointer", async () => {
+      await mount(opts);
+      await carry(row("doc", "d1"), 40);
+      expect(ghost()?.textContent).toBe("Doc d1");
+      expect(row("doc", "d1").style.transform).toBe("");
+      expect(row("doc", "d1").className).toContain("opacity-40");
+      await release();
+      expect(ghost()).toBeNull();
+      expect(row("doc", "d1").className).not.toContain("opacity-40");
+    });
+
+    it("says how many items a multi-selection carries", async () => {
+      await mount(opts);
+      await click(row("doc", "d1"), { metaKey: true });
+      await click(row("doc", "d2"), { metaKey: true });
+      await carry(row("doc", "d2"), 40);
+      expect(ghost()?.textContent).toBe("2 items");
+      await release();
+    });
+
+    it("carries only the row dragged when it is outside the selection", async () => {
+      await mount(opts);
+      await click(row("doc", "d1"), { metaKey: true });
+      await click(row("doc", "d2"), { metaKey: true });
+      await carry(row("doc", "d3"), 40);
+      expect(ghost()?.textContent).toBe("Doc d3");
+      await release();
+    });
+  });
+
+  it("does the same for a card in the folder band", async () => {
+    await mount({ view: "grid" });
+    await carry(row("folder", "f1"), 40);
+    expect(ghost()?.textContent).toBe("Folder f1");
+    expect(row("folder", "f1").style.transform).toBe("");
+    expect(row("folder", "f1").className).toContain("opacity-40");
+    await release();
+  });
+
+  it("includes the glyph in the ghost", async () => {
+    await mount({ view: "list" });
+    await carry(row("doc", "d1"), 40);
+    expect(ghost()?.querySelector("svg")).not.toBeNull();
+    await release();
+  });
+});
+
+describe("DriveBrowser drag: dropping on a folder", () => {
+  const cases = [
+    ["columns", { view: "columns" as const }, "d1", "f1", null],
+    ["list (folder band)", { view: "list" as const }, "d1", "f1", null],
+    ["grid (folder band)", { view: "grid" as const }, "d1", "f1", null],
+    ["list (folder row)", { view: "list" as const, folderId: "f1" }, "d4", "f2", "f1"],
+    ["grid (folder tile)", { view: "grid" as const, folderId: "f1" }, "d4", "f2", "f1"],
+  ] as const;
+
+  it.each(cases)("%s: rings the folder under the pointer and moves into it on release", async (_name, opts, from, to) => {
+    await mount(opts);
+    place(row("doc", from), 0);
+    place(row("folder", to), 100);
+    await carry(row("doc", from), 100);
+    expect(row("folder", to).className).toContain("ring-2");
+    expect(row("folder", to).className).toContain("ring-accent-coral");
+    expect(row("folder", to).className).toContain("bg-accent-coral/10");
+    await release();
+    expect(onMove).toHaveBeenCalledWith("lab", [expect.objectContaining({ id: from })], to);
+  });
+
+  it("moves the whole selection when the dragged row is part of it", async () => {
+    await mount({ view: "grid" });
+    await click(row("doc", "d1"), { metaKey: true });
+    await click(row("doc", "d2"), { metaKey: true });
+    place(row("doc", "d1"), 0);
+    place(row("folder", "f1"), 100);
+    await carry(row("doc", "d1"), 100);
+    await release();
+    expect(onMove.mock.calls[0][1].map((i: DriveItem) => i.id).sort()).toEqual(["d1", "d2"]);
+  });
+
+  it("takes the ring off a folder once the pointer leaves it", async () => {
+    await mount({ view: "list" });
+    place(row("doc", "d1"), 0);
+    place(row("folder", "f1"), 100);
+    await carry(row("doc", "d1"), 100);
+    expect(row("folder", "f1").className).toContain("ring-accent-coral");
+    await mouse(document, "mousemove", 300);
+    expect(row("folder", "f1").className).not.toContain("ring-accent-coral");
+    await release();
+    expect(onMove).not.toHaveBeenCalled();
+  });
+});
+
+describe("DriveBrowser drag: dropping on the breadcrumb", () => {
+  it("moves to the drive's top level from its crumb, with the same ring", async () => {
+    await mount({ view: "list", folderId: "f1" });
+    place(row("doc", "d4"), 0);
+    place(byTestId("drive-crumb-scope"), 100);
+    await carry(row("doc", "d4"), 100);
+    expect(byTestId("drive-crumb-scope").className).toContain("ring-accent-coral");
+    await release();
+    expect(onMove).toHaveBeenCalledWith("lab", [expect.objectContaining({ id: "d4" })], null);
+  });
+
+  it("does not take drops on the root Drive crumb, since nothing moves to the list of drives", async () => {
+    await mount({ view: "list", folderId: "f1" });
+    place(row("doc", "d4"), 0);
+    place(crumbRoot()!, 100);
+    await carry(row("doc", "d4"), 100);
+    expect(crumbRoot()!.className).not.toContain("ring-accent-coral");
+    await release();
+    expect(onMove).not.toHaveBeenCalled();
+    expect(onMoveToScope).not.toHaveBeenCalled();
+  });
+});
+
+describe("DriveBrowser drag: dropping on a drive", () => {
+  it("moves between drives from a column-0 row, with the shared ring", async () => {
+    await mount();
+    place(row("doc", "d1"), 0);
+    place(byTestId("drive-scope-mine"), 100);
+    await carry(row("doc", "d1"), 100);
+    expect(byTestId("drive-scope-mine").className).toContain("ring-2");
+    expect(byTestId("drive-scope-mine").className).toContain("ring-accent-coral");
+    await release();
+    expect(onMoveToScope).toHaveBeenCalledWith("lab", "mine", [expect.objectContaining({ id: "d1" })]);
+  });
+
+  describe.each(["list", "grid"] as const)("the list of drives, %s", (viewMode) => {
+    const projects: DriveTreeScope = { id: "projects", label: "Projects", iconEmoji: null, items: [] };
+    const education: DriveTreeScope = { id: "education", label: "Education", iconEmoji: null, items: [] };
+    const dropped = vi.fn();
+
+    function Source() {
+      const drag = useDraggable({ id: "src", data: { item: doc("d1"), scopeId: "lab" } });
+      return createElement("div", { ref: drag.setNodeRef, "data-testid": "src", ...drag.attributes, ...drag.listeners }, "src");
+    }
+
+    async function mountScopeList() {
+      function Harness() {
+        const [dragging, setDragging] = useState(false);
+        const sensors = useSensors(useSensor(MouseSensor, { activationConstraint: { distance: 6 } }));
+        return createElement(
+          DndContext,
+          {
+            sensors,
+            onDragStart: () => setDragging(true),
+            onDragEnd: (e: DragEndEvent) => {
+              setDragging(false);
+              dropped(e.over?.data.current);
+            },
+          },
+          createElement(Source),
+          createElement(ScopeList, { scopes: [lab, mine, projects, education], viewMode, focusId: null, dragging, onOpen: vi.fn() }),
+        );
+      }
+      container = document.createElement("div");
+      document.body.appendChild(container);
+      root = createRoot(container);
+      await act(async () => {
+        root.render(createElement(Harness));
+      });
+    }
+
+    it("takes drops on a drive and rings it", async () => {
+      await mountScopeList();
+      place(byTestId("src"), 0);
+      place(byTestId("drive-scope-mine"), 100);
+      await carry(byTestId("src"), 100);
+      expect(byTestId("drive-scope-mine").className).toContain("ring-2");
+      expect(byTestId("drive-scope-mine").className).toContain("ring-accent-coral");
+      await release();
+      expect(dropped).toHaveBeenCalledWith({ destScopeId: "mine" });
+    });
+
+    it.each(["projects", "education"])("does not take drops on the %s header", async (id) => {
+      await mountScopeList();
+      place(byTestId("src"), 0);
+      place(byTestId(`drive-scope-${id}`), 100);
+      await carry(byTestId("src"), 100);
+      expect(byTestId(`drive-scope-${id}`).className).not.toContain("ring-accent-coral");
+      await release();
+      expect(dropped).toHaveBeenCalledWith(undefined);
+    });
+  });
+
+  it("leaves search results undraggable", async () => {
+    await mount({ search: "Doc" });
+    const hit = byTestId("drive-search-hit-d1");
+    expect(hit.getAttribute("aria-roledescription")).toBeNull();
+    await carry(hit, 40);
+    expect(ghost()).toBeNull();
+    await release();
+  });
+});
+
+describe("DriveBrowser: the click that ends a drag", () => {
+  /** A rubber-band drag whose click follows in the same task as the pointer-up, landing on `next`. */
+  async function dragThenClick(host: HTMLElement, next: Element) {
+    await pointer(host, "pointerdown", 10, 380);
+    await pointer(host, "pointermove", 10, 40);
+    await act(async () => {
+      host.dispatchEvent(new MouseEvent("pointerup", { bubbles: true, clientX: 10, clientY: 40, button: 0 }));
+      next.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+  }
+
+  it("is ignored by the root crumb, then the crumb works again", async () => {
+    await mount({ view: "list", folderId: "f1" });
+    await dragThenClick(pane("list"), crumbRoot()!);
+    expect(onNavigate).not.toHaveBeenCalled();
+    await click(crumbRoot()!);
+    expect(onNavigate).toHaveBeenCalledWith(null, null);
+  });
+
+  it("is ignored by a folder crumb", async () => {
+    await mount({ view: "list", folderId: "f1" });
+    await dragThenClick(pane("list"), byTestId("drive-crumb-scope"));
+    expect(onNavigate).not.toHaveBeenCalled();
+    await click(byTestId("drive-crumb-scope"));
+    expect(onNavigate).toHaveBeenCalledWith("lab", null);
+  });
+
+  it("is ignored by a drive row in the first column", async () => {
+    await mount();
+    await dragThenClick(byTestId("drive-col-1"), byTestId("drive-scope-mine"));
+    expect(onNavigate).not.toHaveBeenCalled();
+    await click(byTestId("drive-scope-mine"));
+    expect(onNavigate).toHaveBeenCalledWith("mine", null);
+  });
+});
+
+describe("DriveBrowser: the row menu on tiles and cards", () => {
+  it("offers the same ... button on a tile and a band card as on a list row", async () => {
+    await mount({ view: "grid" });
+    expect(row("doc", "d1").contains(actionsButton("d1"))).toBe(true);
+    expect(row("folder", "f1").contains(actionsButton("f1"))).toBe(true);
+  });
+
+  it.each([
+    ["a tile", { view: "grid" as const }, "d1"],
+    ["a band card", { view: "grid" as const }, "f1"],
+    ["a list row", { view: "list" as const, folderId: "f1" }, "d4"],
+    ["a column row", { folderId: "f1" }, "d4"],
+  ])("opens the item menu from %s, and choosing an entry does not also open the item", async (_name, opts, id) => {
+    await mount(opts);
+    await click(actionsButton(id));
+    expect(menuLabels()).toEqual(expect.arrayContaining(["Open", "Rename", "Delete"]));
+    expect(onOpenItem).not.toHaveBeenCalled();
+    expect(onNavigate).not.toHaveBeenCalled();
+    await click(menuItem("Rename"));
+    expect(actions.onRename).toHaveBeenCalledWith(expect.objectContaining({ id }));
+    expect(onOpenItem).not.toHaveBeenCalled();
+    expect(onNavigate).not.toHaveBeenCalled();
+  });
+
+  it("deletes the whole selection from the ... of a tile that is in it", async () => {
+    await mount({ view: "grid" });
+    await click(row("doc", "d1"), { metaKey: true });
+    await click(row("doc", "d2"), { metaKey: true });
+    await click(actionsButton("d2"));
+    await click(menuItem("Delete"));
+    expect(onBulkDelete.mock.calls[0][0].map((i: DriveItem) => i.id).sort()).toEqual(["d1", "d2"]);
+  });
+});
+
+describe.each([
+  ["a tile", { view: "grid" as const }, () => row("doc", "d1"), () => row("doc", "d3"), () => row("doc", "d2")],
+  ["a band card", { view: "grid" as const }, () => row("folder", "f1"), () => row("doc", "d3"), () => row("doc", "d1")],
+  ["a search result", { search: "Doc" }, () => byTestId("drive-search-hit-d1"), () => byTestId("drive-search-hit-d3"), () => byTestId("drive-search-hit-d2")],
+])("DriveBrowser right-click on %s", (_name, opts, first, outside, second) => {
+  const idOf = (el: Element) => el.getAttribute("data-item-id")!;
+
+  it("opens the item menu", async () => {
+    await mount(opts);
+    await contextMenu(first());
+    expect(menuLabels()).toEqual(expect.arrayContaining(["Open", "Rename", "Delete"]));
+  });
+
+  it("selects the row alone when it is outside the selection", async () => {
+    await mount(opts);
+    await click(first(), { metaKey: true });
+    await contextMenu(outside());
+    expect(isChecked(idOf(first()))).toBe(false);
+    expect(isChecked(idOf(outside()))).toBe(true);
+    expect(bar()).toBeNull();
+  });
+
+  it("acts on the whole selection when the row is in it", async () => {
+    await mount(opts);
+    await click(first(), { metaKey: true });
+    await click(second(), { metaKey: true });
+    await contextMenu(second());
+    expect(bar()?.textContent).toContain("2 selected");
+    await click(menuItem("Delete"));
+    expect(onBulkDelete.mock.calls[0][0].map((i: DriveItem) => i.id).sort()).toEqual([idOf(first()), idOf(second())].sort());
+    expect(actions.onDelete).not.toHaveBeenCalled();
+  });
+
+  it("runs a single-item entry on that item", async () => {
+    await mount(opts);
+    await contextMenu(first());
+    await click(menuItem("Rename"));
+    expect(actions.onRename).toHaveBeenCalledWith(expect.objectContaining({ id: idOf(first()) }));
+  });
+});
+
+describe("DriveBrowser search results: right-click matches the ... button", () => {
+  it("lists the same entries", async () => {
+    await mount({ search: "Doc" });
+    await contextMenu(byTestId("drive-search-hit-d1"));
+    const fromRightClick = menuLabels();
+    await key(document.body, "Escape");
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    await click(actionsButton("d1"));
+    expect(fromRightClick.length).toBeGreaterThan(1);
+    expect(menuLabels()).toEqual(fromRightClick);
+  });
+});
+
+describe("DriveBrowser reveal: initialSelectedId", () => {
+  const scrolled: (string | null)[] = [];
+  beforeEach(() => {
+    scrolled.length = 0;
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrolled.push(this.getAttribute("data-item-id"));
+    };
+  });
+
+  it.each(["columns", "list", "grid"] as const)("selects and scrolls to the given row on mount in %s", async (view) => {
+    await mount({ view, initialSelectedId: "d2" });
+    expect(isChecked("d2")).toBe(true);
+    expect(isChecked("d1")).toBe(false);
+    expect(bar()).toBeNull();
+    expect(scrolled).toContain("d2");
+  });
+
+  it("finds a row inside the folder the location points at", async () => {
+    await mount({ folderId: "f1", initialSelectedId: "d4" });
+    expect(isChecked("d4")).toBe(true);
+    expect(scrolled).toContain("d4");
+  });
+
+  it("focuses it too, so the keyboard continues from there", async () => {
+    await mount({ view: "list", initialSelectedId: "d1" });
+    await key(pane("list"), "ArrowDown");
+    expect(isChecked("d2")).toBe(true);
+  });
+
+  it("selects nothing for an id that is not on screen, and does not catch up when it appears later", async () => {
+    await mount({ initialSelectedId: "d4" });
+    expect(["d1", "d2", "d3"].map(isChecked)).toEqual([false, false, false]);
+    await click(row("folder", "f1"));
+    expect(isChecked("d4")).toBe(false);
+  });
+
+  it("selects nothing without an id", async () => {
+    await mount();
+    expect(container.querySelectorAll("input:checked")).toHaveLength(0);
+  });
+});
+
+describe("DriveBrowser history: Back and Forward", () => {
+  it("stay enabled with a host history, even where the local trail has nowhere to go", async () => {
+    await mount({ onHistory: true });
+    expect((byTestId("drive-back") as HTMLButtonElement).disabled).toBe(false);
+    expect((byTestId("drive-forward") as HTMLButtonElement).disabled).toBe(false);
+    await click(byTestId("drive-forward"));
+    expect(onHistory).toHaveBeenCalledWith(1);
+  });
+
+  it("stay enabled after the host steps back", async () => {
+    await mount({ onHistory: true });
+    await click(row("folder", "f1"));
+    await click(byTestId("drive-back"));
+    expect((byTestId("drive-forward") as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("grey out against the local trail without a host history", async () => {
+    await mount();
+    expect((byTestId("drive-back") as HTMLButtonElement).disabled).toBe(true);
+    expect((byTestId("drive-forward") as HTMLButtonElement).disabled).toBe(true);
+    await click(row("folder", "f1"));
+    expect((byTestId("drive-back") as HTMLButtonElement).disabled).toBe(false);
+    expect((byTestId("drive-forward") as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+describe("DriveBrowser grid: up and down move a visual row", () => {
+  /** Two tiles to a row: the folder band is its own row above d1 d2 / d3. */
+  function twoPerRow() {
+    Object.defineProperty(row("doc", "d3"), "offsetTop", { value: 100, configurable: true });
+  }
+
+  it("steps by the number of tiles that fit on a row", async () => {
+    await mount({ view: "grid" });
+    twoPerRow();
+    const p = pane("list");
+    await key(p, "ArrowRight");
+    expect(isChecked("f1")).toBe(true);
+    await key(p, "ArrowDown");
+    expect(isChecked("d1")).toBe(true);
+    await key(p, "ArrowDown");
+    expect(isChecked("d3")).toBe(true);
+    await key(p, "ArrowUp");
+    expect(isChecked("d1")).toBe(true);
+    await key(p, "ArrowUp");
+    expect(isChecked("f1")).toBe(true);
+  });
+
+  it("lands on the last tile when the row below is shorter, and stays at the end", async () => {
+    await mount({ view: "grid" });
+    twoPerRow();
+    const p = pane("list");
+    await key(p, "ArrowRight");
+    await key(p, "ArrowRight");
+    await key(p, "ArrowRight");
+    expect(isChecked("d2")).toBe(true);
+    await key(p, "ArrowDown");
+    expect(isChecked("d3")).toBe(true);
+    await key(p, "ArrowDown");
+    expect(isChecked("d3")).toBe(true);
+  });
+
+  it("stays on the first row going up from the band", async () => {
+    await mount({ view: "grid" });
+    twoPerRow();
+    const p = pane("list");
+    await key(p, "ArrowRight");
+    await key(p, "ArrowUp");
+    expect(isChecked("f1")).toBe(true);
+  });
+
+  it("keeps stepping one row at a time in the list view", async () => {
+    await mount({ view: "list" });
+    const p = pane("list");
+    await key(p, "ArrowDown");
+    await key(p, "ArrowDown");
+    expect(isChecked("d1")).toBe(true);
+  });
+
+  it("steps through the drives at the root as a grid too", async () => {
+    await mount({ view: "grid", scopeId: null });
+    Object.defineProperty(byTestId("drive-scope-mine"), "offsetTop", { value: 100, configurable: true });
+    const p = pane("list");
+    await key(p, "ArrowRight");
+    await key(p, "ArrowDown");
+    await key(p, "Enter");
+    expect(onNavigate).toHaveBeenCalledWith("mine", null);
   });
 });

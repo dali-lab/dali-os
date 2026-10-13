@@ -99,6 +99,7 @@ import { DetailFact } from "~/components/drive/DetailFact";
 import { menuEntries, type MenuEntry } from "~/components/drive/item-menu";
 import { canFileIn, folderShortcutTarget, locateTarget, shortcutRowState } from "~/components/drive/file-in";
 import { clickIntent } from "~/components/drive/column-click";
+import { gridStepBlocks, perRowFromTops, type GridBlock } from "~/components/drive/grid-nav";
 import { MarqueeBox, useMarquee } from "~/components/drive/use-marquee";
 import { CORAL_FOLDER, folderCountLabel, glyphLabel, pickGlyph, type ItemGlyph } from "~/components/drive/glyphs";
 import { FolderSettingsModal } from "~/components/drive/FolderSettingsModal";
@@ -170,6 +171,8 @@ export type DriveBrowserProps = {
   onNavigate: (scopeId: string | null, folderId: string | null) => void;
   /** Step the host's browser history. Omitted when the host has none (the project tab keeps its folder in state), and Back / Forward then walk the browser's own trail of visited folders. */
   onHistory?: (delta: -1 | 1) => void;
+  /** A row to select and scroll to once, when the browser first shows it (Reveal in Drive). */
+  initialSelectedId?: string;
   onOpenItem: (item: DriveItem) => void;
   /** Re-file every item into `destFolderId` within the scope it already sits
    *  in. Takes a list because dragging one row of a multi-selection drags the
@@ -462,6 +465,24 @@ function scopeIcon(scope: DriveTreeScope, size: IconSize = "sm") {
   return <Folder className={`${cls} text-accent-coral/80`} />;
 }
 
+function scopeLabel(scope: DriveTreeScope): string {
+  return scope.id === "mine" ? "My Drive" : scope.id === "lab" ? "Lab" : scope.label;
+}
+
+/** The synthetic "projects" / "education" headers: dropping on one is ambiguous (which project?), so only the projects inside take drops. */
+function isGroupScope(scopeId: string): boolean {
+  return scopeId === "projects" || scopeId === "education";
+}
+
+/** A drive as a drop target: dropping items on it re-scopes them. Shared by the columns, the list and the grid. */
+function useScopeDrop(scopeId: string, dragging: boolean) {
+  return useDroppable({
+    id: `scopedrop::${scopeId}`,
+    data: { destScopeId: scopeId },
+    disabled: !dragging || isGroupScope(scopeId),
+  });
+}
+
 // Menu.Item nodes shared by the row "⋯" dropdown and the right-click menu.
 function itemMenuItems(
   item: DriveItem,
@@ -673,20 +694,18 @@ function RowCheckbox({
   );
 }
 
-/** A row's glyph, which the checkbox takes the place of while the row is hovered or selected. */
+/** A row's leading edge: a checkbox slot that keeps its width while the box is hidden, then the glyph, whose tooltip stays reachable. */
 function RowLead({ item, checked, onToggle }: { item: DriveItem; checked: boolean; onToggle: (shift: boolean) => void }) {
   return (
-    <span className="relative inline-flex shrink-0">
-      <span className={cn("inline-flex", checked ? "opacity-0" : "group-hover:opacity-0")}>
-        <ItemGlyphTip item={item} />
-      </span>
+    <>
       <RowCheckbox
         item={item}
         checked={checked}
         onToggle={onToggle}
-        className="absolute inset-0 flex items-center justify-center"
+        className="flex w-5 shrink-0 items-center justify-center"
       />
-    </span>
+      <ItemGlyphTip item={item} />
+    </>
   );
 }
 
@@ -702,6 +721,9 @@ const GRID_CONTAINER =
   "grid grid-cols-[repeat(auto-fill,minmax(5.75rem,5.75rem))] justify-start gap-x-2 gap-y-3 px-3 py-3";
 const GRID_TILE =
   "group relative flex flex-col items-center gap-1 rounded-lg px-0.5 py-2 text-center cursor-default select-none";
+/** What a row, tile, card or crumb looks like while a dragged item hovers it as a drop target; one look in every view. */
+const DROP_RING = "bg-accent-coral/10 ring-2 ring-inset ring-accent-coral";
+
 /** Caption under a grid icon — always smaller than the artwork, even under os. */
 const GRID_LABEL = "max-w-full truncate rounded px-1.5 py-0.5 text-xs font-medium";
 
@@ -755,6 +777,7 @@ export function DriveBrowser({
   onSearchChange,
   onNavigate,
   onHistory,
+  initialSelectedId,
   onOpenItem: hostOpenItem,
   onMove,
   getScopeActions,
@@ -876,9 +899,10 @@ export function DriveBrowser({
   // Item queued for the spacebar Quick Look overlay (null = closed).
   const [previewItem, setPreviewItem] = useState<DriveItem | null>(null);
   const [uploadOver, setUploadOver] = useState(false);
-  const [activeDrag, setActiveDrag] = useState<DriveItem | null>(null);
+  const [activeDrag, setActiveDrag] = useState<{ item: DriveItem; scopeId: string } | null>(null);
   const dragDepth = useRef(0);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
 
   // Visited locations, oldest first, with `cursor` marking where in that trail
   // the browser currently sits — the state behind the toolbar's < > pair.
@@ -958,12 +982,11 @@ export function DriveBrowser({
   // Follow the keyboard: bring the focused row into view (horizontally as well,
   // since a deep trail scrolls the columns off-screen).
   useEffect(() => {
-    const el = columnsContainerRef.current;
-    if (!el || !focusId) return;
-    el.querySelector(`[data-row-id="${CSS.escape(focusId)}"]`)?.scrollIntoView({
-      block: "nearest",
-      inline: "nearest",
-    });
+    if (!focusId) return;
+    const id = CSS.escape(focusId);
+    rootRef.current
+      ?.querySelector(`[data-row-id="${id}"], [data-item-id="${id}"]`)
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [focusId]);
 
   const sensors = useSensors(
@@ -975,6 +998,12 @@ export function DriveBrowser({
   function suppressNextClick() {
     suppressClickRef.current = true;
     setTimeout(() => (suppressClickRef.current = false), 0);
+  }
+  /** True once, for the click that ends a drag: whatever it landed on should ignore it. */
+  function consumeSuppressedClick(): boolean {
+    const suppressed = suppressClickRef.current;
+    suppressClickRef.current = false;
+    return suppressed;
   }
 
   // "searching" is really "showing flat results across every drive", which a
@@ -1049,6 +1078,20 @@ export function DriveBrowser({
 
   const focusEntry = focusId ? (itemIndex.get(focusId) ?? null) : null;
 
+  // Reveal in Drive lands here with the item to show: select it on first
+  // mount only (a later folder that happens to hold it is not a reveal), and
+  // the focus effect above scrolls it into view.
+  const revealedRef = useRef(false);
+  useEffect(() => {
+    if (!initialSelectedId || revealedRef.current) return;
+    revealedRef.current = true;
+    if (!itemIndex.has(initialSelectedId)) return;
+    focusOnly(initialSelectedId);
+    const level = levelIndexOf(initialSelectedId);
+    if (level > 0) setFocusLevel(level);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialSelectedId, itemIndex]);
+
   // ── Selection ──────────────────────────────────────────────────────────────
   function clearSelection() {
     setSelected(new Set());
@@ -1105,6 +1148,8 @@ export function DriveBrowser({
 
   /** A click on a row, tile or card: plain opens it, cmd/ctrl toggles, shift extends. */
   function handleRowClick(id: string, e: ReactMouseEvent<HTMLElement>) {
+    // A row's own menu renders in a portal but its clicks still bubble here.
+    if (isInFloatingLayer(e.target)) return;
     const poolIds = poolIdsFor(id);
     const intent = clickIntent({
       metaKey: e.metaKey,
@@ -1186,13 +1231,11 @@ export function DriveBrowser({
 
   // ── Back / forward (Finder's < > pair) ────────────────────────────────────
   //
-  // A trail of visited locations is kept only so the pair knows whether each
-  // direction is available and can grey itself out instead of appearing and
-  // vanishing. With a host history to step (`onHistory`) the pair drives that,
-  // so Back / Forward are the browser's own; without one they walk the trail.
-  // Arriving at a location that is already the neighbouring entry is treated as
-  // a step along the trail, so the forward branch survives it; anything else
-  // starts a new branch from here.
+  // Without a host history (the project tab keeps its folder in state) the pair
+  // walks a trail of visited locations kept here, and greys a direction out when
+  // the trail has nowhere to go. Arriving at a location that is already the
+  // neighbouring entry is treated as a step along the trail, so the forward
+  // branch survives it; anything else starts a new branch from here.
   useEffect(() => {
     const trail = historyRef.current;
     const at = (l?: DriveLocation) =>
@@ -1207,8 +1250,11 @@ export function DriveBrowser({
     setCursor(historyRef.current.length - 1);
   }, [currentScopeId, currentFolderId, cursor]);
 
-  const canGoBack = cursor > 0;
-  const canGoForward = cursor < historyRef.current.length - 1;
+  // The browser's own history reaches places this trail never saw (the page
+  // before the Drive, entries after a reload), so with a host history the pair
+  // stays enabled rather than greying out a direction that would still work.
+  const canGoBack = !!onHistory || cursor > 0;
+  const canGoForward = !!onHistory || cursor < historyRef.current.length - 1;
 
   function goHistory(delta: -1 | 1) {
     if (onHistory) {
@@ -1273,6 +1319,15 @@ export function DriveBrowser({
     if (openId) focusOnly(openId, parentLevel > 0);
   }
 
+  /** Each run of tiles that wraps together in the grid view, with how many fit on a row at the current width. */
+  function gridBlocks(): GridBlock[] {
+    const blocks = listRef.current?.querySelectorAll<HTMLElement>("[data-grid-block]") ?? [];
+    return Array.from(blocks, (block) => {
+      const tiles = Array.from(block.children) as HTMLElement[];
+      return { count: tiles.length, perRow: perRowFromTops(tiles.map((tile) => tile.offsetTop)) };
+    });
+  }
+
   function onPaneKeyDown(e: ReactKeyboardEvent<HTMLElement>) {
     if (isInFloatingLayer(e.target)) return;
     if ((e.target as Element).closest("input, textarea, select, [contenteditable='true']")) return;
@@ -1331,14 +1386,22 @@ export function DriveBrowser({
       const next = idx === -1 ? 0 : Math.min(Math.max(idx + delta, 0), rows.length - 1);
       focusOnly(rows[next].id, selectable);
     };
-    if (e.key === "ArrowDown") return step(1);
-    if (e.key === "ArrowUp") return step(-1);
+    const inGrid = viewMode === "grid" && !searching;
+    /** In a grid, up and down move a whole visual row; anywhere else, one row. */
+    const stepVertically = (delta: 1 | -1) => {
+      const blocks = inGrid ? gridBlocks() : [];
+      if (rows.length === 0 || blocks.reduce((n, b) => n + b.count, 0) !== rows.length) return step(delta);
+      e.preventDefault();
+      focusOnly(rows[gridStepBlocks(blocks, idx, delta)].id, selectable);
+    };
+    if (e.key === "ArrowDown") return stepVertically(1);
+    if (e.key === "ArrowUp") return stepVertically(-1);
     if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
       if (columnsActive) {
         e.preventDefault();
         if (e.key === "ArrowRight") stepIntoFocus({ openFiles: false });
         else stepOutOfFocusLevel();
-      } else if (viewMode === "grid") {
+      } else if (inGrid) {
         step(e.key === "ArrowRight" ? 1 : -1);
       }
       return;
@@ -1360,8 +1423,22 @@ export function DriveBrowser({
 
   // ── dnd-kit (internal move) ──────────────────────────────────────────────
   function handleDragStart(e: DragStartEvent) {
-    const data = e.active.data.current as { item: DriveItem } | undefined;
-    setActiveDrag(data?.item ?? null);
+    const data = e.active.data.current as { item: DriveItem; scopeId: string } | undefined;
+    setActiveDrag(data ?? null);
+  }
+  /**
+   * Dragging a row that's part of a multi-selection drags the whole selection,
+   * the way Finder and Drive do; moving only the row under the cursor silently
+   * drops the other items the user had picked. A search selection can span
+   * scopes and a move is scope-relative, so only those sharing the dragged
+   * row's scope come along.
+   */
+  function draggedItemsFor(src: { item: DriveItem; scopeId: string }): DriveItem[] {
+    if (!selected.has(src.item.id) || selectedItems.length < 2) return [src.item];
+    const items = searching
+      ? hits.filter((h) => h.scope.id === src.scopeId && selected.has(h.item.id)).map((h) => h.item)
+      : selectedItems;
+    return items.length > 1 ? items : [src.item];
   }
   function handleDragEnd(e: DragEndEvent) {
     setActiveDrag(null);
@@ -1369,18 +1446,7 @@ export function DriveBrowser({
     const src = e.active.data.current as { item: DriveItem; scopeId: string } | undefined;
     const dest = e.over?.data.current as { destFolderId?: string | null; destScopeId?: string } | undefined;
     if (!src || !dest) return;
-    // Dragging a row that's part of a multi-selection drags the whole
-    // selection — Finder and Drive both do this, and moving only the row under
-    // the cursor silently drops the other items the user had picked. A search
-    // selection can span scopes, and a move is scope-relative, so only the ones
-    // sharing the dragged row's scope come along.
-    const multi =
-      selected.has(src.item.id) && selectedItems.length > 1
-        ? searching
-          ? hits.filter((h) => h.scope.id === src.scopeId && selected.has(h.item.id)).map((h) => h.item)
-          : selectedItems
-        : [];
-    const dragged = multi.length > 1 ? multi : [src.item];
+    const dragged = draggedItemsFor(src);
     // Cross-drive drop: item dragged onto a scope row in column 0.
     if (dest.destScopeId && dest.destFolderId === undefined) {
       if (dest.destScopeId !== src.scopeId) {
@@ -1457,6 +1523,7 @@ export function DriveBrowser({
   // Click a drive in column 0: it opens in column 1. Drives are walked and
   // entered but never selected.
   function handleScopeClick(scopeId: string) {
+    if (consumeSuppressedClick()) return;
     columnsContainerRef.current?.focus({ preventScroll: true });
     setFocusLevel(0);
     focusOnly(scopeId, false);
@@ -1555,7 +1622,7 @@ export function DriveBrowser({
   const detailPathLabel =
     detailItem && detailScope
       ? [
-          detailScope.id === "mine" ? "My Drive" : detailScope.id === "lab" ? "Lab" : detailScope.label,
+          scopeLabel(detailScope),
           ...crumbsFor(detailScope.items, detailItem.parentFolderId).map((c) => c.title),
         ].join(" / ")
       : "";
@@ -1734,6 +1801,8 @@ export function DriveBrowser({
   });
   const paneMarquee = useMarquee(marqueeFor(null));
 
+  const draggedCount = activeDrag ? draggedItemsFor(activeDrag).length : 0;
+
   const rowHandlers: RowHandlers = {
     onClick: handleRowClick,
     onToggle: handleCheckboxToggle,
@@ -1744,7 +1813,7 @@ export function DriveBrowser({
   return (
     <>
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-      <div className="flex flex-col gap-3" data-testid="drive-browser" onClick={handleBackgroundClick}>
+      <div ref={rootRef} className="flex flex-col gap-3" data-testid="drive-browser" onClick={handleBackgroundClick}>
         {/* ── Page toolbar: filters on the left, actions on the right ──
             Navigation, view and search live on the listing's own header
             instead — they act on the table, so they belong to it. ── */}
@@ -1798,7 +1867,9 @@ export function DriveBrowser({
               <Breadcrumb
                 currentScope={currentScope}
                 folderCrumbs={folderCrumbs}
-                onNavigate={onNavigate}
+                onNavigate={(scopeId, folderId) => {
+                  if (!consumeSuppressedClick()) onNavigate(scopeId, folderId);
+                }}
                 dragging={!!activeDrag}
                 showRoot={!embeddedScopeId}
               />
@@ -1965,7 +2036,10 @@ export function DriveBrowser({
                   scopes={scopes}
                   viewMode={viewMode === "grid" ? "grid" : "list"}
                   focusId={focusId}
-                  onOpen={openById}
+                  dragging={!!activeDrag}
+                  onOpen={(id) => {
+                    if (!consumeSuppressedClick()) openById(id);
+                  }}
                 />
               ) : (
                 <ScopeContents
@@ -2032,10 +2106,13 @@ export function DriveBrowser({
       <DragOverlay dropAnimation={null}>
         {activeDrag && (
           <div
+            data-testid="drive-drag-ghost"
             className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5 shadow-lg text-base"
           >
-            {itemIcon(activeDrag)}
-            <span className="font-medium text-foreground">{activeDrag.title || "Untitled"}</span>
+            {itemIcon(activeDrag.item)}
+            <span className="font-medium text-foreground">
+              {draggedCount > 1 ? `${draggedCount} items` : activeDrag.item.title || "Untitled"}
+            </span>
           </div>
         )}
       </DragOverlay>
@@ -2457,21 +2534,7 @@ function ColumnScopeRow({
   onClick: () => void;
 }) {
   const t = useDriveText();
-  const isProcessRoot = isProcessRootSpace(scope.id);
-  // Synthetic group scopes ("projects"/"education") are not valid drop targets —
-  // dropping on the group row is ambiguous (which project?). Only individual
-  // project folders inside the group accept drops via the normal folder-drop path.
-  const isGroupScope = scope.id === "projects" || scope.id === "education";
-  const isProject = scope.id !== "mine" && scope.id !== "lab" && !isProcessRoot && !isGroupScope;
-  const label =
-    scope.id === "mine" ? "My Drive" : scope.id === "lab" ? "Lab" : scope.label;
-
-  const drop = useDroppable({
-    id: `scopedrop::${scope.id}`,
-    data: { destScopeId: scope.id },
-    // Disable dropping onto the group scope rows; also disables when not dragging.
-    disabled: !isDragging || isGroupScope,
-  });
+  const drop = useScopeDrop(scope.id, isDragging);
 
   // Signal ③: audience chip revealed on hover, when the scope carries a scopeAudience label.
   // Reuses the PageRow opacity-reveal convention.
@@ -2491,14 +2554,14 @@ function ColumnScopeRow({
       onClick={(e) => { e.stopPropagation(); onClick(); }}
       className={`group flex items-center rounded-lg ${t.itemRow} ${t.row} cursor-default select-none ${
         drop.isOver
-          ? "ring-2 ring-accent-coral ring-inset bg-accent-coral/10 text-accent-coral"
+          ? `${DROP_RING} text-accent-coral`
           : isOpen
             ? "bg-os-container text-foreground"
             : "text-foreground hover:bg-os-hover"
       } ${isFocused && !drop.isOver ? "ring-1 ring-inset ring-os-accent/50" : ""}`}
     >
       {scopeIcon(scope)}
-      <span className="min-w-0 flex-1 truncate font-medium">{label}</span>
+      <span className="min-w-0 flex-1 truncate font-medium">{scopeLabel(scope)}</span>
       {audienceChip}
       <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0 opacity-60" />
     </div>
@@ -2574,7 +2637,7 @@ function ColumnItemRow({
       className={`group flex items-center rounded-lg dnd-touch-handle ${t.itemRow} ${t.row} cursor-default select-none ${
         drag.isDragging ? "opacity-40" : shortcutRowState(item).dimmed ? "opacity-60" : ""
       } ${
-        drop.isOver ? "ring-2 ring-inset ring-accent-coral bg-accent-coral/10" : ""
+        drop.isOver ? DROP_RING : ""
       } ${
         isSelected
           ? "bg-os-container text-os-accent"
@@ -2838,7 +2901,7 @@ function Breadcrumb({
           and out of folders. */}
       {currentScope && (
         <Crumb
-          label={currentScope.id === "mine" ? "My Drive" : currentScope.id === "lab" ? "Lab" : currentScope.label}
+          label={scopeLabel(currentScope)}
           testid="drive-crumb-scope"
           scopeId={currentScope.id}
           destFolderId={null}
@@ -2927,7 +2990,7 @@ function Crumb({
         }}
         className={`inline-flex items-center rounded-md px-1.5 py-0.5 truncate max-w-[12rem] ${
           drop.isOver
-            ? "bg-accent-coral/10 text-accent-coral ring-1 ring-accent-coral/40"
+            ? `${DROP_RING} text-accent-coral`
             : current
               ? "font-medium text-foreground hover:bg-os-hover"
               : "text-muted-foreground hover:bg-os-hover hover:text-foreground"
@@ -2941,10 +3004,11 @@ function Crumb({
 
 // ── Root: the list of drives (list/grid view only) ───────────────────────────
 
-function ScopeList({
+export function ScopeList({
   scopes,
   viewMode,
   focusId,
+  dragging,
   onOpen,
 }: {
   scopes: DriveTreeScope[];
@@ -2952,80 +3016,89 @@ function ScopeList({
    *  — in grid view they were the one listing that stayed a row list. */
   viewMode: "list" | "grid";
   focusId: string | null;
+  /** An item is being dragged, so the drives accept it. */
+  dragging: boolean;
   /** A drive is entered, never selected: any click on it opens it. */
   onOpen: (id: string) => void;
 }) {
-  const t = useDriveText();
   if (scopes.length === 0) return <EmptyLine>Your Drive is empty.</EmptyLine>;
 
   if (viewMode === "grid") {
     return (
-      <div className={GRID_CONTAINER} data-testid="drive-listing">
-        {scopes.map((scope) => {
-          const label = scope.id === "mine" ? "My Drive" : scope.id === "lab" ? "Lab" : scope.label;
-          const isFocused = focusId === scope.id;
-          return (
-            <div
-              key={scope.id}
-              data-testid={`drive-scope-${scope.id}`}
-              data-marquee-ignore
-              onClick={(e) => {
-                e.stopPropagation();
-                onOpen(scope.id);
-              }}
-              className={`${GRID_TILE} ${
-                isFocused ? "bg-os-container/40" : "hover:bg-os-hover"
-              }`}
-            >
-              {scopeIcon(scope, "xl")}
-              <span
-                className={`${GRID_LABEL} ${
-                  isFocused ? "bg-os-accent text-os-bg" : "text-foreground"
-                }`}
-              >
-                {label}
-              </span>
-            </div>
-          );
-        })}
+      <div className={GRID_CONTAINER} data-testid="drive-listing" data-grid-block>
+        {scopes.map((scope) => (
+          <ScopeTile key={scope.id} scope={scope} focused={focusId === scope.id} dragging={dragging} onOpen={onOpen} />
+        ))}
       </div>
     );
   }
 
   return (
     <div className="flex flex-col divide-y divide-border/50" data-testid="drive-listing">
-      {scopes.map((scope) => {
-        const isProcessRoot = isProcessRootSpace(scope.id);
-        const isGroupScope = scope.id === "projects" || scope.id === "education";
-        const isProject = scope.id !== "mine" && scope.id !== "lab" && !isProcessRoot && !isGroupScope;
-        const label = scope.id === "mine" ? "My Drive" : scope.id === "lab" ? "Lab" : scope.label;
-        return (
-          <div
-            key={scope.id}
-            data-testid={`drive-scope-${scope.id}`}
-            data-marquee-ignore
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpen(scope.id);
-            }}
-            className={`group flex items-center ${t.itemRow} ${t.row} cursor-default select-none rounded-lg ${
-              focusId === scope.id ? "bg-os-container text-os-accent" : "hover:bg-os-hover"
-            }`}
-          >
-            {scopeIcon(scope)}
-            <span className="min-w-0 flex-1 truncate font-medium text-foreground">{label}</span>
-            {/* Signal ③: scope audience chip — hover-reveal via group-hover. */}
-            {scope.scopeAudience ? (
-              <span
-                className={`shrink-0 ${t.badge} tracking-wide text-muted-foreground opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity`}
-              >
-                {scope.scopeAudience}
-              </span>
-            ) : null}
-            <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-          </div>
-        );
-      })}
+      {scopes.map((scope) => (
+        <ScopeRow key={scope.id} scope={scope} focused={focusId === scope.id} dragging={dragging} onOpen={onOpen} />
+      ))}
+    </div>
+  );
+}
+
+type ScopeEntryProps = {
+  scope: DriveTreeScope;
+  focused: boolean;
+  dragging: boolean;
+  onOpen: (id: string) => void;
+};
+
+function ScopeTile({ scope, focused, dragging, onOpen }: ScopeEntryProps) {
+  const drop = useScopeDrop(scope.id, dragging);
+  return (
+    <div
+      ref={drop.setNodeRef}
+      data-testid={`drive-scope-${scope.id}`}
+      data-row-id={scope.id}
+      data-marquee-ignore
+      onClick={(e) => {
+        e.stopPropagation();
+        onOpen(scope.id);
+      }}
+      className={`${GRID_TILE} ${drop.isOver ? DROP_RING : focused ? "bg-os-container/40" : "hover:bg-os-hover"}`}
+    >
+      {scopeIcon(scope, "xl")}
+      <span className={`${GRID_LABEL} ${focused ? "bg-os-accent text-os-bg" : "text-foreground"}`}>
+        {scopeLabel(scope)}
+      </span>
+    </div>
+  );
+}
+
+function ScopeRow({ scope, focused, dragging, onOpen }: ScopeEntryProps) {
+  const t = useDriveText();
+  const drop = useScopeDrop(scope.id, dragging);
+  return (
+    <div
+      ref={drop.setNodeRef}
+      data-testid={`drive-scope-${scope.id}`}
+      data-row-id={scope.id}
+      data-marquee-ignore
+      onClick={(e) => {
+        e.stopPropagation();
+        onOpen(scope.id);
+      }}
+      className={`group flex items-center ${t.itemRow} ${t.row} cursor-default select-none rounded-lg ${
+        drop.isOver ? DROP_RING : focused ? "bg-os-container text-os-accent" : "hover:bg-os-hover"
+      }`}
+    >
+      {scopeIcon(scope)}
+      <span className="min-w-0 flex-1 truncate font-medium text-foreground">{scopeLabel(scope)}</span>
+      {/* Signal ③: scope audience chip — hover-reveal via group-hover. */}
+      {scope.scopeAudience ? (
+        <span
+          className={`shrink-0 ${t.badge} tracking-wide text-muted-foreground opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity`}
+        >
+          {scope.scopeAudience}
+        </span>
+      ) : null}
+      <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
     </div>
   );
 }
@@ -3082,7 +3155,7 @@ export function ScopeContents({
         <h3 className={`px-2 pb-1.5 pt-1 ${t.label} font-medium uppercase tracking-wide text-muted-foreground`}>
           Folders
         </h3>
-        <div className="flex gap-3 overflow-x-auto px-2 pb-3">
+        <div data-grid-block className="flex gap-3 overflow-x-auto px-2 pb-3">
           {bandFolders.map((item) => (
             <FolderCard
               key={item.id}
@@ -3110,7 +3183,7 @@ export function ScopeContents({
         {band}
         {filesHeading}
         {files.length > 0 && (
-          <div className={GRID_CONTAINER}>
+          <div className={GRID_CONTAINER} data-grid-block>
             {files.map((item) => (
               <GridTile
                 key={item.id}
@@ -3248,15 +3321,12 @@ function ListRow({
       data-item-id={item.id}
       onClick={(e) => handlers.onClick(item.id, e)}
       onContextMenu={() => handlers.onContext(item.id)}
-      style={{
-        gridTemplateColumns: scopeId === SHARED_SPACE_KEY ? SHARED_GRID_COLUMNS : GRID_COLUMNS,
-        ...(drag.transform ? { transform: `translate3d(${drag.transform.x}px, ${drag.transform.y}px, 0)`, transition: "none" } : {}),
-      }}
+      style={{ gridTemplateColumns: scopeId === SHARED_SPACE_KEY ? SHARED_GRID_COLUMNS : GRID_COLUMNS }}
       className={`group grid items-center dnd-touch-handle ${t.itemRow} rounded-lg ${t.row} cursor-default select-none ${
         drag.isDragging ? "opacity-40" : shortcutRowState(item).dimmed ? "opacity-60" : ""
       } ${
         drop.isOver && isFolder
-          ? "bg-accent-coral/10 ring-1 ring-accent-coral/40"
+          ? DROP_RING
           : selected
             ? "bg-os-container"
             : focused
@@ -3362,7 +3432,6 @@ function GridTile({
       data-item-id={item.id}
       onClick={(e) => handlers.onClick(item.id, e)}
       onContextMenu={() => handlers.onContext(item.id)}
-      style={drag.transform ? { transform: `translate3d(${drag.transform.x}px, ${drag.transform.y}px, 0)`, transition: "none" } : undefined}
       // No card around a tile: the icon is the object, the way a Finder icon
       // view reads. Selection lives on the label chip below (Finder's blue
       // rectangle), not on a border, so a grid of files reads as a grid of
@@ -3371,7 +3440,7 @@ function GridTile({
         drag.isDragging ? "opacity-40" : shortcutRowState(item).dimmed ? "opacity-60" : ""
       } ${
         drop.isOver && isFolder
-          ? "bg-accent-coral/10 ring-2 ring-inset ring-accent-coral"
+          ? DROP_RING
           : selected
             ? "bg-os-container/40"
             : focused
@@ -3385,11 +3454,15 @@ function GridTile({
         onToggle={(shift) => handlers.onToggle(item.id, shift)}
         className="absolute left-1.5 top-1.5"
       />
-      {/* No ⋯ button on a tile: the whole tile is a right-click target for the
-          same menu, and a borderless icon grid has nowhere to put one without
-          it reading as clutter over the artwork. */}
       <div className="absolute right-1 top-1 flex items-center">
         <FavoriteButton item={item} onToggleFavorite={onToggleFavorite} />
+        <RowActionsMenu
+          item={item}
+          actions={actions}
+          onOpen={() => handlers.onOpen(item.id)}
+          onToggleFavorite={onToggleFavorite}
+          onTogglePartnerVisible={onTogglePartnerVisible}
+        />
       </div>
       {/* Partner-visible badge: positioned top-left so it doesn't conflict
           with the actions/star buttons on the right. */}
@@ -3470,12 +3543,11 @@ function FolderCard({
       data-item-id={item.id}
       onClick={(e) => handlers.onClick(item.id, e)}
       onContextMenu={() => handlers.onContext(item.id)}
-      style={drag.transform ? { transform: `translate3d(${drag.transform.x}px, ${drag.transform.y}px, 0)`, transition: "none" } : undefined}
       className={`group relative flex w-48 shrink-0 flex-col gap-3 rounded-os-card border border-border p-3 dnd-touch-handle cursor-default select-none transition-colors ${
         drag.isDragging ? "opacity-40" : ""
       } ${
         drop.isOver
-          ? "bg-accent-coral/10 ring-2 ring-inset ring-accent-coral"
+          ? DROP_RING
           : selected
             ? "bg-os-container"
             : focused
@@ -3491,6 +3563,13 @@ function FolderCard({
       />
       <div className="absolute right-1.5 top-1.5 flex items-center">
         <FavoriteButton item={item} onToggleFavorite={onToggleFavorite} />
+        <RowActionsMenu
+          item={item}
+          actions={actions}
+          onOpen={() => handlers.onOpen(item.id)}
+          onToggleFavorite={onToggleFavorite}
+          onTogglePartnerVisible={onTogglePartnerVisible}
+        />
       </div>
       <ItemGlyphTip item={item} size="lg" />
       <div className="flex min-w-0 flex-col gap-1">
@@ -3548,47 +3627,58 @@ export function SearchResults({
       </div>
       <div className="flex flex-col divide-y divide-border/50">
         {hits.map((hit) => (
-          <div
+          <ContextMenu
             key={`${hit.scope.id}:${hit.item.id}`}
-            data-testid={`drive-search-hit-${hit.item.id}`}
-            data-item-id={hit.item.id}
-            onClick={(e) => handlers.onClick(hit.item.id, e)}
-            style={{ gridTemplateColumns: GRID_COLUMNS_FLAT }}
-            className={`group grid items-center ${t.itemRow} ${t.row} cursor-default select-none rounded-md ${
-              selected.has(hit.item.id)
-                ? "bg-os-container"
-                : focusId === hit.item.id
-                  ? "bg-os-hover"
-                  : "hover:bg-os-hover"
-            }`}
+            items={itemMenuItems(
+              hit.item,
+              getScopeActions(hit.scope.id),
+              () => handlers.onOpen(hit.item.id),
+              onToggleFavorite,
+            )}
+            ariaLabel="Item actions"
           >
-            <span className="flex min-w-0 items-center gap-2">
-              <RowLead
-                item={hit.item}
-                checked={selected.has(hit.item.id)}
-                onToggle={(shift) => handlers.onToggle(hit.item.id, shift)}
-              />
-              <span className="truncate font-medium text-foreground">{hit.item.title || "Untitled"}</span>
-              <FolderCount item={hit.item} />
-              <RowTags item={hit.item} actions={getScopeActions(hit.scope.id)} />
-              {/* Signal ②: process linkage pill in search results. */}
-              {hit.item.linkedProcess && (
-                <ProcessLinkPill label={hit.item.linkedProcess.label} href={hit.item.linkedProcess.href} />
-              )}
-            </span>
-            <LocationLink location={hit.location} onNavigate={onOpenLocation} />
-            <span className={`${t.meta} text-muted-foreground tabular-nums truncate`}>
-              {relativeTime(hit.item.updatedAt as unknown as string)}
-            </span>
-            <span className="flex items-center justify-end">
-              <RowActionsMenu
-                item={hit.item}
-                actions={getScopeActions(hit.scope.id)}
-                onOpen={() => handlers.onOpen(hit.item.id)}
-                onToggleFavorite={onToggleFavorite}
-              />
-            </span>
-          </div>
+            <div
+              data-testid={`drive-search-hit-${hit.item.id}`}
+              data-item-id={hit.item.id}
+              onClick={(e) => handlers.onClick(hit.item.id, e)}
+              onContextMenu={() => handlers.onContext(hit.item.id)}
+              style={{ gridTemplateColumns: GRID_COLUMNS_FLAT }}
+              className={`group grid items-center ${t.itemRow} ${t.row} cursor-default select-none rounded-md ${
+                selected.has(hit.item.id)
+                  ? "bg-os-container"
+                  : focusId === hit.item.id
+                    ? "bg-os-hover"
+                    : "hover:bg-os-hover"
+              }`}
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <RowLead
+                  item={hit.item}
+                  checked={selected.has(hit.item.id)}
+                  onToggle={(shift) => handlers.onToggle(hit.item.id, shift)}
+                />
+                <span className="truncate font-medium text-foreground">{hit.item.title || "Untitled"}</span>
+                <FolderCount item={hit.item} />
+                <RowTags item={hit.item} actions={getScopeActions(hit.scope.id)} />
+                {/* Signal ②: process linkage pill in search results. */}
+                {hit.item.linkedProcess && (
+                  <ProcessLinkPill label={hit.item.linkedProcess.label} href={hit.item.linkedProcess.href} />
+                )}
+              </span>
+              <LocationLink location={hit.location} onNavigate={onOpenLocation} />
+              <span className={`${t.meta} text-muted-foreground tabular-nums truncate`}>
+                {relativeTime(hit.item.updatedAt as unknown as string)}
+              </span>
+              <span className="flex items-center justify-end">
+                <RowActionsMenu
+                  item={hit.item}
+                  actions={getScopeActions(hit.scope.id)}
+                  onOpen={() => handlers.onOpen(hit.item.id)}
+                  onToggleFavorite={onToggleFavorite}
+                />
+              </span>
+            </div>
+          </ContextMenu>
         ))}
       </div>
     </div>
