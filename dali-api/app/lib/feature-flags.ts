@@ -129,6 +129,12 @@ export const FEATURE_FLAGS = [
     description:
       "Files everything the app creates on its own (hiring forms, application templates, agreements, education templates, certificate backgrounds, meeting notes) into a folder Core has marked to receive it, or at the top of the matching Drive space when none is marked, instead of into the auto-made subfolders used today. Turns off the automatic meeting folders on projects. Ships off.",
   },
+  {
+    key: "drive-home",
+    label: "Drive Home",
+    description:
+      "Shows upcoming meeting notebooks, recently opened and starred documents above the space chooser at the Drive root. Ships off.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

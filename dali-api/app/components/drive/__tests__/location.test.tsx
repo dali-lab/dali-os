@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { crumbsFor, locateFolder, locationOf, type LocatableScope } from "~/components/drive/location";
+import { crumbsFor, locateFolder, locateItem, locationOf, type LocatableScope } from "~/components/drive/location";
 import { LocationLink } from "~/components/drive/LocationLink";
 
 const item = (id: string, title: string, parentFolderId: string | null = null) => ({ id, title, parentFolderId });
@@ -81,5 +81,17 @@ describe("LocationLink", () => {
 
   it("renders nothing clickable when the location is unknown", () => {
     expect(render(null)).not.toContain("<button");
+  });
+});
+
+describe("locateItem", () => {
+  it("places an item inside its folder chain", () => {
+    expect(locateItem(scopes, item("z", "Zed", "b"))).toBeNull();
+    expect(locateItem(scopes, scopes[0].items[2])?.path).toBe("My Drive › Alpha › Beta");
+  });
+
+  it("places a top-level item at its space", () => {
+    const loc = locateItem(scopes, scopes[0].items[3]);
+    expect(loc).toMatchObject({ scopeId: "mine", folderId: null, path: "My Drive" });
   });
 });
