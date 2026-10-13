@@ -12,7 +12,7 @@ export const DestSchema = z.object({
 /** Preflight, method, auth and error mapping shared by the shortcut routes. `run` may return a Response (e.g. a validation failure) to send as is. */
 export async function shortcutAction(
   request: Request,
-  method: "POST" | "DELETE",
+  method: "GET" | "POST" | "DELETE",
   run: (userId: string) => Promise<unknown>,
 ): Promise<Response> {
   const preflight = handlePreflight(request);

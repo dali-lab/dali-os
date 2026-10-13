@@ -559,6 +559,31 @@ export async function shortcutsOf(targetId: string, viewerId: string, request?: 
   return places;
 }
 
+export type PagePlace = Omit<ShortcutPlace, "shortcutId">;
+
+/** Where a page lives and where it is also filed, for the "File in…" picker and the "Also in" line. 404 for a page the viewer can't see. */
+export async function placementsOf(
+  pageId: string,
+  viewerId: string,
+  request?: Request,
+): Promise<{ primary: PagePlace; shortcuts: ShortcutPlace[] }> {
+  const page = await prisma.page.findUnique({
+    where: { id: pageId },
+    select: { ...PAGE_ACCESS_SELECT, kind: true },
+  });
+  if (!page || page.archivedAt !== null || page.kind === "Shortcut") throw new ShortcutError("Document not found", 404);
+  if (!(await getPageAccess(viewerId, page, request)).canView) throw new ShortcutError("Document not found", 404);
+  return {
+    primary: {
+      workspaceType: page.workspaceType,
+      workspaceId: page.workspaceId,
+      folderId: page.parentPageId,
+      path: page.parentPageId ? await folderPath(page.parentPageId) : [],
+    },
+    shortcuts: await shortcutsOf(pageId, viewerId, request),
+  };
+}
+
 /** Where a shortcut leads. No access check: the target enforces its own. */
 export async function resolveShortcutTarget(
   shortcutId: string,
