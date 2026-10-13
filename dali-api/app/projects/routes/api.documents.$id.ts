@@ -5,7 +5,6 @@ import { requireProjectEditAccess, requireMemberSession } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
 import { getPageAccess } from "~/lib/pageAccess.server";
-import { isRoot, ROOT_DELETE_ERROR } from "~/lib/drive-roots";
 import { notebookErrorResponse, trashNotebook } from "~/lib/notebooks.server";
 import { isRoot, ROOT_DELETE_ERROR, CLEARED_FOLDER_TYPE } from "~/lib/drive-roots";
 

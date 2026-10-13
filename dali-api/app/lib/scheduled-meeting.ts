@@ -936,7 +936,7 @@ export async function attachMeetingNote(
         ? {
             workspaceType: previous.workspaceType === "Project" ? "Project" : "Lab",
             workspaceId: previous.workspaceId,
-            parentPageId: previous.parentPageId,
+            parentPageId: folderOfNote(previous),
           }
         : (input.noteLocation ?? null),
       startDate: occurrence.start,
@@ -1098,7 +1098,7 @@ export async function attachMeetingWhiteboard(
     noteLocation = {
       workspaceType: "Lab",
       workspaceId: null,
-      parentPageId: note.parentPageId,
+      parentPageId: folderOfNote(note),
     };
   }
 

@@ -69,6 +69,7 @@ import {
   trackExternalEventAsMeeting,
   tracksAttendance,
   updateScheduledMeeting,
+  folderOfNote,
 } from "~/lib/scheduled-meeting";
 import { isGeneralCalendarEvent } from "~/lib/general-calendar";
 
