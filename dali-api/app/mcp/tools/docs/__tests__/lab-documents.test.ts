@@ -125,6 +125,19 @@ describe("delete_lab_document", () => {
     expect(mockPrisma.page.update).not.toHaveBeenCalled();
   });
 
+  it("clears a receiver's type columns in the same update that archives it", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue({ id: "p1", workspaceType: "Lab", workspaceId: null, archivedAt: null, createdById: "u1", folderType: "Agreements" });
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.page.update.mockResolvedValue({ id: "p1" });
+
+    await runDeleteLabDocument("u1", { pageId: "p1" });
+
+    expect(mockPrisma.page.update).toHaveBeenCalledWith({
+      where: { id: "p1" },
+      data: { archivedAt: expect.any(Date), folderType: null, processType: null, processId: null },
+    });
+  });
+
   it("archives the page when caller is the creator", async () => {
     mockPrisma.page.findUnique.mockResolvedValue({ id: "p1", workspaceType: "Lab", workspaceId: null, archivedAt: null, createdById: "u1" });
     vi.mocked(isCore).mockResolvedValue(false);
