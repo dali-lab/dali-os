@@ -112,7 +112,12 @@ export async function action({ request, params }: Route.ActionArgs) {
       return withCors(request, Response.json({ error: ROOT_DELETE_ERROR }, { status: 400 }));
     }
     if (page.kind === "Notebook") {
-      // The tabs go to Trash with their notebook, and come back with it.
+      if (new URL(request.url).searchParams.get("ifEmpty") === "1") {
+        const notes = await prisma.page.count({ where: { parentPageId: pageId, archivedAt: null } });
+        if (notes > 0) {
+          return withCors(request, Response.json({ error: "This notebook still has notes." }, { status: 409 }));
+        }
+      }
       try {
         await trashNotebook(pageId, auth.user.sub);
       } catch (err) {
@@ -151,14 +156,6 @@ export async function action({ request, params }: Route.ActionArgs) {
             { status: 400 },
           ),
         );
-      }
-    }
-    // The filing toast's Undo asks for a notebook to go only if the note it
-    // just removed was its last, so a note filed in the meantime keeps it.
-    if (page.kind === "Notebook" && new URL(request.url).searchParams.get("ifEmpty") === "1") {
-      const notes = await prisma.page.count({ where: { parentPageId: pageId, archivedAt: null } });
-      if (notes > 0) {
-        return withCors(request, Response.json({ error: "This notebook still has notes." }, { status: 409 }));
       }
     }
     await prisma.page.update({
