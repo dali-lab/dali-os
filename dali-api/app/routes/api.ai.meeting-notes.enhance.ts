@@ -28,6 +28,11 @@ const RequestSchema = z.object({
   recordingId: z.string().min(1),
   blocks: EnhanceBlocksSchema,
   untouchedTemplate: z.boolean(),
+  // Set by the client from hasEnhanceMarks(editor.document) — the server
+  // can't cheaply read the live doc from this route, so it trusts the
+  // client's own scan (specs/meeting-recording-rail.md Step 2: "Server
+  // write paths refuse while marks exist").
+  hasMarks: z.boolean().optional(),
 });
 
 export async function action({ request }: Route.ActionArgs) {
@@ -63,6 +68,9 @@ export async function action({ request }: Route.ActionArgs) {
   }
   if (!(await canRecordInto(auth.user.sub, rec.documentName))) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
+  if (body.hasMarks) {
+    return Response.json({ error: "Keep or revert the current changes first" }, { status: 409 });
   }
 
   const result = await generateAndVerifyEnhancePlan({

@@ -4,10 +4,11 @@ import { buttonClasses } from "~/components/ui/Button";
 import { IconButton } from "~/components/ui/IconButton";
 import { Tooltip } from "~/components/ui/floating/Tooltip";
 import { formatClock } from "./transcript";
+import { summarizeEnhanceMarks } from "./enhance-plan";
 import { formatDateTime } from "./use-meeting-recording";
 import type { UseMeetingRecording } from "./use-meeting-recording";
 import type { Channel } from "./types";
-import { computeEnhancePreview, EnhancePreview } from "./EnhancePreview";
+import { EnhancePreview } from "./EnhancePreview";
 import { RecordingTranscript } from "./RecordingTranscript";
 
 const ENHANCE_AGAIN_TIP = "Rebuilds the notes from the current text and the transcript.";
@@ -27,21 +28,24 @@ export type RailState =
   | "failed"
   | "ready"
   | "generating"
-  | "preview"
+  | "pendingReview"
   | "enhanced"
   | "inserted"
   | "stalePreview";
 
 /** Maps the hook's phase + Enhance flags onto the named state in
- *  specs/meeting-recording-rail.md's state table. Null while idle — there's
- *  no rail body for the start sheet. */
+ *  specs/meeting-recording-rail.md Step 2's revised state table. Null while
+ *  idle — there's no rail body for the start sheet. "pendingReview" is
+ *  derived from the document (rec.pendingMarks), not a flag: Step 2,
+ *  "Pending is derived from the document". */
 export function deriveRailState(
-  rec: Pick<UseMeetingRecording, "phase" | "insertedAt" | "stalePreview" | "enhanceSheetOpen" | "enhanceNotes" | "enhancedAt">,
+  rec: Pick<UseMeetingRecording, "phase" | "insertedAt" | "stalePreview" | "enhanceBusy" | "pendingMarks" | "enhancedAt">,
 ): RailState | null {
   if (rec.phase === "idle") return null;
   if (rec.phase !== "done") return rec.phase;
   if (rec.stalePreview) return "stalePreview";
-  if (rec.enhanceSheetOpen) return rec.enhanceNotes ? "preview" : "generating";
+  if (rec.enhanceBusy) return "generating";
+  if (rec.pendingMarks.length > 0) return "pendingReview";
   if (rec.enhancedAt) return "enhanced";
   if (rec.insertedAt) return "inserted";
   return "ready";
@@ -104,6 +108,13 @@ export function RecordingRail({ rec }: { rec: UseMeetingRecording }) {
         </div>
         <p aria-live="polite" className="text-sm text-muted-foreground">
           {statusLineFor(rec, state)}
+        </p>
+        {/* "Kept N changes."/"Reverted N changes." — a dedicated live region
+            so Keep all/Revert all announce that exact sentence (specs/
+            meeting-recording-rail.md Step 2 Accessibility) separately from
+            the status line's own recount. */}
+        <p aria-live="polite" className="sr-only">
+          {rec.reviewAnnouncement}
         </p>
         <RailActions rec={rec} state={state} />
       </div>
@@ -174,18 +185,22 @@ export function statusLineFor(rec: UseMeetingRecording, state: RailState): React
     case "generating":
       text = "Reading your notes and the transcript…";
       break;
-    case "preview": {
-      const preview = computeEnhancePreview(rec);
-      const changed = preview?.ops.filter((op) => op.kind === "update").length ?? 0;
-      const added = preview?.ops.reduce((n, op) => (op.kind === "insertAfter" ? n + op.blocks.length : n), 0) ?? 0;
-      text = `Preview: ${changed} block${changed === 1 ? "" : "s"} changed, ${added} added.`;
-      if (preview && preview.skipped > 0) {
-        text += ` ${preview.skipped} block${preview.skipped === 1 ? "" : "s"} changed while this ran and were left as typed.`;
+    case "pendingReview": {
+      const { changed, added, removed } = summarizeEnhanceMarks(rec.pendingMarks, rec.enhanceNotes?.priorBlocks);
+      const parts: string[] = [];
+      if (changed > 0) parts.push(`${changed} changed`);
+      if (added > 0) parts.push(`${added} added`);
+      if (removed > 0) parts.push(`${removed} removed`);
+      const who = rec.enhancedByName ? `${rec.enhancedByName} enhanced` : "Enhanced";
+      text = `${who} this note: ${parts.join(", ") || "no changes left"}.`;
+      if (rec.enhanceSkipped > 0) {
+        text += ` ${rec.enhanceSkipped} block${rec.enhanceSkipped === 1 ? "" : "s"} changed while this ran and were left as typed.`;
       }
       break;
     }
     case "enhanced":
       text = `Enhanced ${rec.enhancedAt ? formatDateTime(rec.enhancedAt) : ""}${rec.enhancedByName ? ` by ${rec.enhancedByName}` : ""}.`;
+      if (rec.reviewedAt) text += " Reviewed.";
       if (namesChangedSinceEnhance(rec)) {
         text += " Names changed since these notes were written. Enhance again to update them.";
       }
@@ -317,13 +332,7 @@ function RailActions({ rec, state }: { rec: UseMeetingRecording; state: RailStat
 
     case "ready": {
       if (!rec.canEdit) return null;
-      const label = !rec.aiEnabled
-        ? "Insert transcript"
-        : rec.enhancedAt
-          ? "Enhance again"
-          : rec.currentlyUntouched()
-            ? "Write notes"
-            : "Enhance notes";
+      const label = !rec.aiEnabled ? "Insert transcript" : rec.currentlyUntouched() ? "Write notes" : "Enhance notes";
       return (
         <div className="flex flex-wrap items-center gap-1.5">
           {rec.canDiscard && (
@@ -339,41 +348,40 @@ function RailActions({ rec, state }: { rec: UseMeetingRecording; state: RailStat
               Insert transcript
             </button>
           )}
-          <Tooltip content={label === "Enhance again" ? ENHANCE_AGAIN_TIP : null} variant="rich">
-            <button
-              type="button"
-              onClick={!rec.aiEnabled ? () => rec.insert(null) : () => void rec.onEnhanceClick(Boolean(rec.enhancedAt))}
-              disabled={!rec.hasTranscript || rec.busy}
-              className={buttonClasses("primary", "sm")}
-            >
-              {label}
-            </button>
-          </Tooltip>
+          <button
+            type="button"
+            onClick={!rec.aiEnabled ? () => rec.insert(null) : () => void rec.enhanceNow()}
+            disabled={!rec.hasTranscript || rec.busy}
+            className={buttonClasses("primary", "sm")}
+          >
+            {label}
+          </button>
         </div>
       );
     }
 
     case "generating":
       return (
-        <button type="button" onClick={rec.closeEnhancePreview} className={buttonClasses("secondary", "sm")}>
+        <button type="button" onClick={rec.cancelEnhanceGenerating} className={buttonClasses("secondary", "sm")}>
           Cancel
         </button>
       );
 
-    case "preview":
+    case "pendingReview":
+      if (!rec.canEdit) return null;
       return (
         <div className="flex flex-wrap items-center gap-1.5">
-          <button type="button" onClick={rec.closeEnhancePreview} className={buttonClasses("secondary", "sm")}>
-            Cancel
+          <button type="button" onClick={() => rec.keepAll()} className={buttonClasses("primary", "sm")}>
+            Keep all
           </button>
-          <button
-            type="button"
-            onClick={() => void rec.applyEnhance()}
-            disabled={rec.applyBusy}
-            className={buttonClasses("primary", "sm")}
-          >
-            {rec.applyBusy ? "Applying…" : "Apply"}
+          <button type="button" onClick={() => rec.revertAll()} className={buttonClasses("secondary", "sm")}>
+            Revert all
           </button>
+          <Tooltip content={ENHANCE_AGAIN_TIP} variant="rich">
+            <button type="button" onClick={() => void rec.revertAllAndEnhanceAgain()} className={buttonClasses("secondary", "sm")}>
+              Revert all and enhance again
+            </button>
+          </Tooltip>
         </div>
       );
 
@@ -383,7 +391,7 @@ function RailActions({ rec, state }: { rec: UseMeetingRecording; state: RailStat
         <div className="flex flex-wrap items-center gap-1.5">
           {rec.canDiscard && <IconButton label="Discard recording" icon={Trash2} tone="destructive" onClick={() => void rec.discard()} />}
           <Tooltip content={ENHANCE_AGAIN_TIP} variant="rich">
-            <button type="button" onClick={() => void rec.onEnhanceClick(true)} className={buttonClasses("primary", "sm")}>
+            <button type="button" onClick={() => void rec.enhanceNow()} className={buttonClasses("primary", "sm")}>
               Enhance again
             </button>
           </Tooltip>
@@ -397,7 +405,7 @@ function RailActions({ rec, state }: { rec: UseMeetingRecording; state: RailStat
           {rec.aiEnabled && rec.canEdit && (
             <button
               type="button"
-              onClick={() => void rec.onEnhanceClick(false)}
+              onClick={() => void rec.enhanceNow()}
               disabled={!rec.hasTranscript || rec.busy}
               className={buttonClasses("primary", "sm")}
             >
@@ -410,7 +418,7 @@ function RailActions({ rec, state }: { rec: UseMeetingRecording; state: RailStat
     case "stalePreview":
       return (
         <div className="flex flex-wrap items-center gap-1.5">
-          <button type="button" onClick={rec.closeEnhancePreview} className={buttonClasses("secondary", "sm")}>
+          <button type="button" onClick={rec.dismissStalePreview} className={buttonClasses("secondary", "sm")}>
             Cancel
           </button>
           <button type="button" onClick={rec.reloadStalePreview} className={buttonClasses("primary", "sm")}>
@@ -455,8 +463,8 @@ function RailBody({ rec, state }: { rec: UseMeetingRecording; state: RailState }
       ) : null;
     }
 
-    case "preview":
-      return <EnhancePreview rec={rec} mode="preview" />;
+    case "pendingReview":
+      return <EnhancePreview rec={rec} mode="pendingReview" />;
 
     case "enhanced":
       return <EnhancePreview rec={rec} mode="enhanced" />;

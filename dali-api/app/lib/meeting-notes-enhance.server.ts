@@ -16,7 +16,7 @@ import { verifyEnhancePlan, type VerifyRosterUser } from "~/lib/meeting-notes-ve
 import { fullName } from "~/lib/display";
 import { currentTerm } from "~/lib/roles";
 import { prisma } from "~/lib/db";
-import type { MeetingRecording } from "~/generated/prisma/client";
+import type { MeetingRecording, Prisma } from "~/generated/prisma/client";
 import {
   actionItemMatchesBlock,
   type EnhanceActionItem,
@@ -264,7 +264,7 @@ export async function generateAndVerifyEnhancePlan(params: {
     roster,
   };
 
-  await prisma.meetingRecording.update({ where: { id: rec.id }, data: { notes } });
+  await prisma.meetingRecording.update({ where: { id: rec.id }, data: { notes: notes as Prisma.InputJsonValue } });
 
   return { ok: true, notes };
 }
