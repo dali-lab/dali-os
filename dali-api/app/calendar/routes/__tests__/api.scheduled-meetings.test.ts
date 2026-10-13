@@ -99,3 +99,78 @@ describe("POST /api/scheduled-meetings: filing details", () => {
     expect(mockNotePath).not.toHaveBeenCalled();
   });
 });
+
+describe("POST /api/scheduled-meetings: notebook choice", () => {
+  const noType = { meetingType: undefined, meetingTypeLabel: undefined, note: true };
+
+  beforeEach(() => {
+    mockCreate.mockResolvedValue(created);
+    mockNotePath.mockResolvedValue({ label: "General ▸ Weekly sync notes", href: "/documents/note-1" });
+  });
+
+  it("accepts an existing notebook with no meeting type and hands it to the creator", async () => {
+    const res = await post({ ...noType, notebook: { existingId: "nb-9" } });
+
+    expect(res.status).toBe(201);
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ notebook: { existingId: "nb-9" }, meetingType: undefined, createNote: true }),
+    );
+  });
+
+  it("accepts a new notebook with a location and template", async () => {
+    const notebook = {
+      title: "Standup",
+      location: { workspaceType: "Project", workspaceId: "p1", parentPageId: "f1" },
+      templatePageId: "tpl-1",
+    };
+
+    const res = await post({ ...noType, projectId: "p1", notebook });
+
+    expect(res.status).toBe(201);
+    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ notebook, projectId: "p1" }));
+  });
+
+  it("still accepts the older meetingType payload with no notebook", async () => {
+    const res = await post();
+
+    expect(res.status).toBe(201);
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ meetingType: "Other", meetingTypeLabel: "Weekly sync", notebook: undefined }),
+    );
+  });
+
+  it("rejects a notebook that is neither an id nor a named notebook", async () => {
+    expect((await post({ ...noType, notebook: { nope: 1 } })).status).toBe(400);
+    expect((await post({ ...noType, notebook: { title: "" } })).status).toBe(400);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("rejects a Project location with no project", async () => {
+    const notebook = { title: "A", location: { workspaceType: "Project", workspaceId: null, parentPageId: null } };
+
+    expect((await post({ ...noType, notebook })).status).toBe(400);
+  });
+
+  it("lets a whiteboard-only General meeting carry a noteLocation without naming a type", async () => {
+    const res = await post({
+      meetingType: undefined,
+      meetingTypeLabel: undefined,
+      note: false,
+      whiteboard: true,
+      noteLocation: { workspaceType: "Lab", workspaceId: null, parentPageId: "f1" },
+    });
+
+    expect(res.status).toBe(201);
+  });
+
+  it("still refuses a noteLocation on a project meeting", async () => {
+    const res = await post({
+      meetingType: undefined,
+      meetingTypeLabel: undefined,
+      projectId: "p1",
+      noteLocation: { workspaceType: "Lab", workspaceId: null, parentPageId: "f1" },
+    });
+
+    expect(res.status).toBe(400);
+  });
+});

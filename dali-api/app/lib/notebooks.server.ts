@@ -46,7 +46,7 @@ const notebookRowSelect = {
 } as const;
 
 /** A live notebook the actor can edit. 404 hides one they cannot see. */
-async function loadEditableNotebook(notebookId: string, actorId: string) {
+export async function loadEditableNotebook(notebookId: string, actorId: string) {
   const notebook = await prisma.page.findUnique({ where: { id: notebookId }, select: notebookRowSelect });
   if (!notebook || notebook.kind !== "Notebook" || notebook.archivedAt !== null) {
     throw new NotebookError("Notebook not found", 404);

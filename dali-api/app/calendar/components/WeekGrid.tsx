@@ -1161,6 +1161,7 @@ export function WeekGridEvent({
                     ) : e.meeting.canAddNote ? (
                       <AddMeetingNoteButton
                         meetingId={e.meeting.meetingId}
+                        meetingTitle={e.label}
                         occurrenceStart={e.meeting.occurrenceStart}
                         isCoreMeeting={e.meeting.isCoreMeeting}
                         actionPath={e.meeting.actionPath}

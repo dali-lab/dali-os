@@ -64,3 +64,16 @@ export function meetingNotebookIdentity(
     title: /meeting$/i.test(label) ? `${label} notes` : `${label} meeting notes`,
   };
 }
+
+/**
+ * The meeting type a note filed through a notebook choice is recorded as, so
+ * everything still keyed on meetingType (attendance, titles) keeps working: a
+ * project meeting reads as Team, anything else as Other named for the notebook.
+ */
+export function meetingTypeForNotebook(
+  projectId: string | null,
+  notebookTitle: string,
+): { meetingType: MeetingType; meetingTypeLabel: string | null } {
+  if (projectId) return { meetingType: "Team", meetingTypeLabel: null };
+  return { meetingType: "Other", meetingTypeLabel: notebookTitle.trim().slice(0, 80) || "Meeting" };
+}

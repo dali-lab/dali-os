@@ -76,7 +76,7 @@ describe("POST /api/meeting-recordings", () => {
   });
 
   it("resolves the note via attachMeetingNote when no documentName is given", async () => {
-    vi.mocked(attachMeetingNote).mockResolvedValue({ ok: true, notePageId: "p1", notebookId: null, createdNotebook: false });
+    vi.mocked(attachMeetingNote).mockResolvedValue({ ok: true, notePageId: "p1", notebookId: null, createdNotebook: false, seriesNotebookId: null });
     const res = await run({ scheduledMeetingId: "m1", occurrenceStart: "2026-10-09T15:00:00.000Z" });
     expect(res.status).toBe(201);
     expect(attachMeetingNote).toHaveBeenCalledWith(

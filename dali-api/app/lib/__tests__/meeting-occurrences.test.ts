@@ -3,6 +3,7 @@ import {
   expandOccurrences,
   googleInstanceOriginalStart,
   matchMeetingForEvent,
+  nextOpenOccurrence,
   resolveOccurrence,
 } from "~/lib/meeting-occurrences";
 
@@ -234,5 +235,34 @@ describe("matchMeetingForEvent", () => {
   it("returns null when nothing matches", () => {
     const event = { eventId: "other_20260928T130000Z", recurringEventId: "other", iCalUID: "other-uid@google.com" };
     expect(matchMeetingForEvent(event, byICalUID, byExternalId)).toBeNull();
+  });
+});
+
+describe("nextOpenOccurrence", () => {
+  const occ = (iso: string) => {
+    const start = new Date(iso);
+    return { originalStart: start, start, end: new Date(start.getTime() + 60 * 60_000) };
+  };
+  const week1 = occ("2026-07-15T15:00:00Z");
+  const week2 = occ("2026-07-22T15:00:00Z");
+  const week3 = occ("2026-07-29T15:00:00Z");
+
+  it("is the first upcoming occurrence with no note", () => {
+    const notes = [{ meetingOccurrenceStart: week2.originalStart }];
+    expect(nextOpenOccurrence([week1, week2, week3], notes, new Date("2026-07-20T00:00:00Z"))).toBe(week3);
+  });
+
+  it("skips occurrences that are over", () => {
+    expect(nextOpenOccurrence([week1, week2], [], new Date("2026-07-20T00:00:00Z"))).toBe(week2);
+  });
+
+  it("counts the occurrence under way as still ahead", () => {
+    expect(nextOpenOccurrence([week1, week2], [], new Date("2026-07-15T15:30:00Z"))).toBe(week1);
+  });
+
+  it("is null when every upcoming occurrence already has its note", () => {
+    const notes = [{ meetingOccurrenceStart: week2.originalStart }];
+    expect(nextOpenOccurrence([week2], notes, new Date("2026-07-20T00:00:00Z"))).toBeNull();
+    expect(nextOpenOccurrence([], [], new Date("2026-07-20T00:00:00Z"))).toBeNull();
   });
 });

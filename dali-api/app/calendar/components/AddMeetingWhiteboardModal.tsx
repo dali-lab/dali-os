@@ -140,8 +140,6 @@ function AddMeetingWhiteboardModal({
     const fields: Record<string, string> = { intent: "add-meeting-whiteboard", meetingId };
     if (!hasType) {
       const payload = meetingNotePayload(note.state);
-      if (payload.meetingType) fields.meetingType = String(payload.meetingType);
-      if (payload.meetingTypeLabel) fields.meetingTypeLabel = String(payload.meetingTypeLabel);
       if (payload.projectId) fields.projectId = String(payload.projectId);
       if (payload.noteLocation) fields.noteLocation = JSON.stringify(payload.noteLocation);
     }

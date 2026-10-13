@@ -9,7 +9,7 @@ import {
   type RefObject,
 } from "react";
 import { useNavigate, useRevalidator } from "react-router";
-import { Check, CloudOff, Copy, Download, FileDown, FolderInput, FolderSearch, History, LayoutTemplate, Link, Loader2, MessageSquare, MoreHorizontal, Printer, Search, Upload, Users } from "lucide-react";
+import { BookOpen, Check, CloudOff, Copy, Download, FileDown, FolderInput, FolderSearch, History, LayoutTemplate, Link, Loader2, MessageSquare, MoreHorizontal, Printer, Search, Upload, Users } from "lucide-react";
 import { DocEditor, appendBlocks, stripBlockIds, type DocSyncState, type TocHeading } from "~/components/doc";
 import type { DocEditorInstance } from "~/components/doc/schema/build";
 import { DocCommentsPanel, useDocThreadCount } from "~/components/doc/comments";
@@ -32,6 +32,7 @@ import { FolderPicker } from "~/components/drive/FolderPicker";
 import { useDriveDestinations } from "~/components/drive/use-drive-destinations";
 import { useMovePage } from "~/components/drive/use-move-page";
 import { useToast } from "~/components/ui/toast";
+import { createNotebookRequest, notebookRequest, sendJson } from "~/components/notebooks/notebook-requests";
 import { ImportTemplateDialog } from "./doc-chrome/ImportTemplateDialog";
 import { FindReplaceBar } from "./doc/find";
 import {
@@ -100,6 +101,7 @@ export function DocumentEditor({
   meetingNoteTemplateAction = null,
   rail,
   onContainerWideChange,
+  notebookConversion = null,
 }: {
   pageId: string;
   initialTitle: string;
@@ -164,6 +166,9 @@ export function DocumentEditor({
   // to know too (narrow canvases answer a live recording with a Popover
   // instead of toggling the rail).
   onContainerWideChange?: (wide: boolean) => void;
+  // Set when this plain document can become a notebook's first tab; the ⋯ menu
+  // then offers "Convert to notebook", filed in the folder the document is in.
+  notebookConversion?: { parentPageId: string | null } | null;
 }) {
   const revalidator = useRevalidator();
   const navigate = useNavigate();
@@ -420,6 +425,30 @@ export function DocumentEditor({
     if (!res.ok) return;
     const { id } = (await res.json()) as { id: string };
     navigate(`/documents/${id}`);
+  }
+
+  async function convertToNotebook() {
+    setMoreMenuOpen(false);
+    const title = titleRef.current?.textContent?.trim() || initialTitle;
+    const created = await sendJson<{ id: string }>(
+      createNotebookRequest({
+        title,
+        workspaceType: workspaceType,
+        workspaceId: workspaceId ?? null,
+        parentPageId: notebookConversion?.parentPageId ?? null,
+      }),
+    );
+    if (!created.ok || !created.data) {
+      toast.error(created.error ?? "Couldn't create the notebook");
+      return;
+    }
+    const added = await sendJson(notebookRequest(created.data.id, { intent: "add-page", pageId }));
+    if (!added.ok) {
+      toast.error(added.error ?? "Couldn't add this document to the notebook");
+      void fetch(`/api/documents/${created.data.id}?ifEmpty=1`, { method: "DELETE", credentials: "include" });
+      return;
+    }
+    navigate(`/documents/${created.data.id}`);
   }
 
   async function toggleTemplate() {
@@ -751,6 +780,16 @@ export function DocumentEditor({
               >
                 <FolderInput className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 Move to…
+              </button>
+            )}
+            {notebookConversion && (
+              <button
+                type="button"
+                onClick={() => void convertToNotebook()}
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
+              >
+                <BookOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                Convert to notebook
               </button>
             )}
             {canEdit && (

@@ -2,27 +2,17 @@
 // so it can be unit-tested and reused. The UI (hook + component) lives in
 // MeetingNoteFields.tsx and re-exports these.
 //
-// The single question is "what is this meeting about?":
-//   • a project → project meeting; sub-type Team (default), Partner, or Other
-//     with an organizer-typed name. Team/Partner notes are filed in the
-//     project's meeting-notes folders; Other notes at the project's top level
-//     (server-side).
-//   • General   → no project; needs a short name, and the note can be filed at any
-//     Drive location the organizer can write to (default: Lab-wide).
-// Team/Partner require a project, so "Team + no project" is unreachable.
-//
-// A Core meeting is a third shape of the same "General" case: Core isn't a
-// project, so a project-less Core note files in Core's own folder and draws no
-// Team/Partner distinction — the picker shows "Core" for the empty answer.
-// A Core meeting may also be about a project, in which case its note is an
-// ordinary project note filed in the project — see the `core` prop on
-// MeetingNoteFields. Either way this pure model is unchanged: `about` is "" or a
-// projectId, and whether "" means General or Core is decided server-side by the
-// meeting's isCoreMeeting flag.
+// Two questions. "What is this meeting about?" is `about`: "" or a projectId.
+// Whether "" means General or Core is decided server-side by the meeting's
+// isCoreMeeting flag, and `about` still picks the default location of a new
+// notebook. "Which notebook?" is the notebook choice: an existing one, or a new
+// one with a name, an optional location and an optional template. The server
+// derives the legacy meeting type from the choice.
 
 import type { Destination } from "~/components/drive/FolderPicker";
 import { resolveMoveTarget } from "~/components/drive/move-target";
 import type { PickerRows } from "~/components/drive/picker-rows";
+import type { NotebookChoice } from "~/lib/notebook-choice";
 
 export type MeetingNoteLocation = {
   workspaceType: "Lab" | "Project";
@@ -31,41 +21,43 @@ export type MeetingNoteLocation = {
   label: string;
 };
 
+export type ExistingNotebook = { id: string; title: string; path: string };
+
 export type MeetingNoteState = {
   /** Create a shared note doc for this meeting. */
   enabled: boolean;
-  /** Create a shared whiteboard for this meeting (files alongside the note, uses
-   *  the same About/type). Independent of `enabled` — a meeting can have either,
-   *  both, or neither. */
+  /** Create a shared whiteboard for this meeting (files by About, and in the
+   *  chosen folder for a General meeting). Independent of `enabled`: a meeting
+   *  can have either, both, or neither. */
   whiteboard: boolean;
   /** "" = General (no project); otherwise a projectId. */
   about: string;
-  /** Only meaningful when `about` is a project. */
-  subtype: "Team" | "Partner" | "Other";
-  /** General or project-"Other" meeting name (persisted as meetingTypeLabel). */
-  label: string;
-  /** General destination; null → Lab-wide top level (the default/fallback). */
+  notebookMode: "existing" | "new";
+  /** The notebook picked in "Add to existing" mode. */
+  existing: ExistingNotebook | null;
+  /** The new notebook's name. */
+  title: string;
+  /** True once the organizer typed a name, which stops the meeting-title prefill. */
+  titleEdited: boolean;
+  /** New notebook location; null files it where About says (Lab-wide, Core, or the project). */
   location: MeetingNoteLocation | null;
+  /** New notebook template; null uses the project or lab default. */
+  templatePageId: string | null;
 };
 
-/** Default name for a Core meeting's note. Core notes take the General path
- *  (meetingType "Other"), which needs a label, so this keeps the field valid
- *  from the moment the Core toggle goes on. */
-export const CORE_NOTE_LABEL = "Core meeting";
-
-/** Where a Core meeting's assets are filed, for the read-only destination row.
- *  Mirrors ensureCoreMeetingNotesFolder's placement (the Core drive's "Meeting
- *  assets" folder) — the server does the actual filing, so no location is ever
- *  sent. */
+/** Where a Core meeting's notes are filed by default, for the location row. */
 export const CORE_NOTE_FOLDER_LABEL = "Core / Meeting assets";
 
 export const emptyMeetingNote: MeetingNoteState = {
   enabled: false,
   whiteboard: false,
   about: "",
-  subtype: "Team",
-  label: "",
+  notebookMode: "new",
+  existing: null,
+  title: "",
+  titleEdited: false,
   location: null,
+  templatePageId: null,
 };
 
 /** Whether at least one asset (note or whiteboard) is requested. */
@@ -75,39 +67,43 @@ export function meetingNoteActive(s: MeetingNoteState): boolean {
 
 /** Whether the shared meeting-asset fields are complete enough to submit. */
 export function meetingNoteValid(s: MeetingNoteState): boolean {
-  if (!meetingNoteActive(s)) return true;
-  if (s.about === "" || s.subtype === "Other") return s.label.trim().length > 0;
-  return true;
+  if (!s.enabled) return true;
+  return s.notebookMode === "existing" ? s.existing !== null : s.title.trim().length > 0;
+}
+
+function isLabTop(l: MeetingNoteLocation): boolean {
+  return l.workspaceType === "Lab" && l.parentPageId === null;
+}
+
+function locationPayload(l: MeetingNoteLocation) {
+  return { workspaceType: l.workspaceType, workspaceId: l.workspaceId, parentPageId: l.parentPageId };
+}
+
+/** The notebook the note files into, as the create payloads carry it. A
+ *  Lab-wide top-level location is the default, so it is left out. */
+export function notebookChoiceOf(s: MeetingNoteState): NotebookChoice | null {
+  if (!s.enabled) return null;
+  if (s.notebookMode === "existing") return s.existing ? { existingId: s.existing.id } : null;
+  return {
+    title: s.title.trim(),
+    location: s.location && !isLabTop(s.location) ? locationPayload(s.location) : null,
+    templatePageId: s.templatePageId,
+  };
 }
 
 /** The meeting-asset fields to merge into the /api/scheduled-meetings payload.
- *  When either asset is requested, sends the derived meetingType/project plus the
- *  `note`/`whiteboard` flags telling the server which artifacts to create. */
+ *  Sends the `note`/`whiteboard` flags telling the server which artifacts to
+ *  create, the project the meeting is about, and the notebook choice. A
+ *  whiteboard without a note has no notebook, so a General meeting's chosen
+ *  folder rides as `noteLocation`. */
 export function meetingNotePayload(s: MeetingNoteState): Record<string, unknown> {
   if (!meetingNoteActive(s)) return {};
   const out: Record<string, unknown> = { note: s.enabled, whiteboard: s.whiteboard };
-  if (s.about !== "") {
-    if (s.subtype === "Other") {
-      out.meetingType = "Other";
-      out.meetingTypeLabel = s.label.trim();
-      out.projectId = s.about;
-    } else {
-      out.meetingType = s.subtype;
-      out.projectId = s.about;
-    }
-    return out;
-  }
-  out.meetingType = "Other";
-  out.meetingTypeLabel = s.label.trim();
-  // Only send a location when it deviates from the Lab-wide default — an omitted
-  // noteLocation lets the server file the assets at the default folder (identical
-  // result).
-  if (s.location && !(s.location.workspaceType === "Lab" && s.location.parentPageId === null)) {
-    out.noteLocation = {
-      workspaceType: s.location.workspaceType,
-      workspaceId: s.location.workspaceId,
-      parentPageId: s.location.parentPageId,
-    };
+  if (s.about !== "") out.projectId = s.about;
+  const notebook = notebookChoiceOf(s);
+  if (notebook) out.notebook = notebook;
+  if (!s.enabled && s.about === "" && s.location && !isLabTop(s.location)) {
+    out.noteLocation = locationPayload(s.location);
   }
   return out;
 }
