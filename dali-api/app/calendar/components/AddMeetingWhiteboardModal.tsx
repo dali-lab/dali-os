@@ -176,17 +176,13 @@ function AddMeetingWhiteboardModal({
               : "Starts a shared whiteboard canvas linked to this meeting."}
           </p>
           {!hasType && (
-            // MeetingNoteFields indents its rows for the create form's toggle; a
-            // negative left margin pulls them back flush inside this modal.
-            <div className="-ml-6">
-              <MeetingNoteFields
-                note={note}
-                myProjects={myProjects}
-                fieldClass={fieldClass}
-                labelClass={labelClass}
-                core={isCoreMeeting}
-              />
-            </div>
+            <MeetingNoteFields
+              note={note}
+              surface="whiteboard"
+              myProjects={myProjects}
+              fieldClass={fieldClass}
+              labelClass={labelClass}
+            />
           )}
           {fetcher.data?.error && <p className="text-sm text-red-600">{fetcher.data.error}</p>}
         </div>

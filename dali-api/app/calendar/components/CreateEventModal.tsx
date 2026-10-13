@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useFetcher, useRevalidator } from "react-router";
 import { AlignLeft, CalendarDays, Clock, MapPin, Repeat, UsersRound, Video, X } from "lucide-react";
 import { cn } from "~/lib/cn";
@@ -183,19 +183,13 @@ export function CreateEventModal({
   const hasGuests = selectedUserIds.length > 0 || selectedGroupIds.length > 0 || guestEmails.length > 0;
   const type = hasGuests ? "Meeting" : "Event";
 
-  // ── Core meeting ─────────────────────────────────────────────────────────
-  // Core-only marker that flags the meeting as Core's without touching its
-  // guest list. Inviting the Core group implies it.
-  const coreSelected = selectedGroupIds.some((gid) => groupsById.get(gid)?.systemKey === "core");
-  const [coreMeeting, setCoreMeeting] = useState(false);
-  useEffect(() => {
-    if (coreSelected) setCoreMeeting(true);
-  }, [coreSelected]);
-  const isCoreMeeting = coreSelected || (data.canMarkCoreMeeting && coreMeeting);
-
   // ── Meeting note fields (only shown in Meeting mode) ─────────────────────
-  // Derive-type-from-project model; see MeetingNoteFields.
   const note = useMeetingNote();
+  const filingSuggestions = useMemo(
+    () => ({ attendeeIds: resolvedParticipantIds, groups: data.groups }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [resolvedParticipantIds.join("\0"), data.groups],
+  );
 
   // Prefill "About" when exactly one invited group is a project group — a default
   // the sender can still change; it never enables the note on its own. A Core
@@ -378,9 +372,6 @@ export function CreateEventModal({
       if (rrule) payload.recurrenceRule = rrule;
       if (canAddMeet && addMeet) payload.addMeet = true;
       Object.assign(payload, meetingNotePayload(note.state));
-      if (isCoreMeeting) {
-        payload.isCoreMeeting = true;
-      }
       if (guestEmails.length > 0) payload.guestEmails = guestEmails;
       if (selectedGroupIds.length === 1 && selectedUserIds.length === 0) {
         payload.scopeType = "Group";
@@ -930,52 +921,16 @@ export function CreateEventModal({
                 />
               </div>
 
-              {/* Core meeting (Core only) */}
-              {data.canMarkCoreMeeting && (
-                <div className="rounded-md border border-border bg-muted/20 p-3">
-                  <Toggle
-                    checked={coreSelected || coreMeeting}
-                    disabled={coreSelected}
-                    onChange={(e) => setCoreMeeting(e.target.checked)}
-                    label="Core meeting"
-                    description={
-                      coreSelected
-                        ? "The Core group is invited, so this is already a Core meeting."
-                        : "Marks this as a Core meeting. Doesn't change who's invited."
-                    }
-                  />
-                </div>
-              )}
-
-              {/* Meeting assets: a note doc and/or a whiteboard, sharing the
-                  same About/type. The fields appear once either is enabled. */}
               <div className="rounded-md border border-border bg-muted/20 p-3">
-                <Toggle
-                  checked={note.state.enabled}
-                  onChange={(e) => note.setEnabled(e.target.checked)}
-                  label="Create meeting note"
-                  description="Starts a shared note doc linked to this meeting."
+                <MeetingNoteFields
+                  note={note}
+                  surface="create"
+                  myProjects={data.myProjects}
+                  fieldClass={fieldClass}
+                  labelClass={labelClass}
+                  meetingTitle={title}
+                  suggest={filingSuggestions}
                 />
-                <div className="mt-3">
-                  <Toggle
-                    checked={note.state.whiteboard}
-                    onChange={(e) => note.setWhiteboard(e.target.checked)}
-                    label="Create whiteboard"
-                    description="Starts a shared whiteboard canvas linked to this meeting."
-                  />
-                </div>
-                {(note.state.enabled || note.state.whiteboard) && (
-                  <div className="mt-3 pt-1">
-                    <MeetingNoteFields
-                      note={note}
-                      myProjects={data.myProjects}
-                      fieldClass={fieldClass}
-                      labelClass={labelClass}
-                      core={isCoreMeeting}
-                      meetingTitle={title}
-                    />
-                  </div>
-                )}
               </div>
 
               {/* Timesheet — a repeating meeting logs its first occurrence. */}
