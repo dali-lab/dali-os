@@ -25,6 +25,7 @@ import type { ReactNode } from "react";
 import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
+import { receiversEnabled } from "~/lib/drive-receivers.server";
 import { resolveTermFilter } from "~/lib/terms";
 import { TermFilter } from "~/components/TermFilter";
 import { prisma } from "~/lib/db";
@@ -255,6 +256,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     selectedTerm: termFilter.selected,
     canViewForms: userCanViewForms,
     canManageAgreements: userCanManageAgreements,
+    receiversEnabled: await receiversEnabled(request),
     // My Drive is the Member workspace keyed by the viewer's own id — the
     // cross-drive move needs it to name the source workspace it's leaving.
     viewerId: auth.user.sub,
@@ -1137,6 +1139,7 @@ export default function DriveHub() {
     selectedTerm,
     canViewForms,
     canManageAgreements,
+    receiversEnabled: receiversOn,
     viewerId,
   } = useLoaderData() as LoaderData;
   const [searchParams, setSearchParams] = useSearchParams();
@@ -2034,6 +2037,7 @@ export default function DriveHub() {
           </>
         }
         tagFilter={tagFilter}
+        receiverViewer={receiversOn ? { isCore: canManageAgreements, isProjectMember: true } : undefined}
       />
 
       {/* Hidden upload input (driven by the New menu) + template picker modal */}

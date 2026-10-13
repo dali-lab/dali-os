@@ -185,16 +185,22 @@ export async function createNotebookTab(input: {
 }
 
 /**
- * Re-file an existing note page as a tab of `notebookId`. Sharing that only
- * makes sense where the note used to live is reset, as on any move. The
- * notebook it left is trashed if that emptied it.
+ * Re-file an existing page as a tab of `notebookId`, after the tabs already
+ * there. Sharing that only makes sense where the page used to live is reset, as
+ * on any move; the meeting link (meetingNoteId) is left alone. The notebook it
+ * left is trashed if that emptied it.
  */
 export async function moveIntoNotebook(pageId: string, notebookId: string, title?: string): Promise<void> {
-  const [placement, page] = await Promise.all([
+  const [placement, page, last] = await Promise.all([
     notebookTabPlacement(notebookId),
     prisma.page.findUniqueOrThrow({
       where: { id: pageId },
-      select: { parentPageId: true, workspaceType: true, workspaceId: true, parent: { select: { notebookKey: true } } },
+      select: { parentPageId: true, workspaceType: true, workspaceId: true, parent: { select: { kind: true } } },
+    }),
+    prisma.page.findFirst({
+      where: { parentPageId: notebookId, archivedAt: null },
+      orderBy: { position: "desc" },
+      select: { position: true },
     }),
   ]);
   if (page.parentPageId === notebookId) return;
@@ -205,11 +211,15 @@ export async function moveIntoNotebook(pageId: string, notebookId: string, title
     data: {
       ...placement,
       ...(title ? { title } : {}),
+      position: last ? last.position + 1 : 0,
       pinnedAt: null,
       ...(sameWorkspace ? {} : { partnerVisible: false, publicVisible: false }),
+      ...(page.workspaceType === "Member"
+        ? { profileVisible: false, labListing: "None" as const, labListingNote: null }
+        : {}),
     },
   });
-  if (page.parentPageId && page.parent?.notebookKey) {
+  if (page.parentPageId && page.parent?.kind === "Notebook") {
     const left = await prisma.page.count({ where: { parentPageId: page.parentPageId, archivedAt: null } });
     if (left === 0) {
       await prisma.page.update({ where: { id: page.parentPageId }, data: { archivedAt: new Date() } });

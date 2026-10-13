@@ -14,6 +14,7 @@ import {
 import { Select, Menu, Popover, InfoTip } from "~/components/ui/floating";
 import { CalendarDays, CalendarPlus, CalendarX, Check, Globe, Handshake, History, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink, MoreHorizontal, ExternalLink, Star, Mail, Github, Slack, Layers, Figma } from "lucide-react";
 import { DriveFolderBindings } from "~/components/drive/DriveFolderBindings";
+import { DriveReceivers } from "~/components/drive/DriveReceivers";
 import { useOsChrome } from "~/components/os-chrome";
 import { DomainChips } from "~/components/DomainChips";
 import { ChartStringPanel } from "~/projects/components/ChartStringPanel";
@@ -531,7 +532,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // ensureMeetingNotesFolder must complete before pageRows (creates the system
   // folders that pageRows needs to return), so run them first then fan out.
   // With receivers on nothing auto-creates a folder, so the backfill stops.
-  if (!(await receiversEnabled(request))) {
+  const receiversOn = await receiversEnabled(request);
+  if (!receiversOn) {
     await Promise.all([
       ensureMeetingNotesFolder(project.id, "Team", auth.user.sub),
       ensureMeetingNotesFolder(project.id, "Partner", auth.user.sub),
@@ -1313,6 +1315,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     aiLineEnabled,
     canEdit,
     canEditScope,
+    receiversEnabled: receiversOn,
     canEditAssignmentLevel: core,
     canViewScope,
     hasActivePartner,
@@ -1792,6 +1795,7 @@ export default function ProjectDetail() {
     domainScopeGrid,
     canEdit,
     canEditScope,
+    receiversEnabled: receiversOn,
     canEditAssignmentLevel,
     canViewScope,
     hasActivePartner,
@@ -2064,7 +2068,12 @@ export default function ProjectDetail() {
             canEdit={canEditScope}
             actionError={actionError}
           />
-          {canEditScope && <DriveFolderBindings processType="Project" processId={project.id} />}
+          {canEditScope &&
+            (receiversOn ? (
+              <DriveReceivers processType="Project" processId={project.id} />
+            ) : (
+              <DriveFolderBindings processType="Project" processId={project.id} />
+            ))}
           {canEditScope && (
             <SaveAsTemplateSection projectId={project.id} projectName={project.name} />
           )}
@@ -2117,6 +2126,7 @@ export default function ProjectDetail() {
             projectDriveScope={projectDriveScope}
             canEdit={canEdit}
             hasActivePartner={hasActivePartner}
+            receiverViewer={receiversOn ? { isCore: canEditScope, isProjectMember: canEdit } : undefined}
           />
         )}
 
@@ -4537,11 +4547,13 @@ function ProjectDriveTab({
   projectDriveScope,
   canEdit,
   hasActivePartner,
+  receiverViewer,
 }: {
   projectId: string;
   projectDriveScope: DriveTreeScope;
   canEdit: boolean;
   hasActivePartner: boolean;
+  receiverViewer?: { isCore: boolean; isProjectMember: boolean };
 }) {
   const revalidator = useRevalidator();
   const navigate = useNavigate();
@@ -4969,6 +4981,7 @@ function ProjectDriveTab({
         embeddedScopeId={scopeId}
         onTogglePartnerVisible={canEdit ? togglePagePartnerVisible : undefined}
         hasActivePartner={hasActivePartner}
+        receiverViewer={receiverViewer}
       />
       <input
         ref={inputRef}
