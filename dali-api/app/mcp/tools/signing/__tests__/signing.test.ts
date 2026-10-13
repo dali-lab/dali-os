@@ -88,6 +88,11 @@ vi.mock("~/lib/db", () => ({
   },
 }));
 
+vi.mock("~/lib/drive-receivers.server", () => ({
+  singletonSlot: (processType: string, folderType: string) => ({ processType, processId: "core", folderType }),
+  resolveFilingFolder: vi.fn(async () => ({ folderId: null, viaReceiver: false })),
+}));
+
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, isCore: vi.fn() };
@@ -133,6 +138,7 @@ vi.mock("~/lib/display", () => ({
 
 // Imports after mocks.
 import { isCore } from "~/lib/roles";
+import { resolveFilingFolder } from "~/lib/drive-receivers.server";
 import { prisma } from "~/lib/db";
 import {
   listOutstandingBindings,
@@ -469,6 +475,32 @@ describe("manage_agreement", () => {
       }),
     );
     expect(result).toEqual({ documentId: "doc-new" });
+  });
+
+  it("files a new document via the Core Agreements slot", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    vi.mocked(resolveFilingFolder).mockResolvedValue({ folderId: "agreements-recv", viaReceiver: true });
+    mockPrisma.signingDocument.findUnique.mockResolvedValue(null);
+    mockPrisma.signingDocument.create.mockResolvedValue({ id: "doc-filed" });
+
+    await runManageAgreement(ctx(), { action: "create", name: "Filed" });
+
+    expect(resolveFilingFolder).toHaveBeenCalledWith(
+      { processType: "Core", processId: "core", folderType: "Agreements" },
+      "u1",
+    );
+    expect(mockPrisma.signingDocument.create.mock.calls[0]![0].data.folderPageId).toBe("agreements-recv");
+  });
+
+  it("still creates the document, unfiled, when the filing folder can't be resolved", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    vi.mocked(resolveFilingFolder).mockRejectedValue(new Error("db down"));
+    mockPrisma.signingDocument.findUnique.mockResolvedValue(null);
+    mockPrisma.signingDocument.create.mockResolvedValue({ id: "doc-unfiled" });
+
+    await runManageAgreement(ctx(), { action: "create", name: "Unfiled" });
+
+    expect(mockPrisma.signingDocument.create.mock.calls[0]![0].data.folderPageId).toBeNull();
   });
 
   it("creates a document with explicit kind/scope/audience/cadence", async () => {

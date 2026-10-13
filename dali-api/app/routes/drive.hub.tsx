@@ -25,7 +25,6 @@ import type { ReactNode } from "react";
 import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
-import { receiversEnabled } from "~/lib/drive-receivers.server";
 import { resolveTermFilter } from "~/lib/terms";
 import { TermFilter } from "~/components/TermFilter";
 import { prisma } from "~/lib/db";
@@ -266,7 +265,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     selectedTerm: termFilter.selected,
     canViewForms: userCanViewForms,
     canManageAgreements: userCanManageAgreements,
-    receiversEnabled: await receiversEnabled(request),
     homeEnabled,
     home: await homePromise,
     // My Drive is the Member workspace keyed by the viewer's own id — the
@@ -1154,7 +1152,6 @@ export default function DriveHub() {
     selectedTerm,
     canViewForms,
     canManageAgreements,
-    receiversEnabled: receiversOn,
     homeEnabled,
     home,
     viewerId,
@@ -2066,7 +2063,7 @@ export default function DriveHub() {
         }
         tagFilter={tagFilter}
         onTagClick={applyTag}
-        receiverViewer={receiversOn ? { isCore: canManageAgreements, isProjectMember: true } : undefined}
+        receiverViewer={{ isCore: canManageAgreements, isProjectMember: true }}
       />
 
       {/* Hidden upload input (driven by the New menu) + template picker modal */}

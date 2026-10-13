@@ -220,7 +220,7 @@ export type DriveBrowserProps = {
   /** Whether the project has an active partner relationship. Controls whether
    *  the partner-visibility toggle is shown in item menus. */
   hasActivePartner?: boolean;
-  /** Turns on "Folder settings…" (what a folder receives). Omitted while the `drive-receivers` flag is off. */
+  /** Turns on "Folder settings…" (what a folder receives). */
   receiverViewer?: { isCore: boolean; isProjectMember: boolean };
 };
 

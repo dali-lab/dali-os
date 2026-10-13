@@ -1,6 +1,5 @@
 import { prisma } from "~/lib/db";
 import type { PageKind } from "~/generated/prisma/client";
-import { ensureProcessFolder, CORE_PROCESS_ID, LAB_PROCESS_ID } from "~/lib/bindings.server";
 
 // Creates a Page in a project's workspace (the same Page model the project
 // Overview/PRD/Documents-block use). Appends after the current max position
@@ -106,9 +105,25 @@ export type MeetingNotebookDestination = {
   restricted?: boolean;
 };
 
+/** Create a notebook at the destination. Series find their notebook through `ScheduledMeeting.notebookId`. */
+export async function createMeetingNotebook(
+  input: { title: string; createdById: string; notebookKey?: string } & MeetingNotebookDestination,
+): Promise<{ id: string }> {
+  const fields = {
+    title: input.title,
+    createdById: input.createdById,
+    parentPageId: input.parentPageId,
+    notebookKey: input.notebookKey,
+    kind: "Notebook" as const,
+  };
+  return input.workspaceType === "Project" && input.workspaceId
+    ? createProjectPage({ projectId: input.workspaceId, ...fields })
+    : createLabMeetingPage({ ...fields, restricted: input.restricted });
+}
+
 /**
- * Find or create the notebook with this key (see meeting-notebook.ts for what
- * the key means). The destination only places a NEW notebook: an existing one
+ * Find or create the notebook with this key. Only the mentorship pair notebook
+ * still uses a key. The destination only places a NEW notebook: an existing one
  * stays wherever it has since been moved, and its notes follow it. A notebook
  * in the trash is retired from its key, so the next note starts a fresh one
  * rather than landing somewhere nobody can see.
@@ -128,22 +143,10 @@ export async function ensureMeetingNotebook(
     });
   }
 
-  const fields = {
-    title: input.title,
-    createdById: input.createdById,
-    parentPageId: input.parentPageId,
-    notebookKey: input.key,
-    kind: "Notebook" as const,
-  };
   try {
-    const page =
-      input.workspaceType === "Project" && input.workspaceId
-        ? await createProjectPage({ projectId: input.workspaceId, ...fields })
-        : await createLabMeetingPage({ ...fields, restricted: input.restricted });
+    const page = await createMeetingNotebook({ ...input, notebookKey: input.key });
     return { id: page.id, created: true };
   } catch (err) {
-    // Two notes for the same notebook created at once: the unique key lets one
-    // create it, and the other files into that one.
     const raced = await prisma.page.findUnique({
       where: { notebookKey: input.key },
       select: { id: true },
@@ -408,63 +411,6 @@ export async function ensureOfferingFormsFolder(
 }
 
 const OFFERING_FORMS_FOLDER_TITLE = "Forms";
-
-export type MeetingNotesFolderKind = "Team" | "Partner";
-
-// Idempotently ensures a project's default "Team meeting notes" / "Partner
-// meeting notes" folder exists, returning it. Backed by a ProcessFolderBinding
-// (Project / <projectId> / "meeting-notes-{team,partner}") — an ordinary,
-// editable folder swappable from the project settings, not a systemKey root.
-// Safe to call repeatedly (idempotent via the binding's unique key); cheap
-// enough to call from the Documents block loader so existing projects backfill
-// on first view.
-export async function ensureMeetingNotesFolder(
-  projectId: string,
-  kind: MeetingNotesFolderKind,
-  createdById: string,
-): Promise<{ id: string }> {
-  const purpose = kind === "Team" ? "meeting-notes-team" : "meeting-notes-partner";
-  const id = await ensureProcessFolder({
-    processType: "Project",
-    processId: projectId,
-    purpose,
-    createdById,
-  });
-  return { id };
-}
-
-/** Idempotently ensure Core's "Meeting notes" folder — the Core drive's own
- *  equivalent of a project's Team/Partner meeting-notes folders, so a Core
- *  meeting's note lands somewhere Core-only instead of loose in the Lab drive.
- *  Backed by a ProcessFolderBinding (Core / "meeting-notes"): an ordinary Lab
- *  folder shared with the Core group (scopeKind=Group, applied by
- *  ensureProcessFolder), which the Core drive space surfaces. Core can rename,
- *  move, or repoint it from settings. Nullable return kept for the caller's
- *  Lab-root fallback, though the binding path always yields a folder now. */
-export async function ensureCoreMeetingNotesFolder(createdById: string): Promise<string | null> {
-  return ensureProcessFolder({
-    processType: "Core",
-    processId: CORE_PROCESS_ID,
-    purpose: "meeting-notes",
-    createdById,
-  });
-}
-
-/** Idempotently ensure the Lab drive's own "Meeting notes" folder — the open
- *  counterpart of Core's, and the home for every meeting note that belongs to
- *  no project and isn't Core's. Those used to land loose at the Lab root, where
- *  a note titled just its date is effectively unfindable a week later.
- *  Backed by a ProcessFolderBinding (Lab / "meeting-notes"): an ordinary Lab
- *  folder on the communal shelf (no group scope — everyone in the lab can see
- *  and edit it), so it can be renamed, moved, or repointed like any other. */
-export async function ensureLabMeetingNotesFolder(createdById: string): Promise<string | null> {
-  return ensureProcessFolder({
-    processType: "Lab",
-    processId: LAB_PROCESS_ID,
-    purpose: "meeting-notes",
-    createdById,
-  });
-}
 
 // The page behind a project's public write-up — the body dali.website renders
 // under the showcase card. Created on demand from the Public view (not on

@@ -5311,11 +5311,8 @@ model Page {
   meetingNote            ScheduledMeeting? @relation("MeetingNotePage", fields: [meetingNoteId], references: [id])
   meetingOccurrenceStart DateTime?
 
-  // Set when this page is a meeting notebook: the one Drive document that
-  // holds a run of meeting notes, each note a child page shown as a side tab
-  // (Google Docs tabs). The key says which notes belong in it (see
-  // app/lib/meeting-notebook.ts) and makes find-or-create race safe. The
-  // notebook has no body of its own; opening it lands on a tab.
+  // Find-or-create key for the mentorship pair notebook, race safe. Meeting
+  // notebooks are found through ScheduledMeeting.notebookId and leave this null.
   notebookKey String? @unique
 
   // Typed folder columns. Plus a partial unique index, Page_process_folder_type_live,
@@ -5409,11 +5406,6 @@ model Page {
   // binding the same shared template.
   projectsUsingAsMeetingNoteTemplate Project[] @relation("ProjectMeetingNoteTemplate")
 
-  // Reverse of ProcessFolderBinding.folderPageId — the process folder-binding
-  // rows (project meeting-notes folder, offering Forms folder, Core Agreements
-  // folder, …) that point at this folder as their auto-file target.
-  processFolderBindings ProcessFolderBinding[] @relation("PageProcessBindings")
-
   createdById  String
   createdBy    User     @relation("PageCreatedBy", fields: [createdById], references: [id])
   lastEditedBy User?    @relation("PageLastEditedBy", fields: [lastEditedById], references: [id])
@@ -5456,36 +5448,6 @@ model PageLink {
 
   @@unique([fromPageId, toPageId])
   @@index([toPageId])
-}
-
-// A named, editable relation from a "process" (a project, an education offering,
-// a hiring cycle, or lab-wide Core governance) to a NORMAL Drive folder that
-// receives its auto-filed artifacts — e.g. a project's "Team meeting notes"
-// folder, an offering's "Forms" folder, or Core's "Agreements" folder. This
-// replaces the old `Page.systemKey` scaffolding: the folder is an ordinary Page
-// (renameable / movable / shareable / deletable), and the binding is what the
-// filing code and the settings UI read. Idempotency comes from the unique key,
-// not systemKey. `folderPageId` is nullable + onDelete SetNull so deleting the
-// folder simply clears the binding (settings then offers to rebind/recreate).
-model ProcessFolderBinding {
-  id           String      @id @default(cuid())
-  processType  ProcessType
-  // The owning process's id. For singleton scopes (Core / lab-wide governance)
-  // this is the constant "core" (there is exactly one) — kept non-null so the
-  // unique key below dedupes reliably (Postgres treats NULLs as distinct).
-  processId    String
-  // Stable slot key the filing code and settings UI look up by, e.g.
-  // "meeting-notes-team", "meeting-notes-partner", "forms", "agreements",
-  // "email-templates", "rubrics", "application-templates".
-  purpose      String
-  folderPageId String?
-  folderPage   Page?       @relation("PageProcessBindings", fields: [folderPageId], references: [id], onDelete: SetNull)
-  createdById  String
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
-
-  @@unique([processType, processId, purpose])
-  @@index([folderPageId])
 }
 
 enum ProcessType {

@@ -11,8 +11,7 @@ import { resolveAdminScope } from "~/signing/lib/scope.server";
 import { applyAdminSignatures } from "~/signing/lib/presign.server";
 import { notifySignRequest } from "~/signing/lib/notify.server";
 import { SCOPES, AUDIENCES, CADENCES } from "~/signing/lib/document-config";
-import { ensureProcessFolder, CORE_PROCESS_ID } from "~/lib/bindings.server";
-import { filingFolderOr, singletonSlot } from "~/lib/drive-receivers.server";
+import { resolveFilingFolder, singletonSlot } from "~/lib/drive-receivers.server";
 import {
   requireForAction,
   McpNotFoundError,
@@ -165,14 +164,7 @@ export async function runManageAgreement(ctx: McpCtx, args: Args) {
     const cadence = args.cadence as SigningCadence;
 
     const resolvedAudience = AUDIENCES.includes(audience) ? audience : "Manual";
-    const folderPageId = await filingFolderOr(singletonSlot("Core", "Agreements"), ctx.user.id, () =>
-      ensureProcessFolder({
-        processType: "Core",
-        processId: CORE_PROCESS_ID,
-        purpose: "agreements",
-        createdById: ctx.user.id,
-      }),
-    ).catch(() => null);
+    const folderPageId = await resolveFilingFolder(singletonSlot("Core", "Agreements"), ctx.user.id).then((r) => r.folderId, () => null);
     const doc = await prisma.signingDocument.create({
       data: {
         name,

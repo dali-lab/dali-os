@@ -13,7 +13,6 @@ import {
 } from "react-router";
 import { Select, Menu, Popover, InfoTip } from "~/components/ui/floating";
 import { CalendarDays, CalendarPlus, CalendarX, Check, Globe, Handshake, History, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink, MoreHorizontal, ExternalLink, Star, Mail, Github, Slack, Layers, Figma } from "lucide-react";
-import { DriveFolderBindings } from "~/components/drive/DriveFolderBindings";
 import { DriveReceivers } from "~/components/drive/DriveReceivers";
 import { useOsChrome } from "~/components/os-chrome";
 import { DomainChips } from "~/components/DomainChips";
@@ -57,8 +56,6 @@ import { buildInfraConfigUpdate } from "~/lib/infra/project-infra.server";
 import { listProjectInfraRequests } from "~/lib/infra/requests.server";
 import { ProjectInfraSection } from "~/projects/components/ProjectInfraSection";
 import { ensureProjectGroup } from "~/lib/groups";
-import { ensureMeetingNotesFolder } from "~/lib/pages";
-import { receiversEnabled } from "~/lib/drive-receivers.server";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { formatDateShort, formatDateTime, fullName, UNKNOWN_LABEL } from "~/lib/display";
@@ -531,17 +528,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   ]);
 
   // ── Stage 2: everything that depends on the project row ──────────────────────
-  // ensureMeetingNotesFolder must complete before pageRows (creates the system
-  // folders that pageRows needs to return), so run them first then fan out.
-  // With receivers on nothing auto-creates a folder, so the backfill stops.
-  const receiversOn = await receiversEnabled(request);
-  if (!receiversOn) {
-    await Promise.all([
-      ensureMeetingNotesFolder(project.id, "Team", auth.user.sub),
-      ensureMeetingNotesFolder(project.id, "Partner", auth.user.sub),
-    ]);
-  }
-
   const [
     pageRows,
     fileRows,
@@ -1317,7 +1303,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     aiLineEnabled,
     canEdit,
     canEditScope,
-    receiversEnabled: receiversOn,
     canEditAssignmentLevel: core,
     canViewScope,
     hasActivePartner,
@@ -1797,7 +1782,6 @@ export default function ProjectDetail() {
     domainScopeGrid,
     canEdit,
     canEditScope,
-    receiversEnabled: receiversOn,
     canEditAssignmentLevel,
     canViewScope,
     hasActivePartner,
@@ -2070,12 +2054,7 @@ export default function ProjectDetail() {
             canEdit={canEditScope}
             actionError={actionError}
           />
-          {canEditScope &&
-            (receiversOn ? (
-              <DriveReceivers processType="Project" processId={project.id} />
-            ) : (
-              <DriveFolderBindings processType="Project" processId={project.id} />
-            ))}
+          {canEditScope && <DriveReceivers processType="Project" processId={project.id} />}
           {canEditScope && (
             <SaveAsTemplateSection projectId={project.id} projectName={project.name} />
           )}
@@ -2128,7 +2107,7 @@ export default function ProjectDetail() {
             projectDriveScope={projectDriveScope}
             canEdit={canEdit}
             hasActivePartner={hasActivePartner}
-            receiverViewer={receiversOn ? { isCore: canEditScope, isProjectMember: canEdit } : undefined}
+            receiverViewer={{ isCore: canEditScope, isProjectMember: canEdit }}
           />
         )}
 

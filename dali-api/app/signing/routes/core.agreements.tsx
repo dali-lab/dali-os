@@ -14,8 +14,7 @@ import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles, isCore } from "~/lib/roles";
 import { coreHandle } from "~/core/coreNav";
 import { logAuditEvent } from "~/lib/audit";
-import { ensureProcessFolder, CORE_PROCESS_ID } from "~/lib/bindings.server";
-import { filingFolderOr, singletonSlot } from "~/lib/drive-receivers.server";
+import { resolveFilingFolder, singletonSlot } from "~/lib/drive-receivers.server";
 import type {
   SigningGateScope,
   SigningAudience,
@@ -108,16 +107,7 @@ export async function action({ request }: Route.ActionArgs) {
     const audience = formData.get("audience") as SigningAudience;
     const cadence = formData.get("cadence") as SigningCadence;
 
-    // File the new agreement into the Core Agreements binding folder up front so
-    // its Drive breadcrumb resolves immediately. Best-effort — never block create.
-    const folderPageId = await filingFolderOr(singletonSlot("Core", "Agreements"), auth.user.sub, () =>
-      ensureProcessFolder({
-        processType: "Core",
-        processId: CORE_PROCESS_ID,
-        purpose: "agreements",
-        createdById: auth.user.sub,
-      }),
-    ).catch(() => null);
+    const folderPageId = await resolveFilingFolder(singletonSlot("Core", "Agreements"), auth.user.sub).then((r) => r.folderId, () => null);
     const doc = await prisma.signingDocument.create({
       data: {
         name,

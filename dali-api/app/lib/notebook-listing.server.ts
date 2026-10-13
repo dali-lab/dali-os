@@ -50,7 +50,7 @@ export async function listNotebooks(input: {
     where: { kind: "Notebook", archivedAt: null, ...(q ? { title: { contains: q, mode: "insensitive" } } : {}) },
     orderBy: { updatedAt: "desc" },
     take: MAX_SCANNED,
-    select: { ...PAGE_ACCESS_SELECT, title: true, notebookKey: true },
+    select: { ...PAGE_ACCESS_SELECT, title: true },
   });
   const access = await getPageAccessBulk(input.actorId, rows, input.request);
   const editable = rows.filter((r) => access.get(r.id)?.canEdit);
@@ -101,7 +101,6 @@ export async function listNotebooks(input: {
     const st = statsById.get(r.id);
     const dates = [st?._max.meetingOccurrenceStart, st?._max.createdAt].filter((d): d is Date => !!d);
     const keys = new Set(keysById.get(r.id) ?? []);
-    if (r.notebookKey) keys.add(r.notebookKey);
     return {
       id: r.id,
       title: r.title,

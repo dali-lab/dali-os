@@ -124,12 +124,6 @@ export const FEATURE_FLAGS = [
       "Help hours, socials and info sessions on a hiring cycle. Core creates events on the cycle page, emails everyone who started an application, and takes attendance by QR self check-in or by hand. Attendance shows on application reviews as an engagement signal. Ships off.",
   },
   {
-    key: "drive-receivers",
-    label: "Drive receiver folders",
-    description:
-      "Files everything the app creates on its own (hiring forms, application templates, agreements, education templates, certificate backgrounds, meeting notes) into a folder Core has marked to receive it, or at the top of the matching Drive space when none is marked, instead of into the auto-made subfolders used today. Turns off the automatic meeting folders on projects. Ships off.",
-  },
-  {
     key: "drive-home",
     label: "Drive Home",
     description:
