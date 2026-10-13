@@ -5,7 +5,7 @@ import {
   folderTintClass,
   pickGlyph,
   tabBadge,
-  type GlyphSource,
+  type PlainGlyphSource,
 } from "~/components/drive/glyphs";
 import type { AudienceKind } from "~/lib/page-audience";
 
@@ -34,8 +34,8 @@ describe("folderTintClass", () => {
 });
 
 describe("pickGlyph", () => {
-  const folder = (extra: Partial<GlyphSource> = {}): GlyphSource => ({ type: "folder", ...extra });
-  const doc = (extra: Partial<GlyphSource> = {}): GlyphSource => ({ type: "doc", ...extra });
+  const folder = (extra: Partial<PlainGlyphSource> = {}): PlainGlyphSource => ({ type: "folder", ...extra });
+  const doc = (extra: Partial<PlainGlyphSource> = {}): PlainGlyphSource => ({ type: "doc", ...extra });
 
   it("marks a Meetings folder with a calendar", () => {
     expect(pickGlyph(folder({ folderType: "Meetings" }))).toMatchObject({ kind: "folder", mark: "calendar" });
@@ -75,6 +75,24 @@ describe("pickGlyph", () => {
     for (const type of ["file", "form", "agreement", "rubric"] as const) {
       expect(pickGlyph({ type })).toEqual({ kind: type });
     }
+  });
+});
+
+describe("pickGlyph for a shortcut", () => {
+  it("wears the glyph of its target type", () => {
+    expect(pickGlyph({ type: "shortcut", targetType: "folder" })).toEqual({
+      kind: "shortcut",
+      target: { kind: "folder", tint: CORAL_FOLDER, mark: null },
+    });
+    expect(pickGlyph({ type: "shortcut", targetType: "doc" })).toEqual({ kind: "shortcut", target: { kind: "doc" } });
+    expect(pickGlyph({ type: "shortcut", targetType: "whiteboard" })).toEqual({
+      kind: "shortcut",
+      target: { kind: "whiteboard" },
+    });
+    expect(pickGlyph({ type: "shortcut", targetType: "notebook" })).toEqual({
+      kind: "shortcut",
+      target: { kind: "notebook", tabs: null },
+    });
   });
 });
 
