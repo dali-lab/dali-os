@@ -83,6 +83,14 @@ export type DriveItem =
       iconEmoji: string | null;
       updatedAt: Date;
       href: string;
+      /** "Shared with me" space only: who granted the viewer access. */
+      sharedBy?: { name: string } | null;
+      /** "Shared with me" space only: when the share was made. */
+      sharedAt?: Date;
+      /** "Shared with me" space only: the viewer reaches this page by a named share. */
+      sharedWithMe?: boolean;
+      /** "Shared with me" space only: the viewer granted a named share on this page. */
+      sharedByMe?: boolean;
       /** File size in bytes (files only; null elsewhere). Drives the Size column. */
       sizeBytes?: number | null;
       /** Whether the viewer has favorited this item (pages only). */
