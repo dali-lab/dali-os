@@ -93,7 +93,6 @@ export function AddMeetingNoteButton({
   meetingId,
   meetingTitle,
   occurrenceStart,
-  isCoreMeeting,
   actionPath,
   className,
 }: {
@@ -102,7 +101,8 @@ export function AddMeetingNoteButton({
   meetingTitle?: string;
   /** Which occurrence the first note is for (ISO); omitted = the first. */
   occurrenceStart?: string;
-  isCoreMeeting: boolean;
+  /** Callers that still pass it are ignored: where the note is filed decides Core. */
+  isCoreMeeting?: boolean;
   /** Route the action posts to; defaults to the current route. */
   actionPath?: string;
   className?: string;
@@ -118,7 +118,6 @@ export function AddMeetingNoteButton({
           meetingId={meetingId}
           meetingTitle={meetingTitle}
           occurrenceStart={occurrenceStart}
-          isCoreMeeting={isCoreMeeting}
           actionPath={actionPath}
           onClose={() => setOpen(false)}
         />
@@ -131,14 +130,12 @@ function AddMeetingNoteModal({
   meetingId,
   meetingTitle,
   occurrenceStart,
-  isCoreMeeting,
   actionPath,
   onClose,
 }: {
   meetingId: string;
   meetingTitle?: string;
   occurrenceStart?: string;
-  isCoreMeeting: boolean;
   actionPath?: string;
   onClose: () => void;
 }) {
@@ -156,9 +153,8 @@ function AddMeetingNoteModal({
   }, []);
 
   // Project list for the About picker — the same authorized set the create form
-  // feeds it (Lab-wide dropped; a Core note has no project to file under).
+  // feeds it (Lab-wide dropped).
   useEffect(() => {
-    if (isCoreMeeting) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -179,7 +175,7 @@ function AddMeetingNoteModal({
     return () => {
       cancelled = true;
     };
-  }, [isCoreMeeting]);
+  }, []);
 
   // Close only this modal on Escape — capture-phase + stopPropagation keeps the
   // key from reaching the popover's own Escape handler and closing that too.
@@ -255,19 +251,15 @@ function AddMeetingNoteModal({
           <p className="text-sm text-muted-foreground">
             Starts a shared note doc linked to this meeting.
           </p>
-          {/* MeetingNoteFields indents its rows for the create form's toggle; a
-              negative left margin pulls them back flush inside this modal. */}
-          <div className="-ml-6">
-            <MeetingNoteFields
-              note={note}
-              myProjects={myProjects}
-              fieldClass={fieldClass}
-              labelClass={labelClass}
-              core={isCoreMeeting}
-              meetingTitle={meetingTitle}
-              meetingId={meetingId}
-            />
-          </div>
+          <MeetingNoteFields
+            note={note}
+            surface="note"
+            myProjects={myProjects}
+            fieldClass={fieldClass}
+            labelClass={labelClass}
+            meetingTitle={meetingTitle}
+            meetingId={meetingId}
+          />
           {fetcher.data?.error && <p className="text-sm text-red-600">{fetcher.data.error}</p>}
         </div>
 

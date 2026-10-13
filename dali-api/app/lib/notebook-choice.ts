@@ -10,12 +10,16 @@ export const notebookLocationSchema = z
     message: "workspaceId must be set for Project and null for Lab",
   });
 
-export const existingNotebookSchema = z.object({ existingId: z.string().min(1) });
+export const existingNotebookSchema = z.object({
+  existingId: z.string().min(1),
+  links: notebookLocationSchema.array().max(8).optional(),
+});
 
 export const newNotebookSchema = z.object({
   title: z.string().trim().min(1).max(200),
   location: notebookLocationSchema.nullable().optional(),
   templatePageId: z.string().min(1).nullable().optional(),
+  links: notebookLocationSchema.array().max(8).optional(),
 });
 
 /** Which notebook a meeting's note files into: one that exists, or one to make. */
