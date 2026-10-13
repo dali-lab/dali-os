@@ -8,6 +8,8 @@ import { prisma } from "~/lib/db";
 import { requireAuth, isImpersonating } from "~/lib/auth";
 import { favoritePageIds } from "~/lib/user-pages.server";
 import { visibleDriveSpaces } from "~/lib/drive-spaces";
+import { getPageAccess } from "~/lib/pageAccess.server";
+import { ensureAllRoots, findAllRoots, type RootKey } from "~/lib/drive-roots.server";
 import type { RoleFlags } from "~/lib/nav-areas";
 
 // Tag each doc/folder item with whether the viewer has favorited it (drives the
@@ -27,8 +29,9 @@ export type DriveTreeScope = {
   iconEmoji: string | null;
   items: DriveItem[];
   /** DB parent that this scope's top level maps to. null for My Drive/Lab/
-   *  projects (top level = parentPageId null); set to the Core root folder id
-   *  for the Core drive, so creates/moves land inside the scoped folder. */
+   *  projects (top level = parentPageId null); set to the root folder id for
+   *  the process-root drives (Core, Hiring, Mentorship), so creates/moves land
+   *  inside the root. */
   rootFolderId?: string | null;
   /**
    * Signal ③: human-readable audience label for the space/folder scope chip
@@ -79,6 +82,28 @@ export function liftOrphans(items: DriveItem[]): DriveItem[] {
   );
 }
 
+const ROOT_AUDIENCE: Record<RootKey, string> = {
+  core: "Core only",
+  hiring: "Core only",
+  mentorship: "Mentors",
+};
+
+// Core members get any missing root created on first load, so the creator is
+// always someone the root's scope admits. Everyone else only sees roots that
+// already exist.
+async function resolveLiveRoots(userSub: string, isCore: boolean) {
+  const found = await findAllRoots();
+  const missing = (["core", "hiring", "mentorship"] as const).some((k) => !found.byKey[k]);
+  if (!isCore || !missing) return found;
+  try {
+    await ensureAllRoots(userSub);
+  } catch (err) {
+    console.error("Drive roots could not be ensured", err);
+    return found;
+  }
+  return findAllRoots();
+}
+
 type WorkspaceOut = {
   key: string;
   label: string;
@@ -89,9 +114,9 @@ type WorkspaceOut = {
 /**
  * Load all DriveScopes for the Browse lens. Registry-driven: iterates
  * `visibleDriveSpaces(roleFlags)` and dispatches on each space's backing
- * strategy. My Drive, General (Lab-wide), Projects, Education and Core each
- * materialise per their strategy. Hiring has no space of its own: its folder
- * set is Core-group-scoped, so it surfaces inside Core as an ordinary folder.
+ * strategy. My Drive, General (Lab-wide), Projects and Education materialise
+ * per their strategy; Core, Hiring and Mentorship are the contents of their
+ * root folder, shown only to viewers who can view that root.
  *
  * The form-placement de-dup rule is preserved:
  *   - A form with folderPageId in scope X stays only in scope X.
@@ -138,10 +163,6 @@ export async function loadDriveScopes({
   };
   const spaces = visibleDriveSpaces(roleFlags);
 
-  // The Core space is a virtual filter over Core-group-scoped folders (no
-  // system root any more). Only build it when the viewer can see it.
-  const needsCore = spaces.some((s) => s.key === "core");
-
   const [favIds, linkedProcessMap] = await Promise.all([
     favoritePageIds(userSub),
     // Signal ②: build process linkages once for the whole load (no per-row queries).
@@ -163,7 +184,7 @@ export async function loadDriveScopes({
   const hidePersonal = auth.ok && isImpersonating(auth);
 
   // Phase 1: load pages + files for every scope WITHOUT forms.
-  const [memberItems, labItems, ...projectItemArrays] = await Promise.all([
+  const [memberItems, labItems, liveRoots, ...projectItemArrays] = await Promise.all([
     hidePersonal
       ? Promise.resolve<DriveItem[]>([])
       : loadDriveScope({ userSub, scope: { kind: "Member" }, request }),
@@ -175,6 +196,7 @@ export async function loadDriveScopes({
       request,
       linkedProcessMap,
     }),
+    resolveLiveRoots(userSub, isCore),
     ...projectIds.map((projectId) =>
       loadDriveScope({
         userSub,
@@ -217,53 +239,79 @@ export async function loadDriveScopes({
     ]);
   }
 
-  // Carve the Core subtrees out of the Lab load. They're ordinary Lab folders
-  // shared with the Core group (scopeKind=Group), so a non-Core viewer never
-  // sees them in labItems — nothing leaks. Hiring's folders are Core-scoped
-  // too, so the Hiring set lands here as an ordinary folder rather than in a
-  // space of its own.
-  let coreItems: DriveItem[] = [];
-  let labVisibleItems = labItems;
-  let coreFolderIds = new Set<string>();
-  if (needsCore) {
+  // Carve every root's subtree out of the Lab load, whichever process owns it:
+  // a Mentorship root must never show as a folder in General, and a viewer who
+  // cannot open a root has no space for it either. The root itself is dropped
+  // and its children re-rooted to the space's top level.
+  const carved = new Set<string>();
+  const rootSpaceItems = new Map<RootKey, DriveItem[]>();
+  const visibleRootIds = new Map<RootKey, string>();
+  const rootFolderIdsByKey = new Map<RootKey, Set<string>>();
+  for (const rootId of liveRoots.ids) {
+    for (const id of subtreeIds(labItems, rootId)) carved.add(id);
+  }
+  const processSpaces = spaces.filter((s) => s.backing === "process-root" && s.rootKey);
+  await Promise.all(
+    processSpaces.map(async (space) => {
+      const key = space.rootKey!;
+      const rootId = liveRoots.byKey[key];
+      if (!rootId) return;
+      const access = await getPageAccess(userSub, rootId, request);
+      if (!access.canView) return;
+      visibleRootIds.set(key, rootId);
+      const inRoot = subtreeIds(labItems, rootId);
+      rootSpaceItems.set(
+        key,
+        labItems
+          .filter((it) => inRoot.has(it.id) && it.id !== rootId)
+          .map((it) => (it.parentFolderId === rootId ? { ...it, parentFolderId: null } : it)),
+      );
+      rootFolderIdsByKey.set(key, inRoot);
+    }),
+  );
+
+  // Until the reparent job has run, Core-scoped folders still sit at the Lab
+  // top level. Show them in Core too, so the space reads the same before and
+  // after the move.
+  if (isCore && visibleRootIds.has("core")) {
     const coreGroup = await prisma.groupDefinition.findUnique({
       where: { systemKey: "core" },
       select: { id: true },
     });
-    const coreRootIds = coreGroup
-      ? (
-          await prisma.page.findMany({
-            where: {
-              workspaceType: "Lab",
-              workspaceId: null,
-              scopeKind: "Group",
-              scopeGroupId: coreGroup.id,
-              archivedAt: null,
-            },
-            select: { id: true },
-          })
-        ).map((p) => p.id)
+    const legacyTops = coreGroup
+      ? await prisma.page.findMany({
+          where: {
+            workspaceType: "Lab",
+            workspaceId: null,
+            parentPageId: null,
+            scopeKind: "Group",
+            scopeGroupId: coreGroup.id,
+            archivedAt: null,
+          },
+          select: { id: true, folderType: true },
+        })
       : [];
-
-    const inCore = new Set<string>();
-    for (const rootId of coreRootIds) {
-      if (!labItems.some((it) => it.id === rootId)) continue;
-      inCore.add(rootId);
-      for (const id of subtreeIds(labItems, rootId)) inCore.add(id);
+    const legacyIds = new Set<string>();
+    for (const top of legacyTops) {
+      if (top.folderType === "Root" || carved.has(top.id)) continue;
+      if (!labItems.some((it) => it.id === top.id)) continue;
+      for (const id of subtreeIds(labItems, top.id)) legacyIds.add(id);
     }
-
-    if (inCore.size > 0) {
-      // A Core folder nested inside an unscoped Lab folder is carved out of the
-      // Lab space but lands here without its parent, so lift it to the top
-      // level rather than letting the browser drop it on the floor.
-      coreItems = liftOrphans(labItems.filter((it) => inCore.has(it.id)));
-      coreFolderIds = new Set(coreItems.filter((i) => i.type === "folder").map((i) => i.id));
-      labVisibleItems = labItems.filter((it) => !inCore.has(it.id));
+    if (legacyIds.size > 0) {
+      for (const id of legacyIds) carved.add(id);
+      const coreSet = rootFolderIdsByKey.get("core")!;
+      for (const id of legacyIds) coreSet.add(id);
+      rootSpaceItems.set("core", [
+        ...rootSpaceItems.get("core")!,
+        ...labItems.filter((it) => legacyIds.has(it.id)),
+      ]);
     }
   }
+  for (const [key, items] of rootSpaceItems) rootSpaceItems.set(key, liftOrphans(items));
+  const labVisibleBase = carved.size > 0 ? labItems.filter((it) => !carved.has(it.id)) : labItems;
 
   // Strip managed artifacts from the Lab scope (same as legacy).
-  labVisibleItems = labVisibleItems.filter(
+  const labVisibleItems = labVisibleBase.filter(
     (it) => it.type !== "agreement" && it.type !== "rubric",
   );
 
@@ -291,9 +339,18 @@ export async function loadDriveScopes({
     });
   }
 
-  // Core forms live inside its scoped folders and carry a real parentFolderId
-  // (in coreFolderIds), so no root-lift is needed.
-  const coreForms = pickScopeForms(coreFolderIds, false, isCore);
+  // A root's forms live inside its folders, or sit on the root itself (the
+  // filing rule points at the root), which is the space's top level.
+  const rootForms = new Map<RootKey, DriveItem[]>();
+  for (const [key, folderIds] of rootFolderIdsByKey) {
+    const rootId = visibleRootIds.get(key)!;
+    rootForms.set(
+      key,
+      pickScopeForms(folderIds, false, isCore).map((f) =>
+        f.parentFolderId === rootId ? { ...f, parentFolderId: null } : f,
+      ),
+    );
+  }
   // Lab forms use the un-widened canViewForms gate (same as legacy).
   const labForms = pickScopeForms(labFolderIds, true, canViewForms);
   const projectForms = projectItemArrays.map((_, i) =>
@@ -305,7 +362,6 @@ export async function loadDriveScopes({
   );
 
   // Compose final item lists.
-  const finalCoreItems = [...coreItems, ...coreForms];
   const filteredLab = [...labVisibleItems, ...labForms, ...orphanForms];
   const filteredProjects = projectItemArrays.map((arr, i) => [...arr, ...projectForms[i]]);
   const filteredEducation = educationItemArrays.map((arr, i) => [...arr, ...educationForms[i]]);
@@ -335,20 +391,20 @@ export async function loadDriveScopes({
         });
         break;
 
-      case "virtual-filter":
-        // The Core space is a view over Core-group-scoped folders (no system
-        // root). Its top-level items are the Core-scoped folders themselves.
-        if (space.key === "core") {
-          result.push({
-            id: "core",
-            label: "Core",
-            iconEmoji: null,
-            items: tagFavorites(finalCoreItems, favIds),
-            // Only Core members can see this space.
-            scopeAudience: "Core only",
-          });
-        }
+      case "process-root": {
+        const key = space.rootKey!;
+        const rootId = visibleRootIds.get(key);
+        if (!rootId) break;
+        result.push({
+          id: space.key,
+          label: space.label,
+          iconEmoji: null,
+          items: tagFavorites([...(rootSpaceItems.get(key) ?? []), ...(rootForms.get(key) ?? [])], favIds),
+          rootFolderId: rootId,
+          scopeAudience: ROOT_AUDIENCE[key],
+        });
         break;
+      }
 
       case "workspace-multi":
         if (space.key === "projects" && projectIds.length > 0) {

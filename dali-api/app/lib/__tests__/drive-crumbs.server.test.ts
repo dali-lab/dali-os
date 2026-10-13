@@ -29,6 +29,69 @@ const TREE: Record<string, any> = {
     workspaceType: "Lab",
     archivedAt: null,
   },
+  // Real roots. Reparented folders keep their Core group scope, so the root
+  // (not the scope) has to decide which space they belong to.
+  "hiring-root": {
+    id: "hiring-root",
+    title: "Hiring",
+    iconEmoji: null,
+    parentPageId: null,
+    scopeKind: "Group",
+    scopeGroupId: "core-grp",
+    folderType: "Root",
+    processType: "HiringCycle",
+    processId: "hiring",
+    workspaceType: "Lab",
+    archivedAt: null,
+  },
+  "hiring-forms": {
+    id: "hiring-forms",
+    title: "Hiring Forms",
+    iconEmoji: null,
+    parentPageId: "hiring-root",
+    scopeKind: "Group",
+    scopeGroupId: "core-grp",
+    workspaceType: "Lab",
+    archivedAt: null,
+  },
+  "hiring-deep": { id: "hiring-deep", title: "2026", iconEmoji: null, parentPageId: "hiring-forms", workspaceType: "Lab", archivedAt: null },
+  "mentor-root": {
+    id: "mentor-root",
+    title: "Mentorship",
+    iconEmoji: null,
+    parentPageId: null,
+    scopeKind: "Group",
+    scopeGroupId: "mentors-grp",
+    folderType: "Root",
+    processType: "Mentorship",
+    processId: "mentorship",
+    workspaceType: "Lab",
+    archivedAt: null,
+  },
+  "mentor-notes": { id: "mentor-notes", title: "Notes", iconEmoji: null, parentPageId: "mentor-root", workspaceType: "Lab", archivedAt: null },
+  "core-real-root": {
+    id: "core-real-root",
+    title: "Core",
+    iconEmoji: null,
+    parentPageId: null,
+    scopeKind: "Group",
+    scopeGroupId: "core-grp",
+    folderType: "Root",
+    processType: "Core",
+    processId: "core",
+    workspaceType: "Lab",
+    archivedAt: null,
+  },
+  "core-child": {
+    id: "core-child",
+    title: "Agreements",
+    iconEmoji: null,
+    parentPageId: "core-real-root",
+    scopeKind: "Group",
+    scopeGroupId: "core-grp",
+    workspaceType: "Lab",
+    archivedAt: null,
+  },
   // A plain Lab folder (no scope) directly under the Lab drive root.
   labfolder: {
     id: "labfolder",
@@ -152,5 +215,46 @@ describe("driveFolderCrumbs workspace scope", () => {
     expect(crumbs).toEqual({ scope: "lab", folders: [] });
     // Orphan collapse happens before any access resolution.
     expect(getPageAccess).not.toHaveBeenCalled();
+  });
+});
+
+describe("driveFolderCrumbs process roots", () => {
+  beforeEach(() => vi.mocked(getPageAccess).mockResolvedValue(grant as any));
+
+  it("resolves the hiring scope under the Hiring root and leaves the root out of the trail", async () => {
+    const crumbs = await driveFolderCrumbs("hiring-deep", "core-member");
+    expect(crumbs.scope).toBe("hiring");
+    expect(crumbs.folders).toEqual([
+      { id: "hiring-forms", title: "Hiring Forms", iconEmoji: null },
+      { id: "hiring-deep", title: "2026", iconEmoji: null },
+    ]);
+  });
+
+  it("lets the root win over a Core group scope on a reparented folder", async () => {
+    const crumbs = await driveFolderCrumbs("hiring-forms", "core-member");
+    expect(crumbs.scope).toBe("hiring");
+  });
+
+  it("resolves the core scope under the Core root without a Core crumb", async () => {
+    const crumbs = await driveFolderCrumbs("core-child", "core-member");
+    expect(crumbs.scope).toBe("core");
+    expect(crumbs.folders).toEqual([{ id: "core-child", title: "Agreements", iconEmoji: null }]);
+  });
+
+  it("resolves the mentorship scope", async () => {
+    const crumbs = await driveFolderCrumbs("mentor-notes", "mentor");
+    expect(crumbs.scope).toBe("mentorship");
+    expect(crumbs.folders).toEqual([{ id: "mentor-notes", title: "Notes", iconEmoji: null }]);
+  });
+
+  it("puts an item filed on the root itself in that space with no folders", async () => {
+    const crumbs = await driveFolderCrumbs("hiring-root", "core-member");
+    expect(crumbs).toEqual({ scope: "hiring", folders: [] });
+  });
+
+  it("collapses to the Lab drive for a viewer who cannot open the root", async () => {
+    vi.mocked(getPageAccess).mockResolvedValue(deny as any);
+    const crumbs = await driveFolderCrumbs("mentor-notes", "outsider");
+    expect(crumbs).toEqual({ scope: "lab", folders: [] });
   });
 });

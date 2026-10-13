@@ -19,6 +19,7 @@ import { canViewForms as checkCanViewForms } from "~/lib/roles";
 import { getPageAccess, getPageAccessBulk } from "~/lib/pageAccess.server";
 import { canEditFile } from "~/lib/fileAccess.server";
 import { DRIVE_PAGE_KINDS } from "~/lib/drive.server";
+import { isRoot, ROOT_DELETE_ERROR } from "~/lib/drive-roots";
 import { withCors, handlePreflight } from "~/lib/cors";
 
 // How many archived rows of each kind to look at before filtering, and how
@@ -251,6 +252,10 @@ export async function action({ request }: Route.ActionArgs) {
       // could never succeed for a doc or a folder.
       const access = await getPageAccess(userId, id, request, { includeArchived: true });
       if (!access.canEdit) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+      const target = await prisma.page.findUnique({ where: { id }, select: { folderType: true } });
+      if (target && isRoot(target)) {
+        return withCors(request, Response.json({ error: ROOT_DELETE_ERROR }, { status: 400 }));
+      }
       // A folder's children carry an onDelete: SetNull parent link, so a hard
       // delete would silently re-home everything inside it to the drive root.
       // Purge the contents first, or move them out.

@@ -212,6 +212,29 @@ describe("manage_drive_trash", () => {
     ).rejects.toMatchObject({ name: "ManageDriveTrashError", status: 403 });
   });
 
+  it("refuses to purge a Drive root", async () => {
+    vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canComment: true, canEdit: true } as never);
+    mockPrisma.page.findUnique.mockResolvedValue({ folderType: "Root" });
+
+    await expect(
+      runManageDriveTrash("u1", { action: "purge", type: "folder", id: "root1" }),
+    ).rejects.toMatchObject({
+      name: "ManageDriveTrashError",
+      status: 400,
+      message: "This is a Drive root and can't be deleted",
+    });
+    expect(mockPrisma.page.delete).not.toHaveBeenCalled();
+  });
+
+  it("purges a non-root folder", async () => {
+    vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canComment: true, canEdit: true } as never);
+    mockPrisma.page.findUnique.mockResolvedValue({ folderType: null });
+    mockPrisma.page.delete.mockResolvedValue({ id: "f1" });
+
+    expect(await runManageDriveTrash("u1", { action: "purge", type: "folder", id: "f1" })).toEqual({ ok: true });
+    expect(mockPrisma.page.delete).toHaveBeenCalledWith({ where: { id: "f1" } });
+  });
+
   it("restores a form for a canViewForms caller", async () => {
     vi.mocked(canViewForms).mockResolvedValue(true);
     mockPrisma.form.findUnique.mockResolvedValue({ id: "frm1", archivedAt: new Date() });

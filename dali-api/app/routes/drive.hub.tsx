@@ -29,7 +29,6 @@ import { resolveTermFilter } from "~/lib/terms";
 import { TermFilter } from "~/components/TermFilter";
 import { prisma } from "~/lib/db";
 import { loadDriveScopes } from "~/lib/drive-scopes.server";
-import { getBoundFolderId, HIRING_PROCESS_ID } from "~/lib/bindings.server";
 import type { DriveTreeScope } from "~/lib/drive-scopes.server";
 import type { DriveItem } from "~/lib/drive.server";
 import { DriveBrowser } from "~/components/drive/DriveBrowser";
@@ -46,6 +45,7 @@ import { useToast } from "~/components/ui/toast";
 import { Menu, Select } from "~/components/ui/floating";
 import { Modal } from "~/components/Modal";
 import { cn } from "~/lib/cn";
+import { isProcessRootSpace } from "~/lib/drive-spaces";
 import { filterPillClass } from "~/components/ui/floating/styles";
 import { modalCardClass } from "~/components/os-chrome";
 
@@ -64,6 +64,8 @@ export const handle = {
     if (scope === "mine") return { key: "drive.mine", title: "My Drive" };
     if (scope === "lab") return { key: "drive.lab", title: "Lab-wide Drive" };
     if (scope === "core") return { key: "drive.core", title: "Core Drive" };
+    if (scope === "hiring") return { key: "drive.hiring", title: "Hiring Drive" };
+    if (scope === "mentorship") return { key: "drive.mentorship", title: "Mentorship Drive" };
     return { key: "drive.project", title: "Project Drive" };
   },
 };
@@ -111,20 +113,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return partnerRedirect;
 
-  // /hiring/library is this same hub, opened on the hiring folder set. Hiring
-  // is no longer a drive space of its own — its folders are Core-group-scoped,
-  // so they live inside Core — which means the embed needs the folder's id
-  // rather than a scope name. Resolved from the binding, so renaming or
-  // repointing the folder keeps the Library pointing at the right place.
-  // Depends only on the request's pathname, so it joins this first wave
-  // alongside the other two request-scoped, mutually independent lookups.
-  const isHiringLibrary = new URL(request.url).pathname.startsWith("/hiring/library");
-  const [roles, termFilter, hiringLibraryFolderId] = await Promise.all([
+  const [roles, termFilter] = await Promise.all([
     getUserRoles(auth.user.sub, request),
     resolveTermFilter(request),
-    isHiringLibrary
-      ? getBoundFolderId("HiringCycle", HIRING_PROCESS_ID, "hiring-forms")
-      : Promise.resolve(null),
   ]);
   // isCore is the gate for agreement authoring. Passed down as canManageAgreements
   // so drive.server.ts doesn't re-derive it (matches the canViewForms pattern).
@@ -264,7 +255,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     // My Drive is the Member workspace keyed by the viewer's own id — the
     // cross-drive move needs it to name the source workspace it's leaving.
     viewerId: auth.user.sub,
-    hiringLibraryFolderId,
   };
 }
 
@@ -494,7 +484,7 @@ type ScopeKind = "mine" | "lab" | "project" | "projects-group" | "education-grou
 // "projects" and "education" are the new synthetic parent scopes (flag ON).
 function scopeKindOf(id: string): ScopeKind {
   if (id === "mine") return "mine";
-  if (id === "lab" || id === "core") return "lab";
+  if (id === "lab" || isProcessRootSpace(id)) return "lab";
   if (id === "projects") return "projects-group";
   if (id === "education") return "education-group";
   return "project";
@@ -503,7 +493,8 @@ function scopeKindOf(id: string): ScopeKind {
 // Who can see items in a scope — shown in the cross-drive move confirmation so
 // the mover knows a move re-scopes visibility.
 function scopeAudience(scopeId: string): string {
-  if (scopeId === "core") return "Core only";
+  if (scopeId === "core" || scopeId === "hiring") return "Core only";
+  if (scopeId === "mentorship") return "mentors";
   if (scopeId === "lab") return "everyone in the lab";
   // Synthetic group scopes shouldn't appear in move dialogs, but guard anyway.
   if (scopeId === "projects") return "the project team";
@@ -1139,7 +1130,6 @@ export default function DriveHub() {
     canViewForms,
     canManageAgreements,
     viewerId,
-    hiringLibraryFolderId,
   } = useLoaderData() as LoaderData;
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -1173,14 +1163,12 @@ export default function DriveHub() {
   }, []);
 
   // Location + view state from the URL. No scope/folder = Drive root — except
-  // when this same hub is embedded at /hiring/library, where it opens straight
-  // on the hiring folder set, which now lives inside Core.
+  // when this same hub is embedded at /hiring/library, where it opens on the
+  // Hiring space.
   const location = useLocation();
   const isHiringLibrary = location.pathname.startsWith("/hiring/library");
-  // The Library opens inside Core, drilled into the bound hiring folder.
-  const currentScopeId = searchParams.get("scope") ?? (isHiringLibrary ? "core" : null);
-  const currentFolderId =
-    searchParams.get("folder") ?? (isHiringLibrary ? hiringLibraryFolderId : null);
+  const currentScopeId = searchParams.get("scope") ?? (isHiringLibrary ? "hiring" : null);
+  const currentFolderId = searchParams.get("folder");
   // In the URL like ?type= and ?term=, so "everything tagged onboarding" is a
   // link someone can send, and the back button steps through filters.
   const selectedTagIds = useMemo(
@@ -1721,7 +1709,7 @@ export default function DriveHub() {
   const uploadTarget: UploadTarget = useMemo(() => {
     if (!currentScope) return { scope: { kind: "Lab" } };
     if (currentScope.id === "mine") return { scope: { kind: "Member" }, folderPageId: currentFolderId };
-    if (currentScope.id === "lab" || currentScope.id === "core")
+    if (currentScope.id === "lab" || isProcessRootSpace(currentScope.id))
       return { scope: { kind: "Lab" }, folderPageId: currentFolderId ?? currentScope.rootFolderId ?? null };
     if (currentScope.id === "projects" || currentScope.id === "education") {
       // Resolve the workspace from the current folder. If we can't (e.g. at the

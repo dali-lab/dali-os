@@ -6,6 +6,7 @@ import { prisma } from "~/lib/db";
 import { isCore, isLabMember } from "~/lib/roles";
 import { createLabPage } from "~/lib/pages";
 import { duplicatePage } from "~/lib/page-copy.server";
+import { isRoot, ROOT_DELETE_ERROR } from "~/lib/drive-roots";
 
 // ─── list_lab_documents ───────────────────────────────────────────────────────
 
@@ -220,6 +221,7 @@ export async function runDeleteLabDocument(callerId: string, input: DeleteInput)
       workspaceId: true,
       archivedAt: true,
       createdById: true,
+      folderType: true,
     },
   });
 
@@ -229,6 +231,7 @@ export async function runDeleteLabDocument(callerId: string, input: DeleteInput)
   if (page.archivedAt !== null) {
     throw new LabDocumentError("Document is already archived", 400);
   }
+  if (isRoot(page)) throw new LabDocumentError(ROOT_DELETE_ERROR, 400);
 
   const core = await isCore(callerId);
   if (!core && page.createdById !== callerId) {

@@ -6,9 +6,11 @@
 // as `feature-flags.ts`).
 
 import {
+  Briefcase,
   FolderKanban,
   GraduationCap,
   HardDrive,
+  Heart,
   Shield,
   type LucideIcon,
 } from "lucide-react";
@@ -23,15 +25,20 @@ import type { RoleFlags } from "~/lib/nav-areas";
  * - `lab-open`         — lab-wide pages/files, top-level, no scoped-root carve-outs.
  * - `workspace-multi`  — one sub-space per workspace the viewer can access
  *                        (Projects / Education offerings).
- * - `virtual-filter`   — a view over existing items, no physical root. Core:
- *                        Core-group-scoped Lab folders. Partners (deferred):
- *                        pages where `partnerVisible=true`.
+ * - `process-root`      — the contents of a real root folder (`rootKey`), found
+ *                        by process type and id. Visible to whoever can view
+ *                        the root; the loader decides, not a role gate.
+ * - `virtual-filter`   — a view over existing items, no physical root.
+ *                        Partners (deferred): pages where `partnerVisible=true`.
  */
 export type DriveSpaceBacking =
   | "member"
   | "lab-open"
   | "workspace-multi"
+  | "process-root"
   | "virtual-filter";
+
+export type DriveRootKey = "core" | "hiring" | "mentorship";
 
 // ── Space definition ──────────────────────────────────────────────────────────
 
@@ -57,6 +64,8 @@ export type DriveSpaceDef = {
    * (e.g. `"core"`). Documents which group's scoped folders the space filters to.
    */
   groupQuery?: string;
+  /** For `process-root` spaces: which root folder backs the space. */
+  rootKey?: DriveRootKey;
 };
 
 // ── Registry ──────────────────────────────────────────────────────────────────
@@ -102,13 +111,22 @@ export const DRIVE_SPACES: DriveSpaceDef[] = [
     key: "core",
     label: "Core",
     icon: Shield,
-    // A view over Core-group-scoped folders (ordinary folders shared with the
-    // Core group), not a system-owned scoped root. Hiring's folder set is
-    // Core-group-scoped too, so it surfaces here as an ordinary "Hiring"
-    // folder rather than as a space of its own.
-    backing: "virtual-filter",
-    groupQuery: "core",
-    gate: (r) => r.isCore,
+    backing: "process-root",
+    rootKey: "core",
+  },
+  {
+    key: "hiring",
+    label: "Hiring",
+    icon: Briefcase,
+    backing: "process-root",
+    rootKey: "hiring",
+  },
+  {
+    key: "mentorship",
+    label: "Mentorship",
+    icon: Heart,
+    backing: "process-root",
+    rootKey: "mentorship",
   },
 ];
 
@@ -120,4 +138,9 @@ export const DRIVE_SPACES: DriveSpaceDef[] = [
  */
 export function visibleDriveSpaces(r: RoleFlags): DriveSpaceDef[] {
   return DRIVE_SPACES.filter((s) => !s.gate || s.gate(r));
+}
+
+/** Whether a Drive scope id names a process-root space (Core, Hiring, Mentorship). */
+export function isProcessRootSpace(scopeId: string): boolean {
+  return DRIVE_SPACES.some((s) => s.key === scopeId && s.backing === "process-root");
 }

@@ -1,6 +1,7 @@
 import { prisma } from "~/lib/db";
 import { driveRootCrumbs, workspaceDriveScope } from "~/lib/drive-crumbs";
 import { getPageAccess } from "~/lib/pageAccess.server";
+import { rootKeyFor } from "~/lib/drive-roots.server";
 
 // Breadcrumb ancestry for an item that lives in the Drive tree. Walks up the
 // Page folder chain from `folderPageId` to the (scoped) root, so a document,
@@ -8,11 +9,10 @@ import { getPageAccess } from "~/lib/pageAccess.server";
 // Folder ▸ Subfolder ▸ item — instead of just Drive ▸ item.
 //
 // The scope is the folder's workspace: Member → "mine", Project → "projects",
-// EducationOffering → "education". Within the Lab workspace, a folder shared
-// with the Core group puts everything inside it in the Core scope — including
-// the hiring folder set, which is Core-group-scoped and so lives inside Core
-// rather than in a space of its own. Every such folder stays an ordinary crumb.
-// A folder that is archived (or deleted) collapses to the General root,
+// EducationOffering → "education". Within the Lab workspace, the nearest
+// Root-typed ancestor decides ("core", "hiring" or "mentorship") and is not a
+// crumb itself. A top-level folder shared with the Core group that has not been
+// moved under the Core root yet still counts as Core. A folder that is archived (or deleted) collapses to the General root,
 // matching where the listing surfaces its items.
 //
 // The trail is access-filtered against `viewerSub`: a viewer who reaches the
@@ -25,7 +25,7 @@ import { getPageAccess } from "~/lib/pageAccess.server";
 export type DriveCrumb = { id: string; title: string; iconEmoji: string | null };
 
 export type DriveCrumbs = {
-  /** Drive scope the item lives in: "lab" | "core" (Lab workspace) or
+  /** Drive scope the item lives in: "lab" | "core" | "hiring" | "mentorship" (Lab workspace) or
    *  "mine" | "projects" | "education" (Member / Project / EducationOffering). */
   scope: string;
   /** Ancestor folders, top-most first (excludes the scoped root itself). */
@@ -47,8 +47,7 @@ export async function driveFolderCrumbs(
   let leafWorkspaceType: string | null = null;
   let cursor: string | null = folderPageId;
 
-  // Core scope is now a group share (scopeKind=Group on the core group), not a
-  // systemKey root. Resolve the core group id once for detection in the walk.
+  // Not-yet-reparented Core folders are detected by their group scope.
   const coreGroupId =
     (await prisma.groupDefinition.findUnique({ where: { systemKey: "core" }, select: { id: true } }))
       ?.id ?? null;
@@ -61,6 +60,9 @@ export async function driveFolderCrumbs(
       parentPageId: string | null;
       scopeKind: string | null;
       scopeGroupId: string | null;
+      folderType: string | null;
+      processType: string | null;
+      processId: string | null;
       workspaceType: string;
       archivedAt: Date | null;
     } | null = await prisma.page.findUnique({
@@ -72,6 +74,9 @@ export async function driveFolderCrumbs(
         parentPageId: true,
         scopeKind: true,
         scopeGroupId: true,
+        folderType: true,
+        processType: true,
+        processId: true,
         workspaceType: true,
         archivedAt: true,
       },
@@ -84,9 +89,13 @@ export async function driveFolderCrumbs(
       if (p.archivedAt) return { scope: "lab", folders: [] };
       leafWorkspaceType = p.workspaceType;
     }
-    // A Core-group-shared folder marks everything inside it as Core scope.
-    // Unlike the old system root it's an ordinary folder, so keep it as a crumb
-    // and keep walking; the nearest (deepest) Core-scoped ancestor wins.
+    const rootKey = p.folderType === "Root" ? rootKeyFor(p) : null;
+    if (rootKey) {
+      scope = rootKey;
+      scopeRootId = p.id;
+      cursor = p.parentPageId;
+      continue;
+    }
     if (scope === "lab" && coreGroupId && p.scopeKind === "Group" && p.scopeGroupId === coreGroupId) {
       scope = "core";
       scopeRootId = p.id;

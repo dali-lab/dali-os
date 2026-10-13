@@ -8,6 +8,7 @@ import {
 import { interpretIntentForm } from "../app/projects/lib/intent-form-interpreter.js";
 import { replaceIntentSet } from "../app/projects/lib/intent-validation.js";
 import { syncDefaultGroups } from "../app/lib/groups.js";
+import { ensureAllRoots } from "../app/lib/drive-roots.server.js";
 import { parseChartString } from "../app/lib/chart-string.js";
 import { seedEducationDemo } from "./seeds/education-demo.js";
 import { seedResourcesDemo } from "./seeds/resources-demo.js";
@@ -4841,6 +4842,8 @@ async function main() {
   // Default system-managed user groups: one per Term/Project/Domain + Core.
   // Idempotent; safe to re-run.
   await syncDefaultGroups();
+
+  await ensureAllRoots(admin.id);
 
   // Re-run now that the Core group exists (and thus the Core drive can be
   // provisioned): converges the education templates into the managed

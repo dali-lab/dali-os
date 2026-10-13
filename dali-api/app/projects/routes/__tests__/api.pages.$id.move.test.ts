@@ -115,6 +115,30 @@ function carriedPageIds(): string[] {
   return call ? call[0].where.id.in : [];
 }
 
+describe("POST /api/pages/:id/move — Drive roots", () => {
+  it("400s a move of a root and writes nothing", async () => {
+    m.page.findUnique.mockResolvedValue(labPage({ kind: "Folder", folderType: "Root" }));
+    const res = await call({ parentPageId: null });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("Drive roots can't be moved");
+    expect(m.page.update).not.toHaveBeenCalled();
+  });
+
+  it("400s a cross-workspace move of a root", async () => {
+    m.page.findUnique.mockResolvedValue(labPage({ kind: "Folder", folderType: "Root" }));
+    vi.mocked(isProjectMember).mockResolvedValue(true);
+    const res = await call({ parentPageId: null, workspaceType: "Project", workspaceId: "projA" });
+    expect(res.status).toBe(400);
+    expect(m.page.update).not.toHaveBeenCalled();
+  });
+
+  it("still moves a receiver-typed folder", async () => {
+    m.page.findUnique.mockResolvedValue(labPage({ kind: "Folder", folderType: "Meetings" }));
+    const res = await call({ parentPageId: null });
+    expect(res.status).toBe(200);
+  });
+});
+
 describe("POST /api/pages/:id/move", () => {
   it("same-workspace reorder works with no workspace fields (back-compat)", async () => {
     m.page.findUnique.mockResolvedValue(labPage());
