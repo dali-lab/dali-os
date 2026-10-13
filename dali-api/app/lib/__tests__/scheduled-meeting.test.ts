@@ -54,6 +54,7 @@ import {
   attachMeetingNote,
   cancelScheduledMeeting,
   createScheduledMeeting,
+  folderOfNote,
   isWithinCheckInWindow,
   markMeetingAttendance,
   meetingIsUpcoming,
@@ -1203,6 +1204,29 @@ describe("updateScheduledMeeting", () => {
   });
 });
 
+describe("folderOfNote", () => {
+  it("is the folder a note sits in directly", () => {
+    expect(folderOfNote({ parentPageId: "folder-a", parent: { notebookKey: null, parentPageId: "elsewhere" } })).toBe("folder-a");
+    expect(folderOfNote({ parentPageId: "folder-a" })).toBe("folder-a");
+  });
+
+  it("is the notebook's folder for a note that is a tab in a notebook", () => {
+    expect(
+      folderOfNote({ parentPageId: "notebook-1", parent: { notebookKey: "k", parentPageId: "folder-a" } }),
+    ).toBe("folder-a");
+  });
+
+  it("is null for a note in a notebook at the workspace root", () => {
+    expect(
+      folderOfNote({ parentPageId: "notebook-1", parent: { notebookKey: "k", parentPageId: null } }),
+    ).toBeNull();
+  });
+
+  it("is null for a note at the workspace root", () => {
+    expect(folderOfNote({ parentPageId: null, parent: null })).toBeNull();
+  });
+});
+
 describe("meetingIsUpcoming", () => {
   const now = new Date("2026-09-16T12:00:00Z");
 
@@ -1341,6 +1365,40 @@ describe("attachMeetingNote", () => {
       ],
       skipDuplicates: true,
     });
+  });
+
+  it("files a replacement notebook in the folder the earlier notes' notebook sat in, not under the notebook", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(
+      meetingRow({
+        recurrenceRule: "FREQ=WEEKLY",
+        meetingType: "Other",
+        meetingTypeLabel: "Standup",
+        notePages: [
+          {
+            id: "page-week-1",
+            meetingOccurrenceStart: new Date("2026-09-10T15:00:00Z"),
+            workspaceType: "Lab",
+            workspaceId: null,
+            parentPageId: "notebook-old",
+            parent: { notebookKey: "key-old", parentPageId: "folder-standups" },
+          },
+        ],
+      }),
+    );
+    vi.mocked(prisma.page.findUnique).mockImplementation((async (args: { where: { id: string } }) =>
+      args.where.id === "folder-standups"
+        ? { kind: "Folder", archivedAt: null, workspaceType: "Lab", workspaceId: null }
+        : { kind: "FreeForm", archivedAt: null, workspaceType: "Lab", workspaceId: null }) as never);
+
+    await attachMeetingNote({
+      meetingId: "m1",
+      actorId: "u2",
+      occurrence: new Date("2026-09-24T15:00:00Z"),
+    });
+
+    expect(ensureMeetingNotebook).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceType: "Lab", parentPageId: "folder-standups" }),
+    );
   });
 
   it("keeps a later occurrence's note to people in the meeting", async () => {
