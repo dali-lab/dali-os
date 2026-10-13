@@ -34,8 +34,9 @@ import type { DriveItem } from "~/lib/drive.server";
 import { DriveBrowser } from "~/components/drive/DriveBrowser";
 import type { RowActions } from "~/components/drive/DriveBrowser";
 import { DriveTagFilter } from "~/components/drive/DriveTagFilter";
-import { DestinationPicker } from "~/components/drive/DestinationPicker";
-import type { PickerDrive, PickerFolder, Destination } from "~/components/drive/DestinationPicker";
+import { FolderPicker } from "~/components/drive/FolderPicker";
+import type { PickerDrive, PickerFolder, Destination } from "~/components/drive/FolderPicker";
+import { buildPickerRows } from "~/components/drive/picker-rows";
 import { moveDriveItem, driveErrorFrom } from "~/components/drive/move-item";
 import { reportMoveBatch, runMoveBatch, itemCount } from "~/components/drive/move-batch";
 import { useDriveFileUpload } from "~/components/drive/useDriveFileUpload";
@@ -1487,38 +1488,7 @@ export default function DriveHub() {
         item.type === "folder"
           ? folderAndDescendants(driveScopes.find((s) => s.id === sourceScopeId)?.items ?? [], item.id)
           : undefined;
-      const drives: PickerDrive[] = scopes.map((s) => ({
-        id: s.id,
-        label: s.id === "lab" ? "Lab" : s.label,
-        iconEmoji: s.iconEmoji,
-        // Picking a drive is the part of a move that changes who can see the
-        // item, so the row says so. The loader already derives this per scope.
-        audience: s.scopeAudience ?? null,
-      }));
-      const folders: PickerFolder[] = [];
-      for (const s of scopes) {
-        const rootId = s.rootFolderId ?? null;
-        // One pass over the scope's items gives every folder its child count,
-        // so the picker can say what's inside instead of only its name.
-        const childCount = new Map<string, number>();
-        for (const it of s.items) {
-          if (it.parentFolderId === null) continue;
-          childCount.set(it.parentFolderId, (childCount.get(it.parentFolderId) ?? 0) + 1);
-        }
-        for (const f of s.items) {
-          if (f.type !== "folder") continue;
-          // Normalise a scope's top-level folders so parentId === null uniformly
-          // means "drive top level".
-          folders.push({
-            id: f.id,
-            driveId: s.id,
-            parentId: (f.parentFolderId ?? null) === rootId ? null : f.parentFolderId,
-            title: f.title,
-            iconEmoji: f.iconEmoji,
-            itemCount: childCount.get(f.id) ?? 0,
-          });
-        }
-      }
+      const { drives, folders } = buildPickerRows(scopes);
       const sourceRoot = driveScopes.find((s) => s.id === sourceScopeId)?.rootFolderId ?? null;
       const currentFolder = (item.parentFolderId ?? null) === sourceRoot ? null : (item.parentFolderId ?? null);
       const currentDest: Destination = { driveId: sourceScopeId, folderId: currentFolder };
@@ -2052,6 +2022,7 @@ export default function DriveHub() {
         onBulkDelete={onBulkDelete}
         onBulkMove={(items) => void onBulkMove(items)}
         onMoveToScope={onMoveToScope}
+        onSharingChanged={() => revalidator.revalidate()}
         onUploadFiles={currentScope && currentScope.id !== SHARED_SPACE_KEY ? uploadFiles : undefined}
         filterControl={filterControl}
         newMenu={toolbarActions}
@@ -2081,7 +2052,7 @@ export default function DriveHub() {
       />
 
       {movePicker && (
-        <DestinationPicker
+        <FolderPicker
           open
           heading={movePicker.heading}
           drives={movePicker.drives}

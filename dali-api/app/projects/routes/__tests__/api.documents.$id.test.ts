@@ -179,6 +179,19 @@ describe("DELETE /api/documents/:id — Drive roots", () => {
     const res = await del();
     expect(res.status).toBe(200);
   });
+
+  it("clears the receiver columns in the same update that archives the folder", async () => {
+    m.page.findUnique.mockResolvedValue(labFolder({ folderType: "HiringForms" }));
+    const res = await del();
+    expect(res.status).toBe(200);
+    expect(m.page.update).toHaveBeenCalledTimes(1);
+    expect(m.page.update.mock.calls[0][0].data).toEqual({
+      archivedAt: expect.any(Date),
+      folderType: null,
+      processType: null,
+      processId: null,
+    });
+  });
 });
 
 describe("POST /api/documents/:id — personal notes", () => {

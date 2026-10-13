@@ -75,41 +75,41 @@ export async function action({ request, params }: Route.ActionArgs) {
   const systemPageIds = [project.overviewPageId, project.prdPageId].filter(
     (id): id is string => id !== null,
   );
-  // The "Team meeting notes" / "Partner meeting notes" folders (see
-  // ensureMeetingNotesFolder in ~/lib/pages.ts) are backfilled on every project
-  // page view, so without this they'd count as permanent, un-clearable
-  // "documents" and block deletion forever. They're empty Folder-kind
-  // containers, not authored content — find them via the project's folder
-  // bindings (they're ordinary folders now, no systemKey marker), scoped to the
-  // project's own workspace so a rebound folder living elsewhere isn't swept up,
-  // and exclude + clean them up the same way as overview/PRD.
-  const projectBindings = await prisma.processFolderBinding.findMany({
-    where: { processType: "Project", processId: projectId, folderPageId: { not: null } },
-    select: { folderPageId: true },
-  });
-  const boundFolderIds = projectBindings
-    .map((b) => b.folderPageId)
-    .filter((id): id is string => id !== null);
-  const meetingNotesFolders = boundFolderIds.length
-    ? await prisma.page.findMany({
-        where: {
-          workspaceType: "Project",
-          workspaceId: projectId,
-          kind: "Folder",
-          id: { in: boundFolderIds },
-        },
-        select: { id: true, contentDocId: true },
-      })
-    : [];
-  const excludedPageIds = [...systemPageIds, ...meetingNotesFolders.map((p) => p.id)];
-  const authoredPages = await prisma.page.count({
+  // Folders are containers, not authored content: an empty one (a receiver
+  // someone marked, a leftover meeting folder) neither blocks the delete nor
+  // survives it. A folder holding pages, files or forms is someone's work and
+  // blocks like any document.
+  const livePages = await prisma.page.findMany({
     where: {
       workspaceType: "Project",
       workspaceId: projectId,
-      id: { notIn: excludedPageIds },
+      id: { notIn: systemPageIds },
       archivedAt: null,
     },
+    select: { id: true, kind: true, parentPageId: true, contentDocId: true },
   });
+  const folders = livePages.filter((p) => p.kind === "Folder");
+  const folderIds = folders.map((f) => f.id);
+  const [filedFiles, filedForms] = folderIds.length
+    ? await Promise.all([
+        prisma.projectFile.findMany({
+          where: { folderPageId: { in: folderIds }, archivedAt: null },
+          select: { folderPageId: true },
+        }),
+        prisma.form.findMany({
+          where: { folderPageId: { in: folderIds }, archivedAt: null },
+          select: { folderPageId: true },
+        }),
+      ])
+    : [[], []];
+  const occupiedFolderIds = new Set<string | null>([
+    ...livePages.map((p) => p.parentPageId),
+    ...filedFiles.map((f) => f.folderPageId),
+    ...filedForms.map((f) => f.folderPageId),
+  ]);
+  const emptyFolders = folders.filter((f) => !occupiedFolderIds.has(f.id));
+  const authoredPages = livePages.length - emptyFolders.length;
+  const excludedPageIds = [...systemPageIds, ...emptyFolders.map((p) => p.id)];
 
   const counts = await Promise.all(BLOCKERS.map((b) => b.count(projectId)));
   const blocking = [
@@ -138,9 +138,9 @@ export async function action({ request, params }: Route.ActionArgs) {
   });
   // A FreeForm page's body lives in a CollabDocument keyed by name — the
   // pageDocName() shape unless the page overrides it. Versions cascade off it.
-  // Folders (the meeting-notes pages) never have content, but computing a name
-  // for them anyway is harmless — deleteMany below just matches nothing.
-  const docNames = [...systemPages, ...meetingNotesFolders].map(
+  // Folders never have content, but computing a name for them anyway is
+  // harmless — deleteMany below just matches nothing.
+  const docNames = [...systemPages, ...emptyFolders].map(
     (p) => p.contentDocId ?? pageDocName(p.id),
   );
 

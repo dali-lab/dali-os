@@ -15,6 +15,7 @@
 
 import { prisma } from "~/lib/db";
 import { isCore, isProjectMember } from "~/lib/roles";
+import { CLEARED_FOLDER_TYPE } from "~/lib/drive-roots";
 import { logAuditEvent, type AuditAction } from "~/lib/audit";
 
 export class CurationNotFoundError extends Error {
@@ -294,7 +295,7 @@ export async function runDeleteProjectDocument(
   if (!input.permanent) {
     await prisma.page.update({
       where: { id: input.pageId },
-      data: { archivedAt: new Date(), partnerVisible: false, publicVisible: false },
+      data: { archivedAt: new Date(), partnerVisible: false, publicVisible: false, ...CLEARED_FOLDER_TYPE },
     });
     return { ok: true, archived: true, deleted: false };
   }

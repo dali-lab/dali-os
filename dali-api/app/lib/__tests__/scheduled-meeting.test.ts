@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn() }));
@@ -11,6 +11,12 @@ vi.mock("~/lib/pages", () => ({
   ensureMeetingNotebook: vi.fn(async () => ({ id: "notebook-1" })),
   createNotebookTab: vi.fn(async () => ({ id: "page-tab" })),
   moveIntoNotebook: vi.fn(),
+}));
+vi.mock("~/lib/drive-receivers.server", () => ({
+  receiversEnabled: vi.fn(async () => false),
+  resolveFilingFolder: vi.fn(),
+  projectSlot: (projectId: string) => ({ processType: "Project", processId: projectId, folderType: "Meetings" }),
+  singletonSlot: (processType: string, folderType: string) => ({ processType, processId: processType.toLowerCase(), folderType }),
 }));
 vi.mock("~/lib/terms", () => ({ termWindows: vi.fn(async () => []) }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn(async () => false) }));
@@ -29,6 +35,7 @@ vi.mock("~/components/doc/schema/configs", () => ({ blocksToPlainText: vi.fn(() 
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
 import { isCore } from "~/lib/roles";
+import { receiversEnabled, resolveFilingFolder } from "~/lib/drive-receivers.server";
 import { resolveGroupMembers } from "~/lib/groups";
 import {
   createProjectPage,
@@ -54,7 +61,6 @@ import {
   attachMeetingNote,
   cancelScheduledMeeting,
   createScheduledMeeting,
-  folderOfNote,
   isWithinCheckInWindow,
   markMeetingAttendance,
   meetingIsUpcoming,
@@ -470,6 +476,113 @@ describe("createScheduledMeeting — where a note is filed", () => {
   });
 });
 
+describe("createScheduledMeeting — where a note is filed with receiver folders on", () => {
+  const mockPage = prisma as unknown as {
+    scheduledMeeting: { create: ReturnType<typeof vi.fn> };
+    meetingAttendance: { createMany: ReturnType<typeof vi.fn> };
+  };
+  const notebook = ensureMeetingNotebook as unknown as ReturnType<typeof vi.fn>;
+  const resolve = resolveFilingFolder as unknown as ReturnType<typeof vi.fn>;
+
+  const base = {
+    organizerId: "org-1",
+    organizerEmail: "org@dali.dartmouth.edu",
+    title: "Sync",
+    durationMinutes: 60,
+    scope: { type: "None" } as const,
+    startTime: "2026-09-10T15:00:00.000Z",
+    meetingType: "Other" as const,
+    meetingTypeLabel: "Sync",
+  };
+
+  beforeEach(() => {
+    mockPage.scheduledMeeting.create.mockResolvedValue({ id: "m1", ownerCalendarEmail: base.organizerEmail });
+    mockPage.meetingAttendance.createMany.mockResolvedValue({});
+    vi.mocked(receiversEnabled).mockResolvedValue(true);
+    resolve.mockResolvedValue({ folderId: null, viaReceiver: false });
+  });
+
+  afterEach(() => {
+    vi.mocked(receiversEnabled).mockResolvedValue(false);
+  });
+
+  it("files a Team meeting to the project's Meetings receiver and creates no Team folder", async () => {
+    resolve.mockResolvedValue({ folderId: "recv-1", viaReceiver: true });
+
+    await createScheduledMeeting({ ...base, meetingType: "Team", meetingTypeLabel: null, projectId: "proj-7" });
+
+    expect(resolve).toHaveBeenCalledWith(
+      { processType: "Project", processId: "proj-7", folderType: "Meetings" },
+      "org-1",
+    );
+    expect(ensureMeetingNotesFolder).not.toHaveBeenCalled();
+    expect(notebook).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceType: "Project", workspaceId: "proj-7", parentPageId: "recv-1" }),
+    );
+  });
+
+  it.each(["Team", "Partner", "Other"] as const)("files a %s project meeting at the project top level with no receiver", async (meetingType) => {
+    await createScheduledMeeting({
+      ...base,
+      meetingType,
+      meetingTypeLabel: meetingType === "Other" ? "Retro" : null,
+      projectId: "proj-7",
+    });
+
+    expect(ensureMeetingNotesFolder).not.toHaveBeenCalled();
+    expect(notebook).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceType: "Project", workspaceId: "proj-7", parentPageId: null }),
+    );
+  });
+
+  it("files a Core meeting to Core's Meetings receiver else the Core root", async () => {
+    resolve.mockResolvedValue({ folderId: "core-root", viaReceiver: false });
+
+    await createScheduledMeeting({ ...base, isCoreMeeting: true });
+
+    expect(resolve).toHaveBeenCalledWith({ processType: "Core", processId: "core", folderType: "Meetings" }, "org-1");
+    expect(ensureCoreMeetingNotesFolder).not.toHaveBeenCalled();
+    expect(notebook).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceType: "Lab", parentPageId: "core-root", restricted: true }),
+    );
+  });
+
+  it("files a General meeting to the Lab Meetings receiver", async () => {
+    resolve.mockResolvedValue({ folderId: "lab-recv", viaReceiver: true });
+
+    await createScheduledMeeting({ ...base, isCoreMeeting: false });
+
+    expect(resolve).toHaveBeenCalledWith({ processType: "Lab", processId: "lab", folderType: "Meetings" }, "org-1");
+    expect(ensureLabMeetingNotesFolder).not.toHaveBeenCalled();
+    expect(notebook).toHaveBeenCalledWith(expect.objectContaining({ workspaceType: "Lab", parentPageId: "lab-recv" }));
+  });
+
+  it("files a General meeting at the Lab top level when no receiver is marked", async () => {
+    await createScheduledMeeting({ ...base, isCoreMeeting: false });
+
+    expect(notebook).toHaveBeenCalledWith(expect.objectContaining({ workspaceType: "Lab", parentPageId: null }));
+  });
+
+  it("lets a chosen Lab folder win over the Lab receiver and never looks the receiver up", async () => {
+    resolve.mockResolvedValue({ folderId: "lab-recv", viaReceiver: true });
+    (prisma as unknown as { page: { findUnique: ReturnType<typeof vi.fn> } }).page.findUnique.mockResolvedValue({
+      kind: "Folder",
+      archivedAt: null,
+      workspaceType: "Lab",
+      workspaceId: null,
+    });
+
+    await createScheduledMeeting({
+      ...base,
+      isCoreMeeting: false,
+      noteLocation: { workspaceType: "Lab", workspaceId: null, parentPageId: "folder-chosen" },
+    });
+
+    expect(notebook).toHaveBeenCalledWith(expect.objectContaining({ parentPageId: "folder-chosen" }));
+    expect(resolve).not.toHaveBeenCalled();
+  });
+});
+
 describe("setMeetingProject", () => {
   const p = prisma as unknown as {
     scheduledMeeting: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
@@ -494,6 +607,33 @@ describe("setMeetingProject", () => {
   beforeEach(() => {
     p.project.findFirst.mockResolvedValue({ id: "proj-7", name: "Cortex" });
     p.scheduledMeeting.update.mockResolvedValue({});
+  });
+
+  it("re-files into the project's Meetings receiver with receivers on, creating no Team folder", async () => {
+    vi.mocked(receiversEnabled).mockResolvedValue(true);
+    vi.mocked(resolveFilingFolder).mockResolvedValue({ folderId: "recv-1", viaReceiver: true });
+    p.scheduledMeeting.findUnique.mockResolvedValue({
+      ...baseMeeting,
+      meetingType: "Other",
+      notePages: [{ id: "note-1", kind: "FreeForm", meetingOccurrenceStart: new Date("2026-09-10T15:00:00.000Z") }],
+    });
+
+    try {
+      await setMeetingProject({
+        meetingId: "m1",
+        actorId: "org-1",
+        projectId: "proj-7",
+        meetingType: "Team",
+        meetingTypeLabel: null,
+      });
+    } finally {
+      vi.mocked(receiversEnabled).mockResolvedValue(false);
+    }
+
+    expect(projectFolder).not.toHaveBeenCalled();
+    expect(ensureMeetingNotebook).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceType: "Project", workspaceId: "proj-7", parentPageId: "recv-1" }),
+    );
   });
 
   it("re-files an existing note into the project folder and records the project", async () => {
@@ -1225,29 +1365,6 @@ describe("updateScheduledMeeting", () => {
   });
 });
 
-describe("folderOfNote", () => {
-  it("is the folder a note sits in directly", () => {
-    expect(folderOfNote({ parentPageId: "folder-a", parent: { notebookKey: null, parentPageId: "elsewhere" } })).toBe("folder-a");
-    expect(folderOfNote({ parentPageId: "folder-a" })).toBe("folder-a");
-  });
-
-  it("is the notebook's folder for a note that is a tab in a notebook", () => {
-    expect(
-      folderOfNote({ parentPageId: "notebook-1", parent: { notebookKey: "k", parentPageId: "folder-a" } }),
-    ).toBe("folder-a");
-  });
-
-  it("is null for a note in a notebook at the workspace root", () => {
-    expect(
-      folderOfNote({ parentPageId: "notebook-1", parent: { notebookKey: "k", parentPageId: null } }),
-    ).toBeNull();
-  });
-
-  it("is null for a note at the workspace root", () => {
-    expect(folderOfNote({ parentPageId: null, parent: null })).toBeNull();
-  });
-});
-
 describe("meetingIsUpcoming", () => {
   const now = new Date("2026-09-16T12:00:00Z");
 
@@ -1415,40 +1532,6 @@ describe("attachMeetingNote", () => {
       ],
       skipDuplicates: true,
     });
-  });
-
-  it("files a replacement notebook in the folder the earlier notes' notebook sat in, not under the notebook", async () => {
-    p.scheduledMeeting.findUnique.mockResolvedValue(
-      meetingRow({
-        recurrenceRule: "FREQ=WEEKLY",
-        meetingType: "Other",
-        meetingTypeLabel: "Standup",
-        notePages: [
-          {
-            id: "page-week-1",
-            meetingOccurrenceStart: new Date("2026-09-10T15:00:00Z"),
-            workspaceType: "Lab",
-            workspaceId: null,
-            parentPageId: "notebook-old",
-            parent: { notebookKey: "key-old", parentPageId: "folder-standups" },
-          },
-        ],
-      }),
-    );
-    vi.mocked(prisma.page.findUnique).mockImplementation((async (args: { where: { id: string } }) =>
-      args.where.id === "folder-standups"
-        ? { kind: "Folder", archivedAt: null, workspaceType: "Lab", workspaceId: null }
-        : { kind: "FreeForm", archivedAt: null, workspaceType: "Lab", workspaceId: null }) as never);
-
-    await attachMeetingNote({
-      meetingId: "m1",
-      actorId: "u2",
-      occurrence: new Date("2026-09-24T15:00:00Z"),
-    });
-
-    expect(ensureMeetingNotebook).toHaveBeenCalledWith(
-      expect.objectContaining({ workspaceType: "Lab", parentPageId: "folder-standups" }),
-    );
   });
 
   it("keeps a later occurrence's note to people in the meeting", async () => {

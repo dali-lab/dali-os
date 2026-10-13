@@ -34,7 +34,8 @@ import {
   PROJECT_FUNDING_TYPES,
 } from "~/lib/chart-string.server";
 import { Modal, ModalHeader } from "~/components/Modal";
-import { MoveToDialog } from "~/components/sharing/MoveToDialog";
+import { useDriveDestinations } from "~/components/drive/use-drive-destinations";
+import { useMovePage } from "~/components/drive/use-move-page";
 import { useDialog, useConfirmSubmit } from "~/components/ui/dialog";
 import { Tooltip } from "~/components/ui/floating";
 import { Checkbox } from "~/components/ui/Checkbox";
@@ -56,6 +57,7 @@ import { listProjectInfraRequests } from "~/lib/infra/requests.server";
 import { ProjectInfraSection } from "~/projects/components/ProjectInfraSection";
 import { ensureProjectGroup } from "~/lib/groups";
 import { ensureMeetingNotesFolder } from "~/lib/pages";
+import { receiversEnabled } from "~/lib/drive-receivers.server";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { formatDateShort, formatDateTime, fullName, UNKNOWN_LABEL } from "~/lib/display";
@@ -115,8 +117,8 @@ import { PROJECT_PAGE_SELECT, PROJECT_FILE_SELECT } from "~/lib/drive.server";
 import type { DriveItem } from "~/lib/drive.server";
 import { DriveBrowser } from "~/components/drive/DriveBrowser";
 import type { RowActions } from "~/components/drive/DriveBrowser";
-import { DestinationPicker } from "~/components/drive/DestinationPicker";
-import type { PickerDrive, PickerFolder, Destination } from "~/components/drive/DestinationPicker";
+import { FolderPicker } from "~/components/drive/FolderPicker";
+import type { PickerDrive, PickerFolder, Destination } from "~/components/drive/FolderPicker";
 import { moveDriveItem, driveErrorFrom } from "~/components/drive/move-item";
 import { reportMoveBatch, runMoveBatch, itemCount } from "~/components/drive/move-batch";
 import { useDriveFileUpload } from "~/components/drive/useDriveFileUpload";
@@ -528,10 +530,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // ── Stage 2: everything that depends on the project row ──────────────────────
   // ensureMeetingNotesFolder must complete before pageRows (creates the system
   // folders that pageRows needs to return), so run them first then fan out.
-  await Promise.all([
-    ensureMeetingNotesFolder(project.id, "Team", auth.user.sub),
-    ensureMeetingNotesFolder(project.id, "Partner", auth.user.sub),
-  ]);
+  // With receivers on nothing auto-creates a folder, so the backfill stops.
+  if (!(await receiversEnabled(request))) {
+    await Promise.all([
+      ensureMeetingNotesFolder(project.id, "Team", auth.user.sub),
+      ensureMeetingNotesFolder(project.id, "Partner", auth.user.sub),
+    ]);
+  }
 
   const [
     pageRows,
@@ -4974,7 +4979,7 @@ function ProjectDriveTab({
         data-testid={`drive-upload-input-${scopeId}`}
       />
       {movePicker && (
-        <DestinationPicker
+        <FolderPicker
           open
           heading={movePicker.heading}
           drives={movePicker.drives}
@@ -5008,6 +5013,7 @@ function DocumentsBlock({
   hasActivePartner: boolean;
 }) {
   const dialog = useDialog();
+  const toast = useToast();
   const revalidator = useRevalidator();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -5019,6 +5025,23 @@ function DocumentsBlock({
   const uploadFolderIdRef = useRef<string | null>(null);
   // "Move to…" dialog state — tracks which doc the user wants to move.
   const [moveDoc, setMoveDoc] = useState<{ id: string; title: string } | null>(null);
+  const moveDestinations = useDriveDestinations({
+    enabled: !!moveDoc,
+    onError: () => {
+      toast.error("Couldn't load destinations.");
+      setMoveDoc(null);
+    },
+  });
+  const movePage = useMovePage({
+    pageId: moveDoc?.id ?? "",
+    title: moveDoc?.title ?? "",
+    current: { type: "Project", id: projectId },
+    rows: moveDestinations.rows,
+    onMoved: () => {
+      setMoveDoc(null);
+      revalidator.revalidate();
+    },
+  });
   // Folders start collapsed (Finder/Drive convention). Newly created folders are
   // added to this set so their contents show right after creation.
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
@@ -5747,17 +5770,14 @@ function DocumentsBlock({
         </div>
       )}
 
-      <MoveToDialog
-        open={!!moveDoc}
-        pageId={moveDoc?.id ?? ""}
-        title={moveDoc?.title ?? ""}
-        current={{ type: "Project", id: projectId }}
-        onClose={() => setMoveDoc(null)}
-        onMoved={() => {
-          setMoveDoc(null);
-          revalidator.revalidate();
-        }}
-      />
+      {moveDoc && moveDestinations.status === "ready" && (
+        <FolderPicker
+          open
+          heading={`Move “${moveDoc.title}”`}
+          {...movePage.pickerProps}
+          onClose={() => setMoveDoc(null)}
+        />
+      )}
     </section>
   );
 }

@@ -31,6 +31,7 @@ import {
   moveIntoNotebook,
   type MeetingNotebookDestination,
 } from "~/lib/pages";
+import { receiversEnabled, resolveFilingFolder, projectSlot, singletonSlot } from "~/lib/drive-receivers.server";
 import { meetingNotebookIdentity, termForDate } from "~/lib/meeting-notebook";
 import { termWindows } from "~/lib/terms";
 import { isCore, isProjectMember } from "~/lib/roles";
@@ -324,13 +325,6 @@ export type CreateScheduledMeetingResult =
     }
   | { ok: false; error: string };
 
-export function folderOfNote(note: {
-  parentPageId: string | null;
-  parent?: { notebookKey: string | null; parentPageId: string | null } | null;
-}): string | null {
-  return note.parent?.notebookKey ? note.parent.parentPageId : note.parentPageId;
-}
-
 // Authorize + resolve a General meeting's chosen note location. Mirrors the
 // /api/move-destinations eligibility (Lab-wide, plus any project the organizer
 // can edit) so a note can only land where the organizer may write. Anything
@@ -475,17 +469,25 @@ async function buildMeetingArtifactPage(input: {
   const noun = isBoard ? "whiteboard" : "meeting note";
   let title = isBoard ? `${dateLabel} whiteboard` : dateLabel;
 
+  const receivers = await receiversEnabled();
+
   if (input.projectId) {
     // Team/Partner assets nest under their default, undeletable folder;
     // "Other" assets stay top-level (no default folder for a custom label).
-    let parentPageId: string | null = null;
+    // With receivers on, every project meeting files to the project's Meetings
+    // receiver, else the project top level.
+    let parentPageId: string | null = receivers
+      ? (await resolveFilingFolder(projectSlot(input.projectId), input.authorId)).folderId
+      : null;
     if (input.meetingType === "Team" || input.meetingType === "Partner") {
-      const folder = await ensureMeetingNotesFolder(
-        input.projectId,
-        input.meetingType,
-        input.authorId,
-      );
-      parentPageId = folder.id;
+      if (!receivers) {
+        const folder = await ensureMeetingNotesFolder(
+          input.projectId,
+          input.meetingType,
+          input.authorId,
+        );
+        parentPageId = folder.id;
+      }
       // Named for the project and kind they belong to, so they stay
       // identifiable once they leave that folder — in search, in Drive, and on
       // the meeting itself.
@@ -514,7 +516,9 @@ async function buildMeetingArtifactPage(input: {
         ? `${input.meetingTypeLabel} whiteboard (${dateLabel})`
         : `${input.meetingTypeLabel} (${dateLabel})`;
     }
-    const coreFolderId = await ensureCoreMeetingNotesFolder(input.authorId);
+    const coreFolderId = receivers
+      ? (await resolveFilingFolder(singletonSlot("Core", "Meetings"), input.authorId)).folderId
+      : await ensureCoreMeetingNotesFolder(input.authorId);
     return file(
       {
         workspaceType: "Lab",
@@ -542,7 +546,11 @@ async function buildMeetingArtifactPage(input: {
   // can't honour. The Lab's own "Meeting assets" folder is the default instead
   // of the root, where an asset titled just its date went loose among every
   // other Lab doc. An explicitly chosen folder still wins.
-  const parentPageId = dest.parentPageId ?? (await ensureLabMeetingNotesFolder(input.authorId));
+  const parentPageId =
+    dest.parentPageId ??
+    (receivers
+      ? (await resolveFilingFolder(singletonSlot("Lab", "Meetings"), input.authorId)).folderId
+      : await ensureLabMeetingNotesFolder(input.authorId));
   return file({ workspaceType: "Lab", workspaceId: null, parentPageId }, title);
 }
 
@@ -839,7 +847,6 @@ export async function attachMeetingNote(
           workspaceType: true,
           workspaceId: true,
           parentPageId: true,
-          parent: { select: { notebookKey: true, parentPageId: true } },
         },
         orderBy: { meetingOccurrenceStart: "desc" },
       },
@@ -920,7 +927,7 @@ export async function attachMeetingNote(
         ? {
             workspaceType: previous.workspaceType === "Project" ? "Project" : "Lab",
             workspaceId: previous.workspaceId,
-            parentPageId: folderOfNote(previous),
+            parentPageId: previous.parentPageId,
           }
         : (input.noteLocation ?? null),
       startDate: occurrence.start,
@@ -1025,13 +1032,7 @@ export async function attachMeetingWhiteboard(
       whiteboardPage: { select: { id: true } },
       // The whiteboard is one per series; it files beside the first note.
       notePages: {
-        select: {
-          id: true,
-          workspaceType: true,
-          workspaceId: true,
-          parentPageId: true,
-          parent: { select: { notebookKey: true, parentPageId: true } },
-        },
+        select: { id: true, workspaceType: true, workspaceId: true, parentPageId: true },
         orderBy: { meetingOccurrenceStart: "asc" },
         take: 1,
       },
@@ -1087,7 +1088,7 @@ export async function attachMeetingWhiteboard(
     noteLocation = {
       workspaceType: "Lab",
       workspaceId: null,
-      parentPageId: folderOfNote(note),
+      parentPageId: note.parentPageId,
     };
   }
 
@@ -1142,11 +1143,16 @@ async function refileMeetingArtifactToProject(input: {
 }): Promise<void> {
   const dateLabel = formatDateShort(input.startDate ?? new Date());
   const noun = input.isBoard ? "whiteboard" : "meeting note";
-  let parentPageId: string | null = null;
+  const receivers = await receiversEnabled();
+  let parentPageId: string | null = receivers
+    ? (await resolveFilingFolder(projectSlot(input.projectId), input.authorId)).folderId
+    : null;
   let title: string;
   if (input.meetingType === "Team" || input.meetingType === "Partner") {
-    const folder = await ensureMeetingNotesFolder(input.projectId, input.meetingType, input.authorId);
-    parentPageId = folder.id;
+    if (!receivers) {
+      const folder = await ensureMeetingNotesFolder(input.projectId, input.meetingType, input.authorId);
+      parentPageId = folder.id;
+    }
     title = `${input.projectName} ${input.meetingType} ${noun} (${dateLabel})`;
   } else {
     // "Other": no default folder for a custom label, so it sits at the project

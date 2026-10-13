@@ -250,6 +250,7 @@ export default [
     // endpoint the Drive and editor POST to.
     route("api/forms", "routes/api.forms.ts"),
     route("api/folder-bindings", "routes/api.folder-bindings.ts"),
+    route("api/folder-receivers", "routes/api.folder-receivers.ts"),
     route("api/passkey-prompt", "routes/api.passkey-prompt.ts"),
     route("forms/edit/:formId", "forms/routes/forms.edit.$formId.tsx"),
     route("forms/preview-resolve", "forms/routes/forms.preview-resolve.ts"),
@@ -626,6 +627,7 @@ export default [
   route("api/favorites", "routes/api.favorites.ts"),
   route("api/favorites/route", "routes/api.favorites.route.ts"),
   route("api/move-destinations", "routes/api.move-destinations.ts"),
+  route("api/drive/destinations", "routes/api.drive.destinations.ts"),
   // Drive unified tree: placement move for files and forms (Wave 3).
   route("api/drive/move", "routes/api.drive.move.ts"),
   // Drive unified file upload: scope-agnostic file registration (Lab or Project).

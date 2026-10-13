@@ -9,6 +9,7 @@ import { randomUUID } from "node:crypto";
 import { prisma } from "~/lib/db";
 import { canEditDomainSetup } from "~/hiring/lib/domain-windows.server";
 import { ensureProcessFolder, HIRING_PROCESS_ID } from "~/lib/bindings.server";
+import { filingFolderOr, singletonSlot } from "~/lib/drive-receivers.server";
 import type { Question } from "~/types";
 import { resolveReferenceOptions } from "~/forms/lib/reference-sources";
 import { safeParseJsonString } from "~/forms/lib/forms-data";
@@ -52,12 +53,14 @@ function defaultQuestions(): Question[] {
  * Hiring drive). We converge its placement on every call.
  */
 export async function ensureHiringTemplate(actorId: string): Promise<string> {
-  const folderPageId = await ensureProcessFolder({
-    processType: "HiringCycle",
-    processId: HIRING_PROCESS_ID,
-    purpose: "application-templates",
-    createdById: actorId,
-  });
+  const folderPageId = await filingFolderOr(singletonSlot("HiringCycle", "ApplicationTemplates"), actorId, () =>
+    ensureProcessFolder({
+      processType: "HiringCycle",
+      processId: HIRING_PROCESS_ID,
+      purpose: "application-templates",
+      createdById: actorId,
+    }),
+  );
   const existing = await prisma.form.findFirst({
     where: { templateKey: TEMPLATE_KEY },
     select: { id: true, versions: { select: { id: true }, take: 1 } },
@@ -129,12 +132,14 @@ export async function createCycleApplicationForm(
   const templateVersion = template?.versions[0];
   const questions = (templateVersion?.questions as unknown as Question[]) ?? defaultQuestions();
 
-  const folderPageId = await ensureProcessFolder({
-    processType: "HiringCycle",
-    processId: HIRING_PROCESS_ID,
-    purpose: "hiring-forms",
-    createdById: actorId,
-  });
+  const folderPageId = await filingFolderOr(singletonSlot("HiringCycle", "HiringForms"), actorId, () =>
+    ensureProcessFolder({
+      processType: "HiringCycle",
+      processId: HIRING_PROCESS_ID,
+      purpose: "hiring-forms",
+      createdById: actorId,
+    }),
+  );
   const label = APPLICANTS_FORM_LABEL[cycle.applicants];
   const form = await prisma.form.create({
     data: {
@@ -193,12 +198,14 @@ export async function createCycleContinuedInterestForm(
       },
     },
   ];
-  const folderPageId = await ensureProcessFolder({
-    processType: "HiringCycle",
-    processId: HIRING_PROCESS_ID,
-    purpose: "hiring-forms",
-    createdById: actorId,
-  });
+  const folderPageId = await filingFolderOr(singletonSlot("HiringCycle", "HiringForms"), actorId, () =>
+    ensureProcessFolder({
+      processType: "HiringCycle",
+      processId: HIRING_PROCESS_ID,
+      purpose: "hiring-forms",
+      createdById: actorId,
+    }),
+  );
   const form = await prisma.form.create({
     data: {
       name: `${cycle.name} — Continued interest`,
@@ -241,12 +248,14 @@ export async function createDomainChallengeForm(
   const templateVersion = template?.versions[0];
   const questions = (templateVersion?.questions as unknown as Question[]) ?? defaultQuestions();
 
-  const folderPageId = await ensureProcessFolder({
-    processType: "HiringCycle",
-    processId: HIRING_PROCESS_ID,
-    purpose: "hiring-forms",
-    createdById: actorId,
-  });
+  const folderPageId = await filingFolderOr(singletonSlot("HiringCycle", "HiringForms"), actorId, () =>
+    ensureProcessFolder({
+      processType: "HiringCycle",
+      processId: HIRING_PROCESS_ID,
+      purpose: "hiring-forms",
+      createdById: actorId,
+    }),
+  );
   const form = await prisma.form.create({
     data: {
       name: `${cycle.name} — ${domain.displayName} challenge`,
