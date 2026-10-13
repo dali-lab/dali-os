@@ -68,6 +68,12 @@ vi.mock("~/mcp/tools/access", () => ({
   canEditProject: vi.fn(),
 }));
 
+vi.mock("~/lib/shortcuts.server", () => ({
+  createShortcut: vi.fn(),
+  deleteShortcut: vi.fn(),
+  ShortcutError: class ShortcutError extends Error {},
+}));
+
 import { prisma } from "~/lib/db";
 import { runManagePage } from "~/mcp/tools/docs/manage-page";
 import { canManageSharing } from "~/lib/page-share-access.server";

@@ -59,6 +59,8 @@ export type DriveItem =
       iconEmoji: string | null;
       /** The folder's `FolderType` (Meetings, Agreements, ...); null for a plain folder. */
       folderType?: string | null;
+      /** Live items directly inside, counted over the items the viewer can see. */
+      itemCount?: number;
       updatedAt: Date;
       href: string;
       /** File size in bytes (files only; null elsewhere). Drives the Size column. */
@@ -83,6 +85,10 @@ export type DriveItem =
       /** True when the underlying Page.kind is Whiteboard — drives the Drive
        *  icon and the /whiteboard/:id open href (vs the /documents/:id editor). */
       isWhiteboard?: boolean;
+      /** True when the underlying Page.kind is Notebook (a run of meeting notes shown as tabs). */
+      isNotebook?: boolean;
+      /** Live tabs (child pages) of a Notebook. */
+      tabCount?: number;
       id: string;
       title: string;
       parentFolderId: string | null;
@@ -420,6 +426,7 @@ async function loadLabPages(userSub: string, request?: Request): Promise<DriveIt
         : {
             type: "doc",
             isWhiteboard: row.kind === "Whiteboard",
+            isNotebook: row.kind === "Notebook",
             id: row.id,
             title: row.title,
             parentFolderId: row.parentPageId,
@@ -527,6 +534,7 @@ async function loadProjectPages(
       : {
           type: "doc",
           isWhiteboard: row.kind === "Whiteboard",
+          isNotebook: row.kind === "Notebook",
           id: row.id,
           title: row.title,
           parentFolderId: row.parentPageId,
@@ -651,6 +659,7 @@ async function loadEducationPages(
       : {
           type: "doc",
           isWhiteboard: row.kind === "Whiteboard",
+          isNotebook: row.kind === "Notebook",
           id: row.id,
           title: row.title,
           parentFolderId: row.parentPageId,
@@ -715,6 +724,7 @@ async function loadMemberPages(userSub: string, request?: Request): Promise<Driv
       : {
           type: "doc",
           isWhiteboard: row.kind === "Whiteboard",
+          isNotebook: row.kind === "Notebook",
           id: row.id,
           title: row.title,
           parentFolderId: row.parentPageId,

@@ -1,0 +1,122 @@
+import { describe, expect, it } from "vitest";
+import {
+  CORAL_FOLDER,
+  folderCountLabel,
+  folderTintClass,
+  pickGlyph,
+  tabBadge,
+  type PlainGlyphSource,
+} from "~/components/drive/glyphs";
+import type { AudienceKind } from "~/lib/page-audience";
+
+describe("folderTintClass", () => {
+  const tint = (kind: AudienceKind) => folderTintClass({ kind });
+
+  it("mutes a private folder", () => {
+    expect(tint("private")).toBe("text-muted-foreground");
+  });
+
+  it("keeps coral for group, people and project folders", () => {
+    expect(tint("group")).toBe(CORAL_FOLDER);
+    expect(tint("people")).toBe(CORAL_FOLDER);
+    expect(tint("project")).toBe(CORAL_FOLDER);
+  });
+
+  it("uses teal for lab-wide and public folders", () => {
+    expect(tint("lab")).toBe("text-accent-teal/80");
+    expect(tint("public")).toBe("text-accent-teal/80");
+  });
+
+  it("falls back to coral when the folder has no audience", () => {
+    expect(folderTintClass(undefined)).toBe(CORAL_FOLDER);
+    expect(folderTintClass(null)).toBe(CORAL_FOLDER);
+  });
+});
+
+describe("pickGlyph", () => {
+  const folder = (extra: Partial<PlainGlyphSource> = {}): PlainGlyphSource => ({ type: "folder", ...extra });
+  const doc = (extra: Partial<PlainGlyphSource> = {}): PlainGlyphSource => ({ type: "doc", ...extra });
+
+  it("marks a Meetings folder with a calendar", () => {
+    expect(pickGlyph(folder({ folderType: "Meetings" }))).toMatchObject({ kind: "folder", mark: "calendar" });
+  });
+
+  it("marks every other receiver folder with a tag", () => {
+    for (const folderType of ["Agreements", "Hiring", "Receipts"]) {
+      expect(pickGlyph(folder({ folderType }))).toMatchObject({ kind: "folder", mark: "tag" });
+    }
+  });
+
+  it("leaves a plain folder, and a Root, unmarked", () => {
+    expect(pickGlyph(folder())).toMatchObject({ kind: "folder", mark: null });
+    expect(pickGlyph(folder({ folderType: null }))).toMatchObject({ kind: "folder", mark: null });
+    expect(pickGlyph(folder({ folderType: "Root" }))).toMatchObject({ kind: "folder", mark: null });
+  });
+
+  it("tints a folder by its audience", () => {
+    expect(pickGlyph(folder({ audience: { kind: "private" } }))).toMatchObject({ tint: "text-muted-foreground" });
+    expect(pickGlyph(folder({ audience: { kind: "public" } }))).toMatchObject({ tint: "text-accent-teal/80" });
+  });
+
+  it("gives a folder or doc its emoji when it has one", () => {
+    expect(pickGlyph(folder({ iconEmoji: "🚀" }))).toEqual({ kind: "emoji", emoji: "🚀" });
+    expect(pickGlyph(doc({ iconEmoji: "📝" }))).toEqual({ kind: "emoji", emoji: "📝" });
+  });
+
+  it("picks the notebook glyph with its tab badge, ahead of an emoji", () => {
+    expect(pickGlyph(doc({ isNotebook: true, tabCount: 4, iconEmoji: "📓" }))).toEqual({ kind: "notebook", tabs: "4" });
+    expect(pickGlyph(doc({ isNotebook: true, tabCount: 0 }))).toEqual({ kind: "notebook", tabs: null });
+    expect(pickGlyph(doc({ isNotebook: true }))).toEqual({ kind: "notebook", tabs: null });
+  });
+
+  it("keeps the existing doc, whiteboard and managed glyphs", () => {
+    expect(pickGlyph(doc())).toEqual({ kind: "doc" });
+    expect(pickGlyph(doc({ isWhiteboard: true }))).toEqual({ kind: "whiteboard" });
+    for (const type of ["file", "form", "agreement", "rubric"] as const) {
+      expect(pickGlyph({ type })).toEqual({ kind: type });
+    }
+  });
+});
+
+describe("pickGlyph for a shortcut", () => {
+  it("wears the glyph of its target type", () => {
+    expect(pickGlyph({ type: "shortcut", targetType: "folder" })).toEqual({
+      kind: "shortcut",
+      target: { kind: "folder", tint: CORAL_FOLDER, mark: null },
+    });
+    expect(pickGlyph({ type: "shortcut", targetType: "doc" })).toEqual({ kind: "shortcut", target: { kind: "doc" } });
+    expect(pickGlyph({ type: "shortcut", targetType: "whiteboard" })).toEqual({
+      kind: "shortcut",
+      target: { kind: "whiteboard" },
+    });
+    expect(pickGlyph({ type: "shortcut", targetType: "notebook" })).toEqual({
+      kind: "shortcut",
+      target: { kind: "notebook", tabs: null },
+    });
+  });
+});
+
+describe("tabBadge", () => {
+  it("shows nothing for no tabs", () => {
+    expect(tabBadge(undefined)).toBeNull();
+    expect(tabBadge(0)).toBeNull();
+  });
+
+  it("shows the count, capped at 99+", () => {
+    expect(tabBadge(1)).toBe("1");
+    expect(tabBadge(99)).toBe("99");
+    expect(tabBadge(100)).toBe("99+");
+  });
+});
+
+describe("folderCountLabel", () => {
+  it("says nothing until counts are known", () => {
+    expect(folderCountLabel(undefined)).toBeNull();
+  });
+
+  it("says Empty, singular and plural", () => {
+    expect(folderCountLabel(0)).toBe("Empty");
+    expect(folderCountLabel(1)).toBe("1 item");
+    expect(folderCountLabel(12)).toBe("12 items");
+  });
+});
