@@ -3,15 +3,9 @@ import { Check, ChevronDown, Search, Tag as TagIcon, X } from "lucide-react";
 import { Popover } from "~/components/ui/floating";
 import { filterPillClass } from "~/components/ui/floating/styles";
 import { cn } from "~/lib/cn";
+import { hexColor } from "~/lib/drive-tags";
 
 export type FilterTag = { id: string; label: string; color: string | null };
-
-// A hex color is safe to drop straight into an inline style; a Tailwind token
-// (the other thing DocTag.color may hold) is not, so we only show the swatch
-// for hex values and skip it otherwise rather than render a broken dot.
-function hexColor(color: string | null): string | undefined {
-  return color && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(color) ? color : undefined;
-}
 
 // The Drive tag filter as a compact multi-select dropdown — the same move the
 // type filter made from a chip row to a Select pill, applied to tags. The pill
