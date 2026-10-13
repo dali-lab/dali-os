@@ -34,7 +34,8 @@ import {
   PROJECT_FUNDING_TYPES,
 } from "~/lib/chart-string.server";
 import { Modal, ModalHeader } from "~/components/Modal";
-import { MoveToDialog } from "~/components/sharing/MoveToDialog";
+import { useDriveDestinations } from "~/components/drive/use-drive-destinations";
+import { useMovePage } from "~/components/drive/use-move-page";
 import { useDialog, useConfirmSubmit } from "~/components/ui/dialog";
 import { Tooltip } from "~/components/ui/floating";
 import { Checkbox } from "~/components/ui/Checkbox";
@@ -115,8 +116,8 @@ import { PROJECT_PAGE_SELECT, PROJECT_FILE_SELECT } from "~/lib/drive.server";
 import type { DriveItem } from "~/lib/drive.server";
 import { DriveBrowser } from "~/components/drive/DriveBrowser";
 import type { RowActions } from "~/components/drive/DriveBrowser";
-import { DestinationPicker } from "~/components/drive/DestinationPicker";
-import type { PickerDrive, PickerFolder, Destination } from "~/components/drive/DestinationPicker";
+import { FolderPicker } from "~/components/drive/FolderPicker";
+import type { PickerDrive, PickerFolder, Destination } from "~/components/drive/FolderPicker";
 import { moveDriveItem, driveErrorFrom } from "~/components/drive/move-item";
 import { reportMoveBatch, runMoveBatch, itemCount } from "~/components/drive/move-batch";
 import { useDriveFileUpload } from "~/components/drive/useDriveFileUpload";
@@ -4974,7 +4975,7 @@ function ProjectDriveTab({
         data-testid={`drive-upload-input-${scopeId}`}
       />
       {movePicker && (
-        <DestinationPicker
+        <FolderPicker
           open
           heading={movePicker.heading}
           drives={movePicker.drives}
@@ -5008,6 +5009,7 @@ function DocumentsBlock({
   hasActivePartner: boolean;
 }) {
   const dialog = useDialog();
+  const toast = useToast();
   const revalidator = useRevalidator();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -5019,6 +5021,23 @@ function DocumentsBlock({
   const uploadFolderIdRef = useRef<string | null>(null);
   // "Move to…" dialog state — tracks which doc the user wants to move.
   const [moveDoc, setMoveDoc] = useState<{ id: string; title: string } | null>(null);
+  const moveDestinations = useDriveDestinations({
+    enabled: !!moveDoc,
+    onError: () => {
+      toast.error("Couldn't load destinations.");
+      setMoveDoc(null);
+    },
+  });
+  const movePage = useMovePage({
+    pageId: moveDoc?.id ?? "",
+    title: moveDoc?.title ?? "",
+    current: { type: "Project", id: projectId },
+    rows: moveDestinations.rows,
+    onMoved: () => {
+      setMoveDoc(null);
+      revalidator.revalidate();
+    },
+  });
   // Folders start collapsed (Finder/Drive convention). Newly created folders are
   // added to this set so their contents show right after creation.
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
@@ -5747,17 +5766,14 @@ function DocumentsBlock({
         </div>
       )}
 
-      <MoveToDialog
-        open={!!moveDoc}
-        pageId={moveDoc?.id ?? ""}
-        title={moveDoc?.title ?? ""}
-        current={{ type: "Project", id: projectId }}
-        onClose={() => setMoveDoc(null)}
-        onMoved={() => {
-          setMoveDoc(null);
-          revalidator.revalidate();
-        }}
-      />
+      {moveDoc && moveDestinations.status === "ready" && (
+        <FolderPicker
+          open
+          heading={`Move “${moveDoc.title}”`}
+          {...movePage.pickerProps}
+          onClose={() => setMoveDoc(null)}
+        />
+      )}
     </section>
   );
 }

@@ -27,7 +27,10 @@ import { Menu, Select, type SelectOption, Tooltip } from "~/components/ui/floati
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { ShareDialog } from "~/components/sharing/ShareDialog";
-import { MoveToDialog } from "~/components/sharing/MoveToDialog";
+import { FolderPicker } from "~/components/drive/FolderPicker";
+import { useDriveDestinations } from "~/components/drive/use-drive-destinations";
+import { useMovePage } from "~/components/drive/use-move-page";
+import { useToast } from "~/components/ui/toast";
 import { ImportTemplateDialog } from "./doc-chrome/ImportTemplateDialog";
 import { FindReplaceBar } from "./doc/find";
 import {
@@ -180,6 +183,24 @@ export function DocumentEditor({
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [accessOpen, setAccessOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
+  const toast = useToast();
+  const moveDestinations = useDriveDestinations({
+    enabled: moveOpen,
+    onError: () => {
+      toast.error("Couldn't load destinations.");
+      setMoveOpen(false);
+    },
+  });
+  const movePage = useMovePage({
+    pageId,
+    title: initialTitle,
+    current: { type: workspaceType, id: workspaceId },
+    rows: moveDestinations.rows,
+    onMoved: () => {
+      setMoveOpen(false);
+      revalidator.revalidate();
+    },
+  });
   const [templateImportOpen, setTemplateImportOpen] = useState(false);
   // Optimistic local reflection of isTemplate — revalidator syncs server truth.
   const [templateMarked, setTemplateMarked] = useState(isTemplate);
@@ -1184,14 +1205,12 @@ export function DocumentEditor({
           onChanged={() => revalidator.revalidate()}
         />
       )}
-      {canManageAccess && (
-        <MoveToDialog
-          pageId={pageId}
-          title={initialTitle}
-          current={{ type: workspaceType, id: workspaceId }}
-          open={moveOpen}
+      {canManageAccess && moveOpen && moveDestinations.status === "ready" && (
+        <FolderPicker
+          open
+          heading={`Move “${initialTitle}”`}
+          {...movePage.pickerProps}
           onClose={() => setMoveOpen(false)}
-          onMoved={() => revalidator.revalidate()}
         />
       )}
       {canEdit && (
