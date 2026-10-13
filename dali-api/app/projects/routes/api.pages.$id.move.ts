@@ -11,6 +11,7 @@ import { parseJson } from "~/lib/validate";
 import type { Prisma, WorkspaceType } from "~/generated/prisma/client";
 import { pageDepth, MAX_PAGE_DEPTH, isAncestorOf, collectSubtree } from "~/lib/pages";
 import { isRoot, ROOT_MOVE_ERROR } from "~/lib/drive-roots";
+import { clearTypeIfLeavingRoot } from "~/lib/drive-receivers.server";
 import { getPageAccess, isUnderGoverningScope } from "~/lib/pageAccess.server";
 import { addToNotebook, notebookErrorResponse } from "~/lib/notebooks.server";
 
@@ -373,6 +374,8 @@ export async function action({ request, params }: Route.ActionArgs) {
     ...order.map((id, index) => prisma.page.update({ where: { id }, data: { position: index } })),
   ]);
 
+  const clearedReceivers = await clearTypeIfLeavingRoot(subtreeFolderIds);
+
   if (!sameWorkspace) {
     await logAuditEvent({
       action: "page.move-workspace",
@@ -389,6 +392,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     });
   }
 
-  return withCors(request, Response.json({ ok: true }));
+  return withCors(request, Response.json({ ok: true, clearedReceivers }));
 }
 

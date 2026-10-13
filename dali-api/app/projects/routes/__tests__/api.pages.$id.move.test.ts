@@ -44,6 +44,7 @@ vi.mock("~/lib/notebooks.server", () => {
     addToNotebook: vi.fn(),
   };
 });
+vi.mock("~/lib/drive-receivers.server", () => ({ clearTypeIfLeavingRoot: vi.fn() }));
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
@@ -53,6 +54,7 @@ import { getPageAccess, isUnderGoverningScope } from "~/lib/pageAccess.server";
 import { isOfferingManager } from "~/education/lib/access.server";
 import { logAuditEvent } from "~/lib/audit";
 import { NotebookError, addToNotebook } from "~/lib/notebooks.server";
+import { clearTypeIfLeavingRoot } from "~/lib/drive-receivers.server";
 import { action } from "../api.pages.$id.move";
 
 const m = prisma as any;
@@ -121,6 +123,7 @@ beforeEach(() => {
   m.signingDocument.count.mockResolvedValue(0);
   m.rubric.count.mockResolvedValue(0);
   m.$transaction.mockResolvedValue([]);
+  vi.mocked(clearTypeIfLeavingRoot).mockResolvedValue([]);
 });
 
 /** Data passed to the FIRST prisma.page.update — the moved page. */
@@ -155,6 +158,37 @@ describe("POST /api/pages/:id/move — Drive roots", () => {
     m.page.findUnique.mockResolvedValue(labPage({ kind: "Folder", folderType: "Meetings" }));
     const res = await call({ parentPageId: null });
     expect(res.status).toBe(200);
+  });
+});
+
+describe("POST /api/pages/:id/move — receiver lifecycle", () => {
+  it("checks the moved folder and its whole subtree after the move", async () => {
+    m.page.findUnique.mockResolvedValue(labPage({ kind: "Folder", folderType: "HiringForms" }));
+    childrenByParent = { p1: ["c1"], c1: ["g1"] };
+    await call({ parentPageId: null });
+    expect(clearTypeIfLeavingRoot).toHaveBeenCalledWith(["p1", "c1", "g1"]);
+    expect(vi.mocked(clearTypeIfLeavingRoot).mock.invocationCallOrder[0]).toBeGreaterThan(
+      m.$transaction.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("reports the receivers it cleared", async () => {
+    m.page.findUnique.mockResolvedValue(labPage({ kind: "Folder", folderType: "HiringForms" }));
+    vi.mocked(clearTypeIfLeavingRoot).mockResolvedValue(["p1"]);
+    const res = await call({ parentPageId: null });
+    expect(await res.json()).toEqual({ ok: true, clearedReceivers: ["p1"] });
+  });
+
+  it("reports an empty list when nothing was cleared", async () => {
+    m.page.findUnique.mockResolvedValue(labPage());
+    const res = await call({ parentPageId: null });
+    expect(await res.json()).toEqual({ ok: true, clearedReceivers: [] });
+  });
+
+  it("has no folders to check when a plain document moves", async () => {
+    m.page.findUnique.mockResolvedValue(labPage());
+    await call({ parentPageId: null });
+    expect(clearTypeIfLeavingRoot).toHaveBeenCalledWith([]);
   });
 });
 

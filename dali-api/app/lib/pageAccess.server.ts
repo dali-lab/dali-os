@@ -196,8 +196,9 @@ async function shareAndLinkGrant(
 // MAX_ANCESTOR_WALK levels to avoid N+1 loops.
 const MAX_ANCESTOR_WALK = 8; // generous ceiling above MAX_PAGE_DEPTH
 
-type AncestorRow = {
+export type AncestorRow = {
   id: string;
+  title?: string;
   parentPageId: string | null;
   scopeKind: ScopeKind | null;
   scopeGroupId: string | null;
@@ -225,6 +226,51 @@ export async function isUnderGoverningScope(parentPageId: string | null): Promis
   return (await findGoverningScope(parentPageId)) !== null;
 }
 
+/**
+ * The governing scope of every page in `rows`, computed in-process: the page
+ * itself when it carries a scopeKind, otherwise its nearest scoped ancestor,
+ * otherwise null. A parent missing from `rows` ends the walk with null, the
+ * same as the DB walk reaching the root. Bounded by MAX_ANCESTOR_WALK like
+ * findGoverningScope, so both agree on pathologically deep trees.
+ */
+export function governingScopeMap<R extends AncestorRow>(
+  rows: ReadonlyArray<R>,
+): Map<string, R | null> {
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const result = new Map<string, R | null>();
+  for (const row of rows) {
+    if (row.scopeKind !== null) {
+      result.set(row.id, row);
+      continue;
+    }
+    let found: R | null = null;
+    let id = row.parentPageId;
+    let steps = 0;
+    while (id !== null && steps < MAX_ANCESTOR_WALK) {
+      const ancestor = byId.get(id);
+      if (!ancestor) break;
+      if (ancestor.scopeKind !== null) {
+        found = ancestor;
+        break;
+      }
+      id = ancestor.parentPageId;
+      steps++;
+    }
+    result.set(row.id, found);
+  }
+  return result;
+}
+
+/**
+ * The governing scope for one page whose fields are in hand: the page itself
+ * when it carries a scope, otherwise the nearest scoped ancestor (one DB query
+ * per level), otherwise null.
+ */
+export async function findGoverningScopeFor(page: AncestorRow): Promise<AncestorRow | null> {
+  if (page.scopeKind !== null) return page;
+  return findGoverningScope(page.parentPageId);
+}
+
 async function findGoverningScope(
   startParentId: string | null,
 ): Promise<AncestorRow | null> {
@@ -235,6 +281,7 @@ async function findGoverningScope(
       where: { id },
       select: {
         id: true,
+        title: true,
         parentPageId: true,
         scopeKind: true,
         scopeGroupId: true,
@@ -350,6 +397,7 @@ async function computePageAccessCore(
   preloadedShares?: Array<{ principalType: string; principalId: string; permission: SharePermission }>,
   preloadedGroupIds?: string[],
   options?: PageAccessOptions,
+  governingByPageId?: ReadonlyMap<string, AncestorRow | null>,
 ): Promise<PageAccessResult> {
   // Archived pages: no access at all (collab/comments gate), so that neither
   // the collab socket nor the comments rail opens on a trashed page. Callers
@@ -396,10 +444,6 @@ async function computePageAccessCore(
   // (the spec says the nearest governing folder shadows further ancestors), so
   // one walk is sufficient.
   //
-  // The ancestry walk (findGoverningScope) is kept per-page — batching it safely
-  // would require materialising the full parent chain for every page upfront,
-  // which is not straightforward and the common case (no scope set) already
-  // terminates at the root and returns null immediately.
   const pageScopeKind = page.scopeKind as ScopeKind | null | undefined;
   const pageParentPageId = page.parentPageId as string | null | undefined;
 
@@ -416,7 +460,9 @@ async function computePageAccessCore(
     };
   } else if (pageParentPageId) {
     // Walk up; terminates fast (returns null) when no ancestor has a scope set.
-    governing = await findGoverningScope(pageParentPageId);
+    governing = governingByPageId?.has(page.id)
+      ? (governingByPageId.get(page.id) ?? null)
+      : await findGoverningScope(pageParentPageId);
   }
 
   if (governing !== null) {
@@ -493,16 +539,17 @@ async function computePageAccessCore(
  * the outcome. That holds only if each row carries the fields the computation
  * reads, so callers must select the full PageShape, not a display subset.
  *
- * The governing-scope ancestry walk (findGoverningScope) remains per-page
- * because materialising the full parent chain for all pages upfront is not
- * straightforward and the common case (no scope set) already returns null
- * immediately — no extra round-trips in practice.
+ * The governing-scope ancestry walk (findGoverningScope) is one query per
+ * level per page. A caller that already holds the whole workspace's rows passes
+ * `governingByPageId` (from `governingScopeMap`) and the walk happens in
+ * process; pages absent from the map still fall back to the DB walk.
  */
 export async function getPageAccessBulk(
   userId: string,
   pages: PageShape[],
   request?: Request,
   options?: PageAccessOptions,
+  governingByPageId?: ReadonlyMap<string, AncestorRow | null>,
 ): Promise<Map<string, PageAccessResult>> {
   if (pages.length === 0) return new Map();
 
@@ -542,6 +589,7 @@ export async function getPageAccessBulk(
         sharesForPage,
         groupIds,
         options,
+        governingByPageId,
       );
       result.set(page.id, access);
     }),

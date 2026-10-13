@@ -4,6 +4,9 @@ import {
   emptyMeetingNote,
   meetingNoteValid,
   meetingNotePayload,
+  noteDestinationRows,
+  noteInitialDest,
+  noteLocationFromDest,
   type MeetingNoteState,
 } from "~/calendar/components/meeting-note";
 
@@ -134,6 +137,90 @@ describe("the Core shape", () => {
       whiteboard: false,
       meetingType: "Other",
       meetingTypeLabel: CORE_NOTE_LABEL,
+    });
+  });
+});
+
+describe("note destination picking", () => {
+  const rows = {
+    drives: [
+      { id: "mine", label: "My Drive" },
+      { id: "lab", label: "Lab" },
+      { id: "core", label: "Core", rootFolderId: "core-root" },
+      { id: "projects", label: "Projects" },
+      { id: "education", label: "Education" },
+    ],
+    folders: [
+      { id: "lab-a", driveId: "lab", parentId: null, title: "Ops" },
+      { id: "core-m", driveId: "core", parentId: null, title: "Meetings" },
+      { id: "p1", driveId: "projects", parentId: null, title: "Atlas" },
+      { id: "p1-n", driveId: "projects", parentId: "p1", title: "Notes" },
+      { id: "o1", driveId: "education", parentId: null, title: "Intro" },
+      { id: "mine-a", driveId: "mine", parentId: null, title: "Mine" },
+    ],
+  };
+
+  it("offers neither My Drive nor Education, which the server cannot file into", () => {
+    const out = noteDestinationRows(rows);
+    expect(out.drives.map((d) => d.id)).toEqual(["lab", "core", "projects"]);
+    expect(out.folders.map((f) => f.id)).toEqual(["lab-a", "core-m", "p1", "p1-n"]);
+  });
+
+  it("maps a Lab folder to a Lab location named drive / folder", () => {
+    expect(noteLocationFromDest({ driveId: "lab", folderId: "lab-a" }, rows)).toEqual({
+      workspaceType: "Lab",
+      workspaceId: null,
+      parentPageId: "lab-a",
+      label: "Lab-wide / Ops",
+    });
+  });
+
+  it("maps Core's top level to its root folder", () => {
+    expect(noteLocationFromDest({ driveId: "core", folderId: null }, rows)).toEqual({
+      workspaceType: "Lab",
+      workspaceId: null,
+      parentPageId: "core-root",
+      label: "Core",
+    });
+  });
+
+  it("maps a project's top level and a folder inside it", () => {
+    expect(noteLocationFromDest({ driveId: "projects", folderId: "p1" }, rows)).toEqual({
+      workspaceType: "Project",
+      workspaceId: "p1",
+      parentPageId: null,
+      label: "Atlas",
+    });
+    expect(noteLocationFromDest({ driveId: "projects", folderId: "p1-n" }, rows)).toMatchObject({
+      workspaceType: "Project",
+      workspaceId: "p1",
+      parentPageId: "p1-n",
+      label: "Atlas / Notes",
+    });
+  });
+
+  it("returns null for places a note cannot go", () => {
+    expect(noteLocationFromDest({ driveId: "education", folderId: "o1" }, rows)).toBeNull();
+    expect(noteLocationFromDest({ driveId: "projects", folderId: null }, rows)).toBeNull();
+    expect(noteLocationFromDest({ driveId: "mine", folderId: null }, rows)).toBeNull();
+  });
+
+  it("opens at Lab-wide when no location is chosen", () => {
+    expect(noteInitialDest(null, rows)).toEqual({ driveId: "lab", folderId: null });
+  });
+
+  it("reopens at a chosen Lab folder, its drive, or a project folder", () => {
+    const loc = (over: object) => ({ workspaceType: "Lab" as const, workspaceId: null, parentPageId: null, label: "", ...over });
+    expect(noteInitialDest(loc({ parentPageId: "core-m" }), rows)).toEqual({ driveId: "core", folderId: "core-m" });
+    expect(noteInitialDest(loc({ parentPageId: "core-root" }), rows)).toEqual({ driveId: "core", folderId: null });
+    expect(noteInitialDest(loc({ parentPageId: "gone" }), rows)).toEqual({ driveId: "lab", folderId: null });
+    expect(noteInitialDest(loc({ workspaceType: "Project", workspaceId: "p1" }), rows)).toEqual({
+      driveId: "projects",
+      folderId: "p1",
+    });
+    expect(noteInitialDest(loc({ workspaceType: "Project", workspaceId: "p1", parentPageId: "p1-n" }), rows)).toEqual({
+      driveId: "projects",
+      folderId: "p1-n",
     });
   });
 });

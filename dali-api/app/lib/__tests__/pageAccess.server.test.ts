@@ -30,7 +30,13 @@ import { prisma } from "~/lib/db";
 import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
 import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
 import { resolveGroupMembers, listVisibleGroupIdsForUser } from "~/lib/groups";
-import { getPageAccess, PAGE_ACCESS_SELECT } from "../pageAccess.server";
+import {
+  getPageAccess,
+  getPageAccessBulk,
+  governingScopeMap,
+  isUnderGoverningScope,
+  PAGE_ACCESS_SELECT,
+} from "../pageAccess.server";
 
 const mockPrisma = prisma as any;
 
@@ -514,5 +520,127 @@ describe("Group scope on the object path (non-Core group)", () => {
     mockPrisma.page.findUnique.mockResolvedValue(governingFolder("Edit"));
     const result = await getPageAccess("author", childDoc({ createdById: "author" }));
     expect(result).toEqual(full);
+  });
+});
+
+describe("governingScopeMap", () => {
+  const node = (id: string, parentPageId: string | null, scope: Record<string, unknown> = {}) => ({
+    id,
+    parentPageId,
+    scopeKind: null,
+    scopeGroupId: null,
+    scopePermission: null,
+    createdById: "author",
+    ...scope,
+  });
+  const group = { scopeKind: "Group", scopeGroupId: "g1", scopePermission: "Edit" };
+  const priv = { scopeKind: "Private" };
+
+  // root
+  // ├─ a (Group g1)
+  // │   └─ b ── c
+  // ├─ d
+  // │   └─ f (Private) ── g
+  // └─ (orphan e, parent not in the set)
+  const tree = [
+    node("root", null),
+    node("a", "root", group),
+    node("b", "a"),
+    node("c", "b"),
+    node("d", "root"),
+    node("f", "d", priv),
+    node("g", "f"),
+    node("e", "missing-parent"),
+  ];
+  const expected: Record<string, string | null> = {
+    root: null,
+    a: "a",
+    b: "a",
+    c: "a",
+    d: null,
+    f: "f",
+    g: "f",
+    e: null,
+  };
+
+  it("resolves the nearest scoped ancestor, the page itself when scoped, else null", () => {
+    const map = governingScopeMap(tree);
+    for (const [id, governingId] of Object.entries(expected)) {
+      expect(map.get(id)?.id ?? null, id).toBe(governingId);
+    }
+    expect(map.size).toBe(tree.length);
+  });
+
+  it("nearest scope shadows a further ancestor", () => {
+    const rows = [node("top", null, group), node("mid", "top", priv), node("leaf", "mid")];
+    expect(governingScopeMap(rows).get("leaf")?.id).toBe("mid");
+  });
+
+  it("returns null when a parent is missing from the rows", () => {
+    expect(governingScopeMap([node("lonely", "gone")]).get("lonely")).toBeNull();
+  });
+
+  it("stops after eight ancestors, like the DB walk", () => {
+    const chain = [node("n0", null, group)];
+    for (let i = 1; i <= 10; i++) chain.push(node(`n${i}`, `n${i - 1}`));
+    const map = governingScopeMap(chain);
+    expect(map.get("n8")?.id).toBe("n0");
+    expect(map.get("n9")).toBeNull();
+    expect(map.get("n10")).toBeNull();
+  });
+
+  describe("agrees with the DB walk", () => {
+    const byId = new Map(tree.map((r) => [r.id, r]));
+    beforeEach(() => {
+      mockPrisma.page.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) =>
+        byId.get(where.id) ?? null,
+      );
+    });
+
+    it("on the governing folder of every page's parent chain", async () => {
+      const map = governingScopeMap(tree);
+      for (const row of tree) {
+        const viaDb = await isUnderGoverningScope(row.parentPageId);
+        const parentGoverned = row.parentPageId !== null && (map.get(row.parentPageId) ?? null) !== null;
+        expect(parentGoverned, row.id).toBe(viaDb);
+      }
+    });
+
+    it("on the access getPageAccessBulk computes for every viewer", async () => {
+      const pages = tree.map((r) => ({
+        ...page({ id: r.id, createdById: r.createdById }),
+        ...r,
+      }));
+      vi.mocked(isLabMember).mockResolvedValue(true);
+      vi.mocked(resolveGroupMembers).mockImplementation(async (id: string) =>
+        id === "g1" ? ["member"] : [],
+      );
+      for (const viewer of ["member", "author", "stranger"]) {
+        mockPrisma.page.findUnique.mockClear();
+        const viaDb = await getPageAccessBulk(viewer, pages);
+        const dbWalks = mockPrisma.page.findUnique.mock.calls.length;
+        mockPrisma.page.findUnique.mockClear();
+        const viaMap = await getPageAccessBulk(viewer, pages, undefined, undefined, governingScopeMap(tree));
+        expect(viaMap, viewer).toEqual(viaDb);
+        expect(dbWalks).toBeGreaterThan(0);
+        expect(mockPrisma.page.findUnique).not.toHaveBeenCalled();
+      }
+    });
+  });
+
+  it("falls back to the DB walk for a page missing from the map", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue({
+      id: "folder",
+      parentPageId: null,
+      scopeKind: "Private",
+      scopeGroupId: null,
+      scopePermission: null,
+      createdById: "someone-else",
+    });
+    vi.mocked(isLabMember).mockResolvedValue(true);
+    const child = { ...page({ id: "child", createdById: "x" }), parentPageId: "folder", scopeKind: null };
+    const res = await getPageAccessBulk("viewer", [child], undefined, undefined, new Map());
+    expect(res.get("child")).toEqual(denied());
+    expect(mockPrisma.page.findUnique).toHaveBeenCalled();
   });
 });

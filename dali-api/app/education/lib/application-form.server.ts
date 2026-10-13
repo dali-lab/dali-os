@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 import { prisma } from "~/lib/db";
 import { ensureOfferingFormsFolder } from "~/lib/pages";
 import { ensureProcessFolder, CORE_PROCESS_ID } from "~/lib/bindings.server";
+import { filingFolderOr, singletonSlot } from "~/lib/drive-receivers.server";
 import type { Question } from "~/types";
 import { resolveReferenceOptions } from "~/forms/lib/reference-sources";
 import { safeParseJsonString } from "~/forms/lib/forms-data";
@@ -62,13 +63,15 @@ function defaultQuestions(type: OfferingType): Question[] {
 
 // Resolve the education form-template folder — a Core-scoped binding folder
 // (Core / "education-templates"). A normal folder now, not a systemKey root.
-async function ensureTemplatesFolder(actorId: string): Promise<string> {
-  return ensureProcessFolder({
-    processType: "Core",
-    processId: CORE_PROCESS_ID,
-    purpose: "education-templates",
-    createdById: actorId,
-  });
+async function ensureTemplatesFolder(actorId: string): Promise<string | null> {
+  return filingFolderOr(singletonSlot("Core", "EducationTemplates"), actorId, () =>
+    ensureProcessFolder({
+      processType: "Core",
+      processId: CORE_PROCESS_ID,
+      purpose: "education-templates",
+      createdById: actorId,
+    }),
+  );
 }
 
 /**
