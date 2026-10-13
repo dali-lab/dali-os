@@ -589,6 +589,9 @@ describe("ignoreShares option", () => {
     vi.mocked(isCore).mockResolvedValue(true);
     const result = await getPageAccessBulk("viewer", [page()], undefined, { ignoreShares: true });
     expect(result.get("page-1")).toEqual(full);
+  });
+});
+
 describe("governingScopeMap", () => {
   const node = (id: string, parentPageId: string | null, scope: Record<string, unknown> = {}) => ({
     id,
