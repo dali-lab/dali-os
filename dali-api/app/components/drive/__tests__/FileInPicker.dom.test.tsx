@@ -5,6 +5,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { FileInPicker } from "~/components/drive/FileInPicker";
 import { DialogProvider } from "~/components/ui/dialog";
 import { ToastProvider } from "~/components/ui/toast";
+import { DriveHistoryContext, type DriveHistory } from "~/components/drive/use-drive-history";
+import type { UndoEntry } from "~/components/drive/undo-stack";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -38,19 +40,34 @@ let container: HTMLDivElement;
 let root: Root;
 let posts: Array<{ url: string; body: unknown }>;
 let placeReply: Response;
+let recorded: UndoEntry[];
+let undoEntry: ReturnType<typeof vi.fn<(e: UndoEntry) => Promise<void>>>;
+
+function fakeHistory(): DriveHistory {
+  return {
+    record: (e) => (recorded.push(e), e),
+    undo: async () => {},
+    redo: async () => {},
+    undoEntry: (e) => undoEntry(e),
+    canUndo: () => recorded.length > 0,
+    canRedo: () => false,
+  };
+}
 
 beforeEach(() => {
   Element.prototype.scrollIntoView = () => {};
   window.localStorage.clear();
   posts = [];
-  placeReply = new Response(JSON.stringify({ ok: true, declined: 1 }));
+  placeReply = new Response(JSON.stringify({ ok: true, declined: 1, shortcutIds: ["new1"] }));
+  recorded = [];
+  undoEntry = vi.fn(async () => {});
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init?: RequestInit) => {
       if (url === "/api/drive/destinations") return new Response(JSON.stringify(destinations));
       if (url === "/api/pages/p1/shortcuts") return new Response(JSON.stringify(placements));
       posts.push({ url, body: init?.body ? JSON.parse(init.body as string) : null });
-      return url.endsWith("/place") ? placeReply : new Response(JSON.stringify({ ok: true, created: true, grantDeclined: false }));
+      return url.endsWith("/place") ? placeReply : new Response(JSON.stringify({ ok: true, shortcutId: "sc1", created: true, grantDeclined: false }));
     }),
   );
 });
@@ -60,7 +77,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function mount(mode: "multi" | "single") {
+async function mount(mode: "multi" | "single", opts: { withHistory?: boolean } = {}) {
   const onClose = vi.fn();
   const onDone = vi.fn();
   container = document.createElement("div");
@@ -74,12 +91,16 @@ async function mount(mode: "multi" | "single") {
         createElement(
           ToastProvider,
           null,
-          createElement(FileInPicker, {
-            target: { id: "p1", title: "Kickoff", isFolder: false },
-            mode,
-            onClose,
-            onDone,
-          }),
+          createElement(
+            DriveHistoryContext.Provider,
+            { value: opts.withHistory === false ? null : fakeHistory() },
+            createElement(FileInPicker, {
+              target: { id: "p1", title: "Kickoff", isFolder: false },
+              mode,
+              onClose,
+              onDone,
+            }),
+          ),
         ),
       ),
     );
@@ -145,7 +166,43 @@ describe("FileInPicker multi", () => {
     ]);
     expect(onDone).toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();
-    expect(document.body.textContent).toContain("1 location added. Primary: Lab / Ops. 1 could not be shared; ask the owner.");
+    expect(document.body.textContent).toContain(
+      "Filed “Kickoff” in Lab ▸ Ops, also in Lab ▸ Design. 1 could not be shared; ask the owner.",
+    );
+  });
+
+  it("reports what the filing created so the host can reverse it", async () => {
+    const { onDone } = await mount("multi");
+    await search("Design");
+    await act(async () => {
+      optionNamed("Design").querySelector<HTMLInputElement>('input[type="checkbox"]')!.click();
+    });
+    await act(async () => buttonByText("File").click());
+    expect(onDone).toHaveBeenCalledWith({ previousPrimary: placements.primary, createdShortcutIds: ["new1"] });
+  });
+
+  it("records one history entry and the toast's Undo goes through it", async () => {
+    await mount("multi");
+    await search("Design");
+    await act(async () => {
+      optionNamed("Design").querySelector<HTMLInputElement>('input[type="checkbox"]')!.click();
+    });
+    await act(async () => buttonByText("File").click());
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0].label).toBe("Filing");
+    await act(async () => buttonByText("Undo").click());
+    expect(undoEntry).toHaveBeenCalledWith(recorded[0]);
+  });
+
+  it("files without an Undo when the host keeps no history", async () => {
+    await mount("multi", { withHistory: false });
+    await search("Design");
+    await act(async () => {
+      optionNamed("Design").querySelector<HTMLInputElement>('input[type="checkbox"]')!.click();
+    });
+    await act(async () => buttonByText("File").click());
+    expect(document.body.textContent).toContain("Filed “Kickoff” in Lab ▸ Ops");
+    expect(Array.from(document.querySelectorAll("button")).some((b) => b.textContent === "Undo")).toBe(false);
   });
 
   it("keeps the picker open and says why when the server refuses", async () => {
@@ -175,8 +232,36 @@ describe("FileInPicker single", () => {
         body: { targetPageId: "p1", dest: { workspaceType: "Lab", workspaceId: null, parentPageId: "design" } },
       },
     ]);
-    expect(onDone).toHaveBeenCalled();
+    expect(onDone).toHaveBeenCalledWith({ previousPrimary: placements.primary, createdShortcutIds: ["sc1"] });
     expect(onClose).toHaveBeenCalled();
+    expect(document.body.textContent).toContain("Added a shortcut to “Kickoff” in Lab ▸ Design");
+  });
+
+  it("records the shortcut so Undo can remove it", async () => {
+    await mount("single");
+    await search("Design");
+    await act(async () => optionNamed("Design").click());
+    await act(async () => buttonByText("Add shortcut").click());
+    expect(recorded.map((e) => e.label)).toEqual(["Shortcut"]);
+    await act(async () => buttonByText("Undo").click());
+    expect(undoEntry).toHaveBeenCalledWith(recorded[0]);
+  });
+
+  it("says a shortcut is already there and records nothing", async () => {
+    vi.mocked(fetch).mockImplementation(async (url: string | URL | Request, init?: RequestInit) => {
+      const u = String(url);
+      if (u === "/api/drive/destinations") return new Response(JSON.stringify(destinations));
+      if (u === "/api/pages/p1/shortcuts") return new Response(JSON.stringify(placements));
+      posts.push({ url: u, body: init?.body ? JSON.parse(init.body as string) : null });
+      return new Response(JSON.stringify({ ok: true, shortcutId: "sc1", created: false, grantDeclined: false }));
+    });
+    const { onDone } = await mount("single");
+    await search("Design");
+    await act(async () => optionNamed("Design").click());
+    await act(async () => buttonByText("Add shortcut").click());
+    expect(document.body.textContent).toContain("There is already a shortcut in Lab ▸ Design.");
+    expect(recorded).toHaveLength(0);
+    expect(onDone).not.toHaveBeenCalled();
   });
 
   it("won't put a shortcut next to the original", async () => {

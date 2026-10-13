@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { Placements, ServerDest } from "~/components/drive/file-in";
+import type { PagePlace, Placements, ServerDest } from "~/components/drive/file-in";
 
 async function errorOf(res: Response, fallback: string): Promise<string> {
   return ((await res.json().catch(() => ({}))) as { error?: string }).error ?? fallback;
@@ -34,7 +34,7 @@ export function deleteShortcutRequest(shortcutId: string): Promise<Response> {
 }
 
 export function createShortcutRequest(targetPageId: string, dest: ServerDest) {
-  return call<{ created: boolean; grantDeclined: boolean }>(
+  return call<{ shortcutId: string; created: boolean; grantDeclined: boolean }>(
     "/api/shortcuts",
     json("POST", { targetPageId, dest }),
     "Couldn't add the shortcut",
@@ -42,10 +42,22 @@ export function createShortcutRequest(targetPageId: string, dest: ServerDest) {
 }
 
 export function placePageRequest(pageId: string, destinations: ServerDest[], primaryIndex: number) {
-  return call<{ declined: number }>(
+  return call<{ declined: number; shortcutIds: string[] }>(
     `/api/pages/${pageId}/place`,
     json("POST", { destinations, primaryIndex }),
     "Couldn't file it there",
+  );
+}
+
+/** Put a page back at a place `fetchPlacements` reported as its primary: undoes a filing. */
+export function movePageToPlaceRequest(pageId: string, place: PagePlace) {
+  if (place.workspaceType === "Member") {
+    return Promise.resolve<ApiResult<Record<string, never>>>({ ok: false, error: "That page can't go back into My Drive" });
+  }
+  return call<Record<string, never>>(
+    `/api/pages/${pageId}/move`,
+    json("POST", { parentPageId: place.folderId, workspaceType: place.workspaceType, workspaceId: place.workspaceId }),
+    "Couldn't move it back",
   );
 }
 

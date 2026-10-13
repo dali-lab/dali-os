@@ -62,7 +62,7 @@ export type PlacePlan = {
   payload: { destinations: ServerDest[]; primaryIndex: number } | null;
   primaryChanged: boolean;
   /** Shortcuts the request will add: every chosen destination but the primary and the ones already filed. */
-  added: number;
+  addedDestinations: Destination[];
 };
 
 /**
@@ -85,57 +85,13 @@ export function planPlacement({
   const send = result.destinations.filter((d) => d === chosenPrimary || !lockedKeys.has(destinationKey(d)));
   const destinations = send.map((d) => toServerDest(d, rows));
   const primaryChanged = destinationKey(chosenPrimary) !== destinationKey(currentPrimary);
-  const added = send.filter((d) => d !== chosenPrimary).length;
-  if (destinations.some((d) => d === null)) return { payload: null, primaryChanged, added };
+  const addedDestinations = send.filter((d) => d !== chosenPrimary);
+  if (destinations.some((d) => d === null)) return { payload: null, primaryChanged, addedDestinations };
   return {
     payload: { destinations: destinations as ServerDest[], primaryIndex: send.indexOf(chosenPrimary) },
     primaryChanged,
-    added,
+    addedDestinations,
   };
-}
-
-/** The toast after filing: what was added, which location is primary, and how many grants were declined. */
-export function placeToast({
-  added,
-  declined,
-  primaryPath,
-}: {
-  added: number;
-  declined: number;
-  primaryPath: string;
-}): string {
-  const parts: string[] = [];
-  if (added > 0) parts.push(`${added} location${added === 1 ? "" : "s"} added.`);
-  parts.push(`Primary: ${primaryPath}.`);
-  if (declined > 0) parts.push(`${declined} could not be shared; ask the owner.`);
-  return parts.join(" ");
-}
-
-/** The toast after a single shortcut was added or already there. */
-export function shortcutToast({
-  created,
-  grantDeclined,
-  folderLabel,
-}: {
-  created: boolean;
-  grantDeclined: boolean;
-  folderLabel: string;
-}): string {
-  if (!created) return `There is already a shortcut in ${folderLabel}.`;
-  return grantDeclined
-    ? `Shortcut added to ${folderLabel}. It could not be shared; ask the owner.`
-    : `Shortcut added to ${folderLabel}.`;
-}
-
-export const SHORTCUT_REMOVED_TOAST = "Shortcut removed. The original is untouched.";
-
-/** The toast after a bulk delete: shortcuts alone say the originals are untouched. */
-export function bulkDeletedToast(items: Array<{ type: string }>): string {
-  const count = items.length;
-  if (count > 0 && items.every((i) => i.type === "shortcut")) {
-    return count === 1 ? SHORTCUT_REMOVED_TOAST : `${count} shortcuts removed. The originals are untouched.`;
-  }
-  return `Deleted ${count}`;
 }
 
 const WORKSPACE_LABEL: Record<PagePlace["workspaceType"], string> = {
