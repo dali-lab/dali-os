@@ -4,11 +4,11 @@ import {
   ChevronRight,
   Eye,
   FolderPlus,
-  Landmark,
   Lock,
   Plus,
   Users,
 } from "lucide-react";
+import { LabAudienceGlyph } from "~/components/drive/AudienceSignal";
 import { PageIcon } from "~/components/PageIcon";
 import { FavoriteStar } from "~/components/FavoriteStar";
 import { buttonClasses } from "~/components/ui/Button";
@@ -40,8 +40,8 @@ function VisibilityMark({ note }: { note: NoteSummary }) {
         content="Listed on the lab-wide Documents page — visible to all lab members."
         variant="rich"
       >
-        <span className="text-accent-teal">
-          <Landmark className="w-3.5 h-3.5" aria-label="Listed lab-wide" />
+        <span role="img" aria-label="Listed lab-wide" className="inline-flex items-center gap-1 text-accent-teal">
+          <LabAudienceGlyph />
         </span>
       </Tooltip>
     );

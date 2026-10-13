@@ -93,7 +93,9 @@ import { isProcessRootSpace, SHARED_SPACE_KEY } from "~/lib/drive-spaces";
 import { ProcessLinkPill } from "~/components/drive/ProcessLinkPill";
 import { AudienceSignal, AudienceDetail } from "~/components/drive/AudienceSignal";
 import { TagDots, TagLabels } from "~/components/drive/TagDots";
-import { buttonClasses } from "~/components/ui/Button";
+import { Button, buttonClasses } from "~/components/ui/Button";
+import { IconButton } from "~/components/ui/IconButton";
+import { useOsChrome } from "~/components/os-chrome";
 import { crumbsFor, locationOf, type ItemLocation } from "~/components/drive/location";
 import { LocationLink } from "~/components/drive/LocationLink";
 import { FileInPicker, type FileInTarget } from "~/components/drive/FileInPicker";
@@ -101,7 +103,8 @@ import { AlsoInSection, OriginalValue } from "~/components/drive/ShortcutDetails
 import { DetailFact } from "~/components/drive/DetailFact";
 import { menuEntries, type MenuEntry } from "~/components/drive/item-menu";
 import { canFileIn, folderShortcutTarget, locateTarget, shortcutRowState } from "~/components/drive/file-in";
-import { CORAL_FOLDER, folderCountLabel, pickGlyph, type ItemGlyph } from "~/components/drive/glyphs";
+import { columnClickIntent } from "~/components/drive/column-click";
+import { CORAL_FOLDER, folderCountLabel, glyphLabel, pickGlyph, type ItemGlyph } from "~/components/drive/glyphs";
 import { FolderSettingsModal } from "~/components/drive/FolderSettingsModal";
 import { eligibleSlotsFor, isPageFolder, projectIdFor, receivesLabel } from "~/components/drive/receiver-options";
 
@@ -420,6 +423,23 @@ function glyphIcon(glyph: ItemGlyph, item: DriveItem, size: IconSize): ReactNode
     case "doc":
       return <FileText className={`${cls} text-muted-foreground shrink-0`} />;
   }
+}
+
+/** The row glyph with a hover label saying what the item is and who can see it. */
+function ItemGlyphTip({ item, size }: { item: DriveItem; size?: IconSize }) {
+  const label = glyphLabel(pickGlyph(item), {
+    audienceLabel: "audience" in item ? item.audience?.label : undefined,
+    tabCount: item.type === "doc" ? item.tabCount : undefined,
+    originalInTrash: item.type === "shortcut" ? item.originalInTrash : undefined,
+    itemType: item.type,
+  });
+  return (
+    <Tooltip content={label} variant="label" placement="top">
+      <span aria-hidden data-testid="item-glyph" className="inline-flex shrink-0">
+        {itemIcon(item, size)}
+      </span>
+    </Tooltip>
+  );
 }
 
 function scopeIcon(scope: DriveTreeScope, size: IconSize = "sm") {
@@ -1231,13 +1251,25 @@ export function DriveBrowser({
     onNavigate(scopeId, null);
   }
 
-  // Click a row inside a column: drill into a folder, open anything else.
-  // Cmd/Ctrl- or Shift-click multi-selects within that column (like list/grid)
-  // instead of navigating, driving the same bulk bar.
+  // Click a row inside a column: select it (a folder also drills in). Opening a
+  // document is a double-click or Enter, so a click never launches anything out
+  // from under a multi-select.
   function handleColumnRowClick(levelIdx: number, item: DriveItem, scopeId: string, e: ReactMouseEvent) {
     // Take keyboard focus so arrow/Enter/Space nav works without a second tab.
     columnsContainerRef.current?.focus({ preventScroll: true });
-    if (e.metaKey || e.ctrlKey) {
+    const columnIds = itemsForLevel(colSel.levels[levelIdx]).map((i) => i.id);
+    const intent = columnClickIntent({
+      metaKey: e.metaKey,
+      ctrlKey: e.ctrlKey,
+      shiftKey: e.shiftKey,
+      anchorInColumn: !!anchorId && columnIds.includes(anchorId),
+      suppressed: suppressClickRef.current,
+    });
+    if (intent === "ignore") {
+      suppressClickRef.current = false;
+      return;
+    }
+    if (intent === "toggle") {
       setSelected((prev) => {
         const next = new Set(prev);
         if (next.has(item.id)) next.delete(item.id);
@@ -1247,18 +1279,15 @@ export function DriveBrowser({
       setAnchorId(item.id);
       return;
     }
-    if (e.shiftKey && anchorId) {
-      const ids = itemsForLevel(colSel.levels[levelIdx]).map((i) => i.id);
-      const a = ids.indexOf(anchorId);
-      const b = ids.indexOf(item.id);
-      if (a !== -1 && b !== -1) {
-        const [lo, hi] = a <= b ? [a, b] : [b, a];
-        setSelected(new Set(ids.slice(lo, hi + 1)));
-        return;
-      }
+    if (intent === "range") {
+      const a = columnIds.indexOf(anchorId!);
+      const b = columnIds.indexOf(item.id);
+      const [lo, hi] = a <= b ? [a, b] : [b, a];
+      setSelected(new Set(columnIds.slice(lo, hi + 1)));
+      return;
     }
     highlightColumnRow(levelIdx, item, scopeId);
-    if (item.type !== "folder") onOpenItem(item);
+    setSelected(new Set([item.id]));
   }
 
   // Highlight a row without opening it: a folder drills in, anything else is
@@ -1746,7 +1775,11 @@ export function DriveBrowser({
               ref={columnsContainerRef}
               tabIndex={0}
               onKeyDown={onColumnsKeyDown}
-              className="min-w-0 overflow-x-auto rounded-os-item border border-border focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-os-accent/30"
+              className={cn(
+                "min-w-0 overflow-x-auto rounded-os-item border border-border focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-os-accent/30",
+                // Room under the columns for the floating selection bar.
+                showBulk && "pb-14",
+              )}
               onDragEnter={onFileDragEnter}
               onDragOver={onFileDragOver}
               onDragLeave={onFileDragLeave}
@@ -2050,42 +2083,47 @@ function DriveBulkBar({
   onBulkDelete?: (items: DriveItem[]) => void;
   onClearSelection: () => void;
 }) {
+  const { card } = useOsChrome();
   if (!showBulk) return null;
   return (
     <div
-      // Pinned to the bottom of the listing it belongs to, clear of the rows
-      // it acts on. Its own surface and shadow, since it sits over content.
-      className="absolute inset-x-3 bottom-3 z-20 flex min-h-9 items-center gap-2 rounded-os-item border border-os-accent/40 bg-os-accent/10 px-3 text-base shadow-[0_16px_40px_var(--color-os-shadow)]"
+      className={cn(
+        card,
+        "absolute bottom-4 left-1/2 z-20 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-2 border border-border px-3 py-2 shadow-[0_16px_40px_var(--color-os-shadow)]",
+      )}
       data-testid="drive-bulk-bar"
       onClick={(e) => e.stopPropagation()}
     >
-      <span className="font-medium text-foreground">{selectedCount} selected</span>
+      <span className="whitespace-nowrap rounded-full bg-os-container px-2.5 py-1 text-xs font-medium text-foreground">
+        {selectedCount} selected
+      </span>
       {onBulkMove && (
-        <button
-          type="button"
+        <Button
+          variant="secondary"
+          size="sm"
           data-testid="drive-bulk-move"
           onClick={() => onBulkMove(selectedItems)}
-          className="inline-flex items-center gap-1 text-foreground hover:text-accent-coral"
         >
-          <FolderInput className="w-3.5 h-3.5" /> Move
-        </button>
+          <FolderInput className="h-3.5 w-3.5" /> Move
+        </Button>
       )}
       {onBulkDelete && (
-        <button
-          type="button"
+        <Button
+          variant="destructive"
+          size="sm"
+          data-testid="drive-bulk-delete"
           onClick={() => onBulkDelete(selectedItems)}
-          className="inline-flex items-center gap-1 text-destructive hover:text-destructive/80"
         >
-          <Trash2 className="w-3.5 h-3.5" /> Delete
-        </button>
+          <Trash2 className="h-3.5 w-3.5" /> Delete
+        </Button>
       )}
-      <button
-        type="button"
+      <IconButton
+        label="Clear selection"
+        icon={X}
+        tooltipSide="top"
+        data-testid="drive-bulk-clear"
         onClick={onClearSelection}
-        className="ml-auto text-muted-foreground hover:text-foreground"
-      >
-        Clear
-      </button>
+      />
     </div>
   );
 }
@@ -2494,6 +2532,10 @@ function ColumnItemRow({
       data-col-level={levelIdx}
       data-row-id={item.id}
       onClick={(e) => { e.stopPropagation(); onClick(e); }}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        if (!isFolder) onOpen();
+      }}
       className={`group flex items-center rounded-lg dnd-touch-handle ${t.itemRow} ${t.row} cursor-default select-none ${
         drag.isDragging ? "opacity-40" : shortcutRowState(item).dimmed ? "opacity-60" : ""
       } ${
@@ -2506,7 +2548,7 @@ function ColumnItemRow({
             : "text-foreground hover:bg-os-hover"
       }`}
     >
-      {itemIcon(item)}
+      <ItemGlyphTip item={item} />
       <span className="min-w-0 flex-1 truncate font-medium">
         {item.title || "Untitled"}
       </span>
@@ -3188,7 +3230,7 @@ function ListRow({
       }`}
     >
       <span className="flex items-center gap-2 min-w-0">
-        {itemIcon(item)}
+        <ItemGlyphTip item={item} />
         <span className="truncate font-medium text-foreground">{item.title || "Untitled"}</span>
         <ShortcutMarks item={item} />
         <FolderCount item={item} />
@@ -3320,7 +3362,7 @@ function GridTile({
             </span>
           </Tooltip>
         )}
-      {itemIcon(item, "xl")}
+      <ItemGlyphTip item={item} size="xl" />
       <span
         className={`${GRID_LABEL} ${
           selected ? "bg-os-accent text-os-bg" : "text-foreground"
@@ -3405,7 +3447,7 @@ function FolderCard({
       <div className="absolute right-1.5 top-1.5 flex items-center">
         <FavoriteButton item={item} onToggleFavorite={onToggleFavorite} />
       </div>
-      {itemIcon(item, "lg")}
+      <ItemGlyphTip item={item} size="lg" />
       <div className="flex min-w-0 flex-col gap-1">
         <span className={`truncate ${t.row} font-medium text-foreground`}>{item.title || "Untitled"}</span>
         <span className="flex items-center gap-2">
@@ -3472,7 +3514,7 @@ export function SearchResults({
             }`}
           >
             <span className="flex min-w-0 items-center gap-2">
-              {itemIcon(hit.item)}
+              <ItemGlyphTip item={hit.item} />
               <span className="truncate font-medium text-foreground">{hit.item.title || "Untitled"}</span>
               <FolderCount item={hit.item} />
               <RowTags item={hit.item} actions={getScopeActions(hit.scope.id)} />

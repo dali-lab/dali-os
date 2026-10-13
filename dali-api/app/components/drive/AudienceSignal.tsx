@@ -47,6 +47,16 @@ function AvatarStack({ audience }: { audience: Audience }) {
   );
 }
 
+/** "Everyone in the lab". A globe means the open internet, so lab-wide wears the people mark instead. */
+export function LabAudienceGlyph({ labelled = true }: { labelled?: boolean }) {
+  return (
+    <>
+      <Users className="h-3 w-3" />
+      {labelled && <span className="text-[10px] font-medium">Lab</span>}
+    </>
+  );
+}
+
 function Glyph({ audience }: { audience: Audience }) {
   if (audience.people && audience.people.length > 0) return <AvatarStack audience={audience} />;
   switch (audience.kind) {
@@ -68,6 +78,8 @@ function Glyph({ audience }: { audience: Audience }) {
           <span className="text-[10px] font-medium">Team</span>
         </>
       );
+    case "lab":
+      return <LabAudienceGlyph />;
     default:
       return <Globe className="h-3 w-3" />;
   }
