@@ -12,9 +12,11 @@ import {
   HardDrive,
   Heart,
   Shield,
+  UserPlus,
   type LucideIcon,
 } from "lucide-react";
 import type { RoleFlags } from "~/lib/nav-areas";
+import type { DriveItem } from "~/lib/drive.server";
 
 // ── Backing strategies ────────────────────────────────────────────────────────
 
@@ -30,13 +32,16 @@ import type { RoleFlags } from "~/lib/nav-areas";
  *                        the root; the loader decides, not a role gate.
  * - `virtual-filter`   — a view over existing items, no physical root.
  *                        Partners (deferred): pages where `partnerVisible=true`.
+ * - `shared-with-me`   — pages the viewer holds a named share on, flat, that
+ *                        workspace membership does not already show them.
  */
 export type DriveSpaceBacking =
   | "member"
   | "lab-open"
   | "workspace-multi"
   | "process-root"
-  | "virtual-filter";
+  | "virtual-filter"
+  | "shared-with-me";
 
 export type DriveRootKey = "core" | "hiring" | "mentorship";
 
@@ -83,6 +88,13 @@ export const DRIVE_SPACES: DriveSpaceDef[] = [
     icon: HardDrive,
     backing: "member",
     // Always visible — every signed-in member has a private drive.
+  },
+  {
+    key: "shared",
+    label: "Shared with me",
+    icon: UserPlus,
+    backing: "shared-with-me",
+    // Always visible, even when empty: the empty state explains what lands here.
   },
   {
     key: "lab",
@@ -143,4 +155,20 @@ export function visibleDriveSpaces(r: RoleFlags): DriveSpaceDef[] {
 /** Whether a Drive scope id names a process-root space (Core, Hiring, Mentorship). */
 export function isProcessRootSpace(scopeId: string): boolean {
   return DRIVE_SPACES.some((s) => s.key === scopeId && s.backing === "process-root");
+}
+
+/** The id of the "Shared with me" space (its registry key doubles as the scope id). */
+export const SHARED_SPACE_KEY = "shared";
+
+export type SharedView = "with-me" | "by-me";
+
+/**
+ * Narrow the "Shared with me" space to one direction. The loader sends pages
+ * shared with the viewer and pages they shared with others in one list so the
+ * chip toggles without a refetch; each item says which direction it belongs to.
+ */
+export function sharedSpaceItems(items: DriveItem[], view: SharedView): DriveItem[] {
+  return items.filter((it) =>
+    it.type !== "doc" ? false : view === "by-me" ? it.sharedByMe === true : it.sharedWithMe === true,
+  );
 }

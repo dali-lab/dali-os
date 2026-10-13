@@ -11,6 +11,7 @@ vi.mock("~/lib/drive.server", () => ({
 }));
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn(), isImpersonating: vi.fn() }));
 vi.mock("~/lib/user-pages.server", () => ({ favoritePageIds: vi.fn() }));
+vi.mock("~/lib/drive-shared.server", () => ({ loadSharedWithMe: vi.fn() }));
 vi.mock("~/lib/pageAccess.server", () => ({ getPageAccess: vi.fn() }));
 vi.mock("~/lib/drive-roots.server", () => ({
   findAllRoots: vi.fn(),
@@ -23,6 +24,7 @@ import { requireAuth, isImpersonating } from "~/lib/auth";
 import { favoritePageIds } from "~/lib/user-pages.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { findAllRoots, ensureAllRoots } from "~/lib/drive-roots.server";
+import { loadSharedWithMe } from "~/lib/drive-shared.server";
 import { liftOrphans, loadDriveScopes } from "~/lib/drive-scopes.server";
 import type { DriveItem } from "~/lib/drive.server";
 
@@ -134,6 +136,7 @@ describe("loadDriveScopes: process-root spaces", () => {
     vi.mocked(isImpersonating).mockReturnValue(false);
     vi.mocked(loadForms).mockResolvedValue([]);
     vi.mocked(loadOrphanForms).mockResolvedValue([]);
+    vi.mocked(loadSharedWithMe).mockResolvedValue([]);
     vi.mocked(findAllRoots).mockResolvedValue({
       byKey: { core: "coreRoot", hiring: "hiringRoot", mentorship: "mentorRoot" },
       ids: Object.values(ROOTS),
@@ -201,7 +204,7 @@ describe("loadDriveScopes: process-root spaces", () => {
       canComment: false,
     }));
     const scopes = await load({ isCore: false });
-    expect(scopes.map((s) => s.id)).toEqual(["mine", "lab", "mentorship"]);
+    expect(scopes.map((s) => s.id)).toEqual(["mine", "shared", "lab", "mentorship"]);
     expect(scopes.find((s) => s.id === "hiring")).toBeUndefined();
     expect(ids(scopes, "lab")).not.toContain("hiringRoot");
     expect(ids(scopes, "lab")).not.toContain("mentorRoot");
@@ -210,7 +213,7 @@ describe("loadDriveScopes: process-root spaces", () => {
   it("skips a space whose root does not exist yet", async () => {
     vi.mocked(findAllRoots).mockResolvedValue({ byKey: { core: "coreRoot" }, ids: ["coreRoot"] });
     const scopes = await load({ isCore: false });
-    expect(scopes.map((s) => s.id)).toEqual(["mine", "lab", "core"]);
+    expect(scopes.map((s) => s.id)).toEqual(["mine", "shared", "lab", "core"]);
   });
 
   it("creates missing roots for a Core viewer, then re-reads them", async () => {
@@ -222,7 +225,7 @@ describe("loadDriveScopes: process-root spaces", () => {
       });
     const scopes = await load();
     expect(ensureAllRoots).toHaveBeenCalledWith("viewer");
-    expect(scopes.map((s) => s.id)).toEqual(["mine", "lab", "core", "hiring", "mentorship"]);
+    expect(scopes.map((s) => s.id)).toEqual(["mine", "shared", "lab", "core", "hiring", "mentorship"]);
   });
 
   it("never creates roots on behalf of a non-Core viewer", async () => {
@@ -241,7 +244,7 @@ describe("loadDriveScopes: process-root spaces", () => {
     vi.mocked(findAllRoots).mockResolvedValue({ byKey: {}, ids: [] });
     vi.mocked(ensureAllRoots).mockRejectedValue(new Error("no core group"));
     const scopes = await load();
-    expect(scopes.map((s) => s.id)).toEqual(["mine", "lab"]);
+    expect(scopes.map((s) => s.id)).toEqual(["mine", "shared", "lab"]);
   });
 
   it("re-roots a form filed on the root to the space's top level", async () => {
@@ -256,5 +259,78 @@ describe("loadDriveScopes: process-root spaces", () => {
     expect(core.items.find((i) => i.id === "formInFolder")?.parentFolderId).toBe("agreements");
     expect(core.items.find((i) => i.id === "formElsewhere")).toBeUndefined();
     expect(scopes.find((s) => s.id === "lab")!.items.some((i) => i.id === "formElsewhere")).toBe(true);
+  });
+});
+
+describe("loadDriveScopes: Shared with me space", () => {
+  const shared = (id: string): DriveItem => ({
+    type: "doc",
+    id,
+    title: id,
+    parentFolderId: null,
+    iconEmoji: null,
+    updatedAt: new Date(0),
+    href: `/documents/${id}`,
+    sharedBy: { name: "Alice Ng" },
+    sharedAt: new Date(0),
+    sharedWithMe: true,
+  });
+
+  function load(opts: { isCore?: boolean } = {}) {
+    vi.mocked(loadDriveScope).mockResolvedValue([]);
+    return loadDriveScopes({
+      userSub: "viewer",
+      projectWorkspaces: [],
+      educationWorkspaces: [],
+      canViewForms: false,
+      canManageAgreements: false,
+      isCore: opts.isCore ?? false,
+      request: new Request("http://localhost/drive"),
+    });
+  }
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.mocked(buildLinkedProcessMap).mockResolvedValue(new Map() as any);
+    vi.mocked(favoritePageIds).mockResolvedValue(new Set());
+    vi.mocked(requireAuth).mockResolvedValue({ ok: true } as any);
+    vi.mocked(isImpersonating).mockReturnValue(false);
+    vi.mocked(loadForms).mockResolvedValue([]);
+    vi.mocked(loadOrphanForms).mockResolvedValue([]);
+    vi.mocked(findAllRoots).mockResolvedValue({ byKey: {}, ids: [] } as any);
+    vi.mocked(loadSharedWithMe).mockResolvedValue([]);
+    m.page.findMany.mockResolvedValue([]);
+  });
+
+  it("sits right after My Drive", async () => {
+    const scopes = await load();
+    expect(scopes.slice(0, 3).map((s) => s.id)).toEqual(["mine", "shared", "lab"]);
+    expect(scopes.find((s) => s.id === "shared")?.label).toBe("Shared with me");
+  });
+
+  it("carries the loader's items through, tagging favorites", async () => {
+    vi.mocked(loadSharedWithMe).mockResolvedValue([shared("a"), shared("b")]);
+    vi.mocked(favoritePageIds).mockResolvedValue(new Set(["b"]));
+    const items = (await load()).find((s) => s.id === "shared")!.items;
+    expect(items.map((i) => [i.id, i.favorited ?? false])).toEqual([
+      ["a", false],
+      ["b", true],
+    ]);
+    expect(items[0]).toMatchObject({ sharedBy: { name: "Alice Ng" }, sharedWithMe: true });
+  });
+
+  it("is still present, empty, for a Core viewer with nothing shared by name", async () => {
+    const shared = (await load({ isCore: true })).find((s) => s.id === "shared");
+    expect(shared).toBeDefined();
+    expect(shared?.items).toEqual([]);
+  });
+
+  it("loads nothing while an admin is impersonating", async () => {
+    vi.mocked(requireAuth).mockResolvedValue({ ok: true } as any);
+    vi.mocked(isImpersonating).mockReturnValue(true);
+    vi.mocked(loadSharedWithMe).mockResolvedValue([shared("a")]);
+    const scope = (await load()).find((s) => s.id === "shared");
+    expect(scope?.items).toEqual([]);
+    expect(loadSharedWithMe).not.toHaveBeenCalled();
   });
 });

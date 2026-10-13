@@ -3,9 +3,11 @@ import {
   DRIVE_SPACES,
   visibleDriveSpaces,
   isProcessRootSpace,
+  sharedSpaceItems,
   type DriveSpaceDef,
 } from "~/lib/drive-spaces";
 import type { RoleFlags } from "~/lib/nav-areas";
+import type { DriveItem } from "~/lib/drive.server";
 
 // ── Fixture role flags ────────────────────────────────────────────────────────
 
@@ -47,6 +49,7 @@ describe("DRIVE_SPACES registry", () => {
   it("contains exactly the expected keys in order", () => {
     expect(DRIVE_SPACES.map((s) => s.key)).toEqual([
       "mine",
+      "shared",
       "lab",
       "projects",
       "education",
@@ -113,7 +116,48 @@ describe("visibleDriveSpaces", () => {
   it("shows the process-root spaces to every viewer; the loader filters them by root access", () => {
     for (const flags of [NOBODY, CORE, HIRING_ONLY]) {
       const keys = visibleDriveSpaces(flags).map((s) => s.key);
-      expect(keys).toEqual(["mine", "lab", "projects", "education", "core", "hiring", "mentorship"]);
+      expect(keys).toEqual(["mine", "shared", "lab", "projects", "education", "core", "hiring", "mentorship"]);
     }
+  });
+
+  it("shared with me is ungated and backed by shared-with-me", () => {
+    const shared = DRIVE_SPACES.find((s) => s.key === "shared")!;
+    expect(shared.backing).toBe("shared-with-me");
+    expect(shared.gate).toBeUndefined();
+    expect(shared.label).toBe("Shared with me");
+    for (const flags of [NOBODY, CORE, HIRING_ONLY]) {
+      expect(visibleDriveSpaces(flags).map((s) => s.key)).toContain("shared");
+    }
+  });
+});
+
+describe("sharedSpaceItems", () => {
+  const doc = (id: string, flags: { sharedWithMe?: boolean; sharedByMe?: boolean }): DriveItem => ({
+    type: "doc",
+    id,
+    title: id,
+    parentFolderId: null,
+    iconEmoji: null,
+    updatedAt: new Date(0),
+    href: `/documents/${id}`,
+    ...flags,
+  });
+  const items = [
+    doc("received", { sharedWithMe: true }),
+    doc("granted", { sharedByMe: true }),
+    doc("both", { sharedWithMe: true, sharedByMe: true }),
+  ];
+
+  it("with-me keeps pages shared with the viewer, including ones they re-shared", () => {
+    expect(sharedSpaceItems(items, "with-me").map((i) => i.id)).toEqual(["received", "both"]);
+  });
+
+  it("by-me keeps pages the viewer shared, including ones also shared with them", () => {
+    expect(sharedSpaceItems(items, "by-me").map((i) => i.id)).toEqual(["granted", "both"]);
+  });
+
+  it("drops anything that is not a flagged doc", () => {
+    const folder: DriveItem = { ...doc("f", {}), type: "folder" } as DriveItem;
+    expect(sharedSpaceItems([folder, doc("plain", {})], "with-me")).toEqual([]);
   });
 });

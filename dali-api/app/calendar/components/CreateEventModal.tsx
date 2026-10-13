@@ -8,6 +8,8 @@ import { TimeField as TimeComboField } from "~/components/ui/TimeField";
 import { Select } from "~/components/ui/floating";
 import { Toggle } from "~/components/ui/Toggle";
 import { RoomLocationField } from "~/rooms/components/RoomLocationField";
+import { filedNoteFrom } from "~/calendar/lib/filed-note";
+import { useFiledNoteToast } from "~/calendar/lib/useFiledNoteToast";
 import {
   ScheduleWeekGrid,
   ParticipantPicker,
@@ -296,6 +298,7 @@ export function CreateEventModal({
   const eventFetcher = useFetcher<{ error?: string }>();
   const timeFetcher = useFetcher();
   const revalidator = useRevalidator();
+  const showFiledNote = useFiledNoteToast();
   const [meetingStatus, setMeetingStatus] = useState<
     | null
     | {
@@ -303,6 +306,8 @@ export function CreateEventModal({
         count: number;
         gcalError?: string | null;
         notePageId?: string | null;
+        /** The filing toast names the note, so the inline link steps aside. */
+        filed?: boolean;
         whiteboardPageId?: string | null;
       }
     | { ok: false; error: string }
@@ -397,11 +402,14 @@ export function CreateEventModal({
       if (!res.ok) {
         setMeetingStatus({ ok: false, error: json.error ?? "Failed to create meeting" });
       } else {
+        const filed = filedNoteFrom(json);
+        if (filed) showFiledNote(filed, { undo: true });
         setMeetingStatus({
           ok: true,
           count: json.notifiedCount ?? 0,
           gcalError: json.gcalError ?? null,
           notePageId: json.notePageId ?? null,
+          filed: filed !== null,
           whiteboardPageId: json.whiteboardPageId ?? null,
         });
         // If isWork, log the organizer's time against the meeting we just
@@ -977,7 +985,7 @@ export function CreateEventModal({
                 <p className="text-sm text-green-700">
                   Meeting created. Notified {meetingStatus.count} participant
                   {meetingStatus.count === 1 ? "" : "s"}.
-                  {meetingStatus.notePageId && (
+                  {meetingStatus.notePageId && !meetingStatus.filed && (
                     <>
                       {" "}
                       <a href={`/documents/${meetingStatus.notePageId}`} className="underline font-medium">
