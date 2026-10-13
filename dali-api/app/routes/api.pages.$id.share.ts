@@ -10,6 +10,7 @@ import {
   removePageShare,
   SharePrincipalError,
 } from "~/lib/page-sharing.server";
+import { describePageAudience } from "~/lib/page-audience.server";
 import {
   requirePageShareManager,
   setGeneralAccess,
@@ -65,10 +66,11 @@ export async function action({ request, params }: Route.ActionArgs) {
     switch (intent) {
       case "state": {
         const context = await requirePageShareManager(pageId, me);
-        return withCors(
-          request,
-          Response.json({ ok: true, context, shares: await listPageShares(pageId) }),
-        );
+        const [shares, { audience, inherited }] = await Promise.all([
+          listPageShares(pageId),
+          describePageAudience(me, pageId),
+        ]);
+        return withCors(request, Response.json({ ok: true, context, shares, audience, inherited }));
       }
       case "share-options": {
         if (!(await isLabMember(me))) {
