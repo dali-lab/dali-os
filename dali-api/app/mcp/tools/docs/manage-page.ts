@@ -12,6 +12,7 @@ import { canManageSharing } from "~/lib/page-share-access.server";
 import { logAuditEvent } from "~/lib/audit";
 import { pageDepth, MAX_PAGE_DEPTH, isAncestorOf } from "~/lib/pages";
 import { isRoot, ROOT_MOVE_ERROR } from "~/lib/drive-roots";
+import { clearTypeIfLeavingRoot } from "~/lib/drive-receivers.server";
 import type { McpCtx, McpTool } from "~/mcp/registry";
 import type { Prisma } from "~/generated/prisma/client";
 
@@ -335,6 +336,8 @@ export async function runManagePage(callerId: string, input: ManagePageInput) {
     ...order.map((id, index) => prisma.page.update({ where: { id }, data: { position: index } })),
   ]);
 
+  const clearedReceivers = await clearTypeIfLeavingRoot(page.kind === "Folder" ? [input.pageId, ...childIds] : []);
+
   if (!sameWorkspace) {
     await logAuditEvent({
       action: "page.move-workspace",
@@ -348,7 +351,7 @@ export async function runManagePage(callerId: string, input: ManagePageInput) {
       },
     }).catch((err) => console.error("manage_page move audit failed", err));
   }
-  return { ok: true };
+  return { ok: true, clearedReceivers };
 }
 
 export const MANAGE_PAGE: McpTool = {
