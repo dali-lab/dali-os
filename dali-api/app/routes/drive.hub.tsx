@@ -1846,6 +1846,7 @@ export default function DriveHub() {
         search={search}
         onSearchChange={onSearchChange}
         onNavigate={onNavigate}
+        onHistory={(delta) => void navigate(delta)}
         onOpenItem={onOpenItem}
         onMove={onMove}
         getScopeActions={getScopeActions}
