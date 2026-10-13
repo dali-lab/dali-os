@@ -131,6 +131,68 @@ describe("loadDriveScope — Lab scope", () => {
   });
 });
 
+const pageRow = (over: Record<string, unknown>) => ({
+  id: "pg",
+  title: "Page",
+  kind: "FreeForm",
+  parentPageId: null,
+  iconEmoji: null,
+  updatedAt: new Date("2026-10-01T00:00:00Z"),
+  workspaceType: "Lab",
+  workspaceId: null,
+  archivedAt: null,
+  createdById: "other",
+  partnerVisible: false,
+  profileVisible: false,
+  labListing: "None",
+  linkAccess: "Restricted",
+  linkPermission: "View",
+  scopeKind: null,
+  scopeGroupId: null,
+  scopePermission: null,
+  ...over,
+});
+
+describe("loadDriveScope — notebooks", () => {
+  it("asks for Notebook pages in every Lab, Project, Education and Member page query", async () => {
+    mockPrisma.projectFile.findMany.mockResolvedValue([]);
+    for (const scope of [
+      { kind: "Lab" as const },
+      { kind: "Project" as const, projectId: "proj-1" },
+      { kind: "EducationOffering" as const, offeringId: "off-1" },
+      { kind: "Member" as const },
+    ]) {
+      mockPrisma.page.findMany.mockClear();
+      await loadDriveScope({ userSub: "u1", scope });
+      const pageQueries = mockPrisma.page.findMany.mock.calls.map((c) => c[0].where.kind?.in);
+      expect(pageQueries.filter(Boolean).length).toBeGreaterThan(0);
+      for (const kinds of pageQueries.filter(Boolean)) expect(kinds).toContain("Notebook");
+    }
+  });
+
+  it("lists a Lab notebook as a document that opens at /documents", async () => {
+    mockPrisma.page.findMany.mockResolvedValue([
+      pageRow({ id: "nb-1", title: "Weekly sync", kind: "Notebook", parentPageId: "folder-1" }),
+    ]);
+
+    const items = await loadDriveScope({ userSub: "u1", scope: { kind: "Lab" } });
+    expect(items.find((i) => i.id === "nb-1")).toMatchObject({
+      type: "doc",
+      isWhiteboard: false,
+      parentFolderId: "folder-1",
+      href: "/documents/nb-1",
+    });
+  });
+
+  it("still hides a notebook the viewer cannot see", async () => {
+    mockPrisma.page.findMany.mockResolvedValue([pageRow({ id: "nb-2", kind: "Notebook" })]);
+    vi.mocked(getPageAccess).mockResolvedValue(DENIED as any);
+
+    const items = await loadDriveScope({ userSub: "u1", scope: { kind: "Lab" } });
+    expect(items.find((i) => i.id === "nb-2")).toBeUndefined();
+  });
+});
+
 describe("loadOrphanForms — archived/deleted-folder safety-net", () => {
   it("surfaces a form whose folder is gone at the General root, but not one in a live folder", async () => {
     mockPrisma.form.findMany.mockResolvedValue([

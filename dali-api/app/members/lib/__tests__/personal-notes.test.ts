@@ -10,6 +10,7 @@ import {
   requireNoteView,
   requireNoteOwner,
   listSharedWithMe,
+  listProfileNotes,
   NoteNotFoundError,
   NoteForbiddenError,
 } from "~/members/lib/personal-notes.server";
@@ -139,6 +140,40 @@ describe("guards", () => {
 
   it("requireNoteOwner allows the owner", async () => {
     await expect(requireNoteOwner("pg-1", OWNER)).resolves.toBeUndefined();
+  });
+});
+
+describe("listProfileNotes — notebooks", () => {
+  const notebookRow = {
+    id: "nb-1",
+    title: "Meeting notes",
+    iconEmoji: null,
+    kind: "Notebook",
+    parentPageId: null,
+    workspaceId: OWNER,
+    profileVisible: false,
+    labListing: "None",
+    updatedAt: new Date("2026-10-01T00:00:00.000Z"),
+    tags: [],
+    _count: { shares: 0 },
+  };
+
+  it("lists a notebook among the owner's own notes, with no kind filter", async () => {
+    mockPrisma.page.findMany.mockResolvedValue([notebookRow]);
+
+    const notes = await listProfileNotes(OWNER, OWNER);
+
+    expect(notes.map((n) => [n.id, n.kind])).toEqual([["nb-1", "Notebook"]]);
+    expect(JSON.stringify(mockPrisma.page.findMany.mock.calls[0][0].where)).not.toContain("kind");
+  });
+
+  it("applies no kind filter when another viewer's visibility filter is on", async () => {
+    mockPrisma.page.findMany.mockResolvedValue([{ ...notebookRow, profileVisible: true }]);
+
+    const notes = await listProfileNotes(OWNER, OTHER);
+
+    expect(notes.map((n) => n.id)).toEqual(["nb-1"]);
+    expect(JSON.stringify(mockPrisma.page.findMany.mock.calls[0][0].where)).not.toContain("kind");
   });
 });
 

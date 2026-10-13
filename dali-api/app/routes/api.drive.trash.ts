@@ -18,6 +18,7 @@ import { requireAuth } from "~/lib/auth";
 import { canViewForms as checkCanViewForms } from "~/lib/roles";
 import { getPageAccess, getPageAccessBulk } from "~/lib/pageAccess.server";
 import { canEditFile } from "~/lib/fileAccess.server";
+import { DRIVE_PAGE_KINDS } from "~/lib/drive.server";
 import { withCors, handlePreflight } from "~/lib/cors";
 
 // How many archived rows of each kind to look at before filtering, and how
@@ -51,7 +52,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const archivedPages = await prisma.page.findMany({
     where: {
       archivedAt: { not: null },
-      kind: { in: ["FreeForm", "Folder", "Structured", "Whiteboard"] },
+      kind: { in: DRIVE_PAGE_KINDS },
     },
     // The full access shape, not just what the listing renders: the bulk
     // resolver reads these off the row instead of re-fetching each page, and a

@@ -51,6 +51,20 @@ describe("ensureMeetingNotebook", () => {
     );
   });
 
+  it("creates the notebook with kind Notebook", async () => {
+    page.findUnique.mockResolvedValue(null);
+
+    await ensureMeetingNotebook(input);
+    expect(page.create.mock.calls[0][0].data.kind).toBe("Notebook");
+  });
+
+  it("creates a Lab notebook with kind Notebook too", async () => {
+    page.findUnique.mockResolvedValue(null);
+
+    await ensureMeetingNotebook({ ...input, workspaceType: "Lab", workspaceId: null });
+    expect(page.create.mock.calls[0][0].data.kind).toBe("Notebook");
+  });
+
   it("starts a fresh notebook when the old one is in the trash", async () => {
     page.findUnique.mockResolvedValue({ id: "nb-old", archivedAt: new Date() } as never);
 

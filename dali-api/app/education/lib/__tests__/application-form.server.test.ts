@@ -82,6 +82,38 @@ describe("ensureEducationTemplates", () => {
     const created = mockPrisma.form.create.mock.calls[0][0].data;
     expect(created.folderPageId).toBe("education-templates-folder");
   });
+
+  it("looks every template up by templateKey, not by name or folder", async () => {
+    await ensureEducationTemplates("actor");
+
+    const wheres = mockPrisma.form.findFirst.mock.calls.map((c) => c[0].where);
+    expect(wheres).toHaveLength(3);
+    expect(wheres).toEqual(
+      expect.arrayContaining([
+        { templateKey: "education-template-miniseries" },
+        { templateKey: "education-template-fellowship" },
+        { templateKey: "education-template-workshop" },
+      ]),
+    );
+    expect(mockPrisma.form.create).not.toHaveBeenCalled();
+  });
+
+  it("stamps the templateKey on each template it creates", async () => {
+    mockPrisma.form.findFirst.mockResolvedValue(null);
+    mockPrisma.form.create.mockResolvedValue({ id: "tmpl-new" });
+
+    await ensureEducationTemplates("actor");
+
+    const keys = mockPrisma.form.create.mock.calls.map((c) => c[0].data.templateKey);
+    expect(keys).toHaveLength(3);
+    expect(keys).toEqual(
+      expect.arrayContaining([
+        "education-template-miniseries",
+        "education-template-fellowship",
+        "education-template-workshop",
+      ]),
+    );
+  });
 });
 
 describe("createOfferingApplicationForm", () => {
@@ -107,6 +139,27 @@ describe("createOfferingApplicationForm", () => {
       where: { id: "off-1" },
       data: { applicationFormId: "new-form" },
     });
+  });
+
+  it("clones the offering form from the template found by its templateKey", async () => {
+    mockPrisma.educationOffering.findUnique.mockResolvedValue({
+      id: "off-1",
+      type: "Fellowship",
+      title: "Fellowship 26F",
+      applicationFormId: null,
+    });
+    mockPrisma.form.findFirst.mockResolvedValue({
+      id: "tmpl",
+      versions: [{ id: "v1", questions: [{ key: "q", type: "text", required: false, data: { label: "Q" } }], intro: "hi" }],
+    });
+    mockPrisma.form.create.mockResolvedValue({ id: "new-form" });
+
+    await createOfferingApplicationForm("off-1", "actor");
+
+    const templateLookup = mockPrisma.form.findFirst.mock.calls.at(-1)![0];
+    expect(templateLookup.where).toEqual({ templateKey: "education-template-fellowship" });
+    const created = mockPrisma.form.create.mock.calls[0][0].data;
+    expect(created.versions.create.intro).toBe("hi");
   });
 
   it("is a no-op when the offering already has an application form", async () => {

@@ -50,6 +50,7 @@ async function canManageProcess(
     case "Core":
     case "Lab":
     case "CertificateTemplates":
+    case "Mentorship":
       // Hiring + Core governance bindings are Core-only (Core check above), and
       // so is repointing the Lab drive's shared folders and the certificate
       // backgrounds: deciding where auto-filing lands is a Core decision.

@@ -113,6 +113,21 @@ describe("GET /api/drive/trash", () => {
     expect(mockPrisma.page.findMany.mock.calls[0][0].where.kind.in).toContain("Whiteboard");
   });
 
+  it("includes archived notebooks", async () => {
+    mockPrisma.page.findMany.mockResolvedValue([
+      { id: "nb-1", title: "Weekly sync", archivedAt: ARCHIVED_AT, kind: "Notebook" },
+    ]);
+    bulkAccess(FULL);
+
+    const res = (await loader({
+      request: new Request("http://os.test/api/drive/trash"),
+    } as never)) as Response;
+    const body = (await res.json()) as { items: { id: string }[] };
+
+    expect(body.items.map((i) => i.id)).toEqual(["nb-1"]);
+    expect(mockPrisma.page.findMany.mock.calls[0][0].where.kind.in).toContain("Notebook");
+  });
+
   it("bounds the scan rather than reading every archived row", async () => {
     await loader({ request: new Request("http://os.test/api/drive/trash") } as never);
     expect(mockPrisma.page.findMany.mock.calls[0][0].take).toBeGreaterThan(0);

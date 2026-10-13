@@ -162,7 +162,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   // Restricted push, and the files filed anywhere inside it.
   // A meeting notebook carries its tabs (child pages) the same way.
   const subtree =
-    page.kind === "Folder" || page.notebookKey !== null
+    page.kind === "Folder" || page.kind === "Notebook" || page.notebookKey !== null
       ? await collectSubtree(pageId)
       : { ids: [], height: 0 };
   // `folderPageId` can only point at a Folder, so passing every descendant id
