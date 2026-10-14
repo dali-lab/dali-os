@@ -17,6 +17,7 @@ import { useDialog } from "~/components/ui/dialog";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
 import { uploadFileToS3 } from "~/lib/upload-client";
+import { summarizeFailures, uploadAll } from "~/lib/upload-batch";
 import { MultiSelect, Select, Tooltip } from "~/components/ui/floating";
 import {
   normalizeChecklist,
@@ -664,28 +665,28 @@ export function TaskModal({
   // Upload a brand-new artifact: S3 direct upload → register as a project
   // file → link it to this task. The file also appears in the project's
   // Files section (it's a normal ProjectFile).
+  async function uploadArtifact(file: File): Promise<void> {
+    const meta = await uploadFileToS3(file, `project-files/${projectId}`);
+    const res = await fetch(`/api/projects/${projectId}/files`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: file.name, ...meta }),
+    });
+    const j = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
+    if (!res.ok || !j.id) throw new Error(j.error ?? "Failed to save the upload");
+    await linkArtifact(j.id);
+  }
+
   async function handleUploadArtifact(e: React.ChangeEvent<HTMLInputElement>) {
-    const picked = e.target.files?.[0];
+    const picked = Array.from(e.target.files ?? []);
     e.target.value = "";
-    if (!picked || !task) return;
+    if (picked.length === 0 || !task) return;
     setArtifactBusy(true);
     setArtifactError(null);
-    try {
-      const meta = await uploadFileToS3(picked, `project-files/${projectId}`);
-      const res = await fetch(`/api/projects/${projectId}/files`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: picked.name, ...meta }),
-      });
-      const j = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
-      if (!res.ok || !j.id) throw new Error(j.error ?? "Failed to save the upload");
-      await linkArtifact(j.id);
-    } catch (err) {
-      setArtifactError(err instanceof Error ? err.message : "Upload failed.");
-    } finally {
-      setArtifactBusy(false);
-    }
+    const failed = await uploadAll(picked, uploadArtifact);
+    setArtifactError(summarizeFailures(failed, picked.length));
+    setArtifactBusy(false);
   }
 
   // Create a brand-new GitHub issue for this task (no issueNumber → the server
@@ -1259,6 +1260,7 @@ export function TaskModal({
                 <input
                   ref={artifactInputRef}
                   type="file"
+                  multiple
                   className="hidden"
                   onChange={(e) => void handleUploadArtifact(e)}
                 />
@@ -1268,7 +1270,7 @@ export function TaskModal({
                   disabled={artifactBusy}
                   className="text-accent-coral hover:underline disabled:opacity-60"
                 >
-                  {artifactBusy ? "Working…" : "Upload file"}
+                  {artifactBusy ? "Working…" : "Upload files"}
                 </button>
                 {options.projectFiles.some(
                   (f) => !artifacts.some((a) => a.id === f.id),

@@ -38,10 +38,13 @@ export interface ToastOptions {
   duration?: number;
   /** Buttons under the message, e.g. Open and Undo. */
   actions?: ToastAction[];
+  /** A toast pushed with the id of one already on screen replaces it in place. */
+  id?: string;
 }
 
 interface ToastRecord {
   id: number;
+  key?: string;
   message: ReactNode;
   variant: ToastVariant;
   duration: number;
@@ -76,12 +79,17 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     idRef.current += 1;
     const record: ToastRecord = {
       id: idRef.current,
+      key: opts?.id,
       message,
       variant: opts?.variant ?? "info",
       duration: opts?.duration ?? DEFAULT_DURATION,
       actions: opts?.actions ?? [],
     };
-    setToasts((prev) => [...prev, record]);
+    setToasts((prev) => {
+      const existing = opts?.id ? prev.find((t) => t.key === opts.id) : undefined;
+      if (!existing) return [...prev, record];
+      return prev.map((t) => (t === existing ? { ...record, id: existing.id } : t));
+    });
   }, []);
 
   const toast = useMemo<ToastApi>(() => {
@@ -147,6 +155,9 @@ function useDismissTimer(
   onElapsed: () => void,
 ) {
   const remainingRef = useRef(duration);
+  useEffect(() => {
+    remainingRef.current = duration;
+  }, [duration]);
   useEffect(() => {
     if (duration <= 0 || paused) return;
     const startedAt = Date.now();

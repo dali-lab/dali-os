@@ -10,6 +10,8 @@
 //   favorites, rename, move, delete, bulk actions, context menu, breadcrumb, sort.
 
 import {
+  createContext,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -93,6 +95,7 @@ import { clickIntent } from "~/components/drive/column-click";
 import { gridStepBlocks, perRowFromTops, type GridBlock } from "~/components/drive/grid-nav";
 import { MarqueeBox, useMarquee } from "~/components/drive/use-marquee";
 import { CORAL_FOLDER, folderCountLabel, glyphLabel, pickGlyph, type ItemGlyph } from "~/components/drive/glyphs";
+import { droppedFiles } from "~/components/drive/dropped-files";
 import { FolderGlyph, GlyphBadge } from "~/components/drive/FolderGlyph";
 import { FolderSettingsModal } from "~/components/drive/FolderSettingsModal";
 import { isPageFolder, meetingsOptionFor, receivesLabel } from "~/components/drive/receiver-options";
@@ -181,7 +184,7 @@ export type DriveBrowserProps = {
   /** Move items from one drive scope to another (confirm + re-scope handled by hub). */
   onMoveToScope?: (sourceScopeId: string, destScopeId: string, items: DriveItem[]) => void;
   /** Upload files dropped from the desktop into the current scope+folder. */
-  onUploadFiles?: (files: File[]) => void;
+  onUploadFiles?: (files: File[], options?: FileDropOptions) => void;
   filterControl?: ReactNode;
   newMenu?: ReactNode;
   /** Overflow ("…") menu for the toolbar's occasional destinations. Owned by
@@ -681,6 +684,27 @@ function dropData(item: DriveItem, scopeId: string | null) {
     : { destFolderId: item.id, destScopeId };
 }
 
+/** Where a drop of OS files lands when it is not on the current folder: the folder under the pointer. */
+export type FileDropOptions = { folderId?: string; skippedFolders?: number };
+
+const FILE_DROP_ATTR = "data-file-drop-folder";
+
+/** The folder row or tile under a drag event's target, if any. */
+function fileDropFolderAt(e: React.DragEvent): string | null {
+  const el = e.target instanceof Element ? e.target.closest(`[${FILE_DROP_ATTR}]`) : null;
+  return el?.getAttribute(FILE_DROP_ATTR) ?? null;
+}
+
+/** The folder a dragged OS file is hovering, so its row or tile can light up. */
+const FileDropContext = createContext<string | null>(null);
+
+/** Marks a folder as an upload target for dropped OS files and says whether a file drag is on it now. */
+function useFileDropFolder(item: DriveItem) {
+  const over = useContext(FileDropContext) === item.id;
+  const attrs = item.type === "folder" ? { [FILE_DROP_ATTR]: item.id } : {};
+  return { over, attrs };
+}
+
 /** What a row, tile, card or crumb looks like while a dragged item hovers it as a drop target; one look in every view. */
 const DROP_RING = "bg-accent-coral/10 ring-2 ring-inset ring-accent-coral";
 
@@ -877,6 +901,7 @@ export function DriveBrowser({
   // Item queued for the spacebar Quick Look overlay (null = closed).
   const [previewItem, setPreviewItem] = useState<DriveItem | null>(null);
   const [uploadOver, setUploadOver] = useState(false);
+  const [fileOverFolder, setFileOverFolder] = useState<string | null>(null);
   const [activeDrag, setActiveDrag] = useState<{ item: DriveItem; scopeId: string } | null>(null);
   const dragDepth = useRef(0);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -1499,24 +1524,37 @@ export function DriveBrowser({
     e.preventDefault();
     dragDepth.current += 1;
     setUploadOver(true);
+    setFileOverFolder(fileDropFolderAt(e));
   }
   function onFileDragOver(e: React.DragEvent) {
     if (!canUpload || !hasFiles(e)) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "copy";
+    setFileOverFolder(fileDropFolderAt(e));
   }
-  function onFileDragLeave() {
-    if (!canUpload) return;
+  function onFileDragLeave(e: React.DragEvent) {
+    if (!canUpload || !hasFiles(e)) return;
     dragDepth.current = Math.max(0, dragDepth.current - 1);
-    if (dragDepth.current === 0) setUploadOver(false);
+    if (dragDepth.current === 0) {
+      setUploadOver(false);
+      setFileOverFolder(null);
+    }
   }
   function onFileDrop(e: React.DragEvent) {
-    if (!canUpload) return;
+    if (!canUpload || !hasFiles(e)) return;
     e.preventDefault();
     dragDepth.current = 0;
     setUploadOver(false);
-    const files = Array.from(e.dataTransfer.files);
-    if (files.length && onUploadFiles) onUploadFiles(files);
+    setFileOverFolder(null);
+    const { files, skippedFolders } = droppedFiles(e.dataTransfer);
+    if (!onUploadFiles || (files.length === 0 && skippedFolders === 0)) return;
+    const folderId = fileDropFolderAt(e);
+    const options: FileDropOptions = {
+      ...(folderId ? { folderId } : {}),
+      ...(skippedFolders > 0 ? { skippedFolders } : {}),
+    };
+    if (Object.keys(options).length > 0) onUploadFiles(files, options);
+    else onUploadFiles(files);
   }
 
   function toggleSort(key: SortKey) {
@@ -1819,6 +1857,7 @@ export function DriveBrowser({
 
   return (
     <>
+    <FileDropContext.Provider value={fileOverFolder}>
     <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div ref={rootRef} className="flex flex-col gap-3" data-testid="drive-browser" onClick={handleBackgroundClick}>
         {/* ── Page toolbar: filters on the left, actions on the right ──
@@ -1903,7 +1942,7 @@ export function DriveBrowser({
               onDrop={onFileDrop}
               data-testid="drive-columns"
             >
-              {uploadOver && (
+              {uploadOver && !fileOverFolder && (
                 <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-os-card border-2 border-dashed border-accent-coral bg-accent-coral/10">
                   <span className="flex items-center gap-2 text-sm font-medium text-accent-coral">
                     <Upload className="w-4 h-4" /> Drop files to upload
@@ -2016,7 +2055,7 @@ export function DriveBrowser({
                 showBulk && "pb-14",
               )}
             >
-              {uploadOver && (
+              {uploadOver && !fileOverFolder && (
                 <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-os-card border-2 border-dashed border-accent-coral bg-accent-coral/10">
                   <span className="flex items-center gap-2 text-sm font-medium text-accent-coral">
                     <Upload className="w-4 h-4" /> Drop files to upload
@@ -2124,6 +2163,7 @@ export function DriveBrowser({
         )}
       </DragOverlay>
     </DndContext>
+    </FileDropContext.Provider>
 
     {/* In-place Share dialog — mounted outside DndContext so DnD events don't
         bleed through; keyed by item id so state resets on a different target. */}
@@ -2575,6 +2615,7 @@ function ColumnItemRow({
     data: dropData(item, scopeId),
     disabled: !acceptsDrops(item) || !scopeId,
   });
+  const fileDrop = useFileDropFolder(item);
   function setRefs(node: HTMLDivElement | null) {
     drag.setNodeRef(node);
     if (acceptsDrops(item)) drop.setNodeRef(node);
@@ -2585,6 +2626,7 @@ function ColumnItemRow({
       ref={setRefs}
       {...drag.attributes}
       {...drag.listeners}
+      {...fileDrop.attrs}
       data-testid={`drive-item-${item.type}-${item.id}`}
       data-col-level={levelIdx}
       data-row-id={item.id}
@@ -2597,14 +2639,14 @@ function ColumnItemRow({
       className={`group flex items-center rounded-lg dnd-touch-handle ${t.itemRow} ${t.row} cursor-default select-none ${
         drag.isDragging ? "opacity-40" : ""
       } ${
-        drop.isOver ? DROP_RING : ""
+        drop.isOver || fileDrop.over ? DROP_RING : ""
       } ${
         isSelected
           ? "bg-os-container text-os-accent"
           : isOpen
             ? "bg-os-container text-foreground"
             : "text-foreground hover:bg-os-hover"
-      } ${isFocused && !drop.isOver ? "ring-1 ring-inset ring-os-accent/50" : ""}`}
+      } ${isFocused && !drop.isOver && !fileDrop.over ? "ring-1 ring-inset ring-os-accent/50" : ""}`}
     >
       <RowLead item={item} checked={isSelected} onToggle={(shift) => handlers.onToggle(item.id, shift)} />
       <span className="min-w-0 flex-1 truncate font-medium">
@@ -3252,6 +3294,7 @@ function ListRow({
     data: dropData(item, scopeId),
     disabled: !acceptsDrops(item),
   });
+  const fileDrop = useFileDropFolder(item);
   function setRefs(node: HTMLDivElement | null) {
     drag.setNodeRef(node);
     if (acceptsDrops(item)) drop.setNodeRef(node);
@@ -3262,6 +3305,7 @@ function ListRow({
       ref={setRefs}
       {...drag.attributes}
       {...drag.listeners}
+      {...fileDrop.attrs}
       data-testid={`drive-item-${item.type}-${item.id}`}
       data-item-id={item.id}
       onClick={(e) => handlers.onClick(item.id, e)}
@@ -3270,7 +3314,7 @@ function ListRow({
       className={`group grid items-center dnd-touch-handle ${t.itemRow} rounded-lg ${t.row} cursor-default select-none ${
         drag.isDragging ? "opacity-40" : ""
       } ${
-        drop.isOver && acceptsDrops(item)
+        (drop.isOver && acceptsDrops(item)) || fileDrop.over
           ? DROP_RING
           : selected
             ? "bg-os-container"
@@ -3361,6 +3405,7 @@ function GridTile({
     data: dropData(item, scopeId),
     disabled: !acceptsDrops(item),
   });
+  const fileDrop = useFileDropFolder(item);
   function setRefs(node: HTMLDivElement | null) {
     drag.setNodeRef(node);
     if (acceptsDrops(item)) drop.setNodeRef(node);
@@ -3371,6 +3416,7 @@ function GridTile({
       ref={setRefs}
       {...drag.attributes}
       {...drag.listeners}
+      {...fileDrop.attrs}
       data-testid={`drive-item-${item.type}-${item.id}`}
       data-item-id={item.id}
       onClick={(e) => handlers.onClick(item.id, e)}
@@ -3382,7 +3428,7 @@ function GridTile({
       className={`${GRID_TILE} dnd-touch-handle ${
         drag.isDragging ? "opacity-40" : ""
       } ${
-        drop.isOver && acceptsDrops(item)
+        (drop.isOver && acceptsDrops(item)) || fileDrop.over
           ? DROP_RING
           : selected
             ? "bg-os-container/40"
@@ -3471,6 +3517,7 @@ function FolderCard({
     id: `${scopeId}::drop::${item.id}`,
     data: { destFolderId: item.id, destScopeId: scopeId },
   });
+  const fileDrop = useFileDropFolder(item);
   function setRefs(node: HTMLDivElement | null) {
     drag.setNodeRef(node);
     drop.setNodeRef(node);
@@ -3481,6 +3528,7 @@ function FolderCard({
       ref={setRefs}
       {...drag.attributes}
       {...drag.listeners}
+      {...fileDrop.attrs}
       data-testid={`drive-item-${item.type}-${item.id}`}
       data-item-id={item.id}
       onClick={(e) => handlers.onClick(item.id, e)}
@@ -3488,7 +3536,7 @@ function FolderCard({
       className={`group relative flex w-48 shrink-0 flex-col gap-3 rounded-os-card border border-border p-3 dnd-touch-handle cursor-default select-none transition-colors ${
         drag.isDragging ? "opacity-40" : ""
       } ${
-        drop.isOver
+        drop.isOver || fileDrop.over
           ? DROP_RING
           : selected
             ? "bg-os-container"
