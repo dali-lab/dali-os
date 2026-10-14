@@ -9,6 +9,7 @@ import { DialogProvider } from "~/components/ui/dialog";
 import { ToastProvider } from "~/components/ui/toast";
 import type { DriveTreeScope } from "~/lib/drive-scopes.server";
 import type { DriveItem } from "~/lib/drive.server";
+import type { DriveTypeFilter } from "~/components/drive/type-filter";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -49,6 +50,8 @@ type MountOptions = {
   search?: string;
   onHistory?: boolean;
   initialSelectedId?: string;
+  typeFilter?: DriveTypeFilter;
+  scopes?: DriveTreeScope[];
 };
 
 /** The browser at a location, with `onNavigate` moving it the way the hub's URL does. */
@@ -57,10 +60,10 @@ async function mount(opts: MountOptions = {}) {
   function Harness() {
     const [loc, setLoc] = useState({ scopeId: opts.scopeId === undefined ? "lab" : opts.scopeId, folderId: opts.folderId ?? null });
     return createElement(ToastProvider, null, createElement(DialogProvider, null, createElement(DriveBrowser, {
-      scopes: [lab, mine],
+      scopes: opts.scopes ?? [lab, mine],
       currentScopeId: loc.scopeId,
       currentFolderId: loc.folderId,
-      typeFilter: "all",
+      typeFilter: opts.typeFilter ?? "all",
       search: opts.search ?? "",
       onSearchChange: vi.fn(),
       onNavigate: (scopeId: string | null, folderId: string | null) => {
@@ -1314,5 +1317,41 @@ describe("DriveBrowser grid: up and down move a visual row", () => {
     await key(p, "ArrowDown");
     await key(p, "Enter");
     expect(onNavigate).toHaveBeenCalledWith("mine", null);
+  });
+});
+
+describe("type filter", () => {
+  const typed: DriveTreeScope = {
+    id: "lab",
+    label: "Lab-wide",
+    iconEmoji: null,
+    items: [
+      folder("tf"),
+      doc("plain"),
+      { ...doc("nb"), isNotebook: true, title: "Doc nb" } as DriveItem,
+      { ...doc("wb"), isWhiteboard: true, title: "Doc wb" } as DriveItem,
+      { type: "file", id: "fi", title: "Doc fi", parentFolderId: null, iconEmoji: null, updatedAt: at, href: "/f" } as DriveItem,
+    ],
+  };
+  const listedIds = () => [...new Set([...container.querySelectorAll<HTMLElement>("[data-item-id]")].map((el) => el.getAttribute("data-item-id")))];
+
+  it("Notebooks shows notebooks and folders only", async () => {
+    await mount({ view: "list", scopes: [typed], typeFilter: "notebook" });
+    expect(listedIds()).toEqual(["tf", "nb"]);
+  });
+
+  it("Whiteboards shows whiteboards and folders only", async () => {
+    await mount({ view: "list", scopes: [typed], typeFilter: "whiteboard" });
+    expect(listedIds()).toEqual(["tf", "wb"]);
+  });
+
+  it("Documents leaves notebooks and whiteboards out", async () => {
+    await mount({ view: "list", scopes: [typed], typeFilter: "doc" });
+    expect(listedIds()).toEqual(["tf", "plain"]);
+  });
+
+  it("applies in search results", async () => {
+    await mount({ view: "list", scopes: [typed], typeFilter: "notebook", search: "Doc" });
+    expect(listedIds()).toEqual(["nb"]);
   });
 });

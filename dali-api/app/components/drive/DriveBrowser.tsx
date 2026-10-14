@@ -69,6 +69,7 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import type { DriveItem } from "~/lib/drive.server";
+import { listedUnderFilter, matchesTypeFilter, type DriveTypeFilter } from "~/components/drive/type-filter";
 import { categorize } from "~/lib/file-type";
 import { iconForCategory } from "~/lib/file-icon";
 import type { DriveTreeScope } from "~/lib/drive-scopes.server";
@@ -160,7 +161,7 @@ export type DriveBrowserProps = {
   scopes: DriveTreeScope[];
   currentScopeId: string | null;
   currentFolderId: string | null;
-  typeFilter: "all" | "doc" | "file" | "form" | "agreement" | "rubric";
+  typeFilter: DriveTypeFilter;
   search: string;
   onSearchChange: (q: string) => void;
   onNavigate: (scopeId: string | null, folderId: string | null) => void;
@@ -316,7 +317,7 @@ export function searchAll(
   const hits: SearchHit[] = [];
   for (const scope of scopes) {
     for (const item of scope.items) {
-      if (typeFilter !== "all" && item.type !== typeFilter) continue;
+      if (!matchesTypeFilter(item, typeFilter)) continue;
       if (needle && !(item.title || "").toLowerCase().includes(needle)) continue;
       if (tagFilter && !tagFilter(item)) continue;
       const location = locationOf(scope, item.parentFolderId);
@@ -1004,7 +1005,7 @@ export function DriveBrowser({
   const listing = useMemo(() => {
     if (!currentScope) return [];
     const kids = childrenAt(currentScope.items, currentFolderId).filter(
-      (it) => typeFilter === "all" || it.type === "folder" || it.type === typeFilter,
+      (it) => listedUnderFilter(it, typeFilter),
     );
     return sortItems(kids, sort.key, sort.dir);
   }, [currentScope, currentFolderId, typeFilter, sort]);
@@ -1534,7 +1535,7 @@ export function DriveBrowser({
     if (!scope) return [];
     const folderId = level.folderId;
     const kids = childrenAt(scope.items, folderId).filter(
-      (it) => typeFilter === "all" || it.type === "folder" || it.type === typeFilter,
+      (it) => listedUnderFilter(it, typeFilter),
     );
     return sortItems(kids, sort.key, sort.dir);
   }
