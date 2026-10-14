@@ -13,14 +13,14 @@ vi.mock("~/lib/pageAccess.server", () => ({
   getPageAccessBulk: vi.fn(),
 }));
 vi.mock("~/lib/notebooks.server", () => ({ canManageNotebook: vi.fn() }));
-vi.mock("~/lib/notebook-series.server", () => ({ nextNoteTarget: vi.fn() }));
+vi.mock("~/lib/notebook-series.server", () => ({ nextNoteTargets: vi.fn() }));
 vi.mock("~/lib/user-pages.server", () => ({ isFavorited: vi.fn(), recordPageVisit: vi.fn() }));
 
 import { prisma } from "~/lib/db";
 import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { canManageNotebook } from "~/lib/notebooks.server";
-import { nextNoteTarget } from "~/lib/notebook-series.server";
+import { nextNoteTargets } from "~/lib/notebook-series.server";
 import { loader } from "../documents.$pageId";
 
 const call = () =>
@@ -46,7 +46,7 @@ beforeEach(() => {
   vi.mocked(redirectPartnerToPortal).mockResolvedValue(null as any);
   vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canEdit: true, canComment: true } as any);
   vi.mocked(canManageNotebook).mockResolvedValue(true);
-  vi.mocked(nextNoteTarget).mockResolvedValue({ meetingId: "m1", occurrenceStart: "2026-10-20T14:00:00.000Z" } as any);
+  vi.mocked(nextNoteTargets).mockResolvedValue([{ meetingId: "m1", meetingTitle: "Sync", occurrenceStart: "2026-10-20T14:00:00.000Z" }]);
   (prisma as any).page.findUnique.mockResolvedValue(notebookPage);
 });
 
@@ -69,7 +69,7 @@ describe("documents.$pageId loader on a notebook", () => {
       folderId: "f1",
       templateId: "tpl1",
       projectId: null,
-      nextNote: { meetingId: "m1", occurrenceStart: "2026-10-20T14:00:00.000Z" },
+      nextNotes: [{ meetingId: "m1", meetingTitle: "Sync", occurrenceStart: "2026-10-20T14:00:00.000Z" }],
       tabs: [],
     });
   });
@@ -81,7 +81,7 @@ describe("documents.$pageId loader on a notebook", () => {
 
     const res = (await call()) as any;
 
-    expect(res.emptyNotebook).toMatchObject({ canEdit: false, canManage: false, nextNote: null });
+    expect(res.emptyNotebook).toMatchObject({ canEdit: false, canManage: false, nextNotes: [] });
   });
 
   it("still redirects to the latest tab when the notebook has notes", async () => {

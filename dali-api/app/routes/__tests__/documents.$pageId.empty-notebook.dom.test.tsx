@@ -20,7 +20,7 @@ const notebook: NotebookView = {
   folderId: null,
   templateId: null,
   projectId: null,
-  nextNote: { meetingId: "m1", occurrenceStart: "2026-10-20T14:00:00.000Z" },
+  nextNotes: [{ meetingId: "m1", meetingTitle: "Sync", occurrenceStart: "2026-10-20T14:00:00.000Z" }],
   tabs: [],
 };
 
