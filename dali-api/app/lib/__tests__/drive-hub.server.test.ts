@@ -49,9 +49,9 @@ describe("loadProjectWorkspaces", () => {
     expect(m.project.findMany.mock.calls[0][0].where).toEqual({});
   });
 
-  it("limits a non-Core viewer to projects they are staffed on", async () => {
+  it("gives a non-Core lab member every project too, not only the ones they are staffed on", async () => {
     await loadProjectWorkspaces({ userId: "u", isCore: false, termId: null });
-    expect(m.project.findMany.mock.calls[0][0].where).toEqual({ assignments: { some: { userId: "u" } } });
+    expect(m.project.findMany.mock.calls[0][0].where).toEqual({});
   });
 
   it("scopes to the selected term", async () => {
