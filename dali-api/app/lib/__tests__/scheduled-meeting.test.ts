@@ -2868,6 +2868,50 @@ describe("attachMeetingNote — notebooks", () => {
     expect(createNotebookTab).toHaveBeenCalledWith(expect.objectContaining({ notebookId: "nb-s" }));
   });
 
+  it("lets a participant add the first note once the series has a notebook", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(meetingRow({ notebookId: "nb-s", notebook: series }));
+
+    const res = await attachMeetingNote({ meetingId: "m1", actorId: "u2" });
+
+    expect(res).toMatchObject({ ok: true, notebookId: "nb-s" });
+    expect(createNotebookTab).toHaveBeenCalledWith(expect.objectContaining({ notebookId: "nb-s" }));
+  });
+
+  it("keeps the first note on a series with no notebook to the organizer or Core", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(meetingRow());
+
+    const res = await attachMeetingNote({ meetingId: "m1", actorId: "u2" });
+
+    expect(res).toEqual({ ok: false, error: "Only the organizer or Core can add notes", status: 403 });
+    expect(createNotebookTab).not.toHaveBeenCalled();
+  });
+
+  it("refuses a participant who picks a different notebook on a series that has one", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(meetingRow({ notebookId: "nb-s", notebook: series }));
+
+    const res = await attachMeetingNote({ meetingId: "m1", actorId: "u2", notebook: { existingId: "nb-x" } });
+
+    expect(res).toEqual({ ok: false, error: "Only the organizer or Core can add notes", status: 403 });
+    expect(createNotebookTab).not.toHaveBeenCalled();
+  });
+
+  it("lets the organizer add the first note on a series that has no notebook", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(meetingRow());
+
+    const res = await attachMeetingNote({ meetingId: "m1", actorId: "org-1", meetingType: "Other", meetingTypeLabel: "Sync" });
+
+    expect(res).toMatchObject({ ok: true });
+  });
+
+  it("refuses someone outside the meeting even when the series has a notebook", async () => {
+    p.scheduledMeeting.findUnique.mockResolvedValue(meetingRow({ notebookId: "nb-s", notebook: series }));
+
+    const res = await attachMeetingNote({ meetingId: "m1", actorId: "intruder" });
+
+    expect(res).toEqual({ ok: false, error: "Only people in this meeting can add its notes", status: 403 });
+    expect(createNotebookTab).not.toHaveBeenCalled();
+  });
+
   it("makes a chosen notebook the series default when the series has none", async () => {
     p.scheduledMeeting.findUnique.mockResolvedValue(meetingRow());
 

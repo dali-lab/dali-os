@@ -1207,7 +1207,7 @@ export async function attachMeetingNote(
       ? meeting.notebook
       : null;
 
-  if (previous && !chosen) {
+  if ((previous || series) && !chosen) {
     const takesPart =
       isOrganizer ||
       core ||
