@@ -10,6 +10,7 @@
 
 import { z } from "zod";
 import { prisma, Prisma } from "~/lib/db";
+import { createForm, deleteForm, moveForm, renameForm, setFormAudience } from "./form-page.server";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import type { Question } from "~/types";
 import { isReferenceSourceKey, referenceSourceNeedsTerm } from "./reference-sources.shared";
@@ -408,14 +409,10 @@ export async function runFormsAction(
     case "create-form": {
       const folder = await resolveFolderPageId(input.folderPageId);
       if (!folder.ok) return { error: "Folder not found", status: 404 };
-      const created = await prisma.form.create({
-        data: {
-          name: input.name,
-          folderPageId: folder.value,
-          createdById: userId,
-        },
-        select: { id: true },
-      });
+      const created = await createForm(
+        { name: input.name, folderPageId: folder.value, createdById: userId },
+        { id: true },
+      );
       return { ok: true, formId: created.id };
     }
     case "duplicate-form": {
@@ -446,16 +443,16 @@ export async function runFormsAction(
         ? source.draftIntro
         : (latest?.intro ?? null);
 
-      const created = await prisma.form.create({
-        data: {
+      const created = await createForm(
+        {
           name: `Copy of ${source.name}`.slice(0, 120),
           folderPageId: source.folderPageId,
           createdById: userId,
           draftQuestions: questions === null ? undefined : (questions as object),
           draftIntro: intro,
         },
-        select: { id: true },
-      });
+        { id: true },
+      );
       return { ok: true, formId: created.id };
     }
     case "move-form": {
@@ -466,10 +463,7 @@ export async function runFormsAction(
       if (!exists) return { error: "Not found", status: 404 };
       const folder = await resolveFolderPageId(input.folderPageId);
       if (!folder.ok) return { error: "Folder not found", status: 404 };
-      await prisma.form.update({
-        where: { id: input.id },
-        data: { folderPageId: folder.value },
-      });
+      await moveForm(input.id, folder.value);
       return { ok: true };
     }
     case "rename-form": {
@@ -478,10 +472,7 @@ export async function runFormsAction(
         select: { id: true },
       });
       if (!exists) return { error: "Not found", status: 404 };
-      await prisma.form.update({
-        where: { id: input.id },
-        data: { name: input.name },
-      });
+      await renameForm(input.id, input.name);
       return { ok: true };
     }
     case "delete-form": {
@@ -499,7 +490,7 @@ export async function runFormsAction(
           status: 409,
         };
       }
-      await prisma.form.delete({ where: { id: input.id } });
+      await deleteForm(input.id);
       return { ok: true };
     }
     case "save-draft": {
@@ -759,10 +750,7 @@ export async function runFormsAction(
 
       // Ids are cleared for non-Groups audiences so stored state stays
       // canonical (toggling away and back means re-selecting).
-      await prisma.form.update({
-        where: { id: input.id },
-        data: { audience: input.audience, audienceGroupIds: ids },
-      });
+      await setFormAudience(input.id, input.audience, ids, userId);
       return { ok: true };
     }
   }

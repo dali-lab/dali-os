@@ -4,7 +4,6 @@ vi.mock("~/lib/db", () => ({
   prisma: {
     page: { findUnique: vi.fn(), update: vi.fn(), count: vi.fn() },
     projectFile: { count: vi.fn() },
-    form: { count: vi.fn() },
     signingDocument: { count: vi.fn() },
     rubric: { count: vi.fn() },
   },
@@ -82,7 +81,6 @@ beforeEach(() => {
   m.page.update.mockResolvedValue({});
   m.page.count.mockResolvedValue(0);
   m.projectFile.count.mockResolvedValue(0);
-  m.form.count.mockResolvedValue(0);
   m.signingDocument.count.mockResolvedValue(0);
   m.rubric.count.mockResolvedValue(0);
 });
@@ -111,10 +109,9 @@ describe("DELETE /api/documents/:id — folder contents guard", () => {
 
   it.each([
     ["files", "projectFile"],
-    ["forms", "form"],
     ["agreements", "signingDocument"],
     ["rubrics", "rubric"],
-    ["sub-pages", "page"],
+    ["sub-pages and forms", "page"],
   ])("refuses a folder that still holds %s", async (_label, model) => {
     m.page.findUnique.mockResolvedValue(labFolder());
     m[model].count.mockResolvedValue(2);
@@ -128,7 +125,7 @@ describe("DELETE /api/documents/:id — folder contents guard", () => {
     m.page.findUnique.mockResolvedValue(labFolder());
     m.page.count.mockResolvedValue(1);
     m.projectFile.count.mockResolvedValue(1);
-    m.form.count.mockResolvedValue(1);
+    m.signingDocument.count.mockResolvedValue(1);
     const res = await del();
     expect((await res.json()).error).toMatch(/still holds 3 items/);
   });

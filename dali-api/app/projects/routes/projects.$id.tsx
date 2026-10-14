@@ -685,8 +685,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     auth.user.email;
   const userName = presenceUser?.name ?? fallbackName;
 
+  // Forms are Pages too but are listed by the Drive tab, not as documents here.
+  const docRows = pageRows.filter((p) => p.kind !== "Form");
   const childrenByParent = new Map<string, typeof pageRows>();
-  for (const p of pageRows) {
+  for (const p of docRows) {
     if (!p.parentPageId) continue;
     const list = childrenByParent.get(p.parentPageId);
     if (list) list.push(p);
@@ -704,7 +706,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
   // Top-level docs for the main list. Pinned ones are lifted into
   // `pinnedDocuments` (rendered above), so they don't appear twice.
-  const documents = pageRows
+  const documents = docRows
     .filter((p) => p.parentPageId === null && p.pinnedAt === null)
     .map((p) => ({
       ...toDocumentDto(p),
@@ -713,7 +715,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   // Pinned docs — any page a teammate pinned, most-recent pin first, rendered
   // at the top of the Documents block (and lifted out of the list above).
-  const pinnedDocuments = pageRows
+  const pinnedDocuments = docRows
     .filter((p) => p.pinnedAt !== null && p.parentPageId === null)
     .sort((a, b) => (b.pinnedAt?.getTime() ?? 0) - (a.pinnedAt?.getTime() ?? 0))
     .map((p) => ({

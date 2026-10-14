@@ -1,9 +1,18 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
+vi.mock("~/forms/lib/form-page.server", () => ({
+  createForm: vi.fn(),
+  renameForm: vi.fn(),
+  moveForm: vi.fn(),
+  deleteForm: vi.fn(),
+  setFormAudience: vi.fn(),
+  setFormArchived: vi.fn(),
+}));
 
 import { prisma } from "~/lib/db";
 import { runFormsAction } from "~/forms/lib/forms-data";
+import { setFormAudience } from "~/forms/lib/form-page.server";
 
 const mockPrisma = prisma as unknown as {
   form: {
@@ -34,10 +43,7 @@ describe("runFormsAction update-form-audience", () => {
     );
 
     expect(res).toEqual({ ok: true });
-    expect(mockPrisma.form.update).toHaveBeenCalledWith({
-      where: { id: "form-1" },
-      data: { audience: "Public", audienceGroupIds: [] },
-    });
+    expect(setFormAudience).toHaveBeenCalledWith("form-1", "Public", [], "user-1");
     // No group validation needed off the Groups path.
     expect(mockPrisma.groupDefinition.findMany).not.toHaveBeenCalled();
   });
@@ -59,10 +65,7 @@ describe("runFormsAction update-form-audience", () => {
     );
 
     expect(res).toEqual({ ok: true });
-    expect(mockPrisma.form.update).toHaveBeenCalledWith({
-      where: { id: "form-1" },
-      data: { audience: "Groups", audienceGroupIds: ["g1", "g2"] },
-    });
+    expect(setFormAudience).toHaveBeenCalledWith("form-1", "Groups", ["g1", "g2"], "user-1");
   });
 
   it("rejects Groups with no groups selected", async () => {
@@ -76,7 +79,7 @@ describe("runFormsAction update-form-audience", () => {
       "user-1",
     );
     expect(res).toEqual({ error: "Select at least one group.", status: 400 });
-    expect(mockPrisma.form.update).not.toHaveBeenCalled();
+    expect(setFormAudience).not.toHaveBeenCalled();
   });
 
   it("rejects missing and archived groups", async () => {
@@ -105,7 +108,7 @@ describe("runFormsAction update-form-audience", () => {
       "user-1",
     );
     expect(missing).toMatchObject({ status: 400 });
-    expect(mockPrisma.form.update).not.toHaveBeenCalled();
+    expect(setFormAudience).not.toHaveBeenCalled();
   });
 
   it("rejects malformed groupIds JSON and bad audience values", async () => {

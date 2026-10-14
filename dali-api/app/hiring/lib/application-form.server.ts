@@ -7,6 +7,7 @@
 
 import { randomUUID } from "node:crypto";
 import { prisma } from "~/lib/db";
+import { createForm } from "~/forms/lib/form-page.server";
 import { canEditDomainSetup } from "~/hiring/lib/domain-windows.server";
 import { ensureProcessFolder, HIRING_PROCESS_ID } from "~/lib/bindings.server";
 import { filingFolderOr, singletonSlot } from "~/lib/drive-receivers.server";
@@ -77,8 +78,8 @@ export async function ensureHiringTemplate(actorId: string): Promise<string> {
     });
     return existing.id;
   }
-  const created = await prisma.form.create({
-    data: {
+  const created = await createForm(
+    {
       name: TEMPLATE_NAME,
       templateKey: TEMPLATE_KEY,
       folderPageId,
@@ -91,8 +92,8 @@ export async function ensureHiringTemplate(actorId: string): Promise<string> {
         },
       },
     },
-    select: { id: true },
-  });
+    { id: true },
+  );
   return created.id;
 }
 
@@ -141,8 +142,8 @@ export async function createCycleApplicationForm(
     }),
   );
   const label = APPLICANTS_FORM_LABEL[cycle.applicants];
-  const form = await prisma.form.create({
-    data: {
+  const form = await createForm(
+    {
       name: `${cycle.name} — ${label} application`,
       folderPageId,
       createdById: actorId,
@@ -155,8 +156,8 @@ export async function createCycleApplicationForm(
         },
       },
     },
-    select: { id: true },
-  });
+    { id: true },
+  );
   await prisma.applicationCycle.update({
     where: { id: cycleId },
     data: { applicationFormId: form.id },
@@ -206,8 +207,8 @@ export async function createCycleContinuedInterestForm(
       createdById: actorId,
     }),
   );
-  const form = await prisma.form.create({
-    data: {
+  const form = await createForm(
+    {
       name: `${cycle.name} — Continued interest`,
       folderPageId,
       createdById: actorId,
@@ -215,8 +216,8 @@ export async function createCycleContinuedInterestForm(
         create: { versionNumber: 1, questions: questions as unknown as object, createdById: actorId },
       },
     },
-    select: { id: true },
-  });
+    { id: true },
+  );
   await prisma.applicationCycle.update({
     where: { id: cycleId },
     data: { continuedInterestFormId: form.id },
@@ -256,8 +257,8 @@ export async function createDomainChallengeForm(
       createdById: actorId,
     }),
   );
-  const form = await prisma.form.create({
-    data: {
+  const form = await createForm(
+    {
       name: `${cycle.name} — ${domain.displayName} challenge`,
       folderPageId,
       createdById: actorId,
@@ -270,8 +271,8 @@ export async function createDomainChallengeForm(
         },
       },
     },
-    select: { id: true },
-  });
+    { id: true },
+  );
   await prisma.cycleDomainForm.create({
     data: { applicationCycleId: cycleId, domainId, formId: form.id },
   });

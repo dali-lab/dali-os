@@ -2,7 +2,7 @@
 // lens and applies the form-placement de-dup logic so this code never reaches
 // the client bundle (*.server.ts convention enforced by client-bundle-leak test).
 
-import { loadDriveScope, loadForms, loadOrphanForms, buildLinkedProcessMap } from "~/lib/drive.server";
+import { loadDriveScope, buildLinkedProcessMap } from "~/lib/drive.server";
 import type { DriveItem, ProjectPageRow, ProjectFileRow } from "~/lib/drive.server";
 import { prisma } from "~/lib/db";
 import { isImpersonating, type AuthSuccess } from "~/lib/auth";
@@ -14,12 +14,12 @@ import { getPageAccess } from "~/lib/pageAccess.server";
 import { ensureAllRoots, findAllRoots, type RootKey } from "~/lib/drive-roots.server";
 import type { RoleFlags } from "~/lib/nav-areas";
 
-// Tag each doc/folder item with whether the viewer has favorited it (drives the
-// inline star). Files/forms/agreements aren't page-favoritable, so they pass
+// Tag each doc/folder/form item with whether the viewer has favorited it (drives
+// the inline star). Files/agreements aren't page-favoritable, so they pass
 // through untagged. Mutates in place for brevity — the arrays are freshly built.
 function tagFavorites(items: DriveItem[], favIds: Set<string>): DriveItem[] {
   return items.map((it) =>
-    (it.type === "doc" || it.type === "folder") && favIds.has(it.id)
+    (it.type === "doc" || it.type === "folder" || it.type === "form") && favIds.has(it.id)
       ? { ...it, favorited: true }
       : it,
   );
@@ -139,12 +139,11 @@ type WorkspaceOut = {
  * per their strategy; Core, Hiring and Mentorship are the contents of their
  * root folder, shown only to viewers who can view that root.
  *
- * The form-placement de-dup rule is preserved:
- *   - A form with folderPageId in scope X stays only in scope X.
- *   - An unplaced form (folderPageId = null) appears once, in the Lab scope.
- *   - A form whose folder was archived/deleted surfaces once, in the Lab scope
- *     (via loadOrphanForms) so it is never lost.
- *   - No form is duplicated across scopes.
+ * Forms are Pages (kind Form) and arrive inside each scope's page load, so a
+ * form sits wherever its page does: no cross-scope de-dup is needed. Lab-wide
+ * and project/education spaces show them to `canViewForms` viewers; the
+ * process-root spaces only to Core. A form whose folder was archived or deleted
+ * is lifted to its scope's top level by the loader.
  */
 export async function loadDriveScopes({
   auth,
@@ -220,18 +219,6 @@ export async function loadDriveScopes({
   // Until the reparent job has run, Core-scoped folders still sit at the Lab
   // top level. Looked up speculatively: it needs nothing from the Lab load.
   const legacyTopsPending = isCore ? loadLegacyCoreTops() : Promise.resolve([]);
-  // Forms are read unscoped so they don't wait on the folder ids: placement
-  // below keeps only forms at a scope's top level or inside one of its folders.
-  const allFormsPending = needForms
-    ? linkedProcessMapPending.then((map) => loadForms(undefined, map))
-    : Promise.resolve([] as DriveItem[]);
-  // Safety-net: forms whose folder was archived/deleted are dropped by the scoped
-  // placement below; surface them at the General root so none are lost.
-  // Gated on the un-widened canViewForms (they land in the Lab scope, like labForms).
-  const orphanFormsPending = canViewForms
-    ? linkedProcessMapPending.then((map) => loadOrphanForms(map))
-    : Promise.resolve([] as DriveItem[]);
-
   const [
     favIds,
     memberItems,
@@ -240,8 +227,6 @@ export async function loadDriveScopes({
     liveRoots,
     rootAccess,
     legacyTops,
-    allForms,
-    orphanForms,
     ...scopeItemArrays
   ] = await Promise.all([
     favoritePageIds(userSub),
@@ -255,7 +240,9 @@ export async function loadDriveScopes({
       loadDriveScope({
         userSub,
         scope: { kind: "Lab" },
-        canViewForms: false,
+        // Wide enough for the process roots carved out below, which show forms
+        // to Core; the General space narrows back to canViewForms.
+        canViewForms: needForms,
         canManageAgreements: isCore,
         request,
         linkedProcessMap,
@@ -264,23 +251,27 @@ export async function loadDriveScopes({
     liveRootsPending,
     rootAccessPending,
     legacyTopsPending,
-    allFormsPending,
-    orphanFormsPending,
     ...projectIds.map((projectId) =>
-      loadDriveScope({
-        userSub,
-        scope: { kind: "Project", projectId },
-        canViewForms: false,
-        request,
-      }),
+      linkedProcessMapPending.then((linkedProcessMap) =>
+        loadDriveScope({
+          userSub,
+          scope: { kind: "Project", projectId },
+          canViewForms,
+          request,
+          linkedProcessMap,
+        }),
+      ),
     ),
     ...educationIds.map((offeringId) =>
-      loadDriveScope({
-        userSub,
-        scope: { kind: "EducationOffering", offeringId },
-        canViewForms: false,
-        request,
-      }),
+      linkedProcessMapPending.then((linkedProcessMap) =>
+        loadDriveScope({
+          userSub,
+          scope: { kind: "EducationOffering", offeringId },
+          canViewForms,
+          request,
+          linkedProcessMap,
+        }),
+      ),
     ),
   ]);
   const projectItemArrays = scopeItemArrays.slice(0, projectIds.length);
@@ -293,7 +284,6 @@ export async function loadDriveScopes({
   const carved = new Set<string>();
   const rootSpaceItems = new Map<RootKey, DriveItem[]>();
   const visibleRootIds = new Map<RootKey, string>();
-  const rootFolderIdsByKey = new Map<RootKey, Set<string>>();
   for (const rootId of liveRoots.ids) {
     for (const id of subtreeIds(labItems, rootId)) carved.add(id);
   }
@@ -305,10 +295,9 @@ export async function loadDriveScopes({
     rootSpaceItems.set(
       key,
       labItems
-        .filter((it) => inRoot.has(it.id) && it.id !== rootId)
+        .filter((it) => inRoot.has(it.id) && it.id !== rootId && (isCore || it.type !== "form"))
         .map((it) => (it.parentFolderId === rootId ? { ...it, parentFolderId: null } : it)),
     );
-    rootFolderIdsByKey.set(key, inRoot);
   }
 
   if (isCore && visibleRootIds.has("core")) {
@@ -320,8 +309,6 @@ export async function loadDriveScopes({
     }
     if (legacyIds.size > 0) {
       for (const id of legacyIds) carved.add(id);
-      const coreSet = rootFolderIdsByKey.get("core")!;
-      for (const id of legacyIds) coreSet.add(id);
       rootSpaceItems.set("core", [
         ...rootSpaceItems.get("core")!,
         ...labItems.filter((it) => legacyIds.has(it.id)),
@@ -333,59 +320,12 @@ export async function loadDriveScopes({
 
   // Strip managed artifacts from the Lab scope (same as legacy).
   const labVisibleItems = labVisibleBase.filter(
-    (it) => it.type !== "agreement" && it.type !== "rubric",
+    (it) => it.type !== "agreement" && it.type !== "rubric" && (canViewForms || it.type !== "form"),
   );
 
-  // Build folder-id sets for the form de-dup pass.
-  const labFolderIds = new Set(
-    labVisibleItems.filter((i) => i.type === "folder").map((i) => i.id),
-  );
-  const projectFolderIdSets = projectItemArrays.map(
-    (arr) => new Set(arr.filter((i) => i.type === "folder").map((i) => i.id)),
-  );
-  const educationFolderIdSets = educationItemArrays.map(
-    (arr) => new Set(arr.filter((i) => i.type === "folder").map((i) => i.id)),
-  );
-
-  // Partition forms per scope (same placement rule as legacy).
-  function pickScopeForms(
-    scopeFolderIds: Set<string>,
-    isLab: boolean,
-    viewerCanSeeForms: boolean,
-  ): DriveItem[] {
-    if (!viewerCanSeeForms) return [];
-    return allForms.filter((item) => {
-      if (item.parentFolderId === null) return isLab;
-      return scopeFolderIds.has(item.parentFolderId);
-    });
-  }
-
-  // A root's forms live inside its folders, or sit on the root itself (the
-  // filing rule points at the root), which is the space's top level.
-  const rootForms = new Map<RootKey, DriveItem[]>();
-  for (const [key, folderIds] of rootFolderIdsByKey) {
-    const rootId = visibleRootIds.get(key)!;
-    rootForms.set(
-      key,
-      pickScopeForms(folderIds, false, isCore).map((f) =>
-        f.parentFolderId === rootId ? { ...f, parentFolderId: null } : f,
-      ),
-    );
-  }
-  // Lab forms use the un-widened canViewForms gate (same as legacy).
-  const labForms = pickScopeForms(labFolderIds, true, canViewForms);
-  const projectForms = projectItemArrays.map((_, i) =>
-    pickScopeForms(projectFolderIdSets[i], false, canViewForms),
-  );
-  // Education forms: use un-widened canViewForms (enrolled/instructor/Core).
-  const educationForms = educationItemArrays.map((_, i) =>
-    pickScopeForms(educationFolderIdSets[i], false, canViewForms),
-  );
-
-  // Compose final item lists.
-  const filteredLab = [...labVisibleItems, ...labForms, ...orphanForms];
-  const filteredProjects = projectItemArrays.map((arr, i) => [...arr, ...projectForms[i]]);
-  const filteredEducation = educationItemArrays.map((arr, i) => [...arr, ...educationForms[i]]);
+  const filteredLab = labVisibleItems;
+  const filteredProjects = projectItemArrays;
+  const filteredEducation = educationItemArrays;
 
   // Build the output by iterating the registry in display order.
   // Signal ③: populate scopeAudience per the space definition.
@@ -430,7 +370,7 @@ export async function loadDriveScopes({
           id: space.key,
           label: space.label,
           iconEmoji: null,
-          items: tagFavorites([...(rootSpaceItems.get(key) ?? []), ...(rootForms.get(key) ?? [])], favIds),
+          items: tagFavorites(rootSpaceItems.get(key) ?? [], favIds),
           rootFolderId: rootId,
           scopeAudience: ROOT_AUDIENCE[key],
         });
@@ -473,12 +413,6 @@ export async function loadDriveScopes({
               );
             }
           }
-
-          // Add the synthetic project folder ids to the form de-dup sets so
-          // any form placed directly at a project's root (parentFolderId = null
-          // in the raw data, reparented to pid above) still belongs here.
-          // (Forms were already reparented in the loop above, so no extra work
-          // is needed — they arrive with parentFolderId === pid after reparent.)
 
           result.push({
             id: "projects",

@@ -606,7 +606,7 @@ function FavoriteButton({
   item: DriveItem;
   onToggleFavorite?: (item: DriveItem) => void;
 }) {
-  if ((item.type !== "doc" && item.type !== "folder") || !onToggleFavorite) {
+  if ((item.type !== "doc" && item.type !== "folder" && item.type !== "form") || !onToggleFavorite) {
     return <span className="w-6 shrink-0" aria-hidden="true" />;
   }
   return (
@@ -2265,7 +2265,8 @@ function DriveDetailsPane({
   onClose: () => void;
 }) {
   const t = useDriveText();
-  const canFavorite = !!item && (item.type === "doc" || item.type === "folder") && !!onToggleFavorite;
+  const canFavorite =
+    !!item && (item.type === "doc" || item.type === "folder" || item.type === "form") && !!onToggleFavorite;
   return (
     <aside
       data-testid="drive-details-pane"
@@ -2328,10 +2329,11 @@ function DriveDetailsPane({
               (item as { partnerVisible?: boolean | null }).partnerVisible && (
                 <DetailFact label="Sharing" value="Shared with partner" />
               )}
-            {(item.type === "doc" || item.type === "folder") && !!item.tags?.length && (
+            {(item.type === "doc" || item.type === "folder" || item.type === "form") && !!item.tags?.length && (
               <DetailFact label="Tags" value={<TagLabels tags={item.tags} />} />
             )}
-            {(item.type === "doc" || item.type === "folder" || item.type === "file") && item.audience && (
+            {(item.type === "doc" || item.type === "folder" || item.type === "file" || item.type === "form") &&
+              item.audience && (
               <DetailFact
                 label="Who can see this"
                 value={
@@ -2723,15 +2725,15 @@ function FolderCount({ item, className = "" }: { item: DriveItem; className?: st
 
 /** Tag dots after a row's title; clicking one filters the Drive by that tag. */
 function RowTags({ item, actions }: { item: DriveItem; actions: RowActions | null }) {
-  if (item.type !== "doc" && item.type !== "folder") return null;
+  if (item.type !== "doc" && item.type !== "folder" && item.type !== "form") return null;
   return <TagDots tags={item.tags} onApply={actions?.onTagClick} />;
 }
 
 /** The audience marker for a row; clicking opens Share for items that have one. */
 function RowAudience({ item, actions }: { item: DriveItem; actions: RowActions | null }) {
-  if (item.type !== "doc" && item.type !== "folder" && item.type !== "file") return null;
+  if (item.type !== "doc" && item.type !== "folder" && item.type !== "file" && item.type !== "form") return null;
   if (!item.audience) return null;
-  const share = item.type !== "file" ? actions?.onShare : undefined;
+  const share = item.type !== "file" && item.type !== "form" ? actions?.onShare : undefined;
   return <AudienceSignal audience={item.audience} onOpenShare={share ? () => share(item) : undefined} />;
 }
 

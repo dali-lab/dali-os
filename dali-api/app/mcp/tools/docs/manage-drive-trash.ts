@@ -6,6 +6,7 @@
 //
 // Purge of forms checks formDeletionBlockers before deleting.
 
+import { deleteForm, setFormArchived } from "~/forms/lib/form-page.server";
 import { prisma } from "~/lib/db";
 import { canViewForms } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
@@ -68,7 +69,7 @@ export async function runManageDriveTrash(callerId: string, input: ManageDriveTr
     if (!form) throw new ManageDriveTrashError("Form not found", 404);
 
     if (action === "restore") {
-      await prisma.form.update({ where: { id }, data: { archivedAt: null } });
+      await setFormArchived(id, null);
       return { ok: true };
     }
 
@@ -81,7 +82,7 @@ export async function runManageDriveTrash(callerId: string, input: ManageDriveTr
         409,
       );
     }
-    await prisma.form.delete({ where: { id } });
+    await deleteForm(id);
     return { ok: true };
   }
 
