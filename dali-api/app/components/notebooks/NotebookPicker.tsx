@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Plus } from "lucide-react";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { modalCardClass } from "~/components/os-chrome";
 import { buttonClasses } from "~/components/ui/Button";
@@ -23,7 +24,7 @@ export function NotebookPicker({
   open,
   onClose,
   onPick,
-  onNewInstead,
+  newRow,
   projectId,
   meetingId,
   space,
@@ -34,8 +35,8 @@ export function NotebookPicker({
   open: boolean;
   onClose: () => void;
   onPick: (notebook: PickedNotebook) => void;
-  /** Offers the "New notebook instead" footer button when given. */
-  onNewInstead?: () => void;
+  /** A first row that starts a new notebook instead of picking one. */
+  newRow?: { label: string; onNew: () => void };
   projectId?: string | null;
   meetingId?: string | null;
   /** Limits the list to notebooks in one workspace. */
@@ -96,6 +97,16 @@ export function NotebookPicker({
         aria-label="Search notebooks"
       />
       <div className="min-h-[8rem] flex-1 overflow-y-auto rounded-md border border-border">
+        {newRow && (
+          <button
+            type="button"
+            onClick={newRow.onNew}
+            className="flex w-full items-center gap-2 border-b border-border px-3 py-2 text-left text-sm font-medium text-foreground transition-colors hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:outline-none"
+          >
+            <Plus className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+            {newRow.label}
+          </button>
+        )}
         {status === "loading" && rows.length === 0 && (
           <p className="px-3 py-6 text-center text-sm text-muted-foreground">Loading notebooks</p>
         )}
@@ -110,14 +121,7 @@ export function NotebookPicker({
         <NotebookGroup label="Suggested" rows={suggested} onPick={onPick} />
         <NotebookGroup label="Recent" rows={recent} onPick={onPick} />
       </div>
-      <div className="mt-4 flex items-center justify-between gap-3">
-        {onNewInstead ? (
-          <button type="button" onClick={onNewInstead} className={buttonClasses("secondary", "sm")}>
-            New notebook instead
-          </button>
-        ) : (
-          <span />
-        )}
+      <div className="mt-4 flex items-center justify-end gap-3">
         <button type="button" onClick={onClose} className={buttonClasses("ghost", "sm")}>
           Cancel
         </button>

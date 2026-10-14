@@ -2,30 +2,16 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useFetcher } from "react-router";
 import { Shapes, X } from "lucide-react";
-import {
-  useMeetingNote,
-  meetingNoteValid,
-  meetingNotePayload,
-  MeetingNoteFields,
-} from "~/calendar/components/MeetingNoteFields";
 
 // Post-hoc counterpart to the create modal's whiteboard toggle: adds a whiteboard
 // to a meeting that doesn't have one, posting the `add-meeting-whiteboard`
-// calendar action. When the meeting already knows its type (it has a note), the
-// board files alongside it, so the modal is a one-click confirm; a note-less
-// meeting collects where to file it the same way the add-note flow does. A
-// revalidation then swaps the "Add whiteboard" affordance for the "Whiteboard"
-// link. Only rendered when the whiteboard flag is on and no board exists yet.
-
-const fieldClass =
-  "w-full px-3.5 py-2.5 text-sm border border-border rounded-[10px] bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/40";
-const labelClass =
-  "block text-[11px] font-bold text-muted-foreground uppercase tracking-[0.08em] mb-2";
+// calendar action. The server files the board beside the meeting's note, or at
+// its space's receiver folder. A revalidation then swaps the "Add whiteboard"
+// affordance for the "Whiteboard" link. Only rendered when the whiteboard flag
+// is on and no board exists yet.
 
 export function AddMeetingWhiteboardButton({
   meetingId,
-  /** The meeting already has a recorded type (e.g. a note): the board reuses it,
-   *  so the modal skips the filing fields. */
   hasType,
   actionPath,
   className,
@@ -66,14 +52,7 @@ function AddMeetingWhiteboardModal({
   actionPath?: string;
   onClose: () => void;
 }) {
-  const note = useMeetingNote();
   const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
-
-  // Marks the board (not the note) as the requested asset for the shared fields.
-  useEffect(() => {
-    note.setWhiteboard(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // Close only this modal on Escape (capture + stopPropagation) so the key
   // doesn't also close the popover behind it.
@@ -101,18 +80,12 @@ function AddMeetingWhiteboardModal({
     }
   }, [fetcher.state, fetcher.data, onClose]);
 
-  // With a known type the board reuses it; otherwise the shared fields must be
-  // complete (a General/Other meeting needs a name).
-  const valid = hasType || meetingNoteValid(note.state);
-
   function submit() {
-    const fields: Record<string, string> = { intent: "add-meeting-whiteboard", meetingId };
-    if (!hasType) {
-      const payload = meetingNotePayload(note.state);
-      if (payload.projectId) fields.projectId = String(payload.projectId);
-    }
     submittedRef.current = true;
-    fetcher.submit(fields, { method: "post", ...(actionPath ? { action: actionPath } : {}) });
+    fetcher.submit(
+      { intent: "add-meeting-whiteboard", meetingId },
+      { method: "post", ...(actionPath ? { action: actionPath } : {}) },
+    );
   }
 
   if (typeof document === "undefined") return null;
@@ -143,14 +116,6 @@ function AddMeetingWhiteboardModal({
               ? "Starts a shared whiteboard canvas linked to this meeting, filed alongside the meeting note."
               : "Starts a shared whiteboard canvas linked to this meeting."}
           </p>
-          {!hasType && (
-            <MeetingNoteFields
-              note={note}
-              surface="whiteboard"
-              fieldClass={fieldClass}
-              labelClass={labelClass}
-            />
-          )}
           {fetcher.data?.error && <p className="text-sm text-red-600">{fetcher.data.error}</p>}
         </div>
 
@@ -165,7 +130,7 @@ function AddMeetingWhiteboardModal({
           <button
             type="button"
             onClick={submit}
-            disabled={!valid || submitting}
+            disabled={submitting}
             className="inline-flex items-center gap-1.5 rounded-lg bg-os-accent px-4 py-2 text-sm font-semibold text-white hover:bg-os-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
           >
             {submitting ? "Creating…" : "Create whiteboard"}

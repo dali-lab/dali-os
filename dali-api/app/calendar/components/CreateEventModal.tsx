@@ -7,7 +7,7 @@ import { DateField } from "~/components/ui/DateField";
 import { TimeField as TimeComboField } from "~/components/ui/TimeField";
 import { Select } from "~/components/ui/floating";
 import { RoomLocationField } from "~/rooms/components/RoomLocationField";
-import { filedNoteFrom } from "~/calendar/lib/filed-note";
+import { filedNoteFrom, filedWhere } from "~/calendar/lib/filed-note";
 import { useFiledNoteToast } from "~/calendar/lib/useFiledNoteToast";
 import {
   ScheduleWeekGrid,
@@ -35,6 +35,7 @@ import {
   useMeetingNote,
   meetingNoteValid,
   meetingNotePayload,
+  inviteOf,
   MeetingNoteFields,
 } from "~/calendar/components/MeetingNoteFields";
 import { TimesheetFields } from "~/calendar/components/TimesheetFields";
@@ -184,16 +185,13 @@ export function CreateEventModal({
 
   // ── Meeting note fields (only shown in Meeting mode) ─────────────────────
   const note = useMeetingNote();
+  const invitedGroups = selectedGroupIds.flatMap((id) => groupsById.get(id) ?? []);
+  const scopeGroupId = selectedGroupIds.length === 1 && selectedUserIds.length === 0 ? selectedGroupIds[0]! : null;
   const filingSuggestions = useMemo(
-    () => ({ attendeeIds: resolvedParticipantIds, groups: data.groups }),
+    () => ({ attendeeIds: resolvedParticipantIds, groups: data.groups, invitedGroups, scopeGroupId }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [resolvedParticipantIds.join("\0"), data.groups],
+    [resolvedParticipantIds.join("\0"), data.groups, selectedGroupIds.join("\0"), scopeGroupId],
   );
-
-  // Exactly one invited project group makes its Meetings folder the default
-  // place, a default the sender can change; it never enables the note on its own.
-  // A Core project meeting still prefills its project.
-  const prefillProjectId = selectedGroupIds.length === 1 ? (groupsById.get(selectedGroupIds[0]!)?.projectId ?? null) : null;
 
   // Send the invite from a specific calendar, not just an account — the same
   // sub-calendars the event destination offers. Starts on the event default
@@ -295,8 +293,7 @@ export function CreateEventModal({
         count: number;
         gcalError?: string | null;
         notePageId?: string | null;
-        /** The filing toast names the note, so the inline link steps aside. */
-        filed?: boolean;
+        filed?: { title: string; space: string; href: string } | null;
         whiteboardPageId?: string | null;
       }
     | { ok: false; error: string }
@@ -366,7 +363,7 @@ export function CreateEventModal({
       const rrule = repeatSpecToRRule(repeat, selectedStartLocal);
       if (rrule) payload.recurrenceRule = rrule;
       if (canAddMeet && addMeet) payload.addMeet = true;
-      Object.assign(payload, meetingNotePayload(note.state));
+      Object.assign(payload, meetingNotePayload(note.state, inviteOf(invitedGroups)));
       if (guestEmails.length > 0) payload.guestEmails = guestEmails;
       if (selectedGroupIds.length === 1 && selectedUserIds.length === 0) {
         payload.scopeType = "Group";
@@ -395,7 +392,7 @@ export function CreateEventModal({
           count: json.notifiedCount ?? 0,
           gcalError: json.gcalError ?? null,
           notePageId: json.notePageId ?? null,
-          filed: filed !== null,
+          filed: filed ? { ...filedWhere(filed), href: filed.notePath.href } : null,
           whiteboardPageId: json.whiteboardPageId ?? null,
         });
         // If isWork, log the organizer's time against the meeting we just
@@ -922,7 +919,6 @@ export function CreateEventModal({
                   <MeetingNoteFields
                     note={note}
                     surface="create"
-                    prefillProjectId={prefillProjectId}
                     fieldClass={fieldClass}
                     labelClass={labelClass}
                     meetingTitle={title}
@@ -935,7 +931,19 @@ export function CreateEventModal({
               {/* Status */}
               {meetingStatus?.ok === true && (
                 <p className="text-sm text-green-700">
-                  Meeting created. Notified {meetingStatus.count} participant
+                  Meeting created.
+                  {meetingStatus.filed && (
+                    <>
+                      {" "}
+                      Note in {meetingStatus.filed.title}
+                      {meetingStatus.filed.space && ` (${meetingStatus.filed.space})`}.{" "}
+                      <a href={meetingStatus.filed.href} className="underline font-medium">
+                        Open
+                      </a>
+                      .
+                    </>
+                  )}{" "}
+                  Notified {meetingStatus.count} participant
                   {meetingStatus.count === 1 ? "" : "s"}.
                   {meetingStatus.notePageId && !meetingStatus.filed && (
                     <>

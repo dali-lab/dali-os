@@ -80,5 +80,5 @@ export function useSeriesNotebook() {
     [dialog, apply],
   );
 
-  return { offerFutureFiling, changeNotebook, unsetNotebook };
+  return { apply, offerFutureFiling, changeNotebook, unsetNotebook };
 }

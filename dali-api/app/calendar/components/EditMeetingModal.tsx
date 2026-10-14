@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRevalidator } from "react-router";
 import { AlignLeft, Clock, MapPin, UsersRound } from "lucide-react";
@@ -16,6 +16,11 @@ import { RoomLocationField } from "~/rooms/components/RoomLocationField";
 import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
 import { weekStartIsoForDay, weekWindow } from "~/calendar/lib/view-window";
 import { eventTitleOrDefault } from "~/calendar/lib/event-title";
+import { useDialog } from "~/components/ui/dialog";
+import { MeetingNoteFields, useMeetingNote } from "~/calendar/components/MeetingNoteFields";
+import type { DefaultNotebookResult } from "~/calendar/components/meeting-note";
+import { changedSeriesNotebook, SERIES_CHANGE_CONFIRM } from "~/calendar/lib/series-notebook";
+import { useSeriesNotebook } from "~/calendar/lib/useSeriesNotebook";
 import type { WhDay } from "~/calendar/lib/types";
 
 // Shape of GET /api/scheduled-meetings/:id/edit-context.
@@ -116,6 +121,10 @@ export function EditMeetingModal({
   onClose: () => void;
 }) {
   const revalidator = useRevalidator();
+  const dialog = useDialog();
+  const note = useMeetingNote();
+  const { apply: applySeriesNotebook } = useSeriesNotebook();
+  const seriesNotebookId = useRef<string | null>(null);
   const [ctx, setCtx] = useState<EditContext | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -277,6 +286,21 @@ export function EditMeetingModal({
     ? Array.from(new Set([...resolvedParticipantIds, ctx.viewer.userId]))
     : resolvedParticipantIds;
 
+  const noteInvite = useMemo(
+    () => ({
+      attendeeIds: resolvedParticipantIds,
+      groups: ctx?.options.groups ?? [],
+      invitedGroups: selectedGroupIds.flatMap((id) => groupsById.get(id) ?? []),
+      scopeGroupId: selectedGroupIds.length === 1 && selectedUserIds.length === 0 ? selectedGroupIds[0]! : null,
+    }),
+    [resolvedParticipantIds, ctx, selectedGroupIds, selectedUserIds, groupsById],
+  );
+
+  useEffect(() => {
+    note.setEnabled(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const canSave =
     !!ctx &&
     date !== "" &&
@@ -287,6 +311,8 @@ export function EditMeetingModal({
 
   async function save() {
     if (!canSave) return;
+    const newNotebook = changedSeriesNotebook(note.state.place, note.state.auto, seriesNotebookId.current);
+    if (newNotebook && !(await dialog.confirm({ ...SERIES_CHANGE_CONFIRM }))) return;
     setSaving(true);
     setSaveError(null);
     try {
@@ -326,6 +352,7 @@ export function EditMeetingModal({
         setSaving(false);
         return;
       }
+      if (newNotebook) await applySeriesNotebook(meetingId, newNotebook, "future");
       revalidator.revalidate();
       onClose();
     } catch {
@@ -486,6 +513,19 @@ export function EditMeetingModal({
               placeholder="Add description"
             />
           </div>
+
+          <MeetingNoteFields
+            note={note}
+            surface="edit"
+            fieldClass={fieldClass}
+            labelClass={labelClass}
+            meetingTitle={title}
+            meetingId={meetingId}
+            suggest={noteInvite}
+            onDefaultLoaded={(def: DefaultNotebookResult) => {
+              seriesNotebookId.current = def.kind === "series" ? (def.notebook?.id ?? null) : null;
+            }}
+          />
 
           {saveError && <p className="text-sm text-red-600">{saveError}</p>}
         </div>
