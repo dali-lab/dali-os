@@ -1755,6 +1755,9 @@ describe("DriveBrowser list and grid: dropping OS files on a folder inside a fol
     fileDrag("drop", row("folder", "f2"), { files });
     expect(onUploadFiles).toHaveBeenCalledWith(files, { folderId: "f2" });
     expect(lit(row("folder", "f2"))).toBe(false);
+  });
+});
+
 describe("DriveBrowser: Folder settings", () => {
   const hiring: DriveTreeScope = { id: "hiring", label: "Hiring", iconEmoji: null, items: [folder("h1")] };
   const core: DriveTreeScope = { id: "core", label: "Core", iconEmoji: null, items: [folder("c1")] };
