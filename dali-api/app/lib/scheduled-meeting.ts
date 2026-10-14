@@ -39,6 +39,7 @@ import { isCore, isProjectMember } from "~/lib/roles";
 import { isGeneralCalendarEvent } from "~/lib/general-calendar";
 import { copyPageBody } from "~/lib/page-copy.server";
 import { createNotebook, loadEditableNotebook, NotebookError } from "~/lib/notebooks.server";
+import { movePage } from "~/lib/page-move.server";
 import { isExistingChoice, type NotebookChoice, type NotebookLocation } from "~/lib/notebook-choice";
 import { readDocAsBlocks } from "~/collab/read";
 import { pageDocName } from "~/collab/roomName";
@@ -332,6 +333,8 @@ export type CreateScheduledMeetingResult =
       whiteboardPageId: string | null;
       /** Links in the notebook choice the actor couldn't file. */
       declinedLinks: DeclinedNotebookLink[];
+      /** The move the notebook choice asked for, when the actor couldn't make it. */
+      declinedMove: DeclinedNotebookMove | null;
     }
   | { ok: false; error: string };
 
@@ -650,10 +653,15 @@ type ResolvedNotebook = {
   templatePageId: string | null;
   /** Where the notebook itself lives: a link to this place is not a link. */
   primary: Placement;
+  /** The move the choice asked for, when the actor couldn't make it. */
+  declinedMove?: DeclinedNotebookMove | null;
 };
 
 /** A link the actor couldn't file: the place and why. */
 export type DeclinedNotebookLink = { location: NotebookLocation; error: string };
+
+/** The move an existing notebook was asked to make and couldn't: the place and why. */
+export type DeclinedNotebookMove = { location: NotebookLocation; error: string };
 
 const locationKey = (l: Placement) => `${l.workspaceType}:${l.workspaceId ?? ""}:${l.parentPageId ?? ""}`;
 
@@ -679,6 +687,29 @@ async function fileNotebookLinks(
   return declined;
 }
 
+/** Moves the notebook to `location`; the reason it stayed put, or null once it moved. */
+async function moveNotebook(
+  notebookId: string,
+  location: NotebookLocation,
+  actorId: string,
+  request?: Request,
+): Promise<string | null> {
+  const moved = await movePage({
+    pageId: notebookId,
+    userId: actorId,
+    request,
+    input: {
+      parentPageId: location.parentPageId,
+      workspaceType: location.workspaceType,
+      workspaceId: location.workspaceId,
+    },
+  });
+  if (moved.ok) return null;
+  if ("error" in moved) return moved.error;
+  const body = (await moved.response.json().catch(() => null)) as { error?: string } | null;
+  return body?.error ?? "Couldn't move the notebook";
+}
+
 /**
  * The notebook a caller's choice names: an existing one the actor can edit, or
  * a new one made at the chosen folder (else where the meeting's About files its
@@ -689,16 +720,23 @@ async function resolveNotebookChoice(
   choice: NotebookChoice,
   actorId: string,
   filingFor: (title: string) => ArtifactFilingInput,
+  request?: Request,
 ): Promise<ResolvedNotebook> {
   if (isExistingChoice(choice)) {
     const row = await loadEditableNotebook(choice.existingId, actorId);
-    return {
+    const own: Placement = { workspaceType: row.workspaceType, workspaceId: row.workspaceId, parentPageId: row.parentPageId };
+    const resolved: ResolvedNotebook = {
       id: row.id,
       title: row.title,
       created: false,
       templatePageId: row.templatePageId,
-      primary: { workspaceType: row.workspaceType, workspaceId: row.workspaceId, parentPageId: row.parentPageId },
+      primary: own,
     };
+    if (!choice.location || locationKey(choice.location) === locationKey(own)) return resolved;
+    const error = await moveNotebook(row.id, choice.location, actorId, request);
+    return error
+      ? { ...resolved, declinedMove: { location: choice.location, error } }
+      : { ...resolved, primary: choice.location };
   }
   const location = choice.location ?? null;
   const explicit = location && !(location.workspaceType === "Lab" && location.parentPageId === null) ? location : null;
@@ -771,13 +809,18 @@ export async function createScheduledMeeting(
   let notebookPlan: ResolvedNotebook | null = null;
   if (input.notebook) {
     try {
-      notebookPlan = await resolveNotebookChoice(input.notebook, input.organizerId, (title) => ({
-        authorId: input.organizerId,
-        ...typeForNotebookFiling(input, givenProjectId, title),
-        projectId: givenProjectId,
-        isCoreMeeting: input.isCoreMeeting ?? false,
-        noteLocation: null,
-      }));
+      notebookPlan = await resolveNotebookChoice(
+        input.notebook,
+        input.organizerId,
+        (title) => ({
+          authorId: input.organizerId,
+          ...typeForNotebookFiling(input, givenProjectId, title),
+          projectId: givenProjectId,
+          isCoreMeeting: input.isCoreMeeting ?? false,
+          noteLocation: null,
+        }),
+        input.request,
+      );
     } catch (err) {
       if (err instanceof NotebookError) return { ok: false, error: err.message };
       throw err;
@@ -973,6 +1016,7 @@ export async function createScheduledMeeting(
     createdNotebook,
     whiteboardPageId,
     declinedLinks,
+    declinedMove: notebookPlan?.declinedMove ?? null,
   };
 }
 
@@ -1008,6 +1052,8 @@ export type AttachMeetingNoteResult =
       seriesNotebookId: string | null;
       /** Links in the notebook choice the actor couldn't file. */
       declinedLinks: DeclinedNotebookLink[];
+      /** The move the notebook choice asked for, when the actor couldn't make it. */
+      declinedMove: DeclinedNotebookMove | null;
     }
   | { ok: false; error: string; status: number };
 
@@ -1145,6 +1191,7 @@ export async function attachMeetingNote(
       createdNotebook: false,
       seriesNotebookId: meeting.notebookId,
       declinedLinks: [],
+      declinedMove: null,
     };
   }
 
@@ -1209,13 +1256,18 @@ export async function attachMeetingNote(
   let plan: ResolvedNotebook | null = null;
   try {
     if (chosen) {
-      plan = await resolveNotebookChoice(chosen, input.actorId, (title) => ({
-        authorId: input.actorId,
-        ...typeFor(title),
-        projectId,
-        isCoreMeeting: meeting.isCoreMeeting,
-        noteLocation: null,
-      }));
+      plan = await resolveNotebookChoice(
+        chosen,
+        input.actorId,
+        (title) => ({
+          authorId: input.actorId,
+          ...typeFor(title),
+          projectId,
+          isCoreMeeting: meeting.isCoreMeeting,
+          noteLocation: null,
+        }),
+        input.request,
+      );
     } else if (series) {
       plan = {
         id: series.id,
@@ -1274,6 +1326,7 @@ export async function attachMeetingNote(
         createdNotebook: false,
         seriesNotebookId: meeting.notebookId,
         declinedLinks: [],
+        declinedMove: null,
       };
     }
     throw err;
@@ -1313,7 +1366,15 @@ export async function attachMeetingNote(
   const declinedLinks =
     chosen && plan ? await fileNotebookLinks(plan, chosen.links, input.actorId, input.request) : [];
 
-  return { ok: true, notePageId, notebookId, createdNotebook, seriesNotebookId, declinedLinks };
+  return {
+    ok: true,
+    notePageId,
+    notebookId,
+    createdNotebook,
+    seriesNotebookId,
+    declinedLinks,
+    declinedMove: plan?.declinedMove ?? null,
+  };
 }
 
 export type AttachMeetingWhiteboardInput = {

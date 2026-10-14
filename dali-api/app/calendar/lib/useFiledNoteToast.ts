@@ -1,11 +1,12 @@
 import { useCallback } from "react";
 import { useNavigate, useRevalidator } from "react-router";
 import { useToast } from "~/components/ui/toast";
-import { undoFiledNote, type FiledNote } from "~/calendar/lib/filed-note";
+import { declinedMoveMessage, undoFiledNote, type FiledNote } from "~/calendar/lib/filed-note";
 
 /**
  * The toast that follows filing a meeting note: where it went, with Open and,
- * for a note just created from the calendar, Undo.
+ * for a note just created from the calendar, Undo. A refused notebook move gets
+ * a second toast naming the place `movedTo` it was asked to go.
  */
 export function useFiledNoteToast() {
   const toast = useToast();
@@ -13,7 +14,7 @@ export function useFiledNoteToast() {
   const revalidator = useRevalidator();
 
   return useCallback(
-    (filed: FiledNote, opts: { open?: boolean; undo?: boolean } = {}) => {
+    (filed: FiledNote, opts: { open?: boolean; undo?: boolean; movedTo?: string } = {}) => {
       const actions = [
         ...(opts.open === false
           ? []
@@ -37,6 +38,7 @@ export function useFiledNoteToast() {
           : []),
       ];
       toast.success(`Filed to ${filed.notePath.label}`, { actions, duration: 8000 });
+      if (filed.declinedMove) toast.error(declinedMoveMessage(opts.movedTo));
     },
     [toast, navigate, revalidator],
   );

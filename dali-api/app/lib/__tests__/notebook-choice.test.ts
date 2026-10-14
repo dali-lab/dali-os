@@ -74,3 +74,24 @@ describe("isExistingChoice", () => {
     expect(isExistingChoice({ title: "New" })).toBe(false);
   });
 });
+
+describe("notebookChoiceSchema location on an existing notebook", () => {
+  const lab = { workspaceType: "Lab", workspaceId: null, parentPageId: "f1" };
+
+  it("accepts a location to move the notebook to and keeps it", () => {
+    expect(notebookChoiceSchema.parse({ existingId: "nb_1", location: lab, links: [lab] })).toEqual({
+      existingId: "nb_1",
+      location: lab,
+      links: [lab],
+    });
+  });
+
+  it("keeps the location optional", () => {
+    expect(notebookChoiceSchema.parse({ existingId: "nb_1" })).not.toHaveProperty("location");
+  });
+
+  it("rejects a malformed location", () => {
+    const bad = { workspaceType: "Project", workspaceId: null, parentPageId: null };
+    expect(notebookChoiceSchema.safeParse({ existingId: "nb_1", location: bad }).success).toBe(false);
+  });
+});
