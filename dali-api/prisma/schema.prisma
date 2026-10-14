@@ -3225,6 +3225,7 @@ model Term {
   memberClasses         MemberClass[]
   courseOfferings       CourseOffering[]
   projectChartStrings   ProjectChartString[]
+  mentorshipForms       MentorshipTermForm[]
 
   @@index([sortKey])
 }
@@ -3398,6 +3399,24 @@ model MentorshipPair {
 
   @@index([menteeUserId, projectId, termId])
   @@index([mentorUserId, termId])
+}
+
+// The week 5 check-in forms Core links to a term's mentorship notes page, one
+// per side of the pairing. Each person's response shows beside their name.
+model MentorshipTermForm {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  termId String
+  term   Term   @relation(fields: [termId], references: [id], onDelete: Cascade)
+  // "mentor" | "mentee"
+  role   String
+  formId String
+  form   Form   @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  @@unique([termId, role])
+  @@index([formId])
 }
 
 // Per-cycle override of a member's mentor/mentee role on the staffing board.
@@ -4961,6 +4980,7 @@ model Form {
   hiringCyclesAsApplicationForm       ApplicationCycle[]              @relation("CycleApplicationForm")
   hiringCyclesAsContinuedInterestForm ApplicationCycle[]              @relation("CycleContinuedInterestForm")
   hiringDomainChallenges              CycleDomainForm[]
+  mentorshipTermForms                 MentorshipTermForm[]
 
   @@index([folderPageId])
   @@index([createdById])

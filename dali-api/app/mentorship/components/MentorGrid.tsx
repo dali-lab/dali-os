@@ -12,6 +12,8 @@ import type {
   GridMentorGroup,
   GridPerson,
 } from "../lib/mentor-grid.server";
+import type { TermForms } from "../lib/term-forms";
+import { TermFormStatus } from "./TermFormStatus";
 
 // Core-only inline editing (behind the mentorship-manage flag). When present,
 // each mentee row gains a reassign picker + a remove button. Left undefined for
@@ -52,6 +54,7 @@ export function MentorGrid({
   heading,
   edit,
   nudge,
+  termForms,
 }: {
   group: GridMentorGroup;
   weeks: number[];
@@ -61,7 +64,10 @@ export function MentorGrid({
   heading?: string;
   edit?: MentorGridEdit;
   nudge?: MentorGridNudge;
+  termForms?: TermForms;
 }) {
+  const menteeForm = termForms?.mentee.form;
+  const mentorForm = termForms?.mentor.form;
   const { panel, panelPad, heading: headingClass } = useOsChrome();
   return (
     <section className={cn(panel, panelPad, "flex flex-col gap-3")}>
@@ -77,6 +83,13 @@ export function MentorGrid({
               />
               {fullName(group.mentor)}
             </>
+          )}
+          {mentorForm && (
+            <TermFormStatus
+              response={termForms.mentor.responses[group.mentor.id]}
+              formName={mentorForm.name}
+              personName={fullName(group.mentor)}
+            />
           )}
         </h2>
         {nudge && nudge.count > 0 && (
@@ -117,6 +130,11 @@ export function MentorGrid({
                   </Tooltip>
                 </th>
               ))}
+              {menteeForm && (
+                <th className="pl-3 text-left font-medium text-muted-foreground pb-1 whitespace-nowrap">
+                  Week 5 form
+                </th>
+              )}
               {edit && (
                 <th className="pl-3 text-left font-medium text-muted-foreground pb-1">
                   Mentor
@@ -164,6 +182,15 @@ export function MentorGrid({
                     />
                   </td>
                 ))}
+                {menteeForm && (
+                  <td className="pl-3">
+                    <TermFormStatus
+                      response={termForms.mentee.responses[row.menteeId]}
+                      formName={menteeForm.name}
+                      personName={fullName(row.mentee)}
+                    />
+                  </td>
+                )}
                 {edit && (
                   <td className="pl-3 whitespace-nowrap">
                     <div className="inline-flex items-center gap-2">
