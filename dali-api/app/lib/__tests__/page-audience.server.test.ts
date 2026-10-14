@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("~/lib/db", () => ({
   prisma: {
     pageShare: { findMany: vi.fn() },
+    meetingShareGrant: { findMany: vi.fn() },
     groupDefinition: { findMany: vi.fn(), findUnique: vi.fn() },
     user: { findMany: vi.fn() },
     page: { findUnique: vi.fn() },
@@ -20,6 +21,7 @@ vi.mock("~/lib/groups", () => ({
 }));
 
 import { prisma } from "~/lib/db";
+import { resolveGroupMembers } from "~/lib/groups";
 import { describePageAudience, summarizeAudience, type AudiencePageRow } from "../page-audience.server";
 
 const db = prisma as any;
@@ -54,6 +56,7 @@ beforeEach(() => {
   db.pageShare.findMany.mockResolvedValue([]);
   db.groupDefinition.findMany.mockResolvedValue([]);
   db.user.findMany.mockResolvedValue([]);
+  db.meetingShareGrant.findMany.mockResolvedValue([]);
 });
 
 describe("summarizeAudience: link access", () => {
@@ -402,5 +405,37 @@ describe("describePageAudience", () => {
 
   it("returns nothing for a missing page", async () => {
     expect(await describePageAudience(VIEWER, "gone")).toEqual({ audience: null, inherited: null });
+  });
+});
+
+describe("summarizeAudience: meeting editors", () => {
+  const grant = (pageId: string, principalType: "User" | "Group", principalId: string) => ({ pageId, principalType, principalId });
+
+  it("counts distinct people plus the members of granted groups, per page", async () => {
+    db.meetingShareGrant.findMany.mockResolvedValue([
+      grant("nb", "User", "u1"),
+      grant("nb", "User", "u1"),
+      grant("nb", "User", "u2"),
+      grant("nb", "Group", "g1"),
+      grant("nb", "Group", "g1"),
+      grant("other", "User", "u1"),
+    ]);
+    vi.mocked(resolveGroupMembers).mockResolvedValue(["a", "b", "c"]);
+
+    const map = await summarizeAudience(VIEWER, [row({ id: "nb" }), row({ id: "other" }), row({ id: "none" })], {
+      canManageSharing: () => false,
+    });
+
+    expect(map.get("nb")?.meetingEditors).toBe(5);
+    expect(map.get("other")?.meetingEditors).toBe(1);
+    expect(map.get("none")?.meetingEditors).toBeUndefined();
+    expect(resolveGroupMembers).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves the field off when a group grant resolves to nobody", async () => {
+    db.meetingShareGrant.findMany.mockResolvedValue([grant("nb", "Group", "g1")]);
+    vi.mocked(resolveGroupMembers).mockResolvedValue([]);
+
+    expect((await one(row({ id: "nb" }))).meetingEditors).toBeUndefined();
   });
 });

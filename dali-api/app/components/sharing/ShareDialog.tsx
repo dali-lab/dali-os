@@ -26,6 +26,8 @@ type Share = {
   memberCount?: number;
   /** Set when a shortcut created this grant; names the folder the shortcut sits in. */
   viaShortcut?: { folderTitle: string | null } | null;
+  /** Set when a meeting's roster put this person on the document; names the meeting. */
+  viaMeeting?: { meetingTitle: string } | null;
 };
 type ScopeKind = "Private" | "Lab" | "Group";
 type Context = {
@@ -395,6 +397,15 @@ export function ShareDialog({
                       {s.memberCount === 1 ? "1 person" : `${s.memberCount} people`}
                     </span>
                   )}
+                  {s.viaMeeting && (
+                    <span
+                      data-testid="share-via-meeting"
+                      title="Added because they're on the meeting. Uninviting removes it."
+                      className="block truncate text-xs text-muted-foreground"
+                    >
+                      via meeting {s.viaMeeting.meetingTitle}
+                    </span>
+                  )}
                   {s.viaShortcut && (
                     <span
                       data-testid="share-via-shortcut"
@@ -409,7 +420,7 @@ export function ShareDialog({
                   value={s.permission}
                   options={personOptions}
                   align="right"
-                  disabled={busy}
+                  disabled={busy || !!s.viaMeeting}
                   ariaLabel={`Access level for ${s.label}`}
                   onChange={(permission) =>
                     void run(
@@ -423,17 +434,19 @@ export function ShareDialog({
                     )
                   }
                 />
-                <button
-                  type="button"
-                  disabled={busy}
-                  aria-label={`Remove ${s.label}`}
-                  onClick={() =>
-                    void run({ intent: "share-remove", shareId: s.id }, refresh)
-                  }
-                  className="text-muted-foreground hover:text-destructive transition-colors"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
+                {!s.viaMeeting && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    aria-label={`Remove ${s.label}`}
+                    onClick={() =>
+                      void run({ intent: "share-remove", shareId: s.id }, refresh)
+                    }
+                    className="text-muted-foreground hover:text-destructive transition-colors"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </li>
             ))}
         </ul>

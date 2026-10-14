@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Link, useNavigate, useRevalidator } from "react-router";
 import {
   BookOpen,
+  ChevronRight,
   FilePlus,
   FileText,
   MoreHorizontal,
@@ -16,7 +17,9 @@ import { modalCardClass, useOsChrome } from "~/components/os-chrome";
 import { buttonClasses } from "~/components/ui/Button";
 import { IconButton } from "~/components/ui/IconButton";
 import { useDialog } from "~/components/ui/dialog";
-import { Combobox, Menu, Select } from "~/components/ui/floating";
+import { Combobox, InfoTip, Menu, Select } from "~/components/ui/floating";
+import { LocationLink } from "~/components/drive/LocationLink";
+import type { ItemLocation } from "~/components/drive/location";
 import { useToast } from "~/components/ui/toast";
 import { NotebookPicker } from "~/components/notebooks/NotebookPicker";
 import { useNoteTemplates } from "~/components/notebooks/use-note-templates";
@@ -31,6 +34,7 @@ import {
 } from "~/components/notebooks/notebook-requests";
 import { useOpenMeetingNote } from "~/calendar/components/AddMeetingNoteModal";
 import { cn } from "~/lib/cn";
+import { formatDateShort } from "~/lib/display";
 
 export type NotebookTab = { id: string; label: string; meeting: string | null; isNote: boolean };
 
@@ -46,7 +50,7 @@ export type NotebookView = {
   templateId: string | null;
   projectId: string | null;
   /** The next meeting occurrence without a note, for the series that files here. */
-  nextNote: { meetingId: string; occurrenceStart: string } | null;
+  nextNotes: Array<{ meetingId: string; meetingTitle: string; occurrenceStart: string }>;
   tabs: NotebookTab[];
 };
 
@@ -75,11 +79,7 @@ function NotebookControls({ notebook }: { notebook: NotebookView }) {
   const revalidator = useRevalidator();
   const run = useNotebookRequest();
   const [panel, setPanel] = useState<Panel>(null);
-  const nextNote = useOpenMeetingNote({
-    meetingId: notebook.nextNote?.meetingId ?? "",
-    occurrenceStart: notebook.nextNote?.occurrenceStart ?? "",
-    actionPath: "/calendar",
-  });
+  const nextNote = useOpenMeetingNote({ actionPath: "/calendar" });
   useEffect(() => {
     if (nextNote.error) toast.error(nextNote.error);
   }, [nextNote.error, toast]);
@@ -122,15 +122,18 @@ function NotebookControls({ notebook }: { notebook: NotebookView }) {
             </button>
           }
         >
-          {notebook.nextNote && (
+          {notebook.nextNotes.map((target) => (
             <Menu.Item
+              key={`${target.meetingId}:${target.occurrenceStart}`}
               icon={<FilePlus className="h-3.5 w-3.5" />}
               disabled={nextNote.pending}
-              onSelect={nextNote.open}
+              onSelect={() => nextNote.openOccurrence(target)}
             >
-              Note for the next meeting
+              {notebook.nextNotes.length === 1
+                ? "Note for the next meeting"
+                : `Note for ${target.meetingTitle} · ${formatDateShort(target.occurrenceStart)}`}
             </Menu.Item>
-          )}
+          ))}
           <Menu.Item icon={<FileText className="h-3.5 w-3.5" />} onSelect={() => setPanel("add-document")}>
             Existing document…
           </Menu.Item>
@@ -353,8 +356,10 @@ function NotebookTitle({ notebook }: { notebook: NotebookView }) {
 function TabMenu({ notebook, tab }: { notebook: NotebookView; tab: NotebookTab }) {
   const dialog = useDialog();
   const toast = useToast();
+  const navigate = useNavigate();
   const revalidator = useRevalidator();
   const run = useNotebookRequest();
+  const [picking, setPicking] = useState(false);
 
   async function detach() {
     const ok = await dialog.confirm({
@@ -380,22 +385,42 @@ function TabMenu({ notebook, tab }: { notebook: NotebookView; tab: NotebookTab }
   }
 
   return (
-    <Menu
-      align="right"
-      ariaLabel={`Options for ${tab.label}`}
-      trigger={
-        <button
-          type="button"
-          aria-label={`Options for ${tab.label}`}
-          className="rounded-md p-1 text-os-grey transition-opacity hover:bg-os-container hover:text-foreground focus-visible:opacity-100 lg:opacity-0 lg:group-hover:opacity-100 lg:group-focus-within:opacity-100"
-        >
-          <MoreHorizontal className="h-4 w-4" aria-hidden />
-        </button>
-      }
-    >
-      {tab.isNote && <Menu.Item onSelect={() => void detach()}>Detach from meeting</Menu.Item>}
-      <Menu.Item onSelect={() => void remove()}>Remove from notebook</Menu.Item>
-    </Menu>
+    <>
+      <Menu
+        align="right"
+        ariaLabel={`Options for ${tab.label}`}
+        trigger={
+          <button
+            type="button"
+            aria-label={`Options for ${tab.label}`}
+            className="rounded-md p-1 text-os-grey transition-opacity hover:bg-os-container hover:text-foreground focus-visible:opacity-100 lg:opacity-0 lg:group-hover:opacity-100 lg:group-focus-within:opacity-100"
+          >
+            <MoreHorizontal className="h-4 w-4" aria-hidden />
+          </button>
+        }
+      >
+        {tab.isNote && <Menu.Item onSelect={() => void detach()}>Detach from meeting</Menu.Item>}
+        <Menu.Item onSelect={() => setPicking(true)}>Move to notebook…</Menu.Item>
+        <Menu.Item onSelect={() => void remove()}>Remove from notebook</Menu.Item>
+      </Menu>
+      {picking && (
+        <NotebookPicker
+          open
+          heading="Move to notebook"
+          excludeId={notebook.id}
+          projectId={notebook.projectId}
+          space={{ workspaceType: notebook.workspaceType, workspaceId: notebook.workspaceId }}
+          onClose={() => setPicking(false)}
+          onPick={async (target) => {
+            setPicking(false);
+            await run(notebookRequest(target.id, { intent: "add-page", pageId: tab.id }), () => {
+              toast.success(`Moved to ${target.title}`);
+              navigate(`/documents/${tab.id}`);
+            });
+          }}
+        />
+      )}
+    </>
   );
 }
 
@@ -473,16 +498,40 @@ export function NotebookRail({ notebook, currentId }: { notebook: NotebookView; 
   );
 }
 
-/** One-note notebooks hide the rail, so this chip is where "add to existing" is
- *  discovered: it names the notebook and carries the same Add and ⋯ menus. */
-export function NotebookChip({ notebook }: { notebook: NotebookView }) {
+/** Where the note is filed, under the title. One-note notebooks hide the rail, so
+ *  this line is also where "add to existing" is discovered: it carries the same
+ *  Add and ⋯ menus. */
+export function NoteLocationLine({
+  notebook,
+  location,
+  tabLabel,
+  editViaMeeting,
+  showControls,
+}: {
+  notebook: NotebookView;
+  location: ItemLocation;
+  tabLabel: string;
+  editViaMeeting: boolean;
+  showControls: boolean;
+}) {
+  const navigate = useNavigate();
   return (
-    <div className="flex flex-wrap items-center gap-2 text-sm text-os-grey" data-testid="notebook-chip">
+    <div className="flex flex-wrap items-center gap-2 text-sm text-os-grey" data-testid="note-location">
       <BookOpen className="h-4 w-4 shrink-0" aria-hidden />
-      <span className="min-w-0 truncate">
-        In notebook <span className="font-medium text-foreground">{notebook.title}</span>
-      </span>
-      <NotebookControls notebook={notebook} />
+      <div className="flex min-w-0 items-center gap-1">
+        <LocationLink
+          location={location}
+          onNavigate={(scopeId, folderId) =>
+            navigate(`/drive?scope=${scopeId}${folderId ? `&folder=${folderId}` : ""}`)
+          }
+        />
+        <ChevronRight aria-hidden="true" className="h-3 w-3 shrink-0 opacity-60" />
+        <span className="min-w-0 truncate text-xs text-foreground">
+          {notebook.title} · {tabLabel}
+        </span>
+      </div>
+      {editViaMeeting && <InfoTip content="You can edit because you're on this meeting." />}
+      {showControls && <NotebookControls notebook={notebook} />}
     </div>
   );
 }

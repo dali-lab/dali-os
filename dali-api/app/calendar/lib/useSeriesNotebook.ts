@@ -45,7 +45,16 @@ export function useSeriesNotebook() {
 
   /** A new default picked by hand: ask whether notes already taken move too. */
   const changeNotebook = useCallback(
-    async (meetingId: string, notebookId: string) => {
+    async (meetingId: string, notebook: { id: string; title: string }, { recurring }: { recurring: boolean }) => {
+      if (!recurring) {
+        const yes = await dialog.confirm({
+          title: `Move this note to ${notebook.title}?`,
+          description: "Its notes move into that notebook.",
+          confirmLabel: "Move",
+        });
+        if (yes) await apply(meetingId, notebook.id, "all");
+        return;
+      }
       const scope = await dialog.choice({
         title: "Change this meeting's notebook",
         description: "Choose which notes go to the new notebook.",
@@ -54,7 +63,7 @@ export function useSeriesNotebook() {
           { value: "all", label: "All meetings", description: "Move the notes already taken into it as well." },
         ],
       });
-      if (scope === "future" || scope === "all") await apply(meetingId, notebookId, scope);
+      if (scope === "future" || scope === "all") await apply(meetingId, notebook.id, scope);
     },
     [dialog, apply],
   );

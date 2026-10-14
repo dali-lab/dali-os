@@ -14,6 +14,20 @@ describe("notebookQueryString", () => {
     expect(params.get("meetingId")).toBe("m1");
   });
 
+  it("narrows to one workspace", () => {
+    const params = new URLSearchParams(
+      notebookQueryString("", { space: { workspaceType: "Project", workspaceId: "p1" } }),
+    );
+    expect(params.get("workspaceType")).toBe("Project");
+    expect(params.get("workspaceId")).toBe("p1");
+  });
+
+  it("names a workspace with no id by type alone", () => {
+    const params = new URLSearchParams(notebookQueryString("", { space: { workspaceType: "Lab", workspaceId: null } }));
+    expect(params.get("workspaceType")).toBe("Lab");
+    expect(params.has("workspaceId")).toBe(false);
+  });
+
   it("escapes what it carries", () => {
     expect(notebookQueryString("a&b", {})).toBe("q=a%26b");
   });
