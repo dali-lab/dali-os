@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  CORE_SPACE,
+  GENERAL_SPACE,
   HISTORY_REASON,
   SERIES_REASON,
   clearPlace,
@@ -11,6 +13,8 @@ import {
   meetingNotePayload,
   meetingNoteValid,
   notebookChoiceOf,
+  pickerSpaceOf,
+  spaceChoiceOf,
   placeLine,
   spaceOfGroup,
   withDefault,
@@ -35,7 +39,7 @@ const projectNb: PlaceNotebook = {
   workspaceId: "p1",
 };
 const atlas: NoteSpace = { workspaceType: "Project", workspaceId: "p1", label: "Atlas" };
-const lab: NoteSpace = { workspaceType: "Lab", workspaceId: null, label: "Lab" };
+const lab: NoteSpace = GENERAL_SPACE;
 const noInvite = inviteOf([]);
 
 const on = (over: Partial<MeetingNoteState> = {}): MeetingNoteState => ({ ...emptyMeetingNote, enabled: true, ...over });
@@ -87,13 +91,17 @@ describe("meetingNotePayload", () => {
 
   it("sends a new notebook's trimmed title and template", () => {
     const s = withTemplate(withNewNotebook(on(), lab, "  Sync  "), "t1");
-    expect(meetingNotePayload(s, noInvite).notebook).toEqual({ title: "Sync", templatePageId: "t1" });
+    expect(meetingNotePayload(s, noInvite).notebook).toEqual({
+      title: "Sync",
+      templatePageId: "t1",
+      space: { kind: "lab" },
+    });
   });
 
   it("sends only the notebook choice, never places, links or locations", () => {
     const out = meetingNotePayload(fresh(), noInvite);
     expect(Object.keys(out).sort()).toEqual(["note", "notebook", "whiteboard"]);
-    expect(Object.keys(out.notebook as object).sort()).toEqual(["templatePageId", "title"]);
+    expect(Object.keys(out.notebook as object).sort()).toEqual(["space", "templatePageId", "title"]);
   });
 
   it("takes the project from a single invited group first", () => {
@@ -132,6 +140,25 @@ describe("meetingNotePayload", () => {
     expect(meetingNotePayload(fresh(), noInvite)).not.toHaveProperty("isCoreMeeting");
   });
 
+  it("flags a Core meeting from a new notebook in the Core space, even with no Core group invited", () => {
+    expect(meetingNotePayload(fresh(CORE_SPACE), noInvite)).toMatchObject({
+      isCoreMeeting: true,
+      notebook: { space: { kind: "core" } },
+    });
+  });
+
+  it("does not flag Core for a new notebook in General or a project", () => {
+    expect(meetingNotePayload(fresh(lab), noInvite)).not.toHaveProperty("isCoreMeeting");
+    expect(meetingNotePayload(fresh(atlas), noInvite)).not.toHaveProperty("isCoreMeeting");
+  });
+
+  it("sends the project space a new notebook was started in", () => {
+    expect(meetingNotePayload(fresh(atlas), noInvite)).toMatchObject({
+      projectId: "p1",
+      notebook: { space: { kind: "project", projectId: "p1" } },
+    });
+  });
+
   it("flags Core when it is one of several invited groups", () => {
     const invite = inviteOf([
       { projectId: "p1", systemKey: null },
@@ -164,22 +191,38 @@ describe("invite helpers", () => {
   });
 
   it("names Core for the Core group", () => {
-    expect(inviteSpaceOf([{ projectId: null, systemKey: "core", name: "Core" }])).toEqual({
-      workspaceType: "Lab",
-      workspaceId: null,
-      label: "Core",
-    });
+    expect(inviteSpaceOf([{ projectId: null, systemKey: "core", name: "Core" }])).toEqual(CORE_SPACE);
+    expect(CORE_SPACE.core).toBe(true);
   });
 
-  it("names the Lab otherwise", () => {
+  it("names General otherwise, never Lab", () => {
+    expect(GENERAL_SPACE.label).toBe("General");
     expect(inviteSpaceOf([])).toEqual(lab);
     expect(inviteSpaceOf([{ projectId: null, systemKey: null, name: "Everyone" }])).toEqual(lab);
   });
 
   it("gives a group's space, or none for a plain group", () => {
     expect(spaceOfGroup({ projectId: "p1", systemKey: null, name: "Atlas" })).toEqual(atlas);
-    expect(spaceOfGroup({ projectId: null, systemKey: "core", name: "Core" })?.label).toBe("Core");
+    expect(spaceOfGroup({ projectId: null, systemKey: "core", name: "Core" })).toEqual(CORE_SPACE);
     expect(spaceOfGroup({ projectId: null, systemKey: "offering:o1", name: "Studio" })).toBeNull();
+  });
+});
+
+describe("space mapping", () => {
+  it("maps each space to the choice the server files by", () => {
+    expect(spaceChoiceOf(lab)).toEqual({ kind: "lab" });
+    expect(spaceChoiceOf(CORE_SPACE)).toEqual({ kind: "core" });
+    expect(spaceChoiceOf(atlas)).toEqual({ kind: "project", projectId: "p1" });
+  });
+
+  it("does not take the Core label for the Core space", () => {
+    expect(spaceChoiceOf({ ...lab, label: "Core" })).toEqual({ kind: "lab" });
+  });
+
+  it("lists Core notebooks by their own workspace type, not the whole Lab", () => {
+    expect(pickerSpaceOf(CORE_SPACE)).toEqual({ workspaceType: "Core", workspaceId: null });
+    expect(pickerSpaceOf(lab)).toEqual({ workspaceType: "Lab", workspaceId: null });
+    expect(pickerSpaceOf(atlas)).toEqual({ workspaceType: "Project", workspaceId: "p1" });
   });
 });
 
@@ -276,6 +319,10 @@ describe("default seeding", () => {
     expect(HISTORY_REASON).toBe("last used by this group");
   });
 
+  it("fills the place from a mentorship pair notebook", () => {
+    expect(withDefault(on(), def("pair"))).toMatchObject({ reason: "your mentee", auto: true });
+  });
+
   it("leaves the place empty for a new default", () => {
     const s = on();
     expect(withDefault(s, def("new", null))).toBe(s);
@@ -317,6 +364,13 @@ describe("default query", () => {
       projectId: "p1",
       isCoreMeeting: "1",
     });
+  });
+
+  it("names the mentee on a 1:1", () => {
+    const qs = new URLSearchParams(
+      defaultNotebookQueryString({ scopeGroupId: null, invite: noInvite, pairMenteeId: "mia" }),
+    );
+    expect(Object.fromEntries(qs)).toEqual({ scopeType: "UserList", pairMenteeId: "mia" });
   });
 
   it("asks about a people list", () => {

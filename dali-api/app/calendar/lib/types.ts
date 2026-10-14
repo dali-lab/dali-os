@@ -67,6 +67,9 @@ export type GroupOption = {
   systemKey: string | null;
 };
 
+/** A mentee the viewer mentors this term, for suggesting the pair's notebook on a 1:1. */
+export type MentorPairOption = { menteeId: string; menteeName: string };
+
 export type UserOption = {
   id: string;
   firstName: string;
@@ -331,6 +334,7 @@ export type LoaderData = {
    *  calendar. Lab-native layers are unaffected. */
   googleHidden: boolean;
   groups: GroupOption[];
+  mentorPairs: MentorPairOption[];
   users: UserOption[];
   currentUserId: string;
   myRoles: RoleInstance[];

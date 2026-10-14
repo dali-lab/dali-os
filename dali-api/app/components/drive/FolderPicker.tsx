@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CalendarDays, ChevronRight, Folder, Search } from "lucide-react";
-import { CORAL_FOLDER } from "~/components/drive/glyphs";
+import { ChevronRight, Folder, Search, X } from "lucide-react";
+import { FolderGlyph } from "~/components/drive/FolderGlyph";
+import { PINK_FOLDER } from "~/components/drive/glyphs";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { buttonClasses } from "~/components/ui/Button";
 import { modalCardClass } from "~/components/os-chrome";
@@ -76,10 +77,11 @@ export type Row = { section?: string } & (
     }
 );
 
-export type FolderGlyphKind = "folder" | "calendar";
+export type FolderGlyphKind = "folder" | "system" | "meetings";
 
 export function folderGlyph(folderType: string | null | undefined): FolderGlyphKind {
-  return folderType === "Meetings" ? "calendar" : "folder";
+  if (!folderType) return "folder";
+  return folderType === "Meetings" ? "meetings" : "system";
 }
 
 export function isPreferred(
@@ -717,6 +719,12 @@ export function FolderPicker(props: FolderPickerProps) {
 }
 
 function RowGlyph({ kind }: { kind: FolderGlyphKind }) {
-  const Icon = kind === "calendar" ? CalendarDays : Folder;
-  return <Icon className={`h-4 w-4 shrink-0 ${kind === "calendar" ? CORAL_FOLDER : "text-muted-foreground"}`} aria-hidden />;
+  if (kind === "folder") return <Folder className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />;
+  return (
+    <FolderGlyph
+      glyph={{ tint: PINK_FOLDER, system: true, mark: kind === "meetings" ? "calendar" : null }}
+      className="h-4 w-4"
+      markClassName="h-2.5 w-2.5"
+    />
+  );
 }

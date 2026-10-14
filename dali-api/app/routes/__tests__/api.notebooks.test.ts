@@ -127,6 +127,15 @@ describe("GET /api/notebooks", () => {
     );
   });
 
+  it("passes the Lab and Core workspaces through, and ignores a project without an id", async () => {
+    await get("?workspaceType=Core&workspaceId=ignored");
+    expect(listNotebooks).toHaveBeenLastCalledWith(expect.objectContaining({ space: { workspaceType: "Core", workspaceId: null } }));
+    await get("?workspaceType=Lab");
+    expect(listNotebooks).toHaveBeenLastCalledWith(expect.objectContaining({ space: { workspaceType: "Lab", workspaceId: null } }));
+    await get("?workspaceType=Project");
+    expect(listNotebooks).toHaveBeenLastCalledWith(expect.objectContaining({ space: undefined }));
+  });
+
   it("returns the session gate's response when not a member, and lists nothing", async () => {
     vi.mocked(requireMemberSession).mockResolvedValue({
       ok: false,

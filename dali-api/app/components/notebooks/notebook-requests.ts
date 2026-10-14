@@ -2,6 +2,7 @@
 // sends them so their shapes are tested.
 
 export type NotebookIntent =
+  | { intent: "new-note" }
   | { intent: "set-template"; templatePageId: string | null }
   | { intent: "add-page"; pageId: string }
   | { intent: "merge-into"; targetId: string }

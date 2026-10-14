@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth, forbidden, redirectNonMemberToPortal, isImpersonating } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { listAllGroups } from "~/lib/groups";
+import { listMentorPairs } from "~/mentorship/lib/pair-suggestion.server";
 import {
   canViewForms,
   isCore,
@@ -89,6 +90,7 @@ import type {
   SubCalendarDTO,
   CalendarLinkDTO,
   GroupOption,
+  MentorPairOption,
   UserOption,
   ProjectOption,
   TimeEntryDTO,
@@ -1347,9 +1349,10 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
 // user id. Shared by the calendar loader and the meeting edit-context endpoint.
 export async function loadParticipantOptions(
   request: Request,
-): Promise<{ groups: GroupOption[]; users: UserOption[] }> {
+  viewerId: string,
+): Promise<{ groups: GroupOption[]; users: UserOption[]; mentorPairs: MentorPairOption[] }> {
   const memberWhere = await currentTermMemberWhere(request);
-  const [groups, users] = await Promise.all([
+  const [groups, users, mentorPairs] = await Promise.all([
     listAllGroups().then((rows) =>
       rows
         .filter((r) => !r.archived)
@@ -1368,6 +1371,7 @@ export async function loadParticipantOptions(
       select: { id: true, firstName: true, lastName: true, daliEmail: true },
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
     }),
+    listMentorPairs(viewerId, request),
   ]);
   const knownUserIds = new Set(users.map((u) => u.id));
   const missingMemberIds = Array.from(
@@ -1379,7 +1383,7 @@ export async function loadParticipantOptions(
         select: { id: true, firstName: true, lastName: true, daliEmail: true },
       })
     : [];
-  return { groups, users: [...users, ...extraGroupMembers] };
+  return { groups, users: [...users, ...extraGroupMembers], mentorPairs };
 }
 
 /**
@@ -1416,8 +1420,8 @@ export async function loadCalendarData(
   // edit-context endpoint). Kicked off here so it runs alongside the fan-out
   // below; awaited once the rest resolves.
   const participantOptionsP = labMember
-    ? loadParticipantOptions(request)
-    : Promise.resolve({ groups: [] as GroupOption[], users: [] as UserOption[] });
+    ? loadParticipantOptions(request, userId)
+    : Promise.resolve({ groups: [] as GroupOption[], users: [] as UserOption[], mentorPairs: [] as MentorPairOption[] });
 
   const [
     settings,
@@ -1458,7 +1462,7 @@ export async function loadCalendarData(
       isCore(userId, request),
     ]);
 
-  const { groups, users: allUsers } = await participantOptionsP;
+  const { groups, users: allUsers, mentorPairs } = await participantOptionsP;
 
   // The whole calendar renders in the user's display zone (User.timeZone) —
   // the single source of truth shared with the rest of the app. Working hours
@@ -1730,6 +1734,7 @@ export async function loadCalendarData(
     ingestionError,
     googleHidden: hideGoogle,
     groups,
+    mentorPairs,
     users: allUsers,
     currentUserId: userId,
     myRoles,

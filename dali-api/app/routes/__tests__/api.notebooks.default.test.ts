@@ -46,6 +46,12 @@ describe("GET /api/notebooks/default", () => {
     );
   });
 
+  it("passes the mentee of a 1:1 through", async () => {
+    await get("?scopeType=UserList&pairMenteeId=mia");
+
+    expect(resolveDefaultNotebook).toHaveBeenCalledWith(expect.objectContaining({ pairMenteeId: "mia" }));
+  });
+
   it("leaves absent and empty params undefined and the Core flag false", async () => {
     await get("?scopeType=UserList&meetingId=&projectId=");
 

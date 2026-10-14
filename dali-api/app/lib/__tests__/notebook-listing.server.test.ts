@@ -6,6 +6,7 @@ vi.mock("~/lib/db", () => ({
     scheduledMeeting: { findMany: vi.fn(), findUnique: vi.fn() },
   },
 }));
+vi.mock("~/lib/drive-roots.server", () => ({ findRoot: vi.fn() }));
 vi.mock("~/lib/pageAccess.server", () => ({ getPageAccessBulk: vi.fn(), PAGE_ACCESS_SELECT: { id: true } }));
 vi.mock("~/lib/note-path.server", () => ({
   formatFiledPath: (parts: string[]) => parts.join(" ▸ "),
@@ -15,6 +16,7 @@ vi.mock("~/lib/note-path.server", () => ({
 }));
 
 import { prisma } from "~/lib/db";
+import { findRoot } from "~/lib/drive-roots.server";
 import { getPageAccessBulk } from "~/lib/pageAccess.server";
 import { notebookLocationPartsBulk } from "~/lib/note-path.server";
 import { meetingNotebookIdentity } from "~/lib/meeting-notebook";
@@ -82,6 +84,63 @@ describe("listNotebooks", () => {
       kind: "Notebook",
       workspaceType: "Project",
       workspaceId: "p1",
+    });
+  });
+
+  describe("the Core space", () => {
+    const folders = (...levels: string[][]) => {
+      for (const ids of levels) m.page.findMany.mockResolvedValueOnce(ids.map((id) => ({ id })));
+    };
+
+    it("scans only Lab notebooks filed in the Core root or a folder under it", async () => {
+      vi.mocked(findRoot).mockResolvedValue("core-root");
+      folders(["f1", "f2"], ["f3"], []);
+
+      await listNotebooks({ actorId: "u1", space: { workspaceType: "Core", workspaceId: null } });
+
+      expect(findRoot).toHaveBeenCalledWith("core");
+      expect(m.page.findMany.mock.calls[0][0].where).toEqual({
+        parentPageId: { in: ["core-root"] },
+        kind: "Folder",
+        archivedAt: null,
+      });
+      expect(m.page.findMany.mock.calls[1][0].where.parentPageId).toEqual({ in: ["f1", "f2"] });
+      expect(m.page.findMany.mock.calls[2][0].where.parentPageId).toEqual({ in: ["f3"] });
+      const notebooks = m.page.findMany.mock.calls[3][0].where;
+      expect(notebooks).toMatchObject({
+        kind: "Notebook",
+        workspaceType: "Lab",
+        parentPageId: { in: ["core-root", "f1", "f2", "f3"] },
+      });
+      expect(notebooks).not.toHaveProperty("workspaceId");
+    });
+
+    it("finds a notebook that sits right in the Core root", async () => {
+      vi.mocked(findRoot).mockResolvedValue("core-root");
+      folders([]);
+      m.page.findMany.mockResolvedValueOnce([nb("a", { parentPageId: "core-root" })]);
+      access(["a"]);
+
+      expect((await listNotebooks({ actorId: "u1", space: { workspaceType: "Core", workspaceId: null } })).map((r) => r.id)).toEqual(["a"]);
+    });
+
+    it("lists nothing before Core has a root, rather than falling back to every Lab notebook", async () => {
+      vi.mocked(findRoot).mockResolvedValue(null);
+
+      expect(await listNotebooks({ actorId: "u1", space: { workspaceType: "Core", workspaceId: null } })).toEqual([]);
+      expect(m.page.findMany.mock.calls[0][0].where).toMatchObject({ kind: "Notebook", parentPageId: { in: [] } });
+    });
+
+    it("keeps the search inside Core", async () => {
+      vi.mocked(findRoot).mockResolvedValue("core-root");
+      folders([]);
+
+      await listNotebooks({ actorId: "u1", space: { workspaceType: "Core", workspaceId: null }, q: "week" });
+
+      expect(m.page.findMany.mock.calls[1][0].where).toMatchObject({
+        parentPageId: { in: ["core-root"] },
+        title: { contains: "week", mode: "insensitive" },
+      });
     });
   });
 

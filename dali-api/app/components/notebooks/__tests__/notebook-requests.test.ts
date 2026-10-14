@@ -24,6 +24,10 @@ describe("request builders", () => {
     });
     expect(notebookRequest("nb1", { intent: "dissolve" }).body).toEqual({ intent: "dissolve" });
     expect(notebookRequest("nb1", { intent: "trash" }).body).toEqual({ intent: "trash" });
+    expect(notebookRequest("nb1", { intent: "new-note" })).toEqual({
+      url: "/api/notebooks/nb1",
+      body: { intent: "new-note" },
+    });
   });
 
   it("detaches a note through the page's meeting route", () => {

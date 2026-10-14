@@ -4,8 +4,8 @@ import { requireMemberSession } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { resolveDefaultNotebook } from "~/lib/notebook-default.server";
 
-// GET /api/notebooks/default?meetingId=&scopeType=&groupId=&projectId=&isCoreMeeting=1
-// — { kind: "series" | "history" | "new", notebook, newPath }: the notebook a
+// GET /api/notebooks/default?meetingId=&scopeType=&groupId=&projectId=&isCoreMeeting=1&pairMenteeId=
+// — { kind: "series" | "history" | "pair" | "new", notebook, newPath }: the notebook a
 // meeting form starts on, and the path a new one would take.
 
 const QuerySchema = z.object({
@@ -14,6 +14,7 @@ const QuerySchema = z.object({
   groupId: z.string().min(1).optional(),
   projectId: z.string().min(1).optional(),
   isCoreMeeting: z.literal("1").optional(),
+  pairMenteeId: z.string().min(1).optional(),
 });
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -29,6 +30,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     groupId: params.get("groupId") || undefined,
     projectId: params.get("projectId") || undefined,
     isCoreMeeting: params.get("isCoreMeeting") || undefined,
+    pairMenteeId: params.get("pairMenteeId") || undefined,
   });
   if (!parsed.success) {
     return withCors(request, Response.json({ error: "Invalid query" }, { status: 400 }));
@@ -41,6 +43,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     groupId: parsed.data.groupId,
     projectId: parsed.data.projectId,
     isCoreMeeting: parsed.data.isCoreMeeting === "1",
+    pairMenteeId: parsed.data.pairMenteeId,
     request,
   });
   return withCors(request, Response.json(result));

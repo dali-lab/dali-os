@@ -51,8 +51,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // The viewer's timezone + working hours feed the availability grid the
   // editor draws when the meeting has guests (same inputs the calendar loader
   // gives the create modal).
-  const [{ users, groups }, rsvpRows, viewerRow, whRows] = await Promise.all([
-    loadParticipantOptions(request),
+  const [{ users, groups, mentorPairs }, rsvpRows, viewerRow, whRows] = await Promise.all([
+    loadParticipantOptions(request, auth.user.sub),
     prisma.notification.findMany({
       where: { scheduledMeetingId: params.id!, rsvp: { not: null } },
       select: { recipientUserId: true, rsvp: true },
@@ -104,7 +104,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         // invite; the invite modal says so.
         upcoming: meetingIsUpcoming(meeting, new Date()),
       },
-      options: { users, groups },
+      options: { users, groups, mentorPairs },
       viewer: {
         userId: auth.user.sub,
         timezone: resolveUserTimeZone(viewerRow),

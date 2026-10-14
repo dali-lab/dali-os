@@ -5,6 +5,7 @@ import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import {
   addToNotebook,
+  createBlankNote,
   dissolveNotebook,
   getNotebook,
   mergeNotebooks,
@@ -14,9 +15,10 @@ import {
 } from "~/lib/notebooks.server";
 
 // GET  /api/notebooks/:id — the notebook with its tabs.
-// POST /api/notebooks/:id — { intent: "set-template" | "add-page" | "merge-into" | "dissolve" | "trash", ... }
+// POST /api/notebooks/:id — { intent: "new-note" | "set-template" | "add-page" | "merge-into" | "dissolve" | "trash", ... }
 
 const BodySchema = z.discriminatedUnion("intent", [
+  z.object({ intent: z.literal("new-note") }),
   z.object({ intent: z.literal("set-template"), templatePageId: z.string().min(1).nullable() }),
   z.object({ intent: z.literal("add-page"), pageId: z.string().min(1) }),
   z.object({ intent: z.literal("merge-into"), targetId: z.string().min(1) }),
@@ -52,6 +54,8 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   try {
     switch (body.intent) {
+      case "new-note":
+        return withCors(request, Response.json({ ok: true, ...(await createBlankNote(notebookId, actorId)) }));
       case "set-template":
         await setNotebookTemplate(notebookId, body.templatePageId, actorId);
         return withCors(request, Response.json({ ok: true }));
