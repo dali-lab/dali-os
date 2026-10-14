@@ -155,9 +155,9 @@ describe("glyphLabel", () => {
 
   it("calls a calendar-marked folder a Meetings folder", () => {
     expect(label({ type: "folder", folderType: "Meetings" }, { audienceLabel: "Everyone in the lab" })).toBe(
-      "Meetings folder · Everyone in the lab",
+      "Meetings folder · new notebooks file here · Everyone in the lab",
     );
-    expect(label({ type: "folder", folderType: "Meetings" })).toBe("Meetings folder");
+    expect(label({ type: "folder", folderType: "Meetings" })).toBe("Meetings folder · new notebooks file here");
   });
 
   it("keeps a tag-marked or Root folder a plain Folder", () => {

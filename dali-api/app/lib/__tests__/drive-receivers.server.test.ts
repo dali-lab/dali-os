@@ -36,7 +36,6 @@ import {
   projectSlot,
   receiverProcessId,
   resolveFilingFolder,
-  setFolderHint,
   setReceiver,
   singletonSlot,
 } from "~/lib/drive-receivers.server";
@@ -254,7 +253,7 @@ describe("setReceiver", () => {
     expect(logAuditEvent).not.toHaveBeenCalled();
   });
 
-  it("lets a Meetings hint folder become a Meetings receiver", async () => {
+  it("lets a Meetings-typed folder become a Meetings receiver", async () => {
     pages(coreRoot, page("f", { parentPageId: "croot", folderType: "Meetings" }));
     await setReceiver(singletonSlot("Core", "Meetings"), "f", "u1");
     expect(m.page.update).toHaveBeenCalledWith({
@@ -263,7 +262,7 @@ describe("setReceiver", () => {
     });
   });
 
-  it("refuses to turn a Meetings hint into a different kind of receiver", async () => {
+  it("refuses to turn a Meetings-typed folder into a different kind of receiver", async () => {
     pages(hiringRoot, page("f", { parentPageId: "hroot", folderType: "Meetings" }));
     await expect(setReceiver(slot, "f", "u1")).rejects.toMatchObject({ status: 409 });
   });
@@ -299,29 +298,6 @@ describe("clearReceiver", () => {
     expect(await clearReceiver(slot, "u1")).toBeNull();
     expect(m.page.update).not.toHaveBeenCalled();
     expect(logAuditEvent).not.toHaveBeenCalled();
-  });
-});
-
-describe("setFolderHint", () => {
-  it("sets and clears the hint on a user folder", async () => {
-    pages(page("f"));
-    await setFolderHint("f", "Meetings", "u1");
-    expect(m.page.update).toHaveBeenLastCalledWith({ where: { id: "f" }, data: { folderType: "Meetings" } });
-    await setFolderHint("f", null, "u1");
-    expect(m.page.update).toHaveBeenLastCalledWith({ where: { id: "f" }, data: { folderType: null } });
-    expect(logAuditEvent).toHaveBeenCalledTimes(2);
-  });
-
-  it("refuses a process receiver", async () => {
-    pages(page("f", { folderType: "Meetings", processType: "Core", processId: "core" }));
-    await expect(setFolderHint("f", null, "u1")).rejects.toMatchObject({ status: 409 });
-    expect(m.page.update).not.toHaveBeenCalled();
-  });
-
-  it("refuses a Root", async () => {
-    pages(coreRoot);
-    await expect(setFolderHint("croot", "Meetings", "u1")).rejects.toBeInstanceOf(ReceiverError);
-    expect(m.page.update).not.toHaveBeenCalled();
   });
 });
 

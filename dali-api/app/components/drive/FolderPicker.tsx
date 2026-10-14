@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CalendarDays, ChevronRight, Folder, Search, X } from "lucide-react";
+import { CORAL_FOLDER } from "~/components/drive/glyphs";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { buttonClasses } from "~/components/ui/Button";
 import { Checkbox } from "~/components/ui/Checkbox";
@@ -91,14 +92,8 @@ export type Row = { section?: string } & (
 
 export type FolderGlyphKind = "folder" | "calendar";
 
-/** A preferred-type folder gets a glyph that says what it is; the calendar mark
- *  is the only one defined (for `Meetings`). Every other folder keeps the plain
- *  folder glyph. */
-export function folderGlyph(
-  folderType: string | null | undefined,
-  preferFolderType: string | null | undefined,
-): FolderGlyphKind {
-  return preferFolderType && folderType === preferFolderType && folderType === "Meetings" ? "calendar" : "folder";
+export function folderGlyph(folderType: string | null | undefined): FolderGlyphKind {
+  return folderType === "Meetings" ? "calendar" : "folder";
 }
 
 export function isPreferred(
@@ -255,7 +250,7 @@ export function buildBrowseRows({
         dest,
         disabled: isDisabled(dest),
         preferred: isPreferred(folder?.folderType, preferFolderType),
-        glyph: folderGlyph(folder?.folderType, preferFolderType),
+        glyph: folderGlyph(folder?.folderType),
         section: "Recent",
       };
     });
@@ -299,7 +294,7 @@ export function buildBrowseRows({
       hasChildren: childrenByParent.has(`${cwd.driveId}\0${f.id}`),
       disabled: isDisabled(dest),
       preferred: isPreferred(f.folderType, preferFolderType),
-      glyph: folderGlyph(f.folderType, preferFolderType),
+      glyph: folderGlyph(f.folderType),
     });
   }
   return rows;
@@ -462,7 +457,7 @@ export function FolderPicker(props: FolderPickerProps) {
           dest,
           disabled: isDisabled(dest),
           preferred: isPreferred(f.folderType, preferFolderType),
-          glyph: folderGlyph(f.folderType, preferFolderType),
+          glyph: folderGlyph(f.folderType),
         });
     }
     return preferFirst(rows).slice(0, 100);
@@ -805,7 +800,7 @@ export function FolderPicker(props: FolderPickerProps) {
 
 function RowGlyph({ kind }: { kind: FolderGlyphKind }) {
   const Icon = kind === "calendar" ? CalendarDays : Folder;
-  return <Icon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />;
+  return <Icon className={`h-4 w-4 shrink-0 ${kind === "calendar" ? CORAL_FOLDER : "text-muted-foreground"}`} aria-hidden />;
 }
 
 function SelectionChips({

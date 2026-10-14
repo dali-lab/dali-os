@@ -123,7 +123,7 @@ export function glyphLabel(
     case "emoji":
       return ctx.itemType === "folder" ? folder("Folder") : "Document";
     case "folder":
-      return folder(glyph.mark === "calendar" ? "Meetings folder" : "Folder");
+      return folder(glyph.mark === "calendar" ? "Meetings folder · new notebooks file here" : "Folder");
     case "notebook": {
       const tabs = ctx.tabCount ?? 0;
       return `Notebook · ${tabs < 1 ? "no tabs" : `${tabs} ${tabs === 1 ? "tab" : "tabs"}`}`;

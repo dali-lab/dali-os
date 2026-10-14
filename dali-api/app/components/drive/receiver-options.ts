@@ -14,14 +14,12 @@ export type SlotChoice = {
 };
 
 export const CHOICE_NONE = "none";
-export const CHOICE_HINT = "hint";
 
-export type Choice = typeof CHOICE_NONE | typeof CHOICE_HINT | `slot:${string}`;
+export type Choice = typeof CHOICE_NONE | `slot:${string}`;
 
 export type ReceiverRequest =
   | { intent: "set"; processType: ReceiverProcessType; processId?: string; folderType: ReceiverFolderType; folderId: string }
-  | { intent: "clear"; processType: ReceiverProcessType; processId?: string; folderType: ReceiverFolderType }
-  | { intent: "hint"; folderId: string; hint: "Meetings" | null };
+  | { intent: "clear"; processType: ReceiverProcessType; processId?: string; folderType: ReceiverFolderType };
 
 const SPACE_PROCESS: Record<string, Exclude<ReceiverProcessType, "Project">> = {
   core: "Core",
@@ -79,29 +77,25 @@ export function slotChoice(slot: SlotChoice): Choice {
 
 export function choiceLabel(choice: Choice, slots: SlotChoice[]): string {
   if (choice === CHOICE_NONE) return "None";
-  if (choice === CHOICE_HINT) return "Meeting notebooks (hint)";
   const slot = slots.find((s) => slotChoice(s) === choice);
   if (!slot) return "None";
-  return slot.folderType === "Meetings" ? "Meeting notebooks (new notes file here)" : RECEIVER_LABELS[slot.folderType];
+  return slot.folderType === "Meetings" ? "New meeting notebooks file here" : RECEIVER_LABELS[slot.folderType];
 }
 
-/** Which option reflects the folder today. A slot is the folder's own when the slot's receiver is this folder; a
- *  Meetings folder that holds no slot is a hint. */
+/** Which option reflects the folder today. A slot is the folder's own when the slot's receiver is this folder. */
 export function currentChoice({
   folderId,
-  folderType,
   slots,
   holders,
 }: {
   folderId: string;
-  folderType: string | null | undefined;
   slots: SlotChoice[];
   /** `folderType` -> id of the folder holding that slot, for the process the slots belong to. */
   holders: Partial<Record<ReceiverFolderType, string | null>>;
 }): Choice {
   const held = slots.find((s) => holders[s.folderType] === folderId);
   if (held) return slotChoice(held);
-  return folderType === "Meetings" ? CHOICE_HINT : CHOICE_NONE;
+  return CHOICE_NONE;
 }
 
 function slotRequest(slot: SlotChoice): { processType: ReceiverProcessType; processId?: string; folderType: ReceiverFolderType } {
@@ -112,8 +106,7 @@ function slotRequest(slot: SlotChoice): { processType: ReceiverProcessType; proc
   };
 }
 
-/** The writes that move a folder from one choice to another, in order. The API refuses to stack a hint and a slot on
- *  one folder, so the old choice is cleared first. */
+/** The writes that move a folder from one choice to another, in order. The old choice is cleared first. */
 export function planChoiceChange(
   folderId: string,
   from: Choice,
@@ -124,10 +117,8 @@ export function planChoiceChange(
   const steps: ReceiverRequest[] = [];
   const fromSlot = slots.find((s) => slotChoice(s) === from);
   if (fromSlot) steps.push({ intent: "clear", ...slotRequest(fromSlot) });
-  else if (from === CHOICE_HINT) steps.push({ intent: "hint", folderId, hint: null });
   const toSlot = slots.find((s) => slotChoice(s) === to);
   if (toSlot) steps.push({ intent: "set", ...slotRequest(toSlot), folderId });
-  else if (to === CHOICE_HINT) steps.push({ intent: "hint", folderId, hint: "Meetings" });
   return steps;
 }
 
@@ -191,5 +182,6 @@ export function spaceNoun(processType: ReceiverProcessType): string {
 /** What a folder receives, for the details pane; null for plain folders, roots and types this build doesn't know. */
 export function receivesLabel(folderType: string | null | undefined): string | null {
   if (!folderType || !Object.prototype.hasOwnProperty.call(RECEIVER_LABELS, folderType)) return null;
+  if (folderType === "Meetings") return "New meeting notebooks";
   return RECEIVER_LABELS[folderType as ReceiverFolderType];
 }

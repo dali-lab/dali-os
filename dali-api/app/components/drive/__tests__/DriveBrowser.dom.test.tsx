@@ -470,6 +470,21 @@ describe("DriveBrowser columns: layout follows the URL", () => {
     expect(onNavigate).toHaveBeenCalledTimes(1);
   });
 
+  it("labels a notebook in the details rail with its tab count", async () => {
+    const notebook = (id: string, tabCount: number) => ({ ...doc(id), isNotebook: true, tabCount }) as DriveItem;
+    await mount({ scopes: [{ ...lab, items: [notebook("n1", 1), notebook("n3", 3), doc("d1")] }, mine] });
+    await click(byTestId("drive-details-toggle"));
+    await click(row("doc", "n1"), { metaKey: true });
+    expect(byTestId("drive-details-pane").textContent).toContain("Notebook · 1 tab");
+    expect(byTestId("drive-details-pane").textContent).not.toContain("Notebook · 1 tabs");
+    await click(row("doc", "n1"), { metaKey: true });
+    await click(row("doc", "n3"), { metaKey: true });
+    expect(byTestId("drive-details-pane").textContent).toContain("Notebook · 3 tabs");
+    await click(row("doc", "n3"), { metaKey: true });
+    await click(row("doc", "d1"), { metaKey: true });
+    expect(byTestId("drive-details-pane").textContent).toContain("Document");
+  });
+
   it("shows the focused item in the details rail", async () => {
     await mount();
     await click(byTestId("drive-details-toggle"));
