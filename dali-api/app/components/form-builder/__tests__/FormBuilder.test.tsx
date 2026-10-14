@@ -69,3 +69,17 @@ describe('buildQuestion (form builder save logic)', () => {
     expect(q.data.maxWords).toBe(100)
   })
 })
+
+describe('buildQuestion (info rows)', () => {
+  const body = [{ type: 'paragraph', content: 'Read this first.' }]
+
+  it('keeps the body of an info row', () => {
+    const q = buildQuestion({ key: 'i1', type: 'info', required: false, label: '', body })
+    expect(q.data.body).toEqual(body)
+  })
+
+  it('drops body on non-info types', () => {
+    const q = buildQuestion({ key: 'q1', type: 'text', required: true, label: 'Name', body })
+    expect(q.data.body).toBeUndefined()
+  })
+})

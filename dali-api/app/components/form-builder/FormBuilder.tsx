@@ -22,6 +22,7 @@ import {
   Paperclip,
   Database,
   SeparatorHorizontal,
+  Text,
   type LucideIcon,
 } from 'lucide-react'
 import {
@@ -55,7 +56,7 @@ type QuestionType = Question['type']
 
 // The component library: every type an author can drop onto the canvas, in
 // display order. Also the source of the edit form's type picker and the type
-// badge on each row. `info` isn't authorable here, so it's absent.
+// badge on each row.
 const COMPONENT_GROUPS: {
   title: string
   items: { type: QuestionType; label: string; icon: LucideIcon }[]
@@ -87,7 +88,10 @@ const COMPONENT_GROUPS: {
   },
   {
     title: 'Layout',
-    items: [{ type: 'pageBreak', label: 'Page break', icon: SeparatorHorizontal }],
+    items: [
+      { type: 'info', label: 'Text block', icon: Text },
+      { type: 'pageBreak', label: 'Page break', icon: SeparatorHorizontal },
+    ],
   },
 ]
 
@@ -149,6 +153,7 @@ export interface BuildQuestionInput {
   maxWordsValue?: number | string
   referenceSource?: string
   referenceTermId?: string
+  body?: unknown
 }
 
 export function buildQuestion(input: BuildQuestionInput): Question {
@@ -166,6 +171,7 @@ export function buildQuestion(input: BuildQuestionInput): Question {
     maxWordsValue,
     referenceSource,
     referenceTermId,
+    body,
   } = input
 
   let maxWords: number | undefined
@@ -198,8 +204,17 @@ export function buildQuestion(input: BuildQuestionInput): Question {
         type === 'reference' && referenceSourceNeedsTerm(referenceSource)
           ? referenceTermId || undefined
           : undefined,
+      body: type === 'info' ? body : undefined,
     },
   }
+}
+
+// Legacy `info` rows stored a plain string; the editor needs blocks.
+function infoBodyToBlocks(body: unknown): unknown {
+  if (typeof body === 'string') {
+    return body.trim() ? [{ type: 'paragraph', content: body }] : undefined
+  }
+  return body ?? undefined
 }
 
 interface FormBuilderTabProps {
@@ -439,6 +454,14 @@ export function FormBuilderTab({
       ),
     )
   }
+  // Text blocks edit inline too; their body is the whole row.
+  const updateInfoBody = (key: string, body: unknown) => {
+    setQuestions(
+      questions.map((q) =>
+        q.key === key ? { ...q, data: { ...q.data, body } } : q,
+      ),
+    )
+  }
 
   // Auto-commit: edits to the inline form flow straight into the question list,
   // so there's no separate "Save Question" step — the question is part of the
@@ -461,6 +484,7 @@ export function FormBuilderTab({
       maxWordsValue,
       referenceSource: editForm.data?.referenceSource,
       referenceTermId: editForm.data?.referenceTermId,
+      body: editForm.data?.body,
     })
     setQuestions(
       questions.map((q) => (q.key === editForm.key ? rebuilt : q)),
@@ -481,11 +505,13 @@ export function FormBuilderTab({
     const item: Question =
       type === 'pageBreak'
         ? { key, type, required: false, data: { label: '', description: '' } }
-        : buildQuestion({ key, type, required: true, label: '', isGeneralForm })
+        : type === 'info'
+          ? { key, type, required: false, data: { label: '' } }
+          : buildQuestion({ key, type, required: true, label: '', isGeneralForm })
     const end = questions.length
     pushQuestion(item)
     if (index !== undefined && index < end) moveQuestion(end, index)
-    if (type === 'pageBreak') return
+    if (isLayoutOnly(type)) return
     setEditingKey(key)
     setEditForm({ key, type, required: true, data: { label: '' } })
     setOptionsText('')
@@ -575,7 +601,7 @@ export function FormBuilderTab({
               }
               options={COMPONENTS.filter(
                 (c) =>
-                  c.type !== 'pageBreak' &&
+                  !isLayoutOnly(c.type) &&
                   (c.type !== 'checkbox' || allowCheckbox || editForm.type === 'checkbox'),
               ).map((c) => ({ value: c.type, label: c.label }))}
               buttonClassName={formTrigger}
@@ -841,7 +867,43 @@ export function FormBuilderTab({
                   {(dragHandleProps, isDragging) => (
                     <div className={`space-y-2 ${isDragging ? 'opacity-40' : ''}`}>
                       {dropsAt(q.key, false) && insertionLine}
-                      {q.type === 'pageBreak' ? (
+                      {q.type === 'info' ? (
+                        <div
+                          data-testid="info-row"
+                          className={`flex items-start gap-4 p-4 rounded-os-item border border-dashed group transition-colors duration-150 ${activeId ? 'border-os-container' : 'border-os-container-hi'}`}
+                        >
+                          <div
+                            {...dragHandleProps}
+                            aria-label="Reorder text block"
+                            className="mt-1 cursor-grab active:cursor-grabbing text-muted-foreground/70 hover:text-muted-foreground select-none touch-none dnd-touch-handle"
+                          >
+                            <GripVertical className="w-5 h-5" />
+                          </div>
+                          <div className="flex-1 space-y-2">
+                            <div className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                              Text block
+                              <InfoTip content="Prose shown to respondents at this point in the form. Layout only. Not counted as a question or included in responses." />
+                            </div>
+                            <DocEditor
+                              features="notes"
+                              density="compact"
+                              initialContent={infoBodyToBlocks(q.data.body)}
+                              onChange={(blocks) => updateInfoBody(q.key, blocks)}
+                              placeholder="Write something for respondents to read…"
+                              className="rounded-os-item bg-os-well py-2"
+                            />
+                          </div>
+                          <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 touch:opacity-100 focus-within:opacity-100 transition-opacity">
+                            <button
+                              onClick={() => handleDelete(q.key)}
+                              aria-label="Remove text block"
+                              className="p-1.5 text-muted-foreground/70 hover:text-destructive rounded-md hover:bg-destructive/10"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      ) : q.type === 'pageBreak' ? (
                         <div
                           className={`flex items-start gap-4 p-4 rounded-os-item border border-dashed group transition-colors duration-150 ${activeId ? 'border-os-container' : 'border-os-container-hi'}`}
                         >
