@@ -32,7 +32,7 @@ export class PageNameConflictError extends Error {
   }
 }
 
-/** The refusal message when a live item of the same kind already has this name in this place; null when the name is free. Shortcuts are exempt, as is anything inside a notebook, whose notes are told apart by date. */
+/** The refusal message when a live item of the same kind already has this name in this place; null when the name is free. Anything inside a notebook is exempt, since its notes are told apart by date. */
 export async function findNameConflict(input: NameCheck): Promise<string | null> {
   const label = KIND_LABELS[input.kind];
   if (!label) return null;

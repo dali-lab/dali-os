@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Form, Link, useFetcher } from "react-router";
+import { Form, Link, useFetcher, useRevalidator } from "react-router";
 import {
   FileText,
   Folder,
@@ -24,6 +24,7 @@ import { toDatetimeLocal } from "./OfferingFields";
 import { DateField } from "~/components/ui/DateField";
 import { FavoriteStar } from "~/components/FavoriteStar";
 import { uploadFileToS3 } from "~/lib/upload-client";
+import { summarizeFailures, uploadAll } from "~/lib/upload-batch";
 import { useActionErrorToast } from "~/lib/useActionErrorToast";
 
 // Manager-side course content tabs: Materials (offering-workspace pages),
@@ -74,37 +75,36 @@ export function ManageMaterials({
   const favorites = new Set(favoriteIds);
   const folders = materials.filter((m) => m.isFolder);
 
-  // File upload: hidden input triggered by the "Upload file" button.
+  // File upload: hidden input triggered by the "Upload files" button.
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const revalidator = useRevalidator();
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
+  async function uploadMaterial(file: File) {
+    const meta = await uploadFileToS3(file, `offering/${offeringId}/materials`);
+    const res = await fetch(`/api/education/${offeringId}/files`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: file.name, ...meta }),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error ?? "Failed to register file");
+    }
+  }
+
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const picked = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    if (picked.length === 0) return;
     setUploading(true);
     setUploadError(null);
-    try {
-      const meta = await uploadFileToS3(file, `offering/${offeringId}/materials`);
-      const res = await fetch(`/api/education/${offeringId}/files`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: file.name, ...meta }),
-      });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error ?? "Failed to register file");
-      }
-      // Reload the page so the new file appears in the list.
-      window.location.reload();
-    } catch (err) {
-      setUploadError(err instanceof Error ? err.message : "Upload failed");
-    } finally {
-      setUploading(false);
-      // Reset so the same file can be re-selected if needed.
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
+    const failed = await uploadAll(picked, uploadMaterial);
+    setUploadError(summarizeFailures(failed, picked.length));
+    setUploading(false);
+    if (failed.length < picked.length) revalidator.revalidate();
   }
 
   // Drag a material (a page) or an uploaded file onto a folder to file it, or
@@ -243,10 +243,11 @@ export function ManageMaterials({
           uploaded file onto a folder to file it.
         </p>
         <div className="ml-auto flex items-center gap-2">
-          {/* Hidden file input; triggered by the Upload file menu item. */}
+          {/* Hidden file input; triggered by the Upload files menu item. */}
           <input
             ref={fileInputRef}
             type="file"
+            multiple
             className="hidden"
             onChange={handleFileChange}
             aria-hidden
@@ -290,7 +291,7 @@ export function ManageMaterials({
               disabled={uploading}
               onSelect={() => fileInputRef.current?.click()}
             >
-              {uploading ? "Uploading…" : "Upload file"}
+              {uploading ? "Uploading…" : "Upload files"}
             </Menu.Item>
           </Menu>
         </div>

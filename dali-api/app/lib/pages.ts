@@ -2,6 +2,7 @@ import { prisma } from "~/lib/db";
 import type { PageKind } from "~/generated/prisma/client";
 import { assertUniqueName } from "~/lib/page-names.server";
 import { ensureProcessFolder, CORE_PROCESS_ID, LAB_PROCESS_ID } from "~/lib/bindings.server";
+import { syncMeetingShares } from "~/lib/meeting-shares.server";
 
 // Creates a Page in a project's workspace (the same Page model the project
 // Overview/PRD/Documents-block use). Appends after the current max position
@@ -199,14 +200,20 @@ export async function createNotebookTab(input: {
  * Re-file an existing page as a tab of `notebookId`, after the tabs already
  * there. Sharing that only makes sense where the page used to live is reset, as
  * on any move; the meeting link (meetingNoteId) is left alone. The notebook it
- * left is trashed if that emptied it.
+ * left is trashed if that emptied it and no series points at it.
  */
 export async function moveIntoNotebook(pageId: string, notebookId: string, title?: string): Promise<void> {
   const [placement, page, last] = await Promise.all([
     notebookTabPlacement(notebookId),
     prisma.page.findUniqueOrThrow({
       where: { id: pageId },
-      select: { parentPageId: true, workspaceType: true, workspaceId: true, parent: { select: { kind: true } } },
+      select: {
+        parentPageId: true,
+        workspaceType: true,
+        workspaceId: true,
+        meetingNoteId: true,
+        parent: { select: { kind: true } },
+      },
     }),
     prisma.page.findFirst({
       where: { parentPageId: notebookId, archivedAt: null },
@@ -230,11 +237,18 @@ export async function moveIntoNotebook(pageId: string, notebookId: string, title
         : {}),
     },
   });
-  if (page.parentPageId && page.parent?.kind === "Notebook") {
-    const left = await prisma.page.count({ where: { parentPageId: page.parentPageId, archivedAt: null } });
-    if (left === 0) {
-      await prisma.page.update({ where: { id: page.parentPageId }, data: { archivedAt: new Date() } });
-    }
+  if (page.parentPageId && page.parent?.kind === "Notebook") await trashNotebookIfAbandoned(page.parentPageId);
+  if (page.meetingNoteId) await syncMeetingShares(page.meetingNoteId);
+}
+
+/** Trash a notebook with no live tabs, unless a series still files into it. */
+export async function trashNotebookIfAbandoned(notebookId: string): Promise<void> {
+  const [left, pointedAt] = await Promise.all([
+    prisma.page.count({ where: { parentPageId: notebookId, archivedAt: null } }),
+    prisma.scheduledMeeting.findFirst({ where: { notebookId }, select: { id: true } }),
+  ]);
+  if (left === 0 && !pointedAt) {
+    await prisma.page.update({ where: { id: notebookId }, data: { archivedAt: new Date() } });
   }
 }
 

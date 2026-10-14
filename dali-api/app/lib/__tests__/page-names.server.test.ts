@@ -64,12 +64,6 @@ describe("findNameConflict: pages", () => {
       `A ${label} named “Roadmap” already exists here`,
     );
   });
-
-  it("exempts shortcuts without querying", async () => {
-    pageFind.mockResolvedValue({ id: "other" });
-    expect(await findNameConflict({ ...lab, kind: "Shortcut", title: "Roadmap" })).toBeNull();
-    expect(pageFind).not.toHaveBeenCalled();
-  });
 });
 
 describe("findNameConflict: files", () => {

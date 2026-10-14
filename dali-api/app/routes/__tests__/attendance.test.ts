@@ -5,7 +5,6 @@ vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
   isNonMember: vi.fn(async () => false),
 }));
-vi.mock("~/lib/core-meeting.server", () => ({ isMeetingCoreBulk: vi.fn() }));
 vi.mock("~/lib/roles", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/lib/roles")>()),
   isCore: vi.fn(),
@@ -13,7 +12,6 @@ vi.mock("~/lib/roles", async (importOriginal) => ({
 }));
 
 import { prisma } from "~/lib/db";
-import { isMeetingCoreBulk } from "~/lib/core-meeting.server";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { action, loader } from "~/routes/attendance";
@@ -172,22 +170,14 @@ describe("GET /attendance - scope label", () => {
     ...over,
   });
 
-  it("labels a meeting Core by its notebook's placement, a project meeting by its project, the rest General", async () => {
+  it("labels a meeting Core by its isCoreMeeting column, a project meeting by its project, the rest General", async () => {
     mockPrisma.scheduledMeeting.findMany.mockResolvedValue([
-      row("placed", { notebookId: "nb1" }),
-      row("flagged-only", { isCoreMeeting: true, notebookId: "nb2" }),
-      row("project", { project: { id: "p1", name: "Atlas" }, notebookId: "nb3" }),
+      row("flagged", { isCoreMeeting: true, notebookId: "nb1" }),
+      row("unflagged-with-notebook", { notebookId: "nb2" }),
+      row("project", { project: { id: "p1", name: "Atlas" }, isCoreMeeting: true, notebookId: "nb3" }),
       row("plain"),
     ]);
     mockPrisma.projectAssignment.findMany.mockResolvedValue([]);
-    vi.mocked(isMeetingCoreBulk).mockResolvedValue(
-      new Map([
-        ["placed", true],
-        ["flagged-only", false],
-        ["project", true],
-        ["plain", false],
-      ]),
-    );
 
     const { events } = (await loader({
       request: new Request("http://localhost/attendance"),
@@ -196,8 +186,8 @@ describe("GET /attendance - scope label", () => {
     } as never)) as { events: Array<{ meetingId: string; scope: string }> };
 
     expect(Object.fromEntries(events.map((e) => [e.meetingId, e.scope]))).toEqual({
-      placed: "Core",
-      "flagged-only": "General",
+      flagged: "Core",
+      "unflagged-with-notebook": "General",
       project: "Atlas",
       plain: "General",
     });

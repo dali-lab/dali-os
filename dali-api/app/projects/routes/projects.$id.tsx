@@ -14,8 +14,6 @@ import {
 import { Select, Menu, Popover, InfoTip } from "~/components/ui/floating";
 import { CalendarDays, CalendarPlus, CalendarX, Check, Globe, Handshake, History, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink, MoreHorizontal, ExternalLink, Star, Mail, Github, Slack, Layers, Figma, NotebookPen, Shapes } from "lucide-react";
 import type { DriveTypeFilter } from "~/components/drive/type-filter";
-import { DriveFolderBindings } from "~/components/drive/DriveFolderBindings";
-import { DriveReceivers } from "~/components/drive/DriveReceivers";
 import { useOsChrome } from "~/components/os-chrome";
 import { DomainChips } from "~/components/DomainChips";
 import { ChartStringPanel } from "~/projects/components/ChartStringPanel";
@@ -122,7 +120,6 @@ import type { RowActions } from "~/components/drive/DriveBrowser";
 import { FolderPicker } from "~/components/drive/FolderPicker";
 import type { PickerDrive, PickerFolder, Destination } from "~/components/drive/FolderPicker";
 import { moveDriveItem, driveErrorFrom } from "~/components/drive/move-item";
-import { deleteShortcutRequest } from "~/components/drive/shortcut-api";
 import { destinationLabel } from "~/components/drive/action-toast";
 import { reportMoveBatch, runHiddenMoveBatch, itemCount } from "~/components/drive/move-batch";
 import { withoutHidden, usePendingHidden } from "~/components/drive/pending-hidden";
@@ -133,6 +130,8 @@ import {
   useDriveHistoryKeys,
 } from "~/components/drive/use-drive-history";
 import { useDriveFileUpload } from "~/components/drive/useDriveFileUpload";
+import { DriveUploadInput } from "~/components/drive/DriveUploadInput";
+import { summarizeFailures, uploadAll } from "~/lib/upload-batch";
 import { useToast } from "~/components/ui/toast";
 import { filterPillClass } from "~/components/ui/floating/styles";
 import { Button } from "~/components/ui/Button";
@@ -2080,12 +2079,6 @@ export default function ProjectDetail() {
             canEdit={canEditScope}
             actionError={actionError}
           />
-          {canEditScope &&
-            (receiversOn ? (
-              <DriveReceivers processType="Project" processId={project.id} />
-            ) : (
-              <DriveFolderBindings processType="Project" processId={project.id} />
-            ))}
           {canEditScope && (
             <SaveAsTemplateSection projectId={project.id} projectName={project.name} />
           )}
@@ -4820,9 +4813,7 @@ function ProjectDriveTab({
           description:
             item.type === "folder"
               ? "The folder must be empty first."
-              : item.type === "shortcut"
-                ? "Only the shortcut is removed. The original stays where it is."
-                : "This moves it to the trash.",
+              : "This moves it to the trash.",
           tone: "destructive",
           confirmLabel: "Delete",
         });
@@ -4896,7 +4887,6 @@ function ProjectDriveTab({
   }, [dialog, createPage, revalidate, toast]);
 
   function deleteDriveItemRequest(item: DriveItem): Promise<Response> {
-    if (item.type === "shortcut") return deleteShortcutRequest(item.id);
     const endpoint = item.type === "file" ? `/api/files/${item.id}` : `/api/documents/${item.id}`;
     return fetch(endpoint, { method: "DELETE", credentials: "include" });
   }
@@ -4918,9 +4908,7 @@ function ProjectDriveTab({
 
   const onBulkMove = useCallback(
     async (items: DriveItem[]) => {
-      const movable = items.filter(
-        (i) => i.type === "doc" || i.type === "folder" || i.type === "file" || i.type === "shortcut",
-      );
+      const movable = items.filter((i) => i.type === "doc" || i.type === "folder" || i.type === "file");
       if (movable.length === 0) return;
       const dest = await pickMoveDestination(movable[0], `Move ${itemCount(movable.length)}`);
       if (dest) await moveItems(movable, dest.folderId);
@@ -4979,7 +4967,7 @@ function ProjectDriveTab({
       </Menu.Item>
       <Menu.Separator />
       <Menu.Item icon={<Upload className="w-3.5 h-3.5" />} disabled={uploading} onSelect={() => inputRef.current?.click()}>
-        <span data-testid={`drive-new-upload-${scopeId}`}>{uploading ? "Uploading…" : "Upload file"}</span>
+        <span data-testid={`drive-new-upload-${scopeId}`}>{uploading ? "Uploading…" : "Upload files"}</span>
       </Menu.Item>
     </Menu>
   );
@@ -5005,7 +4993,12 @@ function ProjectDriveTab({
         onToggleFavorite={onToggleFavorite}
         onBulkDelete={canEdit ? onBulkDelete : undefined}
         onBulkMove={canEdit ? onBulkMove : undefined}
-        onUploadFiles={canEdit ? uploadFiles : undefined}
+        onUploadFiles={
+          canEdit
+            ? (files, opts) =>
+                void uploadFiles(files, { folderPageId: opts?.folderId, skippedFolders: opts?.skippedFolders })
+            : undefined
+        }
         filterControl={filterControl}
         newMenu={newMenu}
         embeddedScopeId={scopeId}
@@ -5013,13 +5006,10 @@ function ProjectDriveTab({
         hasActivePartner={hasActivePartner}
         receiverViewer={receiverViewer}
       />
-      <input
-        ref={inputRef}
-        type="file"
-        multiple
-        hidden
+      <DriveUploadInput
+        inputRef={inputRef}
         onChange={handleFileChange}
-        data-testid={`drive-upload-input-${scopeId}`}
+        testId={`drive-upload-input-${scopeId}`}
       />
       {movePicker && (
         <FolderPicker
@@ -5319,10 +5309,42 @@ function DocumentsBlock({
 
   // ── File upload (new file or new version) ────────────────────────────────
   // The hidden <input> is shared for both flows; refs decide what to do on pick.
+  async function addProjectFile(file: File, folderId: string | null) {
+    const meta = await uploadFileToS3(file, `project-files/${projectId}`);
+    const res = await fetch(`/api/projects/${projectId}/files`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: file.name,
+        ...(folderId ? { folderPageId: folderId } : {}),
+        ...meta,
+      }),
+    });
+    if (!res.ok) {
+      const b = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(b.error ?? "Failed to add file");
+    }
+  }
+
+  async function addProjectFileVersion(file: File, fileId: string) {
+    const meta = await uploadFileToS3(file, `project-files/${projectId}`);
+    const res = await fetch(`/api/files/${fileId}`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ intent: "version", ...meta }),
+    });
+    if (!res.ok) {
+      const b = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(b.error ?? "Failed to upload new version");
+    }
+  }
+
   async function onFilePick(e: React.ChangeEvent<HTMLInputElement>) {
-    const picked = e.target.files?.[0];
+    const picked = Array.from(e.target.files ?? []);
     e.target.value = "";
-    if (!picked) return;
+    if (picked.length === 0) return;
     const targetId = versionForId.current;
     const folderId = uploadFolderIdRef.current;
     versionForId.current = null;
@@ -5330,53 +5352,31 @@ function DocumentsBlock({
 
     setBusy(true);
     setError(null);
-    try {
-      const meta = await uploadFileToS3(picked, `project-files/${projectId}`);
-      if (targetId) {
-        const res = await fetch(`/api/files/${targetId}`, {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ intent: "version", ...meta }),
-        });
-        if (!res.ok) {
-          const b = (await res.json().catch(() => ({}))) as { error?: string };
-          throw new Error(b.error ?? "Failed to upload new version");
-        }
-      } else {
-        const res = await fetch(`/api/projects/${projectId}/files`, {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            title: picked.name,
-            ...(folderId ? { folderPageId: folderId } : {}),
-            ...meta,
-          }),
-        });
-        if (!res.ok) {
-          const b = (await res.json().catch(() => ({}))) as { error?: string };
-          throw new Error(b.error ?? "Failed to add file");
-        }
-      }
-      revalidator.revalidate();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed");
-    } finally {
-      setBusy(false);
-    }
+    const failed = await uploadAll(picked, (file) =>
+      targetId ? addProjectFileVersion(file, targetId) : addProjectFile(file, folderId),
+    );
+    if (failed.length < picked.length) revalidator.revalidate();
+    setError(summarizeFailures(failed, picked.length));
+    setBusy(false);
+  }
+
+  function openFilePicker(multiple: boolean) {
+    const input = fileInputRef.current;
+    if (!input) return;
+    input.multiple = multiple;
+    input.click();
   }
 
   function triggerUpload(folderId?: string) {
     versionForId.current = null;
     uploadFolderIdRef.current = folderId ?? null;
-    fileInputRef.current?.click();
+    openFilePicker(true);
   }
 
   function triggerVersionUpload(fileId: string) {
     versionForId.current = fileId;
     uploadFolderIdRef.current = null;
-    fileInputRef.current?.click();
+    openFilePicker(false);
   }
 
   async function deleteFile(id: string, title: string) {
@@ -5538,7 +5538,7 @@ function DocumentsBlock({
   return (
     <section className="bg-card border border-border rounded-lg p-4">
       {/* Hidden file input shared for new-file and new-version uploads. */}
-      <input ref={fileInputRef} type="file" className="hidden" onChange={onFilePick} />
+      <input ref={fileInputRef} type="file" multiple className="hidden" onChange={onFilePick} />
 
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
@@ -5603,7 +5603,7 @@ function DocumentsBlock({
               </Menu.Item>
               <Menu.Separator />
               <Menu.Item icon={<Upload className="w-3.5 h-3.5" />} onSelect={() => triggerUpload()}>
-                Upload file
+                Upload files
               </Menu.Item>
             </Menu>
           )}
@@ -5761,12 +5761,12 @@ function DocumentsBlock({
                           <Plus className="w-3.5 h-3.5" />
                         </button>
                       </Tooltip>
-                      <Tooltip content="Upload file into folder">
+                      <Tooltip content="Upload files into folder">
                         <button
                           type="button"
                           disabled={busy}
                           onClick={() => triggerUpload(doc.id)}
-                          aria-label="Upload file into folder"
+                          aria-label="Upload files into folder"
                           className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-60"
                         >
                           <Upload className="w-3.5 h-3.5" />

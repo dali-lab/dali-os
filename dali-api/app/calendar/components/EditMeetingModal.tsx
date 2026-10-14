@@ -21,7 +21,7 @@ import { MeetingNoteFields, useMeetingNote } from "~/calendar/components/Meeting
 import type { DefaultNotebookResult } from "~/calendar/components/meeting-note";
 import { changedSeriesNotebook, SERIES_CHANGE_CONFIRM } from "~/calendar/lib/series-notebook";
 import { useSeriesNotebook } from "~/calendar/lib/useSeriesNotebook";
-import type { WhDay } from "~/calendar/lib/types";
+import type { MentorPairOption, WhDay } from "~/calendar/lib/types";
 
 // Shape of GET /api/scheduled-meetings/:id/edit-context.
 export type EditContext = {
@@ -60,6 +60,7 @@ export type EditContext = {
       projectId: string | null;
       systemKey: string | null;
     }[];
+    mentorPairs?: MentorPairOption[];
   };
 };
 
@@ -292,6 +293,8 @@ export function EditMeetingModal({
       groups: ctx?.options.groups ?? [],
       invitedGroups: selectedGroupIds.flatMap((id) => groupsById.get(id) ?? []),
       scopeGroupId: selectedGroupIds.length === 1 && selectedUserIds.length === 0 ? selectedGroupIds[0]! : null,
+      viewerId: ctx?.viewer.userId,
+      mentorPairs: ctx?.options.mentorPairs ?? [],
     }),
     [resolvedParticipantIds, ctx, selectedGroupIds, selectedUserIds, groupsById],
   );

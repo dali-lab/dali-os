@@ -33,7 +33,6 @@ vi.mock("~/lib/meeting-recording.server", () => ({
 }));
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn(), isProjectMember: vi.fn() }));
 vi.mock("~/lib/scheduled-meeting", () => ({ ensureOccurrenceRoster: vi.fn() }));
-vi.mock("~/lib/shortcuts.server", () => ({ resolveShortcutTarget: vi.fn() }));
 vi.mock("~/lib/drive-crumbs.server", () => ({ driveFolderCrumbs: vi.fn() }));
 
 import { prisma } from "~/lib/db";

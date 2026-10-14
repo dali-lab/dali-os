@@ -25,19 +25,30 @@ vi.mock("~/lib/pageAccess.server", () => ({
 vi.mock("~/lib/pages", () => ({
   collectSubtree: vi.fn(),
   createLabPage: vi.fn(),
+  createNotebookTab: vi.fn(),
   createProjectPage: vi.fn(),
   moveIntoNotebook: vi.fn(),
   pageDepth: vi.fn(),
+  trashNotebookIfAbandoned: vi.fn(),
   MAX_PAGE_DEPTH: 6,
 }));
-vi.mock("~/lib/scheduled-meeting", () => ({ resolveMeetingOccurrence: vi.fn() }));
+vi.mock("~/lib/scheduled-meeting", () => ({ resolveMeetingOccurrence: vi.fn(), seedPageFromTemplate: vi.fn() }));
 vi.mock("~/lib/meeting-shares.server", () => ({ syncMeetingShares: vi.fn(), removeMeetingShares: vi.fn() }));
 
 import { prisma } from "~/lib/db";
 import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
 import { getPageAccess, getPageAccessBulk, isUnderGoverningScope } from "~/lib/pageAccess.server";
-import { collectSubtree, createLabPage, createProjectPage, moveIntoNotebook, pageDepth } from "~/lib/pages";
-import { resolveMeetingOccurrence } from "~/lib/scheduled-meeting";
+import {
+  collectSubtree,
+  createLabPage,
+  createNotebookTab,
+  createProjectPage,
+  moveIntoNotebook,
+  pageDepth,
+  trashNotebookIfAbandoned,
+} from "~/lib/pages";
+import { resolveMeetingOccurrence, seedPageFromTemplate } from "~/lib/scheduled-meeting";
+import { formatDateShort } from "~/lib/display";
 import { removeMeetingShares, syncMeetingShares } from "~/lib/meeting-shares.server";
 import { PageNameConflictError } from "~/lib/page-names.server";
 import {
@@ -45,6 +56,7 @@ import {
   addToNotebook,
   attachNote,
   canManageNotebook,
+  createBlankNote,
   createNotebook,
   detachNote,
   dissolveNotebook,
@@ -337,6 +349,56 @@ describe("getNotebook", () => {
   });
 });
 
+describe("createBlankNote", () => {
+  beforeEach(() => {
+    vi.mocked(createNotebookTab).mockResolvedValue({ id: "note9" });
+  });
+
+  it("creates an untethered tab titled with today's date and returns its id", async () => {
+    pages({ nb1: notebookRow() });
+
+    expect(await createBlankNote("nb1", "u1")).toEqual({ id: "note9" });
+
+    const input = vi.mocked(createNotebookTab).mock.calls[0][0];
+    expect(input).toMatchObject({ notebookId: "nb1", createdById: "u1" });
+    expect(input.title).toBe(formatDateShort(input.meetingOccurrenceStart));
+    expect(input).not.toHaveProperty("meetingNoteId");
+    expect(seedPageFromTemplate).not.toHaveBeenCalled();
+  });
+
+  it("seeds the tab from the notebook's template", async () => {
+    pages({ nb1: notebookRow({ templatePageId: "tpl1" }), tpl1: { isTemplate: true, archivedAt: null } });
+
+    await createBlankNote("nb1", "u1");
+
+    expect(seedPageFromTemplate).toHaveBeenCalledWith("note9", "tpl1");
+  });
+
+  it("leaves the tab blank when the template is trashed or no longer a template", async () => {
+    pages({ nb1: notebookRow({ templatePageId: "tpl1" }), tpl1: { isTemplate: true, archivedAt: new Date() } });
+    await createBlankNote("nb1", "u1");
+    pages({ nb1: notebookRow({ templatePageId: "tpl1" }), tpl1: { isTemplate: false, archivedAt: null } });
+    await createBlankNote("nb1", "u1");
+
+    expect(seedPageFromTemplate).not.toHaveBeenCalled();
+  });
+
+  it("needs edit on the notebook and creates nothing otherwise", async () => {
+    pages({ nb1: notebookRow() });
+    access({ nb1: VIEW_ONLY });
+    expect((await rejection(createBlankNote("nb1", "u1"))).status).toBe(403);
+    access({ nb1: NONE });
+    expect((await rejection(createBlankNote("nb1", "u1"))).status).toBe(404);
+    expect(createNotebookTab).not.toHaveBeenCalled();
+  });
+
+  it("404s a trashed notebook", async () => {
+    pages({ nb1: notebookRow({ archivedAt: new Date() }) });
+    expect((await rejection(createBlankNote("nb1", "u1"))).status).toBe(404);
+    expect(createNotebookTab).not.toHaveBeenCalled();
+  });
+});
+
 describe("setNotebookTemplate", () => {
   const template = { id: "t1", isTemplate: true, archivedAt: null };
 
@@ -458,14 +520,21 @@ describe("detachNote", () => {
     });
   });
 
-  it("trashes the notebook when that was its last tab", async () => {
+  it("hands the notebook it left to the abandoned-notebook check", async () => {
     pages({ doc1: note() });
-    m.page.count.mockResolvedValue(0);
 
     await detachNote("doc1", "u1");
 
-    expect(m.page.count).toHaveBeenCalledWith({ where: { parentPageId: "nb1", archivedAt: null } });
-    expect(m.page.update).toHaveBeenCalledWith({ where: { id: "nb1" }, data: { archivedAt: expect.any(Date) } });
+    expect(trashNotebookIfAbandoned).toHaveBeenCalledWith("nb1");
+  });
+
+  it("re-syncs the meeting's shares so the notebook it left stops justifying them", async () => {
+    pages({ doc1: note() });
+    m.page.count.mockResolvedValue(2);
+
+    await detachNote("doc1", "u1");
+
+    expect(syncMeetingShares).toHaveBeenCalledWith("m1");
   });
 
   it("goes to the workspace top level when the notebook has no folder", async () => {
@@ -486,7 +555,7 @@ describe("detachNote", () => {
       where: { id: "doc1" },
       data: { meetingNoteId: null, meetingOccurrenceStart: null },
     });
-    expect(m.page.count).not.toHaveBeenCalled();
+    expect(trashNotebookIfAbandoned).not.toHaveBeenCalled();
   });
 
   it("400s a page that is not a meeting note", async () => {
@@ -552,11 +621,38 @@ describe("attachNote", () => {
     expect(m.page.update).not.toHaveBeenCalled();
   });
 
-  it("409s when the occurrence's note is in the trash, which still holds the slot", async () => {
-    m.page.findFirst.mockResolvedValue({ id: "other", archivedAt: new Date() });
-    const err = await rejection(attachNote("doc1", "m1", OCC, "org1"));
-    expect(err.status).toBe(409);
-    expect(err.message).toMatch(/trash/i);
+  it("only counts a live note as holding the occurrence", async () => {
+    await attachNote("doc1", "m1", OCC, "org1");
+    expect(m.page.findFirst).toHaveBeenCalledWith({
+      where: { meetingNoteId: "m1", meetingOccurrenceStart: OCC, archivedAt: null },
+      select: { id: true },
+    });
+  });
+
+  it("frees the slot a trashed note holds, then attaches", async () => {
+    const order: string[] = [];
+    m.page.updateMany.mockImplementation(async () => {
+      order.push("free");
+      return { count: 1 };
+    });
+    m.page.update.mockImplementation(async () => {
+      order.push("attach");
+      return {};
+    });
+
+    await attachNote("doc1", "m1", OCC, "org1");
+
+    expect(m.page.updateMany).toHaveBeenCalledWith({
+      where: { meetingNoteId: "m1", meetingOccurrenceStart: OCC, archivedAt: { not: null } },
+      data: { meetingNoteId: null },
+    });
+    expect(order).toEqual(["free", "attach"]);
+  });
+
+  it("does not free a trashed note's slot when a live note already holds the occurrence", async () => {
+    m.page.findFirst.mockResolvedValue({ id: "other" });
+    await rejection(attachNote("doc1", "m1", OCC, "org1"));
+    expect(m.page.updateMany).not.toHaveBeenCalled();
   });
 
   it("409s when the unique key loses a race", async () => {
