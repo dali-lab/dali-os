@@ -1,7 +1,8 @@
 import { useCallback, useMemo } from "react";
 import { destinationPath, type Destination } from "~/components/drive/FolderPicker";
 import { ACTION_TOAST_MS, movedToast, pathLabel } from "~/components/drive/action-toast";
-import { fetchPlacements, movePageToPlaceRequest } from "~/components/drive/shortcut-api";
+import { driveErrorFrom } from "~/components/drive/move-item";
+import type { MovedFrom } from "~/lib/page-move.server";
 import { pickDrives, type PickerRows } from "~/components/drive/picker-rows";
 import {
   descendantFolderIds,
@@ -12,6 +13,22 @@ import {
 } from "~/components/drive/move-target";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
+
+/** Moves the page back to where the move response said it was; the error message on failure. */
+async function movePageBack(pageId: string, origin: MovedFrom): Promise<string | null> {
+  const fallback = "Couldn't move it back";
+  try {
+    const res = await fetch(`/api/pages/${pageId}/move`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(origin),
+    });
+    return res.ok ? null : ((await driveErrorFrom(res)) ?? fallback);
+  } catch {
+    return fallback;
+  }
+}
 
 /** Everything a `FolderPicker` needs to move one page, and the move itself:
  *  confirms an audience change, POSTs `/api/pages/:id/move`, toasts. Spread
@@ -58,7 +75,6 @@ export function useMovePage({
         });
         if (!ok) return;
       }
-      const before = await fetchPlacements(pageId);
       const res = await fetch(`/api/pages/${pageId}/move`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -75,11 +91,11 @@ export function useMovePage({
         toast.error(res.error);
         return;
       }
-      const origin = before?.primary;
+      const origin: MovedFrom | undefined = res?.from;
       const undo = async () => {
-        const back = origin ? await movePageToPlaceRequest(pageId, origin) : null;
-        if (!back?.ok) {
-          toast.error(back ? back.error : "Couldn't move it back");
+        const back = await movePageBack(pageId, origin!);
+        if (back) {
+          toast.error(back);
           return;
         }
         toast.info("Move undone");

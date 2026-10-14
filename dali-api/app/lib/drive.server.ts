@@ -26,16 +26,10 @@ import { isCore, isProjectMember } from "~/lib/roles";
 import { summarizeAudience } from "~/lib/page-audience.server";
 import type { Audience } from "~/lib/page-audience";
 import type { DriveItemTag } from "~/lib/drive-tags";
-import {
-  NO_ACCESS_SHORTCUT_TITLE,
-  shortcutTargetHref,
-  shortcutTargetType,
-  type ShortcutTargetType,
-} from "~/lib/shortcut-targets";
 import type { PageKind, Prisma } from "~/generated/prisma/client";
 
 /** Every page kind a Drive listing (and the Trash) surfaces. */
-export const DRIVE_PAGE_KINDS: PageKind[] = ["Folder", "FreeForm", "Structured", "Whiteboard", "Notebook", "Shortcut", "Form"];
+export const DRIVE_PAGE_KINDS: PageKind[] = ["Folder", "FreeForm", "Structured", "Whiteboard", "Notebook", "Form"];
 
 /** The kinds My Drive holds until forms follow page access: a Form is a Lab or workspace artifact, never a personal note. */
 const MEMBER_PAGE_KINDS = DRIVE_PAGE_KINDS.filter((k) => k !== "Form");
@@ -138,27 +132,6 @@ export type DriveItem =
       audience?: Audience;
       /** Live tags on this page, by label. */
       tags?: DriveItemTag[];
-    }
-  | {
-      type: "shortcut";
-      id: string;
-      /** The target's title, or "Shortcut (no access)" when the viewer can't open it. */
-      title: string;
-      parentFolderId: string | null;
-      iconEmoji: null;
-      updatedAt: Date;
-      /** The target's own URL; the shortcut's when the viewer has no access. */
-      href: string;
-      targetId: string;
-      targetType: ShortcutTargetType;
-      /** False when the viewer lacks access to the target or it is in the trash. */
-      canOpen: boolean;
-      originalInTrash: boolean;
-      sizeBytes?: number | null;
-      favorited?: boolean;
-      linkedProcess?: { label: string; href: string } | null;
-      partnerVisible?: boolean | null;
-      audience?: Audience;
     }
   | {
       type: "file";
@@ -392,69 +365,11 @@ function splitVisibleForms<T extends { id: string; parentPageId: string | null; 
   };
 }
 
-type ShortcutRow = {
-  id: string;
-  parentPageId: string | null;
-  updatedAt: Date;
-  targetPageId: string | null;
-};
-
-/** DriveItems for the shortcut rows a loader already found visible: one query over their distinct targets. */
-async function shortcutItems(
-  rows: ShortcutRow[],
-  userSub: string,
-  request?: Request,
-  audiencesPending?: Map<string, Audience> | Promise<Map<string, Audience>>,
-): Promise<DriveItem[]> {
-  if (rows.length === 0) return [];
-  const targetIds = [...new Set(rows.flatMap((r) => (r.targetPageId ? [r.targetPageId] : [])))];
-  const targets = await prisma.page.findMany({
-    where: { id: { in: targetIds } },
-    select: { ...PAGE_ACCESS_SELECT, title: true, kind: true },
-  });
-  const access = await getPageAccessBulk(userSub, targets, request, { includeArchived: true });
-  const byId = new Map(targets.map((t) => [t.id, t]));
-  const audiences = await audiencesPending;
-
-  return rows.map((row): DriveItem => {
-    const target = row.targetPageId ? byId.get(row.targetPageId) : undefined;
-    const base = {
-      type: "shortcut" as const,
-      id: row.id,
-      parentFolderId: row.parentPageId,
-      iconEmoji: null,
-      updatedAt: row.updatedAt,
-      targetId: row.targetPageId ?? "",
-      audience: audiences?.get(row.id),
-    };
-    if (!target || !access.get(target.id)?.canView) {
-      return {
-        ...base,
-        title: NO_ACCESS_SHORTCUT_TITLE,
-        href: `/documents/${row.id}`,
-        targetType: "doc",
-        canOpen: false,
-        originalInTrash: false,
-      };
-    }
-    const originalInTrash = target.archivedAt !== null;
-    return {
-      ...base,
-      title: target.title,
-      href: shortcutTargetHref(target.kind, target.id),
-      targetType: shortcutTargetType(target.kind),
-      canOpen: !originalInTrash,
-      originalInTrash,
-    };
-  });
-}
-
 /**
  * The shared tail of the workspace page loaders: apply the scoped-folder filter,
- * resolve the viewer's sharing authority, then build audiences and shortcut rows.
- * The authority check (`managerPending`) runs alongside the filter and the
- * shortcut targets alongside the audiences, since neither feeds the other.
- * `trailing` is the non-page rows: shortcuts, then the forms the viewer may see.
+ * resolve the viewer's sharing authority, then build audiences. The authority
+ * check (`managerPending`) runs alongside the filter, since neither feeds the
+ * other. `trailing` is the non-page rows: the forms the viewer may see.
  */
 async function resolveVisibleRows<T extends ProjectPageRow>(
   rows: T[],
@@ -480,17 +395,11 @@ async function resolveVisibleRows<T extends ProjectPageRow>(
     governing,
     () => manager,
   );
-  const shortcutsPending = shortcutItems(
-    visible.filter((row) => row.kind === "Shortcut"),
-    userSub,
-    request,
-    audiencesPending,
-  );
-  const [audiences, shortcuts] = await Promise.all([audiencesPending, shortcutsPending]);
+  const audiences = await audiencesPending;
   const forms = placedForms.map((f) =>
     formRowToDriveItem(f.row, f.parentFolderId, audiences.get(f.row.id), linkedProcessMap),
   );
-  return { visible, audiences, trailing: [...shortcuts, ...forms] };
+  return { visible, audiences, trailing: forms };
 }
 
 /** Load pages (folders + docs) for a Lab-scope drive, filtering each through
@@ -518,7 +427,6 @@ async function loadLabPages(
       iconEmoji: true,
       folderType: true,
       updatedAt: true,
-      targetPageId: true,
       // Fields getPageAccess needs when passed as PageShape
       workspaceType: true,
       workspaceId: true,
@@ -553,17 +461,10 @@ async function loadLabPages(
     governing,
     (row) => core || row.createdById === userSub,
   );
-  const shortcutsPending = shortcutItems(
-    visible.filter((row) => row.kind === "Shortcut"),
-    userSub,
-    request,
-    audiencesPending,
-  );
-  const [audiences, shortcuts] = await Promise.all([audiencesPending, shortcutsPending]);
+  const audiences = await audiencesPending;
 
   const items: DriveItem[] = [];
   for (const row of visible) {
-    if (row.kind === "Shortcut") continue;
     items.push(
       row.kind === "Folder"
         ? {
@@ -599,7 +500,7 @@ async function loadLabPages(
   const forms = placedForms.map((f) =>
     formRowToDriveItem(f.row, f.parentFolderId, audiences.get(f.row.id), linkedProcessMap),
   );
-  return [...items, ...shortcuts, ...forms];
+  return [...items, ...forms];
 }
 
 /** Load pages for a project-scope drive. Project membership (Core or staffed)
@@ -625,7 +526,6 @@ export const PROJECT_PAGE_SELECT = {
   iconEmoji: true,
   folderType: true,
   updatedAt: true,
-  targetPageId: true,
   partnerVisible: true,
   // Only read by the scoped branch below; cheap to carry either way, and it
   // saves getPageAccessBulk re-fetching every row.
@@ -650,7 +550,7 @@ export type PageItemRow = Pick<
   "id" | "title" | "kind" | "parentPageId" | "iconEmoji" | "folderType" | "updatedAt" | "partnerVisible"
 > & { tags?: Parameters<typeof tagsOf>[0]["tags"] };
 
-/** The folder or doc DriveItem for a Page row. Shortcut rows are not handled here (see `shortcutItems`). */
+/** The folder or doc DriveItem for a Page row. */
 export function pageRowToDriveItem(
   row: PageItemRow,
   audience?: Audience,
@@ -718,9 +618,7 @@ async function loadProjectPages(
     linkedProcessMap,
   );
 
-  const pageItems = visible
-    .filter((row) => row.kind !== "Shortcut")
-    .map((row) => pageRowToDriveItem(row, audiences.get(row.id)));
+  const pageItems = visible.map((row) => pageRowToDriveItem(row, audiences.get(row.id)));
   return [...pageItems, ...trailing];
 }
 
@@ -782,7 +680,6 @@ async function loadEducationPages(
       iconEmoji: true,
       folderType: true,
       updatedAt: true,
-      targetPageId: true,
       // See loadProjectPages: only used when the workspace holds a scoped folder.
       workspaceType: true,
       workspaceId: true,
@@ -815,9 +712,7 @@ async function loadEducationPages(
     linkedProcessMap,
   );
 
-  const pageItems = visible
-    .filter((row) => row.kind !== "Shortcut")
-    .map((row): DriveItem =>
+  const pageItems = visible.map((row): DriveItem =>
     row.kind === "Folder"
       ? {
           type: "folder",
@@ -871,14 +766,11 @@ async function loadMemberPages(userSub: string, request: Request | undefined, fo
       iconEmoji: true,
       folderType: true,
       updatedAt: true,
-      targetPageId: true,
       tags: PAGE_TAGS_SELECT,
     },
   });
 
-  const pageItems = rows
-    .filter((row) => row.kind !== "Shortcut")
-    .map((row): DriveItem =>
+  const pageItems = rows.map((row): DriveItem =>
     row.kind === "Form"
       ? formRowToDriveItem({ ...row, partnerVisible: false }, row.parentPageId, undefined, undefined)
       : row.kind === "Folder"
@@ -909,15 +801,7 @@ async function loadMemberPages(userSub: string, request: Request | undefined, fo
               : `/documents/${row.id}`,
         },
     );
-  return [
-    ...pageItems,
-    ...(await shortcutItems(
-      rows.filter((row) => row.kind === "Shortcut"),
-      userSub,
-      request,
-      undefined,
-    )),
-  ];
+  return pageItems;
 }
 
 /** Load the viewer's own My Drive files (Member workspace, owner-scoped). */

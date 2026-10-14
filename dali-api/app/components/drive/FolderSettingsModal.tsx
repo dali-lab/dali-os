@@ -2,16 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import { useRevalidator } from "react-router";
 import { Modal, ModalFooter, ModalHeader } from "~/components/Modal";
 import { Button } from "~/components/ui/Button";
-import { Select } from "~/components/ui/floating";
+import { Checkbox } from "~/components/ui/Checkbox";
 import { useToast } from "~/components/ui/toast";
 import {
   CHOICE_NONE,
-  choiceLabel,
   currentChoice,
   planChoiceChange,
   slotChoice,
-  type Choice,
-  type SlotChoice,
+  type MeetingsOption,
 } from "~/components/drive/receiver-options";
 import {
   fetchReceiverSlots,
@@ -26,27 +24,27 @@ export function FolderSettingsModal({
   open,
   onClose,
   folder,
-  slots,
+  meetings,
 }: {
   open: boolean;
   onClose: () => void;
   folder: FolderSettingsTarget;
-  /** Process slots this folder is eligible for (`eligibleSlotsFor`); empty offers only None. */
-  slots: SlotChoice[];
+  meetings: MeetingsOption;
 }) {
   const toast = useToast();
   const revalidator = useRevalidator();
   const [rows, setRows] = useState<ReceiverSlotRow[] | null>(null);
   const [loading, setLoading] = useState(false);
-  const [choice, setChoice] = useState<Choice>(CHOICE_NONE);
+  const [checked, setChecked] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const process = slots[0] ?? null;
+  const { slot, space } = meetings;
+  const slots = useMemo(() => [slot], [slot]);
   useEffect(() => {
-    if (!open || !process) return;
+    if (!open) return;
     let cancelled = false;
     setLoading(true);
-    void fetchReceiverSlots(process.processType, process.processId).then((next) => {
+    void fetchReceiverSlots(slot.processType, slot.processId).then((next) => {
       if (cancelled) return;
       setRows(next);
       setLoading(false);
@@ -54,34 +52,23 @@ export function FolderSettingsModal({
     return () => {
       cancelled = true;
     };
-  }, [open, process?.processType, process?.processId]);
+  }, [open, slot.processType, slot.processId]);
 
-  const usable = useMemo(() => (rows ? slots : []), [rows, slots]);
+  const holder = rows?.find((r) => r.folderType === slot.folderType)?.folder ?? null;
   const initial = useMemo(
-    () =>
-      currentChoice({
-        folderId: folder.id,
-        slots: usable,
-        holders: Object.fromEntries((rows ?? []).map((r) => [r.folderType, r.folder?.id ?? null])),
-      }),
-    [folder.id, usable, rows],
+    () => currentChoice({ folderId: folder.id, slots, holders: { [slot.folderType]: holder?.id ?? null } }),
+    [folder.id, slots, slot.folderType, holder?.id],
   );
   useEffect(() => {
-    if (open && !loading) setChoice(initial);
+    if (open && !loading) setChecked(initial !== CHOICE_NONE);
   }, [open, loading, initial]);
 
-  const options = [CHOICE_NONE, ...usable.map(slotChoice)].map((value) => ({
-    value: value as Choice,
-    label: choiceLabel(value as Choice, usable),
-  }));
-
-  const chosenSlot = usable.find((s) => slotChoice(s) === choice);
-  const holder = chosenSlot ? rows?.find((r) => r.folderType === chosenSlot.folderType)?.folder : null;
-  const movesFiling = !!holder && holder.id !== folder.id;
+  const choice = checked ? slotChoice(slot) : CHOICE_NONE;
+  const movesFiling = checked && !!holder && holder.id !== folder.id;
 
   async function save() {
     setSaving(true);
-    for (const step of planChoiceChange(folder.id, initial, choice, usable)) {
+    for (const step of planChoiceChange(folder.id, initial, choice, slots)) {
       const res = await sendReceiverRequest(step);
       if (!res.ok) {
         toast.error(res.error);
@@ -98,17 +85,15 @@ export function FolderSettingsModal({
     <Modal open={open} onClose={onClose} labelledBy="folder-settings-title" disableEscape={saving}>
       <ModalHeader titleId="folder-settings-title" title="Folder settings" subtitle={folder.title || "Untitled folder"} onClose={onClose} />
       <div className="space-y-2">
-        <span className="text-xs font-medium text-muted-foreground">This folder receives</span>
-        <Select<Choice>
-          value={choice}
-          options={options}
-          onChange={setChoice}
+        <Checkbox
+          checked={checked}
+          onChange={(e) => setChecked(e.target.checked)}
           disabled={loading || saving}
-          ariaLabel="This folder receives"
+          label={`New meeting notebooks for ${space} file here`}
         />
         {movesFiling && holder && (
           <p className="text-xs text-muted-foreground" data-testid="receiver-current">
-            Currently: {pathText(holder.path)}. Switching moves future filing here.
+            Currently: {pathText(holder.path)}. Saving moves future filing here.
           </p>
         )}
       </div>

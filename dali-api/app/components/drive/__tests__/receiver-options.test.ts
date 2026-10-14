@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   CHOICE_NONE,
-  choiceLabel,
   currentChoice,
   eligibleSlotsFor,
   isPageFolder,
+  meetingsOptionFor,
   planChoiceChange,
   projectIdFor,
   receiverPickerRows,
@@ -167,17 +167,49 @@ describe("planChoiceChange", () => {
   });
 });
 
-describe("choiceLabel", () => {
-  const slots = eligibleSlotsFor("core", null, true, false);
+describe("meetingsOptionFor", () => {
+  const base = { scopeLabel: "", items: [], folderId: "f1", isCore: true, isProjectMember: false };
 
-  it("names none and each slot", () => {
-    expect(choiceLabel(CHOICE_NONE, slots)).toBe("None");
-    expect(choiceLabel(slotChoice(slots[0]), slots)).toBe("New meeting notebooks file here");
-    expect(choiceLabel(slotChoice(slots[1]), slots)).toBe("Agreements");
+  it("names General for the Lab drive", () => {
+    expect(meetingsOptionFor({ ...base, scopeId: "lab" })).toEqual({
+      slot: { processType: "Lab", processId: null, folderType: "Meetings" },
+      space: "General",
+    });
   });
 
-  it("falls back to None for a slot that isn't offered", () => {
-    expect(choiceLabel("slot:Core:Agreements", [])).toBe("None");
+  it("names Core for the Core drive", () => {
+    expect(meetingsOptionFor({ ...base, scopeId: "core" })).toMatchObject({
+      slot: { processType: "Core", folderType: "Meetings" },
+      space: "Core",
+    });
+  });
+
+  it("names the project in its embedded drive, for a member", () => {
+    expect(
+      meetingsOptionFor({ ...base, scopeId: "project:p1", scopeLabel: "Atlas", isCore: false, isProjectMember: true }),
+    ).toEqual({ slot: { processType: "Project", processId: "p1", folderType: "Meetings" }, space: "Atlas" });
+  });
+
+  it("names the project from its top-level folder in the Projects drive", () => {
+    const items = [
+      { id: "p1", parentFolderId: null, title: "Atlas" },
+      { id: "f1", parentFolderId: "p1", title: "Notes" },
+    ];
+    expect(meetingsOptionFor({ ...base, scopeId: "projects", scopeLabel: "Projects", items })).toMatchObject({
+      slot: { processType: "Project", processId: "p1" },
+      space: "Atlas",
+    });
+  });
+
+  it("offers nothing where the space has no Meetings slot", () => {
+    for (const scopeId of ["hiring", "mentorship", "education", "mine"]) {
+      expect(meetingsOptionFor({ ...base, scopeId })).toBeNull();
+    }
+  });
+
+  it("offers nothing to a viewer who can't change it", () => {
+    expect(meetingsOptionFor({ ...base, scopeId: "lab", isCore: false, isProjectMember: true })).toBeNull();
+    expect(meetingsOptionFor({ ...base, scopeId: "project:p1", isCore: false, isProjectMember: false })).toBeNull();
   });
 });
 

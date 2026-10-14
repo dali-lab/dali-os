@@ -6,14 +6,11 @@ const at = new Date("2026-01-01T00:00:00Z");
 const base = { id: "i", title: "T", parentFolderId: null, updatedAt: at, href: "/x" };
 const item = (type: string, extra: Record<string, unknown> = {}) =>
   ({ ...base, type, iconEmoji: null, ...extra }) as DriveItem;
-const shortcut = (extra: Record<string, unknown> = {}) =>
-  item("shortcut", { targetId: "t", targetType: "doc", canOpen: true, originalInTrash: false, ...extra });
-
-const all = { share: true, fileIn: true, favorite: true, partner: true };
-const none = { share: false, fileIn: false, favorite: false, partner: false };
+const all = { share: true, favorite: true, partner: true };
+const none = { share: false, favorite: false, partner: false };
 
 describe("menuEntries", () => {
-  it("offers File in… and Add shortcut to… beside Move to… for a page that can be filed", () => {
+  it("offers the full set for a page", () => {
     expect(menuEntries(item("doc"), all)).toEqual([
       "open",
       "favorite",
@@ -21,11 +18,8 @@ describe("menuEntries", () => {
       "partner",
       "rename",
       "move",
-      "file-in",
-      "add-shortcut",
       "delete",
     ]);
-    expect(menuEntries(item("folder"), { ...all, partner: false })).toContain("file-in");
   });
 
   it("offers Favorite on a form, but never Share", () => {
@@ -53,19 +47,12 @@ describe("menuEntries", () => {
     }
   });
 
-  it("leaves them out when the item can't be filed", () => {
-    expect(menuEntries(item("doc"), { ...all, fileIn: false })).not.toContain("file-in");
-    expect(menuEntries(item("file"), { ...all, fileIn: false })).not.toContain("add-shortcut");
-  });
-
   it("leaves Rename, Move and Delete off in a read-only space", () => {
     expect(menuEntries(item("doc"), { ...all, readOnly: true })).toEqual([
       "open",
       "favorite",
       "share",
       "partner",
-      "file-in",
-      "add-shortcut",
     ]);
     expect(menuEntries(item("file"), { ...none, readOnly: true })).toEqual(["open"]);
   });
@@ -74,14 +61,5 @@ describe("menuEntries", () => {
     expect(menuEntries(item("file"), none)).toEqual(["open", "rename", "move", "delete"]);
     expect(menuEntries(item("agreement"), none)).toEqual(["open", "rename"]);
     expect(menuEntries(item("rubric"), none)).toEqual(["open"]);
-  });
-
-  it("lets a shortcut be opened, moved and deleted, but not renamed, shared or filed", () => {
-    expect(menuEntries(shortcut(), { ...all, fileIn: false })).toEqual(["open", "move", "delete"]);
-  });
-
-  it("offers only Delete for a shortcut the viewer can't open", () => {
-    expect(menuEntries(shortcut({ canOpen: false }), all)).toEqual(["delete"]);
-    expect(menuEntries(shortcut({ canOpen: false, originalInTrash: true }), all)).toEqual(["delete"]);
   });
 });

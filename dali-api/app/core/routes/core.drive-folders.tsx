@@ -50,7 +50,7 @@ export default function CoreDriveFoldersPage() {
             Core, and you can also mark a folder from its Folder settings in Drive. Hiring has its own
             under Hiring ▸ Drive folders.
           </p>
-          <DriveReceivers processType="Core" processId={processId} title="Receiver folders" className="mt-6" />
+          <DriveReceivers processType="Core" processId={processId} title="Folders" className="mt-6" />
         </>
       ) : (
         <>

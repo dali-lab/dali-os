@@ -8,10 +8,13 @@ import {
   meetingNotePayload,
   inviteOf,
   MeetingNoteFields,
+  type FilingSuggestionInput,
 } from "~/calendar/components/MeetingNoteFields";
 import { filedNoteFrom, type FiledNoteResponse } from "~/calendar/lib/filed-note";
 import { useFiledNoteToast } from "~/calendar/lib/useFiledNoteToast";
 import { useSeriesNotebook } from "~/calendar/lib/useSeriesNotebook";
+import { suggestInputOfMeeting } from "~/calendar/lib/note-suggest-input";
+import type { EditContext } from "~/calendar/components/EditMeetingModal";
 
 // Post-hoc counterpart to the create modal's meeting-note fields: adds a notes
 // doc to a meeting that was created without one. The note config (which
@@ -150,6 +153,22 @@ function AddMeetingNoteModal({
   const showFiledNote = useFiledNoteToast();
   const { offerFutureFiling } = useSeriesNotebook();
 
+  // The guests decide which notebooks are suggested. A meeting the viewer can't
+  // read the context of just gets no suggestions.
+  const [suggest, setSuggest] = useState<FilingSuggestionInput | null | undefined>(undefined);
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/scheduled-meetings/${meetingId}/edit-context`, { credentials: "include" })
+      .then(async (res) => (res.ok ? suggestInputOfMeeting((await res.json()) as EditContext) : null))
+      .catch(() => null)
+      .then((input) => {
+        if (!cancelled) setSuggest(input);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [meetingId]);
+
   // The note is being added explicitly, so it's always "enabled" — the toggle
   // that gates it in the create form has no place here.
   useEffect(() => {
@@ -231,14 +250,19 @@ function AddMeetingNoteModal({
           <p className="text-sm text-muted-foreground">
             Starts a shared note doc linked to this meeting.
           </p>
-          <MeetingNoteFields
-            note={note}
-            surface="note"
-            fieldClass={fieldClass}
-            labelClass={labelClass}
-            meetingTitle={meetingTitle}
-            meetingId={meetingId}
-          />
+          {suggest === undefined ? (
+            <p className="text-sm text-muted-foreground">Loading</p>
+          ) : (
+            <MeetingNoteFields
+              note={note}
+              surface="note"
+              fieldClass={fieldClass}
+              labelClass={labelClass}
+              meetingTitle={meetingTitle}
+              meetingId={meetingId}
+              suggest={suggest ?? undefined}
+            />
+          )}
           {fetcher.data?.error && <p className="text-sm text-red-600">{fetcher.data.error}</p>}
         </div>
 

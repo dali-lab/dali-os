@@ -7,8 +7,11 @@ vi.mock("~/lib/bindings.server", () => ({
   LAB_PROCESS_ID: "lab",
 }));
 
+vi.mock("~/lib/meeting-shares.server", () => ({ syncMeetingShares: vi.fn() }));
+
 import { prisma } from "~/lib/db";
-import { ensureMeetingNotebook, moveIntoNotebook } from "~/lib/pages";
+import { syncMeetingShares } from "~/lib/meeting-shares.server";
+import { ensureMeetingNotebook, moveIntoNotebook, trashNotebookIfAbandoned } from "~/lib/pages";
 
 const page = vi.mocked(prisma.page);
 const input = {
@@ -212,5 +215,92 @@ describe("moveIntoNotebook", () => {
       labListingNote: null,
       partnerVisible: false,
     });
+  });
+
+  describe("a series notebook and meeting shares", () => {
+    const fromNotebook = (over: Record<string, unknown> = {}) => ({
+      parentPageId: "nb-series",
+      workspaceType: "Project",
+      workspaceId: "p1",
+      meetingNoteId: null,
+      parent: { kind: "Notebook" },
+      ...over,
+    });
+
+    it("keeps the notebook a series points at when its last tab leaves", async () => {
+      page.findUniqueOrThrow.mockResolvedValueOnce(notebook as never).mockResolvedValueOnce(fromNotebook() as never);
+      page.count.mockResolvedValue(0);
+      vi.mocked(prisma.scheduledMeeting.findFirst).mockResolvedValue({ id: "m1" } as never);
+
+      await moveIntoNotebook("note-1", "nb-team");
+
+      expect(prisma.scheduledMeeting.findFirst).toHaveBeenCalledWith({
+        where: { notebookId: "nb-series" },
+        select: { id: true },
+      });
+      expect(page.update).toHaveBeenCalledTimes(1);
+    });
+
+    it("trashes an emptied notebook no series points at", async () => {
+      page.findUniqueOrThrow.mockResolvedValueOnce(notebook as never).mockResolvedValueOnce(fromNotebook() as never);
+      page.count.mockResolvedValue(0);
+      vi.mocked(prisma.scheduledMeeting.findFirst).mockResolvedValue(null);
+
+      await moveIntoNotebook("note-1", "nb-team");
+
+      expect(page.update).toHaveBeenCalledWith({ where: { id: "nb-series" }, data: { archivedAt: expect.any(Date) } });
+    });
+
+    it("re-syncs the meeting's shares when a meeting note moves", async () => {
+      page.findUniqueOrThrow
+        .mockResolvedValueOnce(notebook as never)
+        .mockResolvedValueOnce(fromNotebook({ meetingNoteId: "m1" }) as never);
+      page.count.mockResolvedValue(3);
+
+      await moveIntoNotebook("note-1", "nb-team");
+
+      expect(syncMeetingShares).toHaveBeenCalledWith("m1");
+    });
+
+    it("does not sync for a plain doc", async () => {
+      page.findUniqueOrThrow.mockResolvedValueOnce(notebook as never).mockResolvedValueOnce(fromNotebook() as never);
+      page.count.mockResolvedValue(3);
+
+      await moveIntoNotebook("doc-1", "nb-team");
+
+      expect(syncMeetingShares).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe("trashNotebookIfAbandoned", () => {
+  const findPointer = vi.mocked(prisma.scheduledMeeting.findFirst);
+
+  it("trashes a notebook with no live tabs that no series points at", async () => {
+    page.count.mockResolvedValue(0);
+    findPointer.mockResolvedValue(null);
+
+    await trashNotebookIfAbandoned("nb-1");
+
+    expect(page.count).toHaveBeenCalledWith({ where: { parentPageId: "nb-1", archivedAt: null } });
+    expect(page.update).toHaveBeenCalledWith({ where: { id: "nb-1" }, data: { archivedAt: expect.any(Date) } });
+  });
+
+  it("keeps a notebook that still has tabs", async () => {
+    page.count.mockResolvedValue(1);
+    findPointer.mockResolvedValue(null);
+
+    await trashNotebookIfAbandoned("nb-1");
+
+    expect(page.update).not.toHaveBeenCalled();
+  });
+
+  it("keeps an empty notebook a series points at", async () => {
+    page.count.mockResolvedValue(0);
+    findPointer.mockResolvedValue({ id: "m1" } as never);
+
+    await trashNotebookIfAbandoned("nb-1");
+
+    expect(page.update).not.toHaveBeenCalled();
   });
 });

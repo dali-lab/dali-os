@@ -4,37 +4,60 @@ import { getPageAccess, PAGE_ACCESS_SELECT, type PageShape } from "~/lib/pageAcc
 import type { SharePrincipalType } from "~/generated/prisma/client";
 
 type Principal = { principalType: SharePrincipalType; principalId: string };
+type Target = PageShape & { id: string };
 
 const keyOf = (p: Principal) => `${p.principalType}:${p.principalId}`;
+const grantKey = (pageId: string, p: Principal) => `${pageId}:${keyOf(p)}`;
+
+/** The pages this meeting justifies sharing: its series notebook, the notebook
+ *  each live note sits in, and its live whiteboards. */
+async function justifiedPages(meetingId: string, seriesNotebook: Target | null): Promise<Target[]> {
+  const rows = await prisma.page.findMany({
+    where: { archivedAt: null, OR: [{ meetingNoteId: meetingId }, { meetingWhiteboardId: meetingId }] },
+    select: {
+      ...PAGE_ACCESS_SELECT,
+      meetingNoteId: true,
+      meetingWhiteboardId: true,
+      parent: { select: { ...PAGE_ACCESS_SELECT, kind: true } },
+    },
+  });
+  const pages = new Map<string, Target>();
+  if (seriesNotebook) pages.set(seriesNotebook.id, seriesNotebook);
+  for (const row of rows) {
+    if (row.meetingWhiteboardId === meetingId) pages.set(row.id, row);
+    const parent = row.parent;
+    if (row.meetingNoteId === meetingId && parent?.kind === "Notebook" && parent.archivedAt === null) {
+      pages.set(parent.id, parent);
+    }
+  }
+  return [...pages.values()];
+}
 
 async function desiredPrincipals(
-  meeting: {
-    scopeType: string;
-    scopeId: string | null;
-    participantUserIds: string[];
-    organizerId: string;
-    notebook: PageShape | null;
-  },
+  meeting: { scopeType: string; scopeId: string | null; participantUserIds: string[]; organizerId: string },
+  pages: Target[],
   request?: Request,
-): Promise<Principal[]> {
-  const { notebook } = meeting;
-  if (!notebook) return [];
+): Promise<Map<string, Principal[]>> {
+  const out = new Map<string, Principal[]>();
+  if (pages.length === 0) return out;
 
   const groupId = meeting.scopeType === "Group" ? meeting.scopeId : null;
   const groupMembers = new Set(groupId ? await resolveGroupMembers(groupId) : []);
   const people = [...new Set([meeting.organizerId, ...meeting.participantUserIds])].filter(
     (id) => !groupMembers.has(id),
   );
-  const access = await Promise.all(
-    people.map((id) => getPageAccess(id, notebook, request, { ignoreShares: true })),
-  );
-
-  return [
-    ...(groupId ? [{ principalType: "Group" as const, principalId: groupId }] : []),
-    ...people
-      .filter((_, i) => !access[i].canEdit)
-      .map((principalId) => ({ principalType: "User" as const, principalId })),
-  ];
+  for (const page of pages) {
+    const access = await Promise.all(
+      people.map((id) => getPageAccess(id, page, request, { ignoreShares: true })),
+    );
+    out.set(page.id, [
+      ...(groupId ? [{ principalType: "Group" as const, principalId: groupId }] : []),
+      ...people
+        .filter((_, i) => !access[i].canEdit)
+        .map((principalId) => ({ principalType: "User" as const, principalId })),
+    ]);
+  }
+  return out;
 }
 
 async function applyMeetingShares(meetingId: string, request?: Request): Promise<void> {
@@ -51,24 +74,29 @@ async function applyMeetingShares(meetingId: string, request?: Request): Promise
   });
   if (!meeting) return;
 
-  const desired = await desiredPrincipals(meeting, request);
-  const notebookId = meeting.notebook?.id ?? null;
-  const desiredKeys = new Set(desired.map(keyOf));
+  const pages = await justifiedPages(meetingId, meeting.notebook);
+  const desired = await desiredPrincipals(meeting, pages, request);
+  const desiredKeys = new Set(pages.flatMap((p) => (desired.get(p.id) ?? []).map((d) => grantKey(p.id, d))));
 
   const grants = await prisma.meetingShareGrant.findMany({
     where: { scheduledMeetingId: meetingId },
     select: { id: true, pageId: true, principalType: true, principalId: true, pageShareId: true, createdShare: true },
   });
-  const grantedHere = new Set(grants.filter((g) => g.pageId === notebookId).map(keyOf));
-  const stale = grants.filter((g) => g.pageId !== notebookId || !desiredKeys.has(keyOf(g)));
-  const toGrant = desired.filter((p) => !grantedHere.has(keyOf(p)));
+  const grantedKeys = new Set(grants.map((g) => grantKey(g.pageId, g)));
+  const stale = grants.filter((g) => !desiredKeys.has(grantKey(g.pageId, g)));
+  const toGrantByPage = pages
+    .map((page) => ({
+      pageId: page.id,
+      toGrant: (desired.get(page.id) ?? []).filter((p) => !grantedKeys.has(grantKey(page.id, p))),
+    }))
+    .filter((entry) => entry.toGrant.length > 0);
 
-  if (stale.length === 0 && toGrant.length === 0) return;
+  if (stale.length === 0 && toGrantByPage.length === 0) return;
 
   await prisma.$transaction(async (tx) => {
-    if (notebookId && toGrant.length > 0) {
+    for (const { pageId, toGrant } of toGrantByPage) {
       const existing = await tx.pageShare.findMany({
-        where: { pageId: notebookId, OR: toGrant },
+        where: { pageId, OR: toGrant },
         select: { id: true, principalType: true, principalId: true, permission: true },
       });
       const existingKeys = new Set(existing.map(keyOf));
@@ -84,7 +112,7 @@ async function applyMeetingShares(meetingId: string, request?: Request): Promise
       if (missing.length > 0) {
         await tx.pageShare.createMany({
           data: missing.map((p) => ({
-            pageId: notebookId,
+            pageId,
             ...p,
             permission: "Edit" as const,
             createdById: meeting.organizerId,
@@ -95,7 +123,7 @@ async function applyMeetingShares(meetingId: string, request?: Request): Promise
 
       const shares = missing.length > 0
         ? await tx.pageShare.findMany({
-            where: { pageId: notebookId, OR: toGrant },
+            where: { pageId, OR: toGrant },
             select: { id: true, principalType: true, principalId: true },
           })
         : existing;
@@ -103,7 +131,7 @@ async function applyMeetingShares(meetingId: string, request?: Request): Promise
       await tx.meetingShareGrant.createMany({
         data: shares.map((s) => ({
           scheduledMeetingId: meetingId,
-          pageId: notebookId,
+          pageId,
           principalType: s.principalType,
           principalId: s.principalId,
           pageShareId: s.id,
@@ -119,20 +147,11 @@ async function applyMeetingShares(meetingId: string, request?: Request): Promise
 
       const candidateShareIds = stale.filter((g) => g.createdShare).map((g) => g.pageShareId);
       if (candidateShareIds.length > 0) {
-        const [stillGranted, shortcuts] = await Promise.all([
-          tx.meetingShareGrant.findMany({
-            where: { pageShareId: { in: candidateShareIds } },
-            select: { pageShareId: true },
-          }),
-          tx.page.findMany({
-            where: { grantShareId: { in: candidateShareIds } },
-            select: { grantShareId: true },
-          }),
-        ]);
-        const inUse = new Set([
-          ...stillGranted.map((g) => g.pageShareId),
-          ...shortcuts.map((p) => p.grantShareId),
-        ]);
+        const stillGranted = await tx.meetingShareGrant.findMany({
+          where: { pageShareId: { in: candidateShareIds } },
+          select: { pageShareId: true },
+        });
+        const inUse = new Set(stillGranted.map((g) => g.pageShareId));
         const deletable = candidateShareIds.filter((id) => !inUse.has(id));
         if (deletable.length > 0) await tx.pageShare.deleteMany({ where: { id: { in: deletable } } });
       }

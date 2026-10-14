@@ -1,23 +1,10 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CalendarDays, ChevronRight, Folder, Search, X } from "lucide-react";
-import { CORAL_FOLDER } from "~/components/drive/glyphs";
+import { ChevronRight, Folder, Search, X } from "lucide-react";
+import { FolderGlyph } from "~/components/drive/FolderGlyph";
+import { PINK_FOLDER } from "~/components/drive/glyphs";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { buttonClasses } from "~/components/ui/Button";
-import { Checkbox } from "~/components/ui/Checkbox";
 import { modalCardClass } from "~/components/os-chrome";
-import {
-  EMPTY_SELECTION,
-  isLocked,
-  isSelected,
-  primaryOf,
-  removeSelection,
-  selectionFrom,
-  setPrimary,
-  toResult,
-  toggleSelection,
-  type MultiResult,
-  type MultiSelection,
-} from "~/components/drive/picker-multi";
 import { DriveScopeIcon } from "~/components/drive/scope-icon";
 
 // The one folder picker: a hybrid of type-to-filter search and drill-in
@@ -90,10 +77,11 @@ export type Row = { section?: string } & (
     }
 );
 
-export type FolderGlyphKind = "folder" | "calendar";
+export type FolderGlyphKind = "folder" | "system" | "meetings";
 
 export function folderGlyph(folderType: string | null | undefined): FolderGlyphKind {
-  return folderType === "Meetings" ? "calendar" : "folder";
+  if (!folderType) return "folder";
+  return folderType === "Meetings" ? "meetings" : "system";
 }
 
 export function isPreferred(
@@ -300,7 +288,7 @@ export function buildBrowseRows({
   return rows;
 }
 
-type FolderPickerCommonProps = {
+export type FolderPickerProps = {
   open: boolean;
   onClose: () => void;
   heading: string;
@@ -321,24 +309,8 @@ type FolderPickerCommonProps = {
   emptyText?: string;
   /** Leads the "put it here" row inside a folder: `Move into "Design"`. */
   intoVerb?: string;
+  onConfirm: (dest: Destination) => void | Promise<void>;
 };
-
-export type FolderPickerProps =
-  | (FolderPickerCommonProps & {
-      mode?: "single";
-      onConfirm: (dest: Destination) => void | Promise<void>;
-    })
-  | (FolderPickerCommonProps & {
-      /** Several destinations, one of them primary. */
-      mode: "multi";
-      /** The destinations chosen when the picker opens; the first is primary. */
-      initialDestinations?: Destination[];
-      /** Chips that stay put: already filed there, so they can't be removed or made primary here. */
-      lockedDestinations?: Destination[];
-      onConfirm: (result: MultiResult) => void | Promise<void>;
-    });
-
-export type { MultiResult } from "~/components/drive/picker-multi";
 
 export function FolderPicker(props: FolderPickerProps) {
   const {
@@ -353,19 +325,15 @@ export function FolderPicker(props: FolderPickerProps) {
     preferFolderType,
     emptyText = "There's nowhere to move this.",
   } = props;
-  const multi = props.mode === "multi";
-  const confirmLabel = props.confirmLabel ?? (multi ? "File" : "Move");
-  const pendingLabel = props.pendingLabel ?? (multi ? "Primary:" : "Move to:");
-  const intoVerb = props.intoVerb ?? (multi ? "File in" : "Move into");
-  const lockedDestinations = props.mode === "multi" ? props.lockedDestinations : undefined;
-  const initialDestinations = props.mode === "multi" ? props.initialDestinations : undefined;
+  const confirmLabel = props.confirmLabel ?? "Move";
+  const pendingLabel = props.pendingLabel ?? "Move to:";
+  const intoVerb = props.intoVerb ?? "Move into";
   const [query, setQuery] = useState("");
   const [cwd, setCwd] = useState<{ driveId: string | null; folderId: string | null }>({
     driveId: null,
     folderId: null,
   });
   const [pending, setPending] = useState<Destination | null>(null);
-  const [selection, setSelection] = useState<MultiSelection>(EMPTY_SELECTION);
   const [active, setActive] = useState(0);
   const [busy, setBusy] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -411,7 +379,6 @@ export function FolderPicker(props: FolderPickerProps) {
     if (!open) return;
     setQuery("");
     setPending(null);
-    setSelection(multi ? selectionFrom(initialDestinations ?? []) : EMPTY_SELECTION);
     setActive(0);
     setBusy(false);
     setRecentRaw(readRecentDestinations());
@@ -490,9 +457,9 @@ export function FolderPicker(props: FolderPickerProps) {
   const drillInto = useCallback(
     (driveId: string, folderId: string | null) => {
       setCwd({ driveId, folderId });
-      if (!multi) setPending({ driveId, folderId });
+      setPending({ driveId, folderId });
     },
-    [multi],
+    [],
   );
 
   const goUp = useCallback(() => {
@@ -504,8 +471,8 @@ export function FolderPicker(props: FolderPickerProps) {
     }
     const parent = folderById.get(cwd.folderId)?.parentId ?? null;
     setCwd({ driveId: cwd.driveId, folderId: parent });
-    if (!multi) setPending({ driveId: cwd.driveId, folderId: parent });
-  }, [cwd, drives.length, folderById, multi]);
+    setPending({ driveId: cwd.driveId, folderId: parent });
+  }, [cwd, drives.length, folderById]);
 
   const selectRow = useCallback(
     (row: Row) => {
@@ -514,10 +481,9 @@ export function FolderPicker(props: FolderPickerProps) {
         return;
       }
       if (row.disabled) return;
-      if (multi) setSelection((sel) => toggleSelection(sel, row.dest));
-      else setPending(row.dest);
+      setPending(row.dest);
     },
-    [drillInto, multi],
+    [drillInto],
   );
 
   const activateRow = useCallback(
@@ -531,27 +497,20 @@ export function FolderPicker(props: FolderPickerProps) {
     [drillInto, selectRow],
   );
 
-  const result = useMemo(() => toResult(selection), [selection]);
-  const canConfirm = multi
-    ? result !== null && !busy
-    : !!pending && !isDisabled(pending) && !busy;
+  const canConfirm = !!pending && !isDisabled(pending) && !busy;
 
   const confirm = useCallback(async () => {
     if (!canConfirm) return;
     setBusy(true);
     try {
-      if (props.mode === "multi") {
-        if (!result) return;
-        await props.onConfirm(result);
-        for (const dest of [...result.destinations].reverse()) writeRecentDestination(dest);
-      } else if (pending) {
+      if (pending) {
         await props.onConfirm(pending);
         writeRecentDestination(pending);
       }
     } finally {
       setBusy(false);
     }
-  }, [canConfirm, props, result, pending]);
+  }, [canConfirm, props, pending]);
 
   const onListKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -578,13 +537,9 @@ export function FolderPicker(props: FolderPickerProps) {
         }
         const row = rows[active];
         if (row) selectRow(row);
-      } else if (e.key === " " && multi && e.target === listRef.current) {
-        e.preventDefault();
-        const row = rows[active];
-        if (row) selectRow(row);
       }
     },
-    [rows, active, searching, drillInto, goUp, selectRow, confirm, canConfirm, multi],
+    [rows, active, searching, drillInto, goUp, selectRow, confirm, canConfirm],
   );
 
   // Keep the active row scrolled into view.
@@ -593,8 +548,7 @@ export function FolderPicker(props: FolderPickerProps) {
     el?.scrollIntoView({ block: "nearest" });
   }, [active, rows]);
 
-  const pendingDest = multi ? primaryOf(selection) : pending;
-  const pendingPath = pendingDest ? pathOf(pendingDest).join(" / ") : null;
+  const pendingPath = pending ? pathOf(pending).join(" / ") : null;
 
   const breadcrumb = cwd.driveId !== null ? pathOf({ driveId: cwd.driveId, folderId: cwd.folderId }) : [];
 
@@ -608,18 +562,6 @@ export function FolderPicker(props: FolderPickerProps) {
       containerClassName={modalCardClass("max-w-md flex flex-col max-h-[80vh]")}
     >
       <ModalHeader titleId="destination-picker-title" title={heading} onClose={onClose} />
-
-      {multi && (
-        <SelectionChips
-          selection={selection}
-          lockedDestinations={lockedDestinations}
-          pathOf={pathOf}
-          onRemove={(dest) =>
-            setSelection((sel) => removeSelection(sel, dest, (d) => !isLocked(lockedDestinations, d)))
-          }
-          onMakePrimary={(dest) => setSelection((sel) => setPrimary(sel, dest))}
-        />
-      )}
 
       {/* Search */}
       <div className="relative mb-3">
@@ -664,7 +606,6 @@ export function FolderPicker(props: FolderPickerProps) {
       <div
         ref={listRef}
         role="listbox"
-        aria-multiselectable={multi || undefined}
         aria-label="Destinations"
         aria-activedescendant={rows[active] ? `dest-row-${active}` : undefined}
         tabIndex={0}
@@ -677,12 +618,7 @@ export function FolderPicker(props: FolderPickerProps) {
           </p>
         ) : (
           rows.map((row, i) => {
-            const selected =
-              row.kind !== "drive" &&
-              (multi
-                ? isSelected(selection, row.dest)
-                : pending != null && destKey(row.dest) === destKey(pending));
-            const pickable = multi && row.kind !== "drive" && !row.disabled;
+            const selected = row.kind !== "drive" && pending != null && destKey(row.dest) === destKey(pending);
             const showSection = !!row.section && row.section !== rows[i - 1]?.section;
             return (
               <Fragment key={row.key}>
@@ -706,20 +642,6 @@ export function FolderPicker(props: FolderPickerProps) {
                   "disabled" in row && row.disabled ? "cursor-not-allowed opacity-40" : "",
                 ].join(" ")}
               >
-                {pickable && (
-                  <span
-                    className="shrink-0"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <Checkbox
-                      checked={selected}
-                      onChange={() => setSelection((sel) => toggleSelection(sel, row.dest))}
-                      aria-label={`File in ${row.kind === "result" ? row.path : row.label}`}
-                      tabIndex={-1}
-                      disabled={isLocked(lockedDestinations, row.dest)}
-                    />
-                  </span>
-                )}
                 {row.kind === "result" ? (
                   <>
                     <RowGlyph kind={row.glyph} />
@@ -776,8 +698,6 @@ export function FolderPicker(props: FolderPickerProps) {
             <>
               {pendingLabel} <span className="font-medium text-foreground">{pendingPath}</span>
             </>
-          ) : multi ? (
-            "Select one or more destinations"
           ) : (
             "Select a destination"
           )}
@@ -799,70 +719,12 @@ export function FolderPicker(props: FolderPickerProps) {
 }
 
 function RowGlyph({ kind }: { kind: FolderGlyphKind }) {
-  const Icon = kind === "calendar" ? CalendarDays : Folder;
-  return <Icon className={`h-4 w-4 shrink-0 ${kind === "calendar" ? CORAL_FOLDER : "text-muted-foreground"}`} aria-hidden />;
-}
-
-function SelectionChips({
-  selection,
-  lockedDestinations,
-  pathOf,
-  onRemove,
-  onMakePrimary,
-}: {
-  selection: MultiSelection;
-  lockedDestinations?: Destination[];
-  pathOf: (dest: Destination) => string[];
-  onRemove: (dest: Destination) => void;
-  onMakePrimary: (dest: Destination) => void;
-}) {
-  if (selection.items.length === 0) return null;
-  const primary = primaryOf(selection);
+  if (kind === "folder") return <Folder className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />;
   return (
-    <ul aria-label="Selected locations" className="mb-3 flex flex-col gap-1">
-      {selection.items.map((dest) => {
-        const path = pathOf(dest).join(" / ");
-        const isPrimary = primary !== null && destKey(primary) === destKey(dest);
-        const locked = isLocked(lockedDestinations, dest);
-        return (
-          <li
-            key={destKey(dest)}
-            data-testid="picker-chip"
-            className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-2 py-1 text-sm"
-          >
-            <Folder className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-            <span className="min-w-0 flex-1 truncate text-foreground" title={path}>
-              {path}
-            </span>
-            {isPrimary ? (
-              <span className="shrink-0 rounded bg-accent-coral/15 px-1.5 py-0.5 text-[11px] font-semibold text-accent-coral">
-                Primary
-              </span>
-            ) : locked ? (
-              <span className="shrink-0 text-[11px] text-muted-foreground">Shortcut</span>
-            ) : (
-              <button
-                type="button"
-                aria-label={`Make ${path} primary`}
-                onClick={() => onMakePrimary(dest)}
-                className="shrink-0 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
-              >
-                Make primary
-              </button>
-            )}
-            {!locked && (
-              <button
-                type="button"
-                aria-label={`Remove ${path}`}
-                onClick={() => onRemove(dest)}
-                className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-              >
-                <X className="h-3.5 w-3.5" aria-hidden />
-              </button>
-            )}
-          </li>
-        );
-      })}
-    </ul>
+    <FolderGlyph
+      glyph={{ tint: PINK_FOLDER, system: true, mark: kind === "meetings" ? "calendar" : null }}
+      className="h-4 w-4"
+      markClassName="h-2.5 w-2.5"
+    />
   );
 }

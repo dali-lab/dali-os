@@ -58,8 +58,14 @@ export const MovePageBodySchema = z.object({
 
 export type MovePageBody = z.infer<typeof MovePageBodySchema>;
 
+export type MovedFrom = {
+  workspaceType: WorkspaceType;
+  workspaceId: string | null;
+  parentPageId: string | null;
+};
+
 export type MovePageResult =
-  | { ok: true; clearedReceivers: string[] }
+  | { ok: true; clearedReceivers: string[]; from: MovedFrom }
   | { ok: false; status: number; error: string }
   | { ok: false; response: Response };
 
@@ -102,14 +108,11 @@ export async function movePage({
   userId,
   request,
   input,
-  extraOps = [],
 }: {
   pageId: string;
   userId: string;
   request?: Request;
   input: MovePageBody | (() => Promise<MovePageBody | Response>);
-  /** Prisma operations committed in the same transaction as the move, and discarded unrun if a check refuses it. */
-  extraOps?: Prisma.PrismaPromise<unknown>[];
 }): Promise<MovePageResult> {
   const page = await prisma.page.findUnique({
     where: { id: pageId },
@@ -148,6 +151,11 @@ export async function movePage({
     return fail(400, ROOT_MOVE_ERROR);
   }
 
+  const from: MovedFrom = {
+    workspaceType: page.workspaceType,
+    workspaceId: page.workspaceId,
+    parentPageId: page.parentPageId,
+  };
   const resolved = typeof input === "function" ? await input() : input;
   if (resolved instanceof Response) return { ok: false, response: resolved };
   const body = resolved;
@@ -295,7 +303,7 @@ export async function movePage({
       } catch (err) {
         return { ok: false, response: notebookErrorResponse(err) };
       }
-      return { ok: true, clearedReceivers: [] };
+      return { ok: true, clearedReceivers: [], from };
     }
     if (
       !parent ||
@@ -445,7 +453,6 @@ export async function movePage({
     ...(appendOnly
       ? []
       : order.map((id, index) => prisma.page.update({ where: { id }, data: { position: index } }))),
-    ...extraOps,
   ]);
 
   const [clearedReceivers] = await Promise.all([
@@ -467,5 +474,5 @@ export async function movePage({
         }),
   ]);
 
-  return { ok: true, clearedReceivers };
+  return { ok: true, clearedReceivers, from };
 }

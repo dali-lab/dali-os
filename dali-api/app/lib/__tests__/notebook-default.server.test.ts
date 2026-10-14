@@ -1,7 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db", () => ({
-  prisma: { scheduledMeeting: { findUnique: vi.fn(), findMany: vi.fn() } },
+  prisma: { scheduledMeeting: { findUnique: vi.fn(), findMany: vi.fn() }, page: { findUnique: vi.fn() } },
+}));
+vi.mock("~/mentorship/lib/pair-suggestion.server", () => ({ findMentorPair: vi.fn() }));
+vi.mock("~/mentorship/lib/pair-notebook.server", () => ({
+  pairNotebookKey: (p: { mentorId: string; menteeId: string }) => `pair:${p.mentorId}:${p.menteeId}`,
 }));
 vi.mock("~/lib/pageAccess.server", () => ({ getPageAccessBulk: vi.fn(), PAGE_ACCESS_SELECT: { id: true } }));
 vi.mock("~/lib/drive-receivers.server", () => ({
@@ -20,6 +24,7 @@ import { getPageAccessBulk } from "~/lib/pageAccess.server";
 import { findReceiver, resolveFilingFolder } from "~/lib/drive-receivers.server";
 import { notebookLocationParts } from "~/lib/note-path.server";
 import { resolveDefaultNotebook } from "~/lib/notebook-default.server";
+import { findMentorPair } from "~/mentorship/lib/pair-suggestion.server";
 
 const m = prisma as any;
 
@@ -45,7 +50,9 @@ beforeEach(() => {
   vi.mocked(findReceiver).mockResolvedValue(null);
   vi.mocked(notebookLocationParts).mockImplementation((async (n: { parentPageId: string | null; workspaceType: string }) =>
     n.parentPageId ? [`path:${n.parentPageId}`] : [n.workspaceType === "Project" ? "Projects" : "General"]) as never);
-  canView("s1", "h1", "h2", "h3");
+  m.page.findUnique.mockResolvedValue(null);
+  vi.mocked(findMentorPair).mockResolvedValue(null);
+  canView("s1", "h1", "h2", "h3", "pair-nb");
 });
 
 describe("resolveDefaultNotebook: series", () => {
@@ -192,5 +199,58 @@ describe("resolveDefaultNotebook: newPath", () => {
 
     expect(out.kind).toBe("series");
     expect(out.newPath).toBe("path:recv-lab");
+  });
+});
+
+describe("resolveDefaultNotebook: a mentor's pair notebook", () => {
+  const pair = { mentorId: "u1", menteeId: "mia", projectId: "p1", termId: "t1", domainId: "d1" };
+  const ask = () => resolveDefaultNotebook({ actorId: "u1", scopeType: "UserList", pairMenteeId: "mia" });
+
+  beforeEach(() => {
+    vi.mocked(findMentorPair).mockResolvedValue(pair);
+    m.page.findUnique.mockResolvedValue(nb("pair-nb"));
+  });
+
+  it("is the pair notebook when it already exists", async () => {
+    expect(await ask()).toMatchObject({ kind: "pair", notebook: { id: "pair-nb", path: "path:folder-of-pair-nb" } });
+    expect(findMentorPair).toHaveBeenCalledWith("u1", "mia", undefined);
+    expect(m.page.findUnique.mock.calls[0]![0].where).toEqual({ notebookKey: "pair:u1:mia" });
+  });
+
+  it("loses to the meeting's own series notebook", async () => {
+    m.scheduledMeeting.findUnique.mockResolvedValue({ notebook: nb("s1") });
+
+    expect((await resolveDefaultNotebook({ actorId: "u1", meetingId: "m1", scopeType: "UserList", pairMenteeId: "mia" })).kind).toBe("series");
+  });
+
+  it("is new, and makes nothing, when the pair notebook does not exist yet", async () => {
+    m.page.findUnique.mockResolvedValue(null);
+
+    expect(await ask()).toMatchObject({ kind: "new", notebook: null });
+  });
+
+  it("is new for an archived or non-notebook page under that key", async () => {
+    m.page.findUnique.mockResolvedValue(nb("pair-nb", { archivedAt: new Date() }));
+    expect((await ask()).kind).toBe("new");
+    m.page.findUnique.mockResolvedValue(nb("pair-nb", { kind: "Document" }));
+    expect((await ask()).kind).toBe("new");
+  });
+
+  it("is new when the actor cannot view it", async () => {
+    canView();
+
+    expect((await ask()).kind).toBe("new");
+  });
+
+  it("is new when the actor has no pair with that person", async () => {
+    vi.mocked(findMentorPair).mockResolvedValue(null);
+
+    expect((await ask()).kind).toBe("new");
+    expect(m.page.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("looks nothing up without a mentee", async () => {
+    expect((await resolveDefaultNotebook({ actorId: "u1", scopeType: "UserList" })).kind).toBe("new");
+    expect(findMentorPair).not.toHaveBeenCalled();
   });
 });

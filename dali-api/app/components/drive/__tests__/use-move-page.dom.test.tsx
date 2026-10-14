@@ -26,19 +26,16 @@ const wrapper = (children: ReactNode) => createElement(DialogProvider, null, cre
 const reply = (body: unknown = { ok: true }, status = 200) => new Response(JSON.stringify(body), { status });
 
 let calls: Array<{ url: string; method: string; body: unknown }>;
-let origin: unknown;
 let moveReply: Response;
 const unmounts: Array<() => void> = [];
 
 beforeEach(() => {
   calls = [];
-  moveReply = reply();
-  origin = { ok: true, primary: { workspaceType: "Lab", workspaceId: null, folderId: "ops", path: [] }, shortcuts: [] };
+  moveReply = reply({ ok: true, from: { workspaceType: "Lab", workspaceId: null, parentPageId: "ops" } });
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init: RequestInit = {}) => {
       calls.push({ url, method: init.method ?? "GET", body: init.body ? JSON.parse(init.body as string) : null });
-      if (url === "/api/pages/p1/shortcuts") return origin ? reply(origin) : reply({ error: "no" }, 404);
       return moveReply.clone();
     }),
   );
@@ -70,10 +67,10 @@ describe("useMovePage", () => {
     expect(onMoved).toHaveBeenCalledTimes(1);
   });
 
-  it("reads where the page was before it moves it", async () => {
+  it("makes a single request to move the page", async () => {
     const { hook } = mount();
     await act(async () => hook.result.current.pickerProps.onConfirm({ driveId: "lab", folderId: "ops" }));
-    expect(calls.map((c) => c.url)).toEqual(["/api/pages/p1/shortcuts", "/api/pages/p1/move"]);
+    expect(calls.map((c) => c.url)).toEqual(["/api/pages/p1/move"]);
   });
 
   it("offers an Undo that moves the page back to where it was", async () => {
@@ -103,13 +100,20 @@ describe("useMovePage", () => {
     expect(text()).toContain("Not allowed");
   });
 
-  it("moves without an Undo when it could not learn where the page was", async () => {
-    origin = null;
+  it("moves without an Undo when the server did not say where the page was", async () => {
+    moveReply = reply({ ok: true });
     const { hook, onMoved } = mount();
     await act(async () => hook.result.current.pickerProps.onConfirm({ driveId: "lab", folderId: "design" }));
     expect(text()).toContain("Moved “Kickoff” to Lab ▸ Design");
     expect(undoButton()).toBeUndefined();
     expect(onMoved).toHaveBeenCalledTimes(1);
+  });
+
+  it("moves without an Undo when the page came out of My Drive, which cannot be a destination", async () => {
+    moveReply = reply({ ok: true, from: { workspaceType: "Member", workspaceId: "u1", parentPageId: null } });
+    const { hook } = mount();
+    await act(async () => hook.result.current.pickerProps.onConfirm({ driveId: "lab", folderId: "design" }));
+    expect(undoButton()).toBeUndefined();
   });
 
   it("shows the server's reason and keeps the picker when the move is refused", async () => {

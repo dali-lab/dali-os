@@ -17,6 +17,30 @@ describe("notebookChoiceSchema", () => {
   });
 
   it.each([
+    [{ kind: "lab" }],
+    [{ kind: "core" }],
+    [{ kind: "project", projectId: "p1" }],
+  ])("accepts a new notebook in the space %j", (space) => {
+    expect(notebookChoiceSchema.parse({ title: "A", space })).toEqual({ title: "A", space });
+  });
+
+  it.each([
+    ["an unknown space kind", { kind: "member" }],
+    ["a project space without a project", { kind: "project" }],
+    ["a project space with an empty project", { kind: "project", projectId: "" }],
+    ["a core space carrying a project", { kind: "core", projectId: "p1" }],
+    ["a lab space carrying a project", { kind: "lab", projectId: "p1" }],
+    ["a space with no kind", {}],
+    ["a bare string", "core"],
+  ])("rejects a new notebook with %s", (_name, space) => {
+    expect(notebookChoiceSchema.safeParse({ title: "A", space }).success).toBe(false);
+  });
+
+  it("rejects a space on an existing notebook", () => {
+    expect(notebookChoiceSchema.safeParse({ existingId: "nb_1", space: { kind: "core" } }).success).toBe(false);
+  });
+
+  it.each([
     ["a location on a new notebook", { title: "A", location: { workspaceType: "Lab", workspaceId: null, parentPageId: "f1" } }],
     ["a location on an existing notebook", { existingId: "nb_1", location: { workspaceType: "Lab", workspaceId: null, parentPageId: null } }],
     ["links on a new notebook", { title: "A", links: [] }],

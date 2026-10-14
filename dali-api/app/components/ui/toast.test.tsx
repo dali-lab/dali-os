@@ -135,6 +135,56 @@ describe("useToast", () => {
     cleanup();
   });
 
+  it("replaces a toast pushed with the same id instead of stacking a second", () => {
+    const { container, api, cleanup } = captureToast();
+    act(() => {
+      api.info("Uploading 1 of 3", { id: "up", duration: 0 });
+    });
+    act(() => {
+      api.info("Uploading 2 of 3", { id: "up", duration: 0 });
+    });
+    expect(container.querySelectorAll('[role="status"]')).toHaveLength(1);
+    expect(container.textContent).toContain("Uploading 2 of 3");
+    expect(container.textContent).not.toContain("Uploading 1 of 3");
+    cleanup();
+  });
+
+  it("stacks toasts that have different ids", () => {
+    const { container, api, cleanup } = captureToast();
+    act(() => {
+      api.info("One", { id: "a" });
+      api.info("Two", { id: "b" });
+    });
+    expect(container.querySelectorAll('[role="status"]')).toHaveLength(2);
+    cleanup();
+  });
+
+  it("lets a replacement change variant and start auto-dismissing", () => {
+    vi.useFakeTimers();
+    const { container, api, cleanup } = captureToast();
+    act(() => {
+      api.info("Working", { id: "up", duration: 0 });
+    });
+    act(() => {
+      vi.advanceTimersByTime(10_000);
+    });
+    expect(container.textContent).toContain("Working");
+    act(() => {
+      api.error("Done with errors", { id: "up", duration: 1000 });
+    });
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
+    expect(container.textContent).toContain("Done with errors");
+    act(() => {
+      vi.advanceTimersByTime(900);
+    });
+    expect(container.textContent).toContain("Done with errors");
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(container.textContent).not.toContain("Done with errors");
+    cleanup();
+  });
+
   it("renders no action row when none are given", () => {
     const { container, api, cleanup } = captureToast();
     act(() => {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Plus } from "lucide-react";
+import { Plus, Search } from "lucide-react";
 import { Select } from "~/components/ui/floating";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { Button } from "~/components/ui/Button";
@@ -10,8 +10,10 @@ import {
   clearPlace,
   emptyMeetingNote,
   fetchDefaultNotebook,
+  fetchPairNotebook,
   inviteOf,
   inviteSpaceOf,
+  pickerSpaceOf,
   placeLine,
   spaceOfGroup,
   withDefault,
@@ -25,8 +27,8 @@ import {
   type NoteSpace,
   type PlaceNotebook,
 } from "~/calendar/components/meeting-note";
-import { suggestFiling } from "~/calendar/lib/suggest-filing";
-import type { GroupOption } from "~/calendar/lib/types";
+import { suggestFiling, suggestPairFiling, type PairSuggestion } from "~/calendar/lib/suggest-filing";
+import type { GroupOption, MentorPairOption } from "~/calendar/lib/types";
 
 export {
   type MeetingNoteState,
@@ -63,12 +65,74 @@ export type FilingSuggestionInput = {
   groups: GroupOption[];
   invitedGroups: GroupOption[];
   scopeGroupId: string | null;
+  viewerId?: string;
+  mentorPairs?: MentorPairOption[];
 };
 
 type PickerRequest = { space: NoteSpace | null; newLabel: string; newSpace: NoteSpace };
 
 const chipClass =
   "inline-flex max-w-full items-center gap-1 rounded-full border border-dashed border-border px-2.5 py-1 text-xs text-foreground transition-colors hover:bg-muted/60";
+
+type GroupChip = { groupId: string; label: string; reason: string; space: NoteSpace };
+
+function FilingOptions({
+  chips,
+  pairChip,
+  error,
+  onChip,
+  onPair,
+  onSearch,
+  onNew,
+}: {
+  chips: GroupChip[];
+  pairChip: PairSuggestion | null;
+  error: string | null;
+  onChip: (space: NoteSpace) => void;
+  onPair: (menteeId: string) => void;
+  onSearch: () => void;
+  onNew?: () => void;
+}) {
+  return (
+    <div className="space-y-2">
+      {(pairChip || chips.length > 0) && (
+        <ul aria-label="Suggested notebooks" className="flex flex-wrap gap-1.5">
+          {pairChip && (
+            <li>
+              <button type="button" onClick={() => onPair(pairChip.menteeId)} className={chipClass}>
+                <Plus className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden />
+                <span className="truncate">{pairChip.label}</span>
+                <span className="text-muted-foreground">{pairChip.reason}</span>
+              </button>
+            </li>
+          )}
+          {chips.map((c) => (
+            <li key={c.groupId}>
+              <button type="button" onClick={() => onChip(c.space)} className={chipClass}>
+                <Plus className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden />
+                <span className="truncate">{c.label}</span>
+                <span className="text-muted-foreground">{c.reason}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {error && <p className="text-xs text-red-600">{error}</p>}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="secondary" size="sm" onClick={onSearch}>
+          <Search className="h-3.5 w-3.5" aria-hidden />
+          Search notebooks
+        </Button>
+        {onNew && (
+          <Button variant="secondary" size="sm" onClick={onNew}>
+            <Plus className="h-3.5 w-3.5" aria-hidden />
+            New notebook
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export function MeetingNoteFields({
   note,
@@ -99,11 +163,23 @@ export function MeetingNoteFields({
   const invite = inviteOf(invitedGroups);
   const inviteSpace = inviteSpaceOf(invitedGroups);
   const [picker, setPicker] = useState<PickerRequest | null>(null);
+  const [pairError, setPairError] = useState<string | null>(null);
 
   useEffect(() => {
     if (meetingTitle.trim()) note.prefillTitle(meetingTitle.trim());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meetingTitle]);
+
+  const pairChip = useMemo(() => {
+    if (!suggest || !state.enabled) return null;
+    return suggestPairFiling({
+      attendeeIds: suggest.attendeeIds,
+      viewerId: suggest.viewerId ?? "",
+      groupsInvited: suggest.invitedGroups.length > 0,
+      pairs: suggest.mentorPairs ?? [],
+    });
+  }, [suggest, state.enabled]);
+  const pairMenteeId = pairChip?.menteeId ?? null;
 
   const manual = place !== null && !state.auto;
   const onLoaded = useRef(onDefaultLoaded);
@@ -111,7 +187,7 @@ export function MeetingNoteFields({
   useEffect(() => {
     if (!state.enabled || manual) return;
     let cancelled = false;
-    fetchDefaultNotebook({ meetingId, scopeGroupId, invite })
+    fetchDefaultNotebook({ meetingId, scopeGroupId, invite, pairMenteeId })
       .then((def) => {
         if (cancelled) return;
         note.applyDefault(def);
@@ -122,7 +198,7 @@ export function MeetingNoteFields({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.enabled, manual, meetingId, scopeGroupId, invite.projectId, invite.coreInvited]);
+  }, [state.enabled, manual, meetingId, scopeGroupId, invite.projectId, invite.coreInvited, pairMenteeId]);
 
   const chips = useMemo(() => {
     if (!suggest || !state.enabled) return [];
@@ -136,6 +212,15 @@ export function MeetingNoteFields({
   const templateProject = place?.kind === "new" && place.space.workspaceType === "Project" ? place.space.workspaceId : null;
   const { templates } = useNoteTemplates({ enabled: place?.kind === "new", projectId: templateProject });
 
+  async function pickPair(menteeId: string) {
+    setPairError(null);
+    try {
+      note.pickNotebook(await fetchPairNotebook(menteeId));
+    } catch {
+      setPairError("Couldn't open that notebook. Try Search notebooks.");
+    }
+  }
+
   function openPicker(space: NoteSpace | null) {
     setPicker({
       space,
@@ -147,7 +232,7 @@ export function MeetingNoteFields({
   const pickerModal = picker && (
     <NotebookPicker
       open
-      space={picker.space}
+      space={picker.space && pickerSpaceOf(picker.space)}
       meetingId={meetingId}
       heading={picker.space ? `Notebooks in ${picker.space.label}` : "Add to a notebook"}
       newRow={
@@ -166,6 +251,18 @@ export function MeetingNoteFields({
         note.pickNotebook(picked);
         setPicker(null);
       }}
+    />
+  );
+
+  const options = (
+    <FilingOptions
+      chips={chips}
+      pairChip={pairChip}
+      error={pairError}
+      onChip={openPicker}
+      onPair={pickPair}
+      onSearch={() => openPicker(null)}
+      onNew={canCreateNew ? () => note.startNew(inviteSpace, meetingTitle.trim()) : undefined}
     />
   );
 
@@ -212,38 +309,12 @@ export function MeetingNoteFields({
           </div>
         </div>
       )}
+      {options}
     </div>
   ) : (
     <div className="space-y-2">
       <p className="text-sm text-muted-foreground">{PICK_PLACE_COPY}</p>
-      {chips.length > 0 && (
-        <ul aria-label="Suggested notebooks" className="flex flex-wrap gap-1.5">
-          {chips.map((c) => (
-            <li key={c.groupId}>
-              <button type="button" onClick={() => openPicker(c.space)} className={chipClass}>
-                <Plus className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden />
-                <span className="truncate">{c.label}</span>
-                <span className="text-muted-foreground">{c.reason}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      <div className="flex flex-wrap items-center gap-x-3">
-        <Button variant="ghost" size="xs" onClick={() => openPicker(null)} className="-ml-2.5">
-          Search notebooks
-        </Button>
-        {canCreateNew && (
-          <Button
-            variant="ghost"
-            size="xs"
-            onClick={() => note.startNew(inviteSpace, meetingTitle.trim())}
-            className="-ml-2.5"
-          >
-            Or create a new notebook for this meeting's notes
-          </Button>
-        )}
-      </div>
+      {options}
     </div>
   );
 

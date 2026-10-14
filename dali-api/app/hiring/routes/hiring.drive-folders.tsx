@@ -41,7 +41,7 @@ export default function HiringDriveFoldersPage() {
             Where hiring files its forms and application templates. Each slot takes any folder inside
             Hiring, and you can also mark a folder from its Folder settings in Drive.
           </p>
-          <DriveReceivers processType="HiringCycle" processId={processId} title="Receiver folders" className="mt-6" />
+          <DriveReceivers processType="HiringCycle" processId={processId} title="Folders" className="mt-6" />
         </>
       ) : (
         <>

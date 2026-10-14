@@ -188,9 +188,16 @@ export function CreateEventModal({
   const invitedGroups = selectedGroupIds.flatMap((id) => groupsById.get(id) ?? []);
   const scopeGroupId = selectedGroupIds.length === 1 && selectedUserIds.length === 0 ? selectedGroupIds[0]! : null;
   const filingSuggestions = useMemo(
-    () => ({ attendeeIds: resolvedParticipantIds, groups: data.groups, invitedGroups, scopeGroupId }),
+    () => ({
+      attendeeIds: resolvedParticipantIds,
+      groups: data.groups,
+      invitedGroups,
+      scopeGroupId,
+      viewerId: data.currentUserId,
+      mentorPairs: data.mentorPairs,
+    }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [resolvedParticipantIds.join("\0"), data.groups, selectedGroupIds.join("\0"), scopeGroupId],
+    [resolvedParticipantIds.join("\0"), data.groups, data.mentorPairs, data.currentUserId, selectedGroupIds.join("\0"), scopeGroupId],
   );
 
   // Send the invite from a specific calendar, not just an account — the same

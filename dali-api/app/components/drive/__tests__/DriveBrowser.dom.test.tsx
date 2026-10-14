@@ -42,6 +42,7 @@ const onNavigate = vi.fn();
 const onHistory = vi.fn();
 const onMove = vi.fn();
 const onMoveToScope = vi.fn();
+const onUploadFiles = vi.fn();
 
 let swapScopes: (scopes: DriveTreeScope[]) => void = () => {};
 
@@ -55,6 +56,8 @@ type MountOptions = {
   revealId?: string;
   typeFilter?: DriveTypeFilter;
   scopes?: DriveTreeScope[];
+  canUpload?: boolean;
+  receiverViewer?: { isCore: boolean; isProjectMember: boolean };
 };
 
 /** The browser at a location, with `onNavigate` moving it the way the hub's URL does. */
@@ -84,6 +87,8 @@ async function mount(opts: MountOptions = {}) {
       getScopeActions: () => actions,
       onBulkMove,
       onBulkDelete,
+      onUploadFiles: opts.canUpload === false ? undefined : onUploadFiles,
+      receiverViewer: opts.receiverViewer,
     })));
   }
   const Stub = createRoutesStub([{ path: "/", Component: Harness }]);
@@ -762,6 +767,17 @@ describe("DriveBrowser glyph tooltips", () => {
       await new Promise((r) => setTimeout(r, 400));
     });
     expect(document.querySelector('[role="tooltip"]')?.textContent).toBe("Folder · Everyone in the lab");
+  });
+
+  it("labels a system folder by what it receives, in pink", async () => {
+    await mount({ scopes: [{ ...lab, items: [folder("hf", { folderType: "HiringForms" } as Partial<DriveItem>)] }] });
+    const glyph = row("folder", "hf").querySelector('[data-testid="item-glyph"]')!;
+    expect(glyph.querySelector("svg.lucide-folder-cog.text-accent-pink")).not.toBeNull();
+    await act(async () => {
+      glyph.dispatchEvent(new MouseEvent("mouseenter", { bubbles: false }));
+      await new Promise((r) => setTimeout(r, 400));
+    });
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toBe("Hiring forms folder · Everyone in the lab");
   });
 
   it("leaves row clicks working through the glyph wrapper", async () => {
@@ -1598,5 +1614,173 @@ describe("DriveBrowser reveal: revealId", () => {
     await mount({ view: "list", revealId: "d1" });
     await key(pane("list"), "ArrowDown");
     expect(isChecked("d2")).toBe(true);
+  });
+});
+
+const osFile = (name: string) => new File(["x"], name, { type: "text/plain" });
+const osEntry = (file: File, isDirectory = false) => ({
+  kind: "file",
+  getAsFile: () => file,
+  webkitGetAsEntry: () => ({ isDirectory }),
+});
+
+/** A native drag event carrying OS files (or, with `types`, some other payload). */
+function fileDrag(
+  type: "dragenter" | "dragover" | "dragleave" | "drop",
+  el: Element,
+  { files = [] as File[], types = ["Files"], items }: { files?: File[]; types?: string[]; items?: unknown[] } = {},
+) {
+  const ev = new Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperty(ev, "dataTransfer", {
+    value: { types, files, items: items ?? files.map((f) => osEntry(f)), dropEffect: "none" },
+  });
+  act(() => {
+    el.dispatchEvent(ev);
+  });
+  return ev;
+}
+const overlayText = () => container.textContent?.includes("Drop files to upload") ?? false;
+const lit = (el: Element) => el.className.includes("ring-accent-coral");
+
+describe.each(["columns", "list"] as const)("DriveBrowser %s: dropping OS files uploads", (view) => {
+  it("drops on the pane into the current folder", async () => {
+    await mount({ view, folderId: "f1" });
+    const files = [osFile("a.txt"), osFile("b.txt")];
+    fileDrag("dragenter", pane(view), { files });
+    fileDrag("drop", pane(view), { files });
+    expect(onUploadFiles).toHaveBeenCalledTimes(1);
+    expect(onUploadFiles).toHaveBeenCalledWith(files);
+  });
+
+  it("shows the pane overlay while files are over it and hides it after the drop", async () => {
+    await mount({ view });
+    expect(overlayText()).toBe(false);
+    fileDrag("dragenter", pane(view), { files: [osFile("a.txt")] });
+    expect(overlayText()).toBe(true);
+    fileDrag("drop", pane(view), { files: [osFile("a.txt")] });
+    expect(overlayText()).toBe(false);
+  });
+
+  it("hides the overlay when the drag leaves the pane", async () => {
+    await mount({ view });
+    fileDrag("dragenter", pane(view), { files: [osFile("a.txt")] });
+    fileDrag("dragleave", pane(view), { files: [osFile("a.txt")] });
+    expect(overlayText()).toBe(false);
+  });
+
+  it("drops on a folder into that folder instead of the current one", async () => {
+    await mount({ view });
+    const files = [osFile("a.txt")];
+    fileDrag("dragenter", row("folder", "f1"), { files });
+    fileDrag("drop", row("folder", "f1"), { files });
+    expect(onUploadFiles).toHaveBeenCalledTimes(1);
+    expect(onUploadFiles).toHaveBeenCalledWith(files, { folderId: "f1" });
+  });
+
+  it("lights the folder under the pointer and swaps the pane overlay for it", async () => {
+    await mount({ view });
+    const files = [osFile("a.txt")];
+    fileDrag("dragenter", pane(view), { files });
+    expect(overlayText()).toBe(true);
+    fileDrag("dragover", row("folder", "f1"), { files });
+    expect(lit(row("folder", "f1"))).toBe(true);
+    expect(overlayText()).toBe(false);
+    fileDrag("dragover", row("doc", "d1"), { files });
+    expect(lit(row("folder", "f1"))).toBe(false);
+    expect(overlayText()).toBe(true);
+  });
+
+  it("does not treat a document row as a drop target", async () => {
+    await mount({ view });
+    const files = [osFile("a.txt")];
+    fileDrag("dragenter", row("doc", "d1"), { files });
+    fileDrag("drop", row("doc", "d1"), { files });
+    expect(onUploadFiles).toHaveBeenCalledWith(files);
+  });
+
+  it("ignores drags that carry no files (moving Drive items)", async () => {
+    await mount({ view });
+    fileDrag("dragenter", pane(view), { types: ["text/plain"] });
+    expect(overlayText()).toBe(false);
+    const over = fileDrag("dragover", row("folder", "f1"), { types: ["text/plain"] });
+    expect(over.defaultPrevented).toBe(false);
+    expect(lit(row("folder", "f1"))).toBe(false);
+    fileDrag("drop", row("folder", "f1"), { types: ["text/plain"] });
+    expect(onUploadFiles).not.toHaveBeenCalled();
+  });
+
+  it("accepts the drop by cancelling dragover for files", async () => {
+    await mount({ view });
+    const over = fileDrag("dragover", row("folder", "f1"), { files: [osFile("a.txt")] });
+    expect(over.defaultPrevented).toBe(true);
+  });
+
+  it("skips dropped OS folders and tells the upload handler how many", async () => {
+    await mount({ view });
+    const a = osFile("a.txt");
+    const dir = osFile("Photos");
+    fileDrag("drop", pane(view), { files: [a, dir], items: [osEntry(a), osEntry(dir, true)] });
+    expect(onUploadFiles).toHaveBeenCalledWith([a], { skippedFolders: 1 });
+  });
+
+  it("passes a folders-only drop through with no files so the user is told", async () => {
+    await mount({ view });
+    const dir = osFile("Photos");
+    fileDrag("drop", row("folder", "f1"), { files: [dir], items: [osEntry(dir, true)] });
+    expect(onUploadFiles).toHaveBeenCalledWith([], { folderId: "f1", skippedFolders: 1 });
+  });
+
+  it("shows no overlay and uploads nothing when the host offers no upload", async () => {
+    await mount({ view, canUpload: false });
+    fileDrag("dragenter", pane(view), { files: [osFile("a.txt")] });
+    expect(overlayText()).toBe(false);
+    fileDrag("drop", pane(view), { files: [osFile("a.txt")] });
+    expect(onUploadFiles).not.toHaveBeenCalled();
+  });
+});
+
+describe("DriveBrowser list and grid: dropping OS files on a folder inside a folder", () => {
+  it("uploads into a folder row", async () => {
+    await mount({ view: "list", folderId: "f1" });
+    const files = [osFile("a.txt")];
+    fileDrag("drop", row("folder", "f2"), { files });
+    expect(onUploadFiles).toHaveBeenCalledWith(files, { folderId: "f2" });
+  });
+
+  it("uploads into a folder tile and lights it", async () => {
+    await mount({ view: "grid", folderId: "f1" });
+    const files = [osFile("a.txt")];
+    fileDrag("dragover", row("folder", "f2"), { files });
+    expect(lit(row("folder", "f2"))).toBe(true);
+    fileDrag("drop", row("folder", "f2"), { files });
+    expect(onUploadFiles).toHaveBeenCalledWith(files, { folderId: "f2" });
+    expect(lit(row("folder", "f2"))).toBe(false);
+describe("DriveBrowser: Folder settings", () => {
+  const hiring: DriveTreeScope = { id: "hiring", label: "Hiring", iconEmoji: null, items: [folder("h1")] };
+  const core: DriveTreeScope = { id: "core", label: "Core", iconEmoji: null, items: [folder("c1")] };
+  const menuFor = async (scopes: DriveTreeScope[], scopeId: string, id: string, receiverViewer?: MountOptions["receiverViewer"]) => {
+    await mount({ scopes, scopeId, receiverViewer });
+    await contextMenu(row("folder", id));
+    return menuLabels();
+  };
+
+  it("is offered on a folder in a drive with a Meetings slot", async () => {
+    expect(await menuFor([lab], "lab", "f1", { isCore: true, isProjectMember: false })).toContain("Folder settings…");
+  });
+
+  it("is offered in Core", async () => {
+    expect(await menuFor([core], "core", "c1", { isCore: true, isProjectMember: false })).toContain("Folder settings…");
+  });
+
+  it("is not offered in Hiring, which has no Meetings slot", async () => {
+    expect(await menuFor([hiring], "hiring", "h1", { isCore: true, isProjectMember: false })).not.toContain("Folder settings…");
+  });
+
+  it("is not offered to someone who can't change where meetings file", async () => {
+    expect(await menuFor([lab], "lab", "f1", { isCore: false, isProjectMember: true })).not.toContain("Folder settings…");
+  });
+
+  it("is not offered while the receivers flag is off", async () => {
+    expect(await menuFor([lab], "lab", "f1")).not.toContain("Folder settings…");
   });
 });
