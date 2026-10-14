@@ -42,7 +42,7 @@ import {
   useRoster,
 } from "../components/pair-editing";
 import { VIBES, VIBE_META } from "../lib/vibe";
-import { emptyTermForms, isTermFormRole, type TermForms } from "../lib/term-forms";
+import { isTermFormRole, type TermForms } from "../lib/term-forms";
 import { loadTermForms, setTermForm } from "../lib/term-forms.server";
 import { LinkFormsModal } from "../components/TermFormStatus";
 import { listSelectableForms } from "~/projects/lib/form-slots";
@@ -78,7 +78,7 @@ type LoaderData = {
   // nudge action re-derives server-side). Feeds the bulk-nudge recipient
   // preview and the per-mentor nudge buttons.
   nudgeRecipients: { id: string; name: string; count: number }[];
-  // Core only: the week 5 forms linked to the selected term, and the forms
+  // Core only: each domain's week 5 forms for the selected term, and the forms
   // that can be linked. Mentees' answers may be about their mentor.
   termForms: TermForms | null;
   formOptions: { id: string; name: string }[];
@@ -234,7 +234,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const people = grid.mentors.flatMap((m) => [m.mentor.id, ...m.rows.map((r) => r.menteeId)]);
   const [termForms, formOptions] = viewerIsCore
     ? await Promise.all([
-        selectedTerm ? loadTermForms(selectedTerm, [...new Set(people)]) : emptyTermForms(),
+        selectedTerm ? loadTermForms(selectedTerm, [...new Set(people)]) : {},
         listSelectableForms(),
       ])
     : [null, []];
@@ -262,18 +262,21 @@ export async function action({ request }: Route.ActionArgs) {
   }
   const form = await request.formData();
   const termId = form.get("termId");
+  const domainId = form.get("domainId");
   const role = form.get("role");
   const formId = form.get("formId");
   if (
     form.get("intent") !== "link-form" ||
     typeof termId !== "string" ||
     !termId ||
+    typeof domainId !== "string" ||
+    !domainId ||
     !isTermFormRole(role) ||
     typeof formId !== "string"
   ) {
     return Response.json({ error: "Bad request" }, { status: 400 });
   }
-  await setTermForm(termId, role, formId || null);
+  await setTermForm(termId, domainId, role, formId || null);
   return { ok: true };
 }
 
@@ -586,11 +589,13 @@ export default function MentorshipBrowse() {
         </div>
       </div>
 
-      {data.termForms && data.filters.termId && (
+      {linkFormsOpen && data.termForms && data.filters.termId && (
         <LinkFormsModal
-          open={linkFormsOpen}
+          open
           onClose={() => setLinkFormsOpen(false)}
           termId={data.filters.termId}
+          domains={data.options.domains}
+          initialDomainId={data.filters.domainId}
           termForms={data.termForms}
           forms={data.formOptions}
         />

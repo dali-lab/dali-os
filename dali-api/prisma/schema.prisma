@@ -798,6 +798,7 @@ model Domain {
   eligibilities             DomainEligibility[]
   projectAssignments        ProjectAssignment[]
   mentorshipPairs           MentorshipPair[]
+  mentorshipTermForms       MentorshipTermForm[]
   externalMentors           ExternalMentor[]
   tasks                     Task[]
   projectRoleRequests       ProjectRoleRequest[]
@@ -3402,20 +3403,24 @@ model MentorshipPair {
 }
 
 // The week 5 check-in forms Core links to a term's mentorship notes page, one
-// per side of the pairing. Each person's response shows beside their name.
+// per domain and side of the pairing. Each person's response shows beside
+// their name.
 model MentorshipTermForm {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  termId String
-  term   Term   @relation(fields: [termId], references: [id], onDelete: Cascade)
+  termId   String
+  term     Term   @relation(fields: [termId], references: [id], onDelete: Cascade)
+  domainId String
+  domain   Domain @relation(fields: [domainId], references: [id], onDelete: Cascade)
   // "mentor" | "mentee"
-  role   String
-  formId String
-  form   Form   @relation(fields: [formId], references: [id], onDelete: Cascade)
+  role     String
+  formId   String
+  form     Form   @relation(fields: [formId], references: [id], onDelete: Cascade)
 
-  @@unique([termId, role])
+  @@unique([termId, domainId, role])
+  @@index([domainId])
   @@index([formId])
 }
 

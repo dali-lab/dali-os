@@ -1,4 +1,4 @@
-// The week 5 check-in forms linked to a term's mentorship notes page. Lives
+// The week 5 check-in forms linked to a term's mentorship notes page, per domain. Lives
 // apart from the server loader so the grid and its tests can import it without
 // a Prisma client.
 
@@ -20,10 +20,17 @@ export type TermFormSlot = {
   responses: Record<string, TermFormResponse>;
 };
 
-export type TermForms = Record<TermFormRole, TermFormSlot>;
+export type DomainTermForms = Record<TermFormRole, TermFormSlot>;
 
-export function emptyTermForms(): TermForms {
+// Keyed by domain id. Each domain links its own mentee and mentor forms.
+export type TermForms = Record<string, DomainTermForms>;
+
+export function emptyDomainTermForms(): DomainTermForms {
   return { mentee: { form: null, responses: {} }, mentor: { form: null, responses: {} } };
+}
+
+export function domainTermForms(forms: TermForms, domainId: string): DomainTermForms {
+  return forms[domainId] ?? emptyDomainTermForms();
 }
 
 // Only the newest response per person counts, so a resubmission replaces the

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { emptyTermForms, isTermFormRole, latestPerUser } from "../term-forms";
+import { domainTermForms, emptyDomainTermForms, isTermFormRole, latestPerUser } from "../term-forms";
 
 describe("isTermFormRole", () => {
   it("accepts the two sides of a pairing only", () => {
@@ -22,10 +22,21 @@ describe("latestPerUser", () => {
   });
 });
 
-describe("emptyTermForms", () => {
+describe("emptyDomainTermForms", () => {
   it("returns fresh objects each call", () => {
-    const a = emptyTermForms();
+    const a = emptyDomainTermForms();
     a.mentee.responses.x = { submittedAt: "", rows: [] };
-    expect(emptyTermForms().mentee.responses).toEqual({});
+    expect(emptyDomainTermForms().mentee.responses).toEqual({});
+  });
+});
+
+describe("domainTermForms", () => {
+  it("returns the domain's own forms, or none for a domain without links", () => {
+    const design = emptyDomainTermForms();
+    design.mentor.form = { id: "f1", name: "Design mentor" };
+    const forms = { design };
+    expect(domainTermForms(forms, "design").mentor.form?.name).toBe("Design mentor");
+    expect(domainTermForms(forms, "dev").mentor.form).toBeNull();
+    expect(domainTermForms(forms, "dev").mentee.form).toBeNull();
   });
 });
