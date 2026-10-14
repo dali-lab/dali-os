@@ -1,9 +1,11 @@
 import type { AudienceKind } from "~/lib/page-audience";
+import { RECEIVER_LABELS, type ReceiverFolderType } from "~/lib/drive-receivers";
 import type { ShortcutTargetType } from "~/lib/shortcut-targets";
 
 export const CORAL_FOLDER = "text-accent-coral/80";
 const TEAL_FOLDER = "text-accent-teal/80";
 const MUTED_FOLDER = "text-muted-foreground";
+export const PINK_FOLDER = "text-accent-pink";
 
 /** Folder color follows who can see it; no audience (synthetic folders) keeps the default. */
 export function folderTintClass(audience?: { kind: AudienceKind } | null): string {
@@ -40,7 +42,7 @@ export type GlyphSource = PlainGlyphSource | ShortcutGlyphSource;
 
 export type ItemGlyph =
   | { kind: "emoji"; emoji: string }
-  | { kind: "folder"; tint: string; mark: "calendar" | "tag" | null }
+  | { kind: "folder"; tint: string; mark: "calendar" | null; system: boolean; folderType: string | null }
   | { kind: "notebook"; tabs: string | null }
   | { kind: "whiteboard" }
   | { kind: "doc" }
@@ -64,9 +66,9 @@ export function pickGlyph(item: GlyphSource): ItemGlyph {
   }
   switch (item.type) {
     case "folder": {
-      const type = item.folderType;
-      const mark = type === "Meetings" ? "calendar" : type && type !== "Root" ? "tag" : null;
-      return { kind: "folder", tint: folderTintClass(item.audience), mark };
+      const type = item.folderType ?? null;
+      if (type) return { kind: "folder", tint: PINK_FOLDER, mark: type === "Meetings" ? "calendar" : null, system: true, folderType: type };
+      return { kind: "folder", tint: folderTintClass(item.audience), mark: null, system: false, folderType: null };
     }
     case "doc":
       return item.isWhiteboard ? { kind: "whiteboard" } : { kind: "doc" };
@@ -101,6 +103,15 @@ export function folderCountLabel(itemCount?: number): string | null {
   return itemCount === 1 ? "1 item" : `${itemCount} items`;
 }
 
+function systemFolderName(glyph: Extract<ItemGlyph, { kind: "folder" }>, title?: string): string {
+  const type = glyph.folderType;
+  if (!type) return "Folder";
+  if (type === "Meetings") return "Meetings folder · new notebooks file here";
+  if (type === "Root") return title ? `${title} drive` : "Drive";
+  const label = RECEIVER_LABELS[type as ReceiverFolderType];
+  return label ? `${label} folder` : "Folder";
+}
+
 const SHORTCUT_TARGET_NOUN: Partial<Record<ItemGlyph["kind"], string>> = {
   folder: "a folder",
   notebook: "a notebook",
@@ -116,6 +127,8 @@ export function glyphLabel(
     originalInTrash?: boolean;
     /** The item's own type; only needed to name an emoji glyph, which hides it. */
     itemType?: string;
+    /** The item's title; names a drive root's hover text. */
+    title?: string;
   } = {},
 ): string {
   const folder = (name: string) => (ctx.audienceLabel ? `${name} · ${ctx.audienceLabel}` : name);
@@ -123,7 +136,7 @@ export function glyphLabel(
     case "emoji":
       return ctx.itemType === "folder" ? folder("Folder") : "Document";
     case "folder":
-      return folder(glyph.mark === "calendar" ? "Meetings folder · new notebooks file here" : "Folder");
+      return folder(systemFolderName(glyph, ctx.title));
     case "notebook": {
       const tabs = ctx.tabCount ?? 0;
       return `Notebook · ${tabs < 1 ? "no tabs" : `${tabs} ${tabs === 1 ? "tab" : "tabs"}`}`;

@@ -147,7 +147,7 @@ export function DriveReceivers({
           disabledDest={topLevel}
           preferFolderType={picking.folderType}
           confirmLabel="Use this folder"
-          pendingLabel="Receiver:"
+          pendingLabel="Folder:"
           emptyText="No folders in this space yet. Make one in the Drive first."
           onClose={() => setPicking(null)}
           onConfirm={(dest) => choose(picking, dest)}
