@@ -31,3 +31,19 @@ export async function setSeriesNotebookRequest(
   if (!res.ok) return { ok: false, moved: 0, skipped: 0, error: json.error ?? "Couldn't change the notebook" };
   return { ok: true, moved: json.moved ?? 0, skipped: json.skipped ?? 0 };
 }
+
+export const SERIES_CHANGE_CONFIRM = {
+  title: "Change this meeting's notebook?",
+  description: "Notes already taken stay where they are.",
+  confirmLabel: "Change",
+} as const;
+
+/** The notebook the organizer picked by hand when it differs from the series' current one; null when nothing changed. */
+export function changedSeriesNotebook(
+  place: { kind: "existing"; notebook: { id: string } } | { kind: "new" } | null,
+  auto: boolean,
+  currentId: string | null,
+): string | null {
+  if (!place || place.kind !== "existing" || auto) return null;
+  return place.notebook.id === currentId ? null : place.notebook.id;
+}

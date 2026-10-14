@@ -90,3 +90,12 @@ describe("useSeriesNotebook changeNotebook", () => {
     expect(setSeriesNotebookRequest).not.toHaveBeenCalled();
   });
 });
+
+describe("useSeriesNotebook apply", () => {
+  it("sets the series notebook for the scope and reports it", async () => {
+    await act(async () => api.apply("m1", "nb2", "future"));
+    expect(setSeriesNotebookRequest).toHaveBeenCalledWith("m1", "nb2", "future");
+    expect(toast.success).toHaveBeenCalledWith("Notebook updated");
+    expect(revalidate).toHaveBeenCalled();
+  });
+});

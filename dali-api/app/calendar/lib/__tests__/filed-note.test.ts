@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { filedNoteFrom, undoFiledNote } from "../filed-note";
+import { filedNoteFrom, filedWhere, filedWhereLabel, undoFiledNote } from "../filed-note";
 
 const ok = { ok: true };
 const fail = { ok: false };
@@ -67,5 +67,27 @@ describe("filedNoteFrom", () => {
     expect(filedNoteFrom({ notePageId: null, notePath })).toBeNull();
     expect(filedNoteFrom({ notePageId: "n1", notePath: null })).toBeNull();
     expect(filedNoteFrom({})).toBeNull();
+  });
+});
+
+describe("filedWhere", () => {
+  const at = (label: string) => ({ notePath: { label, href: "/documents/n1" } });
+
+  it("names the notebook and the project it is in", () => {
+    expect(filedWhere(at("Projects ▸ Atlas ▸ Meetings ▸ Weekly sync"))).toEqual({ title: "Weekly sync", space: "Atlas" });
+  });
+
+  it("names a process space", () => {
+    expect(filedWhere(at("Core ▸ Meetings ▸ Weekly sync"))).toEqual({ title: "Weekly sync", space: "Core" });
+    expect(filedWhere(at("General ▸ Weekly sync"))).toEqual({ title: "Weekly sync", space: "General" });
+  });
+
+  it("has no space for a bare title", () => {
+    expect(filedWhere(at("Weekly sync"))).toEqual({ title: "Weekly sync", space: "" });
+    expect(filedWhereLabel(at("Weekly sync"))).toBe("Weekly sync");
+  });
+
+  it("joins title and space for the toast", () => {
+    expect(filedWhereLabel(at("Projects ▸ Atlas ▸ Weekly sync"))).toBe("Weekly sync · Atlas");
   });
 });

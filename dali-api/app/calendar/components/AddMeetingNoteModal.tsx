@@ -6,6 +6,7 @@ import {
   useMeetingNote,
   meetingNoteValid,
   meetingNotePayload,
+  inviteOf,
   MeetingNoteFields,
 } from "~/calendar/components/MeetingNoteFields";
 import { filedNoteFrom, type FiledNoteResponse } from "~/calendar/lib/filed-note";
@@ -187,12 +188,12 @@ function AddMeetingNoteModal({
         seriesNotebookId: fetcher.data.seriesNotebookId ?? null,
       });
     }
-  }, [fetcher.state, fetcher.data, onClose, showFiledNote, offerFutureFiling, meetingId, note.state.places]);
+  }, [fetcher.state, fetcher.data, onClose, showFiledNote, offerFutureFiling, meetingId]);
 
   const valid = meetingNoteValid(note.state);
 
   function submit() {
-    const payload = meetingNotePayload(note.state);
+    const payload = meetingNotePayload(note.state, inviteOf([]));
     const fields: Record<string, string> = {
       intent: "add-meeting-note",
       meetingId,
