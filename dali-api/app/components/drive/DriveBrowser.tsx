@@ -22,6 +22,7 @@ import {
   DndContext,
   DragOverlay,
   MouseSensor,
+  pointerWithin,
   TouchSensor,
   useDraggable,
   useDroppable,
@@ -1816,7 +1817,7 @@ export function DriveBrowser({
 
   return (
     <>
-    <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+    <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div ref={rootRef} className="flex flex-col gap-3" data-testid="drive-browser" onClick={handleBackgroundClick}>
         {/* ── Page toolbar: filters on the left, actions on the right ──
             Navigation, view and search live on the listing's own header

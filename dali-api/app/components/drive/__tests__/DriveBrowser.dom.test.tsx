@@ -946,6 +946,29 @@ describe("DriveBrowser drag: dropping on a folder", () => {
     await release();
     expect(onMove).not.toHaveBeenCalled();
   });
+
+  // The folder band lays tiles side by side, so a dragged row (as wide as the
+  // listing) overlaps every tile in the band by the same amount. The drop goes
+  // to the tile under the pointer, not the first one registered.
+  it.each(["list", "grid"] as const)("%s: drops into the tile under the pointer, not the first tile of the band", async (view) => {
+    const twoFolders: DriveTreeScope = { ...lab, items: [folder("f1"), folder("f3"), doc("d1")] };
+    await mount({ view, scopes: [twoFolders, mine] });
+    const tile = (left: number, right: number) =>
+      ({ left, right, top: 100, bottom: 130, width: right - left, height: 30, x: left, y: 100, toJSON: () => ({}) }) as DOMRect;
+    // The row is picked up at x=10 and is 200 wide, so at x=150 it spans
+    // 140..340: both tiles by the same amount, with the pointer in f3.
+    place(row("doc", "d1"), 0);
+    row("folder", "f1").getBoundingClientRect = () => tile(240, 340);
+    row("folder", "f3").getBoundingClientRect = () => tile(140, 240);
+    await carry(row("doc", "d1"), 100);
+    await act(async () => {
+      document.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, cancelable: true, button: 0, clientX: 150, clientY: 110 }));
+    });
+    expect(row("folder", "f3").className).toContain("ring-accent-coral");
+    expect(row("folder", "f1").className).not.toContain("ring-accent-coral");
+    await release();
+    expect(onMove).toHaveBeenCalledWith("lab", [expect.objectContaining({ id: "d1" })], "f3");
+  });
 });
 
 describe("DriveBrowser drag: dropping on the breadcrumb", () => {
