@@ -47,6 +47,11 @@ vi.mock("~/lib/notebooks.server", () => {
     addToNotebook: vi.fn(),
   };
 });
+vi.mock("~/lib/page-names.server", async (importActual) => ({
+  ...(await importActual<typeof import("~/lib/page-names.server")>()),
+  findNameConflict: vi.fn(),
+  assertUniqueName: vi.fn(),
+}));
 vi.mock("~/lib/drive-receivers.server", () => ({ clearTypeIfLeavingRoot: vi.fn() }));
 
 import { prisma } from "~/lib/db";
@@ -59,6 +64,7 @@ import { isOfferingManager } from "~/education/lib/access.server";
 import { logAuditEvent } from "~/lib/audit";
 import { NotebookError, addToNotebook } from "~/lib/notebooks.server";
 import { clearTypeIfLeavingRoot } from "~/lib/drive-receivers.server";
+import { findNameConflict } from "~/lib/page-names.server";
 import { action } from "../api.pages.$id.move";
 
 const m = prisma as any;
@@ -75,6 +81,8 @@ const call = (body: unknown) => action({ request: req(body), params: { id: "p1" 
 function labPage(over: Record<string, unknown> = {}) {
   return {
     id: "p1",
+    title: "Plans",
+    parentPageId: null,
     workspaceType: "Lab",
     workspaceId: null,
     kind: "FreeForm",
@@ -569,5 +577,17 @@ describe("POST /api/pages/:id/move — into a notebook", () => {
     pagesById = { d2: { ...notebook, kind: "FreeForm" } };
     expect((await call({ parentPageId: "d2" })).status).toBe(400);
     expect(addToNotebook).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/pages/:id/move — names", () => {
+  it("409s with the clash message and writes nothing", async () => {
+    m.page.findUnique.mockResolvedValue(labPage({ kind: "Folder" }));
+    vi.mocked(findNameConflict).mockResolvedValueOnce("A folder named “Plans” already exists here");
+    pagesById = { dest: { id: "dest", parentPageId: null, kind: "Folder", workspaceType: "Lab", workspaceId: null, archivedAt: null } };
+    const res = await call({ parentPageId: "dest" });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe("A folder named “Plans” already exists here");
+    expect(m.page.update).not.toHaveBeenCalled();
   });
 });

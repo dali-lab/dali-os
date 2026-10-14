@@ -33,6 +33,11 @@ vi.mock("~/lib/notebooks.server", () => {
     loadManageableNotebook: vi.fn(),
   };
 });
+vi.mock("~/lib/page-names.server", async (importActual) => ({
+  ...(await importActual<typeof import("~/lib/page-names.server")>()),
+  findNameConflict: vi.fn(),
+  assertUniqueName: vi.fn(),
+}));
 vi.mock("~/lib/cors", () => ({
   withCors: (_req: Request, res: Response) => res,
   handlePreflight: () => null,
@@ -42,6 +47,7 @@ import { prisma } from "~/lib/db";
 import { requireMemberSession, requireProjectEditAccess } from "~/lib/auth";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { NotebookError, loadManageableNotebook, trashNotebook } from "~/lib/notebooks.server";
+import { findNameConflict } from "~/lib/page-names.server";
 import { action } from "../api.documents.$id";
 
 const m = prisma as any;
@@ -65,7 +71,7 @@ function del(query = "") {
 
 /** A personal note in My Drive, owned by u1. */
 function notePage(over: Record<string, unknown> = {}) {
-  return { id: "p1", workspaceType: "Member", workspaceId: "u1", kind: "FreeForm", ...over };
+  return { id: "p1", workspaceType: "Member", workspaceId: "u1", parentPageId: "f1", kind: "FreeForm", ...over };
 }
 
 beforeEach(() => {
@@ -389,5 +395,31 @@ describe("DELETE /api/documents/:id — notebooks", () => {
     m.page.findUnique.mockResolvedValue(notebook());
     expect((await post({ iconEmoji: "x" })).status).toBe(200);
     expect(loadManageableNotebook).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/documents/:id — names", () => {
+  it("409s a rename onto a name already used by the same kind in the same folder", async () => {
+    m.page.findUnique.mockResolvedValue(notePage());
+    vi.mocked(findNameConflict).mockResolvedValueOnce("A document named “Retreat notes” already exists here");
+    const res = await post({ title: "Retreat notes" });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe("A document named “Retreat notes” already exists here");
+    expect(m.page.update).not.toHaveBeenCalled();
+    expect(findNameConflict).toHaveBeenCalledWith({
+      workspaceType: "Member",
+      workspaceId: "u1",
+      parentPageId: "f1",
+      kind: "FreeForm",
+      title: "Retreat notes",
+      excludeId: "p1",
+    });
+  });
+
+  it("does not check a change that leaves the title alone", async () => {
+    m.page.findUnique.mockResolvedValue(notePage());
+    const res = await post({ iconEmoji: "x" });
+    expect(res.status).toBe(200);
+    expect(findNameConflict).not.toHaveBeenCalled();
   });
 });

@@ -263,6 +263,20 @@ describe("New menu: creating in place", () => {
     expect(toastError).toHaveBeenCalled();
   });
 
+  it.each(["createDoc", "createFolder", "createWhiteboard"] as const)(
+    "%s toasts the server's name-clash message",
+    async (method) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({ ok: false, json: async () => ({ error: "A folder named “Thing” already exists here" }) }),
+      );
+      prompt.mockResolvedValue("Thing");
+      await actionsFor("lab")[method]();
+      expect(toastError).toHaveBeenCalledWith("A folder named “Thing” already exists here");
+      expect(onCreated).not.toHaveBeenCalled();
+    },
+  );
+
   it("a new form still opens its editor", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true, formId: "form1" }) }));
     prompt.mockResolvedValue("Survey");

@@ -4,6 +4,7 @@ import { prisma } from "~/lib/db";
 import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
+import { nameConflictResponse } from "~/lib/page-names.server";
 import { createProjectPage, pageDepth, MAX_PAGE_DEPTH } from "~/lib/pages";
 
 // POST /api/projects/:id/documents
@@ -73,13 +74,18 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
   }
 
-  const page = await createProjectPage({
-    projectId: params.id!,
-    title: body.title,
-    createdById: auth.user.sub,
-    kind: body.kind,
-    parentPageId: body.parentPageId ?? null,
-  });
-
-  return withCors(request, Response.json({ id: page.id }));
+  try {
+    const page = await createProjectPage({
+      projectId: params.id!,
+      title: body.title,
+      createdById: auth.user.sub,
+      kind: body.kind,
+      parentPageId: body.parentPageId ?? null,
+    });
+    return withCors(request, Response.json({ id: page.id }));
+  } catch (err) {
+    const conflict = nameConflictResponse(err);
+    if (conflict) return withCors(request, conflict);
+    throw err;
+  }
 }

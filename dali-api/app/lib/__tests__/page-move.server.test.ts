@@ -34,6 +34,11 @@ vi.mock("~/lib/notebooks.server", () => ({
   loadManageableNotebook: vi.fn(),
   notebookErrorResponse: vi.fn(),
 }));
+vi.mock("~/lib/page-names.server", async (importActual) => ({
+  ...(await importActual<typeof import("~/lib/page-names.server")>()),
+  findNameConflict: vi.fn(),
+  assertUniqueName: vi.fn(),
+}));
 vi.mock("~/lib/page-ancestry.server", async (importActual) => ({
   ...(await importActual<typeof import("~/lib/page-ancestry.server")>()),
   loadAncestorChain: vi.fn(),
@@ -48,12 +53,15 @@ import { clearTypeIfLeavingRoot } from "~/lib/drive-receivers.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { addToNotebook, loadManageableNotebook, notebookErrorResponse } from "~/lib/notebooks.server";
 import { loadAncestorChain, type ChainRow } from "~/lib/page-ancestry.server";
+import { findNameConflict } from "~/lib/page-names.server";
 import { movePage, type MovePageBody } from "~/lib/page-move.server";
 
 const m = prisma as any;
 
 const sourcePage = (over: Record<string, unknown> = {}) => ({
   id: "page",
+  title: "Plans",
+  parentPageId: null,
   workspaceType: "Lab",
   workspaceId: null,
   kind: "FreeForm",
@@ -437,5 +445,38 @@ describe("movePage: cross-workspace move", () => {
     vi.mocked(isCore).mockResolvedValue(false);
     expect(await move(toProject)).toMatchObject({ ok: false, status: 403 });
     expect(m.$transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("movePage: names", () => {
+  it("refuses with a 409 when the destination already holds an item of that kind and name", async () => {
+    vi.mocked(findNameConflict).mockResolvedValue("A document named “Plans” already exists here");
+
+    const result = await move({ parentPageId: "dest" });
+
+    expect(result).toEqual({ ok: false, status: 409, error: "A document named “Plans” already exists here" });
+    expect(m.$transaction).not.toHaveBeenCalled();
+    expect(findNameConflict).toHaveBeenCalledWith({
+      workspaceType: "Lab",
+      workspaceId: null,
+      parentPageId: "dest",
+      kind: "FreeForm",
+      title: "Plans",
+      excludeId: "page",
+    });
+  });
+
+  it("checks the destination workspace for a cross-workspace move", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    await move({ parentPageId: null, workspaceType: "Project", workspaceId: "projA" });
+    expect(findNameConflict).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceType: "Project", workspaceId: "projA", parentPageId: null }),
+    );
+  });
+
+  it("does not check a reorder inside the folder it already sits in", async () => {
+    m.page.findUnique.mockResolvedValue(sourcePage({ parentPageId: "dest" }));
+    await move({ parentPageId: "dest" });
+    expect(findNameConflict).not.toHaveBeenCalled();
   });
 });

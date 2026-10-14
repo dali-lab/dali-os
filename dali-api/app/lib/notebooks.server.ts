@@ -17,6 +17,7 @@ import {
   pageDepth,
 } from "~/lib/pages";
 import { resolveMeetingOccurrence } from "~/lib/scheduled-meeting";
+import { nameConflictResponse } from "~/lib/page-names.server";
 import { removeMeetingShares, syncMeetingShares } from "~/lib/meeting-shares.server";
 
 // A notebook is a Page of kind Notebook with no body; its tabs are its child
@@ -36,6 +37,8 @@ export class NotebookError extends Error {
 /** The JSON response for a NotebookError; anything else is rethrown. */
 export function notebookErrorResponse(err: unknown): Response {
   if (err instanceof NotebookError) return Response.json({ error: err.message }, { status: err.status });
+  const conflict = nameConflictResponse(err);
+  if (conflict) return conflict;
   throw err;
 }
 

@@ -39,6 +39,7 @@ import { getPageAccess, getPageAccessBulk, isUnderGoverningScope } from "~/lib/p
 import { collectSubtree, createLabPage, createProjectPage, moveIntoNotebook, pageDepth } from "~/lib/pages";
 import { resolveMeetingOccurrence } from "~/lib/scheduled-meeting";
 import { removeMeetingShares, syncMeetingShares } from "~/lib/meeting-shares.server";
+import { PageNameConflictError } from "~/lib/page-names.server";
 import {
   NotebookError,
   addToNotebook,
@@ -188,6 +189,15 @@ describe("createNotebook", () => {
     await createNotebook({ ...lab, title: "  Standups  " });
     expect(vi.mocked(createLabPage).mock.calls[0][0].title).toBe("Standups");
     expect((await rejection(createNotebook({ ...lab, title: "   " }))).status).toBe(400);
+  });
+
+  it("surfaces a same-named notebook in the folder as a 409 with the clash message", async () => {
+    vi.mocked(createLabPage).mockRejectedValueOnce(
+      new PageNameConflictError("A notebook named “Standups” already exists here"),
+    );
+    const res = notebookErrorResponse(await createNotebook(lab).catch((e) => e));
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "A notebook named “Standups” already exists here" });
   });
 
   it("403s a non-member for a lab notebook", async () => {

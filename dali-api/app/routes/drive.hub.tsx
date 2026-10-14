@@ -551,6 +551,13 @@ function educationCreateBlock(
   return null;
 }
 
+type CreatedPage = { id: string } | { error: string | undefined };
+
+async function createdPage(res: Response): Promise<CreatedPage> {
+  if (res.ok) return { id: ((await res.json()) as { id: string }).id };
+  return { error: await driveErrorFrom(res) };
+}
+
 export function makeScopeActions({
   scope,
   currentFolderId,
@@ -585,7 +592,7 @@ export function makeScopeActions({
     pageKind: "FreeForm" | "Folder" | "Whiteboard",
     title: string,
     parentPageId: string | null,
-  ): Promise<string | null> {
+  ): Promise<CreatedPage> {
     if (kind === "mine") {
       const fd = new FormData();
       fd.set("intent", "create");
@@ -594,8 +601,7 @@ export function makeScopeActions({
       fd.set("kind", pageKind);
       if (parentPageId) fd.set("parentPageId", parentPageId);
       const res = await fetch("/api/notes", { method: "POST", body: fd, credentials: "include" });
-      if (!res.ok) return null;
-      return ((await res.json()) as { id: string }).id;
+      return createdPage(res);
     }
     if (kind === "projects-group") {
       // Resolve the project from the current folder. When parentPageId is a
@@ -603,7 +609,7 @@ export function makeScopeActions({
       // that id IS the projectId and we pass parentPageId=null to the project API.
       // When deeper inside a real sub-folder, walk up to find the synthetic root.
       const projectId = resolveWorkspaceId(scope.items, parentPageId);
-      if (!projectId) return null; // no-op: at the group root, no project selected
+      if (!projectId) return { error: undefined }; // no-op: at the group root, no project selected
       // If parentPageId IS the synthetic project folder, the real parentPageId is null.
       const parentNode = parentPageId ? scope.items.find((it) => it.id === parentPageId) : null;
       const realParent = parentNode?.parentFolderId === null ? null : parentPageId;
@@ -613,15 +619,14 @@ export function makeScopeActions({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, kind: pageKind, ...(realParent ? { parentPageId: realParent } : {}) }),
       });
-      if (!res.ok) return null;
-      return ((await res.json()) as { id: string }).id;
+      return createdPage(res);
     }
     if (kind === "education-group") {
       // Mirror the projects-group branch: resolve the offering, strip the
       // synthetic top-level node from parentPageId, then POST to the offering
       // documents endpoint. Instructors and Core only (server-enforced).
       const offeringId = resolveWorkspaceId(scope.items, parentPageId);
-      if (!offeringId) return null; // no-op: at the group root, no offering selected
+      if (!offeringId) return { error: undefined }; // no-op: at the group root, no offering selected
       const parentNode = parentPageId ? scope.items.find((it) => it.id === parentPageId) : null;
       const realParent = parentNode?.parentFolderId === null ? null : parentPageId;
       const res = await fetch(`/api/education/${offeringId}/documents`, {
@@ -630,8 +635,7 @@ export function makeScopeActions({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, kind: pageKind, ...(realParent ? { parentPageId: realParent } : {}) }),
       });
-      if (!res.ok) return null;
-      return ((await res.json()) as { id: string }).id;
+      return createdPage(res);
     }
     const url = kind === "lab" ? "/api/lab-documents" : `/api/projects/${scope.id}/documents`;
     const res = await fetch(url, {
@@ -640,8 +644,7 @@ export function makeScopeActions({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title, kind: pageKind, ...(parentPageId ? { parentPageId } : {}) }),
     });
-    if (!res.ok) return null;
-    return ((await res.json()) as { id: string }).id;
+    return createdPage(res);
   }
 
   async function createDoc() {
@@ -653,9 +656,9 @@ export function makeScopeActions({
       validate: (v) => (v.trim() ? null : "Enter a name"),
     });
     if (name === null) return;
-    const id = await createPage("FreeForm", name.trim(), createParent);
-    if (id) onCreated(id);
-    else toast.error("Couldn't create the document");
+    const created = await createPage("FreeForm", name.trim(), createParent);
+    if ("id" in created) onCreated(created.id);
+    else toast.error(created.error ?? "Couldn't create the document");
   }
 
   async function createFolder() {
@@ -667,12 +670,12 @@ export function makeScopeActions({
       validate: (v) => (v.trim() ? null : "Enter a name"),
     });
     if (name === null) return;
-    const id = await createPage("Folder", name.trim(), createParent);
-    if (id) {
+    const created = await createPage("Folder", name.trim(), createParent);
+    if ("id" in created) {
       toast.success("Folder created");
-      onCreated(id);
+      onCreated(created.id);
     } else {
-      toast.error("Couldn't create the folder");
+      toast.error(created.error ?? "Couldn't create the folder");
     }
   }
 
@@ -685,9 +688,9 @@ export function makeScopeActions({
       validate: (v) => (v.trim() ? null : "Enter a name"),
     });
     if (name === null) return;
-    const id = await createPage("Whiteboard", name.trim(), createParent);
-    if (id) onCreated(id);
-    else toast.error("Couldn't create the whiteboard");
+    const created = await createPage("Whiteboard", name.trim(), createParent);
+    if ("id" in created) onCreated(created.id);
+    else toast.error(created.error ?? "Couldn't create the whiteboard");
   }
 
   async function rename(item: DriveItem) {
