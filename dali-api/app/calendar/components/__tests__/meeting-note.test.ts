@@ -7,6 +7,7 @@ import {
   clearPlace,
   defaultNotebookQueryString,
   emptyMeetingNote,
+  folderFilingOf,
   inviteOf,
   inviteSpaceOf,
   meetingNoteActive,
@@ -19,6 +20,7 @@ import {
   spaceOfGroup,
   withDefault,
   withEnabled,
+  withNewFolder,
   withNewNotebook,
   withPickedNotebook,
   withPrefilledTitle,
@@ -263,7 +265,7 @@ describe("state transitions", () => {
   });
 
   it("clears a place", () => {
-    expect(clearPlace(existing(labNb, { reason: "x" }))).toMatchObject({ place: null, reason: null, auto: false });
+    expect(clearPlace(existing(labNb, { reason: "x" }))).toMatchObject({ place: null, reason: null, auto: false, dismissed: true });
   });
 
   it("ignores title and template edits without a new notebook", () => {
@@ -376,5 +378,116 @@ describe("default query", () => {
   it("asks about a people list", () => {
     const qs = new URLSearchParams(defaultNotebookQueryString({ scopeGroupId: null, invite: noInvite }));
     expect(Object.fromEntries(qs)).toEqual({ scopeType: "UserList" });
+  });
+});
+
+
+describe("removing the notebook", () => {
+  const cleared = () => clearPlace(existing(labNb));
+
+  it("keeps a default from filling the place back in", () => {
+    const def: DefaultNotebookResult = { kind: "series", notebook: { id: "nb1", title: "W", path: "p" }, newPath: "x" };
+    expect(withDefault(cleared(), def).place).toBeNull();
+  });
+
+  it("lets a pick, a new notebook or re-enabling start over", () => {
+    expect(withPickedNotebook(cleared(), labNb).dismissed).toBe(false);
+    expect(withNewNotebook(cleared(), lab, "T").dismissed).toBe(false);
+    expect(withEnabled(withEnabled(cleared(), false), true).dismissed).toBe(false);
+  });
+});
+
+describe("filing a new notebook in a folder", () => {
+  const rows = {
+    drives: [
+      { id: "projects", label: "Projects" },
+      { id: "lab", label: "Lab" },
+      { id: "core", label: "Core", rootFolderId: "core-root" },
+      { id: "education", label: "Education" },
+      { id: "mine", label: "My Drive" },
+    ],
+    folders: [
+      { id: "p1", driveId: "projects", parentId: null, title: "Atlas" },
+      { id: "p1-m", driveId: "projects", parentId: "p1", title: "Meetings" },
+      { id: "c1", driveId: "core", parentId: null, title: "Retros" },
+      { id: "l1", driveId: "lab", parentId: null, title: "Design" },
+      { id: "o1", driveId: "education", parentId: null, title: "CS 10" },
+    ],
+  };
+
+  it("reads a project subfolder as that project and carries the folder and path", () => {
+    expect(folderFilingOf({ driveId: "projects", folderId: "p1-m" }, rows)).toEqual({
+      space: { workspaceType: "Project", workspaceId: "p1", label: "Atlas" },
+      folder: { id: "p1-m", path: "Projects ▸ Atlas ▸ Meetings" },
+    });
+  });
+
+  it("files a project's top level with no folder id", () => {
+    expect(folderFilingOf({ driveId: "projects", folderId: "p1" }, rows)?.folder).toEqual({
+      id: null,
+      path: "Projects ▸ Atlas",
+    });
+  });
+
+  it("reads a Core folder as Core, and Core's top level as its root folder", () => {
+    expect(folderFilingOf({ driveId: "core", folderId: "c1" }, rows)).toMatchObject({
+      space: CORE_SPACE,
+      folder: { id: "c1", path: "Core ▸ Retros" },
+    });
+    expect(folderFilingOf({ driveId: "core", folderId: null }, rows)?.folder).toEqual({ id: "core-root", path: "Core" });
+  });
+
+  it("reads a Lab folder as General", () => {
+    expect(folderFilingOf({ driveId: "lab", folderId: "l1" }, rows)).toMatchObject({
+      space: GENERAL_SPACE,
+      folder: { id: "l1" },
+    });
+  });
+
+  it.each([
+    ["the Lab drive itself", { driveId: "lab", folderId: null }],
+    ["the bare Projects list", { driveId: "projects", folderId: null }],
+    ["an education folder", { driveId: "education", folderId: "o1" }],
+    ["My Drive", { driveId: "mine", folderId: null }],
+  ])("refuses %s", (_n, dest) => {
+    expect(folderFilingOf(dest, rows)).toBeNull();
+  });
+
+  const picked = () => {
+    const filing = folderFilingOf({ driveId: "projects", folderId: "p1-m" }, rows)!;
+    return withNewFolder(withTemplate(fresh(), "tpl"), filing);
+  };
+
+  it("sets the space, the folder and the row line", () => {
+    const s = picked();
+    expect(s.place).toMatchObject({ kind: "new", space: { label: "Atlas" }, folder: { id: "p1-m" } });
+    expect(placeLine(s.place!)).toBe("New notebook “Sync” · Projects ▸ Atlas ▸ Meetings");
+  });
+
+  it("sends the folder and its derived project and Core flag", () => {
+    expect(meetingNotePayload(picked(), noInvite)).toMatchObject({
+      projectId: "p1",
+      notebook: { folderPageId: "p1-m", space: { kind: "project", projectId: "p1" } },
+    });
+    const core = withNewFolder(fresh(), folderFilingOf({ driveId: "core", folderId: "c1" }, rows)!);
+    expect(meetingNotePayload(core, noInvite)).toMatchObject({ isCoreMeeting: true, notebook: { folderPageId: "c1" } });
+  });
+
+  it("keeps the template inside the same space and drops it across spaces", () => {
+    const sameSpace = withNewFolder(
+      withTemplate(withNewNotebook(on(), atlas, "Sync"), "tpl"),
+      folderFilingOf({ driveId: "projects", folderId: "p1-m" }, rows)!,
+    );
+    expect(sameSpace.place).toMatchObject({ templatePageId: "tpl" });
+    expect(picked().place).toMatchObject({ templatePageId: null });
+  });
+
+  it("changes nothing for an existing notebook", () => {
+    const s = existing(labNb);
+    expect(withNewFolder(s, folderFilingOf({ driveId: "lab", folderId: "l1" }, rows)!)).toBe(s);
+  });
+
+  it("omits the folder from the payload until one is picked", () => {
+    expect(notebookChoiceOf(fresh())).not.toHaveProperty("folderPageId");
   });
 });

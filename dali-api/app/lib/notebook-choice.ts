@@ -15,6 +15,7 @@ export const newNotebookSchema = z.object({
   title: z.string().trim().min(1).max(200),
   templatePageId: z.string().min(1).nullable().optional(),
   space: notebookSpaceSchema.optional(),
+  folderPageId: z.string().min(1).optional(),
 });
 
 /** Which notebook a meeting's note files into: one that exists, or one to make. */
