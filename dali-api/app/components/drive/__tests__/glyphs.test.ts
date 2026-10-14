@@ -6,8 +6,7 @@ import {
   glyphLabel,
   pickGlyph,
   tabBadge,
-  type PlainGlyphSource,
-  type ShortcutGlyphSource,
+  type GlyphSource,
 } from "~/components/drive/glyphs";
 import type { AudienceKind } from "~/lib/page-audience";
 
@@ -36,8 +35,8 @@ describe("folderTintClass", () => {
 });
 
 describe("pickGlyph", () => {
-  const folder = (extra: Partial<PlainGlyphSource> = {}): PlainGlyphSource => ({ type: "folder", ...extra });
-  const doc = (extra: Partial<PlainGlyphSource> = {}): PlainGlyphSource => ({ type: "doc", ...extra });
+  const folder = (extra: Partial<GlyphSource> = {}): GlyphSource => ({ type: "folder", ...extra });
+  const doc = (extra: Partial<GlyphSource> = {}): GlyphSource => ({ type: "doc", ...extra });
 
   it("marks a Meetings folder with a calendar", () => {
     expect(pickGlyph(folder({ folderType: "Meetings" }))).toMatchObject({ kind: "folder", mark: "calendar" });
@@ -69,36 +68,6 @@ describe("pickGlyph", () => {
     expect(pickGlyph(doc({ isNotebook: true, tabCount: 4, iconEmoji: "📓" }))).toEqual({ kind: "notebook", tabs: "4" });
     expect(pickGlyph(doc({ isNotebook: true, tabCount: 0 }))).toEqual({ kind: "notebook", tabs: null });
     expect(pickGlyph(doc({ isNotebook: true }))).toEqual({ kind: "notebook", tabs: null });
-  });
-
-  describe("shortcut", () => {
-    const shortcut = (extra: Partial<ShortcutGlyphSource> = {}): ShortcutGlyphSource => ({
-      type: "shortcut",
-      targetType: "doc",
-      canOpen: true,
-      originalInTrash: false,
-      ...extra,
-    });
-
-    it("wears the glyph of what it points at", () => {
-      expect(pickGlyph(shortcut({ targetType: "doc" }))).toEqual({ kind: "shortcut", target: { kind: "doc" }, locked: false });
-      expect(pickGlyph(shortcut({ targetType: "whiteboard" }))).toMatchObject({ target: { kind: "whiteboard" } });
-      expect(pickGlyph(shortcut({ targetType: "notebook" }))).toMatchObject({ target: { kind: "notebook", tabs: null } });
-      expect(pickGlyph(shortcut({ targetType: "folder" }))).toMatchObject({
-        target: { kind: "folder", tint: CORAL_FOLDER, mark: null },
-      });
-    });
-
-    it("does not tint a folder shortcut by the audience of the folder it sits in", () => {
-      expect(pickGlyph({ ...shortcut({ targetType: "folder" }), audience: { kind: "private" } } as ShortcutGlyphSource)).toMatchObject({
-        target: { tint: CORAL_FOLDER },
-      });
-    });
-
-    it("locks a shortcut the viewer can't open, but not one whose original is in the trash", () => {
-      expect(pickGlyph(shortcut({ canOpen: false }))).toMatchObject({ locked: true });
-      expect(pickGlyph(shortcut({ canOpen: false, originalInTrash: true }))).toMatchObject({ locked: false });
-    });
   });
 
   it("keeps the existing doc, whiteboard and managed glyphs", () => {
@@ -136,7 +105,7 @@ describe("folderCountLabel", () => {
 });
 
 describe("glyphLabel", () => {
-  const label = (src: PlainGlyphSource | ShortcutGlyphSource, ctx: Parameters<typeof glyphLabel>[1] = {}) =>
+  const label = (src: GlyphSource, ctx: Parameters<typeof glyphLabel>[1] = {}) =>
     glyphLabel(pickGlyph(src), ctx);
 
   it("names a folder with who can see it", () => {
@@ -191,32 +160,5 @@ describe("glyphLabel", () => {
     );
     expect(label({ type: "doc", iconEmoji: "📝" }, { itemType: "doc" })).toBe("Document");
     expect(label({ type: "doc", iconEmoji: "📝" })).toBe("Document");
-  });
-
-  it.each([
-    ["doc", "Shortcut to a document"],
-    ["folder", "Shortcut to a folder"],
-    ["notebook", "Shortcut to a notebook"],
-    ["whiteboard", "Shortcut to a whiteboard"],
-  ] as const)("names a shortcut to a %s", (targetType, expected) => {
-    expect(label({ type: "shortcut", targetType, canOpen: true })).toBe(expected);
-  });
-
-  it("flags a shortcut whose original is in the trash", () => {
-    expect(
-      label({ type: "shortcut", targetType: "doc", canOpen: false, originalInTrash: true }, { originalInTrash: true }),
-    ).toBe("Shortcut to a document · original in trash");
-  });
-
-  it("flags a shortcut whose original the viewer can't open", () => {
-    expect(label({ type: "shortcut", targetType: "folder", canOpen: false })).toBe(
-      "Shortcut to a folder · you can't open the original",
-    );
-  });
-
-  it("does not use the audience for a shortcut", () => {
-    expect(label({ type: "shortcut", targetType: "doc", canOpen: true }, { audienceLabel: "Only you" })).toBe(
-      "Shortcut to a document",
-    );
   });
 });

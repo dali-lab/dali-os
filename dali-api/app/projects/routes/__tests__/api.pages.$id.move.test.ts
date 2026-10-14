@@ -195,13 +195,19 @@ describe("POST /api/pages/:id/move — receiver lifecycle", () => {
     m.page.findUnique.mockResolvedValue(labPage({ kind: "Folder", folderType: "HiringForms" }));
     vi.mocked(clearTypeIfLeavingRoot).mockResolvedValue(["p1"]);
     const res = await call({ parentPageId: null });
-    expect(await res.json()).toEqual({ ok: true, clearedReceivers: ["p1"] });
+    expect(await res.json()).toMatchObject({ ok: true, clearedReceivers: ["p1"] });
   });
 
   it("reports an empty list when nothing was cleared", async () => {
     m.page.findUnique.mockResolvedValue(labPage());
     const res = await call({ parentPageId: null });
-    expect(await res.json()).toEqual({ ok: true, clearedReceivers: [] });
+    expect(await res.json()).toMatchObject({ ok: true, clearedReceivers: [] });
+  });
+
+  it("reports where the page was", async () => {
+    m.page.findUnique.mockResolvedValue(labPage({ parentPageId: "old" }));
+    const res = await call({ parentPageId: null });
+    expect((await res.json()).from).toEqual({ workspaceType: "Lab", workspaceId: null, parentPageId: "old" });
   });
 
   it("has no folders to check when a plain document moves", async () => {

@@ -46,7 +46,6 @@ import { buildPickerRows } from "~/components/drive/picker-rows";
 import { LocationLink } from "~/components/drive/LocationLink";
 import { locateFolder, type LocatableScope } from "~/components/drive/location";
 import { moveDriveItem, driveErrorFrom, isPageItem } from "~/components/drive/move-item";
-import { deleteShortcutRequest } from "~/components/drive/shortcut-api";
 import { destinationLabel, restoredToast } from "~/components/drive/action-toast";
 import { reportMoveBatch, runHiddenMoveBatch, itemCount, type Landed } from "~/components/drive/move-batch";
 import { withoutHidden, usePendingHidden, type PendingHidden } from "~/components/drive/pending-hidden";
@@ -757,7 +756,6 @@ export function makeScopeActions({
   // Forms are now SOFT-ARCHIVED (archivedAt = now) from Drive, matching how
   // docs and files are handled. Hard-delete is reserved for Trash ("purge").
   async function deleteItem(item: DriveItem): Promise<Response> {
-    if (item.type === "shortcut") return deleteShortcutRequest(item.id);
     if (item.type === "form") {
       const fd = new FormData();
       fd.set("intent", "archive-form");
@@ -782,9 +780,7 @@ export function makeScopeActions({
       description:
         item.type === "folder"
           ? "The folder must be empty first."
-          : item.type === "shortcut"
-            ? "Only the shortcut is removed. The original stays where it is."
-            : item.type === "form"
+          : item.type === "form"
             ? "The form will be moved to Trash. Restore it any time from Trash, or purge it there permanently."
             : "It will be archived and removed from your Drive.",
       tone: "destructive",

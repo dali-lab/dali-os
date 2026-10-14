@@ -29,10 +29,8 @@ async function applyAll<T>(items: T[], step: (item: T) => Promise<boolean>, fail
 
 /**
  * Trash `items` one after another (the confirm, if any, is already behind us):
- * hide their rows, delete, revalidate once, then say what happened. A shortcut
- * is deleted outright rather than trashed, so it has nothing to restore; a
- * batch of only shortcuts gets no Undo. Everything else can be put back from
- * the toast or with Cmd+Z.
+ * hide their rows, delete, revalidate once, then say what happened. Everything
+ * trashed can be put back from the toast or with Cmd+Z.
  */
 export async function runTrash<T extends Trashable>({
   items,
@@ -71,19 +69,14 @@ export async function runTrash<T extends Trashable>({
   }
   if (trashed.length === 0) return;
 
-  const restorable = trashed.filter((i) => i.type !== "shortcut");
   const message = trashedToast(trashed);
-  if (restorable.length === 0) {
-    toast.success(message);
-    return;
-  }
-  const titles = restorable.map((i) => i.title);
+  const titles = trashed.map((i) => i.title);
   const entry = history.record({
     label: "Delete",
-    undo: () => applyAll(restorable, restoreOne, "Couldn't restore everything"),
-    redo: () => applyAll(restorable, async (item) => (await deleteOne(item).catch(() => null))?.ok === true, "Couldn't move everything to Trash again"),
+    undo: () => applyAll(trashed, restoreOne, "Couldn't restore everything"),
+    redo: () => applyAll(trashed, async (item) => (await deleteOne(item).catch(() => null))?.ok === true, "Couldn't move everything to Trash again"),
     undoneMessage: restoredToast(titles),
-    redoneMessage: trashedToast(restorable),
+    redoneMessage: trashedToast(trashed),
   });
   toast.success(message, {
     duration: ACTION_TOAST_MS,

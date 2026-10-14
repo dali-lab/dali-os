@@ -1,5 +1,4 @@
 import type { AudienceKind } from "~/lib/page-audience";
-import type { ShortcutTargetType } from "~/lib/shortcut-targets";
 
 export const CORAL_FOLDER = "text-accent-coral/80";
 const TEAL_FOLDER = "text-accent-teal/80";
@@ -18,7 +17,7 @@ export function folderTintClass(audience?: { kind: AudienceKind } | null): strin
   }
 }
 
-export type PlainGlyphSource = {
+export type GlyphSource = {
   type: "folder" | "doc" | "file" | "form" | "agreement" | "rubric";
   iconEmoji?: string | null;
   folderType?: string | null;
@@ -27,16 +26,6 @@ export type PlainGlyphSource = {
   isNotebook?: boolean;
   tabCount?: number;
 };
-
-export type ShortcutGlyphSource = {
-  type: "shortcut";
-  targetType: ShortcutTargetType;
-  /** False when the viewer can't open the original. */
-  canOpen?: boolean;
-  originalInTrash?: boolean;
-};
-
-export type GlyphSource = PlainGlyphSource | ShortcutGlyphSource;
 
 export type ItemGlyph =
   | { kind: "emoji"; emoji: string }
@@ -47,17 +36,9 @@ export type ItemGlyph =
   | { kind: "file" }
   | { kind: "form" }
   | { kind: "agreement" }
-  | { kind: "rubric" }
-  | { kind: "shortcut"; target: ItemGlyph; locked: boolean };
+  | { kind: "rubric" };
 
 export function pickGlyph(item: GlyphSource): ItemGlyph {
-  if (item.type === "shortcut") {
-    return {
-      kind: "shortcut",
-      target: pickShortcutTarget(item.targetType),
-      locked: item.canOpen === false && !item.originalInTrash,
-    };
-  }
   if (item.type === "doc" && item.isNotebook) return { kind: "notebook", tabs: tabBadge(item.tabCount) };
   if (item.type === "folder" || item.type === "doc") {
     if (item.iconEmoji) return { kind: "emoji", emoji: item.iconEmoji };
@@ -75,19 +56,6 @@ export function pickGlyph(item: GlyphSource): ItemGlyph {
   }
 }
 
-function pickShortcutTarget(targetType: ShortcutTargetType): ItemGlyph {
-  switch (targetType) {
-    case "folder":
-      return pickGlyph({ type: "folder" });
-    case "notebook":
-      return pickGlyph({ type: "doc", isNotebook: true });
-    case "whiteboard":
-      return pickGlyph({ type: "doc", isWhiteboard: true });
-    case "doc":
-      return pickGlyph({ type: "doc" });
-  }
-}
-
 /** Tab count for the notebook glyph's badge; nothing for a notebook with no tabs. */
 export function tabBadge(tabCount?: number): string | null {
   if (!tabCount || tabCount < 1) return null;
@@ -101,19 +69,12 @@ export function folderCountLabel(itemCount?: number): string | null {
   return itemCount === 1 ? "1 item" : `${itemCount} items`;
 }
 
-const SHORTCUT_TARGET_NOUN: Partial<Record<ItemGlyph["kind"], string>> = {
-  folder: "a folder",
-  notebook: "a notebook",
-  whiteboard: "a whiteboard",
-};
-
 /** Hover text for a row glyph: what the item is and, for folders, who can see it. */
 export function glyphLabel(
   glyph: ItemGlyph,
   ctx: {
     audienceLabel?: string | null;
     tabCount?: number;
-    originalInTrash?: boolean;
     /** The item's own type; only needed to name an emoji glyph, which hides it. */
     itemType?: string;
   } = {},
@@ -127,11 +88,6 @@ export function glyphLabel(
     case "notebook": {
       const tabs = ctx.tabCount ?? 0;
       return `Notebook · ${tabs < 1 ? "no tabs" : `${tabs} ${tabs === 1 ? "tab" : "tabs"}`}`;
-    }
-    case "shortcut": {
-      const label = `Shortcut to ${SHORTCUT_TARGET_NOUN[glyph.target.kind] ?? "a document"}`;
-      if (ctx.originalInTrash) return `${label} · original in trash`;
-      return glyph.locked ? `${label} · you can't open the original` : label;
     }
     case "whiteboard":
       return "Whiteboard";

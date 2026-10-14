@@ -15,9 +15,9 @@ import type { DriveItem } from "~/lib/drive.server";
 // Cross-workspace moves (the hub's project/education group scopes, and My
 // Drive's notes endpoint) carry extra destination fields and stay in the hub.
 
-/** True when this item's placement lives on `Page`, not on a `folderPageId`. A shortcut is a page: moving it moves the shortcut, never what it points at. */
+/** True when this item's placement lives on `Page`, not on a `folderPageId`. */
 export function isPageItem(item: DriveItem): boolean {
-  return item.type === "doc" || item.type === "folder" || item.type === "shortcut";
+  return item.type === "doc" || item.type === "folder";
 }
 
 /**

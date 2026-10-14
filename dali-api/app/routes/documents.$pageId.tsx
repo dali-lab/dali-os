@@ -69,7 +69,6 @@ import { NotebookRail, NoteLocationLine, type NotebookView } from "~/components/
 import { EmptyNotebook } from "~/components/notebooks/EmptyNotebook";
 import { redirectToLogin } from "~/lib/login-next";
 import { walletTokensConfigured } from "~/lib/wallet-token";
-import { resolveShortcutTarget } from "~/lib/shortcuts.server";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const t = (data as { title?: string } | undefined)?.title;
@@ -159,13 +158,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
   if (page.archivedAt !== null && !page.meetingNoteId) {
     throw new Response("Not found", { status: 404 });
-  }
-
-  // A shortcut only points elsewhere; the target enforces its own access.
-  if (page.kind === "Shortcut") {
-    const target = await resolveShortcutTarget(page.id);
-    if (!target) throw new Response("Not found", { status: 404 });
-    return redirect(target.href);
   }
 
   // Only a meeting note reaches this line archived (checked above). Its access

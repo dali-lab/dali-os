@@ -1,7 +1,5 @@
 import { redirect } from "react-router";
 import { prisma } from "~/lib/db";
-import { getPageAccessBulk, PAGE_ACCESS_SELECT } from "~/lib/pageAccess.server";
-import { isMeetingCoreBulk } from "~/lib/core-meeting.server";
 import { requireAuth, forbidden, redirectNonMemberToPortal, isImpersonating } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { listAllGroups } from "~/lib/groups";
@@ -255,11 +253,6 @@ export async function meetingsForExternalEvents(
       timeEntries: { where: { userId }, select: { occurrenceStart: true } },
     },
   });
-  const coreByMeeting = await isMeetingCoreBulk(meetings);
-  const fileableNotebooks = await notebooksViewerCanEdit(
-    meetings.flatMap((m) => (m.notebookId ? [m.notebookId] : [])),
-    userId,
-  );
   // Stable-key + fallback indexes. iCalUID is shared across every attendee copy
   // and every instance of a series (see matchMeetingForEvent); externalEventId
   // is the mutable per-copy id we fall back to for un-backfilled rows.
@@ -310,8 +303,7 @@ export async function meetingsForExternalEvents(
       whiteboardPageId: m.whiteboardPage?.id ?? null,
       hasType: m.meetingType != null,
       onTimesheet: m.timeEntries.some((t) => t.occurrenceStart?.getTime() === key),
-      isCoreMeeting: coreByMeeting.get(m.id) ?? false,
-      notebook: m.notebookId ? (fileableNotebooks.get(m.notebookId) ?? null) : null,
+      isCoreMeeting: m.isCoreMeeting,
       canMarkCoreMeeting,
       // Adding notes/whiteboards after the fact is the organizer's or Core's
       // call — the same authority the attach* helpers re-check server-side.
@@ -328,19 +320,6 @@ export async function meetingsForExternalEvents(
     });
   }
   return byEventId;
-}
-
-/** The notebooks among `ids` the viewer can edit, keyed by id: what the popover's "File in…" needs. */
-async function notebooksViewerCanEdit(ids: string[], userId: string): Promise<Map<string, { id: string; title: string }>> {
-  if (ids.length === 0) return new Map();
-  const rows = await prisma.page.findMany({
-    where: { id: { in: [...new Set(ids)] }, kind: "Notebook", archivedAt: null },
-    select: { ...PAGE_ACCESS_SELECT, title: true },
-  });
-  const access = await getPageAccessBulk(userId, rows);
-  return new Map(
-    rows.filter((r) => access.get(r.id)?.canEdit).map((r) => [r.id, { id: r.id, title: r.title }]),
-  );
 }
 
 /**

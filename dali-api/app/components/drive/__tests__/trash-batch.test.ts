@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { restoreFromTrashRequest, runTrash, trashTypeOf } from "~/components/drive/trash-batch";
 import type { UndoEntry } from "~/components/drive/undo-stack";
 
-type Item = { id: string; type: "doc" | "folder" | "file" | "form" | "shortcut"; title: string };
+type Item = { id: string; type: "doc" | "folder" | "file" | "form"; title: string };
 const item = (id: string, type: Item["type"] = "doc"): Item => ({ id, type, title: `Title ${id}` });
 const ok = () => new Response("{}", { status: 200 });
 const refused = (error?: string) => new Response(JSON.stringify(error ? { error } : {}), { status: 409 });
@@ -190,26 +190,5 @@ describe("runTrash", () => {
     const s = setup();
     await runTrash({ items: [item("a")], deleteOne: async () => refused(), ...s });
     expect(s.revalidate).toHaveBeenCalledTimes(1);
-  });
-
-  it("says the originals are untouched for shortcuts, with no Undo and no history entry", async () => {
-    const s = setup();
-    await runTrash({ items: [item("s1", "shortcut"), item("s2", "shortcut")], deleteOne: async () => ok(), ...s });
-    expect(s.toast.success).toHaveBeenCalledWith("2 shortcuts removed. The originals are untouched.");
-    expect(s.history.record).not.toHaveBeenCalled();
-  });
-
-  it("restores only the real items from a mixed selection", async () => {
-    const s = setup();
-    const restored: string[] = [];
-    await runTrash({
-      items: [item("s1", "shortcut"), item("a")],
-      deleteOne: async () => ok(),
-      restoreOne: async (i) => (restored.push(i.id), true),
-      ...s,
-    });
-    await s.recorded[0].undo();
-    expect(restored).toEqual(["a"]);
-    expect(s.recorded[0].undoneMessage).toBe("Restored “Title a”");
   });
 });

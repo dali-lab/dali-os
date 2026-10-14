@@ -37,8 +37,6 @@ import {
   ChevronDown,
   ChevronUp,
   ClipboardList,
-  CornerDownRight,
-  Lock,
   FileSignature,
   FileText,
   Shapes,
@@ -92,11 +90,8 @@ import { IconButton } from "~/components/ui/IconButton";
 import { useOsChrome } from "~/components/os-chrome";
 import { crumbsFor, locationOf, type ItemLocation } from "~/components/drive/location";
 import { LocationLink } from "~/components/drive/LocationLink";
-import { FileInPicker, type FileInTarget } from "~/components/drive/FileInPicker";
-import { AlsoInSection, OriginalValue } from "~/components/drive/ShortcutDetails";
 import { DetailFact } from "~/components/drive/DetailFact";
 import { menuEntries, type MenuEntry } from "~/components/drive/item-menu";
-import { canFileIn, folderShortcutTarget, locateTarget, shortcutRowState } from "~/components/drive/file-in";
 import { clickIntent } from "~/components/drive/column-click";
 import { gridStepBlocks, perRowFromTops, type GridBlock } from "~/components/drive/grid-nav";
 import { MarqueeBox, useMarquee } from "~/components/drive/use-marquee";
@@ -144,12 +139,6 @@ export type RowActions = {
   formShare?: boolean;
   /** Apply a tag to the Drive's tag filter (clicking a tag dot). */
   onTagClick?: (tagId: string) => void;
-  /** "File in…" and "Add shortcut to…", injected by the browser for items that can be filed in several places. */
-  fileIn?: {
-    allows: (item: DriveItem) => boolean;
-    openMulti: (item: DriveItem) => void;
-    openSingle: (item: DriveItem) => void;
-  };
   /** Rename, Move and Delete are left off the item menu (the Shared with me space). */
   readOnly?: boolean;
   /** Open the "This folder receives" settings for a page folder. */
@@ -256,8 +245,6 @@ function kindLabel(item: DriveItem): string {
       return "Form";
     case "rubric":
       return "Rubric";
-    case "shortcut":
-      return "Shortcut";
     default:
       return "Agreement";
   }
@@ -421,14 +408,6 @@ function glyphIcon(glyph: ItemGlyph, item: DriveItem, size: IconSize): ReactNode
       return <FileSignature className={`${cls} text-muted-foreground shrink-0`} />;
     case "rubric":
       return <ClipboardCheck className={`${cls} text-muted-foreground shrink-0`} />;
-    case "shortcut": {
-      const Mark = glyph.locked ? Lock : CornerDownRight;
-      return (
-        <GlyphBadge badge={<Mark data-testid="shortcut-badge" className={`${markCls} text-foreground`} />}>
-          {glyphIcon(glyph.target, item, size)}
-        </GlyphBadge>
-      );
-    }
     case "whiteboard":
       return <Shapes className={`${cls} text-muted-foreground shrink-0`} />;
     case "doc":
@@ -441,7 +420,6 @@ function ItemGlyphTip({ item, size }: { item: DriveItem; size?: IconSize }) {
   const label = glyphLabel(pickGlyph(item), {
     audienceLabel: "audience" in item ? item.audience?.label : undefined,
     tabCount: item.type === "doc" ? item.tabCount : undefined,
-    originalInTrash: item.type === "shortcut" ? item.originalInTrash : undefined,
     itemType: item.type,
   });
   return (
@@ -485,7 +463,6 @@ function itemMenuItems(
 ): ReactNode {
   const entries = menuEntries(item, {
     share: !!actions.onShare,
-    fileIn: !!actions.fileIn?.allows(item),
     favorite: !!onToggleFavorite,
     partner: !!onTogglePartnerVisible,
     readOnly: !!actions.readOnly,
@@ -496,7 +473,6 @@ function itemMenuItems(
   const canMove = has("move");
   const canDelete = has("delete");
   const canFavorite = has("favorite");
-  const canFileIn = has("file-in");
   const canShare = has("share");
   const canTogglePartner = has("partner");
   // Partner visibility toggle: applies to docs and files in project-scoped Drive.
@@ -551,16 +527,6 @@ function itemMenuItems(
         <Menu.Item icon={<FolderInput className="h-3.5 w-3.5" />} onSelect={() => actions.onRequestMove(item)}>
           Move to…
         </Menu.Item>
-      )}
-      {canFileIn && (
-        <>
-          <Menu.Item icon={<CornerDownRight className="h-3.5 w-3.5" />} onSelect={() => actions.fileIn!.openMulti(item)}>
-            File in…
-          </Menu.Item>
-          <Menu.Item icon={<CornerDownRight className="h-3.5 w-3.5" />} onSelect={() => actions.fileIn!.openSingle(item)}>
-            Add shortcut to…
-          </Menu.Item>
-        </>
       )}
       {canDelete && (
         <>
@@ -791,7 +757,7 @@ export function DriveBrowser({
   onHistory,
   initialSelectedId,
   revealId,
-  onOpenItem: hostOpenItem,
+  onOpenItem,
   onMove,
   getScopeActions,
   onToggleFavorite,
@@ -821,7 +787,6 @@ export function DriveBrowser({
   // Share dialog state — the item currently targeted for in-place sharing.
   const [shareTarget, setShareTarget] = useState<{ id: string; title: string; workspaceType: string } | null>(null);
   const sharingChangedRef = useRef(false);
-  const [fileIn, setFileIn] = useState<{ target: FileInTarget; mode: "multi" | "single" } | null>(null);
   const revalidator = useRevalidator();
   const toast = useToast();
 
@@ -841,16 +806,6 @@ export function DriveBrowser({
     }
   }
 
-  /** A shortcut to a folder opens that folder in the Drive; anything else follows the host. */
-  function onOpenItem(item: DriveItem) {
-    const folder = folderShortcutTarget(scopes, item);
-    if (folder) {
-      onNavigate(folder.scopeId, folder.folderId);
-      return;
-    }
-    hostOpenItem(item);
-  }
-
   const [folderSettings, setFolderSettings] = useState<{ item: DriveItem; scopeId: string } | null>(null);
 
   // Wrap the hub's getScopeActions to inject the in-place Share handler.
@@ -859,9 +814,6 @@ export function DriveBrowser({
   // needing to know the browser owns the ShareDialog state.
   function getInternalScopeActions(scopeId: string): RowActions {
     const base = getScopeActions(scopeId);
-    const scopeItems = scopes.find((s) => s.id === scopeId)?.items ?? [];
-    const openFileIn = (item: DriveItem, mode: "multi" | "single") =>
-      setFileIn({ target: { id: item.id, title: item.title, isFolder: item.type === "folder" }, mode });
     // A menu on a row that is part of a multi-selection acts on the selection.
     const inSelection = (item: DriveItem) => selected.has(item.id) && selectedItems.length > 1;
     return {
@@ -871,11 +823,6 @@ export function DriveBrowser({
         inSelection(item) && onBulkDelete ? onBulkDelete(selectedItems) : base.onDelete(item),
       onRequestMove: (item: DriveItem) =>
         inSelection(item) && onBulkMove ? onBulkMove(selectedItems) : base.onRequestMove(item),
-      fileIn: {
-        allows: (item: DriveItem) => canFileIn(item, scopeId, scopeItems),
-        openMulti: (item: DriveItem) => openFileIn(item, "multi"),
-        openSingle: (item: DriveItem) => openFileIn(item, "single"),
-      },
       ...(onTagClick ? { onTagClick } : {}),
       ...(receiverViewer ? { onFolderSettings: (item: DriveItem) => setFolderSettings({ item, scopeId }) } : {}),
       onShare: (item: DriveItem) => {
@@ -1649,15 +1596,13 @@ export function DriveBrowser({
   const canItemMove =
     !!detailItem &&
     detailItem.type !== "agreement" &&
-    detailItem.type !== "rubric" &&
-    !(detailItem.type === "shortcut" && !detailItem.canOpen);
+    detailItem.type !== "rubric";
   const canItemDelete =
     !!detailItem &&
     (detailItem.type === "folder" ||
       detailItem.type === "doc" ||
       detailItem.type === "file" ||
-      detailItem.type === "form" ||
-      detailItem.type === "shortcut");
+      detailItem.type === "form");
   const canItemDownload = !!detailItem && detailItem.type === "file";
   // Share: page-backed items only (doc and folder). Folders support sharing via
   // PageShare, which was previously impossible from the Drive surface.
@@ -2201,16 +2146,6 @@ export function DriveBrowser({
       />
     )}
 
-    {fileIn && (
-      <FileInPicker
-        key={`${fileIn.mode}:${fileIn.target.id}`}
-        target={fileIn.target}
-        mode={fileIn.mode}
-        onClose={() => setFileIn(null)}
-        onDone={() => void revalidator.revalidate()}
-      />
-    )}
-
     {folderSettings && receiverViewer && (
       <FolderSettingsModal
         key={folderSettings.item.id}
@@ -2384,23 +2319,8 @@ function DriveDetailsPane({
           <dl className="mt-4 flex flex-col gap-3.5 border-t border-border pt-3.5">
             <DetailFact label="Where" value={scopePathLabel || "—"} />
             <DetailFact label="Modified" value={relativeTime(item.updatedAt as unknown as string)} />
-            {item.type === "shortcut" && (
-              <DetailFact
-                label="Original"
-                value={
-                  <OriginalValue
-                    item={item}
-                    location={locateTarget(scopes, item.targetId)}
-                    onNavigate={onNavigate}
-                  />
-                }
-              />
-            )}
             {item.type === "folder" && receivesLabel(item.folderType) && (
               <DetailFact label="Receives" value={receivesLabel(item.folderType)!} />
-            )}
-            {(item.type === "doc" || item.type === "folder") && (
-              <AlsoInSection key={item.id} page={item} scopes={scopes} onNavigate={onNavigate} />
             )}
             {item.type === "file" && item.sizeBytes != null && (
               <DetailFact label="Size" value={formatSize(item.sizeBytes)} />
@@ -2429,13 +2349,8 @@ function DriveDetailsPane({
 
           {/* Actions */}
           <div className="mt-4 flex flex-col border-t border-border pt-2">
-            {item.type !== "folder" && !(item.type === "shortcut" && !item.canOpen) && (
-              <DetailAction
-                icon={<FolderOpen />}
-                label={item.type === "shortcut" ? "Open original" : "Open"}
-                testid={item.type === "shortcut" ? "drive-open-original" : undefined}
-                onClick={() => onOpenItem(item)}
-              />
+            {item.type !== "folder" && (
+              <DetailAction icon={<FolderOpen />} label="Open" onClick={() => onOpenItem(item)} />
             )}
             {isPreviewable(item) && (
               <DetailAction icon={<Search />} label="Preview" onClick={() => onPreview(item)} />
@@ -2459,16 +2374,6 @@ function DriveDetailsPane({
             )}
             {canShare && actions?.onShare && (
               <DetailAction icon={<Share2 />} label="Share…" onClick={() => actions.onShare!(item)} />
-            )}
-            {actions?.fileIn?.allows(item) && (
-              <>
-                <DetailAction icon={<CornerDownRight />} label="File in…" onClick={() => actions.fileIn!.openMulti(item)} />
-                <DetailAction
-                  icon={<CornerDownRight />}
-                  label="Add shortcut to…"
-                  onClick={() => actions.fileIn!.openSingle(item)}
-                />
-              </>
             )}
             {canDelete && actions && (
               <DetailAction icon={<Trash2 />} label="Delete" destructive onClick={() => actions.onDelete(item)} />
@@ -2700,7 +2605,7 @@ function ColumnItemRow({
         onContextMenu?.(e);
       }}
       className={`group flex items-center rounded-lg dnd-touch-handle ${t.itemRow} ${t.row} cursor-default select-none ${
-        drag.isDragging ? "opacity-40" : shortcutRowState(item).dimmed ? "opacity-60" : ""
+        drag.isDragging ? "opacity-40" : ""
       } ${
         drop.isOver ? DROP_RING : ""
       } ${
@@ -2715,7 +2620,6 @@ function ColumnItemRow({
       <span className="min-w-0 flex-1 truncate font-medium">
         {item.title || "Untitled"}
       </span>
-      <ShortcutMarks item={item} />
       <FolderCount item={item} />
       <RowTags item={item} actions={scopeActions} />
       <RowAudience item={item} actions={scopeActions} />
@@ -2777,19 +2681,6 @@ function ColumnItemRow({
  * horizontal scroll, the way Finder's columns behave.
  */
 const COLUMN_SIZE = "flex-1 min-w-[12.5rem]";
-
-/** The "Original in trash" chip on a shortcut whose target was deleted. */
-function ShortcutMarks({ item }: { item: DriveItem }) {
-  if (!shortcutRowState(item).inTrash) return null;
-  return (
-    <span
-      data-testid="shortcut-trash-chip"
-      className="shrink-0 rounded-full border border-border px-1.5 py-0.5 text-[10px] leading-none text-muted-foreground"
-    >
-      Original in trash
-    </span>
-  );
-}
 
 /** "12 items" / "Empty" after a folder's name; nothing for other items or before counts load. */
 function FolderCount({ item, className = "" }: { item: DriveItem; className?: string }) {
@@ -3387,7 +3278,7 @@ function ListRow({
       onContextMenu={() => handlers.onContext(item.id)}
       style={{ gridTemplateColumns: scopeId === SHARED_SPACE_KEY ? SHARED_GRID_COLUMNS : GRID_COLUMNS }}
       className={`group grid items-center dnd-touch-handle ${t.itemRow} rounded-lg ${t.row} cursor-default select-none ${
-        drag.isDragging ? "opacity-40" : shortcutRowState(item).dimmed ? "opacity-60" : ""
+        drag.isDragging ? "opacity-40" : ""
       } ${
         drop.isOver && acceptsDrops(item)
           ? DROP_RING
@@ -3401,8 +3292,7 @@ function ListRow({
       <span className="flex items-center gap-2 min-w-0">
         <RowLead item={item} checked={selected} onToggle={(shift) => handlers.onToggle(item.id, shift)} />
         <span className="truncate font-medium text-foreground">{item.title || "Untitled"}</span>
-        <ShortcutMarks item={item} />
-        <FolderCount item={item} />
+          <FolderCount item={item} />
         <RowTags item={item} actions={actions} />
         <RowAudience item={item} actions={actions} />
         {/* Signal ②: process linkage pill. */}
@@ -3500,7 +3390,7 @@ function GridTile({
       // rectangle), not on a border, so a grid of files reads as a grid of
       // files rather than a grid of boxes.
       className={`${GRID_TILE} dnd-touch-handle ${
-        drag.isDragging ? "opacity-40" : shortcutRowState(item).dimmed ? "opacity-60" : ""
+        drag.isDragging ? "opacity-40" : ""
       } ${
         drop.isOver && acceptsDrops(item)
           ? DROP_RING
@@ -3545,7 +3435,6 @@ function GridTile({
       >
         {item.title || "Untitled"}
       </span>
-      <ShortcutMarks item={item} />
       <FolderCount item={item} />
       <RowTags item={item} actions={actions} />
       <RowAudience item={item} actions={actions} />

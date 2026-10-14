@@ -104,6 +104,8 @@ const chainDown = (n: number) =>
 const move = (body: Partial<MovePageBody> = {}, extra: Record<string, unknown> = {}) =>
   movePage({ pageId: "page", userId: "u1", input: { parentPageId: null, ...body } as MovePageBody, ...extra });
 
+const LAB_TOP_LEVEL = { workspaceType: "Lab", workspaceId: null, parentPageId: null };
+
 const updateCalls = () => m.page.update.mock.calls.map(([arg]: any) => arg);
 
 beforeEach(() => {
@@ -133,7 +135,7 @@ describe("movePage: position", () => {
 
     const result = await move({ parentPageId: "dest" });
 
-    expect(result).toEqual({ ok: true, clearedReceivers: [] });
+    expect(result).toEqual({ ok: true, clearedReceivers: [], from: LAB_TOP_LEVEL });
     expect(m.page.aggregate).toHaveBeenCalledTimes(1);
     expect(m.page.aggregate).toHaveBeenCalledWith({
       where: {
@@ -345,7 +347,7 @@ describe("movePage: notebooks", () => {
 
     const result = await move({ parentPageId: "dest" });
 
-    expect(result).toEqual({ ok: true, clearedReceivers: [] });
+    expect(result).toEqual({ ok: true, clearedReceivers: [], from: LAB_TOP_LEVEL });
     expect(addToNotebook).toHaveBeenCalledWith("page", "dest", "u1");
     expect(m.$transaction).not.toHaveBeenCalled();
   });
@@ -426,7 +428,7 @@ describe("movePage: cross-workspace move", () => {
 
   it("asks which receivers it cleared for the folders it moved", async () => {
     vi.mocked(clearTypeIfLeavingRoot).mockResolvedValue(["page"]);
-    expect(await move(toProject)).toEqual({ ok: true, clearedReceivers: ["page"] });
+    expect(await move(toProject)).toEqual({ ok: true, clearedReceivers: ["page"], from: LAB_TOP_LEVEL });
     expect(clearTypeIfLeavingRoot).toHaveBeenCalledWith(["page", "child", "grandchild"]);
   });
 
@@ -435,10 +437,14 @@ describe("movePage: cross-workspace move", () => {
     expect(logAuditEvent).not.toHaveBeenCalled();
   });
 
-  it("includes extraOps in the same transaction", async () => {
-    const extra = { op: "extra" };
-    await move(toProject, { extraOps: [extra] });
-    expect(m.$transaction.mock.calls[0][0]).toContain(extra);
+  it("reports where the page was, so a caller can move it back", async () => {
+    m.page.findUnique.mockResolvedValue(
+      sourcePage({ parentPageId: "old-folder", workspaceType: "Project", workspaceId: "p9" }),
+    );
+    expect(await move(toProject)).toMatchObject({
+      ok: true,
+      from: { workspaceType: "Project", workspaceId: "p9", parentPageId: "old-folder" },
+    });
   });
 
   it("refuses when the actor can't edit in the destination workspace", async () => {
