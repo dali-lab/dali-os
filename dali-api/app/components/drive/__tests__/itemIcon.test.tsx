@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { itemIcon } from "~/components/drive/DriveBrowser";
+import { RECEIVER_LABELS } from "~/lib/drive-receivers";
 import type { DriveItem } from "~/lib/drive.server";
 
 const at = new Date("2026-01-01T00:00:00Z");
@@ -23,29 +24,49 @@ describe("itemIcon", () => {
     expect(html(doc({ isNotebook: true, tabCount: 0 }))).not.toContain("notebook-tab-count");
   });
 
-  it("overlays a calendar on a Meetings folder", () => {
+  const FOLDER_TYPES = ["Root", ...Object.keys(RECEIVER_LABELS)];
+
+  it.each(FOLDER_TYPES)("draws a %s folder pink with the system icon", (folderType) => {
+    const out = html(folder({ folderType, audience: { kind: "lab", label: "", permission: "View" } }));
+    expect(out).toContain("lucide-folder-cog");
+    expect(out).toContain("text-accent-pink");
+    expect(out).not.toContain("text-accent-teal");
+    expect(out).not.toContain("text-accent-coral");
+  });
+
+  it("overlays a pink calendar on a Meetings folder", () => {
     const out = html(folder({ folderType: "Meetings" }));
-    expect(out).toContain("lucide-folder");
+    expect(out).toContain("lucide-folder-cog");
     expect(out).toContain("lucide-calendar-days");
     expect(out).toContain("bg-background");
   });
 
-  it("overlays a tag on any other receiver folder", () => {
-    const out = html(folder({ folderType: "Agreements" }));
-    expect(out).toContain("lucide-tag");
-    expect(out).not.toContain("lucide-calendar-days");
+  it("marks only Meetings folders with a calendar and never with a tag", () => {
+    for (const folderType of FOLDER_TYPES.filter((t) => t !== "Meetings")) {
+      const out = html(folder({ folderType }));
+      expect(out).not.toContain("lucide-calendar-days");
+      expect(out).not.toContain("lucide-tag");
+    }
   });
 
-  it("leaves a plain folder unmarked", () => {
+  it("leaves a plain folder an unmarked folder icon", () => {
     const out = html(folder());
-    expect(out).not.toContain("lucide-tag");
+    expect(out).toContain("lucide-folder");
+    expect(out).not.toContain("lucide-folder-cog");
+    expect(out).not.toContain("text-accent-pink");
     expect(out).not.toContain("lucide-calendar-days");
   });
 
-  it("tints the folder by audience", () => {
+  it("tints a plain folder by audience", () => {
     expect(html(folder({ audience: { kind: "private", label: "", permission: "Edit" } }))).toContain("text-muted-foreground");
     expect(html(folder({ audience: { kind: "lab", label: "", permission: "View" } }))).toContain("text-accent-teal");
     expect(html(folder({ audience: { kind: "group", label: "", permission: "Edit" } }))).toContain("text-accent-coral");
+  });
+
+  it("shows a system folder's emoji instead of the icon", () => {
+    const out = html(folder({ folderType: "Meetings", iconEmoji: "🗓" }));
+    expect(out).toContain("🗓");
+    expect(out).not.toContain("lucide-folder-cog");
   });
 
   it("keeps docs in the muted color", () => {
