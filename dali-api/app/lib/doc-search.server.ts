@@ -131,9 +131,8 @@ type FuzzyRow = {
  * caller ranks them against the other search categories.
  *
  * Archived pages are excluded, matching the title search this sits alongside.
- * No further permission filtering: any authenticated member can already open
- * any live page by URL (only editing is gated), so this discloses nothing the
- * existing document search does not.
+ * Not permission-filtered: hits carry body snippets, so the caller must drop
+ * pages the viewer cannot open before showing them.
  */
 export async function searchPageContent(q: string, limit: number): Promise<DocContentHit[]> {
   const query = q.trim();

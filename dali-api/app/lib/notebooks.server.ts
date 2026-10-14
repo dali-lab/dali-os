@@ -498,11 +498,10 @@ export async function dissolveNotebook(notebookId: string, actorId: string): Pro
 export async function trashNotebook(notebookId: string, actorId: string): Promise<void> {
   await loadManageableNotebook(notebookId, actorId);
   const subtree = await collectSubtree(notebookId);
-  await prisma.$transaction([
-    prisma.page.updateMany({
-      where: { id: { in: [notebookId, ...subtree.ids] }, archivedAt: null },
-      data: { archivedAt: new Date() },
-    }),
-    prisma.scheduledMeeting.updateMany({ where: { notebookId }, data: { notebookId: null } }),
-  ]);
+  // The series keeps pointing at the notebook: reads skip an archived one, and
+  // a restore re-attaches without anyone re-picking.
+  await prisma.page.updateMany({
+    where: { id: { in: [notebookId, ...subtree.ids] }, archivedAt: null },
+    data: { archivedAt: new Date() },
+  });
 }

@@ -55,7 +55,7 @@ export async function runSearch(opts: {
     searchTasks(q, like),
     searchOfferings(q, like),
     searchPartnerOrgs(q, like),
-    searchDocuments(q, like),
+    searchDocuments(opts.userId, q, like),
     // Page guides ("Docs") and /help articles — both readable by every lab
     // member, so ungated like docs.
     searchGuides(q),
@@ -251,23 +251,34 @@ async function searchPartnerOrgs(q: string, like: Like): Promise<SearchResult[]>
   return simpleResults("partner", "Partner", rows.map((r) => ({ id: r.id, label: r.name })), q);
 }
 
-async function searchDocuments(q: string, like: Like): Promise<SearchResult[]> {
-  // Any authenticated member may already open any live page by URL (only
-  // editing is gated), so both passes match that existing view surface.
-  //
+async function searchDocuments(userId: string, q: string, like: Like): Promise<SearchResult[]> {
   // Titles and bodies are searched separately and merged rather than scored
   // together: a title match is what someone means the overwhelming majority of
   // the time, so it keeps its place at the top of the category and body
-  // matches fill whatever room is left. That leaves existing results exactly
-  // where they were and only adds documents search used to miss entirely.
-  const [rows, contentHits] = await Promise.all([
+  // matches fill whatever room is left.
+  //
+  // Both passes over-fetch because access is checked after the query; filtering
+  // a tight limit would starve the category when the viewer cannot open most hits.
+  const [titleRows, rawContentHits] = await Promise.all([
     prisma.page.findMany({
       where: { archivedAt: null, kind: { not: "Form" }, title: like },
-      select: { id: true, title: true, iconEmoji: true },
-      take: RAW_TAKE,
+      select: { ...PAGE_ACCESS_SELECT, title: true, iconEmoji: true },
+      take: RAW_TAKE * 3,
     }),
-    searchPageContent(q, PER_CATEGORY_CAP),
+    searchPageContent(q, PER_CATEGORY_CAP * 3),
   ]);
+
+  const contentPages = rawContentHits.length
+    ? await prisma.page.findMany({
+        where: { id: { in: rawContentHits.map((h) => h.pageId) } },
+        select: PAGE_ACCESS_SELECT,
+      })
+    : [];
+  const access = await getPageAccessBulk(userId, [...titleRows, ...contentPages]);
+  const canView = (id: string) => access.get(id)?.canView === true;
+
+  const rows = titleRows.filter((r) => canView(r.id));
+  const contentHits = rawContentHits.filter((h) => canView(h.pageId));
 
   const titleResults = simpleResults(
     "document",

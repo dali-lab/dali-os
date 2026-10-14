@@ -785,21 +785,17 @@ describe("dissolveNotebook", () => {
 describe("trashNotebook", () => {
   beforeEach(() => pages({ nb1: notebookRow() }));
 
-  it("archives the notebook and its live subtree at one instant, and clears the series", async () => {
+  it("archives the notebook and its live subtree at one instant, and keeps the series pointing at it", async () => {
     vi.mocked(collectSubtree).mockResolvedValue({ ids: ["t1", "t2"], height: 1 });
 
     await trashNotebook("nb1", "u1");
 
     expect(collectSubtree).toHaveBeenCalledWith("nb1");
-    expect(m.$transaction).toHaveBeenCalledTimes(1);
     expect(m.page.updateMany).toHaveBeenCalledWith({
       where: { id: { in: ["nb1", "t1", "t2"] }, archivedAt: null },
       data: { archivedAt: expect.any(Date) },
     });
-    expect(m.scheduledMeeting.updateMany).toHaveBeenCalledWith({
-      where: { notebookId: "nb1" },
-      data: { notebookId: null },
-    });
+    expect(m.scheduledMeeting.updateMany).not.toHaveBeenCalled();
   });
 
   it("needs edit on the notebook", async () => {
