@@ -21,6 +21,8 @@ import QRCode from "qrcode";
 import { useConfirmSubmit, useDialog } from "~/components/ui/dialog";
 import type { HiringFormLink } from "~/hiring/lib/form-links.server";
 import { BADGE, FormBuilderTab } from "~/components/form-builder/FormBuilder";
+import { InfoBody } from "~/components/form-builder/info-body";
+import { isLayoutOnly } from "~/lib/form-answers";
 import { FormPreviewModal } from "~/forms/components/FormPreviewModal";
 import { FormSettingsButton } from "~/forms/components/FormSettings";
 import { VersionResults } from "~/forms/components/VersionResults";
@@ -557,10 +559,21 @@ export function FormDetail() {
                     }}
                     className="p-4 rounded-os-item border border-os-container cursor-pointer transition-colors hover:border-os-container-hi hover:bg-os-well/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent"
                   >
+                    {q.type === "info" ? (
+                      <div className="text-sm text-muted-foreground">
+                        <InfoBody body={q.data.body} />
+                      </div>
+                    ) : (
                     <div className="flex items-center gap-3 mb-1 flex-wrap">
-                      <span className="text-sm font-medium text-muted-foreground">
-                        Q{index + 1}
-                      </span>
+                      {q.type === "pageBreak" ? (
+                        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          Page break
+                        </span>
+                      ) : (
+                        <span className="text-sm font-medium text-muted-foreground">
+                          Q{selectedVersion.questions.slice(0, index + 1).filter((qq) => !isLayoutOnly(qq.type)).length}
+                        </span>
+                      )}
                       <h4 className="text-base font-medium text-foreground">
                         {q.data.label}
                       </h4>
@@ -570,6 +583,7 @@ export function FormDetail() {
                         </span>
                       )}
                     </div>
+                    )}
                     {q.data.description && (
                       <p className="text-sm text-muted-foreground mb-2">
                         {q.data.description}
