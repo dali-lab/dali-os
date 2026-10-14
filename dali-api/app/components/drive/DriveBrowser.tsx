@@ -79,6 +79,8 @@ import { Checkbox } from "~/components/ui/Checkbox";
 import { ShareDialog } from "~/components/sharing/ShareDialog";
 import { relativeTime } from "~/lib/relative-time";
 import { useRevalidator } from "react-router";
+import { useToast } from "~/components/ui/toast";
+import { notebookRequest, sendJson } from "~/components/notebooks/notebook-requests";
 import { cn } from "~/lib/cn";
 import { isProcessRootSpace, SHARED_SPACE_KEY } from "~/lib/drive-spaces";
 import { scopeIconFor } from "~/components/drive/scope-icon";
@@ -710,6 +712,25 @@ const GRID_CONTAINER =
   "grid grid-cols-[repeat(auto-fill,minmax(5.75rem,5.75rem))] justify-start gap-x-2 gap-y-3 px-3 py-3";
 const GRID_TILE =
   "group relative flex flex-col items-center gap-1 rounded-lg px-0.5 py-2 text-center cursor-default select-none";
+function isNotebookItem(item: DriveItem): boolean {
+  return item.type === "doc" && !!item.isNotebook;
+}
+
+function isPlainDocument(item: DriveItem): boolean {
+  return item.type === "doc" && !item.isNotebook && !item.isWhiteboard;
+}
+
+function acceptsDrops(item: DriveItem): boolean {
+  return item.type === "folder" || isNotebookItem(item);
+}
+
+function dropData(item: DriveItem, scopeId: string | null) {
+  const destScopeId = scopeId ?? undefined;
+  return isNotebookItem(item)
+    ? { destNotebookId: item.id, destScopeId }
+    : { destFolderId: item.id, destScopeId };
+}
+
 /** What a row, tile, card or crumb looks like while a dragged item hovers it as a drop target; one look in every view. */
 const DROP_RING = "bg-accent-coral/10 ring-2 ring-inset ring-accent-coral";
 
@@ -799,6 +820,23 @@ export function DriveBrowser({
   const sharingChangedRef = useRef(false);
   const [fileIn, setFileIn] = useState<{ target: FileInTarget; mode: "multi" | "single" } | null>(null);
   const revalidator = useRevalidator();
+  const toast = useToast();
+
+  async function dropOnNotebook(notebook: DriveItem, dragged: DriveItem[]) {
+    if (!dragged.every(isPlainDocument)) {
+      toast.error("Only documents can go in a notebook.");
+      return;
+    }
+    const results = await Promise.all(
+      dragged.map((d) => sendJson(notebookRequest(notebook.id, { intent: "add-page", pageId: d.id }))),
+    );
+    const failed = results.find((r) => !r.ok);
+    if (failed) toast.error(failed.error ?? "Something went wrong");
+    if (results.some((r) => r.ok)) {
+      toast.success(`Added to ${notebook.title}`);
+      void revalidator.revalidate();
+    }
+  }
 
   /** A shortcut to a folder opens that folder in the Drive; anything else follows the host. */
   function onOpenItem(item: DriveItem) {
@@ -1449,9 +1487,16 @@ export function DriveBrowser({
     setActiveDrag(null);
     suppressNextClick();
     const src = e.active.data.current as { item: DriveItem; scopeId: string } | undefined;
-    const dest = e.over?.data.current as { destFolderId?: string | null; destScopeId?: string } | undefined;
+    const dest = e.over?.data.current as
+      | { destFolderId?: string | null; destNotebookId?: string; destScopeId?: string }
+      | undefined;
     if (!src || !dest) return;
     const dragged = draggedItemsFor(src);
+    if (dest.destNotebookId) {
+      const notebook = scopes.flatMap((sc) => sc.items).find((it) => it.id === dest.destNotebookId);
+      if (notebook && !dragged.some((d) => d.id === notebook.id)) void dropOnNotebook(notebook, dragged);
+      return;
+    }
     // Cross-drive drop: item dragged onto a scope row in column 0.
     if (dest.destScopeId && dest.destFolderId === undefined) {
       if (dest.destScopeId !== src.scopeId) {
@@ -2619,12 +2664,12 @@ function ColumnItemRow({
   // without it the column view could only move things via the crumb trail.
   const drop = useDroppable({
     id: `col::drop::${scopeId}::${item.id}`,
-    data: { destFolderId: item.id, destScopeId: scopeId },
-    disabled: !isFolder || !scopeId,
+    data: dropData(item, scopeId),
+    disabled: !acceptsDrops(item) || !scopeId,
   });
   function setRefs(node: HTMLDivElement | null) {
     drag.setNodeRef(node);
-    if (isFolder) drop.setNodeRef(node);
+    if (acceptsDrops(item)) drop.setNodeRef(node);
   }
 
   return (
@@ -3302,7 +3347,6 @@ function ListRow({
   onTogglePartnerVisible?: (item: DriveItem, next: boolean) => void;
 }) {
   const t = useDriveText();
-  const isFolder = item.type === "folder";
   const isManaged = item.type === "agreement" || item.type === "rubric";
   const drag = useDraggable({
     id: `${scopeId}::${item.id}`,
@@ -3311,12 +3355,12 @@ function ListRow({
   });
   const drop = useDroppable({
     id: `${scopeId}::drop::${item.id}`,
-    data: { destFolderId: item.id, destScopeId: scopeId },
-    disabled: !isFolder,
+    data: dropData(item, scopeId),
+    disabled: !acceptsDrops(item),
   });
   function setRefs(node: HTMLDivElement | null) {
     drag.setNodeRef(node);
-    if (isFolder) drop.setNodeRef(node);
+    if (acceptsDrops(item)) drop.setNodeRef(node);
   }
 
   const row = (
@@ -3332,7 +3376,7 @@ function ListRow({
       className={`group grid items-center dnd-touch-handle ${t.itemRow} rounded-lg ${t.row} cursor-default select-none ${
         drag.isDragging ? "opacity-40" : shortcutRowState(item).dimmed ? "opacity-60" : ""
       } ${
-        drop.isOver && isFolder
+        drop.isOver && acceptsDrops(item)
           ? DROP_RING
           : selected
             ? "bg-os-container"
@@ -3413,7 +3457,6 @@ function GridTile({
   onTogglePartnerVisible?: (item: DriveItem, next: boolean) => void;
 }) {
   const t = useDriveText();
-  const isFolder = item.type === "folder";
   const isManaged = item.type === "agreement" || item.type === "rubric";
   const drag = useDraggable({
     id: `${scopeId}::${item.id}`,
@@ -3422,12 +3465,12 @@ function GridTile({
   });
   const drop = useDroppable({
     id: `${scopeId}::drop::${item.id}`,
-    data: { destFolderId: item.id, destScopeId: scopeId },
-    disabled: !isFolder,
+    data: dropData(item, scopeId),
+    disabled: !acceptsDrops(item),
   });
   function setRefs(node: HTMLDivElement | null) {
     drag.setNodeRef(node);
-    if (isFolder) drop.setNodeRef(node);
+    if (acceptsDrops(item)) drop.setNodeRef(node);
   }
 
   const tile = (
@@ -3446,7 +3489,7 @@ function GridTile({
       className={`${GRID_TILE} dnd-touch-handle ${
         drag.isDragging ? "opacity-40" : shortcutRowState(item).dimmed ? "opacity-60" : ""
       } ${
-        drop.isOver && isFolder
+        drop.isOver && acceptsDrops(item)
           ? DROP_RING
           : selected
             ? "bg-os-container/40"

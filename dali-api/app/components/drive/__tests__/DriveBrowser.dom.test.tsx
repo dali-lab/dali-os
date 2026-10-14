@@ -986,6 +986,106 @@ describe("DriveBrowser drag: dropping on a folder", () => {
   });
 });
 
+describe("DriveBrowser drag: dropping on a notebook", () => {
+  const notebook = { ...doc("nb1"), title: "Weekly sync", isNotebook: true, tabCount: 2 } as DriveItem;
+  const board = { ...doc("w1"), isWhiteboard: true } as DriveItem;
+  const withNotebook: DriveTreeScope = { ...lab, items: [folder("f1"), notebook, doc("d1"), doc("d2"), board] };
+  const views = [
+    ["columns", { view: "columns" as const }],
+    ["list", { view: "list" as const }],
+    ["grid", { view: "grid" as const }],
+  ] as const;
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const toastText = () => document.body.textContent ?? "";
+
+  describe.each(views)("%s", (_name, opts) => {
+    it("rings the notebook under the pointer", async () => {
+      await mount({ ...opts, scopes: [withNotebook, mine] });
+      place(row("doc", "d1"), 0);
+      place(row("doc", "nb1"), 100);
+      await carry(row("doc", "d1"), 100);
+      expect(row("doc", "nb1").className).toContain("ring-2");
+      expect(row("doc", "nb1").className).toContain("ring-accent-coral");
+      await release();
+    });
+
+    it("adds the dropped document to the notebook and says so", async () => {
+      await mount({ ...opts, scopes: [withNotebook, mine] });
+      place(row("doc", "d1"), 0);
+      place(row("doc", "nb1"), 100);
+      await carry(row("doc", "d1"), 100);
+      await release();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock.mock.calls[0][0]).toBe("/api/notebooks/nb1");
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ intent: "add-page", pageId: "d1" });
+      expect(toastText()).toContain("Added to Weekly sync");
+      expect(onMove).not.toHaveBeenCalled();
+    });
+
+    it("refuses a folder with a toast and sends nothing", async () => {
+      await mount({ ...opts, scopes: [withNotebook, mine] });
+      place(row("folder", "f1"), 0);
+      place(row("doc", "nb1"), 100);
+      await carry(row("folder", "f1"), 100);
+      await release();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(toastText()).toContain("Only documents can go in a notebook.");
+    });
+
+    it("refuses a whiteboard", async () => {
+      await mount({ ...opts, scopes: [withNotebook, mine] });
+      place(row("doc", "w1"), 0);
+      place(row("doc", "nb1"), 100);
+      await carry(row("doc", "w1"), 100);
+      await release();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(toastText()).toContain("Only documents can go in a notebook.");
+    });
+  });
+
+  it("adds every document of a multi-selection", async () => {
+    await mount({ view: "grid", scopes: [withNotebook, mine] });
+    await click(row("doc", "d1"), { metaKey: true });
+    await click(row("doc", "d2"), { metaKey: true });
+    place(row("doc", "d1"), 0);
+    place(row("doc", "nb1"), 100);
+    await carry(row("doc", "d1"), 100);
+    await release();
+    const ids = fetchMock.mock.calls.map((c) => JSON.parse(c[1].body).pageId).sort();
+    expect(ids).toEqual(["d1", "d2"]);
+  });
+
+  it("surfaces the server's refusal instead of claiming success", async () => {
+    fetchMock.mockResolvedValue({ ok: false, json: async () => ({ error: "You can't move this document" }) });
+    await mount({ view: "list", scopes: [withNotebook, mine] });
+    place(row("doc", "d1"), 0);
+    place(row("doc", "nb1"), 100);
+    await carry(row("doc", "d1"), 100);
+    await release();
+    expect(toastText()).toContain("You can't move this document");
+    expect(toastText()).not.toContain("Added to");
+  });
+
+  it("does not ring a plain document", async () => {
+    await mount({ view: "list", scopes: [withNotebook, mine] });
+    place(row("doc", "d1"), 0);
+    place(row("doc", "d2"), 100);
+    await carry(row("doc", "d1"), 100);
+    expect(row("doc", "d2").className).not.toContain("ring-accent-coral");
+    await release();
+  });
+});
+
 describe("DriveBrowser drag: dropping on the breadcrumb", () => {
   it("moves to the drive's top level from its crumb, with the same ring", async () => {
     await mount({ view: "list", folderId: "f1" });
