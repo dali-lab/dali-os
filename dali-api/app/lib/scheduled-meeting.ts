@@ -473,6 +473,8 @@ type ArtifactFilingInput = {
   projectId: string | null;
   isCoreMeeting: boolean;
   noteLocation: CreateScheduledMeetingInput["noteLocation"];
+  /** Whiteboards only: file exactly here (beside the meeting's notebook) instead of by project, Core or noteLocation. */
+  fileAt?: Placement | null;
 };
 
 // Create a meeting-asset Page (note doc or whiteboard) for a meeting and return
@@ -539,23 +541,59 @@ async function buildMeetingArtifactPage(
   return { id: page.id, notebookId: null, createdNotebook: false };
 }
 
-/** Where a meeting asset is filed (project, Core, or the author's chosen Drive
- *  location) and the title it carries there. */
+/** The title a meeting asset carries wherever it is filed. The artifact noun
+ *  keeps a note and a board for the same meeting distinguishable in Drive and
+ *  search; a project's Team/Partner assets are named for the project so they
+ *  stay identifiable once they leave its folder. */
+async function artifactTitle(input: ArtifactFilingInput, isBoard: boolean, dateLabel: string): Promise<string> {
+  const plain = isBoard ? `${dateLabel} whiteboard` : dateLabel;
+  if (input.projectId && (input.meetingType === "Team" || input.meetingType === "Partner")) {
+    const project = await prisma.project.findUnique({ where: { id: input.projectId }, select: { name: true } });
+    const noun = isBoard ? "whiteboard" : "meeting note";
+    return project ? `${project.name} ${input.meetingType} ${noun} (${dateLabel})` : plain;
+  }
+  if (!input.meetingTypeLabel) return plain;
+  return isBoard ? `${input.meetingTypeLabel} whiteboard (${dateLabel})` : `${input.meetingTypeLabel} (${dateLabel})`;
+}
+
+function destinationOf(p: Placement): MeetingNotebookDestination | null {
+  if (p.workspaceType === "Lab") return { workspaceType: "Lab", workspaceId: null, parentPageId: p.parentPageId };
+  if (p.workspaceType === "Project" && p.workspaceId) {
+    return { workspaceType: "Project", workspaceId: p.workspaceId, parentPageId: p.parentPageId };
+  }
+  return null;
+}
+
+/** Where a meeting asset is filed (beside its notebook, in its project, Core,
+ *  or the author's chosen Drive location) and the title it carries there. */
 async function resolveArtifactFiling(
   input: ArtifactFilingInput,
   isBoard: boolean,
   dateLabel: string,
 ): Promise<{ dest: MeetingNotebookDestination; title: string }> {
-  const file = (dest: MeetingNotebookDestination, title: string) => ({ dest, title });
-  // The artifact noun in the title, so a note and a board for the same meeting
-  // stay distinguishable in Drive and search. Whiteboards always carry
-  // "whiteboard"; notes keep their existing "meeting note" naming.
-  const noun = isBoard ? "whiteboard" : "meeting note";
-  let title = isBoard ? `${dateLabel} whiteboard` : dateLabel;
+  const title = await artifactTitle(input, isBoard, dateLabel);
+  const file = (dest: MeetingNotebookDestination) => ({ dest, title });
+
+  const beside = isBoard && input.fileAt ? destinationOf(input.fileAt) : null;
+  if (beside) return file(beside);
 
   const receivers = await receiversEnabled();
 
   if (input.projectId) {
+    // A board filed in a folder of this very project (whiteboard-only create)
+    // goes where the organizer chose; resolveNoteDestination checks they may.
+    const chosen =
+      isBoard && input.noteLocation?.workspaceType === "Project" && input.noteLocation.workspaceId === input.projectId
+        ? await resolveNoteDestination(input.authorId, input.noteLocation)
+        : null;
+    if (
+      chosen?.workspaceType === "Project" &&
+      chosen.workspaceId === input.projectId &&
+      chosen.parentPageId === input.noteLocation?.parentPageId
+    ) {
+      return file(chosen);
+    }
+
     // Team/Partner assets nest under their default, undeletable folder;
     // "Other" assets stay top-level (no default folder for a custom label).
     // With receivers on, every project meeting files to the project's Meetings
@@ -563,31 +601,11 @@ async function resolveArtifactFiling(
     let parentPageId: string | null = receivers
       ? (await resolveFilingFolder(projectSlot(input.projectId), input.authorId)).folderId
       : null;
-    if (input.meetingType === "Team" || input.meetingType === "Partner") {
-      if (!receivers) {
-        const folder = await ensureMeetingNotesFolder(
-          input.projectId,
-          input.meetingType,
-          input.authorId,
-        );
-        parentPageId = folder.id;
-      }
-      // Named for the project and kind they belong to, so they stay
-      // identifiable once they leave that folder — in search, in Drive, and on
-      // the meeting itself.
-      const project = await prisma.project.findUnique({
-        where: { id: input.projectId },
-        select: { name: true },
-      });
-      if (project) {
-        title = `${project.name} ${input.meetingType} ${noun} (${dateLabel})`;
-      }
-    } else if (input.meetingTypeLabel) {
-      title = isBoard
-        ? `${input.meetingTypeLabel} whiteboard (${dateLabel})`
-        : `${input.meetingTypeLabel} (${dateLabel})`;
+    if (!receivers && (input.meetingType === "Team" || input.meetingType === "Partner")) {
+      const folder = await ensureMeetingNotesFolder(input.projectId, input.meetingType, input.authorId);
+      parentPageId = folder.id;
     }
-    return file({ workspaceType: "Project", workspaceId: input.projectId, parentPageId }, title);
+    return file({ workspaceType: "Project", workspaceId: input.projectId, parentPageId });
   }
 
   if (input.isCoreMeeting) {
@@ -595,47 +613,32 @@ async function resolveArtifactFiling(
     // to its project: always Core's own meeting-assets folder, never a location
     // the organizer picked. The folder is Core-scoped, so the asset is Core-only
     // without depending on its own link access.
-    if (input.meetingTypeLabel) {
-      title = isBoard
-        ? `${input.meetingTypeLabel} whiteboard (${dateLabel})`
-        : `${input.meetingTypeLabel} (${dateLabel})`;
-    }
     const coreFolderId = receivers
       ? (await resolveFilingFolder(singletonSlot("Core", "Meetings"), input.authorId)).folderId
       : await ensureCoreMeetingNotesFolder(input.authorId);
-    return file(
-      {
-        workspaceType: "Lab",
-        workspaceId: null,
-        // Null only when the Core group isn't seeded yet — the asset lands at
-        // the Lab root rather than not existing at all.
-        parentPageId: coreFolderId,
-        restricted: coreFolderId !== null,
-      },
-      title,
-    );
+    return file({
+      workspaceType: "Lab",
+      workspaceId: null,
+      // Null only when the Core group isn't seeded yet: the asset lands at
+      // the Lab root rather than not existing at all.
+      parentPageId: coreFolderId,
+      restricted: coreFolderId !== null,
+    });
   }
 
-  // General meeting: file at the author's chosen Drive location. Include the
-  // label in the title so the asset stays identifiable wherever it lands.
-  if (input.meetingTypeLabel) {
-    title = isBoard
-      ? `${input.meetingTypeLabel} whiteboard (${dateLabel})`
-      : `${input.meetingTypeLabel} (${dateLabel})`;
-  }
   const dest = await resolveNoteDestination(input.authorId, input.noteLocation);
-  if (dest.workspaceType === "Project" && dest.workspaceId) return file(dest, title);
-  // No folder chosen — the common case, since the picker defaults to the top of
-  // the Lab drive and resolveNoteDestination falls back there for anything it
-  // can't honour. The Lab's own "Meeting assets" folder is the default instead
-  // of the root, where an asset titled just its date went loose among every
-  // other Lab doc. An explicitly chosen folder still wins.
+  if (dest.workspaceType === "Project" && dest.workspaceId) return file(dest);
+  // No folder chosen: the picker defaults to the top of the Lab drive and
+  // resolveNoteDestination falls back there for anything it can't honour. The
+  // Lab's own "Meeting assets" folder is the default instead of the root, where
+  // an asset titled just its date went loose among every other Lab doc. An
+  // explicitly chosen folder still wins.
   const parentPageId =
     dest.parentPageId ??
     (receivers
       ? (await resolveFilingFolder(singletonSlot("Lab", "Meetings"), input.authorId)).folderId
       : await ensureLabMeetingNotesFolder(input.authorId));
-  return file({ workspaceType: "Lab", workspaceId: null, parentPageId }, title);
+  return file({ workspaceType: "Lab", workspaceId: null, parentPageId });
 }
 
 type Placement = { workspaceType: string; workspaceId: string | null; parentPageId: string | null };
@@ -918,8 +921,11 @@ export async function createScheduledMeeting(
         await seedNoteFromTemplate(note.id, givenProjectId, recorded.meetingType, notebookPlan.templatePageId);
       }
     }
-    if (wantWhiteboard)
-      whiteboardPageId = (await buildMeetingArtifactPage({ ...common, artifact: "whiteboard" })).id;
+    if (wantWhiteboard) {
+      whiteboardPageId = (
+        await buildMeetingArtifactPage({ ...common, artifact: "whiteboard", fileAt: notebookPlan?.primary })
+      ).id;
+    }
   }
 
   const declinedLinks =
@@ -1352,6 +1358,7 @@ export async function attachMeetingWhiteboard(
       meetingType: true,
       meetingTypeLabel: true,
       projectId: true,
+      notebook: { select: { workspaceType: true, workspaceId: true, parentPageId: true } },
       whiteboardPage: { select: { id: true } },
       // The whiteboard is one per series; it files beside the first note.
       notePages: {
@@ -1428,6 +1435,7 @@ export async function attachMeetingWhiteboard(
     projectId: projectId ?? null,
     isCoreMeeting: meeting.isCoreMeeting,
     noteLocation,
+    fileAt: meeting.notebook,
     startDate: meeting.selectedAt,
   });
 

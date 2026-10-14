@@ -76,6 +76,7 @@ import { blocksToPlainText } from "~/components/doc/schema/configs";
 import { hashTemplateText, normalizeTemplateText } from "~/lib/meeting-note-template";
 import {
   attachMeetingNote,
+  attachMeetingWhiteboard,
   cancelScheduledMeeting,
   createScheduledMeeting,
   isWithinCheckInWindow,
@@ -2823,5 +2824,243 @@ describe("attachMeetingNote — notebooks", () => {
     await attachMeetingNote({ meetingId: "m1", actorId: "org-1" });
 
     expect(copyPageBody).toHaveBeenCalledWith("tpl-nb", "page-tab");
+  });
+});
+
+describe("where a whiteboard is filed", () => {
+  const p = prisma as unknown as {
+    scheduledMeeting: {
+      create: ReturnType<typeof vi.fn>;
+      findUnique: ReturnType<typeof vi.fn>;
+      update: ReturnType<typeof vi.fn>;
+    };
+    meetingAttendance: { createMany: ReturnType<typeof vi.fn> };
+    page: { findUnique: ReturnType<typeof vi.fn> };
+    project: { findFirst: ReturnType<typeof vi.fn>; findUnique: ReturnType<typeof vi.fn> };
+  };
+  const labPage = createLabMeetingPage as unknown as ReturnType<typeof vi.fn>;
+  const projectPage = createProjectPage as unknown as ReturnType<typeof vi.fn>;
+
+  const base = {
+    organizerId: "org-1",
+    organizerEmail: "org@dali.dartmouth.edu",
+    title: "Weekly check-in",
+    durationMinutes: 60,
+    scope: { type: "None" } as const,
+    startTime: "2026-09-10T15:00:00.000Z",
+    createWhiteboard: true,
+  };
+
+  beforeEach(() => {
+    p.scheduledMeeting.create.mockResolvedValue({ id: "m1", ownerCalendarEmail: base.organizerEmail });
+    p.meetingAttendance.createMany.mockResolvedValue({});
+    vi.mocked(receiversEnabled).mockResolvedValue(false);
+    vi.mocked(createNotebook).mockResolvedValue({ id: "nb-new" });
+  });
+
+  describe("created with a note", () => {
+    it("beside a new notebook's primary place in a project folder", async () => {
+      const res = await createScheduledMeeting({
+        ...base,
+        createNote: true,
+        projectId: "proj-7",
+        notebook: {
+          title: "Team sync",
+          location: { workspaceType: "Project", workspaceId: "proj-7", parentPageId: "folder-sub" },
+        },
+      });
+
+      expect(res).toMatchObject({ ok: true, whiteboardPageId: "page-project" });
+      expect(projectPage).toHaveBeenCalledWith(
+        expect.objectContaining({ projectId: "proj-7", parentPageId: "folder-sub", kind: "Whiteboard", meetingWhiteboardId: "m1" }),
+      );
+      expect(ensureMeetingNotesFolder).not.toHaveBeenCalled();
+      expect(labPage).not.toHaveBeenCalled();
+    });
+
+    it("beside a new notebook's primary place in a Lab folder, not the default Meeting assets folder", async () => {
+      await createScheduledMeeting({
+        ...base,
+        createNote: true,
+        notebook: { title: "Standup", location: { workspaceType: "Lab", workspaceId: null, parentPageId: "folder-9" } },
+      });
+
+      expect(labPage).toHaveBeenCalledWith(
+        expect.objectContaining({ parentPageId: "folder-9", kind: "Whiteboard", meetingWhiteboardId: "m1" }),
+      );
+      expect(ensureLabMeetingNotesFolder).not.toHaveBeenCalled();
+    });
+
+    it("beside a new notebook with no chosen place, in the folder the notebook defaulted to", async () => {
+      await createScheduledMeeting({ ...base, createNote: true, notebook: { title: "Standup" } });
+
+      expect(createNotebook).toHaveBeenCalledWith(expect.objectContaining({ parentPageId: "folder-lab-notes" }));
+      expect(labPage).toHaveBeenCalledWith(expect.objectContaining({ parentPageId: "folder-lab-notes" }));
+    });
+
+    it("beside an existing notebook, wherever it lives", async () => {
+      vi.mocked(loadEditableNotebook).mockResolvedValue({
+        id: "nb-9",
+        title: "Weekly",
+        templatePageId: null,
+        workspaceType: "Project",
+        workspaceId: "proj-3",
+        parentPageId: "folder-atlas",
+      } as never);
+
+      await createScheduledMeeting({ ...base, createNote: true, notebook: { existingId: "nb-9" } });
+
+      expect(projectPage).toHaveBeenCalledWith(
+        expect.objectContaining({ projectId: "proj-3", parentPageId: "folder-atlas", kind: "Whiteboard" }),
+      );
+      expect(labPage).not.toHaveBeenCalled();
+    });
+
+    it("keeps the board's usual title", async () => {
+      await createScheduledMeeting({
+        ...base,
+        createNote: true,
+        notebook: { title: "Standup", location: { workspaceType: "Lab", workspaceId: null, parentPageId: "folder-9" } },
+      });
+
+      expect(labPage).toHaveBeenCalledWith(expect.objectContaining({ title: "Standup whiteboard (Sep 10, 2026)" }));
+    });
+  });
+
+  describe("created without a note", () => {
+    it("honours a folder inside the meeting's project", async () => {
+      p.project.findFirst.mockResolvedValue({ id: "proj-7" });
+      p.page.findUnique.mockResolvedValue({ kind: "Folder", archivedAt: null, workspaceType: "Project", workspaceId: "proj-7" });
+
+      await createScheduledMeeting({
+        ...base,
+        createNote: false,
+        projectId: "proj-7",
+        noteLocation: { workspaceType: "Project", workspaceId: "proj-7", parentPageId: "folder-sub" },
+      });
+
+      expect(projectPage).toHaveBeenCalledWith(
+        expect.objectContaining({ projectId: "proj-7", parentPageId: "folder-sub", kind: "Whiteboard" }),
+      );
+      expect(ensureMeetingNotesFolder).not.toHaveBeenCalled();
+    });
+
+    it("falls back to the project's own folder when the chosen folder is not usable", async () => {
+      p.project.findFirst.mockResolvedValue({ id: "proj-7" });
+      p.page.findUnique.mockResolvedValue({ kind: "Folder", archivedAt: null, workspaceType: "Project", workspaceId: "other" });
+
+      await createScheduledMeeting({
+        ...base,
+        createNote: false,
+        projectId: "proj-7",
+        meetingType: "Team",
+        noteLocation: { workspaceType: "Project", workspaceId: "proj-7", parentPageId: "folder-elsewhere" },
+      });
+
+      expect(projectPage).toHaveBeenCalledWith(expect.objectContaining({ parentPageId: "folder-project" }));
+    });
+
+    it("ignores a location in a different project", async () => {
+      await createScheduledMeeting({
+        ...base,
+        createNote: false,
+        projectId: "proj-7",
+        meetingType: "Team",
+        noteLocation: { workspaceType: "Project", workspaceId: "proj-8", parentPageId: "folder-sub" },
+      });
+
+      expect(projectPage).toHaveBeenCalledWith(expect.objectContaining({ projectId: "proj-7", parentPageId: "folder-project" }));
+    });
+
+    it("still files a Team meeting's board in its Meetings notes folder when no location is given", async () => {
+      await createScheduledMeeting({ ...base, createNote: false, projectId: "proj-7", meetingType: "Team" });
+
+      expect(projectPage).toHaveBeenCalledWith(expect.objectContaining({ projectId: "proj-7", parentPageId: "folder-project" }));
+    });
+  });
+
+  describe("added to a meeting later", () => {
+    const meetingRow = (over: Record<string, unknown> = {}) => ({
+      id: "m1",
+      organizerId: "org-1",
+      participantUserIds: ["org-1"],
+      isCoreMeeting: false,
+      selectedAt: new Date("2026-09-10T15:00:00Z"),
+      createdAt: new Date("2026-09-01T12:00:00Z"),
+      status: "Confirmed",
+      title: "Weekly check-in",
+      meetingType: "Other",
+      meetingTypeLabel: "Weekly",
+      projectId: null,
+      notebook: null,
+      whiteboardPage: null,
+      notePages: [],
+      ...over,
+    });
+
+    beforeEach(() => {
+      p.scheduledMeeting.update.mockResolvedValue({});
+      p.meetingAttendance.createMany.mockResolvedValue({ count: 0 });
+    });
+
+    it("files beside the meeting's notebook", async () => {
+      p.scheduledMeeting.findUnique.mockResolvedValue(
+        meetingRow({
+          projectId: "proj-3",
+          notebook: { workspaceType: "Project", workspaceId: "proj-3", parentPageId: "folder-atlas" },
+        }),
+      );
+
+      const res = await attachMeetingWhiteboard({ meetingId: "m1", actorId: "org-1" });
+
+      expect(res).toEqual({ ok: true, whiteboardPageId: "page-project" });
+      expect(projectPage).toHaveBeenCalledWith(
+        expect.objectContaining({ projectId: "proj-3", parentPageId: "folder-atlas", kind: "Whiteboard" }),
+      );
+    });
+
+    it("prefers the notebook's place over where the first note sits", async () => {
+      p.scheduledMeeting.findUnique.mockResolvedValue(
+        meetingRow({
+          notebook: { workspaceType: "Lab", workspaceId: null, parentPageId: "folder-nb" },
+          notePages: [
+            {
+              id: "note-1",
+              workspaceType: "Lab",
+              workspaceId: null,
+              parentPageId: "nb-1",
+              parent: { kind: "Notebook", parentPageId: "folder-old" },
+            },
+          ],
+        }),
+      );
+
+      await attachMeetingWhiteboard({ meetingId: "m1", actorId: "org-1" });
+
+      expect(labPage).toHaveBeenCalledWith(expect.objectContaining({ parentPageId: "folder-nb" }));
+    });
+
+    it("keeps filing by the meeting's type when it has no notebook", async () => {
+      p.scheduledMeeting.findUnique.mockResolvedValue(meetingRow());
+
+      await attachMeetingWhiteboard({ meetingId: "m1", actorId: "org-1" });
+
+      expect(labPage).toHaveBeenCalledWith(expect.objectContaining({ parentPageId: "folder-lab-notes" }));
+    });
+
+    it("honours a folder in the chosen project for a meeting with no type yet", async () => {
+      p.scheduledMeeting.findUnique.mockResolvedValue(meetingRow({ meetingType: null, meetingTypeLabel: null }));
+      p.project.findFirst.mockResolvedValue({ id: "proj-7" });
+      p.page.findUnique.mockResolvedValue({ kind: "Folder", archivedAt: null, workspaceType: "Project", workspaceId: "proj-7" });
+
+      await attachMeetingWhiteboard({
+        meetingId: "m1",
+        actorId: "org-1",
+        projectId: "proj-7",
+        noteLocation: { workspaceType: "Project", workspaceId: "proj-7", parentPageId: "folder-sub" },
+      });
+
+      expect(projectPage).toHaveBeenCalledWith(expect.objectContaining({ projectId: "proj-7", parentPageId: "folder-sub" }));
+    });
   });
 });

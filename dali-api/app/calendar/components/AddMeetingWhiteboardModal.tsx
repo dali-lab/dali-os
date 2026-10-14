@@ -13,11 +13,9 @@ import {
 // to a meeting that doesn't have one, posting the `add-meeting-whiteboard`
 // calendar action. When the meeting already knows its type (it has a note), the
 // board files alongside it, so the modal is a one-click confirm; a note-less
-// meeting collects the About/type the same way the add-note flow does. A
+// meeting collects where to file it the same way the add-note flow does. A
 // revalidation then swaps the "Add whiteboard" affordance for the "Whiteboard"
 // link. Only rendered when the whiteboard flag is on and no board exists yet.
-
-type MoveDestination = { type: "Lab" | "Project"; id: string | null; label: string };
 
 const fieldClass =
   "w-full px-3.5 py-2.5 text-sm border border-border rounded-[10px] bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/40";
@@ -26,15 +24,15 @@ const labelClass =
 
 export function AddMeetingWhiteboardButton({
   meetingId,
-  isCoreMeeting,
   /** The meeting already has a recorded type (e.g. a note): the board reuses it,
-   *  so the modal skips the About/type fields. */
+   *  so the modal skips the filing fields. */
   hasType,
   actionPath,
   className,
 }: {
   meetingId: string;
-  isCoreMeeting: boolean;
+  /** Callers that still pass it are ignored: where the board is filed decides Core. */
+  isCoreMeeting?: boolean;
   hasType: boolean;
   actionPath?: string;
   className?: string;
@@ -48,7 +46,6 @@ export function AddMeetingWhiteboardButton({
       {open && (
         <AddMeetingWhiteboardModal
           meetingId={meetingId}
-          isCoreMeeting={isCoreMeeting}
           hasType={hasType}
           actionPath={actionPath}
           onClose={() => setOpen(false)}
@@ -60,51 +57,23 @@ export function AddMeetingWhiteboardButton({
 
 function AddMeetingWhiteboardModal({
   meetingId,
-  isCoreMeeting,
   hasType,
   actionPath,
   onClose,
 }: {
   meetingId: string;
-  isCoreMeeting: boolean;
   hasType: boolean;
   actionPath?: string;
   onClose: () => void;
 }) {
   const note = useMeetingNote();
   const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
-  const [myProjects, setMyProjects] = useState<{ id: string; name: string }[]>([]);
 
   // Marks the board (not the note) as the requested asset for the shared fields.
   useEffect(() => {
     note.setWhiteboard(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Only need the About picker's projects when the meeting has no type yet.
-  useEffect(() => {
-    if (hasType || isCoreMeeting) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await fetch("/api/move-destinations", { credentials: "include" });
-        const json = await res.json();
-        const dests = (json.destinations ?? []) as MoveDestination[];
-        if (!cancelled) {
-          setMyProjects(
-            dests
-              .filter((d) => d.type === "Project" && d.id)
-              .map((d) => ({ id: d.id!, name: d.label })),
-          );
-        }
-      } catch {
-        // No projects → About offers only "General"; the modal still works.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [hasType, isCoreMeeting]);
 
   // Close only this modal on Escape (capture + stopPropagation) so the key
   // doesn't also close the popover behind it.
@@ -179,7 +148,6 @@ function AddMeetingWhiteboardModal({
             <MeetingNoteFields
               note={note}
               surface="whiteboard"
-              myProjects={myProjects}
               fieldClass={fieldClass}
               labelClass={labelClass}
             />

@@ -2,10 +2,12 @@
 // so it can be unit-tested and reused. The UI (hook + component) lives in
 // MeetingNoteFields.tsx and re-exports these.
 //
-// `about` is "" or a projectId. "Which notebook?" is the notebook choice: an
-// existing one, or a new one with a name and an optional template. Where it is
-// filed is `places`: the first is the primary location, the rest are links
-// (shortcuts). The server derives the legacy meeting type from the choice.
+// "Which notebook?" is the notebook choice: an existing one, or a new one with
+// a name and an optional template. Where it is filed is `places`: the first is
+// the primary location, the rest are links (shortcuts). A whiteboard with no
+// note is filed at the first place alone. The meeting's project is derived
+// from where the assets go (projectIdOf); the server derives the legacy
+// meeting type from the choice.
 
 import { destinationPath, type Destination, type MultiResult } from "~/components/drive/FolderPicker";
 import { resolveMoveTarget } from "~/components/drive/move-target";
@@ -19,6 +21,7 @@ import {
   type MultiSelection,
 } from "~/components/drive/picker-multi";
 import type { PickerRows } from "~/components/drive/picker-rows";
+import type { PickedNotebook } from "~/components/notebooks/notebook-picker";
 import type { NotebookChoice } from "~/lib/notebook-choice";
 
 export type MeetingNoteLocation = {
@@ -35,16 +38,14 @@ export type FilingPlace = { dest: Destination; location: MeetingNoteLocation; pa
 /** The most shortcuts the server accepts alongside a notebook's own location. */
 export const MAX_FILING_LINKS = 8;
 
-export type ExistingNotebook = { id: string; title: string; path: string };
+export type ExistingNotebook = PickedNotebook;
 
 export type MeetingNoteState = {
   /** Create a shared note doc for this meeting. */
   enabled: boolean;
-  /** Also start a shared whiteboard, filed alongside the note. The Add
-   *  whiteboard modal sets it without a note, and files by `location`. */
+  /** Also start a shared whiteboard: beside the notebook, or at the first
+   *  place when there is no note. */
   whiteboard: boolean;
-  /** "" = General (no project); otherwise a projectId. */
-  about: string;
   notebookMode: "existing" | "new";
   /** The notebook picked in "Add to existing" mode. */
   existing: ExistingNotebook | null;
@@ -52,12 +53,10 @@ export type MeetingNoteState = {
   title: string;
   /** True once the organizer typed a name, which stops the meeting-title prefill. */
   titleEdited: boolean;
-  /** Where a whiteboard with no note is filed (Add whiteboard modal); null files it by About. */
-  location: MeetingNoteLocation | null;
   /** Where the notebook is filed, primary first. In "existing" mode the
    *  notebook already has its own location, so every place is a link. */
   places: FilingPlace[];
-  /** True once the organizer added, removed or re-ranked a place, which stops About from choosing one. */
+  /** True once the organizer added, removed or re-ranked a place, which stops the invited project from choosing one. */
   placesTouched: boolean;
   /** New notebook template; null uses the project or lab default. */
   templatePageId: string | null;
@@ -66,12 +65,10 @@ export type MeetingNoteState = {
 export const emptyMeetingNote: MeetingNoteState = {
   enabled: false,
   whiteboard: false,
-  about: "",
   notebookMode: "new",
   existing: null,
   title: "",
   titleEdited: false,
-  location: null,
   places: [],
   placesTouched: false,
   templatePageId: null,
@@ -119,20 +116,30 @@ export function notebookChoiceOf(s: MeetingNoteState): NotebookChoice | null {
   };
 }
 
+/** The project the meeting's assets belong to: the chosen notebook's, or the
+ *  project the primary place is in. Null files them lab-wide. */
+export function projectIdOf(s: MeetingNoteState): string | null {
+  if (s.enabled && s.notebookMode === "existing") {
+    return s.existing?.workspaceType === "Project" ? s.existing.workspaceId : null;
+  }
+  const primary = s.places[0]?.location;
+  return primary?.workspaceType === "Project" ? primary.workspaceId : null;
+}
+
 /** The meeting-asset fields to merge into the /api/scheduled-meetings payload.
  *  Sends the `note`/`whiteboard` flags telling the server which artifacts to
- *  create, the project the meeting is about, and the notebook choice. A
- *  whiteboard without a note has no notebook, so a General meeting's chosen
- *  folder rides as `noteLocation`. */
+ *  create, the project the assets belong to, and the notebook choice. A
+ *  whiteboard without a note has no notebook, so the place it is filed rides
+ *  as `noteLocation`. */
 export function meetingNotePayload(s: MeetingNoteState): Record<string, unknown> {
   if (!meetingNoteActive(s)) return {};
   const out: Record<string, unknown> = { note: s.enabled, whiteboard: s.whiteboard };
-  if (s.about !== "") out.projectId = s.about;
+  const projectId = projectIdOf(s);
+  if (projectId) out.projectId = projectId;
   const notebook = notebookChoiceOf(s);
   if (notebook) out.notebook = notebook;
-  if (!s.enabled && s.about === "" && s.location && !isLabTop(s.location)) {
-    out.noteLocation = locationPayload(s.location);
-  }
+  const boardPlace = s.enabled ? undefined : s.places[0]?.location;
+  if (boardPlace && !isLabTop(boardPlace)) out.noteLocation = locationPayload(boardPlace);
   return out;
 }
 
@@ -157,25 +164,6 @@ export function noteLocationFromDest(dest: Destination, rows: PickerRows): Meeti
     parentPageId: target.parentPageId,
     label: inFolder ? `${target.label} / ${folder.title}` : target.label,
   };
-}
-
-/** Where the picker opens for the note's current location (Lab-wide by default). */
-export function noteInitialDest(location: MeetingNoteLocation | null, rows: PickerRows): Destination {
-  const lab: Destination = { driveId: "lab", folderId: null };
-  if (!location) return lab;
-  if (location.workspaceType === "Project") {
-    const driveId = "projects";
-    const folderId = location.parentPageId ?? location.workspaceId;
-    return folderId && rows.folders.some((f) => f.driveId === driveId && f.id === folderId)
-      ? { driveId, folderId }
-      : lab;
-  }
-  const parent = location.parentPageId;
-  if (!parent) return lab;
-  const folder = rows.folders.find((f) => f.id === parent);
-  if (folder) return { driveId: folder.driveId, folderId: folder.id };
-  const root = rows.drives.find((d) => d.rootFolderId === parent);
-  return root ? { driveId: root.id, folderId: null } : lab;
 }
 
 /** A picked destination as a filing place; null when it is not somewhere a
@@ -278,9 +266,9 @@ export function groupFilingDest(
   return null;
 }
 
-/** The place About chooses by default; null for General, where the server's default applies. */
-export function defaultPlaceFor(about: string, rows: PickerRows): FilingPlace | null {
-  if (about === "") return null;
-  const dest = receiverDest(rows, { kind: "project", projectId: about });
+/** The place a project's meetings are filed in by default; null without a project, where the server's default applies. */
+export function defaultPlaceFor(projectId: string | null, rows: PickerRows): FilingPlace | null {
+  if (!projectId) return null;
+  const dest = receiverDest(rows, { kind: "project", projectId });
   return dest ? placeFromDest(dest, rows) : null;
 }

@@ -96,6 +96,8 @@ describe("listNotebooks", () => {
         id: "a",
         title: "Weekly",
         path: "Lab ▸ Meetings",
+        workspaceType: "Lab",
+        workspaceId: null,
         tabCount: 4,
         lastNoteAt: "2026-09-12T15:00:00.000Z",
         suggested: false,

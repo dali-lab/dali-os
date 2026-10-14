@@ -33,6 +33,8 @@ export type ListedNotebook = {
   id: string;
   title: string;
   path: string;
+  workspaceType: string;
+  workspaceId: string | null;
   tabCount: number;
   lastNoteAt: string | null;
   suggested: boolean;
@@ -127,6 +129,8 @@ export async function listNotebooks(input: {
       id: r.id,
       title: r.title,
       path: formatFiledPath(await notebookLocationParts(pageById.get(r.id)!, input.actorId, input.request)),
+      workspaceType: r.workspaceType,
+      workspaceId: r.workspaceId,
       tabCount: r.tabCount,
       lastNoteAt: r.lastNoteAt?.toISOString() ?? null,
       suggested: r.suggested,

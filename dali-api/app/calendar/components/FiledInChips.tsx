@@ -8,10 +8,12 @@ import { MAX_FILING_LINKS, type FilingPlace } from "~/calendar/components/meetin
 export type FilingSuggestionChip = { groupId: string; label: string; reason: string };
 
 /** The notebook's places: the primary first, then links. In "existing" mode the
- *  notebook already has its own location, so every chip is a link. */
+ *  notebook already has its own location, so every chip is a link. For a
+ *  whiteboard with no note there is one place and nothing to rank. */
 export function FiledInChips({
   places,
   existingNotebook,
+  boardOnly = false,
   suggestions,
   labelClass,
   onPickSuggestion,
@@ -21,6 +23,7 @@ export function FiledInChips({
 }: {
   places: FilingPlace[];
   existingNotebook: boolean;
+  boardOnly?: boolean;
   suggestions: FilingSuggestionChip[];
   labelClass: string;
   onPickSuggestion: (groupId: string) => void;
@@ -62,7 +65,7 @@ export function FiledInChips({
               <span className="min-w-0 flex-1 truncate text-foreground" title={place.path}>
                 {place.path}
               </span>
-              {i === 0 && !existingNotebook ? (
+              {boardOnly ? null : i === 0 && !existingNotebook ? (
                 <span className="shrink-0 rounded bg-accent-coral/15 px-1.5 py-0.5 text-[11px] font-semibold text-accent-coral">
                   Primary
                 </span>
@@ -93,21 +96,23 @@ export function FiledInChips({
           ))}
         </ul>
       )}
-      {linkCount > MAX_FILING_LINKS && (
+      {!boardOnly && linkCount > MAX_FILING_LINKS && (
         <p role="alert" className="mb-2 text-xs text-red-600">
           A notebook can have up to {MAX_FILING_LINKS} links. Remove {linkCount - MAX_FILING_LINKS}.
         </p>
       )}
       {places.length === 0 && (
         <p className="mb-2 text-xs text-muted-foreground">
-          {existingNotebook
-            ? "Optional. Add places to link this notebook from."
-            : "Nothing chosen. A new notebook goes in the default Meetings folder."}
+          {boardOnly
+            ? "Nothing chosen. The whiteboard goes in the default Meeting assets folder."
+            : existingNotebook
+              ? "Optional. Add places to link this notebook from."
+              : "Nothing chosen. A new notebook goes in the default Meetings folder."}
         </p>
       )}
       <Button variant="ghost" size="xs" onClick={onAdd} className="-ml-2.5">
         <Plus className="h-3.5 w-3.5" aria-hidden />
-        Add a place…
+        {boardOnly && places.length > 0 ? "Change place…" : "Add a place…"}
       </Button>
     </div>
   );
