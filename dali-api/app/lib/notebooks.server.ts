@@ -505,13 +505,11 @@ export async function dissolveNotebook(notebookId: string, actorId: string): Pro
 export async function trashNotebook(notebookId: string, actorId: string): Promise<void> {
   await loadManageableNotebook(notebookId, actorId);
   const subtree = await collectSubtree(notebookId);
-  const meetings = await prisma.scheduledMeeting.findMany({ where: { notebookId }, select: { id: true } });
-  await prisma.$transaction([
-    prisma.page.updateMany({
-      where: { id: { in: [notebookId, ...subtree.ids] }, archivedAt: null },
-      data: { archivedAt: new Date() },
-    }),
-    prisma.scheduledMeeting.updateMany({ where: { notebookId }, data: { notebookId: null } }),
-  ]);
-  for (const m of meetings) await removeMeetingShares(m.id);
+  // The series keeps pointing at the notebook and its meeting shares stay: an
+  // archived page grants nothing while in Trash, and a restore re-attaches
+  // without anyone re-picking or re-sharing.
+  await prisma.page.updateMany({
+    where: { id: { in: [notebookId, ...subtree.ids] }, archivedAt: null },
+    data: { archivedAt: new Date() },
+  });
 }
