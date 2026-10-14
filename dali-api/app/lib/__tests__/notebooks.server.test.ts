@@ -11,7 +11,7 @@ vi.mock("~/lib/db", () => ({
       count: vi.fn(),
     },
     project: { findUnique: vi.fn() },
-    scheduledMeeting: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
+    scheduledMeeting: { findUnique: vi.fn(), findFirst: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     $transaction: vi.fn(),
   },
 }));
@@ -41,6 +41,7 @@ import {
   NotebookError,
   addToNotebook,
   attachNote,
+  canManageNotebook,
   createNotebook,
   detachNote,
   dissolveNotebook,
@@ -806,5 +807,102 @@ describe("trashNotebook", () => {
   it("404s a page that is not a live notebook", async () => {
     pages({ nb1: notebookRow({ kind: "Folder" }) });
     expect((await rejection(trashNotebook("nb1", "u1"))).status).toBe(404);
+  });
+});
+
+describe("canManageNotebook", () => {
+  const nb = (over: Record<string, unknown> = {}) => notebookRow({ createdById: "creator", ...over });
+  const shareOnlyEditor = () =>
+    vi.mocked(getPageAccess).mockImplementation((async (_u: string, _p: any, _r: any, options: any) =>
+      options?.ignoreShares ? VIEW_ONLY : FULL) as never);
+
+  it("is true when the actor can edit ignoring shares", async () => {
+    expect(await canManageNotebook("u1", nb())).toBe(true);
+    expect(getPageAccess).toHaveBeenCalledWith("u1", expect.objectContaining({ id: "nb1" }), undefined, {
+      ignoreShares: true,
+    });
+    expect(m.scheduledMeeting.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("is false for an editor who only has a share", async () => {
+    shareOnlyEditor();
+    m.scheduledMeeting.findFirst.mockResolvedValue(null);
+    expect(await canManageNotebook("u1", nb())).toBe(false);
+    expect(m.scheduledMeeting.findFirst).toHaveBeenCalledWith({
+      where: { notebookId: "nb1", organizerId: "u1" },
+      select: { id: true },
+    });
+  });
+
+  it("is true for the organizer of a meeting that files there", async () => {
+    shareOnlyEditor();
+    m.scheduledMeeting.findFirst.mockResolvedValue({ id: "m1" });
+    expect(await canManageNotebook("u1", nb())).toBe(true);
+  });
+
+  it("is true for the notebook's creator", async () => {
+    shareOnlyEditor();
+    expect(await canManageNotebook("creator", nb())).toBe(true);
+    expect(m.scheduledMeeting.findFirst).not.toHaveBeenCalled();
+  });
+});
+
+describe("structure mutations need manage authority", () => {
+  const shareOnlyEditor = () => {
+    vi.mocked(getPageAccess).mockImplementation((async (_u: string, _p: any, _r: any, options: any) =>
+      options?.ignoreShares ? VIEW_ONLY : FULL) as never);
+    m.scheduledMeeting.findFirst.mockResolvedValue(null);
+  };
+  const note = docRow({
+    meetingNoteId: "m1",
+    parentPageId: "nb1",
+    parent: { ...notebookRow(), parentPageId: "folder1" },
+  });
+  const cases: Array<[string, () => Promise<unknown>]> = [
+    ["setNotebookTemplate", () => setNotebookTemplate("nb1", null, "u1")],
+    ["mergeNotebooks", () => mergeNotebooks("nb1", "nb2", "u1")],
+    ["dissolveNotebook", () => dissolveNotebook("nb1", "u1")],
+    ["trashNotebook", () => trashNotebook("nb1", "u1")],
+    ["detachNote", () => detachNote("doc1", "u1")],
+  ];
+
+  beforeEach(() => {
+    pages({ nb1: notebookRow(), nb2: notebookRow({ id: "nb2" }), doc1: note });
+    m.page.findFirst.mockResolvedValue({ position: 1 });
+    m.page.count.mockResolvedValue(1);
+  });
+
+  it.each(cases)("%s 403s a share-only editor", async (_name, run) => {
+    shareOnlyEditor();
+    const err = await rejection(run());
+    expect(err.status).toBe(403);
+    expect(getPageAccess).toHaveBeenCalledWith("u1", expect.objectContaining({ id: "nb1" }), undefined, {
+      ignoreShares: true,
+    });
+    expect(m.page.update).not.toHaveBeenCalled();
+    expect(m.$transaction).not.toHaveBeenCalled();
+  });
+
+  it.each(cases)("%s succeeds for a manager", async (_name, run) => {
+    await expect(run()).resolves.not.toThrow();
+  });
+
+  it("lets the organizer of a meeting filing there restructure", async () => {
+    shareOnlyEditor();
+    m.scheduledMeeting.findFirst.mockResolvedValue({ id: "m1" });
+    await expect(trashNotebook("nb1", "u1")).resolves.toBeUndefined();
+  });
+
+  it("detaches a note that sits outside any notebook with plain edit", async () => {
+    shareOnlyEditor();
+    pages({ doc1: docRow({ meetingNoteId: "m1", parent: null }) });
+    await expect(detachNote("doc1", "u1")).resolves.toBeUndefined();
+  });
+
+  it("still lets a share-only editor add a tab", async () => {
+    shareOnlyEditor();
+    pages({ nb1: notebookRow(), doc1: docRow() });
+    await expect(addToNotebook("doc1", "nb1", "u1")).resolves.toBeUndefined();
+    expect(moveIntoNotebook).toHaveBeenCalledWith("doc1", "nb1");
   });
 });

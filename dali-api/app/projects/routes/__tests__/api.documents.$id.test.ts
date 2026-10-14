@@ -30,6 +30,7 @@ vi.mock("~/lib/notebooks.server", () => {
       throw err;
     },
     trashNotebook: vi.fn(),
+    loadManageableNotebook: vi.fn(),
   };
 });
 vi.mock("~/lib/cors", () => ({
@@ -40,7 +41,7 @@ vi.mock("~/lib/cors", () => ({
 import { prisma } from "~/lib/db";
 import { requireMemberSession, requireProjectEditAccess } from "~/lib/auth";
 import { getPageAccess } from "~/lib/pageAccess.server";
-import { NotebookError, trashNotebook } from "~/lib/notebooks.server";
+import { NotebookError, loadManageableNotebook, trashNotebook } from "~/lib/notebooks.server";
 import { action } from "../api.documents.$id";
 
 const m = prisma as any;
@@ -369,10 +370,24 @@ describe("DELETE /api/documents/:id — notebooks", () => {
     expect(trashNotebook).not.toHaveBeenCalled();
   });
 
-  it("leaves a rename of a notebook on the ordinary path", async () => {
+  it("renames a notebook for a manager", async () => {
     m.page.findUnique.mockResolvedValue(notebook());
     expect((await post({ title: "Renamed" })).status).toBe(200);
+    expect(loadManageableNotebook).toHaveBeenCalledWith("p1", "u1", expect.any(Request));
     expect(m.page.update.mock.calls[0][0].data.title).toBe("Renamed");
     expect(trashNotebook).not.toHaveBeenCalled();
+  });
+
+  it("refuses a rename from an editor who cannot manage the notebook", async () => {
+    m.page.findUnique.mockResolvedValue(notebook());
+    vi.mocked(loadManageableNotebook).mockRejectedValue(new NotebookError("You can't manage this notebook", 403));
+    expect((await post({ title: "Renamed" })).status).toBe(403);
+    expect(m.page.update).not.toHaveBeenCalled();
+  });
+
+  it("does not ask for manage authority when only the icon changes", async () => {
+    m.page.findUnique.mockResolvedValue(notebook());
+    expect((await post({ iconEmoji: "x" })).status).toBe(200);
+    expect(loadManageableNotebook).not.toHaveBeenCalled();
   });
 });

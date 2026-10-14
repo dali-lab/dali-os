@@ -10,7 +10,7 @@ import { loadAncestorChain, chainDepth, chainHasAncestor, chainGoverningScope } 
 import { isRoot, ROOT_MOVE_ERROR } from "~/lib/drive-roots";
 import { clearTypeIfLeavingRoot } from "~/lib/drive-receivers.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
-import { addToNotebook, notebookErrorResponse } from "~/lib/notebooks.server";
+import { addToNotebook, loadManageableNotebook, notebookErrorResponse } from "~/lib/notebooks.server";
 
 // POST /api/pages/:id/move — move and/or reorder a document.
 //   { parentPageId, beforeId? }                  → reorder within its workspace
@@ -124,6 +124,7 @@ export async function movePage({
       publicVisible: true,
       projectAsOverview: { select: { id: true } },
       projectAsPRD: { select: { id: true } },
+      parent: { select: { id: true, kind: true, archivedAt: true } },
     },
   });
   // A movable source is a live page in one of the four workspaces, carrying the
@@ -147,6 +148,18 @@ export async function movePage({
   const resolved = typeof input === "function" ? await input() : input;
   if (resolved instanceof Response) return { ok: false, response: resolved };
   const body = resolved;
+
+  if (
+    page.parent?.kind === "Notebook" &&
+    page.parent.archivedAt === null &&
+    body.parentPageId !== page.parent.id
+  ) {
+    try {
+      await loadManageableNotebook(page.parent.id, userId, request);
+    } catch (err) {
+      return { ok: false, response: notebookErrorResponse(err) };
+    }
+  }
 
   // Destination. Absent workspaceType → reorder in place.
   let dest: { type: WorkspaceType; id: string | null };
