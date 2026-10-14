@@ -65,6 +65,15 @@ const confirmButton = () => Array.from(document.querySelectorAll("button")).find
 const footer = () => document.querySelector("p.truncate")!.textContent;
 
 describe("FolderPicker multi mode", () => {
+  it("draws a Meetings folder with the coral calendar mark whether or not filing prefers it", () => {
+    mountMulti({ initialDestinations: [], initial: { driveId: "lab", folderId: null }, folders: [...folders, { id: "mtg", driveId: "lab", parentId: null, title: "Meetings", folderType: "Meetings" }] });
+    const rowOf = (title: string) => Array.from(document.querySelectorAll("li, [role=option], button")).find((e) => e.textContent?.trim() === title);
+    const calendar = rowOf("Meetings")!.querySelector("svg.lucide-calendar-days");
+    expect(calendar).not.toBeNull();
+    expect(calendar!.getAttribute("class")).toContain("text-accent-coral/80");
+    expect(rowOf("Ops")!.querySelector("svg.lucide-calendar-days")).toBeNull();
+  });
+
   it("opens with the given destinations as chips, the first one primary", () => {
     mountMulti({ initialDestinations: [ops, design] });
     expect(chips().map((c) => c.textContent)).toEqual([

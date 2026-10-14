@@ -274,20 +274,6 @@ export async function clearReceiver(slot: ReceiverSlot, actorId: string): Promis
   return current;
 }
 
-export async function setFolderHint(folderId: string, hint: "Meetings" | null, actorId: string): Promise<void> {
-  const folder = await loadLiveFolder(folderId);
-  if (folder.processType !== null) {
-    throw new ReceiverError("This folder already receives filed items, so it can't also be a hint", 409);
-  }
-  await prisma.page.update({ where: { id: folderId }, data: { folderType: hint } });
-  await logAuditEvent({
-    action: "page.receiver",
-    userId: actorId,
-    targetId: folderId,
-    metadata: { op: "hint", hint },
-  });
-}
-
 /** Called after a move: a receiver that left the tree it files for goes back to being a plain folder. */
 export async function clearTypeIfLeavingRoot(pageIds: string[]): Promise<string[]> {
   if (pageIds.length === 0) return [];

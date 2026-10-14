@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  CHOICE_HINT,
   CHOICE_NONE,
   choiceLabel,
   currentChoice,
@@ -114,25 +113,21 @@ describe("currentChoice", () => {
 
   it("is the slot this folder holds", () => {
     expect(
-      currentChoice({ folderId: "f1", folderType: "Agreements", slots, holders: { Agreements: "f1", Meetings: "f2" } }),
+      currentChoice({ folderId: "f1", slots, holders: { Agreements: "f1", Meetings: "f2" } }),
     ).toBe("slot:Core:Agreements");
   });
 
-  it("prefers the slot over the hint for a Meetings folder that holds the receiver", () => {
-    expect(currentChoice({ folderId: "f1", folderType: "Meetings", slots, holders: { Meetings: "f1" } })).toBe(
-      "slot:Core:Meetings",
-    );
+  it("is the slot a Meetings folder holds", () => {
+    expect(currentChoice({ folderId: "f1", slots, holders: { Meetings: "f1" } })).toBe("slot:Core:Meetings");
   });
 
-  it("is the hint for a Meetings folder that holds no slot", () => {
-    expect(currentChoice({ folderId: "f1", folderType: "Meetings", slots, holders: { Meetings: "f2" } })).toBe(
-      CHOICE_HINT,
-    );
+  it("is none for a Meetings-typed folder that holds no slot", () => {
+    expect(currentChoice({ folderId: "f1", slots, holders: { Meetings: "f2" } })).toBe(CHOICE_NONE);
   });
 
   it("is none for a plain folder, or when no slot data loaded", () => {
-    expect(currentChoice({ folderId: "f1", folderType: null, slots, holders: {} })).toBe(CHOICE_NONE);
-    expect(currentChoice({ folderId: "f1", folderType: "Agreements", slots: [], holders: {} })).toBe(CHOICE_NONE);
+    expect(currentChoice({ folderId: "f1", slots, holders: {} })).toBe(CHOICE_NONE);
+    expect(currentChoice({ folderId: "f1", slots: [], holders: {} })).toBe(CHOICE_NONE);
   });
 });
 
@@ -142,7 +137,6 @@ describe("planChoiceChange", () => {
   const agreements = slotChoice(slots[1]);
 
   it("does nothing when the choice is unchanged", () => {
-    expect(planChoiceChange("f1", CHOICE_HINT, CHOICE_HINT, slots)).toEqual([]);
     expect(planChoiceChange("f1", CHOICE_NONE, CHOICE_NONE, slots)).toEqual([]);
   });
 
@@ -152,30 +146,16 @@ describe("planChoiceChange", () => {
     ]);
   });
 
-  it("clears the old hint before setting a slot", () => {
-    expect(planChoiceChange("f1", CHOICE_HINT, meetings, slots)).toEqual([
-      { intent: "hint", folderId: "f1", hint: null },
-      { intent: "set", processType: "Core", folderType: "Meetings", folderId: "f1" },
-    ]);
-  });
-
-  it("clears the old slot before setting another or a hint", () => {
+  it("clears the old slot before setting another", () => {
     expect(planChoiceChange("f1", meetings, agreements, slots)).toEqual([
       { intent: "clear", processType: "Core", folderType: "Meetings" },
       { intent: "set", processType: "Core", folderType: "Agreements", folderId: "f1" },
     ]);
-    expect(planChoiceChange("f1", meetings, CHOICE_HINT, slots)).toEqual([
-      { intent: "clear", processType: "Core", folderType: "Meetings" },
-      { intent: "hint", folderId: "f1", hint: "Meetings" },
-    ]);
   });
 
-  it("clears a slot or a hint when None is chosen", () => {
+  it("clears a slot when None is chosen", () => {
     expect(planChoiceChange("f1", agreements, CHOICE_NONE, slots)).toEqual([
       { intent: "clear", processType: "Core", folderType: "Agreements" },
-    ]);
-    expect(planChoiceChange("f1", CHOICE_HINT, CHOICE_NONE, slots)).toEqual([
-      { intent: "hint", folderId: "f1", hint: null },
     ]);
   });
 
@@ -190,10 +170,9 @@ describe("planChoiceChange", () => {
 describe("choiceLabel", () => {
   const slots = eligibleSlotsFor("core", null, true, false);
 
-  it("names none, the hint and each slot", () => {
+  it("names none and each slot", () => {
     expect(choiceLabel(CHOICE_NONE, slots)).toBe("None");
-    expect(choiceLabel(CHOICE_HINT, slots)).toBe("Meeting notebooks (hint)");
-    expect(choiceLabel(slotChoice(slots[0]), slots)).toBe("Meeting notebooks (new notes file here)");
+    expect(choiceLabel(slotChoice(slots[0]), slots)).toBe("New meeting notebooks file here");
     expect(choiceLabel(slotChoice(slots[1]), slots)).toBe("Agreements");
   });
 
@@ -256,7 +235,7 @@ describe("topLevelOf", () => {
 describe("receivesLabel and spaceNoun", () => {
   it("labels receiver types and nothing else", () => {
     expect(receivesLabel("HiringForms")).toBe("Hiring forms");
-    expect(receivesLabel("Meetings")).toBe("Meeting notebooks");
+    expect(receivesLabel("Meetings")).toBe("New meeting notebooks");
     expect(receivesLabel("Root")).toBeNull();
     expect(receivesLabel(null)).toBeNull();
     expect(receivesLabel(undefined)).toBeNull();

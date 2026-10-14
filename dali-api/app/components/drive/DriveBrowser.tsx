@@ -245,7 +245,7 @@ function kindLabel(item: DriveItem): string {
     case "folder":
       return "Folder";
     case "doc":
-      return "Document";
+      return item.isNotebook ? `Notebook · ${item.tabCount ?? 0} ${item.tabCount === 1 ? "tab" : "tabs"}` : "Document";
     case "file":
       return "File";
     case "form":

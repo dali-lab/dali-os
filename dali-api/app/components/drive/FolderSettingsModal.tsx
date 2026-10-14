@@ -5,7 +5,6 @@ import { Button } from "~/components/ui/Button";
 import { Select } from "~/components/ui/floating";
 import { useToast } from "~/components/ui/toast";
 import {
-  CHOICE_HINT,
   CHOICE_NONE,
   choiceLabel,
   currentChoice,
@@ -32,7 +31,7 @@ export function FolderSettingsModal({
   open: boolean;
   onClose: () => void;
   folder: FolderSettingsTarget;
-  /** Process slots this folder is eligible for (`eligibleSlotsFor`); empty offers only the hint. */
+  /** Process slots this folder is eligible for (`eligibleSlotsFor`); empty offers only None. */
   slots: SlotChoice[];
 }) {
   const toast = useToast();
@@ -62,17 +61,16 @@ export function FolderSettingsModal({
     () =>
       currentChoice({
         folderId: folder.id,
-        folderType: folder.folderType,
         slots: usable,
         holders: Object.fromEntries((rows ?? []).map((r) => [r.folderType, r.folder?.id ?? null])),
       }),
-    [folder.id, folder.folderType, usable, rows],
+    [folder.id, usable, rows],
   );
   useEffect(() => {
     if (open && !loading) setChoice(initial);
   }, [open, loading, initial]);
 
-  const options = [CHOICE_NONE, CHOICE_HINT, ...usable.map(slotChoice)].map((value) => ({
+  const options = [CHOICE_NONE, ...usable.map(slotChoice)].map((value) => ({
     value: value as Choice,
     label: choiceLabel(value as Choice, usable),
   }));

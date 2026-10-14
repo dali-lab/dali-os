@@ -31,7 +31,7 @@ describe("sendReceiverRequest", () => {
   it("posts the body as JSON", async () => {
     const fetchMock = reply(200, { ok: true });
     vi.stubGlobal("fetch", fetchMock);
-    const body = { intent: "hint", folderId: "f1", hint: "Meetings" } as const;
+    const body = { intent: "set", processType: "Core", folderType: "Meetings", folderId: "f1" } as const;
     expect(await sendReceiverRequest(body)).toEqual({ ok: true });
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
     expect(init.method).toBe("POST");
@@ -48,12 +48,12 @@ describe("sendReceiverRequest", () => {
 
   it("falls back to a generic message when the response has no error text or the network fails", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("nope", { status: 500 })));
-    expect(await sendReceiverRequest({ intent: "hint", folderId: "f1", hint: null })).toEqual({
+    expect(await sendReceiverRequest({ intent: "clear", processType: "Core", folderType: "Meetings" })).toEqual({
       ok: false,
       error: "That didn't save. Try again.",
     });
     vi.stubGlobal("fetch", vi.fn(async () => Promise.reject(new Error("offline"))));
-    expect(await sendReceiverRequest({ intent: "hint", folderId: "f1", hint: null })).toMatchObject({ ok: false });
+    expect(await sendReceiverRequest({ intent: "clear", processType: "Core", folderType: "Meetings" })).toMatchObject({ ok: false });
   });
 });
 

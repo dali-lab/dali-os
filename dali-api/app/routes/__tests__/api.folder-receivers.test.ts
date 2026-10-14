@@ -14,7 +14,6 @@ vi.mock("~/lib/drive-receivers.server", async () => {
     ...actual,
     setReceiver: vi.fn(),
     clearReceiver: vi.fn(),
-    setFolderHint: vi.fn(),
     findReceiver: vi.fn(),
     folderPath: vi.fn(),
   };
@@ -28,7 +27,6 @@ import {
   clearReceiver,
   findReceiver,
   folderPath,
-  setFolderHint,
   setReceiver,
 } from "~/lib/drive-receivers.server";
 import { loader, action } from "~/routes/api.folder-receivers";
@@ -176,34 +174,9 @@ describe("POST /api/folder-receivers", () => {
     expect(clearReceiver).toHaveBeenCalledWith({ processType: "Mentorship", processId: "mentorship", folderType: "MentorNotebooks" }, "u1");
   });
 
-  it("sets a hint when the user can edit the folder", async () => {
-    vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canEdit: true, canComment: true } as any);
+  it("rejects the retired hint intent as an unknown intent", async () => {
     const res = await post({ intent: "hint", folderId: "f1", hint: "Meetings" });
-    expect(res.status).toBe(200);
-    expect(setFolderHint).toHaveBeenCalledWith("f1", "Meetings", "u1");
-  });
-
-  it("clears a hint with null", async () => {
-    vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canEdit: true, canComment: true } as any);
-    await post({ intent: "hint", folderId: "f1", hint: null });
-    expect(setFolderHint).toHaveBeenCalledWith("f1", null, "u1");
-  });
-
-  it("403s a hint from someone who can't edit the folder", async () => {
-    vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canEdit: false, canComment: false } as any);
-    const res = await post({ intent: "hint", folderId: "f1", hint: "Meetings" });
-    expect(res.status).toBe(403);
-    expect(setFolderHint).not.toHaveBeenCalled();
-  });
-
-  it("404s a hint for a folder that does not exist", async () => {
-    vi.mocked(getPageAccess).mockRejectedValue(new Error("Page not found"));
-    const res = await post({ intent: "hint", folderId: "gone", hint: "Meetings" });
-    expect(res.status).toBe(404);
-  });
-
-  it("400s a hint other than Meetings", async () => {
-    expect((await post({ intent: "hint", folderId: "f1", hint: "Agreements" })).status).toBe(400);
+    expect(res.status).toBe(400);
   });
 
   it("405s a non-POST", async () => {

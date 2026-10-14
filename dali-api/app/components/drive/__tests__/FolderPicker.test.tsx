@@ -192,10 +192,10 @@ describe("preferred folder type", () => {
     ]);
   });
 
-  it("keeps the plain glyph for a typed folder when nothing is preferred", () => {
-    expect(folderGlyph("Meetings", null)).toBe("folder");
-    expect(folderGlyph("Agreements", "Agreements")).toBe("folder");
-    expect(folderGlyph("Meetings", "Meetings")).toBe("calendar");
+  it("draws the calendar for any Meetings folder, preferred or not", () => {
+    expect(folderGlyph("Meetings")).toBe("calendar");
+    expect(folderGlyph("Agreements")).toBe("folder");
+    expect(folderGlyph(null)).toBe("folder");
   });
 
   it("isPreferred needs a preferred type that matches", () => {

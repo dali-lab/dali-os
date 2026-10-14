@@ -2,7 +2,6 @@ import type { Route } from "./+types/api.folder-receivers";
 import { z } from "zod";
 import { requireAuth } from "~/lib/auth";
 import { isCore, isProjectMember } from "~/lib/roles";
-import { getPageAccess } from "~/lib/pageAccess.server";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import {
@@ -15,7 +14,6 @@ import {
   folderPath,
   isReceiverProcessType,
   receiverProcessId,
-  setFolderHint,
   setReceiver,
   type ReceiverFolderType,
   type ReceiverProcessType,
@@ -27,7 +25,6 @@ import {
 // POST /api/folder-receivers
 //        { intent: "set", processType, processId?, folderType, folderId }
 //        { intent: "clear", processType, processId?, folderType }
-//        { intent: "hint", folderId, hint: "Meetings" | null }
 //
 // A folder says what it receives (Page.folderType + processType/processId); see
 // app/lib/drive-receivers.server.ts. Core decides where lab-wide filing lands; a
@@ -86,7 +83,6 @@ const SlotFields = {
 const BodySchema = z.discriminatedUnion("intent", [
   z.object({ intent: z.literal("set"), ...SlotFields, folderId: z.string().min(1) }),
   z.object({ intent: z.literal("clear"), ...SlotFields }),
-  z.object({ intent: z.literal("hint"), folderId: z.string().min(1), hint: z.literal("Meetings").nullable() }),
 ]);
 
 export async function action({ request }: Route.ActionArgs) {
@@ -101,18 +97,6 @@ export async function action({ request }: Route.ActionArgs) {
   if (body instanceof Response) return withCors(request, body);
 
   try {
-    if (body.intent === "hint") {
-      let canEdit: boolean;
-      try {
-        canEdit = (await getPageAccess(userId, body.folderId, request)).canEdit;
-      } catch {
-        return json(request, { error: "Folder not found" }, 404);
-      }
-      if (!canEdit) return json(request, { error: "Forbidden" }, 403);
-      await setFolderHint(body.folderId, body.hint, userId);
-      return json(request, { ok: true });
-    }
-
     const processId = receiverProcessId(body.processType, body.processId);
     if (!processId) return json(request, { error: "Bad processId" }, 400);
     if (!acceptsReceiver(body.processType, body.folderType)) return json(request, { error: "Unknown slot" }, 400);
